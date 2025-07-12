@@ -1,0 +1,179 @@
+version: '3'
+services:
+  db:
+    image: postgres:latest
+    container_name: db
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin
+      - POSTGRES_DB=underchat
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=10
+      - -c
+      - max_wal_senders=10
+    ports:
+      - 5432:5432
+    networks:
+      - underchat
+    restart: always
+    volumes:
+      - db_postgresql:/var/lib/postgresql
+      - db_postgresql_data:/var/lib/postgresql/data
+
+  db-elastic:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.0.1
+    container_name: db-elastic
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - 'ES_JAVA_OPTS=-Xms512m -Xmx512m'
+      - xpack.security.enabled=true
+      - ELASTIC_PASSWORD=admin
+      - cluster.name=es-cluster
+      - node.name=es-node
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - db_elastic_data:/usr/share/elasticsearch/data
+    ports:
+      - '9201:9200'
+    networks:
+      - underchat
+    restart: always
+
+  redis:
+    container_name: backend-cache-redis
+    image: redis:7.2.4
+    command: redis-server --requirepass dY5MRW2^!jxHX
+    ports:
+      - 6379:6379
+    restart: always
+    networks:
+      - underchat
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.0.1
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - 'ES_JAVA_OPTS=-Xms512m -Xmx512m'
+      - xpack.security.enabled=true
+      - ELASTIC_PASSWORD=admin
+      - cluster.name=es-cluster
+      - node.name=es-node
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - '9200:9200'
+    networks:
+      - underchat
+    restart: always
+
+  temporal-db:
+    image: postgres:latest
+    container_name: temporal-db
+    environment:
+      - POSTGRES_USER=temporal
+      - POSTGRES_PASSWORD=temporal
+      - POSTGRES_DB=temporal
+    networks:
+      - underchat
+    restart: always
+    volumes:
+      - temporal_postgresql:/var/lib/postgresql/data
+
+  temporal:
+    image: temporalio/auto-setup:latest
+    container_name: temporal
+    ports:
+      - '7233:7233'
+    restart: always
+    environment:
+      - TEMPORAL_CLI_ADDRESS=temporal:7233
+      - DB=postgres12
+      - POSTGRES_USER=temporal
+      - POSTGRES_PWD=temporal
+      - POSTGRES_SEEDS=temporal-db
+      - DB_PORT=5432
+    depends_on:
+      - temporal-db
+    networks:
+      - underchat
+
+  temporal-admin-tools:
+    image: temporalio/admin-tools:latest
+    container_name: temporal-admin-tools
+    restart: always
+    environment:
+      - TEMPORAL_CLI_ADDRESS=temporal:7233
+    depends_on:
+      - temporal
+    networks:
+      - underchat
+
+  temporal-web:
+    image: temporalio/ui:latest
+    container_name: temporal-web
+    restart: always
+    ports:
+      - '8088:8080'
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+    depends_on:
+      - temporal
+    networks:
+      - underchat
+
+  atlas-db:
+    image: postgres:latest
+    container_name: atlas-db
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin
+      - POSTGRES_DB=dev
+    networks:
+      - underchat
+    restart: always
+    volumes:
+      - atlas_db_postgresql:/var/lib/postgresql
+      - atlas_db_postgresql_data:/var/lib/postgresql/data
+
+  atlas:
+    build:
+      context: .
+      dockerfile: ./docker/atlas.Dockerfile
+    container_name: atlas
+    env_file:
+      - .env
+    networks:
+      - underchat
+    depends_on:
+      - db
+      - atlas-db
+    volumes:
+      - ./:/app
+
+networks:
+  underchat:
+
+volumes:
+  postgresql:
+  temporal_postgresql:
+  postgresql_data:
+  db_postgresql:
+  db_postgresql_data:
+  db_elastic_data:
+  atlas_db_postgresql:
+  atlas_db_postgresql_data:
+  elasticsearch_data:

@@ -1,0 +1,34 @@
+name: Validate JSON Files
+
+on:
+  pull_request:
+    branches: [dev, main]
+
+env:
+  VERSION_NODE: 22.17.0
+
+jobs:
+  validate-json:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.VERSION_NODE }}
+
+      - name: Install JSONLint
+        run: npm install -g jsonlint
+
+      - name: Validate JSON structure
+        run: |
+          jsonlint packages/core/plugins/i18next/locales/en/translation.json -q
+          jsonlint packages/core/plugins/i18next/locales/pt/translation.json -q
+
+      - name: Check for duplicate keys
+        run: node .github/scripts/checkDuplicates.js
+
+      - name: Check translation key consistency
+        run: node .github/scripts/checkKeyConsistency.js

@@ -1,0 +1,7 @@
+{
+  "not_authorized": "Não autorizado!",
+  "login_error": "Erro de login",
+  "login_invalid": "Login inválido",
+  "login_success": "Login com sucesso",
+  "internal_server_error": "Erro interno do servidor"
+}
