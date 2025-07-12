@@ -2,13 +2,12 @@ FROM node:22.17.0-alpine AS base
 
 RUN apk add --no-cache bash curl libc6-compat \
     && corepack enable \
-    && corepack prepare pnpm@latest --activate \
-    && npm install -g turbo@latest --ignore-scripts
+    && corepack prepare pnpm@latest --activate
 
 FROM base AS pruned
 WORKDIR /app
 COPY . .
-RUN turbo prune public --docker
+RUN pnpm dlx turbo@latest prune public --docker
 
 FROM pruned AS deps
 WORKDIR /app
