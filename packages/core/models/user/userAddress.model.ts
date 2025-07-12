@@ -11,8 +11,8 @@ export const userAddress = pgTable('user_address', {
     .references(() => user.user_id)
     .notNull(),
   zip_code: varchar({ length: 10 }).notNull(),
-  street: varchar({ length: 100 }).notNull(),
-  number: varchar({ length: 10 }).notNull(),
+  street: varchar({ length: 500 }).notNull(),
+  street_partial: varchar({ length: 25 }).notNull(),
   neighborhood: varchar({ length: 50 }).notNull(),
   city: varchar({ length: 50 }).notNull(),
   state: varchar({ length: 50 }).notNull(),
