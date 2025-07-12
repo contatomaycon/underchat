@@ -3,7 +3,7 @@ FROM node:22.17.0-alpine AS base
 RUN apk add --no-cache bash curl libc6-compat \
     && corepack enable \
     && corepack prepare pnpm@latest --activate \
-    && npm install -g turbo@latest
+    && npm install -g turbo@latest --ignore-scripts
 
 FROM base AS pruned
 WORKDIR /app
@@ -30,8 +30,9 @@ RUN apk add --no-cache bash curl \
     && curl --proto '=https' --tlsv1.2 -sSfL https://atlasgo.sh -o /tmp/atlasgo.sh \
     && echo "$ATLASGO_SHA256  /tmp/atlasgo.sh" | sha256sum -c - \
     && bash /tmp/atlasgo.sh \
-    && rm /tmp/atlasgo.sh
-RUN corepack enable && corepack prepare pnpm@latest --activate
+    && rm /tmp/atlasgo.sh \
+    && corepack enable \
+    && corepack prepare pnpm@latest --activate
 
 COPY --from=builder /app/apps/public_api/dist ./
 COPY --from=builder /app/node_modules ./node_modules
@@ -44,4 +45,4 @@ RUN addgroup -S app && adduser -S app -G app
 USER app
 EXPOSE 3001
 WORKDIR /app/apps/public_api
-CMD ["node", "src/index.js"]
+CMD ["node","src/index.js"]
