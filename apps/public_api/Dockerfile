@@ -1,47 +1,36 @@
-FROM public.ecr.aws/docker/library/node:22.17.0-alpine AS base
+FROM node:22.17.0-alpine AS base
 
-FROM base AS turbo
+RUN apk add --no-cache libc6-compat curl bash
+RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN npm install -g turbo@latest
 
-RUN apk update
-RUN apk add --no-cache libc6-compat
-RUN npm add -g pnpm
-RUN npm add -g turbo
- 
-FROM turbo AS pruned
-
+FROM base AS pruned
 WORKDIR /app
-
 COPY . .
-
 RUN turbo prune public --docker
 
 FROM pruned AS deps
-
 WORKDIR /app
-
-COPY --from=pruned /app/out/json/ .
-
-RUN pnpm install
+COPY --from=pruned /app/out/json/ ./
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 FROM deps AS builder
-
 WORKDIR /app
-
-COPY --from=deps /app/node_modules/ .
-COPY --from=pruned /app/out/full/ .
-
+COPY --from=deps /app/node_modules/ ./
+COPY --from=pruned /app/out/full/ ./
 RUN pnpm build:public
 RUN mkdir -p /build_locales
-
 COPY packages/core/plugins/i18next/locales /build_locales
 
-FROM public.ecr.aws/docker/library/node:22.17.0-alpine
-
+FROM node:22.17.0-alpine AS release
 WORKDIR /app
-
-RUN apk add --no-cache curl bash
-RUN curl -sSf https://atlasgo.sh | sh
-RUN npm install -g pnpm
+ARG ATLASGO_SHA256
+RUN apk add --no-cache curl bash \
+ && curl -sSfL https://atlasgo.sh -o /tmp/atlasgo.sh \
+ && echo "$ATLASGO_SHA256  /tmp/atlasgo.sh" | sha256sum -c - \
+ && bash /tmp/atlasgo.sh \
+ && rm /tmp/atlasgo.sh
+RUN corepack enable && corepack prepare pnpm@latest --activate
 
 COPY --from=builder /app/apps/public_api/dist ./
 COPY --from=builder /app/node_modules ./node_modules
@@ -52,7 +41,5 @@ COPY --from=builder /app/atlas.hcl ./atlas.hcl
 COPY --from=builder /build_locales ./packages/core/plugins/i18next/locales
 
 EXPOSE 3001
-
 WORKDIR /app/apps/public_api
-
 CMD ["node", "src/index.js"]
