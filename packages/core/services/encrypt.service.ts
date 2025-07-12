@@ -7,8 +7,6 @@ import { detectDocumentType } from '@core/common/functions/detectDocumentType';
 
 @injectable()
 export class EncryptService {
-  constructor() {}
-
   encrypt = (value: string | number): string => {
     const valueString = value.toString();
     const type = detectDocumentType(valueString);
