@@ -6,7 +6,9 @@ RUN apk add --no-cache bash curl libc6-compat \
 
 FROM base AS pruned
 WORKDIR /app
-COPY . .
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+COPY apps/public_api ./apps/public_api
+COPY packages/core/plugins/i18next/locales ./packages/core/plugins/i18next/locales
 RUN pnpm dlx turbo@latest prune public --docker
 
 FROM pruned AS deps
@@ -35,7 +37,7 @@ RUN apk add --no-cache bash curl \
 
 COPY --from=builder /app/apps/public_api/dist ./
 COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/package*.json .
 COPY --from=builder /app/apps/public_api/package*.json ./apps/public_api
 COPY --from=builder /app/atlas ./atlas
 COPY --from=builder /app/atlas.hcl ./atlas.hcl
