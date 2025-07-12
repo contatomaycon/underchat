@@ -10,7 +10,8 @@ export const userDocument = pgTable('user_document', {
   user_document_type_id: smallint()
     .references(() => userDocumentType.user_document_type_id)
     .notNull(),
-  document: varchar({ length: 20 }).notNull(),
+  document: varchar({ length: 500 }).notNull(),
+  document_partial: varchar({ length: 50 }).notNull(),
   created_at: timestamp({
     mode: 'string',
     withTimezone: true,

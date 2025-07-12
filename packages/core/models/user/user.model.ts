@@ -11,7 +11,8 @@ export const user = pgTable('user', {
     .references(() => userType.user_type_id)
     .notNull(),
   username: varchar({ length: 50 }),
-  email: varchar({ length: 100 }).notNull(),
+  email: varchar({ length: 500 }).notNull(),
+  email_partial: varchar({ length: 25 }).notNull(),
   password: varchar({ length: 255 }).notNull(),
   created_at: timestamp({
     mode: 'string',
