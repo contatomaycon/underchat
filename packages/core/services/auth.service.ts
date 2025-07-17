@@ -15,10 +15,10 @@ export class AuthService {
 
     console.log(
       'sanitized:',
-      this.encryptService.sanitize('Quadra 14 Casa 04', ETypeSanetize.other)
+      this.encryptService.sanitize('03071321104', ETypeSanetize.document)
     );
 
-    console.log('encrypt:', this.encryptService.encrypt('Quadra 14 Casa 04'));
+    console.log('encrypt:', this.encryptService.encrypt('03071321104'));
 
     return this.authRepository.authenticate(login, passwordEncrypted);
   };

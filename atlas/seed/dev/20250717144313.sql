@@ -1,0 +1,1 @@
+INSERT INTO "user_document" ("user_document_id", "user_document_type_id", "document", "document_partial") VALUES (1, 1, 'e8749250705a4fcc87755a1ea435f562b4dc8c1275751b487225b0f7f9c89ce4', '030.***.***-04');
