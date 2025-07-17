@@ -13,7 +13,7 @@ export class AuthRepository {
   ) {}
 
   authenticate = async (
-    email: string,
+    login: string,
     password: string
   ): Promise<AuthLoginResponse | null> => {
     const result = await this.db
@@ -24,7 +24,7 @@ export class AuthRepository {
       .innerJoin(userStatus, eq(userStatus.user_status_id, user.user_status_id))
       .where(
         and(
-          eq(user.email, email),
+          eq(user.email, login),
           eq(user.password, password),
           eq(user.user_status_id, EUserStatus.active),
           isNull(user.deleted_at)

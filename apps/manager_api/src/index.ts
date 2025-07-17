@@ -9,10 +9,12 @@ import { requestHook, responseHook, errorHook } from '@core/hooks';
 import cacheRedisConnector from '@core/config/cache';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { v4 } from 'uuid';
-import loggerServicePlugin from '@core/plugins/logger';
 import swaggerPlugin from '@/plugins/swagger';
 import corsPlugin from '@core/plugins/cors';
 import jwtPlugin from '@core/plugins/jwt';
+import databaseElasticPlugin from '@core/plugins/dbElastic';
+import elasticLogsPlugin from '@core/plugins/elasticLogs';
+import loggerServicePlugin from '@core/plugins/logger';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -26,7 +28,6 @@ server.addHook('onError', errorHook);
 server.decorateRequest('module', ERouteModule.manager);
 
 server.register(dbConnector);
-server.register(loggerServicePlugin);
 server.register(cacheRedisConnector);
 server.register(auth);
 server.register(authenticateJwt);
@@ -34,6 +35,16 @@ server.register(i18nextPlugin);
 server.register(jwtPlugin);
 server.register(swaggerPlugin);
 server.register(corsPlugin);
+
+server.register(databaseElasticPlugin, {
+  prefix: ERouteModule.public,
+});
+
+server.register(elasticLogsPlugin, {
+  prefix: ERouteModule.public,
+});
+
+server.register(loggerServicePlugin);
 
 const start = async () => {
   try {
