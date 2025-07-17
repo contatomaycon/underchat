@@ -7,4 +7,5 @@ INSERT INTO "permission_action" ("permission_action_id", "permission_module_id",
 INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES (7, 1, 'user_create');
 INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES (8, 1, 'user_update');
 INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES (9, 1, 'user_delete');
-INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES (10, 2, 'metrics_view');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES (10, 2, 'full_access');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES (11, 2, 'metrics_view');

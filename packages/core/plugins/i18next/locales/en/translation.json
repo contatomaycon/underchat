@@ -9,5 +9,7 @@
   "server_already_exists": "Server already exists!",
   "server_ssh_creator_error": "Error creating SSH server!",
   "ssh_connection_failed": "SSH connection failed!",
-  "health_check_success": "Health check successful!"
+  "health_check_success": "Health check successful!",
+  "metrics_server_success": "Metrics server started successfully!",
+  "metrics_server_error": "Error starting metrics server!"
 }

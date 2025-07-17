@@ -1,23 +1,18 @@
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
-import { ViewMetricsRequest } from '@core/schema/metrics/viewMetrics/request.schema';
 import { MetricsViewerUseCase } from '@core/useCases/metrics/MetricsViewer.useCase';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 
 export const viewMetrics = async (
-  request: FastifyRequest<{
-    Querystring: ViewMetricsRequest;
-  }>,
+  request: FastifyRequest,
   reply: FastifyReply
 ) => {
   const metricsViewerUseCase = container.resolve(MetricsViewerUseCase);
   const { t } = request;
 
   try {
-    const responseMetricsView = await metricsViewerUseCase.execute(
-      request.query
-    );
+    const responseMetricsView = await metricsViewerUseCase.execute();
 
     if (responseMetricsView) {
       return sendResponse(reply, {

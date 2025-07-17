@@ -54,7 +54,6 @@ const networksSchema = Type.Object({
   established_conns: Type.Number({
     description: 'Conexões estabelecidas',
   }),
-  backlog: Type.Number({ description: 'Backlog de conexões' }),
   errors: Type.Number({ description: 'Erros de rede' }),
 });
 
