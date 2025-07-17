@@ -15,7 +15,7 @@ import jwtPlugin from '@core/plugins/jwt';
 import databaseElasticPlugin from '@core/plugins/dbElastic';
 import elasticLogsPlugin from '@core/plugins/elasticLogs';
 import loggerServicePlugin from '@core/plugins/logger';
-import kafkaPlugin from '@core/plugins/kafka';
+import kafkaPlugin from '@/plugins/kafka';
 
 const server = fastify({
   genReqId: () => v4(),
