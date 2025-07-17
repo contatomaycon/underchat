@@ -1,6 +1,7 @@
 import { AuthRepository } from '@core/repositories/auth/Auth.repository';
 import { injectable } from 'tsyringe';
 import { EncryptService } from './encrypt.service';
+import { IAuthenticate } from '@core/common/interfaces/IAuthenticate';
 
 @injectable()
 export class AuthService {
@@ -13,6 +14,12 @@ export class AuthService {
     const passwordEncrypted = this.encryptService.encrypt(password);
     const loginEncrypted = this.encryptService.encrypt(login);
 
-    return this.authRepository.authenticate(loginEncrypted, passwordEncrypted);
+    const input: IAuthenticate = {
+      username: login,
+      email: loginEncrypted,
+      password: passwordEncrypted,
+    };
+
+    return this.authRepository.authenticate(input);
   };
 }

@@ -7,5 +7,6 @@
   "server_creator_success": "Servidor criado com sucesso!",
   "server_creator_error": "Erro ao criar o servidor!",
   "server_already_exists": "Servidor já existe!",
-  "server_ssh_creator_error": "Erro ao criar o servidor SSH!"
+  "server_ssh_creator_error": "Erro ao criar o servidor SSH!",
+  "ssh_connection_failed": "Falha na conexão SSH!"
 }
