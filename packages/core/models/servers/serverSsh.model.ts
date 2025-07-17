@@ -32,7 +32,7 @@ export const serverSsh = pgTable('server_ssh', {
 });
 
 export const serverSshRelations = relations(serverSsh, ({ one }) => ({
-  server: one(server, {
+  ser: one(server, {
     fields: [serverSsh.server_id],
     references: [server.server_id],
   }),

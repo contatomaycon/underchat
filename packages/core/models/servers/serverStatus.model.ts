@@ -19,5 +19,5 @@ export const serverStatus = pgTable('server_status', {
 });
 
 export const serverStatusRelations = relations(serverStatus, ({ many }) => ({
-  server: many(server),
+  sss: many(server),
 }));

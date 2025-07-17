@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "nodenext",
+    "lib": ["ES2022"],
+    "moduleResolution": "nodenext",
+    "declaration": true,
+    "outDir": "./dist",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "baseUrl": ".",
+    "typeRoots": ["./node_modules/@types", "../../packages/core/common/types"],
+    "paths": {
+      "@/*": ["src/*"],
+      "@core/*": ["../../packages/core/*"]
+    }
+  },
+  "include": ["src/**/*", "../../packages/core/common/types/**/*.d.ts"],
+  "exclude": ["node_modules"]
+}
