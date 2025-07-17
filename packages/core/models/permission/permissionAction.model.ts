@@ -24,10 +24,10 @@ export const permissionAction = pgTable('permission_action', {
 export const permissionActionRelations = relations(
   permissionAction,
   ({ one, many }) => ({
-    permission_module: one(permissionModule, {
+    ppm: one(permissionModule, {
       fields: [permissionAction.permission_module_id],
       references: [permissionModule.module_id],
     }),
-    permission_role_action: many(permissionRoleAction),
+    pra: many(permissionRoleAction),
   })
 );

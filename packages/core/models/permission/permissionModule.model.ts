@@ -18,6 +18,6 @@ export const permissionModule = pgTable('permission_module', {
 export const permissionModuleRelations = relations(
   permissionModule,
   ({ many }) => ({
-    permission_action: many(permissionAction),
+    ppa: many(permissionAction),
   })
 );

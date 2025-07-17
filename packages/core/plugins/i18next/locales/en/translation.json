@@ -8,5 +8,6 @@
   "server_creator_error": "Error creating server!",
   "server_already_exists": "Server already exists!",
   "server_ssh_creator_error": "Error creating SSH server!",
-  "ssh_connection_failed": "SSH connection failed!"
+  "ssh_connection_failed": "SSH connection failed!",
+  "health_check_success": "Health check successful!"
 }

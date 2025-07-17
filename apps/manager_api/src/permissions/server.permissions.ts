@@ -1,3 +1,7 @@
 import { EServerPermissions } from '@core/common/enums/EPermissions/server';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 
-export const serverCreatePermissions = [EServerPermissions.server_create];
+export const serverCreatePermissions = [
+  EGeneralPermissions.full_access,
+  EServerPermissions.server_create,
+];
