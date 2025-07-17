@@ -1,15 +1,9 @@
-import {
-  pgTable,
-  smallint,
-  timestamp,
-  uuid,
-  varchar,
-} from 'drizzle-orm/pg-core';
+import { pgTable, smallint, timestamp, varchar } from 'drizzle-orm/pg-core';
 import { serverStatus, serverSsh } from '@core/models';
 import { relations } from 'drizzle-orm';
 
 export const server = pgTable('server', {
-  server_id: uuid().primaryKey().notNull(),
+  server_id: smallint().primaryKey().generatedByDefaultAsIdentity().notNull(),
   server_status_id: smallint()
     .references(() => serverStatus.server_status_id)
     .notNull(),
