@@ -1,6 +1,8 @@
 import { injectable } from 'tsyringe';
 import CryptoJS from 'crypto-js';
 import { generalEnvironment } from '@core/config/environments';
+import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
+import { sanitizationMap } from '@core/common/functions/sanitizeValue';
 
 @injectable()
 export class EncryptService {
@@ -18,5 +20,13 @@ export class EncryptService {
     );
 
     return hash;
+  };
+
+  sanitize = (value: string | number, type: ETypeSanetize): string => {
+    const valueString = value.toString();
+
+    return sanitizationMap[type]
+      ? sanitizationMap[type](valueString)
+      : valueString;
   };
 }
