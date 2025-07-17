@@ -4,6 +4,8 @@ import { CreateServerRequest } from '@core/schema/server/createServer/request.sc
 import { CreateServerResponse } from '@core/schema/server/createServer/response.schema';
 import { TFunction } from 'i18next';
 import { SshService } from '@core/services/ssh.service';
+import { FastifyInstance } from 'fastify';
+import { ETopicKafka } from '@core/common/enums/ETopicKafka';
 
 @injectable()
 export class ServerCreatorUseCase {
@@ -34,7 +36,29 @@ export class ServerCreatorUseCase {
     }
   }
 
+  async onServerCreatedInKafka(
+    fastify: FastifyInstance,
+    t: TFunction<'translation', undefined>,
+    serverId: number
+  ): Promise<void> {
+    try {
+      await fastify.kafka.producer.send({
+        topic: ETopicKafka.balance_create,
+        messages: [
+          {
+            value: JSON.stringify({
+              server_id: serverId,
+            }),
+          },
+        ],
+      });
+    } catch {
+      throw new Error(t('kafka_producer_error'));
+    }
+  }
+
   async execute(
+    fastify: FastifyInstance,
     t: TFunction<'translation', undefined>,
     input: CreateServerRequest
   ): Promise<CreateServerResponse | null> {
@@ -54,6 +78,8 @@ export class ServerCreatorUseCase {
     if (!serverSshId) {
       throw new Error(t('server_ssh_creator_error'));
     }
+
+    await this.onServerCreatedInKafka(fastify, t, serverId);
 
     return {
       server_id: serverId,

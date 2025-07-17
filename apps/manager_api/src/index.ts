@@ -15,6 +15,7 @@ import jwtPlugin from '@core/plugins/jwt';
 import databaseElasticPlugin from '@core/plugins/dbElastic';
 import elasticLogsPlugin from '@core/plugins/elasticLogs';
 import loggerServicePlugin from '@core/plugins/logger';
+import kafkaPlugin from '@core/plugins/kafka';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -45,6 +46,7 @@ server.register(elasticLogsPlugin, {
 });
 
 server.register(loggerServicePlugin);
+server.register(kafkaPlugin);
 
 const start = async () => {
   try {

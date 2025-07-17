@@ -9,7 +9,7 @@ import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { ITokenJwtData } from '@core/common/interfaces/ITokenJwtData';
 import { ELanguage } from '../enums/ELanguage';
 import { Client as ClientElastic } from '@elastic/elasticsearch';
-import { Kafka } from 'kafkajs';
+import { Consumer, Producer } from 'kafkajs';
 import { ITokenKeyData } from '../interfaces/ITokenKeyData';
 
 declare module 'fastify' {
@@ -21,7 +21,10 @@ declare module 'fastify' {
     Database: NodePgDatabase<typeof schema>;
     DatabaseElasticClient: ClientElastic;
     ElasticLogsClient: ClientElastic;
-    Kafka: Kafka;
+    kafka: {
+      producer: Producer;
+      consumer: Consumer;
+    };
     redis: FastifyRedis;
     logger: LoggerService;
     authenticateJwt: (
