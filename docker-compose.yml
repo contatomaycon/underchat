@@ -1,8 +1,8 @@
 version: '3'
 services:
-  db:
+  under-db:
     image: postgres:latest
-    container_name: db
+    container_name: under-db
     environment:
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=admin
@@ -24,9 +24,9 @@ services:
       - db_postgresql:/var/lib/postgresql
       - db_postgresql_data:/var/lib/postgresql/data
 
-  db-elastic:
+  under-db-elastic:
     image: docker.elastic.co/elasticsearch/elasticsearch:9.0.1
-    container_name: db-elastic
+    container_name: under-db-elastic
     environment:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
@@ -47,8 +47,8 @@ services:
       - underchat
     restart: always
 
-  redis:
-    container_name: backend-cache-redis
+  under-redis:
+    container_name: under-redis
     image: redis:7.2.4
     command: redis-server --requirepass dY5MRW2^!jxHX
     ports:
@@ -57,9 +57,9 @@ services:
     networks:
       - underchat
 
-  elasticsearch:
+  under-elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:9.0.1
-    container_name: elasticsearch
+    container_name: under-elasticsearch
     environment:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
@@ -80,9 +80,9 @@ services:
       - underchat
     restart: always
 
-  temporal-db:
+  under-temporal-db:
     image: postgres:latest
-    container_name: temporal-db
+    container_name: under-temporal-db
     environment:
       - POSTGRES_USER=temporal
       - POSTGRES_PASSWORD=temporal
@@ -93,51 +93,51 @@ services:
     volumes:
       - temporal_postgresql:/var/lib/postgresql/data
 
-  temporal:
+  under-temporal:
     image: temporalio/auto-setup:latest
-    container_name: temporal
+    container_name: under-temporal
     ports:
       - '7233:7233'
     restart: always
     environment:
-      - TEMPORAL_CLI_ADDRESS=temporal:7233
+      - TEMPORAL_CLI_ADDRESS=under-temporal:7233
       - DB=postgres12
       - POSTGRES_USER=temporal
       - POSTGRES_PWD=temporal
-      - POSTGRES_SEEDS=temporal-db
+      - POSTGRES_SEEDS=under-temporal-db
       - DB_PORT=5432
     depends_on:
-      - temporal-db
+      - under-temporal-db
     networks:
       - underchat
 
-  temporal-admin-tools:
+  under-temporal-admin-tools:
     image: temporalio/admin-tools:latest
-    container_name: temporal-admin-tools
+    container_name: under-temporal-admin-tools
     restart: always
     environment:
-      - TEMPORAL_CLI_ADDRESS=temporal:7233
+      - TEMPORAL_CLI_ADDRESS=under-temporal:7233
     depends_on:
-      - temporal
+      - under-temporal
     networks:
       - underchat
 
-  temporal-web:
+  under-temporal-web:
     image: temporalio/ui:latest
-    container_name: temporal-web
+    container_name: under-temporal-web
     restart: always
     ports:
       - '8088:8080'
     environment:
-      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_ADDRESS=under-temporal:7233
     depends_on:
-      - temporal
+      - under-temporal
     networks:
       - underchat
 
-  atlas-db:
+  under-atlas-db:
     image: postgres:latest
-    container_name: atlas-db
+    container_name: under-atlas-db
     environment:
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=admin
@@ -149,18 +149,18 @@ services:
       - atlas_db_postgresql:/var/lib/postgresql
       - atlas_db_postgresql_data:/var/lib/postgresql/data
 
-  atlas:
+  under-atlas:
     build:
       context: .
       dockerfile: ./docker/atlas.Dockerfile
-    container_name: atlas
+    container_name: under-atlas
     env_file:
       - .env
     networks:
       - underchat
     depends_on:
-      - db
-      - atlas-db
+      - under-db
+      - under-atlas-db
     volumes:
       - ./:/app
 
