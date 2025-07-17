@@ -1,4 +1,5 @@
 import { EUserStatus } from '@core/common/enums/EUserStatus';
+import { IAuthenticate } from '@core/common/interfaces/IAuthenticate';
 import * as schema from '@core/models';
 import {
   user,
@@ -21,8 +22,7 @@ export class AuthRepository {
   ) {}
 
   authenticate = async (
-    login: string,
-    password: string
+    input: IAuthenticate
   ): Promise<AuthUserResponse | null> => {
     const result = await this.db
       .select({
@@ -74,8 +74,8 @@ export class AuthRepository {
       .leftJoin(userAddress, eq(userAddress.user_id, user.user_id))
       .where(
         and(
-          or(eq(user.username, login), eq(user.email, login)),
-          eq(user.password, password),
+          or(eq(user.username, input.username), eq(user.email, input.email)),
+          eq(user.password, input.password),
           eq(user.user_status_id, EUserStatus.active),
           isNull(user.deleted_at)
         )
