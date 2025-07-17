@@ -1,7 +1,6 @@
 import { AuthRepository } from '@core/repositories/auth/Auth.repository';
 import { injectable } from 'tsyringe';
 import { EncryptService } from './encrypt.service';
-import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
 
 @injectable()
 export class AuthService {
@@ -12,14 +11,8 @@ export class AuthService {
 
   authenticate = async (login: string, password: string) => {
     const passwordEncrypted = this.encryptService.encrypt(password);
+    const loginEncrypted = this.encryptService.encrypt(login);
 
-    console.log(
-      'sanitized:',
-      this.encryptService.sanitize('03071321104', ETypeSanetize.document)
-    );
-
-    console.log('encrypt:', this.encryptService.encrypt('03071321104'));
-
-    return this.authRepository.authenticate(login, passwordEncrypted);
+    return this.authRepository.authenticate(loginEncrypted, passwordEncrypted);
   };
 }
