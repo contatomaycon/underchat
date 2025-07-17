@@ -1,6 +1,6 @@
 import { EPermissionsRoles } from '../enums/EPermissions';
 
-export interface IJwtGroupHierarchy {
+export interface IActionsTokenKeyData {
   permission_role_id: string;
   role_name: string;
   module_name: string;

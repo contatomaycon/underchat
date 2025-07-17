@@ -11,6 +11,7 @@ import { v4 } from 'uuid';
 import loggerServicePlugin from '@core/plugins/logger';
 import swaggerPlugin from '@/plugins/swagger';
 import corsPlugin from '@core/plugins/cors';
+import elasticLogsPlugin from '@core/plugins/elasticLogs';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -24,12 +25,17 @@ server.addHook('onError', errorHook);
 server.decorateRequest('module', ERouteModule.balancer);
 
 server.register(dbConnector);
-server.register(loggerServicePlugin);
 server.register(cacheRedisConnector);
 server.register(auth);
 server.register(i18nextPlugin);
 server.register(swaggerPlugin);
 server.register(corsPlugin);
+
+server.register(elasticLogsPlugin, {
+  prefix: ERouteModule.balancer,
+});
+
+server.register(loggerServicePlugin);
 
 const start = async () => {
   try {

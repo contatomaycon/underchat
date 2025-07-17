@@ -37,11 +37,11 @@ server.register(swaggerPlugin);
 server.register(corsPlugin);
 
 server.register(databaseElasticPlugin, {
-  prefix: ERouteModule.public,
+  prefix: ERouteModule.manager,
 });
 
 server.register(elasticLogsPlugin, {
-  prefix: ERouteModule.public,
+  prefix: ERouteModule.manager,
 });
 
 server.register(loggerServicePlugin);
