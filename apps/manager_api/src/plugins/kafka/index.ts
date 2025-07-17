@@ -3,17 +3,18 @@ import { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
 import { container } from 'tsyringe';
 import { kafkaEnvironment } from '@core/config/environments';
+import { ERouteModule } from '@core/common/enums/ERouteModule';
 
 const kafkaPlugin = async (fastify: FastifyInstance) => {
   const kafka = new Kafka({
-    clientId: 'client-manager',
+    clientId: `client-${ERouteModule.manager}`,
     brokers: [kafkaEnvironment.kafkaBroker],
     connectionTimeout: 60_000,
     logLevel: logLevel.NOTHING,
   });
 
   const producer = kafka.producer();
-  const consumer = kafka.consumer({ groupId: 'manager-group' });
+  const consumer = kafka.consumer({ groupId: `group-${ERouteModule.manager}` });
 
   await producer.connect();
   await consumer.connect();
