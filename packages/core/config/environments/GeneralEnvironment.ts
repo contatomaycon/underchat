@@ -9,6 +9,7 @@ dotenv.config({
 export class GeneralEnvironment {
   private readonly APP_ENVIRONMENT: EAppEnvironment | undefined;
   private readonly APP_URL_PUBLIC: string | undefined;
+  private readonly APP_URL_MANAGER: string | undefined;
   private readonly JWT_SECRET: string | undefined;
   private readonly JWT_SECRET_EXPIRES_IN: string | undefined;
   private readonly UPLOAD_LIMIT_IN_BYTES: number | undefined;
@@ -19,6 +20,7 @@ export class GeneralEnvironment {
     this.APP_ENVIRONMENT = process.env
       .APP_ENVIRONMENT as unknown as EAppEnvironment;
     this.APP_URL_PUBLIC = process.env.APP_URL_PUBLIC;
+    this.APP_URL_MANAGER = process.env.APP_URL_MANAGER;
     this.JWT_SECRET = process.env.JWT_SECRET;
     this.JWT_SECRET_EXPIRES_IN = process.env.JWT_SECRET_EXPIRES_IN;
     this.UPLOAD_LIMIT_IN_BYTES = process.env.UPLOAD_LIMIT_IN_BYTES
@@ -51,6 +53,14 @@ export class GeneralEnvironment {
     }
 
     return this.APP_URL_PUBLIC;
+  }
+
+  public get appUrlManager(): string {
+    if (!this.APP_URL_MANAGER) {
+      throw new InvalidConfigurationError('APP_URL_MANAGER is not defined.');
+    }
+
+    return this.APP_URL_MANAGER;
   }
 
   public get jwtSecret(): string {

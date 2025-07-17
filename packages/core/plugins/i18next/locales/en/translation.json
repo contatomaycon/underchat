@@ -3,5 +3,9 @@
   "login_error": "Login error!",
   "login_invalid": "Invalid login!",
   "login_success": "Login success!",
-  "internal_server_error": "Internal server error!"
+  "internal_server_error": "Internal server error!",
+  "server_creator_success": "Server created successfully!",
+  "server_creator_error": "Error creating server!",
+  "server_already_exists": "Server already exists!",
+  "server_ssh_creator_error": "Error creating SSH server!"
 }

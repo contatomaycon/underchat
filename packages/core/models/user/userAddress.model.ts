@@ -1,6 +1,6 @@
 import { pgTable, timestamp, smallint, varchar } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import { user } from '@core/models';
+import { country, user } from '@core/models';
 
 export const userAddress = pgTable('user_address', {
   user_address_id: smallint()
@@ -10,13 +10,17 @@ export const userAddress = pgTable('user_address', {
   user_id: smallint()
     .references(() => user.user_id)
     .notNull(),
+  country_id: smallint()
+    .references(() => country.country_id)
+    .notNull(),
   zip_code: varchar({ length: 10 }).notNull(),
-  street: varchar({ length: 500 }).notNull(),
-  street_partial: varchar({ length: 25 }).notNull(),
-  neighborhood: varchar({ length: 50 }).notNull(),
-  city: varchar({ length: 50 }).notNull(),
-  state: varchar({ length: 50 }).notNull(),
-  complement: varchar({ length: 100 }),
+  address1: varchar({ length: 1000 }).notNull(),
+  address1_partial: varchar({ length: 200 }).notNull(),
+  address2: varchar({ length: 1000 }),
+  address2_partial: varchar({ length: 200 }),
+  city: varchar({ length: 100 }).notNull(),
+  state: varchar({ length: 100 }).notNull(),
+  district: varchar({ length: 100 }).notNull(),
   created_at: timestamp({
     mode: 'string',
     withTimezone: true,
