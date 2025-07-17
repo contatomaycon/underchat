@@ -9,10 +9,9 @@ export class AuthService {
     private readonly encryptService: EncryptService
   ) {}
 
-  authenticate = async (login: string, password: string) => {
-    const loginEncrypted = this.encryptService.encrypt(login);
+  authenticate = async (email: string, password: string) => {
     const passwordEncrypted = this.encryptService.encrypt(password);
 
-    return this.authRepository.authenticate(loginEncrypted, passwordEncrypted);
+    return this.authRepository.authenticate(email, passwordEncrypted);
   };
 }

@@ -1,7 +1,7 @@
 import {
   pgTable,
   timestamp,
-  uuid,
+  smallint,
   varchar,
   integer,
 } from 'drizzle-orm/pg-core';
@@ -9,8 +9,11 @@ import { server } from '@core/models';
 import { relations } from 'drizzle-orm';
 
 export const serverSsh = pgTable('server_ssh', {
-  server_ssh_id: uuid().primaryKey().notNull(),
-  server_id: uuid()
+  server_ssh_id: smallint()
+    .primaryKey()
+    .generatedByDefaultAsIdentity()
+    .notNull(),
+  server_id: smallint()
     .references(() => server.server_id)
     .notNull(),
   ssh_ip: varchar({ length: 200 }).notNull(),

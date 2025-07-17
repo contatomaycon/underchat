@@ -5,10 +5,8 @@ import { LoggerService } from '@core/services/logger.service';
 import { TFunction } from 'i18next';
 import { Connection, Client as ClientTemporal } from '@temporalio/client';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { PermissionsRoles } from '@core/common/enums/permissions';
+import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { ITokenJwtData } from '@core/common/interfaces/ITokenJwtData';
-import { ITokenKeyData } from '@core/common/interfaces/ITokenKeyData';
-import { ITokenTfaData } from '@core/common/interfaces/ITokenTfaData';
 import { ELanguage } from '../enums/ELanguage';
 import { Client as ClientElastic } from '@elastic/elasticsearch';
 import { Kafka } from 'kafkajs';
@@ -28,7 +26,7 @@ declare module 'fastify' {
     authenticateJwt: (
       request: FastifyRequest,
       reply: FastifyReply,
-      permissions: PermissionsRoles[] | null
+      permissions: EPermissionsRoles[] | null
     ) => void;
     verifyToken: (token: string) => Promise<null | string | object>;
     decodeToken: (token: string) => Promise<null | string | object>;
@@ -40,10 +38,8 @@ declare module 'fastify' {
   }
 
   export interface FastifyRequest {
-    tokenKeyData: ITokenKeyData;
     tokenJwtData: ITokenJwtData;
-    tokenTfaData: ITokenTfaData;
-    permissionsRoute: PermissionsRoles[];
+    permissionsRoute: EPermissionsRoles[];
     module: ERouteModule;
     languageData: {
       code: ELanguage;
