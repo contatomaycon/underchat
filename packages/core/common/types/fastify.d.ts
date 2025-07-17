@@ -10,6 +10,7 @@ import { ITokenJwtData } from '@core/common/interfaces/ITokenJwtData';
 import { ELanguage } from '../enums/ELanguage';
 import { Client as ClientElastic } from '@elastic/elasticsearch';
 import { Kafka } from 'kafkajs';
+import { ITokenKeyData } from '../interfaces/ITokenKeyData';
 
 declare module 'fastify' {
   export interface FastifyRequest {
@@ -28,6 +29,11 @@ declare module 'fastify' {
       reply: FastifyReply,
       permissions: EPermissionsRoles[] | null
     ) => void;
+    authenticateKeyApi: (
+      request: FastifyRequest,
+      reply: FastifyReply,
+      permissions: EPermissionsRoles[] | null
+    ) => void;
     verifyToken: (token: string) => Promise<null | string | object>;
     decodeToken: (token: string) => Promise<null | string | object>;
     i18n: TFunction<'translation', undefined>;
@@ -39,6 +45,7 @@ declare module 'fastify' {
 
   export interface FastifyRequest {
     tokenJwtData: ITokenJwtData;
+    tokenKeyData: ITokenKeyData;
     permissionsRoute: EPermissionsRoles[];
     module: ERouteModule;
     languageData: {

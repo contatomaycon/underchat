@@ -16,7 +16,6 @@ export class AuthRefreshTokenUseCase {
   ): Promise<RefreshTokenResponse> {
     const decodeToken: {
       user_id: string;
-      account_id: string;
       module: ERouteModule;
     } = await request.jwtVerify({
       verify: {
@@ -38,7 +37,6 @@ export class AuthRefreshTokenUseCase {
 
     const payload = {
       user_id: decodeToken.user_id,
-      account_id: decodeToken.account_id,
       module: request.module,
     };
 

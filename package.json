@@ -122,6 +122,7 @@
     "reflect-metadata": "^0.2.2",
     "sharp": "^0.34.3",
     "ssh2": "^1.16.0",
+    "systeminformation": "^5.27.7",
     "tsyringe": "^4.10.0",
     "typescript-eslint": "^8.36.0",
     "uuid": "^11.1.0",
