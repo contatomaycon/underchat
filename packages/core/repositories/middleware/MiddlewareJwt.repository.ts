@@ -20,7 +20,6 @@ export class MiddlewareJwtRepository {
       WITH UserPermissions AS (
           SELECT DISTINCT
               pa.permission_role_id,
-              pa.account_id,
               pr.name AS role_name,
               pm.module AS module_name,
               paa.action AS action_name
