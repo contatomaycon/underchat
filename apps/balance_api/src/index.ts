@@ -12,6 +12,7 @@ import loggerServicePlugin from '@core/plugins/logger';
 import swaggerPlugin from '@/plugins/swagger';
 import corsPlugin from '@core/plugins/cors';
 import elasticLogsPlugin from '@core/plugins/elasticLogs';
+import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -27,6 +28,7 @@ server.decorateRequest('module', ERouteModule.balancer);
 server.register(dbConnector);
 server.register(cacheRedisConnector);
 server.register(auth);
+server.register(authenticateKeyApi);
 server.register(i18nextPlugin);
 server.register(swaggerPlugin);
 server.register(corsPlugin);

@@ -10,7 +10,6 @@ import os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { promises } from 'fs';
-import { ViewMetricsRequest } from '@core/schema/metrics/viewMetrics/request.schema';
 
 @injectable()
 export class MetricsViewerUseCase {
@@ -211,46 +210,24 @@ export class MetricsViewerUseCase {
     return conns.filter((c) => c.state === 'ESTABLISHED').length;
   }
 
-  private async getBacklog(port = 80): Promise<number> {
-    const execAsync = promisify(exec);
-
-    try {
-      const { stdout } = await execAsync(`ss -lnt sport = :${port}`, {
-        timeout: 500,
-      });
-      const m = stdout.split('\n').find((l) => l.startsWith('LISTEN'));
-
-      if (!m) return 0;
-      const [, , backlog] = m.trim().split(/\s+/);
-
-      return parseInt(backlog, 10);
-    } catch {
-      return 0;
-    }
-  }
-
   private async getNetworkQuality(
-    port: number,
     rtt: number,
     conns: si.Systeminformation.NetworkConnectionsData[]
   ) {
-    const [rttInfo, retransPct, established, backlog] = await Promise.all([
+    const [rttInfo, retransPct, established] = await Promise.all([
       this.getRtt(rtt),
       this.getTcpRetransPct(),
       this.getEstablishedConns(conns),
-      this.getBacklog(port),
     ]);
 
     return {
       rtt_ms: rttInfo,
       retrans_percentage: retransPct,
       established_conns: established,
-      backlog,
     };
   }
 
   private async networksInfo(
-    port: number,
     defaultIface: string,
     ifaces:
       | si.Systeminformation.NetworkInterfacesData
@@ -280,7 +257,7 @@ export class MetricsViewerUseCase {
       ? Number(((downloadBps / linkSpeedBps) * 100).toFixed(2))
       : 0;
 
-    const getNetwork = await this.getNetworkQuality(port, rtt, conns);
+    const getNetwork = await this.getNetworkQuality(rtt, conns);
 
     return {
       speed: linkSpeedBps,
@@ -291,7 +268,6 @@ export class MetricsViewerUseCase {
       rtt_ms: getNetwork.rtt_ms,
       retrans_percentage: getNetwork.retrans_percentage,
       established_conns: getNetwork.established_conns,
-      backlog: getNetwork.backlog,
       errors: (netStats?.rx_errors ?? 0) + (netStats?.tx_errors ?? 0),
     };
   }
@@ -355,7 +331,7 @@ export class MetricsViewerUseCase {
     return loadAvg;
   }
 
-  async execute(query: ViewMetricsRequest): Promise<ViewMetricsResponse> {
+  async execute(): Promise<ViewMetricsResponse> {
     const [
       cpuInfo,
       cpuTemperature,
@@ -387,7 +363,6 @@ export class MetricsViewerUseCase {
     const [networksInfo, cpuIowait, diskInfo, getOpenFileDescriptors] =
       await Promise.all([
         this.networksInfo(
-          query.port,
           defaultIface,
           ifaces,
           netStatsArray,

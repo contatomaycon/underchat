@@ -2,7 +2,6 @@ import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { viewMetricsResponseSchema } from './response.schema';
-import { viewMetricsRequestSchema } from './request.schema';
 
 export const viewMetricsSchema = {
   description: 'Verifica as métricas do servidor',
@@ -22,7 +21,6 @@ export const viewMetricsSchema = {
       })
     ),
   }),
-  querystring: viewMetricsRequestSchema,
   response: {
     200: Type.Object(
       {
