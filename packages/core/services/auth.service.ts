@@ -10,8 +10,8 @@ export class AuthService {
   ) {}
 
   authenticate = async (login: string, password: string) => {
-    const loginEncrypted = this.encryptService.encrypt(login);
     const passwordEncrypted = this.encryptService.encrypt(password);
+    const loginEncrypted = this.encryptService.encrypt(login);
 
     return this.authRepository.authenticate(loginEncrypted, passwordEncrypted);
   };

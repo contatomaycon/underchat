@@ -41,7 +41,17 @@ export const sanitizationMap: Record<ETypeSanetize, (value: string) => string> =
     },
 
     [ETypeSanetize.other]: (value) => {
-      const maskLength = Math.ceil(value.length / 2);
-      return '*'.repeat(maskLength) + value.slice(maskLength);
+      const length = value.length;
+      const maskCount = Math.ceil(length * 0.25);
+
+      if (maskCount * 2 >= length) {
+        return '*'.repeat(length);
+      }
+
+      const startMask = '*'.repeat(maskCount);
+      const endMask = '*'.repeat(maskCount);
+      const middle = value.slice(maskCount, length - maskCount);
+
+      return `${startMask}${middle}${endMask}`;
     },
   };
