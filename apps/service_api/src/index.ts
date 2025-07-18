@@ -15,6 +15,7 @@ import loggerServicePlugin from '@core/plugins/logger';
 import kafkaPlugin from '@/plugins/kafka';
 import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
 import consumerPlugin from './consumer';
+import vaultPlugin from '@core/plugins/vault';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -27,24 +28,26 @@ server.addHook('onError', errorHook);
 
 server.decorateRequest('module', ERouteModule.service);
 
-server.register(dbConnector);
-server.register(cacheRedisConnector);
-server.register(authenticateKeyApi);
-server.register(i18nextPlugin);
-server.register(swaggerPlugin);
-server.register(corsPlugin);
+server.register(vaultPlugin).after(() => {
+  server.register(dbConnector);
+  server.register(cacheRedisConnector);
+  server.register(authenticateKeyApi);
+  server.register(i18nextPlugin);
+  server.register(swaggerPlugin);
+  server.register(corsPlugin);
 
-server.register(databaseElasticPlugin, {
-  prefix: ERouteModule.service,
+  server.register(databaseElasticPlugin, {
+    prefix: ERouteModule.service,
+  });
+
+  server.register(elasticLogsPlugin, {
+    prefix: ERouteModule.service,
+  });
+
+  server.register(loggerServicePlugin);
+  server.register(kafkaPlugin);
+  server.register(consumerPlugin);
 });
-
-server.register(elasticLogsPlugin, {
-  prefix: ERouteModule.service,
-});
-
-server.register(loggerServicePlugin);
-server.register(kafkaPlugin);
-server.register(consumerPlugin);
 
 const start = async () => {
   try {
