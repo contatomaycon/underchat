@@ -10,8 +10,6 @@ export class BalanceCreatorConsume {
 
   async execute(fastify: FastifyInstance): Promise<void> {
     const consumer = fastify.kafka.consumer;
-    console.log(`Received message on topic: aquiring balance creation`);
-
     consumer.subscribe({
       topic: ETopicKafka.balance_create,
       fromBeginning: true,
@@ -21,8 +19,6 @@ export class BalanceCreatorConsume {
       .run({
         autoCommit: true,
         eachMessage: async ({ topic, message, heartbeat }) => {
-          console.log(`Received message on topic: ${topic}`);
-
           if (topic !== ETopicKafka.balance_create) {
             return;
           }
