@@ -108,4 +108,13 @@ export class GeneralEnvironment {
   public get protocol(): string {
     return this.appEnvironment === EAppEnvironment.local ? 'http' : 'https';
   }
+
+  public get gitToken(): string {
+    const token = process.env.GIT_TOKEN;
+    if (!token) {
+      throw new InvalidConfigurationError('GIT_TOKEN is not defined.');
+    }
+
+    return token;
+  }
 }

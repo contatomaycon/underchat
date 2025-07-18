@@ -1,5 +1,6 @@
 import path from 'path';
 import { getPackageNodeVersion } from './getPackageNodeVersion';
+import { generalEnvironment } from '@core/config/environments';
 
 export function installUbuntu2504(): string[] {
   const patchPackage = path.join(__dirname, '../../../../package.json');
@@ -54,5 +55,10 @@ export function installUbuntu2504(): string[] {
       sudo usermod -aG docker $USER && \
       sudo systemctl enable docker && \
       sudo systemctl start docker"`,
+
+    `bash -ic "sudo rm -rf /home/underchat && \
+      sudo mkdir -p /home/underchat && \
+      sudo chown $USER:$USER /home/underchat && \
+      git clone https://oauth2:${generalEnvironment.gitToken}@github.com/contatomaycon/underchat.git /home/underchat"`,
   ];
 }

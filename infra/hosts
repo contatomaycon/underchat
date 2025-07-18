@@ -1,0 +1,13 @@
+127.0.0.1 vault.localhost
+127.0.0.1 temporal.localhost
+127.0.0.1 temporal-admin.localhost
+127.0.0.1 temporal-backend.localhost
+127.0.0.1 kafdrop.localhost
+127.0.0.1 kafka.localhost
+127.0.0.1 kafka-ext.localhost
+127.0.0.1 elastic.localhost
+127.0.0.1 elastic-db.localhost
+127.0.0.1 postgres.localhost
+127.0.0.1 postgres-temporal.localhost
+127.0.0.1 postgres-atlas.localhost
+127.0.0.1 redis.localhost

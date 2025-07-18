@@ -152,10 +152,8 @@ services:
   under-atlas:
     build:
       context: .
-      dockerfile: ./docker/atlas.Dockerfile
+      dockerfile: ./infra/atlas/Dockerfile
     container_name: under-atlas
-    env_file:
-      - .env
     networks:
       - underchat
     depends_on:
@@ -211,6 +209,31 @@ services:
     volumes:
       - vault_data:/vault/file
     command: vault server -dev -dev-root-token-id=root -dev-listen-address=0.0.0.0:8200
+    networks:
+      - underchat
+
+  under-proxy:
+    image: nginx:latest
+    container_name: under-proxy
+    volumes:
+      - ./infra/nginx/conf.d:/etc/nginx/conf.d:ro
+    depends_on:
+      - under-db
+      - under-db-elastic
+      - under-redis
+      - under-elasticsearch
+      - under-temporal-db
+      - under-temporal
+      - under-temporal-admin-tools
+      - under-temporal-web
+      - under-atlas-db
+      - under-atlas
+      - under-kafka
+      - under-kafdrop
+      - under-vault
+    ports:
+      - '80:80'
+    restart: always
     networks:
       - underchat
 
