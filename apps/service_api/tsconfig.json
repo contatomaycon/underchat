@@ -22,6 +22,10 @@
       ]
     }
   },
-  "include": ["src/**/*", "../../packages/core/common/types/**/*.d.ts"],
+  "include": [
+    "src/**/*",
+    "../../packages/core/common/types/**/*.d.ts",
+    "../../packages/core/plugins/vault"
+  ],
   "exclude": ["node_modules"]
 }

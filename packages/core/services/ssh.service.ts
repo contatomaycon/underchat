@@ -1,4 +1,3 @@
-// src/services/ssh.service.ts
 import { injectable } from 'tsyringe';
 import { Client, ConnectConfig } from 'ssh2';
 import { IDistroInfo } from '@core/common/interfaces/IDistroInfo';
