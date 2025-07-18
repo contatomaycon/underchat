@@ -7,7 +7,7 @@ import { ERouteModule } from '@core/common/enums/ERouteModule';
 
 const kafkaPlugin = async (fastify: FastifyInstance) => {
   const kafka = new Kafka({
-    clientId: `client-${ERouteModule.manager}`,
+    clientId: `client-${ERouteModule.service}`,
     brokers: [kafkaEnvironment.kafkaBroker],
     connectionTimeout: 60_000,
     logLevel: logLevel.NOTHING,
