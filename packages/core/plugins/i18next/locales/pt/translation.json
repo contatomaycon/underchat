@@ -12,5 +12,7 @@
   "health_check_success": "Verificação de saúde bem-sucedida!",
   "metrics_server_success": "Servidor de métricas iniciado com sucesso!",
   "metrics_server_error": "Erro ao iniciar o servidor de métricas!",
-  "kafka_producer_error": "Erro ao criar o produtor Kafka!"
+  "kafka_producer_error": "Erro ao criar o produtor Kafka!",
+  "ssh_distro_version_failed": "Falha ao recuperar distribuição e versão do servidor",
+  "ssh_distro_version_not_allowed": "Distribuição e versão não permitidas para o servidor"
 }

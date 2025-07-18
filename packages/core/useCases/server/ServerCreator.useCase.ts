@@ -6,6 +6,8 @@ import { TFunction } from 'i18next';
 import { SshService } from '@core/services/ssh.service';
 import { FastifyInstance } from 'fastify';
 import { ETopicKafka } from '@core/common/enums/ETopicKafka';
+import { ConnectConfig } from 'ssh2';
+import { isDistroVersionAllowed } from '@core/common/functions/isDistroVersionAllowed';
 
 @injectable()
 export class ServerCreatorUseCase {
@@ -24,15 +26,30 @@ export class ServerCreatorUseCase {
       throw new Error(t('server_already_exists'));
     }
 
-    const isConnected = await this.sshService.testSSHConnection({
+    const sshConfig: ConnectConfig = {
       host: input.ssh_ip,
       port: input.ssh_port,
       username: input.ssh_username,
       password: input.ssh_password,
-    });
+    };
+
+    const isConnected = await this.sshService.testSSHConnection(sshConfig);
 
     if (!isConnected) {
       throw new Error(t('ssh_connection_failed'));
+    }
+
+    const getDistroAndVersion =
+      await this.sshService.getDistroAndVersion(sshConfig);
+
+    if (!getDistroAndVersion) {
+      throw new Error(t('ssh_distro_version_failed'));
+    }
+
+    const isAllowed = isDistroVersionAllowed(getDistroAndVersion);
+
+    if (!isAllowed) {
+      throw new Error(t('ssh_distro_version_not_allowed'));
     }
   }
 
@@ -64,9 +81,9 @@ export class ServerCreatorUseCase {
     t: TFunction<'translation', undefined>,
     input: CreateServerRequest
   ): Promise<CreateServerResponse | null> {
-    await this.validate(t, input);
+    // await this.validate(t, input);
 
-    const serverId = await this.serverService.createServer(input);
+    /* const serverId = await this.serverService.createServer(input);
 
     if (!serverId) {
       throw new Error(t('server_creator_error'));
@@ -79,12 +96,12 @@ export class ServerCreatorUseCase {
 
     if (!serverSshId) {
       throw new Error(t('server_ssh_creator_error'));
-    }
+    } */
 
-    await this.onServerCreatedInKafka(fastify, t, serverId);
+    await this.onServerCreatedInKafka(fastify, t, 3);
 
     return {
-      server_id: serverId,
+      server_id: 3,
     };
   }
 }
