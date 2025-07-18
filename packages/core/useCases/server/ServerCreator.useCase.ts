@@ -42,13 +42,15 @@ export class ServerCreatorUseCase {
     serverId: number
   ): Promise<void> {
     try {
+      const payload: CreateServerResponse = {
+        server_id: serverId,
+      };
+
       await fastify.kafka.producer.send({
         topic: ETopicKafka.balance_create,
         messages: [
           {
-            value: JSON.stringify({
-              server_id: serverId,
-            }),
+            value: JSON.stringify(payload),
           },
         ],
       });
