@@ -38,5 +38,7 @@
   "CRYPTO_KEY_START": "n2zhrlNPWKZaSz2ZQ23GNYqvg",
   "CRYPTO_KEY_END": "uegzCwx2H6XWHwI7OVT1tyK1H",
 
-  "KAFKA_BROKER": "localhost:29092"
+  "KAFKA_BROKER": "localhost:29092",
+
+  "GIT_TOKEN": ""
 }
