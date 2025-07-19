@@ -66,11 +66,10 @@ export async function installUbuntu2504(): Promise<string[]> {
       sudo chown $USER:$USER /home/underchat && \
       git clone https://oauth2:${generalEnvironment.gitToken}@${generalEnvironment.gitRepo} /home/underchat"`,
 
-    `bash -ic "git checkout main"`,
-
     `bash -ic "printf '%b' '${envContent}' > /home/underchat/.env && sudo chown $USER:$USER /home/underchat/.env"`,
 
-    `bash -ic "export NVM_DIR=\\\"$HOME/.nvm\\\" && \
+    `bash -ic "git checkout dev && \
+      export NVM_DIR=\\\"$HOME/.nvm\\\" && \
       npm install pnpm -g && \
       cd /home/underchat && \
       pnpm install --ignore-scripts && \
