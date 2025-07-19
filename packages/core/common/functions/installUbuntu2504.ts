@@ -38,7 +38,7 @@ export async function installUbuntu2504(): Promise<string[]> {
       nvm alias default ${nodeVersion} && \
       npm install -g pm2"`,
 
-    'pm2 delete all || true',
+    `bash -ic "pm2 delete all || true"`,
 
     `bash -ic "sudo mkdir -p /etc/apt/keyrings && \
       curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
