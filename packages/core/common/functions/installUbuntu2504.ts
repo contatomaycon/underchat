@@ -88,7 +88,8 @@ export async function installUbuntu2504(): Promise<string[]> {
 
     `sudo rm -rf /home/app || true`,
 
-    `bash -ic "pm2 start /home/underchat/apps/balance_api/src/index.js \
+    `bash -ic "cd /home/underchat/apps/balance_api && \
+      pm2 start src/index.js \
       --name balance_api \
       --watch \
       --restart-delay 5000 \
