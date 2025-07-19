@@ -25,6 +25,7 @@ export async function installUbuntu2504(): Promise<string[]> {
     'sudo apt-get install gnupg -y',
     'sudo apt-get install lsb-release -y',
 
+    'sudo rm -rf /home/app || true',
     'sudo rm -rf /home/underchat || true',
 
     `bash -ic "export NVM_DIR=\\\"$HOME/.nvm\\\" && \
@@ -62,17 +63,25 @@ export async function installUbuntu2504(): Promise<string[]> {
       sudo systemctl enable docker && \
       sudo systemctl start docker"`,
 
-    `bash -ic "sudo mkdir -p /home/underchat && \
-      sudo chown $USER:$USER /home/underchat && \
-      git clone https://oauth2:${generalEnvironment.gitToken}@${generalEnvironment.gitRepo} /home/underchat"`,
+    `bash -ic "sudo mkdir -p /home/app && \
+      sudo chown $USER:$USER /home/app && \
+      git clone --single-branch --branch ${generalEnvironment.gitBranch} https://oauth2:${generalEnvironment.gitToken}@${generalEnvironment.gitRepo} /home/app"`,
 
-    `bash -ic "printf '%b' '${envContent}' > /home/underchat/.env && sudo chown $USER:$USER /home/underchat/.env"`,
+    `bash -ic "printf '%b' '${envContent}' > /home/app/.env && sudo chown $USER:$USER /home/app/.env"`,
 
-    `bash -ic "git checkout feature/servers && \
-      export NVM_DIR=\\\"$HOME/.nvm\\\" && \
+    `bash -ic "export NVM_DIR=\\\"$HOME/.nvm\\\" && \
       npm install pnpm -g && \
-      cd /home/underchat && \
+      cd /home/app && \
       pnpm install --ignore-scripts && \
       pnpm run build:balancer"`,
+
+    `bash -ic "sudo cp -rT /home/app/apps/balance_api/dist /home/underchat && \
+      sudo cp -r /home/app/node_modules /home/underchat/node_modules && \
+      sudo cp -r /home/app/package*.json /home/underchat && \
+      sudo cp -r /home/app/apps/balance_api/package*.json /home/underchat/apps/balance_api && \
+      sudo cp -r /home/app/packages/core/plugins/i18next/locales /home/underchat/packages/core/plugins/i18next/locales && \
+      sudo cp -r /home/app/.env /home/underchat && \
+      sudo chown -R $USER:$USER /home/underchat && \
+      sudo chmod -R 755 /home/underchat"`,
   ];
 }

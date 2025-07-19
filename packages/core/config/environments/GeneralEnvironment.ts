@@ -126,4 +126,13 @@ export class GeneralEnvironment {
 
     return repo;
   }
+
+  public get gitBranch(): string {
+    const branch = process.env.GIT_BRANCH;
+    if (!branch) {
+      throw new InvalidConfigurationError('GIT_BRANCH is not defined.');
+    }
+
+    return branch;
+  }
 }

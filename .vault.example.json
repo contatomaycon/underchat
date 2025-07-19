@@ -41,5 +41,6 @@
   "KAFKA_BROKER": "localhost:29092",
 
   "GIT_TOKEN": "",
-  "GIT_REPO": "github.com/contatomaycon/underchat.git"
+  "GIT_REPO": "github.com/contatomaycon/underchat.git",
+  "GIT_BRANCH": "feature/servers"
 }
