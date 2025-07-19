@@ -68,6 +68,8 @@ export async function installUbuntu2504(): Promise<string[]> {
 
     `bash -ic "printf '%b' '${envContent}' > /home/app/.env && sudo chown $USER:$USER /home/app/.env"`,
 
+    `bash -ic "docker compose down -v under-balance-api"`,
+
     `bash -ic "sudo docker compose build --no-cache under-balance-api"`,
 
     `bash -ic "sudo docker compose up -d under-balance-api"`,
