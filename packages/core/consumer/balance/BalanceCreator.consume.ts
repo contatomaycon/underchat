@@ -68,12 +68,31 @@ export class BalanceCreatorConsume {
 
   private async isInstalled(
     getDistroAndVersion: IDistroInfo,
-    sshConfig: ConnectConfig
-  ) {
-    const commands = this.sshService.getStatus(getDistroAndVersion);
-    const result = await this.sshService.runCommands(sshConfig, commands);
+    sshConfig: ConnectConfig,
+    attempts = 10
+  ): Promise<boolean> {
+    if (!sshConfig?.host) {
+      throw new Error('SSH host is not defined');
+    }
 
-    console.dir(result, { depth: null });
+    const commands = this.sshService.getStatusCommands(
+      getDistroAndVersion,
+      sshConfig.host,
+      3003
+    );
+
+    for (let i = 0; i < attempts; i++) {
+      await new Promise((r) => setTimeout(r, 6000));
+
+      const result = await this.sshService.runCommands(sshConfig, commands);
+      const status = Number(result[0]?.output) ?? 0;
+
+      if (status === 200) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   async execute(fastify: FastifyInstance): Promise<void> {
@@ -85,8 +104,8 @@ export class BalanceCreatorConsume {
 
     consumer
       .run({
-        autoCommit: false,
-        eachMessage: async ({ topic, partition, message, heartbeat }) => {
+        autoCommit: true,
+        eachMessage: async ({ message, heartbeat }) => {
           if (!message.value) {
             throw new Error('Received message without value');
           }
@@ -102,6 +121,11 @@ export class BalanceCreatorConsume {
           const commands =
             await this.sshService.getInstallCommands(getDistroAndVersion);
 
+          await this.serverService.updateServerStatusById(
+            serverId,
+            EServerStatus.installing
+          );
+
           await this.sshService.runCommands(sshConfig, commands);
 
           const isInstalled = await this.isInstalled(
@@ -109,13 +133,11 @@ export class BalanceCreatorConsume {
             sshConfig
           );
 
-          await consumer.commitOffsets([
-            {
-              topic,
-              partition,
-              offset: (Number(message.offset) + 1).toString(),
-            },
-          ]);
+          const status = isInstalled
+            ? EServerStatus.online
+            : EServerStatus.error;
+
+          await this.serverService.updateServerStatusById(serverId, status);
 
           await heartbeat();
         },
