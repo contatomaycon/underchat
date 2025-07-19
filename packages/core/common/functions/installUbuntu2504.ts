@@ -38,6 +38,8 @@ export async function installUbuntu2504(): Promise<string[]> {
       nvm alias default ${nodeVersion} && \
       npm install -g pm2"`,
 
+    'pm2 delete all || true',
+
     `bash -ic "sudo mkdir -p /etc/apt/keyrings && \
       curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
         | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg"`,
@@ -83,5 +85,9 @@ export async function installUbuntu2504(): Promise<string[]> {
       sudo cp -r /home/app/.env /home/underchat && \
       sudo chown -R $USER:$USER /home/underchat && \
       sudo chmod -R 755 /home/underchat"`,
+
+    `sudo rm -rf /home/app || true`,
+
+    `bash -ic "pm2 start /home/underchat/apps/balance_api/src/index.js --name balance_api --watch"`,
   ];
 }
