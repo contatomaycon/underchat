@@ -8,6 +8,7 @@ import { EServerStatus } from '@core/common/enums/EServerStatus';
 import { ConnectConfig } from 'ssh2';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
 import { isDistroVersionAllowed } from '@core/common/functions/isDistroVersionAllowed';
+import { IDistroInfo } from '@core/common/interfaces/IDistroInfo';
 
 @injectable()
 export class BalanceCreatorConsume {
@@ -16,6 +17,64 @@ export class BalanceCreatorConsume {
     private readonly serverService: ServerService,
     private readonly passwordEncryptorService: PasswordEncryptorService
   ) {}
+
+  private async validate(serverId: number): Promise<{
+    getDistroAndVersion: IDistroInfo;
+    sshConfig: ConnectConfig;
+  }> {
+    const viewServerSshById =
+      await this.serverService.viewServerSshById(serverId);
+
+    if (!viewServerSshById) {
+      throw new Error('SSH configuration not found');
+    }
+
+    if (viewServerSshById.server_status_id !== EServerStatus.new) {
+      throw new Error('Server is not in new status');
+    }
+
+    const sshConfig: ConnectConfig = {
+      host: viewServerSshById.ssh_ip,
+      port: viewServerSshById.ssh_port,
+      username: this.passwordEncryptorService.decrypt(
+        viewServerSshById.ssh_username
+      ),
+      password: this.passwordEncryptorService.decrypt(
+        viewServerSshById.ssh_password
+      ),
+    };
+
+    const isConnected = await this.sshService.testSSHConnection(sshConfig);
+
+    if (!isConnected) {
+      throw new Error('SSH connection failed');
+    }
+
+    const getDistroAndVersion =
+      await this.sshService.getDistroAndVersion(sshConfig);
+
+    if (!getDistroAndVersion) {
+      throw new Error('Failed to retrieve distribution and version');
+    }
+
+    const isDistroVAllowed = isDistroVersionAllowed(getDistroAndVersion);
+
+    if (!isDistroVAllowed) {
+      throw new Error('Distribution and version not allowed');
+    }
+
+    return { getDistroAndVersion, sshConfig };
+  }
+
+  private async isInstalled(
+    getDistroAndVersion: IDistroInfo,
+    sshConfig: ConnectConfig
+  ) {
+    const commands = this.sshService.getStatus(getDistroAndVersion);
+    const result = await this.sshService.runCommands(sshConfig, commands);
+
+    console.dir(result, { depth: null });
+  }
 
   async execute(fastify: FastifyInstance): Promise<void> {
     const consumer = fastify.kafka.consumer;
@@ -29,9 +88,7 @@ export class BalanceCreatorConsume {
         autoCommit: false,
         eachMessage: async ({ topic, partition, message, heartbeat }) => {
           if (!message.value) {
-            fastify.logger.error('Received message without value');
-
-            return;
+            throw new Error('Received message without value');
           }
 
           const data = JSON.parse(
@@ -39,74 +96,17 @@ export class BalanceCreatorConsume {
           ) as CreateServerResponse;
           const serverId = data.server_id;
 
-          const viewServerSshById =
-            await this.serverService.viewServerSshById(serverId);
-
-          if (!viewServerSshById) {
-            fastify.logger.error(
-              `No SSH configuration found for server ID: ${serverId}`
-            );
-
-            return;
-          }
-
-          if (viewServerSshById.server_status_id !== EServerStatus.new) {
-            fastify.logger.info(
-              `Server ID ${serverId} is not in 'new' status, skipping balance creation`
-            );
-
-            return;
-          }
-
-          const sshConfig: ConnectConfig = {
-            host: viewServerSshById.ssh_ip,
-            port: viewServerSshById.ssh_port,
-            username: this.passwordEncryptorService.decrypt(
-              viewServerSshById.ssh_username
-            ),
-            password: this.passwordEncryptorService.decrypt(
-              viewServerSshById.ssh_password
-            ),
-          };
-
-          const isConnected =
-            await this.sshService.testSSHConnection(sshConfig);
-
-          if (!isConnected) {
-            fastify.logger.error(
-              `SSH connection failed for server ID: ${serverId}`
-            );
-
-            return;
-          }
-
-          const getDistroAndVersion =
-            await this.sshService.getDistroAndVersion(sshConfig);
-
-          if (!getDistroAndVersion) {
-            fastify.logger.error(
-              `Failed to retrieve distribution and version for server ID: ${serverId}`
-            );
-
-            return;
-          }
-
-          const isDistroVAllowed = isDistroVersionAllowed(getDistroAndVersion);
-
-          if (!isDistroVAllowed) {
-            fastify.logger.error(
-              `Distribution and version not allowed for server ID: ${serverId}`
-            );
-
-            return;
-          }
+          const { getDistroAndVersion, sshConfig } =
+            await this.validate(serverId);
 
           const commands =
             await this.sshService.getInstallCommands(getDistroAndVersion);
 
-          const results = await this.sshService.runCommands(
-            sshConfig,
-            commands
+          await this.sshService.runCommands(sshConfig, commands);
+
+          const isInstalled = await this.isInstalled(
+            getDistroAndVersion,
+            sshConfig
           );
 
           await consumer.commitOffsets([

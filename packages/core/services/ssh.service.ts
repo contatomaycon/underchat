@@ -110,4 +110,22 @@ export class SshService {
 
     return commandsMap[key] ?? [];
   }
+
+  getStatus(info: IDistroInfo): string[] {
+    const key = `${info.distro}:${info.version}` as EAllowedDistroVersion;
+
+    const commandsMap: Record<EAllowedDistroVersion, string[]> = {
+      [EAllowedDistroVersion.Ubuntu_25_04]: [
+        'curl -s -o /dev/null -w "%{http_code}" http://10.0.2.39:3003/v1/health/check',
+      ],
+      [EAllowedDistroVersion.Ubuntu_24_10]: [
+        'curl -s -o /dev/null -w "%{http_code}" http://10.0.2.39:3003/v1/health/check',
+      ],
+      [EAllowedDistroVersion.Ubuntu_24_04]: [
+        'curl -s -o /dev/null -w "%{http_code}" http://10.0.2.39:3003/v1/health/check',
+      ],
+    };
+
+    return commandsMap[key] ?? [];
+  }
 }
