@@ -117,4 +117,13 @@ export class GeneralEnvironment {
 
     return token;
   }
+
+  public get gitRepo(): string {
+    const repo = process.env.GIT_REPO;
+    if (!repo) {
+      throw new InvalidConfigurationError('GIT_REPO is not defined.');
+    }
+
+    return repo;
+  }
 }

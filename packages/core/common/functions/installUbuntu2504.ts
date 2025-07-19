@@ -1,10 +1,14 @@
 import path from 'path';
 import { getPackageNodeVersion } from './getPackageNodeVersion';
 import { generalEnvironment } from '@core/config/environments';
+import { readEnvFile } from './readEnvFile';
 
-export function installUbuntu2504(): string[] {
+export async function installUbuntu2504(): Promise<string[]> {
   const patchPackage = path.join(__dirname, '../../../../package.json');
   const nodeVersion = getPackageNodeVersion(patchPackage);
+
+  const patchEnv = path.join(__dirname, '../../../../.env');
+  const envContent = await readEnvFile(patchEnv);
 
   return [
     'sudo apt-get update',
@@ -20,6 +24,8 @@ export function installUbuntu2504(): string[] {
     'sudo apt-get install libssl-dev -y',
     'sudo apt-get install gnupg -y',
     'sudo apt-get install lsb-release -y',
+
+    'sudo rm -rf /home/underchat || true',
 
     `bash -ic "export NVM_DIR=\\\"$HOME/.nvm\\\" && \
       curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash && \
@@ -56,9 +62,18 @@ export function installUbuntu2504(): string[] {
       sudo systemctl enable docker && \
       sudo systemctl start docker"`,
 
-    `bash -ic "sudo rm -rf /home/underchat && \
-      sudo mkdir -p /home/underchat && \
+    `bash -ic "sudo mkdir -p /home/underchat && \
       sudo chown $USER:$USER /home/underchat && \
-      git clone https://oauth2:${generalEnvironment.gitToken}@github.com/contatomaycon/underchat.git /home/underchat"`,
+      git clone https://oauth2:${generalEnvironment.gitToken}@${generalEnvironment.gitRepo} /home/underchat"`,
+
+    `bash -ic "git checkout main"`,
+
+    `bash -ic "printf '%b' '${envContent}' > /home/underchat/.env && sudo chown $USER:$USER /home/underchat/.env"`,
+
+    `bash -ic "export NVM_DIR=\\\"$HOME/.nvm\\\" && \
+      npm install pnpm -g && \
+      cd /home/underchat && \
+      pnpm install --ignore-scripts && \
+      pnpm run build:balancer"`,
   ];
 }

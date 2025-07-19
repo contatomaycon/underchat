@@ -93,11 +93,11 @@ export class SshService {
     }
   }
 
-  getInstallCommands(info: IDistroInfo): string[] {
+  async getInstallCommands(info: IDistroInfo): Promise<string[]> {
     const key = `${info.distro}:${info.version}` as EAllowedDistroVersion;
 
     const commandsMap: Record<EAllowedDistroVersion, string[]> = {
-      [EAllowedDistroVersion.Ubuntu_25_04]: installUbuntu2504(),
+      [EAllowedDistroVersion.Ubuntu_25_04]: await installUbuntu2504(),
       [EAllowedDistroVersion.Ubuntu_24_10]: [
         'sudo apt-get update',
         'sudo apt-get dist-upgrade -y',

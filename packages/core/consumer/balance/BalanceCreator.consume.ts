@@ -102,7 +102,7 @@ export class BalanceCreatorConsume {
           }
 
           const commands =
-            this.sshService.getInstallCommands(getDistroAndVersion);
+            await this.sshService.getInstallCommands(getDistroAndVersion);
 
           const results = await this.sshService.runCommands(
             sshConfig,
