@@ -68,7 +68,7 @@ export async function installUbuntu2504(): Promise<string[]> {
 
     `bash -ic "printf '%b' '${envContent}' > /home/underchat/.env && sudo chown $USER:$USER /home/underchat/.env"`,
 
-    `bash -ic "git checkout dev && \
+    `bash -ic "git checkout feature/servers && \
       export NVM_DIR=\\\"$HOME/.nvm\\\" && \
       npm install pnpm -g && \
       cd /home/underchat && \
