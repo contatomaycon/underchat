@@ -81,7 +81,7 @@ export class ServerCreatorUseCase {
     t: TFunction<'translation', undefined>,
     input: CreateServerRequest
   ): Promise<CreateServerResponse | null> {
-    /* await this.validate(t, input);
+    await this.validate(t, input);
 
     const serverId = await this.serverService.createServer(input);
 
@@ -96,12 +96,12 @@ export class ServerCreatorUseCase {
 
     if (!serverSshId) {
       throw new Error(t('server_ssh_creator_error'));
-    } */
+    }
 
-    await this.onServerCreatedInKafka(fastify, t, 2);
+    await this.onServerCreatedInKafka(fastify, t, serverSshId);
 
     return {
-      server_id: 2,
+      server_id: serverSshId,
     };
   }
 }
