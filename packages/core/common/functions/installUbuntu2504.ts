@@ -35,10 +35,7 @@ export async function installUbuntu2504(): Promise<string[]> {
     `bash -ic "export NVM_DIR=\\\"$HOME/.nvm\\\" && \
       nvm install ${nodeVersion} && \
       nvm use ${nodeVersion} && \
-      nvm alias default ${nodeVersion} && \
-      npm install -g pm2"`,
-
-    `bash -ic "pm2 delete all || true"`,
+      nvm alias default ${nodeVersion}"`,
 
     `bash -ic "sudo mkdir -p /etc/apt/keyrings && \
       curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
@@ -71,28 +68,10 @@ export async function installUbuntu2504(): Promise<string[]> {
 
     `bash -ic "printf '%b' '${envContent}' > /home/app/.env && sudo chown $USER:$USER /home/app/.env"`,
 
-    `bash -ic "export NVM_DIR=\\\"$HOME/.nvm\\\" && \
-      npm install pnpm -g && \
-      cd /home/app && \
-      pnpm install --ignore-scripts && \
-      pnpm run build:balancer"`,
+    `bash -ic "sudo docker compose build --no-cache under-balance-api"`,
 
-    `bash -ic "sudo cp -rT /home/app/apps/balance_api/dist /home/underchat && \
-      sudo cp -r /home/app/node_modules /home/underchat/node_modules && \
-      sudo cp -r /home/app/package*.json /home/underchat && \
-      sudo cp -r /home/app/apps/balance_api/package*.json /home/underchat/apps/balance_api && \
-      sudo cp -r /home/app/packages/core/plugins/i18next/locales /home/underchat/packages/core/plugins/i18next/locales && \
-      sudo cp -r /home/app/.env /home/underchat && \
-      sudo chown -R $USER:$USER /home/underchat && \
-      sudo chmod -R 755 /home/underchat"`,
+    `bash -ic "sudo docker compose up -d under-balance-api"`,
 
-    `sudo rm -rf /home/app || true`,
-
-    `bash -ic "cd /home/underchat/apps/balance_api && \
-      pm2 start src/index.js \
-      --name balance_api \
-      --watch \
-      --restart-delay 5000 \
-      --max-restarts 0"`,
+    //'sudo rm -rf /home/app || true',
   ];
 }

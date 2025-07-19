@@ -98,10 +98,10 @@ export class ServerCreatorUseCase {
       throw new Error(t('server_ssh_creator_error'));
     } */
 
-    await this.onServerCreatedInKafka(fastify, t, 1);
+    await this.onServerCreatedInKafka(fastify, t, 2);
 
     return {
-      server_id: 1,
+      server_id: 2,
     };
   }
 }

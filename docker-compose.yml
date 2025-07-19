@@ -214,6 +214,17 @@ services:
     networks:
       - underchat
 
+  under-balance-api:
+    build:
+      context: .
+      dockerfile: ./apps/balance_api/Dockerfile
+    container_name: under-balance-api
+    ports:
+      - '3003:3003'
+    networks:
+      - underchat
+    restart: always
+
 networks:
   underchat:
 
