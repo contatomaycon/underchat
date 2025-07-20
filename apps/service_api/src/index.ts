@@ -13,6 +13,7 @@ import databaseElasticPlugin from '@core/plugins/dbElastic';
 import elasticLogsPlugin from '@core/plugins/elasticLogs';
 import loggerServicePlugin from '@core/plugins/logger';
 import kafkaPlugin from '@/plugins/kafka';
+import kafkaStreamsPlugin from '@/plugins/kafkaStreams';
 import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
 import consumerPlugin from './consumer';
 import vaultPlugin from '@core/plugins/vault';
@@ -46,6 +47,7 @@ server.register(vaultPlugin).after(() => {
 
   server.register(loggerServicePlugin);
   server.register(kafkaPlugin);
+  server.register(kafkaStreamsPlugin);
   server.register(consumerPlugin);
 });
 

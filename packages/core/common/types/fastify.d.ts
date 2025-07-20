@@ -11,6 +11,7 @@ import { ELanguage } from '../enums/ELanguage';
 import { Client as ClientElastic } from '@elastic/elasticsearch';
 import { Consumer, Producer } from 'kafkajs';
 import { ITokenKeyData } from '../interfaces/ITokenKeyData';
+import { KafkaStreams } from 'kafka-streams';
 
 declare module 'fastify' {
   export interface FastifyRequest {
@@ -25,6 +26,7 @@ declare module 'fastify' {
       producer: Producer;
       consumer: Consumer;
     };
+    kafkaStreams: KafkaStreams;
     redis: FastifyRedis;
     logger: LoggerService;
     authenticateJwt: (

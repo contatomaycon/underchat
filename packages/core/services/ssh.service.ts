@@ -3,10 +3,11 @@ import { Client, ConnectConfig } from 'ssh2';
 import { IDistroInfo } from '@core/common/interfaces/IDistroInfo';
 import { EAllowedDistroVersion } from '@core/common/enums/EAllowedDistroVersion';
 import { installUbuntu2504 } from '@core/common/functions/installUbuntu2504';
+import { StreamProducerService } from './streamProducer.service';
 
 @injectable()
 export class SshService {
-  constructor() {}
+  constructor(private readonly streamProducerService: StreamProducerService) {}
 
   private connect(config: ConnectConfig): Promise<Client> {
     return new Promise((resolve, reject) => {
@@ -72,6 +73,7 @@ export class SshService {
   }
 
   async runCommands(
+    serverId: number,
     config: ConnectConfig,
     commands: string[]
   ): Promise<Array<{ command: string; output: string }>> {
@@ -83,7 +85,10 @@ export class SshService {
         const wrapped = `yes | ${cmd}`;
         const output = await this.execCommand(conn, wrapped);
 
-        console.log(`> ${wrapped}\n${output}`); // Debugging output
+        this.streamProducerService.send(`ssh_${serverId}`, {
+          command: wrapped,
+          output,
+        });
 
         results.push({ command: cmd, output });
       }

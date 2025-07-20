@@ -67,6 +67,7 @@ export class BalanceCreatorConsume {
   }
 
   private async isInstalled(
+    serverId: number,
     getDistroAndVersion: IDistroInfo,
     sshConfig: ConnectConfig,
     attempts = 10
@@ -84,7 +85,12 @@ export class BalanceCreatorConsume {
     for (let i = 0; i < attempts; i++) {
       await new Promise((r) => setTimeout(r, 6000));
 
-      const result = await this.sshService.runCommands(sshConfig, commands);
+      const result = await this.sshService.runCommands(
+        serverId,
+        sshConfig,
+        commands
+      );
+
       const status = Number(result[0]?.output) ?? 0;
 
       if (status === 200) {
@@ -126,9 +132,10 @@ export class BalanceCreatorConsume {
             EServerStatus.installing
           );
 
-          await this.sshService.runCommands(sshConfig, commands);
+          await this.sshService.runCommands(serverId, sshConfig, commands);
 
           const isInstalled = await this.isInstalled(
+            serverId,
             getDistroAndVersion,
             sshConfig
           );
