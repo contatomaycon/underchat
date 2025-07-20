@@ -2,10 +2,17 @@ FROM node:22.17.0-alpine AS base
 
 FROM base AS turbo
 
-RUN apk update
-RUN apk add --no-cache libc6-compat
-RUN npm add -g pnpm
-RUN npm add -g turbo
+RUN apk update && \
+    apk add --no-cache \
+      bash \
+      python3 \
+      make \
+      g++ \
+      libc6-compat \
+      librdkafka-dev \
+      musl-dev
+
+RUN npm add -g pnpm turbo
  
 FROM turbo AS pruned
 

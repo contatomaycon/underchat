@@ -225,6 +225,17 @@ services:
       - underchat
     restart: always
 
+  under-socket-io:
+    build:
+      context: .
+      dockerfile: ./apps/socket_io/Dockerfile
+    container_name: under-socket-io
+    ports:
+      - '3005:3005'
+    networks:
+      - underchat
+    restart: always
+
 networks:
   underchat:
 
