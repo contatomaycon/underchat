@@ -4,7 +4,6 @@
   "APP_URL_MANAGER": "10.0.2.2:3002",
   "APP_URL_BALANCER": "10.0.2.2:3003",
   "APP_URL_SERVICE": "10.0.2.2:3004",
-  "APP_URL_SOCKET": "10.0.2.2:3005",
 
   "DB_HOST": "10.0.2.2",
   "DB_PORT": "5432",
@@ -40,6 +39,10 @@
   "CRYPTO_KEY_END": "uegzCwx2H6XWHwI7OVT1tyK1H",
 
   "KAFKA_BROKER": "10.0.2.2:29092",
+
+  "CENTRIFUGO_HMAC_SECRET_KEY": "i9SHlNxpzB1GDU5K0dqzXPpn8eQBs1jKl4yHSWfSpghyvhqP8m",
+  "CENTRIFUGO_WS_URL": "ws://10.0.2.2:8000",
+  "CENTRIFUGO_ENDPOINT": "http://10.0.2.2:8000",
 
   "GIT_TOKEN": "",
   "GIT_REPO": "github.com/contatomaycon/underchat.git",

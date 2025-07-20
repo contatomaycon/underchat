@@ -16,6 +16,7 @@ import kafkaStreamsPlugin from '@/plugins/kafkaStreams';
 import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
 import consumerPlugin from './consumer';
 import vaultPlugin from '@core/plugins/vault';
+import centrifugoPlugin from '@/plugins/centrifugo';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -29,11 +30,11 @@ server.addHook('onError', errorHook);
 server.decorateRequest('module', ERouteModule.service);
 
 server.register(vaultPlugin).after(() => {
+  server.register(centrifugoPlugin);
   server.register(dbConnector);
   server.register(cacheRedisConnector);
   server.register(authenticateKeyApi);
   server.register(i18nextPlugin);
-  server.register(swaggerPlugin);
   server.register(corsPlugin);
 
   server.register(databaseElasticPlugin, {
@@ -47,6 +48,7 @@ server.register(vaultPlugin).after(() => {
   server.register(loggerServicePlugin);
   server.register(kafkaStreamsPlugin);
   server.register(consumerPlugin);
+  server.register(swaggerPlugin);
 });
 
 const start = async () => {

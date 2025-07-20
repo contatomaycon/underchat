@@ -3,11 +3,11 @@ import { Client, ConnectConfig } from 'ssh2';
 import { IDistroInfo } from '@core/common/interfaces/IDistroInfo';
 import { EAllowedDistroVersion } from '@core/common/enums/EAllowedDistroVersion';
 import { installUbuntu2504 } from '@core/common/functions/installUbuntu2504';
-import { StreamProducerService } from './streamProducer.service';
+import { CentrifugoService } from './centrifugo.service';
 
 @injectable()
 export class SshService {
-  constructor(private readonly streamProducerService: StreamProducerService) {}
+  constructor(private readonly centrifugoService: CentrifugoService) {}
 
   private connect(config: ConnectConfig): Promise<Client> {
     return new Promise((resolve, reject) => {
@@ -85,13 +85,14 @@ export class SshService {
         const wrapped = `yes | ${cmd}`;
         const output = await this.execCommand(conn, wrapped);
 
-        this.streamProducerService.send(`ssh_${serverId}`, {
+        await this.centrifugoService.publish(`ssh_${serverId}`, {
           command: wrapped,
           output,
         });
 
         results.push({ command: cmd, output });
       }
+
       return results;
     } finally {
       conn.end();

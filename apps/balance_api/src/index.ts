@@ -32,7 +32,6 @@ server.register(vaultPlugin).after(() => {
   server.register(auth);
   server.register(authenticateKeyApi);
   server.register(i18nextPlugin);
-  server.register(swaggerPlugin);
   server.register(corsPlugin);
 
   server.register(elasticLogsPlugin, {
@@ -40,6 +39,7 @@ server.register(vaultPlugin).after(() => {
   });
 
   server.register(loggerServicePlugin);
+  server.register(swaggerPlugin);
 });
 
 const start = async () => {

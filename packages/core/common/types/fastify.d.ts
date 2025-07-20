@@ -11,6 +11,7 @@ import { ELanguage } from '../enums/ELanguage';
 import { Client as ClientElastic } from '@elastic/elasticsearch';
 import { ITokenKeyData } from '../interfaces/ITokenKeyData';
 import { KafkaStreams } from 'kafka-streams';
+import { Centrifuge } from 'centrifuge';
 
 declare module 'fastify' {
   export interface FastifyRequest {
@@ -21,7 +22,8 @@ declare module 'fastify' {
     Database: NodePgDatabase<typeof schema>;
     DatabaseElasticClient: ClientElastic;
     ElasticLogsClient: ClientElastic;
-    kafkaStreams: KafkaStreams;
+    KafkaStreams: KafkaStreams;
+    Centrifuge: Centrifuge;
     redis: FastifyRedis;
     logger: LoggerService;
     authenticateJwt: (

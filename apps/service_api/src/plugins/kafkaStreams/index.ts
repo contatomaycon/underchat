@@ -49,7 +49,7 @@ const kafkaStreamsPlugin = async (fastify: FastifyInstance) => {
   const kafkaStreams = new KafkaStreams(config);
 
   container.register<KafkaStreams>('KafkaStreams', { useValue: kafkaStreams });
-  fastify.decorate('kafkaStreams', kafkaStreams);
+  fastify.decorate('KafkaStreams', kafkaStreams);
 
   fastify.addHook('onClose', async () => {
     await kafkaStreams.closeAll();

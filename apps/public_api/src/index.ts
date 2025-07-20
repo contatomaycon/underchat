@@ -41,7 +41,6 @@ server.register(vaultPlugin).after(() => {
   server.register(authenticateJwt);
   server.register(i18nextPlugin);
   server.register(jwtPlugin);
-  server.register(swaggerPlugin);
   server.register(corsPlugin);
 
   server.register(databaseElasticPlugin, {
@@ -53,6 +52,7 @@ server.register(vaultPlugin).after(() => {
   });
 
   server.register(loggerServicePlugin);
+  server.register(swaggerPlugin);
 });
 
 const start = async () => {

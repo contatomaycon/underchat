@@ -225,16 +225,16 @@ services:
       - underchat
     restart: always
 
-  under-socket-io:
-    build:
-      context: .
-      dockerfile: ./apps/socket_io/Dockerfile
-    container_name: under-socket-io
+  under-centrifugo:
+    image: centrifugo/centrifugo:latest
+    container_name: under-centrifugo
+    restart: unless-stopped
     ports:
-      - '3005:3005'
-    networks:
-      - underchat
-    restart: always
+      - '8000:8000'
+    volumes:
+      - ./infra/centrifugo/config.json:/etc/centrifugo/config.json:ro
+    entrypoint: ['centrifugo']
+    command: ['--config', '/etc/centrifugo/config.json']
 
 networks:
   underchat:
