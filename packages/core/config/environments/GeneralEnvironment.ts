@@ -56,6 +56,15 @@ export class GeneralEnvironment {
     return serviceUrl;
   }
 
+  public get appUrlSocket(): string {
+    const socketUrl = process.env.APP_URL_SOCKET;
+    if (!socketUrl) {
+      throw new InvalidConfigurationError('APP_URL_SOCKET is not defined.');
+    }
+
+    return socketUrl;
+  }
+
   public get jwtSecret(): string {
     const secret = process.env.JWT_SECRET;
     if (!secret) {

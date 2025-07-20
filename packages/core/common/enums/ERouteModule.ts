@@ -3,4 +3,5 @@ export enum ERouteModule {
   manager = 'manager',
   balancer = 'balancer',
   service = 'service',
+  socket = 'socket',
 }
