@@ -1,7 +1,6 @@
-import { injectable } from 'tsyringe';
+import { inject, injectable } from 'tsyringe';
 import { CreateServerResponse } from '@core/schema/server/createServer/response.schema';
 import { SshService } from '@core/services/ssh.service';
-import { FastifyInstance } from 'fastify';
 import { ETopicKafka } from '@core/common/enums/ETopicKafka';
 import { ServerService } from '@core/services/server.service';
 import { EServerStatus } from '@core/common/enums/EServerStatus';
@@ -9,13 +8,16 @@ import { ConnectConfig } from 'ssh2';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
 import { isDistroVersionAllowed } from '@core/common/functions/isDistroVersionAllowed';
 import { IDistroInfo } from '@core/common/interfaces/IDistroInfo';
+import { KafkaStreams, KStream } from 'kafka-streams';
+import { IKafkaMsg } from '@core/common/interfaces/IKafkaMsg';
 
 @injectable()
 export class BalanceCreatorConsume {
   constructor(
     private readonly sshService: SshService,
     private readonly serverService: ServerService,
-    private readonly passwordEncryptorService: PasswordEncryptorService
+    private readonly passwordEncryptorService: PasswordEncryptorService,
+    @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams
   ) {}
 
   private async validate(serverId: number): Promise<{
@@ -101,54 +103,50 @@ export class BalanceCreatorConsume {
     return false;
   }
 
-  async execute(fastify: FastifyInstance): Promise<void> {
-    const consumer = fastify.kafka.consumer;
-    consumer.subscribe({
-      topic: ETopicKafka.balance_create,
-      fromBeginning: false,
+  async execute(): Promise<void> {
+    const stream: KStream = this.kafkaStreams.getKStream(
+      ETopicKafka.balance_create
+    );
+
+    stream.mapBufferKeyToString();
+    stream.mapBufferValueToString();
+
+    stream.forEach(async (message: IKafkaMsg) => {
+      if (!message.value) {
+        throw new Error('Received message without value');
+      }
+
+      let raw = String(message.value);
+      if (message.value instanceof Buffer) {
+        raw = message.value.toString('utf8');
+      }
+
+      const data = JSON.parse(raw) as CreateServerResponse;
+      const serverId = data.server_id;
+
+      const { getDistroAndVersion, sshConfig } = await this.validate(serverId);
+
+      const commands =
+        await this.sshService.getInstallCommands(getDistroAndVersion);
+
+      await this.serverService.updateServerStatusById(
+        serverId,
+        EServerStatus.installing
+      );
+
+      await this.sshService.runCommands(serverId, sshConfig, commands);
+
+      const isInstalled = await this.isInstalled(
+        serverId,
+        getDistroAndVersion,
+        sshConfig
+      );
+
+      const status = isInstalled ? EServerStatus.online : EServerStatus.error;
+
+      await this.serverService.updateServerStatusById(serverId, status);
     });
 
-    consumer
-      .run({
-        autoCommit: true,
-        eachMessage: async ({ message, heartbeat }) => {
-          if (!message.value) {
-            throw new Error('Received message without value');
-          }
-
-          const data = JSON.parse(
-            message.value.toString()
-          ) as CreateServerResponse;
-          const serverId = data.server_id;
-
-          const { getDistroAndVersion, sshConfig } =
-            await this.validate(serverId);
-
-          const commands =
-            await this.sshService.getInstallCommands(getDistroAndVersion);
-
-          await this.serverService.updateServerStatusById(
-            serverId,
-            EServerStatus.installing
-          );
-
-          await this.sshService.runCommands(serverId, sshConfig, commands);
-
-          const isInstalled = await this.isInstalled(
-            serverId,
-            getDistroAndVersion,
-            sshConfig
-          );
-
-          const status = isInstalled
-            ? EServerStatus.online
-            : EServerStatus.error;
-
-          await this.serverService.updateServerStatusById(serverId, status);
-
-          await heartbeat();
-        },
-      })
-      .catch((err) => fastify.log.error('Error in consumer run:', err));
+    await stream.start();
   }
 }

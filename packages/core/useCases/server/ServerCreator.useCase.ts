@@ -4,16 +4,17 @@ import { CreateServerRequest } from '@core/schema/server/createServer/request.sc
 import { CreateServerResponse } from '@core/schema/server/createServer/response.schema';
 import { TFunction } from 'i18next';
 import { SshService } from '@core/services/ssh.service';
-import { FastifyInstance } from 'fastify';
 import { ETopicKafka } from '@core/common/enums/ETopicKafka';
 import { ConnectConfig } from 'ssh2';
 import { isDistroVersionAllowed } from '@core/common/functions/isDistroVersionAllowed';
+import { StreamProducerService } from '@core/services/streamProducer.service';
 
 @injectable()
 export class ServerCreatorUseCase {
   constructor(
     private readonly serverService: ServerService,
-    private readonly sshService: SshService
+    private readonly sshService: SshService,
+    private readonly streamProducerService: StreamProducerService
   ) {}
 
   async validate(
@@ -54,7 +55,6 @@ export class ServerCreatorUseCase {
   }
 
   async onServerCreatedInKafka(
-    fastify: FastifyInstance,
     t: TFunction<'translation', undefined>,
     serverId: number
   ): Promise<void> {
@@ -63,21 +63,13 @@ export class ServerCreatorUseCase {
         server_id: serverId,
       };
 
-      await fastify.kafka.producer.send({
-        topic: ETopicKafka.balance_create,
-        messages: [
-          {
-            value: JSON.stringify(payload),
-          },
-        ],
-      });
+      this.streamProducerService.send(ETopicKafka.balance_create, payload);
     } catch {
       throw new Error(t('kafka_producer_error'));
     }
   }
 
   async execute(
-    fastify: FastifyInstance,
     t: TFunction<'translation', undefined>,
     input: CreateServerRequest
   ): Promise<CreateServerResponse | null> {
@@ -98,7 +90,7 @@ export class ServerCreatorUseCase {
       throw new Error(t('server_ssh_creator_error'));
     }
 
-    await this.onServerCreatedInKafka(fastify, t, serverSshId);
+    await this.onServerCreatedInKafka(t, serverSshId);
 
     return {
       server_id: serverSshId,

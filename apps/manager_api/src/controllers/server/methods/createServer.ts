@@ -16,7 +16,6 @@ export const createServer = async (
 
   try {
     const responseCreatorServer = await serverCreatorUseCase.execute(
-      request.server,
       t,
       request.body
     );
