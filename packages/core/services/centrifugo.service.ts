@@ -52,11 +52,7 @@ export class CentrifugoService {
   async publish(channel: string, data: unknown): Promise<PublishResult> {
     await this.waitForConnected();
 
-    try {
-      return await this.client.publish(channel, data);
-    } catch (error) {
-      throw error;
-    }
+    return this.client.publish(channel, data);
   }
 
   async unsubscribe(channel: string): Promise<void> {

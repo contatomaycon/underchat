@@ -10,6 +10,7 @@ import { isDistroVersionAllowed } from '@core/common/functions/isDistroVersionAl
 import { IDistroInfo } from '@core/common/interfaces/IDistroInfo';
 import { KafkaStreams, KStream } from 'kafka-streams';
 import { IKafkaMsg } from '@core/common/interfaces/IKafkaMsg';
+import { FastifyInstance } from 'fastify';
 
 @injectable()
 export class BalanceCreatorConsume {
@@ -24,48 +25,40 @@ export class BalanceCreatorConsume {
     getDistroAndVersion: IDistroInfo;
     sshConfig: ConnectConfig;
   }> {
-    const viewServerSshById =
-      await this.serverService.viewServerSshById(serverId);
+    const view = await this.serverService.viewServerSshById(serverId);
 
-    if (!viewServerSshById) {
+    if (!view) {
       throw new Error('SSH configuration not found');
     }
 
-    if (viewServerSshById.server_status_id !== EServerStatus.new) {
+    if (view.server_status_id !== EServerStatus.new) {
       throw new Error('Server is not in new status');
     }
 
     const sshConfig: ConnectConfig = {
-      host: viewServerSshById.ssh_ip,
-      port: viewServerSshById.ssh_port,
-      username: this.passwordEncryptorService.decrypt(
-        viewServerSshById.ssh_username
-      ),
-      password: this.passwordEncryptorService.decrypt(
-        viewServerSshById.ssh_password
-      ),
+      host: view.ssh_ip,
+      port: view.ssh_port,
+      username: this.passwordEncryptorService.decrypt(view.ssh_username),
+      password: this.passwordEncryptorService.decrypt(view.ssh_password),
     };
 
-    const isConnected = await this.sshService.testSSHConnection(sshConfig);
+    const connected = await this.sshService.testSSHConnection(sshConfig);
 
-    if (!isConnected) {
+    if (!connected) {
       throw new Error('SSH connection failed');
     }
 
-    const getDistroAndVersion =
-      await this.sshService.getDistroAndVersion(sshConfig);
+    const distro = await this.sshService.getDistroAndVersion(sshConfig);
 
-    if (!getDistroAndVersion) {
+    if (!distro) {
       throw new Error('Failed to retrieve distribution and version');
     }
 
-    const isDistroVAllowed = isDistroVersionAllowed(getDistroAndVersion);
-
-    if (!isDistroVAllowed) {
+    if (!isDistroVersionAllowed(distro)) {
       throw new Error('Distribution and version not allowed');
     }
 
-    return { getDistroAndVersion, sshConfig };
+    return { getDistroAndVersion: distro, sshConfig };
   }
 
   private async isInstalled(
@@ -74,7 +67,7 @@ export class BalanceCreatorConsume {
     sshConfig: ConnectConfig,
     attempts = 10
   ): Promise<boolean> {
-    if (!sshConfig?.host) {
+    if (!sshConfig.host) {
       throw new Error('SSH host is not defined');
     }
 
@@ -85,7 +78,7 @@ export class BalanceCreatorConsume {
     );
 
     for (let i = 0; i < attempts; i++) {
-      await new Promise((r) => setTimeout(r, 6000));
+      await new Promise((resolve) => setTimeout(resolve, 6000));
 
       const result = await this.sshService.runCommands(
         serverId,
@@ -103,7 +96,7 @@ export class BalanceCreatorConsume {
     return false;
   }
 
-  async execute(): Promise<void> {
+  async execute(server: FastifyInstance): Promise<void> {
     const stream: KStream = this.kafkaStreams.getKStream(
       ETopicKafka.balance_create
     );
@@ -112,41 +105,68 @@ export class BalanceCreatorConsume {
     stream.mapBufferValueToString();
 
     stream.forEach(async (message: IKafkaMsg) => {
-      if (!message.value) {
-        throw new Error('Received message without value');
+      let serverId: number = 0;
+
+      try {
+        if (!message.value) {
+          throw new Error('Received message without value');
+        }
+
+        const raw =
+          message.value instanceof Buffer
+            ? message.value.toString('utf8')
+            : String(message.value);
+
+        const data = JSON.parse(raw) as CreateServerResponse;
+        serverId = data.server_id;
+
+        if (!serverId) {
+          throw new Error('Server ID is not defined in the message');
+        }
+
+        const { getDistroAndVersion, sshConfig } =
+          await this.validate(serverId);
+
+        await this.serverService.updateServerStatusById(
+          serverId,
+          EServerStatus.installing
+        );
+
+        const installCommands =
+          await this.sshService.getInstallCommands(getDistroAndVersion);
+
+        await this.sshService.runCommands(serverId, sshConfig, installCommands);
+
+        const installed = await this.isInstalled(
+          serverId,
+          getDistroAndVersion,
+          sshConfig
+        );
+
+        const finalStatus = installed
+          ? EServerStatus.online
+          : EServerStatus.error;
+
+        await this.serverService.updateServerStatusById(serverId, finalStatus);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+
+        server.logger.warn(`Skipping server ${serverId ?? 'unknown'}: ${msg}`);
+
+        if (serverId > 0) {
+          await this.serverService.updateServerStatusById(
+            serverId,
+            EServerStatus.error
+          );
+        }
       }
-
-      let raw = String(message.value);
-      if (message.value instanceof Buffer) {
-        raw = message.value.toString('utf8');
-      }
-
-      const data = JSON.parse(raw) as CreateServerResponse;
-      const serverId = data.server_id;
-
-      const { getDistroAndVersion, sshConfig } = await this.validate(serverId);
-
-      const commands =
-        await this.sshService.getInstallCommands(getDistroAndVersion);
-
-      await this.serverService.updateServerStatusById(
-        serverId,
-        EServerStatus.installing
-      );
-
-      await this.sshService.runCommands(serverId, sshConfig, commands);
-
-      const isInstalled = await this.isInstalled(
-        serverId,
-        getDistroAndVersion,
-        sshConfig
-      );
-
-      const status = isInstalled ? EServerStatus.online : EServerStatus.error;
-
-      await this.serverService.updateServerStatusById(serverId, status);
     });
 
-    await stream.start();
+    try {
+      await stream.start();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      server.logger.error(`Error starting stream: ${msg}`);
+    }
   }
 }

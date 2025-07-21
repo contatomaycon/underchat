@@ -12,25 +12,65 @@ export class SshService {
   private connect(config: ConnectConfig): Promise<Client> {
     return new Promise((resolve, reject) => {
       const conn = new Client();
+      const connectConfig: ConnectConfig = {
+        ...config,
+        readyTimeout: 600_000,
+        keepaliveInterval: 20_000,
+        keepaliveCountMax: 10,
+      };
 
       conn
         .on('ready', () => resolve(conn))
         .on('error', (err) => reject(err))
-        .connect(config);
+        .connect(connectConfig);
     });
   }
 
-  private execCommand(conn: Client, command: string): Promise<string> {
+  private execCommand(
+    conn: Client,
+    command: string,
+    options: { pty?: boolean; timeoutMs?: number } = {}
+  ): Promise<string> {
+    const { pty = false, timeoutMs = 0 } = options;
+
     return new Promise((resolve, reject) => {
-      conn.exec(command, (err, stream) => {
+      conn.exec(command, { pty }, (err, stream) => {
         if (err) return reject(err);
 
         let output = '';
-        stream
-          .on('data', (chunk: Buffer) => {
-            output += chunk.toString();
-          })
-          .on('close', () => resolve(output));
+        let timer: NodeJS.Timeout | undefined;
+
+        if (timeoutMs > 0) {
+          timer = setTimeout(() => {
+            stream.close();
+
+            reject(new Error('execCommand timeout'));
+          }, timeoutMs);
+        }
+
+        stream.on('data', (chunk: Buffer) => {
+          output += chunk.toString();
+        });
+
+        stream.stderr.on('data', (chunk: Buffer) => {
+          output += chunk.toString();
+        });
+
+        stream.on('close', () => {
+          if (timer) {
+            clearTimeout(timer);
+          }
+
+          resolve(output.trimEnd());
+        });
+
+        stream.on('error', (e: Error) => {
+          if (timer) {
+            clearTimeout(timer);
+          }
+
+          reject(e);
+        });
       });
     });
   }
@@ -82,11 +122,12 @@ export class SshService {
 
     try {
       for (const cmd of commands) {
-        const wrapped = `yes | ${cmd}`;
-        const output = await this.execCommand(conn, wrapped);
+        const output = await this.execCommand(conn, cmd);
+
+        console.dir({ command: cmd, output }, { depth: null });
 
         await this.centrifugoService.publish(`ssh_${serverId}`, {
-          command: wrapped,
+          command: cmd,
           output,
         });
 
@@ -122,13 +163,13 @@ export class SshService {
 
     const commandsMap: Record<EAllowedDistroVersion, string[]> = {
       [EAllowedDistroVersion.Ubuntu_25_04]: [
-        `bash -ic "curl -s -o /dev/null -w "%{http_code}" http://${ip}:${port}/v1/health/check"`,
+        `bash -c "curl -s -o /dev/null -w "%{http_code}" http://${ip}:${port}/v1/health/check"`,
       ],
       [EAllowedDistroVersion.Ubuntu_24_10]: [
-        `bash -ic "curl -s -o /dev/null -w "%{http_code}" http://${ip}:${port}/v1/health/check"`,
+        `bash -c "curl -s -o /dev/null -w "%{http_code}" http://${ip}:${port}/v1/health/check"`,
       ],
       [EAllowedDistroVersion.Ubuntu_24_04]: [
-        `bash -ic "curl -s -o /dev/null -w "%{http_code}" http://${ip}:${port}/v1/health/check"`,
+        `bash -c "curl -s -o /dev/null -w "%{http_code}" http://${ip}:${port}/v1/health/check"`,
       ],
     };
 
