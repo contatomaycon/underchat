@@ -6,7 +6,9 @@ import { ICreateServer } from '@core/common/interfaces/ICreateServer';
 import { EServerStatus } from '@core/common/enums/EServerStatus';
 import { ServerSshCreatorRepository } from '@core/repositories/server/ServerSshCreator.repository';
 import { ICreateServerSsh } from '@core/common/interfaces/ICreateServerSsh';
-import { ServerSshViewerExistsRepository } from '@core/repositories/server/ServerViewerExists.repository';
+import { ServerSshViewerExistsRepository } from '@core/repositories/server/ServerSshViewerExists.repository';
+import { ServerSshViewerRepository } from '@core/repositories/server/ServerSshViewer.repository';
+import { ServerStatusUpdaterRepository } from '@core/repositories/server/ServerStatusUpdater.repository';
 
 @injectable()
 export class ServerService {
@@ -14,7 +16,9 @@ export class ServerService {
     private readonly passwordEncryptorService: PasswordEncryptorService,
     private readonly serverCreatorRepository: ServerCreatorRepository,
     private readonly serverSshViewerExistsRepository: ServerSshViewerExistsRepository,
-    private readonly serverSshCreatorRepository: ServerSshCreatorRepository
+    private readonly serverSshCreatorRepository: ServerSshCreatorRepository,
+    private readonly serverSshViewerRepository: ServerSshViewerRepository,
+    private readonly serverStatusUpdaterRepository: ServerStatusUpdaterRepository
   ) {}
 
   createServer = async (input: CreateServerRequest) => {
@@ -49,5 +53,19 @@ export class ServerService {
 
   viewByIp = async (ip: string): Promise<boolean> => {
     return this.serverSshViewerExistsRepository.viewByIp(ip);
+  };
+
+  viewServerSshById = async (id: number) => {
+    return this.serverSshViewerRepository.viewServerSshById(id);
+  };
+
+  updateServerStatusById = async (
+    serverId: number,
+    status: EServerStatus
+  ): Promise<boolean> => {
+    return this.serverStatusUpdaterRepository.updateServerStatusById(
+      serverId,
+      status
+    );
   };
 }

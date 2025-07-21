@@ -26,11 +26,11 @@ export const permissionRoleAction = pgTable('permission_role_action', {
 export const permissionRoleActionRelations = relations(
   permissionRoleAction,
   ({ one }) => ({
-    permission_action: one(permissionAction, {
+    ppa: one(permissionAction, {
       fields: [permissionRoleAction.permission_action_id],
       references: [permissionAction.permission_action_id],
     }),
-    permission_role: one(permissionRole, {
+    ppr: one(permissionRole, {
       fields: [permissionRoleAction.permission_role_id],
       references: [permissionRole.permission_role_id],
     }),

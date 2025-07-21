@@ -9,7 +9,9 @@ import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { ITokenJwtData } from '@core/common/interfaces/ITokenJwtData';
 import { ELanguage } from '../enums/ELanguage';
 import { Client as ClientElastic } from '@elastic/elasticsearch';
-import { Kafka } from 'kafkajs';
+import { ITokenKeyData } from '../interfaces/ITokenKeyData';
+import { KafkaStreams } from 'kafka-streams';
+import { Centrifuge } from 'centrifuge';
 
 declare module 'fastify' {
   export interface FastifyRequest {
@@ -20,10 +22,16 @@ declare module 'fastify' {
     Database: NodePgDatabase<typeof schema>;
     DatabaseElasticClient: ClientElastic;
     ElasticLogsClient: ClientElastic;
-    Kafka: Kafka;
+    KafkaStreams: KafkaStreams;
+    Centrifuge: Centrifuge;
     redis: FastifyRedis;
     logger: LoggerService;
     authenticateJwt: (
+      request: FastifyRequest,
+      reply: FastifyReply,
+      permissions: EPermissionsRoles[] | null
+    ) => void;
+    authenticateKeyApi: (
       request: FastifyRequest,
       reply: FastifyReply,
       permissions: EPermissionsRoles[] | null
@@ -39,6 +47,7 @@ declare module 'fastify' {
 
   export interface FastifyRequest {
     tokenJwtData: ITokenJwtData;
+    tokenKeyData: ITokenKeyData;
     permissionsRoute: EPermissionsRoles[];
     module: ERouteModule;
     languageData: {

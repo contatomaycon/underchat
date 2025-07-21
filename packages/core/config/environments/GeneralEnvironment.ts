@@ -1,113 +1,147 @@
-import * as dotenv from 'dotenv';
 import InvalidConfigurationError from '@core/common/exceptions/InvalidConfigurationError';
 import { EAppEnvironment } from '@core/common/enums/EAppEnvironment';
 
-dotenv.config({
-  path: '../../.env',
-});
-
 export class GeneralEnvironment {
-  private readonly APP_ENVIRONMENT: EAppEnvironment | undefined;
-  private readonly APP_URL_PUBLIC: string | undefined;
-  private readonly APP_URL_MANAGER: string | undefined;
-  private readonly JWT_SECRET: string | undefined;
-  private readonly JWT_SECRET_EXPIRES_IN: string | undefined;
-  private readonly UPLOAD_LIMIT_IN_BYTES: number | undefined;
-  private readonly CRYPTO_KEY_START: string | undefined;
-  private readonly CRYPTO_KEY_END: string | undefined;
-
-  constructor() {
-    this.APP_ENVIRONMENT = process.env
-      .APP_ENVIRONMENT as unknown as EAppEnvironment;
-    this.APP_URL_PUBLIC = process.env.APP_URL_PUBLIC;
-    this.APP_URL_MANAGER = process.env.APP_URL_MANAGER;
-    this.JWT_SECRET = process.env.JWT_SECRET;
-    this.JWT_SECRET_EXPIRES_IN = process.env.JWT_SECRET_EXPIRES_IN;
-    this.UPLOAD_LIMIT_IN_BYTES = process.env.UPLOAD_LIMIT_IN_BYTES
-      ? Number(process.env.UPLOAD_LIMIT_IN_BYTES)
-      : undefined;
-    this.CRYPTO_KEY_START = process.env.CRYPTO_KEY_START;
-    this.CRYPTO_KEY_END = process.env.CRYPTO_KEY_END;
-  }
-
   public get appEnvironment(): EAppEnvironment {
-    if (!this.APP_ENVIRONMENT) {
+    const env = process.env.APP_ENVIRONMENT as unknown as EAppEnvironment;
+    if (!env) {
       throw new InvalidConfigurationError('APP_ENVIRONMENT is not defined.');
     }
 
     if (
-      this.APP_ENVIRONMENT !== EAppEnvironment.local &&
-      this.APP_ENVIRONMENT !== EAppEnvironment.dev &&
-      this.APP_ENVIRONMENT !== EAppEnvironment.hmg &&
-      this.APP_ENVIRONMENT !== EAppEnvironment.prod
+      env !== EAppEnvironment.local &&
+      env !== EAppEnvironment.dev &&
+      env !== EAppEnvironment.hmg &&
+      env !== EAppEnvironment.prod
     ) {
       throw new InvalidConfigurationError('APP_ENVIRONMENT is not valid.');
     }
 
-    return this.APP_ENVIRONMENT;
+    return env;
   }
 
   public get appUrlPublic(): string {
-    if (!this.APP_URL_PUBLIC) {
+    const url = process.env.APP_URL_PUBLIC;
+    if (!url) {
       throw new InvalidConfigurationError('APP_URL_PUBLIC is not defined.');
     }
 
-    return this.APP_URL_PUBLIC;
+    return url;
   }
 
   public get appUrlManager(): string {
-    if (!this.APP_URL_MANAGER) {
+    const url = process.env.APP_URL_MANAGER;
+    if (!url) {
       throw new InvalidConfigurationError('APP_URL_MANAGER is not defined.');
     }
 
-    return this.APP_URL_MANAGER;
+    return url;
+  }
+
+  public get appUrlBalancer(): string {
+    const balancerUrl = process.env.APP_URL_BALANCER;
+    if (!balancerUrl) {
+      throw new InvalidConfigurationError('APP_URL_BALANCER is not defined.');
+    }
+
+    return balancerUrl;
+  }
+
+  public get appUrlService(): string {
+    const serviceUrl = process.env.APP_URL_SERVICE;
+    if (!serviceUrl) {
+      throw new InvalidConfigurationError('APP_URL_SERVICE is not defined.');
+    }
+
+    return serviceUrl;
   }
 
   public get jwtSecret(): string {
-    if (!this.JWT_SECRET) {
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
       throw new InvalidConfigurationError('JWT_SECRET is not defined.');
     }
 
-    return this.JWT_SECRET;
+    return secret;
   }
 
   public get jwtSecretExpiresIn(): string {
-    if (!this.JWT_SECRET_EXPIRES_IN) {
+    const expiresIn = process.env.JWT_SECRET_EXPIRES_IN;
+    if (!expiresIn) {
       throw new InvalidConfigurationError(
         'JWT_SECRET_EXPIRES_IN is not defined.'
       );
     }
 
-    return this.JWT_SECRET_EXPIRES_IN;
+    return expiresIn;
   }
 
   public get uploadLimitInBytes(): number {
-    if (!this.UPLOAD_LIMIT_IN_BYTES) {
+    const limit = process.env.UPLOAD_LIMIT_IN_BYTES;
+    if (!limit) {
       throw new InvalidConfigurationError(
         'UPLOAD_LIMIT_IN_BYTES is not defined.'
       );
     }
 
-    return this.UPLOAD_LIMIT_IN_BYTES;
+    return Number(limit);
   }
 
   public get cryptoKeyStart(): string {
-    if (!this.CRYPTO_KEY_START) {
+    const start = process.env.CRYPTO_KEY_START;
+    if (!start) {
       throw new InvalidConfigurationError('CRYPTO_KEY_START is not defined.');
     }
 
-    return this.CRYPTO_KEY_START;
+    return start;
   }
 
   public get cryptoKeyEnd(): string {
-    if (!this.CRYPTO_KEY_END) {
+    const end = process.env.CRYPTO_KEY_END;
+    if (!end) {
       throw new InvalidConfigurationError('CRYPTO_KEY_END is not defined.');
     }
 
-    return this.CRYPTO_KEY_END;
+    return end;
   }
 
   public get protocol(): string {
     return this.appEnvironment === EAppEnvironment.local ? 'http' : 'https';
+  }
+
+  public get gitToken(): string {
+    const token = process.env.GIT_TOKEN;
+    if (!token) {
+      throw new InvalidConfigurationError('GIT_TOKEN is not defined.');
+    }
+
+    return token;
+  }
+
+  public get gitRepo(): string {
+    const repo = process.env.GIT_REPO;
+    if (!repo) {
+      throw new InvalidConfigurationError('GIT_REPO is not defined.');
+    }
+
+    return repo;
+  }
+
+  public get gitBranch(): string {
+    const branch = process.env.GIT_BRANCH;
+    if (!branch) {
+      throw new InvalidConfigurationError('GIT_BRANCH is not defined.');
+    }
+
+    return branch;
+  }
+
+  public get ipLatencyDnsIp(): string {
+    const ip = process.env.IP_LATENCY_DNS_IP;
+    if (!ip) {
+      throw new InvalidConfigurationError('IP_LATENCY_DNS_IP is not defined.');
+    }
+
+    return ip;
   }
 }

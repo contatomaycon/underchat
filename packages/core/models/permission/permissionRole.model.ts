@@ -21,7 +21,7 @@ export const permissionRole = pgTable('permission_role', {
 export const permissionRoleRelations = relations(
   permissionRole,
   ({ many }) => ({
-    permission_assignment: many(permissionAssignment),
-    permission_role_action: many(permissionRoleAction),
+    ppa: many(permissionAssignment),
+    pra: many(permissionRoleAction),
   })
 );

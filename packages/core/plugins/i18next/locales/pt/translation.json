@@ -7,5 +7,12 @@
   "server_creator_success": "Servidor criado com sucesso!",
   "server_creator_error": "Erro ao criar o servidor!",
   "server_already_exists": "Servidor já existe!",
-  "server_ssh_creator_error": "Erro ao criar o servidor SSH!"
+  "server_ssh_creator_error": "Erro ao criar o servidor SSH!",
+  "ssh_connection_failed": "Falha na conexão SSH!",
+  "health_check_success": "Verificação de saúde bem-sucedida!",
+  "metrics_server_success": "Servidor de métricas iniciado com sucesso!",
+  "metrics_server_error": "Erro ao iniciar o servidor de métricas!",
+  "kafka_producer_error": "Erro ao criar o produtor Kafka!",
+  "ssh_distro_version_failed": "Falha ao recuperar distribuição e versão do servidor",
+  "ssh_distro_version_not_allowed": "Distribuição e versão não permitidas para o servidor"
 }

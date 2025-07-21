@@ -19,7 +19,7 @@ import { routePathWithoutPrefix } from '@core/common/functions/routePathWithoutP
 async function handleApiKeyCache(
   redis: FastifyRedis,
   cacheKey: string,
-  decoded: { user_id: string; account_id: string },
+  decoded: { user_id: string },
   routeModule: string,
   module: ERouteModule
 ): Promise<IJwtGroupHierarchy[]> {
@@ -45,12 +45,10 @@ async function handleApiKeyCache(
 
 function generateTokenJwtAccess(
   userId: string,
-  accountId: string,
   responseAuth: IJwtGroupHierarchy[]
 ): ITokenJwtData {
   return {
     user_id: userId,
-    account_id: accountId,
     actions: responseAuth,
   } as ITokenJwtData;
 }
@@ -67,7 +65,6 @@ async function authenticateJwt(
   try {
     const decoded: {
       user_id: string;
-      account_id: string;
       module: ERouteModule;
     } = await request.jwtVerify({
       verify: {
@@ -123,7 +120,6 @@ async function authenticateJwt(
 
     request.tokenJwtData = generateTokenJwtAccess(
       decoded.user_id,
-      decoded.account_id,
       responseAuth
     );
     request.permissionsRoute = permissions;
