@@ -17,9 +17,9 @@ const centrifugoPlugin = async (fastify: FastifyInstance) => {
     );
   };
 
-  const getToken = async () => {
+  const getToken = async (): Promise<string> => {
     try {
-      return generateToken();
+      return await generateToken();
     } catch {
       throw new UnauthorizedError('Failed to generate token');
     }

@@ -5,7 +5,7 @@ import { valtEnvironment } from '@core/config/environments/ValtEnvironment';
 
 @injectable()
 export class VaultService {
-  private client: Vault.client;
+  private readonly client: Vault.client;
 
   constructor() {
     this.client = Vault({
@@ -20,21 +20,21 @@ export class VaultService {
       version: valtEnvironment.vaultVersion,
     });
 
-    if (!res || !res.data || !(key in res.data)) {
+    const value = res?.data?.[key];
+    if (value === undefined) {
       throw new InvalidConfigurationError(
         `Key "${key}" not found in "${path}"`
       );
     }
 
-    return res.data[key] as T;
+    return value as T;
   }
-
   async loadEnv(path: string): Promise<void> {
     const res = await this.client.read(path, {
       version: valtEnvironment.vaultVersion,
     });
 
-    if (!res || !res.data) {
+    if (!res?.data) {
       throw new InvalidConfigurationError(`Secret at "${path}" not found`);
     }
 

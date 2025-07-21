@@ -93,7 +93,7 @@ export class BalanceCreatorConsume {
         commands
       );
 
-      const status = Number(result[0]?.output) ?? 0;
+      const status = Number(result[0]?.output ?? 0);
 
       if (status === 200) {
         return true;

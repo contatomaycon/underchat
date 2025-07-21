@@ -5,12 +5,12 @@ FROM base AS turbo
 RUN apk update && \
     apk add --no-cache \
       bash \
-      python3 \
-      make \
       g++ \
       libc6-compat \
       librdkafka-dev \
-      musl-dev
+      make \
+      musl-dev \
+      python3
 
 RUN npm add -g pnpm turbo
  

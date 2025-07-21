@@ -40,7 +40,7 @@ export class MetricsViewerUseCase {
       if (line) {
         const nums = line.match(/\d+/g);
 
-        if (nums && nums.length) {
+        if (nums?.length) {
           maxFds = parseInt(nums[0], 10);
         }
       }

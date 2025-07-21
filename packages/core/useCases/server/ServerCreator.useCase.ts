@@ -63,7 +63,10 @@ export class ServerCreatorUseCase {
         server_id: serverId,
       };
 
-      this.streamProducerService.send(ETopicKafka.balance_create, payload);
+      await this.streamProducerService.send(
+        ETopicKafka.balance_create,
+        payload
+      );
     } catch {
       throw new Error(t('kafka_producer_error'));
     }
