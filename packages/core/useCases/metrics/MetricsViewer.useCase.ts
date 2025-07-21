@@ -10,13 +10,13 @@ import os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { promises } from 'fs';
+import { generalEnvironment } from '@core/config/environments';
 
 @injectable()
 export class MetricsViewerUseCase {
   constructor() {}
 
   private readonly SAMPLE_INTERVAL_MS = 1000;
-  private readonly IP_LATENCY_DNS_IP = '8.8.8.8';
 
   private async getSocketMetrics(
     conns: si.Systeminformation.NetworkConnectionsData[]
@@ -364,7 +364,7 @@ export class MetricsViewerUseCase {
       si.networkStats(),
       si.osInfo(),
       si.networkConnections(),
-      si.inetLatency(this.IP_LATENCY_DNS_IP),
+      si.inetLatency(generalEnvironment.ipLatencyDnsIp),
     ]);
 
     const usage = parseFloat(currentLoad.currentLoad.toFixed(2));

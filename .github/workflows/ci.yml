@@ -67,7 +67,7 @@ jobs:
           projectBaseDir: .
           args: >
             -D"sonar.projectKey=${{ env.SONAR_BACKEND_PROJECT_KEY }}"
-            -D"sonar.exclusions=**/node_modules/**,**/*.spec.ts"
+            -D"sonar.exclusions=**/node_modules/**,**/*.spec.ts,**/**/Dockerfile"
             -D"sonar.coverage.exclusions=**"
             -D"sonar.cpd.exclusions=**"
 

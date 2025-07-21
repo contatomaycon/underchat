@@ -5,6 +5,7 @@ import {
   Subscription,
   SubscriptionState,
   State,
+  PublishResult,
 } from 'centrifuge';
 
 @injectable()
@@ -48,9 +49,14 @@ export class CentrifugoService {
     return sub;
   }
 
-  async publish(channel: string, data: unknown): Promise<void> {
+  async publish(channel: string, data: unknown): Promise<PublishResult> {
     await this.waitForConnected();
-    await this.client.publish(channel, data);
+
+    try {
+      return await this.client.publish(channel, data);
+    } catch (error) {
+      throw error;
+    }
   }
 
   async unsubscribe(channel: string): Promise<void> {

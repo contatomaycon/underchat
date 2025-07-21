@@ -44,6 +44,8 @@
   "CENTRIFUGO_WS_URL": "ws://10.0.2.2:8000",
   "CENTRIFUGO_ENDPOINT": "http://10.0.2.2:8000",
 
+  "IP_LATENCY_DNS_IP": "8.8.8.8",
+
   "GIT_TOKEN": "",
   "GIT_REPO": "github.com/contatomaycon/underchat.git",
   "GIT_BRANCH": "feature/servers"

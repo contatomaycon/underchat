@@ -135,4 +135,13 @@ export class GeneralEnvironment {
 
     return branch;
   }
+
+  public get ipLatencyDnsIp(): string {
+    const ip = process.env.IP_LATENCY_DNS_IP;
+    if (!ip) {
+      throw new InvalidConfigurationError('IP_LATENCY_DNS_IP is not defined.');
+    }
+
+    return ip;
+  }
 }
