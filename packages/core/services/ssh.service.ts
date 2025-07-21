@@ -135,8 +135,8 @@ export class SshService {
       for (const cmd of commands) {
         await this.execCommand(conn, cmd, {
           pty: true,
-          onData: async (linha) => {
-            await this.centrifugoService.publish(`ssh_${serverId}`, {
+          onData: (linha) => {
+            this.centrifugoService.publish(`ssh_${serverId}`, {
               command: cmd,
               output: linha,
             });
