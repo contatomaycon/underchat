@@ -28,11 +28,11 @@ export async function installUbuntu2504(): Promise<string[]> {
     'sudo rm -rf /home/app || true',
     'sudo rm -rf /home/underchat || true',
 
-    `bash -ic "export NVM_DIR=\"$HOME/.nvm\" && \
+    `bash -ic "export NVM_DIR='$HOME/.nvm' && \
       curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash && \
-      source \"$NVM_DIR/nvm.sh\""`,
+      source '$NVM_DIR/nvm.sh'"`,
 
-    `bash -ic "export NVM_DIR=\"$HOME/.nvm\" && \
+    `bash -ic "export NVM_DIR='$HOME/.nvm' && \
       nvm install ${nodeVersion} && \
       nvm use ${nodeVersion} && \
       nvm alias default ${nodeVersion}"`,

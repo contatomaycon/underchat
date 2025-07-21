@@ -278,7 +278,16 @@ export class MetricsViewerUseCase {
     const diskStats = await Promise.all(
       disk.map(async (d) => {
         const part = d.fs.split('/').pop() ?? '';
-        const device = part.replace(/\d+$/, '');
+
+        let end = part.length;
+        while (end > 0) {
+          const c = part.charCodeAt(end - 1);
+          if (c < 48 || c > 57) break;
+
+          end--;
+        }
+        const device = part.slice(0, end);
+
         const { busy_percentage, read_bytes_sec } =
           await this.getDiskReadStats(device);
 
