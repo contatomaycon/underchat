@@ -78,15 +78,15 @@ export class BalanceCreatorConsume {
     );
 
     for (let i = 0; i < attempts; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 6000));
+      await new Promise((r) => setTimeout(r, 6000));
 
-      const result = await this.sshService.runCommands(
+      const [res] = await this.sshService.runCommands(
         serverId,
         sshConfig,
         commands
       );
 
-      const status = Number(result[0]?.output ?? 0);
+      const status = parseInt(res.output?.trim() ?? '0', 10);
 
       if (status === 200) {
         return true;
@@ -166,6 +166,7 @@ export class BalanceCreatorConsume {
       await stream.start();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
+
       server.logger.error(`Error starting stream: ${msg}`);
     }
   }

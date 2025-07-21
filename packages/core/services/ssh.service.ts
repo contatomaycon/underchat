@@ -29,13 +29,19 @@ export class SshService {
   private execCommand(
     conn: Client,
     command: string,
-    options: { pty?: boolean; timeoutMs?: number } = {}
+    options: {
+      pty?: boolean;
+      timeoutMs?: number;
+      onData?: (chunk: string) => void;
+    } = {}
   ): Promise<string> {
-    const { pty = false, timeoutMs = 0 } = options;
+    const { pty = false, timeoutMs = 0, onData } = options;
 
     return new Promise((resolve, reject) => {
       conn.exec(command, { pty }, (err, stream) => {
-        if (err) return reject(err);
+        if (err) {
+          return reject(err);
+        }
 
         let output = '';
         let timer: NodeJS.Timeout | undefined;
@@ -43,19 +49,25 @@ export class SshService {
         if (timeoutMs > 0) {
           timer = setTimeout(() => {
             stream.close();
-
             reject(new Error('execCommand timeout'));
           }, timeoutMs);
         }
-
         stream.on('data', (chunk: Buffer) => {
-          output += chunk.toString();
-        });
+          const text = chunk.toString();
 
+          output += text;
+          if (onData) {
+            onData(text);
+          }
+        });
         stream.stderr.on('data', (chunk: Buffer) => {
-          output += chunk.toString();
-        });
+          const text = chunk.toString();
 
+          output += text;
+          if (onData) {
+            onData(text);
+          }
+        });
         stream.on('close', () => {
           if (timer) {
             clearTimeout(timer);
@@ -63,7 +75,6 @@ export class SshService {
 
           resolve(output.trimEnd());
         });
-
         stream.on('error', (e: Error) => {
           if (timer) {
             clearTimeout(timer);
@@ -122,16 +133,17 @@ export class SshService {
 
     try {
       for (const cmd of commands) {
-        const output = await this.execCommand(conn, cmd);
+        await this.execCommand(conn, cmd, {
+          pty: true,
+          onData: async (linha) => {
+            await this.centrifugoService.publish(`ssh_${serverId}`, {
+              command: cmd,
+              output: linha,
+            });
 
-        console.dir({ command: cmd, output }, { depth: null });
-
-        await this.centrifugoService.publish(`ssh_${serverId}`, {
-          command: cmd,
-          output,
+            results.push({ command: cmd, output: linha });
+          },
         });
-
-        results.push({ command: cmd, output });
       }
 
       return results;
