@@ -106,7 +106,6 @@ const authThemeMask = useGenerateImageVariant(authV2MaskLight, authV2MaskDark);
                   label="Password"
                   placeholder="············"
                   :type="isPasswordVisible ? 'text' : 'password'"
-                  autocomplete="current-password"
                   :append-inner-icon="
                     isPasswordVisible ? 'tabler-eye-off' : 'tabler-eye'
                   "

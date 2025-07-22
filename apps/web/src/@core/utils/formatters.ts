@@ -7,11 +7,9 @@ export const avatarText = (value: string) => {
 };
 
 export const kFormatter = (num: number) => {
-  const regex = /\B(?=(?:\d{3})+(?!\d))/g;
-
   return Math.abs(num) > 9999
     ? `${Math.sign(num) * +(Math.abs(num) / 1000).toFixed(1)}k`
-    : Math.abs(num).toFixed(0).replace(regex, ',');
+    : Math.abs(num).toLocaleString('en-US');
 };
 
 export const formatDate = (
