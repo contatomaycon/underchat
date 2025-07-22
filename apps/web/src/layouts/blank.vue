@@ -1,14 +1,11 @@
 <script lang="ts" setup>
 const { injectSkinClasses } = useSkins();
 
-// ℹ️ This will inject classes in body tag for accurate styling
 injectSkinClasses();
 
-// SECTION: Loading Indicator
 const isFallbackStateActive = ref(false);
 const refLoadingIndicator = ref<any>(null);
 
-// watching if the fallback state is active and the refLoadingIndicator component is available
 watch(
   [isFallbackStateActive, refLoadingIndicator],
   () => {
@@ -20,7 +17,6 @@ watch(
   },
   { immediate: true }
 );
-// !SECTION
 </script>
 
 <template>

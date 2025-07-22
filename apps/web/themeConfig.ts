@@ -2,7 +2,6 @@ import { breakpointsVuetifyV3 } from '@vueuse/core';
 import { VIcon } from 'vuetify/components/VIcon';
 import { defineThemeConfig } from '@core';
 import { Skins } from '@core/enums';
-
 import logo from '@images/logo.svg?raw';
 
 import {
@@ -14,16 +13,16 @@ import {
 
 export const { themeConfig, layoutConfig } = defineThemeConfig({
   app: {
-    title: 'vuexy',
+    title: 'underchat',
     logo: h('div', {
       innerHTML: logo,
       style: 'line-height:0; color: rgb(var(--v-global-theme-primary))',
     }),
-    contentWidth: ContentWidth.Boxed,
+    contentWidth: ContentWidth.Fluid,
     contentLayoutNav: AppContentLayoutNav.Vertical,
     overlayNavFromBreakpoint: breakpointsVuetifyV3.lg - 1,
     i18n: {
-      enable: false,
+      enable: true,
       defaultLocale: 'en',
       langConfig: [
         {
@@ -32,14 +31,14 @@ export const { themeConfig, layoutConfig } = defineThemeConfig({
           isRTL: false,
         },
         {
-          label: 'French',
-          i18nLang: 'fr',
+          label: 'Português',
+          i18nLang: 'pt',
           isRTL: false,
         },
         {
-          label: 'Arabic',
-          i18nLang: 'ar',
-          isRTL: true,
+          label: 'Espanhol',
+          i18nLang: 'es',
+          isRTL: false,
         },
       ],
     },
@@ -51,7 +50,7 @@ export const { themeConfig, layoutConfig } = defineThemeConfig({
     type: NavbarType.Sticky,
     navbarBlur: true,
   },
-  footer: { type: FooterType.Static },
+  footer: { type: FooterType.Sticky },
   verticalNav: {
     isVerticalNavCollapsed: false,
     defaultNavItemIconProps: { icon: 'tabler-circle' },

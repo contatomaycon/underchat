@@ -9,7 +9,7 @@ import type { LayoutConfig } from '@layouts/types';
 
 export const layoutConfig: LayoutConfig = {
   app: {
-    title: 'my-layout',
+    title: 'underchat',
     logo: h('img', { src: '/src/assets/logo.svg' }),
     contentWidth: ContentWidth.Boxed,
     contentLayoutNav: AppContentLayoutNav.Vertical,
