@@ -50,8 +50,12 @@ function generateTokenKeyData(
 
   const apiKey = responseAuth.find((item) => item.api_key !== null)?.api_key;
   const name = responseAuth.find((item) => item.name !== null)?.name;
+  const accountId = responseAuth.find(
+    (item) => item.account_id !== null
+  )?.account_id;
 
   return {
+    account_id: accountId,
     api_key_id: apiKeyId,
     api_key: apiKey,
     name: name,
