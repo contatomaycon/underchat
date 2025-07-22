@@ -12,6 +12,7 @@
     },
     "dev": {
       "outputs": [],
+      "persistent": true,
       "cache": false
     },
     "sonar": {

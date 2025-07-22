@@ -1,0 +1,40 @@
+@use '@core/scss/base/mixins';
+
+%horizontal-nav-item-icon {
+  font-size: 1.375rem;
+}
+
+%horizontal-nav-item {
+  padding-block: 0.5rem;
+  padding-inline: 1rem;
+}
+
+%nav-group-label-and-nav-link-style {
+  border-radius: 0.375rem;
+  margin-block: 0.125rem;
+  margin-inline: 0.5rem;
+}
+
+%horizontal-nav-sub-nav-link-active {
+  background: rgba(var(--v-theme-primary), 0.08);
+
+  &::before {
+    content: none;
+  }
+}
+
+%horizontal-nav-popper-content {
+  @include mixins.elevation(8);
+}
+
+%horizontal-nav-top-level-item {
+  border-radius: 0.375rem;
+}
+
+%horizontal-nav-item-title {
+  line-height: 1.375rem;
+}
+
+%third-level-nav-item-icon {
+  margin-inline: 0 0.5rem;
+}
