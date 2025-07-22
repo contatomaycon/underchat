@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue';
 import { Placeholder } from '@tiptap/extension-placeholder';
 import { TextAlign } from '@tiptap/extension-text-align';
 import { Underline } from '@tiptap/extension-underline';
@@ -10,9 +11,7 @@ const props = defineProps<{
   placeholder?: string;
 }>();
 
-const emit = defineEmits<{
-  (e: 'update:modelValue', value: string): void;
-}>();
+const emit = defineEmits<(e: 'update:modelValue', value: string) => void>();
 
 const editorRef = ref();
 
@@ -20,9 +19,7 @@ const editor = useEditor({
   content: props.modelValue,
   extensions: [
     StarterKit,
-    TextAlign.configure({
-      types: ['heading', 'paragraph'],
-    }),
+    TextAlign.configure({ types: ['heading', 'paragraph'] }),
     Placeholder.configure({
       placeholder: props.placeholder ?? 'Write something here...',
     }),
@@ -30,7 +27,6 @@ const editor = useEditor({
   ],
   onUpdate() {
     if (!editor.value) return;
-
     emit('update:modelValue', editor.value.getHTML());
   },
 });
@@ -39,9 +35,7 @@ watch(
   () => props.modelValue,
   () => {
     const isSame = editor.value?.getHTML() === props.modelValue;
-
     if (isSame) return;
-
     editor.value?.commands.setContent(props.modelValue);
   }
 );
@@ -62,7 +56,6 @@ watch(
       >
         <VIcon icon="tabler-bold" />
       </IconBtn>
-
       <IconBtn
         size="small"
         rounded
@@ -72,7 +65,6 @@ watch(
       >
         <VIcon icon="tabler-underline" />
       </IconBtn>
-
       <IconBtn
         size="small"
         rounded
@@ -80,9 +72,8 @@ watch(
         :color="editor.isActive('italic') ? 'primary' : 'default'"
         @click="editor.chain().focus().toggleItalic().run()"
       >
-        <VIcon icon="tabler-italic" class="font-weight-medium" />
+        <VIcon icon="tabler-italic" />
       </IconBtn>
-
       <IconBtn
         size="small"
         rounded
@@ -92,7 +83,6 @@ watch(
       >
         <VIcon icon="tabler-strikethrough" />
       </IconBtn>
-
       <IconBtn
         size="small"
         rounded
@@ -102,19 +92,17 @@ watch(
       >
         <VIcon icon="tabler-align-left" />
       </IconBtn>
-
       <IconBtn
         size="small"
         rounded
+        :variant="editor.isActive({ textAlign: 'center' }) ? 'tonal' : 'text'"
         :color="
           editor.isActive({ textAlign: 'center' }) ? 'primary' : 'default'
         "
-        :variant="editor.isActive({ textAlign: 'center' }) ? 'tonal' : 'text'"
         @click="editor.chain().focus().setTextAlign('center').run()"
       >
         <VIcon icon="tabler-align-center" />
       </IconBtn>
-
       <IconBtn
         size="small"
         rounded
@@ -124,7 +112,6 @@ watch(
       >
         <VIcon icon="tabler-align-right" />
       </IconBtn>
-
       <IconBtn
         size="small"
         rounded
@@ -137,9 +124,7 @@ watch(
         <VIcon icon="tabler-align-justified" />
       </IconBtn>
     </div>
-
     <VDivider />
-
     <EditorContent ref="editorRef" :editor="editor" />
   </div>
 </template>
@@ -149,11 +134,9 @@ watch(
   padding: 0.5rem;
   min-block-size: 15vh;
   outline: none;
-
   p {
     margin-block-end: 0;
   }
-
   p.is-editor-empty:first-child::before {
     block-size: 0;
     color: #adb5bd;

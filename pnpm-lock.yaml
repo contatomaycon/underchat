@@ -345,6 +345,9 @@ importers:
       eslint-plugin-regexp:
         specifier: 2.9.0
         version: 2.9.0(eslint@9.31.0)
+      flatpickr:
+        specifier: 4.6.13
+        version: 4.6.13
       jwt-decode:
         specifier: 4.0.0
         version: 4.0.0

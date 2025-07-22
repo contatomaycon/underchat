@@ -1,21 +1,13 @@
 <script setup lang="ts">
-interface Props {
+const { page, itemsPerPage, totalItems } = defineProps<{
   page: number;
   itemsPerPage: number;
   totalItems: number;
-}
+}>();
 
-interface Emit {
-  (e: 'update:page', value: number): void;
-}
+const emit = defineEmits<(e: 'update:page', value: number) => void>();
 
-defineProps<Props>();
-
-const emit = defineEmits<Emit>();
-
-const updatePage = (value: number) => {
-  emit('update:page', value);
-};
+const updatePage = (value: number) => emit('update:page', value);
 </script>
 
 <template>

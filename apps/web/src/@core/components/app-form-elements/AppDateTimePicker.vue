@@ -1,11 +1,14 @@
 <script setup lang="ts">
+import type { PropType } from 'vue';
+import type {
+  Options as FlatpickrOptions,
+  DateOption,
+} from 'flatpickr/dist/types/options';
 import FlatPickr from 'vue-flatpickr-component';
 import { useTheme } from 'vuetify';
-// @ts-expect-error There won't be declaration file for it
-import { VField, makeVFieldProps } from 'vuetify/lib/components/VField/VField';
-// @ts-expect-error There won't be declaration file for it
-import { VInput, makeVInputProps } from 'vuetify/lib/components/VInput/VInput';
-// @ts-expect-error There won't be declaration file for it
+import { makeVFieldProps } from 'vuetify/lib/components/VField/VField';
+import { makeVInputProps } from 'vuetify/lib/components/VInput/VInput';
+import { VField, VInput, VLabel } from 'vuetify/components';
 import { filterInputAttrs } from 'vuetify/lib/util/helpers';
 import { useConfigStore } from '@core/stores/config';
 
@@ -14,6 +17,10 @@ defineOptions({
 });
 
 const props = defineProps({
+  modelValue: {
+    type: null as unknown as PropType<DateOption | DateOption[] | null>,
+    default: null,
+  },
   autofocus: Boolean,
   counter: [Boolean, Number, String] as PropType<true | number | string>,
   counterValue: Function as PropType<(value: any) => number>,
@@ -43,14 +50,18 @@ interface Emit {
   (e: 'click:control', val: MouseEvent): true;
   (e: 'mousedown:control', val: MouseEvent): true;
   (e: 'update:focused', val: MouseEvent): true;
-  (e: 'update:modelValue', val: string): void;
+  (e: 'update:modelValue', val: DateOption | DateOption[] | null): void;
   (e: 'click:clear', el: MouseEvent): void;
 }
 
 const configStore = useConfigStore();
 const attrs = useAttrs();
+const [rootAttrs, compAttrsRaw] = filterInputAttrs(attrs);
+type CompAttrs = Partial<FlatpickrOptions> & {
+  config?: FlatpickrOptions & { inline?: boolean };
+} & Record<string, unknown>;
+const compAttrs = compAttrsRaw as CompAttrs;
 
-const [rootAttrs, compAttrs] = filterInputAttrs(attrs);
 const inputProps = ref(VInput.filterProps(props));
 const fieldProps = ref(VField.filterProps(props));
 
@@ -77,14 +88,12 @@ const onClear = (el: MouseEvent) => {
   el.stopPropagation();
 
   nextTick(() => {
-    emit('update:modelValue', '');
-
+    emit('update:modelValue', null);
     emit('click:clear', el);
   });
 };
 
 const vuetifyTheme = useTheme();
-
 const vuetifyThemesName = Object.keys(vuetifyTheme.themes.value);
 
 const updateThemeClassInCalendar = () => {
@@ -104,7 +113,7 @@ onMounted(() => {
   updateThemeClassInCalendar();
 });
 
-const emitModelValue = (val: string) => {
+const emitModelValue = (val: DateOption | DateOption[] | null) => {
   emit('update:modelValue', val);
 };
 
@@ -122,7 +131,7 @@ watch(
 
 const elementId = computed(() => {
   const _elementIdToken =
-    fieldProps.id || fieldProps.label || inputProps.value.id;
+    fieldProps.value.id || fieldProps.value.label || inputProps.value.id;
 
   const _id = useId();
 
@@ -141,7 +150,7 @@ const elementId = computed(() => {
 
     <VInput
       v-bind="{ ...inputProps, ...rootAttrs }"
-      :model-value="modelValue"
+      :model-value="props.modelValue"
       :hide-details="props.hideDetails"
       :class="[
         {
@@ -176,7 +185,7 @@ const elementId = computed(() => {
                 v-if="!isInlinePicker"
                 v-bind="compAttrs"
                 ref="refFlatPicker"
-                :model-value="modelValue"
+                :model-value="props.modelValue"
                 :placeholder="props.placeholder"
                 :readonly="isReadonly.value"
                 class="flat-picker-custom-style h-100 w-100"
@@ -191,7 +200,7 @@ const elementId = computed(() => {
 
               <input
                 v-if="isInlinePicker"
-                :value="modelValue"
+                :value="props.modelValue"
                 :placeholder="props.placeholder"
                 :readonly="isReadonly.value"
                 class="flat-picker-custom-style h-100 w-100"
@@ -207,7 +216,7 @@ const elementId = computed(() => {
       v-if="isInlinePicker"
       v-bind="compAttrs"
       ref="refFlatPicker"
-      :model-value="modelValue"
+      :model-value="props.modelValue"
       @update:model-value="emitModelValue"
       @on-open="isCalendarOpen = true"
       @on-close="isCalendarOpen = false"
@@ -217,7 +226,6 @@ const elementId = computed(() => {
 
 <style lang="scss">
 @use '@core/scss/template/mixins' as templateMixins;
-
 @use 'flatpickr/dist/flatpickr.css';
 @use '@core/scss/base/mixins';
 

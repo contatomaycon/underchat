@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue';
 import { Placeholder } from '@tiptap/extension-placeholder';
 import { TextAlign } from '@tiptap/extension-text-align';
 import { Underline } from '@tiptap/extension-underline';
@@ -10,9 +11,7 @@ const props = defineProps<{
   placeholder?: string;
 }>();
 
-const emit = defineEmits<{
-  (e: 'update:modelValue', value: string): void;
-}>();
+const emit = defineEmits<(e: 'update:modelValue', value: string) => void>();
 
 const editorRef = ref();
 
@@ -20,9 +19,7 @@ const editor = useEditor({
   content: props.modelValue,
   extensions: [
     StarterKit,
-    TextAlign.configure({
-      types: ['heading', 'paragraph'],
-    }),
+    TextAlign.configure({ types: ['heading', 'paragraph'] }),
     Placeholder.configure({
       placeholder: props.placeholder ?? 'Write something here...',
     }),
@@ -30,7 +27,6 @@ const editor = useEditor({
   ],
   onUpdate() {
     if (!editor.value) return;
-
     emit('update:modelValue', editor.value.getHTML());
   },
 });
@@ -39,9 +35,7 @@ watch(
   () => props.modelValue,
   () => {
     const isSame = editor.value?.getHTML() === props.modelValue;
-
     if (isSame) return;
-
     editor.value?.commands.setContent(props.modelValue);
   }
 );
@@ -49,7 +43,6 @@ watch(
 
 <template>
   <div class="pa-6 productDescriptionEditor">
-    <!-- buttons -->
     <div v-if="editor" class="d-flex gap-1 flex-wrap align-center">
       <VBtn
         size="small"
@@ -61,7 +54,6 @@ watch(
       >
         <VIcon icon="tabler-bold" class="font-weight-medium" />
       </VBtn>
-
       <VBtn
         size="small"
         icon
@@ -72,7 +64,6 @@ watch(
       >
         <VIcon icon="tabler-underline" />
       </VBtn>
-
       <VBtn
         size="small"
         icon
@@ -83,7 +74,6 @@ watch(
       >
         <VIcon icon="tabler-italic" class="font-weight-medium" />
       </VBtn>
-
       <VBtn
         size="small"
         icon
@@ -94,7 +84,6 @@ watch(
       >
         <VIcon icon="tabler-strikethrough" size="20" />
       </VBtn>
-
       <VBtn
         size="small"
         icon
@@ -105,20 +94,18 @@ watch(
       >
         <VIcon icon="tabler-align-left" size="20" />
       </VBtn>
-
       <VBtn
         size="small"
         icon
         rounded
+        :variant="editor.isActive({ textAlign: 'center' }) ? 'tonal' : 'text'"
         :color="
           editor.isActive({ textAlign: 'center' }) ? 'primary' : 'default'
         "
-        :variant="editor.isActive({ textAlign: 'center' }) ? 'tonal' : 'text'"
         @click="editor.chain().focus().setTextAlign('center').run()"
       >
         <VIcon icon="tabler-align-center" size="20" />
       </VBtn>
-
       <VBtn
         size="small"
         icon
@@ -129,7 +116,6 @@ watch(
       >
         <VIcon icon="tabler-align-right" size="20" />
       </VBtn>
-
       <VBtn
         size="small"
         icon
@@ -143,9 +129,7 @@ watch(
         <VIcon icon="tabler-align-justified" size="20" />
       </VBtn>
     </div>
-
     <VDivider class="my-4" />
-
     <EditorContent ref="editorRef" :editor="editor" />
   </div>
 </template>
@@ -155,11 +139,9 @@ watch(
   .ProseMirror {
     padding: 0 !important;
     min-block-size: 12vh;
-
     p {
       margin-block-end: 0;
     }
-
     p.is-editor-empty:first-child::before {
       block-size: 0;
       color: #adb5bd;
@@ -167,7 +149,6 @@ watch(
       float: inline-start;
       pointer-events: none;
     }
-
     &-focused {
       outline: none;
     }
