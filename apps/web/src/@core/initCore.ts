@@ -1,5 +1,7 @@
+import { watch } from 'vue';
 import { useStorage } from '@vueuse/core';
 import { useTheme } from 'vuetify';
+import { useI18n } from 'vue-i18n';
 import { useConfigStore } from '@core/stores/config';
 import { cookieRef, namespaceConfig } from '@layouts/stores/config';
 import { themeConfig } from '@themeConfig';
@@ -7,29 +9,24 @@ import { themeConfig } from '@themeConfig';
 const _syncAppRtl = () => {
   const configStore = useConfigStore();
   const storedLang = cookieRef<string | null>('language', null);
-
   const { locale } = useI18n({ useScope: 'global' });
 
-  if (locale.value !== storedLang.value && storedLang.value)
+  if (locale.value !== storedLang.value && storedLang.value) {
     locale.value = storedLang.value;
+  }
 
   watch(
     locale,
     (val) => {
-      if (typeof document !== 'undefined')
-        document.documentElement.setAttribute('lang', val as string);
-
-      storedLang.value = val as string;
-
-      if (
-        themeConfig.app.i18n.langConfig &&
-        themeConfig.app.i18n.langConfig.length
-      ) {
-        themeConfig.app.i18n.langConfig.forEach((lang) => {
-          if (lang.i18nLang === storedLang.value)
-            configStore.isAppRTL = lang.isRTL;
-        });
+      if (typeof document !== 'undefined') {
+        document.documentElement.setAttribute('lang', val);
       }
+      storedLang.value = val;
+      themeConfig.app.i18n?.langConfig?.forEach((lang) => {
+        if (lang.i18nLang === storedLang.value) {
+          configStore.isAppRTL = lang.isRTL;
+        }
+      });
     },
     { immediate: true }
   );
@@ -58,9 +55,10 @@ const _handleSkinChanges = () => {
 
 const _syncInitialLoaderTheme = () => {
   const vuetifyTheme = useTheme();
+  const configStore = useConfigStore();
 
   watch(
-    () => useConfigStore().theme,
+    () => configStore.theme,
     () => {
       useStorage<string | null>(
         namespaceConfig('initial-loader-bg'),
@@ -78,8 +76,9 @@ const _syncInitialLoaderTheme = () => {
 const initCore = () => {
   _syncInitialLoaderTheme();
   _handleSkinChanges();
-
-  if (themeConfig.app.i18n.enable) _syncAppRtl();
+  if (themeConfig.app.i18n.enable) {
+    _syncAppRtl();
+  }
 };
 
 export default initCore;

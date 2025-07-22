@@ -1,6 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, watchEffect } from 'vue';
-import { withDefaults, defineProps, defineEmits } from 'vue';
+import {
+  withDefaults,
+  defineProps,
+  defineEmits,
+  ref,
+  computed,
+  watchEffect,
+} from 'vue';
 
 interface Item {
   title: string;
@@ -32,12 +38,19 @@ const emit = defineEmits<(e: 'update:currentStep', value: number) => void>();
 const currentStep = ref(props.currentStep || 0);
 
 const activeOrCompletedStepsClasses = computed<(index: number) => string>(
-  () => (index) =>
-    index < currentStep.value
-      ? 'stepper-steps-completed'
-      : index === currentStep.value
-        ? 'stepper-steps-active'
-        : ''
+  () => {
+    return (index: number): string => {
+      if (index < currentStep.value) {
+        return 'stepper-steps-completed';
+      }
+
+      if (index === currentStep.value) {
+        return 'stepper-steps-active';
+      }
+
+      return '';
+    };
+  }
 );
 
 const isHorizontalAndNotLastStep = computed<(index: number) => boolean>(

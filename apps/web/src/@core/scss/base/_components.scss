@@ -1,10 +1,9 @@
-@use "@core/scss/base/mixins";
-@use "@layouts/styles/placeholders";
-@use "@layouts/styles/mixins" as layoutMixins;
-@use "@configured-variables" as variables;
-@use "@styles/variables/_vuetify.scss" as vuetify;
+@use '@core/scss/base/mixins';
+@use '@layouts/styles/placeholders';
+@use '@layouts/styles/mixins' as layoutMixins;
+@use '@configured-variables' as variables;
+@use '@styles/variables/_vuetify.scss' as vuetify;
 
-// 👉 Avatar group
 .v-avatar-group {
   display: flex;
   align-items: center;
@@ -14,7 +13,9 @@
       margin-inline-start: -0.8rem;
     }
 
-    transition: transform 0.25s ease, box-shadow 0.15s ease;
+    transition:
+      transform 0.25s ease,
+      box-shadow 0.15s ease;
 
     &:hover {
       z-index: 2;
@@ -30,14 +31,13 @@
   }
 }
 
-// 👉 Button outline with default color border color
 .v-alert--variant-outlined,
 .v-avatar--variant-outlined,
 .v-btn.v-btn--variant-outlined,
 .v-card--variant-outlined,
 .v-chip--variant-outlined,
 .v-list-item--variant-outlined {
-  &:not([class*="text-"]) {
+  &:not([class*='text-']) {
     border-color: rgba(var(--v-border-color), var(--v-border-opacity));
   }
 
@@ -46,14 +46,13 @@
   }
 }
 
-// 👉 Custom Input
 .v-label.custom-input {
   padding: 1rem;
   border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
   opacity: 1;
   white-space: normal;
 
-  +.v-label {
+  + .v-label {
     letter-spacing: normal;
   }
 
@@ -77,7 +76,6 @@
   }
 }
 
-// 👉 Datatable
 .v-data-table-footer__pagination {
   @include layoutMixins.rtl {
     .v-btn {
@@ -88,13 +86,14 @@
   }
 }
 
-// Dialog responsive width
 .v-dialog {
-  // dialog custom close btn
   .v-dialog-close-btn {
     position: absolute;
     z-index: 1;
-    color: rgba(var(--v-theme-on-surface), var(--v-disabled-opacity)) !important;
+    color: rgba(
+      var(--v-theme-on-surface),
+      var(--v-disabled-opacity)
+    ) !important;
     inset-block-start: 0.5rem;
     inset-inline-end: 0.5rem;
 
@@ -139,14 +138,14 @@
   }
 }
 
-// 👉 Expansion panel
 .v-expansion-panels.customized-panels {
   border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
   border-radius: vuetify.$border-radius-root;
 
   .v-expansion-panel-title {
     background-color: rgb(var(--v-theme-expansion-panel-text-custom-bg));
-    border-block-end: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+    border-block-end: 1px solid
+      rgba(var(--v-border-color), var(--v-border-opacity));
     margin-block-end: -1px;
   }
 
@@ -155,7 +154,6 @@
   }
 }
 
-// v-tab with pill support
 .v-tabs.v-tabs-pill {
   .v-tab.v-btn {
     border-radius: 6px !important;
@@ -167,7 +165,6 @@
   }
 }
 
-// loop for all colors bg
 @each $color-name in variables.$theme-colors-name {
   body .v-tabs.v-tabs-pill {
     .v-slide-group__content {
@@ -180,7 +177,6 @@
   }
 }
 
-// ℹ️ We are make even width of all v-timeline body
 .v-timeline--vertical.v-timeline {
   .v-timeline-item {
     .v-timeline-item__body {
@@ -189,7 +185,8 @@
   }
 }
 
-// 👉 Switch
-.v-switch .v-selection-control:not(.v-selection-control--dirty) .v-switch__thumb {
+.v-switch
+  .v-selection-control:not(.v-selection-control--dirty)
+  .v-switch__thumb {
   color: #fff !important;
 }

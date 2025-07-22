@@ -11,15 +11,15 @@ interface Props {
   gridColumn?: GridColumn;
 }
 
-interface Emit {
-  (e: 'update:selectedRadio', value: string): void;
-}
+type Emit = (e: 'update:selectedRadio', value: string) => void;
 
 const props = defineProps<Props>();
 const emit = defineEmits<Emit>();
 
 const updateSelectedOption = (value: string | null) => {
-  if (value !== null) emit('update:selectedRadio', value);
+  if (value !== null) {
+    emit('update:selectedRadio', value);
+  }
 };
 </script>
 
@@ -33,7 +33,7 @@ const updateSelectedOption = (value: string | null) => {
     <VRow>
       <VCol
         v-for="item in props.radioContent"
-        :key="item.bgImage"
+        :key="item.value"
         v-bind="gridColumn"
       >
         <VLabel

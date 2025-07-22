@@ -16,9 +16,11 @@ defineOptions({
   inheritAttrs: false,
 });
 
+type DateModelValue = DateOption | DateOption[] | null;
+
 const props = defineProps({
   modelValue: {
-    type: null as unknown as PropType<DateOption | DateOption[] | null>,
+    type: null as unknown as PropType<DateModelValue>,
     default: null,
   },
   autofocus: Boolean,
@@ -171,7 +173,6 @@ const elementId = computed(() => {
         <VField
           v-bind="{ ...fieldProps, label: undefined }"
           :id="id.value"
-          role="textbox"
           :active="focused || isDirty.value || isCalendarOpen"
           :focused="focused || isCalendarOpen"
           :dirty="isDirty.value || props.dirty"

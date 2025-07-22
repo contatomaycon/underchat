@@ -1,8 +1,4 @@
-@use "@configured-variables" as variables;
-
-// ————————————————————————————————————
-// * ——— Perfect Scrollbar
-// ————————————————————————————————————
+@use '@configured-variables' as variables;
 
 body.v-theme--dark {
   .ps__rail-y,

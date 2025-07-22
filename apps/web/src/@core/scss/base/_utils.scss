@@ -1,8 +1,7 @@
-@use "sass:map";
-@use "sass:list";
-@use "@configured-variables" as variables;
+@use 'sass:map';
+@use 'sass:list';
+@use '@configured-variables' as variables;
 
-// Thanks: https://css-tricks.com/snippets/sass/deep-getset-maps/
 @function map-deep-get($map, $keys...) {
   @each $key in $keys {
     $map: map.get($map, $key);
@@ -12,24 +11,22 @@
 }
 
 @function map-deep-set($map, $keys, $value) {
-  $maps: ($map,);
+  $maps: ($map);
   $result: null;
 
-  // If the last key is a map already
-  // Warn the user we will be overriding it with $value
-  @if type-of(nth($keys, -1)) == "map" {
+  @if type-of(nth($keys, -1)) == 'map' {
     @warn "The last key you specified is a map; it will be overrided with `#{$value}`.";
   }
 
-  // If $keys is a single key
-  // Just merge and return
   @if length($keys) == 1 {
-    @return map-merge($map, ($keys: $value));
+    @return map-merge(
+      $map,
+      (
+        $keys: $value,
+      )
+    );
   }
 
-  // Loop from the first to the second to last key from $keys
-  // Store the associated map to this key in the $maps list
-  // If the key doesn't exist, throw an error
   @for $i from 1 through length($keys) - 1 {
     $current-key: list.nth($keys, $i);
     $current-map: list.nth($maps, -1);
@@ -42,20 +39,21 @@
     $maps: list.append($maps, $current-get);
   }
 
-  // Loop from the last map to the first one
-  // Merge it with the previous one
   @for $i from length($maps) through 1 {
     $current-map: list.nth($maps, $i);
     $current-key: list.nth($keys, $i);
     $current-val: if($i == list.length($maps), $value, $result);
-    $result: map.map-merge($current-map, ($current-key: $current-val));
+    $result: map.map-merge(
+      $current-map,
+      (
+        $current-key: $current-val,
+      )
+    );
   }
 
-  // Return result
   @return $result;
 }
 
-// font size utility classes
 @each $name, $size in variables.$font-sizes {
   .text-#{$name} {
     font-size: $size;
@@ -63,14 +61,12 @@
   }
 }
 
-// truncate utility class
 .truncate {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-// gap utility class
 @each $name, $size in variables.$gap {
   .gap-#{$name} {
     gap: $size;

@@ -1,5 +1,5 @@
 import { stringifyQuery } from 'ufo';
-import type { MaybeRefOrGetter } from 'vue';
+import { computed, toValue, type MaybeRefOrGetter } from 'vue';
 
 interface Options {
   query: MaybeRefOrGetter<Record<string, any>>;
@@ -7,14 +7,14 @@ interface Options {
 
 export const createUrl = (url: MaybeRefOrGetter<string>, options?: Options) =>
   computed(() => {
-    if (!options?.query) return toValue(url);
+    const u = toValue(url);
+    if (!options?.query) return u;
 
-    const _url = toValue(url);
-    const _query = toValue(options?.query);
-
-    const queryObj = Object.fromEntries(
-      Object.entries(_query).map(([key, val]) => [key, toValue(val)])
+    const qObj = Object.fromEntries(
+      Object.entries(toValue(options.query)).map(([k, v]) => [k, toValue(v)])
     );
 
-    return `${_url}${queryObj ? `?${stringifyQuery(queryObj)}` : ''}`;
+    const qs = stringifyQuery(qObj);
+
+    return qs ? u + '?' + qs : u;
   });

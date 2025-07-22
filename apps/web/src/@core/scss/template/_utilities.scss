@@ -19,13 +19,10 @@
   }
 }
 
-// ℹ️ Temporary solution as v-spacer style is not getting applied in build version. will remove this after release.
-// VSpacer
 .v-spacer {
   flex-grow: 1;
 }
 
-// app-logo & app-logo-title
 .app-logo {
   display: flex;
   align-items: center;

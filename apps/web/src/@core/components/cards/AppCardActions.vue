@@ -35,66 +35,60 @@ const emit = defineEmits<Emit>();
 
 const _loading = ref(false);
 
-const $loading = computed({
+const $loading = computed<boolean>({
   get() {
     return props.loading !== undefined ? props.loading : _loading.value;
   },
-
   set(value: boolean) {
-    props.loading !== undefined
-      ? emit('update:loading', value)
-      : (_loading.value = value);
+    if (props.loading !== undefined) {
+      emit('update:loading', value);
+    } else {
+      _loading.value = value;
+    }
   },
 });
 
 const isContentCollapsed = ref(props.collapsed);
 const isCardRemoved = ref(false);
 
-// stop loading
 const stopLoading = () => {
   $loading.value = false;
 };
 
-// trigger collapse
 const triggerCollapse = () => {
   isContentCollapsed.value = !isContentCollapsed.value;
+
   emit('collapsed', isContentCollapsed.value);
 };
 
-// trigger refresh
 const triggerRefresh = () => {
   $loading.value = true;
+
   emit('refresh', stopLoading);
 };
 
-// trigger removal
 const triggeredRemove = () => {
   isCardRemoved.value = true;
+
   emit('trash');
 };
 </script>
 
 <template>
   <VExpandTransition>
-    <!-- TODO remove div when transition work with v-card components: https://github.com/vuetifyjs/vuetify/issues/15111 -->
     <div v-if="!isCardRemoved">
       <VCard v-bind="$attrs">
         <VCardItem>
           <VCardTitle v-if="props.title || $slots.title">
-            <!-- 👉 Title slot and prop -->
             <slot name="title">
               {{ props.title }}
             </slot>
           </VCardTitle>
 
           <template #append>
-            <!-- 👉 Before actions slot -->
             <div>
               <slot name="before-actions" />
 
-              <!-- SECTION Actions buttons -->
-
-              <!-- 👉 Collapse button -->
               <IconBtn
                 v-if="
                   (!(actionRemove || actionRefresh) || actionCollapsed) &&
@@ -114,7 +108,6 @@ const triggeredRemove = () => {
                 />
               </IconBtn>
 
-              <!-- 👉 Overlay button -->
               <IconBtn
                 v-if="
                   (!(actionRemove || actionCollapsed) || actionRefresh) &&
@@ -125,7 +118,6 @@ const triggeredRemove = () => {
                 <VIcon size="20" icon="tabler-refresh" />
               </IconBtn>
 
-              <!-- 👉 Close button -->
               <IconBtn
                 v-if="
                   (!(actionRefresh || actionCollapsed) || actionRemove) &&
@@ -136,18 +128,15 @@ const triggeredRemove = () => {
                 <VIcon size="20" icon="tabler-x" />
               </IconBtn>
             </div>
-            <!-- !SECTION -->
           </template>
         </VCardItem>
 
-        <!-- 👉 card content -->
         <VExpandTransition>
           <div v-show="!isContentCollapsed" class="v-card-content">
             <slot />
           </div>
         </VExpandTransition>
 
-        <!-- 👉 Overlay -->
         <VOverlay
           v-model="$loading"
           contained

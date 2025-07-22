@@ -7,16 +7,15 @@ interface Props {
   gridColumn?: GridColumn;
 }
 
-interface Emit {
-  (e: 'update:selectedCheckbox', value: string[]): void;
-}
+type Emit = (e: 'update:selectedCheckbox', value: string[]) => void;
 
 const props = defineProps<Props>();
 const emit = defineEmits<Emit>();
 
 const updateSelectedOption = (value: string[] | null) => {
-  if (typeof value !== 'boolean' && value !== null)
+  if (typeof value !== 'boolean' && value !== null) {
     emit('update:selectedCheckbox', value);
+  }
 };
 </script>
 
@@ -48,9 +47,9 @@ const updateSelectedOption = (value: string[] | null) => {
                 {{ item.title }}
               </h6>
               <VSpacer />
-              <span v-if="item.subtitle" class="text-disabled text-body-2">{{
-                item.subtitle
-              }}</span>
+              <span v-if="item.subtitle" class="text-disabled text-body-2">
+                {{ item.subtitle }}
+              </span>
             </div>
             <p class="text-sm mb-0">
               {{ item.desc }}

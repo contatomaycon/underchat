@@ -7,16 +7,15 @@ interface Props {
   gridColumn?: GridColumn;
 }
 
-interface Emit {
-  (e: 'update:selectedCheckbox', value: string[]): void;
-}
+type Emit = (e: 'update:selectedCheckbox', value: string[]) => void;
 
 const props = defineProps<Props>();
 const emit = defineEmits<Emit>();
 
 const updateSelectedOption = (value: string[] | null) => {
-  if (typeof value !== 'boolean' && value !== null)
+  if (typeof value !== 'boolean' && value !== null) {
     emit('update:selectedCheckbox', value);
+  }
 };
 </script>
 
@@ -36,8 +35,10 @@ const updateSelectedOption = (value: string[] | null) => {
       >
         <slot :item="item">
           <div class="d-flex flex-column align-center text-center gap-2">
-            <VIcon v-bind="item.icon" class="text-high-emphasis" />
-
+            <VIcon
+              v-bind="item.icon as Record<string, unknown>"
+              class="text-high-emphasis"
+            />
             <h6 class="cr-title text-base">
               {{ item.title }}
             </h6>
@@ -75,18 +76,6 @@ const updateSelectedOption = (value: string[] | null) => {
   .cr-title {
     font-weight: 500;
     line-height: 1.375rem;
-  }
-}
-</style>
-
-<style lang="scss">
-.custom-checkbox-icon {
-  .v-checkbox {
-    margin-block-end: -0.375rem;
-
-    .v-selection-control__wrapper {
-      margin-inline-start: 0;
-    }
   }
 }
 </style>

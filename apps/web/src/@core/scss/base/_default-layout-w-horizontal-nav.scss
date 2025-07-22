@@ -1,18 +1,16 @@
-@use "@core/scss/base/placeholders" as *;
-@use "@core/scss/template/placeholders" as *;
-@use "@core/scss/base/mixins";
+@use '@core/scss/base/placeholders' as *;
+@use '@core/scss/template/placeholders' as *;
+@use '@core/scss/base/mixins';
 
 .layout-wrapper.layout-nav-type-horizontal {
   .layout-navbar-and-nav-container {
     @extend %default-layout-horizontal-nav-navbar-and-nav-container;
   }
 
-  // 👉 Navbar
   .layout-navbar {
     @extend %default-layout-horizontal-nav-navbar;
   }
 
-  // 👉 Layout content container
   .navbar-content-container {
     display: flex;
     align-items: center;
@@ -27,7 +25,6 @@
     }
   }
 
-  // 👉 App footer
   .layout-footer {
     @at-root {
       .layout-footer-sticky#{&} {
@@ -38,7 +35,6 @@
     }
   }
 
-  // TODO: Use Vuetify grid sass variable here
   .layout-page-content {
     padding-block: 1.5rem;
   }

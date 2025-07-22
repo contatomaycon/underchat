@@ -7,16 +7,15 @@ interface Props {
   gridColumn?: GridColumn;
 }
 
-interface Emit {
-  (e: 'update:selectedRadio', value: string): void;
-}
+type Emit = (e: 'update:selectedRadio', value: string) => void;
 
 const props = defineProps<Props>();
-
 const emit = defineEmits<Emit>();
 
 const updateSelectedOption = (value: string | null) => {
-  if (value !== null) emit('update:selectedRadio', value);
+  if (value !== null) {
+    emit('update:selectedRadio', value);
+  }
 };
 </script>
 
@@ -39,17 +38,18 @@ const updateSelectedOption = (value: string | null) => {
         >
           <slot :item="item">
             <div class="d-flex flex-column align-center text-center gap-2">
-              <VIcon v-bind="item.icon" class="text-high-emphasis" />
+              <VIcon
+                v-bind="item.icon as Record<string, unknown>"
+                class="text-high-emphasis"
+              />
               <h6 class="text-h6">
                 {{ item.title }}
               </h6>
-
               <p class="text-body-2 mb-0">
                 {{ item.desc }}
               </p>
             </div>
           </slot>
-
           <div>
             <VRadio :value="item.value" />
           </div>
