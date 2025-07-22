@@ -3,12 +3,11 @@ import { isToday } from './helpers';
 export const avatarText = (value: string) => {
   if (!value) return '';
   const nameArray = value.split(' ');
-
   return nameArray.map((word) => word.charAt(0).toUpperCase()).join('');
 };
 
 export const kFormatter = (num: number) => {
-  const regex = /\B(?=(\d{3})+(?!\d))/g;
+  const regex = /\B(?=(?:\d{3})+(?!\d))/g;
 
   return Math.abs(num) > 9999
     ? `${Math.sign(num) * +(Math.abs(num) / 1000).toFixed(1)}k`
@@ -35,11 +34,12 @@ export const formatDateToMonthShort = (
   const date = new Date(value);
   let formatting: Record<string, string> = { month: 'short', day: 'numeric' };
 
-  if (toTimeForCurrentDay && isToday(date))
+  if (toTimeForCurrentDay && isToday(date)) {
     formatting = { hour: 'numeric', minute: 'numeric' };
+  }
 
-  return new Intl.DateTimeFormat('en-US', formatting).format(new Date(value));
+  return new Intl.DateTimeFormat('en-US', formatting).format(date);
 };
 
 export const prefixWithPlus = (value: number) =>
-  value > 0 ? `+${value}` : value;
+  value > 0 ? `+${value}` : `${value}`;

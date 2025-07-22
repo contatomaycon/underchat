@@ -54,14 +54,12 @@ async function processSVGIcon(
 ) {
   if (type !== 'icon') {
     iconSet.remove(name);
-
     return;
   }
 
   const svg = iconSet.toSVG(name);
   if (!svg) {
     iconSet.remove(name);
-
     return;
   }
 
@@ -84,53 +82,65 @@ async function processSVGIcon(
   }
 }
 
+async function processJsonSources(
+  jsonSources: (string | BundleScriptCustomJSONConfig)[],
+  allIcons: IconifyJSON[]
+) {
+  for (const item of jsonSources) {
+    const filename = typeof item === 'string' ? item : item.filename;
+    const content = JSON.parse(
+      await fs.readFile(filename, 'utf8')
+    ) as IconifyJSON;
+
+    if (content.prefix === 'tabler') {
+      for (const key in content.icons) {
+        content.icons[key].body = content.icons[key].body.replace(
+          /stroke-width="2"/g,
+          'stroke-width="1.5"'
+        );
+      }
+    }
+
+    if (typeof item !== 'string' && item.icons?.length) {
+      const filtered = getIcons(content, item.icons);
+      if (!filtered) {
+        throw new Error(`Cannot find required icons in ${filename}`);
+      }
+      allIcons.push(filtered);
+      continue;
+    }
+
+    allIcons.push(content);
+  }
+}
+
+async function processSvgSources(
+  svgSources: BundleScriptCustomSVGConfig[],
+  allIcons: IconifyJSON[]
+) {
+  for (const source of svgSources) {
+    const iconSet = await importDirectory(source.dir, {
+      prefix: source.prefix,
+    });
+
+    await iconSet.forEach((name, type) =>
+      processSVGIcon(name, type, source, iconSet)
+    );
+
+    allIcons.push(iconSet.export());
+  }
+}
+
 async function processSources(
   sources: BundleScriptConfig,
   allIcons: IconifyJSON[]
 ) {
   if (sources.json) {
-    for (const item of sources.json) {
-      const filename = typeof item === 'string' ? item : item.filename;
-      const content = JSON.parse(
-        await fs.readFile(filename, 'utf8')
-      ) as IconifyJSON;
-
-      if (content.prefix === 'tabler') {
-        for (const key in content.icons) {
-          content.icons[key].body = content.icons[key].body.replace(
-            /stroke-width="2"/g,
-            'stroke-width="1.5"'
-          );
-        }
-      }
-
-      if (typeof item !== 'string' && item.icons?.length) {
-        const filtered = getIcons(content, item.icons);
-        if (!filtered) {
-          throw new Error(`Cannot find required icons in ${filename}`);
-        }
-
-        allIcons.push(filtered);
-
-        continue;
-      }
-
-      allIcons.push(content);
-    }
+    await processJsonSources(sources.json, allIcons);
   }
 
   if (sources.svg) {
-    for (const source of sources.svg) {
-      const iconSet = await importDirectory(source.dir, {
-        prefix: source.prefix,
-      });
-
-      await iconSet.forEach((name, type) =>
-        processSVGIcon(name, type, source, iconSet)
-      );
-
-      allIcons.push(iconSet.export());
-    }
+    await processSvgSources(sources.svg, allIcons);
   }
 }
 

@@ -12,11 +12,18 @@ watch([progressValue, isFallbackState], () => {
   startBuffer();
 });
 
+function getSecureRandom(min: number, max: number) {
+  const array = new Uint32Array(1);
+  crypto.getRandomValues(array);
+
+  return (array[0] / (0xffffffff + 1)) * (max - min) + min;
+}
+
 function startBuffer() {
   clearInterval(interval.value);
   interval.value = setInterval(() => {
-    progressValue.value += Math.random() * (15 - 5) + 5;
-    bufferValue.value += Math.random() * (15 - 5) + 6;
+    progressValue.value += getSecureRandom(5, 15);
+    bufferValue.value += getSecureRandom(6, 15);
   }, 800);
 }
 

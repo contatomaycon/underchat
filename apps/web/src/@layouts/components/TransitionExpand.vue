@@ -19,7 +19,7 @@ export default defineComponent({
       element.style.visibility = '';
       element.style.height = '0px';
 
-      getComputedStyle(element).height;
+      const _ = getComputedStyle(element).height;
 
       requestAnimationFrame(() => {
         element.style.height = height;
@@ -35,7 +35,7 @@ export default defineComponent({
 
       element.style.height = height;
 
-      getComputedStyle(element).height;
+      const _ = getComputedStyle(element).height;
 
       requestAnimationFrame(() => {
         element.style.height = '0px';

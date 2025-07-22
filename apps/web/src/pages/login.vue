@@ -95,6 +95,7 @@ const authThemeMask = useGenerateImageVariant(authV2MaskLight, authV2MaskDark);
                   autofocus
                   label="Email or Username"
                   type="email"
+                  autocomplete="username"
                   placeholder="johndoe@email.com"
                 />
               </VCol>

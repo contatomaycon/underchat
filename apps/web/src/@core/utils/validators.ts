@@ -10,7 +10,7 @@ export const requiredValidator = (value: unknown) => {
 export const emailValidator = (value: unknown) => {
   if (isEmpty(value)) return true;
 
-  const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+  const re = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
 
   if (Array.isArray(value))
     return (
@@ -22,7 +22,7 @@ export const emailValidator = (value: unknown) => {
 };
 
 export const passwordValidator = (password: string) => {
-  const regExp = /(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%&*()]).{8,}/;
+  const regExp = /^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[\W_]).{8,}$/;
 
   const validPassword = regExp.test(password);
 
@@ -83,7 +83,7 @@ export const alphaValidator = (value: unknown) => {
 export const urlValidator = (value: unknown) => {
   if (isEmpty(value)) return true;
 
-  const re = /^https?:\/\/[^\s$.?#].\S*$/;
+  const re = /^(https?:\/\/)?[^\s/$.?#].[^\s]*$/i;
 
   return re.test(String(value)) || 'URL is invalid';
 };
