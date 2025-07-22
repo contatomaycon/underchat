@@ -10,9 +10,11 @@ export const resolveVuetifyTheme = (
   );
   const storedTheme = cookieRef('theme', defaultTheme).value;
 
-  return storedTheme === 'system'
-    ? cookieColorScheme.value === 'dark'
-      ? 'dark'
-      : 'light'
-    : (storedTheme as 'light' | 'dark');
+  if (storedTheme === 'system') {
+    const isDark = cookieColorScheme.value === 'dark';
+
+    return isDark ? 'dark' : 'light';
+  }
+
+  return storedTheme as 'light' | 'dark';
 };

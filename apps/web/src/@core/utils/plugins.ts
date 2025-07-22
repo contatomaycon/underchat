@@ -6,7 +6,7 @@ export const registerPlugins = (app: App) => {
     { eager: true }
   );
 
-  const importPaths = Object.keys(imports).sort();
+  const importPaths = Object.keys(imports).sort((a, b) => a.localeCompare(b));
 
   importPaths.forEach((path) => {
     const pluginImportModule = imports[path];

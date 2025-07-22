@@ -1,4 +1,4 @@
-import { breakpointsVuetify } from '@vueuse/core';
+import { useDisplay } from 'vuetify';
 import {
   AppContentLayoutNav,
   ContentWidth,
@@ -8,13 +8,15 @@ import {
 } from '@layouts/enums';
 import type { LayoutConfig } from '@layouts/types';
 
+const display = useDisplay();
+
 export const layoutConfig: LayoutConfig = {
   app: {
     title: 'my-layout',
     logo: h('img', { src: '/src/assets/logo.svg' }),
     contentWidth: ContentWidth.Boxed,
     contentLayoutNav: AppContentLayoutNav.Vertical,
-    overlayNavFromBreakpoint: breakpointsVuetify.md,
+    overlayNavFromBreakpoint: display.thresholds.value.md,
 
     i18n: {
       enable: true,

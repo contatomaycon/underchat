@@ -22,9 +22,7 @@ interface Props {
   isDialogVisible: boolean;
 }
 
-interface Emit {
-  (e: 'update:isDialogVisible', val: boolean): void;
-}
+type Emit = (e: 'update:isDialogVisible', val: boolean) => void;
 
 const dialogVisibleUpdate = (val: boolean) => {
   emit('update:isDialogVisible', val);
@@ -52,7 +50,7 @@ const paymentProvidersData = [
     providers: [masterCard, americanEx, jcb],
   },
   {
-    title: 'Bambora',
+    title: 'BlueSnap',
     providers: [visa, masterCard, americanEx, jcb, dc],
   },
   {
@@ -76,7 +74,6 @@ const paymentProvidersData = [
 
     <VCard class="pa-2 pa-sm-10">
       <VCardText>
-        <!-- 👉 Title -->
         <h4 class="text-h4 text-center mb-2">Select Payment Providers</h4>
         <p class="text-body-1 text-center mb-6">
           Third-party payment providers
@@ -94,6 +91,7 @@ const paymentProvidersData = [
                 v-for="(img, iterator) in item.providers"
                 :key="iterator"
                 :src="img.value"
+                :alt="item.title + ' logo'"
                 height="30"
                 width="50"
               />

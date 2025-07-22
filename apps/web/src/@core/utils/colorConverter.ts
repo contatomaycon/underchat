@@ -17,9 +17,9 @@ export const hexToRgb = (hex: string) => {
 
 export const rgbaToHex = (rgba: string, forceRemoveAlpha = false) => {
   return `#${rgba
-    .replace(/^rgba?\(|\s+|\)$/g, '')
+    .replace(/(?:^rgba?\()|\s+|(?:\)$)/g, '')
     .split(',')
-    .filter((string, index) => !forceRemoveAlpha || index !== 3)
+    .filter((_, index) => !forceRemoveAlpha || index !== 3)
     .map((string) => Number.parseFloat(string))
     .map((number, index) => (index === 3 ? Math.round(number * 255) : number))
     .map((number) => number.toString(16))

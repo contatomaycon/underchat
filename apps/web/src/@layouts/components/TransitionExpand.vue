@@ -1,5 +1,3 @@
-<!-- Thanks: https://markus.oberlehner.net/blog/transition-to-height-auto-with-vue/ -->
-
 <script lang="ts">
 import { Transition } from 'vue';
 
@@ -21,7 +19,7 @@ export default defineComponent({
       element.style.visibility = '';
       element.style.height = '0px';
 
-      getComputedStyle(element).height;
+      void getComputedStyle(element).height;
 
       requestAnimationFrame(() => {
         element.style.height = height;
@@ -37,7 +35,7 @@ export default defineComponent({
 
       element.style.height = height;
 
-      getComputedStyle(element).height;
+      void getComputedStyle(element).height;
 
       requestAnimationFrame(() => {
         element.style.height = '0px';

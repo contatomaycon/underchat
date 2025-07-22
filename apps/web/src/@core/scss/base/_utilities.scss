@@ -49,12 +49,6 @@ $card-spacer-content: 16px;
   }
 }
 
-.text-link {
-  &:not(:hover) {
-    color: rgba(var(--v-theme-on-surface), var(--v-high-emphasis-opacity));
-  }
-}
-
 .bg-var-theme-background {
   background-color: rgba(
     var(--v-theme-on-background),

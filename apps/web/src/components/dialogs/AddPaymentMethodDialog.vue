@@ -23,9 +23,7 @@ interface Props {
   isDialogVisible: boolean;
 }
 
-interface Emit {
-  (e: 'update:isDialogVisible', val: boolean): void;
-}
+type Emit = (e: 'update:isDialogVisible', val: boolean) => void;
 
 const dialogVisibleUpdate = (val: boolean) => {
   emit('update:isDialogVisible', val);
@@ -66,12 +64,10 @@ const paymentMethodsData = [
     :width="$vuetify.display.smAndDown ? 'auto' : 750"
     @update:model-value="dialogVisibleUpdate"
   >
-    <!-- 👉 dialog close btn -->
     <DialogCloseBtn @click="emit('update:isDialogVisible', false)" />
 
     <VCard class="pa-2 pa-sm-10">
       <VCardText>
-        <!-- 👉 Title -->
         <h4 class="text-h4 text-center mb-2">Add payment methods</h4>
         <p class="text-body-1 text-center mb-6">Supported payment methods</p>
 

@@ -3,6 +3,7 @@ import { layoutConfig } from '@layouts/config';
 import { AppContentLayoutNav } from '@layouts/enums';
 import { useLayoutConfigStore } from '@layouts/stores/config';
 import type { NavGroup, NavLink, NavLinkProps } from '@layouts/types';
+import { RouteNamedMap } from 'vue-router/auto-routes';
 
 export const openGroups = ref<string[]>([]);
 
@@ -12,9 +13,14 @@ export const getComputedNavLinkToProp = computed(() => (link: NavLink) => {
     rel: link.rel,
   };
 
-  if (link.to)
-    props.to = typeof link.to === 'string' ? { name: link.to } : link.to;
-  else props.href = link.href;
+  if (link.to) {
+    props.to =
+      typeof link.to === 'string'
+        ? { name: link.to as keyof RouteNamedMap }
+        : link.to;
+  } else {
+    props.href = link.href;
+  }
 
   return props;
 });
@@ -107,7 +113,7 @@ export const hexToRgb = (hex: string) => {
 
 export const rgbaToHex = (rgba: string, forceRemoveAlpha = false) => {
   return `#${rgba
-    .replace(/^rgba?\(|\s+|\)$/g, '')
+    .replace(/^(rgba?\(|\s+|\))$/g, '')
     .split(',')
     .filter((string, index) => !forceRemoveAlpha || index !== 3)
     .map((string) => Number.parseFloat(string))

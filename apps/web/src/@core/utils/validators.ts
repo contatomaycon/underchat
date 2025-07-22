@@ -10,8 +10,7 @@ export const requiredValidator = (value: unknown) => {
 export const emailValidator = (value: unknown) => {
   if (isEmpty(value)) return true;
 
-  const re =
-    /^(?:[^<>()[\]\\.,;:\s@"]+(?:\.[^<>()[\]\\.,;:\s@"]+)*|".+")@(?:\[\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\]|(?:[a-z\-\d]+\.)+[a-z]{2,})$/i;
+  const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 
   if (Array.isArray(value))
     return (

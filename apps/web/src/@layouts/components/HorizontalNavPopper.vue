@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { ReferenceElement } from '@floating-ui/dom';
+import type { ReferenceElement, Placement } from '@floating-ui/dom';
 import { computePosition, flip, offset, shift } from '@floating-ui/dom';
 import { useLayoutConfigStore } from '@layouts/stores/config';
 import { themeConfig } from '@themeConfig';
@@ -29,15 +29,18 @@ const popperContentStyles = ref({
 
 const updatePopper = async () => {
   if (refPopperContainer.value !== undefined && refPopper.value !== undefined) {
+    let placementValue: Placement;
+
+    placementValue = 'bottom-start';
+    if (props.popperInlineEnd) {
+      placementValue = props.isRtl ? 'left-start' : 'right-start';
+    }
+
     const { x, y } = await computePosition(
       refPopperContainer.value,
       refPopper.value,
       {
-        placement: props.popperInlineEnd
-          ? props.isRtl
-            ? 'left-start'
-            : 'right-start'
-          : 'bottom-start',
+        placement: placementValue,
         middleware: [
           ...(configStore.horizontalNavPopoverOffset
             ? [offset(configStore.horizontalNavPopoverOffset)]
@@ -46,7 +49,6 @@ const updatePopper = async () => {
             boundary: document.querySelector('body')!,
             padding: { bottom: 16 },
           }),
-
           shift({
             boundary: document.querySelector('body')!,
             padding: { bottom: 16 },

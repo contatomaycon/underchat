@@ -59,12 +59,15 @@ export const initConfigStore = () => {
   const configStore = useConfigStore();
 
   watch([() => configStore.theme, userPreferredColorScheme], () => {
-    vuetifyTheme.global.name.value =
-      configStore.theme === 'system'
-        ? userPreferredColorScheme.value === 'dark'
-          ? 'dark'
-          : 'light'
-        : configStore.theme;
+    let newTheme: string;
+
+    if (configStore.theme === 'system') {
+      newTheme = userPreferredColorScheme.value === 'dark' ? 'dark' : 'light';
+    } else {
+      newTheme = configStore.theme;
+    }
+
+    vuetifyTheme.global.name.value = newTheme;
   });
 
   onMounted(() => {

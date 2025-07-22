@@ -1,15 +1,11 @@
-// placeholders
-@use "@configured-variables" as variables;
+@use '@configured-variables' as variables;
 
 %boxed-content {
-  /* 1) flat declarations first */
   inline-size: 100%;
   margin-inline: auto;
   max-inline-size: variables.$layout-boxed-content-width;
 
-  /* 2) then the nested @at-root */
   @at-root #{&}-spacing {
-    // TODO: Use grid gutter variable here
     padding-inline: 1.5rem;
   }
 }
@@ -18,18 +14,12 @@
   display: none;
 }
 
-// ℹ️ We created this placeholder even it is being used in just layout w/ vertical nav because in future we might apply style to both navbar & horizontal nav separately
 %layout-navbar-sticky {
   position: sticky;
   inset-block-start: 0;
-
-  // will-change: transform;
-  // inline-size: 100%;
 }
 
 %style-scroll-bar {
-  /* width */
-
   &::-webkit-scrollbar {
     background: rgb(var(--v-theme-surface));
     block-size: 8px;
@@ -38,12 +28,10 @@
     inline-size: 4px;
   }
 
-  /* Track */
   &::-webkit-scrollbar-track {
     background: transparent;
   }
 
-  /* Handle */
   &::-webkit-scrollbar-thumb {
     border-radius: 0.5rem;
     background: rgb(var(--v-theme-perfect-scrollbar-thumb));
