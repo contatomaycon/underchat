@@ -22,7 +22,6 @@ export const accountInfo = pgTable('account_info', {
   account_id: smallint()
     .references(() => account.account_id)
     .notNull(),
-  title: varchar({ length: 10 }).notNull(),
   logo: varchar({ length: 500 }),
   content_width: varchar({ length: 10 }).default(EContentWidth.fluid),
   content_layout_nav: varchar({ length: 15 }).default(

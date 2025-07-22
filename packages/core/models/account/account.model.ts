@@ -1,4 +1,4 @@
-import { pgTable, timestamp, smallint } from 'drizzle-orm/pg-core';
+import { pgTable, timestamp, smallint, varchar } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { accountInfo, accountStatus, apiKey } from '@core/models';
 
@@ -7,6 +7,7 @@ export const account = pgTable('account', {
   account_status_id: smallint()
     .references(() => accountStatus.account_status_id)
     .notNull(),
+  name: varchar({ length: 10 }).notNull(),
   created_at: timestamp({
     mode: 'string',
     withTimezone: true,

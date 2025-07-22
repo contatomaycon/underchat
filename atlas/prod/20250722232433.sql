@@ -1,0 +1,1 @@
+INSERT INTO "user" ("user_id", "account_id", "user_status_id", "permission_role_id", "username", "email", "email_partial", "password") VALUES (1, 1, 1, 1, 'underchat', 'a6454b075c667859de34d822ab8c8e991c57243609a4ee71aeaf5c0b9e93efd3', 'ad***@underchat.com.br', '145ff01c2f29c4cd305c6ceb71aeb42bc2cc7fb9a2af9c47999c52daacddc4e8');
