@@ -27,6 +27,50 @@ interface BundleScriptConfig {
   json?: (string | BundleScriptCustomJSONConfig)[];
 }
 
+function organizeIconsList(icons: string[]): Record<string, string[]> {
+  const sorted: Record<string, string[]> = Object.create(null);
+  icons.forEach((icon) => {
+    const item = stringToIcon(icon);
+    if (!item) return;
+    const list = sorted[item.prefix] || (sorted[item.prefix] = []);
+    if (!list.includes(item.name)) list.push(item.name);
+  });
+  return sorted;
+}
+
+async function processSVGIcon(
+  name: string,
+  type: string,
+  source: BundleScriptCustomSVGConfig,
+  iconSet: any
+) {
+  if (type !== 'icon') {
+    iconSet.remove(name);
+    return;
+  }
+  const svg = iconSet.toSVG(name);
+  if (!svg) {
+    iconSet.remove(name);
+    return;
+  }
+  try {
+    await cleanupSVG(svg);
+    if (source.monotone) {
+      await parseColors(svg, {
+        defaultColor: 'currentColor',
+        callback: (attr, colorStr, color) =>
+          !color || isEmptyColor(color) ? colorStr : 'currentColor',
+      });
+    }
+    await runSVGO(svg);
+  } catch (err) {
+    console.error(`Error parsing ${name} from ${source.dir}:`, err);
+    iconSet.remove(name);
+    return;
+  }
+  iconSet.fromSVG(name, svg);
+}
+
 const sources: BundleScriptConfig = {
   svg: [],
   icons: [],
@@ -47,129 +91,57 @@ const target = join(__dirname, 'icons.css');
 
 (async function () {
   const dir = dirname(target);
-  await fs.mkdir(dir, {
-    recursive: true,
-  });
-
+  await fs.mkdir(dir, { recursive: true });
   const allIcons: IconifyJSON[] = [];
 
   if (sources.icons) {
-    const sourcesJSON = sources.json ? sources.json : (sources.json = []);
+    const sourcesJSON = sources.json || (sources.json = []);
     const organizedList = organizeIconsList(sources.icons);
-
     for (const prefix in organizedList) {
-      const filename = require.resolve(`@iconify/json/json/${prefix}.json`);
-
       sourcesJSON.push({
-        filename,
+        filename: require.resolve(`@iconify/json/json/${prefix}.json`),
         icons: organizedList[prefix],
       });
     }
   }
 
-  /**
-   * Bundle JSON files and collect icons
-   */
   if (sources.json) {
-    for (let i = 0; i < sources.json.length; i++) {
-      const item = sources.json[i];
-
-      // Load icon set
+    for (const item of sources.json) {
       const filename = typeof item === 'string' ? item : item.filename;
       const content = JSON.parse(
         await fs.readFile(filename, 'utf8')
       ) as IconifyJSON;
-
-      for (const key in content) {
-        if (key === 'prefix' && content.prefix === 'tabler') {
-          for (const k in content.icons)
-            content.icons[k].body = content.icons[k].body.replace(
-              /stroke-width="2"/g,
-              'stroke-width="1.5"'
-            );
+      if (content.prefix === 'tabler') {
+        for (const key in content.icons) {
+          content.icons[key].body = content.icons[key].body.replace(
+            /stroke-width="2"/g,
+            'stroke-width="1.5"'
+          );
         }
       }
-
-      // Filter icons
       if (typeof item !== 'string' && item.icons?.length) {
-        const filteredContent = getIcons(content, item.icons);
-
-        if (!filteredContent)
+        const filtered = getIcons(content, item.icons);
+        if (!filtered)
           throw new Error(`Cannot find required icons in ${filename}`);
-
-        // Collect filtered icons
-        allIcons.push(filteredContent);
+        allIcons.push(filtered);
       } else {
-        // Collect all icons from the JSON file
         allIcons.push(content);
       }
     }
   }
 
-  /**
-   * Bundle custom SVG icons and collect icons
-   */
   if (sources.svg) {
-    for (let i = 0; i < sources.svg.length; i++) {
-      const source = sources.svg[i];
-
-      // Import icons
+    for (const source of sources.svg) {
       const iconSet = await importDirectory(source.dir, {
         prefix: source.prefix,
       });
-
-      // Validate, clean up, fix palette, etc.
-      await iconSet.forEach(async (name, type) => {
-        if (type !== 'icon') return;
-
-        // Get SVG instance for parsing
-        const svg = iconSet.toSVG(name);
-
-        if (!svg) {
-          // Invalid icon
-          iconSet.remove(name);
-
-          return;
-        }
-
-        // Clean up and optimise icons
-        try {
-          // Clean up icon code
-          await cleanupSVG(svg);
-
-          if (source.monotone) {
-            // Replace color with currentColor, add if missing
-            // If icon is not monotone, remove this code
-            await parseColors(svg, {
-              defaultColor: 'currentColor',
-              callback: (attr, colorStr, color) => {
-                return !color || isEmptyColor(color)
-                  ? colorStr
-                  : 'currentColor';
-              },
-            });
-          }
-
-          // Optimise
-          await runSVGO(svg);
-        } catch (err) {
-          // Invalid icon
-          console.error(`Error parsing ${name} from ${source.dir}:`, err);
-          iconSet.remove(name);
-
-          return;
-        }
-
-        // Update icon from SVG instance
-        iconSet.fromSVG(name, svg);
-      });
-
-      // Collect the SVG icon
+      await iconSet.forEach((name, type) =>
+        processSVGIcon(name, type, source, iconSet)
+      );
       allIcons.push(iconSet.export());
     }
   }
 
-  // Generate CSS from collected icons
   const cssContent = allIcons
     .map((iconSet) =>
       getIconsCSS(iconSet, Object.keys(iconSet.icons), {
@@ -179,32 +151,8 @@ const target = join(__dirname, 'icons.css');
     )
     .join('\n');
 
-  // Save the CSS to a file
   await fs.writeFile(target, cssContent, 'utf8');
-
   console.log(`Saved CSS to ${target}!`);
 })().catch((err) => {
   console.error(err);
 });
-
-/**
- * Sort icon names by prefix
- */
-function organizeIconsList(icons: string[]): Record<string, string[]> {
-  const sorted: Record<string, string[]> = Object.create(null);
-
-  icons.forEach((icon) => {
-    const item = stringToIcon(icon);
-
-    if (!item) return;
-
-    const prefix = item.prefix;
-    const prefixList = sorted[prefix] ? sorted[prefix] : (sorted[prefix] = []);
-
-    const name = item.name;
-
-    if (!prefixList.includes(name)) prefixList.push(name);
-  });
-
-  return sorted;
-}
