@@ -1,7 +1,6 @@
 <script setup lang="ts">
-interface Emit {
-  (e: 'update:isDialogVisible', value: boolean): void;
-}
+type Emit = (e: 'update:isDialogVisible', value: boolean) => void;
+
 interface Props {
   isDialogVisible: boolean;
   smsCode?: string;
@@ -55,17 +54,15 @@ const openSelectedMethodDialog = () => {
     :model-value="props.isDialogVisible"
     @update:model-value="(val) => $emit('update:isDialogVisible', val)"
   >
-    <!-- Dialog close btn -->
     <DialogCloseBtn @click="$emit('update:isDialogVisible', false)" />
 
     <VCard class="pa-2 pa-sm-10">
       <VCardText>
-        <!-- 👉 Title -->
         <div class="mb-6">
           <h4 class="text-h4 text-center mb-2">Select Authentication Method</h4>
           <p class="text-body-1 text-center mb-6">
             You also need to select a method by which the proxy authenticates to
-            the directory serve.
+            the directory server.
           </p>
           <CustomRadios
             v-model:selected-radio="selectedMethod"
@@ -76,7 +73,7 @@ const openSelectedMethodDialog = () => {
               <div class="d-flex flex-column">
                 <div class="d-flex gap-1 mb-2">
                   <VIcon
-                    :icon="items.item.icon"
+                    :icon="items.item.icon as string"
                     size="20"
                     class="text-high-emphasis"
                   />

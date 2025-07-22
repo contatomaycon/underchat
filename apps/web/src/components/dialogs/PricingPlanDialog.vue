@@ -3,12 +3,9 @@ interface Props {
   isDialogVisible: boolean;
 }
 
-interface Emit {
-  (e: 'update:isDialogVisible', val: boolean): void;
-}
+type Emit = (e: 'update:isDialogVisible', val: boolean) => void;
 
 const props = defineProps<Props>();
-
 const emit = defineEmits<Emit>();
 
 const dialogVisibleUpdate = (val: boolean) => {

@@ -14,7 +14,7 @@ export interface LayoutConfig {
     logo: VNode;
     contentWidth: (typeof ContentWidth)[keyof typeof ContentWidth];
     contentLayoutNav: (typeof AppContentLayoutNav)[keyof typeof AppContentLayoutNav];
-    overlayNavFromBreakpoint: number;
+    overlayNavFromBreakpoint: number | (() => number);
 
     i18n: {
       enable: boolean;

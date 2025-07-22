@@ -11,12 +11,16 @@ export const createLayouts = (
   return (): void => {
     const configStore = useLayoutConfigStore();
 
+    const overlayBreakpoint =
+      typeof userConfig.app?.overlayNavFromBreakpoint === 'function'
+        ? userConfig.app.overlayNavFromBreakpoint()
+        : userConfig.app?.overlayNavFromBreakpoint;
+
     layoutConfig.app.title = userConfig.app?.title ?? layoutConfig.app.title;
     layoutConfig.app.logo =
       userConfig.app?.logo ?? (layoutConfig.app.logo as any);
     layoutConfig.app.overlayNavFromBreakpoint =
-      userConfig.app?.overlayNavFromBreakpoint ??
-      layoutConfig.app.overlayNavFromBreakpoint;
+      overlayBreakpoint ?? layoutConfig.app.overlayNavFromBreakpoint;
     layoutConfig.app.i18n.enable =
       userConfig.app?.i18n?.enable ?? layoutConfig.app.i18n.enable;
     layoutConfig.app.iconRenderer =

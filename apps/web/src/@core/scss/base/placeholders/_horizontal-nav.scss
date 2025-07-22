@@ -22,24 +22,6 @@
   color: rgb(var(--v-theme-primary));
 }
 
-%horizontal-nav-popper-content-hidden {
-  // display: none;
-
-  // opacity: 0;
-  // pointer-events: none;
-  // transform: translateY(7px);
-  // transition: transform 0.25s ease-in-out, opacity 0.15s ease-in-out;
-}
-
-%horizontal-nav-popper-content-visible {
-  // display: block;
-
-  // opacity: 1;
-  // pointer-events: auto;
-  // pointer-events: auto;
-  // transform: translateY(0);
-}
-
 %horizontal-nav-item-icon {
   font-size: variables.$horizontal-nav-items-icon-size;
   margin-inline-end: variables.$horizontal-nav-items-icon-margin-inline-end;

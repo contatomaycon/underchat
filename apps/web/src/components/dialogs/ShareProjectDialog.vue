@@ -12,12 +12,9 @@ interface Props {
   isDialogVisible: boolean;
 }
 
-interface Emit {
-  (e: 'update:isDialogVisible', val: boolean): void;
-}
+type Emit = (e: 'update:isDialogVisible', val: boolean) => void;
 
 const props = defineProps<Props>();
-
 const emit = defineEmits<Emit>();
 
 const dialogVisibleUpdate = (val: boolean) => {
@@ -91,8 +88,7 @@ const membersList: Member[] = [
     :width="$vuetify.display.smAndDown ? 'auto' : 900"
     @update:model-value="dialogVisibleUpdate"
   >
-    <!-- 👉 Dialog close btn -->
-    <DialogCloseBtn @click="$emit('update:isDialogVisible', false)" />
+    <DialogCloseBtn @click="emit('update:isDialogVisible', false)" />
 
     <VCard class="share-project-dialog pa-2 pa-sm-10">
       <VCardText>

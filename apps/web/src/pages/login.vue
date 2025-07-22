@@ -89,7 +89,6 @@ const authThemeMask = useGenerateImageVariant(authV2MaskLight, authV2MaskDark);
         <VCardText>
           <VForm @submit.prevent="() => {}">
             <VRow>
-              <!-- email -->
               <VCol cols="12">
                 <AppTextField
                   v-model="form.email"
@@ -100,14 +99,13 @@ const authThemeMask = useGenerateImageVariant(authV2MaskLight, authV2MaskDark);
                 />
               </VCol>
 
-              <!-- password -->
               <VCol cols="12">
                 <AppTextField
                   v-model="form.password"
                   label="Password"
                   placeholder="············"
                   :type="isPasswordVisible ? 'text' : 'password'"
-                  autocomplete="password"
+                  autocomplete="current-password"
                   :append-inner-icon="
                     isPasswordVisible ? 'tabler-eye-off' : 'tabler-eye'
                   "
@@ -126,7 +124,6 @@ const authThemeMask = useGenerateImageVariant(authV2MaskLight, authV2MaskDark);
                 <VBtn block type="submit"> Login </VBtn>
               </VCol>
 
-              <!-- create account -->
               <VCol cols="12" class="text-body-1 text-center">
                 <span class="d-inline-block"> New on our platform? </span>
                 <a
@@ -143,7 +140,6 @@ const authThemeMask = useGenerateImageVariant(authV2MaskLight, authV2MaskDark);
                 <VDivider />
               </VCol>
 
-              <!-- auth providers -->
               <VCol cols="12" class="text-center">
                 <AuthProvider />
               </VCol>
