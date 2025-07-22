@@ -1,7 +1,7 @@
 import type { ThemeDefinition } from 'vuetify';
 
-export const staticPrimaryColor = '#7367F0';
-export const staticPrimaryDarkenColor = '#675DD8';
+export const staticPrimaryColor = '#2865B7';
+export const staticPrimaryDarkenColor = '#152642';
 
 export const themes: Record<string, ThemeDefinition> = {
   light: {
@@ -9,8 +9,8 @@ export const themes: Record<string, ThemeDefinition> = {
     colors: {
       primary: staticPrimaryColor,
       'on-primary': '#fff',
-      'primary-darken-1': '#675DD8',
-      secondary: '#808390',
+      'primary-darken-1': '#5098E5',
+      secondary: '#5098E5',
       'on-secondary': '#fff',
       'secondary-darken-1': '#737682',
       success: '#28C76F',
@@ -68,8 +68,6 @@ export const themes: Record<string, ThemeDefinition> = {
       'switch-disabled-thumb-opacity': 0.4,
       'switch-checked-disabled-opacity': 0.3,
       'track-bg': '#F1F0F2',
-
-      // Shadows
       'shadow-key-umbra-color': '#2F2B3D',
       'shadow-xs-opacity': 0.1,
       'shadow-sm-opacity': 0.12,
@@ -81,10 +79,10 @@ export const themes: Record<string, ThemeDefinition> = {
   dark: {
     dark: true,
     colors: {
-      primary: staticPrimaryColor,
+      primary: staticPrimaryDarkenColor,
       'on-primary': '#fff',
       'primary-darken-1': '#675DD8',
-      secondary: '#808390',
+      secondary: '#2865B7',
       'on-secondary': '#fff',
       'secondary-darken-1': '#737682',
       success: '#28C76F',
@@ -140,8 +138,6 @@ export const themes: Record<string, ThemeDefinition> = {
       'switch-disabled-thumb-opacity': 0.8,
       'switch-checked-disabled-opacity': 0.3,
       'track-bg': '#3A3F57',
-
-      // Shadows
       'shadow-key-umbra-color': '#131120',
       'shadow-xs-opacity': 0.16,
       'shadow-sm-opacity': 0.18,

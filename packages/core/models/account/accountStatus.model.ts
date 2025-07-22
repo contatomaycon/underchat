@@ -1,9 +1,9 @@
 import { pgTable, timestamp, varchar, smallint } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import { user } from '@core/models';
+import { account } from '@core/models';
 
-export const userType = pgTable('user_type', {
-  user_type_id: smallint()
+export const accountStatus = pgTable('account_status', {
+  account_status_id: smallint()
     .primaryKey()
     .generatedByDefaultAsIdentity()
     .notNull(),
@@ -18,6 +18,6 @@ export const userType = pgTable('user_type', {
   }).defaultNow(),
 });
 
-export const userTypeRelations = relations(userType, ({ many }) => ({
-  uus: many(user),
+export const accountStatusRelations = relations(accountStatus, ({ many }) => ({
+  aac: many(account),
 }));

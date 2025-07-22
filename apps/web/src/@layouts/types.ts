@@ -15,7 +15,6 @@ export interface LayoutConfig {
     contentWidth: (typeof ContentWidth)[keyof typeof ContentWidth];
     contentLayoutNav: (typeof AppContentLayoutNav)[keyof typeof AppContentLayoutNav];
     overlayNavFromBreakpoint: number | (() => number);
-
     i18n: {
       enable: boolean;
     };

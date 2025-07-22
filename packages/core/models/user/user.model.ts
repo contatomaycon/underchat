@@ -1,14 +1,23 @@
 import { pgTable, timestamp, smallint, varchar } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import { userStatus, userType, userAddress, userInfo } from '@core/models';
+import {
+  userStatus,
+  permissionRole,
+  userAddress,
+  userInfo,
+  account,
+} from '@core/models';
 
 export const user = pgTable('user', {
   user_id: smallint().primaryKey().generatedByDefaultAsIdentity().notNull(),
+  account_id: smallint()
+    .references(() => account.account_id)
+    .notNull(),
   user_status_id: smallint()
     .references(() => userStatus.user_status_id)
     .notNull(),
-  user_type_id: smallint()
-    .references(() => userType.user_type_id)
+  permission_role_id: smallint()
+    .references(() => permissionRole.permission_role_id)
     .notNull(),
   username: varchar({ length: 50 }),
   email: varchar({ length: 500 }).notNull(),
@@ -26,13 +35,17 @@ export const user = pgTable('user', {
 });
 
 export const userRelations = relations(user, ({ one }) => ({
+  aac: one(account, {
+    fields: [user.account_id],
+    references: [account.account_id],
+  }),
   uus: one(userStatus, {
     fields: [user.user_status_id],
     references: [userStatus.user_status_id],
   }),
-  uut: one(userType, {
-    fields: [user.user_type_id],
-    references: [userType.user_type_id],
+  upr: one(permissionRole, {
+    fields: [user.permission_role_id],
+    references: [permissionRole.permission_role_id],
   }),
   uua: one(userAddress, {
     fields: [user.user_id],

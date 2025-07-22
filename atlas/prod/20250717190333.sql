@@ -1,1 +1,0 @@
-INSERT INTO "permission_assignment" ("permission_assignment_id", "permission_role_id", "api_key_id") VALUES (2, 4, 1);

@@ -1,5 +1,5 @@
 import { pgTable, timestamp, smallint, integer } from 'drizzle-orm/pg-core';
-import { permissionRole, user, apiKey } from '@core/models';
+import { permissionRole, user, account } from '@core/models';
 import { relations } from 'drizzle-orm';
 
 export const permissionAssignment = pgTable('permission_assignment', {
@@ -11,7 +11,7 @@ export const permissionAssignment = pgTable('permission_assignment', {
     .references(() => permissionRole.permission_role_id)
     .notNull(),
   user_id: smallint().references(() => user.user_id),
-  api_key_id: smallint().references(() => apiKey.api_key_id),
+  account_id: smallint().references(() => account.account_id),
   created_at: timestamp('created_at', {
     mode: 'string',
     withTimezone: true,
@@ -33,9 +33,9 @@ export const permissionAssignmentRelations = relations(
       fields: [permissionAssignment.user_id],
       references: [user.user_id],
     }),
-    pak: one(apiKey, {
-      fields: [permissionAssignment.api_key_id],
-      references: [apiKey.api_key_id],
+    pac: one(account, {
+      fields: [permissionAssignment.account_id],
+      references: [account.account_id],
     }),
   })
 );
