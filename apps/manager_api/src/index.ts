@@ -16,7 +16,6 @@ import databaseElasticPlugin from '@core/plugins/dbElastic';
 import elasticLogsPlugin from '@core/plugins/elasticLogs';
 import loggerServicePlugin from '@core/plugins/logger';
 import kafkaStreamsPlugin from '@/plugins/kafkaStreams';
-import vaultPlugin from '@core/plugins/vault';
 import centrifugoPlugin from '@/plugins/centrifugo';
 
 const server = fastify({
@@ -30,28 +29,26 @@ server.addHook('onError', errorHook);
 
 server.decorateRequest('module', ERouteModule.manager);
 
-server.register(vaultPlugin).after(() => {
-  server.register(centrifugoPlugin);
-  server.register(dbConnector);
-  server.register(cacheRedisConnector);
-  server.register(auth);
-  server.register(authenticateJwt);
-  server.register(i18nextPlugin);
-  server.register(jwtPlugin);
-  server.register(corsPlugin);
+server.register(centrifugoPlugin);
+server.register(dbConnector);
+server.register(cacheRedisConnector);
+server.register(auth);
+server.register(authenticateJwt);
+server.register(i18nextPlugin);
+server.register(jwtPlugin);
+server.register(corsPlugin);
 
-  server.register(databaseElasticPlugin, {
-    prefix: ERouteModule.manager,
-  });
-
-  server.register(elasticLogsPlugin, {
-    prefix: ERouteModule.manager,
-  });
-
-  server.register(loggerServicePlugin);
-  server.register(kafkaStreamsPlugin);
-  server.register(swaggerPlugin);
+server.register(databaseElasticPlugin, {
+  prefix: ERouteModule.manager,
 });
+
+server.register(elasticLogsPlugin, {
+  prefix: ERouteModule.manager,
+});
+
+server.register(loggerServicePlugin);
+server.register(kafkaStreamsPlugin);
+server.register(swaggerPlugin);
 
 const start = async () => {
   try {

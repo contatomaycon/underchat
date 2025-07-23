@@ -198,22 +198,6 @@ services:
       - underchat
     restart: always
 
-  under-vault:
-    image: vault:1.13.3
-    container_name: under-vault
-    cap_add:
-      - IPC_LOCK
-    environment:
-      - VAULT_DEV_ROOT_TOKEN_ID=root
-      - VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200
-    ports:
-      - '8200:8200'
-    volumes:
-      - vault_data:/vault/file
-    command: vault server -dev -dev-root-token-id=root -dev-listen-address=0.0.0.0:8200
-    networks:
-      - underchat
-
   under-balance-api:
     build:
       context: .
@@ -250,4 +234,3 @@ volumes:
   atlas_db_postgresql_data:
   elasticsearch_data:
   kafka_data:
-  vault_data:

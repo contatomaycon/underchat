@@ -17,7 +17,6 @@ import { generalEnvironment } from '@core/config/environments';
 import databaseElasticPlugin from '@core/plugins/dbElastic';
 import elasticLogsPlugin from '@core/plugins/elasticLogs';
 import loggerServicePlugin from '@core/plugins/logger';
-import vaultPlugin from '@core/plugins/vault';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -30,30 +29,28 @@ server.addHook('onError', errorHook);
 
 server.decorateRequest('module', ERouteModule.public);
 
-server.register(vaultPlugin).after(() => {
-  server.register(multipartFile, {
-    attachFieldsToBody: true,
-    limits: { fileSize: generalEnvironment.uploadLimitInBytes },
-  });
-  server.register(dbConnector);
-  server.register(cacheRedisConnector);
-  server.register(auth);
-  server.register(authenticateJwt);
-  server.register(i18nextPlugin);
-  server.register(jwtPlugin);
-  server.register(corsPlugin);
-
-  server.register(databaseElasticPlugin, {
-    prefix: ERouteModule.public,
-  });
-
-  server.register(elasticLogsPlugin, {
-    prefix: ERouteModule.public,
-  });
-
-  server.register(loggerServicePlugin);
-  server.register(swaggerPlugin);
+server.register(multipartFile, {
+  attachFieldsToBody: true,
+  limits: { fileSize: generalEnvironment.uploadLimitInBytes },
 });
+server.register(dbConnector);
+server.register(cacheRedisConnector);
+server.register(auth);
+server.register(authenticateJwt);
+server.register(i18nextPlugin);
+server.register(jwtPlugin);
+server.register(corsPlugin);
+
+server.register(databaseElasticPlugin, {
+  prefix: ERouteModule.public,
+});
+
+server.register(elasticLogsPlugin, {
+  prefix: ERouteModule.public,
+});
+
+server.register(loggerServicePlugin);
+server.register(swaggerPlugin);
 
 const start = async () => {
   try {

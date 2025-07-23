@@ -13,7 +13,6 @@ import swaggerPlugin from '@/plugins/swagger';
 import corsPlugin from '@core/plugins/cors';
 import elasticLogsPlugin from '@core/plugins/elasticLogs';
 import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
-import vaultPlugin from '@core/plugins/vault';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -26,21 +25,19 @@ server.addHook('onError', errorHook);
 
 server.decorateRequest('module', ERouteModule.balancer);
 
-server.register(vaultPlugin).after(() => {
-  server.register(dbConnector);
-  server.register(cacheRedisConnector);
-  server.register(auth);
-  server.register(authenticateKeyApi);
-  server.register(i18nextPlugin);
-  server.register(corsPlugin);
+server.register(dbConnector);
+server.register(cacheRedisConnector);
+server.register(auth);
+server.register(authenticateKeyApi);
+server.register(i18nextPlugin);
+server.register(corsPlugin);
 
-  server.register(elasticLogsPlugin, {
-    prefix: ERouteModule.balancer,
-  });
-
-  server.register(loggerServicePlugin);
-  server.register(swaggerPlugin);
+server.register(elasticLogsPlugin, {
+  prefix: ERouteModule.balancer,
 });
+
+server.register(loggerServicePlugin);
+server.register(swaggerPlugin);
 
 const start = async () => {
   try {
