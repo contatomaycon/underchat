@@ -8,6 +8,7 @@ import {
   userDocument,
   userDocumentType,
   userAddress,
+  permissionAssignment,
   permissionRole,
 } from '@core/models';
 import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
@@ -63,8 +64,15 @@ export class AuthRepository {
       .innerJoin(userStatus, eq(userStatus.user_status_id, user.user_status_id))
       .innerJoin(userInfo, eq(userInfo.user_id, user.user_id))
       .innerJoin(
+        permissionAssignment,
+        eq(permissionAssignment.user_id, user.user_id)
+      )
+      .innerJoin(
         permissionRole,
-        eq(permissionRole.permission_role_id, user.permission_role_id)
+        eq(
+          permissionRole.permission_role_id,
+          permissionAssignment.permission_role_id
+        )
       )
       .innerJoin(userDocument, eq(userDocument.user_id, user.user_id))
       .innerJoin(

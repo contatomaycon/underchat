@@ -40,6 +40,7 @@ export const authUserResponseSchema = Type.Object({
 
 export const authLoginResponseSchema = Type.Object({
   user: authUserResponseSchema,
+  permission: Type.Array(Type.String()),
   token: Type.String(),
 });
 
