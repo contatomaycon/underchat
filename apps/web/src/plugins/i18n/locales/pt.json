@@ -1,1 +1,8 @@
-{}
+{
+    "welcome": "Bem-vindo à",
+    "please_login": "Por favor, faça login na sua conta e comece a aventura",
+    "email_or_username": "E-mail ou Usuário",
+    "password": "Senha",
+    "forgot_password": "Esqueceu sua senha?",
+    "login": "Entrar"
+}

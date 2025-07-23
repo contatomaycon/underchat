@@ -23,7 +23,7 @@ export const { themeConfig, layoutConfig } = defineThemeConfig({
     overlayNavFromBreakpoint: breakpointsVuetifyV3.lg - 1,
     i18n: {
       enable: true,
-      defaultLocale: 'en',
+      defaultLocale: 'pt',
       langConfig: [
         {
           label: 'English',
@@ -36,7 +36,7 @@ export const { themeConfig, layoutConfig } = defineThemeConfig({
           isRTL: false,
         },
         {
-          label: 'Espanhol',
+          label: 'Español',
           i18nLang: 'es',
           isRTL: false,
         },

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import AuthProvider from '@/views/pages/authentication/AuthProvider.vue';
 import { useGenerateImageVariant } from '@core/composable/useGenerateImageVariant';
 import authV2LoginIllustrationBorderedDark from '@images/pages/auth-v2-login-illustration-bordered-dark.png';
 import authV2LoginIllustrationBorderedLight from '@images/pages/auth-v2-login-illustration-bordered-light.png';
@@ -78,12 +77,12 @@ const authThemeMask = useGenerateImageVariant(authV2MaskLight, authV2MaskDark);
       <VCard flat :max-width="500" class="mt-12 mt-sm-0 pa-6">
         <VCardText>
           <h4 class="text-h4 mb-1">
-            Welcome to
+            {{ $t('welcome') }}
             <span class="text-capitalize">{{ themeConfig.app.title }}</span
-            >! 👋🏻
+            >!
           </h4>
           <p class="mb-0">
-            Please sign-in to your account and start the adventure
+            {{ $t('please_login') }}
           </p>
         </VCardText>
         <VCardText>
@@ -93,17 +92,17 @@ const authThemeMask = useGenerateImageVariant(authV2MaskLight, authV2MaskDark);
                 <AppTextField
                   v-model="form.email"
                   autofocus
-                  label="Email or Username"
-                  type="email"
+                  :label="$t('email_or_username')"
+                  type="text"
                   autocomplete="username"
-                  placeholder="johndoe@email.com"
+                  placeholder="email@email.com"
                 />
               </VCol>
 
               <VCol cols="12">
                 <AppTextField
                   v-model="form.password"
-                  label="Password"
+                  :label="$t('password')"
                   placeholder="············"
                   :type="isPasswordVisible ? 'text' : 'password'"
                   :append-inner-icon="
@@ -115,33 +114,12 @@ const authThemeMask = useGenerateImageVariant(authV2MaskLight, authV2MaskDark);
                 <div
                   class="d-flex align-center flex-wrap justify-space-between my-6"
                 >
-                  <VCheckbox v-model="form.remember" label="Remember me" />
                   <a class="text-primary" href="javascript:void(0)">
-                    Forgot Password?
+                    {{ $t('forgot_password') }}
                   </a>
                 </div>
 
-                <VBtn block type="submit"> Login </VBtn>
-              </VCol>
-
-              <VCol cols="12" class="text-body-1 text-center">
-                <span class="d-inline-block"> New on our platform? </span>
-                <a
-                  class="text-primary ms-1 d-inline-block text-body-1"
-                  href="javascript:void(0)"
-                >
-                  Create an account
-                </a>
-              </VCol>
-
-              <VCol cols="12" class="d-flex align-center">
-                <VDivider />
-                <span class="mx-4">or</span>
-                <VDivider />
-              </VCol>
-
-              <VCol cols="12" class="text-center">
-                <AuthProvider />
+                <VBtn block type="submit"> {{ $t('login') }} </VBtn>
               </VCol>
             </VRow>
           </VForm>

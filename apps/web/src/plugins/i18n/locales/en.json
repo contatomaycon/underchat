@@ -1,1 +1,8 @@
-{}
+{
+    "welcome": "Welcome to",
+    "please_login": "Please log in to your account and start the adventure",
+    "email_or_username": "Email or Username",
+    "password": "Password",
+    "forgot_password": "Forgot your password?",
+    "login": "Login"
+}

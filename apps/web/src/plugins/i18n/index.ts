@@ -2,6 +2,7 @@ import type { App } from 'vue';
 import { createI18n } from 'vue-i18n';
 import { cookieRef } from '@layouts/stores/config';
 import { themeConfig } from '@themeConfig';
+import { getBrowserLanguage } from '@main/common/functions/getBrowserLanguage';
 
 const messages = Object.fromEntries(
   Object.entries(
@@ -15,11 +16,15 @@ export const getI18n = () => {
   if (_i18n === null) {
     _i18n = createI18n({
       legacy: false,
-      locale: cookieRef('language', themeConfig.app.i18n.defaultLocale).value,
-      fallbackLocale: 'en',
+      locale:
+        cookieRef('language', themeConfig.app.i18n.defaultLocale).value ??
+        getBrowserLanguage(),
+      fallbackLocale: 'pt',
       messages,
     });
   }
+
+  _i18n.global.locale = cookieRef('language', getBrowserLanguage()).value;
 
   return _i18n;
 };

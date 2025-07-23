@@ -22,8 +22,8 @@
       "@images/*": ["./src/assets/images/*"],
       "@styles/*": ["./src/assets/styles/*"],
       "@validators": ["./src/@core/utils/validators"],
-      "@db/*": ["./src/plugins/fake-api/handlers/*"],
-      "@api-utils/*": ["./src/plugins/fake-api/utils/*"]
+      "@api-utils/*": ["./src/plugins/fake-api/utils/*"],
+      "@main/*": ["../../packages/core/*"]
     },
     "lib": ["esnext", "dom", "dom.iterable", "scripthost"],
     "skipLibCheck": true,
