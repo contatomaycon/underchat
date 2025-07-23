@@ -86,6 +86,9 @@ export const useAuthStore = defineStore('auth', {
       localStorage.removeItem('user');
       localStorage.removeItem('token');
     },
+    isLoggedIn(): boolean {
+      return !!localStorage.getItem('user') && !!localStorage.getItem('token');
+    },
     getUser(): AuthUserResponse {
       const user = localStorage.getItem('user');
 
