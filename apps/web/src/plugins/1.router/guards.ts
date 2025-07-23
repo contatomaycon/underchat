@@ -4,10 +4,6 @@ import { isLoggedIn } from '@/@core/localStorage/user';
 
 export const setupGuards = (router: Router) => {
   router.beforeEach((to): RouteLocationRaw | void => {
-    if (to.meta.public) {
-      return;
-    }
-
     const isLogged = isLoggedIn();
 
     if (to.meta.unauthenticatedOnly) {
