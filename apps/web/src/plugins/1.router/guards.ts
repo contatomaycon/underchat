@@ -10,6 +10,10 @@ export const setupGuards = (router: Router) => {
       return isLogged ? '/' : undefined;
     }
 
+    if (to.meta.public) {
+      return;
+    }
+
     if (!canNavigate(to) && to.matched.length) {
       return isLogged
         ? { name: 'not-authorized' }
