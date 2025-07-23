@@ -6,7 +6,7 @@ export default [
     title: 'Home',
     to: { name: 'root' as keyof RouteNamedMap },
     icon: { icon: 'tabler-smart-home' },
-    action: EGeneralPermissions.full_access,
+    permissions: [EGeneralPermissions.full_access],
   },
   {
     title: 'Second page',

@@ -3,7 +3,7 @@ import { EGeneralPermissions } from '@main/common/enums/EPermissions/general';
 
 definePage({
   meta: {
-    action: EGeneralPermissions.full_access,
+    permissions: [EGeneralPermissions.full_access],
   },
 });
 </script>

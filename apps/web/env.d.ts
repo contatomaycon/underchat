@@ -1,8 +1,9 @@
 import 'vue-router';
+import { EPermissionsRoles } from '@main/common/enums/EPermissions';
+
 declare module 'vue-router' {
   interface RouteMeta {
-    action?: string;
-    subject?: string;
+    permissions?: EPermissionsRoles[];
     layoutWrapperClasses?: string;
     navActiveLink?: RouteLocationRaw;
     layout?: 'blank' | 'default';
