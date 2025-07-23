@@ -8,6 +8,8 @@ import { IApiResponse } from '@main/common/interfaces/IApiResponse';
 import { getI18n } from '@/plugins/i18n';
 import { EColor } from '@main/common/enums/EColor';
 import { ISnackbar } from '@main/common/interfaces/ISnackbar';
+import { EPermissionsRoles } from '@main/common/enums/EPermissions';
+import { setPermissions, setToken, setUser } from '../localStorage/user';
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -18,6 +20,7 @@ export const useAuthStore = defineStore('auth', {
     } as ISnackbar,
     user: null as AuthUserResponse | null,
     token: null as string | null,
+    permissions: [] as EPermissionsRoles[],
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -66,9 +69,11 @@ export const useAuthStore = defineStore('auth', {
 
         this.user = data.data.user;
         this.token = data.data.token;
+        this.permissions = (data.data.permissions ?? []) as EPermissionsRoles[];
 
-        localStorage.setItem('user', JSON.stringify(this.user));
-        localStorage.setItem('token', this.token);
+        setUser(this.user);
+        setToken(this.token);
+        setPermissions(this.permissions);
 
         this.showSnackbar(i18n.global.t('login_success'), EColor.success);
 
@@ -78,42 +83,6 @@ export const useAuthStore = defineStore('auth', {
 
         return false;
       }
-    },
-    logout() {
-      this.user = null;
-      this.token = null;
-
-      localStorage.removeItem('user');
-      localStorage.removeItem('token');
-    },
-    isLoggedIn(): boolean {
-      return !!localStorage.getItem('user') && !!localStorage.getItem('token');
-    },
-    getUser(): AuthUserResponse {
-      const user = localStorage.getItem('user');
-
-      if (!user) {
-        const i18n = getI18n();
-
-        this.logout();
-
-        throw new Error(i18n.global.t('user_not_found'));
-      }
-
-      return JSON.parse(user);
-    },
-    getToken(): string {
-      const token = localStorage.getItem('token');
-
-      if (!token) {
-        const i18n = getI18n();
-
-        this.logout();
-
-        throw new Error(i18n.global.t('token_not_found'));
-      }
-
-      return token;
     },
   },
 });

@@ -43,14 +43,14 @@ export class AuthLoginUseCase {
       }
     );
 
-    const permission = await this.permissionService.viewPermissionByUserId(
+    const permissions = await this.permissionService.viewPermissionByUserId(
       result.user_id
     );
 
     return {
       user: result,
       token,
-      permission,
+      permissions,
     };
   }
 }

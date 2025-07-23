@@ -9,5 +9,6 @@
     "login_invalid": "Credenciais de login inválidas. Verifique seu e-mail/usuário e senha.",
     "login_success": "Login realizado com sucesso!",
     "user_not_found": "Usuário não encontrado. Verifique seu e-mail/usuário.",
-    "token_not_found": "Token não encontrado. Verifique seu e-mail/usuário."
+    "token_not_found": "Token não encontrado. Verifique seu e-mail/usuário.",
+    "permissions_not_found": "Permissões não encontradas. Verifique suas permissões de usuário."
 }

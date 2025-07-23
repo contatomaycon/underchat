@@ -13,6 +13,7 @@ import { useAuthStore } from '@core/stores/auth';
 const authStore = useAuthStore();
 const route = useRoute();
 const router = useRouter();
+const ability = useAbility();
 
 definePage({
   meta: {
@@ -42,7 +43,16 @@ const handleLogin = async () => {
   const result = await authStore.login(form.value.login, form.value.password);
 
   if (result) {
+    const permissions = authStore.permissions;
+
+    const userAbilityRules = permissions.map((permission) => ({
+      action: permission,
+      subject: permission,
+    }));
+
     await nextTick(() => {
+      ability.update(userAbilityRules);
+
       router.replace(route.query.to ? String(route.query.to) : '/');
     });
   }

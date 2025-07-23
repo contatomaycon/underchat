@@ -9,5 +9,6 @@
     "login_invalid": "Credenciales de inicio de sesión inválidas. Por favor, verifica tu correo electrónico/usuario y contraseña.",
     "login_success": "¡Inicio de sesión exitoso!",
     "user_not_found": "Usuario no encontrado. Por favor, verifica tu correo electrónico/usuario.",
-    "token_not_found": "Token no encontrado. Por favor, verifica tu correo electrónico/usuario."
+    "token_not_found": "Token no encontrado. Por favor, verifica tu correo electrónico/usuario.",
+    "permissions_not_found": "Permisos no encontrados. Por favor, verifica tus permisos de usuario."
 }

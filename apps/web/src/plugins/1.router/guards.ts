@@ -1,6 +1,6 @@
 import type { Router, RouteLocationRaw } from 'vue-router';
 import { canNavigate } from '@layouts/plugins/casl';
-import { useAuthStore } from '@core/stores/auth';
+import { isLoggedIn } from '@/@core/localStorage/user';
 
 export const setupGuards = (router: Router) => {
   router.beforeEach((to): RouteLocationRaw | void => {
@@ -8,15 +8,14 @@ export const setupGuards = (router: Router) => {
       return;
     }
 
-    const authStore = useAuthStore();
-    const isLoggedIn = authStore.isLoggedIn();
+    const isLogged = isLoggedIn();
 
     if (to.meta.unauthenticatedOnly) {
-      return isLoggedIn ? '/' : undefined;
+      return isLogged ? '/' : undefined;
     }
 
     if (!canNavigate(to) && to.matched.length) {
-      return isLoggedIn
+      return isLogged
         ? { name: 'not-authorized' }
         : {
             name: 'login',

@@ -8,6 +8,7 @@ import {
   getDynamicI18nProps,
   isNavLinkActive,
 } from '@layouts/utils';
+import { EPermissionsRoles } from '@main/common/enums/EPermissions';
 
 defineProps<{
   item: NavLink;
@@ -20,7 +21,7 @@ const hideTitleAndBadge = configStore.isVerticalNavMini();
 <template>
   <ul>
     <li
-      v-if="can(item.action, item.subject)"
+      v-if="can(item.action as EPermissionsRoles)"
       class="nav-link"
       :class="{ disabled: item.disable }"
     >

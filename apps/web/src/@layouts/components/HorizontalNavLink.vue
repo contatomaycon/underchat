@@ -7,6 +7,7 @@ import {
   getDynamicI18nProps,
   isNavLinkActive,
 } from '@layouts/utils';
+import { EPermissionsRoles } from '@main/common/enums/EPermissions';
 
 interface Props {
   item: NavLink;
@@ -21,7 +22,7 @@ const props = withDefaults(defineProps<Props>(), {
 <template>
   <ul>
     <li
-      v-if="can(item.action, item.subject)"
+      v-if="can(item.action as EPermissionsRoles)"
       class="nav-link"
       :class="[
         {
