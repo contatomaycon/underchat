@@ -11,15 +11,23 @@ import { ISnackbar } from '@main/common/interfaces/ISnackbar';
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
-    user: null as AuthUserResponse | null,
-    token: null as string | null,
     snackbar: {
       color: EColor.success,
       message: '',
       status: false,
     } as ISnackbar,
+    user: null as AuthUserResponse | null,
+    token: null as string | null,
   }),
   actions: {
+    showSnackbar(message: string, color: EColor) {
+      this.snackbar.message = message;
+      this.snackbar.color = color;
+      this.snackbar.status = true;
+    },
+    hideSnackbar() {
+      this.snackbar.status = false;
+    },
     async login(login: string, password: string): Promise<boolean> {
       const i18n = getI18n();
 
@@ -103,14 +111,6 @@ export const useAuthStore = defineStore('auth', {
       }
 
       return token;
-    },
-    showSnackbar(message: string, color: EColor) {
-      this.snackbar.message = message;
-      this.snackbar.color = color;
-      this.snackbar.status = true;
-    },
-    hideSnackbar() {
-      this.snackbar.status = false;
     },
   },
 });
