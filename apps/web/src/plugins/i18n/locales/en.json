@@ -10,5 +10,6 @@
     "login_success": "Login successful!",
     "user_not_found": "User not found. Please check your email/username.",
     "token_not_found": "Token not found. Please check your email/username.",
-    "permissions_not_found": "Permissions not found. Please check your user permissions."
+    "permissions_not_found": "Permissions not found. Please check your user permissions.",
+    "home": "Home"
 }

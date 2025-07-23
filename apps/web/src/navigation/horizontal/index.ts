@@ -3,7 +3,7 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 
 export default [
   {
-    title: 'Home',
+    title: 'home',
     to: { name: 'root' as keyof RouteNamedMap },
     icon: { icon: 'tabler-smart-home' },
     permissions: [EGeneralPermissions.full_access],

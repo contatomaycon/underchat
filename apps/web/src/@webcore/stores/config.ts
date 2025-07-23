@@ -55,23 +55,27 @@ export const useConfigStore = defineStore('config', () => {
 
 export const initConfigStore = () => {
   const userPreferredColorScheme = usePreferredColorScheme();
-  const vuetifyTheme = useTheme();
+  const theme = useTheme();
   const configStore = useConfigStore();
 
-  watch([() => configStore.theme, userPreferredColorScheme], () => {
-    let newTheme: string;
+  watch(
+    [() => configStore.theme, userPreferredColorScheme],
+    () => {
+      const newTheme =
+        configStore.theme === 'system'
+          ? userPreferredColorScheme.value === 'dark'
+            ? 'dark'
+            : 'light'
+          : configStore.theme;
 
-    if (configStore.theme === 'system') {
-      newTheme = userPreferredColorScheme.value === 'dark' ? 'dark' : 'light';
-    } else {
-      newTheme = configStore.theme;
-    }
-
-    vuetifyTheme.global.name.value = newTheme;
-  });
+      theme.change(newTheme);
+    },
+    { immediate: true }
+  );
 
   onMounted(() => {
-    if (configStore.theme === 'system')
-      vuetifyTheme.global.name.value = userPreferredColorScheme.value;
+    if (configStore.theme === 'system') {
+      theme.change(userPreferredColorScheme.value);
+    }
   });
 };
