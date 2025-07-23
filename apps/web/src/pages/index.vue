@@ -7,6 +7,8 @@ definePage({
     permissions: [EGeneralPermissions.full_access, EHomePermissions.home_view],
   },
 });
+
+console.log('Welcome to UnderChat!', import.meta.env);
 </script>
 
 <template>
