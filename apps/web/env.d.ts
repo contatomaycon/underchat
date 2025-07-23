@@ -1,5 +1,5 @@
 import 'vue-router';
-import { EPermissionsRoles } from '@main/common/enums/EPermissions';
+import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 
 declare module 'vue-router' {
   interface RouteMeta {

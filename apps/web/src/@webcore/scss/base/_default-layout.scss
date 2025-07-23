@@ -1,0 +1,16 @@
+@use '@webcore/scss/base/placeholders';
+@use '@webcore/scss/base/variables' as vars;
+
+.layout-vertical-nav,
+.layout-horizontal-nav {
+  ol,
+  ul {
+    list-style: none;
+  }
+}
+
+@if vars.$navbar-high-emphasis-text {
+  .layout-navbar {
+    @extend %layout-navbar;
+  }
+}

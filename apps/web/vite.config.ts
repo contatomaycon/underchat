@@ -45,7 +45,7 @@ export default defineConfig(({ mode }) => {
       }),
       MetaLayouts({ target: './src/layouts', defaultLayout: 'default' }),
       Components({
-        dirs: ['src/@core/components', 'src/views/demos', 'src/components'],
+        dirs: ['src/@webcore/components', 'src/views/demos', 'src/components'],
         dts: true,
         resolvers: [
           (name) =>
@@ -68,8 +68,8 @@ export default defineConfig(({ mode }) => {
           'pinia',
         ],
         dirs: [
-          './src/@core/utils',
-          './src/@core/composable/',
+          './src/@webcore/utils',
+          './src/@webcore/composable/',
           './src/composables/',
           './src/utils/',
           './src/plugins/*/composables/*',
@@ -85,7 +85,7 @@ export default defineConfig(({ mode }) => {
         '@themeConfig': fileURLToPath(
           new URL('./themeConfig.ts', import.meta.url)
         ),
-        '@core': fileURLToPath(new URL('./src/@core', import.meta.url)),
+        '@webcore': fileURLToPath(new URL('./src/@webcore', import.meta.url)),
         '@layouts': fileURLToPath(new URL('./src/@layouts', import.meta.url)),
         '@images': fileURLToPath(
           new URL('./src/assets/images/', import.meta.url)
@@ -102,7 +102,7 @@ export default defineConfig(({ mode }) => {
         '@api-utils': fileURLToPath(
           new URL('./src/plugins/fake-api/utils/', import.meta.url)
         ),
-        '@main/': fileURLToPath(
+        '@core/': fileURLToPath(
           new URL('../../packages/core/', import.meta.url)
         ),
       },

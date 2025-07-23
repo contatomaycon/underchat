@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { EGeneralPermissions } from '@main/common/enums/EPermissions/general';
-import { EHomePermissions } from '@main/common/enums/EPermissions/home';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EHomePermissions } from '@core/common/enums/EPermissions/home';
 
 definePage({
   meta: {

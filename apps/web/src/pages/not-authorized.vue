@@ -3,7 +3,7 @@ import pages401 from '@images/pages/401.png';
 import miscMaskDark from '@images/pages/misc-mask-dark.png';
 import miscMaskLight from '@images/pages/misc-mask-light.png';
 
-import { useGenerateImageVariant } from '@core/composable/useGenerateImageVariant';
+import { useGenerateImageVariant } from '@webcore/composable/useGenerateImageVariant';
 
 definePage({
   alias: '/pages/misc/not-authorized',
@@ -45,5 +45,5 @@ const authThemeMask = useGenerateImageVariant(miscMaskLight, miscMaskDark);
 </template>
 
 <style lang="scss">
-@use '@core/scss/template/pages/misc.scss';
+@use '@webcore/scss/template/pages/misc.scss';
 </style>

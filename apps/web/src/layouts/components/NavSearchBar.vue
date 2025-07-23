@@ -3,7 +3,7 @@ import Shepherd from 'shepherd.js';
 import { withQuery } from 'ufo';
 import type { RouteLocationRaw } from 'vue-router';
 import type { SearchResults } from '@db/app-bar-search/types';
-import { useConfigStore } from '@core/stores/config';
+import { useConfigStore } from '@/@webcore/stores/config';
 
 interface Suggestion {
   icon: string;
@@ -180,7 +180,7 @@ const redirectToSuggestedPage = (selected: Suggestion) => {
 };
 
 const LazyAppBarSearch = defineAsyncComponent(
-  () => import('@core/components/AppBarSearch.vue')
+  () => import('@webcore/components/AppBarSearch.vue')
 );
 </script>
 

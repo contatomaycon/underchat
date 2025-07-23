@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useGenerateImageVariant } from '@core/composable/useGenerateImageVariant';
+import { useGenerateImageVariant } from '@webcore/composable/useGenerateImageVariant';
 import misc404 from '@images/pages/404.png';
 import miscMaskDark from '@images/pages/misc-mask-dark.png';
 import miscMaskLight from '@images/pages/misc-mask-light.png';
@@ -45,5 +45,5 @@ definePage({
 </template>
 
 <style lang="scss">
-@use '@core/scss/template/pages/misc.scss';
+@use '@webcore/scss/template/pages/misc.scss';
 </style>

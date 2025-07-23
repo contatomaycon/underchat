@@ -1,6 +1,6 @@
 import type { Router, RouteLocationRaw } from 'vue-router';
 import { canNavigate } from '@layouts/plugins/casl';
-import { isLoggedIn } from '@/@core/localStorage/user';
+import { isLoggedIn } from '@/@webcore/localStorage/user';
 
 export const setupGuards = (router: Router) => {
   router.beforeEach((to): RouteLocationRaw | void => {

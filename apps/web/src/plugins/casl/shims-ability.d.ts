@@ -1,5 +1,5 @@
 import type { AppAbility } from './ability';
-import { EPermissionsRoles } from '@main/common/enums/EPermissions';
+import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 
 declare module 'vue' {
   interface ComponentCustomProperties {

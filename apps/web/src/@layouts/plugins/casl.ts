@@ -1,6 +1,6 @@
 import type { RouteLocationNormalized } from 'vue-router';
 import type { NavGroup } from '@layouts/types';
-import { EPermissionsRoles } from '@main/common/enums/EPermissions';
+import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { useAbility } from '@/plugins/casl/composables/useAbility';
 
 export const can = (permissions?: EPermissionsRoles[]): boolean => {

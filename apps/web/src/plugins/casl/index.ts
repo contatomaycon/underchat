@@ -2,8 +2,8 @@ import type { App } from 'vue';
 
 import { createMongoAbility } from '@casl/ability';
 import { abilitiesPlugin } from '@casl/vue';
-import { EPermissionsRoles } from '@main/common/enums/EPermissions';
-import { getPermissions } from '@/@core/localStorage/user';
+import { EPermissionsRoles } from '@core/common/enums/EPermissions';
+import { getPermissions } from '@webcore/localStorage/user';
 
 export default function (app: App) {
   const permissions = getPermissions();

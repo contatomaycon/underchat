@@ -1,7 +1,7 @@
 import { breakpointsVuetifyV3 } from '@vueuse/core';
 import { VIcon } from 'vuetify/components/VIcon';
-import { defineThemeConfig } from '@core';
-import { Skins } from '@core/enums';
+import { defineThemeConfig } from '@webcore';
+import { Skins } from '@webcore/enums';
 import logo from '@images/logo.svg?raw';
 
 import {

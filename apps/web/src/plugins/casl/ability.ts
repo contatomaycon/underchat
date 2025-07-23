@@ -1,5 +1,5 @@
 import { createMongoAbility, MongoAbility } from '@casl/ability';
-import { EPermissionsRoles } from '@main/common/enums/EPermissions';
+import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 
 export type AppAbility = MongoAbility<[EPermissionsRoles, EPermissionsRoles]>;
 

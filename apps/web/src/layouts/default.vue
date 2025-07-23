@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { useConfigStore } from '@core/stores/config';
+import { useConfigStore } from '@/@webcore/stores/config';
 import { AppContentLayoutNav } from '@layouts/enums';
 import { switchToVerticalNavOnLtOverlayNavBreakpoint } from '@layouts/utils';
 

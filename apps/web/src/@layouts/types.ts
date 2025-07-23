@@ -7,7 +7,7 @@ import type {
   HorizontalNavType,
   NavbarType,
 } from '@layouts/enums';
-import { EPermissionsRoles } from '@main/common/enums/EPermissions';
+import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 
 export interface LayoutConfig {
   app: {

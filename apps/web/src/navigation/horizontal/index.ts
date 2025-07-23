@@ -1,5 +1,5 @@
 import { RouteNamedMap } from 'vue-router/auto-routes';
-import { EGeneralPermissions } from '@main/common/enums/EPermissions/general';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 
 export default [
   {
