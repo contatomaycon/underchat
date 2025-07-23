@@ -33,6 +33,11 @@ export const useAuthStore = defineStore('auth', {
     },
     async login(login: string, password: string): Promise<boolean> {
       const i18n = getI18n();
+      const url = import.meta.env.VITE_BACKEND_URL;
+
+      if (!url) {
+        return false;
+      }
 
       try {
         const currentLocale = i18n.global.locale.value;
@@ -40,7 +45,7 @@ export const useAuthStore = defineStore('auth', {
         const response = await axios.post<
           IApiResponse<AuthLoginResponse | null>
         >(
-          'http://localhost:3002/v1/auth/login',
+          `${url}/v1/auth/login`,
           {
             login,
             password,

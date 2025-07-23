@@ -8,21 +8,14 @@ import {
   getPascalCaseRouteName,
 } from 'unplugin-vue-router';
 import VueRouter from 'unplugin-vue-router/vite';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig } from 'vite';
 import VueDevTools from 'vite-plugin-vue-devtools';
 import MetaLayouts from 'vite-plugin-vue-meta-layouts';
 import vuetify from 'vite-plugin-vuetify';
 import svgLoader from 'vite-svg-loader';
 
-export default defineConfig(({ mode }) => {
-  const root = fileURLToPath(new URL('../../', import.meta.url));
-  const env = loadEnv(mode, root, '');
-
+export default defineConfig(() => {
   return {
-    envDir: root,
-    define: {
-      'process.env': env,
-    },
     plugins: [
       VueRouter({
         getRouteName: (routeNode) =>
