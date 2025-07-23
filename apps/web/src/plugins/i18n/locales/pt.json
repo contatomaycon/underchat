@@ -4,5 +4,10 @@
     "email_or_username": "E-mail ou Usuário",
     "password": "Senha",
     "forgot_password": "Esqueceu sua senha?",
-    "login": "Entrar"
+    "login": "Entrar",
+    "login_error": "Ocorreu um erro ao fazer login. Por favor, tente novamente.",
+    "login_invalid": "Credenciais de login inválidas. Verifique seu e-mail/usuário e senha.",
+    "login_success": "Login realizado com sucesso!",
+    "user_not_found": "Usuário não encontrado. Verifique seu e-mail/usuário.",
+    "token_not_found": "Token não encontrado. Verifique seu e-mail/usuário."
 }

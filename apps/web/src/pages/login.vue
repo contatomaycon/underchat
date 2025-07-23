@@ -8,6 +8,11 @@ import authV2MaskDark from '@images/pages/misc-mask-dark.png';
 import authV2MaskLight from '@images/pages/misc-mask-light.png';
 import { VNodeRenderer } from '@layouts/components/VNodeRenderer';
 import { themeConfig } from '@themeConfig';
+import { useAuthStore } from '@core/stores/auth';
+
+const authStore = useAuthStore();
+const route = useRoute();
+const router = useRouter();
 
 definePage({
   meta: {
@@ -17,9 +22,8 @@ definePage({
 });
 
 const form = ref({
-  email: '',
+  login: '',
   password: '',
-  remember: false,
 });
 
 const isPasswordVisible = ref(false);
@@ -33,9 +37,28 @@ const authThemeImg = useGenerateImageVariant(
 );
 
 const authThemeMask = useGenerateImageVariant(authV2MaskLight, authV2MaskDark);
+
+const handleLogin = async () => {
+  const result = await authStore.login(form.value.login, form.value.password);
+
+  if (result) {
+    await nextTick(() => {
+      router.replace(route.query.to ? String(route.query.to) : '/');
+    });
+  }
+};
 </script>
 
 <template>
+  <VSnackbar
+    v-model="authStore.snackbar.status"
+    transition="scroll-y-reverse-transition"
+    location="top end"
+    :color="authStore.snackbar.color"
+  >
+    {{ authStore.snackbar.message }}
+  </VSnackbar>
+
   <a href="javascript:void(0)">
     <div class="auth-logo d-flex align-center gap-x-3">
       <VNodeRenderer :nodes="themeConfig.app.logo" />
@@ -90,7 +113,7 @@ const authThemeMask = useGenerateImageVariant(authV2MaskLight, authV2MaskDark);
             <VRow>
               <VCol cols="12">
                 <AppTextField
-                  v-model="form.email"
+                  v-model="form.login"
                   autofocus
                   :label="$t('email_or_username')"
                   type="text"
@@ -119,7 +142,9 @@ const authThemeMask = useGenerateImageVariant(authV2MaskLight, authV2MaskDark);
                   </a>
                 </div>
 
-                <VBtn block type="submit"> {{ $t('login') }} </VBtn>
+                <VBtn block type="submit" @click="handleLogin">
+                  {{ $t('login') }}
+                </VBtn>
               </VCol>
             </VRow>
           </VForm>

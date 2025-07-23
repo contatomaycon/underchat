@@ -24,8 +24,6 @@ export const getI18n = () => {
     });
   }
 
-  _i18n.global.locale = cookieRef('language', getBrowserLanguage()).value;
-
   return _i18n;
 };
 

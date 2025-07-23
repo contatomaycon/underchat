@@ -4,5 +4,10 @@
     "email_or_username": "Email or Username",
     "password": "Password",
     "forgot_password": "Forgot your password?",
-    "login": "Login"
+    "login": "Login",
+    "login_error": "An error occurred while logging in. Please try again.",
+    "login_invalid": "Invalid login credentials. Please check your email/username and password.",
+    "login_success": "Login successful!",
+    "user_not_found": "User not found. Please check your email/username.",
+    "token_not_found": "Token not found. Please check your email/username."
 }
