@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { EGeneralPermissions } from '@main/common/enums/EPermissions/general';
+import { EHomePermissions } from '@main/common/enums/EPermissions/home';
 
 definePage({
   meta: {
-    permissions: [EGeneralPermissions.full_access],
+    permissions: [EGeneralPermissions.full_access, EHomePermissions.home_view],
   },
 });
 </script>
