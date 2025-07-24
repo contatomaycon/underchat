@@ -9,6 +9,9 @@ import { ICreateServerSsh } from '@core/common/interfaces/ICreateServerSsh';
 import { ServerSshViewerExistsRepository } from '@core/repositories/server/ServerSshViewerExists.repository';
 import { ServerSshViewerRepository } from '@core/repositories/server/ServerSshViewer.repository';
 import { ServerStatusUpdaterRepository } from '@core/repositories/server/ServerStatusUpdater.repository';
+import { ServerDeleterRepository } from '@core/repositories/server/ServerDeleter.repository';
+import { ServerSshDeleterRepository } from '@core/repositories/server/ServerSshDeleter.repository';
+import { ServerViewerExistsRepository } from '@core/repositories/server/ServerViewerExists.repository';
 
 @injectable()
 export class ServerService {
@@ -18,7 +21,10 @@ export class ServerService {
     private readonly serverSshViewerExistsRepository: ServerSshViewerExistsRepository,
     private readonly serverSshCreatorRepository: ServerSshCreatorRepository,
     private readonly serverSshViewerRepository: ServerSshViewerRepository,
-    private readonly serverStatusUpdaterRepository: ServerStatusUpdaterRepository
+    private readonly serverStatusUpdaterRepository: ServerStatusUpdaterRepository,
+    private readonly serverDeleterRepository: ServerDeleterRepository,
+    private readonly serverSshDeleterRepository: ServerSshDeleterRepository,
+    private readonly serverViewerExistsRepository: ServerViewerExistsRepository
   ) {}
 
   createServer = async (input: CreateServerRequest) => {
@@ -67,5 +73,17 @@ export class ServerService {
       serverId,
       status
     );
+  };
+
+  deleteServerById = async (serverId: number): Promise<boolean> => {
+    return this.serverDeleterRepository.deleteServerById(serverId);
+  };
+
+  deleteServerSshById = async (serverId: number): Promise<boolean> => {
+    return this.serverSshDeleterRepository.deleteServerSshById(serverId);
+  };
+
+  existsServerById = async (serverId: number): Promise<boolean> => {
+    return this.serverViewerExistsRepository.existsServerById(serverId);
   };
 }

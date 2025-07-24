@@ -1,0 +1,21 @@
+{
+  "not_authorized": "¡No autorizado!",
+  "login_error": "Error de inicio de sesión",
+  "login_invalid": "Inicio de sesión inválido",
+  "login_success": "¡Inicio de sesión exitoso!",
+  "internal_server_error": "Error interno del servidor",
+  "server_creator_success": "¡Servidor creado con éxito!",
+  "server_creator_error": "Error al crear el servidor",
+  "server_already_exists": "El servidor ya existe",
+  "server_ssh_creator_error": "Error al crear el servidor SSH",
+  "ssh_connection_failed": "¡Error de conexión SSH!",
+  "health_check_success": "¡Verificación de salud exitosa!",
+  "metrics_server_success": "¡Servidor de métricas iniciado con éxito!",
+  "metrics_server_error": "Error al iniciar el servidor de métricas",
+  "kafka_producer_error": "Error al crear el productor Kafka",
+  "ssh_distro_version_failed": "Error al recuperar la distribución y versión del servidor",
+  "ssh_distro_version_not_allowed": "Distribución y versión no permitidas para el servidor",
+  "server_deleted_successfully": "¡Servidor eliminado con éxito!",
+  "server_deleter_error": "Error al eliminar el servidor",
+  "server_not_found": "Servidor no encontrado"
+}

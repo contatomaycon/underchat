@@ -14,5 +14,8 @@
   "metrics_server_error": "Error starting metrics server!",
   "kafka_producer_error": "Error creating Kafka producer!",
   "ssh_distro_version_failed": "Failed to retrieve distribution and version for server",
-  "ssh_distro_version_not_allowed": "Distribution and version not allowed for server"
+  "ssh_distro_version_not_allowed": "Distribution and version not allowed for server",
+  "server_deleted_successfully": "Server deleted successfully!",
+  "server_deleter_error": "Error deleting server!",
+  "server_not_found": "Server not found!"
 }

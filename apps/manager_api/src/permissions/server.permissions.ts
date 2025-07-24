@@ -5,3 +5,8 @@ export const serverCreatePermissions = [
   EGeneralPermissions.full_access,
   EServerPermissions.server_create,
 ];
+
+export const serverDeletePermissions = [
+  EGeneralPermissions.full_access,
+  EServerPermissions.server_delete,
+];
