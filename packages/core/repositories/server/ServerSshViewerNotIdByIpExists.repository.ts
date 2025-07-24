@@ -2,21 +2,24 @@ import * as schema from '@core/models';
 import { serverSsh } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, count, eq } from 'drizzle-orm';
+import { and, count, eq, ne } from 'drizzle-orm';
 
 @injectable()
-export class ServerSshViewerExistsRepository {
+export class ServerSshViewerNotIdByIpExistsRepository {
   constructor(
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  existsServerByIp = async (ip: string): Promise<boolean> => {
+  existsServerNotIdAndByIp = async (
+    serverId: number,
+    ip: string
+  ): Promise<boolean> => {
     const result = await this.db
       .select({
         total: count(),
       })
       .from(serverSsh)
-      .where(and(eq(serverSsh.ssh_ip, ip)))
+      .where(and(eq(serverSsh.ssh_ip, ip), ne(serverSsh.server_id, serverId)))
       .execute();
 
     if (!result.length) {

@@ -17,5 +17,9 @@
   "ssh_distro_version_not_allowed": "Distribution and version not allowed for server",
   "server_deleted_successfully": "Server deleted successfully!",
   "server_deleter_error": "Error deleting server!",
-  "server_not_found": "Server not found!"
+  "server_not_found": "Server not found!",
+  "server_update_error": "Error updating server!",
+  "server_ssh_update_error": "Error updating server SSH!",
+  "server_update_successfully": "Server updated successfully!",
+  "server_ssh_not_found": "SSH server not found!"
 }

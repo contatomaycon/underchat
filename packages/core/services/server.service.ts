@@ -12,6 +12,12 @@ import { ServerStatusUpdaterRepository } from '@core/repositories/server/ServerS
 import { ServerDeleterRepository } from '@core/repositories/server/ServerDeleter.repository';
 import { ServerSshDeleterRepository } from '@core/repositories/server/ServerSshDeleter.repository';
 import { ServerViewerExistsRepository } from '@core/repositories/server/ServerViewerExists.repository';
+import { EditServerRequest } from '@core/schema/server/editServer/request.schema';
+import { IUpdateServerSshById } from '@core/common/interfaces/IUpdateServerSshById';
+import { IUpdateServerById } from '@core/common/interfaces/IUpdateServerById';
+import { ServerUpdaterRepository } from '@core/repositories/server/ServerUpdater.repository';
+import { TFunction } from 'i18next';
+import { ServerSshViewerNotIdByIpExistsRepository } from '@core/repositories/server/ServerSshViewerNotIdByIpExists.repository';
 
 @injectable()
 export class ServerService {
@@ -24,7 +30,9 @@ export class ServerService {
     private readonly serverStatusUpdaterRepository: ServerStatusUpdaterRepository,
     private readonly serverDeleterRepository: ServerDeleterRepository,
     private readonly serverSshDeleterRepository: ServerSshDeleterRepository,
-    private readonly serverViewerExistsRepository: ServerViewerExistsRepository
+    private readonly serverViewerExistsRepository: ServerViewerExistsRepository,
+    private readonly serverUpdaterRepository: ServerUpdaterRepository,
+    private readonly serverSshViewerNotIdByIpExistsRepository: ServerSshViewerNotIdByIpExistsRepository
   ) {}
 
   createServer = async (input: CreateServerRequest) => {
@@ -57,8 +65,8 @@ export class ServerService {
     );
   };
 
-  viewByIp = async (ip: string): Promise<boolean> => {
-    return this.serverSshViewerExistsRepository.viewByIp(ip);
+  existsServerByIp = async (ip: string): Promise<boolean> => {
+    return this.serverSshViewerExistsRepository.existsServerByIp(ip);
   };
 
   viewServerSshById = async (id: number) => {
@@ -85,5 +93,47 @@ export class ServerService {
 
   existsServerById = async (serverId: number): Promise<boolean> => {
     return this.serverViewerExistsRepository.existsServerById(serverId);
+  };
+
+  updateServerById = async (
+    t: TFunction<'translation', undefined>,
+    serverId: number,
+    input: EditServerRequest
+  ): Promise<boolean> => {
+    const sshUsername = input.ssh_username
+      ? this.passwordEncryptorService.encrypt(input.ssh_username)
+      : null;
+    const sshPassword = input.ssh_password
+      ? this.passwordEncryptorService.encrypt(input.ssh_password)
+      : null;
+
+    const inputUpdateServerSsh: IUpdateServerSshById = {
+      server_id: serverId,
+      ssh_ip: input.ssh_ip,
+      ssh_port: input.ssh_port,
+      ssh_username: sshUsername,
+      ssh_password: sshPassword,
+    };
+
+    const inputUpdateServer: IUpdateServerById = {
+      server_id: serverId,
+      name: input.name,
+    };
+
+    return this.serverUpdaterRepository.updateServer(
+      t,
+      inputUpdateServer,
+      inputUpdateServerSsh
+    );
+  };
+
+  existsServerNotIdAndByIp = async (
+    serverId: number,
+    ip: string
+  ): Promise<boolean> => {
+    return this.serverSshViewerNotIdByIpExistsRepository.existsServerNotIdAndByIp(
+      serverId,
+      ip
+    );
   };
 }

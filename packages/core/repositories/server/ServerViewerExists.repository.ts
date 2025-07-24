@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { server } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, count, eq } from 'drizzle-orm';
+import { and, count, eq, isNull } from 'drizzle-orm';
 
 @injectable()
 export class ServerViewerExistsRepository {
@@ -16,7 +16,7 @@ export class ServerViewerExistsRepository {
         total: count(),
       })
       .from(server)
-      .where(and(eq(server.server_id, serverId)))
+      .where(and(eq(server.server_id, serverId), isNull(server.deleted_at)))
       .execute();
 
     if (!result.length) {

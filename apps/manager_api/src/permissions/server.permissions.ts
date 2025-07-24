@@ -10,3 +10,8 @@ export const serverDeletePermissions = [
   EGeneralPermissions.full_access,
   EServerPermissions.server_delete,
 ];
+
+export const serverEditPermissions = [
+  EGeneralPermissions.full_access,
+  EServerPermissions.server_edit,
+];

@@ -88,7 +88,7 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
         next();
       },
     },
-    staticCSP: true,
+    staticCSP: false,
     transformStaticCSP: (header: string): string => {
       return header;
     },
