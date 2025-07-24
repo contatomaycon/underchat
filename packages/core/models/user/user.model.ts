@@ -2,10 +2,10 @@ import { pgTable, timestamp, smallint, varchar } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import {
   userStatus,
-  permissionRole,
   userAddress,
   userInfo,
   account,
+  permissionAssignment,
 } from '@core/models';
 
 export const user = pgTable('user', {
@@ -15,9 +15,6 @@ export const user = pgTable('user', {
     .notNull(),
   user_status_id: smallint()
     .references(() => userStatus.user_status_id)
-    .notNull(),
-  permission_role_id: smallint()
-    .references(() => permissionRole.permission_role_id)
     .notNull(),
   username: varchar({ length: 50 }),
   email: varchar({ length: 500 }).notNull(),
@@ -43,10 +40,6 @@ export const userRelations = relations(user, ({ one }) => ({
     fields: [user.user_status_id],
     references: [userStatus.user_status_id],
   }),
-  upr: one(permissionRole, {
-    fields: [user.permission_role_id],
-    references: [permissionRole.permission_role_id],
-  }),
   uua: one(userAddress, {
     fields: [user.user_id],
     references: [userAddress.user_id],
@@ -54,5 +47,9 @@ export const userRelations = relations(user, ({ one }) => ({
   uui: one(userInfo, {
     fields: [user.user_id],
     references: [userInfo.user_id],
+  }),
+  upa: one(permissionAssignment, {
+    fields: [user.user_id],
+    references: [permissionAssignment.user_id],
   }),
 }));

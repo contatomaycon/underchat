@@ -1,3 +1,14 @@
+<script setup lang="ts">
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EHomePermissions } from '@core/common/enums/EPermissions/home';
+
+definePage({
+  meta: {
+    permissions: [EGeneralPermissions.full_access, EHomePermissions.home_view],
+  },
+});
+</script>
+
 <template>
   <div>
     <VCard class="mb-6" title="Kick start your project 🚀">

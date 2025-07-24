@@ -7,7 +7,7 @@ import { icons } from './icons';
 import { staticPrimaryColor, staticPrimaryDarkenColor, themes } from './theme';
 import { themeConfig } from '@themeConfig';
 import { cookieRef } from '@/@layouts/stores/config';
-import '@core/scss/template/libs/vuetify/index.scss';
+import '@webcore/scss/template/libs/vuetify/index.scss';
 import 'vuetify/styles';
 
 export default function (app: App) {

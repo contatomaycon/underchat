@@ -1,7 +1,8 @@
 import { setupLayouts } from 'virtual:meta-layouts';
 import { App } from 'vue';
 import { createRouter, createWebHistory } from 'vue-router/auto';
-import { routes as autoRoutes } from 'vue-router/auto-routes'; // ← rotas já tipadas
+import { routes as autoRoutes } from 'vue-router/auto-routes';
+import { setupGuards } from './guards';
 
 const routes = setupLayouts(autoRoutes);
 
@@ -13,6 +14,8 @@ const router = createRouter({
     return { top: 0 };
   },
 });
+
+setupGuards(router);
 
 export { router };
 

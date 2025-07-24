@@ -7,6 +7,7 @@ import type {
   HorizontalNavType,
   NavbarType,
 } from '@layouts/enums';
+import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 
 export interface LayoutConfig {
   app: {
@@ -47,8 +48,7 @@ export interface LayoutConfig {
 }
 
 export interface AclProperties {
-  action: string;
-  subject: string;
+  permissions: EPermissionsRoles[];
 }
 
 export interface NavSectionTitle extends Partial<AclProperties> {

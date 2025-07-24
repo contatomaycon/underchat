@@ -1,40 +1,53 @@
-import { useAbility } from '@casl/vue';
 import type { RouteLocationNormalized } from 'vue-router';
 import type { NavGroup } from '@layouts/types';
+import { EPermissionsRoles } from '@core/common/enums/EPermissions';
+import { useAbility } from '@/plugins/casl/composables/useAbility';
 
-export const can = (
-  action: string | undefined,
-  subject: string | undefined
-) => {
-  const vm = getCurrentInstance();
+export const can = (permissions?: EPermissionsRoles[]): boolean => {
+  if (!permissions?.length) {
+    return false;
+  }
 
-  if (!vm) return false;
-
-  const localCan = vm.proxy && '$can' in vm.proxy;
-
-  // @ts-expect-error We will get TS error in below line because we aren't using $can in component instance
-  return localCan ? vm.proxy?.$can(action, subject) : true;
-};
-
-export const canViewNavMenuGroup = (item: NavGroup) => {
-  const hasAnyVisibleChild = item.children.some((i) =>
-    can(i.action, i.subject)
-  );
-
-  if (!(item.action && item.subject)) return hasAnyVisibleChild;
-
-  return can(item.action, item.subject) && hasAnyVisibleChild;
-};
-
-export const canNavigate = (to: RouteLocationNormalized) => {
   const ability = useAbility();
 
-  const targetRoute = to.matched[to.matched.length - 1];
+  for (const perm of permissions) {
+    if (ability.can(perm, perm)) return true;
+  }
 
-  if (targetRoute?.meta?.action && targetRoute?.meta?.subject)
-    return ability.can(targetRoute.meta.action, targetRoute.meta.subject);
+  return false;
+};
 
-  return to.matched.some((route) =>
-    ability.can(route.meta.action, route.meta.subject)
-  );
+export const canViewNavMenuGroup = (item: NavGroup): boolean => {
+  const hasAnyVisibleChild = item.children.some((i) => can(i.permissions));
+
+  if (!item.permissions) {
+    return hasAnyVisibleChild;
+  }
+
+  return can(item.permissions) && hasAnyVisibleChild;
+};
+
+export const canNavigate = (to: RouteLocationNormalized): boolean => {
+  const ability = useAbility();
+
+  const hasPermission = (perms?: EPermissionsRoles[]): boolean => {
+    if (!perms?.length) {
+      return false;
+    }
+
+    for (const p of perms) {
+      if (ability.can(p, p)) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  const target = to.matched[to.matched.length - 1];
+  if (hasPermission(target?.meta?.permissions)) {
+    return true;
+  }
+
+  return to.matched.some((r) => hasPermission(r.meta.permissions));
 };

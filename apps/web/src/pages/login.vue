@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import AuthProvider from '@/views/pages/authentication/AuthProvider.vue';
-import { useGenerateImageVariant } from '@core/composable/useGenerateImageVariant';
+import { useGenerateImageVariant } from '@webcore/composable/useGenerateImageVariant';
 import authV2LoginIllustrationBorderedDark from '@images/pages/auth-v2-login-illustration-bordered-dark.png';
 import authV2LoginIllustrationBorderedLight from '@images/pages/auth-v2-login-illustration-bordered-light.png';
 import authV2LoginIllustrationDark from '@images/pages/auth-v2-login-illustration-dark.png';
@@ -9,18 +8,24 @@ import authV2MaskDark from '@images/pages/misc-mask-dark.png';
 import authV2MaskLight from '@images/pages/misc-mask-light.png';
 import { VNodeRenderer } from '@layouts/components/VNodeRenderer';
 import { themeConfig } from '@themeConfig';
+import { useAuthStore } from '@webcore/stores/auth';
+
+const authStore = useAuthStore();
+const route = useRoute();
+const router = useRouter();
+const ability = useAbility();
 
 definePage({
   meta: {
     layout: 'blank',
     public: true,
+    unauthenticatedOnly: true,
   },
 });
 
 const form = ref({
-  email: '',
+  login: '',
   password: '',
-  remember: false,
 });
 
 const isPasswordVisible = ref(false);
@@ -34,9 +39,37 @@ const authThemeImg = useGenerateImageVariant(
 );
 
 const authThemeMask = useGenerateImageVariant(authV2MaskLight, authV2MaskDark);
+
+const handleLogin = async () => {
+  const result = await authStore.login(form.value.login, form.value.password);
+
+  if (result) {
+    const permissions = authStore.permissions;
+
+    const userAbilityRules = permissions.map((permission) => ({
+      action: permission,
+      subject: permission,
+    }));
+
+    await nextTick(() => {
+      ability.update(userAbilityRules);
+
+      router.replace(route.query.to ? String(route.query.to) : '/');
+    });
+  }
+};
 </script>
 
 <template>
+  <VSnackbar
+    v-model="authStore.snackbar.status"
+    transition="scroll-y-reverse-transition"
+    location="top end"
+    :color="authStore.snackbar.color"
+  >
+    {{ authStore.snackbar.message }}
+  </VSnackbar>
+
   <a href="javascript:void(0)">
     <div class="auth-logo d-flex align-center gap-x-3">
       <VNodeRenderer :nodes="themeConfig.app.logo" />
@@ -78,12 +111,12 @@ const authThemeMask = useGenerateImageVariant(authV2MaskLight, authV2MaskDark);
       <VCard flat :max-width="500" class="mt-12 mt-sm-0 pa-6">
         <VCardText>
           <h4 class="text-h4 mb-1">
-            Welcome to
+            {{ $t('welcome') }}
             <span class="text-capitalize">{{ themeConfig.app.title }}</span
-            >! 👋🏻
+            >!
           </h4>
           <p class="mb-0">
-            Please sign-in to your account and start the adventure
+            {{ $t('please_login') }}
           </p>
         </VCardText>
         <VCardText>
@@ -91,19 +124,18 @@ const authThemeMask = useGenerateImageVariant(authV2MaskLight, authV2MaskDark);
             <VRow>
               <VCol cols="12">
                 <AppTextField
-                  v-model="form.email"
+                  v-model="form.login"
                   autofocus
-                  label="Email or Username"
-                  type="email"
-                  autocomplete="username"
-                  placeholder="johndoe@email.com"
+                  :label="$t('email_or_username')"
+                  type="text"
+                  placeholder="email@email.com"
                 />
               </VCol>
 
               <VCol cols="12">
                 <AppTextField
                   v-model="form.password"
-                  label="Password"
+                  :label="$t('password')"
                   placeholder="············"
                   :type="isPasswordVisible ? 'text' : 'password'"
                   :append-inner-icon="
@@ -115,33 +147,14 @@ const authThemeMask = useGenerateImageVariant(authV2MaskLight, authV2MaskDark);
                 <div
                   class="d-flex align-center flex-wrap justify-space-between my-6"
                 >
-                  <VCheckbox v-model="form.remember" label="Remember me" />
                   <a class="text-primary" href="javascript:void(0)">
-                    Forgot Password?
+                    {{ $t('forgot_password') }}
                   </a>
                 </div>
 
-                <VBtn block type="submit"> Login </VBtn>
-              </VCol>
-
-              <VCol cols="12" class="text-body-1 text-center">
-                <span class="d-inline-block"> New on our platform? </span>
-                <a
-                  class="text-primary ms-1 d-inline-block text-body-1"
-                  href="javascript:void(0)"
-                >
-                  Create an account
-                </a>
-              </VCol>
-
-              <VCol cols="12" class="d-flex align-center">
-                <VDivider />
-                <span class="mx-4">or</span>
-                <VDivider />
-              </VCol>
-
-              <VCol cols="12" class="text-center">
-                <AuthProvider />
+                <VBtn block type="submit" @click="handleLogin">
+                  {{ $t('login') }}
+                </VBtn>
               </VCol>
             </VRow>
           </VForm>
@@ -152,5 +165,5 @@ const authThemeMask = useGenerateImageVariant(authV2MaskLight, authV2MaskDark);
 </template>
 
 <style lang="scss">
-@use '@core/scss/template/pages/page-auth';
+@use '@webcore/scss/template/pages/page-auth';
 </style>

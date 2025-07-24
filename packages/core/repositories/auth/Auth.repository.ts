@@ -5,10 +5,11 @@ import {
   user,
   userStatus,
   userInfo,
-  userType,
   userDocument,
   userDocumentType,
   userAddress,
+  permissionAssignment,
+  permissionRole,
 } from '@core/models';
 import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
 import { and, eq, isNull, or } from 'drizzle-orm';
@@ -27,6 +28,7 @@ export class AuthRepository {
     const result = await this.db
       .select({
         user_id: user.user_id,
+        account_id: user.account_id,
         email_partial: user.email_partial,
         status: {
           status_id: userStatus.user_status_id,
@@ -41,8 +43,8 @@ export class AuthRepository {
           birth_date: userInfo.birth_date,
         },
         type: {
-          user_type_id: userType.user_type_id,
-          name: userType.name,
+          user_type_id: permissionRole.permission_role_id,
+          name: permissionRole.name,
         },
         document: {
           user_document_id: userDocument.user_document_id,
@@ -62,7 +64,17 @@ export class AuthRepository {
       .from(user)
       .innerJoin(userStatus, eq(userStatus.user_status_id, user.user_status_id))
       .innerJoin(userInfo, eq(userInfo.user_id, user.user_id))
-      .innerJoin(userType, eq(userType.user_type_id, user.user_type_id))
+      .innerJoin(
+        permissionAssignment,
+        eq(permissionAssignment.user_id, user.user_id)
+      )
+      .innerJoin(
+        permissionRole,
+        eq(
+          permissionRole.permission_role_id,
+          permissionAssignment.permission_role_id
+        )
+      )
       .innerJoin(userDocument, eq(userDocument.user_id, user.user_id))
       .innerJoin(
         userDocumentType,

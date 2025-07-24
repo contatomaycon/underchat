@@ -6,10 +6,16 @@ import { FastifyReply } from 'fastify';
 import { TFunction } from 'i18next';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { generalEnvironment } from '@core/config/environments';
+import { PermissionService } from '@core/services/permission.service';
+import { AccountService } from '@core/services/account.service';
 
 @injectable()
 export class AuthLoginUseCase {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly permissionService: PermissionService,
+    private readonly accountService: AccountService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,
@@ -39,9 +45,16 @@ export class AuthLoginUseCase {
       }
     );
 
+    const [permissions, accountInfo] = await Promise.all([
+      this.permissionService.viewPermissionByUserId(result.user_id),
+      this.accountService.viewAccountInfoByAccountId(result.account_id),
+    ]);
+
     return {
       user: result,
       token,
+      permissions,
+      layout: accountInfo,
     };
   }
 }

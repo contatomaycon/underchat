@@ -47,7 +47,12 @@ function generateTokenJwtAccess(
   userId: string,
   responseAuth: IJwtGroupHierarchy[]
 ): ITokenJwtData {
+  const accountId = responseAuth.find(
+    (item) => item.account_id !== null
+  )?.account_id;
+
   return {
+    account_id: accountId,
     user_id: userId,
     actions: responseAuth,
   } as ITokenJwtData;

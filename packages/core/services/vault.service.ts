@@ -29,6 +29,7 @@ export class VaultService {
 
     return value as T;
   }
+
   async loadEnv(path: string): Promise<void> {
     const res = await this.client.read(path, {
       version: valtEnvironment.vaultVersion,

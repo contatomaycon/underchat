@@ -1,0 +1,1 @@
+INSERT INTO "user_info" ("user_info_id", "user_id", "phone", "photo", "name", "last_name", "birth_date", "phone_partial", "phone_ddi") VALUES (1, 1, '67d86a97c3f947becc65223d797bfa4603a581de788b37db2f28bfc85de52759', null, 'Administrator', 'UnderChat', '2025-07-17 10:53:17.413000 +00:00', '(61) *****-9040', '55');

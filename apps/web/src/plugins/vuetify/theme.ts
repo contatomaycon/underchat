@@ -1,7 +1,14 @@
+import { getLayout } from '@/@webcore/localStorage/user';
 import type { ThemeDefinition } from 'vuetify';
 
-export const staticPrimaryColor = '#2865B7';
-export const staticPrimaryDarkenColor = '#152642';
+const layout = getLayout();
+
+export const staticPrimaryColor = layout?.light_primary_color ?? '#2865B7';
+export const staticSecondaryColor = layout?.light_secondary_color ?? '#5098E5';
+
+export const staticPrimaryDarkenColor = layout?.dark_primary_color ?? '#152642';
+export const staticSecondaryDarkenColor =
+  layout?.dark_secondary_color ?? '#2865B7';
 
 export const themes: Record<string, ThemeDefinition> = {
   light: {
@@ -10,7 +17,7 @@ export const themes: Record<string, ThemeDefinition> = {
       primary: staticPrimaryColor,
       'on-primary': '#fff',
       'primary-darken-1': '#5098E5',
-      secondary: '#5098E5',
+      secondary: staticSecondaryColor,
       'on-secondary': '#fff',
       'secondary-darken-1': '#737682',
       success: '#28C76F',
@@ -82,7 +89,7 @@ export const themes: Record<string, ThemeDefinition> = {
       primary: staticPrimaryDarkenColor,
       'on-primary': '#fff',
       'primary-darken-1': '#675DD8',
-      secondary: '#2865B7',
+      secondary: staticSecondaryDarkenColor,
       'on-secondary': '#fff',
       'secondary-darken-1': '#737682',
       success: '#28C76F',
