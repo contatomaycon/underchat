@@ -27,15 +27,8 @@ export class ServerListerRepository {
   private setOrders = (query: ListServerRequest): SQL[] => {
     const orders: SQL[] = [];
 
-    console.log('query', query);
-    const sortBy = query.sort_by ?? [];
-
-    console.log('sortBy', sortBy);
-
-    if (query.sort_by) {
+    if (query.sort_by?.length) {
       query.sort_by.forEach(({ key, order }) => {
-        console.log('sort', query.sort_by);
-
         if (key === ESortByServer.name)
           orders.push(
             order === ESortOrder.asc ? asc(server.name) : desc(server.name)
