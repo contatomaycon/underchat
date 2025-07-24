@@ -12,5 +12,11 @@
     "token_not_found": "Token not found. Please check your email/username.",
     "permissions_not_found": "Permissions not found. Please check your user permissions.",
     "home": "Home",
-    "server": "Server"
+    "server": "Server",
+    "name": "Name",
+    "status": "Status",
+    "ssh_ip": "SSH IP",
+    "ssh_port": "SSH Port",
+    "created_at": "Created At",
+    "actions": "Actions"
 }

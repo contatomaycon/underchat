@@ -3,6 +3,7 @@ import { createServer } from './methods/createServer';
 import { deleteServer } from './methods/deleteServer';
 import { editServer } from './methods/editServer';
 import { viewServer } from './methods/viewServer';
+import { listServer } from './methods/listServer';
 
 @injectable()
 class ServerController {
@@ -10,6 +11,7 @@ class ServerController {
   public deleteServer = deleteServer;
   public editServer = editServer;
   public viewServer = viewServer;
+  public listServer = listServer;
 }
 
 export default ServerController;

@@ -12,5 +12,11 @@
     "token_not_found": "Token no encontrado. Por favor, verifica tu correo electrónico/usuario.",
     "permissions_not_found": "Permisos no encontrados. Por favor, verifica tus permisos de usuario.",
     "home": "Inicio",
-    "server": "Servidor"
+    "server": "Servidor",
+    "name": "Nombre",
+    "status": "Status",
+    "ssh_ip": "SSH IP",
+    "ssh_port": "SSH Puerto",
+    "created_at": "Creado en",
+    "actions": "Acciones"
 }

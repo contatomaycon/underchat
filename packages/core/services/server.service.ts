@@ -20,6 +20,9 @@ import { TFunction } from 'i18next';
 import { ServerSshViewerNotIdByIpExistsRepository } from '@core/repositories/server/ServerSshViewerNotIdByIpExists.repository';
 import { ServerViewerRepository } from '@core/repositories/server/ServerViewer.repository';
 import { ViewServerResponse } from '@core/schema/server/viewServer/response.schema';
+import { ServerListerRepository } from '@core/repositories/server/ServerLister.repository';
+import { ListServerResponse } from '@core/schema/server/listServer/response.schema';
+import { ListServerRequest } from '@core/schema/server/listServer/request.schema';
 
 @injectable()
 export class ServerService {
@@ -35,7 +38,8 @@ export class ServerService {
     private readonly serverViewerExistsRepository: ServerViewerExistsRepository,
     private readonly serverUpdaterRepository: ServerUpdaterRepository,
     private readonly serverSshViewerNotIdByIpExistsRepository: ServerSshViewerNotIdByIpExistsRepository,
-    private readonly serverViewerRepository: ServerViewerRepository
+    private readonly serverViewerRepository: ServerViewerRepository,
+    private readonly serverListerRepository: ServerListerRepository
   ) {}
 
   createServer = async (input: CreateServerRequest) => {
@@ -144,5 +148,18 @@ export class ServerService {
     serverId: number
   ): Promise<ViewServerResponse | null> => {
     return this.serverViewerRepository.viewServerById(serverId);
+  };
+
+  listServers = async (
+    perPage: number,
+    currentPage: number,
+    query: ListServerRequest
+  ): Promise<[ListServerResponse[], number]> => {
+    const [result, total] = await Promise.all([
+      this.serverListerRepository.listServers(perPage, currentPage, query),
+      this.serverListerRepository.listServersTotal(query),
+    ]);
+
+    return [result, total];
   };
 }

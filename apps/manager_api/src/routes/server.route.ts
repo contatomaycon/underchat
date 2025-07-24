@@ -11,6 +11,7 @@ import {
 import { deleteServerSchema } from '@core/schema/server/deleteServer';
 import { editServerSchema } from '@core/schema/server/editServer';
 import { viewServerSchema } from '@core/schema/server/viewServer';
+import { listServerSchema } from '@core/schema/server/listServer';
 
 export default async function serverRoutes(server: FastifyInstance) {
   const serverController = container.resolve(ServerController);
@@ -21,6 +22,15 @@ export default async function serverRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, serverCreatePermissions),
+    ],
+  });
+
+  server.get('/server', {
+    schema: listServerSchema,
+    handler: serverController.listServer,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, serverViewPermissions),
     ],
   });
 
