@@ -15,8 +15,8 @@ import {
 } from 'drizzle-orm';
 import { ListServerResponse } from '@core/schema/server/listServer/response.schema';
 import { ListServerRequest } from '@core/schema/server/listServer/request.schema';
-import { ESortByServer } from '@core/common/enums/ESortByServer';
 import { ESortOrder } from '@core/common/enums/ESortOrder';
+import { ESortByServer } from '@core/common/enums/ESortByServer';
 
 @injectable()
 export class ServerListerRepository {
@@ -24,34 +24,51 @@ export class ServerListerRepository {
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  private setOrders = (query: ListServerRequest): SQL<unknown> | undefined => {
-    if (query?.sort_by === ESortByServer.name) {
-      return query.sort_order === ESortOrder.asc
-        ? asc(server.name)
-        : desc(server.name);
+  private setOrders = (query: ListServerRequest): SQL[] => {
+    const orders: SQL[] = [];
+
+    console.log('query', query);
+    const sortBy = query.sort_by ?? [];
+
+    console.log('sortBy', sortBy);
+
+    if (query.sort_by) {
+      query.sort_by.forEach(({ key, order }) => {
+        console.log('sort', query.sort_by);
+
+        if (key === ESortByServer.name)
+          orders.push(
+            order === ESortOrder.asc ? asc(server.name) : desc(server.name)
+          );
+
+        if (key === ESortByServer.ssh_ip)
+          orders.push(
+            order === ESortOrder.asc
+              ? asc(serverSsh.ssh_ip)
+              : desc(serverSsh.ssh_ip)
+          );
+
+        if (key === ESortByServer.ssh_port)
+          orders.push(
+            order === ESortOrder.asc
+              ? asc(serverSsh.ssh_port)
+              : desc(serverSsh.ssh_port)
+          );
+
+        if (key === ESortByServer.status)
+          orders.push(
+            order === ESortOrder.asc
+              ? asc(serverStatus.server_status_id)
+              : desc(serverStatus.server_status_id)
+          );
+      });
     }
 
-    if (query?.sort_by === ESortByServer.ssh_ip) {
-      return query.sort_order === ESortOrder.asc
-        ? asc(serverSsh.ssh_ip)
-        : desc(serverSsh.ssh_ip);
+    if (!query.sort_by?.length) {
+      orders.push(asc(server.created_at), desc(server.server_id));
     }
 
-    if (query?.sort_by === ESortByServer.ssh_port) {
-      return query.sort_order === ESortOrder.asc
-        ? asc(serverSsh.ssh_port)
-        : desc(serverSsh.ssh_port);
-    }
-
-    if (query?.sort_by === ESortByServer.status) {
-      return query.sort_order === ESortOrder.asc
-        ? asc(serverStatus.status)
-        : desc(serverStatus.status);
-    }
-
-    return query.sort_order === ESortOrder.asc
-      ? asc(server.created_at)
-      : desc(server.created_at);
+    return orders;
   };
 
   private setFilters = (query: ListServerRequest): SQLWrapper[] => {
@@ -106,8 +123,8 @@ export class ServerListerRepository {
       )
       .where(and(isNull(server.deleted_at), or(...filters)));
 
-    if (orders) {
-      queryBuilder.orderBy(orders);
+    if (orders.length) {
+      queryBuilder.orderBy(...orders);
     }
 
     const result = await queryBuilder

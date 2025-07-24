@@ -6,9 +6,7 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EServerPermissions } from '@core/common/enums/EPermissions/server';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
-import { SortItem } from '@/@webcore/types';
-import { ESortByServer } from '@core/common/enums/ESortByServer';
-import { sortHelpers } from '@/@webcore/functions/sortHelpers';
+import { SortRequest } from '@core/schema/common/sortRequestSchema';
 
 const { t } = useI18n();
 const serverStore = useServerStore();
@@ -38,34 +36,23 @@ definePage({
 const headers = [
   { title: t('name'), key: 'name' },
   { title: t('status'), key: 'status' },
-  { title: t('ssh_ip'), key: 'ssh.ssh_ip' },
-  { title: t('ssh_port'), key: 'ssh.ssh_port' },
+  { title: t('ssh_ip'), key: 'ssh_ip' },
+  { title: t('ssh_port'), key: 'ssh_port' },
   { title: t('created_at'), key: 'created_at' },
   { title: t('actions'), key: 'actions', sortable: false },
-];
-
-const sorts = [
-  { key: 'name', value: ESortByServer.name },
-  { key: 'status', value: ESortByServer.status },
-  { key: 'ssh.ssh_ip', value: ESortByServer.ssh_ip },
-  { key: 'ssh.ssh_port', value: ESortByServer.ssh_port },
-  { key: 'created_at', value: ESortByServer.created_at },
 ];
 
 const options = ref({
   page: 1,
   itemsPerPage: 10,
-  sortBy: [] as SortItem[],
+  sortBy: [] as SortRequest[],
 });
 
 const fetchData = async () => {
-  const sortData = sortHelpers(options.value.sortBy, sorts);
-
   await serverStore.listServers({
     page: options.value.page,
     per_page: options.value.itemsPerPage,
-    sort_by: sortData.sortBy,
-    sort_order: sortData.sortOrder,
+    sort_by: options.value.sortBy,
   });
 };
 
@@ -100,6 +87,14 @@ onMounted(async () => {
       <VChip :color="resolveStatusVariant(item.status.id).color" size="small">
         {{ resolveStatusVariant(item.status.id).text }}
       </VChip>
+    </template>
+
+    <template #item.ssh_port="{ item }">
+      <span>{{ item.ssh.ssh_port }}</span>
+    </template>
+
+    <template #item.ssh_ip="{ item }">
+      <span>{{ item.ssh.ssh_ip }}</span>
     </template>
 
     <template #item.created_at="{ item }">

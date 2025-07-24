@@ -35,21 +35,3 @@ export interface GridColumn {
   xl?: string;
   xxl?: string;
 }
-
-export interface SortItem {
-  key: string;
-  order?: boolean | 'asc' | 'desc';
-}
-
-export interface SortLister {
-  key: string;
-  value: string;
-}
-
-export interface Options {
-  page: number;
-  itemsPerPage: number;
-  sortBy: readonly SortItem[];
-  groupBy: readonly SortItem[];
-  search: string | undefined;
-}
