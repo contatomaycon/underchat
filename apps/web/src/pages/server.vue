@@ -1,9 +1,27 @@
 <script setup lang="ts">
+import { ref, watch, onMounted } from 'vue';
+import { useServerStore } from '@/@webcore/stores/server';
+import { EColor } from '@core/common/enums/EColor';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EServerPermissions } from '@core/common/enums/EPermissions/server';
 import { useI18n } from 'vue-i18n';
+import { formatDateTime } from '@core/common/functions/formatDateTime';
+import { SortItem } from '@/@webcore/types';
+import { ESortByServer } from '@core/common/enums/ESortByServer';
+import { sortHelpers } from '@/@webcore/functions/sortHelpers';
 
 const { t } = useI18n();
+const serverStore = useServerStore();
+
+const resolveStatusVariant = (status: number) => {
+  if (status === 1) return { color: EColor.info, text: t('new') };
+  if (status === 2) return { color: EColor.warning, text: t('installing') };
+  if (status === 3) return { color: EColor.success, text: t('online') };
+  if (status === 4) return { color: EColor.error, text: t('error') };
+  if (status === 5) return { color: EColor.error, text: t('offline') };
+
+  return { color: EColor.primary, text: t('unknown') };
+};
 
 definePage({
   meta: {
@@ -20,58 +38,79 @@ definePage({
 const headers = [
   { title: t('name'), key: 'name' },
   { title: t('status'), key: 'status' },
-  { title: t('ssh_ip'), key: 'ssh_ip' },
-  { title: t('ssh_port'), key: 'ssh_port' },
+  { title: t('ssh_ip'), key: 'ssh.ssh_ip' },
+  { title: t('ssh_port'), key: 'ssh.ssh_port' },
   { title: t('created_at'), key: 'created_at' },
-  { title: t('actions'), key: 'actions' },
+  { title: t('actions'), key: 'actions', sortable: false },
 ];
+
+const sorts = [
+  { key: 'name', value: ESortByServer.name },
+  { key: 'status', value: ESortByServer.status },
+  { key: 'ssh.ssh_ip', value: ESortByServer.ssh_ip },
+  { key: 'ssh.ssh_port', value: ESortByServer.ssh_port },
+  { key: 'created_at', value: ESortByServer.created_at },
+];
+
+const options = ref({
+  page: 1,
+  itemsPerPage: 10,
+  sortBy: [] as SortItem[],
+});
+
+const fetchData = async () => {
+  const sortData = sortHelpers(options.value.sortBy, sorts);
+
+  await serverStore.listServers({
+    page: options.value.page,
+    per_page: options.value.itemsPerPage,
+    sort_by: sortData.sortBy,
+    sort_order: sortData.sortOrder,
+  });
+};
+
+watch(options, fetchData, { deep: true });
+
+onMounted(async () => {
+  await fetchData();
+});
 </script>
 
 <template>
-  <div>
-    <VDataTable :headers="headers" :items="userList" :items-per-page="5">
-      <!-- full name -->
-      <template #item.fullName="{ item }">
-        <div class="d-flex align-center">
-          <!-- avatar -->
-          <VAvatar
-            size="32"
-            :color="item.avatar ? '' : 'primary'"
-            :class="item.avatar ? '' : 'v-avatar-light-bg primary--text'"
-            :variant="!item.avatar ? 'tonal' : undefined"
-          >
-            <VImg v-if="item.avatar" :src="item.avatar" />
-            <span v-else>{{ avatarText(item.fullName) }}</span>
-          </VAvatar>
+  <VDataTableServer
+    v-model:page="options.page"
+    v-model:items-per-page="options.itemsPerPage"
+    :headers="headers"
+    :items="serverStore.list_servers"
+    :items-length="serverStore.pagings.total"
+    :loading="serverStore.loading"
+    :sort-by="options.sortBy"
+    @update:options="(opts) => (options = opts)"
+  >
+    <template #item.name="{ item }">
+      <div class="d-flex flex-column ms-3">
+        <span
+          class="d-block font-weight-medium text-high-emphasis text-truncate"
+          >{{ item.name }}</span
+        >
+      </div>
+    </template>
 
-          <div class="d-flex flex-column ms-3">
-            <span
-              class="d-block font-weight-medium text-high-emphasis text-truncate"
-              >{{ item.fullName }}</span
-            >
-            <small>{{ item.post }}</small>
-          </div>
-        </div>
-      </template>
+    <template #item.status="{ item }">
+      <VChip :color="resolveStatusVariant(item.status.id).color" size="small">
+        {{ resolveStatusVariant(item.status.id).text }}
+      </VChip>
+    </template>
 
-      <!-- status -->
-      <template #item.status="{ item }">
-        <VChip :color="resolveStatusVariant(item.status).color" size="small">
-          {{ resolveStatusVariant(item.status).text }}
-        </VChip>
-      </template>
+    <template #item.created_at="{ item }">
+      <span>{{ formatDateTime(item.created_at) }}</span>
+    </template>
 
-      <!-- Actions -->
-      <template #item.actions="{ item }">
-        <div class="d-flex gap-1">
-          <IconBtn>
-            <VIcon icon="tabler-edit" />
-          </IconBtn>
-          <IconBtn>
-            <VIcon icon="tabler-trash" />
-          </IconBtn>
-        </div>
-      </template>
-    </VDataTable>
-  </div>
+    <template #item.actions="{ item }">
+      <div class="d-flex gap-1">
+        <IconBtn><VIcon icon="tabler-edit" /></IconBtn>
+        <IconBtn><VIcon icon="tabler-trash" /></IconBtn>
+      </div>
+    </template>
+  </VDataTableServer>
 </template>

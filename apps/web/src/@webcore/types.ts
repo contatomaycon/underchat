@@ -41,6 +41,11 @@ export interface SortItem {
   order?: boolean | 'asc' | 'desc';
 }
 
+export interface SortLister {
+  key: string;
+  value: string;
+}
+
 export interface Options {
   page: number;
   itemsPerPage: number;

@@ -5,8 +5,15 @@ import { Static, Type } from '@sinclair/typebox';
 
 export const listServerRequestSchema = Type.Object({
   ...pagingRequestSchema.properties,
-  sort_by: Type.Optional(Type.String({ enum: Object.values(ESortByServer) })),
-  sort_order: Type.Optional(Type.String({ enum: Object.values(ESortOrder) })),
+  sort_by: Type.Optional(
+    Type.Union([
+      Type.String({ enum: Object.values(ESortByServer) }),
+      Type.Null(),
+    ])
+  ),
+  sort_order: Type.Optional(
+    Type.Union([Type.String({ enum: Object.values(ESortOrder) }), Type.Null()])
+  ),
   server_name: Type.Optional(Type.String()),
   server_status_id: Type.Optional(Type.Number()),
   ssh_ip: Type.Optional(Type.String()),

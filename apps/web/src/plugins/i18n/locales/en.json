@@ -18,5 +18,13 @@
     "ssh_ip": "SSH IP",
     "ssh_port": "SSH Port",
     "created_at": "Created At",
-    "actions": "Actions"
+    "actions": "Actions",
+    "server_list_error": "An error occurred while listing servers. Please try again.",
+    "server_list_success": "Server list retrieved successfully!",
+    "new": "New",
+    "installing": "Installing",
+    "online": "Online",
+    "error": "Error",
+    "unknown": "Unknown",
+    "offline": "Offline"
 }

@@ -18,5 +18,13 @@
     "ssh_ip": "SSH IP",
     "ssh_port": "SSH Porta",
     "created_at": "Criado Em",
-    "actions": "Ações"
+    "actions": "Ações",
+    "server_list_error": "Ocorreu um erro ao listar os servidores. Por favor, tente novamente.",
+    "server_list_success": "Lista de servidores recuperada com sucesso!",
+    "new": "Novo",
+    "installing": "Instalando",
+    "online": "Online",
+    "error": "Erro",
+    "unknown": "Desconhecido",
+    "offline": "Offline"
 }
