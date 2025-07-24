@@ -11,5 +11,6 @@
     "user_not_found": "Usuário não encontrado. Verifique seu e-mail/usuário.",
     "token_not_found": "Token não encontrado. Verifique seu e-mail/usuário.",
     "permissions_not_found": "Permissões não encontradas. Verifique suas permissões de usuário.",
-    "home": "Início"
+    "home": "Início",
+    "server": "Servidor"
 }

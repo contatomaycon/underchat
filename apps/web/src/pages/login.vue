@@ -128,7 +128,6 @@ const handleLogin = async () => {
                   autofocus
                   :label="$t('email_or_username')"
                   type="text"
-                  autocomplete="username"
                   placeholder="email@email.com"
                 />
               </VCol>

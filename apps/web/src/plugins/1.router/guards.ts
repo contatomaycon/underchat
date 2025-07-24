@@ -25,7 +25,5 @@ export const setupGuards = (router: Router) => {
             },
           };
     }
-
-    return;
   });
 };

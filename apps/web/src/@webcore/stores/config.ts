@@ -61,14 +61,15 @@ export const initConfigStore = () => {
   watch(
     [() => configStore.theme, userPreferredColorScheme],
     () => {
-      const newTheme =
-        configStore.theme === 'system'
-          ? userPreferredColorScheme.value === 'dark'
-            ? 'dark'
-            : 'light'
-          : configStore.theme;
+      const newTheme = () => {
+        if (configStore.theme === 'system') {
+          return userPreferredColorScheme.value === 'dark' ? 'dark' : 'light';
+        }
 
-      theme.change(newTheme);
+        return configStore.theme;
+      };
+
+      theme.change(newTheme());
     },
     { immediate: true }
   );
