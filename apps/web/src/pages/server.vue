@@ -64,48 +64,65 @@ onMounted(async () => {
 </script>
 
 <template>
-  <VDataTableServer
-    v-model:page="options.page"
-    v-model:items-per-page="options.itemsPerPage"
-    :headers="headers"
-    :items="serverStore.list_servers"
-    :items-length="serverStore.pagings.total"
-    :loading="serverStore.loading"
-    :sort-by="options.sortBy"
-    @update:options="(opts) => (options = opts)"
-  >
-    <template #item.name="{ item }">
-      <div class="d-flex flex-column ms-3">
-        <span
-          class="d-block font-weight-medium text-high-emphasis text-truncate"
-          >{{ item.name }}</span
-        >
-      </div>
-    </template>
+  <VCard :title="$t('server')" no-padding>
+    <VCardText>
+      <VRow>
+        <VCol cols="12" offset-md="8" md="4">
+          <AppTextField
+            placeholder="Search ..."
+            append-inner-icon="tabler-search"
+            single-line
+            hide-details
+            dense
+            outlined
+          />
+        </VCol>
+      </VRow>
+    </VCardText>
 
-    <template #item.status="{ item }">
-      <VChip :color="resolveStatusVariant(item.status.id).color" size="small">
-        {{ resolveStatusVariant(item.status.id).text }}
-      </VChip>
-    </template>
+    <VDataTableServer
+      v-model:page="options.page"
+      v-model:items-per-page="options.itemsPerPage"
+      :headers="headers"
+      :items="serverStore.list_servers"
+      :items-length="serverStore.pagings.total"
+      :loading="serverStore.loading"
+      :sort-by="options.sortBy"
+      @update:options="(opts) => (options = opts)"
+    >
+      <template #item.name="{ item }">
+        <div class="d-flex flex-column ms-3">
+          <span
+            class="d-block font-weight-medium text-high-emphasis text-truncate"
+            >{{ item.name }}</span
+          >
+        </div>
+      </template>
 
-    <template #item.ssh_port="{ item }">
-      <span>{{ item.ssh.ssh_port }}</span>
-    </template>
+      <template #item.status="{ item }">
+        <VChip :color="resolveStatusVariant(item.status.id).color" size="small">
+          {{ resolveStatusVariant(item.status.id).text }}
+        </VChip>
+      </template>
 
-    <template #item.ssh_ip="{ item }">
-      <span>{{ item.ssh.ssh_ip }}</span>
-    </template>
+      <template #item.ssh_port="{ item }">
+        <span>{{ item.ssh.ssh_port }}</span>
+      </template>
 
-    <template #item.created_at="{ item }">
-      <span>{{ formatDateTime(item.created_at) }}</span>
-    </template>
+      <template #item.ssh_ip="{ item }">
+        <span>{{ item.ssh.ssh_ip }}</span>
+      </template>
 
-    <template #item.actions="{ item }">
-      <div class="d-flex gap-1">
-        <IconBtn><VIcon icon="tabler-edit" /></IconBtn>
-        <IconBtn><VIcon icon="tabler-trash" /></IconBtn>
-      </div>
-    </template>
-  </VDataTableServer>
+      <template #item.created_at="{ item }">
+        <span>{{ formatDateTime(item.created_at) }}</span>
+      </template>
+
+      <template #item.actions="{ item }">
+        <div class="d-flex gap-1">
+          <IconBtn><VIcon icon="tabler-edit" /></IconBtn>
+          <IconBtn><VIcon icon="tabler-trash" /></IconBtn>
+        </div>
+      </template>
+    </VDataTableServer>
+  </VCard>
 </template>
