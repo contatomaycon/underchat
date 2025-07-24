@@ -2,40 +2,36 @@ import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import {
-  EditServerParamsRequest,
-  EditServerRequest,
-} from '@core/schema/server/editServer/request.schema';
-import { ServerUpdaterUseCase } from '@core/useCases/server/ServerUpdater.useCase';
+import { ViewServerRequest } from '@core/schema/server/viewServer/request.schema';
+import { ServerViewerUseCase } from '@core/useCases/server/ServerViewer.useCase';
 
-export const editServer = async (
+export const viewServer = async (
   request: FastifyRequest<{
-    Body: EditServerRequest;
-    Params: EditServerParamsRequest;
+    Params: ViewServerRequest;
   }>,
   reply: FastifyReply
 ) => {
-  const serverUpdaterUseCase = container.resolve(ServerUpdaterUseCase);
+  const serverViewerUseCase = container.resolve(ServerViewerUseCase);
   const { t } = request;
 
   try {
-    const response = await serverUpdaterUseCase.execute(
+    const response = await serverViewerUseCase.execute(
       t,
-      request.params.server_id,
-      request.body
+      request.params.server_id
     );
 
     if (response) {
       return sendResponse(reply, {
-        message: t('server_update_successfully'),
+        message: t('server_view_successfully'),
         httpStatusCode: EHTTPStatusCode.ok,
+        data: response,
       });
     }
 
     request.server.logger.info(response, request.id);
 
     return sendResponse(reply, {
-      message: t('server_update_error'),
+      message: t('server_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {

@@ -21,5 +21,6 @@
   "server_update_error": "Error al actualizar el servidor",
   "server_ssh_update_error": "Error al actualizar el servidor SSH",
   "server_update_successfully": "¡Servidor actualizado con éxito!",
-  "server_ssh_not_found": "¡Servidor SSH no encontrado!"
+  "server_ssh_not_found": "¡Servidor SSH no encontrado!",
+  "server_view_successfully": "¡Servidor visualizado con éxito!"
 }

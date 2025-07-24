@@ -6,9 +6,11 @@ import {
   serverCreatePermissions,
   serverDeletePermissions,
   serverEditPermissions,
+  serverViewPermissions,
 } from '@/permissions/server.permissions';
 import { deleteServerSchema } from '@core/schema/server/deleteServer';
 import { editServerSchema } from '@core/schema/server/editServer';
+import { viewServerSchema } from '@core/schema/server/viewServer';
 
 export default async function serverRoutes(server: FastifyInstance) {
   const serverController = container.resolve(ServerController);
@@ -37,6 +39,15 @@ export default async function serverRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, serverEditPermissions),
+    ],
+  });
+
+  server.get('/server/:server_id', {
+    schema: viewServerSchema,
+    handler: serverController.viewServer,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, serverViewPermissions),
     ],
   });
 }

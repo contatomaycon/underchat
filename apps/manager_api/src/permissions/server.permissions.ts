@@ -15,3 +15,8 @@ export const serverEditPermissions = [
   EGeneralPermissions.full_access,
   EServerPermissions.server_edit,
 ];
+
+export const serverViewPermissions = [
+  EGeneralPermissions.full_access,
+  EServerPermissions.server_view,
+];

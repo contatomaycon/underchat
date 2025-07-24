@@ -15,19 +15,19 @@ export const deleteServer = async (
   const { t } = request;
 
   try {
-    const responseCreatorServer = await serverDeleterUseCase.execute(
+    const response = await serverDeleterUseCase.execute(
       t,
       request.params.server_id
     );
 
-    if (responseCreatorServer) {
+    if (response) {
       return sendResponse(reply, {
         message: t('server_deleted_successfully'),
         httpStatusCode: EHTTPStatusCode.ok,
       });
     }
 
-    request.server.logger.info(responseCreatorServer, request.id);
+    request.server.logger.info(response, request.id);
 
     return sendResponse(reply, {
       message: t('server_deleter_error'),

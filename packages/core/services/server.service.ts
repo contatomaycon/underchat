@@ -18,6 +18,8 @@ import { IUpdateServerById } from '@core/common/interfaces/IUpdateServerById';
 import { ServerUpdaterRepository } from '@core/repositories/server/ServerUpdater.repository';
 import { TFunction } from 'i18next';
 import { ServerSshViewerNotIdByIpExistsRepository } from '@core/repositories/server/ServerSshViewerNotIdByIpExists.repository';
+import { ServerViewerRepository } from '@core/repositories/server/ServerViewer.repository';
+import { ViewServerResponse } from '@core/schema/server/viewServer/response.schema';
 
 @injectable()
 export class ServerService {
@@ -32,7 +34,8 @@ export class ServerService {
     private readonly serverSshDeleterRepository: ServerSshDeleterRepository,
     private readonly serverViewerExistsRepository: ServerViewerExistsRepository,
     private readonly serverUpdaterRepository: ServerUpdaterRepository,
-    private readonly serverSshViewerNotIdByIpExistsRepository: ServerSshViewerNotIdByIpExistsRepository
+    private readonly serverSshViewerNotIdByIpExistsRepository: ServerSshViewerNotIdByIpExistsRepository,
+    private readonly serverViewerRepository: ServerViewerRepository
   ) {}
 
   createServer = async (input: CreateServerRequest) => {
@@ -135,5 +138,11 @@ export class ServerService {
       serverId,
       ip
     );
+  };
+
+  viewServerById = async (
+    serverId: number
+  ): Promise<ViewServerResponse | null> => {
+    return this.serverViewerRepository.viewServerById(serverId);
   };
 }
