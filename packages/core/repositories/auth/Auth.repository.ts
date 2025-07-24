@@ -28,6 +28,7 @@ export class AuthRepository {
     const result = await this.db
       .select({
         user_id: user.user_id,
+        account_id: user.account_id,
         email_partial: user.email_partial,
         status: {
           status_id: userStatus.user_status_id,

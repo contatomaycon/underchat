@@ -1,5 +1,8 @@
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
-import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
+import {
+  AuthUserResponse,
+  AccountInfoResponse,
+} from '@core/schema/auth/login/response.schema';
 
 export const setToken = (token: string): void => {
   localStorage.setItem('token', token);
@@ -29,10 +32,23 @@ export const getUser = (): AuthUserResponse | null => {
   return user ? JSON.parse(user) : null;
 };
 
-export const logout = (): void => {
+export const setLayout = (layout: AccountInfoResponse): void => {
+  localStorage.setItem('layout', JSON.stringify(layout));
+};
+
+export const getLayout = (): AccountInfoResponse | null => {
+  const layout = localStorage.getItem('layout');
+
+  return layout ? JSON.parse(layout) : null;
+};
+
+export const removeUserData = (): boolean => {
   localStorage.removeItem('token');
   localStorage.removeItem('permissions');
   localStorage.removeItem('user');
+  localStorage.removeItem('layout');
+
+  return !getToken() && !getUser() && getPermissions().length === 0;
 };
 
 export const isLoggedIn = (): boolean => {

@@ -1,5 +1,20 @@
 <script setup lang="ts">
+import { removeUserData } from '@/@webcore/localStorage/user';
 import avatar1 from '@images/avatars/avatar-1.png';
+
+const router = useRouter();
+
+const logout = async () => {
+  const result = removeUserData();
+
+  if (result) {
+    await nextTick(() => {
+      router.replace({
+        name: 'login',
+      });
+    });
+  }
+};
 </script>
 
 <template>
@@ -79,11 +94,9 @@ import avatar1 from '@images/avatars/avatar-1.png';
             <VListItemTitle>FAQ</VListItemTitle>
           </VListItem>
 
-          <!-- Divider -->
           <VDivider class="my-2" />
 
-          <!-- 👉 Logout -->
-          <VListItem to="/login">
+          <VListItem @click="logout" link>
             <template #prepend>
               <VIcon class="me-2" icon="tabler-logout" size="22" />
             </template>
@@ -92,7 +105,6 @@ import avatar1 from '@images/avatars/avatar-1.png';
           </VListItem>
         </VList>
       </VMenu>
-      <!-- !SECTION -->
     </VAvatar>
   </VBadge>
 </template>

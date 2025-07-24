@@ -1,5 +1,5 @@
 import { injectable } from 'tsyringe';
-import { PermissionAssignmentUserViewerRepository } from '@core/repositories/auth copy/PermissionAssignmentUserViewer.repository';
+import { PermissionAssignmentUserViewerRepository } from '@core/repositories/permission/PermissionAssignmentUserViewer.repository';
 
 @injectable()
 export class PermissionService {
