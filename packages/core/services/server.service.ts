@@ -25,6 +25,7 @@ import { ListServerResponse } from '@core/schema/server/listServer/response.sche
 import { ListServerRequest } from '@core/schema/server/listServer/request.schema';
 import { CentrifugoService } from './centrifugo.service';
 import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
+import { IStatusServerCentrifugo } from '@core/common/interfaces/IStatusServerCentrifugo';
 
 @injectable()
 export class ServerService {
@@ -87,10 +88,15 @@ export class ServerService {
     serverId: number,
     status: EServerStatus
   ): Promise<boolean> => {
-    this.centrifugoService.publish(ECentrifugoChannel.status_server, {
+    const statusServerCentrifugo: IStatusServerCentrifugo = {
       server_id: serverId,
       status: status,
-    });
+    };
+
+    this.centrifugoService.publish(
+      ECentrifugoChannel.status_server,
+      statusServerCentrifugo
+    );
 
     return this.serverStatusUpdaterRepository.updateServerStatusById(
       serverId,

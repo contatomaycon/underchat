@@ -1,7 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import CentrifugoController from '@/controllers/centrifugo';
-import { serverCreatePermissions } from '@/permissions/server.permissions';
 import { authTokenSchema } from '@core/schema/centrifugo/token';
 
 export default async function centrifugoRoutes(server: FastifyInstance) {
@@ -10,9 +9,6 @@ export default async function centrifugoRoutes(server: FastifyInstance) {
   server.post('/centrifugo/auth/token', {
     schema: authTokenSchema,
     handler: centrifugoController.authToken,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, serverCreatePermissions),
-    ],
+    preHandler: [(request, reply) => server.authenticateJwt(request, reply)],
   });
 }

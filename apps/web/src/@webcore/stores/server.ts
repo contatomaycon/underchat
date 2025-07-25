@@ -16,6 +16,7 @@ import { EditServerRequest } from '@core/schema/server/editServer/request.schema
 import { AxiosError } from 'axios';
 import { CreateServerRequest } from '@core/schema/server/createServer/request.schema';
 import { CreateServerResponse } from '@core/schema/server/createServer/response.schema';
+import { EServerStatus } from '@core/common/enums/EServerStatus';
 
 export const useServerStore = defineStore('server', {
   state: () => ({
@@ -260,6 +261,14 @@ export const useServerStore = defineStore('server', {
         this.loading = false;
 
         return false;
+      }
+    },
+
+    updateStatusServer(serverId: number, status: EServerStatus): void {
+      const server = this.list_servers.find((server) => server.id === serverId);
+
+      if (server) {
+        server.status.id = status;
       }
     },
   },

@@ -10,6 +10,8 @@ import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
+import { IStatusServerCentrifugo } from '@core/common/interfaces/IStatusServerCentrifugo';
+import { IServerSshCentrifugo } from '@core/common/interfaces/IServerSshCentrifugo';
 
 definePage({
   meta: {
@@ -132,15 +134,17 @@ watch(
 );
 
 onMounted(() => {
-  onMessage(ECentrifugoChannel.server_ssh, (data, ctx) => {
-    console.log('Nova publicação:', data, 'em', ctx.channel);
+  onMessage(ECentrifugoChannel.server_ssh, (data: IServerSshCentrifugo) => {
+    console.log('Nova publicação:', data);
     // atualize seu estado/componente aqui
   });
 
-  onMessage(ECentrifugoChannel.status_server, (data, ctx) => {
-    console.log('Nova publicação de status:', data, 'em', ctx.channel);
-    // atualize seu estado/componente aqui
-  });
+  onMessage(
+    ECentrifugoChannel.status_server,
+    (data: IStatusServerCentrifugo) => {
+      serverStore.updateStatusServer(data.server_id, data.status);
+    }
+  );
 });
 
 onBeforeUnmount(async () => {
@@ -244,6 +248,9 @@ onBeforeUnmount(async () => {
 
         <template #item.actions="{ item }">
           <div class="d-flex gap-1">
+            <IconBtn
+              ><VIcon icon="tabler-terminal-2" @click="deleteServer(item.id)"
+            /></IconBtn>
             <IconBtn
               ><VIcon icon="tabler-edit" @click="openEditDialog(item.id)"
             /></IconBtn>

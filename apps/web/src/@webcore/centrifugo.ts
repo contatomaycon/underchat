@@ -1,5 +1,3 @@
-import jwt from 'jsonwebtoken';
-import { ERouteModule } from '@core/common/enums/ERouteModule';
 import {
   Centrifuge,
   PublicationContext,
@@ -8,16 +6,42 @@ import {
   SubscriptionState,
   PublishResult,
 } from 'centrifuge';
+import axios from '@webcore/axios';
+import { IApiResponse } from '@core/common/interfaces/IApiResponse';
+import { AuthTokenResponse } from '@core/schema/centrifugo/token/response.schema';
 
 let centrifugeClient: Centrifuge | null = null;
 
-const generateToken = async (): Promise<string> => {
-  const exp = Math.floor(Date.now() / 1000) + 60 * 60;
-  const secret = import.meta.env.VITE_CENTRIFUGO_HMAC_SECRET_KEY;
+const generateTokenAndUrl = async (): Promise<AuthTokenResponse> => {
+  const response = await axios.post<IApiResponse<AuthTokenResponse>>(
+    `/centrifugo/auth/token`
+  );
 
-  return jwt.sign({ sub: ERouteModule.web, exp }, secret, {
-    algorithm: 'HS256',
-  });
+  const data = response?.data;
+
+  if (!data?.status) {
+    throw new Error(data?.message || 'Failed to generate Centrifugo token');
+  }
+
+  return data.data;
+};
+
+const generateToken = async (): Promise<string> => {
+  const response = await axios.post<IApiResponse<AuthTokenResponse>>(
+    `/centrifugo/auth/token`
+  );
+
+  const data = response?.data;
+
+  if (!data?.status) {
+    throw new Error(data?.message || 'Failed to generate Centrifugo token');
+  }
+
+  if (!data.data?.token) {
+    throw new Error('Token is not available in the response');
+  }
+
+  return data.data.token;
 };
 
 const waitForConnected = (client: Centrifuge): Promise<void> => {
@@ -41,17 +65,11 @@ const getConnection = async (): Promise<Centrifuge> => {
     return centrifugeClient;
   }
 
-  const secret = import.meta.env.VITE_CENTRIFUGO_HMAC_SECRET_KEY;
-  const url = import.meta.env.VITE_CENTRIFUGO_WS_URL;
+  const { token, url: wsUrl } = await generateTokenAndUrl();
 
-  if (!secret) throw new Error('Centrifugo HMAC secret key is not defined');
-  if (!url) throw new Error('Centrifugo WebSocket URL is not defined');
-
-  const initialToken = await generateToken();
-
-  centrifugeClient = new Centrifuge(`${url}/connection/websocket`, {
+  centrifugeClient = new Centrifuge(`${wsUrl}/connection/websocket`, {
     websocket: WebSocket,
-    token: initialToken,
+    token,
     getToken: generateToken,
     timeout: 30000,
     maxServerPingDelay: 60000,
@@ -66,7 +84,7 @@ const getConnection = async (): Promise<Centrifuge> => {
 
 export const onMessage = async (
   channel: string,
-  handler: (data: unknown, ctx: PublicationContext) => void
+  handler: (data: any, ctx: PublicationContext) => void
 ): Promise<Subscription> => {
   const client = await getConnection();
   const sub =
