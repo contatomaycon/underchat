@@ -49,6 +49,9 @@ export const useServerStore = defineStore('server', {
           current_page: input.page,
           per_page: input.per_page,
           sort_by: input.sort_by,
+          server_name: input.search,
+          server_status_id: input.status,
+          ssh_ip: input.search,
         };
 
         const response = await axios.get<IApiResponse<ListServerFinalResponse>>(

@@ -12,6 +12,7 @@ import {
   or,
   SQL,
   SQLWrapper,
+  like,
 } from 'drizzle-orm';
 import { ListServerResponse } from '@core/schema/server/listServer/response.schema';
 import { ListServerRequest } from '@core/schema/server/listServer/request.schema';
@@ -65,25 +66,19 @@ export class ServerListerRepository {
   };
 
   private setFilters = (query: ListServerRequest): SQLWrapper[] => {
-    const filters: SQLWrapper[] = [];
+    const condition = and(
+      query.server_status_id
+        ? eq(serverStatus.server_status_id, query.server_status_id)
+        : undefined,
+      or(
+        query.server_name
+          ? like(server.name, `%${query.server_name}%`)
+          : undefined,
+        query.ssh_ip ? like(serverSsh.ssh_ip, `%${query.ssh_ip}%`) : undefined
+      )
+    );
 
-    if (query?.server_name) {
-      filters.push(eq(server.name, query.server_name));
-    }
-
-    if (query?.server_status_id) {
-      filters.push(eq(serverStatus.server_status_id, query.server_status_id));
-    }
-
-    if (query?.ssh_ip) {
-      filters.push(eq(serverSsh.ssh_ip, query.ssh_ip));
-    }
-
-    if (query?.ssh_port) {
-      filters.push(eq(serverSsh.ssh_port, query.ssh_port));
-    }
-
-    return filters;
+    return condition ? [condition] : [];
   };
 
   listServers = async (

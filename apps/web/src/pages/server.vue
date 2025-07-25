@@ -11,6 +11,15 @@ import { SortRequest } from '@core/schema/common/sortRequestSchema';
 const { t } = useI18n();
 const serverStore = useServerStore();
 
+const itemsStatus = ref([
+  { id: 0, text: t('all') },
+  { id: 1, text: t('new') },
+  { id: 2, text: t('installing') },
+  { id: 3, text: t('online') },
+  { id: 4, text: t('error') },
+  { id: 5, text: t('offline') },
+]);
+
 const resolveStatusVariant = (status: number) => {
   if (status === 1) return { color: EColor.info, text: t('new') };
   if (status === 2) return { color: EColor.warning, text: t('installing') };
@@ -46,6 +55,8 @@ const options = ref({
   page: 1,
   itemsPerPage: 10,
   sortBy: [] as SortRequest[],
+  status: null as number | null,
+  search: null as string | null,
 });
 
 const fetchData = async () => {
@@ -53,6 +64,8 @@ const fetchData = async () => {
     page: options.value.page,
     per_page: options.value.itemsPerPage,
     sort_by: options.value.sortBy,
+    status: options.value.status,
+    search: options.value.search,
   });
 };
 
@@ -66,15 +79,27 @@ onMounted(async () => {
 <template>
   <VCard :title="$t('server')" no-padding>
     <VCardText>
-      <VRow>
-        <VCol cols="12" offset-md="8" md="4">
+      <VRow class="justify-end" dense>
+        <VCol cols="6" md="2">
+          <VLabel>{{ $t('status') }}:</VLabel>
+          <AppAutocomplete
+            item-title="text"
+            item-value="id"
+            :items="itemsStatus"
+            v-model="options.status"
+            :placeholder="$t('select_state')"
+          />
+        </VCol>
+        <VCol cols="6" md="4">
+          <VLabel>{{ $t('search') }}:</VLabel>
           <AppTextField
-            placeholder="Search ..."
+            :placeholder="$t('search') + '...'"
             append-inner-icon="tabler-search"
             single-line
             hide-details
             dense
             outlined
+            v-model="options.search"
           />
         </VCol>
       </VRow>
@@ -122,6 +147,10 @@ onMounted(async () => {
           <IconBtn><VIcon icon="tabler-edit" /></IconBtn>
           <IconBtn><VIcon icon="tabler-trash" /></IconBtn>
         </div>
+      </template>
+
+      <template #no-data>
+        {{ $t('no_data_available') }}
       </template>
     </VDataTableServer>
   </VCard>

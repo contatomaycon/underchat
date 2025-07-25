@@ -26,5 +26,9 @@
     "online": "Online",
     "error": "Error",
     "unknown": "Unknown",
-    "offline": "Offline"
+    "offline": "Offline",
+    "no_data_available": "No data available",
+    "search": "Search",
+    "select_state": "Select status",
+    "all": "All"
 }
