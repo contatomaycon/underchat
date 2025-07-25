@@ -11,6 +11,7 @@ import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
 import { IStatusServerCentrifugo } from '@core/common/interfaces/IStatusServerCentrifugo';
+import { EServerStatus } from '@core/common/enums/EServerStatus';
 
 definePage({
   meta: {
@@ -254,6 +255,7 @@ onBeforeUnmount(async () => {
           <div class="d-flex gap-1">
             <IconBtn
               ><VIcon
+                v-if="item.status.id === EServerStatus.installing"
                 icon="tabler-terminal-2"
                 @click="openConsoleDialog(item.id)"
             /></IconBtn>
