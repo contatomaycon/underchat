@@ -121,96 +121,112 @@ const openEditDialog = (id: number) => {
 </script>
 
 <template>
-  <VCard :title="$t('server')" no-padding>
-    <VCardText>
-      <VRow class="justify-end" dense>
-        <VCol cols="6" md="2">
-          <VLabel>{{ $t('status') }}:</VLabel>
-          <AppAutocomplete
-            item-title="text"
-            item-value="id"
-            :items="itemsStatus"
-            v-model="options.status"
-            :placeholder="$t('select_state')"
-          />
-        </VCol>
+  <div>
+    <VCard :title="$t('server')" no-padding>
+      <VCardText>
+        <VRow class="justify-end" dense>
+          <VCol cols="6" md="2">
+            <VLabel>{{ $t('status') }}:</VLabel>
+            <AppAutocomplete
+              item-title="text"
+              item-value="id"
+              :items="itemsStatus"
+              v-model="options.status"
+              :placeholder="$t('select_state')"
+            />
+          </VCol>
 
-        <VCol cols="6" md="4">
-          <VLabel>{{ $t('search') }}:</VLabel>
-          <AppTextField
-            :placeholder="$t('search') + '...'"
-            append-inner-icon="tabler-search"
-            single-line
-            hide-details
-            dense
-            outlined
-            v-model="options.search"
-          />
-        </VCol>
-      </VRow>
-    </VCardText>
+          <VCol cols="6" md="4">
+            <VLabel>{{ $t('search') }}:</VLabel>
+            <AppTextField
+              :placeholder="$t('search') + '...'"
+              append-inner-icon="tabler-search"
+              single-line
+              hide-details
+              dense
+              outlined
+              v-model="options.search"
+            />
+          </VCol>
+        </VRow>
+      </VCardText>
 
-    <VDataTableServer
-      v-model:page="options.page"
-      v-model:items-per-page="options.itemsPerPage"
-      :headers="headers"
-      :items="serverStore.list_servers"
-      :items-length="serverStore.pagings.total"
-      :loading="serverStore.loading"
-      :sort-by="options.sortBy"
-      @update:options="handleTableChange"
-    >
-      <template #item.name="{ item }">
-        <div class="d-flex flex-column ms-3">
-          <span
-            class="d-block font-weight-medium text-high-emphasis text-truncate"
+      <VDataTableServer
+        v-model:page="options.page"
+        v-model:items-per-page="options.itemsPerPage"
+        :headers="headers"
+        :items="serverStore.list_servers"
+        :items-length="serverStore.pagings.total"
+        :loading="serverStore.loading"
+        :sort-by="options.sortBy"
+        @update:options="handleTableChange"
+      >
+        <template #item.name="{ item }">
+          <div class="d-flex flex-column ms-3">
+            <span
+              class="d-block font-weight-medium text-high-emphasis text-truncate"
+            >
+              {{ item.name }}
+            </span>
+          </div>
+        </template>
+
+        <template #item.status="{ item }">
+          <VChip
+            :color="resolveStatusVariant(item.status.id).color"
+            size="small"
           >
-            {{ item.name }}
-          </span>
-        </div>
-      </template>
+            {{ resolveStatusVariant(item.status.id).text }}
+          </VChip>
+        </template>
 
-      <template #item.status="{ item }">
-        <VChip :color="resolveStatusVariant(item.status.id).color" size="small">
-          {{ resolveStatusVariant(item.status.id).text }}
-        </VChip>
-      </template>
+        <template #item.ssh_port="{ item }">
+          <span>{{ item.ssh.ssh_port }}</span>
+        </template>
 
-      <template #item.ssh_port="{ item }">
-        <span>{{ item.ssh.ssh_port }}</span>
-      </template>
+        <template #item.ssh_ip="{ item }">
+          <span>{{ item.ssh.ssh_ip }}</span>
+        </template>
 
-      <template #item.ssh_ip="{ item }">
-        <span>{{ item.ssh.ssh_ip }}</span>
-      </template>
+        <template #item.created_at="{ item }">
+          <span>{{ formatDateTime(item.created_at) }}</span>
+        </template>
 
-      <template #item.created_at="{ item }">
-        <span>{{ formatDateTime(item.created_at) }}</span>
-      </template>
+        <template #item.actions="{ item }">
+          <div class="d-flex gap-1">
+            <IconBtn
+              ><VIcon icon="tabler-edit" @click="openEditDialog(item.id)"
+            /></IconBtn>
+            <IconBtn
+              ><VIcon icon="tabler-trash" @click="deleteServer(item.id)"
+            /></IconBtn>
+          </div>
+        </template>
 
-      <template #item.actions="{ item }">
-        <div class="d-flex gap-1">
-          <IconBtn
-            ><VIcon icon="tabler-edit" @click="openEditDialog(item.id)"
-          /></IconBtn>
-          <IconBtn
-            ><VIcon icon="tabler-trash" @click="deleteServer(item.id)"
-          /></IconBtn>
-        </div>
-      </template>
+        <template #no-data>
+          {{ $t('no_data_available') }}
+        </template>
+      </VDataTableServer>
 
-      <template #no-data>
-        {{ $t('no_data_available') }}
-      </template>
-    </VDataTableServer>
+      <VDialogDeleter
+        v-model="isDialogDeleterShow"
+        :title="$t('delete_server')"
+        :message="$t('delete_server_confirmation')"
+        @confirm="handleDelete"
+      />
 
-    <VDialogDeleter
-      v-model="isDialogDeleterShow"
-      :title="$t('delete_server')"
-      :message="$t('delete_server_confirmation')"
-      @confirm="handleDelete"
-    />
-
-    <AppEditServer v-model="isDialogEditServerShow" :server-id="serverToEdit" />
-  </VCard>
+      <AppEditServer
+        v-model="isDialogEditServerShow"
+        :server-id="serverToEdit"
+      />
+    </VCard>
+    <VSnackbar
+      v-model="serverStore.snackbar.status"
+      transition="scroll-y-reverse-transition"
+      location="top end"
+      :color="serverStore.snackbar.color"
+    >
+      {{ serverStore.snackbar.message }}
+    </VSnackbar>
+  </div>
 </template>

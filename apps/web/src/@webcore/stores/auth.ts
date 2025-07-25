@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import {
   AccountInfoResponse,
   AuthLoginResponse,
@@ -92,8 +92,13 @@ export const useAuthStore = defineStore('auth', {
         this.showSnackbar(this.i18n.global.t('login_success'), EColor.success);
 
         return true;
-      } catch {
-        this.showSnackbar(this.i18n.global.t('login_invalid'), EColor.error);
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('login_invalid');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
 
         return false;
       }

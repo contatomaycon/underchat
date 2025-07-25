@@ -13,6 +13,7 @@ import { IListServers } from '@webcore/interfaces/IListServers';
 import { ListServerRequest } from '@core/schema/server/listServer/request.schema';
 import { ViewServerResponse } from '@core/schema/server/viewServer/response.schema';
 import { EditServerRequest } from '@core/schema/server/editServer/request.schema';
+import { AxiosError } from 'axios';
 
 export const useServerStore = defineStore('server', {
   state: () => ({
@@ -81,17 +82,14 @@ export const useServerStore = defineStore('server', {
         this.list_servers = data.data.results;
         this.pagings = data.data.pagings;
 
-        this.showSnackbar(
-          this.i18n.global.t('server_list_success'),
-          EColor.success
-        );
-
         return data.data;
-      } catch {
-        this.showSnackbar(
-          this.i18n.global.t('server_list_error'),
-          EColor.error
-        );
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('server_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
 
         this.loading = false;
 
@@ -126,11 +124,13 @@ export const useServerStore = defineStore('server', {
         );
 
         return true;
-      } catch {
-        this.showSnackbar(
-          this.i18n.global.t('server_delete_error'),
-          EColor.error
-        );
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('server_delete_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
 
         this.loading = false;
 
@@ -160,8 +160,13 @@ export const useServerStore = defineStore('server', {
         }
 
         return data.data;
-      } catch {
-        this.showSnackbar(this.i18n.global.t('server_get_error'), EColor.error);
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('server_get_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
 
         this.loading = false;
 
@@ -200,11 +205,13 @@ export const useServerStore = defineStore('server', {
         );
 
         return true;
-      } catch {
-        this.showSnackbar(
-          this.i18n.global.t('server_edit_error'),
-          EColor.error
-        );
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('server_edit_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
 
         this.loading = false;
 

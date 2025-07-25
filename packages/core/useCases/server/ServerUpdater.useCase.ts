@@ -29,46 +29,44 @@ export class ServerUpdaterUseCase {
       throw new Error(t('server_already_exists'));
     }
 
-    if (input?.ssh_password || input?.ssh_username) {
-      const viewServerSshById =
-        await this.serverService.viewServerSshById(serverId);
+    const viewServerSshById =
+      await this.serverService.viewServerSshById(serverId);
 
-      if (!viewServerSshById) {
-        throw new Error(t('server_ssh_not_found'));
-      }
+    if (!viewServerSshById) {
+      throw new Error(t('server_ssh_not_found'));
+    }
 
-      const sshUsernameDescrypted = this.passwordEncryptorService.decrypt(
-        viewServerSshById.ssh_username
-      );
-      const sshPasswordDescrypted = this.passwordEncryptorService.decrypt(
-        viewServerSshById.ssh_password
-      );
+    const sshUsernameDescrypted = this.passwordEncryptorService.decrypt(
+      viewServerSshById.ssh_username
+    );
+    const sshPasswordDescrypted = this.passwordEncryptorService.decrypt(
+      viewServerSshById.ssh_password
+    );
 
-      const sshConfig: ConnectConfig = {
-        host: input.ssh_ip,
-        port: input.ssh_port,
-        username: input.ssh_username ?? sshUsernameDescrypted,
-        password: input.ssh_password ?? sshPasswordDescrypted,
-      };
+    const sshConfig: ConnectConfig = {
+      host: input.ssh_ip,
+      port: input.ssh_port,
+      username: input.ssh_username ?? sshUsernameDescrypted,
+      password: input.ssh_password ?? sshPasswordDescrypted,
+    };
 
-      const isConnected = await this.sshService.testSSHConnection(sshConfig);
+    const isConnected = await this.sshService.testSSHConnection(sshConfig);
 
-      if (!isConnected) {
-        throw new Error(t('ssh_connection_failed'));
-      }
+    if (!isConnected) {
+      throw new Error(t('ssh_connection_failed'));
+    }
 
-      const getDistroAndVersion =
-        await this.sshService.getDistroAndVersion(sshConfig);
+    const getDistroAndVersion =
+      await this.sshService.getDistroAndVersion(sshConfig);
 
-      if (!getDistroAndVersion) {
-        throw new Error(t('ssh_distro_version_failed'));
-      }
+    if (!getDistroAndVersion) {
+      throw new Error(t('ssh_distro_version_failed'));
+    }
 
-      const isAllowed = isDistroVersionAllowed(getDistroAndVersion);
+    const isAllowed = isDistroVersionAllowed(getDistroAndVersion);
 
-      if (!isAllowed) {
-        throw new Error(t('ssh_distro_version_not_allowed'));
-      }
+    if (!isAllowed) {
+      throw new Error(t('ssh_distro_version_not_allowed'));
     }
   }
 
