@@ -139,6 +139,7 @@
     "sharp": "^0.34.3",
     "socket.io": "^4.7.1",
     "ssh2": "^1.16.0",
+    "strip-ansi": "^7.1.0",
     "systeminformation": "^5.27.7",
     "tsyringe": "^4.10.0",
     "typescript-eslint": "^8.36.0",

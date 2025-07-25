@@ -11,7 +11,6 @@ import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
 import { IStatusServerCentrifugo } from '@core/common/interfaces/IStatusServerCentrifugo';
-import { IServerSshCentrifugo } from '@core/common/interfaces/IServerSshCentrifugo';
 
 definePage({
   meta: {
@@ -48,9 +47,13 @@ const itemsStatus = ref([
 
 const isDialogDeleterShow = ref(false);
 const serverToDelete = ref<number | null>(null);
+
 const isDialogEditServerShow = ref(false);
 const isAddServerVisible = ref(false);
 const serverToEdit = ref<number | null>(null);
+
+const isConsoleServerVisible = ref(false);
+const serverToConsole = ref<number | null>(null);
 
 const resolveStatusVariant = (s: number) => {
   if (s === 1) return { color: EColor.info, text: t('new') };
@@ -125,6 +128,12 @@ const openEditDialog = (id: number) => {
   isDialogEditServerShow.value = true;
 };
 
+const openConsoleDialog = (id: number) => {
+  serverToConsole.value = id;
+
+  isConsoleServerVisible.value = true;
+};
+
 watch(
   query,
   async (q) => {
@@ -134,11 +143,6 @@ watch(
 );
 
 onMounted(() => {
-  onMessage(ECentrifugoChannel.server_ssh, (data: IServerSshCentrifugo) => {
-    console.log('Nova publicação:', data);
-    // atualize seu estado/componente aqui
-  });
-
   onMessage(
     ECentrifugoChannel.status_server,
     (data: IStatusServerCentrifugo) => {
@@ -249,7 +253,9 @@ onBeforeUnmount(async () => {
         <template #item.actions="{ item }">
           <div class="d-flex gap-1">
             <IconBtn
-              ><VIcon icon="tabler-terminal-2" @click="deleteServer(item.id)"
+              ><VIcon
+                icon="tabler-terminal-2"
+                @click="openConsoleDialog(item.id)"
             /></IconBtn>
             <IconBtn
               ><VIcon icon="tabler-edit" @click="openEditDialog(item.id)"
@@ -286,6 +292,11 @@ onBeforeUnmount(async () => {
       />
 
       <AppAddServer v-model="isAddServerVisible" />
+
+      <AppConsoleServer
+        v-model="isConsoleServerVisible"
+        :server-id="serverToConsole"
+      />
     </VCard>
     <VSnackbar
       v-model="serverStore.snackbar.status"

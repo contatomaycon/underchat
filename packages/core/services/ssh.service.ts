@@ -142,6 +142,7 @@ export class SshService {
               server_id: serverId,
               command: cmd,
               output: linha,
+              date: new Date(),
             };
 
             this.centrifugoService.publish(

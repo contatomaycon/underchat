@@ -59,5 +59,8 @@
     "server_add_error": "An error occurred while adding the server. Please try again.",
     "server_add_success": "Server added successfully!",
     "server_add": "Add Server",
-    "username_required": "Username is required"
+    "username_required": "Username is required",
+    "console_installation": "Installation Console",
+    "close": "Close",
+    "installation_pending": "Installation pending"
 }

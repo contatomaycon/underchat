@@ -59,5 +59,9 @@
     "server_add_error": "Ocorreu um erro ao adicionar o servidor. Por favor, tente novamente.",
     "server_add_success": "Servidor adicionado com sucesso!",
     "add_server": "Adicionar servidor",
-    "username_required": "Nome de usuário é obrigatório"
+    "username_required": "Nome de usuário é obrigatório",
+    "console_installation": "Console de Instalação",
+    "close": "Fechar",
+    "server_add": "Adicionar Servidor",
+    "installation_pending": "Instalação pendente"
 }
