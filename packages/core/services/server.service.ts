@@ -23,6 +23,8 @@ import { ViewServerResponse } from '@core/schema/server/viewServer/response.sche
 import { ServerListerRepository } from '@core/repositories/server/ServerLister.repository';
 import { ListServerResponse } from '@core/schema/server/listServer/response.schema';
 import { ListServerRequest } from '@core/schema/server/listServer/request.schema';
+import { CentrifugoService } from './centrifugo.service';
+import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
 
 @injectable()
 export class ServerService {
@@ -39,7 +41,8 @@ export class ServerService {
     private readonly serverUpdaterRepository: ServerUpdaterRepository,
     private readonly serverSshViewerNotIdByIpExistsRepository: ServerSshViewerNotIdByIpExistsRepository,
     private readonly serverViewerRepository: ServerViewerRepository,
-    private readonly serverListerRepository: ServerListerRepository
+    private readonly serverListerRepository: ServerListerRepository,
+    private readonly centrifugoService: CentrifugoService
   ) {}
 
   createServer = async (input: CreateServerRequest) => {
@@ -84,6 +87,11 @@ export class ServerService {
     serverId: number,
     status: EServerStatus
   ): Promise<boolean> => {
+    this.centrifugoService.publish(ECentrifugoChannel.status_server, {
+      server_id: serverId,
+      status: status,
+    });
+
     return this.serverStatusUpdaterRepository.updateServerStatusById(
       serverId,
       status

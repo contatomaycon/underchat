@@ -4,6 +4,7 @@ import { IDistroInfo } from '@core/common/interfaces/IDistroInfo';
 import { EAllowedDistroVersion } from '@core/common/enums/EAllowedDistroVersion';
 import { installUbuntu2504 } from '@core/common/functions/installUbuntu2504';
 import { CentrifugoService } from './centrifugo.service';
+import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
 
 @injectable()
 export class SshService {
@@ -136,7 +137,8 @@ export class SshService {
         await this.execCommand(conn, cmd, {
           pty: true,
           onData: (linha) => {
-            this.centrifugoService.publish(`ssh_${serverId}`, {
+            this.centrifugoService.publish(ECentrifugoChannel.server_ssh, {
+              server_id: serverId,
               command: cmd,
               output: linha,
             });

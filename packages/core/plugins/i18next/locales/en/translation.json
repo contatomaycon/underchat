@@ -24,5 +24,7 @@
   "server_ssh_not_found": "SSH server not found!",
   "server_view_successfully": "Server viewed successfully!",
   "server_list_successfully": "Server list retrieved successfully!",
-  "server_list_not_found": "No servers found!"
+  "server_list_not_found": "No servers found!",
+  "centrifugo_token_generation_failed": "Failed to generate token",
+  "centrifugo_token_generation_success": "Token generated successfully"
 }

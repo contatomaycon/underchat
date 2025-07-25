@@ -8,6 +8,20 @@ import { EServerPermissions } from '@core/common/enums/EPermissions/server';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
+import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
+import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
+
+definePage({
+  meta: {
+    permissions: [
+      EGeneralPermissions.full_access,
+      EServerPermissions.server_create,
+      EServerPermissions.server_view,
+      EServerPermissions.server_edit,
+      EServerPermissions.server_delete,
+    ],
+  },
+});
 
 const { t } = useI18n();
 const serverStore = useServerStore();
@@ -46,18 +60,6 @@ const resolveStatusVariant = (s: number) => {
   return { color: EColor.primary, text: t('unknown') };
 };
 
-definePage({
-  meta: {
-    permissions: [
-      EGeneralPermissions.full_access,
-      EServerPermissions.server_create,
-      EServerPermissions.server_view,
-      EServerPermissions.server_edit,
-      EServerPermissions.server_delete,
-    ],
-  },
-});
-
 const headers = [
   { title: t('name'), key: 'name' },
   { title: t('status'), key: 'status' },
@@ -87,14 +89,6 @@ const query = computed(() => ({
   status: options.value.status,
   search: debouncedSearch.value,
 }));
-
-watch(
-  query,
-  async (q) => {
-    await serverStore.listServers(q);
-  },
-  { immediate: true, deep: true }
-);
 
 const handleTableChange = (o: {
   page: number;
@@ -128,6 +122,33 @@ const openEditDialog = (id: number) => {
 
   isDialogEditServerShow.value = true;
 };
+
+watch(
+  query,
+  async (q) => {
+    await serverStore.listServers(q);
+  },
+  { immediate: true, deep: true }
+);
+
+onMounted(() => {
+  onMessage(ECentrifugoChannel.server_ssh, (data, ctx) => {
+    console.log('Nova publicação:', data, 'em', ctx.channel);
+    // atualize seu estado/componente aqui
+  });
+
+  onMessage(ECentrifugoChannel.status_server, (data, ctx) => {
+    console.log('Nova publicação de status:', data, 'em', ctx.channel);
+    // atualize seu estado/componente aqui
+  });
+});
+
+onBeforeUnmount(async () => {
+  await Promise.all([
+    unsubscribe(ECentrifugoChannel.server_ssh),
+    unsubscribe(ECentrifugoChannel.status_server),
+  ]);
+});
 </script>
 
 <template>

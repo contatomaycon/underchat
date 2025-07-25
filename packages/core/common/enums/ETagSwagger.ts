@@ -3,4 +3,5 @@ export enum ETagSwagger {
   server = 'Servidor',
   auth = 'Autenticação',
   metrics = 'Métricas',
+  centrifugo = 'Centrifugo',
 }

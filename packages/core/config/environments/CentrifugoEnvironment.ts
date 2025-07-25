@@ -8,12 +8,10 @@ dotenv.config({
 export class CentrifugoEnvironment {
   private readonly CENTRIFUGO_HMAC_SECRET_KEY: string | undefined;
   private readonly CENTRIFUGO_WS_URL: string | undefined;
-  private readonly CENTRIFUGO_TOKEN_ENDPOINT: string | undefined;
 
   constructor() {
     this.CENTRIFUGO_HMAC_SECRET_KEY = process.env.CENTRIFUGO_HMAC_SECRET_KEY;
     this.CENTRIFUGO_WS_URL = process.env.CENTRIFUGO_WS_URL;
-    this.CENTRIFUGO_TOKEN_ENDPOINT = process.env.CENTRIFUGO_TOKEN_ENDPOINT;
   }
 
   public get centrifugoHmacSecretKey(): string {
@@ -36,17 +34,5 @@ export class CentrifugoEnvironment {
     }
 
     return url;
-  }
-
-  public get centrifugoTokenEndpoint(): string {
-    const endpoint = this.CENTRIFUGO_TOKEN_ENDPOINT;
-
-    if (!endpoint) {
-      throw new InvalidConfigurationError(
-        'CENTRIFUGO_TOKEN_ENDPOINT is not defined.'
-      );
-    }
-
-    return endpoint;
   }
 }
