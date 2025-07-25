@@ -231,6 +231,14 @@ const openEditDialog = (id: number) => {
         <template #no-data>
           {{ $t('no_data_available') }}
         </template>
+
+        <template #bottom>
+          <TablePagination
+            v-model:page="options.page"
+            :items-per-page="options.itemsPerPage"
+            :total-items="serverStore.pagings.total"
+          />
+        </template>
       </VDataTableServer>
 
       <VDialogDeleter
