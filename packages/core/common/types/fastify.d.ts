@@ -29,7 +29,7 @@ declare module 'fastify' {
     authenticateJwt: (
       request: FastifyRequest,
       reply: FastifyReply,
-      permissions: EPermissionsRoles[] | null
+      permissions?: EPermissionsRoles[] | null
     ) => void;
     authenticateKeyApi: (
       request: FastifyRequest,
@@ -48,7 +48,7 @@ declare module 'fastify' {
   export interface FastifyRequest {
     tokenJwtData: ITokenJwtData;
     tokenKeyData: ITokenKeyData;
-    permissionsRoute: EPermissionsRoles[];
+    permissionsRoute: EPermissionsRoles[] | null;
     module: ERouteModule;
     languageData: {
       code: ELanguage;
