@@ -94,5 +94,44 @@ export const useServerStore = defineStore('server', {
         return null;
       }
     },
+
+    async deleteServer(serverId: number): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.delete<IApiResponse<void>>(
+          `/server/${serverId}`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('server_delete_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('server_delete_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch {
+        this.showSnackbar(
+          this.i18n.global.t('server_delete_error'),
+          EColor.error
+        );
+
+        this.loading = false;
+
+        return false;
+      }
+    },
   },
 });

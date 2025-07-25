@@ -34,5 +34,7 @@
     "confirm": "Confirm",
     "cancel": "Cancel",
     "delete_server": "Delete server?",
-    "delete_server_confirmation": "Are you sure you want to delete this server?"
+    "delete_server_confirmation": "Are you sure you want to delete this server?",
+    "server_delete_error": "An error occurred while deleting the server. Please try again.",
+    "server_delete_success": "Server deleted successfully!"
 }

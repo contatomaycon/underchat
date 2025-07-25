@@ -34,5 +34,7 @@
     "confirm": "Confirmar",
     "cancel": "Cancelar",
     "delete_server": "Excluir servidor?",
-    "delete_server_confirmation": "Você tem certeza que deseja excluir este servidor?"
+    "delete_server_confirmation": "Você tem certeza que deseja excluir este servidor?",
+    "server_delete_error": "Ocorreu um erro ao excluir o servidor. Por favor, tente novamente.",
+    "server_delete_success": "Servidor excluído com sucesso!"
 }

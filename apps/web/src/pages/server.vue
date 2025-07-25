@@ -20,7 +20,8 @@ const itemsStatus = ref([
   { id: 5, text: t('offline') },
 ]);
 
-const isDialogShow = ref(false);
+const isDialogDeleterShow = ref(false);
+const serverToDelete = ref<number | null>(null);
 
 const resolveStatusVariant = (status: number) => {
   if (status === 1) return { color: EColor.info, text: t('new') };
@@ -77,13 +78,20 @@ const fetchData = async () => {
 };
 
 const deleteServer = async (serverId: number) => {
-  isDialogShow.value = true;
-
-  console.log(`Deleting server with ID: ${serverId}`);
+  serverToDelete.value = serverId;
+  isDialogDeleterShow.value = true;
 };
 
 const handleDelete = async () => {
-  console.log('Confirmed deletion');
+  if (serverToDelete.value) {
+    const result = await serverStore.deleteServer(serverToDelete.value);
+
+    if (result) {
+      await fetchData();
+    }
+
+    serverToDelete.value = null;
+  }
 };
 
 watch(
@@ -185,7 +193,7 @@ onMounted(async () => {
     </VDataTableServer>
 
     <VDialogDeleter
-      v-model="isDialogShow"
+      v-model="isDialogDeleterShow"
       :title="$t('delete_server')"
       :message="$t('delete_server_confirmation')"
       @confirm="handleDelete"
