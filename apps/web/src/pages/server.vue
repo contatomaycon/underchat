@@ -59,17 +59,33 @@ const options = ref({
   search: null as string | null,
 });
 
+const debouncedSearch = refDebounced(
+  computed(() => options.value.search),
+  500
+);
+
 const fetchData = async () => {
   await serverStore.listServers({
     page: options.value.page,
     per_page: options.value.itemsPerPage,
     sort_by: options.value.sortBy,
     status: options.value.status,
-    search: options.value.search,
+    search: debouncedSearch.value,
   });
 };
 
-watch(options, fetchData, { deep: true });
+watch(
+  () => [
+    options.value.page,
+    options.value.itemsPerPage,
+    options.value.sortBy,
+    options.value.status,
+  ],
+  fetchData,
+  { deep: true }
+);
+
+watch(debouncedSearch, fetchData, { immediate: true });
 
 onMounted(async () => {
   await fetchData();
