@@ -49,5 +49,7 @@
     "server_id_required": "Se requiere el ID del servidor",
     "name_required": "Se requiere el nombre",
     "ip_required": "Se requiere la dirección IP",
-    "port_required": "Se requiere el puerto"
+    "port_required": "Se requiere el puerto",
+    "show": "Mostrar",
+    "add": "Agregar"
 }

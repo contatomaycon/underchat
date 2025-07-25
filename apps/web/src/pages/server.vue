@@ -12,6 +12,15 @@ import { SortRequest } from '@core/schema/common/sortRequestSchema';
 const { t } = useI18n();
 const serverStore = useServerStore();
 
+const itemsPerPage = ref([
+  { value: 5, title: '5' },
+  { value: 10, title: '10' },
+  { value: 25, title: '25' },
+  { value: 50, title: '50' },
+  { value: 100, title: '100' },
+  { value: -1, title: 'All' },
+]);
+
 const itemsStatus = ref([
   { id: 0, text: t('all') },
   { id: 1, text: t('new') },
@@ -124,31 +133,47 @@ const openEditDialog = (id: number) => {
   <div>
     <VCard :title="$t('server')" no-padding>
       <VCardText>
-        <VRow class="justify-end" dense>
-          <VCol cols="6" md="2">
-            <VLabel>{{ $t('status') }}:</VLabel>
-            <AppAutocomplete
-              item-title="text"
-              item-value="id"
-              :items="itemsStatus"
-              v-model="options.status"
-              :placeholder="$t('select_state')"
-            />
-          </VCol>
+        <div class="d-flex justify-space-between flex-wrap gap-4">
+          <div class="d-flex gap-4 align-center mt-5">
+            <div class="d-flex align-center gap-x-2">
+              <div>{{ $t('show') }}</div>
+              <AppSelect
+                :model-value="options.itemsPerPage"
+                :items="itemsPerPage"
+                @update:model-value="
+                  options.itemsPerPage = parseInt($event, 10)
+                "
+              />
+            </div>
 
-          <VCol cols="6" md="4">
-            <VLabel>{{ $t('search') }}:</VLabel>
-            <AppTextField
-              :placeholder="$t('search') + '...'"
-              append-inner-icon="tabler-search"
-              single-line
-              hide-details
-              dense
-              outlined
-              v-model="options.search"
-            />
-          </VCol>
-        </VRow>
+            <VBtn prepend-icon="tabler-plus"> {{ $t('add') }} </VBtn>
+          </div>
+          <div class="d-flex align-center flex-wrap gap-4">
+            <div class="server-status-filter">
+              <VLabel>{{ $t('status') }}:</VLabel>
+              <AppAutocomplete
+                item-title="text"
+                item-value="id"
+                :items="itemsStatus"
+                v-model="options.status"
+                :placeholder="$t('select_state')"
+              />
+            </div>
+
+            <div class="invoice-list-filter">
+              <VLabel>{{ $t('search') }}:</VLabel>
+              <AppTextField
+                :placeholder="$t('search') + '...'"
+                append-inner-icon="tabler-search"
+                single-line
+                hide-details
+                dense
+                outlined
+                v-model="options.search"
+              />
+            </div>
+          </div>
+        </div>
       </VCardText>
 
       <VDataTableServer
@@ -230,3 +255,13 @@ const openEditDialog = (id: number) => {
     </VSnackbar>
   </div>
 </template>
+
+<style lang="scss">
+.server-status-filter {
+  inline-size: 12rem;
+}
+
+.invoice-list-filter {
+  inline-size: 20rem;
+}
+</style>

@@ -49,5 +49,7 @@
     "server_id_required": "Server ID is required",
     "name_required": "Name is required",
     "ip_required": "IP Address is required",
-    "port_required": "Port is required"
+    "port_required": "Port is required",
+    "show": "Show",
+    "add": "Add"
 }

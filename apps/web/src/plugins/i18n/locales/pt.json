@@ -49,5 +49,7 @@
     "server_id_required": "O ID do servidor é obrigatório",
     "name_required": "O nome é obrigatório",
     "ip_required": "O endereço IP é obrigatório",
-    "port_required": "A porta é obrigatória"
+    "port_required": "A porta é obrigatória",
+    "show": "Mostrar",
+    "add": "Adicionar"
 }
