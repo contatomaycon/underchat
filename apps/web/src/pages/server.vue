@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue';
+import { ref, watch, computed } from 'vue';
+import { refDebounced } from '@vueuse/core';
 import { useServerStore } from '@/@webcore/stores/server';
 import { EColor } from '@core/common/enums/EColor';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
@@ -22,13 +23,15 @@ const itemsStatus = ref([
 
 const isDialogDeleterShow = ref(false);
 const serverToDelete = ref<number | null>(null);
+const isDialogEditServerShow = ref(false);
+const serverToEdit = ref<number | null>(null);
 
-const resolveStatusVariant = (status: number) => {
-  if (status === 1) return { color: EColor.info, text: t('new') };
-  if (status === 2) return { color: EColor.warning, text: t('installing') };
-  if (status === 3) return { color: EColor.success, text: t('online') };
-  if (status === 4) return { color: EColor.error, text: t('error') };
-  if (status === 5) return { color: EColor.error, text: t('offline') };
+const resolveStatusVariant = (s: number) => {
+  if (s === 1) return { color: EColor.info, text: t('new') };
+  if (s === 2) return { color: EColor.warning, text: t('installing') };
+  if (s === 3) return { color: EColor.success, text: t('online') };
+  if (s === 4) return { color: EColor.error, text: t('error') };
+  if (s === 5) return { color: EColor.error, text: t('offline') };
 
   return { color: EColor.primary, text: t('unknown') };
 };
@@ -67,49 +70,54 @@ const debouncedSearch = refDebounced(
   500
 );
 
-const fetchData = async () => {
-  await serverStore.listServers({
-    page: options.value.page,
-    per_page: options.value.itemsPerPage,
-    sort_by: options.value.sortBy,
-    status: options.value.status,
-    search: debouncedSearch.value,
-  });
+const query = computed(() => ({
+  page: options.value.page,
+  per_page: options.value.itemsPerPage,
+  sort_by: options.value.sortBy,
+  status: options.value.status,
+  search: debouncedSearch.value,
+}));
+
+watch(
+  query,
+  async (q) => {
+    await serverStore.listServers(q);
+  },
+  { immediate: true, deep: true }
+);
+
+const handleTableChange = (o: {
+  page: number;
+  itemsPerPage: number;
+  sortBy: SortRequest[];
+}) => {
+  options.value.page = o.page;
+  options.value.itemsPerPage = o.itemsPerPage;
+  options.value.sortBy = o.sortBy;
 };
 
-const deleteServer = async (serverId: number) => {
-  serverToDelete.value = serverId;
+const deleteServer = async (id: number) => {
+  serverToDelete.value = id;
+
   isDialogDeleterShow.value = true;
 };
 
 const handleDelete = async () => {
-  if (serverToDelete.value) {
-    const result = await serverStore.deleteServer(serverToDelete.value);
+  if (!serverToDelete.value) return;
 
-    if (result) {
-      await fetchData();
-    }
-
-    serverToDelete.value = null;
+  const result = await serverStore.deleteServer(serverToDelete.value);
+  if (result) {
+    await serverStore.listServers(query.value);
   }
+
+  serverToDelete.value = null;
 };
 
-watch(
-  () => [
-    options.value.page,
-    options.value.itemsPerPage,
-    options.value.sortBy,
-    options.value.status,
-  ],
-  fetchData,
-  { deep: true }
-);
+const openEditDialog = (id: number) => {
+  serverToEdit.value = id;
 
-watch(debouncedSearch, fetchData, { immediate: true });
-
-onMounted(async () => {
-  await fetchData();
-});
+  isDialogEditServerShow.value = true;
+};
 </script>
 
 <template>
@@ -126,6 +134,7 @@ onMounted(async () => {
             :placeholder="$t('select_state')"
           />
         </VCol>
+
         <VCol cols="6" md="4">
           <VLabel>{{ $t('search') }}:</VLabel>
           <AppTextField
@@ -149,14 +158,15 @@ onMounted(async () => {
       :items-length="serverStore.pagings.total"
       :loading="serverStore.loading"
       :sort-by="options.sortBy"
-      @update:options="(opts) => (options = opts)"
+      @update:options="handleTableChange"
     >
       <template #item.name="{ item }">
         <div class="d-flex flex-column ms-3">
           <span
             class="d-block font-weight-medium text-high-emphasis text-truncate"
-            >{{ item.name }}</span
           >
+            {{ item.name }}
+          </span>
         </div>
       </template>
 
@@ -180,7 +190,9 @@ onMounted(async () => {
 
       <template #item.actions="{ item }">
         <div class="d-flex gap-1">
-          <IconBtn><VIcon icon="tabler-edit" /></IconBtn>
+          <IconBtn
+            ><VIcon icon="tabler-edit" @click="openEditDialog(item.id)"
+          /></IconBtn>
           <IconBtn
             ><VIcon icon="tabler-trash" @click="deleteServer(item.id)"
           /></IconBtn>
@@ -198,5 +210,7 @@ onMounted(async () => {
       :message="$t('delete_server_confirmation')"
       @confirm="handleDelete"
     />
+
+    <AppEditServer v-model="isDialogEditServerShow" :server-id="serverToEdit" />
   </VCard>
 </template>

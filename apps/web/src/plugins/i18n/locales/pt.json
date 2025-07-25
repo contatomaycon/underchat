@@ -36,5 +36,18 @@
     "delete_server": "Excluir servidor?",
     "delete_server_confirmation": "Você tem certeza que deseja excluir este servidor?",
     "server_delete_error": "Ocorreu um erro ao excluir o servidor. Por favor, tente novamente.",
-    "server_delete_success": "Servidor excluído com sucesso!"
+    "server_delete_success": "Servidor excluído com sucesso!",
+    "edit_server": "Editar Servidor",
+    "name_server": "Nome do Servidor",
+    "ip": "Endereço IP",
+    "port": "Porta",
+    "username": "Nome de Usuário",
+    "save": "Salvar",
+    "server_get_error": "Ocorreu um erro ao recuperar o servidor. Por favor, tente novamente.",
+    "server_edit_error": "Ocorreu um erro ao editar o servidor. Por favor, tente novamente.",
+    "server_edit_success": "Servidor editado com sucesso!",
+    "server_id_required": "O ID do servidor é obrigatório",
+    "name_required": "O nome é obrigatório",
+    "ip_required": "O endereço IP é obrigatório",
+    "port_required": "A porta é obrigatória"
 }

@@ -11,6 +11,8 @@ import { PagingResponseSchema } from '@core/schema/common/pagingResponseSchema';
 import axios from '@webcore/axios';
 import { IListServers } from '@webcore/interfaces/IListServers';
 import { ListServerRequest } from '@core/schema/server/listServer/request.schema';
+import { ViewServerResponse } from '@core/schema/server/viewServer/response.schema';
+import { EditServerRequest } from '@core/schema/server/editServer/request.schema';
 
 export const useServerStore = defineStore('server', {
   state: () => ({
@@ -40,19 +42,21 @@ export const useServerStore = defineStore('server', {
       this.snackbar.status = false;
     },
     async listServers(
-      input: IListServers
+      input?: IListServers
     ): Promise<ListServerFinalResponse | null> {
       try {
         this.loading = true;
 
-        const request: ListServerRequest = {
-          current_page: input.page,
-          per_page: input.per_page,
-          sort_by: input.sort_by,
-          server_name: input.search,
-          server_status_id: input.status,
-          ssh_ip: input.search,
-        };
+        const request: ListServerRequest | undefined = input
+          ? {
+              current_page: input.page,
+              per_page: input.per_page,
+              sort_by: input.sort_by,
+              server_name: input.search,
+              server_status_id: input.status,
+              ssh_ip: input.search,
+            }
+          : undefined;
 
         const response = await axios.get<IApiResponse<ListServerFinalResponse>>(
           `/server`,
@@ -125,6 +129,80 @@ export const useServerStore = defineStore('server', {
       } catch {
         this.showSnackbar(
           this.i18n.global.t('server_delete_error'),
+          EColor.error
+        );
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async getServerById(serverId: number): Promise<ViewServerResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<IApiResponse<ViewServerResponse>>(
+          `/server/${serverId}`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('server_get_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        this.showSnackbar(this.i18n.global.t('server_get_error'), EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async updateServer(
+      serverId: number,
+      payload: EditServerRequest
+    ): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.put<IApiResponse<void>>(
+          `/server/${serverId}`,
+          payload
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('server_edit_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('server_edit_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch {
+        this.showSnackbar(
+          this.i18n.global.t('server_edit_error'),
           EColor.error
         );
 

@@ -20,6 +20,7 @@ declare module 'vue' {
     AppCombobox: typeof import('./src/@webcore/components/app-form-elements/AppCombobox.vue')['default']
     AppDateTimePicker: typeof import('./src/@webcore/components/app-form-elements/AppDateTimePicker.vue')['default']
     AppDrawerHeaderSection: typeof import('./src/@webcore/components/AppDrawerHeaderSection.vue')['default']
+    AppEditServer: typeof import('./src/components/server/AppEditServer.vue')['default']
     AppLoadingIndicator: typeof import('./src/components/AppLoadingIndicator.vue')['default']
     AppPricing: typeof import('./src/components/AppPricing.vue')['default']
     AppSearchHeader: typeof import('./src/components/AppSearchHeader.vue')['default']
