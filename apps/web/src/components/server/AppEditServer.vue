@@ -79,6 +79,8 @@ watch(serverId, async (id) => {
     name.value = server.name;
     ip.value = server.ssh.ssh_ip;
     port.value = server.ssh.ssh_port;
+    username.value = null;
+    password.value = null;
   }
 });
 </script>
