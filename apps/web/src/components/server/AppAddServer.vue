@@ -1,13 +1,12 @@
 <script lang="ts" setup>
 import { useServerStore } from '@/@webcore/stores/server';
-import { EditServerRequest } from '@core/schema/server/editServer/request.schema';
+import { CreateServerRequest } from '@core/schema/server/createServer/request.schema';
 import { VForm } from 'vuetify/components/VForm';
 
 const serverStore = useServerStore();
 
 const props = defineProps<{
   modelValue: boolean;
-  serverId: number | null;
 }>();
 
 const emit = defineEmits<{
@@ -19,25 +18,29 @@ const isVisible = computed({
   set: (v) => emit('update:modelValue', v),
 });
 
-const serverId = toRef(props, 'serverId');
-
 const name = ref<string | null>(null);
 const ip = ref<string | null>(null);
 const port = ref<number | null>(null);
 const username = ref<string | null>(null);
 const password = ref<string | null>(null);
 
-const refFormEditServer = ref<VForm>();
+const refFormAddServer = ref<VForm>();
 
-const updateServer = async () => {
-  const validateForm = await refFormEditServer?.value?.validate();
+const addServer = async () => {
+  const validateForm = await refFormAddServer?.value?.validate();
   if (!validateForm?.valid) return;
 
-  if (!serverId.value || !name.value || !ip.value || !port.value) {
+  if (
+    !name.value ||
+    !ip.value ||
+    !port.value ||
+    !username.value ||
+    !password.value
+  ) {
     return;
   }
 
-  const payload: EditServerRequest = {
+  const payload: CreateServerRequest = {
     name: name.value,
     ssh_ip: ip.value,
     ssh_port: port.value,
@@ -45,7 +48,7 @@ const updateServer = async () => {
     ssh_password: password.value,
   };
 
-  const result = await serverStore.updateServer(serverId.value, payload);
+  const result = await serverStore.addServer(payload);
 
   if (result) {
     isVisible.value = false;
@@ -53,19 +56,6 @@ const updateServer = async () => {
     await serverStore.listServers();
   }
 };
-
-watch(serverId, async (id) => {
-  if (!id) return;
-
-  const server = await serverStore.getServerById(id);
-  if (server) {
-    name.value = server.name;
-    ip.value = server.ssh.ssh_ip;
-    port.value = server.ssh.ssh_port;
-    username.value = null;
-    password.value = null;
-  }
-});
 </script>
 
 <template>
@@ -81,8 +71,8 @@ watch(serverId, async (id) => {
       </VOverlay>
     </template>
 
-    <VForm ref="refFormEditServer" @submit.prevent>
-      <VCard :title="$t('edit_server')">
+    <VForm ref="refFormAddServer" @submit.prevent>
+      <VCard :title="$t('add_server')">
         <VCardText>
           <VRow>
             <VCol cols="12">
@@ -122,6 +112,7 @@ watch(serverId, async (id) => {
                 v-model="username"
                 :label="$t('username') + ':'"
                 :placeholder="$t('username')"
+                :rules="[requiredValidator(username, $t('username_required'))]"
               />
             </VCol>
 
@@ -130,6 +121,7 @@ watch(serverId, async (id) => {
                 v-model="password"
                 :label="$t('password') + ':'"
                 :placeholder="$t('password')"
+                :rules="[requiredValidator(password, $t('password_required'))]"
               />
             </VCol>
           </VRow>
@@ -139,7 +131,7 @@ watch(serverId, async (id) => {
           <VBtn variant="tonal" color="secondary" @click="isVisible = false">
             {{ $t('cancel') }}
           </VBtn>
-          <VBtn @click="updateServer"> {{ $t('save') }} </VBtn>
+          <VBtn @click="addServer"> {{ $t('add') }} </VBtn>
         </VCardText>
       </VCard>
     </VForm>

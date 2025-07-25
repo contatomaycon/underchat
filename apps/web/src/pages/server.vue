@@ -33,6 +33,7 @@ const itemsStatus = ref([
 const isDialogDeleterShow = ref(false);
 const serverToDelete = ref<number | null>(null);
 const isDialogEditServerShow = ref(false);
+const isAddServerVisible = ref(false);
 const serverToEdit = ref<number | null>(null);
 
 const resolveStatusVariant = (s: number) => {
@@ -146,7 +147,9 @@ const openEditDialog = (id: number) => {
               />
             </div>
 
-            <VBtn prepend-icon="tabler-plus"> {{ $t('add') }} </VBtn>
+            <VBtn prepend-icon="tabler-plus" @click="isAddServerVisible = true">
+              {{ $t('add') }}
+            </VBtn>
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
             <div class="server-status-filter">
@@ -253,6 +256,8 @@ const openEditDialog = (id: number) => {
         v-model="isDialogEditServerShow"
         :server-id="serverToEdit"
       />
+
+      <AppAddServer v-model="isAddServerVisible" />
     </VCard>
     <VSnackbar
       v-model="serverStore.snackbar.status"

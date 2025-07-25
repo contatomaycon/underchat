@@ -55,5 +55,9 @@
     "loading_text": "Cargando... Por favor espera",
     "email_or_username_required": "Se requiere correo electrónico o usuario",
     "password_required": "Se requiere contraseña",
-    "ip_invalid": "Dirección IP inválida"
+    "ip_invalid": "Dirección IP inválida",
+    "server_add_error": "Ocurrió un error al agregar el servidor. Por favor, inténtalo de nuevo.",
+    "server_add_success": "¡Servidor agregado exitosamente!",
+    "add_server": "Agregar servidor",
+    "username_required": "Se requiere nombre de usuario"
 }

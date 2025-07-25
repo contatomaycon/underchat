@@ -14,6 +14,8 @@ import { ListServerRequest } from '@core/schema/server/listServer/request.schema
 import { ViewServerResponse } from '@core/schema/server/viewServer/response.schema';
 import { EditServerRequest } from '@core/schema/server/editServer/request.schema';
 import { AxiosError } from 'axios';
+import { CreateServerRequest } from '@core/schema/server/createServer/request.schema';
+import { CreateServerResponse } from '@core/schema/server/createServer/response.schema';
 
 export const useServerStore = defineStore('server', {
   state: () => ({
@@ -207,6 +209,48 @@ export const useServerStore = defineStore('server', {
         return true;
       } catch (error) {
         let errorMessage = this.i18n.global.t('server_edit_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async addServer(payload: CreateServerRequest): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<CreateServerResponse>>(
+          `/server`,
+          payload
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('server_add_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('server_add_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('server_add_error');
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }
