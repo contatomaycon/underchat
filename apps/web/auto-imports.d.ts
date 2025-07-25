@@ -62,6 +62,7 @@ declare global {
   const inject: typeof import('vue')['inject']
   const injectLocal: typeof import('@vueuse/core')['injectLocal']
   const integerValidator: typeof import('./src/@webcore/utils/validators')['integerValidator']
+  const ipMask: typeof import('./src/@webcore/utils/masks')['ipMask']
   const isDarkPreferred: (typeof import('./src/@webcore/composable/useThemeConfig'))['isDarkPreferred']
   const isDefined: typeof import('@vueuse/core')['isDefined']
   const isEmpty: typeof import('./src/@webcore/utils/helpers')['isEmpty']
@@ -73,6 +74,7 @@ declare global {
   const isReadonly: typeof import('vue')['isReadonly']
   const isRef: typeof import('vue')['isRef']
   const isToday: typeof import('./src/@webcore/utils/helpers')['isToday']
+  const isValidIP: typeof import('./src/@webcore/utils/validators')['isValidIP']
   const kFormatter: typeof import('./src/@webcore/utils/formatters')['kFormatter']
   const lengthValidator: typeof import('./src/@webcore/utils/validators')['lengthValidator']
   const logicAnd: typeof import('@vueuse/math')['logicAnd']
@@ -438,6 +440,7 @@ declare module 'vue' {
     readonly inject: UnwrapRef<typeof import('vue')['inject']>
     readonly injectLocal: UnwrapRef<typeof import('@vueuse/core')['injectLocal']>
     readonly integerValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['integerValidator']>
+    readonly ipMask: UnwrapRef<typeof import('./src/@webcore/utils/masks')['ipMask']>
     readonly isDefined: UnwrapRef<typeof import('@vueuse/core')['isDefined']>
     readonly isEmpty: UnwrapRef<typeof import('./src/@webcore/utils/helpers')['isEmpty']>
     readonly isEmptyArray: UnwrapRef<typeof import('./src/@webcore/utils/helpers')['isEmptyArray']>
@@ -448,6 +451,7 @@ declare module 'vue' {
     readonly isReadonly: UnwrapRef<typeof import('vue')['isReadonly']>
     readonly isRef: UnwrapRef<typeof import('vue')['isRef']>
     readonly isToday: UnwrapRef<typeof import('./src/@webcore/utils/helpers')['isToday']>
+    readonly isValidIP: UnwrapRef<typeof import('./src/@webcore/utils/validators')['isValidIP']>
     readonly kFormatter: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['kFormatter']>
     readonly lengthValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['lengthValidator']>
     readonly logicAnd: UnwrapRef<typeof import('@vueuse/math')['logicAnd']>

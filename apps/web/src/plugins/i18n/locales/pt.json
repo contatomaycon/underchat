@@ -51,5 +51,9 @@
     "ip_required": "O endereço IP é obrigatório",
     "port_required": "A porta é obrigatória",
     "show": "Mostrar",
-    "add": "Adicionar"
+    "add": "Adicionar",
+    "loading_text": "Carregando... Por favor, aguarde",
+    "email_or_username_required": "E-mail ou Usuário é obrigatório",
+    "password_required": "Senha é obrigatória",
+    "ip_invalid": "Endereço IP inválido"
 }

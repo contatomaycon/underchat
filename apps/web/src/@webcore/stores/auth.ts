@@ -89,8 +89,6 @@ export const useAuthStore = defineStore('auth', {
         setPermissions(this.permissions);
         setLayout(this.layout);
 
-        this.showSnackbar(this.i18n.global.t('login_success'), EColor.success);
-
         return true;
       } catch (error) {
         let errorMessage = this.i18n.global.t('login_invalid');

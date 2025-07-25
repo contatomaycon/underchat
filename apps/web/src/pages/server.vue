@@ -185,6 +185,7 @@ const openEditDialog = (id: number) => {
         :loading="serverStore.loading"
         :sort-by="options.sortBy"
         @update:options="handleTableChange"
+        :loading-text="$t('loading_text')"
       >
         <template #item.name="{ item }">
           <div class="d-flex flex-column ms-3">
@@ -219,12 +220,12 @@ const openEditDialog = (id: number) => {
 
         <template #item.actions="{ item }">
           <div class="d-flex gap-1">
-            <VIconBtn
+            <IconBtn
               ><VIcon icon="tabler-edit" @click="openEditDialog(item.id)"
-            /></VIconBtn>
-            <VIconBtn
+            /></IconBtn>
+            <IconBtn
               ><VIcon icon="tabler-trash" @click="deleteServer(item.id)"
-            /></VIconBtn>
+            /></IconBtn>
           </div>
         </template>
 

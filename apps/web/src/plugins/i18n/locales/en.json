@@ -51,5 +51,9 @@
     "ip_required": "IP Address is required",
     "port_required": "Port is required",
     "show": "Show",
-    "add": "Add"
+    "add": "Add",
+    "loading_text": "Loading... Please wait",
+    "email_or_username_required": "Email or Username is required",
+    "password_required": "Password is required",
+    "ip_invalid": "Invalid IP Address"
 }

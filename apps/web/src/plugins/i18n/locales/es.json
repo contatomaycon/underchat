@@ -51,5 +51,9 @@
     "ip_required": "Se requiere la dirección IP",
     "port_required": "Se requiere el puerto",
     "show": "Mostrar",
-    "add": "Agregar"
+    "add": "Agregar",
+    "loading_text": "Cargando... Por favor espera",
+    "email_or_username_required": "Se requiere correo electrónico o usuario",
+    "password_required": "Se requiere contraseña",
+    "ip_invalid": "Dirección IP inválida"
 }
