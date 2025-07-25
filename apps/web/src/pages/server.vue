@@ -219,12 +219,12 @@ const openEditDialog = (id: number) => {
 
         <template #item.actions="{ item }">
           <div class="d-flex gap-1">
-            <IconBtn
+            <VIconBtn
               ><VIcon icon="tabler-edit" @click="openEditDialog(item.id)"
-            /></IconBtn>
-            <IconBtn
+            /></VIconBtn>
+            <VIconBtn
               ><VIcon icon="tabler-trash" @click="deleteServer(item.id)"
-            /></IconBtn>
+            /></VIconBtn>
           </div>
         </template>
 
