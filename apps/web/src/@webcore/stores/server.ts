@@ -23,11 +23,11 @@ export const useServerStore = defineStore('server', {
     loading: false,
     list_servers: [] as ListServerResponse[],
     pagings: {
-      current_page: null as number | null,
-      total_pages: null as number | null,
-      per_page: null as number | null,
-      count: null as number | null,
-      total: null as number | null,
+      current_page: 1 as number,
+      total_pages: 1 as number,
+      per_page: 10 as number,
+      count: 0 as number,
+      total: 0 as number,
     } as PagingResponseSchema,
   }),
   actions: {

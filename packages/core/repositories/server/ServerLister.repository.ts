@@ -91,6 +91,7 @@ export class ServerListerRepository {
 
     const queryBuilder = this.db
       .select({
+        id: server.server_id,
         name: server.name,
         status: {
           id: serverStatus.server_status_id,

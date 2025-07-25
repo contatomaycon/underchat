@@ -7,6 +7,7 @@ export const listServerSshResponseSchema = Type.Object({
 });
 
 export const listServerResponseSchema = Type.Object({
+  id: Type.Number(),
   name: Type.String(),
   status: Type.Object({
     id: Type.Number(),

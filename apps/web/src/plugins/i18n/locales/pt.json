@@ -30,5 +30,9 @@
     "no_data_available": "Nenhum dado disponível",
     "search": "Buscar",
     "select_state": "Selecione o status",
-    "all": "Todos"
+    "all": "Todos",
+    "confirm": "Confirmar",
+    "cancel": "Cancelar",
+    "delete_server": "Excluir servidor?",
+    "delete_server_confirmation": "Você tem certeza que deseja excluir este servidor?"
 }

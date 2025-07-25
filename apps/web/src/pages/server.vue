@@ -20,6 +20,8 @@ const itemsStatus = ref([
   { id: 5, text: t('offline') },
 ]);
 
+const isDialogShow = ref(false);
+
 const resolveStatusVariant = (status: number) => {
   if (status === 1) return { color: EColor.info, text: t('new') };
   if (status === 2) return { color: EColor.warning, text: t('installing') };
@@ -72,6 +74,16 @@ const fetchData = async () => {
     status: options.value.status,
     search: debouncedSearch.value,
   });
+};
+
+const deleteServer = async (serverId: number) => {
+  isDialogShow.value = true;
+
+  console.log(`Deleting server with ID: ${serverId}`);
+};
+
+const handleDelete = async () => {
+  console.log('Confirmed deletion');
 };
 
 watch(
@@ -161,7 +173,9 @@ onMounted(async () => {
       <template #item.actions="{ item }">
         <div class="d-flex gap-1">
           <IconBtn><VIcon icon="tabler-edit" /></IconBtn>
-          <IconBtn><VIcon icon="tabler-trash" /></IconBtn>
+          <IconBtn
+            ><VIcon icon="tabler-trash" @click="deleteServer(item.id)"
+          /></IconBtn>
         </div>
       </template>
 
@@ -169,5 +183,12 @@ onMounted(async () => {
         {{ $t('no_data_available') }}
       </template>
     </VDataTableServer>
+
+    <VDialogDeleter
+      v-model="isDialogShow"
+      :title="$t('delete_server')"
+      :message="$t('delete_server_confirmation')"
+      @confirm="handleDelete"
+    />
   </VCard>
 </template>
