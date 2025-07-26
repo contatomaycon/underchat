@@ -1,16 +1,24 @@
 import type { App } from 'vue';
 
+type VuePlugin = { install: (app: App) => void } | ((app: App) => void);
+
 export const registerPlugins = (app: App) => {
-  const imports = import.meta.glob<{ default: (app: App) => void }>(
+  const pluginsMap = import.meta.glob<VuePlugin>(
     ['../../plugins/*.{ts,js}', '../../plugins/*/index.{ts,js}'],
     { eager: true }
   );
 
-  const importPaths = Object.keys(imports).sort((a, b) => a.localeCompare(b));
+  Object.entries(pluginsMap)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .forEach(([, mod]) => {
+      const plugin = (mod as { default?: VuePlugin }).default ?? mod;
 
-  importPaths.forEach((path) => {
-    const pluginImportModule = imports[path];
+      if (typeof plugin === 'function') {
+        plugin(app);
 
-    pluginImportModule.default?.(app);
-  });
+        return;
+      }
+
+      plugin.install?.(app);
+    });
 };

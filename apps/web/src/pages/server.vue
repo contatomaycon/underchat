@@ -25,6 +25,19 @@ definePage({
   },
 });
 
+const permissionsEdit = [
+  EGeneralPermissions.full_access,
+  EServerPermissions.server_edit,
+];
+const permissionsDelete = [
+  EGeneralPermissions.full_access,
+  EServerPermissions.server_delete,
+];
+const permissionsCreate = [
+  EGeneralPermissions.full_access,
+  EServerPermissions.server_create,
+];
+
 const { t } = useI18n();
 const serverStore = useServerStore();
 
@@ -186,7 +199,11 @@ onBeforeUnmount(async () => {
               />
             </div>
 
-            <VBtn prepend-icon="tabler-plus" @click="isAddServerVisible = true">
+            <VBtn
+              v-if="$canPermission(permissionsCreate)"
+              prepend-icon="tabler-plus"
+              @click="isAddServerVisible = true"
+            >
               {{ $t('add') }}
             </VBtn>
           </div>
@@ -270,10 +287,10 @@ onBeforeUnmount(async () => {
             <IconBtn v-if="item.status.id !== EServerStatus.installing"
               ><VIcon icon="tabler-terminal-2" @click="openLogsDialog(item.id)"
             /></IconBtn>
-            <IconBtn
+            <IconBtn v-if="$canPermission(permissionsEdit)"
               ><VIcon icon="tabler-edit" @click="openEditDialog(item.id)"
             /></IconBtn>
-            <IconBtn
+            <IconBtn v-if="$canPermission(permissionsDelete)"
               ><VIcon icon="tabler-trash" @click="deleteServer(item.id)"
             /></IconBtn>
           </div>
