@@ -54,6 +54,14 @@ const addServer = async () => {
     await serverStore.listServers();
   }
 };
+
+onMounted(() => {
+  name.value = null;
+  ip.value = null;
+  port.value = null;
+  username.value = null;
+  password.value = null;
+});
 </script>
 
 <template>
