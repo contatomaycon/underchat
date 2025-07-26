@@ -1,7 +1,7 @@
 import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
-import { CreateWorkerResponse } from '@core/schema/worker/createWorker/response.schema';
-import { CreateWorkerRequest } from '@core/schema/worker/createWorker/request.schema';
+import { BalanceCreateWorkerResponse } from '@core/schema/worker/balanceCreateWorker/response.schema';
+import { BalanceCreateWorkerRequest } from '@core/schema/worker/balanceCreateWorker/request.schema';
 import { WorkerService } from '@core/services/worker.service';
 import { v4 as uuidv4 } from 'uuid';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
@@ -20,7 +20,7 @@ export class WorkerCreatorUseCase {
 
   private async validate(
     t: TFunction<'translation', undefined>,
-    input: CreateWorkerRequest
+    input: BalanceCreateWorkerRequest
   ) {
     const existsAccountById = await this.accountService.existsAccountById(
       input.account_id
@@ -66,8 +66,8 @@ export class WorkerCreatorUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    input: CreateWorkerRequest
-  ): Promise<CreateWorkerResponse> {
+    input: BalanceCreateWorkerRequest
+  ): Promise<BalanceCreateWorkerResponse> {
     await this.validate(t, input);
 
     const workerType = input.worker_type as EWorkerType;

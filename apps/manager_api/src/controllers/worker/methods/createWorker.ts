@@ -2,7 +2,7 @@ import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { CreateWorkerRequest } from '@core/schema/worker/createWorker/request.schema';
+import { CreateWorkerRequest } from '@core/schema/worker/balanceCreateWorker/request.schema';
 import { WorkerCreatorUseCase } from '@core/useCases/worker/WorkerCreator.useCase';
 
 export const createWorker = async (

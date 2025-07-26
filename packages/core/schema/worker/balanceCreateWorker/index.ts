@@ -1,10 +1,10 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { createWorkerResponseSchema } from './response.schema';
-import { createWorkerRequestSchema } from './request.schema';
+import { balanceCreateWorkerResponseSchema } from './response.schema';
+import { balanceCreateWorkerRequestSchema } from './request.schema';
 
-export const createWorkerSchema = {
+export const balanceCreateWorkerSchema = {
   description: 'Adiciona um novo trabalhador',
   tags: [ETagSwagger.worker],
   produces: ['application/json'],
@@ -22,14 +22,14 @@ export const createWorkerSchema = {
       })
     ),
   }),
-  body: createWorkerRequestSchema,
+  body: balanceCreateWorkerRequestSchema,
   response: {
     200: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: createWorkerResponseSchema,
+        data: balanceCreateWorkerResponseSchema,
       },
       { description: 'Successful' }
     ),
