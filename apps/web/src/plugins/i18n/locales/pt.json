@@ -65,5 +65,7 @@
     "server_add": "Adicionar Servidor",
     "installation_pending": "Instalação pendente",
     "server_logs": "Logs do Servidor",
-    "server_logs_install_error": "Ocorreu um erro ao recuperar os logs de instalação. Por favor, tente novamente."
+    "server_logs_install_error": "Ocorreu um erro ao recuperar os logs de instalação. Por favor, tente novamente.",
+    "reinstall_server": "Reinstalar Servidor",
+    "reinstall_server_confirmation": "Você tem certeza que deseja reinstalar este servidor?"
 }

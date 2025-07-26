@@ -25,3 +25,8 @@ export const serverLogsInstallPermissions = [
   EGeneralPermissions.full_access,
   EServerPermissions.server_logs_install,
 ];
+
+export const serverReinstallPermissions = [
+  EGeneralPermissions.full_access,
+  EServerPermissions.server_reinstall,
+];

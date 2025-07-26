@@ -72,6 +72,9 @@ const serverToConsole = ref<number | null>(null);
 const isLogsServerVisible = ref(false);
 const serverToLogs = ref<number | null>(null);
 
+const isDialogRefreshServerShow = ref(false);
+const serverToRefresh = ref<number | null>(null);
+
 const resolveStatusVariant = (s: number) => {
   if (s === 1) return { color: EColor.info, text: t('new') };
   if (s === 2) return { color: EColor.warning, text: t('installing') };
@@ -128,6 +131,12 @@ const deleteServer = async (id: number) => {
   isDialogDeleterShow.value = true;
 };
 
+const refreshServer = async (id: number) => {
+  serverToRefresh.value = id;
+
+  isDialogRefreshServerShow.value = true;
+};
+
 const handleDelete = async () => {
   if (!serverToDelete.value) return;
 
@@ -137,6 +146,14 @@ const handleDelete = async () => {
   }
 
   serverToDelete.value = null;
+};
+
+const handleReinstall = async () => {
+  if (!serverToRefresh.value) return;
+
+  //await serverStore.reinstallServer(serverToRefresh.value);
+
+  serverToRefresh.value = null;
 };
 
 const openEditDialog = (id: number) => {
@@ -279,6 +296,9 @@ onBeforeUnmount(async () => {
 
         <template #item.actions="{ item }">
           <div class="d-flex gap-1">
+            <IconBtn v-if="item.status.id !== EServerStatus.installing"
+              ><VIcon icon="tabler-refresh" @click="refreshServer(item.id)"
+            /></IconBtn>
             <IconBtn v-if="item.status.id === EServerStatus.installing"
               ><VIcon
                 icon="tabler-terminal-2"
@@ -309,7 +329,14 @@ onBeforeUnmount(async () => {
         </template>
       </VDataTableServer>
 
-      <VDialogDeleter
+      <VDialogHandler
+        v-model="isDialogRefreshServerShow"
+        :title="$t('reinstall_server')"
+        :message="$t('reinstall_server_confirmation')"
+        @confirm="handleReinstall"
+      />
+
+      <VDialogHandler
         v-model="isDialogDeleterShow"
         :title="$t('delete_server')"
         :message="$t('delete_server_confirmation')"

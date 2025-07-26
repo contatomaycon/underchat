@@ -7,6 +7,7 @@ import {
   serverDeletePermissions,
   serverEditPermissions,
   serverLogsInstallPermissions,
+  serverReinstallPermissions,
   serverViewPermissions,
 } from '@/permissions/server.permissions';
 import { deleteServerSchema } from '@core/schema/server/deleteServer';
@@ -14,6 +15,7 @@ import { editServerSchema } from '@core/schema/server/editServer';
 import { viewServerSchema } from '@core/schema/server/viewServer';
 import { listServerSchema } from '@core/schema/server/listServer';
 import { serverLogsInstallSchema } from '@core/schema/server/serverLogsInstall';
+import { reinstallServerSchema } from '@core/schema/server/reinstallServer';
 
 export default async function serverRoutes(server: FastifyInstance) {
   const serverController = container.resolve(ServerController);
@@ -51,6 +53,15 @@ export default async function serverRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, serverEditPermissions),
+    ],
+  });
+
+  server.patch('/server/:server_id', {
+    schema: reinstallServerSchema,
+    handler: serverController.reinstallServer,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, serverReinstallPermissions),
     ],
   });
 
