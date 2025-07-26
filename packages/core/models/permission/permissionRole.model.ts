@@ -27,6 +27,7 @@ export const permissionRole = pgTable('permission_role', {
     mode: 'string',
     withTimezone: true,
   }).defaultNow(),
+  deleted_at: timestamp({ mode: 'string', withTimezone: true }),
 });
 
 export const permissionRoleRelations = relations(

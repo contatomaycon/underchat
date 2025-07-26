@@ -77,6 +77,7 @@ CREATE TABLE "permission_role" (
   "name" character varying(200) NOT NULL,
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
+  "deleted_at" timestamptz NULL,
   PRIMARY KEY ("permission_role_id"),
   CONSTRAINT "permission_role_account_id_account_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "account" ("account_id") ON UPDATE NO ACTION ON DELETE NO ACTION
 );
