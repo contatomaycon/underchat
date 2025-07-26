@@ -17,6 +17,9 @@ export default [
     permissions: [
       EGeneralPermissions.full_access,
       EServerPermissions.server_view,
+      EServerPermissions.server_edit,
+      EServerPermissions.server_create,
+      EServerPermissions.server_delete,
     ],
   },
 ];
