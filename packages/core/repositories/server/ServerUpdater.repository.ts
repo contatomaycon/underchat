@@ -17,7 +17,7 @@ export class ServerUpdaterRepository {
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  private updateServerById = async (
+  private readonly updateServerById = async (
     tx: PgTransaction<
       NodePgQueryResultHKT,
       typeof schema,
@@ -36,7 +36,7 @@ export class ServerUpdaterRepository {
     return result.rowCount === 1;
   };
 
-  private updateServerSshById = async (
+  private readonly updateServerSshById = async (
     tx: PgTransaction<
       NodePgQueryResultHKT,
       typeof schema,

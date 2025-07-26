@@ -133,13 +133,14 @@ export class SshService {
     const conn = await this.connect(config);
     const results: IServerSshCentrifugo[] = [];
 
+    const stripAnsi = (await import('strip-ansi')).default;
+
     try {
       for (const cmd of commands) {
         await this.execCommand(conn, cmd, {
           pty: true,
-          onData: async (linha) => {
+          onData: (linha) => {
             const date = new Date();
-            const stripAnsi = (await import('strip-ansi')).default;
 
             const outputStripAnsi = stripAnsi(linha);
             const commandStripAnsi = stripAnsi(cmd);

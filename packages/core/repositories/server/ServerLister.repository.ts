@@ -25,7 +25,7 @@ export class ServerListerRepository {
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  private setOrders = (query: ListServerRequest): SQL[] => {
+  private readonly setOrders = (query: ListServerRequest): SQL[] => {
     const orders: SQL[] = [];
 
     if (query.sort_by?.length) {
@@ -65,7 +65,7 @@ export class ServerListerRepository {
     return orders;
   };
 
-  private setFilters = (query: ListServerRequest): SQLWrapper[] => {
+  private readonly setFilters = (query: ListServerRequest): SQLWrapper[] => {
     const condition = and(
       query.server_status_id
         ? eq(serverStatus.server_status_id, query.server_status_id)

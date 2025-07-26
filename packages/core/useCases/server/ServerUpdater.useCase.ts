@@ -46,8 +46,8 @@ export class ServerUpdaterUseCase {
     const sshConfig: ConnectConfig = {
       host: input.ssh_ip,
       port: input.ssh_port,
-      username: input.ssh_username ? input.ssh_username : sshUsernameDescrypted,
-      password: input.ssh_password ? input.ssh_password : sshPasswordDescrypted,
+      username: input.ssh_username || sshUsernameDescrypted,
+      password: input.ssh_password || sshPasswordDescrypted,
     };
 
     const isConnected = await this.sshService.testSSHConnection(sshConfig);

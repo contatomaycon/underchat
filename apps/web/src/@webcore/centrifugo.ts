@@ -20,7 +20,7 @@ const generateTokenAndUrl = async (): Promise<AuthTokenResponse> => {
   const data = response?.data;
 
   if (!data?.status) {
-    throw new Error(data?.message || 'Failed to generate Centrifugo token');
+    throw new Error(data?.message ?? 'Failed to generate Centrifugo token');
   }
 
   return data.data;
@@ -34,7 +34,7 @@ const generateToken = async (): Promise<string> => {
   const data = response?.data;
 
   if (!data?.status) {
-    throw new Error(data?.message || 'Failed to generate Centrifugo token');
+    throw new Error(data?.message ?? 'Failed to generate Centrifugo token');
   }
 
   if (!data.data?.token) {
