@@ -3,9 +3,7 @@ import { Static, Type } from '@sinclair/typebox';
 
 export const createWorkerRequestSchema = Type.Object({
   account_id: Type.Number(),
-  worker_type: Type.String({
-    enum: Object.values(EWorkerType),
-  }),
+  worker_type: Type.Number({ enum: Object.values(EWorkerType) }),
 });
 
 export type CreateWorkerRequest = Static<typeof createWorkerRequestSchema>;

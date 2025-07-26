@@ -2,16 +2,22 @@ import { injectable } from 'tsyringe';
 import Docker from 'dockerode';
 import { TFunction } from 'i18next';
 import { EWorkerImage } from '@core/common/enums/EWorkerImage';
+import { WorkerCreatorRepository } from '@core/repositories/worker/WorkerCreator.repository';
+import { ICreateWorker } from '@core/common/interfaces/ICreateWorker';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 
 @injectable()
 export class WorkerService {
   private docker: Docker;
 
-  constructor() {
+  constructor(
+    private readonly workerCreatorRepository: WorkerCreatorRepository
+  ) {
     this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
   }
 
-  public async existsWorkerById(workerId: string): Promise<boolean> {
+  public async existsContainerWorkerById(workerId: string): Promise<boolean> {
     try {
       const container = this.docker.getContainer(workerId);
       await container.inspect();
@@ -22,7 +28,7 @@ export class WorkerService {
     }
   }
 
-  public async removeWorkerById(
+  public async removeContainerWorkerById(
     workerId: string,
     t: TFunction<'translation', undefined>
   ): Promise<void> {
@@ -35,15 +41,16 @@ export class WorkerService {
     }
   }
 
-  public async createWorker(
+  public async createContainerWorker(
     t: TFunction<'translation', undefined>,
     imageName: EWorkerImage,
     containerName: string
   ): Promise<string> {
-    const existsWorkerById = await this.existsWorkerById(containerName);
+    const existsContainerById =
+      await this.existsContainerWorkerById(containerName);
 
-    if (existsWorkerById) {
-      await this.removeWorkerById(containerName, t);
+    if (existsContainerById) {
+      await this.removeContainerWorkerById(containerName, t);
     }
 
     const container = await this.docker.createContainer({
@@ -54,5 +61,25 @@ export class WorkerService {
     await container.start();
 
     return container.id;
+  }
+
+  public async createWorker(
+    t: TFunction<'translation', undefined>,
+    workerType: EWorkerType,
+    serverId: number,
+    accountId: number,
+    containerName: string,
+    containerId: string
+  ): Promise<number | null> {
+    const workerData: ICreateWorker = {
+      worker_status_id: EWorkerStatus.online,
+      worker_type_id: workerType,
+      server_id: serverId,
+      account_id: accountId,
+      name: containerName,
+      container_id: containerId,
+    };
+
+    return this.workerCreatorRepository.createWorker(workerData);
   }
 }

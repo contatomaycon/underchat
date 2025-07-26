@@ -8,6 +8,7 @@ export const server = pgTable('server', {
     .references(() => serverStatus.server_status_id)
     .notNull(),
   name: varchar({ length: 200 }).notNull(),
+  quantity_workers: smallint().notNull(),
   created_at: timestamp('created_at', {
     mode: 'string',
     withTimezone: true,
