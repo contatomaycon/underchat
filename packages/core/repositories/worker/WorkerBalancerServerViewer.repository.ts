@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { server, serverSsh, worker, apiKey } from '@core/models';
+import { server, serverWeb, worker, apiKey } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq, isNull, lt, count, asc } from 'drizzle-orm';
@@ -18,11 +18,13 @@ export class WorkerBalancerServerViewerRepository {
     const result = await this.db
       .select({
         server_id: server.server_id,
-        ssh_ip: serverSsh.ssh_ip,
         key: apiKey.key,
+        web_domain: serverWeb.web_domain,
+        web_port: serverWeb.web_port,
+        web_protocol: serverWeb.web_protocol,
       })
       .from(server)
-      .innerJoin(serverSsh, eq(serverSsh.server_id, server.server_id))
+      .innerJoin(serverWeb, eq(serverWeb.server_id, server.server_id))
       .innerJoin(apiKey, eq(apiKey.account_id, accountId))
       .leftJoin(
         worker,
@@ -37,8 +39,10 @@ export class WorkerBalancerServerViewerRepository {
       .groupBy(
         server.server_id,
         server.quantity_workers,
-        serverSsh.ssh_ip,
-        apiKey.key
+        apiKey.key,
+        serverWeb.web_domain,
+        serverWeb.web_port,
+        serverWeb.web_protocol
       )
       .having(lt(count(worker.worker_id), server.quantity_workers))
       .orderBy(asc(count(worker.worker_id)))
