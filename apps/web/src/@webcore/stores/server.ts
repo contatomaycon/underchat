@@ -17,7 +17,8 @@ import { AxiosError } from 'axios';
 import { CreateServerRequest } from '@core/schema/server/createServer/request.schema';
 import { CreateServerResponse } from '@core/schema/server/createServer/response.schema';
 import { EServerStatus } from '@core/common/enums/EServerStatus';
-import { IServerSshCentrifugo } from '@core/common/interfaces/IServerSshCentrifugo';
+import { ServerLogsInstallResponse } from '@core/schema/server/serverLogsInstall/response.schema';
+import { ServerLogsInstallQuery } from '@core/schema/server/serverLogsInstall/request.schema';
 
 export const useServerStore = defineStore('server', {
   state: () => ({
@@ -267,11 +268,43 @@ export const useServerStore = defineStore('server', {
 
     async searchInstallLogs(
       serverId: number,
-      from: number,
-      size: number
-    ): Promise<IServerSshCentrifugo[]> {
+      input: ServerLogsInstallQuery
+    ): Promise<ServerLogsInstallResponse[]> {
       try {
-      } catch (error) {}
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ServerLogsInstallResponse[]>
+        >(`/server/logs/install/${serverId}`, {
+          params: input,
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('server_logs_install_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return [];
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('server_logs_install_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return [];
+      }
     },
 
     updateStatusServer(serverId: number, status: EServerStatus): void {

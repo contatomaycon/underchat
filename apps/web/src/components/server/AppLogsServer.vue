@@ -1,8 +1,9 @@
 <script lang="ts" setup>
+import { onMounted, onUnmounted } from 'vue';
 import { useServerStore } from '@/@webcore/stores/server';
+import { ServerLogsInstallResponse } from '@core/schema/server/serverLogsInstall/response.schema';
 
 const serverStore = useServerStore();
-const { t } = useI18n();
 
 const props = defineProps<{
   modelValue: boolean;
@@ -19,9 +20,73 @@ const isVisible = computed({
 });
 
 const fromElastic = ref(0);
-const sizeElastic = ref(100);
+const sizeElastic = ref(500);
+const hasMore = ref(true);
+const items = ref<ServerLogsInstallResponse[]>([]);
 
 const serverId = toRef(props, 'serverId');
+const containerLogsServer = ref<HTMLElement | null>(null);
+
+const loadMore = async () => {
+  if (!hasMore.value || !serverId.value) return;
+
+  const response = await serverStore.searchInstallLogs(serverId.value, {
+    from: fromElastic.value,
+    size: sizeElastic.value,
+  });
+
+  if (response.length === 0) {
+    hasMore.value = false;
+    return;
+  }
+
+  items.value.push(...response);
+  fromElastic.value += response.length;
+};
+
+const handleScroll = () => {
+  const container = containerLogsServer.value;
+  if (!container) return;
+
+  const threshold = 50;
+  const { scrollTop, scrollHeight, clientHeight } = container;
+
+  if (scrollTop + clientHeight >= scrollHeight - threshold) {
+    loadMore();
+  }
+};
+
+watch(
+  () => containerLogsServer.value,
+  (container) => {
+    if (!container) return;
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+  },
+  { immediate: true }
+);
+
+onMounted(async () => {
+  await nextTick();
+});
+
+onUnmounted(() => {
+  containerLogsServer.value?.removeEventListener('scroll', handleScroll);
+});
+
+watch(
+  () => serverId.value,
+  async (newServerId) => {
+    if (newServerId) {
+      items.value = [];
+      fromElastic.value = 0;
+      hasMore.value = true;
+
+      await loadMore();
+    }
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
@@ -31,11 +96,11 @@ const serverId = toRef(props, 'serverId');
     <VCard :title="$t('server_logs')">
       <VCardText>
         <div
-          ref="listContainer"
+          ref="containerLogsServer"
           class="app-bar-search-list py-0"
           style="max-height: 60vh; overflow-y: auto"
         >
-          <!-- <VList v-show="items.length" density="compact">
+          <VList v-show="items.length" density="compact">
             <template v-for="item in items" :key="item">
               <slot :item="item">
                 <VListItem>
@@ -49,7 +114,7 @@ const serverId = toRef(props, 'serverId');
                 </VListItem>
               </slot>
             </template>
-          </VList> -->
+          </VList>
         </div>
       </VCardText>
 

@@ -63,5 +63,6 @@
     "console_installation": "Consola de instalación",
     "close": "Cerrar",
     "installation_pending": "Instalación pendiente",
-    "server_logs": "Logs del Servidor"
+    "server_logs": "Logs del Servidor",
+    "server_logs_install_error": "Ocurrió un error al recuperar los logs de instalación. Por favor, inténtalo de nuevo."
 }

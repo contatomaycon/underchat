@@ -63,5 +63,6 @@
     "console_installation": "Installation Console",
     "close": "Close",
     "installation_pending": "Installation pending",
-    "server_logs": "Server Logs"
+    "server_logs": "Server Logs",
+    "server_logs_install_error": "An error occurred while retrieving the installation logs. Please try again."
 }
