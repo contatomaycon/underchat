@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { server, serverSsh, serverStatus } from '@core/models';
+import { server, serverSsh, serverStatus, serverWeb } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import {
@@ -74,7 +74,10 @@ export class ServerListerRepository {
         query.server_name
           ? like(server.name, `%${query.server_name}%`)
           : undefined,
-        query.ssh_ip ? like(serverSsh.ssh_ip, `%${query.ssh_ip}%`) : undefined
+        query.ssh_ip ? like(serverSsh.ssh_ip, `%${query.ssh_ip}%`) : undefined,
+        query.web_domain
+          ? like(serverWeb.web_domain, `%${query.web_domain}%`)
+          : undefined
       )
     );
 
@@ -102,6 +105,11 @@ export class ServerListerRepository {
           ssh_ip: serverSsh.ssh_ip,
           ssh_port: serverSsh.ssh_port,
         },
+        web: {
+          web_domain: serverWeb.web_domain,
+          web_port: serverWeb.web_port,
+          web_protocol: serverWeb.web_protocol,
+        },
         created_at: server.created_at,
         updated_at: server.updated_at,
       })
@@ -111,6 +119,7 @@ export class ServerListerRepository {
         serverStatus,
         eq(serverStatus.server_status_id, server.server_status_id)
       )
+      .innerJoin(serverWeb, eq(serverWeb.server_id, server.server_id))
       .where(and(isNull(server.deleted_at), or(...filters)));
 
     if (orders.length) {

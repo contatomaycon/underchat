@@ -80,25 +80,16 @@ export class ServerCreatorUseCase {
   ): Promise<CreateServerResponse | null> {
     await this.validate(t, input);
 
-    const serverId = await this.serverService.createServer(input);
+    const serverId = await this.serverService.createServer(t, input);
 
     if (!serverId) {
       throw new Error(t('server_creator_error'));
     }
 
-    const serverSshId = await this.serverService.createServerSsh(
-      input,
-      serverId
-    );
-
-    if (!serverSshId) {
-      throw new Error(t('server_ssh_creator_error'));
-    }
-
-    await this.onServerCreatedInKafka(t, serverSshId);
+    await this.onServerCreatedInKafka(t, serverId);
 
     return {
-      server_id: serverSshId,
+      server_id: serverId,
     };
   }
 }

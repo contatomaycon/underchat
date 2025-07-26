@@ -40,5 +40,7 @@
   "worker_not_available_additional": "Seu plano não suporta mais trabalhadores, contrate um adicional ou entre em contato com o administrador do sistema para mais informações.",
   "account_not_found": "Conta não encontrada!",
   "worker_list_success": "Lista de trabalhadores obtida com sucesso!",
-  "worker_list_error": "Erro ao obter a lista de trabalhadores"
+  "worker_list_error": "Erro ao obter a lista de trabalhadores",
+  "server_web_create_error": "Erro ao criar o servidor web",
+  "server_web_update_error": "Erro ao atualizar o servidor web"
 }

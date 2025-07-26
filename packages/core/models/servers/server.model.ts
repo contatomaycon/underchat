@@ -5,7 +5,7 @@ import {
   varchar,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { serverStatus, serverSsh, worker } from '@core/models';
+import { serverStatus, serverSsh, serverWeb, worker } from '@core/models';
 import { relations } from 'drizzle-orm';
 
 export const server = pgTable('server', {
@@ -34,6 +34,10 @@ export const serverRelations = relations(server, ({ one, many }) => ({
   sss: one(serverSsh, {
     fields: [server.server_id],
     references: [serverSsh.server_id],
+  }),
+  swb: one(serverWeb, {
+    fields: [server.server_id],
+    references: [serverWeb.server_id],
   }),
   swk: many(worker),
 }));

@@ -1,5 +1,4 @@
 export interface ICreateServerSsh {
-  server_id: string;
   ssh_ip: string;
   ssh_port: number;
   ssh_username: string;

@@ -1,3 +1,4 @@
+import { EServerWebProtocol } from '@core/common/enums/EServerWebProtocol';
 import { Static, Type } from '@sinclair/typebox';
 
 export const editServerRequestSchema = Type.Object({
@@ -7,6 +8,9 @@ export const editServerRequestSchema = Type.Object({
   ssh_port: Type.Number(),
   ssh_username: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   ssh_password: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  web_domain: Type.String(),
+  web_port: Type.Number(),
+  web_protocol: Type.String({ enum: Object.values(EServerWebProtocol) }),
 });
 
 export const editServerParamsRequestSchema = Type.Object({

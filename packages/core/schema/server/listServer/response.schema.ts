@@ -6,6 +6,12 @@ export const listServerSshResponseSchema = Type.Object({
   ssh_port: Type.Number(),
 });
 
+export const listServerWebResponseSchema = Type.Object({
+  web_domain: Type.String(),
+  web_port: Type.Number(),
+  web_protocol: Type.String(),
+});
+
 export const listServerResponseSchema = Type.Object({
   id: Type.String(),
   name: Type.String(),
@@ -15,6 +21,7 @@ export const listServerResponseSchema = Type.Object({
     name: Type.String(),
   }),
   ssh: listServerSshResponseSchema,
+  web: listServerWebResponseSchema,
   created_at: Type.String(),
   updated_at: Type.String(),
 });
