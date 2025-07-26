@@ -12,7 +12,7 @@ export class ServerViewerRepository {
   ) {}
 
   viewServerById = async (
-    serverId: number
+    serverId: string
   ): Promise<ViewServerResponse | null> => {
     const result = await this.db
       .select({

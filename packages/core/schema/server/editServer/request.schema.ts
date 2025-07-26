@@ -10,7 +10,7 @@ export const editServerRequestSchema = Type.Object({
 });
 
 export const editServerParamsRequestSchema = Type.Object({
-  server_id: Type.Number(),
+  server_id: Type.String(),
 });
 
 export type EditServerRequest = Static<typeof editServerRequestSchema>;

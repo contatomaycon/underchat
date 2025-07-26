@@ -70,7 +70,8 @@ export class WorkerCreatorUseCase {
   ): Promise<CreateWorkerResponse> {
     await this.validate(t, input);
 
-    const imageName = this.getImageWorker(input.worker_type as EWorkerType);
+    const workerType = input.worker_type as EWorkerType;
+    const imageName = this.getImageWorker(workerType);
     const containerName = uuidv4();
 
     const serverId = await this.workerService.viewWorkerBalancerServerId();
@@ -91,7 +92,7 @@ export class WorkerCreatorUseCase {
 
     const workerData: ICreateWorker = {
       worker_status_id: EWorkerStatus.online,
-      worker_type_id: input.worker_type,
+      worker_type_id: workerType,
       server_id: serverId,
       account_id: input.account_id,
       name: containerName,

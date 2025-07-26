@@ -65,15 +65,15 @@ export class WorkerService {
     return container.id;
   }
 
-  public async createWorker(input: ICreateWorker): Promise<number | null> {
+  public async createWorker(input: ICreateWorker): Promise<string | null> {
     return this.workerCreatorRepository.createWorker(input);
   }
 
-  public async viewWorkerBalancerServerId(): Promise<number | null> {
+  public async viewWorkerBalancerServerId(): Promise<string | null> {
     return this.workerBalancerServerViewerRepository.viewWorkerBalancerServerId();
   }
 
-  public async totalWorkerByAccountId(accountId: number): Promise<number> {
+  public async totalWorkerByAccountId(accountId: string): Promise<number> {
     return this.workerTotalViewerRepository.totalWorkerByAccountId(accountId);
   }
 }

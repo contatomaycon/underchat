@@ -10,7 +10,7 @@ export class WorkerTotalViewerRepository {
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  totalWorkerByAccountId = async (accountId: number): Promise<number> => {
+  totalWorkerByAccountId = async (accountId: string): Promise<number> => {
     const result = await this.db
       .select({
         total: count(),

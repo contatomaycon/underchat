@@ -10,7 +10,7 @@ export class ServerViewerExistsRepository {
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  existsServerById = async (serverId: number): Promise<boolean> => {
+  existsServerById = async (serverId: string): Promise<boolean> => {
     const result = await this.db
       .select({
         total: count(),

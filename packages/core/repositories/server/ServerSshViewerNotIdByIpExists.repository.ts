@@ -11,7 +11,7 @@ export class ServerSshViewerNotIdByIpExistsRepository {
   ) {}
 
   existsServerNotIdAndByIp = async (
-    serverId: number,
+    serverId: string,
     ip: string
   ): Promise<boolean> => {
     const result = await this.db

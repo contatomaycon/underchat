@@ -11,7 +11,7 @@ export class AccountViewerExistsRepository {
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  existsAccountById = async (accountId: number): Promise<boolean> => {
+  existsAccountById = async (accountId: string): Promise<boolean> => {
     const result = await this.db
       .select({
         total: count(),

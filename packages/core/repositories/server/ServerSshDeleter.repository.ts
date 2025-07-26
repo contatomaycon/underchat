@@ -11,7 +11,7 @@ export class ServerSshDeleterRepository {
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  deleteServerSshById = async (serverId: number): Promise<boolean> => {
+  deleteServerSshById = async (serverId: string): Promise<boolean> => {
     const date = currentTime();
 
     const result = await this.db

@@ -16,8 +16,8 @@ export class AccountQuantityProductViewerRepository {
   ) {}
 
   viewPlanQuantity = async (
-    accountId: number,
-    planProductId: number
+    accountId: string,
+    planProductId: string
   ): Promise<number> => {
     const planResult = await this.db
       .select({
@@ -42,8 +42,8 @@ export class AccountQuantityProductViewerRepository {
   };
 
   viewPlanCrossSellQuantity = async (
-    accountId: number,
-    planProductId: number
+    accountId: string,
+    planProductId: string
   ): Promise<number> => {
     const planCrossSellResult = await this.db
       .select({
@@ -74,8 +74,8 @@ export class AccountQuantityProductViewerRepository {
   };
 
   viewAccountQuantityProduct = async (
-    accountId: number,
-    planProductId: number
+    accountId: string,
+    planProductId: string
   ): Promise<number> => {
     const [planQuantity, planCrossSellQuantity] = await Promise.all([
       this.viewPlanQuantity(accountId, planProductId),

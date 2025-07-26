@@ -1,5 +1,5 @@
 export interface IUpdateServerSshById {
-  server_id: number;
+  server_id: string;
   ssh_ip: string;
   ssh_port: number;
   ssh_username?: string | null;

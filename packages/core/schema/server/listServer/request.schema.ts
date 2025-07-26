@@ -6,7 +6,7 @@ export const listServerRequestSchema = Type.Object({
   ...pagingRequestSchema.properties,
   sort_by: Type.Optional(Type.Array(sortRequestSchema)),
   server_name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-  server_status_id: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  server_status_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   ssh_ip: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 

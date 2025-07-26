@@ -11,7 +11,7 @@ export class WorkerBalancerServerViewerRepository {
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  viewWorkerBalancerServerId = async (): Promise<number | null> => {
+  viewWorkerBalancerServerId = async (): Promise<string | null> => {
     const result = await this.db
       .select({
         server_id: server.server_id,

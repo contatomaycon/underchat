@@ -12,7 +12,7 @@ export class ServerStatusUpdaterRepository {
   ) {}
 
   updateServerStatusById = async (
-    serverId: number,
+    serverId: string,
     status: EServerStatus
   ): Promise<boolean> => {
     const result = await this.db

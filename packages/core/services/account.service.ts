@@ -13,7 +13,7 @@ export class AccountService {
   ) {}
 
   viewAccountInfoByAccountId = async (
-    accountId: number
+    accountId: string
   ): Promise<AccountInfoResponse | null> => {
     return this.accountInfoViewerRepository.viewAccountInfoByAccountId(
       accountId
@@ -21,8 +21,8 @@ export class AccountService {
   };
 
   viewAccountQuantityProduct = async (
-    accountId: number,
-    planProductId: number
+    accountId: string,
+    planProductId: string
   ): Promise<number> => {
     return this.accountQuantityProductViewerRepository.viewAccountQuantityProduct(
       accountId,
@@ -30,7 +30,7 @@ export class AccountService {
     );
   };
 
-  existsAccountById = async (accountId: number): Promise<boolean> => {
+  existsAccountById = async (accountId: string): Promise<boolean> => {
     return this.accountViewerExistsRepository.existsAccountById(accountId);
   };
 }

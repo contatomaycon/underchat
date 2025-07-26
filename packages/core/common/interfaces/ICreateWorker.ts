@@ -4,8 +4,8 @@ import { EWorkerType } from '../enums/EWorkerType';
 export interface ICreateWorker {
   worker_status_id: EWorkerStatus;
   worker_type_id: EWorkerType;
-  server_id: number;
-  account_id: number;
+  server_id: string;
+  account_id: string;
   name: string;
   container_id: string;
 }

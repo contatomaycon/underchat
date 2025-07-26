@@ -12,7 +12,7 @@ export class ServerSshViewerRepository {
   ) {}
 
   viewServerSshById = async (
-    id: number
+    serverId: string
   ): Promise<IViewServerSshById | null> => {
     const result = await this.db
       .select({
@@ -24,7 +24,7 @@ export class ServerSshViewerRepository {
       })
       .from(serverSsh)
       .innerJoin(server, eq(server.server_id, serverSsh.server_id))
-      .where(and(eq(serverSsh.server_id, id)))
+      .where(and(eq(serverSsh.server_id, serverId)))
       .execute();
 
     if (!result?.length) {

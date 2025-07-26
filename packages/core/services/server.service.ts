@@ -62,7 +62,7 @@ export class ServerService {
     return this.serverCreatorRepository.createServer(inputCreateServer);
   };
 
-  createServerSsh = async (input: CreateServerRequest, serverId: number) => {
+  createServerSsh = async (input: CreateServerRequest, serverId: string) => {
     const usernameEncrypted = this.passwordEncryptorService.encrypt(
       input.ssh_username
     );
@@ -87,12 +87,12 @@ export class ServerService {
     return this.serverSshViewerExistsRepository.existsServerByIp(ip);
   };
 
-  viewServerSshById = async (id: number) => {
-    return this.serverSshViewerRepository.viewServerSshById(id);
+  viewServerSshById = async (serverId: string) => {
+    return this.serverSshViewerRepository.viewServerSshById(serverId);
   };
 
   updateServerStatusById = async (
-    serverId: number,
+    serverId: string,
     status: EServerStatus
   ): Promise<boolean> => {
     const statusServerCentrifugo: IStatusServerCentrifugo = {
@@ -111,21 +111,21 @@ export class ServerService {
     );
   };
 
-  deleteServerById = async (serverId: number): Promise<boolean> => {
+  deleteServerById = async (serverId: string): Promise<boolean> => {
     return this.serverDeleterRepository.deleteServerById(serverId);
   };
 
-  deleteServerSshById = async (serverId: number): Promise<boolean> => {
+  deleteServerSshById = async (serverId: string): Promise<boolean> => {
     return this.serverSshDeleterRepository.deleteServerSshById(serverId);
   };
 
-  existsServerById = async (serverId: number): Promise<boolean> => {
+  existsServerById = async (serverId: string): Promise<boolean> => {
     return this.serverViewerExistsRepository.existsServerById(serverId);
   };
 
   updateServerById = async (
     t: TFunction<'translation', undefined>,
-    serverId: number,
+    serverId: string,
     input: EditServerRequest
   ): Promise<boolean> => {
     const sshUsername = input.ssh_username
@@ -157,7 +157,7 @@ export class ServerService {
   };
 
   existsServerNotIdAndByIp = async (
-    serverId: number,
+    serverId: string,
     ip: string
   ): Promise<boolean> => {
     return this.serverSshViewerNotIdByIpExistsRepository.existsServerNotIdAndByIp(
@@ -167,7 +167,7 @@ export class ServerService {
   };
 
   viewServerById = async (
-    serverId: number
+    serverId: string
   ): Promise<ViewServerResponse | null> => {
     return this.serverViewerRepository.viewServerById(serverId);
   };
