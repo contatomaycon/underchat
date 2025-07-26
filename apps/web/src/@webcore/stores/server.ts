@@ -17,6 +17,7 @@ import { AxiosError } from 'axios';
 import { CreateServerRequest } from '@core/schema/server/createServer/request.schema';
 import { CreateServerResponse } from '@core/schema/server/createServer/response.schema';
 import { EServerStatus } from '@core/common/enums/EServerStatus';
+import { IServerSshCentrifugo } from '@core/common/interfaces/IServerSshCentrifugo';
 
 export const useServerStore = defineStore('server', {
   state: () => ({
@@ -262,6 +263,15 @@ export const useServerStore = defineStore('server', {
 
         return false;
       }
+    },
+
+    async searchInstallLogs(
+      serverId: number,
+      from: number,
+      size: number
+    ): Promise<IServerSshCentrifugo[]> {
+      try {
+      } catch (error) {}
     },
 
     updateStatusServer(serverId: number, status: EServerStatus): void {

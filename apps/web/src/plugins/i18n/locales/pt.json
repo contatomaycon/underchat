@@ -63,5 +63,6 @@
     "console_installation": "Console de Instalação",
     "close": "Fechar",
     "server_add": "Adicionar Servidor",
-    "installation_pending": "Instalação pendente"
+    "installation_pending": "Instalação pendente",
+    "server_logs": "Logs do Servidor"
 }

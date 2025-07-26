@@ -56,6 +56,9 @@ const serverToEdit = ref<number | null>(null);
 const isConsoleServerVisible = ref(false);
 const serverToConsole = ref<number | null>(null);
 
+const isLogsServerVisible = ref(false);
+const serverToLogs = ref<number | null>(null);
+
 const resolveStatusVariant = (s: number) => {
   if (s === 1) return { color: EColor.info, text: t('new') };
   if (s === 2) return { color: EColor.warning, text: t('installing') };
@@ -133,6 +136,12 @@ const openConsoleDialog = (id: number) => {
   serverToConsole.value = id;
 
   isConsoleServerVisible.value = true;
+};
+
+const openLogsDialog = (id: number) => {
+  serverToLogs.value = id;
+
+  isLogsServerVisible.value = true;
 };
 
 watch(
@@ -253,11 +262,13 @@ onBeforeUnmount(async () => {
 
         <template #item.actions="{ item }">
           <div class="d-flex gap-1">
-            <IconBtn
+            <IconBtn v-if="item.status.id === EServerStatus.installing"
               ><VIcon
-                v-if="item.status.id === EServerStatus.installing"
                 icon="tabler-terminal-2"
                 @click="openConsoleDialog(item.id)"
+            /></IconBtn>
+            <IconBtn v-if="item.status.id !== EServerStatus.installing"
+              ><VIcon icon="tabler-terminal-2" @click="openLogsDialog(item.id)"
             /></IconBtn>
             <IconBtn
               ><VIcon icon="tabler-edit" @click="openEditDialog(item.id)"
@@ -299,6 +310,8 @@ onBeforeUnmount(async () => {
         v-model="isConsoleServerVisible"
         :server-id="serverToConsole"
       />
+
+      <AppLogsServer v-model="isLogsServerVisible" :server-id="serverToLogs" />
     </VCard>
     <VSnackbar
       v-model="serverStore.snackbar.status"

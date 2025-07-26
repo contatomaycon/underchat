@@ -26,5 +26,7 @@
   "server_list_successfully": "Server list retrieved successfully!",
   "server_list_not_found": "No servers found!",
   "centrifugo_token_generation_failed": "Failed to generate token",
-  "centrifugo_token_generation_success": "Token generated successfully"
+  "centrifugo_token_generation_success": "Token generated successfully",
+  "server_logs_install_not_found": "Server logs not found!",
+  "server_logs_install_success": "Server logs retrieved successfully!"
 }

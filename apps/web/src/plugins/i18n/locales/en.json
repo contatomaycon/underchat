@@ -62,5 +62,6 @@
     "username_required": "Username is required",
     "console_installation": "Installation Console",
     "close": "Close",
-    "installation_pending": "Installation pending"
+    "installation_pending": "Installation pending",
+    "server_logs": "Server Logs"
 }

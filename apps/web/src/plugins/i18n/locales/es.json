@@ -62,5 +62,6 @@
     "username_required": "Se requiere nombre de usuario",
     "console_installation": "Consola de instalación",
     "close": "Cerrar",
-    "installation_pending": "Instalación pendiente"
+    "installation_pending": "Instalación pendiente",
+    "server_logs": "Logs del Servidor"
 }

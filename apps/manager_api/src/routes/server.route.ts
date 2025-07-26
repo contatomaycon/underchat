@@ -6,12 +6,14 @@ import {
   serverCreatePermissions,
   serverDeletePermissions,
   serverEditPermissions,
+  serverLogsInstallPermissions,
   serverViewPermissions,
 } from '@/permissions/server.permissions';
 import { deleteServerSchema } from '@core/schema/server/deleteServer';
 import { editServerSchema } from '@core/schema/server/editServer';
 import { viewServerSchema } from '@core/schema/server/viewServer';
 import { listServerSchema } from '@core/schema/server/listServer';
+import { serverLogsInstallSchema } from '@core/schema/server/serverLogsInstall';
 
 export default async function serverRoutes(server: FastifyInstance) {
   const serverController = container.resolve(ServerController);
@@ -58,6 +60,15 @@ export default async function serverRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, serverViewPermissions),
+    ],
+  });
+
+  server.get('/server/logs/install/:server_id', {
+    schema: serverLogsInstallSchema,
+    handler: serverController.serverLogsInstall,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, serverLogsInstallPermissions),
     ],
   });
 }

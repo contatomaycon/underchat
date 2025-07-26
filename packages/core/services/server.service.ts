@@ -30,6 +30,7 @@ import { serverInstallMappings } from '@core/mappings/serverInstall.mappings';
 import { ElasticDatabaseService } from './elasticDatabase.service';
 import { IServerSshCentrifugo } from '@core/common/interfaces/IServerSshCentrifugo';
 import { v4 as uuidv4 } from 'uuid';
+import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 
 @injectable()
 export class ServerService {
@@ -186,16 +187,19 @@ export class ServerService {
     documents: IServerSshCentrifugo[]
   ): Promise<boolean> => {
     const mappings = serverInstallMappings();
-    const index = 'install-server';
-
-    const result = await this.elasticDatabaseService.indices(index, mappings);
+    const result = await this.elasticDatabaseService.indices(
+      EElasticIndex.install_server,
+      mappings
+    );
 
     if (!result || documents.length === 0) {
       return false;
     }
 
-    return this.elasticDatabaseService.bulkUpdate(index, documents, () =>
-      uuidv4()
+    return this.elasticDatabaseService.bulkUpdate(
+      EElasticIndex.install_server,
+      documents,
+      () => uuidv4()
     );
   };
 }

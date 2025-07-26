@@ -1,4 +1,7 @@
 <script lang="ts" setup>
+import { useServerStore } from '@/@webcore/stores/server';
+
+const serverStore = useServerStore();
 const { t } = useI18n();
 
 const props = defineProps<{
@@ -15,6 +18,9 @@ const isVisible = computed({
   set: (v) => emit('update:modelValue', v),
 });
 
+const fromElastic = ref(0);
+const sizeElastic = ref(100);
+
 const serverId = toRef(props, 'serverId');
 </script>
 
@@ -22,14 +28,14 @@ const serverId = toRef(props, 'serverId');
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <VCard :title="$t('console_installation')">
+    <VCard :title="$t('server_logs')">
       <VCardText>
         <div
           ref="listContainer"
           class="app-bar-search-list py-0"
           style="max-height: 60vh; overflow-y: auto"
         >
-          <VList v-show="items.length" density="compact">
+          <!-- <VList v-show="items.length" density="compact">
             <template v-for="item in items" :key="item">
               <slot :item="item">
                 <VListItem>
@@ -43,7 +49,7 @@ const serverId = toRef(props, 'serverId');
                 </VListItem>
               </slot>
             </template>
-          </VList>
+          </VList> -->
         </div>
       </VCardText>
 

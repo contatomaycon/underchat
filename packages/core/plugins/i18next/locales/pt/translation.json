@@ -26,5 +26,7 @@
   "server_list_successfully": "Lista de servidores obtida com sucesso!",
   "server_list_not_found": "Nenhum servidor encontrado!",
   "centrifugo_token_generation_failed": "Falha ao gerar token",
-  "centrifugo_token_generation_success": "Token gerado com sucesso"
+  "centrifugo_token_generation_success": "Token gerado com sucesso",
+  "server_logs_install_not_found": "Registros do servidor não encontrados!",
+  "server_logs_install_success": "Registros do servidor obtidos com sucesso!"
 }

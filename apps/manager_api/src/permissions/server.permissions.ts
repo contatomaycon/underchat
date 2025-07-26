@@ -20,3 +20,8 @@ export const serverViewPermissions = [
   EGeneralPermissions.full_access,
   EServerPermissions.server_view,
 ];
+
+export const serverLogsInstallPermissions = [
+  EGeneralPermissions.full_access,
+  EServerPermissions.server_logs_install,
+];
