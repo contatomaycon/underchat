@@ -28,5 +28,16 @@
   "centrifugo_token_generation_failed": "Failed to generate token",
   "centrifugo_token_generation_success": "Token generated successfully",
   "server_logs_install_not_found": "Server logs not found!",
-  "server_logs_install_success": "Server logs retrieved successfully!"
+  "server_logs_install_success": "Server logs retrieved successfully!",
+  "role_list_successfully": "Role list retrieved successfully!",
+  "role_list_not_found": "No roles found!",
+  "role_view_successfully": "Role viewed successfully!",
+  "role_view_not_found": "Role not found!",
+  "role_deleted_successfully": "Role deleted successfully!",
+  "role_deleter_error": "Error deleting role!",
+  "role_update_successfully": "Role updated successfully!",
+  "role_update_error": "Error updating role!",
+  "role_creator_success": "Role created successfully!",
+  "role_creator_error": "Error creating role!",
+  "role_already_exists": "Role already exists!"
 }

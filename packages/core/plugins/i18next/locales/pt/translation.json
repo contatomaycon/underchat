@@ -28,5 +28,16 @@
   "centrifugo_token_generation_failed": "Falha ao gerar token",
   "centrifugo_token_generation_success": "Token gerado com sucesso",
   "server_logs_install_not_found": "Registros do servidor não encontrados!",
-  "server_logs_install_success": "Registros do servidor obtidos com sucesso!"
+  "server_logs_install_success": "Registros do servidor obtidos com sucesso!",
+  "role_list_successfully": "Lista de papéis obtida com sucesso!",
+  "role_list_not_found": "Nenhum papel encontrado!",
+  "role_view_successfully": "Papel visualizado com sucesso!",
+  "role_view_not_found": "Papel não encontrado!",
+  "role_deleted_successfully": "Papel excluído com sucesso!",
+  "role_deleter_error": "Erro ao excluir o papel!",
+  "role_update_successfully": "Papel atualizado com sucesso!",
+  "role_update_error": "Erro ao atualizar o papel!",
+  "role_creator_success": "Papel criado com sucesso!",
+  "role_creator_error": "Erro ao criar o papel!",
+  "role_already_exists": "Papel já existe!"
 }

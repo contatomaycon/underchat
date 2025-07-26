@@ -28,5 +28,16 @@
   "centrifugo_token_generation_failed": "Error al generar el token",
   "centrifugo_token_generation_success": "¡Token generado con éxito!",
   "server_logs_install_not_found": "¡Registros del servidor no encontrados!",
-  "server_logs_install_success": "¡Registros del servidor obtenidos con éxito!"
+  "server_logs_install_success": "¡Registros del servidor obtenidos con éxito!",
+  "role_list_successfully": "¡Lista de roles obtenida con éxito!",
+  "role_list_not_found": "¡No se encontraron roles!",
+  "role_view_successfully": "¡Rol visualizado con éxito!",
+  "role_view_not_found": "¡Rol no encontrado!",
+  "role_deleted_successfully": "¡Rol eliminado con éxito!",
+  "role_deleter_error": "Error al eliminar el rol",
+  "role_update_successfully": "¡Rol actualizado con éxito!",
+  "role_update_error": "Error al actualizar el rol",
+  "role_creator_success": "¡Rol creado con éxito!",
+  "role_creator_error": "Error al crear el rol",
+  "role_already_exists": "¡El rol ya existe!"
 }
