@@ -14,5 +14,19 @@
   "metrics_server_error": "Erro ao iniciar o servidor de métricas!",
   "kafka_producer_error": "Erro ao criar o produtor Kafka!",
   "ssh_distro_version_failed": "Falha ao recuperar distribuição e versão do servidor",
-  "ssh_distro_version_not_allowed": "Distribuição e versão não permitidas para o servidor"
+  "ssh_distro_version_not_allowed": "Distribuição e versão não permitidas para o servidor",
+  "server_deleted_successfully": "Servidor excluído com sucesso!",
+  "server_deleter_error": "Erro ao excluir o servidor!",
+  "server_not_found": "Servidor não encontrado!",
+  "server_update_error": "Erro ao atualizar o servidor!",
+  "server_ssh_update_error": "Erro ao atualizar o servidor SSH",
+  "server_update_successfully": "Servidor atualizado com sucesso!",
+  "server_ssh_not_found": "Servidor SSH não encontrado!",
+  "server_view_successfully": "Servidor visualizado com sucesso!",
+  "server_list_successfully": "Lista de servidores obtida com sucesso!",
+  "server_list_not_found": "Nenhum servidor encontrado!",
+  "centrifugo_token_generation_failed": "Falha ao gerar token",
+  "centrifugo_token_generation_success": "Token gerado com sucesso",
+  "server_logs_install_not_found": "Registros do servidor não encontrados!",
+  "server_logs_install_success": "Registros do servidor obtidos com sucesso!"
 }

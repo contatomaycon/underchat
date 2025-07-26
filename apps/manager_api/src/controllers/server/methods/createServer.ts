@@ -15,20 +15,17 @@ export const createServer = async (
   const { t } = request;
 
   try {
-    const responseCreatorServer = await serverCreatorUseCase.execute(
-      t,
-      request.body
-    );
+    const response = await serverCreatorUseCase.execute(t, request.body);
 
-    if (responseCreatorServer) {
+    if (response) {
       return sendResponse(reply, {
         message: t('server_creator_success'),
         httpStatusCode: EHTTPStatusCode.ok,
-        data: responseCreatorServer,
+        data: response,
       });
     }
 
-    request.server.logger.info(responseCreatorServer, request.id);
+    request.server.logger.info(response, request.id);
 
     return sendResponse(reply, {
       message: t('server_creator_error'),

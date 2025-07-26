@@ -15,6 +15,7 @@ import { getPackageVersion } from '@core/common/functions/getPackageVersion';
 import { EDocumentation } from '@core/common/enums/EDocumentation';
 import path from 'path';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
+import qs from 'fastify-qs';
 
 const swaggerPlugin = async (fastify: FastifyInstance) => {
   const patchPackage = path.join(__dirname, '../../../package.json');
@@ -47,6 +48,10 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
         {
           name: ETagSwagger.auth,
           description: 'End-points relacionados à autenticação',
+        },
+        {
+          name: ETagSwagger.centrifugo,
+          description: 'End-points relacionados à Centrifugo',
         },
         {
           name: ETagSwagger.health,
@@ -92,7 +97,7 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
         next();
       },
     },
-    staticCSP: true,
+    staticCSP: false,
     transformStaticCSP: (header: string): string => {
       return header;
     },
@@ -100,6 +105,7 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
 
   fastify.withTypeProvider<TypeBoxTypeProvider>();
   fastify.register(routes, { prefix: EPrefixRoutes.v1 });
+  fastify.register(qs);
 };
 
 export default fp(swaggerPlugin, { name: 'swagger' });

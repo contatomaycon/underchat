@@ -9,6 +9,7 @@ import authV2MaskLight from '@images/pages/misc-mask-light.png';
 import { VNodeRenderer } from '@layouts/components/VNodeRenderer';
 import { themeConfig } from '@themeConfig';
 import { useAuthStore } from '@webcore/stores/auth';
+import { VForm } from 'vuetify/components/VForm';
 
 const authStore = useAuthStore();
 const route = useRoute();
@@ -22,6 +23,8 @@ definePage({
     unauthenticatedOnly: true,
   },
 });
+
+const refFormLogin = ref<VForm>();
 
 const form = ref({
   login: '',
@@ -41,6 +44,9 @@ const authThemeImg = useGenerateImageVariant(
 const authThemeMask = useGenerateImageVariant(authV2MaskLight, authV2MaskDark);
 
 const handleLogin = async () => {
+  const validateForm = await refFormLogin?.value?.validate();
+  if (!validateForm?.valid) return;
+
   const result = await authStore.login(form.value.login, form.value.password);
 
   if (result) {
@@ -120,7 +126,7 @@ const handleLogin = async () => {
           </p>
         </VCardText>
         <VCardText>
-          <VForm @submit.prevent="() => {}">
+          <VForm ref="refFormLogin" @submit.prevent>
             <VRow>
               <VCol cols="12">
                 <AppTextField
@@ -129,6 +135,12 @@ const handleLogin = async () => {
                   :label="$t('email_or_username')"
                   type="text"
                   placeholder="email@email.com"
+                  :rules="[
+                    requiredValidator(
+                      form.login,
+                      $t('email_or_username_required')
+                    ),
+                  ]"
                 />
               </VCol>
 
@@ -142,6 +154,9 @@ const handleLogin = async () => {
                     isPasswordVisible ? 'tabler-eye-off' : 'tabler-eye'
                   "
                   @click:append-inner="isPasswordVisible = !isPasswordVisible"
+                  :rules="[
+                    requiredValidator(form.password, $t('password_required')),
+                  ]"
                 />
 
                 <div

@@ -4,6 +4,8 @@ import { IDistroInfo } from '@core/common/interfaces/IDistroInfo';
 import { EAllowedDistroVersion } from '@core/common/enums/EAllowedDistroVersion';
 import { installUbuntu2504 } from '@core/common/functions/installUbuntu2504';
 import { CentrifugoService } from './centrifugo.service';
+import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
+import { IServerSshCentrifugo } from '@core/common/interfaces/IServerSshCentrifugo';
 
 @injectable()
 export class SshService {
@@ -127,21 +129,40 @@ export class SshService {
     serverId: number,
     config: ConnectConfig,
     commands: string[]
-  ): Promise<Array<{ command: string; output: string }>> {
+  ): Promise<IServerSshCentrifugo[]> {
     const conn = await this.connect(config);
-    const results: Array<{ command: string; output: string }> = [];
+    const results: IServerSshCentrifugo[] = [];
+
+    const stripAnsi = (await import('strip-ansi')).default;
 
     try {
       for (const cmd of commands) {
         await this.execCommand(conn, cmd, {
           pty: true,
           onData: (linha) => {
-            this.centrifugoService.publish(`ssh_${serverId}`, {
-              command: cmd,
-              output: linha,
-            });
+            const date = new Date();
 
-            results.push({ command: cmd, output: linha });
+            const outputStripAnsi = stripAnsi(linha);
+            const commandStripAnsi = stripAnsi(cmd);
+
+            const serverSshCentrifugo: IServerSshCentrifugo = {
+              server_id: serverId,
+              command: commandStripAnsi,
+              output: outputStripAnsi,
+              date,
+            };
+
+            this.centrifugoService.publish(
+              ECentrifugoChannel.server_ssh,
+              serverSshCentrifugo
+            );
+
+            results.push({
+              command: commandStripAnsi,
+              output: outputStripAnsi,
+              date,
+              server_id: serverId,
+            });
           },
         });
       }

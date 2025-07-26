@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import {
   AccountInfoResponse,
   AuthLoginResponse,
@@ -24,6 +24,7 @@ export const useAuthStore = defineStore('auth', {
       message: '',
       status: false,
     } as ISnackbar,
+    i18n: getI18n(),
     user: null as AuthUserResponse | null,
     token: null as string | null,
     permissions: [] as EPermissionsRoles[],
@@ -39,7 +40,6 @@ export const useAuthStore = defineStore('auth', {
       this.snackbar.status = false;
     },
     async login(login: string, password: string): Promise<boolean> {
-      const i18n = getI18n();
       const url = import.meta.env.VITE_BACKEND_URL;
 
       if (!url) {
@@ -47,7 +47,7 @@ export const useAuthStore = defineStore('auth', {
       }
 
       try {
-        const currentLocale = i18n.global.locale.value;
+        const currentLocale = this.i18n.global.locale;
 
         const response = await axios.post<
           IApiResponse<AuthLoginResponse | null>
@@ -68,13 +68,13 @@ export const useAuthStore = defineStore('auth', {
         const data = response?.data;
 
         if (!data?.status) {
-          this.showSnackbar(i18n.global.t('login_error'), EColor.error);
+          this.showSnackbar(this.i18n.global.t('login_error'), EColor.error);
 
           return false;
         }
 
         if (!data.data) {
-          this.showSnackbar(i18n.global.t('login_invalid'), EColor.error);
+          this.showSnackbar(this.i18n.global.t('login_invalid'), EColor.error);
 
           return false;
         }
@@ -89,11 +89,14 @@ export const useAuthStore = defineStore('auth', {
         setPermissions(this.permissions);
         setLayout(this.layout);
 
-        this.showSnackbar(i18n.global.t('login_success'), EColor.success);
-
         return true;
-      } catch {
-        this.showSnackbar(i18n.global.t('login_invalid'), EColor.error);
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('login_invalid');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
 
         return false;
       }

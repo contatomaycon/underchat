@@ -61,7 +61,7 @@ function generateTokenJwtAccess(
 async function authenticateJwt(
   request: FastifyRequest,
   reply: FastifyReply,
-  permissions: EPermissionsRoles[] | null
+  permissions?: EPermissionsRoles[] | null
 ): Promise<void> {
   const { t } = request;
   const { redis } = request.server;
@@ -80,7 +80,7 @@ async function authenticateJwt(
       },
     });
 
-    if (!decoded || !routePath || !permissions) {
+    if (!decoded || !routePath) {
       return sendResponse(reply, {
         message: t('not_authorized'),
         httpStatusCode: EHTTPStatusCode.unauthorized,
@@ -127,7 +127,7 @@ async function authenticateJwt(
       decoded.user_id,
       responseAuth
     );
-    request.permissionsRoute = permissions;
+    request.permissionsRoute = permissions ?? null;
 
     return;
   } catch {

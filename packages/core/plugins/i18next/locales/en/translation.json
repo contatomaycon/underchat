@@ -14,5 +14,19 @@
   "metrics_server_error": "Error starting metrics server!",
   "kafka_producer_error": "Error creating Kafka producer!",
   "ssh_distro_version_failed": "Failed to retrieve distribution and version for server",
-  "ssh_distro_version_not_allowed": "Distribution and version not allowed for server"
+  "ssh_distro_version_not_allowed": "Distribution and version not allowed for server",
+  "server_deleted_successfully": "Server deleted successfully!",
+  "server_deleter_error": "Error deleting server!",
+  "server_not_found": "Server not found!",
+  "server_update_error": "Error updating server!",
+  "server_ssh_update_error": "Error updating server SSH!",
+  "server_update_successfully": "Server updated successfully!",
+  "server_ssh_not_found": "SSH server not found!",
+  "server_view_successfully": "Server viewed successfully!",
+  "server_list_successfully": "Server list retrieved successfully!",
+  "server_list_not_found": "No servers found!",
+  "centrifugo_token_generation_failed": "Failed to generate token",
+  "centrifugo_token_generation_success": "Token generated successfully",
+  "server_logs_install_not_found": "Server logs not found!",
+  "server_logs_install_success": "Server logs retrieved successfully!"
 }

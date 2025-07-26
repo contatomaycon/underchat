@@ -1,0 +1,1 @@
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES (13, 1, 'server_logs_install');

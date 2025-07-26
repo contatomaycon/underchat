@@ -21,7 +21,9 @@ export class ServerCreatorUseCase {
     t: TFunction<'translation', undefined>,
     input: CreateServerRequest
   ): Promise<void> {
-    const serverExists = await this.serverService.viewByIp(input.ssh_ip);
+    const serverExists = await this.serverService.existsServerByIp(
+      input.ssh_ip
+    );
 
     if (serverExists) {
       throw new Error(t('server_already_exists'));

@@ -80,13 +80,19 @@ export class BalanceCreatorConsume {
     for (let i = 0; i < attempts; i++) {
       await new Promise((r) => setTimeout(r, 6000));
 
-      const [res] = await this.sshService.runCommands(
+      const result = await this.sshService.runCommands(
         serverId,
         sshConfig,
         commands
       );
 
-      const status = parseInt(res.output?.trim() ?? '0', 10);
+      if (result.length > 0) {
+        this.serverService.updateLogInstallServerBulk(result);
+      }
+
+      const lastOutput = result[result.length - 1]?.output?.trim();
+
+      const status = parseInt(lastOutput ?? '0', 10);
 
       if (status === 200) {
         return true;
@@ -135,7 +141,13 @@ export class BalanceCreatorConsume {
         const installCommands =
           await this.sshService.getInstallCommands(getDistroAndVersion);
 
-        await this.sshService.runCommands(serverId, sshConfig, installCommands);
+        const logs = await this.sshService.runCommands(
+          serverId,
+          sshConfig,
+          installCommands
+        );
+
+        this.serverService.updateLogInstallServerBulk(logs);
 
         const installed = await this.isInstalled(
           serverId,
