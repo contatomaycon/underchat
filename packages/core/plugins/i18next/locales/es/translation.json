@@ -38,5 +38,7 @@
   "worker_balancer_server_not_disponible": "Servidor de balanceo de carga del trabajador no disponible",
   "worker_not_available": "Su plan no admite trabajadores, comuníquese con el administrador del sistema para obtener más información.",
   "worker_not_available_additional": "Su plan no admite más trabajadores, contrate un adicional o comuníquese con el administrador del sistema para obtener más información.",
-  "account_not_found": "¡Cuenta no encontrada!"
+  "account_not_found": "¡Cuenta no encontrada!",
+  "worker_list_success": "¡Lista de trabajadores obtenida con éxito!",
+  "worker_list_error": "Error al obtener la lista de trabajadores"
 }

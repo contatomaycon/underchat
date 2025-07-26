@@ -6,6 +6,9 @@ import { WorkerCreatorRepository } from '@core/repositories/worker/WorkerCreator
 import { ICreateWorker } from '@core/common/interfaces/ICreateWorker';
 import { WorkerBalancerServerViewerRepository } from '@core/repositories/worker/WorkerBalancerServerViewer.repository';
 import { WorkerTotalViewerRepository } from '@core/repositories/worker/WorkerTotalViewer.repository';
+import { WorkerListerRepository } from '@core/repositories/worker/WorkerLister.repository';
+import { ListWorkerRequest } from '@core/schema/worker/listWorker/request.schema';
+import { ListWorkerResponse } from '@core/schema/worker/listWorker/response.schema';
 
 @injectable()
 export class WorkerService {
@@ -14,7 +17,8 @@ export class WorkerService {
   constructor(
     private readonly workerCreatorRepository: WorkerCreatorRepository,
     private readonly workerBalancerServerViewerRepository: WorkerBalancerServerViewerRepository,
-    private readonly workerTotalViewerRepository: WorkerTotalViewerRepository
+    private readonly workerTotalViewerRepository: WorkerTotalViewerRepository,
+    private readonly workerListerRepository: WorkerListerRepository
   ) {
     this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
   }
@@ -76,4 +80,23 @@ export class WorkerService {
   public async totalWorkerByAccountId(accountId: string): Promise<number> {
     return this.workerTotalViewerRepository.totalWorkerByAccountId(accountId);
   }
+
+  listWorker = async (
+    accountId: string,
+    perPage: number,
+    currentPage: number,
+    query: ListWorkerRequest
+  ): Promise<[ListWorkerResponse[], number]> => {
+    const [result, total] = await Promise.all([
+      this.workerListerRepository.listWorker(
+        accountId,
+        perPage,
+        currentPage,
+        query
+      ),
+      this.workerListerRepository.listWorkerTotal(accountId, query),
+    ]);
+
+    return [result, total];
+  };
 }
