@@ -3,16 +3,17 @@ import { container } from 'tsyringe';
 import WorkerController from '@/controllers/worker';
 import { listWorkerSchema } from '@core/schema/worker/listWorker';
 import { workerCreatePermissions, workerViewPermissions } from '@/permissions';
+import { managerCreateWorkerSchema } from '@core/schema/worker/managerCreateWorker';
 
 export default async function workerRoutes(server: FastifyInstance) {
   const workerController = container.resolve(WorkerController);
 
   server.post('/worker', {
-    schema: createWorkerSchema,
+    schema: managerCreateWorkerSchema,
     handler: workerController.createWorker,
     preHandler: [
       (request, reply) =>
-        server.authenticateKeyApi(request, reply, workerCreatePermissions),
+        server.authenticateJwt(request, reply, workerCreatePermissions),
     ],
   });
 

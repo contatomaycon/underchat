@@ -1,11 +1,10 @@
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { Static, Type } from '@sinclair/typebox';
 
-export const balanceCreateWorkerRequestSchema = Type.Object({
-  server_id: Type.String(),
+export const managerCreateWorkerRequestSchema = Type.Object({
   worker_type: Type.String({ enum: Object.values(EWorkerType) }),
 });
 
-export type BalanceCreateWorkerRequest = Static<
-  typeof balanceCreateWorkerRequestSchema
+export type ManagerCreateWorkerRequest = Static<
+  typeof managerCreateWorkerRequestSchema
 >;

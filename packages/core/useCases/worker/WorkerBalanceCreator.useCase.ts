@@ -12,7 +12,7 @@ import { AccountService } from '@core/services/account.service';
 import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 
 @injectable()
-export class WorkerCreatorUseCase {
+export class WorkerBalanceCreatorUseCase {
   constructor(
     private readonly workerService: WorkerService,
     private readonly accountService: AccountService
@@ -20,11 +20,10 @@ export class WorkerCreatorUseCase {
 
   private async validate(
     t: TFunction<'translation', undefined>,
-    input: BalanceCreateWorkerRequest
+    accountId: string
   ) {
-    const existsAccountById = await this.accountService.existsAccountById(
-      input.account_id
-    );
+    const existsAccountById =
+      await this.accountService.existsAccountById(accountId);
 
     if (!existsAccountById) {
       throw new Error(t('account_not_found'));
@@ -33,10 +32,10 @@ export class WorkerCreatorUseCase {
     const [viewAccountQuantityProduct, totalWorkerByAccountId] =
       await Promise.all([
         this.accountService.viewAccountQuantityProduct(
-          input.account_id,
+          accountId,
           EPlanProduct.worker
         ),
-        this.workerService.totalWorkerByAccountId(input.account_id),
+        this.workerService.totalWorkerByAccountId(accountId),
       ]);
 
     if (viewAccountQuantityProduct <= 0) {
@@ -66,19 +65,14 @@ export class WorkerCreatorUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
+    accountId: string,
     input: BalanceCreateWorkerRequest
   ): Promise<BalanceCreateWorkerResponse> {
-    await this.validate(t, input);
+    await this.validate(t, accountId);
 
     const workerType = input.worker_type as EWorkerType;
     const imageName = this.getImageWorker(workerType);
     const containerName = uuidv4();
-
-    const serverId = await this.workerService.viewWorkerBalancerServerId();
-
-    if (!serverId) {
-      throw new Error(t('worker_balancer_server_not_disponible'));
-    }
 
     const containerId = await this.workerService.createContainerWorker(
       t,
@@ -93,8 +87,8 @@ export class WorkerCreatorUseCase {
     const workerData: ICreateWorker = {
       worker_status_id: EWorkerStatus.online,
       worker_type_id: workerType,
-      server_id: serverId,
-      account_id: input.account_id,
+      server_id: input.server_id,
+      account_id: accountId,
       name: containerName,
       container_id: containerId,
     };

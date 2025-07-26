@@ -9,6 +9,7 @@ import { WorkerTotalViewerRepository } from '@core/repositories/worker/WorkerTot
 import { WorkerListerRepository } from '@core/repositories/worker/WorkerLister.repository';
 import { ListWorkerRequest } from '@core/schema/worker/listWorker/request.schema';
 import { ListWorkerResponse } from '@core/schema/worker/listWorker/response.schema';
+import { IViewWorkerBalancerServer } from '@core/common/interfaces/IViewWorkerBalancerServer';
 
 @injectable()
 export class WorkerService {
@@ -73,8 +74,12 @@ export class WorkerService {
     return this.workerCreatorRepository.createWorker(input);
   }
 
-  public async viewWorkerBalancerServerId(): Promise<string | null> {
-    return this.workerBalancerServerViewerRepository.viewWorkerBalancerServerId();
+  public async viewWorkerBalancerServer(
+    accountId: string
+  ): Promise<IViewWorkerBalancerServer | null> {
+    return this.workerBalancerServerViewerRepository.viewWorkerBalancerServer(
+      accountId
+    );
   }
 
   public async totalWorkerByAccountId(accountId: string): Promise<number> {
