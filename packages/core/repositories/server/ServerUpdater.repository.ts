@@ -29,6 +29,7 @@ export class ServerUpdaterRepository {
       .update(server)
       .set({
         name: input.name,
+        quantity_workers: input.quantity_workers,
       })
       .where(eq(server.server_id, input.server_id))
       .execute();

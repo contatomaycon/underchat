@@ -9,6 +9,7 @@ export const listServerSshResponseSchema = Type.Object({
 export const listServerResponseSchema = Type.Object({
   id: Type.Number(),
   name: Type.String(),
+  quantity_workers: Type.Number(),
   status: Type.Object({
     id: Type.Number(),
     name: Type.String(),

@@ -56,6 +56,7 @@ export class ServerService {
     const inputCreateServer: ICreateServer = {
       server_status_id: EServerStatus.new,
       name: input.name,
+      quantity_workers: input.quantity_workers,
     };
 
     return this.serverCreatorRepository.createServer(inputCreateServer);
@@ -145,6 +146,7 @@ export class ServerService {
     const inputUpdateServer: IUpdateServerById = {
       server_id: serverId,
       name: input.name,
+      quantity_workers: input.quantity_workers,
     };
 
     return this.serverUpdaterRepository.updateServer(

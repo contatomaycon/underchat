@@ -2,6 +2,7 @@ import { Static, Type } from '@sinclair/typebox';
 
 export const editServerRequestSchema = Type.Object({
   name: Type.String(),
+  quantity_workers: Type.Number(),
   ssh_ip: Type.String(),
   ssh_port: Type.Number(),
   ssh_username: Type.Optional(Type.Union([Type.String(), Type.Null()])),

@@ -16,6 +16,7 @@ export class ServerCreatorRepository {
       .values({
         server_status_id: input.server_status_id,
         name: input.name,
+        quantity_workers: input.quantity_workers,
       })
       .returning();
 

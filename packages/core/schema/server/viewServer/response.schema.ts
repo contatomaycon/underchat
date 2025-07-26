@@ -7,6 +7,7 @@ export const viewServerSshResponseSchema = Type.Object({
 
 export const viewServerResponseSchema = Type.Object({
   name: Type.String(),
+  quantity_workers: Type.Number(),
   status: Type.Object({
     id: Type.Number(),
     name: Type.String(),
