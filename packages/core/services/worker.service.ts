@@ -5,6 +5,7 @@ import { EWorkerImage } from '@core/common/enums/EWorkerImage';
 import { WorkerCreatorRepository } from '@core/repositories/worker/WorkerCreator.repository';
 import { ICreateWorker } from '@core/common/interfaces/ICreateWorker';
 import { WorkerBalancerServerViewerRepository } from '@core/repositories/worker/WorkerBalancerServerViewer.repository';
+import { WorkerTotalViewerRepository } from '@core/repositories/worker/WorkerTotalViewer.repository';
 
 @injectable()
 export class WorkerService {
@@ -12,7 +13,8 @@ export class WorkerService {
 
   constructor(
     private readonly workerCreatorRepository: WorkerCreatorRepository,
-    private readonly workerBalancerServerViewerRepository: WorkerBalancerServerViewerRepository
+    private readonly workerBalancerServerViewerRepository: WorkerBalancerServerViewerRepository,
+    private readonly workerTotalViewerRepository: WorkerTotalViewerRepository
   ) {
     this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
   }
@@ -69,5 +71,9 @@ export class WorkerService {
 
   public async viewWorkerBalancerServerId(): Promise<number | null> {
     return this.workerBalancerServerViewerRepository.viewWorkerBalancerServerId();
+  }
+
+  public async totalWorkerByAccountId(accountId: number): Promise<number> {
+    return this.workerTotalViewerRepository.totalWorkerByAccountId(accountId);
   }
 }

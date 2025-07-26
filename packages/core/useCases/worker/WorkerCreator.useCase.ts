@@ -8,10 +8,37 @@ import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EWorkerImage } from '@core/common/enums/EWorkerImage';
 import { ICreateWorker } from '@core/common/interfaces/ICreateWorker';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { AccountService } from '@core/services/account.service';
+import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 
 @injectable()
 export class WorkerCreatorUseCase {
-  constructor(private readonly workerService: WorkerService) {}
+  constructor(
+    private readonly workerService: WorkerService,
+    private readonly accountService: AccountService
+  ) {}
+
+  private async validate(
+    t: TFunction<'translation', undefined>,
+    input: CreateWorkerRequest
+  ) {
+    const [viewAccountQuantityProduct, totalWorkerByAccountId] =
+      await Promise.all([
+        this.accountService.viewAccountQuantityProduct(
+          input.account_id,
+          EPlanProduct.worker
+        ),
+        this.workerService.totalWorkerByAccountId(input.account_id),
+      ]);
+
+    if (viewAccountQuantityProduct <= 0) {
+      throw new Error(t('worker_not_available'));
+    }
+
+    if (totalWorkerByAccountId >= viewAccountQuantityProduct) {
+      throw new Error(t('worker_not_available_additional'));
+    }
+  }
 
   private getImageWorker(workerType: EWorkerType) {
     if (workerType === EWorkerType.whatsapp) {
@@ -33,6 +60,8 @@ export class WorkerCreatorUseCase {
     t: TFunction<'translation', undefined>,
     input: CreateWorkerRequest
   ): Promise<CreateWorkerResponse> {
+    await this.validate(t, input);
+
     const imageName = this.getImageWorker(input.worker_type as EWorkerType);
     const containerName = uuidv4();
 
