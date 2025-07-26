@@ -28,5 +28,7 @@
   "centrifugo_token_generation_failed": "Failed to generate token",
   "centrifugo_token_generation_success": "Token generated successfully",
   "server_logs_install_not_found": "Server logs not found!",
-  "server_logs_install_success": "Server logs retrieved successfully!"
+  "server_logs_install_success": "Server logs retrieved successfully!",
+  "server_reinstall_successfully": "Server reinstalled successfully!",
+  "server_reinstall_failed": "Failed to reinstall server"
 }

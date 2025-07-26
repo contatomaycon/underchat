@@ -64,5 +64,9 @@
     "close": "Close",
     "installation_pending": "Installation pending",
     "server_logs": "Server Logs",
-    "server_logs_install_error": "An error occurred while retrieving the installation logs. Please try again."
+    "server_logs_install_error": "An error occurred while retrieving the installation logs. Please try again.",
+    "reinstall_server": "Reinstall Server",
+    "reinstall_server_confirmation": "Are you sure you want to reinstall this server?",
+    "server_reinstall_error": "An error occurred while reinstalling the server. Please try again.",
+    "request_reinstall_success": "Server reinstallation request successful!"
 }

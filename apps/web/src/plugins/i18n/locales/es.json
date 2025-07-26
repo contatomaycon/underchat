@@ -64,5 +64,9 @@
     "close": "Cerrar",
     "installation_pending": "Instalación pendiente",
     "server_logs": "Logs del Servidor",
-    "server_logs_install_error": "Ocurrió un error al recuperar los logs de instalación. Por favor, inténtalo de nuevo."
+    "server_logs_install_error": "Ocurrió un error al recuperar los logs de instalación. Por favor, inténtalo de nuevo.",
+    "reinstall_server": "Reinstalar Servidor",
+    "reinstall_server_confirmation": "¿Estás seguro de que deseas reinstalar este servidor?",
+    "server_reinstall_error": "Ocurrió un error al reinstalar el servidor. Por favor, inténtalo de nuevo.",
+    "server_reinstall_success": "¡Servidor reinstalado exitosamente!"
 }

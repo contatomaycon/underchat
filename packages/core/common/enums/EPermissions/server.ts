@@ -4,4 +4,5 @@ export enum EServerPermissions {
   server_edit = 'server_edit',
   server_delete = 'server_delete',
   server_logs_install = 'server_logs_install',
+  server_reinstall = 'server_reinstall',
 }

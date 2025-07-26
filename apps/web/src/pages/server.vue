@@ -25,6 +25,27 @@ definePage({
   },
 });
 
+const permissionsReinstall = [
+  EGeneralPermissions.full_access,
+  EServerPermissions.server_reinstall,
+];
+const permissionsServerLogsInstall = [
+  EGeneralPermissions.full_access,
+  EServerPermissions.server_logs_install,
+];
+const permissionsEdit = [
+  EGeneralPermissions.full_access,
+  EServerPermissions.server_edit,
+];
+const permissionsDelete = [
+  EGeneralPermissions.full_access,
+  EServerPermissions.server_delete,
+];
+const permissionsCreate = [
+  EGeneralPermissions.full_access,
+  EServerPermissions.server_create,
+];
+
 const { t } = useI18n();
 const serverStore = useServerStore();
 
@@ -58,6 +79,9 @@ const serverToConsole = ref<number | null>(null);
 
 const isLogsServerVisible = ref(false);
 const serverToLogs = ref<number | null>(null);
+
+const isDialogRefreshServerShow = ref(false);
+const serverToRefresh = ref<number | null>(null);
 
 const resolveStatusVariant = (s: number) => {
   if (s === 1) return { color: EColor.info, text: t('new') };
@@ -115,6 +139,12 @@ const deleteServer = async (id: number) => {
   isDialogDeleterShow.value = true;
 };
 
+const refreshServer = async (id: number) => {
+  serverToRefresh.value = id;
+
+  isDialogRefreshServerShow.value = true;
+};
+
 const handleDelete = async () => {
   if (!serverToDelete.value) return;
 
@@ -124,6 +154,14 @@ const handleDelete = async () => {
   }
 
   serverToDelete.value = null;
+};
+
+const handleReinstall = async () => {
+  if (!serverToRefresh.value) return;
+
+  await serverStore.reinstallServer(serverToRefresh.value);
+
+  serverToRefresh.value = null;
 };
 
 const openEditDialog = (id: number) => {
@@ -186,7 +224,11 @@ onBeforeUnmount(async () => {
               />
             </div>
 
-            <VBtn prepend-icon="tabler-plus" @click="isAddServerVisible = true">
+            <VBtn
+              v-if="$canPermission(permissionsCreate)"
+              prepend-icon="tabler-plus"
+              @click="isAddServerVisible = true"
+            >
               {{ $t('add') }}
             </VBtn>
           </div>
@@ -262,18 +304,74 @@ onBeforeUnmount(async () => {
 
         <template #item.actions="{ item }">
           <div class="d-flex gap-1">
-            <IconBtn v-if="item.status.id === EServerStatus.installing"
-              ><VIcon
+            <IconBtn
+              v-if="
+                item.status.id !== EServerStatus.installing &&
+                $canPermission(permissionsReinstall)
+              "
+            >
+              <VTooltip
+                location="top"
+                transition="scale-transition"
+                activator="parent"
+              >
+                <span>
+                  {{ $t('reinstall_server') }}
+                </span>
+              </VTooltip>
+              <VIcon icon="tabler-refresh" @click="refreshServer(item.id)"
+            /></IconBtn>
+
+            <IconBtn
+              v-if="
+                item.status.id === EServerStatus.installing &&
+                $canPermission(permissionsServerLogsInstall)
+              "
+            >
+              <VTooltip
+                location="top"
+                transition="scale-transition"
+                activator="parent"
+              >
+                <span>{{ $t('console_installation') }}</span>
+              </VTooltip>
+              <VIcon
                 icon="tabler-terminal-2"
                 @click="openConsoleDialog(item.id)"
             /></IconBtn>
-            <IconBtn v-if="item.status.id !== EServerStatus.installing"
+
+            <IconBtn
+              v-if="
+                item.status.id !== EServerStatus.installing &&
+                $canPermission(permissionsServerLogsInstall)
+              "
+            >
+              <VTooltip
+                location="top"
+                transition="scale-transition"
+                activator="parent"
+              >
+                <span>{{ $t('server_logs') }}</span> </VTooltip
               ><VIcon icon="tabler-terminal-2" @click="openLogsDialog(item.id)"
             /></IconBtn>
-            <IconBtn
+
+            <IconBtn v-if="$canPermission(permissionsEdit)"
+              ><VTooltip
+                location="top"
+                transition="scale-transition"
+                activator="parent"
+              >
+                <span>{{ $t('edit_server') }}</span> </VTooltip
               ><VIcon icon="tabler-edit" @click="openEditDialog(item.id)"
             /></IconBtn>
-            <IconBtn
+
+            <IconBtn v-if="$canPermission(permissionsDelete)"
+              ><VTooltip
+                location="top"
+                transition="scale-transition"
+                activator="parent"
+              >
+                <span>{{ $t('delete_server') }}</span> </VTooltip
               ><VIcon icon="tabler-trash" @click="deleteServer(item.id)"
             /></IconBtn>
           </div>
@@ -292,7 +390,14 @@ onBeforeUnmount(async () => {
         </template>
       </VDataTableServer>
 
-      <VDialogDeleter
+      <VDialogHandler
+        v-model="isDialogRefreshServerShow"
+        :title="$t('reinstall_server')"
+        :message="$t('reinstall_server_confirmation')"
+        @confirm="handleReinstall"
+      />
+
+      <VDialogHandler
         v-model="isDialogDeleterShow"
         :title="$t('delete_server')"
         :message="$t('delete_server_confirmation')"
