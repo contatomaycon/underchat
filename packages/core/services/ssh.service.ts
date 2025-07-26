@@ -126,7 +126,7 @@ export class SshService {
   }
 
   async runCommands(
-    serverId: number,
+    serverId: string,
     config: ConnectConfig,
     commands: string[]
   ): Promise<IServerSshCentrifugo[]> {

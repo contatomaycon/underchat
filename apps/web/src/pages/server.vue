@@ -68,27 +68,31 @@ const itemsStatus = ref([
 ]);
 
 const isDialogDeleterShow = ref(false);
-const serverToDelete = ref<number | null>(null);
+const serverToDelete = ref<string | null>(null);
 
 const isDialogEditServerShow = ref(false);
 const isAddServerVisible = ref(false);
-const serverToEdit = ref<number | null>(null);
+const serverToEdit = ref<string | null>(null);
 
 const isConsoleServerVisible = ref(false);
-const serverToConsole = ref<number | null>(null);
+const serverToConsole = ref<string | null>(null);
 
 const isLogsServerVisible = ref(false);
-const serverToLogs = ref<number | null>(null);
+const serverToLogs = ref<string | null>(null);
 
 const isDialogRefreshServerShow = ref(false);
-const serverToRefresh = ref<number | null>(null);
+const serverToRefresh = ref<string | null>(null);
 
-const resolveStatusVariant = (s: number) => {
-  if (s === 1) return { color: EColor.info, text: t('new') };
-  if (s === 2) return { color: EColor.warning, text: t('installing') };
-  if (s === 3) return { color: EColor.success, text: t('online') };
-  if (s === 4) return { color: EColor.error, text: t('error') };
-  if (s === 5) return { color: EColor.error, text: t('offline') };
+const resolveStatusVariant = (s: string) => {
+  if (s === EServerStatus.new) return { color: EColor.info, text: t('new') };
+  if (s === EServerStatus.installing)
+    return { color: EColor.warning, text: t('installing') };
+  if (s === EServerStatus.online)
+    return { color: EColor.success, text: t('online') };
+  if (s === EServerStatus.error)
+    return { color: EColor.error, text: t('error') };
+  if (s === EServerStatus.offline)
+    return { color: EColor.error, text: t('offline') };
 
   return { color: EColor.primary, text: t('unknown') };
 };
@@ -107,7 +111,7 @@ const options = ref({
   page: 1,
   itemsPerPage: 10,
   sortBy: [] as SortRequest[],
-  status: null as number | null,
+  status: null as string | null,
   search: null as string | null,
 });
 
@@ -134,13 +138,13 @@ const handleTableChange = (o: {
   options.value.sortBy = o.sortBy;
 };
 
-const deleteServer = async (id: number) => {
+const deleteServer = async (id: string) => {
   serverToDelete.value = id;
 
   isDialogDeleterShow.value = true;
 };
 
-const refreshServer = async (id: number) => {
+const refreshServer = async (id: string) => {
   serverToRefresh.value = id;
 
   isDialogRefreshServerShow.value = true;
@@ -165,19 +169,19 @@ const handleReinstall = async () => {
   serverToRefresh.value = null;
 };
 
-const openEditDialog = (id: number) => {
+const openEditDialog = (id: string) => {
   serverToEdit.value = id;
 
   isDialogEditServerShow.value = true;
 };
 
-const openConsoleDialog = (id: number) => {
+const openConsoleDialog = (id: string) => {
   serverToConsole.value = id;
 
   isConsoleServerVisible.value = true;
 };
 
-const openLogsDialog = (id: number) => {
+const openLogsDialog = (id: string) => {
   serverToLogs.value = id;
 
   isLogsServerVisible.value = true;

@@ -103,7 +103,7 @@ export const useServerStore = defineStore('server', {
       }
     },
 
-    async deleteServer(serverId: number): Promise<boolean> {
+    async deleteServer(serverId: string): Promise<boolean> {
       try {
         this.loading = true;
 
@@ -144,7 +144,7 @@ export const useServerStore = defineStore('server', {
       }
     },
 
-    async getServerById(serverId: number): Promise<ViewServerResponse | null> {
+    async getServerById(serverId: string): Promise<ViewServerResponse | null> {
       try {
         this.loading = true;
 
@@ -181,7 +181,7 @@ export const useServerStore = defineStore('server', {
     },
 
     async updateServer(
-      serverId: number,
+      serverId: string,
       payload: EditServerRequest
     ): Promise<boolean> {
       try {
@@ -268,7 +268,7 @@ export const useServerStore = defineStore('server', {
     },
 
     async searchInstallLogs(
-      serverId: number,
+      serverId: string,
       input: ServerLogsInstallQuery
     ): Promise<ServerLogsInstallResponse[]> {
       try {
@@ -308,7 +308,7 @@ export const useServerStore = defineStore('server', {
       }
     },
 
-    async reinstallServer(serverId: number): Promise<boolean> {
+    async reinstallServer(serverId: string): Promise<boolean> {
       try {
         this.loading = true;
 
@@ -349,7 +349,7 @@ export const useServerStore = defineStore('server', {
       }
     },
 
-    updateStatusServer(serverId: number, status: EServerStatus): void {
+    updateStatusServer(serverId: string, status: EServerStatus): void {
       const server = this.list_servers.find((server) => server.id === serverId);
 
       if (server) {

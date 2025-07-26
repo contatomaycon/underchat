@@ -8,7 +8,7 @@ const { t } = useI18n();
 
 const props = defineProps<{
   modelValue: boolean;
-  serverId: number | null;
+  serverId: string | null;
 }>();
 
 const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
