@@ -25,6 +25,14 @@ definePage({
   },
 });
 
+const permissionsReinstall = [
+  EGeneralPermissions.full_access,
+  EServerPermissions.server_reinstall,
+];
+const permissionsServerLogsInstall = [
+  EGeneralPermissions.full_access,
+  EServerPermissions.server_logs_install,
+];
 const permissionsEdit = [
   EGeneralPermissions.full_access,
   EServerPermissions.server_edit,
@@ -296,7 +304,12 @@ onBeforeUnmount(async () => {
 
         <template #item.actions="{ item }">
           <div class="d-flex gap-1">
-            <IconBtn v-if="item.status.id !== EServerStatus.installing">
+            <IconBtn
+              v-if="
+                item.status.id !== EServerStatus.installing &&
+                $canPermission(permissionsReinstall)
+              "
+            >
               <VTooltip
                 location="top"
                 transition="scale-transition"
@@ -309,7 +322,12 @@ onBeforeUnmount(async () => {
               <VIcon icon="tabler-refresh" @click="refreshServer(item.id)"
             /></IconBtn>
 
-            <IconBtn v-if="item.status.id === EServerStatus.installing">
+            <IconBtn
+              v-if="
+                item.status.id === EServerStatus.installing &&
+                $canPermission(permissionsServerLogsInstall)
+              "
+            >
               <VTooltip
                 location="top"
                 transition="scale-transition"
@@ -322,7 +340,12 @@ onBeforeUnmount(async () => {
                 @click="openConsoleDialog(item.id)"
             /></IconBtn>
 
-            <IconBtn v-if="item.status.id !== EServerStatus.installing">
+            <IconBtn
+              v-if="
+                item.status.id !== EServerStatus.installing &&
+                $canPermission(permissionsServerLogsInstall)
+              "
+            >
               <VTooltip
                 location="top"
                 transition="scale-transition"
