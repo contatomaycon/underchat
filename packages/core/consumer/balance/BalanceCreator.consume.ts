@@ -87,7 +87,7 @@ export class BalanceCreatorConsume {
       );
 
       if (result.length > 0) {
-        this.serverService.updateLogInstallServerBulk(result);
+        await this.serverService.updateLogInstallServerBulk(result);
       }
 
       const lastOutput = result[result.length - 1]?.output?.trim();
@@ -147,7 +147,8 @@ export class BalanceCreatorConsume {
           installCommands
         );
 
-        this.serverService.updateLogInstallServerBulk(logs);
+        await this.serverService.deleteLogInstallServer();
+        await this.serverService.updateLogInstallServerBulk(logs);
 
         const installed = await this.isInstalled(
           serverId,

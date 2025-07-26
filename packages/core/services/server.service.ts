@@ -202,4 +202,10 @@ export class ServerService {
       () => uuidv4()
     );
   };
+
+  deleteLogInstallServer = async (): Promise<boolean> => {
+    return this.elasticDatabaseService.deleteIndex(
+      EElasticIndex.install_server
+    );
+  };
 }
