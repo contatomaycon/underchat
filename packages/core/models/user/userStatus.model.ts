@@ -1,12 +1,9 @@
-import { pgTable, timestamp, varchar, smallint } from 'drizzle-orm/pg-core';
+import { pgTable, timestamp, varchar, uuid } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { user } from '@core/models';
 
 export const userStatus = pgTable('user_status', {
-  user_status_id: smallint()
-    .primaryKey()
-    .generatedByDefaultAsIdentity()
-    .notNull(),
+  user_status_id: uuid().primaryKey().notNull(),
   name: varchar({ length: 20 }).notNull(),
   created_at: timestamp({
     mode: 'string',

@@ -5,3 +5,5 @@ export * from './country';
 export * from './zipcode';
 export * from './api';
 export * from './account';
+export * from './worker';
+export * from './plan';

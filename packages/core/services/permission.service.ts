@@ -7,7 +7,7 @@ export class PermissionService {
     private readonly permissionAssignmentUserViewerRepository: PermissionAssignmentUserViewerRepository
   ) {}
 
-  viewPermissionByUserId = async (userId: number): Promise<string[]> => {
+  viewPermissionByUserId = async (userId: string): Promise<string[]> => {
     const result =
       await this.permissionAssignmentUserViewerRepository.viewPermissionByUserId(
         userId

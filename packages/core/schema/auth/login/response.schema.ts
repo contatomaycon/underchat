@@ -7,15 +7,15 @@ import { ESkin } from '@core/common/enums/ESkin';
 import { Static, Type } from '@sinclair/typebox';
 
 export const authUserResponseSchema = Type.Object({
-  user_id: Type.Number(),
-  account_id: Type.Number(),
+  user_id: Type.String(),
+  account_id: Type.String(),
   email_partial: Type.String(),
   status: Type.Object({
-    status_id: Type.Number(),
+    status_id: Type.String(),
     name: Type.String(),
   }),
   info: Type.Object({
-    user_info_id: Type.Number(),
+    user_info_id: Type.String(),
     name: Type.String(),
     last_name: Type.String(),
     phone_partial: Type.String(),
@@ -23,17 +23,17 @@ export const authUserResponseSchema = Type.Object({
     birth_date: Type.Union([Type.String(), Type.Null()]),
   }),
   type: Type.Object({
-    user_type_id: Type.Number(),
+    user_type_id: Type.String(),
     name: Type.String(),
   }),
   document: Type.Object({
-    user_document_id: Type.Number(),
+    user_document_id: Type.String(),
     document_partial: Type.String(),
     document_type: Type.String(),
   }),
   address: Type.Union([
     Type.Object({
-      user_address_id: Type.Number(),
+      user_address_id: Type.String(),
       zip_code: Type.String(),
       address1_partial: Type.String(),
       address2_partial: Type.Union([Type.String(), Type.Null()]),
@@ -46,7 +46,7 @@ export const authUserResponseSchema = Type.Object({
 });
 
 export const accountInfoResponseSchema = Type.Object({
-  account_info_id: Type.Number(),
+  account_info_id: Type.String(),
   name: Type.String(),
   logo: Type.Union([Type.String(), Type.Null()]),
   content_width: Type.Union([Type.String(EContentWidth), Type.Null()]),

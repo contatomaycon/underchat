@@ -8,7 +8,7 @@ export class ServerDeleterUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    serverId: number
+    serverId: string
   ): Promise<boolean> {
     const exists = await this.serverService.existsServerById(serverId);
 

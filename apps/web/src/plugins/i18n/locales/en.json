@@ -68,5 +68,7 @@
     "reinstall_server": "Reinstall Server",
     "reinstall_server_confirmation": "Are you sure you want to reinstall this server?",
     "server_reinstall_error": "An error occurred while reinstalling the server. Please try again.",
-    "request_reinstall_success": "Server reinstallation request successful!"
+    "request_reinstall_success": "Server reinstallation request successful!",
+    "workers_allowed": "Workers allowed",
+    "workers_allowed_required": "Workers allowed is required"
 }

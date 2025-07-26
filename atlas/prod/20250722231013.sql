@@ -1,1 +1,0 @@
-INSERT INTO "account" ("account_id", "account_status_id", "name") VALUES (1, 1, 'Underchat');

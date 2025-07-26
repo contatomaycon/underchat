@@ -1,9 +1,9 @@
 import {
   pgTable,
   timestamp,
-  smallint,
   varchar,
   boolean,
+  uuid,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { account } from '@core/models';
@@ -15,11 +15,8 @@ import { ENavbar } from '@core/common/enums/ENavbar';
 import { EFooter } from '@core/common/enums/EFooter';
 
 export const accountInfo = pgTable('account_info', {
-  account_info_id: smallint()
-    .primaryKey()
-    .generatedByDefaultAsIdentity()
-    .notNull(),
-  account_id: smallint()
+  account_info_id: uuid().primaryKey().notNull(),
+  account_id: uuid()
     .references(() => account.account_id)
     .notNull(),
   logo: varchar({ length: 500 }),

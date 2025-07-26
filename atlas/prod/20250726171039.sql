@@ -1,0 +1,6 @@
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('96f89fa4-b757-470e-91e1-bfe7990ef077', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'server_logs_install');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('1adf4f65-6149-4314-a9be-f620fa420525', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'server_reinstall');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('371dab5c-5dfc-498a-98ab-7793d73f140e', '1213af3e-7eac-4e50-8c22-240a136e4164', 'create_worker');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('ef58aaee-9656-4699-bc7f-4282568a515a', '1213af3e-7eac-4e50-8c22-240a136e4164', 'view_worker');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('d49fe7b7-08f5-42db-ba3d-24fb343d8a6d', '1213af3e-7eac-4e50-8c22-240a136e4164', 'update_worker');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('b9f6a29c-b971-4f8c-85d1-fae59a29e593', '1213af3e-7eac-4e50-8c22-240a136e4164', 'delete_worker');

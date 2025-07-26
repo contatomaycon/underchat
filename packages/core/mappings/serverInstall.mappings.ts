@@ -3,7 +3,7 @@ export const serverInstallMappings = () => {
     mappings: {
       properties: {
         server_id: {
-          type: 'integer',
+          type: 'keyword',
         },
         command: {
           type: 'text',

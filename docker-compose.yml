@@ -224,6 +224,18 @@ services:
     entrypoint: ['centrifugo']
     command: ['--config', '/etc/centrifugo/config.json']
 
+  under-worker-baileys:
+    build:
+      context: .
+      dockerfile: ./apps/worker_baileys/Dockerfile
+    container_name: under-worker-baileys
+    image: under-worker-baileys:latest
+    ports:
+      - '3005:3005'
+    networks:
+      - underchat
+    restart: always
+
 networks:
   underchat:
 

@@ -16,7 +16,7 @@ export class ServerLogsInstallUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    serverId: number,
+    serverId: string,
     query: ServerLogsInstallQuery
   ): Promise<ServerLogsInstallResponse[]> {
     const exists = await this.serverService.existsServerById(serverId);

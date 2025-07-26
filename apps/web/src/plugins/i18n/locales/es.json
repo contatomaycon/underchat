@@ -68,5 +68,7 @@
     "reinstall_server": "Reinstalar Servidor",
     "reinstall_server_confirmation": "¿Estás seguro de que deseas reinstalar este servidor?",
     "server_reinstall_error": "Ocurrió un error al reinstalar el servidor. Por favor, inténtalo de nuevo.",
-    "server_reinstall_success": "¡Servidor reinstalado exitosamente!"
+    "server_reinstall_success": "¡Servidor reinstalado exitosamente!",
+    "workers_allowed": "Trabajadores permitidos",
+    "workers_allowed_required": "Se requiere trabajadores permitidos"
 }

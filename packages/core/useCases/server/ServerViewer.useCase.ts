@@ -9,7 +9,7 @@ export class ServerViewerUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    serverId: number
+    serverId: string
   ): Promise<ViewServerResponse | null> {
     const exists = await this.serverService.existsServerById(serverId);
 

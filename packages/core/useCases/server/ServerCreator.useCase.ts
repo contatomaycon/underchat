@@ -58,7 +58,7 @@ export class ServerCreatorUseCase {
 
   async onServerCreatedInKafka(
     t: TFunction<'translation', undefined>,
-    serverId: number
+    serverId: string
   ): Promise<void> {
     try {
       const payload: CreateServerResponse = {

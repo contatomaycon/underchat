@@ -21,7 +21,7 @@ export class ServerReinstallServerUseCase {
 
   async validate(
     t: TFunction<'translation', undefined>,
-    serverId: number
+    serverId: string
   ): Promise<void> {
     const viewServerSshById =
       await this.serverService.viewServerSshById(serverId);
@@ -66,7 +66,7 @@ export class ServerReinstallServerUseCase {
 
   async onServerCreatedInKafka(
     t: TFunction<'translation', undefined>,
-    serverId: number
+    serverId: string
   ): Promise<void> {
     try {
       const payload: CreateServerResponse = {
@@ -84,7 +84,7 @@ export class ServerReinstallServerUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    serverId: number
+    serverId: string
   ): Promise<boolean> {
     await this.validate(t, serverId);
 

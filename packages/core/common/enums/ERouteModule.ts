@@ -4,4 +4,5 @@ export enum ERouteModule {
   balancer = 'balancer',
   service = 'service',
   web = 'web',
+  worker_baileys = 'worker_baileys',
 }

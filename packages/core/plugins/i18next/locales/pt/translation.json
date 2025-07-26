@@ -30,5 +30,13 @@
   "server_logs_install_not_found": "Registros do servidor não encontrados!",
   "server_logs_install_success": "Registros do servidor obtidos com sucesso!",
   "server_reinstall_successfully": "Servidor reinstalado com sucesso!",
-  "server_reinstall_failed": "Falha ao reinstalar o servidor"
+  "server_reinstall_failed": "Falha ao reinstalar o servidor",
+  "worker_creator_success": "Trabalhador criado com sucesso!",
+  "worker_creator_error": "Erro ao criar o trabalhador!",
+  "worker_removal_failed": "Falha ao remover o trabalhador",
+  "worker_creation_failed": "Falha ao criar o trabalhador",
+  "worker_balancer_server_not_disponible": "Servidor de balanceamento de carga do trabalhador não disponível",
+  "worker_not_available": "Seu plano não tem suporte a trabalhadores, por favor, entre em contato com o administrador do sistema para mais informações.",
+  "worker_not_available_additional": "Seu plano não suporta mais trabalhadores, contrate um adicional ou entre em contato com o administrador do sistema para mais informações.",
+  "account_not_found": "Conta não encontrada!"
 }

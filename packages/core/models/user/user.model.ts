@@ -1,4 +1,4 @@
-import { pgTable, timestamp, smallint, varchar } from 'drizzle-orm/pg-core';
+import { pgTable, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import {
   userStatus,
@@ -9,11 +9,11 @@ import {
 } from '@core/models';
 
 export const user = pgTable('user', {
-  user_id: smallint().primaryKey().generatedByDefaultAsIdentity().notNull(),
-  account_id: smallint()
+  user_id: uuid().primaryKey().notNull(),
+  account_id: uuid()
     .references(() => account.account_id)
     .notNull(),
-  user_status_id: smallint()
+  user_status_id: uuid()
     .references(() => userStatus.user_status_id)
     .notNull(),
   username: varchar({ length: 50 }),

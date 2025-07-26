@@ -1,0 +1,402 @@
+-- Create "account_status" table
+CREATE TABLE "account_status" (
+  "account_status_id" uuid NOT NULL,
+  "name" character varying(20) NOT NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  PRIMARY KEY ("account_status_id")
+);
+-- Create "plan" table
+CREATE TABLE "plan" (
+  "plan_id" uuid NOT NULL,
+  "name" character varying(50) NOT NULL,
+  "price" numeric(10,2) NOT NULL,
+  "price_old" numeric(10,2) NOT NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  "deleted_at" timestamptz NULL,
+  PRIMARY KEY ("plan_id")
+);
+-- Create "account" table
+CREATE TABLE "account" (
+  "account_id" uuid NOT NULL,
+  "account_status_id" uuid NOT NULL,
+  "plan_id" uuid NOT NULL,
+  "name" character varying(10) NOT NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  "deleted_at" timestamptz NULL,
+  PRIMARY KEY ("account_id"),
+  CONSTRAINT "account_account_status_id_account_status_account_status_id_fk" FOREIGN KEY ("account_status_id") REFERENCES "account_status" ("account_status_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "account_plan_id_plan_plan_id_fk" FOREIGN KEY ("plan_id") REFERENCES "plan" ("plan_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+);
+-- Create "account_info" table
+CREATE TABLE "account_info" (
+  "account_info_id" uuid NOT NULL,
+  "account_id" uuid NOT NULL,
+  "logo" character varying(500) NULL,
+  "content_width" character varying(10) NULL DEFAULT 'fluid',
+  "content_layout_nav" character varying(15) NULL DEFAULT 'vertical',
+  "default_locale" character varying(5) NULL DEFAULT 'pt',
+  "skin" character varying(20) NULL DEFAULT 'default',
+  "navbar" character varying(20) NULL DEFAULT 'sticky',
+  "footer" character varying(20) NULL DEFAULT 'sticky',
+  "is_vertical_nav_collapsed" boolean NULL DEFAULT false,
+  "is_vertical_nav_semi_dark" boolean NULL DEFAULT true,
+  "light_primary_color" character varying(20) NULL DEFAULT '#2865B7',
+  "light_secondary_color" character varying(20) NULL DEFAULT '#5098E5',
+  "dark_primary_color" character varying(20) NULL DEFAULT '#152642',
+  "dark_secondary_color" character varying(20) NULL DEFAULT '#2865B7',
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  "deleted_at" timestamptz NULL,
+  PRIMARY KEY ("account_info_id"),
+  CONSTRAINT "account_info_account_id_account_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "account" ("account_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+);
+-- Create "api_key" table
+CREATE TABLE "api_key" (
+  "api_key_id" uuid NOT NULL,
+  "account_id" uuid NOT NULL,
+  "key" character varying(32) NOT NULL,
+  "name" character varying(200) NOT NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  "deleted_at" timestamptz NULL,
+  PRIMARY KEY ("api_key_id"),
+  CONSTRAINT "api_key_account_id_account_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "account" ("account_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+);
+-- Create "permission_module" table
+CREATE TABLE "permission_module" (
+  "module_id" uuid NOT NULL,
+  "module" character varying(100) NOT NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  PRIMARY KEY ("module_id")
+);
+-- Create "permission_action" table
+CREATE TABLE "permission_action" (
+  "permission_action_id" uuid NOT NULL,
+  "permission_module_id" uuid NOT NULL,
+  "action" character varying(100) NOT NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  PRIMARY KEY ("permission_action_id"),
+  CONSTRAINT "permission_action_permission_module_id_permission_module_module" FOREIGN KEY ("permission_module_id") REFERENCES "permission_module" ("module_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+);
+-- Create "permission_role" table
+CREATE TABLE "permission_role" (
+  "permission_role_id" uuid NOT NULL,
+  "account_id" uuid NULL,
+  "name" character varying(200) NOT NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  "deleted_at" timestamptz NULL,
+  PRIMARY KEY ("permission_role_id"),
+  CONSTRAINT "permission_role_account_id_account_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "account" ("account_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+);
+-- Create "user_status" table
+CREATE TABLE "user_status" (
+  "user_status_id" uuid NOT NULL,
+  "name" character varying(20) NOT NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  PRIMARY KEY ("user_status_id")
+);
+-- Create "user" table
+CREATE TABLE "user" (
+  "user_id" uuid NOT NULL,
+  "account_id" uuid NOT NULL,
+  "user_status_id" uuid NOT NULL,
+  "username" character varying(50) NULL,
+  "email" character varying(500) NOT NULL,
+  "email_partial" character varying(25) NOT NULL,
+  "password" character varying(255) NOT NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  "deleted_at" timestamptz NULL,
+  PRIMARY KEY ("user_id"),
+  CONSTRAINT "user_account_id_account_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "account" ("account_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "user_user_status_id_user_status_user_status_id_fk" FOREIGN KEY ("user_status_id") REFERENCES "user_status" ("user_status_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+);
+-- Create "permission_assignment" table
+CREATE TABLE "permission_assignment" (
+  "permission_assignment_id" uuid NOT NULL,
+  "permission_role_id" uuid NOT NULL,
+  "user_id" uuid NULL,
+  "account_id" uuid NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  PRIMARY KEY ("permission_assignment_id"),
+  CONSTRAINT "permission_assignment_account_id_account_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "account" ("account_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "permission_assignment_permission_role_id_permission_role_permis" FOREIGN KEY ("permission_role_id") REFERENCES "permission_role" ("permission_role_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "permission_assignment_user_id_user_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "user" ("user_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+);
+-- Create "permission_role_action" table
+CREATE TABLE "permission_role_action" (
+  "permission_role_action_id" uuid NOT NULL,
+  "permission_action_id" uuid NOT NULL,
+  "permission_role_id" uuid NOT NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  PRIMARY KEY ("permission_role_action_id"),
+  CONSTRAINT "permission_role_action_permission_action_id_permission_action_p" FOREIGN KEY ("permission_action_id") REFERENCES "permission_action" ("permission_action_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "permission_role_action_permission_role_id_permission_role_permi" FOREIGN KEY ("permission_role_id") REFERENCES "permission_role" ("permission_role_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+);
+-- Create "plan_product" table
+CREATE TABLE "plan_product" (
+  "plan_product_id" uuid NOT NULL,
+  "name" character varying(500) NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  PRIMARY KEY ("plan_product_id")
+);
+-- Create "plan_cross_sell" table
+CREATE TABLE "plan_cross_sell" (
+  "plan_cross_sell_id" uuid NOT NULL,
+  "plan_product_id" uuid NOT NULL,
+  "quantity" integer NOT NULL,
+  "price" numeric(10,2) NOT NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  "deleted_at" timestamptz NULL,
+  PRIMARY KEY ("plan_cross_sell_id"),
+  CONSTRAINT "plan_cross_sell_plan_product_id_plan_product_plan_product_id_fk" FOREIGN KEY ("plan_product_id") REFERENCES "plan_product" ("plan_product_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+);
+-- Create "plan_cross_sell_account" table
+CREATE TABLE "plan_cross_sell_account" (
+  "plan_cross_sell_account_id" uuid NOT NULL,
+  "plan_cross_sell_id" uuid NOT NULL,
+  "account_id" uuid NOT NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  "deleted_at" timestamptz NULL,
+  PRIMARY KEY ("plan_cross_sell_account_id"),
+  CONSTRAINT "plan_cross_sell_account_account_id_account_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "account" ("account_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "plan_cross_sell_account_plan_cross_sell_id_plan_cross_sell_plan" FOREIGN KEY ("plan_cross_sell_id") REFERENCES "plan_cross_sell" ("plan_cross_sell_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+);
+-- Create "plan_items" table
+CREATE TABLE "plan_items" (
+  "plan_item_id" uuid NOT NULL,
+  "plan_product_id" uuid NOT NULL,
+  "plan_id" uuid NOT NULL,
+  "quantity" integer NOT NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  "deleted_at" timestamptz NULL,
+  PRIMARY KEY ("plan_item_id"),
+  CONSTRAINT "plan_items_plan_id_plan_plan_id_fk" FOREIGN KEY ("plan_id") REFERENCES "plan" ("plan_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "plan_items_plan_product_id_plan_product_plan_product_id_fk" FOREIGN KEY ("plan_product_id") REFERENCES "plan_product" ("plan_product_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+);
+-- Create "server_status" table
+CREATE TABLE "server_status" (
+  "server_status_id" uuid NOT NULL,
+  "status" character varying(500) NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  PRIMARY KEY ("server_status_id")
+);
+-- Create "server" table
+CREATE TABLE "server" (
+  "server_id" uuid NOT NULL,
+  "server_status_id" uuid NOT NULL,
+  "name" character varying(200) NOT NULL,
+  "quantity_workers" integer NOT NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  "deleted_at" timestamptz NULL,
+  PRIMARY KEY ("server_id"),
+  CONSTRAINT "server_server_status_id_server_status_server_status_id_fk" FOREIGN KEY ("server_status_id") REFERENCES "server_status" ("server_status_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+);
+-- Create "server_ssh" table
+CREATE TABLE "server_ssh" (
+  "server_ssh_id" uuid NOT NULL,
+  "server_id" uuid NOT NULL,
+  "ssh_ip" character varying(200) NOT NULL,
+  "ssh_port" integer NOT NULL,
+  "ssh_username" character varying(1000) NOT NULL,
+  "ssh_password" character varying(1000) NOT NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  "deleted_at" timestamptz NULL,
+  PRIMARY KEY ("server_ssh_id"),
+  CONSTRAINT "server_ssh_server_id_server_server_id_fk" FOREIGN KEY ("server_id") REFERENCES "server" ("server_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+);
+-- Create "country" table
+CREATE TABLE "country" (
+  "country_id" smallint NOT NULL GENERATED BY DEFAULT AS IDENTITY,
+  "iso_code" character varying(3) NOT NULL,
+  "name" character varying(100) NOT NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  PRIMARY KEY ("country_id")
+);
+-- Create "user_address" table
+CREATE TABLE "user_address" (
+  "user_address_id" uuid NOT NULL,
+  "user_id" uuid NOT NULL,
+  "country_id" smallint NOT NULL,
+  "zip_code" character varying(10) NOT NULL,
+  "address1" character varying(1000) NOT NULL,
+  "address1_partial" character varying(200) NOT NULL,
+  "address2" character varying(1000) NULL,
+  "address2_partial" character varying(200) NULL,
+  "city" character varying(100) NOT NULL,
+  "state" character varying(100) NOT NULL,
+  "district" character varying(100) NOT NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  "deleted_at" timestamptz NULL,
+  PRIMARY KEY ("user_address_id"),
+  CONSTRAINT "user_address_country_id_country_country_id_fk" FOREIGN KEY ("country_id") REFERENCES "country" ("country_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "user_address_user_id_user_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "user" ("user_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+);
+-- Create "user_document_type" table
+CREATE TABLE "user_document_type" (
+  "user_document_type_id" uuid NOT NULL,
+  "name" character varying(20) NOT NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  PRIMARY KEY ("user_document_type_id")
+);
+-- Create "user_document" table
+CREATE TABLE "user_document" (
+  "user_document_id" uuid NOT NULL,
+  "user_document_type_id" uuid NOT NULL,
+  "user_id" uuid NOT NULL,
+  "document" character varying(500) NOT NULL,
+  "document_partial" character varying(50) NOT NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  PRIMARY KEY ("user_document_id"),
+  CONSTRAINT "user_document_user_document_type_id_user_document_type_user_doc" FOREIGN KEY ("user_document_type_id") REFERENCES "user_document_type" ("user_document_type_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "user_document_user_id_user_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "user" ("user_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+);
+-- Create "user_info" table
+CREATE TABLE "user_info" (
+  "user_info_id" uuid NOT NULL,
+  "user_id" uuid NOT NULL,
+  "phone_ddi" character varying(5) NOT NULL,
+  "phone" character varying(500) NOT NULL,
+  "phone_partial" character varying(15) NOT NULL,
+  "photo" character varying(255) NULL,
+  "name" character varying(100) NOT NULL,
+  "last_name" character varying(100) NOT NULL,
+  "birth_date" timestamptz NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  "deleted_at" timestamptz NULL,
+  PRIMARY KEY ("user_info_id"),
+  CONSTRAINT "user_info_user_id_user_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "user" ("user_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+);
+-- Create "worker_status" table
+CREATE TABLE "worker_status" (
+  "worker_status_id" uuid NOT NULL,
+  "status" character varying(500) NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  PRIMARY KEY ("worker_status_id")
+);
+-- Create "worker_type" table
+CREATE TABLE "worker_type" (
+  "worker_type_id" uuid NOT NULL,
+  "type" character varying(500) NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  PRIMARY KEY ("worker_type_id")
+);
+-- Create "worker" table
+CREATE TABLE "worker" (
+  "worker_id" uuid NOT NULL,
+  "worker_status_id" uuid NOT NULL,
+  "worker_type_id" uuid NOT NULL,
+  "server_id" uuid NOT NULL,
+  "account_id" uuid NOT NULL,
+  "name" character varying(50) NOT NULL,
+  "container_id" character varying(100) NOT NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  "deleted_at" timestamptz NULL,
+  PRIMARY KEY ("worker_id"),
+  CONSTRAINT "worker_account_id_account_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "account" ("account_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "worker_server_id_server_server_id_fk" FOREIGN KEY ("server_id") REFERENCES "server" ("server_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "worker_worker_status_id_worker_status_worker_status_id_fk" FOREIGN KEY ("worker_status_id") REFERENCES "worker_status" ("worker_status_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "worker_worker_type_id_worker_type_worker_type_id_fk" FOREIGN KEY ("worker_type_id") REFERENCES "worker_type" ("worker_type_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+);
+-- Create "zipcode_state" table
+CREATE TABLE "zipcode_state" (
+  "id_zipcode_state" uuid NOT NULL,
+  "id_country" smallint NOT NULL,
+  "abbreviation" character varying(3) NULL,
+  "capital" character varying(100) NULL,
+  "fiscal_code" character varying(10) NULL,
+  "latitude" numeric(10,6) NULL,
+  "longitude" numeric(10,6) NULL,
+  "region" character varying(100) NULL,
+  "state" character varying(100) NOT NULL,
+  "zipcode_end" character varying(15) NULL,
+  "zipcode_start" character varying(15) NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  PRIMARY KEY ("id_zipcode_state"),
+  CONSTRAINT "zipcode_state_id_country_country_country_id_fk" FOREIGN KEY ("id_country") REFERENCES "country" ("country_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+);
+-- Create "zipcode_city" table
+CREATE TABLE "zipcode_city" (
+  "id_zipcode_city" uuid NOT NULL,
+  "id_country" smallint NOT NULL,
+  "id_zipcode_state" uuid NOT NULL,
+  "city" character varying(100) NOT NULL,
+  "city_area" character varying(100) NULL,
+  "fiscal_code" character varying(10) NULL,
+  "latitude" numeric(10,6) NULL,
+  "longitude" numeric(10,6) NULL,
+  "phone_code" character varying(5) NULL,
+  "zipcode_end" character varying(15) NULL,
+  "zipcode_start" character varying(15) NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  PRIMARY KEY ("id_zipcode_city"),
+  CONSTRAINT "zipcode_city_id_country_country_country_id_fk" FOREIGN KEY ("id_country") REFERENCES "country" ("country_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "zipcode_city_id_zipcode_state_zipcode_state_id_zipcode_state_fk" FOREIGN KEY ("id_zipcode_state") REFERENCES "zipcode_state" ("id_zipcode_state") ON UPDATE NO ACTION ON DELETE NO ACTION
+);
+-- Create "zipcode_district" table
+CREATE TABLE "zipcode_district" (
+  "id_zipcode_district" uuid NOT NULL,
+  "id_country" smallint NOT NULL,
+  "id_zipcode_city" uuid NOT NULL,
+  "id_zipcode_state" uuid NOT NULL,
+  "district" character varying(100) NOT NULL,
+  "latitude" numeric(10,6) NULL,
+  "longitude" numeric(10,6) NULL,
+  "zipcode_end" character varying(15) NULL,
+  "zipcode_start" character varying(15) NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  PRIMARY KEY ("id_zipcode_district"),
+  CONSTRAINT "zipcode_district_id_country_country_country_id_fk" FOREIGN KEY ("id_country") REFERENCES "country" ("country_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "zipcode_district_id_zipcode_city_zipcode_city_id_zipcode_city_f" FOREIGN KEY ("id_zipcode_city") REFERENCES "zipcode_city" ("id_zipcode_city") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "zipcode_district_id_zipcode_state_zipcode_state_id_zipcode_stat" FOREIGN KEY ("id_zipcode_state") REFERENCES "zipcode_state" ("id_zipcode_state") ON UPDATE NO ACTION ON DELETE NO ACTION
+);
+-- Create "zipcode" table
+CREATE TABLE "zipcode" (
+  "id_zipcode" uuid NOT NULL,
+  "id_country" smallint NOT NULL,
+  "id_zipcode_city" uuid NULL,
+  "id_zipcode_district" uuid NULL,
+  "id_zipcode_state" uuid NULL,
+  "address_1" character varying(200) NOT NULL,
+  "address_2" character varying(200) NULL,
+  "enable" boolean NOT NULL,
+  "fiscal_code" character varying(50) NULL,
+  "latitude" numeric(10,6) NULL,
+  "longitude" numeric(10,6) NULL,
+  "type" character varying(50) NULL,
+  "zipcode" character varying(15) NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  PRIMARY KEY ("id_zipcode"),
+  CONSTRAINT "zipcode_id_country_country_country_id_fk" FOREIGN KEY ("id_country") REFERENCES "country" ("country_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "zipcode_id_zipcode_city_zipcode_city_id_zipcode_city_fk" FOREIGN KEY ("id_zipcode_city") REFERENCES "zipcode_city" ("id_zipcode_city") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "zipcode_id_zipcode_district_zipcode_district_id_zipcode_distric" FOREIGN KEY ("id_zipcode_district") REFERENCES "zipcode_district" ("id_zipcode_district") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "zipcode_id_zipcode_state_zipcode_state_id_zipcode_state_fk" FOREIGN KEY ("id_zipcode_state") REFERENCES "zipcode_state" ("id_zipcode_state") ON UPDATE NO ACTION ON DELETE NO ACTION
+);

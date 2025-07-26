@@ -1,0 +1,2 @@
+INSERT INTO "permission_role_action" ("permission_role_action_id", "permission_action_id", "permission_role_id") VALUES ('5ef7deea-83e5-4882-a761-92779acddb60', '5a7e801a-f22c-49f8-aafe-82882413f643', '6afec839-0772-4996-90ea-495ac84347e9');
+INSERT INTO "permission_role_action" ("permission_role_action_id", "permission_action_id", "permission_role_id") VALUES ('0d2589c8-8d5d-452e-babe-c8674ac4d663', 'c15c3f0c-7066-42ae-8443-5fcfb0b73416', '506c972a-7612-4687-8094-9eef7da30d59');

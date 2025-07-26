@@ -1,0 +1,4 @@
+INSERT INTO "permission_role" ("permission_role_id", "account_id", "name") VALUES ('6afec839-0772-4996-90ea-495ac84347e9', '46d209e9-2df0-4033-a176-3d592e000c5c', 'Administrador');
+INSERT INTO "permission_role" ("permission_role_id", "account_id", "name") VALUES ('cdf12523-07ab-4794-9e01-cb3ca006fa4c', '46d209e9-2df0-4033-a176-3d592e000c5c', 'Master');
+INSERT INTO "permission_role" ("permission_role_id", "name") VALUES ('64105df1-d8bb-4ee6-ba7e-10246a9894d2', 'Atendente');
+INSERT INTO "permission_role" ("permission_role_id", "account_id", "name") VALUES ('506c972a-7612-4687-8094-9eef7da30d59', '46d209e9-2df0-4033-a176-3d592e000c5c', 'Load Balancer');

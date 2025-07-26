@@ -17,7 +17,7 @@ export class ServerUpdaterUseCase {
 
   async validate(
     t: TFunction<'translation', undefined>,
-    serverId: number,
+    serverId: string,
     input: EditServerRequest
   ): Promise<void> {
     const serverExists = await this.serverService.existsServerNotIdAndByIp(
@@ -76,7 +76,7 @@ export class ServerUpdaterUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    serverId: number,
+    serverId: string,
     body: EditServerRequest
   ): Promise<boolean> {
     await this.validate(t, serverId, body);

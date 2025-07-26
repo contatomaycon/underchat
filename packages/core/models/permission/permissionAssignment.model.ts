@@ -1,17 +1,14 @@
-import { pgTable, timestamp, smallint, integer } from 'drizzle-orm/pg-core';
+import { pgTable, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { permissionRole, user, account } from '@core/models';
 import { relations } from 'drizzle-orm';
 
 export const permissionAssignment = pgTable('permission_assignment', {
-  permission_assignment_id: integer()
-    .primaryKey()
-    .generatedByDefaultAsIdentity()
-    .notNull(),
-  permission_role_id: integer()
+  permission_assignment_id: uuid().primaryKey().notNull(),
+  permission_role_id: uuid()
     .references(() => permissionRole.permission_role_id)
     .notNull(),
-  user_id: smallint().references(() => user.user_id),
-  account_id: smallint().references(() => account.account_id),
+  user_id: uuid().references(() => user.user_id),
+  account_id: uuid().references(() => account.account_id),
   created_at: timestamp('created_at', {
     mode: 'string',
     withTimezone: true,

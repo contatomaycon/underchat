@@ -12,7 +12,7 @@ export class AccountInfoViewerRepository {
   ) {}
 
   viewAccountInfoByAccountId = async (
-    accountId: number
+    accountId: string
   ): Promise<AccountInfoResponse | null> => {
     const result = await this.db
       .select({

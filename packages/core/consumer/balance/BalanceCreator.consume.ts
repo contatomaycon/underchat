@@ -21,7 +21,7 @@ export class BalanceCreatorConsume {
     @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams
   ) {}
 
-  private async validate(serverId: number): Promise<{
+  private async validate(serverId: string): Promise<{
     getDistroAndVersion: IDistroInfo;
     sshConfig: ConnectConfig;
   }> {
@@ -62,7 +62,7 @@ export class BalanceCreatorConsume {
   }
 
   private async isInstalled(
-    serverId: number,
+    serverId: string,
     getDistroAndVersion: IDistroInfo,
     sshConfig: ConnectConfig,
     attempts = 10
@@ -111,7 +111,7 @@ export class BalanceCreatorConsume {
     stream.mapBufferValueToString();
 
     stream.forEach(async (message: IKafkaMsg) => {
-      let serverId: number = 0;
+      let serverId: string | null = null;
 
       try {
         if (!message.value) {
@@ -124,8 +124,8 @@ export class BalanceCreatorConsume {
             : String(message.value);
 
         const data = JSON.parse(raw) as CreateServerResponse;
-        serverId = data.server_id;
 
+        serverId = data.server_id;
         if (!serverId) {
           throw new Error('Server ID is not defined in the message');
         }
@@ -166,7 +166,7 @@ export class BalanceCreatorConsume {
 
         server.logger.warn(`Skipping server ${serverId ?? 'unknown'}: ${msg}`);
 
-        if (serverId > 0) {
+        if (serverId) {
           await this.serverService.updateServerStatusById(
             serverId,
             EServerStatus.error

@@ -1,0 +1,7 @@
+INSERT INTO "plan_cross_sell" ("plan_cross_sell_id", "plan_product_id", "quantity", "price") VALUES ('0cd06c3e-d18b-4446-a945-f9de8c171b8e', '71d94f31-3368-4d6b-aebb-3cc8b5d83582', 1, 100.00);
+INSERT INTO "plan_cross_sell" ("plan_cross_sell_id", "plan_product_id", "quantity", "price") VALUES ('9b2d8326-028d-43e9-b015-8a4f2e3b2230', '305c2f09-a8c2-4f94-b4ab-55ade0485916', 2, 25.00);
+INSERT INTO "plan_cross_sell" ("plan_cross_sell_id", "plan_product_id", "quantity", "price") VALUES ('36d6722d-6dc4-4211-a8bf-d749b98c474e', 'eddd6297-910b-4d23-af92-f45790a08486', 4, 50.00);
+
+INSERT INTO "plan_cross_sell_account" ("plan_cross_sell_account_id", "plan_cross_sell_id", "account_id") VALUES ('0d09aa10-37db-48c6-9ea3-726fe684298b', '0cd06c3e-d18b-4446-a945-f9de8c171b8e', '46d209e9-2df0-4033-a176-3d592e000c5c');
+INSERT INTO "plan_cross_sell_account" ("plan_cross_sell_account_id", "plan_cross_sell_id", "account_id") VALUES ('ddb70122-d7b2-45bc-87e0-f0eeaa2960fb', '9b2d8326-028d-43e9-b015-8a4f2e3b2230', '46d209e9-2df0-4033-a176-3d592e000c5c');
+INSERT INTO "plan_cross_sell_account" ("plan_cross_sell_account_id", "plan_cross_sell_id", "account_id") VALUES ('e4d6c8f5-e7f7-43f9-a19e-61ff57ebc96e', '36d6722d-6dc4-4211-a8bf-d749b98c474e', '46d209e9-2df0-4033-a176-3d592e000c5c');

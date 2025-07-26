@@ -17,7 +17,7 @@ export class PermissionAssignmentUserViewerRepository {
   ) {}
 
   viewPermissionByUserId = async (
-    userId: number
+    userId: string
   ): Promise<IViewPermissionByUserId[]> => {
     const result = await this.db
       .select({

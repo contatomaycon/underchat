@@ -2,7 +2,7 @@ import { ESortOrder } from '@core/common/enums/ESortOrder';
 import { Static, Type } from '@sinclair/typebox';
 
 export const serverLogsInstallRequestSchema = Type.Object({
-  server_id: Type.Number(),
+  server_id: Type.String(),
 });
 
 export const serverLogsInstallQuerySchema = Type.Object({

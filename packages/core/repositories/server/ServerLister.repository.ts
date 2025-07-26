@@ -93,6 +93,7 @@ export class ServerListerRepository {
       .select({
         id: server.server_id,
         name: server.name,
+        quantity_workers: server.quantity_workers,
         status: {
           id: serverStatus.server_status_id,
           name: serverStatus.status,
