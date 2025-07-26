@@ -1,0 +1,11 @@
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('5a7e801a-f22c-49f8-aafe-82882413f643', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'full_access');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('df92d75a-7095-47fd-8428-6b04f511bc27', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'server_view');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('068ab8e1-3f81-4bb0-a92d-beec45a298e7', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'server_create');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('ca6c9902-5dd4-4295-b6c5-e689c22872c9', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'server_edit');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('f94f8c0c-3706-475d-8bde-0327ec7a9928', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'server_delete');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('749de062-ccd3-408d-bfef-a4e1d075c792', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'user_view');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('f16e7fb8-ce44-4e81-b1df-e8e233c93917', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'user_create');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('56640240-445b-41c7-acb5-3fcbe2480532', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'user_update');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('5dab6ff1-f49b-4e92-8410-a95e9e8b2e16', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'user_delete');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('c15c3f0c-7066-42ae-8443-5fcfb0b73416', '1213af3e-7eac-4e50-8c22-240a136e4164', 'full_access');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('95db7a87-cbd6-4cef-ae56-85d2ebcaef2b', '1213af3e-7eac-4e50-8c22-240a136e4164', 'metrics_view');
