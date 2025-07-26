@@ -34,5 +34,6 @@
   "worker_creator_success": "Trabalhador criado com sucesso!",
   "worker_creator_error": "Erro ao criar o trabalhador!",
   "worker_removal_failed": "Falha ao remover o trabalhador",
-  "worker_creation_failed": "Falha ao criar o trabalhador"
+  "worker_creation_failed": "Falha ao criar o trabalhador",
+  "worker_balancer_server_not_disponible": "Servidor de balanceamento de carga do trabalhador não disponível"
 }

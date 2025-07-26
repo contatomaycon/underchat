@@ -4,15 +4,15 @@ import { TFunction } from 'i18next';
 import { EWorkerImage } from '@core/common/enums/EWorkerImage';
 import { WorkerCreatorRepository } from '@core/repositories/worker/WorkerCreator.repository';
 import { ICreateWorker } from '@core/common/interfaces/ICreateWorker';
-import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
-import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { WorkerBalancerServerViewerRepository } from '@core/repositories/worker/WorkerBalancerServerViewer.repository';
 
 @injectable()
 export class WorkerService {
   private docker: Docker;
 
   constructor(
-    private readonly workerCreatorRepository: WorkerCreatorRepository
+    private readonly workerCreatorRepository: WorkerCreatorRepository,
+    private readonly workerBalancerServerViewerRepository: WorkerBalancerServerViewerRepository
   ) {
     this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
   }
@@ -63,23 +63,11 @@ export class WorkerService {
     return container.id;
   }
 
-  public async createWorker(
-    t: TFunction<'translation', undefined>,
-    workerType: EWorkerType,
-    serverId: number,
-    accountId: number,
-    containerName: string,
-    containerId: string
-  ): Promise<number | null> {
-    const workerData: ICreateWorker = {
-      worker_status_id: EWorkerStatus.online,
-      worker_type_id: workerType,
-      server_id: serverId,
-      account_id: accountId,
-      name: containerName,
-      container_id: containerId,
-    };
+  public async createWorker(input: ICreateWorker): Promise<number | null> {
+    return this.workerCreatorRepository.createWorker(input);
+  }
 
-    return this.workerCreatorRepository.createWorker(workerData);
+  public async viewWorkerBalancerServerId(): Promise<number | null> {
+    return this.workerBalancerServerViewerRepository.viewWorkerBalancerServerId();
   }
 }
