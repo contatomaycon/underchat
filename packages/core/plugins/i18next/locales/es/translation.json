@@ -30,5 +30,7 @@
   "server_logs_install_not_found": "¡Registros del servidor no encontrados!",
   "server_logs_install_success": "¡Registros del servidor obtenidos con éxito!",
   "server_reinstall_successfully": "¡Servidor reinstalado con éxito!",
-  "server_reinstall_failed": "Error al reinstalar el servidor"
+  "server_reinstall_failed": "Error al reinstalar el servidor",
+  "worker_creator_success": "¡Trabajador creado con éxito!",
+  "worker_creator_error": "Error al crear el trabajador"
 }

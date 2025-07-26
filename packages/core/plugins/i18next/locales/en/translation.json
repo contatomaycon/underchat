@@ -30,5 +30,7 @@
   "server_logs_install_not_found": "Server logs not found!",
   "server_logs_install_success": "Server logs retrieved successfully!",
   "server_reinstall_successfully": "Server reinstalled successfully!",
-  "server_reinstall_failed": "Failed to reinstall server"
+  "server_reinstall_failed": "Failed to reinstall server",
+  "worker_creator_success": "Worker created successfully!",
+  "worker_creator_error": "Error creating worker!"
 }
