@@ -32,5 +32,7 @@
   "server_reinstall_successfully": "¡Servidor reinstalado con éxito!",
   "server_reinstall_failed": "Error al reinstalar el servidor",
   "worker_creator_success": "¡Trabajador creado con éxito!",
-  "worker_creator_error": "Error al crear el trabajador"
+  "worker_creator_error": "Error al crear el trabajador",
+  "worker_removal_failed": "Error al eliminar el trabajador",
+  "worker_creation_failed": "Error al crear el trabajador"
 }
