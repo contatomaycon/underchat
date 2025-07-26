@@ -1,16 +1,13 @@
-import { pgTable, timestamp, varchar, smallint } from 'drizzle-orm/pg-core';
+import { pgTable, timestamp, varchar, uuid } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { user, userDocumentType } from '@core/models';
 
 export const userDocument = pgTable('user_document', {
-  user_document_id: smallint()
-    .primaryKey()
-    .generatedByDefaultAsIdentity()
-    .notNull(),
-  user_document_type_id: smallint()
+  user_document_id: uuid().primaryKey().notNull(),
+  user_document_type_id: uuid()
     .references(() => userDocumentType.user_document_type_id)
     .notNull(),
-  user_id: smallint()
+  user_id: uuid()
     .references(() => user.user_id)
     .notNull(),
   document: varchar({ length: 500 }).notNull(),

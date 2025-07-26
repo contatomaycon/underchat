@@ -1,4 +1,4 @@
-import { pgTable, timestamp, smallint, varchar } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, timestamp, varchar } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import {
   accountInfo,
@@ -10,11 +10,11 @@ import {
 } from '@core/models';
 
 export const account = pgTable('account', {
-  account_id: smallint().primaryKey().generatedByDefaultAsIdentity().notNull(),
-  account_status_id: smallint()
+  account_id: uuid().primaryKey().notNull(),
+  account_status_id: uuid()
     .references(() => accountStatus.account_status_id)
     .notNull(),
-  plan_id: smallint()
+  plan_id: uuid()
     .references(() => plan.plan_id)
     .notNull(),
   name: varchar({ length: 10 }).notNull(),

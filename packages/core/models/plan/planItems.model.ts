@@ -1,19 +1,16 @@
-import { pgTable, smallint, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, integer, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { planProduct, plan } from '@core/models';
 import { relations } from 'drizzle-orm';
 
 export const planItems = pgTable('plan_items', {
-  plan_item_id: smallint()
-    .primaryKey()
-    .generatedByDefaultAsIdentity()
-    .notNull(),
-  plan_product_id: smallint()
+  plan_item_id: uuid().primaryKey().notNull(),
+  plan_product_id: uuid()
     .references(() => planProduct.plan_product_id)
     .notNull(),
-  plan_id: smallint()
+  plan_id: uuid()
     .references(() => plan.plan_id)
     .notNull(),
-  quantity: smallint().notNull(),
+  quantity: integer().notNull(),
   created_at: timestamp('created_at', {
     mode: 'string',
     withTimezone: true,

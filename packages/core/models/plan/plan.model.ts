@@ -1,6 +1,6 @@
 import {
   pgTable,
-  smallint,
+  uuid,
   timestamp,
   varchar,
   numeric,
@@ -9,7 +9,7 @@ import { relations } from 'drizzle-orm';
 import { planItems, account } from '@core/models';
 
 export const plan = pgTable('plan', {
-  plan_id: smallint().primaryKey().generatedByDefaultAsIdentity().notNull(),
+  plan_id: uuid().primaryKey().notNull(),
   name: varchar({ length: 50 }).notNull(),
   price: numeric({ precision: 10, scale: 2 }).notNull(),
   price_old: numeric({ precision: 10, scale: 2 }).notNull(),

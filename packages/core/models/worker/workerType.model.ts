@@ -1,12 +1,9 @@
-import { pgTable, timestamp, smallint, varchar } from 'drizzle-orm/pg-core';
+import { pgTable, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { worker } from '@core/models';
 
 export const workerType = pgTable('worker_type', {
-  worker_type_id: smallint()
-    .primaryKey()
-    .generatedByDefaultAsIdentity()
-    .notNull(),
+  worker_type_id: uuid().primaryKey().notNull(),
   type: varchar({ length: 500 }),
   created_at: timestamp('created_at', {
     mode: 'string',

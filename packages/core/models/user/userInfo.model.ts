@@ -1,13 +1,10 @@
-import { pgTable, timestamp, smallint, varchar } from 'drizzle-orm/pg-core';
+import { pgTable, timestamp, varchar, uuid } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { user } from '@core/models';
 
 export const userInfo = pgTable('user_info', {
-  user_info_id: smallint()
-    .primaryKey()
-    .generatedByDefaultAsIdentity()
-    .notNull(),
-  user_id: smallint()
+  user_info_id: uuid().primaryKey().notNull(),
+  user_id: uuid()
     .references(() => user.user_id)
     .notNull(),
   phone_ddi: varchar({ length: 5 }).notNull(),

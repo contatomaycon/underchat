@@ -1,10 +1,10 @@
-import { pgTable, timestamp, smallint, varchar } from 'drizzle-orm/pg-core';
+import { pgTable, timestamp, varchar, uuid } from 'drizzle-orm/pg-core';
 import { account, permissionAssignment } from '@core/models';
 import { relations } from 'drizzle-orm';
 
 export const apiKey = pgTable('api_key', {
-  api_key_id: smallint().primaryKey().generatedByDefaultAsIdentity().notNull(),
-  account_id: smallint()
+  api_key_id: uuid().primaryKey().notNull(),
+  account_id: uuid()
     .references(() => account.account_id)
     .notNull(),
   key: varchar({ length: 32 }).notNull(),

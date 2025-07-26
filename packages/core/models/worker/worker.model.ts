@@ -1,19 +1,19 @@
-import { pgTable, smallint, timestamp, varchar } from 'drizzle-orm/pg-core';
+import { pgTable, timestamp, varchar, uuid } from 'drizzle-orm/pg-core';
 import { account, workerStatus, workerType, server } from '@core/models';
 import { relations } from 'drizzle-orm';
 
 export const worker = pgTable('worker', {
-  worker_id: smallint().primaryKey().generatedByDefaultAsIdentity().notNull(),
-  worker_status_id: smallint()
+  worker_id: uuid().primaryKey().notNull(),
+  worker_status_id: uuid()
     .references(() => workerStatus.worker_status_id)
     .notNull(),
-  worker_type_id: smallint()
+  worker_type_id: uuid()
     .references(() => workerType.worker_type_id)
     .notNull(),
-  server_id: smallint()
+  server_id: uuid()
     .references(() => server.server_id)
     .notNull(),
-  account_id: smallint()
+  account_id: uuid()
     .references(() => account.account_id)
     .notNull(),
   name: varchar({ length: 50 }).notNull(),

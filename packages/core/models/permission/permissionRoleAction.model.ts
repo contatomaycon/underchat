@@ -1,16 +1,13 @@
-import { pgTable, timestamp, integer } from 'drizzle-orm/pg-core';
+import { pgTable, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { permissionAction, permissionRole } from '@core/models';
 import { relations } from 'drizzle-orm';
 
 export const permissionRoleAction = pgTable('permission_role_action', {
-  permission_role_action_id: integer()
-    .primaryKey()
-    .generatedByDefaultAsIdentity()
-    .notNull(),
-  permission_action_id: integer()
+  permission_role_action_id: uuid().primaryKey().notNull(),
+  permission_action_id: uuid()
     .references(() => permissionAction.permission_action_id)
     .notNull(),
-  permission_role_id: integer()
+  permission_role_id: uuid()
     .references(() => permissionRole.permission_role_id)
     .notNull(),
   created_at: timestamp('created_at', {

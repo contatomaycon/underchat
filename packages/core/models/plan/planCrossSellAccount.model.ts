@@ -1,16 +1,13 @@
-import { pgTable, smallint, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, timestamp } from 'drizzle-orm/pg-core';
 import { planCrossSell, account } from '@core/models';
 import { relations } from 'drizzle-orm';
 
 export const planCrossSellAccount = pgTable('plan_cross_sell_account', {
-  plan_cross_sell_account_id: smallint()
-    .primaryKey()
-    .generatedByDefaultAsIdentity()
-    .notNull(),
-  plan_cross_sell_id: smallint()
+  plan_cross_sell_account_id: uuid().primaryKey().notNull(),
+  plan_cross_sell_id: uuid()
     .references(() => planCrossSell.plan_cross_sell_id)
     .notNull(),
-  account_id: smallint()
+  account_id: uuid()
     .references(() => account.account_id)
     .notNull(),
   created_at: timestamp('created_at', {

@@ -1,2 +1,0 @@
-INSERT INTO "plan_cross_sell" ("plan_cross_sell_id", "plan_product_id", "quantity", "price") VALUES (1, 1, 1, 100.00);
-INSERT INTO "plan_cross_sell_account" ("plan_cross_sell_account_id", "plan_cross_sell_id", "account_id") VALUES (1, 1, 1);
