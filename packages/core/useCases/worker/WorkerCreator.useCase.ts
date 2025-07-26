@@ -22,6 +22,14 @@ export class WorkerCreatorUseCase {
     t: TFunction<'translation', undefined>,
     input: CreateWorkerRequest
   ) {
+    const existsAccountById = await this.accountService.existsAccountById(
+      input.account_id
+    );
+
+    if (!existsAccountById) {
+      throw new Error(t('account_not_found'));
+    }
+
     const [viewAccountQuantityProduct, totalWorkerByAccountId] =
       await Promise.all([
         this.accountService.viewAccountQuantityProduct(

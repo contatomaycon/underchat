@@ -37,5 +37,6 @@
   "worker_creation_failed": "Falha ao criar o trabalhador",
   "worker_balancer_server_not_disponible": "Servidor de balanceamento de carga do trabalhador não disponível",
   "worker_not_available": "Seu plano não tem suporte a trabalhadores, por favor, entre em contato com o administrador do sistema para mais informações.",
-  "worker_not_available_additional": "Seu plano não suporta mais trabalhadores, contrate um adicional ou entre em contato com o administrador do sistema para mais informações."
+  "worker_not_available_additional": "Seu plano não suporta mais trabalhadores, contrate um adicional ou entre em contato com o administrador do sistema para mais informações.",
+  "account_not_found": "Conta não encontrada!"
 }
