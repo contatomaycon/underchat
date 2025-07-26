@@ -151,7 +151,7 @@ const handleDelete = async () => {
 const handleReinstall = async () => {
   if (!serverToRefresh.value) return;
 
-  //await serverStore.reinstallServer(serverToRefresh.value);
+  await serverStore.reinstallServer(serverToRefresh.value);
 
   serverToRefresh.value = null;
 };
@@ -296,21 +296,59 @@ onBeforeUnmount(async () => {
 
         <template #item.actions="{ item }">
           <div class="d-flex gap-1">
-            <IconBtn v-if="item.status.id !== EServerStatus.installing"
-              ><VIcon icon="tabler-refresh" @click="refreshServer(item.id)"
+            <IconBtn v-if="item.status.id !== EServerStatus.installing">
+              <VTooltip
+                location="top"
+                transition="scale-transition"
+                activator="parent"
+              >
+                <span>
+                  {{ $t('reinstall_server') }}
+                </span>
+              </VTooltip>
+              <VIcon icon="tabler-refresh" @click="refreshServer(item.id)"
             /></IconBtn>
-            <IconBtn v-if="item.status.id === EServerStatus.installing"
-              ><VIcon
+
+            <IconBtn v-if="item.status.id === EServerStatus.installing">
+              <VTooltip
+                location="top"
+                transition="scale-transition"
+                activator="parent"
+              >
+                <span>{{ $t('console_installation') }}</span>
+              </VTooltip>
+              <VIcon
                 icon="tabler-terminal-2"
                 @click="openConsoleDialog(item.id)"
             /></IconBtn>
-            <IconBtn v-if="item.status.id !== EServerStatus.installing"
+
+            <IconBtn v-if="item.status.id !== EServerStatus.installing">
+              <VTooltip
+                location="top"
+                transition="scale-transition"
+                activator="parent"
+              >
+                <span>{{ $t('server_logs') }}</span> </VTooltip
               ><VIcon icon="tabler-terminal-2" @click="openLogsDialog(item.id)"
             /></IconBtn>
+
             <IconBtn v-if="$canPermission(permissionsEdit)"
+              ><VTooltip
+                location="top"
+                transition="scale-transition"
+                activator="parent"
+              >
+                <span>{{ $t('edit_server') }}</span> </VTooltip
               ><VIcon icon="tabler-edit" @click="openEditDialog(item.id)"
             /></IconBtn>
+
             <IconBtn v-if="$canPermission(permissionsDelete)"
+              ><VTooltip
+                location="top"
+                transition="scale-transition"
+                activator="parent"
+              >
+                <span>{{ $t('delete_server') }}</span> </VTooltip
               ><VIcon icon="tabler-trash" @click="deleteServer(item.id)"
             /></IconBtn>
           </div>
