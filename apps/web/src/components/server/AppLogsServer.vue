@@ -10,9 +10,7 @@ const props = defineProps<{
   serverId: number | null;
 }>();
 
-const emit = defineEmits<{
-  (e: 'update:modelValue', visible: boolean): void;
-}>();
+const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
 
 const isVisible = computed({
   get: () => props.modelValue,
