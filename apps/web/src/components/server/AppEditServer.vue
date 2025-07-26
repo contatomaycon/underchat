@@ -24,6 +24,7 @@ const ip = ref<string | null>(null);
 const port = ref<number | null>(null);
 const username = ref<string | null>(null);
 const password = ref<string | null>(null);
+const quantityWorkers = ref<number | null>(null);
 
 const refFormEditServer = ref<VForm>();
 
@@ -31,7 +32,13 @@ const updateServer = async () => {
   const validateForm = await refFormEditServer?.value?.validate();
   if (!validateForm?.valid) return;
 
-  if (!serverId.value || !name.value || !ip.value || !port.value) {
+  if (
+    !serverId.value ||
+    !name.value ||
+    !ip.value ||
+    !port.value ||
+    !quantityWorkers.value
+  ) {
     return;
   }
 
@@ -41,6 +48,7 @@ const updateServer = async () => {
     ssh_port: port.value,
     ssh_username: username.value,
     ssh_password: password.value,
+    quantity_workers: quantityWorkers.value,
   };
 
   const result = await serverStore.updateServer(serverId.value, payload);
@@ -60,6 +68,7 @@ watch(serverId, async (id) => {
     name.value = server.name;
     ip.value = server.ssh.ssh_ip;
     port.value = server.ssh.ssh_port;
+    quantityWorkers.value = server.quantity_workers;
     username.value = null;
     password.value = null;
   }
@@ -92,7 +101,7 @@ watch(serverId, async (id) => {
               />
             </VCol>
 
-            <VCol cols="12" sm="6" md="6">
+            <VCol cols="12" sm="4" md="4">
               <AppTextField
                 v-model="ip"
                 :label="$t('ip') + ':'"
@@ -105,12 +114,27 @@ watch(serverId, async (id) => {
               />
             </VCol>
 
-            <VCol cols="12" sm="6" md="6">
+            <VCol cols="12" sm="4" md="4">
               <AppTextField
                 v-model="port"
                 :label="$t('port') + ':'"
                 :placeholder="$t('port')"
                 :rules="[requiredValidator(port, $t('port_required'))]"
+                type="number"
+              />
+            </VCol>
+
+            <VCol cols="12" sm="4" md="4">
+              <AppTextField
+                v-model="quantityWorkers"
+                :label="$t('workers_allowed') + ':'"
+                :placeholder="$t('workers_allowed')"
+                :rules="[
+                  requiredValidator(
+                    quantityWorkers,
+                    $t('workers_allowed_required')
+                  ),
+                ]"
                 type="number"
               />
             </VCol>

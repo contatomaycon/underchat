@@ -98,6 +98,7 @@ const headers = [
   { title: t('status'), key: 'status' },
   { title: t('ssh_ip'), key: 'ssh_ip' },
   { title: t('ssh_port'), key: 'ssh_port' },
+  { title: t('workers_allowed'), key: 'quantity_workers' },
   { title: t('created_at'), key: 'created_at' },
   { title: t('actions'), key: 'actions', sortable: false },
 ];
