@@ -10,7 +10,8 @@ RUN apk update && \
       librdkafka-dev \
       make \
       musl-dev \
-      python3
+      python3 \
+      docker-cli
 
 RUN npm add -g pnpm turbo
  

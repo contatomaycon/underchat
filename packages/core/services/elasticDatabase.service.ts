@@ -107,6 +107,16 @@ export class ElasticDatabaseService {
     }
   };
 
+  deleteIndex = async (index: string): Promise<boolean> => {
+    try {
+      const result = await this.client.indices.delete({ index });
+
+      return result.acknowledged;
+    } catch (error) {
+      throw new Error(`Failed to delete index: ${error}`);
+    }
+  };
+
   delete = async (index: string, id: string): Promise<boolean> => {
     try {
       const result = await this.client.delete({
