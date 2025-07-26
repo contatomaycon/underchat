@@ -6,7 +6,7 @@ import {
   numeric,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import { planItems } from '@core/models';
+import { planItems, account } from '@core/models';
 
 export const plan = pgTable('plan', {
   plan_id: smallint().primaryKey().generatedByDefaultAsIdentity().notNull(),
@@ -26,4 +26,5 @@ export const plan = pgTable('plan', {
 
 export const planRelations = relations(plan, ({ many }) => ({
   ppi: many(planItems),
+  ppa: many(account),
 }));

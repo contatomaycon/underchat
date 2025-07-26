@@ -6,12 +6,16 @@ import {
   apiKey,
   permissionAssignment,
   worker,
+  plan,
 } from '@core/models';
 
 export const account = pgTable('account', {
   account_id: smallint().primaryKey().generatedByDefaultAsIdentity().notNull(),
   account_status_id: smallint()
     .references(() => accountStatus.account_status_id)
+    .notNull(),
+  plan_id: smallint()
+    .references(() => plan.plan_id)
     .notNull(),
   name: varchar({ length: 10 }).notNull(),
   created_at: timestamp({
@@ -37,6 +41,10 @@ export const accountRelations = relations(account, ({ one, many }) => ({
   apa: one(permissionAssignment, {
     fields: [account.account_id],
     references: [permissionAssignment.account_id],
+  }),
+  apl: one(plan, {
+    fields: [account.plan_id],
+    references: [plan.plan_id],
   }),
   aak: many(apiKey),
   swk: many(worker),
