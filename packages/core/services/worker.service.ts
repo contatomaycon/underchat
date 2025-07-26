@@ -9,7 +9,7 @@ import { WorkerTotalViewerRepository } from '@core/repositories/worker/WorkerTot
 
 @injectable()
 export class WorkerService {
-  private docker: Docker;
+  private readonly docker: Docker;
 
   constructor(
     private readonly workerCreatorRepository: WorkerCreatorRepository,
