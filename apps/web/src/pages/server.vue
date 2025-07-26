@@ -59,12 +59,12 @@ const itemsPerPage = ref([
 ]);
 
 const itemsStatus = ref([
-  { id: 0, text: t('all') },
-  { id: 1, text: t('new') },
-  { id: 2, text: t('installing') },
-  { id: 3, text: t('online') },
-  { id: 4, text: t('error') },
-  { id: 5, text: t('offline') },
+  { id: '', text: t('all') },
+  { id: EServerStatus.new, text: t('new') },
+  { id: EServerStatus.installing, text: t('installing') },
+  { id: EServerStatus.online, text: t('online') },
+  { id: EServerStatus.error, text: t('error') },
+  { id: EServerStatus.offline, text: t('offline') },
 ]);
 
 const isDialogDeleterShow = ref(false);

@@ -124,8 +124,8 @@ export class BalanceCreatorConsume {
             : String(message.value);
 
         const data = JSON.parse(raw) as CreateServerResponse;
-        serverId = data.server_id;
 
+        serverId = data.server_id;
         if (!serverId) {
           throw new Error('Server ID is not defined in the message');
         }
