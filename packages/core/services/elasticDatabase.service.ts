@@ -79,6 +79,34 @@ export class ElasticDatabaseService {
     }
   };
 
+  bulkUpdate = async <T extends object>(
+    index: string,
+    documents: T[],
+    getId: (doc: T) => string | null
+  ): Promise<boolean> => {
+    const body = documents.flatMap((doc) => {
+      const id = getId(doc);
+      if (!id) return [];
+
+      return [
+        { update: { _index: index, _id: id } },
+        { doc, doc_as_upsert: true },
+      ];
+    });
+
+    if (body.length === 0) {
+      return false;
+    }
+
+    try {
+      const response = await this.client.bulk({ body });
+
+      return !response.errors;
+    } catch (error) {
+      throw new Error(`Failed to bulk update documents: ${error}`);
+    }
+  };
+
   delete = async (index: string, id: string): Promise<boolean> => {
     try {
       const result = await this.client.delete({

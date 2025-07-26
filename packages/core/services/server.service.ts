@@ -26,10 +26,15 @@ import { ListServerRequest } from '@core/schema/server/listServer/request.schema
 import { CentrifugoService } from './centrifugo.service';
 import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
 import { IStatusServerCentrifugo } from '@core/common/interfaces/IStatusServerCentrifugo';
+import { serverInstallMappings } from '@core/mappings/serverInstall.mappings';
+import { ElasticDatabaseService } from './elasticDatabase.service';
+import { IServerSshCentrifugo } from '@core/common/interfaces/IServerSshCentrifugo';
+import { v4 as uuidv4 } from 'uuid';
 
 @injectable()
 export class ServerService {
   constructor(
+    private readonly elasticDatabaseService: ElasticDatabaseService,
     private readonly passwordEncryptorService: PasswordEncryptorService,
     private readonly serverCreatorRepository: ServerCreatorRepository,
     private readonly serverSshViewerExistsRepository: ServerSshViewerExistsRepository,
@@ -175,5 +180,22 @@ export class ServerService {
     ]);
 
     return [result, total];
+  };
+
+  updateLogInstallServerBulk = async (
+    documents: IServerSshCentrifugo[]
+  ): Promise<boolean> => {
+    const mappings = serverInstallMappings();
+    const index = 'install-server';
+
+    const result = await this.elasticDatabaseService.indices(index, mappings);
+
+    if (!result || documents.length === 0) {
+      return false;
+    }
+
+    return this.elasticDatabaseService.bulkUpdate(index, documents, () =>
+      uuidv4()
+    );
   };
 }

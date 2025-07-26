@@ -129,20 +129,26 @@ export class SshService {
     serverId: number,
     config: ConnectConfig,
     commands: string[]
-  ): Promise<Array<{ command: string; output: string }>> {
+  ): Promise<IServerSshCentrifugo[]> {
     const conn = await this.connect(config);
-    const results: Array<{ command: string; output: string }> = [];
+    const results: IServerSshCentrifugo[] = [];
 
     try {
       for (const cmd of commands) {
         await this.execCommand(conn, cmd, {
           pty: true,
-          onData: (linha) => {
+          onData: async (linha) => {
+            const date = new Date();
+            const stripAnsi = (await import('strip-ansi')).default;
+
+            const outputStripAnsi = stripAnsi(linha);
+            const commandStripAnsi = stripAnsi(cmd);
+
             const serverSshCentrifugo: IServerSshCentrifugo = {
               server_id: serverId,
-              command: cmd,
-              output: linha,
-              date: new Date(),
+              command: commandStripAnsi,
+              output: outputStripAnsi,
+              date,
             };
 
             this.centrifugoService.publish(
@@ -150,7 +156,12 @@ export class SshService {
               serverSshCentrifugo
             );
 
-            results.push({ command: cmd, output: linha });
+            results.push({
+              command: commandStripAnsi,
+              output: outputStripAnsi,
+              date,
+              server_id: serverId,
+            });
           },
         });
       }

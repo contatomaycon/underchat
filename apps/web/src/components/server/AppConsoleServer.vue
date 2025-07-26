@@ -3,7 +3,6 @@ import { onMessage } from '@/@webcore/centrifugo';
 import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { IServerSshCentrifugo } from '@core/common/interfaces/IServerSshCentrifugo';
-import stripAnsi from 'strip-ansi';
 
 const { t } = useI18n();
 
@@ -99,12 +98,9 @@ onMounted(() => {
   onMessage(ECentrifugoChannel.server_ssh, (data: IServerSshCentrifugo) => {
     if (data.server_id !== serverId.value) return;
 
-    const cleanCommand = stripAnsi(data.command);
-    const cleanOutput = stripAnsi(data.output);
-
     items.value.push({
-      command: cleanCommand,
-      output: cleanOutput,
+      command: data.command,
+      output: data.output,
       date: formatDateTime(data.date),
     });
 

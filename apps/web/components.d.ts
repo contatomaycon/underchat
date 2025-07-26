@@ -25,6 +25,7 @@ declare module 'vue' {
     AppDrawerHeaderSection: typeof import('./src/@webcore/components/AppDrawerHeaderSection.vue')['default']
     AppEditServer: typeof import('./src/components/server/AppEditServer.vue')['default']
     AppLoadingIndicator: typeof import('./src/components/AppLoadingIndicator.vue')['default']
+    AppLogsServer: typeof import('./src/components/server/AppLogsServer.vue')['default']
     AppPricing: typeof import('./src/components/AppPricing.vue')['default']
     AppSearchHeader: typeof import('./src/components/AppSearchHeader.vue')['default']
     AppSelect: typeof import('./src/@webcore/components/app-form-elements/AppSelect.vue')['default']
