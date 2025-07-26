@@ -1,5 +1,5 @@
 import { pgTable, smallint, timestamp, varchar } from 'drizzle-orm/pg-core';
-import { serverStatus, serverSsh } from '@core/models';
+import { serverStatus, serverSsh, worker } from '@core/models';
 import { relations } from 'drizzle-orm';
 
 export const server = pgTable('server', {
@@ -19,7 +19,7 @@ export const server = pgTable('server', {
   deleted_at: timestamp('deleted_at', { mode: 'string', withTimezone: true }),
 });
 
-export const serverRelations = relations(server, ({ one }) => ({
+export const serverRelations = relations(server, ({ one, many }) => ({
   ssv: one(serverStatus, {
     fields: [server.server_status_id],
     references: [serverStatus.server_status_id],
@@ -28,4 +28,5 @@ export const serverRelations = relations(server, ({ one }) => ({
     fields: [server.server_id],
     references: [serverSsh.server_id],
   }),
+  swk: many(worker),
 }));

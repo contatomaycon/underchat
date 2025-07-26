@@ -5,6 +5,7 @@ import {
   accountStatus,
   apiKey,
   permissionAssignment,
+  worker,
 } from '@core/models';
 
 export const account = pgTable('account', {
@@ -38,4 +39,5 @@ export const accountRelations = relations(account, ({ one, many }) => ({
     references: [permissionAssignment.account_id],
   }),
   aak: many(apiKey),
+  swk: many(worker),
 }));

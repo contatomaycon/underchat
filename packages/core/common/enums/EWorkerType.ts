@@ -1,6 +1,6 @@
 export enum EWorkerType {
-  baileys = 'baileys',
-  whatsapp = 'whatsapp',
-  telegram = 'telegram',
-  discord = 'discord',
+  baileys = 1,
+  whatsapp = 2,
+  telegram = 3,
+  discord = 4,
 }
