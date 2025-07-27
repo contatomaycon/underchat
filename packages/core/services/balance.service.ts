@@ -31,13 +31,13 @@ export class BalanceService {
         IApiResponse<BalanceCreateWorkerResponse>
       >('/worker', payload);
 
-      const data = response?.data;
+      const dataResponse = response?.data;
 
-      if (!data?.status || !data?.data) {
+      if (!dataResponse?.status || !dataResponse?.data) {
         throw new Error(t('worker_creation_failed'));
       }
 
-      return data.data as BalanceCreateWorkerResponse;
+      return dataResponse.data as BalanceCreateWorkerResponse;
     } catch {
       throw new Error(t('worker_creation_failed'));
     }

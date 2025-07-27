@@ -6,9 +6,8 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
-import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
+import { unsubscribe } from '@/@webcore/centrifugo';
 import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
-import { IStatusServerCentrifugo } from '@core/common/interfaces/IStatusServerCentrifugo';
 import { EWorkerPermissions } from '@core/common/enums/EPermissions/worker';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
@@ -144,17 +143,6 @@ const deleteChannel = async (id: string) => {
   isDialogDeleterShow.value = true;
 };
 
-const handleDelete = async () => {
-  /*   if (!serverToDelete.value) return;
-
-  const result = await channelsStore.deleteChannel(serverToDelete.value);
-  if (result) {
-    await channelsStore.listServers(query.value);
-  }
-
-  serverToDelete.value = null; */
-};
-
 const openEditDialog = (id: string) => {
   channelToEdit.value = id;
 
@@ -168,15 +156,6 @@ watch(
   },
   { immediate: true, deep: true }
 );
-
-onMounted(() => {
-  onMessage(
-    ECentrifugoChannel.worker_channel,
-    (data: IStatusServerCentrifugo) => {
-      //channelsStore.updateStatusChannel(data.server_id, data.status);
-    }
-  );
-});
 
 onBeforeUnmount(async () => {
   await Promise.all([unsubscribe(ECentrifugoChannel.worker_channel)]);
@@ -336,7 +315,6 @@ onBeforeUnmount(async () => {
         v-model="isDialogDeleterShow"
         :title="$t('delete_channel')"
         :message="$t('delete_channel_confirmation')"
-        @confirm="handleDelete"
       />
 
       <AppEditChannel

@@ -32,58 +32,25 @@ export class WorkerListerRepository {
   ) {}
 
   private readonly setOrders = (query: ListWorkerRequest): SQL[] => {
-    const orders: SQL[] = [];
-
-    if (query.sort_by?.length) {
-      query.sort_by.forEach(({ key, order }) => {
-        if (key === ESortByWorker.name)
-          orders.push(
-            order === ESortOrder.asc ? asc(worker.name) : desc(worker.name)
-          );
-
-        if (key === ESortByWorker.number)
-          orders.push(
-            order === ESortOrder.asc ? asc(worker.number) : desc(worker.number)
-          );
-
-        if (key === ESortByWorker.server)
-          orders.push(
-            order === ESortOrder.asc ? asc(server.name) : desc(server.name)
-          );
-
-        if (key === ESortByWorker.status)
-          orders.push(
-            order === ESortOrder.asc
-              ? asc(workerStatus.status)
-              : desc(workerStatus.status)
-          );
-
-        if (key === ESortByWorker.type)
-          orders.push(
-            order === ESortOrder.asc
-              ? asc(workerType.type)
-              : desc(workerType.type)
-          );
-
-        if (key === ESortByWorker.account)
-          orders.push(
-            order === ESortOrder.asc ? asc(account.name) : desc(account.name)
-          );
-
-        if (key === ESortByWorker.updated_at)
-          orders.push(
-            order === ESortOrder.asc
-              ? asc(worker.updated_at)
-              : desc(worker.updated_at)
-          );
-      });
-    }
-
     if (!query.sort_by?.length) {
-      orders.push(asc(worker.created_at), desc(worker.worker_id));
+      return [asc(worker.created_at), desc(worker.worker_id)];
     }
 
-    return orders;
+    const mapping: Record<ESortByWorker, SQLWrapper> = {
+      [ESortByWorker.name]: worker.name,
+      [ESortByWorker.number]: worker.number,
+      [ESortByWorker.server]: server.name,
+      [ESortByWorker.status]: workerStatus.status,
+      [ESortByWorker.type]: workerType.type,
+      [ESortByWorker.account]: account.name,
+      [ESortByWorker.created_at]: worker.created_at,
+    };
+
+    return query.sort_by.map(({ key, order }) => {
+      const column = mapping[key as ESortByWorker];
+
+      return order === ESortOrder.asc ? asc(column) : desc(column);
+    });
   };
 
   private readonly setFilters = (query: ListWorkerRequest): SQLWrapper[] => {

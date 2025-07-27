@@ -6,5 +6,4 @@ export enum ESortByWorker {
   server = 'server',
   account = 'account',
   created_at = 'created_at',
-  updated_at = 'updated_at',
 }
