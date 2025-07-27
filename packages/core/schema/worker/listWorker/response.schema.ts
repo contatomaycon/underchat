@@ -16,18 +16,13 @@ const workerServerSchema = Type.Object({
   name: Type.String(),
 });
 
-const workerAccountSchema = Type.Object({
-  id: Type.String(),
-  name: Type.String(),
-});
-
 export const listWorkerResponseSchema = Type.Object({
   id: Type.String(),
   name: Type.String(),
+  number: Type.Union([Type.String(), Type.Null()]),
   status: Type.Union([workerStatusSchema, Type.Null()]),
   type: Type.Union([workerTypeSchema, Type.Null()]),
   server: Type.Union([workerServerSchema, Type.Null()]),
-  account: Type.Union([workerAccountSchema, Type.Null()]),
   created_at: Type.String(),
   updated_at: Type.String(),
 });

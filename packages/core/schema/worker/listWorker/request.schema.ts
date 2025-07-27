@@ -8,6 +8,7 @@ export const listWorkerRequestSchema = Type.Object({
   ...pagingRequestSchema.properties,
   sort_by: Type.Optional(Type.Array(sortRequestSchema)),
   name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  number: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   status: Type.Optional(
     Type.Union([
       Type.String({ enum: Object.values(EWorkerStatus) }),

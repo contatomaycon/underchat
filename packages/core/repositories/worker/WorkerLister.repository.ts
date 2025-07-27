@@ -40,9 +40,9 @@ export class WorkerListerRepository {
             order === ESortOrder.asc ? asc(worker.name) : desc(worker.name)
           );
 
-        if (key === ESortByWorker.account)
+        if (key === ESortByWorker.number)
           orders.push(
-            order === ESortOrder.asc ? asc(account.name) : desc(account.name)
+            order === ESortOrder.asc ? asc(worker.number) : desc(worker.number)
           );
 
         if (key === ESortByWorker.server)
@@ -87,6 +87,10 @@ export class WorkerListerRepository {
       filters.push(like(worker.name, `%${query.name}%`));
     }
 
+    if (query.number) {
+      filters.push(like(worker.number, `%${query.number}%`));
+    }
+
     if (query.status) {
       filters.push(eq(workerStatus.worker_status_id, query.status));
     }
@@ -96,11 +100,7 @@ export class WorkerListerRepository {
     }
 
     if (query.server) {
-      filters.push(eq(server.server_id, query.server));
-    }
-
-    if (query.account) {
-      filters.push(eq(account.name, query.account));
+      filters.push(eq(server.name, query.server));
     }
 
     return filters;
@@ -119,6 +119,7 @@ export class WorkerListerRepository {
       .select({
         id: worker.worker_id,
         name: worker.name,
+        number: worker.number,
         status: {
           id: workerStatus.worker_status_id,
           name: workerStatus.status,
@@ -130,10 +131,6 @@ export class WorkerListerRepository {
         server: {
           id: server.server_id,
           name: server.name,
-        },
-        account: {
-          id: account.account_id,
-          name: account.name,
         },
         created_at: worker.created_at,
         updated_at: worker.updated_at,
