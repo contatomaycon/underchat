@@ -78,5 +78,6 @@
     "web_protocol": "Protocolo Web",
     "web_protocol_required": "Protocolo Web é obrigatório",
     "web_domain_required": "Domínio Web é obrigatório",
-    "web_port_required": "Porta Web é obrigatória"
+    "web_port_required": "Porta Web é obrigatória",
+    "channels": "Canais"
 }

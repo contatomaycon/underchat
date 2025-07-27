@@ -76,5 +76,6 @@
     "web_protocol": "Protocolo Web",
     "web_protocol_required": "Se requiere el protocolo web",
     "web_domain_required": "Se requiere el dominio web",
-    "web_port_required": "Se requiere el puerto web"
+    "web_port_required": "Se requiere el puerto web",
+    "channels": "Canales"
 }
