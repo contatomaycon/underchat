@@ -61,7 +61,6 @@ const itemsStatus = ref([
 const itemsType = ref([
   { id: '', text: t('all') },
   { id: EWorkerType.baileys, text: t('unofficial') },
-  { id: EWorkerType.whatsapp, text: t('official') },
 ]);
 
 const isDialogDeleterShow = ref(false);

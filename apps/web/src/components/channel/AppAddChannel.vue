@@ -21,10 +21,7 @@ const isVisible = computed({
 const name = ref<string | null>(null);
 const type = ref<EWorkerType | null>(null);
 
-const itemsType = ref([
-  { value: EWorkerType.baileys, title: t('unofficial') },
-  { value: EWorkerType.whatsapp, title: t('official') },
-]);
+const itemsType = ref([{ value: EWorkerType.baileys, title: t('unofficial') }]);
 
 const refFormAddChannel = ref<VForm>();
 
