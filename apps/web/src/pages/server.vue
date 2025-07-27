@@ -102,6 +102,7 @@ const headers = [
   { title: t('status'), key: 'status' },
   { title: t('ssh_ip'), key: 'ssh_ip' },
   { title: t('ssh_port'), key: 'ssh_port' },
+  { title: t('web_domain'), key: 'web_domain' },
   { title: t('workers_allowed'), key: 'quantity_workers' },
   { title: t('created_at'), key: 'created_at' },
   { title: t('actions'), key: 'actions', sortable: false },
@@ -301,6 +302,10 @@ onBeforeUnmount(async () => {
 
         <template #item.ssh_ip="{ item }">
           <span>{{ item.ssh.ssh_ip }}</span>
+        </template>
+
+        <template #item.web_domain="{ item }">
+          <span>{{ item.web.web_domain }}</span>
         </template>
 
         <template #item.created_at="{ item }">

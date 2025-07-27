@@ -70,5 +70,11 @@
     "server_reinstall_error": "An error occurred while reinstalling the server. Please try again.",
     "request_reinstall_success": "Server reinstallation request successful!",
     "workers_allowed": "Workers allowed",
-    "workers_allowed_required": "Workers allowed is required"
+    "workers_allowed_required": "Workers allowed is required",
+    "web_domain": "Web Domain",
+    "web_port": "Web Port",
+    "web_protocol": "Web Protocol",
+    "web_protocol_required": "Web Protocol is required",
+    "web_domain_required": "Web Domain is required",
+    "web_port_required": "Web Port is required"
 }

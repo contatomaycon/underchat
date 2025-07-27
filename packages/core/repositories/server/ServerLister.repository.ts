@@ -49,6 +49,13 @@ export class ServerListerRepository {
               : desc(serverSsh.ssh_port)
           );
 
+        if (key === ESortByServer.web_domain)
+          orders.push(
+            order === ESortOrder.asc
+              ? asc(serverWeb.web_domain)
+              : desc(serverWeb.web_domain)
+          );
+
         if (key === ESortByServer.status)
           orders.push(
             order === ESortOrder.asc

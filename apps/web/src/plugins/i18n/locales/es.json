@@ -70,5 +70,11 @@
     "server_reinstall_error": "Ocurrió un error al reinstalar el servidor. Por favor, inténtalo de nuevo.",
     "server_reinstall_success": "¡Servidor reinstalado exitosamente!",
     "workers_allowed": "Trabajadores permitidos",
-    "workers_allowed_required": "Se requiere trabajadores permitidos"
+    "workers_allowed_required": "Se requiere trabajadores permitidos",
+    "web_domain": "Dominio Web",
+    "web_port": "Puerto Web",
+    "web_protocol": "Protocolo Web",
+    "web_protocol_required": "Se requiere el protocolo web",
+    "web_domain_required": "Se requiere el dominio web",
+    "web_port_required": "Se requiere el puerto web"
 }
