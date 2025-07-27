@@ -46,5 +46,8 @@
   "worker_volume_creation_failed": "Failed to create worker volume",
   "channel_updated_successfully": "Channel updated successfully!",
   "channel_not_found": "Channel not found!",
-  "error_updating_worker": "Error updating channel!"
+  "error_updating_worker": "Error updating channel!",
+  "worker_view_success": "Channel viewed successfully!",
+  "worker_view_error": "Error viewing channel!",
+  "worker_not_found": "Worker not found!"
 }

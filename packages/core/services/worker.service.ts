@@ -11,6 +11,8 @@ import { ListWorkerRequest } from '@core/schema/worker/listWorker/request.schema
 import { ListWorkerResponse } from '@core/schema/worker/listWorker/response.schema';
 import { IViewWorkerBalancerServer } from '@core/common/interfaces/IViewWorkerBalancerServer';
 import { WorkerUpdaterRepository } from '@core/repositories/worker/WorkerUpdater.repository';
+import { WorkerViewerRepository } from '@core/repositories/worker/WorkerViewer.repository';
+import { ViewWorkerResponse } from '@core/schema/worker/viewWorker/response.schema';
 
 @injectable()
 export class WorkerService {
@@ -21,7 +23,8 @@ export class WorkerService {
     private readonly workerBalancerServerViewerRepository: WorkerBalancerServerViewerRepository,
     private readonly workerTotalViewerRepository: WorkerTotalViewerRepository,
     private readonly workerListerRepository: WorkerListerRepository,
-    private readonly workerUpdaterRepository: WorkerUpdaterRepository
+    private readonly workerUpdaterRepository: WorkerUpdaterRepository,
+    private readonly workerViewerRepository: WorkerViewerRepository
   ) {
     this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
   }
@@ -135,5 +138,17 @@ export class WorkerService {
     name: string
   ): Promise<boolean> => {
     return this.workerUpdaterRepository.updateWorkerById(workerId, name);
+  };
+
+  viewWorker = async (
+    accountId: string,
+    isAdministrator: boolean,
+    workerId: string
+  ): Promise<ViewWorkerResponse | null> => {
+    return this.workerViewerRepository.viewWorker(
+      accountId,
+      isAdministrator,
+      workerId
+    );
   };
 }

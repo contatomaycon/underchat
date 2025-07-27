@@ -9,6 +9,7 @@ import {
 } from '@/permissions';
 import { managerCreateWorkerSchema } from '@core/schema/worker/managerCreateWorker';
 import { editWorkerSchema } from '@core/schema/worker/editWorker';
+import { viewWorkerSchema } from '@core/schema/worker/viewWorker';
 
 export default async function workerRoutes(server: FastifyInstance) {
   const workerController = container.resolve(WorkerController);
@@ -25,6 +26,15 @@ export default async function workerRoutes(server: FastifyInstance) {
   server.get('/worker', {
     schema: listWorkerSchema,
     handler: workerController.listWorker,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerViewPermissions),
+    ],
+  });
+
+  server.get('/worker/:worker_id', {
+    schema: viewWorkerSchema,
+    handler: workerController.viewWorker,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerViewPermissions),
