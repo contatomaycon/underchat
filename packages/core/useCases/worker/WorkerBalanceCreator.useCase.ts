@@ -85,7 +85,7 @@ export class WorkerBalanceCreatorUseCase {
     }
 
     const workerData: ICreateWorker = {
-      worker_status_id: EWorkerStatus.online,
+      worker_status_id: EWorkerStatus.disponible,
       worker_type_id: workerType,
       server_id: input.server_id,
       account_id: accountId,
