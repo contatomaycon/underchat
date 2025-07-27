@@ -18,7 +18,8 @@ export const viewRole = async (
     const response = await roleViewerUseCase.execute(
       t,
       request.params.permission_role_id,
-      tokenJwtData.account_id
+      tokenJwtData.account_id,
+      tokenJwtData.is_administrator
     );
 
     if (response) {

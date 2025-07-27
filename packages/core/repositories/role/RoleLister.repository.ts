@@ -9,7 +9,6 @@ import {
   desc,
   eq,
   isNull,
-  or,
   SQL,
   SQLWrapper,
   like,
@@ -63,24 +62,25 @@ export class RoleListerRepository {
     perPage: number,
     currentPage: number,
     query: ListRoleRequest,
-    accountId: string
+    accountId: string,
+    isAdministrator: boolean
   ): Promise<ListRoleResponse[]> => {
     const filters = this.setFilters(query);
     const orders = this.setOrders(query);
+    const accountCondition = isAdministrator
+      ? undefined
+      : eq(permissionRole.account_id, accountId);
 
     const queryBuilder = this.db
       .select({
         permission_role_id: permissionRole.permission_role_id,
         name: permissionRole.name,
+        account_id: permissionRole.account_id,
         created_at: permissionRole.created_at,
       })
       .from(permissionRole)
       .where(
-        and(
-          eq(permissionRole.account_id, accountId),
-          isNull(permissionRole.deleted_at),
-          or(...filters)
-        )
+        and(accountCondition, isNull(permissionRole.deleted_at), ...filters)
       );
 
     if (orders.length) {
@@ -96,14 +96,23 @@ export class RoleListerRepository {
       return [] as ListRoleResponse[];
     }
 
-    return result as ListRoleResponse[];
+    return result.map((role) => ({
+      permission_role_id: role.permission_role_id,
+      name: role.name,
+      account_id: isAdministrator ? role.account_id : undefined,
+      created_at: role.created_at,
+    })) as ListRoleResponse[];
   };
 
   listRolesTotal = async (
     query: ListRoleRequest,
-    accountId: string
+    accountId: string,
+    isAdministrator: boolean
   ): Promise<number> => {
     const filters = this.setFilters(query);
+    const accountCondition = isAdministrator
+      ? undefined
+      : eq(permissionRole.account_id, accountId);
 
     const result = await this.db
       .select({
@@ -111,11 +120,7 @@ export class RoleListerRepository {
       })
       .from(permissionRole)
       .where(
-        and(
-          eq(permissionRole.account_id, accountId),
-          isNull(permissionRole.deleted_at),
-          or(...filters)
-        )
+        and(accountCondition, isNull(permissionRole.deleted_at), ...filters)
       )
       .execute();
 

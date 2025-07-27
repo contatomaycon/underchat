@@ -29,16 +29,22 @@ export class RoleService {
     perPage: number,
     currentPage: number,
     query: ListRoleRequest,
-    accountId: string
+    accountId: string,
+    isAdministrator: boolean
   ): Promise<[ListRoleResponse[], number]> => {
     const [result, total] = await Promise.all([
       this.roleListerRepository.listRoles(
         perPage,
         currentPage,
         query,
-        accountId
+        accountId,
+        isAdministrator
       ),
-      this.roleListerRepository.listRolesTotal(query, accountId),
+      this.roleListerRepository.listRolesTotal(
+        query,
+        accountId,
+        isAdministrator
+      ),
     ]);
 
     return [result, total];
@@ -63,9 +69,14 @@ export class RoleService {
 
   viewRoleById = async (
     roleId: string,
-    accountId: string
+    accountId: string,
+    isAdministrator: boolean
   ): Promise<ViewRoleResponse | null> => {
-    return this.roleViewerRepository.viewRoleById(roleId, accountId);
+    return this.roleViewerRepository.viewRoleById(
+      roleId,
+      accountId,
+      isAdministrator
+    );
   };
 
   deleteRoleById = async (

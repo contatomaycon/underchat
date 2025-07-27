@@ -13,19 +13,25 @@ export class RoleViewerRepository {
 
   viewRoleById = async (
     roleId: string,
-    accountId: string
+    accountId: string,
+    isAdministrator: boolean
   ): Promise<ViewRoleResponse | null> => {
+    const accountCondition = isAdministrator
+      ? undefined
+      : eq(permissionRole.account_id, accountId);
+
     const result = await this.db
       .select({
         permission_role_id: permissionRole.permission_role_id,
         name: permissionRole.name,
+        account_id: permissionRole.account_id,
         created_at: permissionRole.created_at,
       })
       .from(permissionRole)
       .where(
         and(
+          accountCondition,
           eq(permissionRole.permission_role_id, roleId),
-          eq(permissionRole.account_id, accountId),
           isNull(permissionRole.deleted_at)
         )
       )
@@ -35,6 +41,13 @@ export class RoleViewerRepository {
       return null;
     }
 
-    return result[0] as ViewRoleResponse;
+    const item = result[0] as ViewRoleResponse;
+
+    return {
+      permission_role_id: item.permission_role_id,
+      name: item.name,
+      account_id: isAdministrator ? item.account_id : undefined,
+      created_at: item.created_at,
+    };
   };
 }

@@ -18,7 +18,8 @@ export const listRole = async (
     const response = await roleListerUseCase.execute(
       t,
       request.query,
-      tokenJwtData.account_id
+      tokenJwtData.account_id,
+      tokenJwtData.is_administrator
     );
 
     if (response) {
