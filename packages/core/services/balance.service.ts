@@ -19,27 +19,28 @@ export class BalanceService {
       },
     });
 
-  createWorker = async (
+  public async createWorker(
     t: TFunction<'translation', undefined>,
     input: IViewWorkerBalancerServer,
     payload: BalanceCreateWorkerRequest
-  ) => {
+  ): Promise<BalanceCreateWorkerResponse> {
     try {
       const axiosInstance = this.createAxiosInstance(input);
 
-      const response = await axiosInstance.post<
-        IApiResponse<BalanceCreateWorkerResponse>
-      >('/worker', payload);
+      const {
+        data: { status, data },
+      } = await axiosInstance.post<IApiResponse<BalanceCreateWorkerResponse>>(
+        '/worker',
+        payload
+      );
 
-      const dataResponse = response?.data;
-
-      if (!dataResponse?.status || !dataResponse?.data) {
+      if (!status || !data) {
         throw new Error(t('worker_creation_failed'));
       }
 
-      return dataResponse.data as BalanceCreateWorkerResponse;
+      return data;
     } catch {
       throw new Error(t('worker_creation_failed'));
     }
-  };
+  }
 }
