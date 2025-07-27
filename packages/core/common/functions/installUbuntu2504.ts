@@ -2,8 +2,11 @@ import path from 'path';
 import { getPackageNodeVersion } from './getPackageNodeVersion';
 import { generalEnvironment } from '@core/config/environments';
 import { readEnvFile } from './readEnvFile';
+import { IViewServerWebById } from '../interfaces/IViewServerWebById';
 
-export async function installUbuntu2504(): Promise<string[]> {
+export async function installUbuntu2504(
+  webView: IViewServerWebById
+): Promise<string[]> {
   const patchPackage = path.join(__dirname, '../../../../package.json');
   const nodeVersion = getPackageNodeVersion(patchPackage);
 
@@ -70,19 +73,30 @@ export async function installUbuntu2504(): Promise<string[]> {
     `bash -ic "printf '%b' '${envContent}' > /home/app/.env && sudo chown $USER:$USER /home/app/.env"`,
 
     `bash -ic "cd /home/app && \
-      docker compose down -v under-worker-baileys"`,
+      sudo docker network create underchat || true"`,
 
     `bash -ic "cd /home/app && \
-    sudo docker compose build --no-cache under-worker-baileys"`,
+      sudo docker stop under-worker-baileys || true && \
+      sudo docker rm under-worker-baileys || true"`,
 
     `bash -ic "cd /home/app && \
-      docker compose down -v under-balance-api"`,
+      sudo docker build --no-cache -t under-worker-baileys:latest -f ./apps/worker_baileys/Dockerfile ."`,
 
     `bash -ic "cd /home/app && \
-    sudo docker compose build --no-cache under-balance-api"`,
+      sudo docker stop under-balance-api || true && \
+      sudo docker rm under-balance-api || true"`,
 
     `bash -ic "cd /home/app && \
-      sudo docker compose up -d under-balance-api"`,
+      sudo docker build --no-cache -t under-balance-api:latest -f ./apps/balance_api/Dockerfile ."`,
+
+    `bash -ic "cd /home/app && \
+      sudo docker run -d --name under-balance-api \
+        --restart always \
+        -p ${webView.web_port}:3003 \
+        -v /var/run/docker.sock:/var/run/docker.sock \
+        --network underchat \
+        -e DOCKER_HOST=unix:///var/run/docker.sock \
+        under-balance-api:latest"`,
 
     'sudo rm -rf /home/app || true',
   ];

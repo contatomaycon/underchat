@@ -2,13 +2,13 @@ import WorkerController from '@/controllers/worker';
 import { workerCreatePermissions } from '@/permissions';
 import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
-import { createWorkerSchema } from '@core/schema/worker/createWorker';
+import { balanceCreateWorkerSchema } from '@core/schema/worker/balanceCreateWorker';
 
 export default async function workerRoutes(server: FastifyInstance) {
   const workerController = container.resolve(WorkerController);
 
   server.post('/worker', {
-    schema: createWorkerSchema,
+    schema: balanceCreateWorkerSchema,
     handler: workerController.createWorker,
     preHandler: [
       (request, reply) =>

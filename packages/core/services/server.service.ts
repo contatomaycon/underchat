@@ -1,10 +1,8 @@
 import { injectable } from 'tsyringe';
-import { ServerCreatorRepository } from '@core/repositories/server/ServerCreator.repository';
 import { PasswordEncryptorService } from './passwordEncryptor.service';
 import { CreateServerRequest } from '@core/schema/server/createServer/request.schema';
 import { ICreateServer } from '@core/common/interfaces/ICreateServer';
 import { EServerStatus } from '@core/common/enums/EServerStatus';
-import { ServerSshCreatorRepository } from '@core/repositories/server/ServerSshCreator.repository';
 import { ICreateServerSsh } from '@core/common/interfaces/ICreateServerSsh';
 import { ServerSshViewerExistsRepository } from '@core/repositories/server/ServerSshViewerExists.repository';
 import { ServerSshViewerRepository } from '@core/repositories/server/ServerSshViewer.repository';
@@ -31,15 +29,19 @@ import { ElasticDatabaseService } from './elasticDatabase.service';
 import { IServerSshCentrifugo } from '@core/common/interfaces/IServerSshCentrifugo';
 import { v4 as uuidv4 } from 'uuid';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
+import { ICreateServerWeb } from '@core/common/interfaces/ICreateServerWeb';
+import { ServerCreatorRepository } from '@core/repositories/server/ServerCreator.repository';
+import { IUpdateServerWebById } from '@core/common/interfaces/IUpdateServerWebById';
+import { EServerWebProtocol } from '@core/common/enums/EServerWebProtocol';
+import { ServerWebDeleterRepository } from '@core/repositories/server/ServerWebDeleter.repository';
+import { ServerWebViewerRepository } from '@core/repositories/server/ServerWebViewer.repository';
 
 @injectable()
 export class ServerService {
   constructor(
     private readonly elasticDatabaseService: ElasticDatabaseService,
     private readonly passwordEncryptorService: PasswordEncryptorService,
-    private readonly serverCreatorRepository: ServerCreatorRepository,
     private readonly serverSshViewerExistsRepository: ServerSshViewerExistsRepository,
-    private readonly serverSshCreatorRepository: ServerSshCreatorRepository,
     private readonly serverSshViewerRepository: ServerSshViewerRepository,
     private readonly serverStatusUpdaterRepository: ServerStatusUpdaterRepository,
     private readonly serverDeleterRepository: ServerDeleterRepository,
@@ -49,20 +51,16 @@ export class ServerService {
     private readonly serverSshViewerNotIdByIpExistsRepository: ServerSshViewerNotIdByIpExistsRepository,
     private readonly serverViewerRepository: ServerViewerRepository,
     private readonly serverListerRepository: ServerListerRepository,
-    private readonly centrifugoService: CentrifugoService
+    private readonly centrifugoService: CentrifugoService,
+    private readonly serverCreatorRepository: ServerCreatorRepository,
+    private readonly serverWebDeleterRepository: ServerWebDeleterRepository,
+    private readonly serverWebViewerRepository: ServerWebViewerRepository
   ) {}
 
-  createServer = async (input: CreateServerRequest) => {
-    const inputCreateServer: ICreateServer = {
-      server_status_id: EServerStatus.new,
-      name: input.name,
-      quantity_workers: input.quantity_workers,
-    };
-
-    return this.serverCreatorRepository.createServer(inputCreateServer);
-  };
-
-  createServerSsh = async (input: CreateServerRequest, serverId: string) => {
+  createServer = async (
+    t: TFunction<'translation', undefined>,
+    input: CreateServerRequest
+  ) => {
     const usernameEncrypted = this.passwordEncryptorService.encrypt(
       input.ssh_username
     );
@@ -70,16 +68,30 @@ export class ServerService {
       input.ssh_password
     );
 
+    const inputCreateServer: ICreateServer = {
+      server_status_id: EServerStatus.new,
+      name: input.name,
+      quantity_workers: input.quantity_workers,
+    };
+
     const inputCreateServerSsh: ICreateServerSsh = {
-      server_id: serverId,
       ssh_ip: input.ssh_ip,
       ssh_port: input.ssh_port,
       ssh_username: usernameEncrypted,
       ssh_password: passwordEncrypted,
     };
 
-    return this.serverSshCreatorRepository.createServerSsh(
-      inputCreateServerSsh
+    const inputCreateServerWeb: ICreateServerWeb = {
+      web_domain: input.web_domain,
+      web_port: input.web_port,
+      web_protocol: input.web_protocol as EServerWebProtocol,
+    };
+
+    return this.serverCreatorRepository.createBalanceServer(
+      t,
+      inputCreateServer,
+      inputCreateServerSsh,
+      inputCreateServerWeb
     );
   };
 
@@ -89,6 +101,10 @@ export class ServerService {
 
   viewServerSshById = async (serverId: string) => {
     return this.serverSshViewerRepository.viewServerSshById(serverId);
+  };
+
+  viewServerWebById = async (serverId: string) => {
+    return this.serverWebViewerRepository.viewServerWebById(serverId);
   };
 
   updateServerStatusById = async (
@@ -117,6 +133,10 @@ export class ServerService {
 
   deleteServerSshById = async (serverId: string): Promise<boolean> => {
     return this.serverSshDeleterRepository.deleteServerSshById(serverId);
+  };
+
+  deleteServerWebById = async (serverId: string): Promise<boolean> => {
+    return this.serverWebDeleterRepository.deleteServerWebById(serverId);
   };
 
   existsServerById = async (serverId: string): Promise<boolean> => {
@@ -149,10 +169,18 @@ export class ServerService {
       quantity_workers: input.quantity_workers,
     };
 
+    const inputUpdateServerWeb: IUpdateServerWebById = {
+      server_id: serverId,
+      web_domain: input.web_domain,
+      web_port: input.web_port,
+      web_protocol: input.web_protocol as EServerWebProtocol,
+    };
+
     return this.serverUpdaterRepository.updateServer(
       t,
       inputUpdateServer,
-      inputUpdateServerSsh
+      inputUpdateServerSsh,
+      inputUpdateServerWeb
     );
   };
 
@@ -205,9 +233,12 @@ export class ServerService {
     );
   };
 
-  deleteLogInstallServer = async (): Promise<boolean> => {
-    return this.elasticDatabaseService.deleteIndex(
-      EElasticIndex.install_server
+  deleteLogInstallServer = async (serverId: string): Promise<boolean> => {
+    return this.elasticDatabaseService.deleteAllByQuery(
+      EElasticIndex.install_server,
+      {
+        term: { server_id: serverId },
+      }
     );
   };
 }

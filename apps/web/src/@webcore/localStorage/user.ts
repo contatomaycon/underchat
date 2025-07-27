@@ -12,6 +12,16 @@ export const getToken = (): string | null => {
   return localStorage.getItem('token');
 };
 
+export const setAdministrator = (isAdmin: boolean): void => {
+  localStorage.setItem('isAdministrator', JSON.stringify(isAdmin));
+};
+
+export const getAdministrator = (): boolean => {
+  const isAdmin = localStorage.getItem('isAdministrator');
+
+  return isAdmin ? JSON.parse(isAdmin) : false;
+};
+
 export const setPermissions = (permissions: EPermissionsRoles[]): void => {
   localStorage.setItem('permissions', JSON.stringify(permissions));
 };
@@ -47,8 +57,14 @@ export const removeUserData = (): boolean => {
   localStorage.removeItem('permissions');
   localStorage.removeItem('user');
   localStorage.removeItem('layout');
+  localStorage.removeItem('isAdministrator');
 
-  return !getToken() && !getUser() && getPermissions().length === 0;
+  return (
+    !getToken() &&
+    !getUser() &&
+    getPermissions().length === 0 &&
+    !getAdministrator()
+  );
 };
 
 export const isLoggedIn = (): boolean => {

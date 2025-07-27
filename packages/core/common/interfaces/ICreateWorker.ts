@@ -7,5 +7,7 @@ export interface ICreateWorker {
   server_id: string;
   account_id: string;
   name: string;
+  number?: string;
+  container_name: string;
   container_id: string;
 }

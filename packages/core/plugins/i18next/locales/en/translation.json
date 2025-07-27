@@ -38,5 +38,16 @@
   "worker_balancer_server_not_disponible": "Worker balancer server not disponible",
   "worker_not_available": "Your plan does not support workers, please contact the system administrator for more information.",
   "worker_not_available_additional": "Your plan does not support additional workers, please contact the system administrator for more information.",
-  "account_not_found": "Account not found!"
+  "account_not_found": "Account not found!",
+  "worker_list_success": "Worker list retrieved successfully!",
+  "worker_list_error": "Error retrieving worker list!",
+  "server_web_create_error": "Error creating web server!",
+  "server_web_update_error": "Error updating web server!",
+  "worker_volume_creation_failed": "Failed to create worker volume",
+  "channel_updated_successfully": "Channel updated successfully!",
+  "channel_not_found": "Channel not found!",
+  "error_updating_worker": "Error updating channel!",
+  "worker_view_success": "Channel viewed successfully!",
+  "worker_view_error": "Error viewing channel!",
+  "worker_not_found": "Worker not found!"
 }

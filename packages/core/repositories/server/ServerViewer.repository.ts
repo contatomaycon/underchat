@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { server, serverSsh, serverStatus } from '@core/models';
+import { server, serverSsh, serverStatus, serverWeb } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -26,6 +26,11 @@ export class ServerViewerRepository {
           ssh_ip: serverSsh.ssh_ip,
           ssh_port: serverSsh.ssh_port,
         },
+        web: {
+          web_domain: serverWeb.web_domain,
+          web_port: serverWeb.web_port,
+          web_protocol: serverWeb.web_protocol,
+        },
         created_at: server.created_at,
         updated_at: server.updated_at,
       })
@@ -35,6 +40,7 @@ export class ServerViewerRepository {
         serverStatus,
         eq(serverStatus.server_status_id, server.server_status_id)
       )
+      .innerJoin(serverWeb, eq(serverWeb.server_id, server.server_id))
       .where(and(eq(server.server_id, serverId), isNull(server.deleted_at)))
       .execute();
 

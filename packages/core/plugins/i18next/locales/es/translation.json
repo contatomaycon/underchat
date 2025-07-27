@@ -38,5 +38,16 @@
   "worker_balancer_server_not_disponible": "Servidor de balanceo de carga del trabajador no disponible",
   "worker_not_available": "Su plan no admite trabajadores, comuníquese con el administrador del sistema para obtener más información.",
   "worker_not_available_additional": "Su plan no admite más trabajadores, contrate un adicional o comuníquese con el administrador del sistema para obtener más información.",
-  "account_not_found": "¡Cuenta no encontrada!"
+  "account_not_found": "¡Cuenta no encontrada!",
+  "worker_list_success": "¡Lista de trabajadores obtenida con éxito!",
+  "worker_list_error": "Error al obtener la lista de trabajadores",
+  "server_web_create_error": "Error al crear el servidor web",
+  "server_web_update_error": "Error al actualizar el servidor web",
+  "worker_volume_creation_failed": "Error al crear el volumen del trabajador",
+  "channel_updated_successfully": "¡Canal actualizado con éxito!",
+  "channel_not_found": "¡Canal no encontrado!",
+  "error_updating_worker": "Error al actualizar el canal",
+  "worker_view_success": "¡Canal visualizado con éxito!",
+  "worker_view_error": "Error al visualizar el canal",
+  "worker_not_found": "¡Canal no encontrado!"
 }

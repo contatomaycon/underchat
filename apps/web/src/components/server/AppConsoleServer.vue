@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { onMessage } from '@/@webcore/centrifugo';
 import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
-import { formatDateTime } from '@core/common/functions/formatDateTime';
+import { formatDateTimeSeconds } from '@core/common/functions/formatDateTimeSeconds';
 import { IServerSshCentrifugo } from '@core/common/interfaces/IServerSshCentrifugo';
 
 const { t } = useI18n();
@@ -24,7 +24,7 @@ const items = ref([
   {
     command: t('installation_pending'),
     output: t('installation_pending'),
-    date: formatDateTime(new Date()),
+    date: formatDateTimeSeconds(new Date()),
   },
 ]);
 
@@ -33,6 +33,7 @@ const isUserScrolling = ref(false);
 const threshold = ref(20);
 const autoScrollIdle = ref(5000);
 const maxRecords = ref(200);
+const isLoading = ref(true);
 
 let scrollTimer: number | null = null;
 let lastInteraction = Date.now();
@@ -79,6 +80,14 @@ const scrollIfNeeded = () => {
   }
 };
 
+const resetForm = () => {
+  items.value = [];
+};
+
+watch(isVisible, (visible) => {
+  if (visible) resetForm();
+});
+
 onMounted(() => {
   nextTick(() => {
     if (listContainer.value)
@@ -96,10 +105,12 @@ onMounted(() => {
   onMessage(ECentrifugoChannel.server_ssh, (data: IServerSshCentrifugo) => {
     if (data.server_id !== serverId.value) return;
 
+    isLoading.value = false;
+
     items.value.push({
       command: data.command,
       output: data.output,
-      date: formatDateTime(data.date),
+      date: formatDateTimeSeconds(data.date),
     });
 
     if (items.value.length > maxRecords.value) {
@@ -128,6 +139,12 @@ onBeforeUnmount(() => {
 <template>
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
+
+    <template v-if="isLoading">
+      <VOverlay :model-value="isLoading" class="align-center justify-center">
+        <VProgressCircular color="primary" indeterminate size="32" />
+      </VOverlay>
+    </template>
 
     <VCard :title="$t('console_installation')">
       <VCardText>

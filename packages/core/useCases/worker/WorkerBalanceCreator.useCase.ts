@@ -1,7 +1,7 @@
 import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
-import { CreateWorkerResponse } from '@core/schema/worker/createWorker/response.schema';
-import { CreateWorkerRequest } from '@core/schema/worker/createWorker/request.schema';
+import { BalanceCreateWorkerResponse } from '@core/schema/worker/balanceCreateWorker/response.schema';
+import { BalanceCreateWorkerRequest } from '@core/schema/worker/balanceCreateWorker/request.schema';
 import { WorkerService } from '@core/services/worker.service';
 import { v4 as uuidv4 } from 'uuid';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
@@ -12,7 +12,7 @@ import { AccountService } from '@core/services/account.service';
 import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 
 @injectable()
-export class WorkerCreatorUseCase {
+export class WorkerBalanceCreatorUseCase {
   constructor(
     private readonly workerService: WorkerService,
     private readonly accountService: AccountService
@@ -20,11 +20,10 @@ export class WorkerCreatorUseCase {
 
   private async validate(
     t: TFunction<'translation', undefined>,
-    input: CreateWorkerRequest
+    accountId: string
   ) {
-    const existsAccountById = await this.accountService.existsAccountById(
-      input.account_id
-    );
+    const existsAccountById =
+      await this.accountService.existsAccountById(accountId);
 
     if (!existsAccountById) {
       throw new Error(t('account_not_found'));
@@ -33,10 +32,10 @@ export class WorkerCreatorUseCase {
     const [viewAccountQuantityProduct, totalWorkerByAccountId] =
       await Promise.all([
         this.accountService.viewAccountQuantityProduct(
-          input.account_id,
+          accountId,
           EPlanProduct.worker
         ),
-        this.workerService.totalWorkerByAccountId(input.account_id),
+        this.workerService.totalWorkerByAccountId(accountId),
       ]);
 
     if (viewAccountQuantityProduct <= 0) {
@@ -66,19 +65,14 @@ export class WorkerCreatorUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    input: CreateWorkerRequest
-  ): Promise<CreateWorkerResponse> {
-    await this.validate(t, input);
+    accountId: string,
+    input: BalanceCreateWorkerRequest
+  ): Promise<BalanceCreateWorkerResponse> {
+    await this.validate(t, accountId);
 
     const workerType = input.worker_type as EWorkerType;
     const imageName = this.getImageWorker(workerType);
     const containerName = uuidv4();
-
-    const serverId = await this.workerService.viewWorkerBalancerServerId();
-
-    if (!serverId) {
-      throw new Error(t('worker_balancer_server_not_disponible'));
-    }
 
     const containerId = await this.workerService.createContainerWorker(
       t,
@@ -91,12 +85,13 @@ export class WorkerCreatorUseCase {
     }
 
     const workerData: ICreateWorker = {
-      worker_status_id: EWorkerStatus.online,
+      worker_status_id: EWorkerStatus.disponible,
       worker_type_id: workerType,
-      server_id: serverId,
-      account_id: input.account_id,
-      name: containerName,
+      server_id: input.server_id,
+      account_id: accountId,
+      container_name: containerName,
       container_id: containerId,
+      name: input.name,
     };
 
     const workerId = await this.workerService.createWorker(workerData);
