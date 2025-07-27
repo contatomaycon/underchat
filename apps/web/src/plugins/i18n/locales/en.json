@@ -77,5 +77,13 @@
     "web_protocol_required": "Web Protocol is required",
     "web_domain_required": "Web Domain is required",
     "web_port_required": "Web Port is required",
-    "channels": "Channels"
+    "channels": "Channels",
+    "worker_list_error": "An error occurred while listing workers. Please try again.",
+    "channel_add_error": "An error occurred while adding the channel. Please try again.",
+    "channel_add_success": "Channel added successfully!",
+    "disponible": "Available",
+    "unofficial": "No Official",
+    "official": "Official",
+    "type": "Type",
+    "select_type": "Select type"
 }

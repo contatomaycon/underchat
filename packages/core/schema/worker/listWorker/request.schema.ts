@@ -19,7 +19,6 @@ export const listWorkerRequestSchema = Type.Object({
     Type.Union([Type.String({ enum: Object.values(EWorkerType) }), Type.Null()])
   ),
   server: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-  account: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export type ListWorkerRequest = Static<typeof listWorkerRequestSchema>;

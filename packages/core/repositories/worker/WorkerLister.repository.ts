@@ -18,6 +18,7 @@ import {
   SQLWrapper,
   like,
   count,
+  or,
 } from 'drizzle-orm';
 import { ListWorkerResponse } from '@core/schema/worker/listWorker/response.schema';
 import { ListWorkerRequest } from '@core/schema/worker/listWorker/request.schema';
@@ -83,12 +84,16 @@ export class WorkerListerRepository {
   private readonly setFilters = (query: ListWorkerRequest): SQLWrapper[] => {
     const filters: SQLWrapper[] = [];
 
-    if (query.name) {
-      filters.push(like(worker.name, `%${query.name}%`));
-    }
+    if (query.name || query.number || query.server) {
+      const conditions: (SQLWrapper | undefined)[] = [
+        query.name ? like(worker.name, `%${query.name}%`) : undefined,
+        query.number ? like(worker.number, `%${query.number}%`) : undefined,
+        query.server ? like(server.name, `%${query.server}%`) : undefined,
+      ];
 
-    if (query.number) {
-      filters.push(like(worker.number, `%${query.number}%`));
+      const combined = or(...conditions);
+
+      if (combined) filters.push(combined);
     }
 
     if (query.status) {
@@ -97,10 +102,6 @@ export class WorkerListerRepository {
 
     if (query.type) {
       filters.push(eq(workerType.worker_type_id, query.type));
-    }
-
-    if (query.server) {
-      filters.push(eq(server.name, query.server));
     }
 
     return filters;

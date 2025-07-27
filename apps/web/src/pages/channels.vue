@@ -1,53 +1,46 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue';
 import { refDebounced } from '@vueuse/core';
-import { useServerStore } from '@/@webcore/stores/server';
 import { EColor } from '@core/common/enums/EColor';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
-import { EServerPermissions } from '@core/common/enums/EPermissions/server';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
 import { IStatusServerCentrifugo } from '@core/common/interfaces/IStatusServerCentrifugo';
-import { EServerStatus } from '@core/common/enums/EServerStatus';
+import { EWorkerPermissions } from '@core/common/enums/EPermissions/worker';
+import { useChannelsStore } from '@/@webcore/stores/channels';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 
 definePage({
   meta: {
     permissions: [
       EGeneralPermissions.full_access,
-      EServerPermissions.server_create,
-      EServerPermissions.server_view,
-      EServerPermissions.server_edit,
-      EServerPermissions.server_delete,
+      EWorkerPermissions.create_worker,
+      EWorkerPermissions.update_worker,
+      EWorkerPermissions.view_worker,
+      EWorkerPermissions.delete_worker,
     ],
   },
 });
 
-const permissionsReinstall = [
-  EGeneralPermissions.full_access,
-  EServerPermissions.server_reinstall,
-];
-const permissionsServerLogsInstall = [
-  EGeneralPermissions.full_access,
-  EServerPermissions.server_logs_install,
-];
 const permissionsEdit = [
   EGeneralPermissions.full_access,
-  EServerPermissions.server_edit,
+  EWorkerPermissions.update_worker,
 ];
 const permissionsDelete = [
   EGeneralPermissions.full_access,
-  EServerPermissions.server_delete,
+  EWorkerPermissions.delete_worker,
 ];
 const permissionsCreate = [
   EGeneralPermissions.full_access,
-  EServerPermissions.server_create,
+  EWorkerPermissions.create_worker,
 ];
 
 const { t } = useI18n();
-const serverStore = useServerStore();
+const channelsStore = useChannelsStore();
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -60,11 +53,15 @@ const itemsPerPage = ref([
 
 const itemsStatus = ref([
   { id: '', text: t('all') },
-  { id: EServerStatus.new, text: t('new') },
-  { id: EServerStatus.installing, text: t('installing') },
-  { id: EServerStatus.online, text: t('online') },
-  { id: EServerStatus.error, text: t('error') },
-  { id: EServerStatus.offline, text: t('offline') },
+  { id: EWorkerStatus.disponible, text: t('disponible') },
+  { id: EWorkerStatus.offline, text: t('offline') },
+  { id: EWorkerStatus.online, text: t('online') },
+]);
+
+const itemsType = ref([
+  { id: '', text: t('all') },
+  { id: EWorkerType.baileys, text: t('unofficial') },
+  { id: EWorkerType.whatsapp, text: t('official') },
 ]);
 
 const isDialogDeleterShow = ref(false);
@@ -74,36 +71,32 @@ const isDialogEditServerShow = ref(false);
 const isAddServerVisible = ref(false);
 const serverToEdit = ref<string | null>(null);
 
-const isConsoleServerVisible = ref(false);
-const serverToConsole = ref<string | null>(null);
-
-const isLogsServerVisible = ref(false);
-const serverToLogs = ref<string | null>(null);
-
-const isDialogRefreshServerShow = ref(false);
-const serverToRefresh = ref<string | null>(null);
-
-const resolveStatusVariant = (s: string) => {
-  if (s === EServerStatus.new) return { color: EColor.info, text: t('new') };
-  if (s === EServerStatus.installing)
-    return { color: EColor.warning, text: t('installing') };
-  if (s === EServerStatus.online)
-    return { color: EColor.success, text: t('online') };
-  if (s === EServerStatus.error)
-    return { color: EColor.error, text: t('error') };
-  if (s === EServerStatus.offline)
+const resolveStatusVariant = (s: string | undefined | null) => {
+  if (s === EWorkerStatus.disponible)
+    return { color: EColor.warning, text: t('disponible') };
+  if (s === EWorkerStatus.offline)
     return { color: EColor.error, text: t('offline') };
+  if (s === EWorkerStatus.online)
+    return { color: EColor.success, text: t('online') };
 
   return { color: EColor.primary, text: t('unknown') };
 };
 
+const resolveTypeVariant = (s: string | undefined | null) => {
+  if (s === EWorkerType.baileys)
+    return { color: EColor.info, text: t('unofficial') };
+  if (s === EWorkerType.whatsapp)
+    return { color: EColor.success, text: t('official') };
+
+  return { color: EColor.error, text: t('unknown') };
+};
+
 const headers = [
   { title: t('name'), key: 'name' },
+  { title: t('number'), key: 'number' },
   { title: t('status'), key: 'status' },
-  { title: t('ssh_ip'), key: 'ssh_ip' },
-  { title: t('ssh_port'), key: 'ssh_port' },
-  { title: t('web_domain'), key: 'web_domain' },
-  { title: t('workers_allowed'), key: 'quantity_workers' },
+  { title: t('type'), key: 'type' },
+  { title: t('server'), key: 'server' },
   { title: t('created_at'), key: 'created_at' },
   { title: t('actions'), key: 'actions', sortable: false },
 ];
@@ -113,6 +106,7 @@ const options = ref({
   itemsPerPage: 10,
   sortBy: [] as SortRequest[],
   status: null as string | null,
+  type: null as string | null,
   search: null as string | null,
 });
 
@@ -126,6 +120,7 @@ const query = computed(() => ({
   per_page: options.value.itemsPerPage,
   sort_by: options.value.sortBy,
   status: options.value.status,
+  type: options.value.type,
   search: debouncedSearch.value,
 }));
 
@@ -145,29 +140,15 @@ const deleteServer = async (id: string) => {
   isDialogDeleterShow.value = true;
 };
 
-const refreshServer = async (id: string) => {
-  serverToRefresh.value = id;
-
-  isDialogRefreshServerShow.value = true;
-};
-
 const handleDelete = async () => {
-  if (!serverToDelete.value) return;
+  /*   if (!serverToDelete.value) return;
 
-  const result = await serverStore.deleteServer(serverToDelete.value);
+  const result = await channelsStore.deleteServer(serverToDelete.value);
   if (result) {
-    await serverStore.listServers(query.value);
+    await channelsStore.listServers(query.value);
   }
 
-  serverToDelete.value = null;
-};
-
-const handleReinstall = async () => {
-  if (!serverToRefresh.value) return;
-
-  await serverStore.reinstallServer(serverToRefresh.value);
-
-  serverToRefresh.value = null;
+  serverToDelete.value = null; */
 };
 
 const openEditDialog = (id: string) => {
@@ -176,46 +157,31 @@ const openEditDialog = (id: string) => {
   isDialogEditServerShow.value = true;
 };
 
-const openConsoleDialog = (id: string) => {
-  serverToConsole.value = id;
-
-  isConsoleServerVisible.value = true;
-};
-
-const openLogsDialog = (id: string) => {
-  serverToLogs.value = id;
-
-  isLogsServerVisible.value = true;
-};
-
 watch(
   query,
   async (q) => {
-    await serverStore.listServers(q);
+    await channelsStore.listChannels(q);
   },
   { immediate: true, deep: true }
 );
 
 onMounted(() => {
   onMessage(
-    ECentrifugoChannel.status_server,
+    ECentrifugoChannel.worker_channel,
     (data: IStatusServerCentrifugo) => {
-      serverStore.updateStatusServer(data.server_id, data.status);
+      //channelsStore.updateStatusChannel(data.server_id, data.status);
     }
   );
 });
 
 onBeforeUnmount(async () => {
-  await Promise.all([
-    unsubscribe(ECentrifugoChannel.server_ssh),
-    unsubscribe(ECentrifugoChannel.status_server),
-  ]);
+  await Promise.all([unsubscribe(ECentrifugoChannel.worker_channel)]);
 });
 </script>
 
 <template>
   <div>
-    <VCard :title="$t('server')" no-padding>
+    <VCard :title="$t('channels')" no-padding>
       <VCardText>
         <div class="d-flex justify-space-between flex-wrap gap-4">
           <div class="d-flex gap-4 align-center mt-5">
@@ -239,7 +205,18 @@ onBeforeUnmount(async () => {
             </VBtn>
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
-            <div class="server-status-filter">
+            <div class="type-filter">
+              <VLabel>{{ $t('type') }}:</VLabel>
+              <AppAutocomplete
+                item-title="text"
+                item-value="id"
+                :items="itemsType"
+                v-model="options.type"
+                :placeholder="$t('select_type')"
+              />
+            </div>
+
+            <div class="status-filter">
               <VLabel>{{ $t('status') }}:</VLabel>
               <AppAutocomplete
                 item-title="text"
@@ -270,9 +247,9 @@ onBeforeUnmount(async () => {
         v-model:page="options.page"
         v-model:items-per-page="options.itemsPerPage"
         :headers="headers"
-        :items="serverStore.list_servers"
-        :items-length="serverStore.pagings.total"
-        :loading="serverStore.loading"
+        :items="channelsStore.list"
+        :items-length="channelsStore.pagings.total"
+        :loading="channelsStore.loading"
         :sort-by="options.sortBy"
         @update:options="handleTableChange"
         :loading-text="$t('loading_text')"
@@ -289,23 +266,21 @@ onBeforeUnmount(async () => {
 
         <template #item.status="{ item }">
           <VChip
-            :color="resolveStatusVariant(item.status.id).color"
+            :color="resolveStatusVariant(item?.status?.id).color"
             size="small"
           >
-            {{ resolveStatusVariant(item.status.id).text }}
+            {{ resolveStatusVariant(item?.status?.id).text }}
           </VChip>
         </template>
 
-        <template #item.ssh_port="{ item }">
-          <span>{{ item.ssh.ssh_port }}</span>
+        <template #item.type="{ item }">
+          <VChip :color="resolveTypeVariant(item?.type?.id).color" size="small">
+            {{ resolveTypeVariant(item?.type?.id).text }}
+          </VChip>
         </template>
 
-        <template #item.ssh_ip="{ item }">
-          <span>{{ item.ssh.ssh_ip }}</span>
-        </template>
-
-        <template #item.web_domain="{ item }">
-          <span>{{ item.web.web_domain }}</span>
+        <template #item.server="{ item }">
+          <span>{{ item.server?.name }}</span>
         </template>
 
         <template #item.created_at="{ item }">
@@ -314,57 +289,6 @@ onBeforeUnmount(async () => {
 
         <template #item.actions="{ item }">
           <div class="d-flex gap-1">
-            <IconBtn
-              v-if="
-                item.status.id !== EServerStatus.installing &&
-                $canPermission(permissionsReinstall)
-              "
-            >
-              <VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>
-                  {{ $t('reinstall_server') }}
-                </span>
-              </VTooltip>
-              <VIcon icon="tabler-refresh" @click="refreshServer(item.id)"
-            /></IconBtn>
-
-            <IconBtn
-              v-if="
-                item.status.id === EServerStatus.installing &&
-                $canPermission(permissionsServerLogsInstall)
-              "
-            >
-              <VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('console_installation') }}</span>
-              </VTooltip>
-              <VIcon
-                icon="tabler-terminal-2"
-                @click="openConsoleDialog(item.id)"
-            /></IconBtn>
-
-            <IconBtn
-              v-if="
-                item.status.id !== EServerStatus.installing &&
-                $canPermission(permissionsServerLogsInstall)
-              "
-            >
-              <VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('server_logs') }}</span> </VTooltip
-              ><VIcon icon="tabler-terminal-2" @click="openLogsDialog(item.id)"
-            /></IconBtn>
-
             <IconBtn v-if="$canPermission(permissionsEdit)"
               ><VTooltip
                 location="top"
@@ -395,17 +319,10 @@ onBeforeUnmount(async () => {
           <TablePagination
             v-model:page="options.page"
             :items-per-page="options.itemsPerPage"
-            :total-items="serverStore.pagings.total"
+            :total-items="channelsStore.pagings.total"
           />
         </template>
       </VDataTableServer>
-
-      <VDialogHandler
-        v-model="isDialogRefreshServerShow"
-        :title="$t('reinstall_server')"
-        :message="$t('reinstall_server_confirmation')"
-        @confirm="handleReinstall"
-      />
 
       <VDialogHandler
         v-model="isDialogDeleterShow"
@@ -420,27 +337,25 @@ onBeforeUnmount(async () => {
       />
 
       <AppAddServer v-model="isAddServerVisible" />
-
-      <AppConsoleServer
-        v-model="isConsoleServerVisible"
-        :server-id="serverToConsole"
-      />
-
-      <AppLogsServer v-model="isLogsServerVisible" :server-id="serverToLogs" />
     </VCard>
+
     <VSnackbar
-      v-model="serverStore.snackbar.status"
+      v-model="channelsStore.snackbar.status"
       transition="scroll-y-reverse-transition"
       location="top end"
-      :color="serverStore.snackbar.color"
+      :color="channelsStore.snackbar.color"
     >
-      {{ serverStore.snackbar.message }}
+      {{ channelsStore.snackbar.message }}
     </VSnackbar>
   </div>
 </template>
 
 <style lang="scss">
-.server-status-filter {
+.status-filter {
+  inline-size: 12rem;
+}
+
+.type-filter {
   inline-size: 12rem;
 }
 

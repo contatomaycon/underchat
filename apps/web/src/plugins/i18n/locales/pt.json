@@ -79,5 +79,13 @@
     "web_protocol_required": "Protocolo Web é obrigatório",
     "web_domain_required": "Domínio Web é obrigatório",
     "web_port_required": "Porta Web é obrigatória",
-    "channels": "Canais"
+    "channels": "Canais",
+    "worker_list_error": "Ocorreu um erro ao listar os canais. Por favor, tente novamente.",
+    "channel_add_error": "Ocorreu um erro ao adicionar o canal. Por favor, tente novamente.",
+    "channel_add_success": "Canal adicionado com sucesso!",
+    "disponible": "Disponível",
+    "unofficial": "Não Oficial",
+    "official": "Oficial",
+    "type": "Tipo",
+    "select_type": "Selecione o tipo"
 }
