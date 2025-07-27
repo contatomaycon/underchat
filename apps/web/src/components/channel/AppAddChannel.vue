@@ -19,7 +19,7 @@ const isVisible = computed({
 });
 
 const name = ref<string | null>(null);
-const type = ref<EWorkerType | null>(null);
+const type = ref<EWorkerType | null>(EWorkerType.baileys);
 
 const itemsType = ref([{ value: EWorkerType.baileys, title: t('unofficial') }]);
 
@@ -49,7 +49,7 @@ const addChannel = async () => {
 
 const resetForm = () => {
   name.value = null;
-  type.value = null;
+  type.value = EWorkerType.baileys;
   refFormAddChannel.value?.resetValidation();
 };
 
