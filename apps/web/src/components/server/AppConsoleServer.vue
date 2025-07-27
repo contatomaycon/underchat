@@ -33,6 +33,7 @@ const isUserScrolling = ref(false);
 const threshold = ref(20);
 const autoScrollIdle = ref(5000);
 const maxRecords = ref(200);
+const isLoading = ref(true);
 
 let scrollTimer: number | null = null;
 let lastInteraction = Date.now();
@@ -104,6 +105,8 @@ onMounted(() => {
   onMessage(ECentrifugoChannel.server_ssh, (data: IServerSshCentrifugo) => {
     if (data.server_id !== serverId.value) return;
 
+    isLoading.value = false;
+
     items.value.push({
       command: data.command,
       output: data.output,
@@ -136,6 +139,12 @@ onBeforeUnmount(() => {
 <template>
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
+
+    <template v-if="isLoading">
+      <VOverlay :model-value="isLoading" class="align-center justify-center">
+        <VProgressCircular color="primary" indeterminate size="32" />
+      </VOverlay>
+    </template>
 
     <VCard :title="$t('console_installation')">
       <VCardText>

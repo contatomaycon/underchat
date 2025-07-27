@@ -60,11 +60,13 @@ export class WorkerService {
       await this.removeContainerWorkerById(containerName, t);
     }
 
-    const createVolume = await this.docker.createVolume({
+    await this.docker.createVolume({
       Name: containerName,
     });
 
-    if (!createVolume.Status) {
+    const getVolume = await this.docker.getVolume(containerName).inspect();
+
+    if (!getVolume) {
       throw new Error(t('worker_volume_creation_failed'));
     }
 
