@@ -107,6 +107,7 @@ export class WorkerService {
 
   listWorker = async (
     accountId: string,
+    isAdministrator: boolean,
     perPage: number,
     currentPage: number,
     query: ListWorkerRequest
@@ -114,11 +115,16 @@ export class WorkerService {
     const [result, total] = await Promise.all([
       this.workerListerRepository.listWorker(
         accountId,
+        isAdministrator,
         perPage,
         currentPage,
         query
       ),
-      this.workerListerRepository.listWorkerTotal(accountId, query),
+      this.workerListerRepository.listWorkerTotal(
+        accountId,
+        isAdministrator,
+        query
+      ),
     ]);
 
     return [result, total];

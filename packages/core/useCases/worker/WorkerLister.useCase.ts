@@ -12,6 +12,7 @@ export class WorkerListerUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
+    isAdministrator: boolean,
     query: ListWorkerRequest
   ): Promise<ListWorkerFinalResponse> {
     const perPage = query.per_page ?? 10;
@@ -19,6 +20,7 @@ export class WorkerListerUseCase {
 
     const [results, total] = await this.workerService.listWorker(
       accountId,
+      isAdministrator,
       perPage,
       currentPage,
       query

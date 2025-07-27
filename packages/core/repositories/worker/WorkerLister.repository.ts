@@ -65,6 +65,11 @@ export class WorkerListerRepository {
               : desc(workerType.type)
           );
 
+        if (key === ESortByWorker.account)
+          orders.push(
+            order === ESortOrder.asc ? asc(account.name) : desc(account.name)
+          );
+
         if (key === ESortByWorker.updated_at)
           orders.push(
             order === ESortOrder.asc
@@ -89,6 +94,7 @@ export class WorkerListerRepository {
         query.name ? like(worker.name, `%${query.name}%`) : undefined,
         query.number ? like(worker.number, `%${query.number}%`) : undefined,
         query.server ? like(server.name, `%${query.server}%`) : undefined,
+        query.account ? like(account.name, `%${query.account}%`) : undefined,
       ];
 
       const combined = or(...conditions);
@@ -109,12 +115,17 @@ export class WorkerListerRepository {
 
   listWorker = async (
     accountId: string,
+    isAdministrator: boolean,
     perPage: number,
     currentPage: number,
     query: ListWorkerRequest
   ): Promise<ListWorkerResponse[]> => {
     const orders = this.setOrders(query);
     const filters = this.setFilters(query);
+
+    const accountCondition = isAdministrator
+      ? undefined
+      : eq(account.account_id, accountId);
 
     const queryBuilder = this.db
       .select({
@@ -133,6 +144,10 @@ export class WorkerListerRepository {
           id: server.server_id,
           name: server.name,
         },
+        account: {
+          id: account.account_id,
+          name: account.name,
+        },
         created_at: worker.created_at,
         updated_at: worker.updated_at,
       })
@@ -147,13 +162,7 @@ export class WorkerListerRepository {
       )
       .innerJoin(server, eq(server.server_id, worker.server_id))
       .innerJoin(account, eq(account.account_id, worker.account_id))
-      .where(
-        and(
-          eq(worker.account_id, accountId),
-          isNull(worker.deleted_at),
-          ...filters
-        )
-      );
+      .where(and(accountCondition, isNull(worker.deleted_at), ...filters));
 
     if (orders.length) {
       queryBuilder.orderBy(...orders);
@@ -168,13 +177,28 @@ export class WorkerListerRepository {
       return [] as ListWorkerResponse[];
     }
 
-    return result as ListWorkerResponse[];
+    return result.map((item) => ({
+      id: item.id,
+      name: item.name,
+      number: item.number,
+      status: item.status,
+      type: item.type,
+      server: isAdministrator ? item.server : undefined,
+      account: isAdministrator ? item.account : undefined,
+      created_at: item.created_at,
+      updated_at: item.updated_at,
+    }));
   };
 
   listWorkerTotal = async (
     accountId: string,
+    isAdministrator: boolean,
     query: ListWorkerRequest
   ): Promise<number> => {
+    const accountCondition = isAdministrator
+      ? undefined
+      : eq(account.account_id, accountId);
+
     const filters = this.setFilters(query);
 
     const result = await this.db
@@ -192,13 +216,7 @@ export class WorkerListerRepository {
       )
       .innerJoin(server, eq(server.server_id, worker.server_id))
       .innerJoin(account, eq(account.account_id, worker.account_id))
-      .where(
-        and(
-          eq(worker.account_id, accountId),
-          isNull(worker.deleted_at),
-          ...filters
-        )
-      )
+      .where(and(accountCondition, isNull(worker.deleted_at), ...filters))
       .execute();
 
     return result[0]?.count ?? 0;

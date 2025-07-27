@@ -15,6 +15,7 @@ import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
 import { ITokenJwtData } from '@core/common/interfaces/ITokenJwtData';
 import { routePathWithoutPrefix } from '@core/common/functions/routePathWithoutPrefix';
+import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 
 async function handleApiKeyCache(
   redis: FastifyRedis,
@@ -50,10 +51,17 @@ function generateTokenJwtAccess(
   const accountId = responseAuth.find(
     (item) => item.account_id !== null
   )?.account_id;
+  const permissionRoleId = responseAuth.find(
+    (item) => item.permission_role_id !== null
+  )?.permission_role_id;
+
+  const isAdministrator = permissionRoleId === EPermissionRole.administrator;
 
   return {
     account_id: accountId,
     user_id: userId,
+    permission_role_id: permissionRoleId,
+    is_administrator: isAdministrator,
     actions: responseAuth,
   } as ITokenJwtData;
 }
