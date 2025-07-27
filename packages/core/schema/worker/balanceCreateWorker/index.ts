@@ -1,5 +1,4 @@
 import { Type } from '@sinclair/typebox';
-import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { balanceCreateWorkerResponseSchema } from './response.schema';
 import { balanceCreateWorkerRequestSchema } from './request.schema';
@@ -13,15 +12,6 @@ export const balanceCreateWorkerSchema = {
       authenticateKeyApi: [],
     },
   ],
-  headers: Type.Object({
-    'Accept-Language': Type.Optional(
-      Type.String({
-        description: 'Idioma preferencial para a resposta',
-        enum: Object.values(ELanguage),
-        default: ELanguage.pt,
-      })
-    ),
-  }),
   body: balanceCreateWorkerRequestSchema,
   response: {
     200: Type.Object(

@@ -34,6 +34,7 @@ import { ServerCreatorRepository } from '@core/repositories/server/ServerCreator
 import { IUpdateServerWebById } from '@core/common/interfaces/IUpdateServerWebById';
 import { EServerWebProtocol } from '@core/common/enums/EServerWebProtocol';
 import { ServerWebDeleterRepository } from '@core/repositories/server/ServerWebDeleter.repository';
+import { ServerWebViewerRepository } from '@core/repositories/server/ServerWebViewer.repository';
 
 @injectable()
 export class ServerService {
@@ -52,7 +53,8 @@ export class ServerService {
     private readonly serverListerRepository: ServerListerRepository,
     private readonly centrifugoService: CentrifugoService,
     private readonly serverCreatorRepository: ServerCreatorRepository,
-    private readonly serverWebDeleterRepository: ServerWebDeleterRepository
+    private readonly serverWebDeleterRepository: ServerWebDeleterRepository,
+    private readonly serverWebViewerRepository: ServerWebViewerRepository
   ) {}
 
   createServer = async (
@@ -99,6 +101,10 @@ export class ServerService {
 
   viewServerSshById = async (serverId: string) => {
     return this.serverSshViewerRepository.viewServerSshById(serverId);
+  };
+
+  viewServerWebById = async (serverId: string) => {
+    return this.serverWebViewerRepository.viewServerWebById(serverId);
   };
 
   updateServerStatusById = async (

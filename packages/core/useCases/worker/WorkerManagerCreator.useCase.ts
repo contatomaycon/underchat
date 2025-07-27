@@ -6,12 +6,15 @@ import { AccountService } from '@core/services/account.service';
 import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 import { ManagerCreateWorkerRequest } from '@core/schema/worker/managerCreateWorker/request.schema';
 import { ManagerCreateWorkerResponse } from '@core/schema/worker/managerCreateWorker/response.schema';
+import { BalanceService } from '@core/services/balance.service';
+import { BalanceCreateWorkerRequest } from '@core/schema/worker/balanceCreateWorker/request.schema';
 
 @injectable()
 export class WorkerManagerCreatorUseCase {
   constructor(
     private readonly workerService: WorkerService,
-    private readonly accountService: AccountService
+    private readonly accountService: AccountService,
+    private readonly balanceService: BalanceService
   ) {}
 
   private async validate(
@@ -52,17 +55,30 @@ export class WorkerManagerCreatorUseCase {
 
     const workerType = input.worker_type as EWorkerType;
 
-    const serverId =
+    const viewWorkerBalancerServer =
       await this.workerService.viewWorkerBalancerServer(accountId);
 
-    if (!serverId) {
+    console.log('viewWorkerBalancerServer', viewWorkerBalancerServer);
+
+    if (!viewWorkerBalancerServer) {
       throw new Error(t('worker_balancer_server_not_disponible'));
     }
 
-    console.log('serverId', serverId);
+    const payload: BalanceCreateWorkerRequest = {
+      server_id: viewWorkerBalancerServer.server_id,
+      worker_type: workerType,
+    };
+
+    const createWorker = await this.balanceService.createWorker(
+      t,
+      viewWorkerBalancerServer,
+      payload
+    );
+
+    console.log('workerId', createWorker);
 
     return {
-      worker_id: '',
+      worker_id: createWorker.worker_id,
     };
   }
 }

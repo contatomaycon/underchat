@@ -6,6 +6,7 @@ import { installUbuntu2504 } from '@core/common/functions/installUbuntu2504';
 import { CentrifugoService } from './centrifugo.service';
 import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
 import { IServerSshCentrifugo } from '@core/common/interfaces/IServerSshCentrifugo';
+import { IViewServerWebById } from '@core/common/interfaces/IViewServerWebById';
 
 @injectable()
 export class SshService {
@@ -173,11 +174,14 @@ export class SshService {
     }
   }
 
-  async getInstallCommands(info: IDistroInfo): Promise<string[]> {
+  async getInstallCommands(
+    info: IDistroInfo,
+    webView: IViewServerWebById
+  ): Promise<string[]> {
     const key = `${info.distro}:${info.version}` as EAllowedDistroVersion;
 
     const commandsMap: Record<EAllowedDistroVersion, string[]> = {
-      [EAllowedDistroVersion.Ubuntu_25_04]: await installUbuntu2504(),
+      [EAllowedDistroVersion.Ubuntu_25_04]: await installUbuntu2504(webView),
       [EAllowedDistroVersion.Ubuntu_24_10]: [
         'sudo apt-get update',
         'sudo apt-get dist-upgrade -y',

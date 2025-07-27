@@ -1,5 +1,4 @@
 import { Type } from '@sinclair/typebox';
-import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { viewMetricsResponseSchema } from './response.schema';
 
@@ -12,15 +11,6 @@ export const viewMetricsSchema = {
       authenticateKeyApi: [],
     },
   ],
-  headers: Type.Object({
-    'Accept-Language': Type.Optional(
-      Type.String({
-        description: 'Idioma preferencial para a resposta',
-        enum: Object.values(ELanguage),
-        default: ELanguage.pt,
-      })
-    ),
-  }),
   response: {
     200: Type.Object(
       {

@@ -11,6 +11,7 @@ import { IDistroInfo } from '@core/common/interfaces/IDistroInfo';
 import { KafkaStreams, KStream } from 'kafka-streams';
 import { IKafkaMsg } from '@core/common/interfaces/IKafkaMsg';
 import { FastifyInstance } from 'fastify';
+import { IViewServerWebById } from '@core/common/interfaces/IViewServerWebById';
 
 @injectable()
 export class BalanceCreatorConsume {
@@ -24,22 +25,30 @@ export class BalanceCreatorConsume {
   private async validate(serverId: string): Promise<{
     getDistroAndVersion: IDistroInfo;
     sshConfig: ConnectConfig;
+    webView: IViewServerWebById;
   }> {
-    const view = await this.serverService.viewServerSshById(serverId);
+    const [sshView, webView] = await Promise.all([
+      this.serverService.viewServerSshById(serverId),
+      this.serverService.viewServerWebById(serverId),
+    ]);
 
-    if (!view) {
+    if (!sshView) {
       throw new Error('SSH configuration not found');
     }
 
-    if (view.server_status_id !== EServerStatus.new) {
+    if (!webView) {
+      throw new Error('Web configuration not found');
+    }
+
+    if (sshView.server_status_id !== EServerStatus.new) {
       throw new Error('Server is not in new status');
     }
 
     const sshConfig: ConnectConfig = {
-      host: view.ssh_ip,
-      port: view.ssh_port,
-      username: this.passwordEncryptorService.decrypt(view.ssh_username),
-      password: this.passwordEncryptorService.decrypt(view.ssh_password),
+      host: sshView.ssh_ip,
+      port: sshView.ssh_port,
+      username: this.passwordEncryptorService.decrypt(sshView.ssh_username),
+      password: this.passwordEncryptorService.decrypt(sshView.ssh_password),
     };
 
     const connected = await this.sshService.testSSHConnection(sshConfig);
@@ -58,13 +67,14 @@ export class BalanceCreatorConsume {
       throw new Error('Distribution and version not allowed');
     }
 
-    return { getDistroAndVersion: distro, sshConfig };
+    return { getDistroAndVersion: distro, sshConfig, webView };
   }
 
   private async isInstalled(
     serverId: string,
     getDistroAndVersion: IDistroInfo,
     sshConfig: ConnectConfig,
+    webView: IViewServerWebById,
     attempts = 10
   ): Promise<boolean> {
     if (!sshConfig.host) {
@@ -74,7 +84,7 @@ export class BalanceCreatorConsume {
     const commands = this.sshService.getStatusCommands(
       getDistroAndVersion,
       sshConfig.host,
-      3003
+      webView.web_port
     );
 
     for (let i = 0; i < attempts; i++) {
@@ -130,7 +140,7 @@ export class BalanceCreatorConsume {
           throw new Error('Server ID is not defined in the message');
         }
 
-        const { getDistroAndVersion, sshConfig } =
+        const { getDistroAndVersion, sshConfig, webView } =
           await this.validate(serverId);
 
         await this.serverService.updateServerStatusById(
@@ -138,8 +148,10 @@ export class BalanceCreatorConsume {
           EServerStatus.installing
         );
 
-        const installCommands =
-          await this.sshService.getInstallCommands(getDistroAndVersion);
+        const installCommands = await this.sshService.getInstallCommands(
+          getDistroAndVersion,
+          webView
+        );
 
         const logs = await this.sshService.runCommands(
           serverId,
@@ -153,7 +165,8 @@ export class BalanceCreatorConsume {
         const installed = await this.isInstalled(
           serverId,
           getDistroAndVersion,
-          sshConfig
+          sshConfig,
+          webView
         );
 
         const finalStatus = installed
