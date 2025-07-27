@@ -2,6 +2,7 @@ import { Client } from '@elastic/elasticsearch';
 import { inject, injectable } from 'tsyringe';
 import type {
   AggregationsAggregate,
+  QueryDslQueryContainer,
   SearchResponse,
 } from '@elastic/elasticsearch/lib/api/types';
 
@@ -114,6 +115,22 @@ export class ElasticDatabaseService {
       return result.acknowledged;
     } catch (error) {
       throw new Error(`Failed to delete index: ${error}`);
+    }
+  };
+
+  deleteAllByQuery = async (
+    index: string,
+    query: QueryDslQueryContainer
+  ): Promise<boolean> => {
+    try {
+      const { deleted = 0 } = await this.client.deleteByQuery({
+        index,
+        query,
+      });
+
+      return deleted > 0;
+    } catch {
+      return false;
     }
   };
 

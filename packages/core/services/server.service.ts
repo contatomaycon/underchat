@@ -233,9 +233,12 @@ export class ServerService {
     );
   };
 
-  deleteLogInstallServer = async (): Promise<boolean> => {
-    return this.elasticDatabaseService.deleteIndex(
-      EElasticIndex.install_server
+  deleteLogInstallServer = async (serverId: string): Promise<boolean> => {
+    return this.elasticDatabaseService.deleteAllByQuery(
+      EElasticIndex.install_server,
+      {
+        term: { server_id: serverId },
+      }
     );
   };
 }

@@ -159,7 +159,7 @@ export class BalanceCreatorConsume {
           installCommands
         );
 
-        await this.serverService.deleteLogInstallServer();
+        await this.serverService.deleteLogInstallServer(serverId);
         await this.serverService.updateLogInstallServerBulk(logs);
 
         const installed = await this.isInstalled(
