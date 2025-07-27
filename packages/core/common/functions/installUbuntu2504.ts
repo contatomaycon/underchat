@@ -73,10 +73,14 @@ export async function installUbuntu2504(
     `bash -ic "printf '%b' '${envContent}' > /home/app/.env && sudo chown $USER:$USER /home/app/.env"`,
 
     `bash -ic "cd /home/app && \
-      docker compose down -v under-worker-baileys"`,
+      sudo docker network create underchat || true"`,
 
     `bash -ic "cd /home/app && \
-    sudo docker compose build --no-cache under-worker-baileys"`,
+      sudo docker stop under-worker-baileys || true && \
+      sudo docker rm under-worker-baileys || true"`,
+
+    `bash -ic "cd /home/app && \
+      sudo docker build --no-cache -t under-worker-baileys:latest -f ./apps/worker_baileys/Dockerfile ."`,
 
     `bash -ic "cd /home/app && \
       sudo docker stop under-balance-api || true && \
@@ -84,9 +88,6 @@ export async function installUbuntu2504(
 
     `bash -ic "cd /home/app && \
       sudo docker build --no-cache -t under-balance-api:latest -f ./apps/balance_api/Dockerfile ."`,
-
-    `bash -ic "cd /home/app && \
-      sudo docker network create underchat || true"`,
 
     `bash -ic "cd /home/app && \
       sudo docker run -d --name under-balance-api \
