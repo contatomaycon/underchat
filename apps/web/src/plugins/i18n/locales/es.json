@@ -85,5 +85,9 @@
     "unofficial": "No Oficial",
     "official": "Oficial",
     "type": "Tipo",
-    "select_type": "Selecciona el tipo"
+    "select_type": "Selecciona el tipo",
+    "delete_channel": "Eliminar canal?",
+    "delete_channel_confirmation": "¿Estás seguro de que deseas eliminar este canal?",
+    "edit_channel": "Editar canal",
+    "type_required": "Se requiere el tipo"
 }

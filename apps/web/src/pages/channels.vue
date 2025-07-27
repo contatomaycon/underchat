@@ -68,7 +68,7 @@ const isDialogDeleterShow = ref(false);
 const serverToDelete = ref<string | null>(null);
 
 const isDialogEditServerShow = ref(false);
-const isAddServerVisible = ref(false);
+const isAddChannelVisible = ref(false);
 const serverToEdit = ref<string | null>(null);
 
 const resolveStatusVariant = (s: string | undefined | null) => {
@@ -199,7 +199,7 @@ onBeforeUnmount(async () => {
             <VBtn
               v-if="$canPermission(permissionsCreate)"
               prepend-icon="tabler-plus"
-              @click="isAddServerVisible = true"
+              @click="isAddChannelVisible = true"
             >
               {{ $t('add') }}
             </VBtn>
@@ -295,7 +295,7 @@ onBeforeUnmount(async () => {
                 transition="scale-transition"
                 activator="parent"
               >
-                <span>{{ $t('edit_server') }}</span> </VTooltip
+                <span>{{ $t('edit_channel') }}</span> </VTooltip
               ><VIcon icon="tabler-edit" @click="openEditDialog(item.id)"
             /></IconBtn>
 
@@ -305,7 +305,7 @@ onBeforeUnmount(async () => {
                 transition="scale-transition"
                 activator="parent"
               >
-                <span>{{ $t('delete_server') }}</span> </VTooltip
+                <span>{{ $t('delete_channel') }}</span> </VTooltip
               ><VIcon icon="tabler-trash" @click="deleteServer(item.id)"
             /></IconBtn>
           </div>
@@ -326,8 +326,8 @@ onBeforeUnmount(async () => {
 
       <VDialogHandler
         v-model="isDialogDeleterShow"
-        :title="$t('delete_server')"
-        :message="$t('delete_server_confirmation')"
+        :title="$t('delete_channel')"
+        :message="$t('delete_channel_confirmation')"
         @confirm="handleDelete"
       />
 
@@ -336,7 +336,7 @@ onBeforeUnmount(async () => {
         :server-id="serverToEdit"
       />
 
-      <AppAddServer v-model="isAddServerVisible" />
+      <AppAddChannel v-model="isAddChannelVisible" />
     </VCard>
 
     <VSnackbar

@@ -14,6 +14,7 @@ declare module 'vue' {
     AddEditRoleDialog: typeof import('./src/components/dialogs/AddEditRoleDialog.vue')['default']
     AddEditServer: typeof import('./src/components/server/AddEditServer.vue')['default']
     AddPaymentMethodDialog: typeof import('./src/components/dialogs/AddPaymentMethodDialog.vue')['default']
+    AppAddChannel: typeof import('./src/components/channel/AppAddChannel.vue')['default']
     AppAddServer: typeof import('./src/components/server/AppAddServer.vue')['default']
     AppAutocomplete: typeof import('./src/@webcore/components/app-form-elements/AppAutocomplete.vue')['default']
     AppBarSearch: typeof import('./src/@webcore/components/AppBarSearch.vue')['default']
