@@ -58,6 +58,7 @@ export const useChannelsStore = defineStore('channels', {
               name: input.search,
               number: input.search,
               server: input.search,
+              account: input.search,
               status: input.status,
               type: input.type,
             }

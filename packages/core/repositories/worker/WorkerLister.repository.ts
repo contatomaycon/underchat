@@ -89,7 +89,7 @@ export class WorkerListerRepository {
   private readonly setFilters = (query: ListWorkerRequest): SQLWrapper[] => {
     const filters: SQLWrapper[] = [];
 
-    if (query.name || query.number || query.server) {
+    if (query.name || query.number || query.server || query.account) {
       const conditions: (SQLWrapper | undefined)[] = [
         query.name ? like(worker.name, `%${query.name}%`) : undefined,
         query.number ? like(worker.number, `%${query.number}%`) : undefined,

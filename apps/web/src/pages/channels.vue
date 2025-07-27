@@ -13,6 +13,9 @@ import { EWorkerPermissions } from '@core/common/enums/EPermissions/worker';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { getAdministrator } from '@/@webcore/localStorage/user';
+import { DataTableHeader } from 'vuetify';
+import { ListWorkerResponse } from '@core/schema/worker/listWorker/response.schema';
 
 definePage({
   meta: {
@@ -41,6 +44,7 @@ const permissionsCreate = [
 
 const { t } = useI18n();
 const channelsStore = useChannelsStore();
+const isAdministrator = getAdministrator();
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -90,12 +94,13 @@ const resolveTypeVariant = (s: string | undefined | null) => {
   return { color: EColor.error, text: t('unknown') };
 };
 
-const headers = [
+const headers: DataTableHeader<ListWorkerResponse>[] = [
   { title: t('name'), key: 'name' },
   { title: t('number'), key: 'number' },
   { title: t('status'), key: 'status' },
   { title: t('type'), key: 'type' },
-  { title: t('server'), key: 'server' },
+  ...(isAdministrator ? [{ title: t('server'), key: 'server' }] : []),
+  ...(isAdministrator ? [{ title: t('account'), key: 'account' }] : []),
   { title: t('created_at'), key: 'created_at' },
   { title: t('actions'), key: 'actions', sortable: false },
 ];
@@ -280,6 +285,10 @@ onBeforeUnmount(async () => {
 
         <template #item.server="{ item }">
           <span>{{ item.server?.name }}</span>
+        </template>
+
+        <template #item.account="{ item }">
+          <span>{{ item.account?.name }}</span>
         </template>
 
         <template #item.created_at="{ item }">

@@ -91,5 +91,7 @@
     "edit_channel": "Edit Channel",
     "type_required": "Type is required",
     "channel_edit_error": "An error occurred while editing the channel. Please try again.",
-    "channel_edit_success": "Channel edited successfully!"
+    "channel_edit_success": "Channel edited successfully!",
+    "number": "Number",
+    "account": "Account"
 }
