@@ -43,5 +43,8 @@
   "worker_list_error": "Error al obtener la lista de trabajadores",
   "server_web_create_error": "Error al crear el servidor web",
   "server_web_update_error": "Error al actualizar el servidor web",
-  "worker_volume_creation_failed": "Error al crear el volumen del trabajador"
+  "worker_volume_creation_failed": "Error al crear el volumen del trabajador",
+  "channel_updated_successfully": "¡Canal actualizado con éxito!",
+  "channel_not_found": "¡Canal no encontrado!",
+  "error_updating_worker": "Error al actualizar el canal"
 }

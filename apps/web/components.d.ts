@@ -24,6 +24,7 @@ declare module 'vue' {
     AppConsoleServer: typeof import('./src/components/server/AppConsoleServer.vue')['default']
     AppDateTimePicker: typeof import('./src/@webcore/components/app-form-elements/AppDateTimePicker.vue')['default']
     AppDrawerHeaderSection: typeof import('./src/@webcore/components/AppDrawerHeaderSection.vue')['default']
+    AppEditChannel: typeof import('./src/components/channel/AppEditChannel.vue')['default']
     AppEditServer: typeof import('./src/components/server/AppEditServer.vue')['default']
     AppLoadingIndicator: typeof import('./src/components/AppLoadingIndicator.vue')['default']
     AppLogsServer: typeof import('./src/components/server/AppLogsServer.vue')['default']

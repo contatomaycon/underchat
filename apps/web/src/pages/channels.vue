@@ -67,9 +67,9 @@ const itemsType = ref([
 const isDialogDeleterShow = ref(false);
 const serverToDelete = ref<string | null>(null);
 
-const isDialogEditServerShow = ref(false);
+const isDialogEditChannelShow = ref(false);
 const isAddChannelVisible = ref(false);
-const serverToEdit = ref<string | null>(null);
+const channelToEdit = ref<string | null>(null);
 
 const resolveStatusVariant = (s: string | undefined | null) => {
   if (s === EWorkerStatus.disponible)
@@ -134,7 +134,7 @@ const handleTableChange = (o: {
   options.value.sortBy = o.sortBy;
 };
 
-const deleteServer = async (id: string) => {
+const deleteChannel = async (id: string) => {
   serverToDelete.value = id;
 
   isDialogDeleterShow.value = true;
@@ -143,7 +143,7 @@ const deleteServer = async (id: string) => {
 const handleDelete = async () => {
   /*   if (!serverToDelete.value) return;
 
-  const result = await channelsStore.deleteServer(serverToDelete.value);
+  const result = await channelsStore.deleteChannel(serverToDelete.value);
   if (result) {
     await channelsStore.listServers(query.value);
   }
@@ -152,9 +152,9 @@ const handleDelete = async () => {
 };
 
 const openEditDialog = (id: string) => {
-  serverToEdit.value = id;
+  channelToEdit.value = id;
 
-  isDialogEditServerShow.value = true;
+  isDialogEditChannelShow.value = true;
 };
 
 watch(
@@ -306,7 +306,7 @@ onBeforeUnmount(async () => {
                 activator="parent"
               >
                 <span>{{ $t('delete_channel') }}</span> </VTooltip
-              ><VIcon icon="tabler-trash" @click="deleteServer(item.id)"
+              ><VIcon icon="tabler-trash" @click="deleteChannel(item.id)"
             /></IconBtn>
           </div>
         </template>
@@ -331,9 +331,9 @@ onBeforeUnmount(async () => {
         @confirm="handleDelete"
       />
 
-      <AppEditServer
-        v-model="isDialogEditServerShow"
-        :server-id="serverToEdit"
+      <AppEditChannel
+        v-model="isDialogEditChannelShow"
+        :channel-id="channelToEdit"
       />
 
       <AppAddChannel v-model="isAddChannelVisible" />

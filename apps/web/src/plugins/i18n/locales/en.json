@@ -89,5 +89,7 @@
     "delete_channel": "Delete channel?",
     "delete_channel_confirmation": "Are you sure you want to delete this channel?",
     "edit_channel": "Edit Channel",
-    "type_required": "Type is required"
+    "type_required": "Type is required",
+    "channel_edit_error": "An error occurred while editing the channel. Please try again.",
+    "channel_edit_success": "Channel edited successfully!"
 }

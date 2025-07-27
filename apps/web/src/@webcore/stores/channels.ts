@@ -15,6 +15,7 @@ import { ListWorkerRequest } from '@core/schema/worker/listWorker/request.schema
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { ManagerCreateWorkerRequest } from '@core/schema/worker/managerCreateWorker/request.schema';
 import { ManagerCreateWorkerResponse } from '@core/schema/worker/managerCreateWorker/response.schema';
+import { EditWorkerRequest } from '@core/schema/worker/editWorker/request.schema';
 
 export const useChannelsStore = defineStore('channels', {
   state: () => ({
@@ -129,6 +130,48 @@ export const useChannelsStore = defineStore('channels', {
         return true;
       } catch (error) {
         let errorMessage = this.i18n.global.t('channel_add_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async updateChannel(payload: EditWorkerRequest): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<IApiResponse<boolean>>(
+          `/worker/${payload.worker_id}/${payload.name}`,
+          payload
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('channel_edit_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('channel_edit_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('channel_edit_error');
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }

@@ -10,3 +10,8 @@ export const workerViewPermissions = [
   EGeneralPermissions.full_access,
   EWorkerPermissions.view_worker,
 ];
+
+export const workerEditPermissions = [
+  EGeneralPermissions.full_access,
+  EWorkerPermissions.update_worker,
+];

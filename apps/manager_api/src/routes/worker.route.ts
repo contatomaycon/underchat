@@ -2,8 +2,13 @@ import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import WorkerController from '@/controllers/worker';
 import { listWorkerSchema } from '@core/schema/worker/listWorker';
-import { workerCreatePermissions, workerViewPermissions } from '@/permissions';
+import {
+  workerCreatePermissions,
+  workerEditPermissions,
+  workerViewPermissions,
+} from '@/permissions';
 import { managerCreateWorkerSchema } from '@core/schema/worker/managerCreateWorker';
+import { editWorkerSchema } from '@core/schema/worker/editWorker';
 
 export default async function workerRoutes(server: FastifyInstance) {
   const workerController = container.resolve(WorkerController);
@@ -23,6 +28,15 @@ export default async function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerViewPermissions),
+    ],
+  });
+
+  server.patch('/worker/:worker_id/:name', {
+    schema: editWorkerSchema,
+    handler: workerController.updateWorker,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerEditPermissions),
     ],
   });
 }

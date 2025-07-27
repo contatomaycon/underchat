@@ -91,5 +91,7 @@
     "delete_channel": "Excluir canal?",
     "delete_channel_confirmation": "Você tem certeza que deseja excluir este canal?",
     "edit_channel": "Editar Canal",
-    "type_required": "O tipo é obrigatório"
+    "type_required": "O tipo é obrigatório",
+    "channel_edit_error": "Ocorreu um erro ao editar o canal. Por favor, tente novamente.",
+    "channel_edit_success": "Canal editado com sucesso!"
 }

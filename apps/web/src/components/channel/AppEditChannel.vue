@@ -1,7 +1,9 @@
 <script lang="ts" setup>
 import { useChannelsStore } from '@/@webcore/stores/channels';
+import { EServerWebProtocol } from '@core/common/enums/EServerWebProtocol';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
-import { ManagerCreateWorkerRequest } from '@core/schema/worker/managerCreateWorker/request.schema';
+import { EditServerRequest } from '@core/schema/server/editServer/request.schema';
+import { EditWorkerRequest } from '@core/schema/worker/editWorker/request.schema';
 import { VForm } from 'vuetify/components/VForm';
 
 const channelStore = useChannelsStore();
@@ -9,6 +11,7 @@ const { t } = useI18n();
 
 const props = defineProps<{
   modelValue: boolean;
+  channelId: string | null;
 }>();
 
 const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
@@ -18,30 +21,25 @@ const isVisible = computed({
   set: (v) => emit('update:modelValue', v),
 });
 
+const channelId = toRef(props, 'channelId');
 const name = ref<string | null>(null);
-const type = ref<EWorkerType | null>(null);
 
-const itemsType = ref([
-  { value: EWorkerType.baileys, title: t('unofficial') },
-  { value: EWorkerType.whatsapp, title: t('official') },
-]);
+const refFormEditChannel = ref<VForm>();
 
-const refFormAddChannel = ref<VForm>();
-
-const addChannel = async () => {
-  const validateForm = await refFormAddChannel?.value?.validate();
+const updateServer = async () => {
+  const validateForm = await refFormEditChannel?.value?.validate();
   if (!validateForm?.valid) return;
 
-  if (!name.value || !type.value) {
+  if (!channelId.value || !name.value) {
     return;
   }
 
-  const payload: ManagerCreateWorkerRequest = {
+  const payload: EditWorkerRequest = {
     name: name.value,
-    worker_type: type.value,
+    worker_id: channelId.value,
   };
 
-  const result = await channelStore.addChannel(payload);
+  const result = await channelStore.updateChannel(payload);
 
   if (result) {
     isVisible.value = false;
@@ -50,17 +48,14 @@ const addChannel = async () => {
   }
 };
 
-const resetForm = () => {
-  name.value = null;
-  type.value = null;
-  refFormAddChannel.value?.resetValidation();
-};
+watch(channelId, async (id) => {
+  if (!id) return;
 
-watch(isVisible, (visible) => {
-  if (visible) resetForm();
+  const server = await channelStore.getServerById(id);
+  if (server) {
+    name.value = server.name;
+  }
 });
-
-onMounted(resetForm);
 </script>
 
 <template>
@@ -76,21 +71,11 @@ onMounted(resetForm);
       </VOverlay>
     </template>
 
-    <VForm ref="refFormAddChannel" @submit.prevent>
-      <VCard :title="$t('add_server')">
+    <VForm ref="refFormEditChannel" @submit.prevent>
+      <VCard :title="$t('edit_channel')">
         <VCardText>
           <VRow>
-            <VCol cols="12" sm="6" md="6">
-              <AppSelect
-                :items="itemsType"
-                v-model="type"
-                :label="$t('type') + ':'"
-                :placeholder="$t('type')"
-                :rules="[requiredValidator(type, $t('type_required'))]"
-              />
-            </VCol>
-
-            <VCol cols="12" sm="6" md="6">
+            <VCol cols="12">
               <AppTextField
                 v-model="name"
                 :label="$t('name') + ':'"
@@ -105,7 +90,7 @@ onMounted(resetForm);
           <VBtn variant="tonal" color="secondary" @click="isVisible = false">
             {{ $t('cancel') }}
           </VBtn>
-          <VBtn @click="addChannel"> {{ $t('add') }} </VBtn>
+          <VBtn @click="updateServer"> {{ $t('save') }} </VBtn>
         </VCardText>
       </VCard>
     </VForm>

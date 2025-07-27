@@ -43,5 +43,8 @@
   "worker_list_error": "Error retrieving worker list!",
   "server_web_create_error": "Error creating web server!",
   "server_web_update_error": "Error updating web server!",
-  "worker_volume_creation_failed": "Failed to create worker volume"
+  "worker_volume_creation_failed": "Failed to create worker volume",
+  "channel_updated_successfully": "Channel updated successfully!",
+  "channel_not_found": "Channel not found!",
+  "error_updating_worker": "Error updating channel!"
 }
