@@ -58,8 +58,6 @@ export class WorkerManagerCreatorUseCase {
     const viewWorkerBalancerServer =
       await this.workerService.viewWorkerBalancerServer(accountId);
 
-    console.log('viewWorkerBalancerServer', viewWorkerBalancerServer);
-
     if (!viewWorkerBalancerServer) {
       throw new Error(t('worker_balancer_server_not_disponible'));
     }
@@ -74,8 +72,6 @@ export class WorkerManagerCreatorUseCase {
       viewWorkerBalancerServer,
       payload
     );
-
-    console.log('workerId', createWorker);
 
     return {
       worker_id: createWorker.worker_id,
