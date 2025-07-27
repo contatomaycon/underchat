@@ -17,6 +17,8 @@ export const worker = pgTable('worker', {
     .references(() => account.account_id)
     .notNull(),
   name: varchar({ length: 50 }).notNull(),
+  number: varchar({ length: 20 }),
+  container_name: varchar({ length: 100 }).notNull(),
   container_id: varchar({ length: 100 }).notNull(),
   created_at: timestamp('created_at', {
     mode: 'string',

@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { useServerStore } from '@/@webcore/stores/server';
+import { EServerWebProtocol } from '@core/common/enums/EServerWebProtocol';
 import { EditServerRequest } from '@core/schema/server/editServer/request.schema';
 import { VForm } from 'vuetify/components/VForm';
 
@@ -25,6 +26,16 @@ const port = ref<number | null>(null);
 const username = ref<string | null>(null);
 const password = ref<string | null>(null);
 const quantityWorkers = ref<number | null>(null);
+const webDomain = ref<string | null>(null);
+const webPort = ref<number | null>(null);
+const webProtocol = ref<EServerWebProtocol.http | EServerWebProtocol.https>(
+  EServerWebProtocol.http
+);
+
+const itemsWebProtocol = ref([
+  { value: EServerWebProtocol.http, title: 'HTTP' },
+  { value: EServerWebProtocol.https, title: 'HTTPS' },
+]);
 
 const refFormEditServer = ref<VForm>();
 
@@ -37,7 +48,10 @@ const updateServer = async () => {
     !name.value ||
     !ip.value ||
     !port.value ||
-    !quantityWorkers.value
+    !quantityWorkers.value ||
+    !webDomain.value ||
+    !webPort.value ||
+    !webProtocol.value
   ) {
     return;
   }
@@ -49,6 +63,9 @@ const updateServer = async () => {
     ssh_username: username.value,
     ssh_password: password.value,
     quantity_workers: quantityWorkers.value,
+    web_domain: webDomain.value,
+    web_port: webPort.value,
+    web_protocol: webProtocol.value,
   };
 
   const result = await serverStore.updateServer(serverId.value, payload);
@@ -69,6 +86,9 @@ watch(serverId, async (id) => {
     ip.value = server.ssh.ssh_ip;
     port.value = server.ssh.ssh_port;
     quantityWorkers.value = server.quantity_workers;
+    webDomain.value = server.web.web_domain;
+    webPort.value = server.web.web_port;
+    webProtocol.value = server.web.web_protocol as EServerWebProtocol;
     username.value = null;
     password.value = null;
   }
@@ -135,6 +155,39 @@ watch(serverId, async (id) => {
                     $t('workers_allowed_required')
                   ),
                 ]"
+                type="number"
+              />
+            </VCol>
+
+            <VCol cols="12" sm="4" md="4">
+              <AppSelect
+                :items="itemsWebProtocol"
+                v-model="webProtocol"
+                :label="$t('web_protocol') + ':'"
+                :placeholder="$t('web_protocol')"
+                :rules="[
+                  requiredValidator(webProtocol, $t('web_protocol_required')),
+                ]"
+              />
+            </VCol>
+
+            <VCol cols="12" sm="4" md="4">
+              <AppTextField
+                v-model="webDomain"
+                :label="$t('web_domain') + ':'"
+                :placeholder="$t('web_domain')"
+                :rules="[
+                  requiredValidator(webDomain, $t('web_domain_required')),
+                ]"
+              />
+            </VCol>
+
+            <VCol cols="12" sm="4" md="4">
+              <AppTextField
+                v-model="webPort"
+                :label="$t('web_port') + ':'"
+                :placeholder="$t('web_port')"
+                :rules="[requiredValidator(webPort, $t('web_port_required'))]"
                 type="number"
               />
             </VCol>

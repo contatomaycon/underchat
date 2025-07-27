@@ -2,20 +2,26 @@ import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { CreateWorkerRequest } from '@core/schema/worker/createWorker/request.schema';
-import { WorkerCreatorUseCase } from '@core/useCases/worker/WorkerCreator.useCase';
+import { WorkerBalanceCreatorUseCase } from '@core/useCases/worker/WorkerBalanceCreator.useCase';
+import { BalanceCreateWorkerRequest } from '@core/schema/worker/balanceCreateWorker/request.schema';
 
 export const createWorker = async (
   request: FastifyRequest<{
-    Body: CreateWorkerRequest;
+    Body: BalanceCreateWorkerRequest;
   }>,
   reply: FastifyReply
 ) => {
-  const workerCreatorUseCase = container.resolve(WorkerCreatorUseCase);
-  const { t } = request;
+  const workerBalanceCreatorUseCase = container.resolve(
+    WorkerBalanceCreatorUseCase
+  );
+  const { t, tokenKeyData } = request;
 
   try {
-    const response = await workerCreatorUseCase.execute(t, request.body);
+    const response = await workerBalanceCreatorUseCase.execute(
+      t,
+      tokenKeyData.account_id,
+      request.body
+    );
 
     if (response) {
       return sendResponse(reply, {

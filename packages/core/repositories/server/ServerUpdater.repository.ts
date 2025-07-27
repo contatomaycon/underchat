@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { server, serverSsh } from '@core/models';
+import { server, serverSsh, serverWeb } from '@core/models';
 import {
   NodePgDatabase,
   NodePgQueryResultHKT,
@@ -10,6 +10,7 @@ import { IUpdateServerById } from '@core/common/interfaces/IUpdateServerById';
 import { IUpdateServerSshById } from '@core/common/interfaces/IUpdateServerSshById';
 import { PgTransaction } from 'drizzle-orm/pg-core';
 import { TFunction } from 'i18next';
+import { IUpdateServerWebById } from '@core/common/interfaces/IUpdateServerWebById';
 
 @injectable()
 export class ServerUpdaterRepository {
@@ -67,10 +68,32 @@ export class ServerUpdaterRepository {
     return result.rowCount === 1;
   };
 
+  private readonly updateServerWeb = async (
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
+    input: IUpdateServerWebById
+  ): Promise<boolean> => {
+    const result = await tx
+      .update(serverWeb)
+      .set({
+        web_domain: input.web_domain,
+        web_port: input.web_port,
+        web_protocol: input.web_protocol,
+      })
+      .where(eq(serverWeb.server_id, input.server_id))
+      .execute();
+
+    return result.rowCount === 1;
+  };
+
   updateServer = async (
     t: TFunction<'translation', undefined>,
     inputServer: IUpdateServerById,
-    inputServerSsh: IUpdateServerSshById
+    inputServerSsh: IUpdateServerSshById,
+    inputServerWeb: IUpdateServerWebById
   ): Promise<boolean> => {
     return this.db.transaction(async (tx) => {
       const updateServerResult = await this.updateServerById(tx, inputServer);
@@ -85,6 +108,14 @@ export class ServerUpdaterRepository {
 
       if (!updateServerSshResult) {
         throw new Error(t('server_ssh_update_error'));
+      }
+
+      const updateServerWebResult = await this.updateServerWeb(
+        tx,
+        inputServerWeb
+      );
+      if (!updateServerWebResult) {
+        throw new Error(t('server_web_update_error'));
       }
 
       return true;

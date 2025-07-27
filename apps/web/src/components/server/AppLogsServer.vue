@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted } from 'vue';
 import { useServerStore } from '@/@webcore/stores/server';
 import { ServerLogsInstallResponse } from '@core/schema/server/serverLogsInstall/response.schema';
+import { formatDateTimeSeconds } from '@core/common/functions/formatDateTimeSeconds';
 
 const serverStore = useServerStore();
 
@@ -112,7 +113,7 @@ watch(
               <slot :item="item">
                 <VListItem>
                   <VListItemTitle class="wrap-text">
-                    <strong>{{ item.date }}:</strong>
+                    <strong>{{ formatDateTimeSeconds(item.date) }}:</strong>
                     {{ item.command }}
                   </VListItemTitle>
                   <VListItemSubtitle class="wrap-text">

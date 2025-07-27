@@ -1,16 +1,16 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { createWorkerResponseSchema } from './response.schema';
-import { createWorkerRequestSchema } from './request.schema';
+import { managerCreateWorkerRequestSchema } from './request.schema';
+import { managerCreateWorkerResponseSchema } from './response.schema';
 
-export const createWorkerSchema = {
-  description: 'Adiciona um novo trabalhador',
+export const managerCreateWorkerSchema = {
+  description: 'Adiciona um novo canal',
   tags: [ETagSwagger.worker],
   produces: ['application/json'],
   security: [
     {
-      authenticateKeyApi: [],
+      authenticateJwt: [],
     },
   ],
   headers: Type.Object({
@@ -22,14 +22,14 @@ export const createWorkerSchema = {
       })
     ),
   }),
-  body: createWorkerRequestSchema,
+  body: managerCreateWorkerRequestSchema,
   response: {
     200: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: createWorkerResponseSchema,
+        data: managerCreateWorkerResponseSchema,
       },
       { description: 'Successful' }
     ),

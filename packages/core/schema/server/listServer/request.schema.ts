@@ -8,6 +8,7 @@ export const listServerRequestSchema = Type.Object({
   server_name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   server_status_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   ssh_ip: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  web_domain: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export type ListServerRequest = Static<typeof listServerRequestSchema>;

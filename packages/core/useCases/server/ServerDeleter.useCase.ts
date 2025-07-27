@@ -16,12 +16,14 @@ export class ServerDeleterUseCase {
       throw new Error(t('server_not_found'));
     }
 
-    const [deleteServerSshById, deleteServerById] = await Promise.all([
-      this.serverService.deleteServerSshById(serverId),
-      this.serverService.deleteServerById(serverId),
-    ]);
+    const [deleteServerSshById, deleteServerById, deleteServerWebById] =
+      await Promise.all([
+        this.serverService.deleteServerSshById(serverId),
+        this.serverService.deleteServerById(serverId),
+        this.serverService.deleteServerWebById(serverId),
+      ]);
 
-    if (!deleteServerSshById || !deleteServerById) {
+    if (!deleteServerSshById || !deleteServerById || !deleteServerWebById) {
       throw new Error(t('server_deleter_error'));
     }
 

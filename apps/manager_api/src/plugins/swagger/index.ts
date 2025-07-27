@@ -65,6 +65,10 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
           name: ETagSwagger.role,
           description: 'End-points relacionados à funções',
         },
+        {
+          name: ETagSwagger.worker,
+          description: 'End-points relacionados à canais',
+        },
       ],
     },
   });
