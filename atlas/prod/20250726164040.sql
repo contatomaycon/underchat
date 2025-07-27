@@ -312,7 +312,7 @@ CREATE TABLE "worker" (
   "server_id" uuid NOT NULL,
   "account_id" uuid NOT NULL,
   "name" character varying(50) NOT NULL,
-  "number" character varying(20) NOT NULL,
+  "number" character varying(20) NULL,
   "container_name" character varying(100) NOT NULL,
   "container_id" character varying(100) NOT NULL,
   "created_at" timestamptz NULL DEFAULT now(),

@@ -65,6 +65,7 @@ export class WorkerManagerCreatorUseCase {
     const payload: BalanceCreateWorkerRequest = {
       server_id: viewWorkerBalancerServer.server_id,
       worker_type: workerType,
+      name: input.name,
     };
 
     const createWorker = await this.balanceService.createWorker(

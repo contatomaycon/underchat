@@ -89,8 +89,9 @@ export class WorkerBalanceCreatorUseCase {
       worker_type_id: workerType,
       server_id: input.server_id,
       account_id: accountId,
-      name: containerName,
+      container_name: containerName,
       container_id: containerId,
+      name: input.name,
     };
 
     const workerId = await this.workerService.createWorker(workerData);
