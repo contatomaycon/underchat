@@ -5,4 +5,5 @@ export enum ETagSwagger {
   metrics = 'Métricas',
   centrifugo = 'Centrifugo',
   worker = 'Trabalhador',
+  role = 'Funções',
 }

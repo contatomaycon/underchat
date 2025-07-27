@@ -38,5 +38,18 @@
   "worker_balancer_server_not_disponible": "Worker balancer server not disponible",
   "worker_not_available": "Your plan does not support workers, please contact the system administrator for more information.",
   "worker_not_available_additional": "Your plan does not support additional workers, please contact the system administrator for more information.",
-  "account_not_found": "Account not found!"
+  "account_not_found": "Account not found!",
+  "role_list_successfully": "Role list retrieved successfully!",
+  "role_list_not_found": "No roles found!",
+  "role_view_successfully": "Role viewed successfully!",
+  "role_view_not_found": "Role not found!",
+  "role_deleted_successfully": "Role deleted successfully!",
+  "role_deleter_error": "Error deleting role!",
+  "role_update_successfully": "Role updated successfully!",
+  "role_update_error": "Error updating role!",
+  "role_creator_success": "Role created successfully!",
+  "role_creator_error": "Error creating role!",
+  "role_already_exists": "Role already exists!",
+  "role_not_available": "Your plan does not support roles, please contact the system administrator for more information.",
+  "role_not_available_additional": "Your plan does not support additional roles, please contact the system administrator for more information."
 }

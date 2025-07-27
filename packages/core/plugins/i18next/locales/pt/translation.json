@@ -38,5 +38,19 @@
   "worker_balancer_server_not_disponible": "Servidor de balanceamento de carga do trabalhador não disponível",
   "worker_not_available": "Seu plano não tem suporte a trabalhadores, por favor, entre em contato com o administrador do sistema para mais informações.",
   "worker_not_available_additional": "Seu plano não suporta mais trabalhadores, contrate um adicional ou entre em contato com o administrador do sistema para mais informações.",
-  "account_not_found": "Conta não encontrada!"
+  "account_not_found": "Conta não encontrada!",
+  "role_list_successfully": "Lista de papéis obtida com sucesso!",
+  "role_list_not_found": "Nenhum papel encontrado!",
+  "role_view_successfully": "Papel visualizado com sucesso!",
+  "role_view_not_found": "Papel não encontrado!",
+  "role_deleted_successfully": "Papel excluído com sucesso!",
+  "role_deleter_error": "Erro ao excluir o papel!",
+  "role_update_successfully": "Papel atualizado com sucesso!",
+  "role_update_error": "Erro ao atualizar o papel!",
+  "role_creator_success": "Papel criado com sucesso!",
+  "role_creator_error": "Erro ao criar o papel!",
+  "role_already_exists": "Papel já existe!",
+  "role_not_available": "Seu plano não tem suporte a papéis, por favor, entre em contato com o administrador do sistema para mais informações.",
+  "role_not_available_additional": "Seu plano não suporta mais papéis, contrate um adicional ou entre em contato com o administrador do sistema para mais informações."
+
 }
