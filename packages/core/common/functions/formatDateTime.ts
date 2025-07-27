@@ -1,5 +1,5 @@
-import moment from 'moment';
+import moment from 'moment-timezone';
 
 export function formatDateTime(input: string | Date): string {
-  return moment.utc(input).format('DD/MM/YYYY [às] HH:mm');
+  return moment.tz(input, 'America/Sao_Paulo').format('DD/MM/YYYY [às] HH:mm');
 }

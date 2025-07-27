@@ -42,5 +42,6 @@
   "worker_list_success": "Worker list retrieved successfully!",
   "worker_list_error": "Error retrieving worker list!",
   "server_web_create_error": "Error creating web server!",
-  "server_web_update_error": "Error updating web server!"
+  "server_web_update_error": "Error updating web server!",
+  "worker_volume_creation_failed": "Failed to create worker volume"
 }

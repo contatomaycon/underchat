@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { onMessage } from '@/@webcore/centrifugo';
 import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
-import { formatDateTime } from '@core/common/functions/formatDateTime';
+import { formatDateTimeSeconds } from '@core/common/functions/formatDateTimeSeconds';
 import { IServerSshCentrifugo } from '@core/common/interfaces/IServerSshCentrifugo';
 
 const { t } = useI18n();
@@ -24,7 +24,7 @@ const items = ref([
   {
     command: t('installation_pending'),
     output: t('installation_pending'),
-    date: formatDateTime(new Date()),
+    date: formatDateTimeSeconds(new Date()),
   },
 ]);
 
@@ -79,6 +79,14 @@ const scrollIfNeeded = () => {
   }
 };
 
+const resetForm = () => {
+  items.value = [];
+};
+
+watch(isVisible, (visible) => {
+  if (visible) resetForm();
+});
+
 onMounted(() => {
   nextTick(() => {
     if (listContainer.value)
@@ -99,7 +107,7 @@ onMounted(() => {
     items.value.push({
       command: data.command,
       output: data.output,
-      date: formatDateTime(data.date),
+      date: formatDateTimeSeconds(data.date),
     });
 
     if (items.value.length > maxRecords.value) {

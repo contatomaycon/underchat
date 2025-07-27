@@ -60,9 +60,24 @@ export class WorkerService {
       await this.removeContainerWorkerById(containerName, t);
     }
 
+    const createVolume = await this.docker.createVolume({
+      Name: containerName,
+    });
+
+    if (!createVolume.Status) {
+      throw new Error(t('worker_volume_creation_failed'));
+    }
+
     const container = await this.docker.createContainer({
       Image: imageName,
       name: containerName,
+      HostConfig: {
+        Binds: [`${containerName}:/app/data`],
+        NetworkMode: 'underchat',
+      },
+      Volumes: {
+        '/app/data': {},
+      },
     });
 
     await container.start();
