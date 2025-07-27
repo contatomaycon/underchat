@@ -1,8 +1,5 @@
 <script lang="ts" setup>
 import { useChannelsStore } from '@/@webcore/stores/channels';
-import { EServerWebProtocol } from '@core/common/enums/EServerWebProtocol';
-import { EWorkerType } from '@core/common/enums/EWorkerType';
-import { EditServerRequest } from '@core/schema/server/editServer/request.schema';
 import { EditWorkerRequest } from '@core/schema/worker/editWorker/request.schema';
 import { VForm } from 'vuetify/components/VForm';
 
@@ -51,7 +48,7 @@ const updateServer = async () => {
 watch(channelId, async (id) => {
   if (!id) return;
 
-  const server = await channelStore.getServerById(id);
+  const server = await channelStore.getWorkerById(id);
   if (server) {
     name.value = server.name;
   }

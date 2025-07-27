@@ -95,5 +95,6 @@
     "channel_edit_error": "Ocorreu um erro ao editar o canal. Por favor, tente novamente.",
     "channel_edit_success": "Canal editado com sucesso!",
     "number": "Número",
-    "account": "Conta"
+    "account": "Conta",
+    "worker_view_error": "Ocorreu um erro ao ver o trabalhador. Por favor, tente novamente."
 }

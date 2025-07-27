@@ -16,6 +16,7 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { ManagerCreateWorkerRequest } from '@core/schema/worker/managerCreateWorker/request.schema';
 import { ManagerCreateWorkerResponse } from '@core/schema/worker/managerCreateWorker/response.schema';
 import { EditWorkerRequest } from '@core/schema/worker/editWorker/request.schema';
+import { ViewWorkerResponse } from '@core/schema/worker/viewWorker/response.schema';
 
 export const useChannelsStore = defineStore('channels', {
   state: () => ({
@@ -182,6 +183,42 @@ export const useChannelsStore = defineStore('channels', {
         this.loading = false;
 
         return false;
+      }
+    },
+
+    async getWorkerById(workerId: string): Promise<ViewWorkerResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<IApiResponse<ViewWorkerResponse>>(
+          `/worker/${workerId}`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('worker_view_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('worker_view_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
       }
     },
 
