@@ -5,7 +5,7 @@ import { managerCreateWorkerRequestSchema } from './request.schema';
 import { managerCreateWorkerResponseSchema } from './response.schema';
 
 export const managerCreateWorkerSchema = {
-  description: 'Adiciona um novo trabalhador',
+  description: 'Adiciona um novo canal',
   tags: [ETagSwagger.worker],
   produces: ['application/json'],
   security: [

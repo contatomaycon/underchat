@@ -4,7 +4,7 @@ import { balanceCreateWorkerResponseSchema } from './response.schema';
 import { balanceCreateWorkerRequestSchema } from './request.schema';
 
 export const balanceCreateWorkerSchema = {
-  description: 'Adiciona um novo trabalhador',
+  description: 'Adiciona um novo canal',
   tags: [ETagSwagger.worker],
   produces: ['application/json'],
   security: [

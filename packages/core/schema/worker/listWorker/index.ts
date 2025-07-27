@@ -5,7 +5,7 @@ import { listWorkerFinalResponseSchema } from './response.schema';
 import { listWorkerRequestSchema } from './request.schema';
 
 export const listWorkerSchema = {
-  description: 'Lista os trabalhadores',
+  description: 'Lista os canais',
   tags: [ETagSwagger.worker],
   produces: ['application/json'],
   security: [
