@@ -3,27 +3,29 @@ import { worker } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq } from 'drizzle-orm';
+import { currentTime } from '@core/common/functions/currentTime';
 
 @injectable()
-export class WorkerUpdaterRepository {
+export class WorkerDeleterRepository {
   constructor(
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  updateWorkerById = async (
+  deleteWorkerById = async (
     isAdministrator: boolean,
     accountId: string,
-    workerId: string,
-    name: string
+    workerId: string
   ): Promise<boolean> => {
     const accountCondition = isAdministrator
       ? undefined
       : eq(worker.account_id, accountId);
 
+    const date = currentTime();
+
     const result = await this.db
       .update(worker)
       .set({
-        name,
+        deleted_at: date,
       })
       .where(and(eq(worker.worker_id, workerId), accountCondition))
       .execute();

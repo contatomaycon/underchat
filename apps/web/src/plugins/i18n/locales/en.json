@@ -94,5 +94,7 @@
     "channel_edit_success": "Channel edited successfully!",
     "number": "Number",
     "account": "Account",
-    "worker_view_error": "An error occurred while viewing the worker. Please try again."
+    "worker_view_error": "An error occurred while viewing the worker. Please try again.",
+    "worker_delete_error": "An error occurred while deleting the worker. Please try again.",
+    "worker_delete_success": "Worker deleted successfully!"
 }

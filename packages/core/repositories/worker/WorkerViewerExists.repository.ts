@@ -2,32 +2,41 @@ import * as schema from '@core/models';
 import { worker } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq } from 'drizzle-orm';
+import { and, count, eq, isNull } from 'drizzle-orm';
 
 @injectable()
-export class WorkerUpdaterRepository {
+export class WorkerViewerExistsRepository {
   constructor(
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  updateWorkerById = async (
+  existsWorkerById = async (
     isAdministrator: boolean,
     accountId: string,
-    workerId: string,
-    name: string
+    workerId: string
   ): Promise<boolean> => {
     const accountCondition = isAdministrator
       ? undefined
       : eq(worker.account_id, accountId);
 
     const result = await this.db
-      .update(worker)
-      .set({
-        name,
+      .select({
+        total: count(),
       })
-      .where(and(eq(worker.worker_id, workerId), accountCondition))
+      .from(worker)
+      .where(
+        and(
+          accountCondition,
+          eq(worker.worker_id, workerId),
+          isNull(worker.deleted_at)
+        )
+      )
       .execute();
 
-    return result.rowCount === 1;
+    if (!result.length) {
+      return false;
+    }
+
+    return result[0].total > 0;
   };
 }
