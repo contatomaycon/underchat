@@ -14,13 +14,13 @@ export const deleteWorker = async (
   const workerManagerDeleterUseCase = container.resolve(
     WorkerManagerDeleterUseCase
   );
-  const { t, tokenKeyData } = request;
+  const { t, tokenJwtData } = request;
 
   try {
     const response = await workerManagerDeleterUseCase.execute(
       t,
-      tokenKeyData.account_id,
-      tokenKeyData.is_administrator,
+      tokenJwtData.account_id,
+      tokenJwtData.is_administrator,
       request.params.worker_id
     );
 
