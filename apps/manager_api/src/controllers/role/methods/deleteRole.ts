@@ -18,7 +18,8 @@ export const deleteRole = async (
     const response = await roleDeleterUseCase.execute(
       t,
       request.params.permission_role_id,
-      tokenJwtData.account_id
+      tokenJwtData.account_id,
+      tokenJwtData.is_administrator
     );
 
     if (response) {

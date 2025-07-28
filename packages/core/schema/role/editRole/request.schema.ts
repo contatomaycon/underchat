@@ -1,12 +1,8 @@
 import { Static, Type } from '@sinclair/typebox';
 
-export const editRoleRequestSchema = Type.Object({
+export const editRoleParamsRequestSchema = Type.Object({
+  permission_role_id: Type.String({ format: 'uuid' }),
   name: Type.String(),
 });
 
-export const editRoleParamsRequestSchema = Type.Object({
-  permission_role_id: Type.String({ format: 'uuid' }),
-});
-
-export type EditRoleRequest = Static<typeof editRoleRequestSchema>;
 export type EditRoleParamsRequest = Static<typeof editRoleParamsRequestSchema>;

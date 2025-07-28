@@ -52,9 +52,14 @@ export class RoleService {
 
   existsRoleById = async (
     roleId: string,
-    accountId: string
+    accountId: string,
+    isAdministrator: boolean
   ): Promise<boolean> => {
-    return this.roleViewerExistsRepository.existsRoleById(roleId, accountId);
+    return this.roleViewerExistsRepository.existsRoleById(
+      roleId,
+      accountId,
+      isAdministrator
+    );
   };
 
   existsRoleByName = async (
@@ -81,9 +86,14 @@ export class RoleService {
 
   deleteRoleById = async (
     roleId: string,
-    accountId: string
+    accountId: string,
+    isAdministrator: boolean
   ): Promise<boolean> => {
-    return this.roleDeleterRepository.deleteRoleById(roleId, accountId);
+    return this.roleDeleterRepository.deleteRoleById(
+      roleId,
+      accountId,
+      isAdministrator
+    );
   };
 
   updateRoleById = async (

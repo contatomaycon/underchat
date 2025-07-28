@@ -94,5 +94,21 @@
     "channel_edit_success": "¡Canal editado exitosamente!",
     "number": "Número",
     "account": "Cuenta",
-    "worker_view_error": "Ocurrió un error al ver el trabajador. Por favor, inténtalo de nuevo."
+    "worker_view_error": "Ocurrió un error al ver el trabajador. Por favor, inténtalo de nuevo.",
+    "cargos": "Cargos",
+    "role_list_error": "Ocurrió un error al listar los roles. Por favor, inténtalo de nuevo.",
+    "role_add_error": "Ocurrió un error al agregar el rol. Por favor, inténtalo de nuevo.",
+    "role_add_success": "¡Rol agregado exitosamente!",
+    "role_edit_error": "Ocurrió un error al editar el rol. Por favor, inténtalo de nuevo.",
+    "role_edit_success": "¡Rol editado exitosamente!",
+    "role_view_error": "Ocurrió un error al ver el rol. Por favor, inténtalo de nuevo.",
+    "role_deleted_error": "Ocurrió un error al eliminar el rol. Por favor, inténtalo de nuevo.",
+    "role_deleted_success": "¡Rol eliminado exitosamente!",
+    "role_delete_error": "Ocurrió un error al eliminar el rol. Por favor, inténtalo de nuevo.",
+    "role_delete_success": "¡Rol eliminado exitosamente!",
+    "role_not_edit": "Rol no editable",
+    "add_role": "Agregar rol",
+    "delete_role": "¿Eliminar rol?",
+    "delete_role_confirmation": "¿Estás seguro de que deseas eliminar este rol?",
+    "edit_role": "Editar rol"
 }

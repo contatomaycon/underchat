@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { permissionRole } from '@core/models';
+import { permissionRole, account } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import {
@@ -11,7 +11,8 @@ import {
   isNull,
   SQL,
   SQLWrapper,
-  like,
+  or,
+  ilike,
 } from 'drizzle-orm';
 import { ESortOrder } from '@core/common/enums/ESortOrder';
 import { ListRoleResponse } from '@core/schema/role/listRole/response.schema';
@@ -49,13 +50,22 @@ export class RoleListerRepository {
   };
 
   private readonly setFilters = (query: ListRoleRequest): SQLWrapper[] => {
-    const condition = and(
-      query.role_name
-        ? like(permissionRole.name, `%${query.role_name}%`)
-        : undefined
-    );
+    const filters: SQLWrapper[] = [];
 
-    return condition ? [condition] : [];
+    if (query.role_name || query.account) {
+      const conditions: (SQLWrapper | undefined)[] = [
+        query.role_name
+          ? ilike(permissionRole.name, `%${query.role_name}%`)
+          : undefined,
+        query.account ? ilike(account.name, `%${query.account}%`) : undefined,
+      ];
+
+      const combined = or(...conditions);
+
+      if (combined) filters.push(combined);
+    }
+
+    return filters;
   };
 
   listRoles = async (
@@ -75,10 +85,14 @@ export class RoleListerRepository {
       .select({
         permission_role_id: permissionRole.permission_role_id,
         name: permissionRole.name,
-        account_id: permissionRole.account_id,
+        account: {
+          id: account.account_id,
+          name: account.name,
+        },
         created_at: permissionRole.created_at,
       })
       .from(permissionRole)
+      .leftJoin(account, eq(permissionRole.account_id, account.account_id))
       .where(
         and(accountCondition, isNull(permissionRole.deleted_at), ...filters)
       );
@@ -99,7 +113,7 @@ export class RoleListerRepository {
     return result.map((role) => ({
       permission_role_id: role.permission_role_id,
       name: role.name,
-      account_id: isAdministrator ? role.account_id : undefined,
+      account: isAdministrator ? role.account : undefined,
       created_at: role.created_at,
     })) as ListRoleResponse[];
   };
@@ -119,6 +133,7 @@ export class RoleListerRepository {
         count: count(),
       })
       .from(permissionRole)
+      .leftJoin(account, eq(permissionRole.account_id, account.account_id))
       .where(
         and(accountCondition, isNull(permissionRole.deleted_at), ...filters)
       )

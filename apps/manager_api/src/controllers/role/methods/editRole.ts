@@ -3,14 +3,10 @@ import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { RoleUpdaterUseCase } from '@core/useCases/role/RoleUpdater.useCase';
-import {
-  EditRoleParamsRequest,
-  EditRoleRequest,
-} from '@core/schema/role/editRole/request.schema';
+import { EditRoleParamsRequest } from '@core/schema/role/editRole/request.schema';
 
 export const editRole = async (
   request: FastifyRequest<{
-    Body: EditRoleRequest;
     Params: EditRoleParamsRequest;
   }>,
   reply: FastifyReply
@@ -22,8 +18,9 @@ export const editRole = async (
     const response = await roleUpdaterUseCase.execute(
       t,
       request.params.permission_role_id,
-      request.body.name,
-      tokenJwtData.account_id
+      request.params.name,
+      tokenJwtData.account_id,
+      tokenJwtData.is_administrator
     );
 
     if (response) {

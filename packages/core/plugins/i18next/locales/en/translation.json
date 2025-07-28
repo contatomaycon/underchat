@@ -62,5 +62,6 @@
   "error_updating_worker": "Error updating channel!",
   "worker_view_success": "Channel viewed successfully!",
   "worker_view_error": "Error viewing channel!",
-  "worker_not_found": "Worker not found!"
+  "worker_not_found": "Worker not found!",
+  "role_not_found": "Role not found!"
 }

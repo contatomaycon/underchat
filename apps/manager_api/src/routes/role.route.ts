@@ -44,7 +44,7 @@ export default async function roleRoutes(server: FastifyInstance) {
     ],
   });
 
-  server.patch('/role/:permission_role_id', {
+  server.patch('/role/:permission_role_id/:name', {
     schema: editRoleSchema,
     handler: roleController.editRole,
     preHandler: [

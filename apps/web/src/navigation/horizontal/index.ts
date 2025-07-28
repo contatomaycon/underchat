@@ -3,6 +3,7 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EHomePermissions } from '@core/common/enums/EPermissions/home';
 import { EServerPermissions } from '@core/common/enums/EPermissions/server';
 import { EWorkerPermissions } from '@core/common/enums/EPermissions/worker';
+import { ERolePermissions } from '@core/common/enums/EPermissions/role';
 
 export default [
   {
@@ -21,6 +22,19 @@ export default [
       EWorkerPermissions.update_worker,
       EWorkerPermissions.view_worker,
       EWorkerPermissions.delete_worker,
+    ],
+  },
+  {
+    title: 'cargos',
+    to: { name: 'roles' as keyof RouteNamedMap },
+    icon: { icon: 'tabler-crosshair' },
+    permissions: [
+      EGeneralPermissions.full_access,
+      ERolePermissions.role_list,
+      ERolePermissions.role_view,
+      ERolePermissions.role_create,
+      ERolePermissions.role_edit,
+      ERolePermissions.role_delete,
     ],
   },
   {

@@ -96,5 +96,21 @@
     "channel_edit_success": "Canal editado com sucesso!",
     "number": "Número",
     "account": "Conta",
-    "worker_view_error": "Ocorreu um erro ao ver o trabalhador. Por favor, tente novamente."
+    "worker_view_error": "Ocorreu um erro ao ver o trabalhador. Por favor, tente novamente.",
+    "cargos": "Cargos",
+    "role_list_error": "Ocorreu um erro ao listar os cargos. Por favor, tente novamente.",
+    "role_add_error": "Ocorreu um erro ao adicionar o cargo. Por favor, tente novamente.",
+    "role_add_success": "Cargo adicionado com sucesso!",
+    "role_edit_error": "Ocorreu um erro ao editar o cargo. Por favor, tente novamente.",
+    "role_edit_success": "Cargo editado com sucesso!",
+    "role_view_error": "Ocorreu um erro ao ver o cargo. Por favor, tente novamente.",
+    "role_deleted_error": "Ocorreu um erro ao excluir o cargo. Por favor, tente novamente.",
+    "role_deleted_success": "Cargo excluído com sucesso!",
+    "role_delete_error": "Ocorreu um erro ao excluir o cargo. Por favor, tente novamente.",
+    "role_delete_success": "Cargo excluído com sucesso!",
+    "role_not_edit": "Cargo não editável",
+    "add_role": "Adicionar Cargo",
+    "delete_role": "Excluir cargo?",
+    "delete_role_confirmation": "Você tem certeza que deseja excluir este cargo?",
+    "edit_role": "Editar Cargo"
 }

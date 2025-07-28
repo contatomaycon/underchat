@@ -9,10 +9,15 @@ export class RoleUpdaterUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     roleId: string,
-    body: string,
-    accountId: string
+    name: string,
+    accountId: string,
+    isAdministrator: boolean
   ): Promise<boolean> {
-    const exists = await this.roleService.existsRoleById(roleId, accountId);
+    const exists = await this.roleService.existsRoleById(
+      roleId,
+      accountId,
+      isAdministrator
+    );
 
     if (!exists) {
       throw new Error(t('role_not_found'));
@@ -20,7 +25,7 @@ export class RoleUpdaterUseCase {
 
     const roleUpdate = await this.roleService.updateRoleById(
       roleId,
-      body,
+      name,
       accountId
     );
 

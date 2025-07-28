@@ -9,9 +9,14 @@ export class RoleDeleterUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     roleId: string,
-    accountId: string
+    accountId: string,
+    isAdministrator: boolean
   ): Promise<boolean> {
-    const exists = await this.roleService.existsRoleById(roleId, accountId);
+    const exists = await this.roleService.existsRoleById(
+      roleId,
+      accountId,
+      isAdministrator
+    );
 
     if (!exists) {
       throw new Error(t('role_not_found'));
@@ -19,7 +24,8 @@ export class RoleDeleterUseCase {
 
     const deleteRoleById = await this.roleService.deleteRoleById(
       roleId,
-      accountId
+      accountId,
+      isAdministrator
     );
 
     if (!deleteRoleById) {

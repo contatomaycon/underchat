@@ -62,5 +62,6 @@
   "error_updating_worker": "Erro ao atualizar o canal!",
   "worker_view_success": "Canal visualizado com sucesso!",
   "worker_view_error": "Erro ao visualizar o canal!",
-  "worker_not_found": "Canal não encontrado!"
+  "worker_not_found": "Canal não encontrado!",
+  "role_not_found": "Cargo não encontrado!"
 }

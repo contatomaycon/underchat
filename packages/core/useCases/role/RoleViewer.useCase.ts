@@ -13,7 +13,11 @@ export class RoleViewerUseCase {
     accountId: string,
     isAdministrator: boolean
   ): Promise<ViewRoleResponse | null> {
-    const exists = await this.roleService.existsRoleById(roleId, accountId);
+    const exists = await this.roleService.existsRoleById(
+      roleId,
+      accountId,
+      isAdministrator
+    );
 
     if (!exists) {
       throw new Error(t('role_not_found'));
