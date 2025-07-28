@@ -2,10 +2,9 @@ import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { AccountService } from '@core/services/account.service';
-import { EditWorkerRequest } from '@core/schema/worker/editWorker/request.schema';
 
 @injectable()
-export class WorkerUpdaterUseCase {
+export class WorkerBalanceDeleterUseCase {
   constructor(
     private readonly workerService: WorkerService,
     private readonly accountService: AccountService
@@ -27,21 +26,29 @@ export class WorkerUpdaterUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     isAdministrator: boolean,
-    input: EditWorkerRequest
+    workerId: string
   ): Promise<boolean> {
     await this.validate(t, accountId);
 
-    const updateWorkerById = await this.workerService.updateWorkerById(
+    const viewWorkerNameAndId = await this.workerService.viewWorkerNameAndId(
       isAdministrator,
       accountId,
-      input.worker_id,
-      input.name
+      workerId
     );
 
-    if (!updateWorkerById) {
-      throw new Error(t('error_updating_worker'));
+    if (!viewWorkerNameAndId) {
+      throw new Error(t('worker_not_found'));
     }
 
-    return updateWorkerById;
+    const containerId = await this.workerService.removeContainerWorker(
+      viewWorkerNameAndId.container_name,
+      t
+    );
+
+    if (!containerId) {
+      throw new Error(t('worker_removal_failed'));
+    }
+
+    return true;
   }
 }

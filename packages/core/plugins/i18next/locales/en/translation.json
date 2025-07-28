@@ -63,5 +63,8 @@
   "worker_view_success": "Channel viewed successfully!",
   "worker_view_error": "Error viewing channel!",
   "worker_not_found": "Worker not found!",
-  "role_not_found": "Role not found!"
+  "role_not_found": "Role not found!",
+  "worker_delete_success": "Worker deleted successfully!",
+  "worker_delete_error": "Error deleting worker!",
+  "worker_volume_removal_failed": "Error removing worker volume!"
 }

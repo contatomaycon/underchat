@@ -2,29 +2,31 @@ import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { WorkerUpdaterUseCase } from '@core/useCases/worker/WorkerUpdater.useCase';
-import { EditWorkerRequest } from '@core/schema/worker/editWorker/request.schema';
+import { WorkerManagerDeleterUseCase } from '@core/useCases/worker/WorkerManagerDeleter.useCase';
+import { ManagerDeleteWorkerRequest } from '@core/schema/worker/managerDeleteWorker/request.schema';
 
-export const updateWorker = async (
+export const deleteWorker = async (
   request: FastifyRequest<{
-    Params: EditWorkerRequest;
+    Params: ManagerDeleteWorkerRequest;
   }>,
   reply: FastifyReply
 ) => {
-  const workerUpdaterUseCase = container.resolve(WorkerUpdaterUseCase);
+  const workerManagerDeleterUseCase = container.resolve(
+    WorkerManagerDeleterUseCase
+  );
   const { t, tokenJwtData } = request;
 
   try {
-    const response = await workerUpdaterUseCase.execute(
+    const response = await workerManagerDeleterUseCase.execute(
       t,
       tokenJwtData.account_id,
       tokenJwtData.is_administrator,
-      request.params
+      request.params.worker_id
     );
 
     if (response) {
       return sendResponse(reply, {
-        message: t('channel_updated_successfully'),
+        message: t('worker_delete_success'),
         httpStatusCode: EHTTPStatusCode.ok,
       });
     }
@@ -32,7 +34,7 @@ export const updateWorker = async (
     request.server.logger.info(response, request.id);
 
     return sendResponse(reply, {
-      message: t('channel_not_found'),
+      message: t('worker_delete_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {

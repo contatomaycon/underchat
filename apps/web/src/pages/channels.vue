@@ -67,7 +67,7 @@ const itemsType = ref([
 ]);
 
 const isDialogDeleterShow = ref(false);
-const serverToDelete = ref<string | null>(null);
+const channelToDelete = ref<string | null>(null);
 
 const isDialogEditChannelShow = ref(false);
 const isAddChannelVisible = ref(false);
@@ -138,7 +138,7 @@ const handleTableChange = (o: {
 };
 
 const deleteChannel = async (id: string) => {
-  serverToDelete.value = id;
+  channelToDelete.value = id;
 
   isDialogDeleterShow.value = true;
 };
@@ -147,6 +147,17 @@ const openEditDialog = (id: string) => {
   channelToEdit.value = id;
 
   isDialogEditChannelShow.value = true;
+};
+
+const handleDelete = async () => {
+  if (!channelToDelete.value) return;
+
+  const result = await channelsStore.deleteChannel(channelToDelete.value);
+  if (result) {
+    await channelsStore.listChannels(query.value);
+  }
+
+  channelToDelete.value = null;
 };
 
 watch(
@@ -315,6 +326,7 @@ onBeforeUnmount(async () => {
         v-model="isDialogDeleterShow"
         :title="$t('delete_channel')"
         :message="$t('delete_channel_confirmation')"
+        @confirm="handleDelete"
       />
 
       <AppEditChannel

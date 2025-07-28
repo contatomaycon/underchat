@@ -12,7 +12,7 @@ import {
   or,
   SQL,
   SQLWrapper,
-  like,
+  ilike,
 } from 'drizzle-orm';
 import { ListServerResponse } from '@core/schema/server/listServer/response.schema';
 import { ListServerRequest } from '@core/schema/server/listServer/request.schema';
@@ -73,22 +73,29 @@ export class ServerListerRepository {
   };
 
   private readonly setFilters = (query: ListServerRequest): SQLWrapper[] => {
-    const condition = and(
-      query.server_status_id
-        ? eq(serverStatus.server_status_id, query.server_status_id)
-        : undefined,
-      or(
-        query.server_name
-          ? like(server.name, `%${query.server_name}%`)
-          : undefined,
-        query.ssh_ip ? like(serverSsh.ssh_ip, `%${query.ssh_ip}%`) : undefined,
-        query.web_domain
-          ? like(serverWeb.web_domain, `%${query.web_domain}%`)
-          : undefined
-      )
-    );
+    const filters: SQLWrapper[] = [];
 
-    return condition ? [condition] : [];
+    if (query.server_name || query.ssh_ip || query.web_domain) {
+      const conditions: (SQLWrapper | undefined)[] = [
+        query.server_name
+          ? ilike(server.name, `%${query.server_name}%`)
+          : undefined,
+        query.ssh_ip ? ilike(serverSsh.ssh_ip, `%${query.ssh_ip}%`) : undefined,
+        query.web_domain
+          ? ilike(serverWeb.web_domain, `%${query.web_domain}%`)
+          : undefined,
+      ];
+
+      const combined = or(...conditions);
+
+      if (combined) filters.push(combined);
+    }
+
+    if (query.server_status_id) {
+      filters.push(eq(serverStatus.server_status_id, query.server_status_id));
+    }
+
+    return filters;
   };
 
   listServers = async (

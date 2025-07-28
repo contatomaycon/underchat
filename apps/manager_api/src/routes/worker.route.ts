@@ -4,12 +4,14 @@ import WorkerController from '@/controllers/worker';
 import { listWorkerSchema } from '@core/schema/worker/listWorker';
 import {
   workerCreatePermissions,
+  workerDeletePermissions,
   workerEditPermissions,
   workerViewPermissions,
 } from '@/permissions';
 import { managerCreateWorkerSchema } from '@core/schema/worker/managerCreateWorker';
 import { editWorkerSchema } from '@core/schema/worker/editWorker';
 import { viewWorkerSchema } from '@core/schema/worker/viewWorker';
+import { managerDeleteWorkerSchema } from '@core/schema/worker/managerDeleteWorker';
 
 export default async function workerRoutes(server: FastifyInstance) {
   const workerController = container.resolve(WorkerController);
@@ -47,6 +49,15 @@ export default async function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerEditPermissions),
+    ],
+  });
+
+  server.delete('/worker/:worker_id', {
+    schema: managerDeleteWorkerSchema,
+    handler: workerController.deleteWorker,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerDeletePermissions),
     ],
   });
 }

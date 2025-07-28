@@ -112,5 +112,7 @@
     "add_role": "Adicionar Cargo",
     "delete_role": "Excluir cargo?",
     "delete_role_confirmation": "Você tem certeza que deseja excluir este cargo?",
-    "edit_role": "Editar Cargo"
+    "edit_role": "Editar Cargo",
+    "worker_delete_error": "Ocorreu um erro ao excluir o trabalhador. Por favor, tente novamente.",
+    "worker_delete_success": "Trabalhador excluído com sucesso!"
 }

@@ -13,6 +13,11 @@ import { IViewWorkerBalancerServer } from '@core/common/interfaces/IViewWorkerBa
 import { WorkerUpdaterRepository } from '@core/repositories/worker/WorkerUpdater.repository';
 import { WorkerViewerRepository } from '@core/repositories/worker/WorkerViewer.repository';
 import { ViewWorkerResponse } from '@core/schema/worker/viewWorker/response.schema';
+import { WorkerNameAndIdViewerRepository } from '@core/repositories/worker/WorkerNameAndIdViewer.repository';
+import { IViewWorkerNameAndId } from '@core/common/interfaces/IViewWorkerNameAndId';
+import { WorkerViewerExistsRepository } from '@core/repositories/worker/WorkerViewerExists.repository';
+import { WorkerBalancerViewerRepository } from '@core/repositories/worker/WorkerBalancerViewer.repository';
+import { WorkerDeleterRepository } from '@core/repositories/worker/WorkerDeleter.repository';
 
 @injectable()
 export class WorkerService {
@@ -24,14 +29,20 @@ export class WorkerService {
     private readonly workerTotalViewerRepository: WorkerTotalViewerRepository,
     private readonly workerListerRepository: WorkerListerRepository,
     private readonly workerUpdaterRepository: WorkerUpdaterRepository,
-    private readonly workerViewerRepository: WorkerViewerRepository
+    private readonly workerViewerRepository: WorkerViewerRepository,
+    private readonly workerNameAndIdViewerRepository: WorkerNameAndIdViewerRepository,
+    private readonly workerViewerExistsRepository: WorkerViewerExistsRepository,
+    private readonly workerBalancerViewerRepository: WorkerBalancerViewerRepository,
+    private readonly workerDeleterRepository: WorkerDeleterRepository
   ) {
     this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
   }
 
-  public async existsContainerWorkerById(workerId: string): Promise<boolean> {
+  public async existsContainerWorkerById(
+    containerName: string
+  ): Promise<boolean> {
     try {
-      const container = this.docker.getContainer(workerId);
+      const container = this.docker.getContainer(containerName);
       await container.inspect();
 
       return true;
@@ -41,15 +52,30 @@ export class WorkerService {
   }
 
   public async removeContainerWorkerById(
-    workerId: string,
+    containerName: string,
     t: TFunction<'translation', undefined>
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
-      const container = this.docker.getContainer(workerId);
-
+      const container = this.docker.getContainer(containerName);
       await container.remove({ force: true });
+
+      return true;
     } catch {
       throw new Error(t('worker_removal_failed'));
+    }
+  }
+
+  public async removeVolumeWorkerById(
+    containerName: string,
+    t: TFunction<'translation', undefined>
+  ): Promise<boolean> {
+    try {
+      const volume = this.docker.getVolume(containerName);
+      await volume.remove();
+
+      return true;
+    } catch {
+      throw new Error(t('worker_volume_removal_failed'));
     }
   }
 
@@ -90,6 +116,31 @@ export class WorkerService {
     await container.start();
 
     return container.id;
+  }
+
+  public async removeContainerWorker(
+    containerName: string,
+    t: TFunction<'translation', undefined>
+  ): Promise<boolean> {
+    const removeContainerWorkerById = await this.removeContainerWorkerById(
+      containerName,
+      t
+    );
+
+    if (!removeContainerWorkerById) {
+      throw new Error(t('worker_removal_failed'));
+    }
+
+    const removeVolumeWorkerById = await this.removeVolumeWorkerById(
+      containerName,
+      t
+    );
+
+    if (!removeVolumeWorkerById) {
+      throw new Error(t('worker_volume_removal_failed'));
+    }
+
+    return true;
   }
 
   public async createWorker(input: ICreateWorker): Promise<string | null> {
@@ -134,10 +185,17 @@ export class WorkerService {
   };
 
   updateWorkerById = async (
+    isAdministrator: boolean,
+    accountId: string,
     workerId: string,
     name: string
   ): Promise<boolean> => {
-    return this.workerUpdaterRepository.updateWorkerById(workerId, name);
+    return this.workerUpdaterRepository.updateWorkerById(
+      isAdministrator,
+      accountId,
+      workerId,
+      name
+    );
   };
 
   viewWorker = async (
@@ -148,6 +206,54 @@ export class WorkerService {
     return this.workerViewerRepository.viewWorker(
       accountId,
       isAdministrator,
+      workerId
+    );
+  };
+
+  viewWorkerNameAndId = async (
+    isAdministrator: boolean,
+    accountId: string,
+    workerId: string
+  ): Promise<IViewWorkerNameAndId | null> => {
+    return this.workerNameAndIdViewerRepository.viewWorkerNameAndId(
+      isAdministrator,
+      accountId,
+      workerId
+    );
+  };
+
+  existsWorkerById = async (
+    isAdministrator: boolean,
+    accountId: string,
+    workerId: string
+  ): Promise<boolean> => {
+    return this.workerViewerExistsRepository.existsWorkerById(
+      isAdministrator,
+      accountId,
+      workerId
+    );
+  };
+
+  viewWorkerBalancer = async (
+    accountId: string,
+    isAdministrator: boolean,
+    workerId: string
+  ): Promise<IViewWorkerBalancerServer | null> => {
+    return this.workerBalancerViewerRepository.viewWorkerBalancer(
+      accountId,
+      isAdministrator,
+      workerId
+    );
+  };
+
+  deleteWorkerById = async (
+    isAdministrator: boolean,
+    accountId: string,
+    workerId: string
+  ): Promise<boolean> => {
+    return this.workerDeleterRepository.deleteWorkerById(
+      isAdministrator,
+      accountId,
       workerId
     );
   };

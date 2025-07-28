@@ -16,7 +16,7 @@ import {
   asc,
   desc,
   SQLWrapper,
-  like,
+  ilike,
   count,
   or,
 } from 'drizzle-orm';
@@ -58,10 +58,10 @@ export class WorkerListerRepository {
 
     if (query.name || query.number || query.server || query.account) {
       const conditions: (SQLWrapper | undefined)[] = [
-        query.name ? like(worker.name, `%${query.name}%`) : undefined,
-        query.number ? like(worker.number, `%${query.number}%`) : undefined,
-        query.server ? like(server.name, `%${query.server}%`) : undefined,
-        query.account ? like(account.name, `%${query.account}%`) : undefined,
+        query.name ? ilike(worker.name, `%${query.name}%`) : undefined,
+        query.number ? ilike(worker.number, `%${query.number}%`) : undefined,
+        query.server ? ilike(server.name, `%${query.server}%`) : undefined,
+        query.account ? ilike(account.name, `%${query.account}%`) : undefined,
       ];
 
       const combined = or(...conditions);

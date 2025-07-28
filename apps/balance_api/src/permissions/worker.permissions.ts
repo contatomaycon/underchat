@@ -5,3 +5,8 @@ export const workerCreatePermissions = [
   EGeneralPermissions.full_access,
   EWorkerPermissions.create_worker,
 ];
+
+export const workerDeletePermissions = [
+  EGeneralPermissions.full_access,
+  EWorkerPermissions.delete_worker,
+];

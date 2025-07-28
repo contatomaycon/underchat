@@ -63,5 +63,8 @@
   "worker_view_success": "¡Canal visualizado con éxito!",
   "worker_view_error": "Error al visualizar el canal",
   "worker_not_found": "¡Canal no encontrado!",
-  "role_not_found": "¡Rol no encontrado!"
+  "role_not_found": "¡Rol no encontrado!",
+  "worker_delete_success": "¡Canal eliminado con éxito!",
+  "worker_delete_error": "Error al eliminar el canal",
+  "worker_volume_removal_failed": "Error al eliminar el volumen del canal"
 }
