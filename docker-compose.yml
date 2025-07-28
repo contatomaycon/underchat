@@ -154,6 +154,7 @@ services:
       context: .
       dockerfile: ./infra/atlas/Dockerfile
     container_name: under-atlas
+    user: '1000:1000'
     env_file:
       - .env
     networks:
