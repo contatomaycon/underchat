@@ -43,4 +43,26 @@ export class BalanceService {
       throw new Error(t('worker_creation_failed'));
     }
   }
+
+  public async deleteWorker(
+    t: TFunction<'translation', undefined>,
+    input: IViewWorkerBalancerServer,
+    workerId: string
+  ): Promise<IApiResponse<null>> {
+    try {
+      const axiosInstance = this.createAxiosInstance(input);
+
+      const { data } = await axiosInstance.delete<IApiResponse<null>>(
+        `/worker/${workerId}`
+      );
+
+      if (!data.status) {
+        throw new Error(t('worker_delete_error'));
+      }
+
+      return data;
+    } catch {
+      throw new Error(t('worker_delete_error'));
+    }
+  }
 }

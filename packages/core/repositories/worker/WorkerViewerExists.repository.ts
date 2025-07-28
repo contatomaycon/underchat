@@ -2,29 +2,26 @@ import * as schema from '@core/models';
 import { worker } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull } from 'drizzle-orm';
-import { IViewWorkerNameAndId } from '@core/common/interfaces/IViewWorkerNameAndId';
+import { and, count, eq, isNull } from 'drizzle-orm';
 
 @injectable()
-export class WorkerNameAndIdViewerRepository {
+export class WorkerViewerExistsRepository {
   constructor(
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  viewWorkerNameAndId = async (
+  existsWorkerById = async (
     isAdministrator: boolean,
     accountId: string,
     workerId: string
-  ): Promise<IViewWorkerNameAndId | null> => {
+  ): Promise<boolean> => {
     const accountCondition = isAdministrator
       ? undefined
       : eq(worker.account_id, accountId);
 
     const result = await this.db
       .select({
-        worker_id: worker.worker_id,
-        container_id: worker.container_id,
-        container_name: worker.container_name,
+        total: count(),
       })
       .from(worker)
       .where(
@@ -36,10 +33,10 @@ export class WorkerNameAndIdViewerRepository {
       )
       .execute();
 
-    if (!result?.length) {
-      return null;
+    if (!result.length) {
+      return false;
     }
 
-    return result[0] as IViewWorkerNameAndId;
+    return result[0].total > 0;
   };
 }

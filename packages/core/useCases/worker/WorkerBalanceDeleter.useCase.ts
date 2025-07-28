@@ -25,11 +25,13 @@ export class WorkerBalanceDeleterUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
+    isAdministrator: boolean,
     workerId: string
   ): Promise<boolean> {
     await this.validate(t, accountId);
 
     const viewWorkerNameAndId = await this.workerService.viewWorkerNameAndId(
+      isAdministrator,
       accountId,
       workerId
     );

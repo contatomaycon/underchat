@@ -15,6 +15,9 @@ import { WorkerViewerRepository } from '@core/repositories/worker/WorkerViewer.r
 import { ViewWorkerResponse } from '@core/schema/worker/viewWorker/response.schema';
 import { WorkerNameAndIdViewerRepository } from '@core/repositories/worker/WorkerNameAndIdViewer.repository';
 import { IViewWorkerNameAndId } from '@core/common/interfaces/IViewWorkerNameAndId';
+import { WorkerViewerExistsRepository } from '@core/repositories/worker/WorkerViewerExists.repository';
+import { WorkerBalancerViewerRepository } from '@core/repositories/worker/WorkerBalancerViewer.repository';
+import { WorkerDeleterRepository } from '@core/repositories/worker/WorkerDeleter.repository';
 
 @injectable()
 export class WorkerService {
@@ -27,7 +30,10 @@ export class WorkerService {
     private readonly workerListerRepository: WorkerListerRepository,
     private readonly workerUpdaterRepository: WorkerUpdaterRepository,
     private readonly workerViewerRepository: WorkerViewerRepository,
-    private readonly workerNameAndIdViewerRepository: WorkerNameAndIdViewerRepository
+    private readonly workerNameAndIdViewerRepository: WorkerNameAndIdViewerRepository,
+    private readonly workerViewerExistsRepository: WorkerViewerExistsRepository,
+    private readonly workerBalancerViewerRepository: WorkerBalancerViewerRepository,
+    private readonly workerDeleterRepository: WorkerDeleterRepository
   ) {
     this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
   }
@@ -179,10 +185,17 @@ export class WorkerService {
   };
 
   updateWorkerById = async (
+    isAdministrator: boolean,
+    accountId: string,
     workerId: string,
     name: string
   ): Promise<boolean> => {
-    return this.workerUpdaterRepository.updateWorkerById(workerId, name);
+    return this.workerUpdaterRepository.updateWorkerById(
+      isAdministrator,
+      accountId,
+      workerId,
+      name
+    );
   };
 
   viewWorker = async (
@@ -198,10 +211,48 @@ export class WorkerService {
   };
 
   viewWorkerNameAndId = async (
+    isAdministrator: boolean,
     accountId: string,
     workerId: string
   ): Promise<IViewWorkerNameAndId | null> => {
     return this.workerNameAndIdViewerRepository.viewWorkerNameAndId(
+      isAdministrator,
+      accountId,
+      workerId
+    );
+  };
+
+  existsWorkerById = async (
+    isAdministrator: boolean,
+    accountId: string,
+    workerId: string
+  ): Promise<boolean> => {
+    return this.workerViewerExistsRepository.existsWorkerById(
+      isAdministrator,
+      accountId,
+      workerId
+    );
+  };
+
+  viewWorkerBalancer = async (
+    accountId: string,
+    isAdministrator: boolean,
+    workerId: string
+  ): Promise<IViewWorkerBalancerServer | null> => {
+    return this.workerBalancerViewerRepository.viewWorkerBalancer(
+      accountId,
+      isAdministrator,
+      workerId
+    );
+  };
+
+  deleteWorkerById = async (
+    isAdministrator: boolean,
+    accountId: string,
+    workerId: string
+  ): Promise<boolean> => {
+    return this.workerDeleterRepository.deleteWorkerById(
+      isAdministrator,
       accountId,
       workerId
     );

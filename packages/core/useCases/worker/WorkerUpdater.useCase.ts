@@ -26,11 +26,14 @@ export class WorkerUpdaterUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
+    isAdministrator: boolean,
     input: EditWorkerRequest
   ): Promise<boolean> {
     await this.validate(t, accountId);
 
     const updateWorkerById = await this.workerService.updateWorkerById(
+      isAdministrator,
+      accountId,
       input.worker_id,
       input.name
     );
