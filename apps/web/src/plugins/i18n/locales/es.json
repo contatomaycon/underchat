@@ -94,5 +94,7 @@
     "channel_edit_success": "¡Canal editado exitosamente!",
     "number": "Número",
     "account": "Cuenta",
-    "worker_view_error": "Ocurrió un error al ver el trabajador. Por favor, inténtalo de nuevo."
+    "worker_view_error": "Ocurrió un error al ver el trabajador. Por favor, inténtalo de nuevo.",
+    "worker_delete_error": "Ocurrió un error al eliminar el trabajador. Por favor, inténtalo de nuevo.",
+    "worker_delete_success": "¡Trabajador eliminado exitosamente!"
 }
