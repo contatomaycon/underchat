@@ -60,14 +60,6 @@ const isDialogEditRoleShow = ref(false);
 const isAddRoleVisible = ref(false);
 const roleToEdit = ref<string | null>(null);
 
-const resolveRoleVariant = (s: string | undefined | null) => {
-  if (!s) {
-    return { color: EColor.warning, text: t('role_not_edit') };
-  }
-
-  return { color: EColor.primary, text: s };
-};
-
 const headers: DataTableHeader<ListRoleResponse>[] = [
   { title: t('name'), key: 'name' },
   ...(isAdministrator ? [{ title: t('account'), key: 'account' }] : []),
@@ -206,12 +198,7 @@ onBeforeUnmount(async () => {
         </template>
 
         <template #item.account="{ item }">
-          <VChip
-            :color="resolveRoleVariant(item.account?.name).color"
-            size="small"
-          >
-            {{ resolveRoleVariant(item.account?.name).text }}
-          </VChip>
+          {{ item.account?.name }}
         </template>
 
         <template #item.created_at="{ item }">

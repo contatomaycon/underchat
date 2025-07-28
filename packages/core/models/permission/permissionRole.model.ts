@@ -8,7 +8,9 @@ import { relations } from 'drizzle-orm';
 
 export const permissionRole = pgTable('permission_role', {
   permission_role_id: uuid().primaryKey().notNull(),
-  account_id: uuid().references(() => account.account_id),
+  account_id: uuid()
+    .references(() => account.account_id)
+    .notNull(),
   name: varchar({ length: 200 }).notNull(),
   created_at: timestamp('created_at', {
     mode: 'string',
