@@ -5,8 +5,7 @@ import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { v4 } from 'uuid';
 import swaggerPlugin from '@/plugins/swagger';
 import corsPlugin from '@core/plugins/cors';
-import kafkaStreamsPlugin from '@/plugins/kafkaStreams';
-import consumerPlugin from './consumer';
+import rabbitmqPlugin from '@core/plugins/rabbitmq';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -16,9 +15,8 @@ const server = fastify({
 server.decorateRequest('module', ERouteModule.worker_baileys);
 
 server.register(corsPlugin);
-server.register(kafkaStreamsPlugin);
 server.register(swaggerPlugin);
-server.register(consumerPlugin);
+server.register(rabbitmqPlugin);
 
 const start = async () => {
   try {

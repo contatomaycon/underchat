@@ -12,7 +12,6 @@
   "health_check_success": "Verificação de saúde bem-sucedida!",
   "metrics_server_success": "Servidor de métricas iniciado com sucesso!",
   "metrics_server_error": "Erro ao iniciar o servidor de métricas!",
-  "kafka_producer_error": "Erro ao criar o produtor Kafka!",
   "ssh_distro_version_failed": "Falha ao recuperar distribuição e versão do servidor",
   "ssh_distro_version_not_allowed": "Distribuição e versão não permitidas para o servidor",
   "server_deleted_successfully": "Servidor excluído com sucesso!",
@@ -68,5 +67,6 @@
   "worker_delete_error": "Erro ao excluir o canal!",
   "worker_volume_removal_failed": "Falha ao remover volume do canal",
   "worker_status_change_success": "Status do canal alterado com sucesso!",
-  "worker_status_change_error": "Erro ao alterar o status do canal"
+  "worker_status_change_error": "Erro ao alterar o status do canal",
+  "rabbitmq_error": "Erro ao comunicar com RabbitMQ!"
 }

@@ -1,17 +1,15 @@
-import { inject, injectable } from 'tsyringe';
+import { injectable } from 'tsyringe';
 import { CreateServerResponse } from '@core/schema/server/createServer/response.schema';
 import { SshService } from '@core/services/ssh.service';
-import { ETopicKafka } from '@core/common/enums/ETopicKafka';
 import { ServerService } from '@core/services/server.service';
 import { EServerStatus } from '@core/common/enums/EServerStatus';
 import { ConnectConfig } from 'ssh2';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
 import { isDistroVersionAllowed } from '@core/common/functions/isDistroVersionAllowed';
 import { IDistroInfo } from '@core/common/interfaces/IDistroInfo';
-import { KafkaStreams, KStream } from 'kafka-streams';
-import { IKafkaMsg } from '@core/common/interfaces/IKafkaMsg';
 import { FastifyInstance } from 'fastify';
 import { IViewServerWebById } from '@core/common/interfaces/IViewServerWebById';
+import { ServerRabbitMQService } from '@core/services/serverRabbitMQ.service';
 
 @injectable()
 export class BalanceCreatorConsume {
@@ -19,7 +17,7 @@ export class BalanceCreatorConsume {
     private readonly sshService: SshService,
     private readonly serverService: ServerService,
     private readonly passwordEncryptorService: PasswordEncryptorService,
-    @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams
+    private readonly serverRabbitMQService: ServerRabbitMQService
   ) {}
 
   private async validate(serverId: string): Promise<{
@@ -113,87 +111,80 @@ export class BalanceCreatorConsume {
   }
 
   async execute(server: FastifyInstance): Promise<void> {
-    const stream: KStream = this.kafkaStreams.getKStream(
-      ETopicKafka.balance_create
-    );
+    await this.serverRabbitMQService.receive(
+      'create:server',
+      async (content) => {
+        let serverId: string | null = null;
 
-    stream.mapBufferKeyToString();
-    stream.mapBufferValueToString();
+        try {
+          if (!content) {
+            throw new Error('Received message without value');
+          }
 
-    stream.forEach(async (message: IKafkaMsg) => {
-      let serverId: string | null = null;
+          const raw =
+            content instanceof Buffer
+              ? content.toString('utf8')
+              : String(content);
 
-      try {
-        if (!message.value) {
-          throw new Error('Received message without value');
-        }
+          const data = JSON.parse(raw) as CreateServerResponse;
 
-        const raw =
-          message.value instanceof Buffer
-            ? message.value.toString('utf8')
-            : String(message.value);
+          serverId = data.server_id;
+          if (!serverId) {
+            throw new Error('Server ID is not defined in the message');
+          }
 
-        const data = JSON.parse(raw) as CreateServerResponse;
+          const { getDistroAndVersion, sshConfig, webView } =
+            await this.validate(serverId);
 
-        serverId = data.server_id;
-        if (!serverId) {
-          throw new Error('Server ID is not defined in the message');
-        }
-
-        const { getDistroAndVersion, sshConfig, webView } =
-          await this.validate(serverId);
-
-        await this.serverService.updateServerStatusById(
-          serverId,
-          EServerStatus.installing
-        );
-
-        const installCommands = await this.sshService.getInstallCommands(
-          getDistroAndVersion,
-          webView
-        );
-
-        const logs = await this.sshService.runCommands(
-          serverId,
-          sshConfig,
-          installCommands
-        );
-
-        await this.serverService.deleteLogInstallServer(serverId);
-        await this.serverService.updateLogInstallServerBulk(logs);
-
-        const installed = await this.isInstalled(
-          serverId,
-          getDistroAndVersion,
-          sshConfig,
-          webView
-        );
-
-        const finalStatus = installed
-          ? EServerStatus.online
-          : EServerStatus.error;
-
-        await this.serverService.updateServerStatusById(serverId, finalStatus);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-
-        server.logger.warn(`Skipping server ${serverId ?? 'unknown'}: ${msg}`);
-
-        if (serverId) {
           await this.serverService.updateServerStatusById(
             serverId,
-            EServerStatus.error
+            EServerStatus.installing
           );
+
+          const installCommands = await this.sshService.getInstallCommands(
+            getDistroAndVersion,
+            webView
+          );
+
+          const logs = await this.sshService.runCommands(
+            serverId,
+            sshConfig,
+            installCommands
+          );
+
+          await this.serverService.deleteLogInstallServer(serverId);
+          await this.serverService.updateLogInstallServerBulk(logs);
+
+          const installed = await this.isInstalled(
+            serverId,
+            getDistroAndVersion,
+            sshConfig,
+            webView
+          );
+
+          const finalStatus = installed
+            ? EServerStatus.online
+            : EServerStatus.error;
+
+          await this.serverService.updateServerStatusById(
+            serverId,
+            finalStatus
+          );
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+
+          server.logger.warn(
+            `Skipping server ${serverId ?? 'unknown'}: ${msg}`
+          );
+
+          if (serverId) {
+            await this.serverService.updateServerStatusById(
+              serverId,
+              EServerStatus.error
+            );
+          }
         }
       }
-    });
-
-    try {
-      await stream.start();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-
-      server.logger.error(`Error starting stream: ${msg}`);
-    }
+    );
   }
 }

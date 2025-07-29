@@ -2,15 +2,10 @@ import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
-import { StreamProducerService } from '@core/services/streamProducer.service';
-import { ETopicKafka } from '@core/common/enums/ETopicKafka';
 
 @injectable()
 export class WorkerChangeStatusConnectionUseCase {
-  constructor(
-    private readonly workerService: WorkerService,
-    private readonly streamProducerService: StreamProducerService
-  ) {}
+  constructor(private readonly workerService: WorkerService) {}
 
   private async validate(
     t: TFunction<'translation', undefined>,
@@ -39,12 +34,12 @@ export class WorkerChangeStatusConnectionUseCase {
         status: input.status,
       };
 
-      await this.streamProducerService.send(
+      /* await this.streamProducerService.send(
         ETopicKafka.connection_channel,
         payload
-      );
+      ); */
     } catch {
-      throw new Error(t('kafka_producer_error'));
+      throw new Error(t('rabbitmq_error'));
     }
   }
 

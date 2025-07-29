@@ -10,8 +10,8 @@ import { ITokenJwtData } from '@core/common/interfaces/ITokenJwtData';
 import { ELanguage } from '../enums/ELanguage';
 import { Client as ClientElastic } from '@elastic/elasticsearch';
 import { ITokenKeyData } from '../interfaces/ITokenKeyData';
-import { KafkaStreams } from 'kafka-streams';
 import { Centrifuge } from 'centrifuge';
+import * as amqp from 'amqplib';
 
 declare module 'fastify' {
   export interface FastifyRequest {
@@ -22,10 +22,11 @@ declare module 'fastify' {
     Database: NodePgDatabase<typeof schema>;
     DatabaseElasticClient: ClientElastic;
     ElasticLogsClient: ClientElastic;
-    KafkaStreams: KafkaStreams;
     Centrifuge: Centrifuge;
     redis: FastifyRedis;
     logger: LoggerService;
+    RabbitmqConnection: amqp.ChannelModel;
+    RabbitmqChannel: amqp.Channel;
     authenticateJwt: (
       request: FastifyRequest,
       reply: FastifyReply,

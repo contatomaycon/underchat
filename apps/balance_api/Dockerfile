@@ -7,7 +7,6 @@ RUN apk update && \
       bash \
       g++ \
       libc6-compat \
-      librdkafka-dev \
       make \
       musl-dev \
       python3 \
