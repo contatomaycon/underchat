@@ -111,6 +111,7 @@ export class WorkerService {
       Volumes: {
         '/app/data': {},
       },
+      Env: [`BAILEYS_CONTAINER_NAME=${containerName}`],
     });
 
     await container.start();

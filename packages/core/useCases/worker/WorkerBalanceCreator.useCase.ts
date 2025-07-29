@@ -102,6 +102,7 @@ export class WorkerBalanceCreatorUseCase {
 
     return {
       worker_id: workerId,
+      container_name: containerName,
     };
   }
 }

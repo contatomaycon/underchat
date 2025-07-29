@@ -64,8 +64,6 @@ export class BaileysConnectionService {
     this.socket?.end(new Error('logout'));
     this.deleteStoredFiles();
 
-    this.centrifugoService.unsubscribe(ECentrifugoChannel.connection_channel);
-
     this.setStatus(Status.disconnected);
   }
 
