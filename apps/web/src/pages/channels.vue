@@ -344,6 +344,7 @@ onBeforeUnmount(async () => {
       </VDataTableServer>
 
       <VDialogHandler
+        v-if="isDialogDeleterShow"
         v-model="isDialogDeleterShow"
         :title="$t('delete_channel')"
         :message="$t('delete_channel_confirmation')"
@@ -351,13 +352,15 @@ onBeforeUnmount(async () => {
       />
 
       <AppEditChannel
+        v-if="isDialogEditChannelShow"
         v-model="isDialogEditChannelShow"
         :channel-id="channelToEdit"
       />
 
-      <AppAddChannel v-model="isAddChannelVisible" />
+      <AppAddChannel v-if="isAddChannelVisible" v-model="isAddChannelVisible" />
 
       <AppConnectChannel
+        v-if="isDialogConnectionChannelShow"
         v-model="isDialogConnectionChannelShow"
         :channel-id="channelConnectionChannel"
       />

@@ -116,7 +116,7 @@ export class ServerService {
       status: status,
     };
 
-    this.centrifugoService.publish(
+    await this.centrifugoService.publish(
       ECentrifugoChannel.status_server,
       statusServerCentrifugo
     );

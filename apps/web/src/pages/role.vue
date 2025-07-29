@@ -255,15 +255,20 @@ onBeforeUnmount(async () => {
       </VDataTableServer>
 
       <VDialogHandler
+        v-if="isDialogDeleterShow"
         v-model="isDialogDeleterShow"
         :title="$t('delete_role')"
         :message="$t('delete_role_confirmation')"
         @confirm="handleDelete"
       />
 
-      <AppEditRole v-model="isDialogEditRoleShow" :role-id="roleToEdit" />
+      <AppEditRole
+        v-if="isDialogEditRoleShow"
+        v-model="isDialogEditRoleShow"
+        :role-id="roleToEdit"
+      />
 
-      <AppAddRole v-model="isAddRoleVisible" />
+      <AppAddRole v-if="isAddRoleVisible" v-model="isAddRoleVisible" />
     </VCard>
 
     <VSnackbar

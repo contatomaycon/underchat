@@ -100,11 +100,11 @@ export class BaileysConnectionService {
     return { socket, saveCreds };
   }
 
-  private waitForConnection(
+  private async waitForConnection(
     socket: WASocket
   ): Promise<IBaileysConnectionState> {
     return new Promise<IBaileysConnectionState>((resolve) => {
-      const listener = (update: IBaileysUpdateEvent) => {
+      const listener = async (update: IBaileysUpdateEvent) => {
         const { qr, connection, lastDisconnect } = update;
 
         if (qr) {
@@ -114,7 +114,7 @@ export class BaileysConnectionService {
         }
 
         if (connection === 'open' || connection === 'close') {
-          this.handleConnectionState(
+          await this.handleConnectionState(
             connection,
             lastDisconnect,
             socket,
@@ -142,8 +142,8 @@ export class BaileysConnectionService {
 
     const qrcode = await QRCode.toDataURL(qr);
 
-    this.centrifugoService.publish(
-      `worker:${baileysEnvironment.baileysWorkerId}:qrcode`,
+    await this.centrifugoService.publish(
+      `worker_${baileysEnvironment.baileysWorkerId}_qrcode`,
       {
         status: this.status,
         qrcode,
@@ -158,35 +158,35 @@ export class BaileysConnectionService {
     });
   }
 
-  private handleConnectionState(
+  private async handleConnectionState(
     connection: 'open' | 'close',
     lastDisconnect: IBaileysUpdateEvent['lastDisconnect'],
     socket: WASocket,
     listener: (u: IBaileysUpdateEvent) => void,
     resolve: (v: IBaileysConnectionState) => void
-  ): void {
+  ): Promise<void> {
     if (connection === 'open') {
-      this.onOpen(socket, listener, resolve);
+      await this.onOpen(socket, listener, resolve);
 
       return;
     }
 
-    this.onClose(lastDisconnect, socket, listener, resolve);
+    await this.onClose(lastDisconnect, socket, listener, resolve);
   }
 
-  private onOpen(
+  private async onOpen(
     socket: WASocket,
     listener: (u: IBaileysUpdateEvent) => void,
     resolve: (v: IBaileysConnectionState) => void
-  ): void {
+  ): Promise<void> {
     socket.ev.off('connection.update', listener);
 
     this.attempts = 0;
     this.qrHash = undefined;
     this.setStatus(Status.connected);
 
-    this.centrifugoService.publish(
-      `worker:${baileysEnvironment.baileysWorkerId}:qrcode`,
+    await this.centrifugoService.publish(
+      `worker_${baileysEnvironment.baileysWorkerId}_qrcode`,
       {
         status: this.status,
         worker_id: baileysEnvironment.baileysWorkerId,
@@ -199,19 +199,19 @@ export class BaileysConnectionService {
     });
   }
 
-  private onClose(
+  private async onClose(
     lastDisconnect: IBaileysUpdateEvent['lastDisconnect'],
     socket: WASocket,
     listener: (u: IBaileysUpdateEvent) => void,
     resolve: (v: IBaileysConnectionState) => void
-  ): void {
+  ): Promise<void> {
     const code = (lastDisconnect?.error as Boom | undefined)?.output
       ?.statusCode;
 
     this.setStatus(Status.disconnected);
 
-    this.centrifugoService.publish(
-      `worker:${baileysEnvironment.baileysWorkerId}:qrcode`,
+    await this.centrifugoService.publish(
+      `worker_${baileysEnvironment.baileysWorkerId}_qrcode`,
       {
         status: this.status,
         worker_id: baileysEnvironment.baileysWorkerId,

@@ -34,9 +34,14 @@ watch(channelId, async (id) => {
 });
 
 onMounted(() => {
-  onMessage(`worker:${channelId}:qrcode`, (data: IBaileysConnectionState) => {
-    console.log('Baileys QR Code:', data);
-  });
+  onMessage(
+    `worker_${channelId.value}_qrcode`,
+    (data: IBaileysConnectionState) => {
+      if (data?.worker_id !== channelId.value) return;
+
+      console.log('Baileys QR Code:', data);
+    }
+  );
 });
 </script>
 
