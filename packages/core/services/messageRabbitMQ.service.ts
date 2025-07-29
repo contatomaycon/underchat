@@ -35,6 +35,8 @@ export class MessageRabbitMQService {
   }
 
   async send(queueName: string, payload: object | Buffer): Promise<void> {
+    await this.createQueue(queueName);
+
     const data = Buffer.isBuffer(payload)
       ? payload
       : Buffer.from(JSON.stringify(payload));
