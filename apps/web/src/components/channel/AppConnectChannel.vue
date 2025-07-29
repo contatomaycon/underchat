@@ -30,8 +30,6 @@ watch(channelId, async (id) => {
     status: EWorkerStatus.online,
   };
 
-  console.log('Updating connection status for channel:', id);
-
   await channelStore.updateConnectionChannel(input);
 });
 

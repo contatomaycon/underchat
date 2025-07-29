@@ -15,25 +15,23 @@ export class ServerRabbitMQService {
     private readonly channel: amqp.Channel
   ) {}
 
-  async createQueue(queueName: string): Promise<void> {
+  private async ensureQueue(queueName: string): Promise<void> {
     await this.channel.assertExchange(this.exchange, 'direct', {
       durable: true,
     });
+
     await this.channel.assertExchange(this.dlx, 'fanout', { durable: true });
 
     await this.channel.assertQueue(queueName, {
       durable: true,
-      arguments: {
-        'x-dead-letter-exchange': this.dlx,
-        'x-queue-mode': 'lazy',
-      },
+      arguments: { 'x-dead-letter-exchange': this.dlx, 'x-queue-mode': 'lazy' },
     });
 
     await this.channel.bindQueue(queueName, this.exchange, queueName);
   }
 
   async send(queueName: string, payload: object | Buffer): Promise<void> {
-    await this.createQueue(queueName);
+    await this.ensureQueue(queueName);
 
     const data = Buffer.isBuffer(payload)
       ? payload
@@ -43,7 +41,7 @@ export class ServerRabbitMQService {
   }
 
   async receive(queueName: string, handler: IHandlerRabbitMQ): Promise<void> {
-    await this.createQueue(queueName);
+    await this.ensureQueue(queueName);
 
     this.channel.consume(
       queueName,

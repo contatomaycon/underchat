@@ -33,16 +33,24 @@ export class ConnectionStatusConsume {
           const data = JSON.parse(raw) as StatusConnectionWorkerRequest;
 
           workerId = data.worker_id;
+
+          console.log('workerId:', workerId);
+
           if (!workerId) {
             throw new Error('Worker ID is not defined in the message');
           }
 
           status = data.status as EWorkerStatus;
+
+          console.log('status:', status);
+
           if (!status) {
             throw new Error('Status is not defined in the message');
           }
 
           if (status === EWorkerStatus.online) {
+            console.log('online');
+
             await this.baileysService.connect();
           }
 

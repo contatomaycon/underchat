@@ -5,7 +5,7 @@ import { IHandlerRabbitMQ } from '@core/common/interfaces/IHandlerRabbitMQ';
 @injectable()
 export class MessageRabbitMQService {
   private readonly exchange = 'underchat.exchange';
-  private readonly dlx = 'underchat.dlx';
+  private readonly dlx = 'servers.dlx';
 
   constructor(
     @inject('RabbitMQConnection')
@@ -17,25 +17,23 @@ export class MessageRabbitMQService {
     this.channel.prefetch(1);
   }
 
-  async createQueue(queueName: string): Promise<void> {
+  private async ensureQueue(queueName: string): Promise<void> {
     await this.channel.assertExchange(this.exchange, 'direct', {
       durable: true,
     });
+
     await this.channel.assertExchange(this.dlx, 'fanout', { durable: true });
 
     await this.channel.assertQueue(queueName, {
       durable: true,
-      arguments: {
-        'x-dead-letter-exchange': this.dlx,
-        'x-queue-mode': 'lazy',
-      },
+      arguments: { 'x-dead-letter-exchange': this.dlx, 'x-queue-mode': 'lazy' },
     });
 
     await this.channel.bindQueue(queueName, this.exchange, queueName);
   }
 
   async send(queueName: string, payload: object | Buffer): Promise<void> {
-    await this.createQueue(queueName);
+    await this.ensureQueue(queueName);
 
     const data = Buffer.isBuffer(payload)
       ? payload
@@ -47,7 +45,7 @@ export class MessageRabbitMQService {
   async receive(queueName: string, handler: IHandlerRabbitMQ): Promise<void> {
     this.channel.prefetch(1);
 
-    await this.createQueue(queueName);
+    await this.ensureQueue(queueName);
 
     this.channel.consume(
       queueName,
