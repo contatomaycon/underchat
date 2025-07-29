@@ -86,8 +86,8 @@ onMounted(() => {
           style="max-height: 60vh; overflow-y: auto"
         >
           <VList density="compact" v-show="items.length">
-            <template v-for="item in items" :key="item.date + item.command">
-              <VListItem>
+            <template v-for="(item, index) in items" :key="index">
+              <VListItem :id="index">
                 <VListItemTitle class="wrap-text">
                   <strong>{{ item.date }}:</strong> {{ item.command }}
                 </VListItemTitle>
