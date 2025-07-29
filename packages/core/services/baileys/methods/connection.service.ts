@@ -100,7 +100,7 @@ export class BaileysConnectionService {
     return { socket, saveCreds };
   }
 
-  private async waitForConnection(
+  private waitForConnection(
     socket: WASocket
   ): Promise<IBaileysConnectionState> {
     return new Promise<IBaileysConnectionState>((resolve) => {
