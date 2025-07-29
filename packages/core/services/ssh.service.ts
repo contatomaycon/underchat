@@ -7,6 +7,7 @@ import { CentrifugoService } from './centrifugo.service';
 import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
 import { IServerSshCentrifugo } from '@core/common/interfaces/IServerSshCentrifugo';
 import { IViewServerWebById } from '@core/common/interfaces/IViewServerWebById';
+import { EWorkerImage } from '@core/common/enums/EWorkerImage';
 
 @injectable()
 export class SshService {
@@ -207,6 +208,24 @@ export class SshService {
       ],
       [EAllowedDistroVersion.Ubuntu_24_04]: [
         `bash -c "curl -s -o /dev/null -w "%{http_code}" http://${ip}:${port}/v1/health/check"`,
+      ],
+    };
+
+    return commandsMap[key] ?? [];
+  }
+
+  getImagesCommands(info: IDistroInfo): string[] {
+    const key = `${info.distro}:${info.version}` as EAllowedDistroVersion;
+
+    const commandsMap: Record<EAllowedDistroVersion, string[]> = {
+      [EAllowedDistroVersion.Ubuntu_25_04]: [
+        `bash -c "if docker image inspect ${EWorkerImage.baileys} > /dev/null 2>&1; then   echo true; else   echo false; fi"`,
+      ],
+      [EAllowedDistroVersion.Ubuntu_24_10]: [
+        `bash -c "if docker image inspect ${EWorkerImage.baileys} > /dev/null 2>&1; then   echo true; else   echo false; fi"`,
+      ],
+      [EAllowedDistroVersion.Ubuntu_24_04]: [
+        `bash -c "if docker image inspect ${EWorkerImage.baileys} > /dev/null 2>&1; then   echo true; else   echo false; fi"`,
       ],
     };
 

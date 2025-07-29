@@ -152,6 +152,17 @@ export class BalanceCreatorConsume {
             installCommands
           );
 
+          const getImagesCommands =
+            this.sshService.getImagesCommands(getDistroAndVersion);
+
+          const imagesLogs = await this.sshService.runCommands(
+            serverId,
+            sshConfig,
+            getImagesCommands
+          );
+
+          console.log('imagesLogs:', imagesLogs);
+
           await this.serverService.deleteLogInstallServer(serverId);
           await this.serverService.updateLogInstallServerBulk(logs);
 
