@@ -6,6 +6,7 @@ import { v4 } from 'uuid';
 import swaggerPlugin from '@/plugins/swagger';
 import corsPlugin from '@core/plugins/cors';
 import rabbitmqPlugin from '@core/plugins/rabbitmq';
+import consumerPlugin from './consumer';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -17,6 +18,7 @@ server.decorateRequest('module', ERouteModule.worker_baileys);
 server.register(corsPlugin);
 server.register(swaggerPlugin);
 server.register(rabbitmqPlugin);
+server.register(consumerPlugin);
 
 const start = async () => {
   try {

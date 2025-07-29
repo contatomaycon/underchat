@@ -73,6 +73,9 @@ const isDialogEditChannelShow = ref(false);
 const isAddChannelVisible = ref(false);
 const channelToEdit = ref<string | null>(null);
 
+const channelConnectionChannel = ref<string | null>(null);
+const isDialogConnectionChannelShow = ref(false);
+
 const resolveStatusVariant = (s: string | undefined | null) => {
   if (s === EWorkerStatus.disponible)
     return { color: EColor.warning, text: t('disponible') };
@@ -147,6 +150,12 @@ const openEditDialog = (id: string) => {
   channelToEdit.value = id;
 
   isDialogEditChannelShow.value = true;
+};
+
+const openConnectionDialog = (id: string) => {
+  channelConnectionChannel.value = id;
+
+  isDialogConnectionChannelShow.value = true;
 };
 
 const handleDelete = async () => {
@@ -287,6 +296,18 @@ onBeforeUnmount(async () => {
 
         <template #item.actions="{ item }">
           <div class="d-flex gap-1">
+            <IconBtn
+              ><VTooltip
+                location="top"
+                transition="scale-transition"
+                activator="parent"
+              >
+                <span>{{ $t('connect_channel') }}</span> </VTooltip
+              ><VIcon
+                icon="tabler-plug-connected"
+                @click="openConnectionDialog(item.id)"
+            /></IconBtn>
+
             <IconBtn v-if="$canPermission(permissionsEdit)"
               ><VTooltip
                 location="top"
@@ -335,6 +356,11 @@ onBeforeUnmount(async () => {
       />
 
       <AppAddChannel v-model="isAddChannelVisible" />
+
+      <AppConnectChannel
+        v-model="isDialogConnectionChannelShow"
+        :channel-id="channelConnectionChannel"
+      />
     </VCard>
 
     <VSnackbar

@@ -111,5 +111,8 @@
     "delete_role_confirmation": "Are you sure you want to delete this role?",
     "edit_role": "Edit Role",
     "worker_delete_error": "An error occurred while deleting the worker. Please try again.",
-    "worker_delete_success": "Worker deleted successfully!"
+    "worker_delete_success": "Worker deleted successfully!",
+    "connect_channel": "Connect Channel",
+    "worker_status_update_error": "An error occurred while updating the worker status. Please try again.",
+    "worker_status_update_success": "Worker status updated successfully!"
 }

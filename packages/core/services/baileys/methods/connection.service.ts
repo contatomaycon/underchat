@@ -15,7 +15,6 @@ import { baileysEnvironment } from '@core/config/environments';
 import { IBaileysUpdateEvent } from '@core/common/interfaces/IBaileysUpdateEvent';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { injectable } from 'tsyringe';
-import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
 
 const credentialsFolder = path.join(
   process.cwd(),
@@ -143,11 +142,14 @@ export class BaileysConnectionService {
 
     const qrcode = await QRCode.toDataURL(qr);
 
-    this.centrifugoService.publish(ECentrifugoChannel.connection_channel, {
-      status: this.status,
-      qrcode,
-      worker_id: baileysEnvironment.baileysWorkerId,
-    });
+    this.centrifugoService.publish(
+      `worker:${baileysEnvironment.baileysWorkerId}:qrcode`,
+      {
+        status: this.status,
+        qrcode,
+        worker_id: baileysEnvironment.baileysWorkerId,
+      }
+    );
 
     resolve({
       status: this.status,
@@ -183,10 +185,13 @@ export class BaileysConnectionService {
     this.qrHash = undefined;
     this.setStatus(Status.connected);
 
-    this.centrifugoService.publish(ECentrifugoChannel.connection_channel, {
-      status: this.status,
-      worker_id: baileysEnvironment.baileysWorkerId,
-    });
+    this.centrifugoService.publish(
+      `worker:${baileysEnvironment.baileysWorkerId}:qrcode`,
+      {
+        status: this.status,
+        worker_id: baileysEnvironment.baileysWorkerId,
+      }
+    );
 
     resolve({
       status: this.status,
@@ -205,10 +210,13 @@ export class BaileysConnectionService {
 
     this.setStatus(Status.disconnected);
 
-    this.centrifugoService.publish(ECentrifugoChannel.connection_channel, {
-      status: this.status,
-      worker_id: baileysEnvironment.baileysWorkerId,
-    });
+    this.centrifugoService.publish(
+      `worker:${baileysEnvironment.baileysWorkerId}:qrcode`,
+      {
+        status: this.status,
+        worker_id: baileysEnvironment.baileysWorkerId,
+      }
+    );
 
     if (code !== DisconnectReason.loggedOut && this.attempts < 5) {
       this.attempts++;

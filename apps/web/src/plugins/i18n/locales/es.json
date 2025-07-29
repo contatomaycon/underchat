@@ -112,5 +112,8 @@
     "delete_role_confirmation": "¿Estás seguro de que deseas eliminar este rol?",
     "edit_role": "Editar rol",
     "worker_delete_error": "Ocurrió un error al eliminar el trabajador. Por favor, inténtalo de nuevo.",
-    "worker_delete_success": "¡Trabajador eliminado exitosamente!"
+    "worker_delete_success": "¡Trabajador eliminado exitosamente!",
+    "connect_channel": "Conectar canal",
+    "worker_status_update_error": "Ocurrió un error al actualizar el estado del trabajador. Por favor, inténtalo de nuevo.",
+    "worker_status_update_success": "¡Estado del trabajador actualizado exitosamente!"
 }
