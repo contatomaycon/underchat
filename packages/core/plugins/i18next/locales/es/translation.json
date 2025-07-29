@@ -66,5 +66,7 @@
   "role_not_found": "¡Rol no encontrado!",
   "worker_delete_success": "¡Canal eliminado con éxito!",
   "worker_delete_error": "Error al eliminar el canal",
-  "worker_volume_removal_failed": "Error al eliminar el volumen del canal"
+  "worker_volume_removal_failed": "Error al eliminar el volumen del canal",
+  "worker_status_change_success": "¡Estado del trabajador cambiado con éxito!",
+  "worker_status_change_error": "Error al cambiar el estado del trabajador"
 }

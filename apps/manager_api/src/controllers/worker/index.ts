@@ -4,6 +4,7 @@ import { listWorker } from './methods/listWorker';
 import { updateWorker } from './methods/updateWorker';
 import { viewWorker } from './methods/viewWorker';
 import { deleteWorker } from './methods/deleteWorker';
+import { changeStatusConnection } from './methods/changeStatusConnection';
 
 @injectable()
 class WorkerController {
@@ -12,6 +13,7 @@ class WorkerController {
   public updateWorker = updateWorker;
   public viewWorker = viewWorker;
   public deleteWorker = deleteWorker;
+  public changeStatusConnection = changeStatusConnection;
 }
 
 export default WorkerController;
