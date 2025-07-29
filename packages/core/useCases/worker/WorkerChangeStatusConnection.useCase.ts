@@ -2,10 +2,14 @@ import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
+import { MessageRabbitMQService } from '@core/services/messageRabbitMQ.service';
 
 @injectable()
 export class WorkerChangeStatusConnectionUseCase {
-  constructor(private readonly workerService: WorkerService) {}
+  constructor(
+    private readonly workerService: WorkerService,
+    private readonly messageRabbitMQService: MessageRabbitMQService
+  ) {}
 
   private async validate(
     t: TFunction<'translation', undefined>,
@@ -24,7 +28,7 @@ export class WorkerChangeStatusConnectionUseCase {
     }
   }
 
-  private async onChangeConnectionStatusInKafka(
+  private async onChangeConnectionStatus(
     t: TFunction<'translation', undefined>,
     input: StatusConnectionWorkerRequest
   ): Promise<void> {
@@ -34,10 +38,10 @@ export class WorkerChangeStatusConnectionUseCase {
         status: input.status,
       };
 
-      /* await this.streamProducerService.send(
-        ETopicKafka.connection_channel,
+      await this.messageRabbitMQService.send(
+        `worker:${input.worker_id}:status`,
         payload
-      ); */
+      );
     } catch {
       throw new Error(t('rabbitmq_error'));
     }
@@ -50,7 +54,7 @@ export class WorkerChangeStatusConnectionUseCase {
     input: StatusConnectionWorkerRequest
   ): Promise<boolean> {
     await this.validate(t, accountId, isAdministrator, input.worker_id);
-    await this.onChangeConnectionStatusInKafka(t, input);
+    await this.onChangeConnectionStatus(t, input);
 
     return true;
   }
