@@ -287,11 +287,6 @@ export const useChannelsStore = defineStore('channels', {
           return false;
         }
 
-        this.showSnackbar(
-          this.i18n.global.t('worker_status_update_success'),
-          EColor.success
-        );
-
         return true;
       } catch (error) {
         let errorMessage = this.i18n.global.t('worker_status_update_error');

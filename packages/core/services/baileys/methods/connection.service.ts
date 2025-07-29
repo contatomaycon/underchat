@@ -28,8 +28,10 @@ export class BaileysConnectionService {
 
   private socket?: WASocket;
   private status: Status = Status.disconnected;
-  private attempts = 0;
   private qrHash?: string;
+  private attempts = 0;
+  private maxRetries = 5;
+  private retryDelay = 5_000;
 
   get connected() {
     return this.status === Status.connected;
@@ -218,9 +220,22 @@ export class BaileysConnectionService {
       }
     );
 
-    if (code !== DisconnectReason.loggedOut && this.attempts < 5) {
+    if (
+      code !== DisconnectReason.loggedOut &&
+      this.attempts < this.maxRetries
+    ) {
       this.attempts++;
-      setTimeout(() => this.connect().then(resolve), 5_000);
+
+      setTimeout(() => {
+        this.connect()
+          .then(resolve)
+          .catch(() => {
+            resolve({
+              status: this.status,
+              worker_id: baileysEnvironment.baileysWorkerId,
+            });
+          });
+      }, this.retryDelay);
 
       return;
     }
