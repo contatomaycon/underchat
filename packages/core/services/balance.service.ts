@@ -39,9 +39,7 @@ export class BalanceService {
       }
 
       return data;
-    } catch (error) {
-      console.log('Error creating worker in balance service', error);
-
+    } catch {
       throw new Error(t('worker_creation_failed'));
     }
   }

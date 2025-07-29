@@ -116,6 +116,18 @@ export class WorkerService {
     return container.id;
   }
 
+  public async existsImage(imageName: string): Promise<boolean> {
+    try {
+      const image = this.docker.getImage(imageName);
+
+      await image.inspect();
+
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   public async removeContainerWorker(
     workerId: string,
     t: TFunction<'translation', undefined>

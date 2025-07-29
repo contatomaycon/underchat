@@ -7,6 +7,7 @@ import swaggerPlugin from '@/plugins/swagger';
 import corsPlugin from '@core/plugins/cors';
 import rabbitmqPlugin from '@core/plugins/rabbitmq';
 import consumerPlugin from './consumer';
+import centrifugoPlugin from '@/plugins/centrifugo';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -18,6 +19,7 @@ server.decorateRequest('module', ERouteModule.worker_baileys);
 server.register(corsPlugin);
 server.register(swaggerPlugin);
 server.register(rabbitmqPlugin);
+server.register(centrifugoPlugin);
 server.register(consumerPlugin);
 
 const start = async () => {
