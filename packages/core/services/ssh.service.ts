@@ -141,7 +141,7 @@ export class SshService {
       for (const cmd of commands) {
         await this.execCommand(conn, cmd, {
           pty: true,
-          onData: async (linha) => {
+          onData: (linha) => {
             const date = new Date();
 
             const outputStripAnsi = stripAnsi(linha);
@@ -154,17 +154,17 @@ export class SshService {
               date,
             };
 
-            await this.centrifugoService.publish(
-              ECentrifugoChannel.server_ssh,
-              serverSshCentrifugo
-            );
-
             results.push({
               command: commandStripAnsi,
               output: outputStripAnsi,
               date,
               server_id: serverId,
             });
+
+            this.centrifugoService.publish(
+              ECentrifugoChannel.server_ssh,
+              serverSshCentrifugo
+            );
           },
         });
       }

@@ -100,7 +100,7 @@ export class BalanceCreatorConsume {
 
       const lastOutput = result[result.length - 1]?.output?.trim();
 
-      const status = parseInt(lastOutput ?? '0', 10);
+      const status = Number(lastOutput ?? 0);
 
       if (status === 200) {
         return true;
@@ -108,6 +108,29 @@ export class BalanceCreatorConsume {
     }
 
     return false;
+  }
+
+  private async imageIsBuilt(
+    serverId: string,
+    getDistroAndVersion: IDistroInfo,
+    sshConfig: ConnectConfig
+  ): Promise<boolean> {
+    const getImagesCommands =
+      this.sshService.getImagesCommands(getDistroAndVersion);
+
+    const result = await this.sshService.runCommands(
+      serverId,
+      sshConfig,
+      getImagesCommands
+    );
+
+    if (result.length > 0) {
+      await this.serverService.updateLogInstallServerBulk(result);
+    }
+
+    const lastOutput = result[result.length - 1]?.output?.trim();
+
+    return Boolean(lastOutput) === true;
   }
 
   async execute(server: FastifyInstance): Promise<void> {
@@ -152,16 +175,20 @@ export class BalanceCreatorConsume {
             installCommands
           );
 
-          const getImagesCommands =
-            this.sshService.getImagesCommands(getDistroAndVersion);
-
-          const imagesLogs = await this.sshService.runCommands(
+          const imageIsBuilt = await this.imageIsBuilt(
             serverId,
-            sshConfig,
-            getImagesCommands
+            getDistroAndVersion,
+            sshConfig
           );
 
-          console.log('imagesLogs:', imagesLogs);
+          if (!imageIsBuilt) {
+            await this.serverService.updateServerStatusById(
+              serverId,
+              EServerStatus.error
+            );
+
+            throw new Error('Docker image is not built');
+          }
 
           await this.serverService.deleteLogInstallServer(serverId);
           await this.serverService.updateLogInstallServerBulk(logs);
