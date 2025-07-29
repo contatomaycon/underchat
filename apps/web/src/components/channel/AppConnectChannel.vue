@@ -52,5 +52,9 @@ onMounted(() => {
         <VProgressCircular color="primary" indeterminate size="32" />
       </VOverlay>
     </template>
+
+    <VCard :title="$t('add_server')">
+      <VCardText> </VCardText>
+    </VCard>
   </VDialog>
 </template>
