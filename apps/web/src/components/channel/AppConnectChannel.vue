@@ -22,18 +22,7 @@ const isVisible = computed({
 
 const channelId = toRef(props, 'channelId');
 
-watch(channelId, async (id) => {
-  if (!id) return;
-
-  const input: StatusConnectionWorkerRequest = {
-    worker_id: id,
-    status: EWorkerStatus.online,
-  };
-
-  await channelStore.updateConnectionChannel(input);
-});
-
-onMounted(() => {
+onMounted(async () => {
   onMessage(
     `worker_${channelId.value}_qrcode`,
     (data: IBaileysConnectionState) => {
@@ -42,6 +31,15 @@ onMounted(() => {
       console.log('Baileys QR Code:', data);
     }
   );
+
+  if (channelId.value) {
+    const input: StatusConnectionWorkerRequest = {
+      worker_id: channelId.value,
+      status: EWorkerStatus.online,
+    };
+
+    await channelStore.updateConnectionChannel(input);
+  }
 });
 </script>
 

@@ -45,12 +45,12 @@ const updateServer = async () => {
   }
 };
 
-watch(channelId, async (id) => {
-  if (!id) return;
+onMounted(async () => {
+  if (!channelId.value) return;
 
-  const server = await channelStore.getWorkerById(id);
-  if (server) {
-    name.value = server.name;
+  const channel = await channelStore.getWorkerById(channelId.value);
+  if (channel) {
+    name.value = channel.name;
   }
 });
 </script>

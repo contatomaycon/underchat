@@ -77,10 +77,10 @@ const updateServer = async () => {
   }
 };
 
-watch(serverId, async (id) => {
-  if (!id) return;
+onMounted(async () => {
+  if (!serverId.value) return;
 
-  const server = await serverStore.getServerById(id);
+  const server = await serverStore.getServerById(serverId.value);
   if (server) {
     name.value = server.name;
     ip.value = server.ssh.ssh_ip;
