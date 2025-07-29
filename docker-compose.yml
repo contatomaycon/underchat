@@ -191,34 +191,6 @@ services:
     entrypoint: ['centrifugo']
     command: ['--config', '/etc/centrifugo/config.json']
 
-  under-balance-api:
-    build:
-      context: .
-      dockerfile: ./apps/balance_api/Dockerfile
-    container_name: under-balance-api
-    image: under-balance-api:latest
-    ports:
-      - '3003:3003'
-    networks:
-      - underchat
-    restart: always
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - DOCKER_HOST=unix:///var/run/docker.sock
-
-  under-worker-baileys:
-    build:
-      context: .
-      dockerfile: ./apps/worker_baileys/Dockerfile
-    container_name: under-worker-baileys
-    image: under-worker-baileys:latest
-    ports:
-      - '3005:3005'
-    networks:
-      - underchat
-    restart: always
-
 networks:
   underchat:
 
