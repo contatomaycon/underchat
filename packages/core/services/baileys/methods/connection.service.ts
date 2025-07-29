@@ -20,7 +20,7 @@ import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
 const credentialsFolder = path.join(
   process.cwd(),
   'storage',
-  baileysEnvironment.baileysContainerName
+  baileysEnvironment.baileysWorkerId
 );
 
 @injectable()
@@ -46,7 +46,7 @@ export class BaileysConnectionService {
     if (this.connected) {
       return {
         status: this.status,
-        container_name: baileysEnvironment.baileysContainerName,
+        worker_id: baileysEnvironment.baileysWorkerId,
       };
     }
 
@@ -146,13 +146,13 @@ export class BaileysConnectionService {
     this.centrifugoService.publish(ECentrifugoChannel.connection_channel, {
       status: this.status,
       qrcode,
-      container_name: baileysEnvironment.baileysContainerName,
+      worker_id: baileysEnvironment.baileysWorkerId,
     });
 
     resolve({
       status: this.status,
       qrcode,
-      container_name: baileysEnvironment.baileysContainerName,
+      worker_id: baileysEnvironment.baileysWorkerId,
     });
   }
 
@@ -185,12 +185,12 @@ export class BaileysConnectionService {
 
     this.centrifugoService.publish(ECentrifugoChannel.connection_channel, {
       status: this.status,
-      container_name: baileysEnvironment.baileysContainerName,
+      worker_id: baileysEnvironment.baileysWorkerId,
     });
 
     resolve({
       status: this.status,
-      container_name: baileysEnvironment.baileysContainerName,
+      worker_id: baileysEnvironment.baileysWorkerId,
     });
   }
 
@@ -207,7 +207,7 @@ export class BaileysConnectionService {
 
     this.centrifugoService.publish(ECentrifugoChannel.connection_channel, {
       status: this.status,
-      container_name: baileysEnvironment.baileysContainerName,
+      worker_id: baileysEnvironment.baileysWorkerId,
     });
 
     if (code !== DisconnectReason.loggedOut && this.attempts < 5) {
@@ -221,7 +221,7 @@ export class BaileysConnectionService {
 
     resolve({
       status: this.status,
-      container_name: baileysEnvironment.baileysContainerName,
+      worker_id: baileysEnvironment.baileysWorkerId,
     });
   }
 

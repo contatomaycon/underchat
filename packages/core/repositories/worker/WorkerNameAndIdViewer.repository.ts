@@ -24,7 +24,6 @@ export class WorkerNameAndIdViewerRepository {
       .select({
         worker_id: worker.worker_id,
         container_id: worker.container_id,
-        container_name: worker.container_name,
       })
       .from(worker)
       .where(

@@ -72,12 +72,12 @@ export class WorkerBalanceCreatorUseCase {
 
     const workerType = input.worker_type as EWorkerType;
     const imageName = this.getImageWorker(workerType);
-    const containerName = uuidv4();
+    const workerId = uuidv4();
 
     const containerId = await this.workerService.createContainerWorker(
       t,
       imageName,
-      containerName
+      workerId
     );
 
     if (!containerId) {
@@ -85,24 +85,23 @@ export class WorkerBalanceCreatorUseCase {
     }
 
     const workerData: ICreateWorker = {
+      worker_id: workerId,
       worker_status_id: EWorkerStatus.disponible,
       worker_type_id: workerType,
       server_id: input.server_id,
       account_id: accountId,
-      container_name: containerName,
       container_id: containerId,
       name: input.name,
     };
 
-    const workerId = await this.workerService.createWorker(workerData);
+    const statusCreate = await this.workerService.createWorker(workerData);
 
-    if (!workerId) {
+    if (!statusCreate) {
       throw new Error(t('worker_creation_failed'));
     }
 
     return {
       worker_id: workerId,
-      container_name: containerName,
     };
   }
 }

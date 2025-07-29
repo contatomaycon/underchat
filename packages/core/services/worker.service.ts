@@ -38,11 +38,9 @@ export class WorkerService {
     this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
   }
 
-  public async existsContainerWorkerById(
-    containerName: string
-  ): Promise<boolean> {
+  public async existsContainerWorkerById(workerId: string): Promise<boolean> {
     try {
-      const container = this.docker.getContainer(containerName);
+      const container = this.docker.getContainer(workerId);
       await container.inspect();
 
       return true;
@@ -52,11 +50,11 @@ export class WorkerService {
   }
 
   public async removeContainerWorkerById(
-    containerName: string,
+    workerId: string,
     t: TFunction<'translation', undefined>
   ): Promise<boolean> {
     try {
-      const container = this.docker.getContainer(containerName);
+      const container = this.docker.getContainer(workerId);
       await container.remove({ force: true });
 
       return true;
@@ -66,11 +64,11 @@ export class WorkerService {
   }
 
   public async removeVolumeWorkerById(
-    containerName: string,
+    workerId: string,
     t: TFunction<'translation', undefined>
   ): Promise<boolean> {
     try {
-      const volume = this.docker.getVolume(containerName);
+      const volume = this.docker.getVolume(workerId);
       await volume.remove();
 
       return true;
@@ -82,20 +80,19 @@ export class WorkerService {
   public async createContainerWorker(
     t: TFunction<'translation', undefined>,
     imageName: EWorkerImage,
-    containerName: string
+    workerId: string
   ): Promise<string> {
-    const existsContainerById =
-      await this.existsContainerWorkerById(containerName);
+    const existsContainerById = await this.existsContainerWorkerById(workerId);
 
     if (existsContainerById) {
-      await this.removeContainerWorkerById(containerName, t);
+      await this.removeContainerWorkerById(workerId, t);
     }
 
     await this.docker.createVolume({
-      Name: containerName,
+      Name: workerId,
     });
 
-    const getVolume = await this.docker.getVolume(containerName).inspect();
+    const getVolume = await this.docker.getVolume(workerId).inspect();
 
     if (!getVolume) {
       throw new Error(t('worker_volume_creation_failed'));
@@ -103,15 +100,15 @@ export class WorkerService {
 
     const container = await this.docker.createContainer({
       Image: imageName,
-      name: containerName,
+      name: workerId,
       HostConfig: {
-        Binds: [`${containerName}:/app/data`],
+        Binds: [`${workerId}:/app/data`],
         NetworkMode: 'underchat',
       },
       Volumes: {
         '/app/data': {},
       },
-      Env: [`BAILEYS_CONTAINER_NAME=${containerName}`],
+      Env: [`WORKER_ID=${workerId}`],
     });
 
     await container.start();
@@ -120,11 +117,11 @@ export class WorkerService {
   }
 
   public async removeContainerWorker(
-    containerName: string,
+    workerId: string,
     t: TFunction<'translation', undefined>
   ): Promise<boolean> {
     const removeContainerWorkerById = await this.removeContainerWorkerById(
-      containerName,
+      workerId,
       t
     );
 
@@ -133,7 +130,7 @@ export class WorkerService {
     }
 
     const removeVolumeWorkerById = await this.removeVolumeWorkerById(
-      containerName,
+      workerId,
       t
     );
 
@@ -144,7 +141,7 @@ export class WorkerService {
     return true;
   }
 
-  public async createWorker(input: ICreateWorker): Promise<string | null> {
+  public async createWorker(input: ICreateWorker): Promise<boolean> {
     return this.workerCreatorRepository.createWorker(input);
   }
 

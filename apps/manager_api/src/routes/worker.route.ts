@@ -60,4 +60,13 @@ export default async function workerRoutes(server: FastifyInstance) {
         server.authenticateJwt(request, reply, workerDeletePermissions),
     ],
   });
+
+  server.post('/worker/:worker_id/connection', {
+    schema: managerCreateWorkerSchema,
+    handler: workerController.createWorker,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerCreatePermissions),
+    ],
+  });
 }

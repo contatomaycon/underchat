@@ -76,7 +76,6 @@ export class WorkerManagerCreatorUseCase {
 
     return {
       worker_id: createWorker.worker_id,
-      container_name: createWorker.container_name,
     };
   }
 }

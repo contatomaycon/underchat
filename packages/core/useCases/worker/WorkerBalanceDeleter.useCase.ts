@@ -41,7 +41,7 @@ export class WorkerBalanceDeleterUseCase {
     }
 
     const containerId = await this.workerService.removeContainerWorker(
-      viewWorkerNameAndId.container_name,
+      workerId,
       t
     );
 

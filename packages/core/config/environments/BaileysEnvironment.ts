@@ -6,14 +6,12 @@ dotenv.config({
 });
 
 export class BaileysEnvironment {
-  public get baileysContainerName(): string {
-    const containerName = process.env.BAILEYS_CONTAINER_NAME;
-    if (!containerName) {
-      throw new InvalidConfigurationError(
-        'BAILEYS_CONTAINER_NAME is not defined.'
-      );
+  public get baileysWorkerId(): string {
+    const workerId = process.env.WORKER_ID;
+    if (!workerId) {
+      throw new InvalidConfigurationError('WORKER_ID is not defined.');
     }
 
-    return containerName;
+    return workerId;
   }
 }
