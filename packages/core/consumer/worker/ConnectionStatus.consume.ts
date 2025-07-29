@@ -49,9 +49,11 @@ export class ConnectionStatusConsume {
           }
 
           if (status === EWorkerStatus.online) {
-            console.log('online');
-
-            await this.baileysService.connect();
+            try {
+              await this.baileysService.connect();
+            } catch (err) {
+              console.error('Erro ao conectar com o WhatsApp:', err);
+            }
           }
 
           if (status === EWorkerStatus.offline) {
