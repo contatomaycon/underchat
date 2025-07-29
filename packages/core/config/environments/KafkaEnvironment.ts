@@ -6,14 +6,8 @@ dotenv.config({
 });
 
 export class KafkaEnvironment {
-  private readonly KAFKA_BROKER: string | undefined;
-
-  constructor() {
-    this.KAFKA_BROKER = process.env.KAFKA_BROKER;
-  }
-
   public get kafkaBroker(): string {
-    const broker = this.KAFKA_BROKER;
+    const broker = process.env.KAFKA_BROKER;
     if (!broker) {
       throw new InvalidConfigurationError('KAFKA_BROKER is not defined.');
     }

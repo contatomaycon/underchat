@@ -10,4 +10,8 @@ export default async function healthRoutes(server: FastifyInstance) {
     schema: healthCheckSchema,
     handler: healthController.view,
   });
+
+  server.get('/health/teste', {
+    handler: healthController.teste,
+  });
 }

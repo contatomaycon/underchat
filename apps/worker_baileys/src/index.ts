@@ -15,14 +15,15 @@ const server = fastify({
 server.decorateRequest('module', ERouteModule.worker_baileys);
 
 server.register(corsPlugin);
-
 server.register(kafkaStreamsPlugin);
 server.register(swaggerPlugin);
 
 const start = async () => {
   try {
     await server.listen({ port: 3005, host: '0.0.0.0' });
-  } catch {
+  } catch (error) {
+    console.error('Error:', error);
+
     process.exit(1);
   }
 };
