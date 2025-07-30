@@ -355,11 +355,13 @@ export class BaileysConnectionService {
     try {
       this.socket?.ev.removeAllListeners('connection.update');
     } catch {}
+
     this.safeLogout();
     this.pendingResolve?.(this.state());
     this.pendingResolve = undefined;
     this.currentPromise = undefined;
     this.connecting = false;
+    this.awaitingNewLogin = false;
   }
 
   /* ---------------- misc ----------------------- */
