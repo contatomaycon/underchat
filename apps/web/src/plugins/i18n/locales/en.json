@@ -125,5 +125,7 @@
     "select_connected_devices": "Select Connected Devices",
     "access_connect_device": "Access the option to connect a new device.",
     "point_camera_screen": "Point your camera at this screen",
-    "scan_qr_code": "Scan the QR code to connect automatically."
+    "scan_qr_code": "Scan the QR code to connect automatically.",
+    "connection_failed": "Connection failed. Please try again.",
+    "connection_success": "Connection successful!"
 }

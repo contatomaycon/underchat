@@ -8,9 +8,10 @@ import {
 import { Boom } from '@hapi/boom';
 import QRCode from 'qrcode';
 import P from 'pino';
-import fs, { mkdirSync } from 'fs';
+import fs from 'fs';
 import path from 'path';
 import { injectable } from 'tsyringe';
+
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { EBaileysConnectionStatus as Status } from '@core/common/enums/EBaileysConnectionStatus';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
@@ -33,34 +34,41 @@ export class BaileysConnectionService {
   private attempts = 0;
   private readonly maxRetries = 5;
   private readonly retryDelay = 5_000;
+  private readonly qrValidity = 20;
   private reconnecting = false;
+
+  private publishQueue: Promise<void> = Promise.resolve();
+  private lastPublishHash?: string;
 
   get connected() {
     return this.status === Status.connected;
   }
-
   getStatus() {
     return this.status;
   }
-
   getSocket(): WASocket | undefined {
     return this.socket;
   }
 
+  discard(): void {
+    this.disconnect();
+    this.deleteStoredFiles();
+  }
+
+  async reconnect(): Promise<IBaileysConnectionState> {
+    if (this.connected) return this.state();
+    this.attempts = 0;
+    return this.connect();
+  }
+
   async connect(): Promise<IBaileysConnectionState> {
-    if (this.connected) {
-      return this.state();
-    }
+    if (this.connected) return this.state();
 
-    if (this.reconnecting) {
-      return this.waitCurrentConnect();
-    }
-
+    if (this.reconnecting) return this.waitCurrentConnect();
     this.reconnecting = true;
 
     this.ensureFolder();
     const { socket, saveCreds } = await this.createSocket();
-
     this.socket = socket;
     socket.ev.on('creds.update', saveCreds);
 
@@ -72,66 +80,45 @@ export class BaileysConnectionService {
   disconnect(): void {
     this.socket?.logout().catch(() => null);
     this.socket?.end(new Error('logout'));
-    this.deleteStoredFiles();
     this.setStatus(Status.disconnected);
   }
 
-  discard(): void {
-    this.disconnect();
-  }
-
-  async reconnect(): Promise<IBaileysConnectionState> {
-    if (this.connected) {
-      return this.state();
-    }
-    this.attempts = 0;
-
-    return this.connect();
-  }
-
-  private state(qr?: string): IBaileysConnectionState {
-    return {
-      status: this.status,
-      worker_id: baileysEnvironment.baileysWorkerId,
-      qrcode: qr,
-    };
-  }
-
   private ensureFolder() {
-    if (!fs.existsSync(credentialsFolder)) {
-      mkdirSync(credentialsFolder, { recursive: true });
-    }
+    if (!fs.existsSync(credentialsFolder))
+      fs.mkdirSync(credentialsFolder, { recursive: true });
   }
 
   private deleteStoredFiles() {
-    fs.readdirSync(credentialsFolder).forEach((e) => {
-      const p = path.join(credentialsFolder, e);
-
-      fs.rmSync(p, { recursive: true, force: true });
-    });
+    fs.readdirSync(credentialsFolder).forEach((e) =>
+      fs.rmSync(path.join(credentialsFolder, e), {
+        recursive: true,
+        force: true,
+      })
+    );
   }
 
   private async createSocket() {
     const { state, saveCreds } = await useMultiFileAuthState(credentialsFolder);
     const { version } = await fetchLatestBaileysVersion();
 
-    const socket = makeWASocket({
-      auth: state,
-      version,
-      browser: ['Windows', 'Chrome', '4.0.0'],
-      printQRInTerminal: false,
-      connectTimeoutMs: 60_000,
-      logger: P({ level: 'silent' }),
-    });
-
-    return { socket, saveCreds };
+    return {
+      socket: makeWASocket({
+        auth: state,
+        version,
+        browser: ['Windows', 'Chrome', '4.0.0'],
+        printQRInTerminal: false,
+        connectTimeoutMs: 60_000,
+        logger: P({ level: 'silent' }),
+      }),
+      saveCreds,
+    };
   }
 
   private waitCurrentConnect() {
     return new Promise<IBaileysConnectionState>((r) => {
-      const check = setInterval(() => {
+      const t = setInterval(() => {
         if (!this.reconnecting) {
-          clearInterval(check);
+          clearInterval(t);
           r(this.state());
         }
       }, 250);
@@ -144,27 +131,26 @@ export class BaileysConnectionService {
     return new Promise<IBaileysConnectionState>((resolve) => {
       const listener = (u: IBaileysUpdateEvent) => {
         const { qr, connection, lastDisconnect } = u;
-
         if (qr) {
           this.handleQr(qr, resolve);
-
           return;
         }
 
-        if (!connection) return;
+        if (connection === 'open') {
+          this.onOpen(socket, listener, resolve);
+          return;
+        }
 
-        connection === 'open'
-          ? this.onOpen(socket, listener, resolve)
-          : this.onClose(lastDisconnect, socket, listener, resolve);
+        if (connection === 'close')
+          this.onClose(lastDisconnect, socket, listener, resolve);
       };
-
       socket.ev.on('connection.update', listener);
     });
   }
 
   private async handleQr(
     qr: string,
-    resolve: (v: IBaileysConnectionState) => void
+    resolve: (s: IBaileysConnectionState) => void
   ) {
     const hash = qr.slice(-20);
     if (hash === this.qrHash) return;
@@ -173,49 +159,45 @@ export class BaileysConnectionService {
     this.setStatus(Status.connecting);
 
     const qrcode = await QRCode.toDataURL(qr);
-    await this.safePublish(qrcode);
 
+    this.enqueuePublish({ status: this.status, qrcode });
     resolve(this.state(qrcode));
   }
 
   private onOpen(
     socket: WASocket,
     listener: (u: IBaileysUpdateEvent) => void,
-    resolve: (v: IBaileysConnectionState) => void
+    resolve: (s: IBaileysConnectionState) => void
   ) {
     socket.ev.off('connection.update', listener);
-
     this.attempts = 0;
     this.qrHash = undefined;
     this.setStatus(Status.connected);
 
-    void this.safePublish();
+    this.enqueuePublish({ status: this.status });
     resolve(this.state());
   }
 
   private onClose(
-    lastDisconnect: IBaileysUpdateEvent['lastDisconnect'],
+    last: IBaileysUpdateEvent['lastDisconnect'],
     socket: WASocket,
     listener: (u: IBaileysUpdateEvent) => void,
-    resolve: (v: IBaileysConnectionState) => void
+    resolve: (s: IBaileysConnectionState) => void
   ) {
-    const code = (lastDisconnect?.error as Boom | undefined)?.output
-      ?.statusCode;
+    const code = (last?.error as Boom | undefined)?.output?.statusCode;
     this.setStatus(Status.disconnected);
-    void this.safePublish();
+    this.enqueuePublish({ status: this.status });
 
     if (
       code !== DisconnectReason.loggedOut &&
       this.attempts < this.maxRetries
     ) {
       this.attempts++;
-
       setTimeout(() => {
         this.connect()
           .then(resolve)
           .catch(() => resolve(this.state()));
       }, this.retryDelay);
-
       return;
     }
 
@@ -223,22 +205,33 @@ export class BaileysConnectionService {
     resolve(this.state());
   }
 
-  private async safePublish(qrcode?: string) {
-    try {
-      await this.centrifugo.publish(
-        `worker_${baileysEnvironment.baileysWorkerId}_qrcode`,
-        {
-          status: this.status,
-          qrcode,
-          worker_id: baileysEnvironment.baileysWorkerId,
-        }
-      );
-    } catch (err) {
-      console.error('[Centrifugo] publish error:', err);
-    }
+  private enqueuePublish(payload: Record<string, unknown>): void {
+    const hash = JSON.stringify(payload);
+    if (hash === this.lastPublishHash) return;
+
+    this.lastPublishHash = hash;
+
+    this.publishQueue = this.publishQueue
+      .then(() =>
+        this.centrifugo
+          .publish(`worker_${baileysEnvironment.baileysWorkerId}_qrcode`, {
+            ...payload,
+            worker_id: baileysEnvironment.baileysWorkerId,
+          })
+          .then(() => undefined)
+      )
+      .catch((err) => console.error('[Centrifugo] publish error:', err));
   }
 
   private setStatus(s: Status) {
     this.status = s;
+  }
+
+  private state(qr?: string): IBaileysConnectionState {
+    return {
+      status: this.status,
+      worker_id: baileysEnvironment.baileysWorkerId,
+      qrcode: qr,
+    };
   }
 }

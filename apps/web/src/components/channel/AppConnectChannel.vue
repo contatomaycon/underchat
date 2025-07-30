@@ -125,7 +125,7 @@ onMounted(async () => {
     </template>
 
     <VCard>
-      <VRow v-if="!isConnected" no-gutters>
+      <VRow no-gutters>
         <VCol cols="12" sm="8" md="12" lg="7" order="2" order-lg="1">
           <VCardItem>
             <VCardTitle>{{ $t('conection') }}</VCardTitle>
@@ -143,6 +143,22 @@ onMounted(async () => {
                 size="32"
                 indeterminate
               />
+            </VCardText>
+          </div>
+          <div v-if="isDisconnected">
+            <VCardText class="d-flex justify-center">
+              <VIcon icon="tabler-plug-connected-x" color="error" size="150" />
+            </VCardText>
+            <VCardText class="text-center">
+              <strong>{{ $t('connection_failed') }}</strong>
+            </VCardText>
+          </div>
+          <div v-if="isConnected">
+            <VCardText class="d-flex justify-center">
+              <VIcon icon="tabler-plug-connected" color="success" size="150" />
+            </VCardText>
+            <VCardText class="text-center">
+              <strong>{{ $t('connection_success') }}</strong>
             </VCardText>
           </div>
 
