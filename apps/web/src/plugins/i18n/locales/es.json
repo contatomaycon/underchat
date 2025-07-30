@@ -115,5 +115,16 @@
     "worker_delete_success": "¡Trabajador eliminado exitosamente!",
     "connect_channel": "Conectar canal",
     "worker_status_update_error": "Ocurrió un error al actualizar el estado del trabajador. Por favor, inténtalo de nuevo.",
-    "worker_status_update_success": "¡Estado del trabajador actualizado exitosamente!"
+    "worker_status_update_success": "¡Estado del trabajador actualizado exitosamente!",
+    "conection": "Conexión",
+    "remove": "Eliminar",
+    "reconnect": "Reconectar",
+    "open_whatsapp": "Abrir WhatsApp",
+    "certify_latest_version": "Asegúrate de que estás utilizando la última versión.",
+    "tap_settings": "Toca en Configuración ⋮",
+    "you_top_right_corner": "Encontrarás en la esquina superior derecha de la pantalla.",
+    "select_connected_devices": "Selecciona 'Dispositivos conectados'",
+    "access_connect_device": "Accede a la opción para conectar un nuevo dispositivo.",
+    "point_camera_screen": "Apunta la cámara a esta pantalla",
+    "scan_qr_code": "Escanea el código QR para conectar automáticamente."
 }

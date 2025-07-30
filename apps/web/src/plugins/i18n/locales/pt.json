@@ -117,5 +117,16 @@
     "worker_delete_success": "Canal excluído com sucesso!",
     "connect_channel": "Conectar Canal",
     "worker_status_update_error": "Ocorreu um erro ao atualizar o status do canal. Por favor, tente novamente.",
-    "worker_status_update_success": "Status do canal atualizado com sucesso!"
+    "worker_status_update_success": "Status do canal atualizado com sucesso!",
+    "conection": "Conexão",
+    "remove": "Remover",
+    "reconnect": "Reconectar",
+    "open_whatsapp": "Abra o WhatsApp no seu celular",
+    "certify_latest_version": "Certifique-se de que você está usando a versão mais recente.",
+    "tap_settings": "Toque em Configurações",
+    "you_top_right_corner": "Você pode encontrá-lo no canto superior direito.",
+    "select_connected_devices": "Selecione 'Dispositivos conectados'",
+    "access_connect_device": "Acesse a opção para conectar um novo dispositivo.",
+    "point_camera_screen": "Aponte a câmera para esta tela",
+    "scan_qr_code": "Escaneie o QR code para conectar automaticamente."
 }

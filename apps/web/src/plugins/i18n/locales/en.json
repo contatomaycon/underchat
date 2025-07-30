@@ -114,5 +114,16 @@
     "worker_delete_success": "Worker deleted successfully!",
     "connect_channel": "Connect Channel",
     "worker_status_update_error": "An error occurred while updating the worker status. Please try again.",
-    "worker_status_update_success": "Worker status updated successfully!"
+    "worker_status_update_success": "Worker status updated successfully!",
+    "conection": "Connection",
+    "remove": "Remove",
+    "reconnect": "Reconnect",
+    "open_whatsapp": "Open WhatsApp",
+    "certify_latest_version": "Make sure you are using the latest version.",
+    "tap_settings": "Tap on Settings ⋮",
+    "you_top_right_corner": "You will find it in the top right corner of the screen.",
+    "select_connected_devices": "Select Connected Devices",
+    "access_connect_device": "Access the option to connect a new device.",
+    "point_camera_screen": "Point your camera at this screen",
+    "scan_qr_code": "Scan the QR code to connect automatically."
 }
