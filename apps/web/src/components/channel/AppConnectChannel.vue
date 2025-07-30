@@ -119,8 +119,6 @@ onMounted(async () => {
   await onMessage(
     `worker_${channelId.value}_qrcode`,
     (data: IBaileysConnectionState) => {
-      console.log('Baileys Connection State:', data);
-
       if (data?.worker_id !== channelId.value) return;
 
       if (data?.status) {

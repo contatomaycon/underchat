@@ -20,6 +20,7 @@ import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EWppConnection } from '@core/common/enums/EWppConnection';
 import { wppConnectionMappings } from '@core/mappings/wppConnection.mappings';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
+import { v4 as uuidv4 } from 'uuid';
 
 const FOLDER = path.join(
   process.cwd(),
@@ -42,7 +43,7 @@ export class BaileysConnectionService {
   private qrHash?: string;
   private initialConnection = false;
   private awaitingNewLogin = false;
-  private lastPayload?: string;
+  private lastPayload: string | null = null;
 
   private connecting = false;
   private retryCount = 0;
@@ -423,6 +424,8 @@ export class BaileysConnectionService {
 
   private reportConnected(): IBaileysConnectionState {
     if (this.initialConnection) {
+      this.lastPayload = null;
+
       this.publish({
         status: this.status,
         code: ECodeMessage.connectionEstablished,
@@ -502,7 +505,7 @@ export class BaileysConnectionService {
     return this.elasticDatabaseService.update(
       EElasticIndex.wpp_connection,
       wppLog,
-      wppLog.worker_id
+      uuidv4()
     );
   };
 }
