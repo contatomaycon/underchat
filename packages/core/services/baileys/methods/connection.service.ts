@@ -9,7 +9,6 @@ import P from 'pino';
 import fs from 'fs';
 import path from 'path';
 import { injectable } from 'tsyringe';
-
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { baileysEnvironment } from '@core/config/environments';
 import { EBaileysConnectionStatus as Status } from '@core/common/enums/EBaileysConnectionStatus';
@@ -17,6 +16,10 @@ import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { BaileysHelpersService } from './helpers.service';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { IBaileysUpdateEvent } from '@core/common/interfaces/IBaileysUpdateEvent';
+import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
+import { EWppConnection } from '@core/common/enums/EWppConnection';
+import { wppConnectionMappings } from '@core/mappings/wppConnection.mappings';
+import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 
 const FOLDER = path.join(
   process.cwd(),
@@ -26,21 +29,16 @@ const FOLDER = path.join(
 const CHANNEL = `worker_${baileysEnvironment.baileysWorkerId}_qrcode`;
 const WORKER = baileysEnvironment.baileysWorkerId;
 
-/* ================================================================== */
-/*  SERVICE                                                           */
-/* ================================================================== */
 @injectable()
 export class BaileysConnectionService {
-  /* -------- configuração estática -------- */
   private readonly retryDelay = 2_000;
   private readonly maxRetries = 5;
 
-  /* -------- runtime -------- */
   private socket?: WASocket;
   private status: Status = Status.initial;
   private code: ECodeMessage = ECodeMessage.awaitConnection;
 
-  private socketId = 0; // <<< identificação de geração
+  private socketId = 0;
   private qrHash?: string;
   private initialConnection = false;
   private awaitingNewLogin = false;
@@ -51,58 +49,57 @@ export class BaileysConnectionService {
   private currentPromise?: Promise<IBaileysConnectionState>;
   private pendingResolve?: (s: IBaileysConnectionState) => void;
 
-  /* -------- DI -------- */
   constructor(
     private readonly centrifugo: CentrifugoService,
-    private readonly helpers: BaileysHelpersService
+    private readonly helpers: BaileysHelpersService,
+    private readonly elasticDatabaseService: ElasticDatabaseService
   ) {
     process.on('unhandledRejection', () => this.handleFatal());
   }
 
-  /* ================================================================ */
-  /*  PUBLIC FACADE                                                   */
-  /* ================================================================ */
   get connected(): boolean {
     return this.status === Status.connected && !!this.socket?.user;
   }
+
   getStatus(): Status {
     return this.status;
   }
+
   getSocket(): WASocket | undefined {
     return this.socket;
   }
 
-  /* ---------------------------------------------------------------- */
-  /*  CONNECT                                                         */
-  /* ---------------------------------------------------------------- */
   async connect(
     initial = false,
     allowRestore = true
   ): Promise<IBaileysConnectionState> {
     this.initialConnection = initial;
 
-    /* — já conectado — */
-    if (this.connected) return this.reportConnected();
-
-    /* — balanceamento de concorrência — */
-    if (this.connecting) {
-      if (initial)
-        this.cancelAttempt(); // força abortar tentativa anterior
-      else if (this.currentPromise) return this.currentPromise;
+    if (this.connected) {
+      return this.reportConnected();
     }
 
-    /* — restauração de sessão existente — */
+    if (this.connecting) {
+      if (initial) {
+        this.cancelAttempt();
+      }
+
+      if (this.currentPromise) {
+        return this.currentPromise;
+      }
+    }
+
     if (allowRestore && this.status === Status.initial && this.hasSession()) {
       return this.restoreWithRetries();
     }
 
-    /* — inicia um novo ciclo — */
     this.prepareFolder();
     this.connecting = true;
-    this.retryCount = 0; // zera contagem a cada novo ciclo
-    this.socketId += 1; // gera nova “versão” de socket
+    this.retryCount = 0;
+    this.socketId += 1;
 
     const { socket, saveCreds } = await this.createSocket();
+
     this.socket = socket;
     socket.ev.on('creds.update', saveCreds);
 
@@ -114,9 +111,6 @@ export class BaileysConnectionService {
     return this.currentPromise;
   }
 
-  /* ---------------------------------------------------------------- */
-  /*  DISCONNECT (manual)                                             */
-  /* ---------------------------------------------------------------- */
   disconnect(initial = false): void {
     this.initialConnection = initial;
 
@@ -124,19 +118,28 @@ export class BaileysConnectionService {
     this.safeLogout();
     this.clearFolder();
 
-    console.log('BaileysConnectionService:', this.initialConnection);
+    this.saveLogWppConnection({
+      worker_id: WORKER,
+      status: this.status,
+      code: this.code?.toString(),
+      message: 'BaileysConnectionService disconnected',
+      date: new Date(),
+    });
 
-    if (!this.initialConnection) return;
+    if (!this.initialConnection) {
+      return;
+    }
 
     this.setStatus(Status.disconnected, ECodeMessage.connectionClosed);
-    this.publish({ status: this.status, code: this.code, worker_id: WORKER });
+    this.publish({
+      status: this.status,
+      code: this.code,
+      worker_id: WORKER,
+    });
 
-    this.connect(true); // dispara um novo ciclo
+    this.connect(true);
   }
 
-  /* ================================================================ */
-  /*  PRIVATE – criação / espera                                      */
-  /* ================================================================ */
   private async createSocket() {
     const { state, saveCreds } = await useMultiFileAuthState(FOLDER);
     const { version } = await fetchLatestBaileysVersion();
@@ -154,54 +157,53 @@ export class BaileysConnectionService {
     };
   }
 
-  /** Aguarda eventos do socket _apenas_ se pertencer à geração ativa. */
-  private wait(socket: WASocket, id: number) {
+  private wait(socket: WASocket, id: number): Promise<IBaileysConnectionState> {
     return new Promise<IBaileysConnectionState>((resolve) => {
       this.pendingResolve = resolve;
       let opened = false;
 
       socket.ev.on('connection.update', async (u: IBaileysUpdateEvent) => {
-        if (id !== this.socketId) return; // <<< ignora gerações antigas
+        if (id !== this.socketId) {
+          return;
+        }
 
         const { qr, connection, isNewLogin, lastDisconnect } = u;
 
-        console.dir(u, { depth: 3, colors: true });
+        if (isNewLogin) {
+          return this.onNewLoginAttempt();
+        }
 
-        /* 1) novo login em andamento */
-        if (isNewLogin) return this.onNewLoginAttempt();
+        if (qr && this.canShowQr()) {
+          return this.onQr(qr, resolve);
+        }
 
-        console.log('canShowQr:', this.canShowQr());
-
-        /* 2) QR‑Code */
-        if (qr && this.canShowQr()) return this.onQr(qr, resolve);
-
-        /* 3) conexão aberta */
         if (connection === 'open' && !opened) {
           opened = true;
           this.retryCount = 0;
+
           return this.onOpen(resolve);
         }
 
-        /* 4) conexão encerrada */
-        if (connection === 'close')
+        if (connection === 'close') {
           return this.onClose(lastDisconnect, resolve);
+        }
       });
     });
   }
 
-  /* ================================================================ */
-  /*  EVENT‑HANDLERS                                                  */
-  /* ================================================================ */
   private async onQr(
     qr: string,
     resolve: (s: IBaileysConnectionState) => void
-  ) {
-    if (qr.slice(-20) === this.qrHash) return; // mesmo QR já tratado
+  ): Promise<void> {
+    if (qr.slice(-20) === this.qrHash) {
+      return;
+    }
 
     this.qrHash = qr.slice(-20);
     this.setStatus(Status.connecting, ECodeMessage.awaitingReadQrCode);
 
     const img = await QRCode.toDataURL(qr);
+
     this.publish({
       status: this.status,
       code: this.code,
@@ -209,16 +211,26 @@ export class BaileysConnectionService {
       worker_id: WORKER,
     });
 
+    this.saveLogWppConnection({
+      worker_id: WORKER,
+      status: this.status,
+      code: this.code?.toString(),
+      message: 'QR Code received',
+      date: new Date(),
+    });
+
     resolve(this.state(img));
+
     this.pendingResolve = undefined;
     this.initialConnection = false;
   }
 
-  private onOpen(resolve: (s: IBaileysConnectionState) => void) {
+  private onOpen(resolve: (s: IBaileysConnectionState) => void): void {
     this.qrHash = undefined;
     this.setStatus(Status.connected, ECodeMessage.connectionEstablished);
 
     const phone = this.helpers.getPhoneNumber(this.socket?.user?.id);
+
     this.publish({
       status: this.status,
       code: this.code,
@@ -227,29 +239,48 @@ export class BaileysConnectionService {
     });
 
     resolve(this.state());
+
     this.pendingResolve = undefined;
   }
 
   private onClose(
     last: IBaileysUpdateEvent['lastDisconnect'],
     resolve: (s: IBaileysConnectionState) => void
-  ) {
+  ): void {
     const statusCode = (last?.error as any)?.output?.statusCode as
       | ECodeMessage
       | undefined;
-    if (statusCode) this.setStatus(Status.disconnected, statusCode);
+    const statusMessage = last?.error?.message as string | undefined;
 
-    this.publish({ status: this.status, code: this.code, worker_id: WORKER });
+    if (statusCode) {
+      this.setStatus(Status.disconnected, statusCode);
+    }
 
-    if (statusCode === ECodeMessage.loggedOut) this.clearFolder();
+    this.publish({
+      status: this.status,
+      code: this.code,
+      worker_id: WORKER,
+    });
+
+    this.saveLogWppConnection({
+      worker_id: WORKER,
+      status: this.status,
+      code: this.code?.toString(),
+      message: statusMessage || 'BaileysConnectionService disconnected',
+      date: new Date(),
+    });
+
+    if (statusCode === ECodeMessage.loggedOut) {
+      this.clearFolder();
+    }
 
     resolve(this.state());
     this.pendingResolve = undefined;
 
-    /* reconexão controlada */
     if (this.retryCount < this.maxRetries) {
       setTimeout(() => {
         this.retryCount++;
+
         void this.connect(this.initialConnection).catch(() => {});
       }, this.retryDelay);
     }
@@ -269,9 +300,6 @@ export class BaileysConnectionService {
     this.centrifugo.publish(CHANNEL, payload);
   }
 
-  /* ================================================================ */
-  /*  INTERNOS UTILITÁRIOS                                             */
-  /* ================================================================ */
   private canShowQr(): boolean {
     return this.initialConnection && !this.connected && !this.awaitingNewLogin;
   }
@@ -284,66 +312,87 @@ export class BaileysConnectionService {
     for (let i = 0; i < this.maxRetries; i++) {
       try {
         const s = await this.connect(this.initialConnection, false);
-        if (s.status === Status.connected) return s;
+
+        if (s.status === Status.connected) {
+          return s;
+        }
       } catch (e) {
-        console.error(`Tentativa #${i + 1} falhou`, e);
+        this.saveLogWppConnection({
+          worker_id: WORKER,
+          status: Status.disconnected,
+          code: ECodeMessage.connectionLost,
+          message: `Failed to restore session: ${e instanceof Error ? e.message : String(e)}`,
+          date: new Date(),
+        });
       }
+
       await new Promise((r) => setTimeout(r, this.retryDelay));
     }
     this.setStatus(Status.disconnected, ECodeMessage.badSession);
+
     return this.state();
   }
 
   private publish(payload: Record<string, unknown>): void {
-    if (!this.initialConnection) return;
+    if (!this.initialConnection) {
+      return;
+    }
+
     const data = JSON.stringify(payload);
-    if (data === this.lastPayload) return;
+    if (data === this.lastPayload) {
+      return;
+    }
+
     this.lastPayload = data;
     this.centrifugo.publish(CHANNEL, payload);
   }
 
-  /* ---------------- logout / cancel helpers ----------------------- */
-  /* ------------------------------------------------------------------ */
-  /*  NOVA implementação de safeLogout – não explode se handshake < OPEN*/
-  /* ------------------------------------------------------------------ */
   private safeLogout(): void {
     if (this.socket) {
-      /* 1) encerra a sessão de forma “clean” se já existe user logado ----- */
       try {
-        // .logout dispara .end internamente; por isso só chamamos
-        // se o usuário já foi estabelecido (evita erro 440/401 p/ duplicidade)
         if (this.socket.user) {
           this.socket.logout().catch(() => null);
         }
       } catch {
-        /* swallow */
+        this.saveLogWppConnection({
+          worker_id: WORKER,
+          status: Status.disconnected,
+          code: ECodeMessage.connectionLost,
+          message: 'Error during logout',
+          date: new Date(),
+        });
       }
     }
 
-    /* 2) garante que o transporte é finalizado ------------------------- */
     try {
-      // acesso ao WebSocket interno utilizado pelo baileys
       const ws: import('ws').WebSocket | undefined = (this.socket as any).ws;
-      if (!ws) return;
+      if (!ws) {
+        return;
+      }
 
       switch (ws.readyState) {
-        case ws.OPEN: // 1 – conexão estabelecida → close normal
+        case ws.OPEN:
           ws.close(1000, 'logout');
           break;
 
-        case ws.CONNECTING: // 0 – handshake ainda pendente → terminate bruto
-        case ws.CLOSING: // 2 – já fechando
-          ws.terminate?.(); // encerra sem levantar exceção
+        case ws.CONNECTING:
+        case ws.CLOSING:
+          ws.terminate?.();
           break;
 
-        default: // 3 – CLOSED
+        default:
           break;
       }
     } catch {
-      /* swallow */
+      this.saveLogWppConnection({
+        worker_id: WORKER,
+        status: Status.disconnected,
+        code: ECodeMessage.connectionLost,
+        message: 'Error during WebSocket close',
+        date: new Date(),
+      });
     }
 
-    /* 3) limpa referências locais ------------------------------------- */
     this.socket = undefined;
     this.setStatus(Status.disconnected, ECodeMessage.loggedOut);
   }
@@ -351,40 +400,60 @@ export class BaileysConnectionService {
   private cancelAttempt() {
     try {
       this.socket?.ev.removeAllListeners('connection.update');
-    } catch {}
+    } catch {
+      this.saveLogWppConnection({
+        worker_id: WORKER,
+        status: Status.disconnected,
+        code: ECodeMessage.connectionLost,
+        message: 'Error during cancel attempt',
+        date: new Date(),
+      });
+    }
 
     this.safeLogout();
     this.pendingResolve?.(this.state());
     this.pendingResolve = undefined;
+
     this.currentPromise = undefined;
     this.connecting = false;
     this.awaitingNewLogin = false;
   }
 
-  /* ---------------- misc ----------------------- */
   private reportConnected(): IBaileysConnectionState {
-    if (this.initialConnection)
+    if (this.initialConnection) {
       this.publish({
         status: this.status,
         code: ECodeMessage.connectionEstablished,
         worker_id: WORKER,
       });
+    }
+
     return this.state();
   }
 
   private prepareFolder() {
-    if (!fs.existsSync(FOLDER)) fs.mkdirSync(FOLDER, { recursive: true });
+    if (!fs.existsSync(FOLDER)) {
+      fs.mkdirSync(FOLDER, {
+        recursive: true,
+      });
+    }
   }
 
   private clearFolder() {
     fs.readdirSync(FOLDER).forEach((f) =>
-      fs.rmSync(path.join(FOLDER, f), { recursive: true, force: true })
+      fs.rmSync(path.join(FOLDER, f), {
+        recursive: true,
+        force: true,
+      })
     );
   }
 
   private setStatus(s: Status, c?: ECodeMessage) {
     this.status = s;
-    if (c) this.code = c;
+
+    if (c) {
+      this.code = c;
+    }
   }
 
   private state(qr?: string): IBaileysConnectionState {
@@ -398,6 +467,40 @@ export class BaileysConnectionService {
 
   private handleFatal() {
     this.setStatus(Status.disconnected, ECodeMessage.connectionLost);
-    this.publish({ status: this.status, code: this.code, worker_id: WORKER });
+
+    this.publish({
+      status: this.status,
+      code: this.code,
+      worker_id: WORKER,
+    });
+
+    this.saveLogWppConnection({
+      worker_id: WORKER,
+      status: this.status,
+      code: this.code?.toString(),
+      message: 'Unhandled Rejection – BaileysConnectionService',
+      date: new Date(),
+    });
   }
+
+  private saveLogWppConnection = async (
+    wppLog: EWppConnection
+  ): Promise<boolean> => {
+    const mappings = wppConnectionMappings();
+
+    const result = await this.elasticDatabaseService.indices(
+      EElasticIndex.wpp_connection,
+      mappings
+    );
+
+    if (!result || !wppLog) {
+      return false;
+    }
+
+    return this.elasticDatabaseService.update(
+      EElasticIndex.wpp_connection,
+      wppLog,
+      wppLog.worker_id
+    );
+  };
 }

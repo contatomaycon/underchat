@@ -8,6 +8,7 @@ import corsPlugin from '@core/plugins/cors';
 import rabbitmqPlugin from '@core/plugins/rabbitmq';
 import consumerPlugin from './consumer';
 import centrifugoPlugin from '@/plugins/centrifugo';
+import databaseElasticPlugin from '@core/plugins/dbElastic';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -18,6 +19,11 @@ server.decorateRequest('module', ERouteModule.worker_baileys);
 
 server.register(corsPlugin);
 server.register(swaggerPlugin);
+
+server.register(databaseElasticPlugin, {
+  prefix: ERouteModule.service,
+});
+
 server.register(rabbitmqPlugin);
 server.register(centrifugoPlugin);
 server.register(consumerPlugin);
