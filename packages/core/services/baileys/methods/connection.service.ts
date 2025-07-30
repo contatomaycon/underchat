@@ -42,8 +42,8 @@ export class BaileysConnectionService {
   private initialConnection = false;
   private lastPayload?: string;
   private awaitingNewLogin = false;
-
   private connecting = false;
+
   private currentPromise?: Promise<IBaileysConnectionState>;
   private pendingResolve?: (s: IBaileysConnectionState) => void;
 
@@ -212,6 +212,7 @@ export class BaileysConnectionService {
           !this.awaitingNewLogin
         ) {
           this.onQr(qr, resolve);
+
           return;
         }
 
@@ -222,6 +223,7 @@ export class BaileysConnectionService {
           this.awaitingNewLogin = false;
 
           this.onOpen(resolve);
+
           return;
         }
 

@@ -33,6 +33,9 @@ const elapsedSeconds = ref(0);
 const qrcode = ref<string | null>(null);
 const intervalId = ref<number | null>(null);
 const phoneNumber = ref<string | null>(null);
+const numberAttempt = ref(0);
+const numberMaxAttempt = ref(4);
+const removeInPhone = ref(false);
 
 const getProgress = (seconds: number, max = totalSeconds.value) => {
   const value = Math.min(Math.round((seconds / max) * 100), 100);
@@ -58,22 +61,30 @@ const getProgress = (seconds: number, max = totalSeconds.value) => {
 const startTimer = () => {
   elapsedSeconds.value = 0;
 
-  if (intervalId.value !== null) {
-    clearInterval(intervalId.value);
-  }
+  if (intervalId.value !== null) clearInterval(intervalId.value);
 
   intervalId.value = window.setInterval(() => {
     if (elapsedSeconds.value < totalSeconds.value) {
       elapsedSeconds.value++;
-    } else {
-      elapsedSeconds.value = 0;
-      reconnectChannel();
+      return;
     }
+
+    elapsedSeconds.value = 0;
+    if (numberAttempt.value <= numberMaxAttempt.value) {
+      numberAttempt.value++;
+      reconnectChannel();
+
+      return;
+    }
+
+    clearInterval(intervalId.value!);
+    intervalId.value = null;
   }, 1000);
 };
 
-const reconnectChannel = async () => {
+const reconnectChannel = async (restart: boolean = false) => {
   if (!channelId.value) return;
+  if (restart) numberAttempt.value = 0;
 
   const input: StatusConnectionWorkerRequest = {
     worker_id: channelId.value,
@@ -97,9 +108,6 @@ const disponibleChannel = async () => {
 const isConnected = computed(
   () => statusConnection.value === EBaileysConnectionStatus.connected
 );
-const isConnecting = computed(
-  () => statusConnection.value === EBaileysConnectionStatus.connecting
-);
 const isDisconnected = computed(
   () => statusConnection.value === EBaileysConnectionStatus.disconnected
 );
@@ -112,6 +120,7 @@ onMounted(async () => {
     `worker_${channelId.value}_qrcode`,
     (data: IBaileysConnectionState) => {
       console.log('Received connection update:', data);
+      console.log('numberAttempt.value:', numberAttempt.value);
 
       if (data?.worker_id !== channelId.value) return;
 
@@ -125,13 +134,22 @@ onMounted(async () => {
 
       if (data?.code) {
         statusCode.value = data.code as ECodeMessage;
+
+        if (data.code === ECodeMessage.loggedOut) {
+          numberAttempt.value = 0;
+          removeInPhone.value = true;
+        }
       }
 
       if (data?.phone) {
         phoneNumber.value = formatPhoneBR(data.phone);
       }
 
-      if (data.status === EBaileysConnectionStatus.connecting) {
+      if (
+        data.status === EBaileysConnectionStatus.connecting &&
+        qrcode.value &&
+        numberAttempt.value <= numberMaxAttempt.value
+      ) {
         startTimer();
       }
     }
@@ -174,7 +192,17 @@ onBeforeMount(() => {
             <VCardTitle>{{ $t('conection') }}</VCardTitle>
           </VCardItem>
 
-          <div v-if="statusCode === ECodeMessage.awaitConnection">
+          <div v-if="numberAttempt > numberMaxAttempt && !isConnected">
+            <VCardText class="d-flex justify-center">
+              <VIcon icon="tabler-mobiledata-off" size="150" />
+            </VCardText>
+
+            <VCardText class="text-center">
+              <i>{{ $t('connection_timeout') }}</i>
+            </VCardText>
+          </div>
+
+          <div v-else-if="statusCode === ECodeMessage.awaitConnection">
             <VCardText class="d-flex justify-center">
               <VIcon icon="tabler-hourglass-high" size="150" />
             </VCardText>
@@ -217,6 +245,15 @@ onBeforeMount(() => {
             </VCardText>
           </div>
 
+          <div v-else-if="isDisconnected && removeInPhone">
+            <VCardText class="d-flex justify-center">
+              <VIcon icon="tabler-plug-connected-x" color="error" size="150" />
+            </VCardText>
+            <VCardText class="text-center">
+              <i>{{ $t('connection_removed_in_phone') }}</i>
+            </VCardText>
+          </div>
+
           <div v-else-if="isDisconnected">
             <VCardText class="d-flex justify-center">
               <VIcon icon="tabler-plug-connected-x" color="error" size="150" />
@@ -255,9 +292,12 @@ onBeforeMount(() => {
               </VBtn>
 
               <VBtn
-                :disabled="isConnecting || isConnected"
+                :disabled="
+                  !(numberAttempt > numberMaxAttempt && !isConnected) &&
+                  !(isDisconnected && removeInPhone)
+                "
                 color="warning"
-                @click="reconnectChannel"
+                @click="reconnectChannel(true)"
               >
                 <VTooltip
                   location="top"

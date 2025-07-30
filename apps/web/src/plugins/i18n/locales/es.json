@@ -132,5 +132,7 @@
     "awaiting_connection": "Esperando estado de conexión",
     "awaiting_qr_code": "Esperando escaneo del código QR",
     "connection_in_progress": "Conexión en progreso, por favor espera...",
-    "connection_removed": "Conexión eliminada, por favor reconecta."
+    "connection_removed": "Conexión eliminada, por favor reconecta.",
+    "connection_timeout": "Tiempo de conexión agotado. Por favor, inténtalo de nuevo.",
+    "connection_removed_in_phone": "Conexión eliminada en el teléfono, por favor reconecta."
 }
