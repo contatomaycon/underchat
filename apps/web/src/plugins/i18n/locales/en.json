@@ -127,5 +127,9 @@
     "point_camera_screen": "Point your camera at this screen",
     "scan_qr_code": "Scan the QR code to connect automatically.",
     "connection_failed": "Connection failed. Please try again.",
-    "connection_success": "Connection successful!"
+    "connection_success": "Connection successful!",
+    "awaiting_connection": "Awaiting connection status",
+    "awaiting_qr_code": "Awaiting QR code scan",
+    "connection_in_progress": "Connection in progress, please wait...",
+    "connection_removed": "Connection removed, please reconnect."
 }

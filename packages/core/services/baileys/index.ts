@@ -15,8 +15,14 @@ export class BaileysService {
     private readonly messages: BaileysMessageService
   ) {}
 
-  connect(): Promise<IBaileysConnectionState> {
-    return this.connection.connect();
+  connect(
+    initialConnection: boolean = false
+  ): Promise<IBaileysConnectionState> {
+    return this.connection.connect(initialConnection);
+  }
+
+  disconnect(): void {
+    this.connection.disconnect();
   }
 
   getStatus(): EBaileysConnectionStatus {

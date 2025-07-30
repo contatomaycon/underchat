@@ -128,5 +128,9 @@
     "point_camera_screen": "Apunta la cámara a esta pantalla",
     "scan_qr_code": "Escanea el código QR para conectar automáticamente.",
     "connection_failed": "Conexión fallida. Por favor, inténtalo de nuevo.",
-    "connection_success": "¡Conexión exitosa!"
+    "connection_success": "¡Conexión exitosa!",
+    "awaiting_connection": "Esperando estado de conexión",
+    "awaiting_qr_code": "Esperando escaneo del código QR",
+    "connection_in_progress": "Conexión en progreso, por favor espera...",
+    "connection_removed": "Conexión eliminada, por favor reconecta."
 }

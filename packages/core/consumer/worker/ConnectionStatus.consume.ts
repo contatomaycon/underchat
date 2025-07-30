@@ -43,7 +43,7 @@ export class ConnectionStatusConsume {
           }
 
           if (status === EWorkerStatus.online) {
-            await this.baileysService.connect();
+            await this.baileysService.connect(true);
 
             return;
           }
@@ -52,6 +52,9 @@ export class ConnectionStatusConsume {
           }
 
           if (status === EWorkerStatus.disponible) {
+            this.baileysService.disconnect();
+
+            return;
           }
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);

@@ -1,5 +1,6 @@
 export interface IBaileysUpdateEvent {
   qr?: string;
-  connection?: 'close' | 'connecting' | 'open';
+  connection?: 'open' | 'close' | 'connecting' | 'disconnecting';
   lastDisconnect?: { error?: Error };
+  isNewLogin?: boolean;
 }

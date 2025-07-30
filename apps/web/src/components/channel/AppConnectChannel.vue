@@ -5,6 +5,8 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
+import { ECodeMessage } from '@core/common/enums/ECodeMessage';
+import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 
 const channelStore = useChannelsStore();
 const { t } = useI18n();
@@ -25,21 +27,41 @@ const channelId = toRef(props, 'channelId');
 const statusConnection = ref<EBaileysConnectionStatus>(
   EBaileysConnectionStatus.disconnected
 );
+const statusCode = ref<ECodeMessage>(ECodeMessage.awaitConnection);
 const totalSeconds = ref(15);
 const elapsedSeconds = ref(0);
 const qrcode = ref<string | null>(null);
 const intervalId = ref<number | null>(null);
+const phoneNumber = ref<string | null>(null);
 
 const getProgress = (seconds: number, max = totalSeconds.value) => {
   const value = Math.min(Math.round((seconds / max) * 100), 100);
-  if (value > 75) return { value, color: 'error' as const };
-  if (value > 50) return { value, color: 'warning' as const };
-  return { value, color: 'success' as const };
+
+  if (value > 75)
+    return {
+      value,
+      color: 'error' as const,
+    };
+
+  if (value > 50)
+    return {
+      value,
+      color: 'warning' as const,
+    };
+
+  return {
+    value,
+    color: 'success' as const,
+  };
 };
 
 const startTimer = () => {
   elapsedSeconds.value = 0;
-  if (intervalId.value !== null) clearInterval(intervalId.value);
+
+  if (intervalId.value !== null) {
+    clearInterval(intervalId.value);
+  }
+
   intervalId.value = window.setInterval(() => {
     if (elapsedSeconds.value < totalSeconds.value) {
       elapsedSeconds.value++;
@@ -52,10 +74,23 @@ const startTimer = () => {
 
 const reconnectChannel = async () => {
   if (!channelId.value) return;
+
   const input: StatusConnectionWorkerRequest = {
     worker_id: channelId.value,
     status: EWorkerStatus.online,
   };
+
+  await channelStore.updateConnectionChannel(input);
+};
+
+const disponibleChannel = async () => {
+  if (!channelId.value) return;
+
+  const input: StatusConnectionWorkerRequest = {
+    worker_id: channelId.value,
+    status: EWorkerStatus.disponible,
+  };
+
   await channelStore.updateConnectionChannel(input);
 };
 
@@ -73,15 +108,28 @@ const progress = computed(() => getProgress(elapsedSeconds.value).value);
 const progressColor = computed(() => getProgress(elapsedSeconds.value).color);
 
 onMounted(async () => {
-  onMessage(
+  await onMessage(
     `worker_${channelId.value}_qrcode`,
     (data: IBaileysConnectionState) => {
       console.log('Received connection update:', data);
 
       if (data?.worker_id !== channelId.value) return;
-      if (data?.status)
+
+      if (data?.status) {
         statusConnection.value = data.status as EBaileysConnectionStatus;
-      if (data?.qrcode) qrcode.value = data.qrcode;
+      }
+
+      if (data?.qrcode) {
+        qrcode.value = data.qrcode;
+      }
+
+      if (data?.code) {
+        statusCode.value = data.code as ECodeMessage;
+      }
+
+      if (data?.phone) {
+        phoneNumber.value = formatPhoneBR(data.phone);
+      }
 
       if (data.status === EBaileysConnectionStatus.connecting) {
         startTimer();
@@ -100,7 +148,9 @@ onMounted(async () => {
 });
 
 onBeforeMount(() => {
-  if (intervalId.value !== null) clearInterval(intervalId.value);
+  if (intervalId.value !== null) {
+    clearInterval(intervalId.value);
+  }
 });
 </script>
 
@@ -124,12 +174,31 @@ onBeforeMount(() => {
             <VCardTitle>{{ $t('conection') }}</VCardTitle>
           </VCardItem>
 
-          <div v-if="qrcode && !isDisconnected && !isConnected">
+          <div v-if="statusCode === ECodeMessage.awaitConnection">
+            <VCardText class="d-flex justify-center">
+              <VIcon icon="tabler-hourglass-high" size="150" />
+            </VCardText>
+
+            <VCardText class="text-center">
+              <i>{{ $t('awaiting_connection') }}</i>
+            </VCardText>
+          </div>
+
+          <div
+            v-else-if="
+              statusCode === ECodeMessage.awaitingReadQrCode &&
+              qrcode &&
+              !isDisconnected &&
+              !isConnected
+            "
+          >
             <VCardText class="d-flex justify-center">
               <VImg :src="qrcode" max-width="240" />
             </VCardText>
 
-            <VCardText>
+            <VCardText class="text-center">
+              <i>{{ $t('awaiting_qr_code') }}</i>
+
               <VProgressLinear
                 :model-value="progress"
                 :color="progressColor"
@@ -138,27 +207,43 @@ onBeforeMount(() => {
             </VCardText>
           </div>
 
-          <div v-if="isDisconnected">
+          <div v-else-if="statusCode === ECodeMessage.newLoginAttempt">
+            <VCardText class="d-flex justify-center">
+              <VIcon icon="tabler-brand-whatsapp" size="150" />
+            </VCardText>
+
+            <VCardText class="text-center">
+              <i>{{ $t('connection_in_progress') }}</i>
+            </VCardText>
+          </div>
+
+          <div v-else-if="isDisconnected">
             <VCardText class="d-flex justify-center">
               <VIcon icon="tabler-plug-connected-x" color="error" size="150" />
             </VCardText>
             <VCardText class="text-center">
-              <strong>{{ $t('connection_failed') }}</strong>
+              <i>{{ $t('connection_removed') }}</i>
             </VCardText>
           </div>
 
-          <div v-if="isConnected">
+          <div v-else-if="isConnected">
             <VCardText class="d-flex justify-center">
-              <VIcon icon="tabler-plug-connected" color="success" size="150" />
+              <VIcon icon="tabler-brand-whatsapp" color="success" size="150" />
             </VCardText>
             <VCardText class="text-center">
-              <strong>{{ $t('connection_success') }}</strong>
+              <i>{{ $t('connection_success') }}</i>
+              <br />
+              <small>{{ phoneNumber }}</small>
             </VCardText>
           </div>
 
           <VCardText class="d-flex justify-center">
             <div class="d-flex gap-2">
-              <VBtn :disabled="!isConnected" color="error">
+              <VBtn
+                :disabled="!isConnected"
+                color="error"
+                @click="disponibleChannel"
+              >
                 <VTooltip
                   location="top"
                   activator="parent"
@@ -170,7 +255,7 @@ onBeforeMount(() => {
               </VBtn>
 
               <VBtn
-                :disabled="isConnecting"
+                :disabled="isConnecting || isConnected"
                 color="warning"
                 @click="reconnectChannel"
               >

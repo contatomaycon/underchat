@@ -196,8 +196,8 @@ watch(
   { immediate: true, deep: true }
 );
 
-onMounted(() => {
-  onMessage(
+onMounted(async () => {
+  await onMessage(
     ECentrifugoChannel.status_server,
     (data: IStatusServerCentrifugo) => {
       serverStore.updateStatusServer(data.server_id, data.status);

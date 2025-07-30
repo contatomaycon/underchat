@@ -1,5 +1,4 @@
 import {
-  DisconnectReason,
   fetchLatestBaileysVersion,
   makeWASocket,
   useMultiFileAuthState,
@@ -10,12 +9,13 @@ import P from 'pino';
 import fs from 'fs';
 import path from 'path';
 import { injectable } from 'tsyringe';
-
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { EBaileysConnectionStatus as Status } from '@core/common/enums/EBaileysConnectionStatus';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { IBaileysUpdateEvent } from '@core/common/interfaces/IBaileysUpdateEvent';
 import { baileysEnvironment } from '@core/config/environments';
+import { ECodeMessage } from '@core/common/enums/ECodeMessage';
+import { BaileysHelpersService } from './helpers.service';
 
 const folder = path.join(
   process.cwd(),
@@ -23,77 +23,288 @@ const folder = path.join(
   baileysEnvironment.baileysWorkerId
 );
 const channel = `worker_${baileysEnvironment.baileysWorkerId}_qrcode`;
-const workerId = baileysEnvironment.baileysWorkerId;
+const worker = baileysEnvironment.baileysWorkerId;
 
 @injectable()
 export class BaileysConnectionService {
-  constructor(private readonly centrifugo: CentrifugoService) {
+  constructor(
+    private readonly centrifugo: CentrifugoService,
+    private readonly baileysHelpersService: BaileysHelpersService
+  ) {
     process.on('unhandledRejection', () => this.handleFatal());
   }
 
   private socket?: WASocket;
-  private status: Status = Status.disconnected;
-  private qrHash?: string;
+  private status: Status = Status.initial;
+  private code: ECodeMessage = ECodeMessage.awaitConnection;
 
+  private qrHash?: string;
+  private initialConnection = false;
+  private lastPayload?: string;
+  private awaitingNewLogin = false;
+
+  private connecting = false;
+  private currentPromise?: Promise<IBaileysConnectionState>;
   private pendingResolve?: (s: IBaileysConnectionState) => void;
-  private currentListener?: (u: IBaileysUpdateEvent) => void;
 
   get connected() {
     return this.status === Status.connected && !!this.socket?.user;
   }
+
   getStatus() {
     return this.status;
   }
+
+  getCode() {
+    return this.code;
+  }
+
   getSocket(): ReturnType<typeof makeWASocket> | undefined {
     return this.socket;
   }
 
-  async connect(): Promise<IBaileysConnectionState> {
+  async connect(
+    initialConnection = false,
+    allowRestore = true
+  ): Promise<IBaileysConnectionState> {
+    this.initialConnection = initialConnection;
+
     if (this.connected) {
-      this.notify();
+      if (this.initialConnection) {
+        this.setStatus(Status.connected);
+        this.setCode(ECodeMessage.connectionEstablished);
+
+        this.publish({
+          code: this.getCode(),
+          status: this.status,
+          worker_id: worker,
+          time: Date.now(),
+        });
+      }
+
       return this.state();
     }
 
-    this.cancelPending();
+    if (
+      allowRestore &&
+      this.status === Status.initial &&
+      this.hasSessionFiles()
+    ) {
+      return this.restoreWithRetries();
+    }
+
+    if (this.connecting) {
+      if (this.initialConnection) {
+        this.cancelCurrentAttempt();
+      }
+
+      if (this.currentPromise) {
+        return this.currentPromise;
+      }
+    }
+
+    this.connecting = true;
     this.prepareFolder();
 
     const { socket, saveCreds } = await this.newSocket();
     this.socket = socket;
     socket.ev.on('creds.update', saveCreds);
 
-    return this.wait(socket);
+    this.currentPromise = this.wait(socket).finally(() => {
+      this.connecting = false;
+      this.currentPromise = undefined;
+    });
+
+    return this.currentPromise;
   }
 
-  disconnectSession() {
+  disconnect(): void {
+    this.cancelCurrentAttempt();
     this.logout();
     this.clearFolder();
+
+    if (this.initialConnection) {
+      this.setStatus(Status.disconnected);
+      this.setCode(ECodeMessage.connectionClosed);
+
+      this.publish({
+        code: this.getCode(),
+        status: this.status,
+        worker_id: worker,
+      });
+
+      this.connect(true);
+    }
   }
 
-  /* ---------------------------------------------------------------------- */
+  private hasSessionFiles(): boolean {
+    try {
+      return fs.existsSync(folder) && fs.readdirSync(folder).length > 0;
+    } catch {
+      return false;
+    }
+  }
 
-  private cancelPending() {
-    if (!this.currentListener) return;
-    this.socket?.ev.off('connection.update', this.currentListener);
+  /* ------------ helper novo: tenta reconectar até 5 vezes ----------- */
+  private async restoreWithRetries(): Promise<IBaileysConnectionState> {
+    for (let i = 1; i <= 5; i++) {
+      try {
+        const state = await this.connect(this.initialConnection, false); // ← evita recursão
+        if (state.status === Status.connected) return state;
+      } catch (e) {
+        console.error(`Tentativa de restauração #${i} falhou`, e);
+      }
+    }
+
+    console.error('Falha ao restaurar sessão após 5 tentativas');
+
+    this.setStatus(Status.disconnected);
+    this.setCode(ECodeMessage.badSession);
+
+    return this.state();
+  }
+
+  /* ------------------------------------------------ helpers -------- */
+
+  private cancelCurrentAttempt() {
+    this.socket?.ev.removeAllListeners('connection.update');
     this.logout();
-    this.pendingResolve?.(this.state());
-    this.currentListener = undefined;
+
+    this.pendingResolve?.(this.state()); // encerra promessa anterior
+    this.pendingResolve = undefined;
+    this.currentPromise = undefined;
+    this.connecting = false;
+  }
+
+  private wait(socket: WASocket) {
+    return new Promise<IBaileysConnectionState>((resolve) => {
+      this.pendingResolve = resolve;
+
+      let opened = false; // ← nova flag
+
+      const listener = (u: IBaileysUpdateEvent) => {
+        const { qr, connection, isNewLogin, lastDisconnect } = u;
+
+        console.dir(u, { depth: 3, colors: true });
+
+        /* tentativa de login --------------------------------------- */
+        if (isNewLogin) {
+          this.awaitingNewLogin = true;
+
+          const payload: IBaileysConnectionState = {
+            status: this.status,
+            worker_id: worker,
+            is_new_login: isNewLogin,
+            code: ECodeMessage.newLoginAttempt,
+          };
+
+          this.lastPayload = JSON.stringify(payload);
+          this.centrifugo.publish(channel, payload);
+
+          return;
+        }
+
+        /* QR‑Code --------------------------------------------------- */
+        if (
+          qr &&
+          this.initialConnection &&
+          !this.connected &&
+          !this.awaitingNewLogin
+        ) {
+          this.onQr(qr, resolve);
+          return;
+        }
+
+        /* conexão estabelecida ------------------------------------- */
+        if (connection === 'open' && !opened) {
+          // roda só uma vez
+          opened = true;
+          this.awaitingNewLogin = false;
+
+          this.onOpen(resolve);
+          return;
+        }
+
+        /* conexão encerrada (logout, queda, etc.) ------------------ */
+        if (connection === 'close') {
+          this.awaitingNewLogin = false;
+
+          this.onClose(lastDisconnect, resolve);
+        }
+      };
+
+      socket.ev.on('connection.update', listener);
+    });
+  }
+
+  private async onQr(
+    qr: string,
+    resolve: (s: IBaileysConnectionState) => void
+  ) {
+    if (qr.slice(-20) === this.qrHash) return;
+
+    this.qrHash = qr.slice(-20);
+    this.setStatus(Status.connecting);
+    this.setCode(ECodeMessage.awaitingReadQrCode);
+
+    const img = await QRCode.toDataURL(qr);
+    this.publish({
+      status: this.status,
+      qrcode: img,
+      worker_id: worker,
+      code: this.getCode(),
+    });
+
+    resolve(this.state(img));
+    this.pendingResolve = undefined;
+    this.initialConnection = false;
+  }
+
+  private onOpen(resolve: (s: IBaileysConnectionState) => void) {
+    this.qrHash = undefined;
+
+    this.setStatus(Status.connected);
+    this.setCode(ECodeMessage.connectionEstablished);
+
+    const phone = this.baileysHelpersService.getPhoneNumber(
+      this.socket?.user?.id
+    );
+
+    this.publish({
+      status: this.status,
+      worker_id: worker,
+      code: this.getCode(),
+      phone,
+    });
+
+    resolve(this.state());
+
     this.pendingResolve = undefined;
   }
 
-  private logout() {
-    this.socket?.logout().catch(() => null);
-    this.socket?.end(new Error('logout'));
-    this.setStatus(Status.disconnected);
-  }
+  private onClose(
+    last: IBaileysUpdateEvent['lastDisconnect'],
+    resolve: (s: IBaileysConnectionState) => void
+  ) {
+    const statusCode = (last?.error as any)?.output?.statusCode as ECodeMessage;
 
-  private clearFolder() {
-    fs.readdirSync(folder).forEach((e) =>
-      fs.rmSync(path.join(folder, e), { recursive: true, force: true })
-    );
-  }
+    if (statusCode) {
+      this.setStatus(Status.disconnected);
+      this.setCode(statusCode);
+    }
 
-  private prepareFolder() {
-    if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
+    this.publish({
+      status: this.status,
+      worker_id: worker,
+      code: this.getCode(),
+    });
+
+    if (statusCode === ECodeMessage.loggedOut) {
+      this.clearFolder();
+    }
+
+    resolve(this.state());
+    this.pendingResolve = undefined;
   }
 
   private async newSocket() {
@@ -113,105 +324,58 @@ export class BaileysConnectionService {
     };
   }
 
-  private wait(socket: WASocket) {
-    return new Promise<IBaileysConnectionState>((resolve) => {
-      const listener = (u: IBaileysUpdateEvent) => {
-        const { qr, connection, lastDisconnect } = u;
+  private publish(payload: IBaileysConnectionState) {
+    if (!this.initialConnection) return; // somente na primeira chamada
+    const data = JSON.stringify(payload);
+    if (data === this.lastPayload) return; // evita duplicidade
 
-        if (qr) {
-          this.onQr(qr, resolve);
-          return;
-        }
-        if (connection === 'open') {
-          this.onOpen(socket, listener, resolve);
-          return;
-        }
-        if (connection === 'close') {
-          this.onClose(lastDisconnect, socket, listener, resolve);
-        }
-      };
-      this.currentListener = listener;
-      this.pendingResolve = resolve;
-      socket.ev.on('connection.update', listener);
-    });
-  }
-
-  private async onQr(
-    qr: string,
-    resolve: (s: IBaileysConnectionState) => void
-  ) {
-    const hash = qr.slice(-20);
-    if (hash === this.qrHash) return;
-
-    this.qrHash = hash;
-    this.setStatus(Status.connecting);
-
-    const qrcode = await QRCode.toDataURL(qr);
-    this.centrifugo.publish(channel, {
-      status: this.status,
-      qrcode,
-      worker_id: workerId,
-    });
-
-    resolve(this.state(qrcode));
-  }
-
-  private onOpen(
-    socket: WASocket,
-    listener: (u: IBaileysUpdateEvent) => void,
-    resolve: (s: IBaileysConnectionState) => void
-  ) {
-    socket.ev.off('connection.update', listener);
-    this.currentListener = undefined;
-    this.pendingResolve = undefined;
-    this.qrHash = undefined;
-    this.setStatus(Status.connected);
-
-    this.notify();
-    resolve(this.state());
-  }
-
-  private onClose(
-    last: IBaileysUpdateEvent['lastDisconnect'],
-    socket: WASocket,
-    listener: (u: IBaileysUpdateEvent) => void,
-    resolve: (s: IBaileysConnectionState) => void
-  ) {
-    const removed =
-      (last?.error as any)?.output?.statusCode === DisconnectReason.loggedOut;
-
-    this.setStatus(Status.disconnected);
-
-    this.notify();
-    socket.ev.off('connection.update', listener);
-
-    this.currentListener = undefined;
-    this.pendingResolve = undefined;
-    this.clearFolder();
-
-    resolve(this.state());
-  }
-
-  private notify() {
-    if (!this.connected) return;
-
-    this.centrifugo.publish(channel, {
-      status: this.status,
-      worker_id: workerId,
-    });
+    // cancela publicações pendentes caso initialConnection seja true
+    this.lastPayload = data;
+    this.centrifugo.publish(channel, payload);
   }
 
   private handleFatal() {
-    this.cancelPending();
     this.setStatus(Status.disconnected);
-    this.notify();
+    this.setCode(ECodeMessage.connectionLost);
+
+    this.publish({
+      status: this.status,
+      worker_id: worker,
+      code: this.getCode(),
+    });
+  }
+
+  private logout() {
+    this.socket?.logout().catch(() => null);
+    this.socket?.end(new Error('logout'));
+    this.setStatus(Status.disconnected);
+    this.setCode(ECodeMessage.loggedOut);
+  }
+
+  private clearFolder() {
+    fs.readdirSync(folder).forEach((f) =>
+      fs.rmSync(path.join(folder, f), { recursive: true, force: true })
+    );
+  }
+
+  private prepareFolder() {
+    if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
   }
 
   private setStatus(s: Status) {
     this.status = s;
   }
 
+  private setCode(code: ECodeMessage) {
+    this.code = code;
+  }
+
   private state(qr?: string): IBaileysConnectionState {
-    return { status: this.status, worker_id: workerId, qrcode: qr };
+    return {
+      status: this.status,
+      worker_id: worker,
+      qrcode: qr,
+      code: this.getCode(),
+    };
   }
 }
