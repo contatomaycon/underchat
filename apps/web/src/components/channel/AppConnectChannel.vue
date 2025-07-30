@@ -25,42 +25,37 @@ const channelId = toRef(props, 'channelId');
 const statusConnection = ref<EBaileysConnectionStatus>(
   EBaileysConnectionStatus.disconnected
 );
-const totalSeconds = ref(20);
+const totalSeconds = ref(15);
 const elapsedSeconds = ref(0);
 const qrcode = ref<string | null>(null);
 const intervalId = ref<number | null>(null);
 
 const getProgress = (seconds: number, max = totalSeconds.value) => {
   const value = Math.min(Math.round((seconds / max) * 100), 100);
-
-  if (value > 75) {
-    return { value, color: 'error' as const };
-  }
-
-  if (value > 50) {
-    return { value, color: 'warning' as const };
-  }
-
+  if (value > 75) return { value, color: 'error' as const };
+  if (value > 50) return { value, color: 'warning' as const };
   return { value, color: 'success' as const };
 };
 
 const startTimer = () => {
   elapsedSeconds.value = 0;
-
   if (intervalId.value !== null) clearInterval(intervalId.value);
   intervalId.value = window.setInterval(() => {
-    if (elapsedSeconds.value < totalSeconds.value) elapsedSeconds.value++;
+    if (elapsedSeconds.value < totalSeconds.value) {
+      elapsedSeconds.value++;
+    } else {
+      elapsedSeconds.value = 0;
+      reconnectChannel();
+    }
   }, 1000);
 };
 
 const reconnectChannel = async () => {
   if (!channelId.value) return;
-
   const input: StatusConnectionWorkerRequest = {
     worker_id: channelId.value,
     status: EWorkerStatus.online,
   };
-
   await channelStore.updateConnectionChannel(input);
 };
 
@@ -78,25 +73,19 @@ const progress = computed(() => getProgress(elapsedSeconds.value).value);
 const progressColor = computed(() => getProgress(elapsedSeconds.value).color);
 
 onMounted(async () => {
-  startTimer();
-
   onMessage(
     `worker_${channelId.value}_qrcode`,
     (data: IBaileysConnectionState) => {
+      console.log('Received connection update:', data);
+
       if (data?.worker_id !== channelId.value) return;
-
-      console.log('Received connection state:', data);
-
-      totalSeconds.value = 18;
-      if (data?.status) {
+      if (data?.status)
         statusConnection.value = data.status as EBaileysConnectionStatus;
-      }
+      if (data?.qrcode) qrcode.value = data.qrcode;
 
-      if (data?.qrcode) {
-        qrcode.value = data.qrcode;
+      if (data.status === EBaileysConnectionStatus.connecting) {
+        startTimer();
       }
-
-      startTimer();
     }
   );
 
@@ -108,6 +97,10 @@ onMounted(async () => {
 
     await channelStore.updateConnectionChannel(input);
   }
+});
+
+onBeforeMount(() => {
+  if (intervalId.value !== null) clearInterval(intervalId.value);
 });
 </script>
 
@@ -131,7 +124,7 @@ onMounted(async () => {
             <VCardTitle>{{ $t('conection') }}</VCardTitle>
           </VCardItem>
 
-          <div v-if="qrcode && !isDisconnected">
+          <div v-if="qrcode && !isDisconnected && !isConnected">
             <VCardText class="d-flex justify-center">
               <VImg :src="qrcode" max-width="240" />
             </VCardText>
@@ -141,10 +134,10 @@ onMounted(async () => {
                 :model-value="progress"
                 :color="progressColor"
                 size="32"
-                indeterminate
               />
             </VCardText>
           </div>
+
           <div v-if="isDisconnected">
             <VCardText class="d-flex justify-center">
               <VIcon icon="tabler-plug-connected-x" color="error" size="150" />
@@ -153,6 +146,7 @@ onMounted(async () => {
               <strong>{{ $t('connection_failed') }}</strong>
             </VCardText>
           </div>
+
           <div v-if="isConnected">
             <VCardText class="d-flex justify-center">
               <VIcon icon="tabler-plug-connected" color="success" size="150" />
@@ -221,9 +215,9 @@ onMounted(async () => {
                 <div
                   class="d-flex justify-space-between align-center gap-2 flex-wrap mb-2"
                 >
-                  <span class="app-timeline-title">
-                    {{ $t('open_whatsapp') }}
-                  </span>
+                  <span class="app-timeline-title">{{
+                    $t('open_whatsapp')
+                  }}</span>
                   <span class="app-timeline-meta">{{
                     $t('certify_latest_version')
                   }}</span>
@@ -240,12 +234,12 @@ onMounted(async () => {
                 <div
                   class="d-flex justify-space-between align-center gap-2 flex-wrap mb-2"
                 >
-                  <span class="app-timeline-title">
-                    {{ $t('tap_settings') }}
-                  </span>
-                  <span class="app-timeline-meta">
-                    {{ $t('you_top_right_corner') }}</span
-                  >
+                  <span class="app-timeline-title">{{
+                    $t('tap_settings')
+                  }}</span>
+                  <span class="app-timeline-meta">{{
+                    $t('you_top_right_corner')
+                  }}</span>
                 </div>
               </VTimelineItem>
 
@@ -259,12 +253,12 @@ onMounted(async () => {
                 <div
                   class="d-flex justify-space-between align-center gap-2 flex-wrap mb-2"
                 >
-                  <span class="app-timeline-title">
-                    {{ $t('select_connected_devices') }}
-                  </span>
-                  <span class="app-timeline-meta"
-                    >{{ $t('access_connect_device') }}
-                  </span>
+                  <span class="app-timeline-title">{{
+                    $t('select_connected_devices')
+                  }}</span>
+                  <span class="app-timeline-meta">{{
+                    $t('access_connect_device')
+                  }}</span>
                 </div>
               </VTimelineItem>
 
@@ -278,12 +272,12 @@ onMounted(async () => {
                 <div
                   class="d-flex justify-space-between align-center gap-2 flex-wrap mb-2"
                 >
-                  <span class="app-timeline-title">
-                    {{ $t('point_camera_screen') }}
-                  </span>
-                  <span class="app-timeline-meta"
-                    >{{ $t('scan_qr_code') }}
-                  </span>
+                  <span class="app-timeline-title">{{
+                    $t('point_camera_screen')
+                  }}</span>
+                  <span class="app-timeline-meta">{{
+                    $t('scan_qr_code')
+                  }}</span>
                 </div>
               </VTimelineItem>
             </VTimeline>
