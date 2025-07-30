@@ -1,4 +1,5 @@
 import {
+  DisconnectReason,
   fetchLatestBaileysVersion,
   makeWASocket,
   useMultiFileAuthState,
@@ -38,24 +39,18 @@ export class BaileysConnectionService {
   private currentListener?: (u: IBaileysUpdateEvent) => void;
 
   get connected() {
-    return this.status === Status.connected;
+    return this.status === Status.connected && !!this.socket?.user;
   }
-
   getStatus() {
     return this.status;
   }
-
-  getSocket(): WASocket | undefined {
+  getSocket(): ReturnType<typeof makeWASocket> | undefined {
     return this.socket;
   }
 
   async connect(): Promise<IBaileysConnectionState> {
     if (this.connected) {
-      this.centrifugo.publish(channel, {
-        status: this.status,
-        worker_id: workerId,
-      });
-
+      this.notify();
       return this.state();
     }
 
@@ -63,7 +58,6 @@ export class BaileysConnectionService {
     this.prepareFolder();
 
     const { socket, saveCreds } = await this.newSocket();
-
     this.socket = socket;
     socket.ev.on('creds.update', saveCreds);
 
@@ -75,15 +69,15 @@ export class BaileysConnectionService {
     this.clearFolder();
   }
 
+  /* ---------------------------------------------------------------------- */
+
   private cancelPending() {
     if (!this.currentListener) return;
-
     this.socket?.ev.off('connection.update', this.currentListener);
-
     this.logout();
     this.pendingResolve?.(this.state());
-    this.pendingResolve = undefined;
     this.currentListener = undefined;
+    this.pendingResolve = undefined;
   }
 
   private logout() {
@@ -119,28 +113,25 @@ export class BaileysConnectionService {
     };
   }
 
-  private wait(socket: WASocket): Promise<IBaileysConnectionState> {
+  private wait(socket: WASocket) {
     return new Promise<IBaileysConnectionState>((resolve) => {
       const listener = (u: IBaileysUpdateEvent) => {
-        const { qr, connection } = u;
+        const { qr, connection, lastDisconnect } = u;
 
         if (qr) {
           this.onQr(qr, resolve);
           return;
         }
-
         if (connection === 'open') {
           this.onOpen(socket, listener, resolve);
           return;
         }
-
         if (connection === 'close') {
-          this.onClose(socket, listener, resolve);
+          this.onClose(lastDisconnect, socket, listener, resolve);
         }
       };
       this.currentListener = listener;
       this.pendingResolve = resolve;
-
       socket.ev.on('connection.update', listener);
     });
   }
@@ -156,7 +147,6 @@ export class BaileysConnectionService {
     this.setStatus(Status.connecting);
 
     const qrcode = await QRCode.toDataURL(qr);
-
     this.centrifugo.publish(channel, {
       status: this.status,
       qrcode,
@@ -172,48 +162,49 @@ export class BaileysConnectionService {
     resolve: (s: IBaileysConnectionState) => void
   ) {
     socket.ev.off('connection.update', listener);
-
     this.currentListener = undefined;
     this.pendingResolve = undefined;
     this.qrHash = undefined;
     this.setStatus(Status.connected);
 
-    this.centrifugo.publish(channel, {
-      status: this.status,
-      worker_id: workerId,
-    });
-
+    this.notify();
     resolve(this.state());
   }
 
   private onClose(
+    last: IBaileysUpdateEvent['lastDisconnect'],
     socket: WASocket,
     listener: (u: IBaileysUpdateEvent) => void,
     resolve: (s: IBaileysConnectionState) => void
   ) {
+    const removed =
+      (last?.error as any)?.output?.statusCode === DisconnectReason.loggedOut;
+
     this.setStatus(Status.disconnected);
+
+    this.notify();
+    socket.ev.off('connection.update', listener);
+
+    this.currentListener = undefined;
+    this.pendingResolve = undefined;
+    this.clearFolder();
+
+    resolve(this.state());
+  }
+
+  private notify() {
+    if (!this.connected) return;
 
     this.centrifugo.publish(channel, {
       status: this.status,
       worker_id: workerId,
     });
-
-    socket.ev.off('connection.update', listener);
-
-    this.currentListener = undefined;
-    this.pendingResolve = undefined;
-
-    resolve(this.state());
   }
 
   private handleFatal() {
     this.cancelPending();
     this.setStatus(Status.disconnected);
-
-    this.centrifugo.publish(channel, {
-      status: this.status,
-      worker_id: workerId,
-    });
+    this.notify();
   }
 
   private setStatus(s: Status) {
