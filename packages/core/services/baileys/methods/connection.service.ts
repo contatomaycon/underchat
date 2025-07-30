@@ -211,13 +211,15 @@ export class BaileysConnectionService {
       worker_id: WORKER,
     });
 
-    this.saveLogWppConnection({
-      worker_id: WORKER,
-      status: this.status,
-      code: this.code?.toString(),
-      message: 'QR Code received',
-      date: new Date(),
-    });
+    if (!this.initialConnection) {
+      this.saveLogWppConnection({
+        worker_id: WORKER,
+        status: this.status,
+        code: this.code?.toString(),
+        message: 'QR Code received',
+        date: new Date(),
+      });
+    }
 
     resolve(this.state(img));
 
