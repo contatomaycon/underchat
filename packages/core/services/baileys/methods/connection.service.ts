@@ -120,15 +120,21 @@ export class BaileysConnectionService {
   /* ---------------------------------------------------------------- */
   /*  DISCONNECT (manual)                                             */
   /* ---------------------------------------------------------------- */
-  disconnect(): void {
+  disconnect(initial = false): void {
+    this.initialConnection = initial;
+
     this.cancelAttempt();
     this.safeLogout();
+    this.clearFolder();
+
+    console.log('BaileysConnectionService:', this.initialConnection);
 
     if (!this.initialConnection) return;
 
     this.setStatus(Status.disconnected, ECodeMessage.connectionClosed);
     this.publish({ status: this.status, code: this.code, worker_id: WORKER });
-    void this.connect(true); // dispara um novo ciclo
+
+    this.connect(true); // dispara um novo ciclo
   }
 
   /* ================================================================ */
@@ -300,14 +306,47 @@ export class BaileysConnectionService {
   }
 
   /* ---------------- logout / cancel helpers ----------------------- */
-  private safeLogout() {
-    if (!this.socket) return;
+  /* ------------------------------------------------------------------ */
+  /*  NOVA implementação de safeLogout – não explode se handshake < OPEN*/
+  /* ------------------------------------------------------------------ */
+  private safeLogout(): void {
+    if (this.socket) {
+      /* 1) encerra a sessão de forma “clean” se já existe user logado ----- */
+      try {
+        // .logout dispara .end internamente; por isso só chamamos
+        // se o usuário já foi estabelecido (evita erro 440/401 p/ duplicidade)
+        if (this.socket.user) {
+          this.socket.logout().catch(() => null);
+        }
+      } catch {
+        /* swallow */
+      }
+    }
+
+    /* 2) garante que o transporte é finalizado ------------------------- */
     try {
-      this.socket.logout().catch(() => null);
-    } catch {}
-    try {
-      this.socket.end(new Error('logout'));
-    } catch {}
+      // acesso ao WebSocket interno utilizado pelo baileys
+      const ws: import('ws').WebSocket | undefined = (this.socket as any).ws;
+      if (!ws) return;
+
+      switch (ws.readyState) {
+        case ws.OPEN: // 1 – conexão estabelecida → close normal
+          ws.close(1000, 'logout');
+          break;
+
+        case ws.CONNECTING: // 0 – handshake ainda pendente → terminate bruto
+        case ws.CLOSING: // 2 – já fechando
+          ws.terminate?.(); // encerra sem levantar exceção
+          break;
+
+        default: // 3 – CLOSED
+          break;
+      }
+    } catch {
+      /* swallow */
+    }
+
+    /* 3) limpa referências locais ------------------------------------- */
     this.socket = undefined;
     this.setStatus(Status.disconnected, ECodeMessage.loggedOut);
   }
@@ -337,6 +376,7 @@ export class BaileysConnectionService {
   private prepareFolder() {
     if (!fs.existsSync(FOLDER)) fs.mkdirSync(FOLDER, { recursive: true });
   }
+
   private clearFolder() {
     fs.readdirSync(FOLDER).forEach((f) =>
       fs.rmSync(path.join(FOLDER, f), { recursive: true, force: true })

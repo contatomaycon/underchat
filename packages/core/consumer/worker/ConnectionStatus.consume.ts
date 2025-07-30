@@ -52,7 +52,7 @@ export class ConnectionStatusConsume {
           }
 
           if (status === EWorkerStatus.disponible) {
-            this.baileysService.disconnect();
+            this.baileysService.disconnect(true);
 
             return;
           }
