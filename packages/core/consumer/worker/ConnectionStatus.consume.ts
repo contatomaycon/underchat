@@ -1,5 +1,4 @@
 import { injectable } from 'tsyringe';
-import { FastifyInstance } from 'fastify';
 import { ServerRabbitMQService } from '@core/services/serverRabbitMQ.service';
 import { baileysEnvironment } from '@core/config/environments';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
@@ -13,10 +12,10 @@ export class ConnectionStatusConsume {
     private readonly baileysService: BaileysService
   ) {}
 
-  async execute(server: FastifyInstance): Promise<void> {
+  async execute(): Promise<void> {
     await this.serverRabbitMQService.receive(
       `worker:${baileysEnvironment.baileysWorkerId}:status`,
-      async (content) => {
+      async (content, msg, channel) => {
         let workerId: string | null = null;
         let status: EWorkerStatus | null = null;
 
@@ -48,19 +47,21 @@ export class ConnectionStatusConsume {
             return;
           }
 
-          if (status === EWorkerStatus.offline) {
-          }
-
           if (status === EWorkerStatus.disponible) {
             this.baileysService.disconnect(true);
 
             return;
           }
         } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
+          console.error(
+            `Error processing connection status for worker ${workerId}:`,
+            err
+          );
 
-          server.logger.warn(`Skipping message due to error: ${msg}`);
+          return;
         }
+
+        channel.ack(msg);
       }
     );
   }
