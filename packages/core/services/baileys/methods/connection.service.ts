@@ -147,7 +147,7 @@ export class BaileysConnectionService {
 
     this.publish(payload);
 
-    this.streamProducerService.send('worker.status', payload);
+    this.streamProducerService.send('worker.status', payload, WORKER);
 
     this.connect(true);
   }
@@ -252,7 +252,7 @@ export class BaileysConnectionService {
 
     this.publish(payload);
 
-    this.streamProducerService.send('worker.status', payload);
+    this.streamProducerService.send('worker.status', payload, WORKER);
 
     resolve(this.state());
 
@@ -280,7 +280,7 @@ export class BaileysConnectionService {
 
     this.publish(payload);
 
-    this.streamProducerService.send('worker.status', payload);
+    this.streamProducerService.send('worker.status', payload, WORKER);
 
     this.saveLogWppConnection({
       worker_id: WORKER,
@@ -507,7 +507,7 @@ export class BaileysConnectionService {
 
     this.publish(payload);
 
-    this.streamProducerService.send('worker.status', payload);
+    this.streamProducerService.send('worker.status', payload, WORKER);
 
     this.saveLogWppConnection({
       worker_id: WORKER,
