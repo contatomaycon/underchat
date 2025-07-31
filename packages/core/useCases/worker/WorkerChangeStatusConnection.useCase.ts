@@ -3,6 +3,7 @@ import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { StreamProducerService } from '@core/services/streamProducer.service';
+import { baileysEnvironment } from '@core/config/environments';
 
 @injectable()
 export class WorkerChangeStatusConnectionUseCase {
@@ -39,7 +40,7 @@ export class WorkerChangeStatusConnectionUseCase {
       };
 
       await this.streamProducerService.send(
-        'worker:status',
+        `worker:${baileysEnvironment.baileysWorkerId}:status`,
         payload,
         input.worker_id
       );
