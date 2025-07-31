@@ -46,7 +46,7 @@ const kafkaStreamsPlugin: FastifyPluginAsync<
     batchOptions: {
       batchSize: 100,
       commitEveryNBatch: 1,
-      concurrency: 4,
+      concurrency: 12,
       commitSync: false,
       noBatchCommits: false,
     },

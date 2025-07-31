@@ -39,8 +39,9 @@ export class WorkerChangeStatusConnectionUseCase {
       };
 
       await this.streamProducerService.send(
-        `worker:${input.worker_id}:status`,
-        payload
+        'worker:status',
+        payload,
+        input.worker_id
       );
     } catch {
       throw new Error(t('kafka_error'));
