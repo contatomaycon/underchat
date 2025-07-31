@@ -4,7 +4,6 @@ import { CreateServerRequest } from '@core/schema/server/createServer/request.sc
 import { CreateServerResponse } from '@core/schema/server/createServer/response.schema';
 import { TFunction } from 'i18next';
 import { SshService } from '@core/services/ssh.service';
-import { ETopicKafka } from '@core/common/enums/ETopicKafka';
 import { ConnectConfig } from 'ssh2';
 import { isDistroVersionAllowed } from '@core/common/functions/isDistroVersionAllowed';
 import { StreamProducerService } from '@core/services/streamProducer.service';
@@ -56,7 +55,7 @@ export class ServerCreatorUseCase {
     }
   }
 
-  async onServerCreatedInKafka(
+  async onServerCreated(
     t: TFunction<'translation', undefined>,
     serverId: string
   ): Promise<void> {
@@ -65,12 +64,9 @@ export class ServerCreatorUseCase {
         server_id: serverId,
       };
 
-      await this.streamProducerService.send(
-        ETopicKafka.balance_create,
-        payload
-      );
+      await this.streamProducerService.send('create:server', payload);
     } catch {
-      throw new Error(t('kafka_producer_error'));
+      throw new Error(t('kafka_error'));
     }
   }
 
@@ -86,7 +82,7 @@ export class ServerCreatorUseCase {
       throw new Error(t('server_creator_error'));
     }
 
-    await this.onServerCreatedInKafka(t, serverId);
+    await this.onServerCreated(t, serverId);
 
     return {
       server_id: serverId,

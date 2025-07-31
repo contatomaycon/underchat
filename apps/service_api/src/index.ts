@@ -12,10 +12,10 @@ import corsPlugin from '@core/plugins/cors';
 import databaseElasticPlugin from '@core/plugins/dbElastic';
 import elasticLogsPlugin from '@core/plugins/elasticLogs';
 import loggerServicePlugin from '@core/plugins/logger';
-import kafkaStreamsPlugin from '@/plugins/kafkaStreams';
 import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
 import consumerPlugin from './consumer';
 import centrifugoPlugin from '@/plugins/centrifugo';
+import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -34,6 +34,7 @@ server.register(cacheRedisConnector);
 server.register(authenticateKeyApi);
 server.register(i18nextPlugin);
 server.register(corsPlugin);
+server.register(kafkaStreamsPlugin, { module: ERouteModule.service });
 
 server.register(databaseElasticPlugin, {
   prefix: ERouteModule.service,
@@ -44,7 +45,6 @@ server.register(elasticLogsPlugin, {
 });
 
 server.register(loggerServicePlugin);
-server.register(kafkaStreamsPlugin);
 server.register(consumerPlugin);
 server.register(swaggerPlugin);
 

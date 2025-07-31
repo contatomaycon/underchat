@@ -8,7 +8,6 @@ import { PasswordEncryptorService } from '@core/services/passwordEncryptor.servi
 import { EServerStatus } from '@core/common/enums/EServerStatus';
 import { CreateServerResponse } from '@core/schema/server/createServer/response.schema';
 import { StreamProducerService } from '@core/services/streamProducer.service';
-import { ETopicKafka } from '@core/common/enums/ETopicKafka';
 
 @injectable()
 export class ServerReinstallServerUseCase {
@@ -64,7 +63,7 @@ export class ServerReinstallServerUseCase {
     }
   }
 
-  async onServerCreatedInKafka(
+  async onServerCreated(
     t: TFunction<'translation', undefined>,
     serverId: string
   ): Promise<void> {
@@ -73,12 +72,9 @@ export class ServerReinstallServerUseCase {
         server_id: serverId,
       };
 
-      await this.streamProducerService.send(
-        ETopicKafka.balance_create,
-        payload
-      );
+      await this.streamProducerService.send('create:server', payload);
     } catch {
-      throw new Error(t('kafka_producer_error'));
+      throw new Error(t('kafka_error'));
     }
   }
 
@@ -94,7 +90,7 @@ export class ServerReinstallServerUseCase {
       throw new Error(t('server_not_found'));
     }
 
-    await this.onServerCreatedInKafka(t, serverId);
+    await this.onServerCreated(t, serverId);
 
     return this.serverService.updateServerStatusById(
       serverId,

@@ -12,7 +12,6 @@ import { DataTableHeader } from 'vuetify';
 import { ListRoleResponse } from '@core/schema/role/listRole/response.schema';
 import { ERolePermissions } from '@core/common/enums/EPermissions/role';
 import { useRolesStore } from '@/@webcore/stores/role';
-import { EColor } from '@core/common/enums/EColor';
 
 definePage({
   meta: {
@@ -255,15 +254,20 @@ onBeforeUnmount(async () => {
       </VDataTableServer>
 
       <VDialogHandler
+        v-if="isDialogDeleterShow"
         v-model="isDialogDeleterShow"
         :title="$t('delete_role')"
         :message="$t('delete_role_confirmation')"
         @confirm="handleDelete"
       />
 
-      <AppEditRole v-model="isDialogEditRoleShow" :role-id="roleToEdit" />
+      <AppEditRole
+        v-if="isDialogEditRoleShow"
+        v-model="isDialogEditRoleShow"
+        :role-id="roleToEdit"
+      />
 
-      <AppAddRole v-model="isAddRoleVisible" />
+      <AppAddRole v-if="isAddRoleVisible" v-model="isAddRoleVisible" />
     </VCard>
 
     <VSnackbar

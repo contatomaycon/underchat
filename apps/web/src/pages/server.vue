@@ -196,8 +196,8 @@ watch(
   { immediate: true, deep: true }
 );
 
-onMounted(() => {
-  onMessage(
+onMounted(async () => {
+  await onMessage(
     ECentrifugoChannel.status_server,
     (data: IStatusServerCentrifugo) => {
       serverStore.updateStatusServer(data.server_id, data.status);
@@ -401,6 +401,7 @@ onBeforeUnmount(async () => {
       </VDataTableServer>
 
       <VDialogHandler
+        v-if="isDialogRefreshServerShow"
         v-model="isDialogRefreshServerShow"
         :title="$t('reinstall_server')"
         :message="$t('reinstall_server_confirmation')"
@@ -408,6 +409,7 @@ onBeforeUnmount(async () => {
       />
 
       <VDialogHandler
+        v-if="isDialogDeleterShow"
         v-model="isDialogDeleterShow"
         :title="$t('delete_server')"
         :message="$t('delete_server_confirmation')"
@@ -415,18 +417,24 @@ onBeforeUnmount(async () => {
       />
 
       <AppEditServer
+        v-if="isDialogEditServerShow"
         v-model="isDialogEditServerShow"
         :server-id="serverToEdit"
       />
 
-      <AppAddServer v-model="isAddServerVisible" />
+      <AppAddServer v-if="isAddServerVisible" v-model="isAddServerVisible" />
 
       <AppConsoleServer
+        v-if="isConsoleServerVisible"
         v-model="isConsoleServerVisible"
         :server-id="serverToConsole"
       />
 
-      <AppLogsServer v-model="isLogsServerVisible" :server-id="serverToLogs" />
+      <AppLogsServer
+        v-if="isLogsServerVisible"
+        v-model="isLogsServerVisible"
+        :server-id="serverToLogs"
+      />
     </VCard>
     <VSnackbar
       v-model="serverStore.snackbar.status"

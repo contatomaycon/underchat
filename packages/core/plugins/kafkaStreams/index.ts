@@ -1,4 +1,4 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import fp from 'fastify-plugin';
 import {
   KafkaStreams,
@@ -9,11 +9,19 @@ import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { container } from 'tsyringe';
 import { kafkaEnvironment } from '@core/config/environments';
 
-const kafkaStreamsPlugin = async (fastify: FastifyInstance) => {
+interface KafkaStreamsPluginOptions {
+  module: ERouteModule;
+}
+
+const kafkaStreamsPlugin: FastifyPluginAsync<
+  KafkaStreamsPluginOptions
+> = async (fastify: FastifyInstance, opts) => {
+  const module = opts.module;
+
   const noptions: CommonKafkaOptions = {
     'metadata.broker.list': kafkaEnvironment.kafkaBroker,
     'group.id': 'group-underchat-streams',
-    'client.id': `client-stream-${ERouteModule.service}`,
+    'client.id': `client-stream-${module}`,
     'compression.codec': 'snappy',
     'enable.auto.commit': false,
     'socket.keepalive.enable': true,
@@ -38,7 +46,7 @@ const kafkaStreamsPlugin = async (fastify: FastifyInstance) => {
     batchOptions: {
       batchSize: 100,
       commitEveryNBatch: 1,
-      concurrency: 4,
+      concurrency: 12,
       commitSync: false,
       noBatchCommits: false,
     },

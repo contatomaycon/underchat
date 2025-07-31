@@ -22,6 +22,7 @@ declare module 'vue' {
     AppCardActions: typeof import('./src/@webcore/components/cards/AppCardActions.vue')['default']
     AppCardCode: typeof import('./src/@webcore/components/cards/AppCardCode.vue')['default']
     AppCombobox: typeof import('./src/@webcore/components/app-form-elements/AppCombobox.vue')['default']
+    AppConnectChannel: typeof import('./src/components/channel/AppConnectChannel.vue')['default']
     AppConsoleServer: typeof import('./src/components/server/AppConsoleServer.vue')['default']
     AppDateTimePicker: typeof import('./src/@webcore/components/app-form-elements/AppDateTimePicker.vue')['default']
     AppDrawerHeaderSection: typeof import('./src/@webcore/components/AppDrawerHeaderSection.vue')['default']

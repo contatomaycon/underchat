@@ -5,11 +5,11 @@ import { BalanceCreateWorkerRequest } from '@core/schema/worker/balanceCreateWor
 import { WorkerService } from '@core/services/worker.service';
 import { v4 as uuidv4 } from 'uuid';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
-import { EWorkerImage } from '@core/common/enums/EWorkerImage';
 import { ICreateWorker } from '@core/common/interfaces/ICreateWorker';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { AccountService } from '@core/services/account.service';
 import { EPlanProduct } from '@core/common/enums/EPlanProduct';
+import { getImageWorker } from '@core/common/functions/getImageWorker';
 
 @injectable()
 export class WorkerBalanceCreatorUseCase {
@@ -47,22 +47,6 @@ export class WorkerBalanceCreatorUseCase {
     }
   }
 
-  private getImageWorker(workerType: EWorkerType) {
-    if (workerType === EWorkerType.whatsapp) {
-      return EWorkerImage.whatsapp;
-    }
-
-    if (workerType === EWorkerType.telegram) {
-      return EWorkerImage.telegram;
-    }
-
-    if (workerType === EWorkerType.discord) {
-      return EWorkerImage.discord;
-    }
-
-    return EWorkerImage.baileys;
-  }
-
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -71,13 +55,13 @@ export class WorkerBalanceCreatorUseCase {
     await this.validate(t, accountId);
 
     const workerType = input.worker_type as EWorkerType;
-    const imageName = this.getImageWorker(workerType);
-    const containerName = uuidv4();
+    const imageName = getImageWorker(workerType);
+    const workerId = uuidv4();
 
     const containerId = await this.workerService.createContainerWorker(
       t,
       imageName,
-      containerName
+      workerId
     );
 
     if (!containerId) {
@@ -85,18 +69,18 @@ export class WorkerBalanceCreatorUseCase {
     }
 
     const workerData: ICreateWorker = {
+      worker_id: workerId,
       worker_status_id: EWorkerStatus.disponible,
       worker_type_id: workerType,
       server_id: input.server_id,
       account_id: accountId,
-      container_name: containerName,
       container_id: containerId,
       name: input.name,
     };
 
-    const workerId = await this.workerService.createWorker(workerData);
+    const statusCreate = await this.workerService.createWorker(workerData);
 
-    if (!workerId) {
+    if (!statusCreate) {
       throw new Error(t('worker_creation_failed'));
     }
 

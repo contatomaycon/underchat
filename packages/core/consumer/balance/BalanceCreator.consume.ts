@@ -1,17 +1,15 @@
-import { inject, injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { CreateServerResponse } from '@core/schema/server/createServer/response.schema';
 import { SshService } from '@core/services/ssh.service';
-import { ETopicKafka } from '@core/common/enums/ETopicKafka';
 import { ServerService } from '@core/services/server.service';
 import { EServerStatus } from '@core/common/enums/EServerStatus';
 import { ConnectConfig } from 'ssh2';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
 import { isDistroVersionAllowed } from '@core/common/functions/isDistroVersionAllowed';
 import { IDistroInfo } from '@core/common/interfaces/IDistroInfo';
-import { KafkaStreams, KStream } from 'kafka-streams';
-import { IKafkaMsg } from '@core/common/interfaces/IKafkaMsg';
 import { FastifyInstance } from 'fastify';
 import { IViewServerWebById } from '@core/common/interfaces/IViewServerWebById';
+import { KafkaStreams, KStream } from 'kafka-streams';
 
 @injectable()
 export class BalanceCreatorConsume {
@@ -102,7 +100,7 @@ export class BalanceCreatorConsume {
 
       const lastOutput = result[result.length - 1]?.output?.trim();
 
-      const status = parseInt(lastOutput ?? '0', 10);
+      const status = Number(lastOutput ?? 0);
 
       if (status === 200) {
         return true;
@@ -112,29 +110,45 @@ export class BalanceCreatorConsume {
     return false;
   }
 
-  async execute(server: FastifyInstance): Promise<void> {
-    const stream: KStream = this.kafkaStreams.getKStream(
-      ETopicKafka.balance_create
+  private async imageIsBuilt(
+    serverId: string,
+    getDistroAndVersion: IDistroInfo,
+    sshConfig: ConnectConfig
+  ): Promise<boolean> {
+    const getImagesCommands =
+      this.sshService.getImagesCommands(getDistroAndVersion);
+
+    const result = await this.sshService.runCommands(
+      serverId,
+      sshConfig,
+      getImagesCommands
     );
 
-    stream.mapBufferKeyToString();
-    stream.mapBufferValueToString();
+    if (result.length > 0) {
+      await this.serverService.updateLogInstallServerBulk(result);
+    }
 
-    stream.forEach(async (message: IKafkaMsg) => {
+    const lastOutput = result[result.length - 1]?.output?.trim();
+
+    return Boolean(lastOutput) === true;
+  }
+
+  async execute(server: FastifyInstance): Promise<void> {
+    const stream: KStream = this.kafkaStreams.getKStream('create:server');
+
+    stream.mapBufferKeyToString();
+    stream.mapJSONConvenience();
+
+    stream.forEach(async (message) => {
+      const data = message.value as CreateServerResponse;
+
+      if (!data) {
+        throw new Error('Received message without value');
+      }
+
       let serverId: string | null = null;
 
       try {
-        if (!message.value) {
-          throw new Error('Received message without value');
-        }
-
-        const raw =
-          message.value instanceof Buffer
-            ? message.value.toString('utf8')
-            : String(message.value);
-
-        const data = JSON.parse(raw) as CreateServerResponse;
-
         serverId = data.server_id;
         if (!serverId) {
           throw new Error('Server ID is not defined in the message');
@@ -158,6 +172,21 @@ export class BalanceCreatorConsume {
           sshConfig,
           installCommands
         );
+
+        const imageIsBuilt = await this.imageIsBuilt(
+          serverId,
+          getDistroAndVersion,
+          sshConfig
+        );
+
+        if (!imageIsBuilt) {
+          await this.serverService.updateServerStatusById(
+            serverId,
+            EServerStatus.error
+          );
+
+          throw new Error('Docker image is not built');
+        }
 
         await this.serverService.deleteLogInstallServer(serverId);
         await this.serverService.updateLogInstallServerBulk(logs);

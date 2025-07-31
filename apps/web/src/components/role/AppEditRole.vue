@@ -45,10 +45,10 @@ const updateServer = async () => {
   }
 };
 
-watch(roleId, async (id) => {
-  if (!id) return;
+onMounted(async () => {
+  if (!roleId.value) return;
 
-  const nameRole = await roleStore.getRoleById(id);
+  const nameRole = await roleStore.getRoleById(roleId.value);
   if (nameRole) {
     name.value = nameRole.name;
   }

@@ -25,7 +25,7 @@ export default [
     ],
   },
   {
-    title: 'cargos',
+    title: 'roles',
     to: { name: 'roles' as keyof RouteNamedMap },
     icon: { icon: 'tabler-crosshair' },
     permissions: [

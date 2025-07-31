@@ -1,0 +1,15 @@
+export enum ECodeMessage {
+  connectionEstablished = 200,
+  newLoginAttempt = 201,
+  awaitingReadQrCode = 202,
+  awaitConnection = 203,
+  loggedOut = 401,
+  forbidden = 403,
+  connectionLost = 408,
+  multideviceMismatch = 411,
+  connectionClosed = 428,
+  connectionReplaced = 440,
+  badSession = 500,
+  unavailableService = 503,
+  restartRequired = 515,
+}

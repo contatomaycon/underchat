@@ -6,10 +6,11 @@ RUN apk update && \
     apk add --no-cache \
       bash \
       g++ \
+      git \
       libc6-compat \
-      librdkafka-dev \
       make \
       musl-dev \
+      librdkafka-dev \
       python3 \
       docker-cli
 

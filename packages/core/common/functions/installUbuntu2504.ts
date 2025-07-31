@@ -14,22 +14,22 @@ export async function installUbuntu2504(
   const envContent = await readEnvFile(patchEnv);
 
   return [
-    'sudo apt-get update',
-    'sudo apt-get upgrade -y',
+    'apt-get update',
+    'apt-get upgrade -y',
 
-    'sudo apt-get install git -y',
-    'sudo apt-get install curl -y',
-    'sudo apt-get install wget -y',
-    'sudo apt-get install htop -y',
-    'sudo apt-get install zip -y',
-    'sudo apt-get install build-essential -y',
-    'sudo apt-get install ca-certificates -y',
-    'sudo apt-get install libssl-dev -y',
-    'sudo apt-get install gnupg -y',
-    'sudo apt-get install lsb-release -y',
+    'apt-get install git -y',
+    'apt-get install curl -y',
+    'apt-get install wget -y',
+    'apt-get install htop -y',
+    'apt-get install zip -y',
+    'apt-get install build-essential -y',
+    'apt-get install ca-certificates -y',
+    'apt-get install libssl-dev -y',
+    'apt-get install gnupg -y',
+    'apt-get install lsb-release -y',
 
-    'sudo rm -rf /home/app || true',
-    'sudo rm -rf /home/underchat || true',
+    'rm -rf /home/app || true',
+    'rm -rf /home/underchat || true',
 
     `bash -lc 'export NVM_DIR="$HOME/.nvm" && \
       curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash && \
@@ -41,56 +41,56 @@ export async function installUbuntu2504(
       nvm use ${nodeVersion} && \
       nvm alias default ${nodeVersion}'`,
 
-    `bash -ic "sudo mkdir -p /etc/apt/keyrings && \
+    `bash -ic "mkdir -p /etc/apt/keyrings && \
       curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-        | sudo gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg"`,
+        | gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg"`,
 
     `bash -ic "echo 'deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
       https://download.docker.com/linux/ubuntu \
       $(lsb_release -cs) stable' \
-      | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null"`,
+      | tee /etc/apt/sources.list.d/docker.list > /dev/null"`,
 
-    `bash -ic "sudo apt-get update && \
-      sudo apt-get install -y docker-ce docker-ce-cli containerd.io"`,
+    `bash -ic "apt-get update && \
+      apt-get install -y docker-ce docker-ce-cli containerd.io"`,
 
-    `bash -ic "sudo apt-get update && \
-      sudo apt-get install -y docker-compose-plugin"`,
+    `bash -ic "apt-get update && \
+      apt-get install -y docker-compose-plugin"`,
 
-    `bash -ic "sudo rm -f /usr/local/bin/docker-compose || true"`,
+    `bash -ic "rm -f /usr/local/bin/docker-compose || true"`,
 
-    `bash -ic "sudo mkdir -p /usr/local/bin && \
-      sudo ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose"`,
+    `bash -ic "mkdir -p /usr/local/bin && \
+      ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose"`,
 
-    `bash -ic "sudo groupadd docker && \
-      sudo usermod -aG docker $USER && \
-      sudo systemctl enable docker && \
-      sudo systemctl start docker"`,
+    `bash -ic "groupadd docker && \
+      usermod -aG docker $USER && \
+      systemctl enable docker && \
+      systemctl start docker"`,
 
-    `bash -ic "sudo mkdir -p /home/app && \
-      sudo chown $USER:$USER /home/app && \
+    `bash -ic "mkdir -p /home/app && \
+      chown $USER:$USER /home/app && \
       git clone --single-branch --branch ${generalEnvironment.gitBranch} https://oauth2:${generalEnvironment.gitToken}@${generalEnvironment.gitRepo} /home/app"`,
 
-    `bash -ic "printf '%b' '${envContent}' > /home/app/.env && sudo chown $USER:$USER /home/app/.env"`,
+    `bash -ic "printf '%b' '${envContent}' > /home/app/.env && chown $USER:$USER /home/app/.env"`,
 
     `bash -ic "cd /home/app && \
-      sudo docker network create underchat || true"`,
+      docker network create underchat || true"`,
 
     `bash -ic "cd /home/app && \
-      sudo docker stop under-worker-baileys || true && \
-      sudo docker rm under-worker-baileys || true"`,
+      docker stop under-worker-baileys || true && \
+      docker rm under-worker-baileys || true"`,
 
     `bash -ic "cd /home/app && \
-      sudo docker build --no-cache -t under-worker-baileys:latest -f ./apps/worker_baileys/Dockerfile ."`,
+      docker build --no-cache -t under-worker-baileys:latest -f ./apps/worker_baileys/Dockerfile ."`,
 
     `bash -ic "cd /home/app && \
-      sudo docker stop under-balance-api || true && \
-      sudo docker rm under-balance-api || true"`,
+      docker stop under-balance-api || true && \
+      docker rm under-balance-api || true"`,
 
     `bash -ic "cd /home/app && \
-      sudo docker build --no-cache -t under-balance-api:latest -f ./apps/balance_api/Dockerfile ."`,
+      docker build --no-cache -t under-balance-api:latest -f ./apps/balance_api/Dockerfile ."`,
 
     `bash -ic "cd /home/app && \
-      sudo docker run -d --name under-balance-api \
+      docker run -d --name under-balance-api \
         --restart always \
         -p ${webView.web_port}:3003 \
         -v /var/run/docker.sock:/var/run/docker.sock \
@@ -98,6 +98,6 @@ export async function installUbuntu2504(
         -e DOCKER_HOST=unix:///var/run/docker.sock \
         under-balance-api:latest"`,
 
-    'sudo rm -rf /home/app || true',
+    'rm -rf /home/app || true',
   ];
 }

@@ -20,7 +20,7 @@ const isVisible = computed({
 
 const serverId = toRef(props, 'serverId');
 
-const items = ref([
+const items = ref<{ command: string; output: string; date: string }[]>([
   {
     command: t('installation_pending'),
     output: t('installation_pending'),
@@ -29,110 +29,45 @@ const items = ref([
 ]);
 
 const listContainer = ref<HTMLElement | null>(null);
-const isUserScrolling = ref(false);
-const threshold = ref(20);
-const autoScrollIdle = ref(5000);
-const maxRecords = ref(200);
 const isLoading = ref(true);
 
-let scrollTimer: number | null = null;
-let lastInteraction = Date.now();
-let idleInterval: number | null = null;
-
-const handleScroll = () => {
-  isUserScrolling.value = true;
-
-  lastInteraction = Date.now();
-
-  if (scrollTimer) {
-    clearTimeout(scrollTimer);
-  }
-
-  scrollTimer = window.setTimeout(() => (isUserScrolling.value = false), 150);
-};
-
-const atBottom = () => {
-  if (!listContainer.value) {
-    return true;
-  }
-
-  const el = listContainer.value;
-
-  return el.scrollHeight - el.scrollTop - el.clientHeight < threshold.value;
-};
-
 const scrollToBottom = () => {
-  if (!listContainer.value) return;
-
   nextTick(() => {
-    const el = listContainer.value;
-    if (!el) return;
-
-    el.scrollTop = el.scrollHeight;
+    if (listContainer.value) {
+      listContainer.value.scrollTop = listContainer.value.scrollHeight;
+    }
   });
-};
-
-const scrollIfNeeded = () => {
-  if (!listContainer.value) return;
-
-  if (!isUserScrolling.value && atBottom()) {
-    scrollToBottom();
-  }
-};
-
-const resetForm = () => {
-  items.value = [];
 };
 
 watch(isVisible, (visible) => {
-  if (visible) resetForm();
+  if (visible) {
+    items.value = [];
+    isLoading.value = true;
+
+    scrollToBottom();
+  }
 });
 
-onMounted(() => {
-  nextTick(() => {
-    if (listContainer.value)
-      listContainer.value.addEventListener('scroll', handleScroll, {
-        passive: true,
+onMounted(async () => {
+  await onMessage(
+    ECentrifugoChannel.server_ssh,
+    (data: IServerSshCentrifugo) => {
+      if (data.server_id !== serverId.value) return;
+
+      isLoading.value = false;
+      items.value.push({
+        command: data.command,
+        output: data.output,
+        date: formatDateTimeSeconds(data.date),
       });
 
-    scrollIfNeeded();
-  });
+      if (items.value.length > 200) {
+        items.value.splice(0, items.value.length - 200);
+      }
 
-  idleInterval = window.setInterval(() => {
-    if (Date.now() - lastInteraction >= autoScrollIdle.value) scrollToBottom();
-  }, 1000);
-
-  onMessage(ECentrifugoChannel.server_ssh, (data: IServerSshCentrifugo) => {
-    if (data.server_id !== serverId.value) return;
-
-    isLoading.value = false;
-
-    items.value.push({
-      command: data.command,
-      output: data.output,
-      date: formatDateTimeSeconds(data.date),
-    });
-
-    if (items.value.length > maxRecords.value) {
-      items.value.splice(0, items.value.length - maxRecords.value);
+      scrollToBottom();
     }
-
-    scrollIfNeeded();
-  });
-});
-
-onBeforeUnmount(() => {
-  if (listContainer.value) {
-    listContainer.value.removeEventListener('scroll', handleScroll);
-  }
-
-  if (scrollTimer) {
-    clearTimeout(scrollTimer);
-  }
-
-  if (idleInterval) {
-    clearInterval(idleInterval);
-  }
+  );
 });
 </script>
 
@@ -142,7 +77,7 @@ onBeforeUnmount(() => {
 
     <template v-if="isLoading">
       <VOverlay :model-value="isLoading" class="align-center justify-center">
-        <VProgressCircular color="primary" indeterminate size="32" />
+        <VProgressCircular indeterminate size="32" />
       </VOverlay>
     </template>
 
@@ -153,25 +88,22 @@ onBeforeUnmount(() => {
           class="app-bar-search-list py-0"
           style="max-height: 60vh; overflow-y: auto"
         >
-          <VList v-show="items.length" density="compact">
-            <template v-for="item in items" :key="item">
-              <slot :item="item">
-                <VListItem>
-                  <VListItemTitle class="wrap-text">
-                    <strong>{{ item.date }}:</strong>
-                    {{ item.command }}
-                  </VListItemTitle>
-                  <VListItemSubtitle class="wrap-text">
-                    {{ item.output }}
-                  </VListItemSubtitle>
-                </VListItem>
-              </slot>
+          <VList density="compact" v-show="items.length">
+            <template v-for="(item, index) in items" :key="index">
+              <VListItem :id="index">
+                <VListItemTitle class="wrap-text">
+                  <strong>{{ item.date }}:</strong> {{ item.command }}
+                </VListItemTitle>
+                <VListItemSubtitle class="wrap-text">
+                  {{ item.output }}
+                </VListItemSubtitle>
+              </VListItem>
             </template>
           </VList>
         </div>
       </VCardText>
 
-      <VCardText class="d-flex justify-end flex-wrap gap-3">
+      <VCardText class="d-flex justify-end gap-3">
         <VBtn variant="tonal" color="secondary" @click="isVisible = false">
           {{ $t('close') }}
         </VBtn>

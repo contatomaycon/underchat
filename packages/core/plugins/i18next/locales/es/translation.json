@@ -12,7 +12,6 @@
   "health_check_success": "¡Verificación de salud exitosa!",
   "metrics_server_success": "¡Servidor de métricas iniciado con éxito!",
   "metrics_server_error": "Error al iniciar el servidor de métricas",
-  "kafka_producer_error": "Error al crear el productor Kafka",
   "ssh_distro_version_failed": "Error al recuperar la distribución y versión del servidor",
   "ssh_distro_version_not_allowed": "Distribución y versión no permitidas para el servidor",
   "server_deleted_successfully": "¡Servidor eliminado con éxito!",
@@ -66,5 +65,8 @@
   "role_not_found": "¡Rol no encontrado!",
   "worker_delete_success": "¡Canal eliminado con éxito!",
   "worker_delete_error": "Error al eliminar el canal",
-  "worker_volume_removal_failed": "Error al eliminar el volumen del canal"
+  "worker_volume_removal_failed": "Error al eliminar el volumen del canal",
+  "worker_status_change_success": "¡Estado del trabajador cambiado con éxito!",
+  "worker_status_change_error": "Error al cambiar el estado del trabajador",
+  "kafka_error": "Error al comunicarse con Kafka"
 }

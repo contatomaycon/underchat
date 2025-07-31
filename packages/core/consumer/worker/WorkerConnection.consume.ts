@@ -1,0 +1,50 @@
+import { injectable, inject } from 'tsyringe';
+import { KafkaStreams, KStream } from 'kafka-streams';
+import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
+import { WorkerService } from '@core/services/worker.service';
+import { getStatusWorkerConnection } from '@core/common/functions/getStatusWorkerConnection';
+
+@injectable()
+export class WorkerConnectionConsume {
+  constructor(
+    @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams,
+    private readonly workerService: WorkerService
+  ) {}
+
+  public async execute(): Promise<void> {
+    const topic = 'worker.status';
+    const stream: KStream = this.kafkaStreams.getKStream(topic);
+
+    stream.mapBufferKeyToString();
+    stream.mapJSONConvenience();
+
+    stream.forEach(async (msg) => {
+      const data = msg.value as IBaileysConnectionState;
+
+      if (!data) {
+        throw new Error('Received message without value');
+      }
+
+      const viewWorkerPhoneConnectionDate =
+        await this.workerService.viewWorkerPhoneConnectionDate(data.worker_id);
+
+      if (!viewWorkerPhoneConnectionDate) {
+        return;
+      }
+
+      const status = getStatusWorkerConnection(
+        data.status,
+        data.disconnected_user
+      );
+
+      await this.workerService.updateWorkerPhoneStatusConnectionDate({
+        worker_id: data.worker_id,
+        status,
+        number: data.phone ?? viewWorkerPhoneConnectionDate.number,
+        connection_date: viewWorkerPhoneConnectionDate.connection_date,
+      });
+    });
+
+    await stream.start();
+  }
+}
