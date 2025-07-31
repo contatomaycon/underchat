@@ -15,6 +15,7 @@ import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { getAdministrator } from '@/@webcore/localStorage/user';
 import { DataTableHeader } from 'vuetify';
 import { ListWorkerResponse } from '@core/schema/worker/listWorker/response.schema';
+import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 
 definePage({
   meta: {
@@ -285,6 +286,10 @@ onBeforeUnmount(async () => {
 
         <template #item.server="{ item }">
           <span>{{ item.server?.name }}</span>
+        </template>
+
+        <template #item.number="{ item }">
+          <span>{{ item.number ? formatPhoneBR(item.number) : '-' }}</span>
         </template>
 
         <template #item.account="{ item }">
