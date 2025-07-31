@@ -55,7 +55,6 @@
   "license": "ISC",
   "devDependencies": {
     "@faker-js/faker": "^9.9.0",
-    "@types/amqplib": "^0.10.7",
     "@types/crypto-js": "^4.2.2",
     "@types/dockerode": "^3.3.42",
     "@types/jest": "^30.0.0",
@@ -113,7 +112,6 @@
     "@types/lodash": "^4.17.20",
     "@types/uuid": "^10.0.0",
     "@whiskeysockets/baileys": "^6.7.18",
-    "amqplib": "^0.10.8",
     "axios": "^1.10.0",
     "centrifuge": "^5.3.5",
     "crypto-js": "^4.2.0",
@@ -130,6 +128,7 @@
     "i18next-http-middleware": "^3.7.4",
     "ioredis": "^5.6.1",
     "jsonwebtoken": "^9.0.2",
+    "kafka-streams": "^5.0.0",
     "lodash": "^4.17.21",
     "module-alias": "^2.2.3",
     "moment": "^2.30.1",

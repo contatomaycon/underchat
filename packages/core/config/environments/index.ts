@@ -5,7 +5,7 @@ import { ElasticSearchEnvironment } from './ElasticSearchEnvironment';
 import { DatabaseElasticEnvironment } from './DatabaseElasticEnvironment';
 import { CentrifugoEnvironment } from './CentrifugoEnvironment';
 import { BaileysEnvironment } from './BaileysEnvironment';
-import { RabbitMQEnvironment } from './RabbitMQEnvironment';
+import { KafkaEnvironment } from './KafkaEnvironment';
 
 export const generalEnvironment = new GeneralEnvironment();
 export const databaseEnvironment = new DatabaseEnvironment();
@@ -14,4 +14,4 @@ export const elasticSearchEnvironment = new ElasticSearchEnvironment();
 export const databaseElasticEnvironment = new DatabaseElasticEnvironment();
 export const centrifugoEnvironment = new CentrifugoEnvironment();
 export const baileysEnvironment = new BaileysEnvironment();
-export const rabbitMQEnvironment = new RabbitMQEnvironment();
+export const kafkaEnvironment = new KafkaEnvironment();

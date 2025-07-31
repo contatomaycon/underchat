@@ -15,7 +15,7 @@ import loggerServicePlugin from '@core/plugins/logger';
 import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
 import consumerPlugin from './consumer';
 import centrifugoPlugin from '@/plugins/centrifugo';
-import rabbitmqPlugin from '@core/plugins/rabbitmq';
+import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -34,7 +34,7 @@ server.register(cacheRedisConnector);
 server.register(authenticateKeyApi);
 server.register(i18nextPlugin);
 server.register(corsPlugin);
-server.register(rabbitmqPlugin);
+server.register(kafkaStreamsPlugin, { module: ERouteModule.service });
 
 server.register(databaseElasticPlugin, {
   prefix: ERouteModule.service,
