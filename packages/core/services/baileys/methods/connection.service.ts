@@ -282,7 +282,15 @@ export class BaileysConnectionService {
       setTimeout(() => {
         this.retryCount++;
 
-        void this.connect(this.initialConnection).catch(() => {});
+        this.connect(this.initialConnection).catch(() => {
+          this.saveLogWppConnection({
+            worker_id: WORKER,
+            status: this.status ?? Status.disconnected,
+            code: this.code ?? ECodeMessage.connectionLost,
+            message: 'Retry failed',
+            date: new Date(),
+          });
+        });
       }, this.retryDelay);
     }
   }
