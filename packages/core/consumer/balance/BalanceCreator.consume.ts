@@ -10,7 +10,6 @@ import { IDistroInfo } from '@core/common/interfaces/IDistroInfo';
 import { FastifyInstance } from 'fastify';
 import { IViewServerWebById } from '@core/common/interfaces/IViewServerWebById';
 import { KafkaStreams, KStream } from 'kafka-streams';
-import { IKafkaMsg } from '@core/common/interfaces/IKafkaMsg';
 
 @injectable()
 export class BalanceCreatorConsume {
@@ -138,23 +137,18 @@ export class BalanceCreatorConsume {
     const stream: KStream = this.kafkaStreams.getKStream('create:server');
 
     stream.mapBufferKeyToString();
-    stream.mapBufferValueToString();
+    stream.mapJSONConvenience();
 
-    stream.forEach(async (message: IKafkaMsg) => {
+    stream.forEach(async (message) => {
+      const data = message.value as CreateServerResponse;
+
+      if (!data) {
+        throw new Error('Received message without value');
+      }
+
       let serverId: string | null = null;
 
       try {
-        if (!message) {
-          throw new Error('Received message without value');
-        }
-
-        const raw =
-          message instanceof Buffer
-            ? message.toString('utf8')
-            : String(message);
-
-        const data = JSON.parse(raw) as CreateServerResponse;
-
         serverId = data.server_id;
         if (!serverId) {
           throw new Error('Server ID is not defined in the message');

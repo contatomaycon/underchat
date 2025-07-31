@@ -40,7 +40,7 @@ export class WorkerChangeStatusConnectionUseCase {
       };
 
       await this.streamProducerService.send(
-        `worker:${baileysEnvironment.baileysWorkerId}:status`,
+        `worker.${baileysEnvironment.baileysWorkerId}.status`,
         payload,
         input.worker_id
       );

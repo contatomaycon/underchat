@@ -13,15 +13,18 @@ export class ConnectionStatusConsume {
   ) {}
 
   public async execute(): Promise<void> {
-    const topic = `worker:${baileysEnvironment.baileysWorkerId}:status`;
-    const stream: KStream = this.kafkaStreams.getKStream();
+    const topic = `worker.${baileysEnvironment.baileysWorkerId}.status`;
+    const stream: KStream = this.kafkaStreams.getKStream(topic);
 
-    stream.from(topic);
     stream.mapBufferKeyToString();
     stream.mapJSONConvenience();
 
     stream.forEach(async (msg) => {
       const data = msg.value as StatusConnectionWorkerRequest;
+
+      if (!data) {
+        throw new Error('Received message without value');
+      }
 
       if (data.status === EWorkerStatus.online) {
         await this.baileysService.connect(true);
