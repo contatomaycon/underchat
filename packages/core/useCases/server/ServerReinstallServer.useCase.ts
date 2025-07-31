@@ -7,7 +7,7 @@ import { isDistroVersionAllowed } from '@core/common/functions/isDistroVersionAl
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
 import { EServerStatus } from '@core/common/enums/EServerStatus';
 import { CreateServerResponse } from '@core/schema/server/createServer/response.schema';
-import { ServerRabbitMQService } from '@core/services/serverRabbitMQ.service';
+import { StreamProducerService } from '@core/services/streamProducer.service';
 
 @injectable()
 export class ServerReinstallServerUseCase {
@@ -15,7 +15,7 @@ export class ServerReinstallServerUseCase {
     private readonly serverService: ServerService,
     private readonly sshService: SshService,
     private readonly passwordEncryptorService: PasswordEncryptorService,
-    private readonly serverRabbitMQService: ServerRabbitMQService
+    private readonly streamProducerService: StreamProducerService
   ) {}
 
   async validate(
@@ -72,9 +72,9 @@ export class ServerReinstallServerUseCase {
         server_id: serverId,
       };
 
-      await this.serverRabbitMQService.send('create:server', payload);
+      await this.streamProducerService.send('create:server', payload);
     } catch {
-      throw new Error(t('rabbitmq_error'));
+      throw new Error(t('kafka_error'));
     }
   }
 

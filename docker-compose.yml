@@ -223,4 +223,4 @@ volumes:
   atlas_db_postgresql:
   atlas_db_postgresql_data:
   elasticsearch_data:
-  rabbitmq_data:
+  kafka_data:

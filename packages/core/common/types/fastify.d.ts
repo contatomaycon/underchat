@@ -11,7 +11,7 @@ import { ELanguage } from '../enums/ELanguage';
 import { Client as ClientElastic } from '@elastic/elasticsearch';
 import { ITokenKeyData } from '../interfaces/ITokenKeyData';
 import { Centrifuge } from 'centrifuge';
-import * as amqp from 'amqplib';
+import { KafkaStreams } from 'kafka-streams';
 
 declare module 'fastify' {
   export interface FastifyRequest {
@@ -23,10 +23,9 @@ declare module 'fastify' {
     DatabaseElasticClient: ClientElastic;
     ElasticLogsClient: ClientElastic;
     Centrifuge: Centrifuge;
+    KafkaStreams: KafkaStreams;
     redis: FastifyRedis;
     logger: LoggerService;
-    RabbitmqConnection: amqp.ChannelModel;
-    RabbitmqChannel: amqp.Channel;
     authenticateJwt: (
       request: FastifyRequest,
       reply: FastifyReply,

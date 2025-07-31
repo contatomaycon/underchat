@@ -16,7 +16,7 @@ import databaseElasticPlugin from '@core/plugins/dbElastic';
 import elasticLogsPlugin from '@core/plugins/elasticLogs';
 import loggerServicePlugin from '@core/plugins/logger';
 import centrifugoPlugin from '@/plugins/centrifugo';
-import rabbitmqPlugin from '@core/plugins/rabbitmq';
+import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -37,7 +37,7 @@ server.register(authenticateJwt);
 server.register(i18nextPlugin);
 server.register(jwtPlugin);
 server.register(corsPlugin);
-server.register(rabbitmqPlugin);
+server.register(kafkaStreamsPlugin, { module: ERouteModule.manager });
 
 server.register(databaseElasticPlugin, {
   prefix: ERouteModule.manager,

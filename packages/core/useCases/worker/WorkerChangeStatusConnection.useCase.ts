@@ -2,13 +2,13 @@ import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
-import { MessageRabbitMQService } from '@core/services/messageRabbitMQ.service';
+import { StreamProducerService } from '@core/services/streamProducer.service';
 
 @injectable()
 export class WorkerChangeStatusConnectionUseCase {
   constructor(
     private readonly workerService: WorkerService,
-    private readonly messageRabbitMQService: MessageRabbitMQService
+    private readonly streamProducerService: StreamProducerService
   ) {}
 
   private async validate(
@@ -38,12 +38,12 @@ export class WorkerChangeStatusConnectionUseCase {
         status: input.status,
       };
 
-      await this.messageRabbitMQService.send(
+      await this.streamProducerService.send(
         `worker:${input.worker_id}:status`,
         payload
       );
     } catch {
-      throw new Error(t('rabbitmq_error'));
+      throw new Error(t('kafka_error'));
     }
   }
 

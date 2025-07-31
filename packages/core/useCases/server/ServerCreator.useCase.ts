@@ -6,14 +6,14 @@ import { TFunction } from 'i18next';
 import { SshService } from '@core/services/ssh.service';
 import { ConnectConfig } from 'ssh2';
 import { isDistroVersionAllowed } from '@core/common/functions/isDistroVersionAllowed';
-import { ServerRabbitMQService } from '@core/services/serverRabbitMQ.service';
+import { StreamProducerService } from '@core/services/streamProducer.service';
 
 @injectable()
 export class ServerCreatorUseCase {
   constructor(
     private readonly serverService: ServerService,
     private readonly sshService: SshService,
-    private readonly serverRabbitMQService: ServerRabbitMQService
+    private readonly streamProducerService: StreamProducerService
   ) {}
 
   async validate(
@@ -64,9 +64,9 @@ export class ServerCreatorUseCase {
         server_id: serverId,
       };
 
-      await this.serverRabbitMQService.send('create:server', payload);
+      await this.streamProducerService.send('create:server', payload);
     } catch {
-      throw new Error(t('rabbitmq_error'));
+      throw new Error(t('kafka_error'));
     }
   }
 

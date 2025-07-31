@@ -68,5 +68,5 @@
   "worker_volume_removal_failed": "Error al eliminar el volumen del canal",
   "worker_status_change_success": "¡Estado del trabajador cambiado con éxito!",
   "worker_status_change_error": "Error al cambiar el estado del trabajador",
-  "rabbitmq_error": "Error al comunicarse con RabbitMQ"
+  "kafka_error": "Error al comunicarse con Kafka"
 }

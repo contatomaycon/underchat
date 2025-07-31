@@ -5,10 +5,10 @@ import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { v4 } from 'uuid';
 import swaggerPlugin from '@/plugins/swagger';
 import corsPlugin from '@core/plugins/cors';
-import rabbitmqPlugin from '@core/plugins/rabbitmq';
 import consumerPlugin from './consumer';
 import centrifugoPlugin from '@/plugins/centrifugo';
 import databaseElasticPlugin from '@core/plugins/dbElastic';
+import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -24,7 +24,7 @@ server.register(databaseElasticPlugin, {
   prefix: ERouteModule.service,
 });
 
-server.register(rabbitmqPlugin);
+server.register(kafkaStreamsPlugin, { module: ERouteModule.worker_baileys });
 server.register(centrifugoPlugin);
 server.register(consumerPlugin);
 

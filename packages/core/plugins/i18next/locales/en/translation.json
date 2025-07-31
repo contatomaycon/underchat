@@ -68,5 +68,5 @@
   "worker_volume_removal_failed": "Error removing worker volume!",
   "worker_status_change_success": "Worker status changed successfully!",
   "worker_status_change_error": "Error changing worker status!",
-  "rabbitmq_error": "Error communicating with RabbitMQ!"
+  "kafka_error": "Error communicating with Kafka!"
 }

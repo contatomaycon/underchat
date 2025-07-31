@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { CreateServerResponse } from '@core/schema/server/createServer/response.schema';
 import { SshService } from '@core/services/ssh.service';
 import { ServerService } from '@core/services/server.service';
@@ -9,7 +9,8 @@ import { isDistroVersionAllowed } from '@core/common/functions/isDistroVersionAl
 import { IDistroInfo } from '@core/common/interfaces/IDistroInfo';
 import { FastifyInstance } from 'fastify';
 import { IViewServerWebById } from '@core/common/interfaces/IViewServerWebById';
-import { ServerRabbitMQService } from '@core/services/serverRabbitMQ.service';
+import { KafkaStreams, KStream } from 'kafka-streams';
+import { IKafkaMsg } from '@core/common/interfaces/IKafkaMsg';
 
 @injectable()
 export class BalanceCreatorConsume {
@@ -17,7 +18,7 @@ export class BalanceCreatorConsume {
     private readonly sshService: SshService,
     private readonly serverService: ServerService,
     private readonly passwordEncryptorService: PasswordEncryptorService,
-    private readonly serverRabbitMQService: ServerRabbitMQService
+    @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams
   ) {}
 
   private async validate(serverId: string): Promise<{
@@ -134,95 +135,100 @@ export class BalanceCreatorConsume {
   }
 
   async execute(server: FastifyInstance): Promise<void> {
-    await this.serverRabbitMQService.receive(
-      'create:server',
-      async (content) => {
-        let serverId: string | null = null;
+    const stream: KStream = this.kafkaStreams.getKStream('create:server');
 
-        try {
-          if (!content) {
-            throw new Error('Received message without value');
-          }
+    stream.mapBufferKeyToString();
+    stream.mapBufferValueToString();
 
-          const raw =
-            content instanceof Buffer
-              ? content.toString('utf8')
-              : String(content);
+    stream.forEach(async (message: IKafkaMsg) => {
+      let serverId: string | null = null;
 
-          const data = JSON.parse(raw) as CreateServerResponse;
+      try {
+        if (!message) {
+          throw new Error('Received message without value');
+        }
 
-          serverId = data.server_id;
-          if (!serverId) {
-            throw new Error('Server ID is not defined in the message');
-          }
+        const raw =
+          message instanceof Buffer
+            ? message.toString('utf8')
+            : String(message);
 
-          const { getDistroAndVersion, sshConfig, webView } =
-            await this.validate(serverId);
+        const data = JSON.parse(raw) as CreateServerResponse;
 
+        serverId = data.server_id;
+        if (!serverId) {
+          throw new Error('Server ID is not defined in the message');
+        }
+
+        const { getDistroAndVersion, sshConfig, webView } =
+          await this.validate(serverId);
+
+        await this.serverService.updateServerStatusById(
+          serverId,
+          EServerStatus.installing
+        );
+
+        const installCommands = await this.sshService.getInstallCommands(
+          getDistroAndVersion,
+          webView
+        );
+
+        const logs = await this.sshService.runCommands(
+          serverId,
+          sshConfig,
+          installCommands
+        );
+
+        const imageIsBuilt = await this.imageIsBuilt(
+          serverId,
+          getDistroAndVersion,
+          sshConfig
+        );
+
+        if (!imageIsBuilt) {
           await this.serverService.updateServerStatusById(
             serverId,
-            EServerStatus.installing
+            EServerStatus.error
           );
 
-          const installCommands = await this.sshService.getInstallCommands(
-            getDistroAndVersion,
-            webView
-          );
+          throw new Error('Docker image is not built');
+        }
 
-          const logs = await this.sshService.runCommands(
-            serverId,
-            sshConfig,
-            installCommands
-          );
+        await this.serverService.deleteLogInstallServer(serverId);
+        await this.serverService.updateLogInstallServerBulk(logs);
 
-          const imageIsBuilt = await this.imageIsBuilt(
-            serverId,
-            getDistroAndVersion,
-            sshConfig
-          );
+        const installed = await this.isInstalled(
+          serverId,
+          getDistroAndVersion,
+          sshConfig,
+          webView
+        );
 
-          if (!imageIsBuilt) {
-            await this.serverService.updateServerStatusById(
-              serverId,
-              EServerStatus.error
-            );
+        const finalStatus = installed
+          ? EServerStatus.online
+          : EServerStatus.error;
 
-            throw new Error('Docker image is not built');
-          }
+        await this.serverService.updateServerStatusById(serverId, finalStatus);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
 
-          await this.serverService.deleteLogInstallServer(serverId);
-          await this.serverService.updateLogInstallServerBulk(logs);
+        server.logger.warn(`Skipping server ${serverId ?? 'unknown'}: ${msg}`);
 
-          const installed = await this.isInstalled(
-            serverId,
-            getDistroAndVersion,
-            sshConfig,
-            webView
-          );
-
-          const finalStatus = installed
-            ? EServerStatus.online
-            : EServerStatus.error;
-
+        if (serverId) {
           await this.serverService.updateServerStatusById(
             serverId,
-            finalStatus
+            EServerStatus.error
           );
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-
-          server.logger.warn(
-            `Skipping server ${serverId ?? 'unknown'}: ${msg}`
-          );
-
-          if (serverId) {
-            await this.serverService.updateServerStatusById(
-              serverId,
-              EServerStatus.error
-            );
-          }
         }
       }
-    );
+    });
+
+    try {
+      await stream.start();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+
+      server.logger.error(`Error starting stream: ${msg}`);
+    }
   }
 }
