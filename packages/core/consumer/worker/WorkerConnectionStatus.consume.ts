@@ -4,6 +4,7 @@ import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnect
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { BaileysService } from '@core/services/baileys';
 import { KafkaStreams, KStream } from 'kafka-streams';
+import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 
 @injectable()
 export class WorkerConnectionStatusConsume {
@@ -27,13 +28,20 @@ export class WorkerConnectionStatusConsume {
       }
 
       if (data.status === EWorkerStatus.online) {
-        await this.baileysService.connect(true);
+        await this.baileysService.connect({
+          initial_connection: true,
+          type: data.type as EBaileysConnectionType,
+          phone_connection: data.phone_connection,
+        });
 
         return;
       }
 
       if (data.status === EWorkerStatus.disponible) {
-        this.baileysService.disconnect(true, true);
+        this.baileysService.disconnect({
+          initial_connection: true,
+          disconnected_user: true,
+        });
       }
     });
 

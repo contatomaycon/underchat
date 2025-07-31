@@ -10,4 +10,5 @@ export interface IBaileysConnectionState {
   time?: number;
   phone?: string;
   disconnected_user?: boolean;
+  pairing_code?: string;
 }

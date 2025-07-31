@@ -7,6 +7,7 @@ import { BaileysConnectionService } from './methods/connection.service';
 import { BaileysMessageService } from './methods/message.service';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
+import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
 
 @injectable()
 export class BaileysService {
@@ -15,17 +16,22 @@ export class BaileysService {
     private readonly messages: BaileysMessageService
   ) {}
 
-  connect(
-    initialConnection: boolean = false
-  ): Promise<IBaileysConnectionState> {
-    return this.connection.connect(initialConnection);
+  connect({
+    initial_connection: initialConnection = false,
+  }: IBaileysConnection = {}): Promise<IBaileysConnectionState> {
+    return this.connection.connect({
+      initial_connection: initialConnection,
+    });
   }
 
-  disconnect(
-    initialConnection: boolean = false,
-    disconnectedUser: boolean = false
-  ): void {
-    this.connection.disconnect(initialConnection, disconnectedUser);
+  disconnect({
+    initial_connection: initialConnection = false,
+    disconnected_user: disconnectedUser = false,
+  }: IBaileysConnection = {}): void {
+    this.connection.disconnect({
+      initial_connection: initialConnection,
+      disconnected_user: disconnectedUser,
+    });
   }
 
   getStatus(): EBaileysConnectionStatus {

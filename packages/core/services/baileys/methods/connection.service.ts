@@ -22,6 +22,8 @@ import { wppConnectionMappings } from '@core/mappings/wppConnection.mappings';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { v4 as uuidv4 } from 'uuid';
 import { StreamProducerService } from '@core/services/streamProducer.service';
+import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
+import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 
 const FOLDER = path.join(
   process.cwd(),
@@ -45,6 +47,8 @@ export class BaileysConnectionService {
   private initialConnection = false;
   private awaitingNewLogin = false;
   private lastPayload: string | null = null;
+  private typeConnection: EBaileysConnectionType =
+    EBaileysConnectionType.qrcode;
 
   private connecting = false;
   private retryCount = 0;
@@ -72,18 +76,21 @@ export class BaileysConnectionService {
     return this.socket;
   }
 
-  async connect(
-    initial = false,
-    allowRestore = true
-  ): Promise<IBaileysConnectionState> {
-    this.initialConnection = initial;
+  async connect({
+    initial_connection: initialConnection = false,
+    allow_restore: allowRestore = true,
+    type: typeConnection = EBaileysConnectionType.qrcode,
+    phone_connection: phoneConnection,
+  }: IBaileysConnection = {}): Promise<IBaileysConnectionState> {
+    this.initialConnection = initialConnection;
+    this.typeConnection = typeConnection;
 
     if (this.connected) {
       return this.reportConnected();
     }
 
     if (this.connecting) {
-      if (initial) {
+      if (initialConnection) {
         this.cancelAttempt();
       }
 
@@ -92,7 +99,12 @@ export class BaileysConnectionService {
       }
     }
 
-    if (allowRestore && this.status === Status.initial && this.hasSession()) {
+    if (
+      allowRestore &&
+      this.typeConnection !== EBaileysConnectionType.phone &&
+      this.status === Status.initial &&
+      this.hasSession()
+    ) {
       return this.restoreWithRetries();
     }
 
@@ -106,6 +118,10 @@ export class BaileysConnectionService {
     this.socket = socket;
     socket.ev.on('creds.update', saveCreds);
 
+    if (this.typeConnection === EBaileysConnectionType.phone) {
+      await this.requestPairing(socket, phoneConnection);
+    }
+
     this.currentPromise = this.wait(socket, this.socketId).finally(() => {
       this.connecting = false;
       this.currentPromise = undefined;
@@ -114,11 +130,11 @@ export class BaileysConnectionService {
     return this.currentPromise;
   }
 
-  disconnect(
-    initial: boolean = false,
-    disconnectedUser: boolean = false
-  ): void {
-    this.initialConnection = initial;
+  disconnect({
+    initial_connection: initialConnection = false,
+    disconnected_user: disconnectedUser = false,
+  }: IBaileysConnection = {}): void {
+    this.initialConnection = initialConnection;
 
     this.cancelAttempt();
     this.safeLogout();
@@ -149,7 +165,9 @@ export class BaileysConnectionService {
 
     this.streamProducerService.send('worker.status', payload, WORKER);
 
-    this.connect(true);
+    this.connect({
+      initial_connection: true,
+    });
   }
 
   private async createSocket() {
@@ -169,6 +187,40 @@ export class BaileysConnectionService {
     };
   }
 
+  private async requestPairing(
+    socket: WASocket,
+    phone?: number
+  ): Promise<void> {
+    if (!phone) {
+      return;
+    }
+
+    const number = phone.toString();
+
+    try {
+      if (!socket.authState.creds.registered) {
+        const code = await socket.requestPairingCode(number);
+
+        const payload: IBaileysConnectionState = {
+          status: this.status,
+          worker_id: WORKER,
+          pairing_code: code,
+          code: ECodeMessage.awaitingPairingCode,
+        };
+
+        this.publish(payload);
+      }
+    } catch (e) {
+      this.saveLogWppConnection({
+        worker_id: WORKER,
+        status: Status.disconnected,
+        code: ECodeMessage.connectionLost,
+        message: `Failed to request pairing code: ${e instanceof Error ? e.message : String(e)}`,
+        date: new Date(),
+      });
+    }
+  }
+
   private wait(socket: WASocket, id: number): Promise<IBaileysConnectionState> {
     return new Promise<IBaileysConnectionState>((resolve) => {
       this.pendingResolve = resolve;
@@ -185,7 +237,11 @@ export class BaileysConnectionService {
           return this.onNewLoginAttempt();
         }
 
-        if (qr && this.canShowQr()) {
+        if (
+          qr &&
+          this.canShowQr() &&
+          this.typeConnection === EBaileysConnectionType.qrcode
+        ) {
           return this.onQr(qr, resolve);
         }
 
@@ -301,7 +357,9 @@ export class BaileysConnectionService {
       setTimeout(() => {
         this.retryCount++;
 
-        this.connect(this.initialConnection).catch(() => {
+        this.connect({
+          initial_connection: this.initialConnection,
+        }).catch(() => {
           this.saveLogWppConnection({
             worker_id: WORKER,
             status: this.status ?? Status.disconnected,
@@ -339,7 +397,10 @@ export class BaileysConnectionService {
   private async restoreWithRetries(): Promise<IBaileysConnectionState> {
     for (let i = 0; i < this.maxRetries; i++) {
       try {
-        const s = await this.connect(this.initialConnection, false);
+        const s = await this.connect({
+          initial_connection: this.initialConnection,
+          allow_restore: false,
+        });
 
         if (s.status === Status.connected) {
           return s;
