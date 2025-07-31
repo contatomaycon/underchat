@@ -377,25 +377,15 @@ export class BaileysConnectionService {
 
   private safeLogout(): void {
     if (this.socket) {
-      try {
-        if (this.socket.user) {
-          this.socket.logout().catch(() => {
-            this.saveLogWppConnection({
-              worker_id: WORKER,
-              status: Status.disconnected,
-              code: ECodeMessage.connectionLost,
-              message: 'Error during logout',
-              date: new Date(),
-            });
+      if (this.socket.user) {
+        this.socket.logout().catch(() => {
+          this.saveLogWppConnection({
+            worker_id: WORKER,
+            status: Status.disconnected,
+            code: ECodeMessage.connectionLost,
+            message: 'Error during logout',
+            date: new Date(),
           });
-        }
-      } catch {
-        this.saveLogWppConnection({
-          worker_id: WORKER,
-          status: Status.disconnected,
-          code: ECodeMessage.connectionLost,
-          message: 'Error during logout',
-          date: new Date(),
         });
       }
     }
