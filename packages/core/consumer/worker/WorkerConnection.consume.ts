@@ -1,9 +1,8 @@
 import { injectable, inject } from 'tsyringe';
 import { KafkaStreams, KStream } from 'kafka-streams';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
-import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
-import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { WorkerService } from '@core/services/worker.service';
+import { getStatusWorkerConnection } from '@core/common/functions/getStatusWorkerConnection';
 
 @injectable()
 export class WorkerConnectionConsume {
@@ -11,21 +10,6 @@ export class WorkerConnectionConsume {
     @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams,
     private readonly workerService: WorkerService
   ) {}
-
-  private getStatus(
-    status: EBaileysConnectionStatus,
-    disconnectedUser?: boolean
-  ): EWorkerStatus {
-    if (status === EBaileysConnectionStatus.connected) {
-      return EWorkerStatus.online;
-    }
-
-    if (status === EBaileysConnectionStatus.disconnected && disconnectedUser) {
-      return EWorkerStatus.disponible;
-    }
-
-    return EWorkerStatus.offline;
-  }
 
   public async execute(): Promise<void> {
     const topic = 'worker.status';
@@ -48,7 +32,10 @@ export class WorkerConnectionConsume {
         return;
       }
 
-      const status = this.getStatus(data.status, data.disconnected_user);
+      const status = getStatusWorkerConnection(
+        data.status,
+        data.disconnected_user
+      );
 
       await this.workerService.updateWorkerPhoneStatusConnectionDate({
         worker_id: data.worker_id,

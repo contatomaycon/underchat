@@ -103,6 +103,7 @@ const headers: DataTableHeader<ListWorkerResponse>[] = [
   { title: t('type'), key: 'type' },
   ...(isAdministrator ? [{ title: t('server'), key: 'server' }] : []),
   ...(isAdministrator ? [{ title: t('account'), key: 'account' }] : []),
+  { title: t('connection_date'), key: 'connection_date' },
   { title: t('created_at'), key: 'created_at' },
   { title: t('actions'), key: 'actions', sortable: false },
 ];
@@ -288,6 +289,12 @@ onBeforeUnmount(async () => {
 
         <template #item.account="{ item }">
           <span>{{ item.account?.name }}</span>
+        </template>
+
+        <template #item.connection_date="{ item }">
+          <span>{{
+            item.connection_date ? formatDateTime(item.connection_date) : '-'
+          }}</span>
         </template>
 
         <template #item.created_at="{ item }">
