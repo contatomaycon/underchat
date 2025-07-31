@@ -15,53 +15,29 @@ export class ConnectionStatusConsume {
   async execute(): Promise<void> {
     await this.serverRabbitMQService.receive(
       `worker:${baileysEnvironment.baileysWorkerId}:status`,
-      async (content, msg, channel) => {
-        let workerId: string | null = null;
-        let status: EWorkerStatus | null = null;
-
+      async (content) => {
+        let data: StatusConnectionWorkerRequest;
         try {
-          if (!content) {
-            throw new Error('Received message without value');
-          }
-
           const raw =
             content instanceof Buffer
               ? content.toString('utf8')
               : String(content);
+          data = JSON.parse(raw) as StatusConnectionWorkerRequest;
+        } catch {
+          return;
+        }
 
-          const data = JSON.parse(raw) as StatusConnectionWorkerRequest;
-
-          workerId = data.worker_id;
-          if (!workerId) {
-            throw new Error('Worker ID is not defined in the message');
-          }
-
-          status = data.status as EWorkerStatus;
-          if (!status) {
-            throw new Error('Status is not defined in the message');
-          }
-
-          if (status === EWorkerStatus.online) {
-            await this.baileysService.connect(true);
-
-            return;
-          }
-
-          if (status === EWorkerStatus.disponible) {
-            this.baileysService.disconnect(true);
-
-            return;
-          }
-        } catch (err: unknown) {
-          console.error(
-            `Error processing connection status for worker ${workerId}:`,
-            err
-          );
+        if (data.status === EWorkerStatus.online) {
+          await this.baileysService.connect(true);
 
           return;
         }
 
-        channel.ack(msg);
+        if (data.status === EWorkerStatus.disponible) {
+          this.baileysService.disconnect(true);
+
+          return;
+        }
       }
     );
   }

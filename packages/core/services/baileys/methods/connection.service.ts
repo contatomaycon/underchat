@@ -232,13 +232,11 @@ export class BaileysConnectionService {
     this.qrHash = undefined;
     this.setStatus(Status.connected, ECodeMessage.connectionEstablished);
 
-    const phone = this.helpers.getPhoneNumber(this.socket?.user?.id);
-
     this.publish({
       status: this.status,
       code: this.code,
       worker_id: WORKER,
-      phone,
+      phone: this.helpers.getPhoneNumber(this.socket?.user?.id),
     });
 
     resolve(this.state());
@@ -430,6 +428,7 @@ export class BaileysConnectionService {
         status: this.status,
         code: ECodeMessage.connectionEstablished,
         worker_id: WORKER,
+        phone: this.helpers.getPhoneNumber(this.socket?.user?.id),
       });
     }
 
