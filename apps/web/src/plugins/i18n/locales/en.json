@@ -134,5 +134,6 @@
     "connection_removed": "Connection removed, please reconnect.",
     "connection_timeout": "Connection timeout. Please try again.",
     "connection_removed_in_phone": "Connection removed in phone, please reconnect.",
-    "connection_date": "Connection Date"
+    "connection_date": "Connection Date",
+    "roles": "Roles"
 }

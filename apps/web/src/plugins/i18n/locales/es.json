@@ -135,5 +135,6 @@
     "connection_removed": "Conexión eliminada, por favor reconecta.",
     "connection_timeout": "Tiempo de conexión agotado. Por favor, inténtalo de nuevo.",
     "connection_removed_in_phone": "Conexión eliminada en el teléfono, por favor reconecta.",
-    "connection_date": "Fecha de conexión"
+    "connection_date": "Fecha de conexión",
+    "roles": "Roles"
 }
