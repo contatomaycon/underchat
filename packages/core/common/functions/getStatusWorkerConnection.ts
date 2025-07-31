@@ -3,15 +3,15 @@ import { EWorkerStatus } from '../enums/EWorkerStatus';
 
 export function getStatusWorkerConnection(
   status: EBaileysConnectionStatus,
-  disconnectedUser?: boolean
+  disconnectedUser?: boolean | null
 ): EWorkerStatus {
   if (status === EBaileysConnectionStatus.connected) {
     return EWorkerStatus.online;
   }
 
-  if (status === EBaileysConnectionStatus.disconnected && disconnectedUser) {
-    return EWorkerStatus.disponible;
+  if (status === EBaileysConnectionStatus.disconnected && !disconnectedUser) {
+    return EWorkerStatus.offline;
   }
 
-  return EWorkerStatus.offline;
+  return EWorkerStatus.disponible;
 }
