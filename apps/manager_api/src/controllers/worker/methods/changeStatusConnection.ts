@@ -7,7 +7,7 @@ import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnect
 
 export const changeStatusConnection = async (
   request: FastifyRequest<{
-    Params: StatusConnectionWorkerRequest;
+    Body: StatusConnectionWorkerRequest;
   }>,
   reply: FastifyReply
 ) => {
@@ -21,7 +21,7 @@ export const changeStatusConnection = async (
       t,
       tokenJwtData.account_id,
       tokenJwtData.is_administrator,
-      request.params
+      request.body
     );
 
     if (response) {

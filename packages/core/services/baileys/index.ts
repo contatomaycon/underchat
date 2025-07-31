@@ -16,22 +16,12 @@ export class BaileysService {
     private readonly messages: BaileysMessageService
   ) {}
 
-  connect({
-    initial_connection: initialConnection = false,
-  }: IBaileysConnection = {}): Promise<IBaileysConnectionState> {
-    return this.connection.connect({
-      initial_connection: initialConnection,
-    });
+  connect(input: IBaileysConnection): Promise<IBaileysConnectionState> {
+    return this.connection.connect(input);
   }
 
-  disconnect({
-    initial_connection: initialConnection = false,
-    disconnected_user: disconnectedUser = false,
-  }: IBaileysConnection = {}): void {
-    this.connection.disconnect({
-      initial_connection: initialConnection,
-      disconnected_user: disconnectedUser,
-    });
+  disconnect(input: IBaileysConnection): void {
+    this.connection.disconnect(input);
   }
 
   getStatus(): EBaileysConnectionStatus {

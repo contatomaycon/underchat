@@ -1,4 +1,5 @@
 import {
+  Browsers,
   fetchLatestBaileysVersion,
   makeWASocket,
   useMultiFileAuthState,
@@ -49,6 +50,7 @@ export class BaileysConnectionService {
   private lastPayload: string | null = null;
   private typeConnection: EBaileysConnectionType =
     EBaileysConnectionType.qrcode;
+  private phoneConnection?: number | undefined = undefined;
 
   private connecting = false;
   private retryCount = 0;
@@ -76,14 +78,17 @@ export class BaileysConnectionService {
     return this.socket;
   }
 
-  async connect({
-    initial_connection: initialConnection = false,
-    allow_restore: allowRestore = true,
-    type: typeConnection = EBaileysConnectionType.qrcode,
-    phone_connection: phoneConnection,
-  }: IBaileysConnection = {}): Promise<IBaileysConnectionState> {
+  async connect(input: IBaileysConnection): Promise<IBaileysConnectionState> {
+    const {
+      initial_connection: initialConnection = false,
+      allow_restore: allowRestore = true,
+      type: typeConnection = EBaileysConnectionType.qrcode,
+      phone_connection: phoneConnection,
+    } = input;
+
     this.initialConnection = initialConnection;
     this.typeConnection = typeConnection;
+    this.phoneConnection = phoneConnection;
 
     if (this.connected) {
       return this.reportConnected();
@@ -116,11 +121,12 @@ export class BaileysConnectionService {
     const { socket, saveCreds } = await this.createSocket();
 
     this.socket = socket;
-    socket.ev.on('creds.update', saveCreds);
 
     if (this.typeConnection === EBaileysConnectionType.phone) {
-      await this.requestPairing(socket, phoneConnection);
+      await this.requestPairing(this.socket);
     }
+
+    socket.ev.on('creds.update', saveCreds);
 
     this.currentPromise = this.wait(socket, this.socketId).finally(() => {
       this.connecting = false;
@@ -130,10 +136,12 @@ export class BaileysConnectionService {
     return this.currentPromise;
   }
 
-  disconnect({
-    initial_connection: initialConnection = false,
-    disconnected_user: disconnectedUser = false,
-  }: IBaileysConnection = {}): void {
+  disconnect(input: IBaileysConnection): void {
+    const {
+      initial_connection: initialConnection = false,
+      disconnected_user: disconnectedUser = false,
+    } = input;
+
     this.initialConnection = initialConnection;
 
     this.cancelAttempt();
@@ -178,28 +186,28 @@ export class BaileysConnectionService {
       socket: makeWASocket({
         auth: state,
         version,
-        browser: ['Windows', 'Chrome', '4.0.0'],
+        browser: Browsers.windows('Chrome'),
         logger: P({ level: 'silent' }),
         printQRInTerminal: false,
         connectTimeoutMs: 60_000,
+        defaultQueryTimeoutMs: 0,
       }),
       saveCreds,
     };
   }
 
-  private async requestPairing(
-    socket: WASocket,
-    phone?: number
-  ): Promise<void> {
-    if (!phone) {
+  private async requestPairing(socket: WASocket): Promise<void> {
+    if (!this.phoneConnection) {
       return;
     }
 
-    const number = phone.toString();
+    const phoneNumber = this.phoneConnection.toString();
 
     try {
       if (!socket.authState.creds.registered) {
-        const code = await socket.requestPairingCode(number);
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        const code = await socket.requestPairingCode(phoneNumber);
 
         const payload: IBaileysConnectionState = {
           status: this.status,

@@ -37,6 +37,8 @@ export class WorkerChangeStatusConnectionUseCase {
       const payload: StatusConnectionWorkerRequest = {
         worker_id: input.worker_id,
         status: input.status,
+        type: input.type,
+        phone_connection: input.phone_connection,
       };
 
       await this.streamProducerService.send(

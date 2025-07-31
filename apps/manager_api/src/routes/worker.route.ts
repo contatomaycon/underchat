@@ -62,7 +62,7 @@ export default async function workerRoutes(server: FastifyInstance) {
     ],
   });
 
-  server.patch('/worker/:worker_id/status/:status', {
+  server.post('/worker/whatsapp/unofficial', {
     schema: statusConnectionWorkerSchema,
     handler: workerController.changeStatusConnection,
     preHandler: [
