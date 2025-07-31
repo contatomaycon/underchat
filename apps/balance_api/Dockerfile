@@ -10,6 +10,7 @@ RUN apk update && \
       libc6-compat \
       make \
       musl-dev \
+      librdkafka-dev \
       python3 \
       docker-cli
 

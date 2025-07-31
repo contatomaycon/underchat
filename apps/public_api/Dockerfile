@@ -1,6 +1,7 @@
 FROM node:22.17.0-alpine AS base
 
 RUN apk add --no-cache bash curl libc6-compat \
+      librdkafka-dev \
     && corepack enable \
     && corepack prepare pnpm@latest --activate
 
