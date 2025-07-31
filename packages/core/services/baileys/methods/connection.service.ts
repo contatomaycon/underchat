@@ -21,6 +21,7 @@ import { EWppConnection } from '@core/common/enums/EWppConnection';
 import { wppConnectionMappings } from '@core/mappings/wppConnection.mappings';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { v4 as uuidv4 } from 'uuid';
+import { StreamProducerService } from '@core/services/streamProducer.service';
 
 const FOLDER = path.join(
   process.cwd(),
@@ -53,7 +54,8 @@ export class BaileysConnectionService {
   constructor(
     private readonly centrifugo: CentrifugoService,
     private readonly helpers: BaileysHelpersService,
-    private readonly elasticDatabaseService: ElasticDatabaseService
+    private readonly elasticDatabaseService: ElasticDatabaseService,
+    private readonly streamProducerService: StreamProducerService
   ) {
     process.on('unhandledRejection', () => this.handleFatal());
   }
@@ -112,7 +114,10 @@ export class BaileysConnectionService {
     return this.currentPromise;
   }
 
-  disconnect(initial = false): void {
+  disconnect(
+    initial: boolean = false,
+    disconnectedUser: boolean = false
+  ): void {
     this.initialConnection = initial;
 
     this.cancelAttempt();
@@ -132,11 +137,17 @@ export class BaileysConnectionService {
     }
 
     this.setStatus(Status.disconnected, ECodeMessage.connectionClosed);
-    this.publish({
+
+    const payload: IBaileysConnectionState = {
       status: this.status,
-      code: this.code,
       worker_id: WORKER,
-    });
+      code: this.code,
+      disconnected_user: disconnectedUser,
+    };
+
+    this.publish(payload);
+
+    this.streamProducerService.send('worker.status', payload);
 
     this.connect(true);
   }
@@ -232,12 +243,16 @@ export class BaileysConnectionService {
     this.qrHash = undefined;
     this.setStatus(Status.connected, ECodeMessage.connectionEstablished);
 
-    this.publish({
+    const payload: IBaileysConnectionState = {
       status: this.status,
-      code: this.code,
       worker_id: WORKER,
+      code: this.code,
       phone: this.helpers.getPhoneNumber(this.socket?.user?.id),
-    });
+    };
+
+    this.publish(payload);
+
+    this.streamProducerService.send('worker.status', payload);
 
     resolve(this.state());
 
@@ -257,11 +272,15 @@ export class BaileysConnectionService {
       this.setStatus(Status.disconnected, statusCode);
     }
 
-    this.publish({
+    const payload: IBaileysConnectionState = {
       status: this.status,
-      code: this.code,
       worker_id: WORKER,
-    });
+      code: this.code ?? statusCode,
+    };
+
+    this.publish(payload);
+
+    this.streamProducerService.send('worker.status', payload);
 
     this.saveLogWppConnection({
       worker_id: WORKER,
@@ -342,7 +361,7 @@ export class BaileysConnectionService {
     return this.state();
   }
 
-  private publish(payload: Record<string, unknown>): void {
+  private publish(payload: IBaileysConnectionState): void {
     if (!this.initialConnection) {
       return;
     }
@@ -480,11 +499,15 @@ export class BaileysConnectionService {
   private handleFatal() {
     this.setStatus(Status.disconnected, ECodeMessage.connectionLost);
 
-    this.publish({
+    const payload: IBaileysConnectionState = {
       status: this.status,
-      code: this.code,
       worker_id: WORKER,
-    });
+      code: this.code,
+    };
+
+    this.publish(payload);
+
+    this.streamProducerService.send('worker.status', payload);
 
     this.saveLogWppConnection({
       worker_id: WORKER,

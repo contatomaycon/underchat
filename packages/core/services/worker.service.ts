@@ -18,6 +18,10 @@ import { IViewWorkerNameAndId } from '@core/common/interfaces/IViewWorkerNameAnd
 import { WorkerViewerExistsRepository } from '@core/repositories/worker/WorkerViewerExists.repository';
 import { WorkerBalancerViewerRepository } from '@core/repositories/worker/WorkerBalancerViewer.repository';
 import { WorkerDeleterRepository } from '@core/repositories/worker/WorkerDeleter.repository';
+import { WorkerPhoneConnectionDateViewerRepository } from '@core/repositories/worker/WorkerPhoneConnectionDateViewer.repository';
+import { IViewWorkerPhoneConnectionDate } from '@core/common/interfaces/IViewWorkerPhoneConnectionDate';
+import { WorkerPhoneStatusConnectionDateUpdaterRepository } from '@core/repositories/worker/WorkerPhoneStatusConnectionDateUpdater.repository';
+import { IUpdateWorkerPhoneStatusConnectionDate } from '@core/common/interfaces/IUpdateWorkerPhoneStatusConnectionDate';
 
 @injectable()
 export class WorkerService {
@@ -33,7 +37,9 @@ export class WorkerService {
     private readonly workerNameAndIdViewerRepository: WorkerNameAndIdViewerRepository,
     private readonly workerViewerExistsRepository: WorkerViewerExistsRepository,
     private readonly workerBalancerViewerRepository: WorkerBalancerViewerRepository,
-    private readonly workerDeleterRepository: WorkerDeleterRepository
+    private readonly workerDeleterRepository: WorkerDeleterRepository,
+    private readonly workerPhoneConnectionDateViewerRepository: WorkerPhoneConnectionDateViewerRepository,
+    private readonly workerPhoneStatusConnectionDateUpdaterRepository: WorkerPhoneStatusConnectionDateUpdaterRepository
   ) {
     this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
   }
@@ -265,6 +271,22 @@ export class WorkerService {
       isAdministrator,
       accountId,
       workerId
+    );
+  };
+
+  viewWorkerPhoneConnectionDate = async (
+    workerId: string
+  ): Promise<IViewWorkerPhoneConnectionDate | null> => {
+    return this.workerPhoneConnectionDateViewerRepository.viewWorkerPhoneConnectionDate(
+      workerId
+    );
+  };
+
+  updateWorkerPhoneStatusConnectionDate = async (
+    input: IUpdateWorkerPhoneStatusConnectionDate
+  ): Promise<boolean> => {
+    return this.workerPhoneStatusConnectionDateUpdaterRepository.updateWorkerPhoneStatusConnectionDate(
+      input
     );
   };
 }

@@ -1,8 +1,10 @@
 import { container } from 'tsyringe';
-import { ConnectionStatusConsume } from '@core/consumer/worker/ConnectionStatus.consume';
+import { WorkerConnectionStatusConsume } from '@core/consumer/worker/WorkerConnectionStatus.consume';
 
 export default async function connectionConsume() {
-  const connectionStatusConsume = container.resolve(ConnectionStatusConsume);
+  const workerConnectionStatusConsume = container.resolve(
+    WorkerConnectionStatusConsume
+  );
 
-  await connectionStatusConsume.execute();
+  await workerConnectionStatusConsume.execute();
 }

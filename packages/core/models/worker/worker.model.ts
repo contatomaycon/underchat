@@ -19,15 +19,19 @@ export const worker = pgTable('worker', {
   name: varchar({ length: 50 }).notNull(),
   number: varchar({ length: 20 }),
   container_id: varchar({ length: 100 }).notNull(),
-  created_at: timestamp('created_at', {
+  connection_date: timestamp({
+    mode: 'string',
+    withTimezone: true,
+  }),
+  created_at: timestamp({
     mode: 'string',
     withTimezone: true,
   }).defaultNow(),
-  updated_at: timestamp('updated_at', {
+  updated_at: timestamp({
     mode: 'string',
     withTimezone: true,
   }).defaultNow(),
-  deleted_at: timestamp('deleted_at', { mode: 'string', withTimezone: true }),
+  deleted_at: timestamp({ mode: 'string', withTimezone: true }),
 });
 
 export const workerRelations = relations(worker, ({ one }) => ({

@@ -6,7 +6,7 @@ import { BaileysService } from '@core/services/baileys';
 import { KafkaStreams, KStream } from 'kafka-streams';
 
 @injectable()
-export class ConnectionStatusConsume {
+export class WorkerConnectionStatusConsume {
   constructor(
     private readonly baileysService: BaileysService,
     @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams
@@ -33,7 +33,7 @@ export class ConnectionStatusConsume {
       }
 
       if (data.status === EWorkerStatus.disponible) {
-        this.baileysService.disconnect(true);
+        this.baileysService.disconnect(true, true);
 
         return;
       }

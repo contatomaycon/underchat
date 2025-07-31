@@ -314,6 +314,7 @@ CREATE TABLE "worker" (
   "name" character varying(50) NOT NULL,
   "number" character varying(20) NULL,
   "container_id" character varying(100) NOT NULL,
+  "connection_date" timestamptz NULL,
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
   "deleted_at" timestamptz NULL,

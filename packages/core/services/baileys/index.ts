@@ -21,8 +21,11 @@ export class BaileysService {
     return this.connection.connect(initialConnection);
   }
 
-  disconnect(initialConnection: boolean = false): void {
-    this.connection.disconnect(initialConnection);
+  disconnect(
+    initialConnection: boolean = false,
+    disconnectedUser: boolean = false
+  ): void {
+    this.connection.disconnect(initialConnection, disconnectedUser);
   }
 
   getStatus(): EBaileysConnectionStatus {

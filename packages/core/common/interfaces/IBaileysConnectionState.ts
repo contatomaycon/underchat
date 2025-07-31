@@ -9,4 +9,5 @@ export interface IBaileysConnectionState {
   is_new_login?: boolean;
   time?: number;
   phone?: string | undefined;
+  disconnected_user?: boolean;
 }

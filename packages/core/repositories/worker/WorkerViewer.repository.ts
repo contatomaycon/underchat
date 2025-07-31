@@ -47,6 +47,7 @@ export class WorkerViewerRepository {
           id: account.account_id,
           name: account.name,
         },
+        connection_date: worker.connection_date,
         created_at: worker.created_at,
         updated_at: worker.updated_at,
       })
@@ -84,6 +85,7 @@ export class WorkerViewerRepository {
       type: item.type,
       server: isAdministrator ? item.server : undefined,
       account: isAdministrator ? item.account : undefined,
+      connection_date: item.connection_date,
       created_at: item.created_at,
       updated_at: item.updated_at,
     };
