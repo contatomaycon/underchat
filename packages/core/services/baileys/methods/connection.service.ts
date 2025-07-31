@@ -266,7 +266,7 @@ export class BaileysConnectionService {
     const statusCode = (last?.error as any)?.output?.statusCode as
       | ECodeMessage
       | undefined;
-    const statusMessage = last?.error?.message as string | undefined;
+    const statusMessage: string | undefined = last?.error?.message;
 
     if (statusCode) {
       this.setStatus(Status.disconnected, statusCode);
@@ -286,7 +286,7 @@ export class BaileysConnectionService {
       worker_id: WORKER,
       status: this.status,
       code: this.code?.toString(),
-      message: statusMessage || 'BaileysConnectionService disconnected',
+      message: statusMessage ?? 'BaileysConnectionService disconnected',
       date: new Date(),
     });
 
@@ -379,7 +379,15 @@ export class BaileysConnectionService {
     if (this.socket) {
       try {
         if (this.socket.user) {
-          this.socket.logout().catch(() => null);
+          this.socket.logout().catch(() => {
+            this.saveLogWppConnection({
+              worker_id: WORKER,
+              status: Status.disconnected,
+              code: ECodeMessage.connectionLost,
+              message: 'Error during logout',
+              date: new Date(),
+            });
+          });
         }
       } catch {
         this.saveLogWppConnection({
@@ -518,7 +526,7 @@ export class BaileysConnectionService {
     });
   }
 
-  private saveLogWppConnection = async (
+  private readonly saveLogWppConnection = async (
     wppLog: EWppConnection
   ): Promise<boolean> => {
     const mappings = wppConnectionMappings();

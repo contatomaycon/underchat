@@ -8,6 +8,6 @@ export interface IBaileysConnectionState {
   qrcode?: string;
   is_new_login?: boolean;
   time?: number;
-  phone?: string | undefined;
+  phone?: string;
   disconnected_user?: boolean;
 }

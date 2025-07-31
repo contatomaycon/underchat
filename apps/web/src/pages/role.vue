@@ -12,7 +12,6 @@ import { DataTableHeader } from 'vuetify';
 import { ListRoleResponse } from '@core/schema/role/listRole/response.schema';
 import { ERolePermissions } from '@core/common/enums/EPermissions/role';
 import { useRolesStore } from '@/@webcore/stores/role';
-import { EColor } from '@core/common/enums/EColor';
 
 definePage({
   meta: {

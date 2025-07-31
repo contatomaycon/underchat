@@ -6,7 +6,6 @@ export enum ECodeMessage {
   loggedOut = 401,
   forbidden = 403,
   connectionLost = 408,
-  timedOut = 408,
   multideviceMismatch = 411,
   connectionClosed = 428,
   connectionReplaced = 440,

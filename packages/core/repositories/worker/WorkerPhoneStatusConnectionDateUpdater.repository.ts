@@ -13,7 +13,7 @@ export class WorkerPhoneStatusConnectionDateUpdaterRepository {
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  private connectionDate = (
+  private readonly connectionDate = (
     status: EWorkerStatus,
     connection_date?: string | null
   ) => {

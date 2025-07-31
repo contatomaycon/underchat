@@ -34,8 +34,6 @@ export class WorkerConnectionStatusConsume {
 
       if (data.status === EWorkerStatus.disponible) {
         this.baileysService.disconnect(true, true);
-
-        return;
       }
     });
 
