@@ -104,12 +104,7 @@ export class BaileysConnectionService {
       }
     }
 
-    if (
-      allowRestore &&
-      this.typeConnection !== EBaileysConnectionType.phone &&
-      this.status === Status.initial &&
-      this.hasSession()
-    ) {
+    if (allowRestore && this.status === Status.initial && this.hasSession()) {
       return this.restoreWithRetries();
     }
 
@@ -236,7 +231,8 @@ export class BaileysConnectionService {
         if (
           qr &&
           this.canShowQr() &&
-          this.typeConnection === EBaileysConnectionType.qrcode
+          this.typeConnection === EBaileysConnectionType.qrcode &&
+          !this.awaitingNewLogin
         ) {
           return this.onQr(qr, resolve);
         }
@@ -380,7 +376,6 @@ export class BaileysConnectionService {
       code: ECodeMessage.newLoginAttempt,
     };
 
-    this.lastPayload = JSON.stringify(payload);
     this.centrifugo.publish(CHANNEL, payload);
   }
 

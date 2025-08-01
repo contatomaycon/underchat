@@ -199,6 +199,15 @@ onMounted(async () => {
 
       if (data?.status) {
         statusConnection.value = data.status as EBaileysConnectionStatus;
+
+        if (statusConnection.value === EBaileysConnectionStatus.connected) {
+          phoneNumber.value = null;
+          isPhoneNumber.value = false;
+          isPhoneSend.value = false;
+          pairingCodePrimary.value = '';
+          pairingCodeSecondary.value = '';
+          typeConnection.value = EBaileysConnectionType.qrcode;
+        }
       }
 
       if (data?.qrcode) {
@@ -287,6 +296,16 @@ onBeforeMount(() => {
 
             <VCardText class="text-center">
               <i>{{ $t('connection_timeout') }}</i>
+            </VCardText>
+          </div>
+
+          <div v-else-if="statusCode === ECodeMessage.newLoginAttempt">
+            <VCardText class="d-flex justify-center">
+              <VIcon icon="tabler-brand-whatsapp" size="150" />
+            </VCardText>
+
+            <VCardText class="text-center">
+              <i>{{ $t('connection_in_progress') }}</i>
             </VCardText>
           </div>
 
@@ -388,16 +407,6 @@ onBeforeMount(() => {
             </VCardText>
           </div>
 
-          <div v-else-if="statusCode === ECodeMessage.newLoginAttempt">
-            <VCardText class="d-flex justify-center">
-              <VIcon icon="tabler-brand-whatsapp" size="150" />
-            </VCardText>
-
-            <VCardText class="text-center">
-              <i>{{ $t('connection_in_progress') }}</i>
-            </VCardText>
-          </div>
-
           <div v-else-if="isDisconnected && removeInPhone">
             <VCardText class="d-flex justify-center">
               <VIcon icon="tabler-plug-connected-x" color="error" size="150" />
@@ -427,7 +436,10 @@ onBeforeMount(() => {
             </VCardText>
           </div>
 
-          <VCardText class="d-flex justify-center" v-if="!isPhoneNumber">
+          <VCardText
+            class="d-flex justify-center"
+            v-if="!isPhoneNumber || isConnected"
+          >
             <div class="d-flex gap-2">
               <VBtn
                 :disabled="!isConnected"
@@ -481,7 +493,11 @@ onBeforeMount(() => {
           </div>
           <div
             v-else-if="
-              isPhoneNumber && pairingCodePrimary && pairingCodeSecondary
+              isPhoneNumber &&
+              pairingCodePrimary &&
+              pairingCodeSecondary &&
+              !isConnected &&
+              statusCode !== ECodeMessage.newLoginAttempt
             "
           >
             <VCardText class="text-center">
@@ -490,7 +506,13 @@ onBeforeMount(() => {
               }}</a>
             </VCardText>
           </div>
-          <div v-else-if="!isDisconnected && !isConnected">
+          <div
+            v-else-if="
+              !isDisconnected &&
+              !isConnected &&
+              statusCode !== ECodeMessage.newLoginAttempt
+            "
+          >
             <VCardText class="text-center">
               <a class="clickable" @click="enterPhoneNumber">{{
                 $t('enter_phone_number')
