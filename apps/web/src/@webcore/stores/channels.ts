@@ -21,6 +21,8 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { getStatusWorkerConnection } from '@core/common/functions/getStatusWorkerConnection';
 import { currentTime } from '@core/common/functions/currentTime';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { WorkerConnectionLogsQuery } from '@core/schema/worker/workerConnectionLogs/request.schema';
+import { WorkerConnectionLogsResponse } from '@core/schema/worker/workerConnectionLogs/response.schema';
 
 export const useChannelsStore = defineStore('channels', {
   state: () => ({
@@ -303,6 +305,47 @@ export const useChannelsStore = defineStore('channels', {
         this.loading = false;
 
         return false;
+      }
+    },
+
+    async channelLogsConnection(
+      channelId: string,
+      input: WorkerConnectionLogsQuery
+    ): Promise<WorkerConnectionLogsResponse[]> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<WorkerConnectionLogsResponse[]>
+        >(`/worker/logs/connection/${channelId}`, {
+          params: input,
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('worker_logs_connection_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return [];
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('worker_logs_connection_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return [];
       }
     },
 

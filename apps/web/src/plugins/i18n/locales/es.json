@@ -149,5 +149,7 @@
     "is_limited": "Está limitado a 3 solicitudes de conexión por teléfono cada 30 minutos",
     "wait_until_next_attempt": "Espera hasta el próximo intento",
     "seconds_until_next_attempt": "Segundos hasta el próximo intento",
-    "phone_not_available": "Número de teléfono no disponible"
+    "phone_not_available": "Número de teléfono no disponible",
+    "worker_logs_connection_error": "Ocurrió un error al recuperar los logs de conexión del trabajador. Por favor, inténtalo de nuevo.",
+    "worker_logs_connection": "Logs de Conexión del Trabajador"
 }
