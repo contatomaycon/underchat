@@ -43,7 +43,8 @@ const pairingCodeSecondary = ref<string>();
 const typeConnection = ref<EBaileysConnectionType>(
   EBaileysConnectionType.qrcode
 );
-const phoneConnection = ref<number | undefined>();
+const phoneConnection = ref<string | undefined>();
+const isPhoneSend = ref(false);
 
 const getProgress = (seconds: number, max = totalSeconds.value) => {
   const value = Math.min(Math.round((seconds / max) * 100), 100);
@@ -72,6 +73,15 @@ const startTimer = () => {
   if (intervalId.value !== null) clearInterval(intervalId.value);
 
   intervalId.value = window.setInterval(() => {
+    if (
+      !isPhoneSend.value &&
+      typeConnection.value === EBaileysConnectionType.phone
+    ) {
+      elapsedSeconds.value = 0;
+
+      return;
+    }
+
     if (elapsedSeconds.value < totalSeconds.value) {
       elapsedSeconds.value++;
       return;
@@ -123,6 +133,8 @@ const disponibleChannel = async () => {
 
 const sendPhoneNumber = async () => {
   if (!channelId.value || !phoneConnection.value) return;
+
+  isPhoneSend.value = true;
 
   const input: StatusConnectionWorkerRequest = {
     worker_id: channelId.value,
@@ -280,7 +292,9 @@ onBeforeMount(() => {
           </div>
 
           <VCardText
-            v-else-if="isPhoneNumber && !isDisconnected && !isConnected"
+            v-else-if="
+              isPhoneNumber && !isPhoneSend && !isDisconnected && !isConnected
+            "
           >
             <h4 class="text-h4 mb-1">{{ $t('for_phone') }} 💬</h4>
             <p class="mb-1">{{ $t('request_phone_number') }}</p>

@@ -6,6 +6,8 @@ import { App } from 'vue';
 export default (app: App) => {
   const vPhoneInput = createVPhoneInput({
     countryIconMode: 'svg',
+    defaultCountry: 'BR',
+    preferCountries: ['BR'],
   });
 
   app.use(vPhoneInput);

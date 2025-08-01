@@ -50,7 +50,7 @@ export class BaileysConnectionService {
   private lastPayload: string | null = null;
   private typeConnection: EBaileysConnectionType =
     EBaileysConnectionType.qrcode;
-  private phoneConnection?: number | undefined = undefined;
+  private phoneConnection?: string | undefined = undefined;
 
   private connecting = false;
   private retryCount = 0;
@@ -201,13 +201,11 @@ export class BaileysConnectionService {
       return;
     }
 
-    const phoneNumber = this.phoneConnection.toString();
-
     try {
       if (!socket.authState.creds.registered) {
         await new Promise((resolve) => setTimeout(resolve, 2000));
 
-        const code = await socket.requestPairingCode(phoneNumber);
+        const code = await socket.requestPairingCode(this.phoneConnection);
 
         const payload: IBaileysConnectionState = {
           status: this.status,
