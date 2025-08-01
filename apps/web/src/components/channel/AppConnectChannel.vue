@@ -216,8 +216,17 @@ function buildRequest(status: EWorkerStatus): StatusConnectionWorkerRequest {
 }
 
 function startNextAttemptCountdown() {
+  clearInterval(intervalIdNextAttempt.value!);
   intervalIdNextAttempt.value = window.setInterval(() => {
-    if (secondsNextAttempt.value > 0) secondsNextAttempt.value--;
+    if (secondsNextAttempt.value > 0) {
+      secondsNextAttempt.value--;
+      return;
+    }
+
+    clearInterval(intervalIdNextAttempt.value!);
+    if (statusCode.value === ECodeMessage.phoneNotAvailable) {
+      enterPhoneNumber();
+    }
   }, 1000);
 }
 
