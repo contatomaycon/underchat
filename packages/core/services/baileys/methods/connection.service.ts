@@ -302,7 +302,6 @@ export class BaileysConnectionService {
       code: this.code,
       phone: this.helpers.getPhoneNumber(this.socket?.user?.id),
     };
-
     this.publish(payload);
 
     this.streamProducerService.send('worker.status', payload, WORKER);
