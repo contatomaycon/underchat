@@ -222,6 +222,13 @@ onMounted(async () => {
     (data: IBaileysConnectionState) => {
       if (data?.worker_id !== channelId.value) return;
 
+      if (
+        data?.code === ECodeMessage.phoneNotAvailable &&
+        data?.status !== EBaileysConnectionStatus.initial
+      ) {
+        return;
+      }
+
       if (data?.status) {
         statusConnection.value = data.status as EBaileysConnectionStatus;
 
