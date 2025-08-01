@@ -320,13 +320,13 @@ export class BaileysConnectionService {
       this.setStatus(Status.disconnected, statusCode);
     }
 
-    if (!this.awaitingNewLogin) {
-      const payload: IBaileysConnectionState = {
-        status: this.status,
-        worker_id: WORKER,
-        code: this.code ?? statusCode,
-      };
+    const payload: IBaileysConnectionState = {
+      status: this.status,
+      worker_id: WORKER,
+      code: this.code ?? statusCode,
+    };
 
+    if (!this.awaitingNewLogin) {
       this.publish(payload);
 
       this.streamProducerService.send('worker.status', payload, WORKER);
@@ -342,6 +342,8 @@ export class BaileysConnectionService {
 
     if (statusCode === ECodeMessage.loggedOut) {
       this.clearFolder();
+
+      this.streamProducerService.send('worker.status', payload, WORKER);
     }
 
     resolve(this.state());
