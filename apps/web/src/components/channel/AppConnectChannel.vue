@@ -108,6 +108,9 @@ const reconnectChannel = async (restart: boolean = false) => {
   if (!channelId.value) return;
   if (restart) numberAttempt.value = 0;
 
+  pairingCodePrimary.value = '';
+  pairingCodeSecondary.value = '';
+
   const input: StatusConnectionWorkerRequest = {
     worker_id: channelId.value,
     status: EWorkerStatus.online,
@@ -135,7 +138,10 @@ const sendPhoneNumber = async () => {
   if (!channelId.value || !phoneConnection.value) return;
 
   isPhoneSend.value = true;
-  totalSeconds.value = 180;
+  totalSeconds.value = 10;
+  numberMaxAttempt.value = 2;
+  pairingCodePrimary.value = '';
+  pairingCodeSecondary.value = '';
 
   const input: StatusConnectionWorkerRequest = {
     worker_id: channelId.value,
@@ -407,7 +413,7 @@ onBeforeMount(() => {
             </VCardText>
           </div>
 
-          <div v-else-if="isDisconnected && removeInPhone">
+          <div v-else-if="isDisconnected && removeInPhone && !isPhoneNumber">
             <VCardText class="d-flex justify-center">
               <VIcon icon="tabler-plug-connected-x" color="error" size="150" />
             </VCardText>

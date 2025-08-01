@@ -309,6 +309,7 @@ export const useChannelsStore = defineStore('channels', {
     updateInfoChannel(input: IBaileysConnectionState): void {
       const status = getStatusWorkerConnection(
         input.status,
+        input.phone ?? null,
         input.disconnected_user
       );
 
