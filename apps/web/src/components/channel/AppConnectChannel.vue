@@ -384,13 +384,6 @@ onBeforeMount(() => {
               ><br />
               <small>{{ $t('wait_until_next_attempt') }}</small>
             </VCardText>
-            <VCardText class="text-center">
-              <VProgressLinear
-                :model-value="progress"
-                :color="progressColor"
-                size="32"
-              />
-            </VCardText>
           </VCardText>
 
           <VCardText
