@@ -148,7 +148,7 @@ const sendPhoneNumber = async () => {
   if (!channelId.value || !phoneConnection.value) return;
 
   isPhoneSend.value = true;
-  totalSeconds.value = 10;
+  totalSeconds.value = 120;
   numberMaxAttempt.value = 2;
   pairingCodePrimary.value = '';
   pairingCodeSecondary.value = '';
@@ -169,6 +169,7 @@ const enterPhoneNumber = async () => {
   isPhoneSend.value = false;
   typeConnection.value = EBaileysConnectionType.phone;
   phoneNumber.value = null;
+  numberAttempt.value = 0;
 };
 
 const changePhone = async () => {
@@ -183,6 +184,7 @@ const enterQrcode = async () => {
   isPhoneNumber.value = false;
   typeConnection.value = EBaileysConnectionType.qrcode;
   phoneConnection.value = undefined;
+  numberAttempt.value = 0;
 
   secondsUntilNextAttempt.value = 0;
   totalSeconds.value = 60;
@@ -218,8 +220,6 @@ onMounted(async () => {
   await onMessage(
     `worker_${channelId.value}_qrcode`,
     (data: IBaileysConnectionState) => {
-      console.log('onMessage worker_qrcode', data);
-
       if (data?.worker_id !== channelId.value) return;
 
       if (data?.status) {
