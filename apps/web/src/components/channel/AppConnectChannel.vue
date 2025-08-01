@@ -139,7 +139,7 @@ const sendPhoneNumber = async () => {
 
   isPhoneSend.value = true;
   totalSeconds.value = 10;
-  numberMaxAttempt.value = 2;
+  numberMaxAttempt.value = 1;
   pairingCodePrimary.value = '';
   pairingCodeSecondary.value = '';
 
@@ -332,6 +332,9 @@ onBeforeMount(() => {
           >
             <h4 class="text-h4 mb-1">{{ $t('for_phone') }} 💬</h4>
             <p class="mb-1">{{ $t('request_phone_number') }}</p>
+            <p class="mb-1">
+              <strong>{{ $t('attention') }}:</strong> {{ $t('is_limited') }}
+            </p>
 
             <v-phone-input v-model="phoneConnection" />
 

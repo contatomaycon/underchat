@@ -143,6 +143,8 @@
     "request_phone_number": "Enter your phone number and click request",
     "request": "Request",
     "code_requested": "Code requested. Please wait...",
-    "change_phone_number": "Change phone number"
+    "change_phone_number": "Change phone number",
+    "attention": "Attention",
+    "is_limited": "It is limited to 3 connection requests per phone every 30 minutes"
     
 }

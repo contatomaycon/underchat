@@ -144,5 +144,7 @@
     "request_phone_number": "Ingresa tu número de teléfono y haz clic en solicitar",
     "request": "Solicitar",
     "code_requested": "Código solicitado. Por favor, aguarde...",
-    "change_phone_number": "Cambiar número de teléfono"
+    "change_phone_number": "Cambiar número de teléfono",
+    "attention": "Atención",
+    "is_limited": "Está limitado a 3 solicitudes de conexión por teléfono cada 30 minutos"
 }
