@@ -142,5 +142,7 @@
     "for_phone": "Por teléfono",
     "for_phone_description": "Ingresa el código en WhatsApp para conectar",
     "request_phone_number": "Ingresa tu número de teléfono y haz clic en solicitar",
-    "request": "Solicitar"
+    "request": "Solicitar",
+    "code_requested": "Código solicitado. Por favor, aguarde...",
+    "change_phone_number": "Cambiar número de teléfono"
 }

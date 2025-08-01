@@ -208,7 +208,7 @@ export class BaileysConnectionService {
         const code = await socket.requestPairingCode(this.phoneConnection);
 
         const payload: IBaileysConnectionState = {
-          status: this.status,
+          status: Status.connecting,
           worker_id: WORKER,
           pairing_code: code,
           code: ECodeMessage.awaitingPairingCode,

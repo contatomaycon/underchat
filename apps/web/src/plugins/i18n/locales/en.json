@@ -141,5 +141,8 @@
     "for_phone": "For Phone",
     "for_phone_description": "Enter the code in WhatsApp to connect",
     "request_phone_number": "Enter your phone number and click request",
-    "request": "Request"
+    "request": "Request",
+    "code_requested": "Code requested. Please wait...",
+    "change_phone_number": "Change phone number"
+    
 }

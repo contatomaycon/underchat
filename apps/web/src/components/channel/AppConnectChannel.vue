@@ -151,6 +151,14 @@ const enterPhoneNumber = async () => {
   typeConnection.value = EBaileysConnectionType.phone;
 };
 
+const changePhone = async () => {
+  isPhoneNumber.value = true;
+  isPhoneSend.value = false;
+  phoneConnection.value = undefined;
+  pairingCodePrimary.value = '';
+  pairingCodeSecondary.value = '';
+};
+
 const enterQrcode = async () => {
   isPhoneNumber.value = false;
   typeConnection.value = EBaileysConnectionType.qrcode;
@@ -316,30 +324,43 @@ onBeforeMount(() => {
           </VCardText>
 
           <VCardText
-            v-else-if="
-              isPhoneNumber &&
-              pairingCodePrimary &&
-              pairingCodeSecondary &&
-              !isDisconnected &&
-              !isConnected
-            "
+            v-else-if="isPhoneNumber && !isDisconnected && !isConnected"
           >
             <h4 class="text-h4 mb-1">{{ $t('for_phone') }} 💬</h4>
-            <p class="mb-1">{{ $t('for_phone_description') }}</p>
-            <VOtpInput
-              v-model="pairingCodePrimary"
-              length="4"
-              type="text"
-              class="pa-0"
-              :focused="false"
-            />
-            <VOtpInput
-              v-model="pairingCodeSecondary"
-              length="4"
-              type="text"
-              class="pa-0"
-              :focused="false"
-            />
+            <VCardText
+              class="d-flex flex-column align-center gap-2"
+              v-if="!pairingCodePrimary || !pairingCodeSecondary"
+            >
+              <p class="mb-1">{{ $t('code_requested') }}</p>
+              <VProgressCircular indeterminate size="40" color="primary" />
+            </VCardText>
+            <VCardText v-else>
+              <p class="mb-1">{{ $t('for_phone_description') }}</p>
+              <VOtpInput
+                v-model="pairingCodePrimary"
+                disabled
+                length="4"
+                type="text"
+                class="pa-0"
+                :focused="false"
+              />
+              <VOtpInput
+                v-model="pairingCodeSecondary"
+                disabled
+                length="4"
+                type="text"
+                class="pa-0"
+                :focused="false"
+              />
+
+              <VCardText class="text-center">
+                <VProgressLinear
+                  :model-value="progress"
+                  :color="progressColor"
+                  size="32"
+                />
+              </VCardText>
+            </VCardText>
           </VCardText>
 
           <div
@@ -442,10 +463,29 @@ onBeforeMount(() => {
             </div>
           </VCardText>
 
-          <div v-if="isPhoneNumber && !isDisconnected && !isConnected">
+          <div
+            v-if="
+              isPhoneNumber &&
+              !isDisconnected &&
+              !isConnected &&
+              !pairingCodePrimary &&
+              !pairingCodeSecondary
+            "
+          >
             <VCardText class="text-center">
               <a class="clickable" @click="enterQrcode">{{
                 $t('enter_qrcode')
+              }}</a>
+            </VCardText>
+          </div>
+          <div
+            v-else-if="
+              isPhoneNumber && pairingCodePrimary && pairingCodeSecondary
+            "
+          >
+            <VCardText class="text-center">
+              <a class="clickable" @click="changePhone">{{
+                $t('change_phone_number')
               }}</a>
             </VCardText>
           </div>
