@@ -20,3 +20,8 @@ export const workerDeletePermissions = [
   EGeneralPermissions.full_access,
   EWorkerPermissions.delete_worker,
 ];
+
+export const workerLogsConnectionPermissions = [
+  EGeneralPermissions.full_access,
+  EWorkerPermissions.view_worker_logs,
+];

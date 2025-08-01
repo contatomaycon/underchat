@@ -69,5 +69,7 @@
   "worker_status_change_success": "¡Estado del trabajador cambiado con éxito!",
   "worker_status_change_error": "Error al cambiar el estado del trabajador",
   "kafka_error": "Error al comunicarse con Kafka",
-  "phone_connection_required": "¡Se requiere teléfono!"
+  "phone_connection_required": "¡Se requiere teléfono!",
+  "worker_connection_logs_success": "¡Registros de conexión del trabajador obtenidos con éxito!",
+  "worker_connection_logs_not_found": "¡Registros de conexión del trabajador no encontrados!"
 }
