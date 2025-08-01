@@ -21,6 +21,7 @@ export class WorkerPhoneConnectionCreatorRepository {
         worker_id: input.worker_id,
         number: input.number,
         attempt: input.attempt,
+        date_attempt: input.attempt_date,
       })
       .execute();
 

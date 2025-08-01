@@ -8,7 +8,6 @@ import { CentrifugoService } from '@core/services/centrifugo.service';
 import { IUpdateWorkerPhoneConnection } from '@core/common/interfaces/IUpdateWorkerPhoneConnection';
 import { ICreateWorkerPhoneConnection } from '@core/common/interfaces/ICreateWorkerPhoneConnection';
 import moment from 'moment';
-import { currentTime } from '@core/common/functions/currentTime';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
@@ -38,22 +37,22 @@ export class WorkerChangeStatusConnectionUseCase {
 
   private secondsUntilWindowExpires(firstAttemptDate: string): number {
     const firstAttempt = moment(firstAttemptDate);
-    const elapsedSeconds = moment().diff(firstAttempt, 'seconds');
+    const elapsed = moment().diff(firstAttempt, 'seconds');
+    const windowSec = this.WINDOW_MINUTES * 60;
 
-    const windowSeconds = this.WINDOW_MINUTES * 60;
-    const remaining = windowSeconds - elapsedSeconds;
-
-    return remaining > 0 ? remaining : 0;
+    return Math.max(windowSec - elapsed, 0);
   }
 
   private async createPhoneConnectionRecord(
     workerId: string,
     number: string
   ): Promise<void> {
+    const now = moment().toISOString();
     const payload: ICreateWorkerPhoneConnection = {
       worker_id: workerId,
       number,
       attempt: 1,
+      attempt_date: now,
     };
 
     await this.workerService.createWorkerPhoneConnection(payload);
@@ -64,12 +63,13 @@ export class WorkerChangeStatusConnectionUseCase {
     workerId: string,
     number: string
   ): Promise<void> {
+    const now = moment().toISOString();
     const payload: IUpdateWorkerPhoneConnection = {
       worker_phone_connection_id: record.worker_phone_connection_id,
       worker_id: workerId,
       number,
       attempt: 1,
-      attempt_date: currentTime(),
+      attempt_date: now,
     };
 
     await this.workerService.updateWorkerPhoneConnection(payload);
@@ -95,15 +95,11 @@ export class WorkerChangeStatusConnectionUseCase {
     await this.workerService.updateWorkerPhoneConnection(payload);
   }
 
-  async updatePhoneConnection(input: StatusConnectionWorkerRequest): Promise<{
-    canProceed: boolean;
-    secondsUntilNextAttempt: number;
-  }> {
+  async updatePhoneConnection(
+    input: StatusConnectionWorkerRequest
+  ): Promise<{ canProceed: boolean; secondsUntilNextAttempt: number }> {
     if (!input?.phone_connection) {
-      return {
-        canProceed: false,
-        secondsUntilNextAttempt: 0,
-      };
+      return { canProceed: false, secondsUntilNextAttempt: 0 };
     }
 
     const cleanPhone = this.cleanPhoneNumber(input.phone_connection);
@@ -113,10 +109,7 @@ export class WorkerChangeStatusConnectionUseCase {
     if (!record) {
       await this.createPhoneConnectionRecord(input.worker_id, cleanPhone);
 
-      return {
-        canProceed: true,
-        secondsUntilNextAttempt: 0,
-      };
+      return { canProceed: true, secondsUntilNextAttempt: 0 };
     }
 
     if (this.isWindowExpired(record.date_attempt)) {
@@ -126,32 +119,12 @@ export class WorkerChangeStatusConnectionUseCase {
         cleanPhone
       );
 
-      return {
-        canProceed: true,
-        secondsUntilNextAttempt: 0,
-      };
-    }
-
-    if (this.isWindowExpired(record.date_attempt)) {
-      await this.resetPhoneConnectionRecord(
-        record,
-        input.worker_id,
-        cleanPhone
-      );
-
-      return {
-        canProceed: true,
-        secondsUntilNextAttempt: 0,
-      };
+      return { canProceed: true, secondsUntilNextAttempt: 0 };
     }
 
     if (record.attempt >= this.MAX_ATTEMPTS) {
-      return {
-        canProceed: false,
-        secondsUntilNextAttempt: this.secondsUntilWindowExpires(
-          record.date_attempt
-        ),
-      };
+      const wait = this.secondsUntilWindowExpires(record.date_attempt);
+      return { canProceed: false, secondsUntilNextAttempt: wait };
     }
 
     await this.incrementPhoneConnectionRecord(
@@ -160,10 +133,7 @@ export class WorkerChangeStatusConnectionUseCase {
       cleanPhone
     );
 
-    return {
-      canProceed: true,
-      secondsUntilNextAttempt: 0,
-    };
+    return { canProceed: true, secondsUntilNextAttempt: 0 };
   }
 
   private async validate(

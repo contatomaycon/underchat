@@ -149,7 +149,7 @@ const sendPhoneNumber = async () => {
 
   isPhoneSend.value = true;
   totalSeconds.value = 10;
-  numberMaxAttempt.value = 1;
+  numberMaxAttempt.value = 2;
   pairingCodePrimary.value = '';
   pairingCodeSecondary.value = '';
 
@@ -218,6 +218,8 @@ onMounted(async () => {
   await onMessage(
     `worker_${channelId.value}_qrcode`,
     (data: IBaileysConnectionState) => {
+      console.log('onMessage worker_qrcode', data);
+
       if (data?.worker_id !== channelId.value) return;
 
       if (data?.status) {
