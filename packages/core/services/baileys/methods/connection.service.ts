@@ -229,8 +229,6 @@ export class BaileysConnectionService {
 
         const { qr, connection, isNewLogin, lastDisconnect } = u;
 
-        console.dir(u, { depth: 3 });
-
         if (isNewLogin) {
           return this.onNewLoginAttempt();
         }
@@ -304,9 +302,6 @@ export class BaileysConnectionService {
       code: this.code,
       phone: this.helpers.getPhoneNumber(this.socket?.user?.id),
     };
-
-    console.log('payload', payload);
-    console.log('this.initialConnection', this.initialConnection);
 
     this.publish(payload);
 
