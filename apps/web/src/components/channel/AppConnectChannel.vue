@@ -29,7 +29,7 @@ const statusConnection = ref<EBaileysConnectionStatus>(
   EBaileysConnectionStatus.disconnected
 );
 const statusCode = ref<ECodeMessage>(ECodeMessage.awaitConnection);
-const totalSeconds = ref(15);
+const totalSeconds = ref(60);
 const elapsedSeconds = ref(0);
 const qrcode = ref<string | null>(null);
 const intervalId = ref<number | null>(null);
@@ -135,6 +135,7 @@ const sendPhoneNumber = async () => {
   if (!channelId.value || !phoneConnection.value) return;
 
   isPhoneSend.value = true;
+  totalSeconds.value = 180;
 
   const input: StatusConnectionWorkerRequest = {
     worker_id: channelId.value,
@@ -194,6 +195,8 @@ onMounted(async () => {
   await onMessage(
     `worker_${channelId.value}_qrcode`,
     (data: IBaileysConnectionState) => {
+      console.log('data', data);
+
       if (data?.worker_id !== channelId.value) return;
 
       if (data?.status) {

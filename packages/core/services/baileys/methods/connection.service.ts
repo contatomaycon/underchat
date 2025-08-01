@@ -123,7 +123,7 @@ export class BaileysConnectionService {
     this.socket = socket;
 
     if (this.typeConnection === EBaileysConnectionType.phone) {
-      await this.requestPairing(this.socket);
+      await this.requestPairing(socket);
     }
 
     socket.ev.on('creds.update', saveCreds);
@@ -201,29 +201,19 @@ export class BaileysConnectionService {
       return;
     }
 
-    try {
-      if (!socket.authState.creds.registered) {
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+    if (!socket.authState.creds.registered) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
-        const code = await socket.requestPairingCode(this.phoneConnection);
+      const code = await socket.requestPairingCode(this.phoneConnection);
 
-        const payload: IBaileysConnectionState = {
-          status: Status.connecting,
-          worker_id: WORKER,
-          pairing_code: code,
-          code: ECodeMessage.awaitingPairingCode,
-        };
-
-        this.publish(payload);
-      }
-    } catch (e) {
-      this.saveLogWppConnection({
+      const payload: IBaileysConnectionState = {
+        status: Status.connecting,
         worker_id: WORKER,
-        status: Status.disconnected,
-        code: ECodeMessage.connectionLost,
-        message: `Failed to request pairing code: ${e instanceof Error ? e.message : String(e)}`,
-        date: new Date(),
-      });
+        pairing_code: code,
+        code: ECodeMessage.awaitingPairingCode,
+      };
+
+      this.publish(payload);
     }
   }
 
@@ -238,6 +228,8 @@ export class BaileysConnectionService {
         }
 
         const { qr, connection, isNewLogin, lastDisconnect } = u;
+
+        console.dir(u, { depth: 3 });
 
         if (isNewLogin) {
           return this.onNewLoginAttempt();
@@ -261,6 +253,8 @@ export class BaileysConnectionService {
         if (connection === 'close') {
           return this.onClose(lastDisconnect, resolve);
         }
+
+        this.awaitingNewLogin = false;
       });
     });
   }
@@ -298,7 +292,6 @@ export class BaileysConnectionService {
     resolve(this.state(img));
 
     this.pendingResolve = undefined;
-    this.initialConnection = false;
   }
 
   private onOpen(resolve: (s: IBaileysConnectionState) => void): void {
@@ -311,6 +304,9 @@ export class BaileysConnectionService {
       code: this.code,
       phone: this.helpers.getPhoneNumber(this.socket?.user?.id),
     };
+
+    console.log('payload', payload);
+    console.log('this.initialConnection', this.initialConnection);
 
     this.publish(payload);
 
@@ -325,6 +321,8 @@ export class BaileysConnectionService {
     last: IBaileysUpdateEvent['lastDisconnect'],
     resolve: (s: IBaileysConnectionState) => void
   ): void {
+    if (this.awaitingNewLogin) return;
+
     const statusCode = (last?.error as any)?.output?.statusCode as
       | ECodeMessage
       | undefined;
