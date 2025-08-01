@@ -135,5 +135,11 @@
     "connection_timeout": "Connection timeout. Please try again.",
     "connection_removed_in_phone": "Connection removed in phone, please reconnect.",
     "connection_date": "Connection Date",
-    "roles": "Roles"
+    "roles": "Roles",
+    "enter_phone_number": "Enter phone number",
+    "enter_qrcode": "Enter QR Code",
+    "for_phone": "For Phone",
+    "for_phone_description": "Enter the code in WhatsApp to connect",
+    "request_phone_number": "Enter your phone number and click request",
+    "request": "Request"
 }

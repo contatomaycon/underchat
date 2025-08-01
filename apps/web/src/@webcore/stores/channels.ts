@@ -273,8 +273,9 @@ export const useChannelsStore = defineStore('channels', {
       try {
         this.loading = true;
 
-        const response = await axios.patch<IApiResponse<boolean>>(
-          `/worker/${input.worker_id}/status/${input.status}`
+        const response = await axios.post<IApiResponse<boolean>>(
+          '/worker/whatsapp/unofficial',
+          input
         );
 
         this.loading = false;

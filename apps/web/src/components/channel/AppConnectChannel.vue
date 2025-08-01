@@ -7,6 +7,7 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
+import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 
 const channelStore = useChannelsStore();
 const { t } = useI18n();
@@ -36,6 +37,13 @@ const phoneNumber = ref<string | null>(null);
 const numberAttempt = ref(0);
 const numberMaxAttempt = ref(4);
 const removeInPhone = ref(false);
+const isPhoneNumber = ref(false);
+const pairingCodePrimary = ref<string>();
+const pairingCodeSecondary = ref<string>();
+const typeConnection = ref<EBaileysConnectionType>(
+  EBaileysConnectionType.qrcode
+);
+const phoneConnection = ref<number | undefined>();
 
 const getProgress = (seconds: number, max = totalSeconds.value) => {
   const value = Math.min(Math.round((seconds / max) * 100), 100);
@@ -82,6 +90,10 @@ const startTimer = () => {
   }, 1000);
 };
 
+const splitCode = (code: string): [string, string] => {
+  return [code.slice(0, 4), code.slice(4)];
+};
+
 const reconnectChannel = async (restart: boolean = false) => {
   if (!channelId.value) return;
   if (restart) numberAttempt.value = 0;
@@ -89,6 +101,8 @@ const reconnectChannel = async (restart: boolean = false) => {
   const input: StatusConnectionWorkerRequest = {
     worker_id: channelId.value,
     status: EWorkerStatus.online,
+    type: typeConnection.value,
+    phone_connection: phoneConnection.value,
   };
 
   await channelStore.updateConnectionChannel(input);
@@ -100,9 +114,50 @@ const disponibleChannel = async () => {
   const input: StatusConnectionWorkerRequest = {
     worker_id: channelId.value,
     status: EWorkerStatus.disponible,
+    type: typeConnection.value,
+    phone_connection: phoneConnection.value,
   };
 
   await channelStore.updateConnectionChannel(input);
+};
+
+const sendPhoneNumber = async () => {
+  if (!channelId.value || !phoneConnection.value) return;
+
+  const input: StatusConnectionWorkerRequest = {
+    worker_id: channelId.value,
+    status: EWorkerStatus.online,
+    type: typeConnection.value,
+    phone_connection: phoneConnection.value,
+  };
+
+  await channelStore.updateConnectionChannel(input);
+};
+
+const enterPhoneNumber = async () => {
+  isPhoneNumber.value = true;
+  typeConnection.value = EBaileysConnectionType.phone;
+};
+
+const enterQrcode = async () => {
+  isPhoneNumber.value = false;
+  typeConnection.value = EBaileysConnectionType.qrcode;
+  phoneConnection.value = undefined;
+
+  if (channelId.value) {
+    if (intervalId.value !== null) {
+      clearInterval(intervalId.value);
+    }
+
+    const input: StatusConnectionWorkerRequest = {
+      worker_id: channelId.value,
+      status: EWorkerStatus.online,
+      type: typeConnection.value,
+      phone_connection: phoneConnection.value,
+    };
+
+    await channelStore.updateConnectionChannel(input);
+  }
 };
 
 const isConnected = computed(
@@ -150,6 +205,13 @@ onMounted(async () => {
         startTimer();
       }
 
+      if (data.pairing_code) {
+        const [primary, secondary] = splitCode(data.pairing_code);
+
+        pairingCodePrimary.value = primary;
+        pairingCodeSecondary.value = secondary;
+      }
+
       channelStore.updateInfoChannel(data);
     }
   );
@@ -158,6 +220,8 @@ onMounted(async () => {
     const input: StatusConnectionWorkerRequest = {
       worker_id: channelId.value,
       status: EWorkerStatus.online,
+      type: typeConnection.value,
+      phone_connection: phoneConnection.value,
     };
 
     await channelStore.updateConnectionChannel(input);
@@ -191,7 +255,11 @@ onBeforeMount(() => {
             <VCardTitle>{{ $t('conection') }}</VCardTitle>
           </VCardItem>
 
-          <div v-if="numberAttempt > numberMaxAttempt && !isConnected">
+          <div
+            v-if="
+              numberAttempt > numberMaxAttempt && !isConnected && !isPhoneNumber
+            "
+          >
             <VCardText class="d-flex justify-center">
               <VIcon icon="tabler-mobiledata-off" size="150" />
             </VCardText>
@@ -211,8 +279,58 @@ onBeforeMount(() => {
             </VCardText>
           </div>
 
+          <VCardText
+            v-else-if="isPhoneNumber && !isDisconnected && !isConnected"
+          >
+            <h4 class="text-h4 mb-1">{{ $t('for_phone') }} 💬</h4>
+            <p class="mb-1">{{ $t('request_phone_number') }}</p>
+
+            <v-phone-input v-model="phoneConnection" />
+
+            <VCol cols="12">
+              <VBtn
+                :loading="channelStore.loading"
+                :disabled="channelStore.loading"
+                block
+                type="submit"
+                class="mt-2"
+                @click="sendPhoneNumber"
+              >
+                {{ $t('request') }}
+              </VBtn>
+            </VCol>
+          </VCardText>
+
+          <VCardText
+            v-else-if="
+              isPhoneNumber &&
+              pairingCodePrimary &&
+              pairingCodeSecondary &&
+              !isDisconnected &&
+              !isConnected
+            "
+          >
+            <h4 class="text-h4 mb-1">{{ $t('for_phone') }} 💬</h4>
+            <p class="mb-1">{{ $t('for_phone_description') }}</p>
+            <VOtpInput
+              v-model="pairingCodePrimary"
+              length="4"
+              type="text"
+              class="pa-0"
+              :focused="false"
+            />
+            <VOtpInput
+              v-model="pairingCodeSecondary"
+              length="4"
+              type="text"
+              class="pa-0"
+              :focused="false"
+            />
+          </VCardText>
+
           <div
             v-else-if="
+              !isPhoneNumber &&
               statusCode === ECodeMessage.awaitingReadQrCode &&
               qrcode &&
               !isDisconnected &&
@@ -273,7 +391,7 @@ onBeforeMount(() => {
             </VCardText>
           </div>
 
-          <VCardText class="d-flex justify-center">
+          <VCardText class="d-flex justify-center" v-if="!isPhoneNumber">
             <div class="d-flex gap-2">
               <VBtn
                 :disabled="!isConnected"
@@ -309,6 +427,21 @@ onBeforeMount(() => {
               </VBtn>
             </div>
           </VCardText>
+
+          <div v-if="isPhoneNumber && !isDisconnected && !isConnected">
+            <VCardText class="text-center">
+              <a class="clickable" @click="enterQrcode">{{
+                $t('enter_qrcode')
+              }}</a>
+            </VCardText>
+          </div>
+          <div v-else-if="!isDisconnected && !isConnected">
+            <VCardText class="text-center">
+              <a class="clickable" @click="enterPhoneNumber">{{
+                $t('enter_phone_number')
+              }}</a>
+            </VCardText>
+          </div>
         </VCol>
 
         <VCol
@@ -433,5 +566,9 @@ onBeforeMount(() => {
 
 .v-btn {
   transform: none;
+}
+
+.clickable {
+  cursor: pointer;
 }
 </style>

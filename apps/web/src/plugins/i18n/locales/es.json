@@ -136,5 +136,11 @@
     "connection_timeout": "Tiempo de conexión agotado. Por favor, inténtalo de nuevo.",
     "connection_removed_in_phone": "Conexión eliminada en el teléfono, por favor reconecta.",
     "connection_date": "Fecha de conexión",
-    "roles": "Roles"
+    "roles": "Roles",
+    "enter_phone_number": "Ingresar número de teléfono",
+    "enter_qrcode": "Ingresar código QR",
+    "for_phone": "Por teléfono",
+    "for_phone_description": "Ingresa el código en WhatsApp para conectar",
+    "request_phone_number": "Ingresa tu número de teléfono y haz clic en solicitar",
+    "request": "Solicitar"
 }
