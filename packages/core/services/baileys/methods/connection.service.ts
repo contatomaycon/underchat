@@ -315,8 +315,6 @@ export class BaileysConnectionService {
     last: IBaileysUpdateEvent['lastDisconnect'],
     resolve: (s: IBaileysConnectionState) => void
   ): void {
-    if (this.awaitingNewLogin) return;
-
     const statusCode = (last?.error as any)?.output?.statusCode as
       | ECodeMessage
       | undefined;
@@ -326,23 +324,25 @@ export class BaileysConnectionService {
       this.setStatus(Status.disconnected, statusCode);
     }
 
-    const payload: IBaileysConnectionState = {
-      status: this.status,
-      worker_id: WORKER,
-      code: this.code ?? statusCode,
-    };
+    if (!this.awaitingNewLogin) {
+      const payload: IBaileysConnectionState = {
+        status: this.status,
+        worker_id: WORKER,
+        code: this.code ?? statusCode,
+      };
 
-    this.publish(payload);
+      this.publish(payload);
 
-    this.streamProducerService.send('worker.status', payload, WORKER);
+      this.streamProducerService.send('worker.status', payload, WORKER);
 
-    this.saveLogWppConnection({
-      worker_id: WORKER,
-      status: this.status,
-      code: this.code?.toString(),
-      message: statusMessage ?? 'BaileysConnectionService disconnected',
-      date: new Date(),
-    });
+      this.saveLogWppConnection({
+        worker_id: WORKER,
+        status: this.status,
+        code: this.code?.toString(),
+        message: statusMessage ?? 'BaileysConnectionService disconnected',
+        date: new Date(),
+      });
+    }
 
     if (statusCode === ECodeMessage.loggedOut) {
       this.clearFolder();
