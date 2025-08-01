@@ -438,7 +438,11 @@ onBeforeMount(() => {
 
           <VCardText
             class="d-flex justify-center"
-            v-if="!isPhoneNumber || isConnected"
+            v-if="
+              !isPhoneNumber ||
+              isConnected ||
+              statusCode === ECodeMessage.newLoginAttempt
+            "
           >
             <div class="d-flex gap-2">
               <VBtn
