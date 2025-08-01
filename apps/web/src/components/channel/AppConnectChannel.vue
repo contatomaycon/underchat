@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { onMessage } from '@/@webcore/centrifugo';
+import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
@@ -33,6 +33,7 @@ const totalSeconds = ref(60);
 const elapsedSeconds = ref(0);
 const qrcode = ref<string | null>(null);
 const intervalId = ref<number | null>(null);
+const intervalIdSecondsUntilNextAttempt = ref<number | null>(null);
 const phoneNumber = ref<string | null>(null);
 const numberAttempt = ref(0);
 const numberMaxAttempt = ref(4);
@@ -45,6 +46,7 @@ const typeConnection = ref<EBaileysConnectionType>(
 );
 const phoneConnection = ref<string | undefined>();
 const isPhoneSend = ref(false);
+const secondsUntilNextAttempt = ref(0);
 
 const getProgress = (seconds: number, max = totalSeconds.value) => {
   const value = Math.min(Math.round((seconds / max) * 100), 100);
@@ -78,6 +80,14 @@ const startTimer = () => {
       typeConnection.value === EBaileysConnectionType.phone
     ) {
       elapsedSeconds.value = 0;
+      intervalId.value = null;
+
+      return;
+    }
+
+    if (statusCode.value === ECodeMessage.phoneNotAvailable) {
+      elapsedSeconds.value = 0;
+      intervalId.value = null;
 
       return;
     }
@@ -154,8 +164,11 @@ const sendPhoneNumber = async () => {
 };
 
 const enterPhoneNumber = async () => {
+  secondsUntilNextAttempt.value = 0;
   isPhoneNumber.value = true;
+  isPhoneSend.value = false;
   typeConnection.value = EBaileysConnectionType.phone;
+  phoneNumber.value = null;
 };
 
 const changePhone = async () => {
@@ -170,6 +183,10 @@ const enterQrcode = async () => {
   isPhoneNumber.value = false;
   typeConnection.value = EBaileysConnectionType.qrcode;
   phoneConnection.value = undefined;
+
+  secondsUntilNextAttempt.value = 0;
+  totalSeconds.value = 60;
+  statusCode.value = ECodeMessage.awaitConnection;
 
   if (channelId.value) {
     if (intervalId.value !== null) {
@@ -248,6 +265,12 @@ onMounted(async () => {
         pairingCodeSecondary.value = secondary;
       }
 
+      if (data?.seconds_until_next_attempt) {
+        secondsUntilNextAttempt.value = data.seconds_until_next_attempt;
+
+        setIntervalSecondsUntilNextAttempt();
+      }
+
       channelStore.updateInfoChannel(data);
     }
   );
@@ -264,10 +287,32 @@ onMounted(async () => {
   }
 });
 
+const formattedTime = computed(() => {
+  const m = Math.floor(secondsUntilNextAttempt.value / 60)
+    .toString()
+    .padStart(2, '0');
+  const s = (secondsUntilNextAttempt.value % 60).toString().padStart(2, '0');
+
+  return `${m}:${s}`;
+});
+
+const setIntervalSecondsUntilNextAttempt = () => {
+  intervalIdSecondsUntilNextAttempt.value = window.setInterval(() => {
+    if (secondsUntilNextAttempt.value > 0) {
+      secondsUntilNextAttempt.value--;
+    }
+  }, 1000);
+};
+
 onBeforeMount(() => {
   if (intervalId.value !== null) {
     clearInterval(intervalId.value);
   }
+  if (intervalIdSecondsUntilNextAttempt.value !== null) {
+    clearInterval(intervalIdSecondsUntilNextAttempt.value);
+  }
+
+  unsubscribe(`worker_${channelId.value}_qrcode`);
 });
 </script>
 
@@ -350,6 +395,33 @@ onBeforeMount(() => {
                 {{ $t('request') }}
               </VBtn>
             </VCol>
+          </VCardText>
+
+          <VCardText
+            v-else-if="
+              statusCode === ECodeMessage.phoneNotAvailable &&
+              secondsUntilNextAttempt
+            "
+          >
+            <VCardText class="d-flex justify-center">
+              <VIcon icon="tabler-device-mobile-off" size="150" />
+            </VCardText>
+            <VCardText class="text-center">
+              <i>{{ $t('phone_not_available') }}</i>
+              <br />
+              <strong>{{ $t('seconds_until_next_attempt') }}:</strong>
+              <br />
+              <strong class="text-h5">{{ formattedTime }}</strong>
+              <br />
+              <small>{{ $t('wait_until_next_attempt') }}</small>
+            </VCardText>
+            <VCardText class="text-center">
+              <VProgressLinear
+                :model-value="progress"
+                :color="progressColor"
+                size="32"
+              />
+            </VCardText>
           </VCardText>
 
           <VCardText
@@ -510,7 +582,11 @@ onBeforeMount(() => {
               pairingCodePrimary &&
               pairingCodeSecondary &&
               !isConnected &&
-              statusCode !== ECodeMessage.newLoginAttempt
+              statusCode !== ECodeMessage.newLoginAttempt &&
+              !(
+                statusCode === ECodeMessage.phoneNotAvailable &&
+                secondsUntilNextAttempt
+              )
             "
           >
             <VCardText class="text-center">
@@ -523,7 +599,11 @@ onBeforeMount(() => {
             v-else-if="
               !isDisconnected &&
               !isConnected &&
-              statusCode !== ECodeMessage.newLoginAttempt
+              statusCode !== ECodeMessage.newLoginAttempt &&
+              !(
+                statusCode === ECodeMessage.phoneNotAvailable &&
+                secondsUntilNextAttempt
+              )
             "
           >
             <VCardText class="text-center">

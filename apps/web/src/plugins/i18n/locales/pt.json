@@ -148,5 +148,8 @@
     "code_requested": "Código solicitado. Por favor, aguarde...",
     "change_phone_number": "Alterar número de telefone",
     "attention": "Atenção",
-    "is_limited": "É limitado a 3 solicitações de conexão por telefone a cada 30 minutos"
+    "is_limited": "É limitado a 3 solicitações de conexão por telefone a cada 30 minutos",
+    "wait_until_next_attempt": "Aguarde até a próxima tentativa",
+    "seconds_until_next_attempt": "Segundos até a próxima tentativa",
+    "phone_not_available": "O número de telefone não está disponível"
 }

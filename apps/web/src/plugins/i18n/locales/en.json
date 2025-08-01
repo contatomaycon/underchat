@@ -145,6 +145,8 @@
     "code_requested": "Code requested. Please wait...",
     "change_phone_number": "Change phone number",
     "attention": "Attention",
-    "is_limited": "It is limited to 3 connection requests per phone every 30 minutes"
-    
+    "is_limited": "It is limited to 3 connection requests per phone every 30 minutes",
+    "wait_until_next_attempt": "Wait until the next attempt",
+    "seconds_until_next_attempt": "Seconds until the next attempt",
+    "phone_not_available": "Phone number not available"
 }

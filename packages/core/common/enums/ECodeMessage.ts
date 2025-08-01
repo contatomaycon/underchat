@@ -13,4 +13,5 @@ export enum ECodeMessage {
   badSession = 500,
   unavailableService = 503,
   restartRequired = 515,
+  phoneNotAvailable = 600,
 }
