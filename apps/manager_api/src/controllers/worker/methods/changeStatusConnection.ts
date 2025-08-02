@@ -17,25 +17,16 @@ export const changeStatusConnection = async (
   const { t, tokenJwtData } = request;
 
   try {
-    const response = await workerChangeStatusConnectionUseCase.execute(
+    await workerChangeStatusConnectionUseCase.execute(
       t,
       tokenJwtData.account_id,
       tokenJwtData.is_administrator,
       request.body
     );
 
-    if (response) {
-      return sendResponse(reply, {
-        message: t('worker_status_change_success'),
-        httpStatusCode: EHTTPStatusCode.ok,
-      });
-    }
-
-    request.server.logger.info(response, request.id);
-
     return sendResponse(reply, {
-      message: t('worker_status_change_error'),
-      httpStatusCode: EHTTPStatusCode.bad_request,
+      message: t('worker_status_change_success'),
+      httpStatusCode: EHTTPStatusCode.ok,
     });
   } catch (error) {
     request.server.logger.error(error, request.id);

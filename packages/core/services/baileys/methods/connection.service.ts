@@ -50,7 +50,7 @@ export class BaileysConnectionService {
   private lastPayload: string | null = null;
   private typeConnection: EBaileysConnectionType =
     EBaileysConnectionType.qrcode;
-  private phoneConnection?: string | undefined = undefined;
+  private phoneConnection?: string = undefined;
 
   private connecting = false;
   private retryCount = 0;

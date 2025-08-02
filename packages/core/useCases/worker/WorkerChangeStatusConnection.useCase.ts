@@ -188,7 +188,7 @@ export class WorkerChangeStatusConnectionUseCase {
     accountId: string,
     isAdministrator: boolean,
     input: StatusConnectionWorkerRequest
-  ): Promise<boolean> {
+  ): Promise<void> {
     if (input.type === EBaileysConnectionType.phone) {
       const canPhoneConnection = await this.updatePhoneConnection(input);
 
@@ -206,13 +206,11 @@ export class WorkerChangeStatusConnectionUseCase {
           payload
         );
 
-        return true;
+        return;
       }
     }
 
     await this.validate(t, input, accountId, isAdministrator);
     await this.onChangeConnectionStatus(t, input);
-
-    return true;
   }
 }
