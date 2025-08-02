@@ -22,6 +22,12 @@ import { WorkerPhoneConnectionDateViewerRepository } from '@core/repositories/wo
 import { IViewWorkerPhoneConnectionDate } from '@core/common/interfaces/IViewWorkerPhoneConnectionDate';
 import { WorkerPhoneStatusConnectionDateUpdaterRepository } from '@core/repositories/worker/WorkerPhoneStatusConnectionDateUpdater.repository';
 import { IUpdateWorkerPhoneStatusConnectionDate } from '@core/common/interfaces/IUpdateWorkerPhoneStatusConnectionDate';
+import { WorkerPhoneConnectionViewerRepository } from '@core/repositories/worker/WorkerPhoneConnectionViewer.repository';
+import { IViewWorkerPhoneConnection } from '@core/common/interfaces/IViewWorkerPhoneConnection';
+import { WorkerPhoneConnectionUpdaterRepository } from '@core/repositories/worker/WorkerPhoneConnectionUpdater.repository';
+import { IUpdateWorkerPhoneConnection } from '@core/common/interfaces/IUpdateWorkerPhoneConnection';
+import { WorkerPhoneConnectionCreatorRepository } from '@core/repositories/worker/WorkerPhoneConnectionCreator.repository';
+import { ICreateWorkerPhoneConnection } from '@core/common/interfaces/ICreateWorkerPhoneConnection';
 
 @injectable()
 export class WorkerService {
@@ -39,7 +45,10 @@ export class WorkerService {
     private readonly workerBalancerViewerRepository: WorkerBalancerViewerRepository,
     private readonly workerDeleterRepository: WorkerDeleterRepository,
     private readonly workerPhoneConnectionDateViewerRepository: WorkerPhoneConnectionDateViewerRepository,
-    private readonly workerPhoneStatusConnectionDateUpdaterRepository: WorkerPhoneStatusConnectionDateUpdaterRepository
+    private readonly workerPhoneStatusConnectionDateUpdaterRepository: WorkerPhoneStatusConnectionDateUpdaterRepository,
+    private readonly workerPhoneConnectionViewerRepository: WorkerPhoneConnectionViewerRepository,
+    private readonly workerPhoneConnectionUpdaterRepository: WorkerPhoneConnectionUpdaterRepository,
+    private readonly workerPhoneConnectionCreatorRepository: WorkerPhoneConnectionCreatorRepository
   ) {
     this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
   }
@@ -286,6 +295,36 @@ export class WorkerService {
     input: IUpdateWorkerPhoneStatusConnectionDate
   ): Promise<boolean> => {
     return this.workerPhoneStatusConnectionDateUpdaterRepository.updateWorkerPhoneStatusConnectionDate(
+      input
+    );
+  };
+
+  viewWorkerPhoneConnection = async (
+    number: string
+  ): Promise<IViewWorkerPhoneConnection | null> => {
+    return this.workerPhoneConnectionViewerRepository.viewWorkerPhoneConnection(
+      number
+    );
+  };
+
+  totalWorkerPhoneConnection = async (number: string): Promise<number> => {
+    return this.workerPhoneConnectionViewerRepository.totalWorkerPhoneConnection(
+      number
+    );
+  };
+
+  updateWorkerPhoneConnection = async (
+    input: IUpdateWorkerPhoneConnection
+  ): Promise<boolean> => {
+    return this.workerPhoneConnectionUpdaterRepository.updateWorkerPhoneConnection(
+      input
+    );
+  };
+
+  createWorkerPhoneConnection = async (
+    input: ICreateWorkerPhoneConnection
+  ): Promise<boolean> => {
+    return this.workerPhoneConnectionCreatorRepository.createWorkerPhoneConnection(
       input
     );
   };

@@ -1,10 +1,14 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { statusConnectionWorkerRequestSchema } from './request.schema';
+import { workerConnectionLogsResponseSchema } from './response.schema';
+import {
+  workerConnectionLogsRequestSchema,
+  workerConnectionLogsQuerySchema,
+} from './request.schema';
 
-export const statusConnectionWorkerSchema = {
-  description: 'Altera o status da conexão com o canal',
+export const workerConnectionLogsSchema = {
+  description: 'Visualiza logs de conexão de um canal',
   tags: [ETagSwagger.worker],
   produces: ['application/json'],
   security: [
@@ -21,14 +25,15 @@ export const statusConnectionWorkerSchema = {
       })
     ),
   }),
-  body: statusConnectionWorkerRequestSchema,
+  params: workerConnectionLogsRequestSchema,
+  querystring: workerConnectionLogsQuerySchema,
   response: {
     200: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: Type.Null(),
+        data: Type.Array(workerConnectionLogsResponseSchema),
       },
       { description: 'Successful' }
     ),

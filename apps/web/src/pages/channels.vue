@@ -41,6 +41,10 @@ const permissionsCreate = [
   EGeneralPermissions.full_access,
   EWorkerPermissions.create_worker,
 ];
+const permissionsViewLogs = [
+  EGeneralPermissions.full_access,
+  EWorkerPermissions.view_worker_logs,
+];
 
 const { t } = useI18n();
 const channelsStore = useChannelsStore();
@@ -76,6 +80,9 @@ const channelToEdit = ref<string | null>(null);
 
 const channelConnectionChannel = ref<string | null>(null);
 const isDialogConnectionChannelShow = ref(false);
+
+const channelConnectionLogs = ref<string | null>(null);
+const isDialogConnectionLogsShow = ref(false);
 
 const resolveStatusVariant = (s: string | undefined | null) => {
   if (s === EWorkerStatus.disponible)
@@ -144,20 +151,22 @@ const handleTableChange = (o: {
 
 const deleteChannel = async (id: string) => {
   channelToDelete.value = id;
-
   isDialogDeleterShow.value = true;
 };
 
 const openEditDialog = (id: string) => {
   channelToEdit.value = id;
-
   isDialogEditChannelShow.value = true;
 };
 
 const openConnectionDialog = (id: string) => {
   channelConnectionChannel.value = id;
-
   isDialogConnectionChannelShow.value = true;
+};
+
+const openConnectionLogDialog = (id: string) => {
+  channelConnectionLogs.value = id;
+  isDialogConnectionLogsShow.value = true;
 };
 
 const handleDelete = async () => {
@@ -330,6 +339,18 @@ onBeforeUnmount(async () => {
               ><VIcon icon="tabler-edit" @click="openEditDialog(item.id)"
             /></IconBtn>
 
+            <IconBtn v-if="$canPermission(permissionsViewLogs)"
+              ><VTooltip
+                location="top"
+                transition="scale-transition"
+                activator="parent"
+              >
+                <span>{{ $t('worker_logs_connection') }}</span> </VTooltip
+              ><VIcon
+                icon="tabler-logs"
+                @click="openConnectionLogDialog(item.id)"
+            /></IconBtn>
+
             <IconBtn v-if="$canPermission(permissionsDelete)"
               ><VTooltip
                 location="top"
@@ -375,6 +396,12 @@ onBeforeUnmount(async () => {
         v-if="isDialogConnectionChannelShow"
         v-model="isDialogConnectionChannelShow"
         :channel-id="channelConnectionChannel"
+      />
+
+      <AppLogsChannel
+        v-if="isDialogConnectionLogsShow"
+        v-model="isDialogConnectionLogsShow"
+        :channel-id="channelConnectionLogs"
       />
     </VCard>
 

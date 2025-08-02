@@ -32,15 +32,18 @@ export class WorkerConnectionConsume {
         return;
       }
 
+      const phoneNumber = data.phone ?? viewWorkerPhoneConnectionDate.number;
+
       const status = getStatusWorkerConnection(
         data.status,
+        phoneNumber,
         data.disconnected_user
       );
 
       await this.workerService.updateWorkerPhoneStatusConnectionDate({
         worker_id: data.worker_id,
         status,
-        number: data.phone ?? viewWorkerPhoneConnectionDate.number,
+        number: phoneNumber,
         connection_date: viewWorkerPhoneConnectionDate.connection_date,
       });
     });

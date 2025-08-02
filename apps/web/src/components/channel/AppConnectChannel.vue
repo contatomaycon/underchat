@@ -1,22 +1,22 @@
 <script lang="ts" setup>
-import { onMessage } from '@/@webcore/centrifugo';
+import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
+import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 
 const channelStore = useChannelsStore();
-const { t } = useI18n();
 
 const props = defineProps<{
   modelValue: boolean;
   channelId: string | null;
 }>();
 
-const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
+const emit = defineEmits<(e: 'update:modelValue', v: boolean) => void>();
 
 const isVisible = computed({
   get: () => props.modelValue,
@@ -24,150 +24,282 @@ const isVisible = computed({
 });
 
 const channelId = toRef(props, 'channelId');
+
 const statusConnection = ref<EBaileysConnectionStatus>(
   EBaileysConnectionStatus.disconnected
 );
 const statusCode = ref<ECodeMessage>(ECodeMessage.awaitConnection);
-const totalSeconds = ref(15);
-const elapsedSeconds = ref(0);
-const qrcode = ref<string | null>(null);
-const intervalId = ref<number | null>(null);
-const phoneNumber = ref<string | null>(null);
-const numberAttempt = ref(0);
-const numberMaxAttempt = ref(4);
-const removeInPhone = ref(false);
 
-const getProgress = (seconds: number, max = totalSeconds.value) => {
+const totalSeconds = ref(60);
+const elapsedSeconds = ref(0);
+
+const qrcode = ref<string | null>(null);
+
+const intervalId = ref<number | null>(null);
+const intervalIdNextAttempt = ref<number | null>(null);
+
+const phoneNumber = ref<string | null>(null);
+
+const attempt = ref(0);
+const maxAttempts = ref(4);
+
+const removeInPhone = ref(false);
+const isPhoneNumber = ref(false);
+
+const pairingCodePrimary = ref<string>();
+const pairingCodeSecondary = ref<string>();
+
+const connectionType = ref<EBaileysConnectionType>(
+  EBaileysConnectionType.qrcode
+);
+
+const phoneConnection = ref<string | undefined>();
+
+const phoneSent = ref(false);
+
+const secondsNextAttempt = ref(0);
+
+const isConnected = computed(
+  () => statusConnection.value === EBaileysConnectionStatus.connected
+);
+
+const isDisconnected = computed(
+  () => statusConnection.value === EBaileysConnectionStatus.disconnected
+);
+
+const progress = computed(() => calculateProgress(elapsedSeconds.value).value);
+const progressColor = computed(
+  () => calculateProgress(elapsedSeconds.value).color
+);
+
+const formattedTime = computed(() => {
+  const m = Math.floor(secondsNextAttempt.value / 60)
+    .toString()
+    .padStart(2, '0');
+  const s = (secondsNextAttempt.value % 60).toString().padStart(2, '0');
+
+  return `${m}:${s}`;
+});
+
+function calculateProgress(seconds: number, max = totalSeconds.value) {
   const value = Math.min(Math.round((seconds / max) * 100), 100);
 
-  if (value > 75)
-    return {
-      value,
-      color: 'error' as const,
-    };
+  if (value > 75) return { value, color: 'error' as const };
+  if (value > 50) return { value, color: 'warning' as const };
 
-  if (value > 50)
-    return {
-      value,
-      color: 'warning' as const,
-    };
+  return { value, color: 'success' as const };
+}
 
-  return {
-    value,
-    color: 'success' as const,
-  };
-};
+function splitCode(code: string): [string, string] {
+  return [code.slice(0, 4), code.slice(4)];
+}
 
-const startTimer = () => {
+async function reconnectChannel(restart = false) {
+  if (!channelId.value) return;
+  if (restart) attempt.value = 0;
+
+  resetPairingCodes();
+
+  await channelStore.updateConnectionChannel(
+    buildRequest(EWorkerStatus.online)
+  );
+}
+
+async function disponibleChannel() {
+  if (!channelId.value) return;
+
+  await channelStore.updateConnectionChannel(
+    buildRequest(EWorkerStatus.disponible)
+  );
+}
+
+async function sendPhoneNumber() {
+  if (!channelId.value || !phoneConnection.value) return;
+
+  phoneSent.value = true;
+  totalSeconds.value = 120;
+  maxAttempts.value = 2;
+
+  resetPairingCodes();
+
+  await channelStore.updateConnectionChannel(
+    buildRequest(EWorkerStatus.online)
+  );
+}
+
+function enterPhoneNumber() {
+  secondsNextAttempt.value = 0;
+  isPhoneNumber.value = true;
+  phoneSent.value = false;
+  connectionType.value = EBaileysConnectionType.phone;
+  phoneNumber.value = null;
+  attempt.value = 0;
+}
+
+function changePhone() {
+  isPhoneNumber.value = true;
+  phoneSent.value = false;
+  phoneConnection.value = undefined;
+
+  resetPairingCodes();
+}
+
+async function enterQrcode() {
+  isPhoneNumber.value = false;
+  connectionType.value = EBaileysConnectionType.qrcode;
+  phoneConnection.value = undefined;
+  attempt.value = 0;
+  secondsNextAttempt.value = 0;
+  totalSeconds.value = 60;
+  statusCode.value = ECodeMessage.awaitConnection;
+
+  if (channelId.value) {
+    clearTimer();
+
+    await channelStore.updateConnectionChannel(
+      buildRequest(EWorkerStatus.online)
+    );
+  }
+}
+
+function startTimer() {
   elapsedSeconds.value = 0;
-
-  if (intervalId.value !== null) clearInterval(intervalId.value);
+  clearTimer();
 
   intervalId.value = window.setInterval(() => {
+    if (
+      (!phoneSent.value &&
+        connectionType.value === EBaileysConnectionType.phone) ||
+      statusCode.value === ECodeMessage.phoneNotAvailable
+    ) {
+      clearTimer();
+
+      return;
+    }
+
     if (elapsedSeconds.value < totalSeconds.value) {
       elapsedSeconds.value++;
+
       return;
     }
 
     elapsedSeconds.value = 0;
-    if (numberAttempt.value <= numberMaxAttempt.value) {
-      numberAttempt.value++;
+    if (attempt.value <= maxAttempts.value) {
+      attempt.value++;
       reconnectChannel();
 
       return;
     }
 
-    clearInterval(intervalId.value!);
-    intervalId.value = null;
+    clearTimer();
   }, 1000);
-};
+}
 
-const reconnectChannel = async (restart: boolean = false) => {
-  if (!channelId.value) return;
-  if (restart) numberAttempt.value = 0;
+function clearTimer() {
+  if (intervalId.value !== null) clearInterval(intervalId.value);
 
-  const input: StatusConnectionWorkerRequest = {
-    worker_id: channelId.value,
-    status: EWorkerStatus.online,
+  intervalId.value = null;
+}
+
+function resetPairingCodes() {
+  pairingCodePrimary.value = '';
+  pairingCodeSecondary.value = '';
+}
+
+function buildRequest(status: EWorkerStatus): StatusConnectionWorkerRequest {
+  return {
+    worker_id: channelId.value!,
+    status,
+    type: connectionType.value,
+    phone_connection: phoneConnection.value,
   };
+}
 
-  await channelStore.updateConnectionChannel(input);
-};
+function startNextAttemptCountdown() {
+  clearInterval(intervalIdNextAttempt.value!);
+  intervalIdNextAttempt.value = window.setInterval(() => {
+    if (secondsNextAttempt.value > 0) {
+      secondsNextAttempt.value--;
+      return;
+    }
 
-const disponibleChannel = async () => {
-  if (!channelId.value) return;
-
-  const input: StatusConnectionWorkerRequest = {
-    worker_id: channelId.value,
-    status: EWorkerStatus.disponible,
-  };
-
-  await channelStore.updateConnectionChannel(input);
-};
-
-const isConnected = computed(
-  () => statusConnection.value === EBaileysConnectionStatus.connected
-);
-const isDisconnected = computed(
-  () => statusConnection.value === EBaileysConnectionStatus.disconnected
-);
-
-const progress = computed(() => getProgress(elapsedSeconds.value).value);
-const progressColor = computed(() => getProgress(elapsedSeconds.value).color);
+    clearInterval(intervalIdNextAttempt.value!);
+    if (statusCode.value === ECodeMessage.phoneNotAvailable) {
+      enterPhoneNumber();
+    }
+  }, 1000);
+}
 
 onMounted(async () => {
   await onMessage(
     `worker_${channelId.value}_qrcode`,
     (data: IBaileysConnectionState) => {
       if (data?.worker_id !== channelId.value) return;
+      if (statusCode.value === ECodeMessage.phoneNotAvailable) return;
 
-      if (data?.status) {
+      if (data.status) {
         statusConnection.value = data.status as EBaileysConnectionStatus;
+        if (statusConnection.value === EBaileysConnectionStatus.connected) {
+          phoneNumber.value = null;
+          isPhoneNumber.value = false;
+          phoneSent.value = false;
+          connectionType.value = EBaileysConnectionType.qrcode;
+
+          resetPairingCodes();
+        }
       }
 
-      if (data?.qrcode) {
-        qrcode.value = data.qrcode;
-      }
-
-      if (data?.code) {
+      if (data.qrcode) qrcode.value = data.qrcode;
+      if (data.code) {
         statusCode.value = data.code as ECodeMessage;
 
         if (data.code === ECodeMessage.loggedOut) {
-          numberAttempt.value = 0;
+          attempt.value = 0;
           removeInPhone.value = true;
         }
       }
 
-      if (data?.phone) {
-        phoneNumber.value = formatPhoneBR(data.phone);
-      }
+      if (data.phone) phoneNumber.value = formatPhoneBR(data.phone);
 
       if (
         data.status === EBaileysConnectionStatus.connecting &&
         qrcode.value &&
-        numberAttempt.value <= numberMaxAttempt.value
+        attempt.value <= maxAttempts.value
       ) {
         startTimer();
+      }
+
+      if (data.pairing_code) {
+        const [p, s] = splitCode(data.pairing_code);
+
+        pairingCodePrimary.value = p;
+        pairingCodeSecondary.value = s;
+      }
+
+      if (data.seconds_until_next_attempt) {
+        secondsNextAttempt.value = data.seconds_until_next_attempt;
+
+        startNextAttemptCountdown();
       }
 
       channelStore.updateInfoChannel(data);
     }
   );
 
-  if (channelId.value) {
-    const input: StatusConnectionWorkerRequest = {
-      worker_id: channelId.value,
-      status: EWorkerStatus.online,
-    };
-
-    await channelStore.updateConnectionChannel(input);
-  }
+  if (channelId.value)
+    await channelStore.updateConnectionChannel(
+      buildRequest(EWorkerStatus.online)
+    );
 });
 
 onBeforeMount(() => {
-  if (intervalId.value !== null) {
-    clearInterval(intervalId.value);
+  clearTimer();
+
+  if (intervalIdNextAttempt.value !== null) {
+    clearInterval(intervalIdNextAttempt.value);
   }
+
+  unsubscribe(`worker_${channelId.value}_qrcode`);
 });
 </script>
 
@@ -191,13 +323,21 @@ onBeforeMount(() => {
             <VCardTitle>{{ $t('conection') }}</VCardTitle>
           </VCardItem>
 
-          <div v-if="numberAttempt > numberMaxAttempt && !isConnected">
+          <div v-if="attempt > maxAttempts && !isConnected && !isPhoneNumber">
             <VCardText class="d-flex justify-center">
               <VIcon icon="tabler-mobiledata-off" size="150" />
             </VCardText>
-
             <VCardText class="text-center">
               <i>{{ $t('connection_timeout') }}</i>
+            </VCardText>
+          </div>
+
+          <div v-else-if="statusCode === ECodeMessage.newLoginAttempt">
+            <VCardText class="d-flex justify-center">
+              <VIcon icon="tabler-brand-whatsapp" size="150" />
+            </VCardText>
+            <VCardText class="text-center">
+              <i>{{ $t('connection_in_progress') }}</i>
             </VCardText>
           </div>
 
@@ -205,14 +345,101 @@ onBeforeMount(() => {
             <VCardText class="d-flex justify-center">
               <VIcon icon="tabler-hourglass-high" size="150" />
             </VCardText>
-
             <VCardText class="text-center">
               <i>{{ $t('awaiting_connection') }}</i>
             </VCardText>
           </div>
 
+          <VCardText
+            v-else-if="
+              isPhoneNumber && !phoneSent && !isDisconnected && !isConnected
+            "
+          >
+            <h4 class="text-h4 mb-1">{{ $t('for_phone') }} 💬</h4>
+            <p class="mb-1">{{ $t('request_phone_number') }}</p>
+            <p class="mb-1">
+              <strong>{{ $t('attention') }}:</strong> {{ $t('is_limited') }}
+            </p>
+
+            <v-phone-input v-model="phoneConnection" />
+
+            <VCol cols="12">
+              <VBtn
+                :loading="channelStore.loading"
+                :disabled="channelStore.loading"
+                block
+                class="mt-2"
+                @click="sendPhoneNumber"
+              >
+                {{ $t('request') }}
+              </VBtn>
+            </VCol>
+          </VCardText>
+
+          <VCardText
+            v-else-if="
+              statusCode === ECodeMessage.phoneNotAvailable &&
+              secondsNextAttempt
+            "
+          >
+            <VCardText class="d-flex justify-center">
+              <VIcon icon="tabler-device-mobile-off" size="150" />
+            </VCardText>
+            <VCardText class="text-center">
+              <i>{{ $t('phone_not_available') }}</i
+              ><br />
+              <strong>{{ $t('seconds_until_next_attempt') }}:</strong><br />
+              <strong class="text-h5">{{ formattedTime }}</strong
+              ><br />
+              <small>{{ $t('wait_until_next_attempt') }}</small>
+            </VCardText>
+          </VCardText>
+
+          <VCardText
+            v-else-if="isPhoneNumber && !isDisconnected && !isConnected"
+          >
+            <h4 class="text-h4 mb-1">{{ $t('for_phone') }} 💬</h4>
+            <VCardText
+              class="d-flex flex-column align-center gap-2"
+              v-if="!pairingCodePrimary || !pairingCodeSecondary"
+            >
+              <p class="mb-1">{{ $t('code_requested') }}</p>
+              <VProgressCircular indeterminate size="40" color="primary" />
+            </VCardText>
+
+            <VCardText v-else>
+              <p class="mb-1">{{ $t('for_phone_description') }}</p>
+
+              <VOtpInput
+                v-model="pairingCodePrimary"
+                disabled
+                length="4"
+                type="text"
+                class="pa-0"
+                :focused="false"
+              />
+              <VOtpInput
+                v-model="pairingCodeSecondary"
+                disabled
+                length="4"
+                type="text"
+                class="pa-0"
+                :focused="false"
+              />
+
+              <VCardText class="text-center">
+                <VProgressLinear
+                  :model-value="progress"
+                  :color="progressColor"
+                  size="32"
+                />
+              </VCardText>
+            </VCardText>
+          </VCardText>
+
           <div
             v-else-if="
+              !isPhoneNumber &&
               statusCode === ECodeMessage.awaitingReadQrCode &&
               qrcode &&
               !isDisconnected &&
@@ -222,10 +449,8 @@ onBeforeMount(() => {
             <VCardText class="d-flex justify-center">
               <VImg :src="qrcode" max-width="240" />
             </VCardText>
-
             <VCardText class="text-center">
               <i>{{ $t('awaiting_qr_code') }}</i>
-
               <VProgressLinear
                 :model-value="progress"
                 :color="progressColor"
@@ -234,17 +459,7 @@ onBeforeMount(() => {
             </VCardText>
           </div>
 
-          <div v-else-if="statusCode === ECodeMessage.newLoginAttempt">
-            <VCardText class="d-flex justify-center">
-              <VIcon icon="tabler-brand-whatsapp" size="150" />
-            </VCardText>
-
-            <VCardText class="text-center">
-              <i>{{ $t('connection_in_progress') }}</i>
-            </VCardText>
-          </div>
-
-          <div v-else-if="isDisconnected && removeInPhone">
+          <div v-else-if="isDisconnected && removeInPhone && !isPhoneNumber">
             <VCardText class="d-flex justify-center">
               <VIcon icon="tabler-plug-connected-x" color="error" size="150" />
             </VCardText>
@@ -267,13 +482,20 @@ onBeforeMount(() => {
               <VIcon icon="tabler-brand-whatsapp" color="success" size="150" />
             </VCardText>
             <VCardText class="text-center">
-              <i>{{ $t('connection_success') }}</i>
-              <br />
+              <i>{{ $t('connection_success') }}</i
+              ><br />
               <small>{{ phoneNumber }}</small>
             </VCardText>
           </div>
 
-          <VCardText class="d-flex justify-center">
+          <VCardText
+            class="d-flex justify-center"
+            v-if="
+              !isPhoneNumber ||
+              isConnected ||
+              statusCode === ECodeMessage.newLoginAttempt
+            "
+          >
             <div class="d-flex gap-2">
               <VBtn
                 :disabled="!isConnected"
@@ -292,7 +514,7 @@ onBeforeMount(() => {
 
               <VBtn
                 :disabled="
-                  !(numberAttempt > numberMaxAttempt && !isConnected) &&
+                  !(attempt > maxAttempts && !isConnected) &&
                   !(isDisconnected && removeInPhone)
                 "
                 color="warning"
@@ -309,6 +531,60 @@ onBeforeMount(() => {
               </VBtn>
             </div>
           </VCardText>
+
+          <div
+            v-if="
+              isPhoneNumber &&
+              !isDisconnected &&
+              !isConnected &&
+              !pairingCodePrimary &&
+              !pairingCodeSecondary
+            "
+          >
+            <VCardText class="text-center">
+              <a class="clickable" @click="enterQrcode">{{
+                $t('enter_qrcode')
+              }}</a>
+            </VCardText>
+          </div>
+
+          <div
+            v-else-if="
+              isPhoneNumber &&
+              pairingCodePrimary &&
+              pairingCodeSecondary &&
+              !isConnected &&
+              statusCode !== ECodeMessage.newLoginAttempt &&
+              !(
+                statusCode === ECodeMessage.phoneNotAvailable &&
+                secondsNextAttempt
+              )
+            "
+          >
+            <VCardText class="text-center">
+              <a class="clickable" @click="changePhone">{{
+                $t('change_phone_number')
+              }}</a>
+            </VCardText>
+          </div>
+
+          <div
+            v-else-if="
+              !isDisconnected &&
+              !isConnected &&
+              statusCode !== ECodeMessage.newLoginAttempt &&
+              !(
+                statusCode === ECodeMessage.phoneNotAvailable &&
+                secondsNextAttempt
+              )
+            "
+          >
+            <VCardText class="text-center">
+              <a class="clickable" @click="enterPhoneNumber">{{
+                $t('enter_phone_number')
+              }}</a>
+            </VCardText>
+          </div>
         </VCol>
 
         <VCol
@@ -433,5 +709,9 @@ onBeforeMount(() => {
 
 .v-btn {
   transform: none;
+}
+
+.clickable {
+  cursor: pointer;
 }
 </style>

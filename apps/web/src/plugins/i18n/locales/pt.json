@@ -138,5 +138,20 @@
     "connection_timeout": "Tempo de conexão esgotado. Por favor, tente novamente.",
     "connection_removed_in_phone": "Conexão removida no celular, por favor, reconecte.",
     "connection_date": "Data de Conexão",
-    "roles": "Cargos"
+    "roles": "Cargos",
+    "enter_phone_number": "Entrar com o número de telefone",
+    "enter_qrcode": "Entrar com o QR Code",
+    "for_phone": "Por telefone",
+    "for_phone_description": "Insira o código no WhatsApp para conectar",
+    "request_phone_number": "Digite seu número de telefone e clique em solicitar",
+    "request": "Solicitar",
+    "code_requested": "Código solicitado. Por favor, aguarde...",
+    "change_phone_number": "Alterar número de telefone",
+    "attention": "Atenção",
+    "is_limited": "É limitado a 3 solicitações de conexão por telefone a cada 30 minutos",
+    "wait_until_next_attempt": "Aguarde até a próxima tentativa",
+    "seconds_until_next_attempt": "Segundos até a próxima tentativa",
+    "phone_not_available": "O número de telefone não está disponível",
+    "worker_logs_connection_error": "Ocorreu um erro ao recuperar os logs de conexão do canal. Por favor, tente novamente.",
+    "worker_logs_connection": "Logs de Conexão do Canal"
 }
