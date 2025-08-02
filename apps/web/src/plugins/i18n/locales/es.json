@@ -151,5 +151,6 @@
     "seconds_until_next_attempt": "Segundos hasta el próximo intento",
     "phone_not_available": "Número de teléfono no disponible",
     "worker_logs_connection_error": "Ocurrió un error al recuperar los logs de conexión del trabajador. Por favor, inténtalo de nuevo.",
-    "worker_logs_connection": "Logs de Conexión del Trabajador"
+    "worker_logs_connection": "Logs de Conexión del Trabajador",
+    "last_sync": "Última sincronización"
 }

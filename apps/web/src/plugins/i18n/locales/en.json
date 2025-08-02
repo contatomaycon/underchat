@@ -150,5 +150,6 @@
     "seconds_until_next_attempt": "Seconds until the next attempt",
     "phone_not_available": "Phone number not available",
     "worker_logs_connection_error": "An error occurred while retrieving the worker connection logs. Please try again.",
-    "worker_logs_connection": "Worker Connection Logs"
+    "worker_logs_connection": "Worker Connection Logs",
+    "last_sync": "Last Sync"
 }

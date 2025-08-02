@@ -153,5 +153,6 @@
     "seconds_until_next_attempt": "Segundos até a próxima tentativa",
     "phone_not_available": "O número de telefone não está disponível",
     "worker_logs_connection_error": "Ocorreu um erro ao recuperar os logs de conexão do canal. Por favor, tente novamente.",
-    "worker_logs_connection": "Logs de Conexão do Canal"
+    "worker_logs_connection": "Logs de Conexão do Canal",
+    "last_sync": "Última Sincronização"
 }
