@@ -2,11 +2,13 @@ import WorkerController from '@/controllers/worker';
 import {
   workerCreatePermissions,
   workerDeletePermissions,
+  workerRecreatePermissions,
 } from '@/permissions';
 import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import { balanceCreateWorkerSchema } from '@core/schema/worker/balanceCreateWorker';
 import { balanceDeleteWorkerSchema } from '@core/schema/worker/balanceDeleteWorker';
+import { balanceRecreateWorkerSchema } from '@core/schema/worker/balanceRecreateWorker';
 
 export default async function workerRoutes(server: FastifyInstance) {
   const workerController = container.resolve(WorkerController);
@@ -26,6 +28,15 @@ export default async function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateKeyApi(request, reply, workerDeletePermissions),
+    ],
+  });
+
+  server.patch('/worker/:worker_id', {
+    schema: balanceRecreateWorkerSchema,
+    handler: workerController.recreateCreateWorker,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateKeyApi(request, reply, workerRecreatePermissions),
     ],
   });
 }

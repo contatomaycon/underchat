@@ -28,6 +28,10 @@ import { WorkerPhoneConnectionUpdaterRepository } from '@core/repositories/worke
 import { IUpdateWorkerPhoneConnection } from '@core/common/interfaces/IUpdateWorkerPhoneConnection';
 import { WorkerPhoneConnectionCreatorRepository } from '@core/repositories/worker/WorkerPhoneConnectionCreator.repository';
 import { ICreateWorkerPhoneConnection } from '@core/common/interfaces/ICreateWorkerPhoneConnection';
+import { WorkerTypeViewerRepository } from '@core/repositories/worker/WorkerTypeViewer.repository';
+import { IViewWorkerType } from '@core/common/interfaces/IViewWorkerType';
+import { WorkerRecreateUpdaterRepository } from '@core/repositories/worker/WorkerRecreateUpdater.repository';
+import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
 
 @injectable()
 export class WorkerService {
@@ -48,7 +52,9 @@ export class WorkerService {
     private readonly workerPhoneStatusConnectionDateUpdaterRepository: WorkerPhoneStatusConnectionDateUpdaterRepository,
     private readonly workerPhoneConnectionViewerRepository: WorkerPhoneConnectionViewerRepository,
     private readonly workerPhoneConnectionUpdaterRepository: WorkerPhoneConnectionUpdaterRepository,
-    private readonly workerPhoneConnectionCreatorRepository: WorkerPhoneConnectionCreatorRepository
+    private readonly workerPhoneConnectionCreatorRepository: WorkerPhoneConnectionCreatorRepository,
+    private readonly workerTypeViewerRepository: WorkerTypeViewerRepository,
+    private readonly workerRecreateUpdaterRepository: WorkerRecreateUpdaterRepository
   ) {
     this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
   }
@@ -95,7 +101,8 @@ export class WorkerService {
   public async createContainerWorker(
     t: TFunction<'translation', undefined>,
     imageName: EWorkerImage,
-    workerId: string
+    workerId: string,
+    isCreateVolume: boolean = true
   ): Promise<string> {
     const existsContainerById = await this.existsContainerWorkerById(workerId);
 
@@ -103,14 +110,16 @@ export class WorkerService {
       await this.removeContainerWorkerById(workerId, t);
     }
 
-    await this.docker.createVolume({
-      Name: workerId,
-    });
+    if (isCreateVolume) {
+      await this.docker.createVolume({
+        Name: workerId,
+      });
 
-    const getVolume = await this.docker.getVolume(workerId).inspect();
+      const getVolume = await this.docker.getVolume(workerId).inspect();
 
-    if (!getVolume) {
-      throw new Error(t('worker_volume_creation_failed'));
+      if (!getVolume) {
+        throw new Error(t('worker_volume_creation_failed'));
+      }
     }
 
     const container = await this.docker.createContainer({
@@ -144,8 +153,9 @@ export class WorkerService {
   }
 
   public async removeContainerWorker(
+    t: TFunction<'translation', undefined>,
     workerId: string,
-    t: TFunction<'translation', undefined>
+    isRemoveVolume: boolean = true
   ): Promise<boolean> {
     const removeContainerWorkerById = await this.removeContainerWorkerById(
       workerId,
@@ -156,13 +166,15 @@ export class WorkerService {
       throw new Error(t('worker_removal_failed'));
     }
 
-    const removeVolumeWorkerById = await this.removeVolumeWorkerById(
-      workerId,
-      t
-    );
+    if (isRemoveVolume) {
+      const removeVolumeWorkerById = await this.removeVolumeWorkerById(
+        workerId,
+        t
+      );
 
-    if (!removeVolumeWorkerById) {
-      throw new Error(t('worker_volume_removal_failed'));
+      if (!removeVolumeWorkerById) {
+        throw new Error(t('worker_volume_removal_failed'));
+      }
     }
 
     return true;
@@ -327,5 +339,21 @@ export class WorkerService {
     return this.workerPhoneConnectionCreatorRepository.createWorkerPhoneConnection(
       input
     );
+  };
+
+  viewWorkerType = async (
+    accountId: string,
+    isAdministrator: boolean,
+    workerId: string
+  ): Promise<IViewWorkerType | null> => {
+    return this.workerTypeViewerRepository.viewWorkerType(
+      accountId,
+      isAdministrator,
+      workerId
+    );
+  };
+
+  updateWorkerRecreate = async (input: IUpdateWorker): Promise<boolean> => {
+    return this.workerRecreateUpdaterRepository.updateWorkerRecreate(input);
   };
 }

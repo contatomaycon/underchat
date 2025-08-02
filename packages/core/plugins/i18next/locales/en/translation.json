@@ -71,5 +71,8 @@
   "kafka_error": "Error communicating with Kafka!",
   "phone_connection_required": "Phone is required!",
   "worker_connection_logs_success": "Worker connection logs retrieved successfully!",
-  "worker_connection_logs_not_found": "Worker connection logs not found!"
+  "worker_connection_logs_not_found": "Worker connection logs not found!",
+  "worker_recreate_success": "Worker recreated successfully!",
+  "worker_recreate_not_found": "Worker not found for recreation!",
+  "worker_recreation_failed": "Failed to recreate worker"
 }
