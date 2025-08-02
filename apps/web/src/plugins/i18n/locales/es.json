@@ -152,5 +152,9 @@
     "phone_not_available": "Número de teléfono no disponible",
     "worker_logs_connection_error": "Ocurrió un error al recuperar los logs de conexión del trabajador. Por favor, inténtalo de nuevo.",
     "worker_logs_connection": "Logs de Conexión del Trabajador",
-    "last_sync": "Última sincronización"
+    "last_sync": "Última sincronización",
+    "recreate_channel": "Recrear canal",
+    "recreate_channel_confirmation": "¿Estás seguro de que deseas recrear este canal?",
+    "worker_recreation_failed": "Error al recrear el canal. Por favor, inténtalo de nuevo.",
+    "worker_recreation_success": "Canal recreado exitosamente."
 }

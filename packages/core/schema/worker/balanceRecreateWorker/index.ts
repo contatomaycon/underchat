@@ -1,6 +1,7 @@
 import { Type } from '@sinclair/typebox';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { balanceRecreateWorkerRequestSchema } from './request.schema';
+import { balanceRecreateWorkerResponseSchema } from './response.schema';
 
 export const balanceRecreateWorkerSchema = {
   description: 'Recria um canal existente',
@@ -18,7 +19,7 @@ export const balanceRecreateWorkerSchema = {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: Type.Null(),
+        data: balanceRecreateWorkerResponseSchema,
       },
       { description: 'Successful' }
     ),

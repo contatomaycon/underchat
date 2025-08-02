@@ -1,12 +1,12 @@
 import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
-import { BalanceCreateWorkerResponse } from '@core/schema/worker/balanceCreateWorker/response.schema';
 import { WorkerService } from '@core/services/worker.service';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { AccountService } from '@core/services/account.service';
 import { getImageWorker } from '@core/common/functions/getImageWorker';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
+import { BalanceRecreateWorkerResponse } from '@core/schema/worker/balanceRecreateWorker/response.schema';
 
 @injectable()
 export class WorkerBalanceRecreatorUseCase {
@@ -32,7 +32,7 @@ export class WorkerBalanceRecreatorUseCase {
     accountId: string,
     isAdministrator: boolean,
     workerId: string
-  ): Promise<BalanceCreateWorkerResponse> {
+  ): Promise<BalanceRecreateWorkerResponse> {
     await this.validate(t, accountId);
 
     const viewWorkerType = await this.workerService.viewWorkerType(

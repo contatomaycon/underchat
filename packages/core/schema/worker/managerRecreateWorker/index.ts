@@ -2,6 +2,7 @@ import { Type } from '@sinclair/typebox';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { managerRecreateWorkerRequestSchema } from './request.schema';
 import { ELanguage } from '@core/common/enums/ELanguage';
+import { managerRecreateWorkerResponseSchema } from './response.schema';
 
 export const managerRecreateWorkerSchema = {
   description: 'Recria um canal existente',
@@ -28,7 +29,7 @@ export const managerRecreateWorkerSchema = {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: Type.Null(),
+        data: managerRecreateWorkerResponseSchema,
       },
       { description: 'Successful' }
     ),

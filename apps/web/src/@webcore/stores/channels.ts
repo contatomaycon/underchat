@@ -23,6 +23,7 @@ import { currentTime } from '@core/common/functions/currentTime';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { WorkerConnectionLogsQuery } from '@core/schema/worker/workerConnectionLogs/request.schema';
 import { WorkerConnectionLogsResponse } from '@core/schema/worker/workerConnectionLogs/response.schema';
+import { ManagerRecreateWorkerResponse } from '@core/schema/worker/managerRecreateWorker/response.schema';
 
 export const useChannelsStore = defineStore('channels', {
   state: () => ({
@@ -346,6 +347,47 @@ export const useChannelsStore = defineStore('channels', {
         this.loading = false;
 
         return [];
+      }
+    },
+
+    async recreateChannel(workerId: string): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<
+          IApiResponse<ManagerRecreateWorkerResponse>
+        >(`/worker/${workerId}`);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('worker_recreation_failed');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('worker_recreate_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('worker_recreation_failed');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
       }
     },
 

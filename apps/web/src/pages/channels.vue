@@ -45,6 +45,10 @@ const permissionsViewLogs = [
   EGeneralPermissions.full_access,
   EWorkerPermissions.view_worker_logs,
 ];
+const permissionsRecreate = [
+  EGeneralPermissions.full_access,
+  EWorkerPermissions.recreate_worker,
+];
 
 const { t } = useI18n();
 const channelsStore = useChannelsStore();
@@ -73,6 +77,9 @@ const itemsType = ref([
 
 const isDialogDeleterShow = ref(false);
 const channelToDelete = ref<string | null>(null);
+
+const isDialogRecreatorShow = ref(false);
+const channelToRecreate = ref<string | null>(null);
 
 const isDialogEditChannelShow = ref(false);
 const isAddChannelVisible = ref(false);
@@ -154,6 +161,11 @@ const deleteChannel = async (id: string) => {
   isDialogDeleterShow.value = true;
 };
 
+const recreateChannel = async (id: string) => {
+  channelToRecreate.value = id;
+  isDialogRecreatorShow.value = true;
+};
+
 const openEditDialog = (id: string) => {
   channelToEdit.value = id;
   isDialogEditChannelShow.value = true;
@@ -178,6 +190,14 @@ const handleDelete = async () => {
   }
 
   channelToDelete.value = null;
+};
+
+const handleRecreate = async () => {
+  if (!channelToRecreate.value) return;
+
+  await channelsStore.recreateChannel(channelToRecreate.value);
+
+  channelToRecreate.value = null;
 };
 
 watch(
@@ -351,6 +371,16 @@ onBeforeUnmount(async () => {
                 @click="openConnectionLogDialog(item.id)"
             /></IconBtn>
 
+            <IconBtn v-if="$canPermission(permissionsRecreate)"
+              ><VTooltip
+                location="top"
+                transition="scale-transition"
+                activator="parent"
+              >
+                <span>{{ $t('recreate_channel') }}</span> </VTooltip
+              ><VIcon icon="tabler-refresh" @click="recreateChannel(item.id)"
+            /></IconBtn>
+
             <IconBtn v-if="$canPermission(permissionsDelete)"
               ><VTooltip
                 location="top"
@@ -382,6 +412,14 @@ onBeforeUnmount(async () => {
         :title="$t('delete_channel')"
         :message="$t('delete_channel_confirmation')"
         @confirm="handleDelete"
+      />
+
+      <VDialogHandler
+        v-if="isDialogRecreatorShow"
+        v-model="isDialogRecreatorShow"
+        :title="$t('recreate_channel')"
+        :message="$t('recreate_channel_confirmation')"
+        @confirm="handleRecreate"
       />
 
       <AppEditChannel

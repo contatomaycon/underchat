@@ -2,8 +2,8 @@ import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { AccountService } from '@core/services/account.service';
-import { ManagerCreateWorkerResponse } from '@core/schema/worker/managerCreateWorker/response.schema';
 import { BalanceService } from '@core/services/balance.service';
+import { ManagerRecreateWorkerResponse } from '@core/schema/worker/managerRecreateWorker/response.schema';
 
 @injectable()
 export class WorkerManagerRecreatorUseCase {
@@ -30,7 +30,7 @@ export class WorkerManagerRecreatorUseCase {
     accountId: string,
     isAdministrator: boolean,
     workerId: string
-  ): Promise<ManagerCreateWorkerResponse> {
+  ): Promise<ManagerRecreateWorkerResponse> {
     await this.validate(t, accountId);
 
     const viewWorkerBalancer = await this.workerService.viewWorkerBalancer(
@@ -43,14 +43,14 @@ export class WorkerManagerRecreatorUseCase {
       throw new Error(t('worker_balancer_not_available'));
     }
 
-    const createWorker = await this.balanceService.recreateWorker(
+    const recreateWorker = await this.balanceService.recreateWorker(
       t,
       viewWorkerBalancer,
       workerId
     );
 
     return {
-      worker_id: createWorker.worker_id,
+      worker_id: recreateWorker.worker_id,
     };
   }
 }
