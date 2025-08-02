@@ -14,8 +14,10 @@ import elasticLogsPlugin from '@core/plugins/elasticLogs';
 import loggerServicePlugin from '@core/plugins/logger';
 import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
 import consumerPlugin from './consumer';
+import temporalConsumerPlugin from './temporal';
 import centrifugoPlugin from '@/plugins/centrifugo';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
+import temporalPlugin from '@core/plugins/temporal';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -47,6 +49,8 @@ server.register(elasticLogsPlugin, {
 server.register(loggerServicePlugin);
 server.register(consumerPlugin);
 server.register(swaggerPlugin);
+server.register(temporalPlugin);
+server.register(temporalConsumerPlugin);
 
 const start = async () => {
   try {
