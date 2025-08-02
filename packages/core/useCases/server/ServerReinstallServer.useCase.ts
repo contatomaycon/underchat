@@ -92,7 +92,7 @@ export class ServerReinstallServerUseCase {
 
     await this.onServerCreated(t, serverId);
 
-    return this.serverService.updateServerStatusById(
+    return this.serverService.
       serverId,
       EServerStatus.new
     );

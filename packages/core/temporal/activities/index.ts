@@ -116,6 +116,8 @@ export async function testServers(): Promise<void> {
       if (!isWebServerRunning) {
         return updateServerStatusById(server.server_id, EServerStatus.offline);
       }
+
+      await updateServerStatusById(server.server_id, EServerStatus.online);
     })
   );
 }

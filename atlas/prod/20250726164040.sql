@@ -201,6 +201,7 @@ CREATE TABLE "server" (
   "server_status_id" uuid NOT NULL,
   "name" character varying(200) NOT NULL,
   "quantity_workers" integer NOT NULL,
+  "last_sync" timestamptz NULL,
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
   "deleted_at" timestamptz NULL,

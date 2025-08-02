@@ -37,6 +37,7 @@ import { ServerWebDeleterRepository } from '@core/repositories/server/ServerWebD
 import { ServerWebViewerRepository } from '@core/repositories/server/ServerWebViewer.repository';
 import { ServerSshListerRepository } from '@core/repositories/server/ServerSshLister.repository';
 import { IListerServerSsh } from '@core/common/interfaces/IListerServerSsh';
+import { currentTime } from '@core/common/functions/currentTime';
 
 @injectable()
 export class ServerService {
@@ -114,9 +115,12 @@ export class ServerService {
     serverId: string,
     status: EServerStatus
   ): Promise<boolean> => {
+    const date = currentTime();
+
     const statusServerCentrifugo: IStatusServerCentrifugo = {
       server_id: serverId,
       status: status,
+      last_sync: date,
     };
 
     this.centrifugoService.publish(
