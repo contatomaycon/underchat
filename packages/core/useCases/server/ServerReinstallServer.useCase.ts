@@ -72,7 +72,7 @@ export class ServerReinstallServerUseCase {
         server_id: serverId,
       };
 
-      await this.streamProducerService.send('create:server', payload);
+      await this.streamProducerService.send('create.server', payload);
     } catch {
       throw new Error(t('kafka_error'));
     }

@@ -134,7 +134,7 @@ export class BalanceCreatorConsume {
   }
 
   async execute(server: FastifyInstance): Promise<void> {
-    const stream: KStream = this.kafkaStreams.getKStream('create:server');
+    const stream: KStream = this.kafkaStreams.getKStream('create.server');
 
     stream.mapBufferKeyToString();
     stream.mapJSONConvenience();
