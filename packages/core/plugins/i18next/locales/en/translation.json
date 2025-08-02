@@ -74,5 +74,6 @@
   "worker_connection_logs_not_found": "Worker connection logs not found!",
   "worker_recreate_success": "Worker recreated successfully!",
   "worker_recreate_not_found": "Worker not found for recreation!",
-  "worker_recreation_failed": "Failed to recreate worker"
+  "worker_recreation_failed": "Failed to recreate worker",
+  "worker_balancer_not_available": "Worker balancer not available!"
 }

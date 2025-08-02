@@ -65,4 +65,26 @@ export class BalanceService {
       throw new Error(t('worker_delete_error'));
     }
   }
+
+  public async recreateWorker(
+    t: TFunction<'translation', undefined>,
+    input: IViewWorkerBalancerServer,
+    workerId: string
+  ): Promise<BalanceCreateWorkerResponse> {
+    try {
+      const axiosInstance = this.createAxiosInstance(input);
+
+      const { data } = await axiosInstance.patch<
+        IApiResponse<BalanceCreateWorkerResponse>
+      >(`/worker/${workerId}`);
+
+      if (!data.status || !data.data) {
+        throw new Error(t('worker_recreation_failed'));
+      }
+
+      return data.data;
+    } catch {
+      throw new Error(t('worker_recreation_failed'));
+    }
+  }
 }

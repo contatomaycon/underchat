@@ -25,3 +25,8 @@ export const workerLogsConnectionPermissions = [
   EGeneralPermissions.full_access,
   EWorkerPermissions.view_worker_logs,
 ];
+
+export const workerRecreatePermissions = [
+  EGeneralPermissions.full_access,
+  EWorkerPermissions.recreate_worker,
+];
