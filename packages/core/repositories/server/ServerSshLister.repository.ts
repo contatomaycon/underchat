@@ -1,9 +1,10 @@
 import * as schema from '@core/models';
-import { serverSsh } from '@core/models';
+import { serverSsh, server } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, isNull } from 'drizzle-orm';
+import { and, isNull, eq, or } from 'drizzle-orm';
 import { IListerServerSsh } from '@core/common/interfaces/IListerServerSsh';
+import { EServerStatus } from '@core/common/enums/EServerStatus';
 
 @injectable()
 export class ServerSshListerRepository {
@@ -21,7 +22,16 @@ export class ServerSshListerRepository {
         ssh_password: serverSsh.ssh_password,
       })
       .from(serverSsh)
-      .where(and(isNull(serverSsh.deleted_at)))
+      .innerJoin(server, eq(server.server_id, serverSsh.server_id))
+      .where(
+        and(
+          isNull(serverSsh.deleted_at),
+          or(
+            eq(server.server_status_id, EServerStatus.offline),
+            eq(server.server_status_id, EServerStatus.online)
+          )
+        )
+      )
       .execute();
 
     if (!result?.length) {
