@@ -1,4 +1,5 @@
 import { EServerStatus } from '@core/common/enums/EServerStatus';
+import { IDistroInfo } from '@core/common/interfaces/IDistroInfo';
 import { IListerServerSsh } from '@core/common/interfaces/IListerServerSsh';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
 import { ServerService } from '@core/services/server.service';
@@ -7,7 +8,7 @@ import { ConnectConfig } from 'ssh2';
 import { container } from 'tsyringe';
 
 export interface IServerActivity {
-  testSSHConnection(): Promise<void>;
+  testServers(): Promise<void>;
 }
 
 export async function listServerSsh(): Promise<IListerServerSsh[]> {
@@ -44,7 +45,39 @@ export async function updateServerStatusById(
   return serverService.updateServerStatusById(serverId, status);
 }
 
-export async function testSSHConnection(): Promise<void> {
+export async function statusWebServer(
+  distro: IDistroInfo,
+  sshConfig: ConnectConfig,
+  serverId: string
+): Promise<boolean> {
+  const serverService = container.resolve(ServerService);
+  const sshService = container.resolve(SshService);
+
+  const webView = await serverService.viewServerWebById(serverId);
+
+  if (!webView || !sshConfig?.host) {
+    return false;
+  }
+
+  const commands = sshService.getStatusCommands(
+    distro,
+    sshConfig.host,
+    webView.web_port
+  );
+
+  const result = await sshService.runCommands(serverId, sshConfig, commands);
+
+  if (result.length > 0) {
+    await serverService.updateLogInstallServerBulk(result);
+  }
+
+  const lastOutput = result[result.length - 1]?.output?.trim();
+  const status = Number(lastOutput ?? 0);
+
+  return status === 200;
+}
+
+export async function testServers(): Promise<void> {
   const sshService = container.resolve(SshService);
 
   const serverSshList = await listServerSsh();
@@ -63,10 +96,25 @@ export async function testSSHConnection(): Promise<void> {
       };
 
       const decryptedConfig = await decryptConnectConfig(config);
-      const testeSsh = await sshService.testSSHConnection(decryptedConfig);
 
+      const testeSsh = await sshService.testSSHConnection(decryptedConfig);
       if (!testeSsh) {
-        await updateServerStatusById(server.server_id, EServerStatus.offline);
+        return updateServerStatusById(server.server_id, EServerStatus.offline);
+      }
+
+      const distro = await sshService.getDistroAndVersion(decryptedConfig);
+      if (!distro) {
+        return updateServerStatusById(server.server_id, EServerStatus.offline);
+      }
+
+      const isWebServerRunning = await statusWebServer(
+        distro,
+        decryptedConfig,
+        server.server_id
+      );
+
+      if (!isWebServerRunning) {
+        return updateServerStatusById(server.server_id, EServerStatus.offline);
       }
     })
   );
