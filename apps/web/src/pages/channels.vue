@@ -68,6 +68,9 @@ const itemsStatus = ref([
   { id: EWorkerStatus.disponible, text: t('disponible') },
   { id: EWorkerStatus.offline, text: t('offline') },
   { id: EWorkerStatus.online, text: t('online') },
+  { id: EWorkerStatus.new, text: t('new') },
+  { id: EWorkerStatus.deleting, text: t('deleting') },
+  { id: EWorkerStatus.recreating, text: t('recreating') },
 ]);
 
 const itemsType = ref([
@@ -98,6 +101,11 @@ const resolveStatusVariant = (s: string | undefined | null) => {
     return { color: EColor.error, text: t('offline') };
   if (s === EWorkerStatus.online)
     return { color: EColor.success, text: t('online') };
+  if (s === EWorkerStatus.new) return { color: EColor.info, text: t('new') };
+  if (s === EWorkerStatus.deleting)
+    return { color: EColor.error, text: t('deleting') };
+  if (s === EWorkerStatus.recreating)
+    return { color: EColor.info, text: t('recreating') };
 
   return { color: EColor.primary, text: t('unknown') };
 };
