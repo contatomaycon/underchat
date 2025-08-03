@@ -84,9 +84,7 @@ export class BalanceService {
       }
 
       return data.data;
-    } catch (error) {
-      console.log('Error al recrear el trabajador', error);
-
+    } catch {
       throw new Error(t('worker_recreation_failed'));
     }
   }
