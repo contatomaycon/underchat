@@ -20,7 +20,7 @@ const kafkaStreamsPlugin: FastifyPluginAsync<
 
   const noptions: CommonKafkaOptions = {
     'metadata.broker.list': kafkaEnvironment.kafkaBroker,
-    'group.id': 'group-underchat-streams',
+    'group.id': `group-underchat-streams-${module}`,
     'client.id': `client-stream-${module}`,
     'compression.codec': 'snappy',
     'enable.auto.commit': false,
@@ -41,7 +41,7 @@ const kafkaStreamsPlugin: FastifyPluginAsync<
   const config: KafkaStreamsConfig = {
     kafkaHost: kafkaEnvironment.kafkaBroker,
     clientName: `client-stream-${module}`,
-    groupId: 'group-underchat-streams',
+    groupId: `group-underchat-streams-${module}`,
     workerPerPartition: 1,
     batchOptions: {
       batchSize: 1,

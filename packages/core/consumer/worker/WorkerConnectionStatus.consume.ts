@@ -14,8 +14,6 @@ export class WorkerConnectionStatusConsume {
   ) {}
 
   public async execute(): Promise<void> {
-    process.env.DEBUG = 'kafka-streams:*';
-
     const topic = `worker.${baileysEnvironment.baileysWorkerId}.status`;
 
     console.log(`Consuming messages from topic: ${topic}`);
