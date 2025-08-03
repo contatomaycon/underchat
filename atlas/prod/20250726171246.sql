@@ -4,3 +4,4 @@ INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('6b9fba64-289
 INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('1585dbf9-eff8-41c8-bccb-b4c15b444b0a', 'new');
 INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('214ed038-6f66-4fa3-be83-2ee07b093d15', 'deleting');
 INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('997d6778-365c-43ad-9c94-8dba0a7974b8', 'recreating');
+INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('2c954c06-c950-4818-a7aa-3a78c10cb506', 'error');

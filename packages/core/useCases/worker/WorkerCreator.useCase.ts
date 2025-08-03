@@ -7,15 +7,18 @@ import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 import { CreateWorkerRequest } from '@core/schema/worker/createWorker/request.schema';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { v4 as uuidv4 } from 'uuid';
-import { ICreateWorker } from '@core/common/interfaces/ICreateWorker';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
+import { EWorkerAction } from '@core/common/enums/EWorkerAction';
+import { CentrifugoService } from '@core/services/centrifugo.service';
 
 @injectable()
 export class WorkerCreatorUseCase {
   constructor(
     private readonly workerService: WorkerService,
     private readonly accountService: AccountService,
-    private readonly streamProducerService: StreamProducerService
+    private readonly streamProducerService: StreamProducerService,
+    private readonly centrifugoService: CentrifugoService
   ) {}
 
   private async validate(
@@ -49,11 +52,11 @@ export class WorkerCreatorUseCase {
 
   private async onWorkerCreated(
     t: TFunction<'translation', undefined>,
-    payload: ICreateWorker
+    payload: IWorkerPayload
   ): Promise<void> {
     try {
       await this.streamProducerService.send(
-        `create.${payload.server_id}.worker`,
+        `worker.${payload.server_id}`,
         payload
       );
     } catch {
@@ -79,7 +82,8 @@ export class WorkerCreatorUseCase {
     const workerId = uuidv4();
     const workerType = input.worker_type as EWorkerType;
 
-    const payload: ICreateWorker = {
+    const payloadCreate: IWorkerPayload = {
+      action: EWorkerAction.create,
       worker_id: workerId,
       worker_status_id: EWorkerStatus.new,
       worker_type_id: workerType,
@@ -89,13 +93,18 @@ export class WorkerCreatorUseCase {
       is_administrator: isAdministrator,
     };
 
-    const isCreated = await this.workerService.createWorker(payload);
+    const isCreated = await this.workerService.createWorker(payloadCreate);
 
     if (!isCreated) {
       throw new Error(t('worker_creation_failed'));
     }
 
-    await this.onWorkerCreated(t, payload);
+    await this.centrifugoService.publish(
+      `worker.${payloadCreate.server_id}`,
+      payloadCreate
+    );
+
+    await this.onWorkerCreated(t, payloadCreate);
 
     return isCreated;
   }

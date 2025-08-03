@@ -1,4 +1,4 @@
-import { ICreateWorker } from '@core/common/interfaces/ICreateWorker';
+import { ICreateWorker } from '@core/common/interfaces/IWorkerPayload';
 import * as schema from '@core/models';
 import { worker } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';

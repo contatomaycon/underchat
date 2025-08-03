@@ -2,15 +2,18 @@ import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
-import { IDeleteWorker } from '@core/common/interfaces/IDeleteWorker';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
+import { EWorkerAction } from '@core/common/enums/EWorkerAction';
+import { CentrifugoService } from '@core/services/centrifugo.service';
 
 @injectable()
 export class WorkerDeleterUseCase {
   constructor(
     private readonly workerService: WorkerService,
-    private readonly streamProducerService: StreamProducerService
+    private readonly streamProducerService: StreamProducerService,
+    private readonly centrifugoService: CentrifugoService
   ) {}
 
   private async validate(
@@ -32,11 +35,11 @@ export class WorkerDeleterUseCase {
 
   private async onWorkerDeleted(
     t: TFunction<'translation', undefined>,
-    payload: IDeleteWorker
+    payload: IWorkerPayload
   ): Promise<void> {
     try {
       await this.streamProducerService.send(
-        `delete.${payload.server_id}.worker`,
+        `worker.${payload.server_id}`,
         payload
       );
     } catch {
@@ -62,12 +65,18 @@ export class WorkerDeleterUseCase {
       throw new Error(t('worker_not_found'));
     }
 
-    const inputDeleter: IDeleteWorker = {
+    const inputDeleter: IWorkerPayload = {
+      action: EWorkerAction.delete,
       worker_id: workerId,
       server_id: viewWorkerBalancer.server_id,
       account_id: accountId,
       is_administrator: isAdministrator,
     };
+
+    await this.centrifugoService.publish(
+      `worker.${inputDeleter.server_id}`,
+      inputDeleter
+    );
 
     await this.onWorkerDeleted(t, inputDeleter);
 

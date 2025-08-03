@@ -69,6 +69,7 @@ const itemsStatus = ref([
   { id: EWorkerStatus.new, text: t('new') },
   { id: EWorkerStatus.deleting, text: t('deleting') },
   { id: EWorkerStatus.recreating, text: t('recreating') },
+  { id: EWorkerStatus.error, text: t('error') },
 ]);
 
 const itemsType = ref([
@@ -104,6 +105,8 @@ const resolveStatusVariant = (s: string | undefined | null) => {
     return { color: EColor.error, text: t('deleting') };
   if (s === EWorkerStatus.recreating)
     return { color: EColor.info, text: t('recreating') };
+  if (s === EWorkerStatus.error)
+    return { color: EColor.error, text: t('error') };
 
   return { color: EColor.primary, text: t('unknown') };
 };

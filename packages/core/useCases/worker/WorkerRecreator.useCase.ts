@@ -2,16 +2,19 @@ import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { AccountService } from '@core/services/account.service';
-import { IRecreateWorker } from '@core/common/interfaces/IRecreateWorker';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
+import { EWorkerAction } from '@core/common/enums/EWorkerAction';
+import { CentrifugoService } from '@core/services/centrifugo.service';
 
 @injectable()
 export class WorkerRecreatorUseCase {
   constructor(
     private readonly workerService: WorkerService,
     private readonly accountService: AccountService,
-    private readonly streamProducerService: StreamProducerService
+    private readonly streamProducerService: StreamProducerService,
+    private readonly centrifugoService: CentrifugoService
   ) {}
 
   private async validate(
@@ -28,11 +31,11 @@ export class WorkerRecreatorUseCase {
 
   private async onWorkerRecreated(
     t: TFunction<'translation', undefined>,
-    payload: IRecreateWorker
+    payload: IWorkerPayload
   ): Promise<void> {
     try {
       await this.streamProducerService.send(
-        `recreate.${payload.server_id}.worker`,
+        `worker.${payload.server_id}`,
         payload
       );
     } catch {
@@ -58,13 +61,19 @@ export class WorkerRecreatorUseCase {
       throw new Error(t('worker_balancer_not_available'));
     }
 
-    const inputRecreate: IRecreateWorker = {
+    const inputRecreate: IWorkerPayload = {
+      action: EWorkerAction.recreate,
       worker_id: workerId,
       server_id: viewWorkerBalancer.server_id,
       account_id: accountId,
       is_administrator: isAdministrator,
       worker_status_id: EWorkerStatus.recreating,
     };
+
+    await this.centrifugoService.publish(
+      `worker.${inputRecreate.server_id}`,
+      inputRecreate
+    );
 
     await this.onWorkerRecreated(t, inputRecreate);
 

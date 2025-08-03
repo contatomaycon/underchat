@@ -2,7 +2,7 @@ import { injectable } from 'tsyringe';
 import Docker from 'dockerode';
 import { EWorkerImage } from '@core/common/enums/EWorkerImage';
 import { WorkerCreatorRepository } from '@core/repositories/worker/WorkerCreator.repository';
-import { ICreateWorker } from '@core/common/interfaces/ICreateWorker';
+import { ICreateWorker } from '@core/common/interfaces/IWorkerPayload';
 import { WorkerServerViewerRepository } from '@core/repositories/worker/WorkerServerViewer.repository';
 import { WorkerTotalViewerRepository } from '@core/repositories/worker/WorkerTotalViewer.repository';
 import { WorkerListerRepository } from '@core/repositories/worker/WorkerLister.repository';
