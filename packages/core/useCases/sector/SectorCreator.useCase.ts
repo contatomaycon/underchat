@@ -14,20 +14,12 @@ export class SectorCreatorUseCase {
 
   async validate(
     t: TFunction<'translation', undefined>,
-    accountId: string,
-    input: CreateSectorRequest
+    accountId: string
   ): Promise<void> {
     const accountExists =
       await this.accountService.existsAccountById(accountId);
     if (!accountExists) {
       throw new Error(t('account_not_found'));
-    }
-
-    const sectorStatusExists = await this.sectorService.existsSectorStatusById(
-      input.sector_status_id
-    );
-    if (!sectorStatusExists) {
-      throw new Error(t('sector_status_not_found'));
     }
   }
 
@@ -36,7 +28,7 @@ export class SectorCreatorUseCase {
     input: CreateSectorRequest,
     accountId: string
   ): Promise<CreateSectorResponse | null> {
-    await this.validate(t, accountId, input);
+    await this.validate(t, accountId);
 
     const sectorCreator = await this.sectorService.createSector(
       input,

@@ -138,5 +138,20 @@
     "connection_timeout": "Tempo de conexão esgotado. Por favor, tente novamente.",
     "connection_removed_in_phone": "Conexão removida no celular, por favor, reconecte.",
     "connection_date": "Data de Conexão",
-    "roles": "Cargos"
+    "roles": "Cargos",
+    "sector": "Setor",
+    "sector_list_error": "Ocorreu um erro ao listar os setores. Por favor, tente novamente.",
+    "sector_add_error": "Ocorreu um erro ao adicionar o setor. Por favor, tente novamente.",
+    "sector_add_success": "Setor adicionado com sucesso!",
+    "add_sector": "Adicionar Setor",
+    "sector_edit_error": "Ocorreu um erro ao editar o setor. Por favor, tente novamente.",
+    "sector_edit_success": "Setor editado com sucesso!",
+    "cor": "Cor",
+    "sector_view_error": "Ocorreu um erro ao ver o setor. Por favor, tente novamente.",
+    "active": "Ativo",
+    "inactive": "Inativo",
+    "sector_deleted_error": "Ocorreu um erro ao excluir o setor. Por favor, tente novamente.",
+    "sector_deleted_success": "Setor excluído com sucesso!",
+    "delete_sector": "Excluir setor?",
+    "delete_sector_confirmation": "Você tem certeza que deseja excluir este setor?"
 }

@@ -135,5 +135,20 @@
     "connection_timeout": "Connection timeout. Please try again.",
     "connection_removed_in_phone": "Connection removed in phone, please reconnect.",
     "connection_date": "Connection Date",
-    "roles": "Roles"
+    "roles": "Roles",
+    "sector": "Sector",
+    "sector_list_error": "An error occurred while listing sectors. Please try again.",
+    "sector_add_error": "An error occurred while adding the sector. Please try again.",
+    "sector_add_success": "Sector added successfully!",
+    "add_sector": "Add Sector",
+    "sector_edit_error": "An error occurred while editing the sector. Please try again.",
+    "sector_edit_success": "Sector edited successfully!",
+    "cor": "Color",
+    "sector_view_error": "An error occurred while viewing the sector. Please try again.",
+    "active": "Active",
+    "inactive": "Inactive",
+    "sector_deleted_error": "An error occurred while deleting the sector. Please try again.",
+    "sector_deleted_success": "Sector deleted successfully!",
+    "delete_sector": "Delete sector?",
+    "delete_sector_confirmation": "Are you sure you want to delete this sector?"
 }
