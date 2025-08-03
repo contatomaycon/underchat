@@ -2,6 +2,7 @@ import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { IViewWorkerBalancerServer } from '@core/common/interfaces/IViewWorkerBalancerServer';
 import { BalanceCreateWorkerRequest } from '@core/schema/worker/balanceCreateWorker/request.schema';
 import { BalanceCreateWorkerResponse } from '@core/schema/worker/balanceCreateWorker/response.schema';
+import { BalanceRecreateWorkerRequest } from '@core/schema/worker/balanceRecreateWorker/request.schema';
 import axios, { AxiosInstance } from 'axios';
 import { TFunction } from 'i18next';
 import { injectable } from 'tsyringe';
@@ -70,12 +71,12 @@ export class BalanceService {
     t: TFunction<'translation', undefined>,
     input: IViewWorkerBalancerServer,
     workerId: string
-  ): Promise<BalanceCreateWorkerResponse> {
+  ): Promise<BalanceRecreateWorkerRequest> {
     try {
       const axiosInstance = this.createAxiosInstance(input);
 
       const { data } = await axiosInstance.patch<
-        IApiResponse<BalanceCreateWorkerResponse>
+        IApiResponse<BalanceRecreateWorkerRequest>
       >(`/worker/${workerId}`);
 
       if (!data.status || !data.data) {
@@ -83,7 +84,9 @@ export class BalanceService {
       }
 
       return data.data;
-    } catch {
+    } catch (error) {
+      console.log('Error al recrear el trabajador', error);
+
       throw new Error(t('worker_recreation_failed'));
     }
   }

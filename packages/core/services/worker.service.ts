@@ -98,11 +98,22 @@ export class WorkerService {
     }
   }
 
+  public async existsVolumeWorkerById(workerId: string): Promise<boolean> {
+    try {
+      const volume = this.docker.getVolume(workerId);
+      await volume.inspect();
+
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   public async checkVolumeAndCreate(
     workerId: string,
     isCreateVolume: boolean
   ): Promise<void> {
-    const getVolume = await this.docker.getVolume(workerId).inspect();
+    const getVolume = await this.existsVolumeWorkerById(workerId);
 
     if (!getVolume || isCreateVolume) {
       await this.docker.createVolume({
@@ -118,14 +129,13 @@ export class WorkerService {
     isCreateVolume: boolean = true
   ): Promise<string> {
     const existsContainerById = await this.existsContainerWorkerById(workerId);
-
     if (existsContainerById) {
       await this.removeContainerWorkerById(workerId, t);
     }
 
     await this.checkVolumeAndCreate(workerId, isCreateVolume);
 
-    const getVolume = await this.docker.getVolume(workerId).inspect();
+    const getVolume = await this.existsVolumeWorkerById(workerId);
     if (!getVolume) {
       throw new Error(t('worker_volume_creation_failed'));
     }
@@ -165,13 +175,17 @@ export class WorkerService {
     workerId: string,
     isRemoveVolume: boolean = true
   ): Promise<boolean> {
-    const removeContainerWorkerById = await this.removeContainerWorkerById(
-      workerId,
-      t
-    );
+    const existsContainerById = await this.existsContainerWorkerById(workerId);
 
-    if (!removeContainerWorkerById) {
-      throw new Error(t('worker_removal_failed'));
+    if (existsContainerById) {
+      const removeContainerWorkerById = await this.removeContainerWorkerById(
+        workerId,
+        t
+      );
+
+      if (!removeContainerWorkerById) {
+        throw new Error(t('worker_removal_failed'));
+      }
     }
 
     if (isRemoveVolume) {
