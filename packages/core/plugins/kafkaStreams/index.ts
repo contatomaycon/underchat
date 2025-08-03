@@ -18,8 +18,6 @@ const kafkaStreamsPlugin: FastifyPluginAsync<
 > = async (fastify: FastifyInstance, opts) => {
   const module = opts.module;
 
-  console.log(`Initializing Kafka Streams for module: ${module}`);
-
   const noptions: CommonKafkaOptions = {
     'metadata.broker.list': kafkaEnvironment.kafkaBroker,
     'group.id': `group-underchat-streams-${module}`,

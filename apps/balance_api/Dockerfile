@@ -8,11 +8,12 @@ RUN apk update && \
       g++ \
       git \
       libc6-compat \
+      librdkafka-dev \
+      librdkafka \
       make \
       musl-dev \
-      librdkafka-dev \
       python3 \
-      docker-cli
+      lz4-libs
 
 RUN npm add -g pnpm turbo
  
@@ -45,11 +46,6 @@ RUN mkdir -p /build_locales
 COPY packages/core/plugins/i18next/locales /build_locales
 
 FROM node:22.17.0-alpine
-
-RUN apk update && \
-    apk add --no-cache \
-      librdkafka \
-      lz4-libs
 
 WORKDIR /app
 

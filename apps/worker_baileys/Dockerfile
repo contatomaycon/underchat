@@ -9,9 +9,11 @@ RUN apk update && \
       git \
       libc6-compat \
       librdkafka-dev \
+      librdkafka \
       make \
       musl-dev \
-      python3
+      python3 \
+      lz4-libs
 
 RUN npm add -g pnpm turbo
  
@@ -41,11 +43,6 @@ COPY --from=pruned /app/out/full/ .
 RUN pnpm build:worker_baileys
 
 FROM node:22.17.0-alpine
-
-RUN apk update && \
-    apk add --no-cache \
-      librdkafka \
-      lz4-libs
 
 WORKDIR /app
 
