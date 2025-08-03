@@ -95,7 +95,7 @@
     "number": "Number",
     "account": "Account",
     "worker_view_error": "An error occurred while viewing the worker. Please try again.",
-    "cargos": "Cargos",
+    "cargos": "Roles",
     "role_list_error": "An error occurred while listing roles. Please try again.",
     "role_add_error": "An error occurred while adding the role. Please try again.",
     "role_add_success": "Role added successfully!",

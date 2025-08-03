@@ -68,5 +68,16 @@
   "worker_volume_removal_failed": "Falha ao remover volume do canal",
   "worker_status_change_success": "Status do canal alterado com sucesso!",
   "worker_status_change_error": "Erro ao alterar o status do canal",
-  "kafka_error": "Erro ao comunicar com Kafka!"
+  "kafka_error": "Erro ao comunicar com Kafka!",
+  "sector_creator_success": "Setor criado com sucesso!",
+  "sector_not_found": "Setor não encontrado!",
+  "sector_creator_error": "Erro ao criar o setor!",
+  "sector_status_not_found": "Status do setor não encontrado!",
+  "sector_list_successfully": "Lista de setores obtida com sucesso!",
+  "sector_list_not_found": "Nenhum setor encontrado!",
+  "sector_view_successfully": "Setor visualizado com sucesso!",
+  "sector_deleted_successfully": "Setor excluído com sucesso!",
+  "sector_deleter_error": "Erro ao excluir o setor!",
+  "sector_update_successfully": "Setor atualizado com sucesso!",
+  "sector_update_error": "Erro ao atualizar o setor!"
 }

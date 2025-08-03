@@ -68,5 +68,16 @@
   "worker_volume_removal_failed": "Error al eliminar el volumen del canal",
   "worker_status_change_success": "¡Estado del trabajador cambiado con éxito!",
   "worker_status_change_error": "Error al cambiar el estado del trabajador",
-  "kafka_error": "Error al comunicarse con Kafka"
+  "kafka_error": "Error al comunicarse con Kafka",
+  "sector_creator_success": "¡Sector creado con éxito!",
+  "sector_not_found": "¡Sector no encontrado!",
+  "sector_creator_error": "Error al crear el sector",
+  "sector_status_not_found": "¡Estado del sector no encontrado!",
+  "sector_list_successfully": "¡Lista de sectores obtenida con éxito!",
+  "sector_list_not_found": "¡No se encontraron sectores!",
+  "sector_view_successfully": "¡Sector visualizado con éxito!",
+  "sector_deleted_successfully": "¡Sector eliminado con éxito!",
+  "sector_deleter_error": "Error al eliminar el sector",
+  "sector_update_successfully": "¡Sector actualizado con éxito!",
+  "sector_update_error": "Error al actualizar el sector"
 }

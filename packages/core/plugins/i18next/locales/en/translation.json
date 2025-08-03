@@ -68,5 +68,16 @@
   "worker_volume_removal_failed": "Error removing worker volume!",
   "worker_status_change_success": "Worker status changed successfully!",
   "worker_status_change_error": "Error changing worker status!",
-  "kafka_error": "Error communicating with Kafka!"
+  "kafka_error": "Error communicating with Kafka!",
+  "sector_creator_success": "Sector created successfully!",
+  "sector_not_found": "Sector not found!",
+  "sector_creator_error": "Error creating sector!",
+  "sector_status_not_found": "Sector status not found!",
+  "sector_list_successfully": "Sector list retrieved successfully!",
+  "sector_list_not_found": "No sectors found!",
+  "sector_view_successfully": "Sector viewed successfully!",
+  "sector_deleted_successfully": "Sector deleted successfully!",
+  "sector_deleter_error": "Error deleting sector!",
+  "sector_update_successfully": "Sector updated successfully!",
+  "sector_update_error": "Error updating sector!"
 }
