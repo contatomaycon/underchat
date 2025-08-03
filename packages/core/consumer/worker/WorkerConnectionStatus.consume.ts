@@ -15,19 +15,12 @@ export class WorkerConnectionStatusConsume {
 
   public async execute(): Promise<void> {
     const topic = `worker.${baileysEnvironment.baileysWorkerId}.status`;
-
-    console.log(`Consuming messages from topic: ${topic}`);
-
     const stream: KStream = this.kafkaStreams.getKStream(topic);
-
-    console.log(`Stream created for topic: ${topic}`);
 
     stream.mapBufferKeyToString();
     stream.mapJSONConvenience();
 
     stream.forEach(async (msg) => {
-      console.log(`Received message: ${JSON.stringify(msg)}`);
-
       const data = msg.value as StatusConnectionWorkerRequest;
 
       if (!data) {

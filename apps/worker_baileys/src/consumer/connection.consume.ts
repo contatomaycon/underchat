@@ -8,8 +8,6 @@ export default fp(
     const consumer = container.resolve(WorkerConnectionStatusConsume);
 
     consumer.execute().catch((error) => {
-      console.error('Error executing consumer:', error);
-
       throw error;
     });
 
