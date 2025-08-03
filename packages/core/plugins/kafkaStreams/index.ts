@@ -40,11 +40,11 @@ const kafkaStreamsPlugin: FastifyPluginAsync<
 
   const config: KafkaStreamsConfig = {
     kafkaHost: kafkaEnvironment.kafkaBroker,
-    clientName: `client-stream-${ERouteModule.service}`,
+    clientName: `client-stream-${module}`,
     groupId: 'group-underchat-streams',
     workerPerPartition: 1,
     batchOptions: {
-      batchSize: 100,
+      batchSize: 1,
       commitEveryNBatch: 1,
       concurrency: 12,
       commitSync: false,
