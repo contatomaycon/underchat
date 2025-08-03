@@ -155,5 +155,5 @@
     "recreate_channel": "Recreate Channel",
     "recreate_channel_confirmation": "Are you sure you want to recreate this channel?",
     "worker_recreation_failed": "Failed to recreate the channel. Please try again.",
-    "worker_recreation_success": "Channel recreated successfully!"
+    "worker_recreate_success": "Channel recreated successfully!"
 }

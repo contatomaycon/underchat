@@ -156,5 +156,5 @@
     "recreate_channel": "Recrear canal",
     "recreate_channel_confirmation": "¿Estás seguro de que deseas recrear este canal?",
     "worker_recreation_failed": "Error al recrear el canal. Por favor, inténtalo de nuevo.",
-    "worker_recreation_success": "Canal recreado exitosamente."
+    "worker_recreate_success": "Canal recreado exitosamente."
 }
