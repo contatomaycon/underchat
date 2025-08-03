@@ -13,6 +13,8 @@ import swaggerPlugin from '@/plugins/swagger';
 import corsPlugin from '@core/plugins/cors';
 import elasticLogsPlugin from '@core/plugins/elasticLogs';
 import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
+import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
+import consumerPlugin from './consumer';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -32,12 +34,16 @@ server.register(authenticateKeyApi);
 server.register(i18nextPlugin);
 server.register(corsPlugin);
 
+server.register(kafkaStreamsPlugin, { module: ERouteModule.balancer });
+
 server.register(elasticLogsPlugin, {
   prefix: ERouteModule.balancer,
 });
 
 server.register(loggerServicePlugin);
 server.register(swaggerPlugin);
+
+server.register(consumerPlugin);
 
 const start = async () => {
   try {

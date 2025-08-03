@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
-import { ManagerCreateWorkerRequest } from '@core/schema/worker/managerCreateWorker/request.schema';
+import { ManagerCreateWorkerRequest } from '@core/schema/worker/createWorker/request.schema';
 import { VForm } from 'vuetify/components/VForm';
 
 const channelStore = useChannelsStore();

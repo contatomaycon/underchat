@@ -4,17 +4,17 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq, isNull, lt, count, asc } from 'drizzle-orm';
 import { EServerStatus } from '@core/common/enums/EServerStatus';
-import { IViewWorkerBalancerServer } from '@core/common/interfaces/IViewWorkerBalancerServer';
+import { IViewWorkerServer } from '@core/common/interfaces/IViewWorkerServer';
 
 @injectable()
-export class WorkerBalancerServerViewerRepository {
+export class WorkerServerViewerRepository {
   constructor(
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  viewWorkerBalancerServer = async (
+  viewWorkerServer = async (
     accountId: string
-  ): Promise<IViewWorkerBalancerServer | null> => {
+  ): Promise<IViewWorkerServer | null> => {
     const result = await this.db
       .select({
         server_id: server.server_id,
@@ -53,6 +53,6 @@ export class WorkerBalancerServerViewerRepository {
       return null;
     }
 
-    return result[0] as IViewWorkerBalancerServer;
+    return result[0] as IViewWorkerServer;
   };
 }

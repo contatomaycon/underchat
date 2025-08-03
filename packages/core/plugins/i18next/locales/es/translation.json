@@ -34,7 +34,7 @@
   "worker_creator_error": "Error al crear el trabajador",
   "worker_removal_failed": "Error al eliminar el trabajador",
   "worker_creation_failed": "Error al crear el trabajador",
-  "worker_balancer_server_not_disponible": "Servidor de balanceo de carga del trabajador no disponible",
+  "worker_server_not_disponible": "Servidor de trabajadores no disponible",
   "worker_not_available": "Su plan no admite trabajadores, comuníquese con el administrador del sistema para obtener más información.",
   "worker_not_available_additional": "Su plan no admite más trabajadores, contrate un adicional o comuníquese con el administrador del sistema para obtener más información.",
   "account_not_found": "¡Cuenta no encontrada!",

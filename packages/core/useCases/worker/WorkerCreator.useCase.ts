@@ -1,21 +1,21 @@
 import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
-import { BalanceCreateWorkerResponse } from '@core/schema/worker/balanceCreateWorker/response.schema';
-import { BalanceCreateWorkerRequest } from '@core/schema/worker/balanceCreateWorker/request.schema';
 import { WorkerService } from '@core/services/worker.service';
-import { v4 as uuidv4 } from 'uuid';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
-import { ICreateWorker } from '@core/common/interfaces/ICreateWorker';
-import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { AccountService } from '@core/services/account.service';
 import { EPlanProduct } from '@core/common/enums/EPlanProduct';
-import { getImageWorker } from '@core/common/functions/getImageWorker';
+import { CreateWorkerRequest } from '@core/schema/worker/createWorker/request.schema';
+import { StreamProducerService } from '@core/services/streamProducer.service';
+import { v4 as uuidv4 } from 'uuid';
+import { ICreateWorker } from '@core/common/interfaces/ICreateWorker';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 
 @injectable()
-export class WorkerBalanceCreatorUseCase {
+export class WorkerCreatorUseCase {
   constructor(
     private readonly workerService: WorkerService,
-    private readonly accountService: AccountService
+    private readonly accountService: AccountService,
+    private readonly streamProducerService: StreamProducerService
   ) {}
 
   private async validate(
@@ -47,45 +47,56 @@ export class WorkerBalanceCreatorUseCase {
     }
   }
 
+  private async onWorkerCreated(
+    t: TFunction<'translation', undefined>,
+    payload: ICreateWorker
+  ): Promise<void> {
+    try {
+      await this.streamProducerService.send(
+        `create.${payload.server_id}.worker`,
+        payload
+      );
+    } catch {
+      throw new Error(t('kafka_error'));
+    }
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    input: BalanceCreateWorkerRequest
-  ): Promise<BalanceCreateWorkerResponse> {
+    isAdministrator: boolean,
+    input: CreateWorkerRequest
+  ): Promise<boolean> {
     await this.validate(t, accountId);
 
-    const workerType = input.worker_type as EWorkerType;
-    const imageName = getImageWorker(workerType);
+    const viewWorkerServer =
+      await this.workerService.viewWorkerServer(accountId);
+
+    if (!viewWorkerServer) {
+      throw new Error(t('worker_server_not_disponible'));
+    }
+
     const workerId = uuidv4();
+    const workerType = input.worker_type as EWorkerType;
 
-    const containerId = await this.workerService.createContainerWorker(
-      t,
-      imageName,
-      workerId
-    );
-
-    if (!containerId) {
-      throw new Error(t('worker_creation_failed'));
-    }
-
-    const workerData: ICreateWorker = {
+    const payload: ICreateWorker = {
       worker_id: workerId,
-      worker_status_id: EWorkerStatus.disponible,
+      worker_status_id: EWorkerStatus.new,
       worker_type_id: workerType,
-      server_id: input.server_id,
+      server_id: viewWorkerServer.server_id,
       account_id: accountId,
-      container_id: containerId,
       name: input.name,
+      is_administrator: isAdministrator,
     };
 
-    const statusCreate = await this.workerService.createWorker(workerData);
+    const isCreated = await this.workerService.createWorker(payload);
 
-    if (!statusCreate) {
+    if (!isCreated) {
       throw new Error(t('worker_creation_failed'));
     }
 
-    return {
-      worker_id: workerId,
-    };
+    await this.onWorkerCreated(t, payload);
+
+    return isCreated;
   }
 }

@@ -1,17 +1,27 @@
 import { Type } from '@sinclair/typebox';
+import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { balanceDeleteWorkerRequestSchema } from './request.schema';
+import { createWorkerRequestSchema } from './request.schema';
 
-export const balanceDeleteWorkerSchema = {
-  description: 'Remove um canal existente',
+export const createWorkerSchema = {
+  description: 'Adiciona um novo canal',
   tags: [ETagSwagger.worker],
   produces: ['application/json'],
   security: [
     {
-      authenticateKeyApi: [],
+      authenticateJwt: [],
     },
   ],
-  params: balanceDeleteWorkerRequestSchema,
+  headers: Type.Object({
+    'Accept-Language': Type.Optional(
+      Type.String({
+        description: 'Idioma preferencial para a resposta',
+        enum: Object.values(ELanguage),
+        default: ELanguage.pt,
+      })
+    ),
+  }),
+  body: createWorkerRequestSchema,
   response: {
     200: Type.Object(
       {

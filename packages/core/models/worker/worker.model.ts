@@ -24,7 +24,7 @@ export const worker = pgTable('worker', {
     .notNull(),
   name: varchar({ length: 50 }).notNull(),
   number: varchar({ length: 20 }),
-  container_id: varchar({ length: 100 }).notNull(),
+  container_id: varchar({ length: 100 }),
   connection_date: timestamp({
     mode: 'string',
     withTimezone: true,

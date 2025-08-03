@@ -1,9 +1,9 @@
 import { Type } from '@sinclair/typebox';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { managerDeleteWorkerRequestSchema } from './request.schema';
+import { deleteWorkerRequestSchema } from './request.schema';
 import { ELanguage } from '@core/common/enums/ELanguage';
 
-export const managerDeleteWorkerSchema = {
+export const deleteWorkerSchema = {
   description: 'Remove um canal existente',
   tags: [ETagSwagger.worker],
   produces: ['application/json'],
@@ -21,7 +21,7 @@ export const managerDeleteWorkerSchema = {
       })
     ),
   }),
-  params: managerDeleteWorkerRequestSchema,
+  params: deleteWorkerRequestSchema,
   response: {
     200: Type.Object(
       {

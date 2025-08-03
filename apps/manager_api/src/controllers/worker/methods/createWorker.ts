@@ -2,24 +2,23 @@ import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { WorkerManagerCreatorUseCase } from '@core/useCases/worker/WorkerManagerCreator.useCase';
-import { ManagerCreateWorkerRequest } from '@core/schema/worker/managerCreateWorker/request.schema';
+import { WorkerCreatorUseCase } from '@core/useCases/worker/WorkerCreator.useCase';
+import { CreateWorkerRequest } from '@core/schema/worker/createWorker/request.schema';
 
 export const createWorker = async (
   request: FastifyRequest<{
-    Body: ManagerCreateWorkerRequest;
+    Body: CreateWorkerRequest;
   }>,
   reply: FastifyReply
 ) => {
-  const workerManagerCreatorUseCase = container.resolve(
-    WorkerManagerCreatorUseCase
-  );
+  const workerCreatorUseCase = container.resolve(WorkerCreatorUseCase);
   const { t, tokenJwtData } = request;
 
   try {
-    const response = await workerManagerCreatorUseCase.execute(
+    const response = await workerCreatorUseCase.execute(
       t,
       tokenJwtData.account_id,
+      tokenJwtData.is_administrator,
       request.body
     );
 
@@ -27,7 +26,6 @@ export const createWorker = async (
       return sendResponse(reply, {
         message: t('worker_creator_success'),
         httpStatusCode: EHTTPStatusCode.ok,
-        data: response,
       });
     }
 

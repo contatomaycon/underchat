@@ -7,7 +7,6 @@ export interface ICreateWorker {
   worker_type_id: EWorkerType;
   server_id: string;
   account_id: string;
+  is_administrator: boolean;
   name: string;
-  number?: string;
-  container_id: string;
 }

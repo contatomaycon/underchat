@@ -1,11 +1,10 @@
 import { Type } from '@sinclair/typebox';
-import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { managerCreateWorkerRequestSchema } from './request.schema';
-import { managerCreateWorkerResponseSchema } from './response.schema';
+import { recreateWorkerRequestSchema } from './request.schema';
+import { ELanguage } from '@core/common/enums/ELanguage';
 
-export const managerCreateWorkerSchema = {
-  description: 'Adiciona um novo canal',
+export const recreateWorkerSchema = {
+  description: 'Recria um canal existente',
   tags: [ETagSwagger.worker],
   produces: ['application/json'],
   security: [
@@ -22,14 +21,14 @@ export const managerCreateWorkerSchema = {
       })
     ),
   }),
-  body: managerCreateWorkerRequestSchema,
+  params: recreateWorkerRequestSchema,
   response: {
     200: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: managerCreateWorkerResponseSchema,
+        data: Type.Null(),
       },
       { description: 'Successful' }
     ),
