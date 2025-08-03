@@ -42,6 +42,11 @@ RUN pnpm build:worker_baileys
 
 FROM node:22.17.0-alpine
 
+RUN apk update && \
+    apk add --no-cache \
+      librdkafka \
+      lz4-libs
+
 WORKDIR /app
 
 COPY .env ./

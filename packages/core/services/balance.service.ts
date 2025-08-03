@@ -17,7 +17,6 @@ export class BalanceService {
       timeout: 20000,
       headers: {
         keyapi: input.key,
-        'Content-Type': 'application/json',
       },
     });
 
@@ -78,7 +77,7 @@ export class BalanceService {
 
       const { data } = await axiosInstance.patch<
         IApiResponse<BalanceRecreateWorkerRequest>
-      >(`/worker/${workerId}`);
+      >(`/worker/${workerId}`, {});
 
       if (!data.status || !data.data) {
         throw new Error(t('worker_recreation_failed'));
