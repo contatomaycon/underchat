@@ -15,6 +15,9 @@ export class WorkerConnectionStatusConsume {
 
   public async execute(): Promise<void> {
     const topic = `worker.${baileysEnvironment.baileysWorkerId}.status`;
+
+    console.log(`Subscribing to topic: ${topic}`);
+
     const stream: KStream = this.kafkaStreams.getKStream(topic);
 
     stream.mapBufferKeyToString();
