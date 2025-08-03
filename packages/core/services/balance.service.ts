@@ -17,6 +17,7 @@ export class BalanceService {
       timeout: 20000,
       headers: {
         keyapi: input.key,
+        'Content-Type': 'application/json',
       },
     });
 
