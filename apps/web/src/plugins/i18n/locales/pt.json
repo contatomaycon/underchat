@@ -152,6 +152,8 @@
     "inactive": "Inativo",
     "sector_deleted_error": "Ocorreu um erro ao excluir o setor. Por favor, tente novamente.",
     "sector_deleted_success": "Setor excluído com sucesso!",
-    "delete_sector": "Excluir setor?",
-    "delete_sector_confirmation": "Você tem certeza que deseja excluir este setor?"
+    "delete_sector": "Excluir Setor?",
+    "delete_sector_confirmation": "Você tem certeza que deseja excluir este setor?",   
+    "edit_sector": "Editar Setor",
+    "color": "Cor"
 }

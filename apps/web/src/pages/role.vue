@@ -127,10 +127,6 @@ watch(
   },
   { immediate: true, deep: true }
 );
-
-onBeforeUnmount(async () => {
-  await Promise.all([unsubscribe(ECentrifugoChannel.worker_channel)]);
-});
 </script>
 
 <template>
@@ -216,7 +212,7 @@ onBeforeUnmount(async () => {
                 transition="scale-transition"
                 activator="parent"
               >
-                <span>{{ $t('edit_channel') }}</span> </VTooltip
+                <span>{{ $t('edit_role') }}</span> </VTooltip
               ><VIcon
                 icon="tabler-edit"
                 @click="openEditDialog(item.permission_role_id)"

@@ -49,7 +49,7 @@ const updateSector = async () => {
 
   const body: EditSectorParamsBody = {
     name: name.value,
-    color: color.value,
+    color: color.value.toUpperCase(),
     sector_status_id: sectorStatus.value,
   };
 
@@ -88,7 +88,7 @@ onMounted(async () => {
     </template>
 
     <VForm ref="refFormEditSector" @submit.prevent>
-      <VCard :title="$t('edit_role')">
+      <VCard :title="$t('edit_sector')">
         <VCardText>
           <VRow>
             <VCol cols="12" sm="12" md="12">
@@ -117,13 +117,19 @@ onMounted(async () => {
             </VCol>
 
             <VCol cols="12" sm="12" md="12">
-              <div class="d-flex align-center gap-3">
+              <div class="d-flex align-center">
                 <div class="d-flex align-center gap-2">
                   <label class="mb-0 fw-semibold">{{ $t('cor') }}:</label>
-                  <input type="color" v-model="color" class="color-input" />
-                  <div class="ms-auto">
-                    <span class="color-value">{{ color?.toUpperCase() }}</span>
-                  </div>
+                  <span class="color-value">{{ color?.toUpperCase() }}</span>
+                </div>
+                <div class="flex-grow-1"></div>
+                <div class="d-flex align-center gap-2">
+                  <input
+                    type="color"
+                    v-model="color"
+                    class="color-input"
+                    aria-label="seletor de cor"
+                  />
                   <div
                     class="swatch-large"
                     :style="{ backgroundColor: color || '' }"

@@ -149,6 +149,8 @@
     "inactive": "Inactive",
     "sector_deleted_error": "An error occurred while deleting the sector. Please try again.",
     "sector_deleted_success": "Sector deleted successfully!",
-    "delete_sector": "Delete sector?",
-    "delete_sector_confirmation": "Are you sure you want to delete this sector?"
+    "delete_sector": "Delete Sector?",
+    "delete_sector_confirmation": "Are you sure you want to delete this sector?",
+    "edit_sector": "Edit Sector",
+    "color": "Color"
 }

@@ -34,7 +34,7 @@ const addSectors = async () => {
 
   const payload: CreateSectorRequest = {
     name: name.value,
-    color: color.value,
+    color: color.value.toUpperCase(),
   };
 
   const result = await sectorStore.addSectors(payload);
@@ -86,16 +86,22 @@ onMounted(resetForm);
             </VCol>
 
             <VCol cols="12" sm="12" md="12">
-              <div class="d-flex align-center gap-3">
+              <div class="d-flex align-center">
                 <div class="d-flex align-center gap-2">
                   <label class="mb-0 fw-semibold">{{ $t('cor') }}:</label>
-                  <input type="color" v-model="color" class="color-input" />
-                  <div class="ms-auto">
-                    <span class="color-value">{{ color?.toUpperCase() }}</span>
-                  </div>
+                  <span class="color-value">{{ color.toUpperCase() }}</span>
+                </div>
+                <div class="flex-grow-1"></div>
+                <div class="d-flex align-center gap-2">
+                  <input
+                    type="color"
+                    v-model="color"
+                    class="color-input"
+                    aria-label="seletor de cor"
+                  />
                   <div
                     class="swatch-large"
-                    :style="{ backgroundColor: color }"
+                    :style="{ backgroundColor: color || '' }"
                     aria-label="preview da cor"
                   ></div>
                 </div>
