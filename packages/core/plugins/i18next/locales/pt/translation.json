@@ -74,6 +74,6 @@
   "worker_connection_logs_not_found": "Registros de conexão do canal não encontrados!",
   "worker_recreate_success": "Canal recriado com sucesso!",
   "worker_recreate_not_found": "Canal não encontrado para recriação!",
-  "worker_recreate_error": "Erro ao recriar o canal!",
+  "worker_recreation_failed": "Erro ao recriar o canal!",
   "worker_balancer_not_available": "Trabalhador balancer não disponível"
 }

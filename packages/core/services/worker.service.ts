@@ -98,6 +98,19 @@ export class WorkerService {
     }
   }
 
+  public async checkVolumeAndCreate(
+    workerId: string,
+    isCreateVolume: boolean
+  ): Promise<void> {
+    const getVolume = await this.docker.getVolume(workerId).inspect();
+
+    if (!getVolume || isCreateVolume) {
+      await this.docker.createVolume({
+        Name: workerId,
+      });
+    }
+  }
+
   public async createContainerWorker(
     t: TFunction<'translation', undefined>,
     imageName: EWorkerImage,
@@ -110,16 +123,11 @@ export class WorkerService {
       await this.removeContainerWorkerById(workerId, t);
     }
 
-    if (isCreateVolume) {
-      await this.docker.createVolume({
-        Name: workerId,
-      });
+    await this.checkVolumeAndCreate(workerId, isCreateVolume);
 
-      const getVolume = await this.docker.getVolume(workerId).inspect();
-
-      if (!getVolume) {
-        throw new Error(t('worker_volume_creation_failed'));
-      }
+    const getVolume = await this.docker.getVolume(workerId).inspect();
+    if (!getVolume) {
+      throw new Error(t('worker_volume_creation_failed'));
     }
 
     const container = await this.docker.createContainer({
