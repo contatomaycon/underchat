@@ -133,8 +133,11 @@ export class BalanceCreatorConsume {
       }
 
       const lastOutput = result[result.length - 1]?.output?.trim();
+      const status = Number(lastOutput ?? 0);
 
-      return Boolean(lastOutput) === true;
+      if (status === 200) {
+        return true;
+      }
     }
 
     return false;
