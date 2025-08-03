@@ -14,6 +14,7 @@ import { getAdministrator } from '@/@webcore/localStorage/user';
 import { DataTableHeader } from 'vuetify';
 import { ListWorkerResponse } from '@core/schema/worker/listWorker/response.schema';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
+import { onMessage } from '@/@webcore/centrifugo';
 
 definePage({
   meta: {
@@ -215,6 +216,17 @@ watch(
     await channelsStore.listChannels(q);
   },
   { immediate: true, deep: true }
+);
+
+onMounted(async () => {
+  await onMessage(
+    `worker.${payload.server_id}`,
+    (data: IBaileysConnectionState) => {
+      if (data.status === 'connected') {
+        await channelsStore.listChannels(query.value);
+      }
+    }
+  );
 );
 </script>
 

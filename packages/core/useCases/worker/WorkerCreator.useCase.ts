@@ -21,6 +21,10 @@ export class WorkerCreatorUseCase {
     private readonly centrifugoService: CentrifugoService
   ) {}
 
+  private queueCentrifugo(data: IWorkerPayload): string {
+    return `worker.${data.account_id}`;
+  }
+
   private async validate(
     t: TFunction<'translation', undefined>,
     accountId: string
@@ -100,7 +104,7 @@ export class WorkerCreatorUseCase {
     }
 
     await this.centrifugoService.publish(
-      `worker.${payloadCreate.server_id}`,
+      this.queueCentrifugo(payloadCreate),
       payloadCreate
     );
 

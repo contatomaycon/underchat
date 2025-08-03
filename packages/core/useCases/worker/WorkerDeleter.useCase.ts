@@ -16,6 +16,10 @@ export class WorkerDeleterUseCase {
     private readonly centrifugoService: CentrifugoService
   ) {}
 
+  private queueCentrifugo(data: IWorkerPayload): string {
+    return `worker.${data.account_id}`;
+  }
+
   private async validate(
     t: TFunction<'translation', undefined>,
     isAdministrator: boolean,
@@ -74,7 +78,7 @@ export class WorkerDeleterUseCase {
     };
 
     await this.centrifugoService.publish(
-      `worker.${inputDeleter.server_id}`,
+      this.queueCentrifugo(inputDeleter),
       inputDeleter
     );
 

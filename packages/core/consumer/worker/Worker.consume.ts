@@ -19,7 +19,9 @@ export class WorkerConsume {
     private readonly centrifugoService: CentrifugoService
   ) {}
 
-  private topic = `worker.${balanceEnvironment.serverId}`;
+  private queueCentrifugo(data: IWorkerPayload): string {
+    return `worker.${data.account_id}`;
+  }
 
   private async updateWorkerErrorStatus(
     data: IWorkerPayload
@@ -37,7 +39,7 @@ export class WorkerConsume {
       inputUpdate
     );
 
-    return this.centrifugoService.publish(this.topic, data);
+    return this.centrifugoService.publish(this.queueCentrifugo(data), data);
   }
 
   private async recreateWorker(data: IWorkerPayload): Promise<void> {
@@ -96,7 +98,7 @@ export class WorkerConsume {
       throw new Error('Failed to update worker status');
     }
 
-    await this.centrifugoService.publish(this.topic, data);
+    await this.centrifugoService.publish(this.queueCentrifugo(data), data);
   }
 
   private async deleteWorker(data: IWorkerPayload): Promise<void> {
@@ -134,7 +136,7 @@ export class WorkerConsume {
       throw new Error('Failed to delete worker');
     }
 
-    await this.centrifugoService.publish(this.topic, data);
+    await this.centrifugoService.publish(this.queueCentrifugo(data), data);
   }
 
   private async createWorker(data: IWorkerPayload): Promise<void> {
@@ -175,11 +177,13 @@ export class WorkerConsume {
       throw new Error('Failed to update worker status');
     }
 
-    await this.centrifugoService.publish(this.topic, data);
+    await this.centrifugoService.publish(this.queueCentrifugo(data), data);
   }
 
   public async execute(): Promise<void> {
-    const stream: KStream = this.kafkaStreams.getKStream(this.topic);
+    const stream: KStream = this.kafkaStreams.getKStream(
+      `worker.${balanceEnvironment.serverId}`
+    );
 
     stream.mapBufferKeyToString();
     stream.mapJSONConvenience();
