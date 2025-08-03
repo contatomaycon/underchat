@@ -6,8 +6,6 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
-import { unsubscribe } from '@/@webcore/centrifugo';
-import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
 import { EWorkerPermissions } from '@core/common/enums/EPermissions/worker';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
@@ -215,10 +213,6 @@ watch(
   },
   { immediate: true, deep: true }
 );
-
-onBeforeUnmount(async () => {
-  await Promise.all([unsubscribe(ECentrifugoChannel.worker_channel)]);
-});
 </script>
 
 <template>
