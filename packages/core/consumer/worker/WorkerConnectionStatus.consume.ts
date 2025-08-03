@@ -45,6 +45,13 @@ export class WorkerConnectionStatusConsume {
       }
     });
 
-    await stream.start();
+    stream
+      .start()
+      .catch((error) => {
+        throw error;
+      })
+      .finally(() => {
+        this.kafkaStreams.closeAll();
+      });
   }
 }

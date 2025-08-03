@@ -1,6 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import connectionConsume from './connection.consume';
+import fp from 'fastify-plugin';
 
-export default async function (server: FastifyInstance) {
-  await server.register(connectionConsume);
-}
+const connectionPlugin = async (fastify: FastifyInstance) => {
+  await fastify.register(connectionConsume);
+};
+
+export default fp(connectionPlugin, { name: 'connection-plugin' });
