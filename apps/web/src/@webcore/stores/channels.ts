@@ -12,8 +12,7 @@ import {
   ListWorkerResponse,
 } from '@core/schema/worker/listWorker/response.schema';
 import { ListWorkerRequest } from '@core/schema/worker/listWorker/request.schema';
-import { ManagerCreateWorkerRequest } from '@core/schema/worker/managerCreateWorker/request.schema';
-import { ManagerCreateWorkerResponse } from '@core/schema/worker/managerCreateWorker/response.schema';
+import { CreateWorkerRequest } from '@core/schema/worker/createWorker/request.schema';
 import { EditWorkerRequest } from '@core/schema/worker/editWorker/request.schema';
 import { ViewWorkerResponse } from '@core/schema/worker/viewWorker/response.schema';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
@@ -23,7 +22,6 @@ import { currentTime } from '@core/common/functions/currentTime';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { WorkerConnectionLogsQuery } from '@core/schema/worker/workerConnectionLogs/request.schema';
 import { WorkerConnectionLogsResponse } from '@core/schema/worker/workerConnectionLogs/response.schema';
-import { ManagerRecreateWorkerResponse } from '@core/schema/worker/managerRecreateWorker/response.schema';
 
 export const useChannelsStore = defineStore('channels', {
   state: () => ({
@@ -110,13 +108,14 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
-    async addChannel(payload: ManagerCreateWorkerRequest): Promise<boolean> {
+    async addChannel(payload: CreateWorkerRequest): Promise<boolean> {
       try {
         this.loading = true;
 
-        const response = await axios.post<
-          IApiResponse<ManagerCreateWorkerResponse>
-        >(`/worker`, payload);
+        const response = await axios.post<IApiResponse<boolean>>(
+          `/worker`,
+          payload
+        );
 
         this.loading = false;
 
@@ -354,9 +353,9 @@ export const useChannelsStore = defineStore('channels', {
       try {
         this.loading = true;
 
-        const response = await axios.patch<
-          IApiResponse<ManagerRecreateWorkerResponse>
-        >(`/worker/${workerId}`);
+        const response = await axios.patch<IApiResponse<boolean>>(
+          `/worker/${workerId}`
+        );
 
         this.loading = false;
 
