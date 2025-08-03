@@ -113,24 +113,31 @@ export class BalanceCreatorConsume {
   private async imageIsBuilt(
     serverId: string,
     getDistroAndVersion: IDistroInfo,
-    sshConfig: ConnectConfig
+    sshConfig: ConnectConfig,
+    attempts = 10
   ): Promise<boolean> {
     const getImagesCommands =
       this.sshService.getImagesCommands(getDistroAndVersion);
 
-    const result = await this.sshService.runCommands(
-      serverId,
-      sshConfig,
-      getImagesCommands
-    );
+    for (let i = 0; i < attempts; i++) {
+      await new Promise((r) => setTimeout(r, 6000));
 
-    if (result.length > 0) {
-      await this.serverService.updateLogInstallServerBulk(result);
+      const result = await this.sshService.runCommands(
+        serverId,
+        sshConfig,
+        getImagesCommands
+      );
+
+      if (result.length > 0) {
+        await this.serverService.updateLogInstallServerBulk(result);
+      }
+
+      const lastOutput = result[result.length - 1]?.output?.trim();
+
+      return Boolean(lastOutput) === true;
     }
 
-    const lastOutput = result[result.length - 1]?.output?.trim();
-
-    return Boolean(lastOutput) === true;
+    return false;
   }
 
   async execute(server: FastifyInstance): Promise<void> {
