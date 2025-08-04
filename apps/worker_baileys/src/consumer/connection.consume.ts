@@ -5,14 +5,16 @@ import { WorkerConnectionStatusConsume } from '@core/consumer/worker/WorkerConne
 
 export default fp(
   async (fastify: FastifyInstance) => {
-    const consumer = container.resolve(WorkerConnectionStatusConsume);
+    const workerConnectionStatusConsume = container.resolve(
+      WorkerConnectionStatusConsume
+    );
 
-    consumer.execute().catch((error) => {
+    workerConnectionStatusConsume.execute().catch((error) => {
       throw error;
     });
 
     fastify.addHook('onClose', async () => {
-      await consumer.close();
+      await workerConnectionStatusConsume.close();
     });
   },
   { name: 'connection-consume' }
