@@ -11,6 +11,7 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { CentrifugoService } from '@core/services/centrifugo.service';
+import { ICreateWorker } from '@core/common/interfaces/ICreateWorker';
 
 @injectable()
 export class WorkerCreatorUseCase {
@@ -86,6 +87,22 @@ export class WorkerCreatorUseCase {
     const workerId = uuidv4();
     const workerType = input.worker_type as EWorkerType;
 
+    const createWorkerPayload: ICreateWorker = {
+      worker_id: workerId,
+      worker_status_id: EWorkerStatus.new,
+      worker_type_id: workerType,
+      server_id: viewWorkerServer.server_id,
+      account_id: accountId,
+      name: input.name,
+    };
+
+    const isCreated =
+      await this.workerService.createWorker(createWorkerPayload);
+
+    if (!isCreated) {
+      throw new Error(t('worker_creation_failed'));
+    }
+
     const payloadCreate: IWorkerPayload = {
       action: EWorkerAction.create,
       worker_id: workerId,
@@ -96,12 +113,6 @@ export class WorkerCreatorUseCase {
       name: input.name,
       is_administrator: isAdministrator,
     };
-
-    const isCreated = await this.workerService.createWorker(payloadCreate);
-
-    if (!isCreated) {
-      throw new Error(t('worker_creation_failed'));
-    }
 
     await this.centrifugoService.publish(
       this.queueCentrifugo(payloadCreate),
