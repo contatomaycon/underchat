@@ -411,10 +411,19 @@ export const useChannelsStore = defineStore('channels', {
     },
 
     updateStatusChannel(input: IWorkerPayload): void {
-      const channel = this.list.find(
+      const index = this.list.findIndex(
         (c) => c.account?.id === input.account_id && c.id === input.worker_id
       );
 
+      if (index === -1) return;
+
+      if (input.worker_status_id === EWorkerStatus.delete) {
+        this.list.splice(index, 1);
+
+        return;
+      }
+
+      const channel = this.list[index];
       if (channel?.status && input?.worker_status_id) {
         channel.status.id = input.worker_status_id;
       }

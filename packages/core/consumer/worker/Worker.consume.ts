@@ -98,6 +98,8 @@ export class WorkerConsume {
       throw new Error('Failed to update worker status');
     }
 
+    data.worker_status_id = EWorkerStatus.disponible;
+
     await this.centrifugoService.publish(this.queueCentrifugo(data), data);
   }
 
@@ -135,6 +137,8 @@ export class WorkerConsume {
 
       throw new Error('Failed to delete worker');
     }
+
+    data.worker_status_id = EWorkerStatus.delete;
 
     await this.centrifugoService.publish(this.queueCentrifugo(data), data);
   }
@@ -176,6 +180,8 @@ export class WorkerConsume {
 
       throw new Error('Failed to update worker status');
     }
+
+    data.worker_status_id = EWorkerStatus.disponible;
 
     await this.centrifugoService.publish(this.queueCentrifugo(data), data);
   }

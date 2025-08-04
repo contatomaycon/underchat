@@ -221,6 +221,8 @@ watch(
 );
 
 onMounted(async () => {
+  console.log('user.account_id', user?.account_id);
+
   if (user?.account_id) {
     await onMessage(`worker.${user.account_id}`, (data: IWorkerPayload) => {
       if (data.worker_id && data.account_id) {

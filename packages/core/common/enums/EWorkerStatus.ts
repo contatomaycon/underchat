@@ -6,4 +6,5 @@ export enum EWorkerStatus {
   deleting = '214ed038-6f66-4fa3-be83-2ee07b093d15',
   recreating = '997d6778-365c-43ad-9c94-8dba0a7974b8',
   error = '2c954c06-c950-4818-a7aa-3a78c10cb506',
+  delete = '458a9372-3e5e-4a24-93ec-7fd15a4cc6c2',
 }
