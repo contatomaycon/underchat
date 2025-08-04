@@ -24,15 +24,15 @@ export class KafkaServiceQueueService {
     return this.kafkaService.deleteTopics(allTopics);
   };
 
+  close = async (): Promise<void> => {
+    await this.kafkaService.close();
+  };
+
   createServer = () => {
     return 'create.server';
   };
 
   workerStatus = () => {
     return 'worker.status';
-  };
-
-  close = async (): Promise<void> => {
-    await this.kafkaService.close();
   };
 }

@@ -23,11 +23,11 @@ export class KafkaBaileysQueueService {
     return this.kafkaService.deleteTopics(allTopics);
   };
 
-  workerConnection = (workerId: string) => {
-    return `worker.${workerId}.connection`;
-  };
-
   close = async (): Promise<void> => {
     await this.kafkaService.close();
+  };
+
+  workerConnection = (workerId: string) => {
+    return `worker.${workerId}.connection`;
   };
 }

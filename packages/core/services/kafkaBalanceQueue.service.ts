@@ -23,11 +23,11 @@ export class KafkaBalanceQueueService {
     return this.kafkaService.deleteTopics(allTopics);
   };
 
-  worker = (serverId: string) => {
-    return `worker.${serverId}`;
-  };
-
   close = async (): Promise<void> => {
     await this.kafkaService.close();
+  };
+
+  worker = (serverId: string) => {
+    return `worker.${serverId}`;
   };
 }
