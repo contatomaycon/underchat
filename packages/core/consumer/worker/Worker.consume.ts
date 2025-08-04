@@ -112,6 +112,8 @@ export class WorkerConsume {
 
     const healthy = await this.isServiceHealthy(containerId);
 
+    console.log('Worker health status:', healthy);
+
     if (!healthy) {
       await this.updateWorkerErrorStatus(data);
 
@@ -203,6 +205,8 @@ export class WorkerConsume {
     }
 
     const healthy = await this.isServiceHealthy(containerId);
+
+    console.log('Worker health status:', healthy);
 
     if (!healthy) {
       await this.updateWorkerErrorStatus(data);
