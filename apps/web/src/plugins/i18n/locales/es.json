@@ -158,5 +158,6 @@
     "worker_recreation_failed": "Error al recrear el canal. Por favor, inténtalo de nuevo.",
     "worker_recreate_success": "Canal recreado exitosamente.",
     "deleting": "Eliminando",
-    "recreating": "Recreando"
+    "recreating": "Recreando",
+    "delete": "Eliminar"
 }

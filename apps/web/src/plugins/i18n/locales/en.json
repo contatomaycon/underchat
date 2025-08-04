@@ -157,5 +157,6 @@
     "worker_recreation_failed": "Failed to recreate the channel. Please try again.",
     "worker_recreate_success": "Channel recreated successfully!",
     "deleting": "Deleting",
-    "recreating": "Recreating"
+    "recreating": "Recreating",
+    "delete": "Delete"
 }

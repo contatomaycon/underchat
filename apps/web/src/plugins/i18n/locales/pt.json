@@ -160,5 +160,6 @@
     "worker_recreation_failed": "Falha ao recriar o canal. Por favor, tente novamente.",
     "worker_recreate_success": "Canal recriado com sucesso!",
     "deleting": "Excluindo",
-    "recreating": "Recriando"
+    "recreating": "Recriando",
+    "delete": "Excluir"
 }

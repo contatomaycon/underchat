@@ -362,7 +362,7 @@ export const useChannelsStore = defineStore('channels', {
 
         const data = response?.data;
 
-        if (!data?.status || !data?.data) {
+        if (!data?.status) {
           const mensage =
             data?.message ?? this.i18n.global.t('worker_recreation_failed');
 
