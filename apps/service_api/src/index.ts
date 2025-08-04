@@ -13,6 +13,7 @@ import databaseElasticPlugin from '@core/plugins/dbElastic';
 import elasticLogsPlugin from '@core/plugins/elasticLogs';
 import loggerServicePlugin from '@core/plugins/logger';
 import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
+import queueKafkaPlugin from './queue';
 import consumerPlugin from './consumer';
 import temporalConsumerPlugin from './temporal';
 import centrifugoPlugin from '@core/plugins/centrifugo';
@@ -47,6 +48,7 @@ server.register(elasticLogsPlugin, {
 });
 
 server.register(loggerServicePlugin);
+server.register(queueKafkaPlugin);
 server.register(consumerPlugin);
 server.register(swaggerPlugin);
 server.register(temporalPlugin);

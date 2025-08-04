@@ -10,14 +10,16 @@ import { IDistroInfo } from '@core/common/interfaces/IDistroInfo';
 import { FastifyInstance } from 'fastify';
 import { IViewServerWebById } from '@core/common/interfaces/IViewServerWebById';
 import { KafkaStreams, KStream } from 'kafka-streams';
+import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 
 @injectable()
 export class BalanceCreatorConsume {
   constructor(
+    @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams,
     private readonly sshService: SshService,
     private readonly serverService: ServerService,
     private readonly passwordEncryptorService: PasswordEncryptorService,
-    @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 
   private async validate(serverId: string): Promise<{
@@ -144,7 +146,9 @@ export class BalanceCreatorConsume {
   }
 
   async execute(server: FastifyInstance): Promise<void> {
-    const stream: KStream = this.kafkaStreams.getKStream('create.server');
+    const stream: KStream = this.kafkaStreams.getKStream(
+      this.kafkaServiceQueueService.createServer()
+    );
 
     stream.mapBufferKeyToString();
     stream.mapJSONConvenience();
