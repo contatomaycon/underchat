@@ -12,8 +12,7 @@ import { PublishResult } from 'centrifuge';
 import { KafkaBalanceQueueService } from '@core/services/kafkaBalanceQueue.service';
 import { balanceEnvironment } from '@core/config/environments';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
-import { promisify } from 'util';
-import { exec as execCallback } from 'child_process';
+import { ContainerHealthService } from '@core/services/containerHealth.service';
 
 @injectable()
 export class WorkerConsume {
@@ -22,36 +21,12 @@ export class WorkerConsume {
     private readonly workerService: WorkerService,
     private readonly centrifugoService: CentrifugoService,
     private readonly kafkaBalanceQueueService: KafkaBalanceQueueService,
-    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService
+    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    private readonly containerHealthService: ContainerHealthService
   ) {}
 
   private queueCentrifugo(data: IWorkerPayload): string {
     return `worker.${data.account_id}`;
-  }
-
-  private async getHealthStatusCode(workerId: string): Promise<string> {
-    const cmd = `docker exec ${workerId} sh -c 'curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3005/v1/health/check'`;
-
-    const exec = promisify(execCallback);
-    const { stdout } = await exec(cmd);
-
-    return stdout.trim();
-  }
-
-  private async isServiceHealthy(workerId: string): Promise<boolean> {
-    for (let attempt = 1; attempt <= 10; attempt++) {
-      try {
-        const code = await this.getHealthStatusCode(workerId);
-
-        if (code === '200') {
-          return true;
-        }
-
-        await new Promise((r) => setTimeout(r, 1000));
-      } catch {}
-    }
-
-    return false;
   }
 
   private async updateWorkerErrorStatus(
@@ -110,9 +85,8 @@ export class WorkerConsume {
       throw new Error('Worker creation failed');
     }
 
-    const healthy = await this.isServiceHealthy(containerId);
-
-    console.log('Worker health status:', healthy);
+    const healthy =
+      await this.containerHealthService.isServiceHealthy(containerId);
 
     if (!healthy) {
       await this.updateWorkerErrorStatus(data);
@@ -204,9 +178,8 @@ export class WorkerConsume {
       throw new Error('Failed to create worker container');
     }
 
-    const healthy = await this.isServiceHealthy(containerId);
-
-    console.log('Worker health status:', healthy);
+    const healthy =
+      await this.containerHealthService.isServiceHealthy(containerId);
 
     if (!healthy) {
       await this.updateWorkerErrorStatus(data);
