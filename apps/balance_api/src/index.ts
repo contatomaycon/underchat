@@ -15,6 +15,7 @@ import elasticLogsPlugin from '@core/plugins/elasticLogs';
 import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 import consumerPlugin from './consumer';
+import centrifugoPlugin from '@core/plugins/centrifugo';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -27,6 +28,7 @@ server.addHook('onError', errorHook);
 
 server.decorateRequest('module', ERouteModule.balancer);
 
+server.register(centrifugoPlugin, { module: ERouteModule.balancer });
 server.register(dbConnector);
 server.register(cacheRedisConnector);
 server.register(auth);

@@ -6,7 +6,7 @@ import { v4 } from 'uuid';
 import swaggerPlugin from '@/plugins/swagger';
 import corsPlugin from '@core/plugins/cors';
 import consumerPlugin from './consumer';
-import centrifugoPlugin from '@/plugins/centrifugo';
+import centrifugoPlugin from '@core/plugins/centrifugo';
 import databaseElasticPlugin from '@core/plugins/dbElastic';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 
@@ -25,7 +25,7 @@ server.register(databaseElasticPlugin, {
 });
 
 server.register(kafkaStreamsPlugin, { module: ERouteModule.worker_baileys });
-server.register(centrifugoPlugin);
+server.register(centrifugoPlugin, { module: ERouteModule.worker_baileys });
 server.register(consumerPlugin);
 
 const start = async () => {

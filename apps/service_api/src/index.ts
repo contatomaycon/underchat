@@ -15,7 +15,7 @@ import loggerServicePlugin from '@core/plugins/logger';
 import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
 import consumerPlugin from './consumer';
 import temporalConsumerPlugin from './temporal';
-import centrifugoPlugin from '@/plugins/centrifugo';
+import centrifugoPlugin from '@core/plugins/centrifugo';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 import temporalPlugin from '@core/plugins/temporal';
 
@@ -30,7 +30,7 @@ server.addHook('onError', errorHook);
 
 server.decorateRequest('module', ERouteModule.service);
 
-server.register(centrifugoPlugin);
+server.register(centrifugoPlugin, { module: ERouteModule.service });
 server.register(dbConnector);
 server.register(cacheRedisConnector);
 server.register(authenticateKeyApi);

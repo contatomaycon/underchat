@@ -1,4 +1,4 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import fp from 'fastify-plugin';
 import { container } from 'tsyringe';
 import { centrifugoEnvironment } from '@core/config/environments';
@@ -7,11 +7,20 @@ import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { Centrifuge, UnauthorizedError } from 'centrifuge';
 import WebSocket from 'ws';
 
-const centrifugoPlugin = async (fastify: FastifyInstance) => {
+interface CentrifugoPluginOptions {
+  module: ERouteModule;
+}
+
+const centrifugoPlugin: FastifyPluginAsync<CentrifugoPluginOptions> = async (
+  fastify: FastifyInstance,
+  opts
+) => {
+  const module = opts.module;
+
   const generateToken = async (): Promise<string> => {
     const exp = Math.floor(Date.now() / 1000) + 60 * 60;
     return jwt.sign(
-      { sub: ERouteModule.manager, exp },
+      { sub: module, exp },
       centrifugoEnvironment.centrifugoHmacSecretKey,
       { algorithm: 'HS256' }
     );
