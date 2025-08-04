@@ -2,7 +2,6 @@ import { injectable, inject } from 'tsyringe';
 import { KafkaStreams, KStream } from 'kafka-streams';
 import { WorkerService } from '@core/services/worker.service';
 import { getImageWorker } from '@core/common/functions/getImageWorker';
-import { balanceEnvironment } from '@core/config/environments';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
@@ -189,9 +188,7 @@ export class WorkerConsume {
   }
 
   public async execute(): Promise<void> {
-    const workerServerId = this.kafkaBalanceQueueService.workerServerId(
-      balanceEnvironment.serverId
-    );
+    const workerServerId = this.kafkaBalanceQueueService.workerServerId();
     const stream: KStream = this.kafkaStreams.getKStream(workerServerId);
 
     stream.mapBufferKeyToString();
