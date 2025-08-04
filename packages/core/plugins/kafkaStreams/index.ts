@@ -18,7 +18,9 @@ const kafkaStreamsPlugin: FastifyPluginAsync<
 > = async (fastify: FastifyInstance, opts) => {
   const module = opts.module;
 
-  const noptions: CommonKafkaOptions = {
+  const noptions: CommonKafkaOptions & {
+    'allow.auto.create.topics'?: boolean;
+  } = {
     'metadata.broker.list': kafkaEnvironment.kafkaBroker,
     'group.id': `group-underchat-streams-${module}`,
     'client.id': `client-stream-${module}`,
@@ -31,6 +33,9 @@ const kafkaStreamsPlugin: FastifyPluginAsync<
     'queued.max.messages.kbytes': 102_400,
     'batch.num.messages': 10_000,
     'retry.backoff.ms': 500,
+    'allow.auto.create.topics': true,
+    'topic.metadata.refresh.interval.ms': 30000,
+    'metadata.max.age.ms': 60000,
   };
 
   const tconf: KafkaStreamsConfig['tconf'] = {
