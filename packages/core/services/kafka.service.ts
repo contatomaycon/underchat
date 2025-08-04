@@ -1,9 +1,10 @@
 import { injectable, inject } from 'tsyringe';
-import { Admin, Kafka } from 'kafkajs';
+import { Admin, Consumer, Kafka } from 'kafkajs';
 
 @injectable()
 export class KafkaService {
   private readonly admin: Admin;
+  private readonly consumers = new Map<string, Consumer>();
 
   constructor(@inject('Kafka') private readonly kafka: Kafka) {
     this.admin = this.kafka.admin();
@@ -34,7 +35,26 @@ export class KafkaService {
     await this.close();
   }
 
+  async registerConsumer(
+    groupId: string,
+    topics: string[],
+    fromBeginning = true
+  ): Promise<void> {
+    const consumer = this.kafka.consumer({ groupId });
+    await consumer.connect();
+
+    for (const topic of topics) {
+      await consumer.subscribe({ topic, fromBeginning });
+    }
+
+    this.consumers.set(groupId, consumer);
+  }
+
   async close(): Promise<void> {
     await this.admin.disconnect();
+
+    for (const consumer of this.consumers.values()) {
+      await consumer.disconnect();
+    }
   }
 }
