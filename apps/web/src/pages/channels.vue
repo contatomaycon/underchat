@@ -10,11 +10,12 @@ import { EWorkerPermissions } from '@core/common/enums/EPermissions/worker';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
-import { getAdministrator } from '@/@webcore/localStorage/user';
+import { getAdministrator, getUser } from '@/@webcore/localStorage/user';
 import { DataTableHeader } from 'vuetify';
 import { ListWorkerResponse } from '@core/schema/worker/listWorker/response.schema';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
-import { onMessage } from '@/@webcore/centrifugo';
+import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
+import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 
 definePage({
   meta: {
@@ -52,6 +53,7 @@ const permissionsRecreate = [
 const { t } = useI18n();
 const channelsStore = useChannelsStore();
 const isAdministrator = getAdministrator();
+const user = getUser();
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -219,15 +221,20 @@ watch(
 );
 
 onMounted(async () => {
-  await onMessage(
-    `worker.${payload.server_id}`,
-    (data: IBaileysConnectionState) => {
-      if (data.status === 'connected') {
-        await channelsStore.listChannels(query.value);
+  if (user?.account_id) {
+    await onMessage(`worker.${user.account_id}`, (data: IWorkerPayload) => {
+      if (data.worker_id && data.account_id) {
+        channelsStore.updateStatusChannel(data);
       }
-    }
-  );
-);
+    });
+  }
+});
+
+onUnmounted(async () => {
+  if (user?.account_id) {
+    await unsubscribe(`worker.${user.account_id}`);
+  }
+});
 </script>
 
 <template>

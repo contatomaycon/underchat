@@ -22,6 +22,7 @@ import { currentTime } from '@core/common/functions/currentTime';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { WorkerConnectionLogsQuery } from '@core/schema/worker/workerConnectionLogs/request.schema';
 import { WorkerConnectionLogsResponse } from '@core/schema/worker/workerConnectionLogs/response.schema';
+import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 
 export const useChannelsStore = defineStore('channels', {
   state: () => ({
@@ -406,6 +407,16 @@ export const useChannelsStore = defineStore('channels', {
         channel.status.id = status;
         channel.number = input.phone ?? null;
         channel.connection_date = connectionDate;
+      }
+    },
+
+    updateStatusChannel(input: IWorkerPayload): void {
+      const channel = this.list.find(
+        (c) => c.account?.id === input.account_id && c.id === input.worker_id
+      );
+
+      if (channel?.status && input?.worker_status_id) {
+        channel.status.id = input.worker_status_id;
       }
     },
   },
