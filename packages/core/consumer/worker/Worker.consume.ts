@@ -11,6 +11,7 @@ import { CentrifugoService } from '@core/services/centrifugo.service';
 import { PublishResult } from 'centrifuge';
 import { KafkaBalanceQueueService } from '@core/services/kafkaBalanceQueue.service';
 import { balanceEnvironment } from '@core/config/environments';
+import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 
 @injectable()
 export class WorkerConsume {
@@ -18,7 +19,8 @@ export class WorkerConsume {
     @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams,
     private readonly workerService: WorkerService,
     private readonly centrifugoService: CentrifugoService,
-    private readonly kafkaBalanceQueueService: KafkaBalanceQueueService
+    private readonly kafkaBalanceQueueService: KafkaBalanceQueueService,
+    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService
   ) {}
 
   private queueCentrifugo(data: IWorkerPayload): string {
@@ -209,10 +211,14 @@ export class WorkerConsume {
       }
 
       if (data.action === EWorkerAction.delete) {
+        await this.kafkaBaileysQueueService.delete(data.worker_id);
+
         return this.deleteWorker(data);
       }
 
       if (data.action === EWorkerAction.recreate) {
+        await this.kafkaBaileysQueueService.delete(data.worker_id);
+
         return this.recreateWorker(data);
       }
     });
