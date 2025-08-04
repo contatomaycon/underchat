@@ -1,25 +1,24 @@
 import { injectable } from 'tsyringe';
 import { KafkaService } from './kafka.service';
-import { balanceEnvironment } from '@core/config/environments';
 
 @injectable()
 export class KafkaBalanceQueueService {
   constructor(private readonly kafkaService: KafkaService) {}
 
-  all = (): string[] => {
-    const worker = this.worker();
+  all = (serverId: string): string[] => {
+    const worker = this.worker(serverId);
 
     return [worker];
   };
 
-  create = (): Promise<void> => {
-    const allTopics = this.all();
+  create = (serverId: string): Promise<void> => {
+    const allTopics = this.all(serverId);
 
     return this.kafkaService.createTopics(allTopics);
   };
 
-  worker = () => {
-    return `worker.${balanceEnvironment.serverId}`;
+  worker = (serverId: string) => {
+    return `worker.${serverId}`;
   };
 
   close = async (): Promise<void> => {

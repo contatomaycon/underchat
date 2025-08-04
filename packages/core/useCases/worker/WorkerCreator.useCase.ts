@@ -12,6 +12,7 @@ import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { ICreateWorker } from '@core/common/interfaces/ICreateWorker';
+import { KafkaBalanceQueueService } from '@core/services/kafkaBalanceQueue.service';
 
 @injectable()
 export class WorkerCreatorUseCase {
@@ -19,7 +20,8 @@ export class WorkerCreatorUseCase {
     private readonly workerService: WorkerService,
     private readonly accountService: AccountService,
     private readonly streamProducerService: StreamProducerService,
-    private readonly centrifugoService: CentrifugoService
+    private readonly centrifugoService: CentrifugoService,
+    private readonly kafkaBalanceQueueService: KafkaBalanceQueueService
   ) {}
 
   private queueCentrifugo(data: IWorkerPayload): string {
@@ -61,7 +63,7 @@ export class WorkerCreatorUseCase {
   ): Promise<void> {
     try {
       await this.streamProducerService.send(
-        `worker.${payload.server_id}`,
+        this.kafkaBalanceQueueService.worker(payload.server_id),
         payload
       );
     } catch {

@@ -10,6 +10,7 @@ import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { PublishResult } from 'centrifuge';
 import { KafkaBalanceQueueService } from '@core/services/kafkaBalanceQueue.service';
+import { balanceEnvironment } from '@core/config/environments';
 
 @injectable()
 export class WorkerConsume {
@@ -188,7 +189,9 @@ export class WorkerConsume {
   }
 
   public async execute(): Promise<void> {
-    const worker = this.kafkaBalanceQueueService.worker();
+    const worker = this.kafkaBalanceQueueService.worker(
+      balanceEnvironment.serverId
+    );
     const stream: KStream = this.kafkaStreams.getKStream(worker);
 
     stream.mapBufferKeyToString();

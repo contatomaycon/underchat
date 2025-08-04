@@ -2,6 +2,7 @@ import { KafkaBalanceQueueService } from '@core/services/kafkaBalanceQueue.servi
 import { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
 import { container } from 'tsyringe';
+import { balanceEnvironment } from '@core/config/environments';
 
 export default fp(
   async (fastify: FastifyInstance) => {
@@ -9,9 +10,11 @@ export default fp(
       KafkaBalanceQueueService
     );
 
-    kafkaBalanceQueueService.create().catch((error) => {
-      throw error;
-    });
+    kafkaBalanceQueueService
+      .create(balanceEnvironment.serverId)
+      .catch((error) => {
+        throw error;
+      });
 
     fastify.addHook('onClose', async () => {
       await kafkaBalanceQueueService.close();
