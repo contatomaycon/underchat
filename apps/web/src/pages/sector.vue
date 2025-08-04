@@ -5,8 +5,6 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
-import { unsubscribe } from '@/@webcore/centrifugo';
-import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
 import { getAdministrator } from '@/@webcore/localStorage/user';
 import { DataTableHeader } from 'vuetify';
 import { ESectorPermissions } from '@core/common/enums/EPermissions/sector';
