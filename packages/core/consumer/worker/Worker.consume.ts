@@ -210,4 +210,8 @@ export class WorkerConsume {
 
     await stream.start();
   }
+
+  public async close(): Promise<void> {
+    await this.kafkaStreams.closeAll();
+  }
 }
