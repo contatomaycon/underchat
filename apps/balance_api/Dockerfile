@@ -11,8 +11,7 @@ RUN apk update && \
       librdkafka-dev \
       make \
       musl-dev \
-      python3 \
-      curl
+      python3
 
 RUN npm add -g pnpm turbo
  
@@ -50,7 +49,8 @@ RUN apk update && \
     apk add --no-cache \
       lz4 \
       lz4-libs \
-      librdkafka
+      librdkafka \
+      curl
 
 WORKDIR /app
 
