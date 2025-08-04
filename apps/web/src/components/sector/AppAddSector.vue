@@ -76,7 +76,7 @@ onMounted(resetForm);
       <VCard :title="$t('add_sector')">
         <VCardText>
           <VRow>
-            <VCol cols="12" sm="12" md="12">
+            <VCol cols="12">
               <AppTextField
                 v-model="name"
                 :label="$t('name') + ':'"
@@ -85,10 +85,12 @@ onMounted(resetForm);
               />
             </VCol>
 
-            <VCol cols="12" sm="12" md="12">
+            <VCol cols="12">
               <div class="d-flex align-center">
                 <div class="d-flex align-center gap-2">
-                  <label class="mb-0 fw-semibold">{{ $t('cor') }}:</label>
+                  <label :for="'color-picker'" class="mb-0 fw-semibold"
+                    >{{ $t('cor') }}:</label
+                  >
                   <span class="color-value">{{ color.toUpperCase() }}</span>
                 </div>
                 <div class="flex-grow-1"></div>

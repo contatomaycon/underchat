@@ -91,7 +91,7 @@ onMounted(async () => {
       <VCard :title="$t('edit_sector')">
         <VCardText>
           <VRow>
-            <VCol cols="12" sm="12" md="12">
+            <VCol cols="12" sm="6" md="6">
               <AppTextField
                 v-model="name"
                 :label="$t('name') + ':'"
@@ -100,8 +100,11 @@ onMounted(async () => {
               />
             </VCol>
 
-            <VCol cols="12" sm="12" md="12">
-              <label class="d-block text-body-2 font-weight-medium mb-1">
+            <VCol cols="12" sm="6" md="6">
+              <label
+                :for="'sector-status-select'"
+                class="d-block text-body-2 font-weight-medium mb-1"
+              >
                 {{ $t('status') }}:
               </label>
               <VSelect
@@ -116,10 +119,12 @@ onMounted(async () => {
               />
             </VCol>
 
-            <VCol cols="12" sm="12" md="12">
+            <VCol cols="12" sm="6" md="6">
               <div class="d-flex align-center">
                 <div class="d-flex align-center gap-2">
-                  <label class="mb-0 fw-semibold">{{ $t('cor') }}:</label>
+                  <label for="color-picker" class="mb-0 fw-semibold"
+                    >{{ $t('cor') }}:</label
+                  >
                   <span class="color-value">{{ color?.toUpperCase() }}</span>
                 </div>
                 <div class="flex-grow-1"></div>

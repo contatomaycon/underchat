@@ -41,7 +41,7 @@ export default [
   {
     title: 'sector',
     to: { name: 'sector' as keyof RouteNamedMap },
-    icon: { icon: 'tabler-settings' },
+    icon: { icon: 'tabler-sitemap' },
     permissions: [
       EGeneralPermissions.full_access,
       ESectorPermissions.sector_list,
