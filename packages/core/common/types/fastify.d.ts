@@ -13,6 +13,7 @@ import { Client as ClientElastic } from '@elastic/elasticsearch';
 import { ITokenKeyData } from '../interfaces/ITokenKeyData';
 import { Centrifuge } from 'centrifuge';
 import { KafkaStreams } from 'kafka-streams';
+import { Kafka } from 'kafkajs';
 
 declare module 'fastify' {
   export interface FastifyRequest {
@@ -25,6 +26,7 @@ declare module 'fastify' {
     ElasticLogsClient: ClientElastic;
     Centrifuge: Centrifuge;
     KafkaStreams: KafkaStreams;
+    Kafka: Kafka;
     redis: FastifyRedis;
     logger: LoggerService;
     authenticateJwt: (

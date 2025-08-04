@@ -1,9 +1,9 @@
 import { injectable } from 'tsyringe';
-import { StreamProducerService } from './streamProducer.service';
+import { KafkaService } from './kafka.service';
 
 @injectable()
 export class QueueBalanceKafkaService {
-  constructor(private readonly streamProducerService: StreamProducerService) {}
+  constructor(private readonly kafkaService: KafkaService) {}
 
   balanceQueueAll = (serverId: string): string[] => {
     return [this.workerServerId(serverId)];

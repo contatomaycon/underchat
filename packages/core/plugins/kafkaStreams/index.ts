@@ -8,6 +8,7 @@ import {
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { container } from 'tsyringe';
 import { kafkaEnvironment } from '@core/config/environments';
+import { Kafka } from 'kafkajs';
 
 interface KafkaStreamsPluginOptions {
   module: ERouteModule;
@@ -60,6 +61,14 @@ const kafkaStreamsPlugin: FastifyPluginAsync<
 
   container.register<KafkaStreams>('KafkaStreams', { useValue: kafkaStreams });
   fastify.decorate('KafkaStreams', kafkaStreams);
+
+  const kafka = new Kafka({
+    clientId: `client-admin-${module}`,
+    brokers: [kafkaEnvironment.kafkaBroker],
+  });
+
+  container.register<Kafka>('Kafka', { useValue: kafka });
+  fastify.decorate('kafka', kafka);
 
   fastify.addHook('onClose', async () => {
     await kafkaStreams.closeAll();
