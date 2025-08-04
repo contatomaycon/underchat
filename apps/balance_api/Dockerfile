@@ -5,8 +5,8 @@ FROM base AS turbo
 RUN apk update && \
     apk add --no-cache \
       bash \
-      g++ \
       git \
+      g++ \
       libc6-compat \
       librdkafka-dev \
       make \
