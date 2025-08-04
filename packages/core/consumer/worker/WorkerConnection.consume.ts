@@ -50,4 +50,8 @@ export class WorkerConnectionConsume {
 
     await stream.start();
   }
+
+  public async close(): Promise<void> {
+    await this.kafkaStreams.closeAll();
+  }
 }

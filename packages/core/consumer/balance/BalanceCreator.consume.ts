@@ -235,4 +235,8 @@ export class BalanceCreatorConsume {
       server.logger.error(`Error starting stream: ${msg}`);
     }
   }
+
+  public async close(): Promise<void> {
+    await this.kafkaStreams.closeAll();
+  }
 }
