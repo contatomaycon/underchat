@@ -24,7 +24,7 @@ export class ContainerHealthService {
   }
 
   private async getStatusCode(containerId: string): Promise<string> {
-    const cmd = `docker exec ${containerId} sh -c 'curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3005/v1/health/check'`;
+    const cmd = `bash -c "docker exec ${containerId} sh -c 'curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:3005/v1/health/check'"`;
 
     try {
       const { stdout } = await exec(cmd);
