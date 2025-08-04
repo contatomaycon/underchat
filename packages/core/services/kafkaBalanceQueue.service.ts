@@ -17,6 +17,12 @@ export class KafkaBalanceQueueService {
     return this.kafkaService.createTopics(allTopics);
   };
 
+  delete = (serverId: string): Promise<void> => {
+    const allTopics = this.all(serverId);
+
+    return this.kafkaService.deleteTopics(allTopics);
+  };
+
   worker = (serverId: string) => {
     return `worker.${serverId}`;
   };

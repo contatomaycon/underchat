@@ -34,6 +34,13 @@ export class KafkaService {
     await this.close();
   }
 
+  async deleteTopics(topics: string[]): Promise<void> {
+    await this.admin.connect();
+    await this.admin.deleteTopics({ topics });
+
+    await this.close();
+  }
+
   async close(): Promise<void> {
     await this.admin.disconnect();
   }

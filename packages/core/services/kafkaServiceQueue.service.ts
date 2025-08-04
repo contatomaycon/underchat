@@ -18,6 +18,12 @@ export class KafkaServiceQueueService {
     return this.kafkaService.createTopics(allTopics);
   };
 
+  delete = (): Promise<void> => {
+    const allTopics = this.all();
+
+    return this.kafkaService.deleteTopics(allTopics);
+  };
+
   createServer = () => {
     return 'create.server';
   };

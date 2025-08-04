@@ -17,6 +17,12 @@ export class KafkaBaileysQueueService {
     return this.kafkaService.createTopics(allTopics);
   };
 
+  delete = (workerId: string): Promise<void> => {
+    const allTopics = this.all(workerId);
+
+    return this.kafkaService.deleteTopics(allTopics);
+  };
+
   workerConnection = (workerId: string) => {
     return `worker.${workerId}.connection`;
   };
