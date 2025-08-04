@@ -11,7 +11,8 @@ RUN apk update && \
       librdkafka-dev \
       make \
       musl-dev \
-      python3
+      python3 \
+      curl
 
 RUN npm add -g pnpm turbo
  

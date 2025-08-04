@@ -88,7 +88,7 @@ export class BalanceCreatorConsume {
     );
 
     for (let i = 0; i < attempts; i++) {
-      await new Promise((r) => setTimeout(r, 6000));
+      await new Promise((r) => setTimeout(r, 1000));
 
       const result = await this.sshService.runCommands(
         serverId,
@@ -122,7 +122,7 @@ export class BalanceCreatorConsume {
       this.sshService.getImagesCommands(getDistroAndVersion);
 
     for (let i = 0; i < attempts; i++) {
-      await new Promise((r) => setTimeout(r, 6000));
+      await new Promise((r) => setTimeout(r, 1000));
 
       const result = await this.sshService.runCommands(
         serverId,
