@@ -7,13 +7,15 @@ import { SshService } from '@core/services/ssh.service';
 import { ConnectConfig } from 'ssh2';
 import { isDistroVersionAllowed } from '@core/common/functions/isDistroVersionAllowed';
 import { StreamProducerService } from '@core/services/streamProducer.service';
+import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 
 @injectable()
 export class ServerCreatorUseCase {
   constructor(
     private readonly serverService: ServerService,
     private readonly sshService: SshService,
-    private readonly streamProducerService: StreamProducerService
+    private readonly streamProducerService: StreamProducerService,
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 
   async validate(
@@ -64,7 +66,10 @@ export class ServerCreatorUseCase {
         server_id: serverId,
       };
 
-      await this.streamProducerService.send('create.server', payload);
+      await this.streamProducerService.send(
+        this.kafkaServiceQueueService.createServer(),
+        payload
+      );
     } catch {
       throw new Error(t('kafka_error'));
     }

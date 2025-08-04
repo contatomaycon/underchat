@@ -7,9 +7,9 @@ export class KafkaBalanceQueueService {
   constructor(private readonly kafkaService: KafkaService) {}
 
   all = (): string[] => {
-    const workerServerId = this.workerServerId();
+    const worker = this.worker();
 
-    return [workerServerId];
+    return [worker];
   };
 
   create = (): Promise<void> => {
@@ -18,7 +18,7 @@ export class KafkaBalanceQueueService {
     return this.kafkaService.createTopics(allTopics);
   };
 
-  workerServerId = () => {
+  worker = () => {
     return `worker.${balanceEnvironment.serverId}`;
   };
 

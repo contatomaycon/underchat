@@ -8,6 +8,7 @@ import { PasswordEncryptorService } from '@core/services/passwordEncryptor.servi
 import { EServerStatus } from '@core/common/enums/EServerStatus';
 import { CreateServerResponse } from '@core/schema/server/createServer/response.schema';
 import { StreamProducerService } from '@core/services/streamProducer.service';
+import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 
 @injectable()
 export class ServerReinstallServerUseCase {
@@ -15,7 +16,8 @@ export class ServerReinstallServerUseCase {
     private readonly serverService: ServerService,
     private readonly sshService: SshService,
     private readonly passwordEncryptorService: PasswordEncryptorService,
-    private readonly streamProducerService: StreamProducerService
+    private readonly streamProducerService: StreamProducerService,
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 
   async validate(
@@ -72,7 +74,10 @@ export class ServerReinstallServerUseCase {
         server_id: serverId,
       };
 
-      await this.streamProducerService.send('create.server', payload);
+      await this.streamProducerService.send(
+        this.kafkaServiceQueueService.createServer(),
+        payload
+      );
     } catch {
       throw new Error(t('kafka_error'));
     }

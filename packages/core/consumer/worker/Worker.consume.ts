@@ -188,8 +188,8 @@ export class WorkerConsume {
   }
 
   public async execute(): Promise<void> {
-    const workerServerId = this.kafkaBalanceQueueService.workerServerId();
-    const stream: KStream = this.kafkaStreams.getKStream(workerServerId);
+    const worker = this.kafkaBalanceQueueService.worker();
+    const stream: KStream = this.kafkaStreams.getKStream(worker);
 
     stream.mapBufferKeyToString();
     stream.mapJSONConvenience();

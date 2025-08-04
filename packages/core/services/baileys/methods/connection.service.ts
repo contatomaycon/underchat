@@ -25,6 +25,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
+import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 
 const FOLDER = path.join(
   process.cwd(),
@@ -61,7 +62,8 @@ export class BaileysConnectionService {
     private readonly centrifugo: CentrifugoService,
     private readonly helpers: BaileysHelpersService,
     private readonly elasticDatabaseService: ElasticDatabaseService,
-    private readonly streamProducerService: StreamProducerService
+    private readonly streamProducerService: StreamProducerService,
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {
     process.on('unhandledRejection', () => this.handleFatal());
   }
@@ -166,7 +168,11 @@ export class BaileysConnectionService {
 
     this.publish(payload);
 
-    this.streamProducerService.send('worker.status', payload, WORKER);
+    this.streamProducerService.send(
+      this.kafkaServiceQueueService.workerStatus(),
+      payload,
+      WORKER
+    );
 
     this.connect({
       initial_connection: true,
@@ -300,7 +306,11 @@ export class BaileysConnectionService {
     };
     this.publish(payload);
 
-    this.streamProducerService.send('worker.status', payload, WORKER);
+    this.streamProducerService.send(
+      this.kafkaServiceQueueService.workerStatus(),
+      payload,
+      WORKER
+    );
 
     resolve(this.state());
 
@@ -329,7 +339,11 @@ export class BaileysConnectionService {
 
       this.publish(payload);
 
-      this.streamProducerService.send('worker.status', payload, WORKER);
+      this.streamProducerService.send(
+        this.kafkaServiceQueueService.workerStatus(),
+        payload,
+        WORKER
+      );
 
       this.saveLogWppConnection({
         worker_id: WORKER,
@@ -350,7 +364,11 @@ export class BaileysConnectionService {
         disconnected_user: true,
       };
 
-      this.streamProducerService.send('worker.status', payload, WORKER);
+      this.streamProducerService.send(
+        this.kafkaServiceQueueService.workerStatus(),
+        payload,
+        WORKER
+      );
     }
 
     resolve(this.state());
@@ -568,7 +586,11 @@ export class BaileysConnectionService {
 
     this.publish(payload);
 
-    this.streamProducerService.send('worker.status', payload, WORKER);
+    this.streamProducerService.send(
+      this.kafkaServiceQueueService.workerStatus(),
+      payload,
+      WORKER
+    );
 
     this.saveLogWppConnection({
       worker_id: WORKER,
