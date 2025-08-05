@@ -13,6 +13,8 @@ import { KafkaBalanceQueueService } from '@core/services/kafkaBalanceQueue.servi
 import { balanceEnvironment } from '@core/config/environments';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { ContainerHealthService } from '@core/services/containerHealth.service';
+import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
+import { StreamProducerService } from '@core/services/streamProducer.service';
 
 @injectable()
 export class WorkerConsume {
@@ -22,7 +24,8 @@ export class WorkerConsume {
     private readonly centrifugoService: CentrifugoService,
     private readonly kafkaBalanceQueueService: KafkaBalanceQueueService,
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
-    private readonly containerHealthService: ContainerHealthService
+    private readonly containerHealthService: ContainerHealthService,
+    private readonly streamProducerService: StreamProducerService
   ) {}
 
   private queueCentrifugo(data: IWorkerPayload): string {
@@ -112,6 +115,18 @@ export class WorkerConsume {
 
       throw new Error('Failed to update worker status');
     }
+
+    const payload: StatusConnectionWorkerRequest = {
+      worker_id: data.worker_id,
+      status: EWorkerStatus.recreating,
+      type: data.worker_type_id as EWorkerType,
+    };
+
+    await this.streamProducerService.send(
+      this.kafkaBaileysQueueService.workerConnection(data.worker_id),
+      payload,
+      data.worker_id
+    );
 
     data.worker_status_id = EWorkerStatus.disponible;
 

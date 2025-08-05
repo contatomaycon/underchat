@@ -42,6 +42,12 @@ export class WorkerConnectionStatusConsume {
         return;
       }
 
+      if (data.status === EWorkerStatus.recreating) {
+        this.baileysService.reconnect();
+
+        return;
+      }
+
       if (data.status === EWorkerStatus.disponible) {
         this.baileysService.disconnect({
           initial_connection: true,
