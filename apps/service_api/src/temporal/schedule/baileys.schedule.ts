@@ -15,7 +15,7 @@ export const baileysSchedule = async (fastify: FastifyInstance) => {
       await clientTemporal.schedule.create({
         scheduleId,
         spec: {
-          intervals: [{ every: '120s' }],
+          intervals: [{ every: '600s' }],
         },
         action: {
           type: 'startWorkflow',
