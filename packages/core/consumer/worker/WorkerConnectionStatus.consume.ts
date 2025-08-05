@@ -1,4 +1,4 @@
-import { injectable, inject } from 'tsyringe';
+import { singleton, inject } from 'tsyringe';
 import { baileysEnvironment } from '@core/config/environments';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
@@ -7,7 +7,7 @@ import { KafkaStreams, KStream } from 'kafka-streams';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 
-@injectable()
+@singleton()
 export class WorkerConnectionStatusConsume {
   constructor(
     private readonly baileysService: BaileysService,

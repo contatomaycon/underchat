@@ -1,11 +1,11 @@
-import { injectable, inject } from 'tsyringe';
+import { singleton, inject } from 'tsyringe';
 import { KafkaStreams, KStream } from 'kafka-streams';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { WorkerService } from '@core/services/worker.service';
 import { getStatusWorkerConnection } from '@core/common/functions/getStatusWorkerConnection';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 
-@injectable()
+@singleton()
 export class WorkerConnectionConsume {
   constructor(
     @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams,

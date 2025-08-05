@@ -1,4 +1,4 @@
-import { injectable, inject } from 'tsyringe';
+import { singleton, inject } from 'tsyringe';
 import { KafkaStreams, KStream } from 'kafka-streams';
 import { WorkerService } from '@core/services/worker.service';
 import { getImageWorker } from '@core/common/functions/getImageWorker';
@@ -16,7 +16,7 @@ import { ContainerHealthService } from '@core/services/containerHealth.service';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 
-@injectable()
+@singleton()
 export class WorkerConsume {
   constructor(
     @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams,

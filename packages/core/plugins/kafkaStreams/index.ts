@@ -25,7 +25,7 @@ const kafkaStreamsPlugin: FastifyPluginAsync<
     'group.id': `group-underchat-streams-${module}`,
     'client.id': `client-stream-${module}`,
     'compression.codec': 'snappy',
-    'enable.auto.commit': true,
+    'enable.auto.commit': false,
     'socket.keepalive.enable': true,
     'session.timeout.ms': 6000,
     'fetch.wait.max.ms': 500,
