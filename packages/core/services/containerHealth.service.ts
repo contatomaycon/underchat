@@ -12,9 +12,6 @@ export class ContainerHealthService {
   async isServiceHealthy(containerId: string): Promise<boolean> {
     for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
       const code = await this.getStatusCode(containerId);
-
-      console.log('code:', code);
-
       if (code === '200') return true;
 
       await this.sleep(this.delayMs);
@@ -24,15 +21,20 @@ export class ContainerHealthService {
   }
 
   private async getStatusCode(containerId: string): Promise<string> {
-    const cmd = `bash -c "docker exec ${containerId} sh -c 'curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:3005/v1/health/check'"`;
+    const cmd = [
+      'docker exec',
+      containerId,
+      "curl -s -o /dev/null -w '%{http_code}'",
+      'http://127.0.0.1:3005/v1/health/check',
+    ].join(' ');
 
     try {
-      const { stdout } = await exec(cmd);
-
-      console.log('stdout:', stdout);
-
+      const { stdout, stderr } = await exec(cmd);
+      if (stderr)
+        console.warn(`[health][${containerId}] stderr:`, stderr.trim());
       return stdout.trim();
-    } catch {
+    } catch (err: any) {
+      console.error(`[health][${containerId}] exec error:`, err.message);
       return '';
     }
   }
