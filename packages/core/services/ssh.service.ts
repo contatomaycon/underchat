@@ -130,7 +130,8 @@ export class SshService {
   async runCommands(
     serverId: string,
     config: ConnectConfig,
-    commands: string[]
+    commands: string[],
+    sendCentrifugo = true
   ): Promise<IServerSshCentrifugo[]> {
     const conn = await this.connect(config);
     const results: IServerSshCentrifugo[] = [];
@@ -161,10 +162,12 @@ export class SshService {
               server_id: serverId,
             });
 
-            this.centrifugoService.publish(
-              ECentrifugoChannel.server_ssh,
-              serverSshCentrifugo
-            );
+            if (sendCentrifugo) {
+              this.centrifugoService.publish(
+                ECentrifugoChannel.server_ssh,
+                serverSshCentrifugo
+              );
+            }
           },
         });
       }

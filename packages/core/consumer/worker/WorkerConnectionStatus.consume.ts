@@ -5,17 +5,22 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { BaileysService } from '@core/services/baileys';
 import { KafkaStreams, KStream } from 'kafka-streams';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
+import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 
 @injectable()
 export class WorkerConnectionStatusConsume {
   constructor(
     private readonly baileysService: BaileysService,
-    @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams
+    @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams,
+    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService
   ) {}
 
   public async execute(): Promise<void> {
-    const topic = `worker.${baileysEnvironment.baileysWorkerId}.status`;
-    const stream: KStream = this.kafkaStreams.getKStream(topic);
+    const stream: KStream = this.kafkaStreams.getKStream(
+      this.kafkaBaileysQueueService.workerConnection(
+        baileysEnvironment.baileysWorkerId
+      )
+    );
 
     stream.mapBufferKeyToString();
     stream.mapJSONConvenience();
@@ -46,5 +51,9 @@ export class WorkerConnectionStatusConsume {
     });
 
     await stream.start();
+  }
+
+  public async close(): Promise<void> {
+    await this.kafkaStreams.closeAll();
   }
 }

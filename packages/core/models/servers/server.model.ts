@@ -15,6 +15,10 @@ export const server = pgTable('server', {
     .notNull(),
   name: varchar({ length: 200 }).notNull(),
   quantity_workers: integer().notNull(),
+  last_sync: timestamp('last_sync', {
+    mode: 'string',
+    withTimezone: true,
+  }),
   created_at: timestamp('created_at', {
     mode: 'string',
     withTimezone: true,

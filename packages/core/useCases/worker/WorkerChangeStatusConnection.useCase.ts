@@ -11,13 +11,15 @@ import moment from 'moment';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
+import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 
 @injectable()
 export class WorkerChangeStatusConnectionUseCase {
   constructor(
     private readonly workerService: WorkerService,
     private readonly streamProducerService: StreamProducerService,
-    private readonly centrifugoService: CentrifugoService
+    private readonly centrifugoService: CentrifugoService,
+    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService
   ) {}
 
   private readonly MAX_ATTEMPTS = 3;
@@ -174,7 +176,7 @@ export class WorkerChangeStatusConnectionUseCase {
       };
 
       await this.streamProducerService.send(
-        `worker.${input.worker_id}.status`,
+        this.kafkaBaileysQueueService.workerConnection(input.worker_id),
         payload,
         input.worker_id
       );

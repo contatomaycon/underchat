@@ -104,6 +104,7 @@ const headers = [
   { title: t('ssh_port'), key: 'ssh_port' },
   { title: t('web_domain'), key: 'web_domain' },
   { title: t('workers_allowed'), key: 'quantity_workers' },
+  { title: t('last_sync'), key: 'last_sync' },
   { title: t('created_at'), key: 'created_at' },
   { title: t('actions'), key: 'actions', sortable: false },
 ];
@@ -200,7 +201,11 @@ onMounted(async () => {
   await onMessage(
     ECentrifugoChannel.status_server,
     (data: IStatusServerCentrifugo) => {
-      serverStore.updateStatusServer(data.server_id, data.status);
+      serverStore.updateStatusServer(
+        data.server_id,
+        data.status,
+        data.last_sync
+      );
     }
   );
 });
@@ -306,6 +311,10 @@ onBeforeUnmount(async () => {
 
         <template #item.web_domain="{ item }">
           <span>{{ item.web.web_domain }}</span>
+        </template>
+
+        <template #item.last_sync="{ item }">
+          <span>{{ formatDateTime(item.last_sync) }}</span>
         </template>
 
         <template #item.created_at="{ item }">

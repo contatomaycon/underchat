@@ -349,11 +349,16 @@ export const useServerStore = defineStore('server', {
       }
     },
 
-    updateStatusServer(serverId: string, status: EServerStatus): void {
+    updateStatusServer(
+      serverId: string,
+      status: EServerStatus,
+      lastSync?: string | null
+    ): void {
       const server = this.list_servers.find((server) => server.id === serverId);
 
       if (server) {
         server.status.id = status;
+        server.last_sync = lastSync ?? new Date().toISOString();
       }
     },
   },

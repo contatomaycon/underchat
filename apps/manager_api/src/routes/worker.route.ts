@@ -7,24 +7,35 @@ import {
   workerDeletePermissions,
   workerEditPermissions,
   workerLogsConnectionPermissions,
+  workerRecreatePermissions,
   workerViewPermissions,
 } from '@/permissions';
-import { managerCreateWorkerSchema } from '@core/schema/worker/managerCreateWorker';
+import { createWorkerSchema } from '@core/schema/worker/createWorker';
 import { editWorkerSchema } from '@core/schema/worker/editWorker';
 import { viewWorkerSchema } from '@core/schema/worker/viewWorker';
-import { managerDeleteWorkerSchema } from '@core/schema/worker/managerDeleteWorker';
+import { deleteWorkerSchema } from '@core/schema/worker/deleteWorker';
 import { statusConnectionWorkerSchema } from '@core/schema/worker/statusConnection';
 import { workerConnectionLogsSchema } from '@core/schema/worker/workerConnectionLogs';
+import { recreateWorkerSchema } from '@core/schema/worker/recreateWorker';
 
 export default async function workerRoutes(server: FastifyInstance) {
   const workerController = container.resolve(WorkerController);
 
   server.post('/worker', {
-    schema: managerCreateWorkerSchema,
+    schema: createWorkerSchema,
     handler: workerController.createWorker,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerCreatePermissions),
+    ],
+  });
+
+  server.patch('/worker/:worker_id', {
+    schema: recreateWorkerSchema,
+    handler: workerController.recreateWorker,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerRecreatePermissions),
     ],
   });
 
@@ -56,7 +67,7 @@ export default async function workerRoutes(server: FastifyInstance) {
   });
 
   server.delete('/worker/:worker_id', {
-    schema: managerDeleteWorkerSchema,
+    schema: deleteWorkerSchema,
     handler: workerController.deleteWorker,
     preHandler: [
       (request, reply) =>

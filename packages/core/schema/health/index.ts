@@ -14,5 +14,13 @@ export const healthCheckSchema = {
       },
       { description: 'Successful' }
     ),
+    500: Type.Object(
+      {
+        status: Type.Boolean(),
+        message: Type.String(),
+        data: Type.Null(),
+      },
+      { description: 'Internal Server Error' }
+    ),
   },
 };

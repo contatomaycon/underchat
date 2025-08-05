@@ -1,15 +1,13 @@
 import { injectable } from 'tsyringe';
 import Docker from 'dockerode';
-import { TFunction } from 'i18next';
 import { EWorkerImage } from '@core/common/enums/EWorkerImage';
 import { WorkerCreatorRepository } from '@core/repositories/worker/WorkerCreator.repository';
 import { ICreateWorker } from '@core/common/interfaces/ICreateWorker';
-import { WorkerBalancerServerViewerRepository } from '@core/repositories/worker/WorkerBalancerServerViewer.repository';
+import { WorkerServerViewerRepository } from '@core/repositories/worker/WorkerServerViewer.repository';
 import { WorkerTotalViewerRepository } from '@core/repositories/worker/WorkerTotalViewer.repository';
 import { WorkerListerRepository } from '@core/repositories/worker/WorkerLister.repository';
 import { ListWorkerRequest } from '@core/schema/worker/listWorker/request.schema';
 import { ListWorkerResponse } from '@core/schema/worker/listWorker/response.schema';
-import { IViewWorkerBalancerServer } from '@core/common/interfaces/IViewWorkerBalancerServer';
 import { WorkerUpdaterRepository } from '@core/repositories/worker/WorkerUpdater.repository';
 import { WorkerViewerRepository } from '@core/repositories/worker/WorkerViewer.repository';
 import { ViewWorkerResponse } from '@core/schema/worker/viewWorker/response.schema';
@@ -28,6 +26,14 @@ import { WorkerPhoneConnectionUpdaterRepository } from '@core/repositories/worke
 import { IUpdateWorkerPhoneConnection } from '@core/common/interfaces/IUpdateWorkerPhoneConnection';
 import { WorkerPhoneConnectionCreatorRepository } from '@core/repositories/worker/WorkerPhoneConnectionCreator.repository';
 import { ICreateWorkerPhoneConnection } from '@core/common/interfaces/ICreateWorkerPhoneConnection';
+import { WorkerTypeViewerRepository } from '@core/repositories/worker/WorkerTypeViewer.repository';
+import { IViewWorkerType } from '@core/common/interfaces/IViewWorkerType';
+import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
+import { IViewWorkerServer } from '@core/common/interfaces/IViewWorkerServer';
+import { WorkerBaileysActivitiesListerRepository } from '@core/repositories/worker/WorkerBaileysActivitiesLister.repository';
+import { IListWorkerActivities } from '@core/common/interfaces/IListWorkerActivities';
+import { WorkerStatusUpdaterRepository } from '@core/repositories/worker/WorkerStatusUpdater.repository';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 
 @injectable()
 export class WorkerService {
@@ -35,7 +41,7 @@ export class WorkerService {
 
   constructor(
     private readonly workerCreatorRepository: WorkerCreatorRepository,
-    private readonly workerBalancerServerViewerRepository: WorkerBalancerServerViewerRepository,
+    private readonly workerServerViewerRepository: WorkerServerViewerRepository,
     private readonly workerTotalViewerRepository: WorkerTotalViewerRepository,
     private readonly workerListerRepository: WorkerListerRepository,
     private readonly workerUpdaterRepository: WorkerUpdaterRepository,
@@ -48,7 +54,10 @@ export class WorkerService {
     private readonly workerPhoneStatusConnectionDateUpdaterRepository: WorkerPhoneStatusConnectionDateUpdaterRepository,
     private readonly workerPhoneConnectionViewerRepository: WorkerPhoneConnectionViewerRepository,
     private readonly workerPhoneConnectionUpdaterRepository: WorkerPhoneConnectionUpdaterRepository,
-    private readonly workerPhoneConnectionCreatorRepository: WorkerPhoneConnectionCreatorRepository
+    private readonly workerPhoneConnectionCreatorRepository: WorkerPhoneConnectionCreatorRepository,
+    private readonly workerTypeViewerRepository: WorkerTypeViewerRepository,
+    private readonly workerBaileysActivitiesListerRepository: WorkerBaileysActivitiesListerRepository,
+    private readonly workerStatusUpdaterRepository: WorkerStatusUpdaterRepository
   ) {
     this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
   }
@@ -64,53 +73,67 @@ export class WorkerService {
     }
   }
 
-  public async removeContainerWorkerById(
-    workerId: string,
-    t: TFunction<'translation', undefined>
-  ): Promise<boolean> {
+  public async removeContainerWorkerById(workerId: string): Promise<boolean> {
     try {
       const container = this.docker.getContainer(workerId);
       await container.remove({ force: true });
 
       return true;
     } catch {
-      throw new Error(t('worker_removal_failed'));
+      throw new Error('The worker removal failed');
     }
   }
 
-  public async removeVolumeWorkerById(
-    workerId: string,
-    t: TFunction<'translation', undefined>
-  ): Promise<boolean> {
+  public async removeVolumeWorkerById(workerId: string): Promise<boolean> {
     try {
       const volume = this.docker.getVolume(workerId);
       await volume.remove();
 
       return true;
     } catch {
-      throw new Error(t('worker_volume_removal_failed'));
+      throw new Error('The worker volume removal failed');
+    }
+  }
+
+  public async existsVolumeWorkerById(workerId: string): Promise<boolean> {
+    try {
+      const volume = this.docker.getVolume(workerId);
+      await volume.inspect();
+
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  public async checkVolumeAndCreate(
+    workerId: string,
+    isCreateVolume: boolean
+  ): Promise<void> {
+    const getVolume = await this.existsVolumeWorkerById(workerId);
+
+    if (!getVolume || isCreateVolume) {
+      await this.docker.createVolume({
+        Name: workerId,
+      });
     }
   }
 
   public async createContainerWorker(
-    t: TFunction<'translation', undefined>,
     imageName: EWorkerImage,
-    workerId: string
+    workerId: string,
+    isCreateVolume: boolean = true
   ): Promise<string> {
     const existsContainerById = await this.existsContainerWorkerById(workerId);
-
     if (existsContainerById) {
-      await this.removeContainerWorkerById(workerId, t);
+      await this.removeContainerWorkerById(workerId);
     }
 
-    await this.docker.createVolume({
-      Name: workerId,
-    });
+    await this.checkVolumeAndCreate(workerId, isCreateVolume);
 
-    const getVolume = await this.docker.getVolume(workerId).inspect();
-
+    const getVolume = await this.existsVolumeWorkerById(workerId);
     if (!getVolume) {
-      throw new Error(t('worker_volume_creation_failed'));
+      throw new Error('Volume creation failed');
     }
 
     const container = await this.docker.createContainer({
@@ -145,24 +168,26 @@ export class WorkerService {
 
   public async removeContainerWorker(
     workerId: string,
-    t: TFunction<'translation', undefined>
+    isRemoveVolume: boolean = true
   ): Promise<boolean> {
-    const removeContainerWorkerById = await this.removeContainerWorkerById(
-      workerId,
-      t
-    );
+    const existsContainerById = await this.existsContainerWorkerById(workerId);
 
-    if (!removeContainerWorkerById) {
-      throw new Error(t('worker_removal_failed'));
+    if (existsContainerById) {
+      const removeContainerWorkerById =
+        await this.removeContainerWorkerById(workerId);
+
+      if (!removeContainerWorkerById) {
+        throw new Error('The worker removal failed');
+      }
     }
 
-    const removeVolumeWorkerById = await this.removeVolumeWorkerById(
-      workerId,
-      t
-    );
+    if (isRemoveVolume) {
+      const removeVolumeWorkerById =
+        await this.removeVolumeWorkerById(workerId);
 
-    if (!removeVolumeWorkerById) {
-      throw new Error(t('worker_volume_removal_failed'));
+      if (!removeVolumeWorkerById) {
+        throw new Error('The worker volume removal failed');
+      }
     }
 
     return true;
@@ -172,12 +197,10 @@ export class WorkerService {
     return this.workerCreatorRepository.createWorker(input);
   }
 
-  public async viewWorkerBalancerServer(
+  public async viewWorkerServer(
     accountId: string
-  ): Promise<IViewWorkerBalancerServer | null> {
-    return this.workerBalancerServerViewerRepository.viewWorkerBalancerServer(
-      accountId
-    );
+  ): Promise<IViewWorkerServer | null> {
+    return this.workerServerViewerRepository.viewWorkerServer(accountId);
   }
 
   public async totalWorkerByAccountId(accountId: string): Promise<number> {
@@ -212,14 +235,12 @@ export class WorkerService {
   updateWorkerById = async (
     isAdministrator: boolean,
     accountId: string,
-    workerId: string,
-    name: string
+    input: IUpdateWorker
   ): Promise<boolean> => {
     return this.workerUpdaterRepository.updateWorkerById(
       isAdministrator,
       accountId,
-      workerId,
-      name
+      input
     );
   };
 
@@ -263,7 +284,7 @@ export class WorkerService {
     accountId: string,
     isAdministrator: boolean,
     workerId: string
-  ): Promise<IViewWorkerBalancerServer | null> => {
+  ): Promise<IViewWorkerServer | null> => {
     return this.workerBalancerViewerRepository.viewWorkerBalancer(
       accountId,
       isAdministrator,
@@ -326,6 +347,32 @@ export class WorkerService {
   ): Promise<boolean> => {
     return this.workerPhoneConnectionCreatorRepository.createWorkerPhoneConnection(
       input
+    );
+  };
+
+  viewWorkerType = async (
+    accountId: string,
+    isAdministrator: boolean,
+    workerId: string
+  ): Promise<IViewWorkerType | null> => {
+    return this.workerTypeViewerRepository.viewWorkerType(
+      accountId,
+      isAdministrator,
+      workerId
+    );
+  };
+
+  listWorkerBaileysActivities = async (): Promise<IListWorkerActivities[]> => {
+    return this.workerBaileysActivitiesListerRepository.listWorkerBaileysActivities();
+  };
+
+  updateStatusWorker = async (
+    workerId: string,
+    workerStatusId: EWorkerStatus
+  ): Promise<boolean> => {
+    return this.workerStatusUpdaterRepository.updateStatusWorker(
+      workerId,
+      workerStatusId
     );
   };
 }

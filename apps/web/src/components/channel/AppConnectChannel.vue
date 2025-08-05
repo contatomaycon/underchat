@@ -292,7 +292,7 @@ onMounted(async () => {
     );
 });
 
-onBeforeMount(() => {
+onUnmounted(() => {
   clearTimer();
 
   if (intervalIdNextAttempt.value !== null) {

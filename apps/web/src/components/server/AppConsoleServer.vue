@@ -70,7 +70,7 @@ onMounted(async () => {
   );
 });
 
-onBeforeMount(() => {
+onUnmounted(() => {
   unsubscribe(ECentrifugoChannel.server_ssh);
 });
 </script>

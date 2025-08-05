@@ -5,8 +5,8 @@ FROM base AS turbo
 RUN apk update && \
     apk add --no-cache \
       bash \
-      g++ \
       git \
+      g++ \
       libc6-compat \
       librdkafka-dev \
       make \
@@ -41,6 +41,13 @@ COPY --from=pruned /app/out/full/ .
 RUN pnpm build:worker_baileys
 
 FROM node:22.17.0-alpine
+
+RUN apk update && \
+    apk add --no-cache \
+      lz4 \
+      lz4-libs \
+      librdkafka \
+      curl
 
 WORKDIR /app
 

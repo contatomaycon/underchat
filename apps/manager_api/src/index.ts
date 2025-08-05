@@ -15,7 +15,7 @@ import jwtPlugin from '@core/plugins/jwt';
 import databaseElasticPlugin from '@core/plugins/dbElastic';
 import elasticLogsPlugin from '@core/plugins/elasticLogs';
 import loggerServicePlugin from '@core/plugins/logger';
-import centrifugoPlugin from '@/plugins/centrifugo';
+import centrifugoPlugin from '@core/plugins/centrifugo';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 
 const server = fastify({
@@ -29,7 +29,7 @@ server.addHook('onError', errorHook);
 
 server.decorateRequest('module', ERouteModule.manager);
 
-server.register(centrifugoPlugin);
+server.register(centrifugoPlugin, { module: ERouteModule.manager });
 server.register(dbConnector);
 server.register(cacheRedisConnector);
 server.register(auth);

@@ -9,7 +9,7 @@ import QRCode from 'qrcode';
 import P from 'pino';
 import fs from 'fs';
 import path from 'path';
-import { injectable } from 'tsyringe';
+import { singleton } from 'tsyringe';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { baileysEnvironment } from '@core/config/environments';
 import { EBaileysConnectionStatus as Status } from '@core/common/enums/EBaileysConnectionStatus';
@@ -25,16 +25,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
+import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 
-const FOLDER = path.join(
-  process.cwd(),
-  'storage',
-  baileysEnvironment.baileysWorkerId
-);
+const FOLDER = `/app/data/storage/${baileysEnvironment.baileysWorkerId}`;
 const CHANNEL = `worker_${baileysEnvironment.baileysWorkerId}_qrcode`;
 const WORKER = baileysEnvironment.baileysWorkerId;
 
-@injectable()
+@singleton()
 export class BaileysConnectionService {
   private readonly retryDelay = 2_000;
   private readonly maxRetries = 5;
@@ -61,7 +58,8 @@ export class BaileysConnectionService {
     private readonly centrifugo: CentrifugoService,
     private readonly helpers: BaileysHelpersService,
     private readonly elasticDatabaseService: ElasticDatabaseService,
-    private readonly streamProducerService: StreamProducerService
+    private readonly streamProducerService: StreamProducerService,
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {
     process.on('unhandledRejection', () => this.handleFatal());
   }
@@ -166,10 +164,33 @@ export class BaileysConnectionService {
 
     this.publish(payload);
 
-    this.streamProducerService.send('worker.status', payload, WORKER);
+    this.streamProducerService.send(
+      this.kafkaServiceQueueService.workerStatus(),
+      payload,
+      WORKER
+    );
 
     this.connect({
       initial_connection: true,
+    });
+  }
+
+  reconnect(): void {
+    if (this.connecting || this.connected) {
+      return;
+    }
+
+    this.connect({
+      initial_connection: this.initialConnection,
+      allow_restore: false,
+    }).catch(() => {
+      this.saveLogWppConnection({
+        worker_id: WORKER,
+        status: this.status ?? Status.disconnected,
+        code: this.code ?? ECodeMessage.connectionLost,
+        message: 'Reconnect failed',
+        date: new Date(),
+      });
     });
   }
 
@@ -300,7 +321,11 @@ export class BaileysConnectionService {
     };
     this.publish(payload);
 
-    this.streamProducerService.send('worker.status', payload, WORKER);
+    this.streamProducerService.send(
+      this.kafkaServiceQueueService.workerStatus(),
+      payload,
+      WORKER
+    );
 
     resolve(this.state());
 
@@ -329,7 +354,11 @@ export class BaileysConnectionService {
 
       this.publish(payload);
 
-      this.streamProducerService.send('worker.status', payload, WORKER);
+      this.streamProducerService.send(
+        this.kafkaServiceQueueService.workerStatus(),
+        payload,
+        WORKER
+      );
 
       this.saveLogWppConnection({
         worker_id: WORKER,
@@ -350,7 +379,11 @@ export class BaileysConnectionService {
         disconnected_user: true,
       };
 
-      this.streamProducerService.send('worker.status', payload, WORKER);
+      this.streamProducerService.send(
+        this.kafkaServiceQueueService.workerStatus(),
+        payload,
+        WORKER
+      );
     }
 
     resolve(this.state());
@@ -568,7 +601,11 @@ export class BaileysConnectionService {
 
     this.publish(payload);
 
-    this.streamProducerService.send('worker.status', payload, WORKER);
+    this.streamProducerService.send(
+      this.kafkaServiceQueueService.workerStatus(),
+      payload,
+      WORKER
+    );
 
     this.saveLogWppConnection({
       worker_id: WORKER,
