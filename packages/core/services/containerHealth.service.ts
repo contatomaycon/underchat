@@ -66,19 +66,6 @@ export class ContainerHealthService {
     }
   }
 
-  private streamToString(stream: NodeJS.ReadableStream): Promise<string> {
-    return new Promise((resolve, reject) => {
-      let data = '';
-
-      stream.on('data', (chunk) => {
-        data += chunk.toString();
-      });
-
-      stream.on('end', () => resolve(data));
-      stream.on('error', (err) => reject(err));
-    });
-  }
-
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }

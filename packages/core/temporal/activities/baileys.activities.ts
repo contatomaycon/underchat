@@ -61,7 +61,7 @@ export async function isHelm(
   const sshService = container.resolve(SshService);
 
   const commands = [
-    `bash -c "docker exec ${workerId} sh -c 'curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:3005/v1/health/check'"`,
+    `bash -c "docker exec ${workerId} sh -c 'curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3005/v1/health/check'"`,
   ];
 
   for (let i = 0; i < attempts; i++) {
@@ -94,7 +94,7 @@ export async function isHelmConnection(
   const sshService = container.resolve(SshService);
 
   const commands = [
-    `bash -c "docker exec ${workerId} sh -c 'curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:3005/v1/connection/health/check'"`,
+    `bash -c "docker exec ${workerId} sh -c 'curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3005/v1/connection/health/check'"`,
   ];
 
   for (let i = 0; i < attempts; i++) {
@@ -185,8 +185,6 @@ export async function updateStatusWorker(
     );
 
     await notifyWorker(input, EWorkerStatus.error);
-
-    return;
   }
 }
 
