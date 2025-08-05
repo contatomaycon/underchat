@@ -1,5 +1,5 @@
 import { proxyActivities } from '@temporalio/workflow';
-import { IServerActivity } from '../activities';
+import { IServerActivity } from '../activities/server.activities';
 
 const { testServers } = proxyActivities<IServerActivity>({
   startToCloseTimeout: '1 minute',

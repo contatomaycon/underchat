@@ -30,6 +30,10 @@ import { WorkerTypeViewerRepository } from '@core/repositories/worker/WorkerType
 import { IViewWorkerType } from '@core/common/interfaces/IViewWorkerType';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
 import { IViewWorkerServer } from '@core/common/interfaces/IViewWorkerServer';
+import { WorkerBaileysActivitiesListerRepository } from '@core/repositories/worker/WorkerBaileysActivitiesLister.repository';
+import { IListWorkerActivities } from '@core/common/interfaces/IListWorkerActivities';
+import { WorkerStatusUpdaterRepository } from '@core/repositories/worker/WorkerStatusUpdater.repository';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 
 @injectable()
 export class WorkerService {
@@ -51,7 +55,9 @@ export class WorkerService {
     private readonly workerPhoneConnectionViewerRepository: WorkerPhoneConnectionViewerRepository,
     private readonly workerPhoneConnectionUpdaterRepository: WorkerPhoneConnectionUpdaterRepository,
     private readonly workerPhoneConnectionCreatorRepository: WorkerPhoneConnectionCreatorRepository,
-    private readonly workerTypeViewerRepository: WorkerTypeViewerRepository
+    private readonly workerTypeViewerRepository: WorkerTypeViewerRepository,
+    private readonly workerBaileysActivitiesListerRepository: WorkerBaileysActivitiesListerRepository,
+    private readonly workerStatusUpdaterRepository: WorkerStatusUpdaterRepository
   ) {
     this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
   }
@@ -353,6 +359,20 @@ export class WorkerService {
       accountId,
       isAdministrator,
       workerId
+    );
+  };
+
+  listWorkerBaileysActivities = async (): Promise<IListWorkerActivities[]> => {
+    return this.workerBaileysActivitiesListerRepository.listWorkerBaileysActivities();
+  };
+
+  updateStatusWorker = async (
+    workerId: string,
+    workerStatusId: EWorkerStatus
+  ): Promise<boolean> => {
+    return this.workerStatusUpdaterRepository.updateStatusWorker(
+      workerId,
+      workerStatusId
     );
   };
 }

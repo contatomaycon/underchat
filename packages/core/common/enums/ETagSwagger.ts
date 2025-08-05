@@ -6,4 +6,5 @@ export enum ETagSwagger {
   centrifugo = 'Centrifugo',
   role = 'Funções',
   worker = 'Canais',
+  connection = 'Conexão',
 }

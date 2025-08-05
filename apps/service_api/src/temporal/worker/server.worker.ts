@@ -1,12 +1,12 @@
 import { FastifyInstance } from 'fastify';
 import { Worker } from '@temporalio/worker';
-import * as queue from '@core/temporal/activities/index';
+import * as activities from '@core/temporal/activities/server.activities';
 
 export const serverWorker = async (fastify: FastifyInstance) => {
   const worker = await Worker.create({
     connection: fastify.temporal.nativeConnection,
-    workflowsPath: require.resolve('@core/temporal/workflows/index.workflow'),
-    activities: queue,
+    workflowsPath: require.resolve('@core/temporal/workflows/server.workflow'),
+    activities: activities,
     taskQueue: 'server-queue',
   });
 

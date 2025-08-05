@@ -1,9 +1,9 @@
 import { Type } from '@fastify/type-provider-typebox';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 
-export const healthCheckSchema = {
-  description: 'Verifica a saúde da aplicação',
-  tags: [ETagSwagger.health],
+export const connectionHealthCheckSchema = {
+  description: 'Verifica a saúde da conexão',
+  tags: [ETagSwagger.connection],
   produces: ['application/json'],
   response: {
     200: Type.Object(
