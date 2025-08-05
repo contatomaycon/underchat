@@ -9,6 +9,7 @@ import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { container } from 'tsyringe';
 import { kafkaEnvironment } from '@core/config/environments';
 import { Kafka } from 'kafkajs';
+import { EAutoOffsetReset } from '@core/common/enums/EAutoOffsetReset';
 
 interface KafkaStreamsPluginOptions {
   module: ERouteModule;
@@ -24,7 +25,7 @@ const kafkaStreamsPlugin: FastifyPluginAsync<
     'group.id': `group-underchat-streams-${module}`,
     'client.id': `client-stream-${module}`,
     'compression.codec': 'snappy',
-    'enable.auto.commit': false,
+    'enable.auto.commit': true,
     'socket.keepalive.enable': true,
     'session.timeout.ms': 6000,
     'fetch.wait.max.ms': 500,
@@ -37,7 +38,7 @@ const kafkaStreamsPlugin: FastifyPluginAsync<
   };
 
   const tconf: KafkaStreamsConfig['tconf'] = {
-    'auto.offset.reset': 'latest',
+    'auto.offset.reset': EAutoOffsetReset.earliest,
     'request.required.acks': 1,
   };
 

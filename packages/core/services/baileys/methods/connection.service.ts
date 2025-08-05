@@ -175,14 +175,19 @@ export class BaileysConnectionService {
     });
   }
 
-  reconnect(): void {
+  reconnect(input: IBaileysConnection): void {
+    const {
+      initial_connection: initialConnection = false,
+      allow_restore: allowRestore = false,
+    } = input;
+
     if (this.connecting || this.connected) {
       return;
     }
 
     this.connect({
-      initial_connection: this.initialConnection,
-      allow_restore: false,
+      initial_connection: initialConnection,
+      allow_restore: allowRestore,
     }).catch(() => {
       this.saveLogWppConnection({
         worker_id: WORKER,

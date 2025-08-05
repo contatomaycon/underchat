@@ -20,8 +20,8 @@ export class BaileysService {
     return this.connection.connect(input);
   }
 
-  reconnect(): void {
-    return this.connection.reconnect();
+  reconnect(input: IBaileysConnection): void {
+    return this.connection.reconnect(input);
   }
 
   disconnect(input: IBaileysConnection): void {
