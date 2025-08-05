@@ -67,7 +67,12 @@ export async function isHelm(
   for (let i = 0; i < attempts; i++) {
     await new Promise((r) => setTimeout(r, 1000));
 
-    const result = await sshService.runCommands(serverId, sshConfig, commands);
+    const result = await sshService.runCommands(
+      serverId,
+      sshConfig,
+      commands,
+      false
+    );
 
     const lastOutput = result[result.length - 1]?.output?.trim();
     const status = Number(lastOutput ?? 0);
@@ -95,7 +100,12 @@ export async function isHelmConnection(
   for (let i = 0; i < attempts; i++) {
     await new Promise((r) => setTimeout(r, 1000));
 
-    const result = await sshService.runCommands(serverId, sshConfig, commands);
+    const result = await sshService.runCommands(
+      serverId,
+      sshConfig,
+      commands,
+      false
+    );
 
     const lastOutput = result[result.length - 1]?.output?.trim();
     const status = Number(lastOutput ?? 0);

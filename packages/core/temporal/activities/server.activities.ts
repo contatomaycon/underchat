@@ -65,11 +65,12 @@ export async function statusWebServer(
     webView.web_port
   );
 
-  const result = await sshService.runCommands(serverId, sshConfig, commands);
-
-  if (result.length > 0) {
-    await serverService.updateLogInstallServerBulk(result);
-  }
+  const result = await sshService.runCommands(
+    serverId,
+    sshConfig,
+    commands,
+    false
+  );
 
   const lastOutput = result[result.length - 1]?.output?.trim();
   const status = Number(lastOutput ?? 0);
