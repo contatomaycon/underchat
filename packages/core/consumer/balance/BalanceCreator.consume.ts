@@ -75,7 +75,7 @@ export class BalanceCreatorConsume {
     getDistroAndVersion: IDistroInfo,
     sshConfig: ConnectConfig,
     webView: IViewServerWebById,
-    attempts = 10
+    attempts = 20
   ): Promise<boolean> {
     if (!sshConfig.host) {
       throw new Error('SSH host is not defined');
@@ -116,7 +116,7 @@ export class BalanceCreatorConsume {
     serverId: string,
     getDistroAndVersion: IDistroInfo,
     sshConfig: ConnectConfig,
-    attempts = 10
+    attempts = 20
   ): Promise<boolean> {
     const getImagesCommands =
       this.sshService.getImagesCommands(getDistroAndVersion);

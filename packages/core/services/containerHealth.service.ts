@@ -4,7 +4,7 @@ import { PassThrough } from 'stream';
 
 @injectable()
 export class ContainerHealthService {
-  private readonly maxAttempts = 10;
+  private readonly maxAttempts = 20;
   private readonly delayMs = 1000;
   private readonly docker: Docker;
 
@@ -15,10 +15,6 @@ export class ContainerHealthService {
   async isServiceHealthy(containerId: string): Promise<boolean> {
     for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
       const code = await this.getStatusCode(containerId);
-
-      console.log(
-        `Attempt ${attempt}/${this.maxAttempts}: Health check code for container ${containerId} is ${code}`
-      );
 
       if (Number(code) === 200) {
         return true;
