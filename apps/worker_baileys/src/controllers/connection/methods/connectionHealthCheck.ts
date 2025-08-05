@@ -12,15 +12,8 @@ export const connectionHealthCheck = async (
   const baileysService = container.resolve(BaileysService);
 
   const status = baileysService.getStatus();
-
   if (status === EBaileysConnectionStatus.disconnected) {
-    try {
-      await baileysService.reconnect();
-    } catch {
-      return sendResponse(reply, {
-        httpStatusCode: EHTTPStatusCode.internal_server_error,
-      });
-    }
+    baileysService.reconnect();
   }
 
   return sendResponse(reply, {

@@ -175,14 +175,23 @@ export class BaileysConnectionService {
     });
   }
 
-  async reconnect(): Promise<IBaileysConnectionState> {
-    if (this.connected) {
-      this.reportConnected();
-
-      return Promise.resolve(this.state());
+  reconnect(): void {
+    if (this.connecting || this.connected) {
+      return;
     }
 
-    return this.restoreWithRetries();
+    this.connect({
+      initial_connection: this.initialConnection,
+      allow_restore: false,
+    }).catch(() => {
+      this.saveLogWppConnection({
+        worker_id: WORKER,
+        status: this.status ?? Status.disconnected,
+        code: this.code ?? ECodeMessage.connectionLost,
+        message: 'Reconnect failed',
+        date: new Date(),
+      });
+    });
   }
 
   private async createSocket() {

@@ -89,7 +89,7 @@ export async function isHelmConnection(
   sshConfig: ConnectConfig,
   serverId: string,
   workerId: string,
-  attempts = 20
+  attempts = 5
 ): Promise<boolean> {
   const sshService = container.resolve(SshService);
 
@@ -98,7 +98,7 @@ export async function isHelmConnection(
   ];
 
   for (let i = 0; i < attempts; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
+    await new Promise((r) => setTimeout(r, 10000));
 
     const result = await sshService.runCommands(
       serverId,
