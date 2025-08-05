@@ -15,7 +15,6 @@ export const connectionHealthCheck = async (
   if (status === EBaileysConnectionStatus.disconnected) {
     baileysService.reconnect({
       initial_connection: false,
-      allow_restore: false,
     });
   }
 

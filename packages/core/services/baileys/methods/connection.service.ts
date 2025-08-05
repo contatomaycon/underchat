@@ -176,18 +176,12 @@ export class BaileysConnectionService {
   }
 
   reconnect(input: IBaileysConnection): void {
-    const {
-      initial_connection: initialConnection = true,
-      allow_restore: allowRestore = true,
-    } = input;
+    const { initial_connection: initialConnection = true } = input;
 
-    if (this.connecting || this.connected) {
-      return;
-    }
+    console.log('Reconnecting Baileys:', input);
 
     this.connect({
       initial_connection: initialConnection,
-      allow_restore: allowRestore,
     }).catch(() => {
       this.saveLogWppConnection({
         worker_id: WORKER,
