@@ -80,6 +80,34 @@ export async function isHelm(
   return false;
 }
 
+export async function isHelmConnection(
+  sshConfig: ConnectConfig,
+  serverId: string,
+  workerId: string,
+  attempts = 20
+): Promise<boolean> {
+  const sshService = container.resolve(SshService);
+
+  const commands = [
+    `bash -c "docker exec ${workerId} sh -c 'curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:3005/v1/connection/health/check'"`,
+  ];
+
+  for (let i = 0; i < attempts; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+
+    const result = await sshService.runCommands(serverId, sshConfig, commands);
+
+    const lastOutput = result[result.length - 1]?.output?.trim();
+    const status = Number(lastOutput ?? 0);
+
+    if (status === 200) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export async function notifyWorker(
   input: IListWorkerActivities,
   workerStatusId: EWorkerStatus
@@ -135,6 +163,41 @@ export async function updateStatusWorker(
   }
 }
 
+export async function updateStatusConnectionWorker(
+  isHelmConnectionCheck: boolean,
+  input: IListWorkerActivities
+): Promise<void> {
+  const workerService = container.resolve(WorkerService);
+
+  if (
+    isHelmConnectionCheck &&
+    input.worker_status_id !== EWorkerStatus.online
+  ) {
+    await workerService.updateStatusWorker(
+      input.worker_id,
+      EWorkerStatus.online
+    );
+
+    await notifyWorker(input, EWorkerStatus.online);
+
+    return;
+  }
+
+  if (
+    !isHelmConnectionCheck &&
+    input.worker_status_id !== EWorkerStatus.offline
+  ) {
+    await workerService.updateStatusWorker(
+      input.worker_id,
+      EWorkerStatus.offline
+    );
+
+    await notifyWorker(input, EWorkerStatus.offline);
+
+    return;
+  }
+}
+
 export async function execute(input: IListWorkerActivities): Promise<void> {
   const sshConfig = await viewServerSshById(input.server_id);
 
@@ -144,8 +207,19 @@ export async function execute(input: IListWorkerActivities): Promise<void> {
   }
 
   const isHelmCheck = await isHelm(sshConfig, input.server_id, input.worker_id);
-
   await updateStatusWorker(isHelmCheck, input);
 
-  console.log('isHelmCheck:', isHelmCheck);
+  if (
+    isHelmCheck &&
+    (input.worker_status_id === EWorkerStatus.online ||
+      input.worker_status_id === EWorkerStatus.offline)
+  ) {
+    const isHelmConnectionCheck = await isHelmConnection(
+      sshConfig,
+      input.server_id,
+      input.worker_id
+    );
+
+    await updateStatusConnectionWorker(isHelmConnectionCheck, input);
+  }
 }
