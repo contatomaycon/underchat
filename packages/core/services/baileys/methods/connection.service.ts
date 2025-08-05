@@ -9,7 +9,7 @@ import QRCode from 'qrcode';
 import P from 'pino';
 import fs from 'fs';
 import path from 'path';
-import { injectable } from 'tsyringe';
+import { singleton } from 'tsyringe';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { baileysEnvironment } from '@core/config/environments';
 import { EBaileysConnectionStatus as Status } from '@core/common/enums/EBaileysConnectionStatus';
@@ -35,7 +35,7 @@ const FOLDER = path.join(
 const CHANNEL = `worker_${baileysEnvironment.baileysWorkerId}_qrcode`;
 const WORKER = baileysEnvironment.baileysWorkerId;
 
-@injectable()
+@singleton()
 export class BaileysConnectionService {
   private readonly retryDelay = 2_000;
   private readonly maxRetries = 5;
