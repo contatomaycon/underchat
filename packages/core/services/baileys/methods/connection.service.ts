@@ -27,11 +27,7 @@ import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 
-const FOLDER = path.join(
-  process.cwd(),
-  'storage',
-  baileysEnvironment.baileysWorkerId
-);
+const FOLDER = `/app/data/storage/${baileysEnvironment.baileysWorkerId}`;
 const CHANNEL = `worker_${baileysEnvironment.baileysWorkerId}_qrcode`;
 const WORKER = baileysEnvironment.baileysWorkerId;
 
