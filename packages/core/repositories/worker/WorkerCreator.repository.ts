@@ -20,8 +20,6 @@ export class WorkerCreatorRepository {
         server_id: input.server_id,
         account_id: input.account_id,
         name: input.name,
-        number: input.number,
-        container_id: input.container_id,
       })
       .execute();
 

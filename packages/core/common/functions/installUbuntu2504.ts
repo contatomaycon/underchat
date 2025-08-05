@@ -96,6 +96,7 @@ export async function installUbuntu2504(
         -v /var/run/docker.sock:/var/run/docker.sock \
         --network underchat \
         -e DOCKER_HOST=unix:///var/run/docker.sock \
+        -e SERVER_ID=${webView.server_id} \
         under-balance-api:latest"`,
 
     'rm -rf /home/app || true',

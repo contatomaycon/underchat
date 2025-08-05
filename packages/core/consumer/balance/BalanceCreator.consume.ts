@@ -10,14 +10,16 @@ import { IDistroInfo } from '@core/common/interfaces/IDistroInfo';
 import { FastifyInstance } from 'fastify';
 import { IViewServerWebById } from '@core/common/interfaces/IViewServerWebById';
 import { KafkaStreams, KStream } from 'kafka-streams';
+import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 
 @injectable()
 export class BalanceCreatorConsume {
   constructor(
+    @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams,
     private readonly sshService: SshService,
     private readonly serverService: ServerService,
     private readonly passwordEncryptorService: PasswordEncryptorService,
-    @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 
   private async validate(serverId: string): Promise<{
@@ -73,7 +75,7 @@ export class BalanceCreatorConsume {
     getDistroAndVersion: IDistroInfo,
     sshConfig: ConnectConfig,
     webView: IViewServerWebById,
-    attempts = 10
+    attempts = 20
   ): Promise<boolean> {
     if (!sshConfig.host) {
       throw new Error('SSH host is not defined');
@@ -86,7 +88,7 @@ export class BalanceCreatorConsume {
     );
 
     for (let i = 0; i < attempts; i++) {
-      await new Promise((r) => setTimeout(r, 6000));
+      await new Promise((r) => setTimeout(r, 1000));
 
       const result = await this.sshService.runCommands(
         serverId,
@@ -113,28 +115,40 @@ export class BalanceCreatorConsume {
   private async imageIsBuilt(
     serverId: string,
     getDistroAndVersion: IDistroInfo,
-    sshConfig: ConnectConfig
+    sshConfig: ConnectConfig,
+    attempts = 20
   ): Promise<boolean> {
     const getImagesCommands =
       this.sshService.getImagesCommands(getDistroAndVersion);
 
-    const result = await this.sshService.runCommands(
-      serverId,
-      sshConfig,
-      getImagesCommands
-    );
+    for (let i = 0; i < attempts; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
 
-    if (result.length > 0) {
-      await this.serverService.updateLogInstallServerBulk(result);
+      const result = await this.sshService.runCommands(
+        serverId,
+        sshConfig,
+        getImagesCommands
+      );
+
+      if (result.length > 0) {
+        await this.serverService.updateLogInstallServerBulk(result);
+      }
+
+      const lastOutput = result[result.length - 1]?.output?.trim();
+      const status = Boolean(lastOutput ?? false);
+
+      if (status) {
+        return true;
+      }
     }
 
-    const lastOutput = result[result.length - 1]?.output?.trim();
-
-    return Boolean(lastOutput) === true;
+    return false;
   }
 
   async execute(server: FastifyInstance): Promise<void> {
-    const stream: KStream = this.kafkaStreams.getKStream('create:server');
+    const stream: KStream = this.kafkaStreams.getKStream(
+      this.kafkaServiceQueueService.createServer()
+    );
 
     stream.mapBufferKeyToString();
     stream.mapJSONConvenience();
@@ -224,5 +238,9 @@ export class BalanceCreatorConsume {
 
       server.logger.error(`Error starting stream: ${msg}`);
     }
+  }
+
+  public async close(): Promise<void> {
+    await this.kafkaStreams.closeAll();
   }
 }

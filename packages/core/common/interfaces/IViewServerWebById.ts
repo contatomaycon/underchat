@@ -1,4 +1,5 @@
 export interface IViewServerWebById {
+  server_id: string;
   server_status_id: string;
   web_domain: string;
   web_port: number;

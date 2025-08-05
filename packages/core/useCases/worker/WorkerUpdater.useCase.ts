@@ -3,6 +3,7 @@ import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { AccountService } from '@core/services/account.service';
 import { EditWorkerRequest } from '@core/schema/worker/editWorker/request.schema';
+import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
 
 @injectable()
 export class WorkerUpdaterUseCase {
@@ -31,11 +32,15 @@ export class WorkerUpdaterUseCase {
   ): Promise<boolean> {
     await this.validate(t, accountId);
 
+    const inputUpdate: IUpdateWorker = {
+      worker_id: input.worker_id,
+      name: input.name,
+    };
+
     const updateWorkerById = await this.workerService.updateWorkerById(
       isAdministrator,
       accountId,
-      input.worker_id,
-      input.name
+      inputUpdate
     );
 
     if (!updateWorkerById) {

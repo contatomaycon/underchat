@@ -4,6 +4,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { eq } from 'drizzle-orm';
 import { EServerStatus } from '@core/common/enums/EServerStatus';
+import { currentTime } from '@core/common/functions/currentTime';
 
 @injectable()
 export class ServerStatusUpdaterRepository {
@@ -15,10 +16,13 @@ export class ServerStatusUpdaterRepository {
     serverId: string,
     status: EServerStatus
   ): Promise<boolean> => {
+    const date = currentTime();
+
     const result = await this.db
       .update(server)
       .set({
         server_status_id: status,
+        last_sync: date,
       })
       .where(eq(server.server_id, serverId))
       .execute();

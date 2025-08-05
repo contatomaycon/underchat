@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { onMessage } from '@/@webcore/centrifugo';
+import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
 import { formatDateTimeSeconds } from '@core/common/functions/formatDateTimeSeconds';
 import { IServerSshCentrifugo } from '@core/common/interfaces/IServerSshCentrifugo';
@@ -68,6 +68,10 @@ onMounted(async () => {
       scrollToBottom();
     }
   );
+});
+
+onUnmounted(() => {
+  unsubscribe(ECentrifugoChannel.server_ssh);
 });
 </script>
 

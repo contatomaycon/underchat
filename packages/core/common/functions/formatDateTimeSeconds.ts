@@ -1,9 +1,13 @@
-import moment from 'moment';
+import moment from 'moment-timezone';
 
 export function formatDateTimeSeconds(input: string | Date | null): string {
   if (!input) return '';
 
-  return moment
-    .tz(input, 'America/Sao_Paulo')
+  if (typeof input === 'string') {
+    return moment.parseZone(input).format('DD/MM/YYYY [às] HH:mm:ss');
+  }
+
+  return moment(input)
+    .tz('America/Sao_Paulo')
     .format('DD/MM/YYYY [às] HH:mm:ss');
 }

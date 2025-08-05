@@ -13,9 +13,19 @@ import VueDevTools from 'vite-plugin-vue-devtools';
 import MetaLayouts from 'vite-plugin-vue-meta-layouts';
 import vuetify from 'vite-plugin-vuetify';
 import svgLoader from 'vite-svg-loader';
+import path from 'node:path';
 
 export default defineConfig(() => {
   return {
+    server: {
+      fs: {
+        allow: [
+          path.resolve(__dirname),
+          path.resolve(__dirname, '../node_modules'),
+          path.resolve(__dirname, '../../node_modules'),
+        ],
+      },
+    },
     plugins: [
       VueRouter({
         getRouteName: (routeNode) =>

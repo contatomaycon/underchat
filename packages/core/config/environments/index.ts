@@ -6,6 +6,8 @@ import { DatabaseElasticEnvironment } from './DatabaseElasticEnvironment';
 import { CentrifugoEnvironment } from './CentrifugoEnvironment';
 import { BaileysEnvironment } from './BaileysEnvironment';
 import { KafkaEnvironment } from './KafkaEnvironment';
+import { TemporalEnvironment } from './TemporalEnvironment';
+import { BalanceEnvironment } from './BalanceEnvironment';
 
 export const generalEnvironment = new GeneralEnvironment();
 export const databaseEnvironment = new DatabaseEnvironment();
@@ -15,3 +17,5 @@ export const databaseElasticEnvironment = new DatabaseElasticEnvironment();
 export const centrifugoEnvironment = new CentrifugoEnvironment();
 export const baileysEnvironment = new BaileysEnvironment();
 export const kafkaEnvironment = new KafkaEnvironment();
+export const temporalEnvironment = new TemporalEnvironment();
+export const balanceEnvironment = new BalanceEnvironment();

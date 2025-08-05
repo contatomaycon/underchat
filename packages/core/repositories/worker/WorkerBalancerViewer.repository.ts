@@ -3,7 +3,7 @@ import { server, serverWeb, worker, apiKey } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq, isNull } from 'drizzle-orm';
-import { IViewWorkerBalancerServer } from '@core/common/interfaces/IViewWorkerBalancerServer';
+import { IViewWorkerServer } from '@core/common/interfaces/IViewWorkerServer';
 
 @injectable()
 export class WorkerBalancerViewerRepository {
@@ -15,7 +15,7 @@ export class WorkerBalancerViewerRepository {
     accountId: string,
     isAdministrator: boolean,
     workerId: string
-  ): Promise<IViewWorkerBalancerServer | null> => {
+  ): Promise<IViewWorkerServer | null> => {
     const accountCondition = isAdministrator
       ? undefined
       : eq(worker.account_id, accountId);
@@ -45,6 +45,6 @@ export class WorkerBalancerViewerRepository {
       return null;
     }
 
-    return result[0] as IViewWorkerBalancerServer;
+    return result[0] as IViewWorkerServer;
   };
 }

@@ -3,6 +3,7 @@ export enum ECodeMessage {
   newLoginAttempt = 201,
   awaitingReadQrCode = 202,
   awaitConnection = 203,
+  awaitingPairingCode = 204,
   loggedOut = 401,
   forbidden = 403,
   connectionLost = 408,
@@ -12,4 +13,5 @@ export enum ECodeMessage {
   badSession = 500,
   unavailableService = 503,
   restartRequired = 515,
+  phoneNotAvailable = 600,
 }

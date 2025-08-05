@@ -22,6 +22,7 @@ export const listServerResponseSchema = Type.Object({
   }),
   ssh: listServerSshResponseSchema,
   web: listServerWebResponseSchema,
+  last_sync: Type.String(),
   created_at: Type.String(),
   updated_at: Type.String(),
 });

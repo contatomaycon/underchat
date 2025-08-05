@@ -14,15 +14,14 @@ export class WorkerPhoneStatusConnectionDateUpdaterRepository {
   ) {}
 
   private readonly connectionDate = (
-    status: EWorkerStatus,
-    connection_date?: string | null
+    input: IUpdateWorkerPhoneStatusConnectionDate
   ) => {
-    if (status === EWorkerStatus.disponible) {
+    if (input.status === EWorkerStatus.disponible || !input.number) {
       return null;
     }
 
-    if (connection_date) {
-      return connection_date;
+    if (input.connection_date) {
+      return input.connection_date;
     }
 
     return currentTime();
@@ -33,10 +32,7 @@ export class WorkerPhoneStatusConnectionDateUpdaterRepository {
   ): Promise<boolean> => {
     const phoneNumber =
       input.status === EWorkerStatus.disponible ? null : input.number;
-    const connectionDate = this.connectionDate(
-      input.status,
-      input.connection_date
-    );
+    const connectionDate = this.connectionDate(input);
 
     const result = await this.db
       .update(worker)

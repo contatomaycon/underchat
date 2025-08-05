@@ -1,13 +1,8 @@
-import { EWorkerStatus } from '../enums/EWorkerStatus';
-import { EWorkerType } from '../enums/EWorkerType';
-
 export interface ICreateWorker {
   worker_id: string;
-  worker_status_id: EWorkerStatus;
-  worker_type_id: EWorkerType;
+  worker_status_id: string;
+  worker_type_id: string;
   server_id: string;
   account_id: string;
   name: string;
-  number?: string;
-  container_id: string;
 }

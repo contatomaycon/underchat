@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { singleton } from 'tsyringe';
 import makeWASocket, {
   AnyMessageContent,
   MiscMessageGenerationOptions,
@@ -7,25 +7,25 @@ import { BaileysConnectionService } from './methods/connection.service';
 import { BaileysMessageService } from './methods/message.service';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
+import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
 
-@injectable()
+@singleton()
 export class BaileysService {
   constructor(
     private readonly connection: BaileysConnectionService,
     private readonly messages: BaileysMessageService
   ) {}
 
-  connect(
-    initialConnection: boolean = false
-  ): Promise<IBaileysConnectionState> {
-    return this.connection.connect(initialConnection);
+  connect(input: IBaileysConnection): Promise<IBaileysConnectionState> {
+    return this.connection.connect(input);
   }
 
-  disconnect(
-    initialConnection: boolean = false,
-    disconnectedUser: boolean = false
-  ): void {
-    this.connection.disconnect(initialConnection, disconnectedUser);
+  reconnect(): void {
+    return this.connection.reconnect();
+  }
+
+  disconnect(input: IBaileysConnection): void {
+    this.connection.disconnect(input);
   }
 
   getStatus(): EBaileysConnectionStatus {

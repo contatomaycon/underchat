@@ -1,5 +1,11 @@
 import { pgTable, timestamp, varchar, uuid } from 'drizzle-orm/pg-core';
-import { account, workerStatus, workerType, server } from '@core/models';
+import {
+  account,
+  workerStatus,
+  workerType,
+  server,
+  workerPhoneConnection,
+} from '@core/models';
 import { relations } from 'drizzle-orm';
 
 export const worker = pgTable('worker', {
@@ -18,7 +24,7 @@ export const worker = pgTable('worker', {
     .notNull(),
   name: varchar({ length: 50 }).notNull(),
   number: varchar({ length: 20 }),
-  container_id: varchar({ length: 100 }).notNull(),
+  container_id: varchar({ length: 100 }),
   connection_date: timestamp({
     mode: 'string',
     withTimezone: true,
@@ -34,7 +40,7 @@ export const worker = pgTable('worker', {
   deleted_at: timestamp({ mode: 'string', withTimezone: true }),
 });
 
-export const workerRelations = relations(worker, ({ one }) => ({
+export const workerRelations = relations(worker, ({ one, many }) => ({
   wws: one(workerStatus, {
     fields: [worker.worker_status_id],
     references: [workerStatus.worker_status_id],
@@ -51,4 +57,5 @@ export const workerRelations = relations(worker, ({ one }) => ({
     fields: [worker.account_id],
     references: [account.account_id],
   }),
+  wwp: many(workerPhoneConnection),
 }));

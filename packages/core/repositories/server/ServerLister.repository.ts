@@ -124,6 +124,7 @@ export class ServerListerRepository {
           web_port: serverWeb.web_port,
           web_protocol: serverWeb.web_protocol,
         },
+        last_sync: server.last_sync,
         created_at: server.created_at,
         updated_at: server.updated_at,
       })

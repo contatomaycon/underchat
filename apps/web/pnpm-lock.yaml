@@ -65,6 +65,9 @@ importers:
       eslint-plugin-regexp:
         specifier: 2.9.0
         version: 2.9.0(eslint@9.31.0)
+      flag-icons:
+        specifier: ^7.5.0
+        version: 7.5.0
       jwt-decode:
         specifier: 4.0.0
         version: 4.0.0
@@ -95,6 +98,9 @@ importers:
       unplugin-vue-define-options:
         specifier: 3.0.0-beta.17
         version: 3.0.0-beta.17(vue@3.5.17(typescript@5.8.3))
+      v-phone-input:
+        specifier: ^5.0.0
+        version: 5.0.0(vue@3.5.17(typescript@5.8.3))(vuetify@3.9.2)
       vue:
         specifier: 3.5.17
         version: 3.5.17(typescript@5.8.3)
@@ -2082,6 +2088,10 @@ packages:
     resolution: {integrity: sha512-wvUjBtSGN7+7SjNpq/9M2Tg350UZD3q62IFZLbRAR1bSMlCo1ZaeW+BJ+D090e4hIIZLBcTDWe4Mh4jvUDajzQ==}
     engines: {node: '>= 0.4'}
 
+  awesome-phonenumber@7.5.0:
+    resolution: {integrity: sha512-qWQHCiMHMNVyUsICiCcaPJAYbGL4E4kGnIxnrwkS3YCwcPa8VtQCo11HGKY8AbUpXJloDG10c9Bulhw3xYkC/g==}
+    engines: {node: '>=18'}
+
   axios@1.10.0:
     resolution: {integrity: sha512-/1xYAC4MP/HEG+3duIhFr4ZQXR4sQXOIe+o6sdqzeykGLx6Upp/1p8MHqhINOvGeP7xyNHe7tsiJByc4SSVUxw==}
 
@@ -2297,6 +2307,9 @@ packages:
     peerDependenciesMeta:
       typescript:
         optional: true
+
+  countries-list@3.1.1:
+    resolution: {integrity: sha512-nPklKJ5qtmY5MdBKw1NiBAoyx5Sa7p2yPpljZyQ7gyCN1m+eMFs9I6CT37Mxt8zvR5L3VzD3DJBE4WQzX3WF4A==}
 
   crelt@1.0.6:
     resolution: {integrity: sha512-VQ2MBenTq1fWZUH9DJNGti7kKv6EeAuYr3cLwxUWhIu1baTaXh4Ib5W2CqHVqib4/MqbYGJqiL3Zb8GJZr3l4g==}
@@ -2912,6 +2925,9 @@ packages:
   find-up@5.0.0:
     resolution: {integrity: sha512-78/PXT1wlLLDgTzDs7sjq9hzz0vXD+zn+7wypEe4fXQxCmdmqfGsEPQxmiCSQI3ajFV91bVSsvNtrJRiW6nGng==}
     engines: {node: '>=10'}
+
+  flag-icons@7.5.0:
+    resolution: {integrity: sha512-kd+MNXviFIg5hijH766tt+3x76ele1AXlo4zDdCxIvqWZhKt4T83bOtxUOOMlTx/EcFdUMH5yvQgYlFh1EqqFg==}
 
   flat-cache@4.0.1:
     resolution: {integrity: sha512-f7ccFPK3SXFHpx15UIGyRJ/FJQctuKZ0zVuN3frBo4HnK3cay9VEW0R6yPYFHC0AgqhukPzKjq22t5DmAyqGyw==}
@@ -4704,6 +4720,13 @@ packages:
   util-deprecate@1.0.2:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
 
+  v-phone-input@5.0.0:
+    resolution: {integrity: sha512-DMro1xnaCubCaoNswdxJLhu7xJXCC00D6yWtbud0d8t3r489jXO4j9KSPIIff3CuHuFk4yTk3V71GNQxs+xCdg==}
+    engines: {node: '>=12'}
+    peerDependencies:
+      vue: ^3.0.0
+      vuetify: ^3.0.0
+
   validate-npm-package-license@3.0.4:
     resolution: {integrity: sha512-DpKm2Ui/xN7/HQKCtpZxoRWBhZ9Z0kqtygG8XCgNQ8ZlDnxuQmWhj566j8fN4Cu3/JmbhsDo7fcAJq4s9h27Ew==}
 
@@ -4943,6 +4966,9 @@ packages:
   word-wrap@1.2.5:
     resolution: {integrity: sha512-BN22B5eaMMI9UMtjrGd5g5eCYPpCPDUy0FJXbYsaT5zYxjFOckS53SQDE3pWkVoWpHXVb3BrYcEN4Twa55B5cA==}
     engines: {node: '>=0.10.0'}
+
+  world-flags-sprite@0.0.2:
+    resolution: {integrity: sha512-v4Qjd8+5hBNVyn9AKFcVTaKZWaz0fZliHZ7FK0ugPMbAv+oI5BZrT72rBxmGiD6D86yshA08FTo/CcAaZW7buw==}
 
   wrap-ansi@6.2.0:
     resolution: {integrity: sha512-r6lPcBGxZXlIcymEu7InxDMhdW0KDxpLgoFLcguasxCaJ/SOIZwINatK9KY/tf+ZrlywOKU0UDj3ATXUBfxJXA==}
@@ -6955,6 +6981,8 @@ snapshots:
     dependencies:
       possible-typed-array-names: 1.1.0
 
+  awesome-phonenumber@7.5.0: {}
+
   axios@1.10.0:
     dependencies:
       follow-redirects: 1.15.9
@@ -7167,6 +7195,8 @@ snapshots:
       parse-json: 5.2.0
     optionalDependencies:
       typescript: 5.8.3
+
+  countries-list@3.1.1: {}
 
   crelt@1.0.6: {}
 
@@ -8017,6 +8047,8 @@ snapshots:
     dependencies:
       locate-path: 6.0.0
       path-exists: 4.0.0
+
+  flag-icons@7.5.0: {}
 
   flat-cache@4.0.1:
     dependencies:
@@ -10024,6 +10056,16 @@ snapshots:
 
   util-deprecate@1.0.2: {}
 
+  v-phone-input@5.0.0(vue@3.5.17(typescript@5.8.3))(vuetify@3.9.2):
+    dependencies:
+      awesome-phonenumber: 7.5.0
+      countries-list: 3.1.1
+      vue: 3.5.17(typescript@5.8.3)
+      vuetify: 3.9.2(typescript@5.8.3)(vite-plugin-vuetify@2.1.1)(vue@3.5.17(typescript@5.8.3))
+    optionalDependencies:
+      flag-icons: 7.5.0
+      world-flags-sprite: 0.0.2
+
   validate-npm-package-license@3.0.4:
     dependencies:
       spdx-correct: 3.2.0
@@ -10298,6 +10340,9 @@ snapshots:
       isexe: 2.0.0
 
   word-wrap@1.2.5: {}
+
+  world-flags-sprite@0.0.2:
+    optional: true
 
   wrap-ansi@6.2.0:
     dependencies:
