@@ -175,6 +175,16 @@ export class BaileysConnectionService {
     });
   }
 
+  async reconnect(): Promise<IBaileysConnectionState> {
+    if (this.connected) {
+      this.reportConnected();
+
+      return Promise.resolve(this.state());
+    }
+
+    return this.restoreWithRetries();
+  }
+
   private async createSocket() {
     const { state, saveCreds } = await useMultiFileAuthState(FOLDER);
     const { version } = await fetchLatestBaileysVersion();

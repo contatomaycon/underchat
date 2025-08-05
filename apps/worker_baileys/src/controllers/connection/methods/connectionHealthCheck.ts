@@ -13,6 +13,16 @@ export const connectionHealthCheck = async (
 
   const status = baileysService.getStatus();
 
+  if (status === EBaileysConnectionStatus.disconnected) {
+    try {
+      await baileysService.reconnect();
+    } catch {
+      return sendResponse(reply, {
+        httpStatusCode: EHTTPStatusCode.internal_server_error,
+      });
+    }
+  }
+
   return sendResponse(reply, {
     httpStatusCode:
       status === EBaileysConnectionStatus.connected

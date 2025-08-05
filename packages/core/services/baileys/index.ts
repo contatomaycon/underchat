@@ -20,6 +20,10 @@ export class BaileysService {
     return this.connection.connect(input);
   }
 
+  reconnect(): Promise<IBaileysConnectionState> {
+    return this.connection.reconnect();
+  }
+
   disconnect(input: IBaileysConnection): void {
     this.connection.disconnect(input);
   }
