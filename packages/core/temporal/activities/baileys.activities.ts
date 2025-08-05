@@ -200,8 +200,6 @@ export async function execute(input: IListWorkerActivities): Promise<void> {
 
   const isHelmCheck = await isHelm(sshConfig, input.server_id, input.worker_id);
 
-  console.log('isHelmCheck:', isHelmCheck);
-
   let isHelmConnectionCheck = true;
   if (
     isHelmCheck &&
@@ -213,8 +211,6 @@ export async function execute(input: IListWorkerActivities): Promise<void> {
       input.server_id,
       input.worker_id
     );
-
-    console.log('isHelmConnectionCheck:', isHelmConnectionCheck);
   }
 
   await updateStatusWorker(isHelmCheck, isHelmConnectionCheck, input);

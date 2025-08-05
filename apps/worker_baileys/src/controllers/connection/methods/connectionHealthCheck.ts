@@ -13,8 +13,6 @@ export const connectionHealthCheck = async (
 
   const status = baileysService.getStatus();
 
-  console.log('Baileys connection status:', status);
-
   return sendResponse(reply, {
     httpStatusCode:
       status === EBaileysConnectionStatus.connected
