@@ -16,6 +16,10 @@ export class ContainerHealthService {
     for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
       const code = await this.getStatusCode(containerId);
 
+      console.log(
+        `Attempt ${attempt}/${this.maxAttempts}: Health check code for container ${containerId} is ${code}`
+      );
+
       if (Number(code) === 200) {
         return true;
       }
