@@ -1,5 +1,6 @@
 import { injectable } from 'tsyringe';
 import Docker from 'dockerode';
+import { PassThrough } from 'stream';
 
 @injectable()
 export class ContainerHealthService {
@@ -15,9 +16,7 @@ export class ContainerHealthService {
     for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
       const code = await this.getStatusCode(containerId);
 
-      console.log('code:', code);
-
-      if (code === '200') {
+      if (Number(code) === 200) {
         return true;
       }
 
@@ -45,12 +44,23 @@ export class ContainerHealthService {
         AttachStderr: true,
       });
 
-      const stream = await execInstance.start({ hijack: true, stdin: false });
+      const execStream = await execInstance.start({
+        hijack: true,
+        stdin: false,
+      });
 
-      const output = await this.streamToString(stream);
-      const code = output.trim();
+      const stdoutStream = new PassThrough();
+      const stderrStream = new PassThrough();
 
-      return code;
+      this.docker.modem.demuxStream(execStream, stdoutStream, stderrStream);
+
+      const chunks: string[] = [];
+
+      stdoutStream.on('data', (chunk) => chunks.push(chunk.toString()));
+
+      await new Promise<void>((resolve) => execStream.on('end', resolve));
+
+      return chunks.join('').trim();
     } catch {
       return '';
     }
