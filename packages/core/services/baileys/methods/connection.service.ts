@@ -177,8 +177,8 @@ export class BaileysConnectionService {
 
   reconnect(input: IBaileysConnection): void {
     const {
-      initial_connection: initialConnection = false,
-      allow_restore: allowRestore = false,
+      initial_connection: initialConnection = true,
+      allow_restore: allowRestore = true,
     } = input;
 
     if (this.connecting || this.connected) {
