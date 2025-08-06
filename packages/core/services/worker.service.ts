@@ -122,6 +122,7 @@ export class WorkerService {
   public async createContainerWorker(
     imageName: EWorkerImage,
     workerId: string,
+    accountId: string,
     isCreateVolume: boolean = true
   ): Promise<string> {
     const existsContainerById = await this.existsContainerWorkerById(workerId);
@@ -146,7 +147,7 @@ export class WorkerService {
       Volumes: {
         '/app/data': {},
       },
-      Env: [`WORKER_ID=${workerId}`],
+      Env: [`WORKER_ID=${workerId}`, `ACCOUNT_ID=${accountId}`],
     });
 
     await container.start();

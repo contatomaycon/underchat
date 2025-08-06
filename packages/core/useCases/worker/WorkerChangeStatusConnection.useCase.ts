@@ -198,15 +198,13 @@ export class WorkerChangeStatusConnectionUseCase {
         const payload: IBaileysConnectionState = {
           status: EBaileysConnectionStatus.initial,
           worker_id: input.worker_id,
+          account_id: accountId,
           seconds_until_next_attempt:
             canPhoneConnection.secondsUntilNextAttempt,
           code: ECodeMessage.phoneNotAvailable,
         };
 
-        this.centrifugoService.publish(
-          `worker_${input.worker_id}_qrcode`,
-          payload
-        );
+        this.centrifugoService.publish(`worker.${accountId}`, payload);
 
         return;
       }

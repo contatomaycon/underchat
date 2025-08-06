@@ -15,6 +15,9 @@ import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.servi
 import { ContainerHealthService } from '@core/services/containerHealth.service';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { StreamProducerService } from '@core/services/streamProducer.service';
+import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
+import { ECodeMessage } from '@core/common/enums/ECodeMessage';
+import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 
 @singleton()
 export class WorkerConsume {
@@ -28,30 +31,47 @@ export class WorkerConsume {
     private readonly streamProducerService: StreamProducerService
   ) {}
 
-  private queueCentrifugo(data: IWorkerPayload): string {
-    return `worker.${data.account_id}`;
+  private queueCentrifugo(accountId: string): string {
+    return `worker.${accountId}`;
+  }
+
+  private centrifugoPublish(
+    dataPublish: IBaileysConnectionState
+  ): Promise<PublishResult> {
+    return this.centrifugoService.publish(
+      this.queueCentrifugo(dataPublish.account_id),
+      dataPublish
+    );
   }
 
   private async updateWorkerErrorStatus(
-    data: IWorkerPayload
+    workerId: string,
+    accountId: string,
+    isAdministrator: boolean
   ): Promise<PublishResult> {
     const inputUpdate: IUpdateWorker = {
-      worker_id: data.worker_id,
+      worker_id: workerId,
       worker_status_id: EWorkerStatus.error,
     };
 
-    data.worker_status_id = EWorkerStatus.error;
-
     await this.workerService.updateWorkerById(
-      data.is_administrator,
-      data.account_id,
+      isAdministrator,
+      accountId,
       inputUpdate
     );
 
-    return this.centrifugoService.publish(this.queueCentrifugo(data), data);
+    const dataPublish: IBaileysConnectionState = {
+      code: ECodeMessage.info,
+      status: EBaileysConnectionStatus.info,
+      worker_id: workerId,
+      account_id: accountId,
+      worker_status_id: EWorkerStatus.error,
+    };
+
+    return this.centrifugoPublish(dataPublish);
   }
 
-  private async recreateWorker(data: IWorkerPayload): Promise<void> {
+  private async recreateWorker(data: IWorkerPayload): Promise<PublishResult> {
     const viewWorkerType = await this.workerService.viewWorkerType(
       data.account_id,
       data.is_administrator,
@@ -59,7 +79,11 @@ export class WorkerConsume {
     );
 
     if (!viewWorkerType) {
-      await this.updateWorkerErrorStatus(data);
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.is_administrator
+      );
 
       throw new Error('Worker not found');
     }
@@ -68,7 +92,11 @@ export class WorkerConsume {
       await this.workerService.removeContainerWorker(data.worker_id, false);
 
     if (!removeContainerWorker) {
-      await this.updateWorkerErrorStatus(data);
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.is_administrator
+      );
 
       throw new Error('Worker removal failed');
     }
@@ -79,11 +107,16 @@ export class WorkerConsume {
     const containerId = await this.workerService.createContainerWorker(
       imageName,
       data.worker_id,
+      data.account_id,
       false
     );
 
     if (!containerId) {
-      await this.updateWorkerErrorStatus(data);
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.is_administrator
+      );
 
       throw new Error('Worker creation failed');
     }
@@ -92,7 +125,11 @@ export class WorkerConsume {
       await this.containerHealthService.isServiceHealthy(containerId);
 
     if (!healthy) {
-      await this.updateWorkerErrorStatus(data);
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.is_administrator
+      );
 
       throw new Error('Worker service is not healthy');
     }
@@ -111,7 +148,11 @@ export class WorkerConsume {
     );
 
     if (!updateWorkerById) {
-      await this.updateWorkerErrorStatus(data);
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.is_administrator
+      );
 
       throw new Error('Failed to update worker status');
     }
@@ -128,12 +169,18 @@ export class WorkerConsume {
       data.worker_id
     );
 
-    data.worker_status_id = EWorkerStatus.disponible;
+    const dataPublish: IBaileysConnectionState = {
+      code: ECodeMessage.info,
+      status: EBaileysConnectionStatus.info,
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      worker_status_id: EWorkerStatus.disponible,
+    };
 
-    await this.centrifugoService.publish(this.queueCentrifugo(data), data);
+    return this.centrifugoPublish(dataPublish);
   }
 
-  private async deleteWorker(data: IWorkerPayload): Promise<void> {
+  private async deleteWorker(data: IWorkerPayload): Promise<PublishResult> {
     const existsWorkerById = await this.workerService.existsWorkerById(
       data.is_administrator,
       data.account_id,
@@ -141,7 +188,11 @@ export class WorkerConsume {
     );
 
     if (!existsWorkerById) {
-      await this.updateWorkerErrorStatus(data);
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.is_administrator
+      );
 
       throw new Error('Worker not found');
     }
@@ -151,7 +202,11 @@ export class WorkerConsume {
     );
 
     if (!containerId) {
-      await this.updateWorkerErrorStatus(data);
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.is_administrator
+      );
 
       throw new Error('Worker removal failed');
     }
@@ -163,19 +218,33 @@ export class WorkerConsume {
     );
 
     if (!deleteWorkerById) {
-      await this.updateWorkerErrorStatus(data);
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.is_administrator
+      );
 
       throw new Error('Failed to delete worker');
     }
 
-    data.worker_status_id = EWorkerStatus.delete;
+    const dataPublish: IBaileysConnectionState = {
+      code: ECodeMessage.info,
+      status: EBaileysConnectionStatus.info,
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      worker_status_id: EWorkerStatus.delete,
+    };
 
-    await this.centrifugoService.publish(this.queueCentrifugo(data), data);
+    return this.centrifugoPublish(dataPublish);
   }
 
-  private async createWorker(data: IWorkerPayload): Promise<void> {
+  private async createWorker(data: IWorkerPayload): Promise<PublishResult> {
     if (!data?.worker_type_id) {
-      await this.updateWorkerErrorStatus(data);
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.is_administrator
+      );
 
       throw new Error('Worker type ID is required');
     }
@@ -184,11 +253,16 @@ export class WorkerConsume {
 
     const containerId = await this.workerService.createContainerWorker(
       imageName,
-      data.worker_id
+      data.worker_id,
+      data.account_id
     );
 
     if (!containerId) {
-      await this.updateWorkerErrorStatus(data);
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.is_administrator
+      );
 
       throw new Error('Failed to create worker container');
     }
@@ -197,7 +271,11 @@ export class WorkerConsume {
       await this.containerHealthService.isServiceHealthy(containerId);
 
     if (!healthy) {
-      await this.updateWorkerErrorStatus(data);
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.is_administrator
+      );
 
       throw new Error('Worker service is not healthy');
     }
@@ -215,14 +293,24 @@ export class WorkerConsume {
     );
 
     if (!updateWorkerById) {
-      await this.updateWorkerErrorStatus(data);
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.is_administrator
+      );
 
       throw new Error('Failed to update worker status');
     }
 
-    data.worker_status_id = EWorkerStatus.disponible;
+    const dataPublish: IBaileysConnectionState = {
+      code: ECodeMessage.info,
+      status: EBaileysConnectionStatus.info,
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      worker_status_id: EWorkerStatus.disponible,
+    };
 
-    await this.centrifugoService.publish(this.queueCentrifugo(data), data);
+    return this.centrifugoPublish(dataPublish);
   }
 
   public async execute(): Promise<void> {

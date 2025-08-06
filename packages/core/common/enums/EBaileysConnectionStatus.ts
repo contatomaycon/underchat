@@ -3,4 +3,5 @@ export enum EBaileysConnectionStatus {
   connected = 'connected',
   disconnected = 'disconnected',
   initial = 'initial',
+  info = 'info',
 }

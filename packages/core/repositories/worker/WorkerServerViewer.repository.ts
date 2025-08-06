@@ -22,6 +22,7 @@ export class WorkerServerViewerRepository {
         web_domain: serverWeb.web_domain,
         web_port: serverWeb.web_port,
         web_protocol: serverWeb.web_protocol,
+        account_id: apiKey.account_id,
       })
       .from(server)
       .innerJoin(serverWeb, eq(serverWeb.server_id, server.server_id))
@@ -42,7 +43,8 @@ export class WorkerServerViewerRepository {
         apiKey.key,
         serverWeb.web_domain,
         serverWeb.web_port,
-        serverWeb.web_protocol
+        serverWeb.web_protocol,
+        apiKey.account_id
       )
       .having(lt(count(worker.worker_id), server.quantity_workers))
       .orderBy(asc(count(worker.worker_id)))

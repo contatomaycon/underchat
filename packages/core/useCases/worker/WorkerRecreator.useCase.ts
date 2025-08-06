@@ -71,7 +71,7 @@ export class WorkerRecreatorUseCase {
       action: EWorkerAction.recreate,
       worker_id: workerId,
       server_id: viewWorkerBalancer.server_id,
-      account_id: accountId,
+      account_id: viewWorkerBalancer.account_id,
       is_administrator: isAdministrator,
       worker_status_id: EWorkerStatus.recreating,
     };

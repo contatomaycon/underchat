@@ -26,10 +26,12 @@ import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 
 const FOLDER = `/app/data/storage/${baileysEnvironment.baileysWorkerId}`;
-const CHANNEL = `worker_${baileysEnvironment.baileysWorkerId}_qrcode`;
+const CHANNEL = `worker.${baileysEnvironment.baileysAccountId}`;
 const WORKER = baileysEnvironment.baileysWorkerId;
+const ACCOUNT = baileysEnvironment.baileysAccountId;
 
 @singleton()
 export class BaileysConnectionService {
@@ -158,8 +160,10 @@ export class BaileysConnectionService {
     const payload: IBaileysConnectionState = {
       status: this.status,
       worker_id: WORKER,
+      account_id: ACCOUNT,
       code: this.code,
       disconnected_user: disconnectedUser,
+      worker_status_id: EWorkerStatus.disponible,
     };
 
     this.publish(payload);
@@ -177,8 +181,6 @@ export class BaileysConnectionService {
 
   reconnect(input: IBaileysConnection): void {
     const { initial_connection: initialConnection = true } = input;
-
-    console.log('Reconnecting Baileys:', input);
 
     this.connect({
       initial_connection: initialConnection,
@@ -224,8 +226,10 @@ export class BaileysConnectionService {
       const payload: IBaileysConnectionState = {
         status: Status.connecting,
         worker_id: WORKER,
+        account_id: ACCOUNT,
         pairing_code: code,
         code: ECodeMessage.awaitingPairingCode,
+        worker_status_id: EWorkerStatus.disponible,
       };
 
       this.publish(payload);
@@ -291,6 +295,8 @@ export class BaileysConnectionService {
       code: this.code,
       qrcode: img,
       worker_id: WORKER,
+      account_id: ACCOUNT,
+      worker_status_id: EWorkerStatus.disponible,
     });
 
     if (!this.initialConnection) {
@@ -315,9 +321,12 @@ export class BaileysConnectionService {
     const payload: IBaileysConnectionState = {
       status: this.status,
       worker_id: WORKER,
+      account_id: ACCOUNT,
       code: this.code,
       phone: this.helpers.getPhoneNumber(this.socket?.user?.id),
+      worker_status_id: EWorkerStatus.online,
     };
+
     this.publish(payload);
 
     this.streamProducerService.send(
@@ -348,6 +357,7 @@ export class BaileysConnectionService {
       const payload: IBaileysConnectionState = {
         status: this.status,
         worker_id: WORKER,
+        account_id: ACCOUNT,
         code: this.code ?? statusCode,
       };
 
@@ -376,6 +386,8 @@ export class BaileysConnectionService {
         worker_id: WORKER,
         code: this.code ?? statusCode,
         disconnected_user: true,
+        account_id: ACCOUNT,
+        worker_status_id: EWorkerStatus.disponible,
       };
 
       this.streamProducerService.send(
@@ -413,8 +425,10 @@ export class BaileysConnectionService {
     const payload: IBaileysConnectionState = {
       status: this.status,
       worker_id: WORKER,
+      account_id: ACCOUNT,
       is_new_login: true,
       code: ECodeMessage.newLoginAttempt,
+      worker_status_id: EWorkerStatus.disponible,
     };
 
     this.centrifugo.publish(CHANNEL, payload);
@@ -548,7 +562,9 @@ export class BaileysConnectionService {
         status: this.status,
         code: ECodeMessage.connectionEstablished,
         worker_id: WORKER,
+        account_id: ACCOUNT,
         phone: this.helpers.getPhoneNumber(this.socket?.user?.id),
+        worker_status_id: EWorkerStatus.online,
       });
     }
 
@@ -584,6 +600,7 @@ export class BaileysConnectionService {
     return {
       status: this.status,
       worker_id: WORKER,
+      account_id: ACCOUNT,
       qrcode: qr,
       code: this.code,
     };
@@ -595,7 +612,9 @@ export class BaileysConnectionService {
     const payload: IBaileysConnectionState = {
       status: this.status,
       worker_id: WORKER,
+      account_id: ACCOUNT,
       code: this.code,
+      worker_status_id: EWorkerStatus.error,
     };
 
     this.publish(payload);

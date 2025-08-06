@@ -111,7 +111,7 @@ export class WorkerCreatorUseCase {
       worker_status_id: EWorkerStatus.new,
       worker_type_id: workerType,
       server_id: viewWorkerServer.server_id,
-      account_id: accountId,
+      account_id: viewWorkerServer.account_id,
       name: input.name,
       is_administrator: isAdministrator,
     };

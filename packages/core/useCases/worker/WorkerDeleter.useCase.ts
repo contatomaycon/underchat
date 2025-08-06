@@ -75,7 +75,7 @@ export class WorkerDeleterUseCase {
       action: EWorkerAction.delete,
       worker_id: workerId,
       server_id: viewWorkerBalancer.server_id,
-      account_id: accountId,
+      account_id: viewWorkerBalancer.account_id,
       is_administrator: isAdministrator,
     };
 

@@ -14,6 +14,7 @@ const channelStore = useChannelsStore();
 const props = defineProps<{
   modelValue: boolean;
   channelId: string | null;
+  accountId: string | null;
 }>();
 
 const emit = defineEmits<(e: 'update:modelValue', v: boolean) => void>();
@@ -24,6 +25,7 @@ const isVisible = computed({
 });
 
 const channelId = toRef(props, 'channelId');
+const accountId = toRef(props, 'accountId');
 
 const statusConnection = ref<EBaileysConnectionStatus>(
   EBaileysConnectionStatus.disconnected
@@ -232,9 +234,10 @@ function startNextAttemptCountdown() {
 
 onMounted(async () => {
   await onMessage(
-    `worker_${channelId.value}_qrcode`,
+    `worker.${accountId.value}`,
     (data: IBaileysConnectionState) => {
-      if (data?.worker_id !== channelId.value) return;
+      if (data?.account_id !== accountId.value) return;
+
       if (statusCode.value === ECodeMessage.phoneNotAvailable) return;
 
       if (data.status) {
@@ -281,8 +284,6 @@ onMounted(async () => {
 
         startNextAttemptCountdown();
       }
-
-      channelStore.updateInfoChannel(data);
     }
   );
 
@@ -299,7 +300,7 @@ onUnmounted(() => {
     clearInterval(intervalIdNextAttempt.value);
   }
 
-  unsubscribe(`worker_${channelId.value}_qrcode`);
+  unsubscribe(`worker.${accountId.value}`);
 });
 </script>
 
