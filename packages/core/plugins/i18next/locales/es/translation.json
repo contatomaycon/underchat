@@ -75,5 +75,7 @@
   "worker_recreate_success": "¡Trabajador recreado con éxito!",
   "worker_recreate_not_found": "¡Trabajador no encontrado para recrear!",
   "worker_recreation_failed": "Error al recrear el trabajador",
-  "worker_balancer_not_available": "Trabajador balancer no disponible"
+  "worker_balancer_not_available": "Trabajador balancer no disponible",
+  "chat_list_success": "¡Lista de chats obtenida con éxito!",
+  "chat_list_not_found": "¡No se encontraron chats!"
 }

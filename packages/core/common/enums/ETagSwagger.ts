@@ -7,4 +7,5 @@ export enum ETagSwagger {
   role = 'Funções',
   worker = 'Canais',
   connection = 'Conexão',
+  chat = 'Chat',
 }

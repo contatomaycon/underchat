@@ -6,6 +6,7 @@ import {
   userInfo,
   account,
   permissionAssignment,
+  chatUser,
 } from '@core/models';
 
 export const user = pgTable('user', {
@@ -51,5 +52,9 @@ export const userRelations = relations(user, ({ one }) => ({
   upa: one(permissionAssignment, {
     fields: [user.user_id],
     references: [permissionAssignment.user_id],
+  }),
+  ucu: one(chatUser, {
+    fields: [user.user_id],
+    references: [chatUser.user_id],
   }),
 }));

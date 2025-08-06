@@ -1,0 +1,51 @@
+import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { Static, Type } from '@sinclair/typebox';
+
+export const accountSchema = Type.Object({
+  id: Type.String(),
+  name: Type.String(),
+});
+
+export const summarySchema = Type.Object({
+  last_message: Type.Union([Type.String(), Type.Null()]),
+  last_date: Type.Union([Type.String(), Type.Null()]),
+  unread_count: Type.Integer(),
+});
+
+export const workerSchema = Type.Object({
+  id: Type.String(),
+  name: Type.String(),
+});
+
+export const sectorSchema = Type.Object({
+  id: Type.String(),
+  name: Type.String(),
+});
+
+export const userSchema = Type.Object({
+  id: Type.String(),
+  name: Type.String(),
+});
+
+export const contactSchema = Type.Object({
+  id: Type.String(),
+  name: Type.String(),
+  phone: Type.String(),
+});
+
+export const listChatsResponseSchema = Type.Object({
+  chat_id: Type.String(),
+  summary: summarySchema,
+  account: accountSchema,
+  worker: workerSchema,
+  sector: sectorSchema,
+  user: userSchema,
+  contact: Type.Optional(Type.Union([contactSchema, Type.Null()])),
+  photo: Type.Union([Type.String(), Type.Null()]),
+  name: Type.Union([Type.String(), Type.Null()]),
+  phone: Type.Number(),
+  status: Type.String({ enum: Object.values(EChatStatus) }),
+  date: Type.String(),
+});
+
+export type ListChatsResponse = Static<typeof listChatsResponseSchema>;

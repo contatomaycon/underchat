@@ -6,6 +6,7 @@ import { EGeneralPermissions } from './general';
 import { EHomePermissions } from './home';
 import { EWorkerPermissions } from './worker';
 import { ERolePermissions } from './role';
+import { EChatPermissions } from './chat';
 
 export type EPermissionsRoles =
   | EUserPermissions
@@ -15,4 +16,5 @@ export type EPermissionsRoles =
   | EMetricsPermissions
   | EHomePermissions
   | EWorkerPermissions
-  | ERolePermissions;
+  | ERolePermissions
+  | EChatPermissions;

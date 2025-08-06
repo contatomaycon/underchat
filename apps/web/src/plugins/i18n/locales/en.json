@@ -158,5 +158,18 @@
     "worker_recreate_success": "Channel recreated successfully!",
     "deleting": "Deleting",
     "recreating": "Recreating",
-    "delete": "Delete"
+    "delete": "Delete",
+    "no_chat_in_service": "No chats in service",
+    "no_chat_in_queue": "No chats in queue",
+    "yesterday": "Yesterday",
+    "sunday": "Sunday",
+    "monday": "Monday",
+    "tuesday": "Tuesday",
+    "wednesday": "Wednesday",
+    "thursday": "Thursday",
+    "friday": "Friday",
+    "saturday": "Saturday",
+    "waiting_for_service": "Waiting for service",
+    "in_service": "In service",
+    "select_a_contact": "Select a contact"
 }

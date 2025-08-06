@@ -161,5 +161,19 @@
     "worker_recreate_success": "Canal recriado com sucesso!",
     "deleting": "Excluindo",
     "recreating": "Recriando",
-    "delete": "Excluir"
+    "delete": "Excluir",
+    "no_chat_in_service": "Nenhum chat em atendimento",
+    "no_chat_in_queue": "Nenhum chat na fila",
+    "yesterday": "Ontem",
+    "sunday": "Domingo",
+    "monday": "Segunda-feira",
+    "tuesday": "Terça-feira",
+    "wednesday": "Quarta-feira",
+    "thursday": "Quinta-feira",
+    "friday": "Sexta-feira",
+    "saturday": "Sábado",
+    "waiting_for_service": "Aguardando atendimento",
+    "in_service": "Em Atendimento",
+    "select_a_contact": "Comece a se conectar com as pessoas selecionando um dos contatos à esquerda"
+
 }

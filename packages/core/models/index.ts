@@ -8,3 +8,4 @@ export * from './account';
 export * from './worker';
 export * from './plan';
 export * from './sector';
+export * from './chat';
