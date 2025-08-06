@@ -172,5 +172,13 @@
     "saturday": "Sábado",
     "waiting_for_service": "Esperando por servicio",
     "in_service": "En servicio",
-    "select_a_contact": "Selecciona un contacto"
+    "select_a_contact": "Selecciona un contacto",
+    "about": "ACERCA DE",
+    "settings": "CONFIGURACIONES",
+    "status_chat": "ESTADO",
+    "busy": "Ocupado",
+    "away": "Ausente",
+    "do_not_disturb": "No molestar",
+    "notification": "Notificación",
+    "max_length_200": "La longitud máxima es de 200 caracteres"
 }

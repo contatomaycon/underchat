@@ -171,5 +171,13 @@
     "saturday": "Saturday",
     "waiting_for_service": "Waiting for service",
     "in_service": "In service",
-    "select_a_contact": "Select a contact"
+    "select_a_contact": "Select a contact",
+    "about": "ABOUT",
+    "settings": "SETTINGS",
+    "status_chat": "STATUS",
+    "busy": "Busy",
+    "away": "Away",
+    "do_not_disturb": "Do Not Disturb",
+    "notification": "Notification",
+    "max_length_200": "Maximum length is 200 characters"
 }

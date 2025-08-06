@@ -4,6 +4,14 @@ import ChatQueue from './ChatQueue.vue';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { ListChatsResponse } from '@core/schema/chat/listChats/response.schema';
+
+defineEmits<{
+  (e: 'openChatOfContact', id: ListChatsResponse['chat_id']): void;
+  (e: 'showUserProfile'): void;
+  (e: 'close'): void;
+  (e: 'update:search', value: string): void;
+}>();
 
 const chatStore = useChatStore();
 

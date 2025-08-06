@@ -75,6 +75,10 @@ const chatContentContainerBg = computed(() => {
 
   return color;
 });
+
+watch(isUserProfileSidebarOpen, (newVal) => {
+  console.log('User Profile Sidebar Open:', newVal);
+});
 </script>
 
 <template>

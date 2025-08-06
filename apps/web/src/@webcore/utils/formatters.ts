@@ -1,7 +1,8 @@
 import { ComposerTranslation } from 'vue-i18n';
 
-export const avatarText = (value: string | null) => {
+export const avatarText = (value?: string | null) => {
   if (!value) return '';
+
   const nameArray = value.split(' ');
   return nameArray.map((word) => word.charAt(0).toUpperCase()).join('');
 };
