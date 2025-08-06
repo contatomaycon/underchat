@@ -7,6 +7,7 @@ import axios from '@webcore/axios';
 import { IPagingElastic } from '@core/common/interfaces/IPagingElastic';
 import { ListChatsResponse } from '@core/schema/chat/listChats/response.schema';
 import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
+import { ListChatsUserResponse } from '@core/schema/chat/listChatsUser/response.schema';
 
 export const useChatStore = defineStore('chat', {
   state: () => ({
@@ -20,6 +21,7 @@ export const useChatStore = defineStore('chat', {
     activeChat: {} as ListChatsResponse,
     listQueue: [] as ListChatsResponse[],
     listInChat: [] as ListChatsResponse[],
+    chatsUser: null as ListChatsUserResponse | null,
     pagings: {
       from: 0,
       size: 100,
@@ -104,6 +106,34 @@ export const useChatStore = defineStore('chat', {
         this.listInChat = [];
 
         return [] as ListChatsResponse[];
+      }
+    },
+
+    async listChatsUser(): Promise<ListChatsUserResponse | null> {
+      try {
+        this.loading = true;
+
+        const response =
+          await axios.get<IApiResponse<ListChatsUserResponse | null>>(
+            `/chat/user`
+          );
+
+        this.loading = false;
+
+        const data =
+          response?.data as IApiResponse<ListChatsUserResponse | null>;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        this.chatsUser = data.data;
+
+        return data.data;
+      } catch {
+        this.chatsUser = null;
+
+        return null;
       }
     },
   },

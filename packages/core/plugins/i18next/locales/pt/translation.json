@@ -77,5 +77,7 @@
   "worker_recreation_failed": "Erro ao recriar o canal!",
   "worker_balancer_not_available": "Trabalhador balancer não disponível",
   "chat_list_success": "Lista de chats obtida com sucesso!",
-  "chat_list_not_found": "Lista de chats não encontrada!"
+  "chat_list_not_found": "Lista de chats não encontrada!",
+  "chat_list_user_success": "Lista de chats do usuário obtida com sucesso!",
+  "chat_list_user_not_found": "Lista de chats do usuário não encontrada!"
 }
