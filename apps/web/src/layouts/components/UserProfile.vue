@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { removeUserData } from '@/@webcore/localStorage/user';
-import avatar1 from '@images/avatars/avatar-1.png';
+import { useChatStore } from '@/@webcore/stores/chat';
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 
 const router = useRouter();
+const chatStore = useChatStore();
 
 const logout = async () => {
   const result = removeUserData();
@@ -24,10 +26,20 @@ const logout = async () => {
     offset-x="3"
     offset-y="3"
     bordered
-    color="success"
+    :color="
+      resolveAvatarBadgeVariant(
+        chatStore.user?.chat_user?.status as EChatUserStatus
+      )
+    "
   >
     <VAvatar class="cursor-pointer" color="primary" variant="tonal">
-      <VImg :src="avatar1" />
+      <VImg
+        v-if="chatStore.user?.info.photo"
+        :src="chatStore.user?.info.photo"
+      />
+      <span v-else class="text-3xl">{{
+        avatarText(chatStore.user?.info.name)
+      }}</span>
 
       <!-- SECTION Menu -->
       <VMenu activator="parent" width="230" location="bottom end" offset="14px">
@@ -41,19 +53,31 @@ const logout = async () => {
                   location="bottom right"
                   offset-x="3"
                   offset-y="3"
-                  color="success"
+                  :color="
+                    resolveAvatarBadgeVariant(
+                      chatStore.user?.chat_user?.status as EChatUserStatus
+                    )
+                  "
                 >
                   <VAvatar color="primary" variant="tonal">
-                    <VImg :src="avatar1" />
+                    <VImg
+                      v-if="chatStore.user?.info.photo"
+                      :src="chatStore.user?.info.photo"
+                    />
+                    <span v-else class="text-3xl">{{
+                      avatarText(chatStore.user?.info.name)
+                    }}</span>
                   </VAvatar>
                 </VBadge>
               </VListItemAction>
             </template>
 
             <VListItemTitle class="font-weight-semibold">
-              John Doe
+              {{ chatStore.user?.info.name }}
             </VListItemTitle>
-            <VListItemSubtitle>Admin</VListItemSubtitle>
+            <VListItemSubtitle>{{
+              chatStore.user?.type.name
+            }}</VListItemSubtitle>
           </VListItem>
 
           <VDivider class="my-2" />
