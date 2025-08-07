@@ -7,6 +7,7 @@ import ChatLeftSidebarContent from '@/components/chat/ChatLeftSidebarContent.vue
 import ChatLog from '@/components/chat/ChatLog.vue';
 import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSidebarContent.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { ListChatsResponse } from '@core/schema/chat/listChats/response.schema';
 
 definePage({
   meta: {
@@ -15,58 +16,58 @@ definePage({
   },
 });
 
+const { name } = useTheme();
+const vuetifyDisplays = useDisplay();
+
 const activeChat = ref(null);
 const contact_id = ref('contact-id');
 
-// composables
-const vuetifyDisplays = useDisplay();
 const { isLeftSidebarOpen } = useResponsiveLeftSidebar(
   vuetifyDisplays.smAndDown
 );
-// Perfect scrollbar
+
 const chatLogPS = ref();
+const q = ref('');
+const msg = ref('');
+const avatar = ref(false);
+const isUserProfileSidebarOpen = ref(false);
+const isActiveChatUserProfileSidebarOpen = ref(false);
+const refInputEl = ref<HTMLElement>();
 
 const scrollToBottomInChatLog = () => {
+  if (!chatLogPS.value) return;
+
   const scrollEl = chatLogPS.value.$el || chatLogPS.value;
+
+  if (!scrollEl) return;
 
   scrollEl.scrollTop = scrollEl.scrollHeight;
 };
 
-// Search query
-const q = ref('');
-
-// Open Sidebar in smAndDown when "start conversation" is clicked
 const startConversation = () => {
   if (vuetifyDisplays.mdAndUp.value) return;
   isLeftSidebarOpen.value = true;
 };
 
-// Chat message
-const msg = ref('');
-const avatar = ref(false);
-
 const sendMessage = async () => {
   if (!msg.value) return;
 
-  // Reset message input
   msg.value = '';
 
-  // Scroll to bottom
   nextTick(() => {
     scrollToBottomInChatLog();
   });
 };
 
-// User profile sidebar
-const isUserProfileSidebarOpen = ref(false);
+const openChat = async (chatId: ListChatsResponse['chat_id']) => {
+  console.log('Open chat with ID:', chatId);
 
-// Active chat user profile sidebar
-const isActiveChatUserProfileSidebarOpen = ref(false);
+  if (vuetifyDisplays.smAndDown.value) isLeftSidebarOpen.value = false;
 
-// file input
-const refInputEl = ref<HTMLElement>();
-
-const { name } = useTheme();
+  nextTick(() => {
+    scrollToBottomInChatLog();
+  });
+};
 
 const chatContentContainerBg = computed(() => {
   let color = 'transparent';
@@ -126,7 +127,7 @@ const chatContentContainerBg = computed(() => {
       <ChatLeftSidebarContent
         v-model:is-drawer-open="isLeftSidebarOpen"
         v-model:search="q"
-        @open-chat-of-contact=""
+        @open-chat="openChat"
         @show-user-profile="isUserProfileSidebarOpen = true"
         @close="isLeftSidebarOpen = false"
       />

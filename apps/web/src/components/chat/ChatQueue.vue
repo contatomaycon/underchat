@@ -18,8 +18,8 @@ const isChatContactActive = computed(() => {
 <template>
   <li
     :key="chatStore.listQueue.length"
-    class="chat-contact cursor-pointer d-flex align-center"
-    :class="{ 'chat-contact-active': isChatContactActive }"
+    class="chat cursor-pointer d-flex align-center"
+    :class="{ 'chat-active': isChatContactActive }"
   >
     <VAvatar size="40" :variant="!props.user.photo ? 'tonal' : undefined">
       <VImg
@@ -64,7 +64,7 @@ const isChatContactActive = computed(() => {
 @use '@webcore/scss/base/mixins';
 @use 'vuetify/lib/styles/tools/states' as vuetifyStates;
 
-.chat-contact {
+.chat {
   border-radius: vuetify.$border-radius-root;
   padding-block: 8px;
   padding-inline: 12px;
@@ -72,7 +72,7 @@ const isChatContactActive = computed(() => {
   @include mixins.before-pseudo;
   @include vuetifyStates.states($active: false);
 
-  &.chat-contact-active {
+  &.chat-active {
     @include templateMixins.custom-elevation(var(--v-theme-primary), 'sm');
 
     background: rgb(var(--v-theme-primary));
