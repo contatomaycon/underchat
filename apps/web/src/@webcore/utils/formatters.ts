@@ -1,11 +1,15 @@
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { ComposerTranslation } from 'vue-i18n';
 
-export const avatarText = (value?: string | null) => {
+export const avatarText = (value?: string | null): string => {
   if (!value) return '';
 
-  const nameArray = value.split(' ');
-  return nameArray.map((word) => word.charAt(0).toUpperCase()).join('');
+  const words = value.trim().split(/\s+/);
+  if (words.length === 1) {
+    return words[0].substring(0, 2).toUpperCase();
+  }
+
+  return (words[0].charAt(0) + words[1].charAt(0)).toUpperCase();
 };
 
 export const resolveAvatarBadgeVariant = (status: EChatUserStatus) => {

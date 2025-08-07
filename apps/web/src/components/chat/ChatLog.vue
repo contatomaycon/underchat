@@ -1,9 +1,32 @@
 <script lang="ts" setup>
-const msgGroups: any = ref([]);
 const contact = ref({
-  id: 'contact-id',
+  id: 10,
   avatar: 'path/to/avatar.jpg',
 });
+
+const msgGroups = [
+  {
+    message: "How can we help? We're here for you!",
+    time: 'Mon Dec 10 2018 07:45:00 GMT+0000 (GMT)',
+    senderId: 11,
+    feedback: {
+      isSent: true,
+      isDelivered: true,
+      isSeen: true,
+    },
+  },
+  {
+    message:
+      'Hey John, I am looking for the best admin template. Could you please help me to find it out?',
+    time: 'Mon Dec 10 2018 07:45:23 GMT+0000 (GMT)',
+    senderId: 1,
+    feedback: {
+      isSent: true,
+      isDelivered: true,
+      isSeen: true,
+    },
+  },
+];
 </script>
 
 <template>
@@ -21,18 +44,25 @@ const contact = ref({
     >
       <div
         class="chat-avatar"
-        :class="msgGrp.senderId !== contact ? 'ms-4' : 'me-4'"
+        :class="msgGrp.senderId !== contact.id ? 'ms-4' : 'me-4'"
       >
         <VAvatar size="32">
-          <VImg />
+          <VImg
+            :src="
+              msgGrp.senderId === contact.id
+                ? contact.avatar
+                : 'avatar-placeholder.png'
+            "
+          />
         </VAvatar>
       </div>
-      <div
+
+      <!-- <div
         class="chat-body d-inline-flex flex-column"
         :class="msgGrp.senderId !== contact.id ? 'align-end' : 'align-start'"
       >
         <div
-          v-for="(msgData, msgIndex) in msgGrp.messages"
+          v-for="(msgData, msgIndex) in msgGroups"
           :key="msgData.time"
           class="chat-content py-2 px-4 elevation-2"
           style="background-color: rgb(var(--v-theme-surface))"
@@ -51,9 +81,17 @@ const contact = ref({
           <VIcon
             v-if="msgGrp.senderId !== contact.id"
             size="16"
-            color="primary"
+            :color="
+              resolveFeedbackIcon(
+                msgGrp.messages[msgGrp.messages.length - 1].feedback
+              ).color
+            "
           >
-            tabler-check
+            {{
+              resolveFeedbackIcon(
+                msgGrp.messages[msgGrp.messages.length - 1].feedback
+              ).icon
+            }}
           </VIcon>
           <span class="text-sm ms-2 text-disabled">{{
             formatDate(msgGrp.messages[msgGrp.messages.length - 1].time, {
@@ -62,7 +100,7 @@ const contact = ref({
             })
           }}</span>
         </div>
-      </div>
+      </div> -->
     </div>
   </div>
 </template>

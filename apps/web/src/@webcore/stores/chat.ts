@@ -21,7 +21,7 @@ export const useChatStore = defineStore('chat', {
     } as ISnackbar,
     i18n: getI18n(),
     loading: false,
-    activeChat: {} as ListChatsResponse,
+    activeChat: null as ListChatsResponse | null,
     listQueue: [] as ListChatsResponse[],
     listInChat: [] as ListChatsResponse[],
     user: getUser(),
@@ -170,6 +170,19 @@ export const useChatStore = defineStore('chat', {
           EColor.error
         );
       }
+    },
+
+    setActiveChat(chatId: string): void {
+      this.activeChat = {} as ListChatsResponse;
+
+      const chat = (this.listQueue.find((c) => c.chat_id === chatId) ||
+        this.listInChat.find((c) => c.chat_id === chatId)) as ListChatsResponse;
+
+      if (!chat.chat_id) {
+        return;
+      }
+
+      this.activeChat = chat;
     },
   },
 });

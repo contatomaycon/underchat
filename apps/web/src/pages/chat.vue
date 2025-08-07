@@ -8,6 +8,8 @@ import ChatLog from '@/components/chat/ChatLog.vue';
 import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSidebarContent.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { ListChatsResponse } from '@core/schema/chat/listChats/response.schema';
+import { useChatStore } from '@/@webcore/stores/chat';
+import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 
 definePage({
   meta: {
@@ -16,10 +18,10 @@ definePage({
   },
 });
 
+const chatStore = useChatStore();
 const { name } = useTheme();
 const vuetifyDisplays = useDisplay();
 
-const activeChat = ref(null);
 const contact_id = ref('contact-id');
 
 const { isLeftSidebarOpen } = useResponsiveLeftSidebar(
@@ -60,7 +62,7 @@ const sendMessage = async () => {
 };
 
 const openChat = async (chatId: ListChatsResponse['chat_id']) => {
-  console.log('Open chat with ID:', chatId);
+  chatStore.setActiveChat(chatId);
 
   if (vuetifyDisplays.smAndDown.value) isLeftSidebarOpen.value = false;
 
@@ -133,59 +135,45 @@ const chatContentContainerBg = computed(() => {
       />
     </VNavigationDrawer>
 
-    <!-- 👉 Chat content -->
     <VMain class="chat-content-container">
-      <!-- 👉 Right content: Active Chat -->
-      <div v-if="activeChat" class="d-flex flex-column h-100">
-        <!-- 👉 Active chat header -->
+      <div v-if="chatStore.activeChat" class="d-flex flex-column h-100">
         <div
           class="active-chat-header d-flex align-center text-medium-emphasis bg-surface"
         >
-          <!-- Sidebar toggler -->
           <IconBtn class="d-md-none me-3" @click="isLeftSidebarOpen = true">
             <VIcon icon="tabler-menu-2" />
           </IconBtn>
 
-          <!-- avatar -->
           <div
             class="d-flex align-center cursor-pointer"
             @click="isActiveChatUserProfileSidebarOpen = true"
           >
-            <VBadge
-              dot
-              location="bottom right"
-              offset-x="3"
-              offset-y="0"
-              color="primary"
-              bordered
+            <VAvatar
+              size="40"
+              :variant="!chatStore.activeChat.photo ? 'tonal' : undefined"
+              class="cursor-pointer"
             >
-              <VAvatar
-                size="40"
-                variant="tonal"
-                color="primary"
-                class="cursor-pointer"
-              >
-                <VImg v-if="avatar" src="avatar" alt="fullName" />
-                <span v-else>{{ avatarText('Full Name') }}</span>
-              </VAvatar>
-            </VBadge>
+              <VImg
+                v-if="chatStore.activeChat.photo"
+                :src="chatStore.activeChat.photo"
+                :alt="chatStore.activeChat.name ?? ''"
+              />
+              <span v-else>{{ avatarText(chatStore.activeChat.name) }}</span>
+            </VAvatar>
 
             <div class="flex-grow-1 ms-4 overflow-hidden">
-              <div class="text-h6 mb-0 font-weight-regular">Full Name</div>
-              <p class="text-truncate mb-0 text-body-2">Cargo</p>
+              <div class="text-h6 mb-0 font-weight-regular">
+                {{ chatStore.activeChat.name }}
+              </div>
+              <p class="text-truncate mb-0 text-body-2">
+                {{ formatPhoneBR(chatStore.activeChat.phone) }}
+              </p>
             </div>
           </div>
 
           <VSpacer />
 
-          <!-- Header right content -->
           <div class="d-sm-flex align-center d-none text-medium-emphasis">
-            <IconBtn>
-              <VIcon icon="tabler-phone" />
-            </IconBtn>
-            <IconBtn>
-              <VIcon icon="tabler-video" />
-            </IconBtn>
             <IconBtn>
               <VIcon icon="tabler-search" />
             </IconBtn>
@@ -197,7 +185,6 @@ const chatContentContainerBg = computed(() => {
 
         <VDivider />
 
-        <!-- Chat log -->
         <PerfectScrollbar
           ref="chatLogPS"
           tag="ul"
@@ -207,7 +194,6 @@ const chatContentContainerBg = computed(() => {
           <ChatLog />
         </PerfectScrollbar>
 
-        <!-- Message form -->
         <VForm
           class="chat-log-message-form mb-5 mx-5"
           @submit.prevent="sendMessage"
