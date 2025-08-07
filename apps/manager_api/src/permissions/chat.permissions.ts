@@ -10,3 +10,8 @@ export const listChatUserPermissions = [
   EGeneralPermissions.full_access,
   EChatPermissions.list_chat_user,
 ];
+
+export const updateChatUserPermissions = [
+  EGeneralPermissions.full_access,
+  EChatPermissions.update_chat_user,
+];

@@ -29,14 +29,10 @@ const userStatusRadioOptions = [
   { title: t('offline'), value: 'offline', color: 'secondary' },
   { title: t('do_not_disturb'), value: 'do_not_disturb', color: 'error' },
 ];
-
-onMounted(async () => {
-  await chatStore.listChatsUser();
-});
 </script>
 
 <template>
-  <template v-if="chatStore.chatsUser">
+  <template v-if="user?.chat_user">
     <div class="pt-2 me-2 text-end">
       <IconBtn @click="$emit('close')">
         <VIcon class="text-medium-emphasis" color="disabled" icon="tabler-x" />
@@ -50,9 +46,7 @@ onMounted(async () => {
         offset-y="4"
         bordered
         :color="
-          resolveAvatarBadgeVariant(
-            chatStore.chatsUser.status as EChatUserStatus
-          )
+          resolveAvatarBadgeVariant(user?.chat_user.status as EChatUserStatus)
         "
         class="chat-user-profile-badge mb-3"
       >
@@ -62,7 +56,7 @@ onMounted(async () => {
           :color="
             !user?.info.photo
               ? resolveAvatarBadgeVariant(
-                  chatStore.chatsUser.status as EChatUserStatus
+                  user?.chat_user.status as EChatUserStatus
                 )
               : undefined
           "
@@ -89,13 +83,13 @@ onMounted(async () => {
         </div>
         <AppTextarea
           id="textarea-user-about"
-          v-model="chatStore.chatsUser.about"
+          v-model="user.chat_user.about"
           auto-grow
           class="mt-1"
           rows="3"
           :rules="[
             maxLengthValidator(
-              chatStore.chatsUser.about,
+              user?.chat_user.about,
               200,
               $t('max_length_200')
             ),
@@ -106,7 +100,7 @@ onMounted(async () => {
 
       <div class="mb-6">
         <div class="text-base text-disabled">{{ $t('status_chat') }}</div>
-        <VRadioGroup v-model="chatStore.chatsUser.status" class="mt-1">
+        <VRadioGroup v-model="user.chat_user.status" class="mt-1">
           <VRadio
             v-for="(radioOption, index) in userStatusRadioOptions"
             :id="`${index}`"
@@ -132,7 +126,7 @@ onMounted(async () => {
             </div>
             <VSwitch
               id="chat-notification"
-              v-model="chatStore.chatsUser.notifications"
+              v-model="user.chat_user.notifications"
               density="compact"
             />
           </div>

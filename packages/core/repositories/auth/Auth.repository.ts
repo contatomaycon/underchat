@@ -10,6 +10,7 @@ import {
   userAddress,
   permissionAssignment,
   permissionRole,
+  chatUser,
 } from '@core/models';
 import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
 import { and, eq, isNull, or } from 'drizzle-orm';
@@ -60,6 +61,12 @@ export class AuthRepository {
           state: userAddress.state,
           district: userAddress.district,
         },
+        chat_user: {
+          chat_user_id: chatUser.chat_user_id,
+          status: chatUser.status,
+          about: chatUser.about,
+          notifications: chatUser.notifications,
+        },
       })
       .from(user)
       .innerJoin(userStatus, eq(userStatus.user_status_id, user.user_status_id))
@@ -84,6 +91,7 @@ export class AuthRepository {
         )
       )
       .leftJoin(userAddress, eq(userAddress.user_id, user.user_id))
+      .leftJoin(chatUser, eq(chatUser.user_id, user.user_id))
       .where(
         and(
           or(eq(user.username, input.username), eq(user.email, input.email)),

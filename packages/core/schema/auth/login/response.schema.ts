@@ -1,3 +1,4 @@
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { EContentLayoutNav } from '@core/common/enums/EContentLayoutNav';
 import { EContentWidth } from '@core/common/enums/EContentWidth';
 import { EFooter } from '@core/common/enums/EFooter';
@@ -5,6 +6,13 @@ import { ELanguage } from '@core/common/enums/ELanguage';
 import { ENavbar } from '@core/common/enums/ENavbar';
 import { ESkin } from '@core/common/enums/ESkin';
 import { Static, Type } from '@sinclair/typebox';
+
+export const chatsUserResponseSchema = Type.Object({
+  chat_user_id: Type.String(),
+  about: Type.Union([Type.String(), Type.Null()]),
+  status: Type.String({ enum: Object.values(EChatUserStatus) }),
+  notifications: Type.Boolean(),
+});
 
 export const authUserResponseSchema = Type.Object({
   user_id: Type.String(),
@@ -43,6 +51,7 @@ export const authUserResponseSchema = Type.Object({
     }),
     Type.Null(),
   ]),
+  chat_user: Type.Union([chatsUserResponseSchema, Type.Null()]),
 });
 
 export const accountInfoResponseSchema = Type.Object({

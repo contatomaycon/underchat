@@ -2,3 +2,4 @@ INSERT INTO "permission_action" ("permission_action_id", "permission_module_id",
 INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('30dc35fa-e29c-43bf-8774-ac78133a15b9', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'view_chat');
 INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('a5ff51ed-f4a7-446f-9cc4-7e3a3a7bac03', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'create_chat');
 INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('9ae97848-5898-4885-8b86-0eaff98078ce', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'list_chat_user');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('17f325df-e00d-48bb-8e87-c47fd2139711', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'update_chat_user');

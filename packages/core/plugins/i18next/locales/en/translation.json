@@ -79,5 +79,7 @@
   "chat_list_success": "Chat list retrieved successfully!",
   "chat_list_not_found": "No chats found!",
   "chat_list_user_success": "User chat list retrieved successfully!",
-  "chat_list_user_not_found": "No user chats found!"
+  "chat_list_user_not_found": "No user chats found!",
+  "chat_update_user_success": "User chat updated successfully!",
+  "chat_update_user_not_found": "User chat not found!"
 }

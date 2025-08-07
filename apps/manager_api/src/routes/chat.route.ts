@@ -2,8 +2,13 @@ import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import { listChatsSchema } from '@core/schema/chat/listChats';
 import ChatController from '@/controllers/chat';
-import { listChatPermissions, listChatUserPermissions } from '@/permissions';
+import {
+  listChatPermissions,
+  listChatUserPermissions,
+  updateChatUserPermissions,
+} from '@/permissions';
 import { listChatsUserSchema } from '@core/schema/chat/listChatsUser';
+import { updateChatsUserSchema } from '@core/schema/chat/updateChatsUser';
 
 export default async function chatRoutes(server: FastifyInstance) {
   const chatController = container.resolve(ChatController);
@@ -23,6 +28,15 @@ export default async function chatRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, listChatUserPermissions),
+    ],
+  });
+
+  server.put('/chat/user', {
+    schema: updateChatsUserSchema,
+    handler: chatController.updateChatsUser,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, updateChatUserPermissions),
     ],
   });
 }
