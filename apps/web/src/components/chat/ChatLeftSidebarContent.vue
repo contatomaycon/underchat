@@ -5,12 +5,18 @@ import { useChatStore } from '@/@webcore/stores/chat';
 import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ListChatsResponse } from '@core/schema/chat/listChats/response.schema';
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'openChatOfContact', id: ListChatsResponse['chat_id']): void;
   (e: 'showUserProfile'): void;
   (e: 'close'): void;
   (e: 'update:search', value: string): void;
+}>();
+
+const props = defineProps<{
+  isDrawerOpen: boolean;
+  search: string;
 }>();
 
 const chatStore = useChatStore();
@@ -22,6 +28,11 @@ const fromInChat = ref(0);
 const sizeInChat = ref(100);
 
 const search = ref('');
+
+const modelSearch = computed({
+  get: () => props.search,
+  set: (value: string) => emit('update:search', value),
+});
 
 onMounted(async () => {
   const requestQueue: ListChatsQuery = {
@@ -45,19 +56,44 @@ onMounted(async () => {
 
 <template>
   <div class="chat-list-header">
-    <VBadge dot location="bottom right" offset-x="3" offset-y="3" bordered>
+    <VBadge
+      dot
+      location="bottom right"
+      offset-x="3"
+      offset-y="3"
+      bordered
+      :color="
+        resolveAvatarBadgeVariant(
+          chatStore.user?.chat_user?.status as EChatUserStatus
+        )
+      "
+      class="cursor-pointer"
+    >
       <VAvatar
         size="40"
-        class="cursor-pointer"
+        :variant="!chatStore.user?.info.photo ? 'tonal' : undefined"
+        :color="
+          !chatStore.user?.info.photo
+            ? resolveAvatarBadgeVariant(
+                chatStore.user?.chat_user?.status as EChatUserStatus
+              )
+            : undefined
+        "
         @click="$emit('showUserProfile')"
       >
-        <VImg alt="John Doe" />
+        <VImg
+          v-if="chatStore.user?.info.photo"
+          :src="chatStore.user?.info.photo"
+        />
+        <span v-else class="text-3xl">{{
+          avatarText(chatStore.user?.info.name)
+        }}</span>
       </VAvatar>
     </VBadge>
 
     <AppTextField
       id="search"
-      v-model="search"
+      v-model="modelSearch"
       placeholder="Search..."
       prepend-inner-icon="tabler-search"
       class="ms-4 me-1 chat-list-search"

@@ -8,7 +8,9 @@ import { IPagingElastic } from '@core/common/interfaces/IPagingElastic';
 import { ListChatsResponse } from '@core/schema/chat/listChats/response.schema';
 import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
 import { UpdateChatsUserRequest } from '@core/schema/chat/updateChatsUser/request.schema';
-import { Promise } from '@sinclair/typebox';
+import { getUser, setUser } from '../localStorage/user';
+import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 
 export const useChatStore = defineStore('chat', {
   state: () => ({
@@ -22,6 +24,7 @@ export const useChatStore = defineStore('chat', {
     activeChat: {} as ListChatsResponse,
     listQueue: [] as ListChatsResponse[],
     listInChat: [] as ListChatsResponse[],
+    user: getUser(),
     pagings: {
       from: 0,
       size: 100,
@@ -36,6 +39,37 @@ export const useChatStore = defineStore('chat', {
     hideSnackbar() {
       this.snackbar.status = false;
     },
+    updateChatUserImmediate() {
+      if (!this.user?.status) return;
+
+      const chatUserUpdate = {
+        chat_user_id: this.user?.chat_user?.chat_user_id ?? '',
+        status: this.user?.chat_user?.status as EChatUserStatus,
+        about: this.user?.chat_user?.about ?? '',
+        notifications: this.user?.chat_user?.notifications ?? false,
+      };
+
+      setUser({ ...this.user, chat_user: chatUserUpdate });
+      this.user.chat_user = chatUserUpdate as AuthUserResponse['chat_user'];
+    },
+
+    async updateChatUserDebounce() {
+      if (!this.user?.status) return;
+
+      const chatUserUpdate = {
+        chat_user_id: this.user?.chat_user?.chat_user_id ?? '',
+        status: this.user?.chat_user?.status as EChatUserStatus,
+        about: this.user?.chat_user?.about ?? '',
+        notifications: this.user?.chat_user?.notifications ?? false,
+      };
+
+      await this.updateChatsUser({
+        about: chatUserUpdate.about,
+        status: chatUserUpdate.status,
+        notifications: chatUserUpdate.notifications,
+      });
+    },
+
     async listQueueChats(input: ListChatsQuery): Promise<ListChatsResponse[]> {
       try {
         this.loading = true;
@@ -128,12 +162,13 @@ export const useChatStore = defineStore('chat', {
 
           return;
         }
-
-        this.showSnackbar(this.i18n.t('chat.updateSuccess'), EColor.success);
       } catch {
         this.loading = false;
 
-        this.showSnackbar(this.i18n.t('chat.updateError'), EColor.error);
+        this.showSnackbar(
+          this.i18n.global.t('chat_config_update_error'),
+          EColor.error
+        );
       }
     },
   },

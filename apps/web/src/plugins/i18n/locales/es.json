@@ -180,5 +180,7 @@
     "away": "Ausente",
     "do_not_disturb": "No molestar",
     "notification": "Notificación",
-    "max_length_200": "La longitud máxima es de 200 caracteres"
+    "max_length_200": "La longitud máxima es de 200 caracteres",
+    "chat_config_update_error": "Error al actualizar la configuración del chat",
+    "chat": "Chat"
 }

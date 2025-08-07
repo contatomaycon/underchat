@@ -182,5 +182,7 @@
     "away": "Ausente",
     "do_not_disturb": "Não perturbe",
     "notification": "Notificação",
-    "max_length_200": "O comprimento máximo é de 200 caracteres"
+    "max_length_200": "O comprimento máximo é de 200 caracteres",
+    "chat_config_update_error": "Erro ao atualizar as configurações do chat",
+    "chat": "Chat"
 }

@@ -13,7 +13,7 @@ export default [
     permissions: [EGeneralPermissions.full_access, EHomePermissions.home_view],
   },
   {
-    title: 'Chat',
+    title: 'chat',
     icon: { icon: 'tabler-message-circle' },
     to: { name: 'chat' as keyof RouteNamedMap },
     permissions: [EGeneralPermissions.full_access],

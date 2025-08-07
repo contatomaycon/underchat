@@ -1,3 +1,4 @@
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { ComposerTranslation } from 'vue-i18n';
 
 export const avatarText = (value?: string | null) => {
@@ -5,6 +6,16 @@ export const avatarText = (value?: string | null) => {
 
   const nameArray = value.split(' ');
   return nameArray.map((word) => word.charAt(0).toUpperCase()).join('');
+};
+
+export const resolveAvatarBadgeVariant = (status: EChatUserStatus) => {
+  if (status === EChatUserStatus.online) return 'success';
+  if (status === EChatUserStatus.busy) return 'error';
+  if (status === EChatUserStatus.away) return 'warning';
+  if (status === EChatUserStatus.offline) return 'secondary';
+  if (status === EChatUserStatus.do_not_disturb) return 'error';
+
+  return 'secondary';
 };
 
 export const kFormatter = (num: number) => {

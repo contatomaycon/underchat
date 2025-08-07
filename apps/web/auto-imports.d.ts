@@ -134,6 +134,7 @@ declare global {
   const registerPlugins_: (typeof import('./src/@webcore/utils/plugins'))['registerPlugins_']
   const requiredValidator: typeof import('./src/@webcore/utils/validators')['requiredValidator']
   const resetAbility: (typeof import('./src/plugins/casl/composables/useAbility'))['resetAbility']
+  const resolveAvatarBadgeVariant: typeof import('./src/@webcore/utils/formatters')['resolveAvatarBadgeVariant']
   const resolveComponent: typeof import('vue')['resolveComponent']
   const resolveRef: typeof import('@vueuse/core')['resolveRef']
   const resolveUnref: typeof import('@vueuse/core')['resolveUnref']
@@ -510,6 +511,7 @@ declare module 'vue' {
     readonly regexValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['regexValidator']>
     readonly registerPlugins: UnwrapRef<typeof import('./src/@webcore/utils/plugins')['registerPlugins']>
     readonly requiredValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['requiredValidator']>
+    readonly resolveAvatarBadgeVariant: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['resolveAvatarBadgeVariant']>
     readonly resolveComponent: UnwrapRef<typeof import('vue')['resolveComponent']>
     readonly resolveRef: UnwrapRef<typeof import('@vueuse/core')['resolveRef']>
     readonly resolveUnref: UnwrapRef<typeof import('@vueuse/core')['resolveUnref']>

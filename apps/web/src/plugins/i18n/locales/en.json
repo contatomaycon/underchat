@@ -179,5 +179,7 @@
     "away": "Away",
     "do_not_disturb": "Do Not Disturb",
     "notification": "Notification",
-    "max_length_200": "Maximum length is 200 characters"
+    "max_length_200": "Maximum length is 200 characters",
+    "chat_config_update_error": "Error updating chat settings",
+    "chat": "Chat"
 }
