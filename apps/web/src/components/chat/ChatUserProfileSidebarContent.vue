@@ -1,16 +1,18 @@
 <script lang="ts" setup>
-import { getUser } from '@/@webcore/localStorage/user';
+import { getUser, setUser } from '@/@webcore/localStorage/user';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
+import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
 
 defineEmits<{
   (e: 'close'): void;
 }>();
 
 const chatStore = useChatStore();
-const user = getUser();
 const { t } = useI18n();
+
+const user = ref<AuthUserResponse | null>(getUser());
 
 const resolveAvatarBadgeVariant = (status: EChatUserStatus) => {
   if (status === EChatUserStatus.online) return 'success';
@@ -29,6 +31,69 @@ const userStatusRadioOptions = [
   { title: t('offline'), value: 'offline', color: 'secondary' },
   { title: t('do_not_disturb'), value: 'do_not_disturb', color: 'error' },
 ];
+
+function updateChatUserImmediate(chatUser: AuthUserResponse['chat_user']) {
+  if (!user?.value?.status) return;
+
+  const chatUserUpdate = {
+    chat_user_id: chatUser?.chat_user_id ?? '',
+    status: chatUser?.status as EChatUserStatus,
+    about: chatUser?.about ?? '',
+    notifications: chatUser?.notifications ?? false,
+  };
+
+  setUser({ ...user.value, chat_user: chatUserUpdate });
+  user.value.chat_user = chatUserUpdate as AuthUserResponse['chat_user'];
+}
+
+function updateChatUserDebounce(chatUser: AuthUserResponse['chat_user']) {
+  if (!user?.value?.status) return;
+
+  const chatUserUpdate = {
+    chat_user_id: chatUser?.chat_user_id ?? '',
+    status: chatUser?.status as EChatUserStatus,
+    about: chatUser?.about ?? '',
+    notifications: chatUser?.notifications ?? false,
+  };
+
+  chatStore.updateChatsUser({
+    about: chatUserUpdate.about,
+    status: chatUserUpdate.status,
+    notifications: chatUserUpdate.notifications,
+  });
+}
+
+const updateChatUser = useDebounceFn(updateChatUserDebounce, 500);
+
+const about = computed<string>({
+  get: () => user?.value?.chat_user?.about ?? '',
+  set: (val) => {
+    if (user?.value?.chat_user) {
+      updateChatUserImmediate({ ...user.value.chat_user, about: val });
+      updateChatUser({ ...user.value.chat_user, about: val });
+    }
+  },
+});
+
+const status = computed({
+  get: () => user?.value?.chat_user?.status ?? EChatUserStatus.offline,
+  set: (val: EChatUserStatus) => {
+    if (user?.value?.chat_user) {
+      updateChatUserImmediate({ ...user.value.chat_user, status: val });
+      updateChatUser({ ...user.value.chat_user, status: val });
+    }
+  },
+});
+
+const notifications = computed<boolean>({
+  get: () => user?.value?.chat_user?.notifications ?? false,
+  set: (val) => {
+    if (user?.value?.chat_user) {
+      updateChatUserImmediate({ ...user.value.chat_user, notifications: val });
+      updateChatUser({ ...user.value.chat_user, notifications: val });
+    }
+  },
+});
 </script>
 
 <template>
@@ -45,9 +110,7 @@ const userStatusRadioOptions = [
         offset-x="7"
         offset-y="4"
         bordered
-        :color="
-          resolveAvatarBadgeVariant(user?.chat_user.status as EChatUserStatus)
-        "
+        :color="resolveAvatarBadgeVariant(status as EChatUserStatus)"
         class="chat-user-profile-badge mb-3"
       >
         <VAvatar
@@ -55,9 +118,7 @@ const userStatusRadioOptions = [
           :variant="!user?.info.photo ? 'tonal' : undefined"
           :color="
             !user?.info.photo
-              ? resolveAvatarBadgeVariant(
-                  user?.chat_user.status as EChatUserStatus
-                )
+              ? resolveAvatarBadgeVariant(status as EChatUserStatus)
               : undefined
           "
         >
@@ -83,24 +144,18 @@ const userStatusRadioOptions = [
         </div>
         <AppTextarea
           id="textarea-user-about"
-          v-model="user.chat_user.about"
+          v-model="about"
           auto-grow
           class="mt-1"
           rows="3"
-          :rules="[
-            maxLengthValidator(
-              user?.chat_user.about,
-              200,
-              $t('max_length_200')
-            ),
-          ]"
+          :rules="[maxLengthValidator(about, 200, $t('max_length_200'))]"
           counter
         />
       </div>
 
       <div class="mb-6">
         <div class="text-base text-disabled">{{ $t('status_chat') }}</div>
-        <VRadioGroup v-model="user.chat_user.status" class="mt-1">
+        <VRadioGroup v-model="status" class="mt-1">
           <VRadio
             v-for="(radioOption, index) in userStatusRadioOptions"
             :id="`${index}`"
@@ -126,7 +181,7 @@ const userStatusRadioOptions = [
             </div>
             <VSwitch
               id="chat-notification"
-              v-model="user.chat_user.notifications"
+              v-model="notifications"
               density="compact"
             />
           </div>
