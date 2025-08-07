@@ -4,6 +4,7 @@ import { useChatStore } from '@/@webcore/stores/chat';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
+import { VForm } from 'vuetify/components';
 
 defineEmits<{
   (e: 'close'): void;
@@ -13,6 +14,15 @@ const chatStore = useChatStore();
 const { t } = useI18n();
 
 const user = ref<AuthUserResponse | null>(getUser());
+const refFormProfileSidebarContent = ref<VForm>();
+
+const aboutForm = ref<string | null | undefined>(user?.value?.chat_user?.about);
+const statusForm = ref<EChatUserStatus>(
+  user?.value?.chat_user?.status as EChatUserStatus.online
+);
+const notificationsForm = ref<boolean>(
+  user?.value?.chat_user?.notifications ?? true
+);
 
 const resolveAvatarBadgeVariant = (status: EChatUserStatus) => {
   if (status === EChatUserStatus.online) return 'success';
@@ -46,7 +56,7 @@ function updateChatUserImmediate(chatUser: AuthUserResponse['chat_user']) {
   user.value.chat_user = chatUserUpdate as AuthUserResponse['chat_user'];
 }
 
-function updateChatUserDebounce(chatUser: AuthUserResponse['chat_user']) {
+async function updateChatUserDebounce(chatUser: AuthUserResponse['chat_user']) {
   if (!user?.value?.status) return;
 
   const chatUserUpdate = {
@@ -56,44 +66,29 @@ function updateChatUserDebounce(chatUser: AuthUserResponse['chat_user']) {
     notifications: chatUser?.notifications ?? false,
   };
 
-  chatStore.updateChatsUser({
+  await chatStore.updateChatsUser({
     about: chatUserUpdate.about,
     status: chatUserUpdate.status,
     notifications: chatUserUpdate.notifications,
   });
 }
 
-const updateChatUser = useDebounceFn(updateChatUserDebounce, 500);
+const updateChatUser = useDebounceFn(updateChatUserDebounce, 1000);
 
-const about = computed<string>({
-  get: () => user?.value?.chat_user?.about ?? '',
-  set: (val) => {
-    if (user?.value?.chat_user) {
-      updateChatUserImmediate({ ...user.value.chat_user, about: val });
-      updateChatUser({ ...user.value.chat_user, about: val });
-    }
-  },
-});
+const updateProfileSidebarContent = async () => {
+  const validateForm = await refFormProfileSidebarContent?.value?.validate();
+  if (!validateForm?.valid) return;
 
-const status = computed({
-  get: () => user?.value?.chat_user?.status ?? EChatUserStatus.offline,
-  set: (val: EChatUserStatus) => {
-    if (user?.value?.chat_user) {
-      updateChatUserImmediate({ ...user.value.chat_user, status: val });
-      updateChatUser({ ...user.value.chat_user, status: val });
-    }
-  },
-});
+  const chatUser = {
+    chat_user_id: user.value?.chat_user?.chat_user_id ?? '',
+    status: statusForm.value ?? EChatUserStatus.online,
+    about: aboutForm.value ?? '',
+    notifications: notificationsForm.value ?? false,
+  };
 
-const notifications = computed<boolean>({
-  get: () => user?.value?.chat_user?.notifications ?? false,
-  set: (val) => {
-    if (user?.value?.chat_user) {
-      updateChatUserImmediate({ ...user.value.chat_user, notifications: val });
-      updateChatUser({ ...user.value.chat_user, notifications: val });
-    }
-  },
-});
+  updateChatUserImmediate(chatUser);
+  await updateChatUser(chatUser);
+};
 </script>
 
 <template>
@@ -110,7 +105,7 @@ const notifications = computed<boolean>({
         offset-x="7"
         offset-y="4"
         bordered
-        :color="resolveAvatarBadgeVariant(status as EChatUserStatus)"
+        :color="resolveAvatarBadgeVariant(statusForm as EChatUserStatus)"
         class="chat-user-profile-badge mb-3"
       >
         <VAvatar
@@ -118,7 +113,7 @@ const notifications = computed<boolean>({
           :variant="!user?.info.photo ? 'tonal' : undefined"
           :color="
             !user?.info.photo
-              ? resolveAvatarBadgeVariant(status as EChatUserStatus)
+              ? resolveAvatarBadgeVariant(statusForm as EChatUserStatus)
               : undefined
           "
         >
@@ -138,59 +133,71 @@ const notifications = computed<boolean>({
       class="ps-chat-user-profile-sidebar-content pb-5 px-6"
       :options="{ wheelPropagation: false }"
     >
-      <div class="my-6 text-medium-emphasis">
-        <div for="textarea-user-about" class="text-base text-disabled">
-          {{ $t('about') }}
-        </div>
-        <AppTextarea
-          id="textarea-user-about"
-          v-model="about"
-          auto-grow
-          class="mt-1"
-          rows="3"
-          :rules="[maxLengthValidator(about, 200, $t('max_length_200'))]"
-          counter
-        />
-      </div>
-
-      <div class="mb-6">
-        <div class="text-base text-disabled">{{ $t('status_chat') }}</div>
-        <VRadioGroup v-model="status" class="mt-1">
-          <VRadio
-            v-for="(radioOption, index) in userStatusRadioOptions"
-            :id="`${index}`"
-            :key="radioOption.title"
-            :name="radioOption.title"
-            :label="radioOption.title"
-            :value="radioOption.value"
-            :color="radioOption.color"
+      <VForm ref="refFormProfileSidebarContent" @submit.prevent>
+        <div class="my-6 text-medium-emphasis">
+          <div for="textarea-user-about" class="text-base text-disabled">
+            {{ $t('about') }}
+          </div>
+          <AppTextarea
+            id="textarea-user-about"
+            v-model="aboutForm"
+            auto-grow
+            class="mt-1"
+            rows="3"
+            :rules="[maxLengthValidator(aboutForm, 200, $t('max_length_200'))]"
+            counter
+            @update:model-value="updateProfileSidebarContent"
           />
-        </VRadioGroup>
-      </div>
+        </div>
 
-      <div class="text-medium-emphasis chat-settings-section">
-        <div class="text-base text-disabled">{{ $t('settings') }}</div>
-
-        <div class="d-flex align-center pa-2">
-          <VIcon class="me-2 text-high-emphasis" icon="tabler-bell" size="22" />
-          <div
-            class="text-high-emphasis d-flex align-center justify-space-between flex-grow-1"
+        <div class="mb-6">
+          <div class="text-base text-disabled">{{ $t('status_chat') }}</div>
+          <VRadioGroup
+            v-model="statusForm"
+            @update:model-value="updateProfileSidebarContent"
+            class="mt-1"
           >
-            <div class="text-body-1 text-high-emphasis">
-              {{ $t('notification') }}
-            </div>
-            <VSwitch
-              id="chat-notification"
-              v-model="notifications"
-              density="compact"
+            <VRadio
+              v-for="(radioOption, index) in userStatusRadioOptions"
+              :id="`${index}`"
+              :key="radioOption.title"
+              :name="radioOption.title"
+              :label="radioOption.title"
+              :value="radioOption.value"
+              :color="radioOption.color"
             />
+          </VRadioGroup>
+        </div>
+
+        <div class="text-medium-emphasis chat-settings-section">
+          <div class="text-base text-disabled">{{ $t('settings') }}</div>
+
+          <div class="d-flex align-center pa-2">
+            <VIcon
+              class="me-2 text-high-emphasis"
+              icon="tabler-bell"
+              size="22"
+            />
+            <div
+              class="text-high-emphasis d-flex align-center justify-space-between flex-grow-1"
+            >
+              <div class="text-body-1 text-high-emphasis">
+                {{ $t('notification') }}
+              </div>
+              <VSwitch
+                id="chat-notification"
+                v-model="notificationsForm"
+                density="compact"
+                @update:model-value="updateProfileSidebarContent"
+              />
+            </div>
           </div>
         </div>
-      </div>
 
-      <VBtn color="primary" class="mt-12" block append-icon="tabler-logout">
-        Logout
-      </VBtn>
+        <VBtn color="primary" class="mt-12" block append-icon="tabler-logout">
+          Logout
+        </VBtn>
+      </VForm>
     </PerfectScrollbar>
   </template>
 </template>
