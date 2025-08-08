@@ -10,6 +10,7 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { ListChatsResponse } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
+import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
 
 definePage({
   meta: {
@@ -28,6 +29,8 @@ const { isLeftSidebarOpen } = useResponsiveLeftSidebar(
   vuetifyDisplays.smAndDown
 );
 
+const from = ref(0);
+const size = ref(100);
 const chatLogPS = ref();
 const q = ref('');
 const msg = ref('');
@@ -63,6 +66,13 @@ const sendMessage = async () => {
 
 const openChat = async (chatId: ListChatsResponse['chat_id']) => {
   chatStore.setActiveChat(chatId);
+
+  const requestQueue: ListMessageChatsQuery = {
+    from: from.value,
+    size: size.value,
+  };
+
+  await chatStore.getChatById(requestQueue);
 
   if (vuetifyDisplays.smAndDown.value) isLeftSidebarOpen.value = false;
 

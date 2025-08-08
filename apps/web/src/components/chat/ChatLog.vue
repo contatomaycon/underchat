@@ -1,13 +1,9 @@
 <script lang="ts" setup>
 import { useChatStore } from '@/@webcore/stores/chat';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
-import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
 import { ListMessageResponse } from '@core/schema/chat/listMessageChats/response.schema';
 
 const chatStore = useChatStore();
-
-const from = ref(0);
-const size = ref(100);
 
 const resolveFeedbackIcon = (message: ListMessageResponse) => {
   if (message.summary?.is_seen)
@@ -16,15 +12,6 @@ const resolveFeedbackIcon = (message: ListMessageResponse) => {
     return { icon: 'tabler-checks', color: undefined };
   else return { icon: 'tabler-check', color: undefined };
 };
-
-onMounted(async () => {
-  const requestQueue: ListMessageChatsQuery = {
-    from: from.value,
-    size: size.value,
-  };
-
-  await chatStore.getChatById(requestQueue);
-});
 </script>
 
 <template>
@@ -64,7 +51,6 @@ onMounted(async () => {
             msgGrp.type_user === ETypeUserChat.client
               ? 'chat-left'
               : 'bg-primary text-white chat-right',
-            //msgGrp.messages.length - 1 !== msgIndex ? 'mb-2' : 'mb-1',
           ]"
         >
           <p class="mb-0 text-base">
