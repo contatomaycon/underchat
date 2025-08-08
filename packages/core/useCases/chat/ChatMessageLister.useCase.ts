@@ -24,7 +24,7 @@ export class ChatMessageListerUseCase {
     const queryElastic = {
       from,
       size,
-      sort: [{ date: { order: 'desc' } }],
+      sort: [{ date: { order: 'asc' } }],
       query: {
         bool: {
           must: [

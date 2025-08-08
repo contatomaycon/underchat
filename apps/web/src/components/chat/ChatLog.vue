@@ -1,106 +1,94 @@
 <script lang="ts" setup>
-const contact = ref({
-  id: 10,
-  avatar: 'path/to/avatar.jpg',
-});
+import { useChatStore } from '@/@webcore/stores/chat';
+import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
+import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
+import { ListMessageResponse } from '@core/schema/chat/listMessageChats/response.schema';
 
-const msgGroups = [
-  {
-    message: "How can we help? We're here for you!",
-    time: 'Mon Dec 10 2018 07:45:00 GMT+0000 (GMT)',
-    senderId: 11,
-    feedback: {
-      isSent: true,
-      isDelivered: true,
-      isSeen: true,
-    },
-  },
-  {
-    message:
-      'Hey John, I am looking for the best admin template. Could you please help me to find it out?',
-    time: 'Mon Dec 10 2018 07:45:23 GMT+0000 (GMT)',
-    senderId: 1,
-    feedback: {
-      isSent: true,
-      isDelivered: true,
-      isSeen: true,
-    },
-  },
-];
+const chatStore = useChatStore();
+
+const from = ref(0);
+const size = ref(100);
+
+const resolveFeedbackIcon = (message: ListMessageResponse) => {
+  if (message.summary?.is_seen)
+    return { icon: 'tabler-checks', color: 'success' };
+  else if (message.summary?.is_delivered)
+    return { icon: 'tabler-checks', color: undefined };
+  else return { icon: 'tabler-check', color: undefined };
+};
+
+onMounted(async () => {
+  const requestQueue: ListMessageChatsQuery = {
+    from: from.value,
+    size: size.value,
+  };
+
+  await chatStore.getChatById(requestQueue);
+});
 </script>
 
 <template>
   <div class="chat-log pa-6">
     <div
-      v-for="(msgGrp, index) in msgGroups"
-      :key="msgGrp.senderId + String(index)"
+      v-for="(msgGrp, index) in chatStore.listMessages"
+      :key="msgGrp.message_id"
       class="chat-group d-flex align-start"
       :class="[
         {
-          'flex-row-reverse': msgGrp.senderId !== contact.id,
-          'mb-6': msgGroups.length - 1 !== index,
+          'flex-row-reverse': msgGrp.type_user !== ETypeUserChat.client,
+          'mb-6': chatStore.listMessages.length - 1 !== index,
         },
       ]"
     >
       <div
         class="chat-avatar"
-        :class="msgGrp.senderId !== contact.id ? 'ms-4' : 'me-4'"
+        :class="msgGrp.type_user !== ETypeUserChat.client ? 'ms-4' : 'me-4'"
       >
         <VAvatar size="32">
-          <VImg
-            :src="
-              msgGrp.senderId === contact.id
-                ? contact.avatar
-                : 'avatar-placeholder.png'
-            "
-          />
+          <VImg src="avatar-placeholder.png" />
         </VAvatar>
       </div>
 
-      <!-- <div
+      <div
         class="chat-body d-inline-flex flex-column"
-        :class="msgGrp.senderId !== contact.id ? 'align-end' : 'align-start'"
+        :class="
+          msgGrp.type_user !== ETypeUserChat.client
+            ? 'align-end'
+            : 'align-start'
+        "
       >
         <div
-          v-for="(msgData, msgIndex) in msgGroups"
-          :key="msgData.time"
           class="chat-content py-2 px-4 elevation-2"
           style="background-color: rgb(var(--v-theme-surface))"
           :class="[
-            msgGrp.senderId === contact.id
+            msgGrp.type_user === ETypeUserChat.client
               ? 'chat-left'
               : 'bg-primary text-white chat-right',
-            msgGrp.messages.length - 1 !== msgIndex ? 'mb-2' : 'mb-1',
+            //msgGrp.messages.length - 1 !== msgIndex ? 'mb-2' : 'mb-1',
           ]"
         >
           <p class="mb-0 text-base">
-            {{ msgData.message }}
+            {{ msgGrp.message }}
           </p>
         </div>
-        <div :class="{ 'text-right': msgGrp.senderId !== contact.id }">
+        <div
+          :class="{ 'text-right': msgGrp.type_user !== ETypeUserChat.client }"
+        >
           <VIcon
-            v-if="msgGrp.senderId !== contact.id"
+            v-if="msgGrp.type_user !== ETypeUserChat.client"
             size="16"
-            :color="
-              resolveFeedbackIcon(
-                msgGrp.messages[msgGrp.messages.length - 1].feedback
-              ).color
-            "
+            :color="resolveFeedbackIcon(msgGrp).color"
           >
-            {{
-              resolveFeedbackIcon(
-                msgGrp.messages[msgGrp.messages.length - 1].feedback
-              ).icon
-            }}
+            {{ resolveFeedbackIcon(msgGrp).icon }}
           </VIcon>
           <span class="text-sm ms-2 text-disabled">{{
-            formatDate(msgGrp.messages[msgGrp.messages.length - 1].time, {
+            formatDate(msgGrp.date, {
               hour: 'numeric',
               minute: 'numeric',
             })
           }}</span>
         </div>
-      </div> -->
+      </div>
     </div>
   </div>
 </template>

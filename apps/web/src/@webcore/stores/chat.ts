@@ -11,6 +11,8 @@ import { UpdateChatsUserRequest } from '@core/schema/chat/updateChatsUser/reques
 import { getUser, setUser } from '../localStorage/user';
 import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
+import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
+import { ListMessageResponse } from '@core/schema/chat/listMessageChats/response.schema';
 
 export const useChatStore = defineStore('chat', {
   state: () => ({
@@ -22,6 +24,7 @@ export const useChatStore = defineStore('chat', {
     i18n: getI18n(),
     loading: false,
     activeChat: null as ListChatsResponse | null,
+    listMessages: [] as ListMessageResponse[],
     listQueue: [] as ListChatsResponse[],
     listInChat: [] as ListChatsResponse[],
     user: getUser(),
@@ -169,6 +172,38 @@ export const useChatStore = defineStore('chat', {
           this.i18n.global.t('chat_config_update_error'),
           EColor.error
         );
+      }
+    },
+
+    async getChatById(query: ListMessageChatsQuery): Promise<void> {
+      try {
+        this.loading = true;
+        this.listMessages = [];
+
+        const response = await axios.get<IApiResponse<ListMessageResponse[]>>(
+          `/chat/${this.activeChat?.chat_id}`,
+          {
+            params: query,
+          }
+        );
+
+        const data = response?.data as IApiResponse<ListMessageResponse[]>;
+
+        if (!data?.status || !data?.data) {
+          this.listMessages = [];
+          this.loading = false;
+
+          return;
+        }
+
+        this.loading = false;
+
+        this.listMessages = data.data;
+      } catch {
+        this.loading = false;
+        this.listMessages = [];
+
+        return;
       }
     },
 
