@@ -59,7 +59,7 @@ export class ServerUpdaterRepository {
       updateServer.ssh_password = input.ssh_password;
     }
 
-    if (!updateServer) {
+    if (Object.keys(updateServer).length === 0) {
       return false;
     }
 

@@ -47,7 +47,7 @@ export class ChatUserUpdaterRepository {
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input);
 
-    if (!updateInput) {
+    if (Object.keys(updateInput).length === 0) {
       return false;
     }
 

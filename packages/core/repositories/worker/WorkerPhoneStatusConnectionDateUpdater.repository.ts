@@ -48,7 +48,7 @@ export class WorkerPhoneStatusConnectionDateUpdaterRepository {
       updateData.connection_date = connectionDate;
     }
 
-    if (!updateData) {
+    if (Object.keys(updateData).length === 0) {
       return false;
     }
 
