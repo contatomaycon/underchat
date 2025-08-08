@@ -13,6 +13,10 @@
     "without_namespace": {
       "allow_publish_for_client": true,
       "allow_subscribe_for_client": true
+    },
+    "private:chat:*": {
+      "subscribe": "user == params.userID && channel == \"private:chat:\" + user",
+      "publish": "true"
     }
   }
 }

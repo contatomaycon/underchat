@@ -1,15 +1,14 @@
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
-import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { centrifugoEnvironment } from '@core/config/environments';
 import { UnauthorizedError } from 'centrifuge';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import jwt from 'jsonwebtoken';
 
-const generateToken = async (): Promise<string> => {
+const generateToken = async (accountId: string): Promise<string> => {
   const exp = Math.floor(Date.now() / 1000) + 60 * 60;
   return jwt.sign(
-    { sub: ERouteModule.web, exp },
+    { sub: accountId, exp },
     centrifugoEnvironment.centrifugoHmacSecretKey,
     { algorithm: 'HS256' }
   );
@@ -19,10 +18,10 @@ export const authToken = async (
   request: FastifyRequest,
   reply: FastifyReply
 ) => {
-  const { t } = request;
+  const { t, tokenJwtData } = request;
 
   try {
-    const token = await generateToken();
+    const token = await generateToken(tokenJwtData.account_id);
 
     if (token) {
       return sendResponse(reply, {
