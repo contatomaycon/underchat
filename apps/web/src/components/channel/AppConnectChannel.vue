@@ -234,7 +234,7 @@ function startNextAttemptCountdown() {
 }
 
 onMounted(async () => {
-  if (channelId.value) {
+  if (channelId.value && accountId.value) {
     await onMessage(
       workerCentrifugoQueue(accountId.value),
       (data: IBaileysConnectionState) => {
@@ -302,7 +302,9 @@ onUnmounted(() => {
     clearInterval(intervalIdNextAttempt.value);
   }
 
-  unsubscribe(workerCentrifugoQueue(accountId.value));
+  if (accountId.value) {
+    unsubscribe(workerCentrifugoQueue(accountId.value));
+  }
 });
 </script>
 
