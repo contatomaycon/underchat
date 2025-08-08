@@ -9,6 +9,7 @@ import {
 } from '@/permissions';
 import { listChatsUserSchema } from '@core/schema/chat/listChatsUser';
 import { updateChatsUserSchema } from '@core/schema/chat/updateChatsUser';
+import { listMessageChatsSchema } from '@core/schema/chat/listMessageChats';
 
 export default async function chatRoutes(server: FastifyInstance) {
   const chatController = container.resolve(ChatController);
@@ -16,6 +17,15 @@ export default async function chatRoutes(server: FastifyInstance) {
   server.get('/chat', {
     schema: listChatsSchema,
     handler: chatController.listChats,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, listChatPermissions),
+    ],
+  });
+
+  server.get('/chat/:chat_id', {
+    schema: listMessageChatsSchema,
+    handler: chatController.listMessageChats,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, listChatPermissions),
