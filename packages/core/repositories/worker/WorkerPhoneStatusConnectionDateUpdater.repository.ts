@@ -48,6 +48,10 @@ export class WorkerPhoneStatusConnectionDateUpdaterRepository {
       updateData.connection_date = connectionDate;
     }
 
+    if (!updateData) {
+      return false;
+    }
+
     const result = await this.db
       .update(worker)
       .set(updateData)

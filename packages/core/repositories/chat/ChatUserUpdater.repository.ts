@@ -47,6 +47,10 @@ export class ChatUserUpdaterRepository {
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input);
 
+    if (!updateInput) {
+      return false;
+    }
+
     const result = await tx
       .update(chatUser)
       .set(updateInput)
