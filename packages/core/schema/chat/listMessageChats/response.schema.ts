@@ -4,6 +4,7 @@ import { Static, Type } from '@sinclair/typebox';
 export const userSchema = Type.Object({
   id: Type.String(),
   name: Type.String(),
+  photo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export const summarySchema = Type.Object({

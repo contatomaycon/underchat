@@ -31,8 +31,28 @@ const resolveFeedbackIcon = (message: ListMessageResponse) => {
         class="chat-avatar"
         :class="msgGrp.type_user !== ETypeUserChat.client ? 'ms-4' : 'me-4'"
       >
-        <VAvatar size="32">
-          <VImg src="avatar-placeholder.png" />
+        <VAvatar
+          v-if="msgGrp.user"
+          size="32"
+          :variant="!msgGrp.user?.photo ? 'tonal' : undefined"
+        >
+          <VImg v-if="msgGrp.user?.photo" :src="msgGrp.user?.photo" />
+          <span v-else class="text-1xl">{{
+            avatarText(msgGrp.user?.name)
+          }}</span>
+        </VAvatar>
+        <VAvatar
+          v-else
+          size="32"
+          :variant="!chatStore.activeChat?.photo ? 'tonal' : undefined"
+        >
+          <VImg
+            v-if="chatStore.activeChat?.photo"
+            :src="chatStore.activeChat?.photo"
+          />
+          <span v-else class="text-1xl">{{
+            avatarText(chatStore.activeChat?.name)
+          }}</span>
         </VAvatar>
       </div>
 
@@ -60,11 +80,7 @@ const resolveFeedbackIcon = (message: ListMessageResponse) => {
         <div
           :class="{ 'text-right': msgGrp.type_user !== ETypeUserChat.client }"
         >
-          <VIcon
-            v-if="msgGrp.type_user !== ETypeUserChat.client"
-            size="16"
-            :color="resolveFeedbackIcon(msgGrp).color"
-          >
+          <VIcon size="16" :color="resolveFeedbackIcon(msgGrp).color">
             {{ resolveFeedbackIcon(msgGrp).icon }}
           </VIcon>
           <span class="text-sm ms-2 text-disabled">{{

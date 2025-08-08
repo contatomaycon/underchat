@@ -34,6 +34,9 @@ export const mensageMappings = () => {
             name: {
               type: 'text',
             },
+            photo: {
+              type: 'text',
+            },
           },
         },
         message: {
