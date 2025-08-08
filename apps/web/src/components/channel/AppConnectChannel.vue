@@ -8,6 +8,7 @@ import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionS
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
+import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
 const channelStore = useChannelsStore();
 
@@ -233,64 +234,65 @@ function startNextAttemptCountdown() {
 }
 
 onMounted(async () => {
-  await onMessage(
-    `worker.${accountId.value}`,
-    (data: IBaileysConnectionState) => {
-      if (data?.account_id !== accountId.value) return;
+  if (channelId.value) {
+    await onMessage(
+      workerCentrifugoQueue(accountId.value),
+      (data: IBaileysConnectionState) => {
+        if (data?.account_id !== accountId.value) return;
 
-      if (statusCode.value === ECodeMessage.phoneNotAvailable) return;
+        if (statusCode.value === ECodeMessage.phoneNotAvailable) return;
 
-      if (data.status) {
-        statusConnection.value = data.status as EBaileysConnectionStatus;
-        if (statusConnection.value === EBaileysConnectionStatus.connected) {
-          phoneNumber.value = null;
-          isPhoneNumber.value = false;
-          phoneSent.value = false;
-          connectionType.value = EBaileysConnectionType.qrcode;
+        if (data.status) {
+          statusConnection.value = data.status as EBaileysConnectionStatus;
+          if (statusConnection.value === EBaileysConnectionStatus.connected) {
+            phoneNumber.value = null;
+            isPhoneNumber.value = false;
+            phoneSent.value = false;
+            connectionType.value = EBaileysConnectionType.qrcode;
 
-          resetPairingCodes();
+            resetPairingCodes();
+          }
+        }
+
+        if (data.qrcode) qrcode.value = data.qrcode;
+        if (data.code) {
+          statusCode.value = data.code as ECodeMessage;
+
+          if (data.code === ECodeMessage.loggedOut) {
+            attempt.value = 0;
+            removeInPhone.value = true;
+          }
+        }
+
+        if (data.phone) phoneNumber.value = formatPhoneBR(data.phone);
+
+        if (
+          data.status === EBaileysConnectionStatus.connecting &&
+          qrcode.value &&
+          attempt.value <= maxAttempts.value
+        ) {
+          startTimer();
+        }
+
+        if (data.pairing_code) {
+          const [p, s] = splitCode(data.pairing_code);
+
+          pairingCodePrimary.value = p;
+          pairingCodeSecondary.value = s;
+        }
+
+        if (data.seconds_until_next_attempt) {
+          secondsNextAttempt.value = data.seconds_until_next_attempt;
+
+          startNextAttemptCountdown();
         }
       }
+    );
 
-      if (data.qrcode) qrcode.value = data.qrcode;
-      if (data.code) {
-        statusCode.value = data.code as ECodeMessage;
-
-        if (data.code === ECodeMessage.loggedOut) {
-          attempt.value = 0;
-          removeInPhone.value = true;
-        }
-      }
-
-      if (data.phone) phoneNumber.value = formatPhoneBR(data.phone);
-
-      if (
-        data.status === EBaileysConnectionStatus.connecting &&
-        qrcode.value &&
-        attempt.value <= maxAttempts.value
-      ) {
-        startTimer();
-      }
-
-      if (data.pairing_code) {
-        const [p, s] = splitCode(data.pairing_code);
-
-        pairingCodePrimary.value = p;
-        pairingCodeSecondary.value = s;
-      }
-
-      if (data.seconds_until_next_attempt) {
-        secondsNextAttempt.value = data.seconds_until_next_attempt;
-
-        startNextAttemptCountdown();
-      }
-    }
-  );
-
-  if (channelId.value)
     await channelStore.updateConnectionChannel(
       buildRequest(EWorkerStatus.online)
     );
+  }
 });
 
 onUnmounted(() => {
@@ -300,7 +302,7 @@ onUnmounted(() => {
     clearInterval(intervalIdNextAttempt.value);
   }
 
-  unsubscribe(`worker.${accountId.value}`);
+  unsubscribe(workerCentrifugoQueue(accountId.value));
 });
 </script>
 

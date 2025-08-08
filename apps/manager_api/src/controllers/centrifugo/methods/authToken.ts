@@ -8,7 +8,13 @@ import jwt from 'jsonwebtoken';
 const generateToken = async (accountId: string): Promise<string> => {
   const exp = Math.floor(Date.now() / 1000) + 60 * 60;
   return jwt.sign(
-    { sub: accountId, exp },
+    {
+      sub: accountId,
+      exp,
+      params: {
+        userID: accountId,
+      },
+    },
     centrifugoEnvironment.centrifugoHmacSecretKey,
     { algorithm: 'HS256' }
   );

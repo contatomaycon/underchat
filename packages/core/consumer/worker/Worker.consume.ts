@@ -18,6 +18,7 @@ import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
+import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
 @singleton()
 export class WorkerConsume {
@@ -31,15 +32,11 @@ export class WorkerConsume {
     private readonly streamProducerService: StreamProducerService
   ) {}
 
-  private queueCentrifugo(accountId: string): string {
-    return `worker.${accountId}`;
-  }
-
   private centrifugoPublish(
     dataPublish: IBaileysConnectionState
   ): Promise<PublishResult> {
-    return this.centrifugoService.publish(
-      this.queueCentrifugo(dataPublish.account_id),
+    return this.centrifugoService.publishSub(
+      workerCentrifugoQueue(dataPublish.account_id),
       dataPublish
     );
   }

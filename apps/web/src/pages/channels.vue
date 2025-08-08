@@ -16,6 +16,7 @@ import { ListWorkerResponse } from '@core/schema/worker/listWorker/response.sche
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
+import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
 definePage({
   meta: {
@@ -223,7 +224,7 @@ watch(
 onMounted(async () => {
   if (user?.account_id) {
     await onMessage(
-      `worker.${user.account_id}`,
+      workerCentrifugoQueue(user.account_id),
       (data: IBaileysConnectionState) => {
         if (data?.account_id !== user.account_id) return;
 
@@ -235,7 +236,7 @@ onMounted(async () => {
 
 onUnmounted(async () => {
   if (user?.account_id) {
-    await unsubscribe(`worker.${user.account_id}`);
+    await unsubscribe(workerCentrifugoQueue(user.account_id));
   }
 });
 </script>

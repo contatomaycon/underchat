@@ -12,6 +12,7 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
+import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
 @injectable()
 export class WorkerChangeStatusConnectionUseCase {
@@ -204,7 +205,10 @@ export class WorkerChangeStatusConnectionUseCase {
           code: ECodeMessage.phoneNotAvailable,
         };
 
-        this.centrifugoService.publish(`worker.${accountId}`, payload);
+        this.centrifugoService.publishSub(
+          workerCentrifugoQueue(accountId),
+          payload
+        );
 
         return;
       }

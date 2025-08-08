@@ -27,9 +27,10 @@ import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
 const FOLDER = `/app/data/storage/${baileysEnvironment.baileysWorkerId}`;
-const CHANNEL = `worker.${baileysEnvironment.baileysAccountId}`;
+const CHANNEL = workerCentrifugoQueue(baileysEnvironment.baileysAccountId);
 const WORKER = baileysEnvironment.baileysWorkerId;
 const ACCOUNT = baileysEnvironment.baileysAccountId;
 
@@ -166,7 +167,7 @@ export class BaileysConnectionService {
       worker_status_id: EWorkerStatus.disponible,
     };
 
-    this.publish(payload);
+    this.publishSub(payload);
 
     this.streamProducerService.send(
       this.kafkaServiceQueueService.workerStatus(),
@@ -232,7 +233,7 @@ export class BaileysConnectionService {
         worker_status_id: EWorkerStatus.disponible,
       };
 
-      this.publish(payload);
+      this.publishSub(payload);
     }
   }
 
@@ -290,7 +291,7 @@ export class BaileysConnectionService {
 
     const img = await QRCode.toDataURL(qr);
 
-    this.publish({
+    this.publishSub({
       status: this.status,
       code: this.code,
       qrcode: img,
@@ -327,7 +328,7 @@ export class BaileysConnectionService {
       worker_status_id: EWorkerStatus.online,
     };
 
-    this.publish(payload);
+    this.publishSub(payload);
 
     this.streamProducerService.send(
       this.kafkaServiceQueueService.workerStatus(),
@@ -361,7 +362,7 @@ export class BaileysConnectionService {
         code: this.code ?? statusCode,
       };
 
-      this.publish(payload);
+      this.publishSub(payload);
 
       this.streamProducerService.send(
         this.kafkaServiceQueueService.workerStatus(),
@@ -431,7 +432,7 @@ export class BaileysConnectionService {
       worker_status_id: EWorkerStatus.disponible,
     };
 
-    this.centrifugo.publish(CHANNEL, payload);
+    this.centrifugo.publishSub(CHANNEL, payload);
   }
 
   private canShowQr(): boolean {
@@ -470,7 +471,7 @@ export class BaileysConnectionService {
     return this.state();
   }
 
-  private publish(payload: IBaileysConnectionState): void {
+  private publishSub(payload: IBaileysConnectionState): void {
     if (!this.initialConnection) {
       return;
     }
@@ -481,7 +482,7 @@ export class BaileysConnectionService {
     }
 
     this.lastPayload = data;
-    this.centrifugo.publish(CHANNEL, payload);
+    this.centrifugo.publishSub(CHANNEL, payload);
   }
 
   private safeLogout(): void {
@@ -558,7 +559,7 @@ export class BaileysConnectionService {
     if (this.initialConnection) {
       this.lastPayload = null;
 
-      this.publish({
+      this.publishSub({
         status: this.status,
         code: ECodeMessage.connectionEstablished,
         worker_id: WORKER,
@@ -617,7 +618,7 @@ export class BaileysConnectionService {
       worker_status_id: EWorkerStatus.error,
     };
 
-    this.publish(payload);
+    this.publishSub(payload);
 
     this.streamProducerService.send(
       this.kafkaServiceQueueService.workerStatus(),

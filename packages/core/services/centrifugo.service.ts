@@ -2,25 +2,27 @@ import { injectable, inject } from 'tsyringe';
 import {
   Centrifuge,
   PublicationContext,
+  PublishResult,
+  State,
   Subscription,
   SubscriptionState,
-  State,
-  PublishResult,
 } from 'centrifuge';
+import jwt from 'jsonwebtoken';
+import WebSocket from 'ws';
+import { centrifugoEnvironment } from '@core/config/environments';
 
 @injectable()
 export class CentrifugoService {
   constructor(@inject('Centrifuge') private readonly client: Centrifuge) {}
 
-  private waitForConnected(): Promise<void> {
+  private async waitForConnected(): Promise<void> {
     if (this.client.state === State.Connected) {
-      return Promise.resolve();
+      return;
     }
 
-    return new Promise((resolve) => {
+    await new Promise<void>((resolve) => {
       const handler = () => {
         this.client.off('connected', handler);
-
         resolve();
       };
 
@@ -28,25 +30,62 @@ export class CentrifugoService {
     });
   }
 
-  async onMessage(
+  private generateSubToken(subId: string): string {
+    const exp = Math.floor(Date.now() / 1000) + 5;
+
+    return jwt.sign(
+      { sub: subId, exp },
+      centrifugoEnvironment.centrifugoHmacSecretKey,
+      { algorithm: 'HS256' }
+    );
+  }
+
+  private async publishWithToken(
+    token: string,
     channel: string,
-    handler: (data: unknown, ctx: PublicationContext) => void
-  ): Promise<Subscription> {
-    await this.waitForConnected();
+    data: unknown
+  ): Promise<PublishResult> {
+    const tempClient = new Centrifuge(
+      `${centrifugoEnvironment.centrifugoWsUrl}/connection/websocket`,
+      {
+        websocket: WebSocket,
+        token,
+        timeout: 30_000,
+        maxServerPingDelay: 60_000,
+      }
+    );
 
-    const sub =
-      this.client.getSubscription(channel) ??
-      this.client.newSubscription(channel);
+    await new Promise<void>((resolve, reject) => {
+      const onConnect = () => {
+        tempClient.off('connected', onConnect);
+        resolve();
+      };
 
-    sub.on('publication', (ctx: PublicationContext) => {
-      handler(ctx.data, ctx);
+      const onError = (err: unknown) => {
+        tempClient.off('error', onError);
+        reject(err);
+      };
+
+      tempClient.on('connected', onConnect);
+      tempClient.on('error', onError);
+      tempClient.connect();
     });
 
-    if (sub.state !== SubscriptionState.Subscribed) {
-      sub.subscribe();
+    const result = await tempClient.publish(channel, data);
+
+    tempClient.disconnect();
+
+    return result;
+  }
+
+  private extractSubId(channel: string): string | null {
+    const idx = channel.lastIndexOf('#');
+
+    if (idx === -1) {
+      return null;
     }
 
-    return sub;
+    return channel.slice(idx + 1);
   }
 
   async publish(channel: string, data: unknown): Promise<PublishResult> {
@@ -55,13 +94,91 @@ export class CentrifugoService {
     return this.client.publish(channel, data);
   }
 
+  async publishSub(channel: string, data: unknown): Promise<PublishResult> {
+    const subId = this.extractSubId(channel);
+
+    if (!subId) {
+      throw new Error('Invalid channel format');
+    }
+
+    console.log(`Publishing to channel: ${channel} with subId: ${subId}`);
+
+    const token = this.generateSubToken(subId);
+
+    return this.publishWithToken(token, channel, data);
+  }
+
+  async onMessage(
+    channel: string,
+    handler: (data: unknown, ctx: PublicationContext) => void
+  ): Promise<Subscription> {
+    await this.waitForConnected();
+
+    const subscription =
+      this.client.getSubscription(channel) ??
+      this.client.newSubscription(channel);
+
+    subscription.on('publication', (ctx) => {
+      handler(ctx.data, ctx);
+    });
+
+    if (subscription.state !== SubscriptionState.Subscribed) {
+      subscription.subscribe();
+    }
+
+    return subscription;
+  }
+
+  async onMessageSub(
+    channel: string,
+    handler: (data: unknown, ctx: PublicationContext) => void
+  ): Promise<void> {
+    const subId = this.extractSubId(channel);
+
+    if (!subId) {
+      throw new Error('Invalid channel format');
+    }
+
+    const token = this.generateSubToken(subId);
+
+    const tempClient = new Centrifuge(
+      `${centrifugoEnvironment.centrifugoWsUrl}/connection/websocket`,
+      {
+        websocket: WebSocket,
+        token,
+        timeout: 30_000,
+        maxServerPingDelay: 60_000,
+      }
+    );
+
+    tempClient.on('publication', (ctx) => {
+      handler(ctx.data, ctx);
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      const onConnect = () => {
+        tempClient.off('connected', onConnect);
+        resolve();
+      };
+
+      const onError = (err: unknown) => {
+        tempClient.off('error', onError);
+        reject(err);
+      };
+
+      tempClient.on('connected', onConnect);
+      tempClient.on('error', onError);
+      tempClient.connect();
+    });
+  }
+
   async unsubscribe(channel: string): Promise<void> {
     await this.waitForConnected();
 
-    const sub = this.client.getSubscription(channel);
+    const subscription = this.client.getSubscription(channel);
 
-    if (sub && sub.state !== SubscriptionState.Unsubscribed) {
-      sub.unsubscribe();
+    if (subscription && subscription.state !== SubscriptionState.Unsubscribed) {
+      subscription.unsubscribe();
     }
   }
 }
