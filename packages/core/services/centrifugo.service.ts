@@ -101,8 +101,6 @@ export class CentrifugoService {
       throw new Error('Invalid channel format');
     }
 
-    console.log(`Publishing to channel: ${channel} with subId: ${subId}`);
-
     const token = this.generateSubToken(subId);
 
     return this.publishWithToken(token, channel, data);

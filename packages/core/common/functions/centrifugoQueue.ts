@@ -1,4 +1,4 @@
-export function chatCentrifugoQueue(accountId: string): string {
+export function chatAccountCentrifugoQueue(accountId: string): string {
   return `chat:account#${accountId}`;
 }
 

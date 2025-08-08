@@ -11,6 +11,8 @@ import { ListChatsResponse } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
+import { onMessage, publish, unsubscribe } from '@/@webcore/centrifugo';
+import { chatAccountCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
 definePage({
   meta: {
@@ -57,6 +59,8 @@ const startConversation = () => {
 const sendMessage = async () => {
   if (!msg.value) return;
 
+  console.log('sendMessage', msg.value);
+
   msg.value = '';
 
   nextTick(() => {
@@ -87,6 +91,23 @@ const chatContentContainerBg = computed(() => {
   if (themes) color = themes?.[name.value].colors?.background as string;
 
   return color;
+});
+
+onMounted(async () => {
+  if (chatStore.user?.account_id) {
+    await onMessage(
+      chatAccountCentrifugoQueue(chatStore.user.account_id),
+      (data: any) => {
+        console.log('chatAccountCentrifugoQueue data', data);
+      }
+    );
+  }
+});
+
+onUnmounted(async () => {
+  if (chatStore.user?.account_id) {
+    await unsubscribe(chatAccountCentrifugoQueue(chatStore.user.account_id));
+  }
 });
 </script>
 
