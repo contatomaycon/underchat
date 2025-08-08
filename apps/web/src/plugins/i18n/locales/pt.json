@@ -184,5 +184,8 @@
     "notification": "Notificação",
     "max_length_200": "O comprimento máximo é de 200 caracteres",
     "chat_config_update_error": "Erro ao atualizar as configurações do chat",
-    "chat": "Chat"
+    "chat": "Chat",
+    "write_your_message": "Escreva sua mensagem",
+    "start_conversation": "Iniciar conversa",
+    "send": "Enviar"
 }

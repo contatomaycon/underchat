@@ -214,7 +214,7 @@ const chatContentContainerBg = computed(() => {
             variant="solo"
             density="default"
             class="chat-message-input"
-            placeholder="Type your message..."
+            :placeholder="$t('write_your_message')"
             autofocus
           >
             <template #append-inner>
@@ -227,7 +227,7 @@ const chatContentContainerBg = computed(() => {
                 </IconBtn>
                 <div class="d-none d-md-block">
                   <VBtn append-icon="tabler-send" @click="sendMessage">
-                    Send
+                    {{ $t('send') }}
                   </VBtn>
                 </div>
                 <IconBtn class="d-block d-md-none" @click="sendMessage">
@@ -247,7 +247,6 @@ const chatContentContainerBg = computed(() => {
         </VForm>
       </div>
 
-      <!-- 👉 Start conversation -->
       <div v-else class="d-flex h-100 align-center justify-center flex-column">
         <VAvatar size="98" variant="tonal" color="primary" class="mb-4">
           <VIcon size="50" class="rounded-0" icon="tabler-message-2" />
@@ -257,7 +256,7 @@ const chatContentContainerBg = computed(() => {
           rounded="pill"
           @click="startConversation"
         >
-          Start Conversation
+          {{ $t('start_conversation') }}
         </VBtn>
 
         <p
