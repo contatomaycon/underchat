@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
-import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
+import { serverSshCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { formatDateTimeSeconds } from '@core/common/functions/formatDateTimeSeconds';
 import { IServerSshCentrifugo } from '@core/common/interfaces/IServerSshCentrifugo';
 
@@ -49,29 +49,26 @@ watch(isVisible, (visible) => {
 });
 
 onMounted(async () => {
-  await onMessage(
-    ECentrifugoChannel.server_ssh,
-    (data: IServerSshCentrifugo) => {
-      if (data.server_id !== serverId.value) return;
+  await onMessage(serverSshCentrifugoQueue(), (data: IServerSshCentrifugo) => {
+    if (data.server_id !== serverId.value) return;
 
-      isLoading.value = false;
-      items.value.push({
-        command: data.command,
-        output: data.output,
-        date: formatDateTimeSeconds(data.date),
-      });
+    isLoading.value = false;
+    items.value.push({
+      command: data.command,
+      output: data.output,
+      date: formatDateTimeSeconds(data.date),
+    });
 
-      if (items.value.length > 200) {
-        items.value.splice(0, items.value.length - 200);
-      }
-
-      scrollToBottom();
+    if (items.value.length > 200) {
+      items.value.splice(0, items.value.length - 200);
     }
-  );
+
+    scrollToBottom();
+  });
 });
 
 onUnmounted(() => {
-  unsubscribe(ECentrifugoChannel.server_ssh);
+  unsubscribe(serverSshCentrifugoQueue());
 });
 </script>
 

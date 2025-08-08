@@ -4,10 +4,10 @@ import { IDistroInfo } from '@core/common/interfaces/IDistroInfo';
 import { EAllowedDistroVersion } from '@core/common/enums/EAllowedDistroVersion';
 import { installUbuntu2504 } from '@core/common/functions/installUbuntu2504';
 import { CentrifugoService } from './centrifugo.service';
-import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
 import { IServerSshCentrifugo } from '@core/common/interfaces/IServerSshCentrifugo';
 import { IViewServerWebById } from '@core/common/interfaces/IViewServerWebById';
 import { EWorkerImage } from '@core/common/enums/EWorkerImage';
+import { serverSshCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
 @injectable()
 export class SshService {
@@ -164,7 +164,7 @@ export class SshService {
 
             if (sendCentrifugo) {
               this.centrifugoService.publish(
-                ECentrifugoChannel.server_ssh,
+                serverSshCentrifugoQueue(),
                 serverSshCentrifugo
               );
             }

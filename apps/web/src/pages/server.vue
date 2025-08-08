@@ -9,9 +9,9 @@ import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
-import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
 import { IStatusServerCentrifugo } from '@core/common/interfaces/IStatusServerCentrifugo';
 import { EServerStatus } from '@core/common/enums/EServerStatus';
+import { statusServerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
 definePage({
   meta: {
@@ -199,7 +199,7 @@ watch(
 
 onMounted(async () => {
   await onMessage(
-    ECentrifugoChannel.status_server,
+    statusServerCentrifugoQueue(),
     (data: IStatusServerCentrifugo) => {
       serverStore.updateStatusServer(
         data.server_id,
@@ -211,10 +211,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(async () => {
-  await Promise.all([
-    unsubscribe(ECentrifugoChannel.server_ssh),
-    unsubscribe(ECentrifugoChannel.status_server),
-  ]);
+  await Promise.all([unsubscribe(statusServerCentrifugoQueue())]);
 });
 </script>
 

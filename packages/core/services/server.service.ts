@@ -22,7 +22,6 @@ import { ServerListerRepository } from '@core/repositories/server/ServerLister.r
 import { ListServerResponse } from '@core/schema/server/listServer/response.schema';
 import { ListServerRequest } from '@core/schema/server/listServer/request.schema';
 import { CentrifugoService } from './centrifugo.service';
-import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
 import { IStatusServerCentrifugo } from '@core/common/interfaces/IStatusServerCentrifugo';
 import { serverInstallMappings } from '@core/mappings/serverInstall.mappings';
 import { ElasticDatabaseService } from './elasticDatabase.service';
@@ -38,6 +37,7 @@ import { ServerWebViewerRepository } from '@core/repositories/server/ServerWebVi
 import { ServerSshListerRepository } from '@core/repositories/server/ServerSshLister.repository';
 import { IListerServerSsh } from '@core/common/interfaces/IListerServerSsh';
 import { currentTime } from '@core/common/functions/currentTime';
+import { statusServerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
 @injectable()
 export class ServerService {
@@ -124,7 +124,7 @@ export class ServerService {
     };
 
     this.centrifugoService.publish(
-      ECentrifugoChannel.status_server,
+      statusServerCentrifugoQueue(),
       statusServerCentrifugo
     );
 
