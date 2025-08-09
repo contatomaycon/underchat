@@ -155,5 +155,10 @@
     "delete_sector": "Excluir Setor?",
     "delete_sector_confirmation": "Você tem certeza que deseja excluir este setor?",   
     "edit_sector": "Editar Setor",
-    "color": "Cor"
+    "color": "Cor",
+    "sector_role_account_list_error": "Ocorreu um erro ao listar os cargos e contas do setor. Por favor, tente novamente.",
+    "sector_role_list_error": "Ocorreu um erro ao listar os cargos do setor. Por favor, tente novamente.",
+    "sector_role_add_error": "Ocorreu um erro ao adicionar o cargo do setor. Por favor, tente novamente.",
+    "sector_role_add_success": "Cargo do setor adicionado com sucesso!",
+    "select_role": "Selecione o cargo"
 }

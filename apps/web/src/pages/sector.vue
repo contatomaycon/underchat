@@ -11,6 +11,7 @@ import { ESectorPermissions } from '@core/common/enums/EPermissions/sector';
 import { useSectorsStore } from '@/@webcore/stores/sector';
 import { ListSectorResponse } from '@core/schema/sector/listSector/response.schema';
 import { EColor } from '@core/common/enums/EColor';
+import { ESectorStatus } from '@core/common/enums/ESectorStatus';
 
 definePage({
   meta: {
@@ -51,12 +52,20 @@ const itemsPerPage = ref([
   { value: -1, title: 'All' },
 ]);
 
+const itemsStatus = ref([
+  { id: '', text: t('all') },
+  { id: ESectorStatus.active, text: t('active') },
+  { id: ESectorStatus.inactive, text: t('inactive') },
+]);
+
 const isDialogDeleterShow = ref(false);
 const sectorToDelete = ref<string | null>(null);
 
 const isDialogEditSectorShow = ref(false);
+const isDialogAddSectorRoleShow = ref(false);
 const isAddSectorVisible = ref(false);
 const sectorToEdit = ref<string | null>(null);
+const sectorToAddRole = ref<string | null>(null);
 
 const isHexColor = (s: string) => /^#([0-9A-F]{6}|[0-9A-F]{3})$/i.test(s);
 
@@ -79,8 +88,7 @@ const options = ref({
   page: 1,
   itemsPerPage: 10,
   sortBy: [] as SortRequest[],
-  status: null as string | null,
-  type: null as string | null,
+  sector_status: null as string | null,
   search: null as string | null,
 });
 
@@ -93,6 +101,7 @@ const query = computed(() => ({
   page: options.value.page,
   per_page: options.value.itemsPerPage,
   sort_by: options.value.sortBy,
+  sector_status: options.value.sector_status,
   search: debouncedSearch.value,
 }));
 
@@ -127,6 +136,12 @@ const openEditDialog = (id: string) => {
   sectorToEdit.value = id;
 
   isDialogEditSectorShow.value = true;
+};
+
+const openAddRoleDialog = (id: string) => {
+  sectorToAddRole.value = id;
+
+  isDialogAddSectorRoleShow.value = true;
 };
 
 watch(
@@ -164,6 +179,16 @@ watch(
             </VBtn>
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
+            <div class="status-filter">
+              <VLabel>{{ $t('status') }}:</VLabel>
+              <AppAutocomplete
+                item-title="text"
+                item-value="id"
+                :items="itemsStatus"
+                v-model="options.sector_status"
+                :placeholder="$t('select_state')"
+              />
+            </div>
             <div class="invoice-list-filter">
               <VLabel>{{ $t('search') }}:</VLabel>
               <AppTextField
@@ -225,6 +250,18 @@ watch(
         <template #item.actions="{ item }">
           <div class="d-flex gap-1">
             <IconBtn
+              ><VTooltip
+                location="top"
+                transition="scale-transition"
+                activator="parent"
+              >
+                <span>{{ $t('add_role') }}</span> </VTooltip
+              ><VIcon
+                icon="tabler-square-rounded-plus"
+                @click="openAddRoleDialog(item.sector_id)"
+            /></IconBtn>
+
+            <IconBtn
               v-if="
                 $canPermission(permissionsEdit) &&
                 (item.account?.id || isAdministrator)
@@ -277,6 +314,12 @@ watch(
         @confirm="handleDelete"
       />
 
+      <AppAddSectorRole
+        v-if="isDialogAddSectorRoleShow"
+        v-model="isDialogAddSectorRoleShow"
+        :sector-id="sectorToAddRole"
+      />
+
       <AppEditSector
         v-if="isDialogEditSectorShow"
         v-model="isDialogEditSectorShow"
@@ -299,10 +342,6 @@ watch(
 
 <style lang="scss">
 .status-filter {
-  inline-size: 12rem;
-}
-
-.type-filter {
   inline-size: 12rem;
 }
 

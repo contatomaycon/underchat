@@ -51,15 +51,16 @@ export class SectorListerRepository {
       const conditions: (SQLWrapper | undefined)[] = [
         query.name ? ilike(sector.name, `%${query.name}%`) : undefined,
         query.account ? ilike(account.name, `%${query.account}%`) : undefined,
-        query.sector_status
-          ? ilike(sectorStatus.name, `%${query.sector_status}%`)
-          : undefined,
         query.color ? ilike(sector.color, `%${query.color}%`) : undefined,
       ];
 
       const combined = or(...conditions);
 
       if (combined) filters.push(combined);
+    }
+
+    if (query.sector_status) {
+      filters.push(eq(sectorStatus.sector_status_id, query.sector_status));
     }
 
     return filters;

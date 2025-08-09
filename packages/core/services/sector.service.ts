@@ -12,6 +12,12 @@ import { SectorViewerRepository } from '@core/repositories/sector/SectorViewer.r
 import { SectorDeleterRepository } from '@core/repositories/sector/SectorDeleter.repository';
 import { EditSectorParamsBody } from '@core/schema/sector/editSector/request.schema';
 import { SectorUpdaterRepository } from '@core/repositories/sector/SectorUpdater.repository';
+import { SectorRoleViewerExistsRepository } from '@core/repositories/sector/SectorRoleViewerExists.repository';
+import { SectorRoleListerRepository } from '@core/repositories/sector/SectorRoleLister.repository';
+import { SectorRoleTransactionCreatorRepository } from '@core/repositories/sector/SectorRoleCreatorTransaction.repository';
+import { CreateSectorRoleRequest } from '@core/schema/sector/createSectorRole/request.schema';
+import { TFunction } from 'i18next';
+import { SectorByIdExistsRepository } from '@core/repositories/sector/SectorByIdExists.repository';
 
 @injectable()
 export class SectorService {
@@ -22,7 +28,11 @@ export class SectorService {
     private readonly sectorListerRepository: SectorListerRepository,
     private readonly sectorViewerRepository: SectorViewerRepository,
     private readonly sectorDeleterRepository: SectorDeleterRepository,
-    private readonly sectorUpdaterRepository: SectorUpdaterRepository
+    private readonly sectorUpdaterRepository: SectorUpdaterRepository,
+    private readonly sectorRoleViewerExistsRepository: SectorRoleViewerExistsRepository,
+    private readonly sectorRoleListerRepository: SectorRoleListerRepository,
+    private readonly sectorRoleTransactionCreatorRepository: SectorRoleTransactionCreatorRepository,
+    private readonly sectorByIdExistsRepository: SectorByIdExistsRepository
   ) {}
 
   existsSectorById = async (
@@ -107,6 +117,42 @@ export class SectorService {
     return this.sectorUpdaterRepository.updateSectorById(
       sectorId,
       input,
+      accountId
+    );
+  };
+
+  existsSectorRoleById = async (sectorId: string): Promise<boolean> => {
+    return this.sectorRoleViewerExistsRepository.existsSectorRoleById(sectorId);
+  };
+
+  listSectorRoleAccountSectorById = async (
+    accountId: string,
+    sectorId: string
+  ) => {
+    return this.sectorRoleListerRepository.listSectorRoleAccountSectorById(
+      accountId,
+      sectorId
+    );
+  };
+
+  createSectorRole = async (
+    t: TFunction<'translation', undefined>,
+    sectorId: string,
+    input: CreateSectorRoleRequest
+  ): Promise<boolean> => {
+    return this.sectorRoleTransactionCreatorRepository.createSectorRole(
+      t,
+      sectorId,
+      input
+    );
+  };
+
+  sectorByIdExists = async (
+    sectorId: string,
+    accountId: string
+  ): Promise<boolean> => {
+    return this.sectorByIdExistsRepository.sectorByIdExists(
+      sectorId,
       accountId
     );
   };

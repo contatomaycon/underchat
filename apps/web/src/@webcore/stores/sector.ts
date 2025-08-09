@@ -19,6 +19,9 @@ import {
   EditSectorParamsRequest,
 } from '@core/schema/sector/editSector/request.schema';
 import { ViewSectorResponse } from '@core/schema/sector/viewSector/response.schema';
+import { ListRoleAccountResponse } from '@core/schema/sector/listSectorRoleAccount/response.schema';
+import { ListSectorRoleAccountSectorResponse } from '@core/schema/sector/listSectorRoleAccountSector/response.schema';
+import { CreateSectorRoleRequest } from '@core/schema/sector/createSectorRole/request.schema';
 
 export const useSectorsStore = defineStore('sectors', {
   state: () => ({
@@ -59,7 +62,7 @@ export const useSectorsStore = defineStore('sectors', {
               per_page: input.per_page,
               sort_by: input.sort_by,
               name: input.search,
-              sector_status: input.search,
+              sector_status: input.sector_status,
               color: input.search,
               account: input.search,
             }
@@ -103,6 +106,77 @@ export const useSectorsStore = defineStore('sectors', {
       }
     },
 
+    async listSectorsRoleAccount(): Promise<ListRoleAccountResponse | null> {
+      try {
+        this.loading = true;
+
+        const response =
+          await axios.get<IApiResponse<ListRoleAccountResponse>>(
+            `/sector-role/account`
+          );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ??
+            this.i18n.global.t('sector_role_account_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('sector_role_account_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listSectorsRoleSectorId(
+      sectorId: string
+    ): Promise<ListSectorRoleAccountSectorResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListSectorRoleAccountSectorResponse>
+        >(`/sector-role/account/${sectorId}`);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('sector_role_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
     async addSectors(payload: CreateSectorRequest): Promise<boolean> {
       try {
         this.loading = true;
@@ -133,6 +207,51 @@ export const useSectorsStore = defineStore('sectors', {
         return true;
       } catch (error) {
         let errorMessage = this.i18n.global.t('sector_add_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async addSectorRole(
+      sectorId: string,
+      payload: CreateSectorRoleRequest
+    ): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<boolean>>(
+          `/sector-role/${sectorId}`,
+          payload
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('sector_role_add_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('sector_role_add_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('sector_role_add_error');
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }

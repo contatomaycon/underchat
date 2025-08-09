@@ -13,6 +13,9 @@ import { deleteSectorSchema } from '@core/schema/sector/deleteSector';
 import { listSectorSchema } from '@core/schema/sector/listSector';
 import { viewSectorSchema } from '@core/schema/sector/viewSector';
 import { editSectorSchema } from '@core/schema/sector/editSector';
+import { listSectorRoleAccountSchema } from '@core/schema/sector/listSectorRoleAccount';
+import { listSectorRoleAccountSectorSchema } from '@core/schema/sector/listSectorRoleAccountSector';
+import { createSectorRoleSchema } from '@core/schema/sector/createSectorRole';
 
 export default async function sectorRoutes(server: FastifyInstance) {
   const sectorController = container.resolve(SectorController);
@@ -56,6 +59,33 @@ export default async function sectorRoutes(server: FastifyInstance) {
   server.post('/sector', {
     schema: createSectorSchema,
     handler: sectorController.createSector,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, sectorCreatePermissions),
+    ],
+  });
+
+  server.get('/sector-role/account', {
+    schema: listSectorRoleAccountSchema,
+    handler: sectorController.listSectorRoleAccount,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, sectorListPermissions),
+    ],
+  });
+
+  server.get('/sector-role/account/:sector_id', {
+    schema: listSectorRoleAccountSectorSchema,
+    handler: sectorController.listSectorRoleAccountSector,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, sectorListPermissions),
+    ],
+  });
+
+  server.post('/sector-role/:sector_id', {
+    schema: createSectorRoleSchema,
+    handler: sectorController.createSectorRole,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, sectorCreatePermissions),

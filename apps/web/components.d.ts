@@ -17,6 +17,7 @@ declare module 'vue' {
     AppAddChannel: typeof import('./src/components/channel/AppAddChannel.vue')['default']
     AppAddRole: typeof import('./src/components/role/AppAddRole.vue')['default']
     AppAddSector: typeof import('./src/components/sector/AppAddSector.vue')['default']
+    AppAddSectorRole: typeof import('./src/components/sector/AppAddSectorRole.vue')['default']
     AppAddServer: typeof import('./src/components/server/AppAddServer.vue')['default']
     AppAutocomplete: typeof import('./src/@webcore/components/app-form-elements/AppAutocomplete.vue')['default']
     AppBarSearch: typeof import('./src/@webcore/components/AppBarSearch.vue')['default']

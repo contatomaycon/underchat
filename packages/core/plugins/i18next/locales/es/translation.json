@@ -79,5 +79,14 @@
   "sector_deleted_successfully": "¡Sector eliminado con éxito!",
   "sector_deleter_error": "Error al eliminar el sector",
   "sector_update_successfully": "¡Sector actualizado con éxito!",
-  "sector_update_error": "Error al actualizar el sector"
+  "sector_update_error": "Error al actualizar el sector",
+  "permission_role_not_found": "¡Rol de permiso no encontrado!",
+  "sector_role_not_found": "¡Rol de sector no encontrado!",
+  "sector_role_creator_success": "¡Rol de sector creado con éxito!",
+  "sector_role_creator_error": "Error al crear el rol de sector!",
+  "sector_role_deleted_failed": "Error al eliminar el rol de sector",
+  "sector_role_account_successfully": "¡Cuenta de rol de sector obtenida con éxito!",
+  "sector_role_account_not_found": "¡No se encontraron cuentas de rol de sector!",
+  "sector_role_successfully": "¡Cuentas de rol de sector obtenidas con éxito!",
+  "permission_role_count_sector_incompatible": "Contador de roles de sector incompatible"
 }

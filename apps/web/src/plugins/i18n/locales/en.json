@@ -152,5 +152,10 @@
     "delete_sector": "Delete Sector?",
     "delete_sector_confirmation": "Are you sure you want to delete this sector?",
     "edit_sector": "Edit Sector",
-    "color": "Color"
+    "color": "Color",
+    "sector_role_account_list_error": "An error occurred while listing sector roles and accounts. Please try again.",
+    "sector_role_list_error": "An error occurred while listing sector roles. Please try again.",
+    "sector_role_add_error": "An error occurred while adding the sector role. Please try again.",
+    "sector_role_add_success": "Sector role added successfully!",
+    "select_role": "Select role"
 }
