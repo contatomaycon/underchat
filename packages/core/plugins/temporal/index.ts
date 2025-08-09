@@ -9,42 +9,36 @@ import { Client, Connection } from '@temporalio/client';
 import { NativeConnection } from '@temporalio/worker';
 
 const temporalPlugin = async (fastify: FastifyInstance) => {
-  try {
-    const [connection, nativeConnection, client] = await Promise.all([
-      connectionTemporal(),
-      nativeConnectionTemporal(),
-      clientTemporal(),
-    ]);
+  const [connection, nativeConnection, client] = await Promise.all([
+    connectionTemporal(),
+    nativeConnectionTemporal(),
+    clientTemporal(),
+  ]);
 
-    fastify.decorate<ITemporal>('temporal', {
-      connection,
-      nativeConnection,
-      client,
-    });
+  fastify.decorate<ITemporal>('temporal', {
+    connection,
+    nativeConnection,
+    client,
+  });
 
-    container.register<Connection>('TemporalConnection', {
-      useValue: connection,
-    });
+  container.register<Connection>('TemporalConnection', {
+    useValue: connection,
+  });
 
-    container.register<NativeConnection>('TemporalNativeConnection', {
-      useValue: nativeConnection,
-    });
+  container.register<NativeConnection>('TemporalNativeConnection', {
+    useValue: nativeConnection,
+  });
 
-    container.register<Client>('TemporalClient', {
-      useValue: client,
-    });
+  container.register<Client>('TemporalClient', {
+    useValue: client,
+  });
 
-    fastify.addHook('onClose', async () => {
-      await connection.close();
-      await nativeConnection.close();
+  fastify.addHook('onClose', async () => {
+    await connection.close();
+    await nativeConnection.close();
 
-      fastify.log.info('Connection to Temporal closed successfully.');
-    });
-  } catch (err) {
-    fastify.log.error('Error connecting to Temporal:', err);
-
-    throw err;
-  }
+    fastify.log.info('Connection to Temporal closed successfully.');
+  });
 };
 
 export default fp(temporalPlugin, { name: 'temporal-plugin' });
