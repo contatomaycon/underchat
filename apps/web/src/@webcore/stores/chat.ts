@@ -13,6 +13,7 @@ import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
 import { ListMessageResponse } from '@core/schema/chat/listMessageChats/response.schema';
+import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
 
 export const useChatStore = defineStore('chat', {
   state: () => ({
@@ -204,6 +205,34 @@ export const useChatStore = defineStore('chat', {
         this.listMessages = [];
 
         return;
+      }
+    },
+
+    async createMessage(input: CreateMessageChatsBody): Promise<void> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<boolean>>(
+          `/chat/${this.activeChat?.chat_id}`,
+          input
+        );
+
+        this.loading = false;
+
+        const data = response?.data as IApiResponse<boolean>;
+
+        if (!data?.status) {
+          this.showSnackbar(data.message, EColor.error);
+
+          return;
+        }
+      } catch {
+        this.loading = false;
+
+        this.showSnackbar(
+          this.i18n.global.t('chat_message_create_error'),
+          EColor.error
+        );
       }
     },
 

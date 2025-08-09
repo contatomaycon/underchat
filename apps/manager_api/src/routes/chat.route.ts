@@ -3,6 +3,7 @@ import { container } from 'tsyringe';
 import { listChatsSchema } from '@core/schema/chat/listChats';
 import ChatController from '@/controllers/chat';
 import {
+  createChatPermissions,
   listChatPermissions,
   listChatUserPermissions,
   updateChatUserPermissions,
@@ -10,6 +11,7 @@ import {
 import { listChatsUserSchema } from '@core/schema/chat/listChatsUser';
 import { updateChatsUserSchema } from '@core/schema/chat/updateChatsUser';
 import { listMessageChatsSchema } from '@core/schema/chat/listMessageChats';
+import { createMessageChatsSchema } from '@core/schema/chat/createMessageChats';
 
 export default async function chatRoutes(server: FastifyInstance) {
   const chatController = container.resolve(ChatController);
@@ -29,6 +31,15 @@ export default async function chatRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, listChatPermissions),
+    ],
+  });
+
+  server.post('/chat/:chat_id', {
+    schema: createMessageChatsSchema,
+    handler: chatController.createMessageChats,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, createChatPermissions),
     ],
   });
 

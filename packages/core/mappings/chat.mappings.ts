@@ -61,6 +61,9 @@ export const chatMappings = () => {
             name: {
               type: 'text',
             },
+            photo: {
+              type: 'text',
+            },
           },
         },
         contact: {

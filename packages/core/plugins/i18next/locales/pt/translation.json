@@ -81,5 +81,7 @@
   "chat_list_user_success": "Lista de chats do usuário obtida com sucesso!",
   "chat_list_user_not_found": "Lista de chats do usuário não encontrada!",
   "chat_update_user_success": "Chat do usuário atualizado com sucesso!",
-  "chat_update_user_not_found": "Chat do usuário não encontrado!"
+  "chat_update_user_not_found": "Chat do usuário não encontrado!",
+  "chat_create_success": "Chat criado com sucesso!",
+  "chat_create_not_found": "Chat não encontrado para criação!"
 }

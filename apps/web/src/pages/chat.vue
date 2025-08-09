@@ -13,6 +13,7 @@ import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
 import { onMessage, publish, unsubscribe } from '@/@webcore/centrifugo';
 import { chatAccountCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
 
 definePage({
   meta: {
@@ -60,6 +61,12 @@ const sendMessage = async () => {
   if (!msg.value) return;
 
   console.log('sendMessage', msg.value);
+
+  const inputCreateMessage: CreateMessageChatsBody = {
+    message: msg.value as CreateMessageChatsBody['message'],
+  };
+
+  await chatStore.createMessage(inputCreateMessage);
 
   msg.value = '';
 

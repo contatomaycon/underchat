@@ -184,5 +184,6 @@
     "chat": "Chat",
     "write_your_message": "Write your message",
     "start_conversation": "Start conversation",
-    "send": "Send"
+    "send": "Send",
+    "chat_message_create_error": "Error creating chat message. Please try again."
 }
