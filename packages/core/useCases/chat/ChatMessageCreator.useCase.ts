@@ -24,20 +24,27 @@ export class ChatMessageCreatorUseCase {
     accountId: string,
     params: CreateMessageChatsParams,
     body: CreateMessageChatsBody,
-    userId?: string | null,
-    typeUser: ETypeUserChat = ETypeUserChat.operator
+    userId: string
   ): Promise<boolean> {
-    const account = await this.accountService.viewAccountName(accountId);
+    const [account, user] = await Promise.all([
+      this.accountService.viewAccountName(accountId),
+      this.userService.viewUserNamePhoto(userId),
+    ]);
 
     if (!account) {
       throw new Error(t('account_not_found'));
     }
 
+    if (!user) {
+      throw new Error(t('user_not_found'));
+    }
+
     const inputChat: IChatMessage = {
       message_id: uuidv4(),
       chat_id: params.chat_id,
-      type_user: typeUser,
+      type_user: ETypeUserChat.operator,
       account,
+      user,
       message: body.message,
       summary: {
         is_sent: false,
@@ -46,14 +53,6 @@ export class ChatMessageCreatorUseCase {
       },
       date: new Date().toISOString(),
     };
-
-    if (userId && typeUser === ETypeUserChat.operator) {
-      const user = await this.userService.viewUserNamePhoto(userId);
-
-      if (user) {
-        inputChat.user = user;
-      }
-    }
 
     return this.chatService.saveMessageChat(inputChat);
   }
