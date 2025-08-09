@@ -54,6 +54,11 @@ const saveSectorRole = async () => {
   }
 };
 
+function toArray<T>(value: T | T[] | null | undefined): T[] {
+  if (Array.isArray(value)) return value;
+  return value ? [value] : [];
+}
+
 onMounted(async () => {
   if (!sectorId.value) return;
 
@@ -62,15 +67,10 @@ onMounted(async () => {
     sectorStore.listSectorsRoleSectorId(sectorId.value),
   ]);
 
-  const all = Array.isArray(allRoles) ? allRoles : allRoles ? [allRoles] : [];
-  const assigned = Array.isArray(assignedRoles)
-    ? assignedRoles
-    : assignedRoles
-      ? [assignedRoles]
-      : [];
+  const all = toArray(allRoles);
+  const assigned = toArray(assignedRoles);
 
   sectorRoleOptions.value = uniqById([...all, ...assigned]);
-
   nameId.value = assigned.map((r) => r.id);
 });
 </script>
