@@ -60,8 +60,6 @@ const startConversation = () => {
 const sendMessage = async () => {
   if (!msg.value) return;
 
-  console.log('sendMessage', msg.value);
-
   const inputCreateMessage: CreateMessageChatsBody = {
     message: msg.value as CreateMessageChatsBody['message'],
   };
