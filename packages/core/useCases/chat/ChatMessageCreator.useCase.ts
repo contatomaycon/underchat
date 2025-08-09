@@ -11,6 +11,8 @@ import { TFunction } from 'i18next';
 import { UserService } from '@core/services/user.service';
 import { ChatService } from '@core/services/chat.service';
 import Redis from 'ioredis';
+import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
+import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 
 @injectable()
 export class ChatMessageCreatorUseCase {
@@ -18,8 +20,44 @@ export class ChatMessageCreatorUseCase {
     @inject('Redis') private readonly redis: Redis,
     private readonly chatService: ChatService,
     private readonly accountService: AccountService,
-    private readonly userService: UserService
+    private readonly userService: UserService,
+    private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
+
+  private async getChat(accountId: string, chatId: string) {
+    const queryElastic = {
+      query: {
+        bool: {
+          must: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: {
+                    'account.id': accountId,
+                  },
+                },
+              },
+            },
+          ],
+          filter: [
+            {
+              term: {
+                chat_id: chatId,
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select(
+      EElasticIndex.chat,
+      queryElastic
+    );
+
+    console.log(result);
+  }
 
   async execute(
     t: TFunction<'translation', undefined>,
@@ -40,6 +78,10 @@ export class ChatMessageCreatorUseCase {
     if (!user) {
       throw new Error(t('user_not_found'));
     }
+
+    const getChat = await this.getChat(accountId, params.chat_id);
+
+    console.log(getChat);
 
     const inputChat: IChatMessage = {
       message_id: uuidv4(),

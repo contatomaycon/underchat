@@ -7,7 +7,6 @@ import { container } from 'tsyringe';
 import { createCacheKey } from '@core/common/functions/createCacheKey';
 import { getRootPath } from '@core/common/functions/getRootPath';
 import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
-import { FastifyRedis } from '@fastify/redis';
 import { generalEnvironment } from '@core/config/environments';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { IJwtMiddleware } from '@core/common/interfaces/IJwtMiddleware';
@@ -16,9 +15,10 @@ import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
 import { ITokenJwtData } from '@core/common/interfaces/ITokenJwtData';
 import { routePathWithoutPrefix } from '@core/common/functions/routePathWithoutPrefix';
 import { EPermissionRole } from '@core/common/enums/EPermissionRole';
+import Redis from 'ioredis';
 
 async function handleApiKeyCache(
-  redis: FastifyRedis,
+  redis: Redis,
   cacheKey: string,
   decoded: { user_id: string },
   routeModule: string,
@@ -72,7 +72,7 @@ async function authenticateJwt(
   permissions?: EPermissionsRoles[] | null
 ): Promise<void> {
   const { t } = request;
-  const { redis } = request.server;
+  const { Redis } = request.server;
   const routePath = routePathWithoutPrefix(request);
 
   try {
@@ -106,7 +106,7 @@ async function authenticateJwt(
     const cacheKey = createCacheKey('jwtCache', decoded.user_id, routeModule);
 
     const responseAuth = await handleApiKeyCache(
-      redis,
+      Redis,
       cacheKey,
       decoded,
       routeModule,
@@ -129,7 +129,7 @@ async function authenticateJwt(
       });
     }
 
-    await redis.set(cacheKey, JSON.stringify(responseAuth), 'EX', 1800);
+    await Redis.set(cacheKey, JSON.stringify(responseAuth), 'EX', 1800);
 
     request.tokenJwtData = generateTokenJwtAccess(
       decoded.user_id,
