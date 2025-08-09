@@ -62,15 +62,23 @@ onMounted(async () => {
     sectorStore.listSectorsRoleSectorId(sectorId.value),
   ]);
 
-  const all = Array.isArray(allRoles) ? allRoles : allRoles ? [allRoles] : [];
-  const assigned = Array.isArray(assignedRoles)
-    ? assignedRoles
-    : assignedRoles
-      ? [assignedRoles]
-      : [];
+  let all:
+    | { id: string; name: string }[]
+    | ({ id: string; name: string } & any[]) = [];
+  if (Array.isArray(allRoles)) {
+    all = allRoles;
+  } else if (allRoles) {
+    all = [allRoles];
+  }
+
+  let assigned: any[] = [];
+  if (Array.isArray(assignedRoles)) {
+    assigned = assignedRoles;
+  } else if (assignedRoles) {
+    assigned = [assignedRoles];
+  }
 
   sectorRoleOptions.value = uniqById([...all, ...assigned]);
-
   nameId.value = assigned.map((r) => r.id);
 });
 </script>
