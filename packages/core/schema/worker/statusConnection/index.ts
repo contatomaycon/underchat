@@ -21,7 +21,7 @@ export const statusConnectionWorkerSchema = {
       })
     ),
   }),
-  params: statusConnectionWorkerRequestSchema,
+  body: statusConnectionWorkerRequestSchema,
   response: {
     200: Type.Object(
       {

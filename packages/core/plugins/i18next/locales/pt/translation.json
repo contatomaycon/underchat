@@ -47,7 +47,7 @@
   "worker_creator_error": "Erro ao criar o canal!",
   "worker_removal_failed": "Falha ao remover o canal",
   "worker_creation_failed": "Falha ao criar o canal",
-  "worker_balancer_server_not_disponible": "Servidor de balanceamento de carga do canal não disponível",
+  "worker_server_not_disponible": "Servidor de canal não disponível",
   "worker_not_available": "Seu plano não tem suporte a canais, por favor, entre em contato com o administrador do sistema para mais informações.",
   "worker_not_available_additional": "Seu plano não suporta mais canais, contrate um adicional ou entre em contato com o administrador do sistema para mais informações.",
   "account_not_found": "Conta não encontrada!",
@@ -88,5 +88,12 @@
   "sector_role_account_successfully": "Conta de cargo de setor obtida com sucesso!",
   "sector_role_account_not_found": "Conta de cargo de setor não encontrada!",
   "sector_role_successfully": "Contas de cargo de setor obtidas com sucesso!",
-  "permission_role_count_sector_incompatible": "Contagem de cargos de setor incompatível!"
+  "permission_role_count_sector_incompatible": "Contagem de cargos de setor incompatível!",
+  "phone_connection_required": "Telefone é obrigatório!",
+  "worker_connection_logs_success": "Registros de conexão do canal obtidos com sucesso!",
+  "worker_connection_logs_not_found": "Registros de conexão do canal não encontrados!",
+  "worker_recreate_success": "Canal recriado com sucesso!",
+  "worker_recreate_not_found": "Canal não encontrado para recriação!",
+  "worker_recreation_failed": "Erro ao recriar o canal!",
+  "worker_balancer_not_available": "Trabalhador balancer não disponível"
 }

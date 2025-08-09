@@ -14,12 +14,5 @@
       "allow_publish_for_client": true,
       "allow_subscribe_for_client": true
     }
-  },
-  "namespaces": [
-    {
-      "name": "worker",
-      "client_publish":   true,
-      "client_subscribe": true
-    }
-  ]
+  }
 }

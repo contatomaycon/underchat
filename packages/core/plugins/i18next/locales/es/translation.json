@@ -34,7 +34,7 @@
   "worker_creator_error": "Error al crear el trabajador",
   "worker_removal_failed": "Error al eliminar el trabajador",
   "worker_creation_failed": "Error al crear el trabajador",
-  "worker_balancer_server_not_disponible": "Servidor de balanceo de carga del trabajador no disponible",
+  "worker_server_not_disponible": "Servidor de trabajadores no disponible",
   "worker_not_available": "Su plan no admite trabajadores, comuníquese con el administrador del sistema para obtener más información.",
   "worker_not_available_additional": "Su plan no admite más trabajadores, contrate un adicional o comuníquese con el administrador del sistema para obtener más información.",
   "account_not_found": "¡Cuenta no encontrada!",
@@ -88,5 +88,12 @@
   "sector_role_account_successfully": "¡Cuenta de rol de sector obtenida con éxito!",
   "sector_role_account_not_found": "¡No se encontraron cuentas de rol de sector!",
   "sector_role_successfully": "¡Cuentas de rol de sector obtenidas con éxito!",
-  "permission_role_count_sector_incompatible": "Contador de roles de sector incompatible"
+  "permission_role_count_sector_incompatible": "Contador de roles de sector incompatible",
+  "phone_connection_required": "¡Se requiere teléfono!",
+  "worker_connection_logs_success": "¡Registros de conexión del trabajador obtenidos con éxito!",
+  "worker_connection_logs_not_found": "¡Registros de conexión del trabajador no encontrados!",
+  "worker_recreate_success": "¡Trabajador recreado con éxito!",
+  "worker_recreate_not_found": "¡Trabajador no encontrado para recrear!",
+  "worker_recreation_failed": "Error al recrear el trabajador",
+  "worker_balancer_not_available": "Trabajador balancer no disponible"
 }

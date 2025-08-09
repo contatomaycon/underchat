@@ -34,7 +34,7 @@
   "worker_creator_error": "Error creating worker!",
   "worker_removal_failed": "Failed to remove worker",
   "worker_creation_failed": "Failed to create worker",
-  "worker_balancer_server_not_disponible": "Worker balancer server not disponible",
+  "worker_server_not_disponible": "Worker server not disponible",
   "worker_not_available": "Your plan does not support workers, please contact the system administrator for more information.",
   "worker_not_available_additional": "Your plan does not support additional workers, please contact the system administrator for more information.",
   "account_not_found": "Account not found!",
@@ -88,5 +88,12 @@
   "sector_role_account_successfully": "Sector role account retrieved successfully!",
   "sector_role_account_not_found": "No sector role accounts found!",
   "sector_role_successfully": "Sector role accounts retrieved successfully!",
-  "permission_role_count_sector_incompatible": "Sector role count incompatible!"
+  "permission_role_count_sector_incompatible": "Sector role count incompatible!",
+  "phone_connection_required": "Phone is required!",
+  "worker_connection_logs_success": "Worker connection logs retrieved successfully!",
+  "worker_connection_logs_not_found": "Worker connection logs not found!",
+  "worker_recreate_success": "Worker recreated successfully!",
+  "worker_recreate_not_found": "Worker not found for recreation!",
+  "worker_recreation_failed": "Failed to recreate worker",
+  "worker_balancer_not_available": "Worker balancer not available!"
 }

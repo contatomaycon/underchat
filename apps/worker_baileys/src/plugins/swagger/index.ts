@@ -39,6 +39,10 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
           name: ETagSwagger.health,
           description: 'End-points relacionados à saúde do sistema',
         },
+        {
+          name: ETagSwagger.connection,
+          description: 'End-points relacionados à conexão do sistema',
+        },
       ],
     },
   });

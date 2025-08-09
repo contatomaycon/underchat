@@ -8,6 +8,7 @@ import {
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { container } from 'tsyringe';
 import { kafkaEnvironment } from '@core/config/environments';
+import { Kafka } from 'kafkajs';
 
 interface KafkaStreamsPluginOptions {
   module: ERouteModule;
@@ -20,7 +21,7 @@ const kafkaStreamsPlugin: FastifyPluginAsync<
 
   const noptions: CommonKafkaOptions = {
     'metadata.broker.list': kafkaEnvironment.kafkaBroker,
-    'group.id': 'group-underchat-streams',
+    'group.id': `group-underchat-streams-${module}`,
     'client.id': `client-stream-${module}`,
     'compression.codec': 'snappy',
     'enable.auto.commit': false,
@@ -31,6 +32,8 @@ const kafkaStreamsPlugin: FastifyPluginAsync<
     'queued.max.messages.kbytes': 102_400,
     'batch.num.messages': 10_000,
     'retry.backoff.ms': 500,
+    'topic.metadata.refresh.interval.ms': 30000,
+    'metadata.max.age.ms': 60000,
   };
 
   const tconf: KafkaStreamsConfig['tconf'] = {
@@ -40,14 +43,14 @@ const kafkaStreamsPlugin: FastifyPluginAsync<
 
   const config: KafkaStreamsConfig = {
     kafkaHost: kafkaEnvironment.kafkaBroker,
-    clientName: `client-stream-${ERouteModule.service}`,
-    groupId: 'group-underchat-streams',
+    clientName: `client-stream-${module}`,
+    groupId: `group-underchat-streams-${module}`,
     workerPerPartition: 1,
     batchOptions: {
-      batchSize: 100,
+      batchSize: 1,
       commitEveryNBatch: 1,
       concurrency: 12,
-      commitSync: false,
+      commitSync: true,
       noBatchCommits: false,
     },
     noptions,
@@ -58,6 +61,14 @@ const kafkaStreamsPlugin: FastifyPluginAsync<
 
   container.register<KafkaStreams>('KafkaStreams', { useValue: kafkaStreams });
   fastify.decorate('KafkaStreams', kafkaStreams);
+
+  const kafka = new Kafka({
+    clientId: `client-admin-${module}`,
+    brokers: [kafkaEnvironment.kafkaBroker],
+  });
+
+  container.register<Kafka>('Kafka', { useValue: kafka });
+  fastify.decorate('kafka', kafka);
 
   fastify.addHook('onClose', async () => {
     await kafkaStreams.closeAll();

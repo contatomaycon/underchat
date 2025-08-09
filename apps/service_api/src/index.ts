@@ -13,9 +13,12 @@ import databaseElasticPlugin from '@core/plugins/dbElastic';
 import elasticLogsPlugin from '@core/plugins/elasticLogs';
 import loggerServicePlugin from '@core/plugins/logger';
 import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
+import queueKafkaPlugin from './queue';
 import consumerPlugin from './consumer';
-import centrifugoPlugin from '@/plugins/centrifugo';
+import temporalConsumerPlugin from './temporal';
+import centrifugoPlugin from '@core/plugins/centrifugo';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
+import temporalPlugin from '@core/plugins/temporal';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -28,7 +31,7 @@ server.addHook('onError', errorHook);
 
 server.decorateRequest('module', ERouteModule.service);
 
-server.register(centrifugoPlugin);
+server.register(centrifugoPlugin, { module: ERouteModule.service });
 server.register(dbConnector);
 server.register(cacheRedisConnector);
 server.register(authenticateKeyApi);
@@ -45,8 +48,11 @@ server.register(elasticLogsPlugin, {
 });
 
 server.register(loggerServicePlugin);
+server.register(queueKafkaPlugin);
 server.register(consumerPlugin);
 server.register(swaggerPlugin);
+server.register(temporalPlugin);
+server.register(temporalConsumerPlugin);
 
 const start = async () => {
   try {

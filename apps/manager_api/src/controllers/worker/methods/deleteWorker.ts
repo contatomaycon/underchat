@@ -2,22 +2,20 @@ import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { WorkerManagerDeleterUseCase } from '@core/useCases/worker/WorkerManagerDeleter.useCase';
-import { ManagerDeleteWorkerRequest } from '@core/schema/worker/managerDeleteWorker/request.schema';
+import { WorkerDeleterUseCase } from '@core/useCases/worker/WorkerDeleter.useCase';
+import { DeleteWorkerRequest } from '@core/schema/worker/deleteWorker/request.schema';
 
 export const deleteWorker = async (
   request: FastifyRequest<{
-    Params: ManagerDeleteWorkerRequest;
+    Params: DeleteWorkerRequest;
   }>,
   reply: FastifyReply
 ) => {
-  const workerManagerDeleterUseCase = container.resolve(
-    WorkerManagerDeleterUseCase
-  );
+  const workerDeleterUseCase = container.resolve(WorkerDeleterUseCase);
   const { t, tokenJwtData } = request;
 
   try {
-    const response = await workerManagerDeleterUseCase.execute(
+    const response = await workerDeleterUseCase.execute(
       t,
       tokenJwtData.account_id,
       tokenJwtData.is_administrator,

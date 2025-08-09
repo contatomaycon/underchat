@@ -5,14 +5,13 @@ FROM base AS turbo
 RUN apk update && \
     apk add --no-cache \
       bash \
-      g++ \
       git \
+      g++ \
       libc6-compat \
+      librdkafka-dev \
       make \
       musl-dev \
-      librdkafka-dev \
-      python3 \
-      docker-cli
+      python3
 
 RUN npm add -g pnpm turbo
  
@@ -45,6 +44,13 @@ RUN mkdir -p /build_locales
 COPY packages/core/plugins/i18next/locales /build_locales
 
 FROM node:22.17.0-alpine
+
+RUN apk update && \
+    apk add --no-cache \
+      lz4 \
+      lz4-libs \
+      librdkafka \
+      curl
 
 WORKDIR /app
 

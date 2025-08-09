@@ -8,4 +8,5 @@ export enum ETagSwagger {
   worker = 'Canais',
   sector = 'Setores',
   sectorRole = 'Setores e Funções',
+  connection = 'Conexão',
 }

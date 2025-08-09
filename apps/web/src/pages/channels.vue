@@ -6,16 +6,16 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
-import { unsubscribe } from '@/@webcore/centrifugo';
-import { ECentrifugoChannel } from '@core/common/enums/ECentrifugoChannel';
 import { EWorkerPermissions } from '@core/common/enums/EPermissions/worker';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
-import { getAdministrator } from '@/@webcore/localStorage/user';
+import { getAdministrator, getUser } from '@/@webcore/localStorage/user';
 import { DataTableHeader } from 'vuetify';
 import { ListWorkerResponse } from '@core/schema/worker/listWorker/response.schema';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
+import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
+import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 
 definePage({
   meta: {
@@ -41,10 +41,19 @@ const permissionsCreate = [
   EGeneralPermissions.full_access,
   EWorkerPermissions.create_worker,
 ];
+const permissionsViewLogs = [
+  EGeneralPermissions.full_access,
+  EWorkerPermissions.view_worker_logs,
+];
+const permissionsRecreate = [
+  EGeneralPermissions.full_access,
+  EWorkerPermissions.recreate_worker,
+];
 
 const { t } = useI18n();
 const channelsStore = useChannelsStore();
 const isAdministrator = getAdministrator();
+const user = getUser();
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -60,6 +69,8 @@ const itemsStatus = ref([
   { id: EWorkerStatus.disponible, text: t('disponible') },
   { id: EWorkerStatus.offline, text: t('offline') },
   { id: EWorkerStatus.online, text: t('online') },
+  { id: EWorkerStatus.new, text: t('new') },
+  { id: EWorkerStatus.error, text: t('error') },
 ]);
 
 const itemsType = ref([
@@ -70,12 +81,18 @@ const itemsType = ref([
 const isDialogDeleterShow = ref(false);
 const channelToDelete = ref<string | null>(null);
 
+const isDialogRecreatorShow = ref(false);
+const channelToRecreate = ref<string | null>(null);
+
 const isDialogEditChannelShow = ref(false);
 const isAddChannelVisible = ref(false);
 const channelToEdit = ref<string | null>(null);
 
 const channelConnectionChannel = ref<string | null>(null);
 const isDialogConnectionChannelShow = ref(false);
+
+const channelConnectionLogs = ref<string | null>(null);
+const isDialogConnectionLogsShow = ref(false);
 
 const resolveStatusVariant = (s: string | undefined | null) => {
   if (s === EWorkerStatus.disponible)
@@ -84,6 +101,15 @@ const resolveStatusVariant = (s: string | undefined | null) => {
     return { color: EColor.error, text: t('offline') };
   if (s === EWorkerStatus.online)
     return { color: EColor.success, text: t('online') };
+  if (s === EWorkerStatus.new) return { color: EColor.info, text: t('new') };
+  if (s === EWorkerStatus.deleting)
+    return { color: EColor.error, text: t('deleting') };
+  if (s === EWorkerStatus.delete)
+    return { color: EColor.info, text: t('delete') };
+  if (s === EWorkerStatus.recreating)
+    return { color: EColor.info, text: t('recreating') };
+  if (s === EWorkerStatus.error)
+    return { color: EColor.error, text: t('error') };
 
   return { color: EColor.primary, text: t('unknown') };
 };
@@ -144,20 +170,27 @@ const handleTableChange = (o: {
 
 const deleteChannel = async (id: string) => {
   channelToDelete.value = id;
-
   isDialogDeleterShow.value = true;
+};
+
+const recreateChannel = async (id: string) => {
+  channelToRecreate.value = id;
+  isDialogRecreatorShow.value = true;
 };
 
 const openEditDialog = (id: string) => {
   channelToEdit.value = id;
-
   isDialogEditChannelShow.value = true;
 };
 
 const openConnectionDialog = (id: string) => {
   channelConnectionChannel.value = id;
-
   isDialogConnectionChannelShow.value = true;
+};
+
+const openConnectionLogDialog = (id: string) => {
+  channelConnectionLogs.value = id;
+  isDialogConnectionLogsShow.value = true;
 };
 
 const handleDelete = async () => {
@@ -171,6 +204,14 @@ const handleDelete = async () => {
   channelToDelete.value = null;
 };
 
+const handleRecreate = async () => {
+  if (!channelToRecreate.value) return;
+
+  await channelsStore.recreateChannel(channelToRecreate.value);
+
+  channelToRecreate.value = null;
+};
+
 watch(
   query,
   async (q) => {
@@ -179,8 +220,20 @@ watch(
   { immediate: true, deep: true }
 );
 
-onBeforeUnmount(async () => {
-  await Promise.all([unsubscribe(ECentrifugoChannel.worker_channel)]);
+onMounted(async () => {
+  if (user?.account_id) {
+    await onMessage(`worker.${user.account_id}`, (data: IWorkerPayload) => {
+      if (data.worker_id && data.account_id) {
+        channelsStore.updateStatusChannel(data);
+      }
+    });
+  }
+});
+
+onUnmounted(async () => {
+  if (user?.account_id) {
+    await unsubscribe(`worker.${user.account_id}`);
+  }
 });
 </script>
 
@@ -309,6 +362,11 @@ onBeforeUnmount(async () => {
         <template #item.actions="{ item }">
           <div class="d-flex gap-1">
             <IconBtn
+              v-if="
+                EWorkerStatus.disponible === item.status?.id ||
+                EWorkerStatus.online === item.status?.id ||
+                EWorkerStatus.offline === item.status?.id
+              "
               ><VTooltip
                 location="top"
                 transition="scale-transition"
@@ -328,6 +386,28 @@ onBeforeUnmount(async () => {
               >
                 <span>{{ $t('edit_channel') }}</span> </VTooltip
               ><VIcon icon="tabler-edit" @click="openEditDialog(item.id)"
+            /></IconBtn>
+
+            <IconBtn v-if="$canPermission(permissionsViewLogs)"
+              ><VTooltip
+                location="top"
+                transition="scale-transition"
+                activator="parent"
+              >
+                <span>{{ $t('worker_logs_connection') }}</span> </VTooltip
+              ><VIcon
+                icon="tabler-logs"
+                @click="openConnectionLogDialog(item.id)"
+            /></IconBtn>
+
+            <IconBtn v-if="$canPermission(permissionsRecreate)"
+              ><VTooltip
+                location="top"
+                transition="scale-transition"
+                activator="parent"
+              >
+                <span>{{ $t('recreate_channel') }}</span> </VTooltip
+              ><VIcon icon="tabler-refresh" @click="recreateChannel(item.id)"
             /></IconBtn>
 
             <IconBtn v-if="$canPermission(permissionsDelete)"
@@ -363,6 +443,14 @@ onBeforeUnmount(async () => {
         @confirm="handleDelete"
       />
 
+      <VDialogHandler
+        v-if="isDialogRecreatorShow"
+        v-model="isDialogRecreatorShow"
+        :title="$t('recreate_channel')"
+        :message="$t('recreate_channel_confirmation')"
+        @confirm="handleRecreate"
+      />
+
       <AppEditChannel
         v-if="isDialogEditChannelShow"
         v-model="isDialogEditChannelShow"
@@ -375,6 +463,12 @@ onBeforeUnmount(async () => {
         v-if="isDialogConnectionChannelShow"
         v-model="isDialogConnectionChannelShow"
         :channel-id="channelConnectionChannel"
+      />
+
+      <AppLogsChannel
+        v-if="isDialogConnectionLogsShow"
+        v-model="isDialogConnectionLogsShow"
+        :channel-id="channelConnectionLogs"
       />
     </VCard>
 

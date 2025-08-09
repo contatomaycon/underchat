@@ -12,8 +12,7 @@ import {
   ListWorkerResponse,
 } from '@core/schema/worker/listWorker/response.schema';
 import { ListWorkerRequest } from '@core/schema/worker/listWorker/request.schema';
-import { ManagerCreateWorkerRequest } from '@core/schema/worker/managerCreateWorker/request.schema';
-import { ManagerCreateWorkerResponse } from '@core/schema/worker/managerCreateWorker/response.schema';
+import { CreateWorkerRequest } from '@core/schema/worker/createWorker/request.schema';
 import { EditWorkerRequest } from '@core/schema/worker/editWorker/request.schema';
 import { ViewWorkerResponse } from '@core/schema/worker/viewWorker/response.schema';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
@@ -21,6 +20,9 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { getStatusWorkerConnection } from '@core/common/functions/getStatusWorkerConnection';
 import { currentTime } from '@core/common/functions/currentTime';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { WorkerConnectionLogsQuery } from '@core/schema/worker/workerConnectionLogs/request.schema';
+import { WorkerConnectionLogsResponse } from '@core/schema/worker/workerConnectionLogs/response.schema';
+import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 
 export const useChannelsStore = defineStore('channels', {
   state: () => ({
@@ -107,13 +109,14 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
-    async addChannel(payload: ManagerCreateWorkerRequest): Promise<boolean> {
+    async addChannel(payload: CreateWorkerRequest): Promise<boolean> {
       try {
         this.loading = true;
 
-        const response = await axios.post<
-          IApiResponse<ManagerCreateWorkerResponse>
-        >(`/worker`, payload);
+        const response = await axios.post<IApiResponse<boolean>>(
+          `/worker`,
+          payload
+        );
 
         this.loading = false;
 
@@ -273,8 +276,9 @@ export const useChannelsStore = defineStore('channels', {
       try {
         this.loading = true;
 
-        const response = await axios.patch<IApiResponse<boolean>>(
-          `/worker/${input.worker_id}/status/${input.status}`
+        const response = await axios.post<IApiResponse<boolean>>(
+          '/worker/whatsapp/unofficial',
+          input
         );
 
         this.loading = false;
@@ -305,9 +309,92 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
+    async channelLogsConnection(
+      channelId: string,
+      input: WorkerConnectionLogsQuery
+    ): Promise<WorkerConnectionLogsResponse[]> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<WorkerConnectionLogsResponse[]>
+        >(`/worker/logs/connection/${channelId}`, {
+          params: input,
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('worker_logs_connection_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return [];
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('worker_logs_connection_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return [];
+      }
+    },
+
+    async recreateChannel(workerId: string): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<IApiResponse<boolean>>(
+          `/worker/${workerId}`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('worker_recreation_failed');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('worker_recreate_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('worker_recreation_failed');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
     updateInfoChannel(input: IBaileysConnectionState): void {
       const status = getStatusWorkerConnection(
         input.status,
+        input.phone ?? null,
         input.disconnected_user
       );
 
@@ -320,6 +407,25 @@ export const useChannelsStore = defineStore('channels', {
         channel.status.id = status;
         channel.number = input.phone ?? null;
         channel.connection_date = connectionDate;
+      }
+    },
+
+    updateStatusChannel(input: IWorkerPayload): void {
+      const index = this.list.findIndex(
+        (c) => c.account?.id === input.account_id && c.id === input.worker_id
+      );
+
+      if (index === -1) return;
+
+      if (input.worker_status_id === EWorkerStatus.delete) {
+        this.list.splice(index, 1);
+
+        return;
+      }
+
+      const channel = this.list[index];
+      if (channel?.status && input?.worker_status_id) {
+        channel.status.id = input.worker_status_id;
       }
     },
   },

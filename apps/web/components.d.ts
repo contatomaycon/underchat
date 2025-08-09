@@ -33,6 +33,7 @@ declare module 'vue' {
     AppEditSector: typeof import('./src/components/sector/AppEditSector.vue')['default']
     AppEditServer: typeof import('./src/components/server/AppEditServer.vue')['default']
     AppLoadingIndicator: typeof import('./src/components/AppLoadingIndicator.vue')['default']
+    AppLogsChannel: typeof import('./src/components/channel/AppLogsChannel.vue')['default']
     AppLogsServer: typeof import('./src/components/server/AppLogsServer.vue')['default']
     AppPricing: typeof import('./src/components/AppPricing.vue')['default']
     AppSearchHeader: typeof import('./src/components/AppSearchHeader.vue')['default']
