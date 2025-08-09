@@ -5,7 +5,6 @@ export const createMessageChatsParamsSchema = Type.Object({
 });
 
 export const createMessageChatsBodySchema = Type.Object({
-  worker_id: Type.String(),
   message: Type.String(),
 });
 

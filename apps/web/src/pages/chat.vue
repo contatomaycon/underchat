@@ -62,7 +62,6 @@ const sendMessage = async () => {
 
   if (chatStore.activeChat?.worker?.id) {
     const inputCreateMessage: CreateMessageChatsBody = {
-      worker_id: chatStore.activeChat.worker.id,
       message: msg.value,
     };
 

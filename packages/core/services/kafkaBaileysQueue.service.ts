@@ -30,4 +30,8 @@ export class KafkaBaileysQueueService {
   workerConnection = (workerId: string) => {
     return `worker.${workerId}.connection`;
   };
+
+  workerSendMessage = (workerId: string) => {
+    return `worker.${workerId}.send.message`;
+  };
 }

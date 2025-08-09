@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import {
   CreateMessageChatsBody,
   CreateMessageChatsParams,
@@ -10,10 +10,12 @@ import { AccountService } from '@core/services/account.service';
 import { TFunction } from 'i18next';
 import { UserService } from '@core/services/user.service';
 import { ChatService } from '@core/services/chat.service';
+import Redis from 'ioredis';
 
 @injectable()
 export class ChatMessageCreatorUseCase {
   constructor(
+    @inject('Redis') private readonly redis: Redis,
     private readonly chatService: ChatService,
     private readonly accountService: AccountService,
     private readonly userService: UserService
