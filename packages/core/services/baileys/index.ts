@@ -1,20 +1,13 @@
 import { singleton } from 'tsyringe';
-import makeWASocket, {
-  AnyMessageContent,
-  MiscMessageGenerationOptions,
-} from '@whiskeysockets/baileys';
+import makeWASocket from '@whiskeysockets/baileys';
 import { BaileysConnectionService } from './methods/connection.service';
-import { BaileysMessageService } from './methods/message.service';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
 
 @singleton()
 export class BaileysService {
-  constructor(
-    private readonly connection: BaileysConnectionService,
-    private readonly messages: BaileysMessageService
-  ) {}
+  constructor(private readonly connection: BaileysConnectionService) {}
 
   connect(input: IBaileysConnection): Promise<IBaileysConnectionState> {
     return this.connection.connect(input);
@@ -30,14 +23,6 @@ export class BaileysService {
 
   getStatus(): EBaileysConnectionStatus {
     return this.connection.getStatus();
-  }
-
-  sendMessage(
-    jid: string,
-    content: AnyMessageContent,
-    options?: MiscMessageGenerationOptions
-  ) {
-    return this.messages.send(jid, content, options);
   }
 
   get socket(): ReturnType<typeof makeWASocket> | undefined {

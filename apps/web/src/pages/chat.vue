@@ -60,11 +60,14 @@ const startConversation = () => {
 const sendMessage = async () => {
   if (!msg.value) return;
 
-  const inputCreateMessage: CreateMessageChatsBody = {
-    message: msg.value as CreateMessageChatsBody['message'],
-  };
+  if (chatStore.activeChat?.worker?.id) {
+    const inputCreateMessage: CreateMessageChatsBody = {
+      worker_id: chatStore.activeChat.worker.id,
+      message: msg.value,
+    };
 
-  await chatStore.createMessage(inputCreateMessage);
+    await chatStore.createMessage(inputCreateMessage);
+  }
 
   msg.value = '';
 
