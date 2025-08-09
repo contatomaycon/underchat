@@ -16,11 +16,11 @@ const temporalPlugin = async (fastify: FastifyInstance) => {
       clientTemporal(),
     ]);
 
-    fastify.decorate('temporal', {
+    fastify.decorate<ITemporal>('temporal', {
       connection,
       nativeConnection,
       client,
-    } as ITemporal);
+    });
 
     container.register<Connection>('TemporalConnection', {
       useValue: connection,
