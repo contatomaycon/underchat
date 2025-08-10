@@ -34,7 +34,6 @@ interface IContact {
 }
 
 interface IMessageKey {
-  id?: string | null;
   jid?: string | null;
 }
 

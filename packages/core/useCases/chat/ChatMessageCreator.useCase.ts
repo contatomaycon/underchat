@@ -32,10 +32,10 @@ export class ChatMessageCreatorUseCase {
     chatId: string
   ): Promise<IGetChat | null> {
     const cacheKey = `chat:${accountId}:${chatId}`;
-    const cacheAuth = await this.redis.get(cacheKey);
+    const cache = await this.redis.get(cacheKey);
 
-    if (cacheAuth) {
-      return JSON.parse(cacheAuth) as IGetChat;
+    if (cache) {
+      return JSON.parse(cache) as IGetChat;
     }
 
     const queryElastic = {
