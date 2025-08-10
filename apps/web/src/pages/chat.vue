@@ -108,6 +108,8 @@ onMounted(async () => {
     await onMessage(
       chatAccountCentrifugoQueue(chatStore.user.account_id),
       (data: IChatMessage) => {
+        console.log('data', data);
+
         if (chatStore.activeChat?.chat_id !== data.chat_id) return;
 
         chatStore.addMessageActiveChat(data);

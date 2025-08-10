@@ -17,6 +17,7 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { PublishResult } from 'centrifuge';
 import { chatAccountCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -43,6 +44,10 @@ export class MessageUpsertConsume {
     phone: string,
     jid?: string | null
   ): Promise<IChat | null> {
+    const candidates = buildCandidates(phone);
+
+    console.log('candidates', candidates);
+
     const queryElastic = {
       query: {
         bool: {
@@ -70,7 +75,7 @@ export class MessageUpsertConsume {
             {
               bool: {
                 should: [
-                  { term: { phone } },
+                  { terms: { phone: candidates } },
                   {
                     nested: {
                       path: 'message_key',
@@ -90,10 +95,14 @@ export class MessageUpsertConsume {
       },
     };
 
+    console.log('queryElastic', queryElastic);
+
     const result = await this.elasticDatabaseService.select(
       EElasticIndex.chat,
       queryElastic
     );
+
+    console.log('result', result);
 
     const data = result?.hits.hits[0]?._source as IChat | null;
 

@@ -12,6 +12,8 @@ import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.servi
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import { baileysEnvironment } from '@core/config/environments';
+import { getChatKind } from '@core/common/functions/getChatKind';
+import { EChatKind } from '@core/common/enums/EChatKind';
 
 export type IncomingEvent =
   | {
@@ -50,23 +52,27 @@ export class BaileysIncomingMessageService {
     socket.ev.on('messages.upsert', async (e) => {
       if (!e?.messages?.length) return;
       for (const m of e.messages) {
-        const type = mapIncomingToType(m);
+        const chatKind = getChatKind(m);
 
-        if (!type) {
-          throw new Error('Unknown message type');
+        if (chatKind === EChatKind.user) {
+          const type = mapIncomingToType(m);
+
+          if (!type) {
+            throw new Error('Unknown message type');
+          }
+
+          const inputUpsert: IUpsertMessage = {
+            worker_id: baileysEnvironment.baileysWorkerId,
+            account_id: baileysEnvironment.baileysAccountId,
+            type,
+            message: m,
+          };
+
+          await this.streamProducerService.send(
+            this.kafkaServiceQueueService.upsertMessage(),
+            inputUpsert
+          );
         }
-
-        const inputUpsert: IUpsertMessage = {
-          worker_id: baileysEnvironment.baileysWorkerId,
-          account_id: baileysEnvironment.baileysAccountId,
-          type,
-          message: m,
-        };
-
-        await this.streamProducerService.send(
-          this.kafkaServiceQueueService.upsertMessage(),
-          inputUpsert
-        );
       }
     });
 

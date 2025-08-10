@@ -9,6 +9,7 @@ import { injectable } from 'tsyringe';
 import { BaileysConnectionService } from './connection.service';
 import { isJid } from '@core/common/functions/isJid';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
+import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 
 @injectable()
 export class BaileysHelpersService {
@@ -74,33 +75,8 @@ export class BaileysHelpersService {
     return s;
   }
 
-  private isBrazil(numeric: string) {
-    return numeric.startsWith('55');
-  }
-
-  private buildCandidatesBR(numeric: string) {
-    const n = onlyDigits(numeric);
-    const rest = n.slice(2);
-    if (rest.length < 10) return [n];
-
-    const ddd = rest.slice(0, 2);
-    const local = rest.slice(2);
-
-    const with9 = `55${ddd}${local.startsWith('9') ? local : '9' + local}`;
-    const without9 = `55${ddd}${local.startsWith('9') ? local.slice(1) : local}`;
-
-    return Array.from(new Set([with9, without9]));
-  }
-
-  private buildCandidates(numeric: string) {
-    const n = onlyDigits(numeric);
-    if (!this.isBrazil(n)) return [n];
-
-    return this.buildCandidatesBR(n);
-  }
-
   private async resolveJidFlexible(sock: WASocket, raw: string) {
-    const candidates = this.buildCandidates(raw);
+    const candidates = buildCandidates(raw);
     const probes = await Promise.all(
       candidates.map(async (c) => {
         const resp = await sock.onWhatsApp(onlyDigits(c));
