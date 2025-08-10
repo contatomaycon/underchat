@@ -14,6 +14,7 @@ import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
 import { ListMessageResponse } from '@core/schema/chat/listMessageChats/response.schema';
 import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
+import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 
 export const useChatStore = defineStore('chat', {
   state: () => ({
@@ -42,6 +43,19 @@ export const useChatStore = defineStore('chat', {
     },
     hideSnackbar() {
       this.snackbar.status = false;
+    },
+    addMessageActiveChat(message: IChatMessage) {
+      const input: ListMessageResponse = {
+        message_id: message.message_id,
+        chat_id: message.chat_id,
+        type_user: message.type_user,
+        user: message.user,
+        content: message.content,
+        summary: message.summary,
+        date: message.date,
+      };
+
+      this.listMessages.push(input);
     },
     updateChatUserImmediate() {
       if (!this.user?.status) return;

@@ -16,6 +16,9 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { IGetChat } from '@core/common/interfaces/IGetChat';
+import { CentrifugoService } from '@core/services/centrifugo.service';
+import { PublishResult } from 'centrifuge';
+import { chatAccountCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
 @injectable()
 export class ChatMessageCreatorUseCase {
@@ -24,7 +27,8 @@ export class ChatMessageCreatorUseCase {
     private readonly chatService: ChatService,
     private readonly elasticDatabaseService: ElasticDatabaseService,
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
-    private readonly streamProducerService: StreamProducerService
+    private readonly streamProducerService: StreamProducerService,
+    private readonly centrifugoService: CentrifugoService
   ) {}
 
   private async getChat(
@@ -86,6 +90,13 @@ export class ChatMessageCreatorUseCase {
     return saveChat;
   }
 
+  private centrifugoPublish(dataPublish: IChatMessage): Promise<PublishResult> {
+    return this.centrifugoService.publishSub(
+      chatAccountCentrifugoQueue(dataPublish.account.id),
+      dataPublish
+    );
+  }
+
   private async validate(body: CreateMessageChatsBody) {
     if (body.type === EMessageType.text && !body.message) {
       throw new Error('Message content is required for text messages');
@@ -129,11 +140,15 @@ export class ChatMessageCreatorUseCase {
       date: new Date().toISOString(),
     };
 
-    await this.streamProducerService.send(
-      this.kafkaBaileysQueueService.workerSendMessage(getChat.data.worker.id),
-      inputChatMessage
-    );
+    const [, , result] = await Promise.all([
+      this.centrifugoPublish(inputChatMessage),
+      this.streamProducerService.send(
+        this.kafkaBaileysQueueService.workerSendMessage(getChat.data.worker.id),
+        inputChatMessage
+      ),
+      this.chatService.saveMessageChat(inputChatMessage),
+    ]);
 
-    return this.chatService.saveMessageChat(inputChatMessage);
+    return result;
   }
 }

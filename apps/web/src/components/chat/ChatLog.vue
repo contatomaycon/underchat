@@ -74,7 +74,7 @@ const resolveFeedbackIcon = (message: ListMessageResponse) => {
           ]"
         >
           <p class="mb-0 text-base">
-            {{ msgGrp.message }}
+            {{ msgGrp.content.message }}
           </p>
         </div>
         <div

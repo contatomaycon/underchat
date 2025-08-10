@@ -14,6 +14,8 @@ import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/reques
 import { onMessage, publish, unsubscribe } from '@/@webcore/centrifugo';
 import { chatAccountCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
+import { EMessageType } from '@core/common/enums/EMessageType';
+import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 
 definePage({
   meta: {
@@ -62,6 +64,7 @@ const sendMessage = async () => {
 
   if (chatStore.activeChat?.worker?.id) {
     const inputCreateMessage: CreateMessageChatsBody = {
+      type: EMessageType.text,
       message: msg.value,
     };
 
@@ -104,8 +107,10 @@ onMounted(async () => {
   if (chatStore.user?.account_id) {
     await onMessage(
       chatAccountCentrifugoQueue(chatStore.user.account_id),
-      (data: any) => {
-        console.log('chatAccountCentrifugoQueue data', data);
+      (data: IChatMessage) => {
+        if (chatStore.activeChat?.chat_id !== data.chat_id) return;
+
+        chatStore.addMessageActiveChat(data);
       }
     );
   }

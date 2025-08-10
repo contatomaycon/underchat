@@ -14,14 +14,18 @@ export const summarySchema = Type.Object({
   is_seen: Type.Boolean(),
 });
 
+export const contentSchema = Type.Object({
+  type: Type.String({ enum: Object.values(EMessageType) }),
+  message: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+
 export const listMessageResponseSchema = Type.Object({
   message_id: Type.String(),
   chat_id: Type.String(),
   quoted_message_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   type_user: Type.String({ enum: Object.values(ETypeUserChat) }),
   user: Type.Optional(Type.Union([userSchema, Type.Null()])),
-  type: Type.String({ enum: Object.values(EMessageType) }),
-  message: Type.Union([Type.String(), Type.Null()]),
+  content: contentSchema,
   summary: Type.Optional(Type.Union([summarySchema, Type.Null()])),
   date: Type.String(),
 });

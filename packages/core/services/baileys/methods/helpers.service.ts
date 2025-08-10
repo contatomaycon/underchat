@@ -40,6 +40,7 @@ export class BaileysHelpersService {
     while (Date.now() - start < durationMs) {
       const remaining = durationMs - (Date.now() - start);
       const tick = Math.min(5000, remaining);
+
       await this.sleep(tick);
       if (Date.now() - start < durationMs) {
         await sock.sendPresenceUpdate('composing', jid);
