@@ -1,3 +1,4 @@
+import { EMessageType } from '../enums/EMessageType';
 import { ETypeUserChat } from '../enums/ETypeUserChat';
 
 export interface IAccount {
@@ -17,14 +18,26 @@ export interface ISummary {
   is_seen: boolean;
 }
 
+export interface IWorker {
+  id: string;
+  name: string;
+}
+
+export interface IContent {
+  type: EMessageType;
+  message?: string | null;
+}
+
 export interface IChatMessage {
   message_id: string;
   chat_id: string;
   quoted_message_id?: string | null;
   type_user: ETypeUserChat;
   account: IAccount;
+  worker: IWorker;
   user?: IUser | null;
-  message: string;
+  phone: string;
+  content: IContent;
   summary: ISummary;
   date: string;
 }

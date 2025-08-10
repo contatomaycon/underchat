@@ -83,5 +83,6 @@
   "chat_update_user_success": "User chat updated successfully!",
   "chat_update_user_not_found": "User chat not found!",
   "chat_create_success": "Chat created successfully!",
-  "chat_create_not_found": "Chat not found for creation!"
+  "chat_create_not_found": "Chat not found for creation!",
+  "chat_not_found": "Chat not found!"
 }

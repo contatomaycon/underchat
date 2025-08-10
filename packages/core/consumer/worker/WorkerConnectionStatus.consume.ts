@@ -10,8 +10,8 @@ import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.servi
 @singleton()
 export class WorkerConnectionStatusConsume {
   constructor(
-    private readonly baileysService: BaileysService,
     @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams,
+    private readonly baileysService: BaileysService,
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService
   ) {}
 

@@ -1,33 +1,15 @@
 import { injectable } from 'tsyringe';
 import {
-  AnyMessageContent,
   MiscMessageGenerationOptions,
   PollMessageOptions,
   proto,
   WAMessageKey,
 } from '@whiskeysockets/baileys';
-import { BaileysConnectionService } from './connection.service';
+import { BaileysHelpersService } from './helpers.service';
 
 @injectable()
 export class BaileysMessageReactionsInteractionsService {
-  constructor(private readonly connection: BaileysConnectionService) {}
-
-  private socket() {
-    const s = this.connection.getSocket();
-    if (!s) {
-      throw new Error('Socket not connected');
-    }
-
-    return s;
-  }
-
-  send(
-    jid: string,
-    content: AnyMessageContent,
-    options?: MiscMessageGenerationOptions
-  ): Promise<proto.WebMessageInfo | undefined> {
-    return this.socket().sendMessage(jid, content, options);
-  }
+  constructor(private readonly baileysHelpersService: BaileysHelpersService) {}
 
   /**
    * Reage a uma mensagem com um emoji (💖, 👍, etc).
@@ -38,7 +20,11 @@ export class BaileysMessageReactionsInteractionsService {
     emoji: string,
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send(jid, { react: { text: emoji, key } }, options);
+    return this.baileysHelpersService.send(
+      jid,
+      { react: { text: emoji, key } },
+      options
+    );
   }
 
   /**
@@ -51,7 +37,11 @@ export class BaileysMessageReactionsInteractionsService {
     time?: 86400 | 604800 | 2592000,
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send(jid, { pin: key, type, time }, options);
+    return this.baileysHelpersService.send(
+      jid,
+      { pin: key, type, time },
+      options
+    );
   }
 
   /**
@@ -64,6 +54,6 @@ export class BaileysMessageReactionsInteractionsService {
     },
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send(jid, { poll }, options);
+    return this.baileysHelpersService.send(jid, { poll }, options);
   }
 }

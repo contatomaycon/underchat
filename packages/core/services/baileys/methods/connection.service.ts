@@ -14,7 +14,6 @@ import { CentrifugoService } from '@core/services/centrifugo.service';
 import { baileysEnvironment } from '@core/config/environments';
 import { EBaileysConnectionStatus as Status } from '@core/common/enums/EBaileysConnectionStatus';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
-import { BaileysHelpersService } from './helpers.service';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { IBaileysUpdateEvent } from '@core/common/interfaces/IBaileysUpdateEvent';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
@@ -28,6 +27,8 @@ import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionTyp
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { BaileysIncomingMessageService } from './incoming.service';
+import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 
 const FOLDER = `/app/data/storage/${baileysEnvironment.baileysWorkerId}`;
 const CHANNEL = workerCentrifugoQueue(baileysEnvironment.baileysAccountId);
@@ -59,10 +60,10 @@ export class BaileysConnectionService {
 
   constructor(
     private readonly centrifugo: CentrifugoService,
-    private readonly helpers: BaileysHelpersService,
     private readonly elasticDatabaseService: ElasticDatabaseService,
     private readonly streamProducerService: StreamProducerService,
-    private readonly kafkaServiceQueueService: KafkaServiceQueueService
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    private readonly baileysIncomingMessageService: BaileysIncomingMessageService
   ) {
     process.on('unhandledRejection', () => this.handleFatal());
   }
@@ -115,8 +116,8 @@ export class BaileysConnectionService {
     this.socketId += 1;
 
     const { socket, saveCreds } = await this.createSocket();
-
     this.socket = socket;
+    this.baileysIncomingMessageService.bindTo(socket);
 
     if (this.typeConnection === EBaileysConnectionType.phone) {
       await this.requestPairing(socket);
@@ -324,7 +325,7 @@ export class BaileysConnectionService {
       worker_id: WORKER,
       account_id: ACCOUNT,
       code: this.code,
-      phone: this.helpers.getPhoneNumber(this.socket?.user?.id),
+      phone: getPhoneNumber(this.socket?.user?.id),
       worker_status_id: EWorkerStatus.online,
     };
 
@@ -546,6 +547,7 @@ export class BaileysConnectionService {
       });
     }
 
+    this.baileysIncomingMessageService.unbind();
     this.safeLogout();
     this.pendingResolve?.(this.state());
     this.pendingResolve = undefined;
@@ -564,7 +566,7 @@ export class BaileysConnectionService {
         code: ECodeMessage.connectionEstablished,
         worker_id: WORKER,
         account_id: ACCOUNT,
-        phone: this.helpers.getPhoneNumber(this.socket?.user?.id),
+        phone: getPhoneNumber(this.socket?.user?.id),
         worker_status_id: EWorkerStatus.online,
       });
     }

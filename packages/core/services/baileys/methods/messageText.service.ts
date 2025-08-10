@@ -4,35 +4,17 @@ import {
   MiscMessageGenerationOptions,
   WAMessage,
   WAUrlInfo,
-  proto,
 } from '@whiskeysockets/baileys';
-import { BaileysConnectionService } from './connection.service';
+import { BaileysHelpersService } from './helpers.service';
 
 @injectable()
 export class BaileysMessageTextService {
-  constructor(private readonly connection: BaileysConnectionService) {}
-
-  private socket() {
-    const s = this.connection.getSocket();
-    if (!s) {
-      throw new Error('Socket not connected');
-    }
-
-    return s;
-  }
-
-  send(
-    jid: string,
-    content: AnyMessageContent,
-    options?: MiscMessageGenerationOptions
-  ): Promise<proto.WebMessageInfo | undefined> {
-    return this.socket().sendMessage(jid, content, options);
-  }
+  constructor(private readonly baileysHelpersService: BaileysHelpersService) {}
 
   /**
    * Envia um texto simples. Pode incluir linkPreview (prévia de link) e mentions (menções a contatos no texto).
    */
-  sendText(
+  async sendText(
     jid: string,
     text: string,
     options?: MiscMessageGenerationOptions & {
@@ -46,7 +28,11 @@ export class BaileysMessageTextService {
       mentions: options?.mentions,
     };
 
-    return this.send(jid, content, options);
+    try {
+      await this.baileysHelpersService.send(jid, content, options);
+    } catch (error) {
+      console.error('Error sending message:', error);
+    }
   }
 
   /**
@@ -58,7 +44,11 @@ export class BaileysMessageTextService {
     quoted: WAMessage,
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send(jid, { text }, { ...options, quoted });
+    return this.baileysHelpersService.send(
+      jid,
+      { text },
+      { ...options, quoted }
+    );
   }
 
   /**
@@ -70,7 +60,7 @@ export class BaileysMessageTextService {
     mentions: string[],
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send(jid, { text, mentions }, options);
+    return this.baileysHelpersService.send(jid, { text, mentions }, options);
   }
 
   /**
@@ -82,6 +72,10 @@ export class BaileysMessageTextService {
     force = false,
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send(jid, { forward: msg, force }, options);
+    return this.baileysHelpersService.send(
+      jid,
+      { forward: msg, force },
+      options
+    );
   }
 }

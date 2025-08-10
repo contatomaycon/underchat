@@ -1,32 +1,13 @@
 import { injectable } from 'tsyringe';
 import {
-  AnyMessageContent,
   MiscMessageGenerationOptions,
-  proto,
   WASendableProduct,
 } from '@whiskeysockets/baileys';
-import { BaileysConnectionService } from './connection.service';
+import { BaileysHelpersService } from './helpers.service';
 
 @injectable()
 export class BaileysMessageProductsBusinessService {
-  constructor(private readonly connection: BaileysConnectionService) {}
-
-  private socket() {
-    const s = this.connection.getSocket();
-    if (!s) {
-      throw new Error('Socket not connected');
-    }
-
-    return s;
-  }
-
-  send(
-    jid: string,
-    content: AnyMessageContent,
-    options?: MiscMessageGenerationOptions
-  ): Promise<proto.WebMessageInfo | undefined> {
-    return this.socket().sendMessage(jid, content, options);
-  }
+  constructor(private readonly baileysHelpersService: BaileysHelpersService) {}
 
   /**
    * Envia informações de um produto do catálogo do WhatsApp Business.
@@ -37,7 +18,7 @@ export class BaileysMessageProductsBusinessService {
     args?: { businessOwnerJid?: string; body?: string; footer?: string },
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send(
+    return this.baileysHelpersService.send(
       jid,
       {
         product,

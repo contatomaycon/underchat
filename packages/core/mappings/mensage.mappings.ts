@@ -39,12 +39,20 @@ export const mensageMappings = () => {
             },
           },
         },
-        message: {
-          type: 'text',
-          fields: {
-            keyword: {
+        content: {
+          type: 'nested',
+          properties: {
+            type: {
               type: 'keyword',
-              ignore_above: 256,
+            },
+            message: {
+              type: 'text',
+              fields: {
+                keyword: {
+                  type: 'keyword',
+                  ignore_above: 256,
+                },
+              },
             },
           },
         },

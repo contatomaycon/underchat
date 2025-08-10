@@ -1,3 +1,4 @@
+import { EMessageType } from '@core/common/enums/EMessageType';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { Static, Type } from '@sinclair/typebox';
 
@@ -19,6 +20,7 @@ export const listMessageResponseSchema = Type.Object({
   quoted_message_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   type_user: Type.String({ enum: Object.values(ETypeUserChat) }),
   user: Type.Optional(Type.Union([userSchema, Type.Null()])),
+  type: Type.String({ enum: Object.values(EMessageType) }),
   message: Type.Union([Type.String(), Type.Null()]),
   summary: Type.Optional(Type.Union([summarySchema, Type.Null()])),
   date: Type.String(),

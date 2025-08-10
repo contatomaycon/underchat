@@ -1,32 +1,13 @@
 import { injectable } from 'tsyringe';
 import {
-  AnyMessageContent,
   MiscMessageGenerationOptions,
   WALocationMessage,
-  proto,
 } from '@whiskeysockets/baileys';
-import { BaileysConnectionService } from './connection.service';
+import { BaileysHelpersService } from './helpers.service';
 
 @injectable()
 export class BaileysMessageLocationContactService {
-  constructor(private readonly connection: BaileysConnectionService) {}
-
-  private socket() {
-    const s = this.connection.getSocket();
-    if (!s) {
-      throw new Error('Socket not connected');
-    }
-
-    return s;
-  }
-
-  send(
-    jid: string,
-    content: AnyMessageContent,
-    options?: MiscMessageGenerationOptions
-  ): Promise<proto.WebMessageInfo | undefined> {
-    return this.socket().sendMessage(jid, content, options);
-  }
+  constructor(private readonly baileysHelpersService: BaileysHelpersService) {}
 
   /**
    * Envia coordenadas GPS (latitude/longitude) no formato locationMessage.
@@ -36,7 +17,7 @@ export class BaileysMessageLocationContactService {
     location: WALocationMessage,
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send(jid, { location }, options);
+    return this.baileysHelpersService.send(jid, { location }, options);
   }
 
   /**
@@ -48,7 +29,7 @@ export class BaileysMessageLocationContactService {
     displayName?: string,
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send(
+    return this.baileysHelpersService.send(
       jid,
       { contacts: { displayName, contacts: [{ vcard }] } },
       options
@@ -64,7 +45,7 @@ export class BaileysMessageLocationContactService {
     displayName?: string,
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send(
+    return this.baileysHelpersService.send(
       jid,
       {
         contacts: { displayName, contacts: vcards.map((vcard) => ({ vcard })) },

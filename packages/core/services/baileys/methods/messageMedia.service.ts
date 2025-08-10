@@ -2,32 +2,14 @@ import { injectable } from 'tsyringe';
 import {
   AnyMessageContent,
   MiscMessageGenerationOptions,
-  proto,
   WAMediaUpload,
 } from '@whiskeysockets/baileys';
-import { BaileysConnectionService } from './connection.service';
 import { IMediaInput } from '@core/common/interfaces/IMediaInput';
+import { BaileysHelpersService } from './helpers.service';
 
 @injectable()
 export class BaileysMessageMediaService {
-  constructor(private readonly connection: BaileysConnectionService) {}
-
-  private socket() {
-    const s = this.connection.getSocket();
-    if (!s) {
-      throw new Error('Socket not connected');
-    }
-
-    return s;
-  }
-
-  send(
-    jid: string,
-    content: AnyMessageContent,
-    options?: MiscMessageGenerationOptions
-  ): Promise<proto.WebMessageInfo | undefined> {
-    return this.socket().sendMessage(jid, content, options);
-  }
+  constructor(private readonly baileysHelpersService: BaileysHelpersService) {}
 
   /**
    * Envia uma imagem com caption opcional, miniatura e dimensões.
@@ -53,7 +35,7 @@ export class BaileysMessageMediaService {
       viewOnce: args?.viewOnce,
     };
 
-    return this.send(jid, content, options);
+    return this.baileysHelpersService.send(jid, content, options);
   }
 
   /**
@@ -84,7 +66,7 @@ export class BaileysMessageMediaService {
       viewOnce: args?.viewOnce,
     };
 
-    return this.send(jid, content, options);
+    return this.baileysHelpersService.send(jid, content, options);
   }
 
   /**
@@ -107,7 +89,7 @@ export class BaileysMessageMediaService {
       mimetype: args?.mimetype,
     };
 
-    return this.send(jid, content, options);
+    return this.baileysHelpersService.send(jid, content, options);
   }
 
   /**
@@ -130,7 +112,7 @@ export class BaileysMessageMediaService {
       height: args?.height,
     };
 
-    return this.send(jid, content, options);
+    return this.baileysHelpersService.send(jid, content, options);
   }
 
   /**
@@ -153,7 +135,7 @@ export class BaileysMessageMediaService {
       caption: args.caption,
     };
 
-    return this.send(jid, content, options);
+    return this.baileysHelpersService.send(jid, content, options);
   }
 
   /**
@@ -165,7 +147,7 @@ export class BaileysMessageMediaService {
     caption?: string,
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send(
+    return this.baileysHelpersService.send(
       jid,
       { image: media as WAMediaUpload, viewOnce: true, caption },
       options
@@ -181,7 +163,7 @@ export class BaileysMessageMediaService {
     caption?: string,
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send(
+    return this.baileysHelpersService.send(
       jid,
       { video: media as WAMediaUpload, viewOnce: true, caption },
       options

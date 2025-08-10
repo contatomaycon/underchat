@@ -6,25 +6,37 @@ import {
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { v4 as uuidv4 } from 'uuid';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
-import { AccountService } from '@core/services/account.service';
 import { TFunction } from 'i18next';
-import { UserService } from '@core/services/user.service';
 import { ChatService } from '@core/services/chat.service';
 import Redis from 'ioredis';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
+import { IChat } from '@core/common/interfaces/IChat';
+import { EMessageType } from '@core/common/enums/EMessageType';
+import { StreamProducerService } from '@core/services/streamProducer.service';
+import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 
 @injectable()
 export class ChatMessageCreatorUseCase {
   constructor(
     @inject('Redis') private readonly redis: Redis,
     private readonly chatService: ChatService,
-    private readonly accountService: AccountService,
-    private readonly userService: UserService,
-    private readonly elasticDatabaseService: ElasticDatabaseService
+    private readonly elasticDatabaseService: ElasticDatabaseService,
+    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    private readonly streamProducerService: StreamProducerService
   ) {}
 
-  private async getChat(accountId: string, chatId: string) {
+  private async getChat(
+    accountId: string,
+    chatId: string
+  ): Promise<IChat | null> {
+    const cacheKey = `chat:${accountId}:${chatId}`;
+    const cacheAuth = await this.redis.get(cacheKey);
+
+    if (cacheAuth) {
+      return JSON.parse(cacheAuth) as IChat;
+    }
+
     const queryElastic = {
       query: {
         bool: {
@@ -56,48 +68,54 @@ export class ChatMessageCreatorUseCase {
       queryElastic
     );
 
-    console.log(result);
+    const data = result?.hits.hits[0]?._source as IChat | null;
+
+    if (!data) {
+      return null;
+    }
+
+    await this.redis.set(cacheKey, JSON.stringify(data), 'EX', 1800);
+
+    return data;
   }
 
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
     params: CreateMessageChatsParams,
-    body: CreateMessageChatsBody,
-    userId: string
+    body: CreateMessageChatsBody
   ): Promise<boolean> {
-    const [account, user] = await Promise.all([
-      this.accountService.viewAccountName(accountId),
-      this.userService.viewUserNamePhoto(userId),
-    ]);
-
-    if (!account) {
-      throw new Error(t('account_not_found'));
-    }
-
-    if (!user) {
-      throw new Error(t('user_not_found'));
-    }
-
     const getChat = await this.getChat(accountId, params.chat_id);
 
-    console.log(getChat);
+    if (!getChat) {
+      throw new Error(t('chat_not_found'));
+    }
 
-    const inputChat: IChatMessage = {
+    const inputChatMessage: IChatMessage = {
       message_id: uuidv4(),
       chat_id: params.chat_id,
       type_user: ETypeUserChat.operator,
-      account,
-      user,
-      message: body.message,
+      account: getChat.account,
+      worker: getChat.worker,
+      user: getChat.user,
+      phone: getChat.phone,
       summary: {
         is_sent: false,
         is_delivered: false,
         is_seen: false,
       },
+      content: {
+        type: body.type as EMessageType,
+        message: body.message,
+      },
       date: new Date().toISOString(),
     };
 
-    return this.chatService.saveMessageChat(inputChat);
+    await this.streamProducerService.send(
+      this.kafkaBaileysQueueService.workerSendMessage(getChat.worker.id),
+      inputChatMessage
+    );
+
+    return this.chatService.saveMessageChat(inputChatMessage);
   }
 }

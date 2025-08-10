@@ -5,28 +5,11 @@ import {
   proto,
   WAMessage,
 } from '@whiskeysockets/baileys';
-import { BaileysConnectionService } from './connection.service';
+import { BaileysHelpersService } from './helpers.service';
 
 @injectable()
 export class BaileysMessageExtrasUtilitiesService {
-  constructor(private readonly connection: BaileysConnectionService) {}
-
-  private socket() {
-    const s = this.connection.getSocket();
-    if (!s) {
-      throw new Error('Socket not connected');
-    }
-
-    return s;
-  }
-
-  send(
-    jid: string,
-    content: AnyMessageContent,
-    options?: MiscMessageGenerationOptions
-  ): Promise<proto.WebMessageInfo | undefined> {
-    return this.socket().sendMessage(jid, content, options);
-  }
+  constructor(private readonly baileysHelpersService: BaileysHelpersService) {}
 
   /**
    * Envia mensagem com contextInfo (ex.: metadados, citações avançadas, menções).
@@ -37,7 +20,11 @@ export class BaileysMessageExtrasUtilitiesService {
     contextInfo: proto.IContextInfo,
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send(jid, { ...(content as any), contextInfo }, options);
+    return this.baileysHelpersService.send(
+      jid,
+      { ...(content as any), contextInfo },
+      options
+    );
   }
 
   /**
@@ -49,7 +36,10 @@ export class BaileysMessageExtrasUtilitiesService {
     messageId: string,
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send(jid, content, { ...options, messageId });
+    return this.baileysHelpersService.send(jid, content, {
+      ...options,
+      messageId,
+    });
   }
 
   /**
@@ -62,7 +52,7 @@ export class BaileysMessageExtrasUtilitiesService {
     args?: { backgroundColor?: string; font?: number },
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send(jid, content, {
+    return this.baileysHelpersService.send(jid, content, {
       ...(options || {}),
       statusJidList,
       backgroundColor: args?.backgroundColor,
@@ -79,7 +69,11 @@ export class BaileysMessageExtrasUtilitiesService {
     inner: AnyMessageContent,
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send(jid, { ...(inner as any), viewOnce: true }, options);
+    return this.baileysHelpersService.send(
+      jid,
+      { ...(inner as any), viewOnce: true },
+      options
+    );
   }
 
   /**
@@ -91,7 +85,7 @@ export class BaileysMessageExtrasUtilitiesService {
     seconds: number,
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send(jid, inner, {
+    return this.baileysHelpersService.send(jid, inner, {
       ...(options || {}),
       ephemeralExpiration: seconds,
     });
@@ -106,7 +100,10 @@ export class BaileysMessageExtrasUtilitiesService {
     quoted: WAMessage,
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send(jid, inner, { ...(options || {}), quoted });
+    return this.baileysHelpersService.send(jid, inner, {
+      ...(options || {}),
+      quoted,
+    });
   }
 
   /**
@@ -117,7 +114,7 @@ export class BaileysMessageExtrasUtilitiesService {
     recipients: string[],
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send('status@broadcast', content, {
+    return this.baileysHelpersService.send('status@broadcast', content, {
       ...(options || {}),
       statusJidList: recipients,
       broadcast: true,

@@ -1,32 +1,13 @@
 import { injectable } from 'tsyringe';
 import {
-  AnyMessageContent,
   MiscMessageGenerationOptions,
   WAMessageKey,
-  proto,
 } from '@whiskeysockets/baileys';
-import { BaileysConnectionService } from './connection.service';
+import { BaileysHelpersService } from './helpers.service';
 
 @injectable()
 export class BaileysMessageEditDeleteService {
-  constructor(private readonly connection: BaileysConnectionService) {}
-
-  private socket() {
-    const s = this.connection.getSocket();
-    if (!s) {
-      throw new Error('Socket not connected');
-    }
-
-    return s;
-  }
-
-  send(
-    jid: string,
-    content: AnyMessageContent,
-    options?: MiscMessageGenerationOptions
-  ): Promise<proto.WebMessageInfo | undefined> {
-    return this.socket().sendMessage(jid, content, options);
-  }
+  constructor(private readonly baileysHelpersService: BaileysHelpersService) {}
 
   /**
    * Exclui uma mensagem (para todos).
@@ -36,7 +17,7 @@ export class BaileysMessageEditDeleteService {
     key: WAMessageKey,
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send(jid, { delete: key }, options);
+    return this.baileysHelpersService.send(jid, { delete: key }, options);
   }
 
   /**
@@ -48,6 +29,10 @@ export class BaileysMessageEditDeleteService {
     editKey: WAMessageKey,
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send(jid, { text: newText, edit: editKey }, options);
+    return this.baileysHelpersService.send(
+      jid,
+      { text: newText, edit: editKey },
+      options
+    );
   }
 }

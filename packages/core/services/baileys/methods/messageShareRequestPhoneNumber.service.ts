@@ -2,36 +2,18 @@ import { injectable } from 'tsyringe';
 import {
   AnyMessageContent,
   MiscMessageGenerationOptions,
-  proto,
 } from '@whiskeysockets/baileys';
-import { BaileysConnectionService } from './connection.service';
+import { BaileysHelpersService } from './helpers.service';
 
 @injectable()
 export class BaileysMessageShareRequestPhoneNumberService {
-  constructor(private readonly connection: BaileysConnectionService) {}
-
-  private socket() {
-    const s = this.connection.getSocket();
-    if (!s) {
-      throw new Error('Socket not connected');
-    }
-
-    return s;
-  }
-
-  send(
-    jid: string,
-    content: AnyMessageContent,
-    options?: MiscMessageGenerationOptions
-  ): Promise<proto.WebMessageInfo | undefined> {
-    return this.socket().sendMessage(jid, content, options);
-  }
+  constructor(private readonly baileysHelpersService: BaileysHelpersService) {}
 
   /**
    * Compartilha seu número de telefone com o destinatário.
    */
   sharePhoneNumber(jid: string, options?: MiscMessageGenerationOptions) {
-    return this.send(
+    return this.baileysHelpersService.send(
       jid,
       { sharePhoneNumber: true } as AnyMessageContent,
       options
@@ -42,7 +24,7 @@ export class BaileysMessageShareRequestPhoneNumberService {
    * Solicita o número de telefone do destinatário.
    */
   requestPhoneNumber(jid: string, options?: MiscMessageGenerationOptions) {
-    return this.send(
+    return this.baileysHelpersService.send(
       jid,
       { requestPhoneNumber: true } as AnyMessageContent,
       options

@@ -1,32 +1,11 @@
 import { injectable } from 'tsyringe';
-import {
-  AnyMessageContent,
-  MiscMessageGenerationOptions,
-  proto,
-} from '@whiskeysockets/baileys';
-import { BaileysConnectionService } from './connection.service';
+import { MiscMessageGenerationOptions } from '@whiskeysockets/baileys';
 import { IMediaInput } from '@core/common/interfaces/IMediaInput';
+import { BaileysHelpersService } from './helpers.service';
 
 @injectable()
 export class BaileysMessageStatusStoriesService {
-  constructor(private readonly connection: BaileysConnectionService) {}
-
-  private socket() {
-    const s = this.connection.getSocket();
-    if (!s) {
-      throw new Error('Socket not connected');
-    }
-
-    return s;
-  }
-
-  send(
-    jid: string,
-    content: AnyMessageContent,
-    options?: MiscMessageGenerationOptions
-  ): Promise<proto.WebMessageInfo | undefined> {
-    return this.socket().sendMessage(jid, content, options);
-  }
+  constructor(private readonly baileysHelpersService: BaileysHelpersService) {}
 
   /**
    * Publica imagem no Status (stories) para contatos específicos.
@@ -45,7 +24,7 @@ export class BaileysMessageStatusStoriesService {
       'statusJidList' | 'backgroundColor' | 'font' | 'broadcast'
     >
   ) {
-    return this.send(
+    return this.baileysHelpersService.send(
       jid,
       { image: media, caption: args.caption },
       {
@@ -75,7 +54,7 @@ export class BaileysMessageStatusStoriesService {
       'statusJidList' | 'backgroundColor' | 'font' | 'broadcast'
     >
   ) {
-    return this.send(
+    return this.baileysHelpersService.send(
       jid,
       { video: media, caption: args.caption },
       {
@@ -100,7 +79,7 @@ export class BaileysMessageStatusStoriesService {
       'statusJidList' | 'backgroundColor' | 'font' | 'broadcast'
     >
   ) {
-    return this.send(
+    return this.baileysHelpersService.send(
       jid,
       { text },
       {

@@ -1,32 +1,14 @@
 import { injectable } from 'tsyringe';
 import {
-  AnyMessageContent,
   ButtonReplyInfo,
   MiscMessageGenerationOptions,
   proto,
 } from '@whiskeysockets/baileys';
-import { BaileysConnectionService } from './connection.service';
+import { BaileysHelpersService } from './helpers.service';
 
 @injectable()
 export class BaileysMessageButtonsListsInvitationsService {
-  constructor(private readonly connection: BaileysConnectionService) {}
-
-  private socket() {
-    const s = this.connection.getSocket();
-    if (!s) {
-      throw new Error('Socket not connected');
-    }
-
-    return s;
-  }
-
-  send(
-    jid: string,
-    content: AnyMessageContent,
-    options?: MiscMessageGenerationOptions
-  ): Promise<proto.WebMessageInfo | undefined> {
-    return this.socket().sendMessage(jid, content, options);
-  }
+  constructor(private readonly baileysHelpersService: BaileysHelpersService) {}
 
   /**
    * Envia resposta de botão (template ou plain).
@@ -37,7 +19,11 @@ export class BaileysMessageButtonsListsInvitationsService {
     type: 'template' | 'plain',
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send(jid, { buttonReply: info, type }, options);
+    return this.baileysHelpersService.send(
+      jid,
+      { buttonReply: info, type },
+      options
+    );
   }
 
   /**
@@ -48,7 +34,7 @@ export class BaileysMessageButtonsListsInvitationsService {
     list: Omit<proto.Message.IListResponseMessage, 'contextInfo'>,
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send(jid, { listReply: list }, options);
+    return this.baileysHelpersService.send(jid, { listReply: list }, options);
   }
 
   /**
@@ -65,6 +51,10 @@ export class BaileysMessageButtonsListsInvitationsService {
     },
     options?: MiscMessageGenerationOptions
   ) {
-    return this.send(jid, { groupInvite: invite }, options);
+    return this.baileysHelpersService.send(
+      jid,
+      { groupInvite: invite },
+      options
+    );
   }
 }

@@ -1,11 +1,10 @@
 import { singleton, inject } from 'tsyringe';
 import { baileysEnvironment } from '@core/config/environments';
-import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
-import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { KafkaStreams, KStream } from 'kafka-streams';
-import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { BaileysMessageTextService } from '@core/services/baileys/methods/messageText.service';
+import { EMessageType } from '@core/common/enums/EMessageType';
+import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 
 @singleton()
 export class WorkerSendMessageConsume {
@@ -26,18 +25,23 @@ export class WorkerSendMessageConsume {
     stream.mapJSONConvenience();
 
     stream.forEach(async (msg) => {
-      const data = msg.value as StatusConnectionWorkerRequest;
+      const data = msg.value as IChatMessage;
 
       if (!data) {
         throw new Error('Received message without value');
       }
 
-      if (data.status === EWorkerStatus.online) {
-        await this.baileysService.connect({
-          initial_connection: true,
-          type: data.type as EBaileysConnectionType,
-          phone_connection: data.phone_connection,
-        });
+      if (data.content.type === EMessageType.text) {
+        if (!data.content.message) {
+          throw new Error('Received message without content');
+        }
+
+        console.log('data', data);
+
+        await this.baileysMessageTextService.sendText(
+          data.phone,
+          data.content.message
+        );
 
         return;
       }

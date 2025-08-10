@@ -1,3 +1,4 @@
+import { EMessageType } from '@core/common/enums/EMessageType';
 import { Static, Type } from '@sinclair/typebox';
 
 export const createMessageChatsParamsSchema = Type.Object({
@@ -5,7 +6,8 @@ export const createMessageChatsParamsSchema = Type.Object({
 });
 
 export const createMessageChatsBodySchema = Type.Object({
-  message: Type.String(),
+  type: Type.String({ enum: Object.values(EMessageType) }),
+  message: Type.Optional(Type.String()),
 });
 
 export type CreateMessageChatsParams = Static<
