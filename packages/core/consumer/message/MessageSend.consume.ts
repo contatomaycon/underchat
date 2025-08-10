@@ -10,7 +10,7 @@ import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.servi
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
 
 @singleton()
-export class WorkerSendMessageConsume {
+export class MessageSendConsume {
   constructor(
     @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams,
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
@@ -39,13 +39,15 @@ export class WorkerSendMessageConsume {
           throw new Error('Received message without value');
         }
 
+        const phoneSend = data.message_key?.jid ?? data.phone;
+
         if (data.content.type === EMessageType.text) {
           if (!data.content.message) {
             throw new Error('Received message without content');
           }
 
           const result = await this.baileysMessageTextService.sendText(
-            data.phone,
+            phoneSend,
             data.content.message
           );
 

@@ -16,6 +16,10 @@ export class BaileysHelpersService {
     }
   }
 
+  isJid(value: string): boolean {
+    return /^[0-9]{10,15}@s\.whatsapp\.net$/.test(value);
+  }
+
   toJid(raw: string) {
     const n = this.onlyDigits(raw);
 
@@ -51,15 +55,21 @@ export class BaileysHelpersService {
     options?: MiscMessageGenerationOptions
   ): Promise<proto.WebMessageInfo | undefined> {
     const sock = this.socket();
-    const { exists, jid } = await this.resolveJidFlexible(sock, phone);
 
-    if (!exists || !jid) {
-      throw new Error(`Number not found on WhatsApp: ${phone}`);
+    let jidSend = phone;
+    if (!this.isJid(jidSend)) {
+      const { exists, jid } = await this.resolveJidFlexible(sock, phone);
+
+      if (!exists || !jid) {
+        throw new Error(`Number not found on WhatsApp: ${phone}`);
+      }
+
+      jidSend = jid;
     }
 
-    await this.simulateHumanTyping(jid, content);
+    await this.simulateHumanTyping(jidSend, content);
 
-    return sock.sendMessage(jid, content, options);
+    return sock.sendMessage(jidSend, content, options);
   }
 
   private socket(): WASocket {

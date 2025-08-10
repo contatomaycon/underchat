@@ -15,6 +15,7 @@ import { IChat } from '@core/common/interfaces/IChat';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
+import { IGetChat } from '@core/common/interfaces/IGetChat';
 
 @injectable()
 export class ChatMessageCreatorUseCase {
@@ -29,12 +30,12 @@ export class ChatMessageCreatorUseCase {
   private async getChat(
     accountId: string,
     chatId: string
-  ): Promise<IChat | null> {
+  ): Promise<IGetChat | null> {
     const cacheKey = `chat:${accountId}:${chatId}`;
     const cacheAuth = await this.redis.get(cacheKey);
 
     if (cacheAuth) {
-      return JSON.parse(cacheAuth) as IChat;
+      return JSON.parse(cacheAuth) as IGetChat;
     }
 
     const queryElastic = {
@@ -69,14 +70,20 @@ export class ChatMessageCreatorUseCase {
     );
 
     const data = result?.hits.hits[0]?._source as IChat | null;
+    const _id = result?.hits.hits[0]?._id as string | null;
 
-    if (!data) {
+    if (!data || !_id) {
       return null;
     }
 
-    await this.redis.set(cacheKey, JSON.stringify(data), 'EX', 1800);
+    const saveChat: IGetChat = {
+      _id,
+      data,
+    };
 
-    return data;
+    await this.redis.set(cacheKey, JSON.stringify(saveChat), 'EX', 1800);
+
+    return saveChat;
   }
 
   async execute(
@@ -94,11 +101,12 @@ export class ChatMessageCreatorUseCase {
     const inputChatMessage: IChatMessage = {
       message_id: uuidv4(),
       chat_id: params.chat_id,
+      message_key: getChat.data.message_key,
       type_user: ETypeUserChat.operator,
-      account: getChat.account,
-      worker: getChat.worker,
-      user: getChat.user,
-      phone: getChat.phone,
+      account: getChat.data.account,
+      worker: getChat.data.worker,
+      user: getChat.data.user,
+      phone: getChat.data.phone,
       summary: {
         is_sent: false,
         is_delivered: false,
@@ -112,7 +120,7 @@ export class ChatMessageCreatorUseCase {
     };
 
     await this.streamProducerService.send(
-      this.kafkaBaileysQueueService.workerSendMessage(getChat.worker.id),
+      this.kafkaBaileysQueueService.workerSendMessage(getChat.data.worker.id),
       inputChatMessage
     );
 
