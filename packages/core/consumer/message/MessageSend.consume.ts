@@ -41,7 +41,7 @@ export class MessageSendConsume {
 
         const phoneSend = data.message_key?.jid ?? data.phone;
 
-        if (data.content.type === EMessageType.text) {
+        if (data?.content?.type === EMessageType.text) {
           if (!data.content.message) {
             throw new Error('Received message without content');
           }
