@@ -4,6 +4,7 @@ import { EHomePermissions } from '@core/common/enums/EPermissions/home';
 import { EServerPermissions } from '@core/common/enums/EPermissions/server';
 import { EWorkerPermissions } from '@core/common/enums/EPermissions/worker';
 import { ERolePermissions } from '@core/common/enums/EPermissions/role';
+import { ESectorPermissions } from '@core/common/enums/EPermissions/sector';
 
 export default [
   {
@@ -35,6 +36,19 @@ export default [
       ERolePermissions.role_create,
       ERolePermissions.role_edit,
       ERolePermissions.role_delete,
+    ],
+  },
+  {
+    title: 'sector',
+    to: { name: 'sector' as keyof RouteNamedMap },
+    icon: { icon: 'tabler-sitemap' },
+    permissions: [
+      EGeneralPermissions.full_access,
+      ESectorPermissions.sector_list,
+      ESectorPermissions.sector_view,
+      ESectorPermissions.sector_create,
+      ESectorPermissions.sector_edit,
+      ESectorPermissions.sector_delete,
     ],
   },
   {
