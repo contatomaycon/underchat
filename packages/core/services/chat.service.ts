@@ -27,7 +27,7 @@ export class ChatService {
     return this.elasticDatabaseService.update(
       EElasticIndex.message,
       messageChat,
-      messageChat.chat_id
+      messageChat.message_id
     );
   };
 

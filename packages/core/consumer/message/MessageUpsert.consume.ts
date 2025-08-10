@@ -112,7 +112,9 @@ export class MessageUpsertConsume {
     if (EMessageType.text === data.type) {
       content = {
         type: data.type,
-        message: data.message.message?.conversation,
+        message:
+          data.message.message?.extendedTextMessage?.text ??
+          data.message.message?.conversation,
       };
     }
 
