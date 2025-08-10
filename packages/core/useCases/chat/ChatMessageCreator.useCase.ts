@@ -101,7 +101,9 @@ export class ChatMessageCreatorUseCase {
     const inputChatMessage: IChatMessage = {
       message_id: uuidv4(),
       chat_id: params.chat_id,
-      message_key: getChat.data.message_key,
+      message_key: {
+        jid: getChat.data.message_key?.jid ?? null,
+      },
       type_user: ETypeUserChat.operator,
       account: getChat.data.account,
       worker: getChat.data.worker,
