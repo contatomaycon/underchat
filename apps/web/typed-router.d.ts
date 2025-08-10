@@ -25,6 +25,7 @@ declare module 'vue-router/auto-routes' {
     'login': RouteRecordInfo<'login', '/login', Record<never, never>, Record<never, never>>,
     'not-authorized': RouteRecordInfo<'not-authorized', '/not-authorized', Record<never, never>, Record<never, never>>,
     'role': RouteRecordInfo<'role', '/role', Record<never, never>, Record<never, never>>,
+    'sector': RouteRecordInfo<'sector', '/sector', Record<never, never>, Record<never, never>>,
     'server': RouteRecordInfo<'server', '/server', Record<never, never>, Record<never, never>>,
   }
 }

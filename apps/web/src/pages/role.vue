@@ -210,7 +210,7 @@ watch(
                 transition="scale-transition"
                 activator="parent"
               >
-                <span>{{ $t('edit_channel') }}</span> </VTooltip
+                <span>{{ $t('edit_role') }}</span> </VTooltip
               ><VIcon
                 icon="tabler-edit"
                 @click="openEditDialog(item.permission_role_id)"
