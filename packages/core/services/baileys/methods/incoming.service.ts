@@ -34,15 +34,21 @@ export class BaileysIncomingMessageService {
     this.unbind();
     this.currentSocket = socket;
 
+    /**
+     * Mensagem nova recebida ou enviada (via messages.upsert).
+     */
     socket.ev.on('messages.upsert', (e) => {
       if (!e?.messages?.length) return;
       for (const m of e.messages) {
-        /*   console.log('messages.upsert');
+        console.log('messages.upsert');
         console.log('New message received:', m);
-        console.log('Message event:', e); */
+        console.log('Message event:', e);
       }
     });
 
+    /**
+     * Alterações em mensagens existentes (reação, edição, status, etc.).
+     */
     socket.ev.on('messages.update', (events) => {
       for (const { key, update } of events) {
         /*   console.log('messages.update');
@@ -51,6 +57,9 @@ export class BaileysIncomingMessageService {
       }
     });
 
+    /**
+     * Mudança no status de entrega/leitura.
+     */
     socket.ev.on('message-receipt.update', (events) => {
       for (const { key, receipt } of events) {
         /*  console.log('message-receipt.update');
@@ -59,11 +68,17 @@ export class BaileysIncomingMessageService {
       }
     });
 
+    /**
+     * Alguém no chat mudou de status (online, digitando, etc.).
+     */
     socket.ev.on('presence.update', (data) => {
       /*   console.log('presence.update');
       console.log('Presence data:', data); */
     });
 
+    /**
+     * Histórico carregado pelo WhatsApp (ao conectar ou sincronizar).
+     */
     socket.ev.on('messaging-history.set', (data) => {
       /*   console.log('messaging-history.set');
       console.log('Messaging history data:', data); */
@@ -80,16 +95,6 @@ export class BaileysIncomingMessageService {
       this.currentSocket.ev.removeAllListeners('messaging-history.set');
     } catch {}
     this.currentSocket = undefined;
-  }
-
-  onIncoming(handler: (event: IncomingEvent) => void) {
-    /*     console.log('Incoming event handler registered');
-    console.log('handler:', handler); */
-  }
-
-  offIncoming(handler: (event: IncomingEvent) => void) {
-    /*     console.log('Incoming event handler unregistered');
-    console.log('handler:', handler); */
   }
 
   async markRead(keys: WAMessageKey[]) {
