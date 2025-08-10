@@ -12,6 +12,7 @@ import { listChatsUserSchema } from '@core/schema/chat/listChatsUser';
 import { updateChatsUserSchema } from '@core/schema/chat/updateChatsUser';
 import { listMessageChatsSchema } from '@core/schema/chat/listMessageChats';
 import { createMessageChatsSchema } from '@core/schema/chat/createMessageChats';
+import { createChatSchema } from '@core/schema/chat/createChat';
 
 export default async function chatRoutes(server: FastifyInstance) {
   const chatController = container.resolve(ChatController);
@@ -22,6 +23,15 @@ export default async function chatRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, listChatPermissions),
+    ],
+  });
+
+  server.post('/chat', {
+    schema: createChatSchema,
+    handler: chatController.createChats,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, createChatPermissions),
     ],
   });
 

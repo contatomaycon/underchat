@@ -1,4 +1,4 @@
 export interface IViewWorkerNameAndId {
-  worker_id: string;
-  container_id: string;
+  id: string;
+  name: string;
 }

@@ -31,17 +31,19 @@ const isChatContactActive = computed(() => {
     </VAvatar>
     <div class="flex-grow-1 ms-4 overflow-hidden">
       <p class="text-base text-high-emphasis mb-0">
-        {{ limitCharacters(props.user.name, 20) }}
+        {{ limitCharacters(20, props.user?.name) }}
       </p>
       <p class="mb-0 text-truncate text-body-2">
-        {{ formatPhoneBR(props.user.phone) }}
+        {{ formatPhoneBR(props.user?.phone) }}
       </p>
       <p class="mb-0 text-truncate text-body-2 text-end">
-        <i>{{ limitCharacters(props.user.summary.last_message, 35, '...') }}</i>
+        <i>{{
+          limitCharacters(35, props.user?.summary?.last_message, '...')
+        }}</i>
       </p>
     </div>
     <div
-      v-if="props.user.summary.last_date"
+      v-if="props.user?.summary?.last_date"
       class="d-flex flex-column align-self-start"
     >
       <div class="text-body-2 text-disabled whitespace-no-wrap">

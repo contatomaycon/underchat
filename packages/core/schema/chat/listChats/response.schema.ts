@@ -35,13 +35,13 @@ export const contactSchema = Type.Object({
 
 export const listChatsResponseSchema = Type.Object({
   chat_id: Type.String(),
-  summary: summarySchema,
+  summary: Type.Optional(Type.Union([summarySchema, Type.Null()])),
   account: accountSchema,
   worker: workerSchema,
-  sector: sectorSchema,
+  sector: Type.Optional(Type.Union([Type.String(), sectorSchema])),
   user: userSchema,
   contact: Type.Optional(Type.Union([contactSchema, Type.Null()])),
-  photo: Type.Union([Type.String(), Type.Null()]),
+  photo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   name: Type.Union([Type.String(), Type.Null()]),
   phone: Type.Number(),
   status: Type.String({ enum: Object.values(EChatStatus) }),

@@ -15,7 +15,6 @@ import { IChat } from '@core/common/interfaces/IChat';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
-import { IGetChat } from '@core/common/interfaces/IGetChat';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { PublishResult } from 'centrifuge';
 import { chatAccountCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
@@ -34,12 +33,12 @@ export class ChatMessageCreatorUseCase {
   private async getChat(
     accountId: string,
     chatId: string
-  ): Promise<IGetChat | null> {
+  ): Promise<IChat | null> {
     const cacheKey = `chat:${accountId}:${chatId}`;
     const cache = await this.redis.get(cacheKey);
 
     if (cache) {
-      return JSON.parse(cache) as IGetChat;
+      return JSON.parse(cache) as IChat;
     }
 
     const queryElastic = {
@@ -74,20 +73,14 @@ export class ChatMessageCreatorUseCase {
     );
 
     const data = result?.hits.hits[0]?._source as IChat | null;
-    const _id = result?.hits.hits[0]?._id as string | null;
 
-    if (!data || !_id) {
+    if (!data) {
       return null;
     }
 
-    const saveChat: IGetChat = {
-      _id,
-      data,
-    };
+    await this.redis.set(cacheKey, JSON.stringify(data), 'EX', 1800);
 
-    await this.redis.set(cacheKey, JSON.stringify(saveChat), 'EX', 1800);
-
-    return saveChat;
+    return data;
   }
 
   private centrifugoPublish(dataPublish: IChatMessage): Promise<PublishResult> {
@@ -121,13 +114,13 @@ export class ChatMessageCreatorUseCase {
       message_id: uuidv4(),
       chat_id: params.chat_id,
       message_key: {
-        jid: getChat.data.message_key?.jid ?? null,
+        jid: getChat.message_key?.jid ?? null,
       },
       type_user: ETypeUserChat.operator,
-      account: getChat.data.account,
-      worker: getChat.data.worker,
-      user: getChat.data.user,
-      phone: getChat.data.phone,
+      account: getChat.account,
+      worker: getChat.worker,
+      user: getChat.user,
+      phone: getChat.phone,
       summary: {
         is_sent: false,
         is_delivered: false,
@@ -143,7 +136,7 @@ export class ChatMessageCreatorUseCase {
     const [, , result] = await Promise.all([
       this.centrifugoPublish(inputChatMessage),
       this.streamProducerService.send(
-        this.kafkaBaileysQueueService.workerSendMessage(getChat.data.worker.id),
+        this.kafkaBaileysQueueService.workerSendMessage(getChat.worker.id),
         inputChatMessage
       ),
       this.chatService.saveMessageChat(inputChatMessage),

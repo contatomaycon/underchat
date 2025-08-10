@@ -1,9 +1,10 @@
 import { injectable } from 'tsyringe';
 import { ElasticDatabaseService } from './elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
-import { v4 as uuidv4 } from 'uuid';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { mensageMappings } from '@core/mappings/mensage.mappings';
+import { IChat } from '@core/common/interfaces/IChat';
+import { chatMappings } from '@core/mappings/chat.mappings';
 
 @injectable()
 export class ChatService {
@@ -26,7 +27,26 @@ export class ChatService {
     return this.elasticDatabaseService.update(
       EElasticIndex.message,
       messageChat,
-      uuidv4()
+      messageChat.chat_id
+    );
+  };
+
+  saveChat = async (chat: IChat): Promise<boolean> => {
+    const mappings = chatMappings();
+
+    const result = await this.elasticDatabaseService.indices(
+      EElasticIndex.chat,
+      mappings
+    );
+
+    if (!result || !chat) {
+      return false;
+    }
+
+    return this.elasticDatabaseService.update(
+      EElasticIndex.chat,
+      chat,
+      chat.chat_id
     );
   };
 }

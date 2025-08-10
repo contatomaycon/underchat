@@ -1,6 +1,6 @@
 export function limitCharacters(
-  text: string | null,
   maxLength: number,
+  text?: string | null,
   suffix: string | null = null
 ): string {
   if (!text || text.length <= maxLength) {

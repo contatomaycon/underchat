@@ -6,6 +6,7 @@ import {
   ListMessageChatsQuery,
 } from '@core/schema/chat/listMessageChats/request.schema';
 import { ListMessageResponse } from '@core/schema/chat/listMessageChats/response.schema';
+import { IChat } from '@core/common/interfaces/IChat';
 
 @injectable()
 export class ChatMessageListerUseCase {
@@ -13,7 +14,20 @@ export class ChatMessageListerUseCase {
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 
-  async execute(
+  private async updateChat(chatId: string) {
+    const input: IChat['summary'] = {
+      last_message: null,
+      last_date: new Date().toISOString(),
+      unread_count: 0,
+    };
+    return this.elasticDatabaseService.update(
+      EElasticIndex.chat,
+      { summary: input },
+      chatId
+    );
+  }
+
+  private async getChatMessage(
     accountId: string,
     query: ListMessageChatsQuery,
     params: ListMessageChatsParams
@@ -60,5 +74,21 @@ export class ChatMessageListerUseCase {
     }
 
     return result.hits.hits.map((hit) => hit._source) as ListMessageResponse[];
+  }
+
+  async execute(
+    accountId: string,
+    query: ListMessageChatsQuery,
+    params: ListMessageChatsParams
+  ): Promise<ListMessageResponse[]> {
+    const chatMessages = await this.getChatMessage(accountId, query, params);
+
+    if (!chatMessages) {
+      return [] as ListMessageResponse[];
+    }
+
+    await this.updateChat(params.chat_id);
+
+    return chatMessages;
   }
 }

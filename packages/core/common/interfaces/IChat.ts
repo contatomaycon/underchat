@@ -1,8 +1,8 @@
 import { EChatStatus } from '../enums/EChatStatus';
 
 interface ISummary {
-  last_message: string;
-  last_date: Date;
+  last_message: string | null;
+  last_date: string | null;
   unread_count: number;
 }
 
@@ -40,13 +40,13 @@ interface IMessageKey {
 export interface IChat {
   chat_id: string;
   message_key?: IMessageKey | null;
-  summary: ISummary;
+  summary?: ISummary | null;
   account: IAccount;
   worker: IWorker;
-  sector: ISector | null;
+  sector?: ISector | null;
   user: IUser | null;
-  contact: IContact | null;
-  photo: string | null;
+  contact?: IContact | null;
+  photo?: string | null;
   name: string | null;
   phone: string;
   status: EChatStatus;
