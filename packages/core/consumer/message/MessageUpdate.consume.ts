@@ -156,16 +156,22 @@ export class MessageUpdateConsume {
           throw new Error('Received message without value');
         }
 
-        const [getChat, getMessageChat] = await Promise.all([
-          this.getChat(data.data.account.id, data.data.chat_id),
-          this.getMessageChat(
+        let getChat = null;
+        let getMessageChat = null;
+
+        if (!data?.data?.message_key?.jid) {
+          getChat = await this.getChat(data.data.account.id, data.data.chat_id);
+        }
+
+        if (!data?.data?.message_key?.id) {
+          getMessageChat = await this.getMessageChat(
             data.data.account.id,
             data.data.chat_id,
             data.data.message_id
-          ),
-        ]);
+          );
+        }
 
-        if (getChat?._id && !getChat?.data?.message_key?.jid) {
+        if (getChat?._id && !data?.data?.message_key?.jid) {
           const messageKey: IChat['message_key'] = {
             jid: data.message?.key.remoteJid ?? null,
           };
@@ -185,8 +191,7 @@ export class MessageUpdateConsume {
 
         if (
           getMessageChat?._id &&
-          (!getMessageChat?.data?.message_key?.id ||
-            !getMessageChat?.data?.message_key?.jid)
+          (!data?.data?.message_key?.id || !data?.data?.message_key?.jid)
         ) {
           const messageKey: IChatMessage['message_key'] = {
             id: data.message?.key.id ?? null,
