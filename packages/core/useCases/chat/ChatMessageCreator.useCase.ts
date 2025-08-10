@@ -86,12 +86,20 @@ export class ChatMessageCreatorUseCase {
     return saveChat;
   }
 
+  private async validate(body: CreateMessageChatsBody) {
+    if (body.type === EMessageType.text && !body.message) {
+      throw new Error('Message content is required for text messages');
+    }
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
     params: CreateMessageChatsParams,
     body: CreateMessageChatsBody
   ): Promise<boolean> {
+    this.validate(body);
+
     const getChat = await this.getChat(accountId, params.chat_id);
 
     if (!getChat) {
