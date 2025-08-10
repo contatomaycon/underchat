@@ -5,13 +5,18 @@ import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.servi
 import { BaileysMessageTextService } from '@core/services/baileys/methods/messageText.service';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
+import { StreamProducerService } from '@core/services/streamProducer.service';
+import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
 
 @singleton()
 export class WorkerSendMessageConsume {
   constructor(
     @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams,
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
-    private readonly baileysMessageTextService: BaileysMessageTextService
+    private readonly baileysMessageTextService: BaileysMessageTextService,
+    private readonly streamProducerService: StreamProducerService,
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 
   public async execute(): Promise<void> {
@@ -39,9 +44,23 @@ export class WorkerSendMessageConsume {
             throw new Error('Received message without content');
           }
 
-          await this.baileysMessageTextService.sendText(
+          const result = await this.baileysMessageTextService.sendText(
             data.phone,
             data.content.message
+          );
+
+          if (!result) {
+            throw new Error('Failed to send message');
+          }
+
+          const inputUpdate: IUpdateMessage = {
+            message: result,
+            data,
+          };
+
+          await this.streamProducerService.send(
+            this.kafkaServiceQueueService.updateMessage(),
+            inputUpdate
           );
 
           return;

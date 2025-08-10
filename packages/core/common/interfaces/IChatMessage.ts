@@ -1,36 +1,42 @@
 import { EMessageType } from '../enums/EMessageType';
 import { ETypeUserChat } from '../enums/ETypeUserChat';
 
-export interface IAccount {
+interface IAccount {
   id: string;
   name: string;
 }
 
-export interface IUser {
+interface IUser {
   id: string;
   name: string;
   photo: string | null;
 }
 
-export interface ISummary {
+interface ISummary {
   is_sent: boolean;
   is_delivered: boolean;
   is_seen: boolean;
 }
 
-export interface IWorker {
+interface IWorker {
   id: string;
   name: string;
 }
 
-export interface IContent {
+interface IContent {
   type: EMessageType;
   message?: string | null;
+}
+
+interface IMessageKey {
+  id?: string | null;
+  jid?: string | null;
 }
 
 export interface IChatMessage {
   message_id: string;
   chat_id: string;
+  message_key?: IMessageKey | null;
   quoted_message_id?: string | null;
   type_user: ETypeUserChat;
   account: IAccount;

@@ -5,6 +5,17 @@ export const chatMappings = () => {
         chat_id: {
           type: 'keyword',
         },
+        message_key: {
+          type: 'nested',
+          properties: {
+            id: {
+              type: 'keyword',
+            },
+            jid: {
+              type: 'keyword',
+            },
+          },
+        },
         summary: {
           type: 'nested',
           properties: {

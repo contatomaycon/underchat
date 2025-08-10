@@ -40,9 +40,9 @@ export class BaileysIncomingMessageService {
     socket.ev.on('messages.upsert', (e) => {
       if (!e?.messages?.length) return;
       for (const m of e.messages) {
-        console.log('messages.upsert');
+        /* console.log('messages.upsert');
         console.log('New message received:', m);
-        console.log('Message event:', e);
+        console.log('Message event:', e); */
       }
     });
 

@@ -1,40 +1,46 @@
 import { EChatStatus } from '../enums/EChatStatus';
 
-export interface ISummary {
+interface ISummary {
   last_message: string;
   last_date: Date;
   unread_count: number;
 }
 
-export interface IAccount {
+interface IAccount {
   id: string;
   name: string;
 }
 
-export interface IWorker {
+interface IWorker {
   id: string;
   name: string;
 }
 
-export interface ISector {
+interface ISector {
   id: string;
   name: string;
 }
 
-export interface IUser {
+interface IUser {
   id: string;
   name: string;
   photo: string | null;
 }
 
-export interface IContact {
+interface IContact {
   id: string;
   name: string;
   phone: string;
 }
 
+interface IMessageKey {
+  id?: string | null;
+  jid?: string | null;
+}
+
 export interface IChat {
   chat_id: string;
+  message_key?: IMessageKey | null;
   summary: ISummary;
   account: IAccount;
   worker: IWorker;

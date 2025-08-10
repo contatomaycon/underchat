@@ -8,6 +8,17 @@ export const mensageMappings = () => {
         chat_id: {
           type: 'keyword',
         },
+        message_key: {
+          type: 'nested',
+          properties: {
+            id: {
+              type: 'keyword',
+            },
+            jid: {
+              type: 'keyword',
+            },
+          },
+        },
         quoted_message_id: {
           type: 'keyword',
         },

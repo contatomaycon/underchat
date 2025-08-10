@@ -2,6 +2,7 @@ import { injectable } from 'tsyringe';
 import {
   AnyMessageContent,
   MiscMessageGenerationOptions,
+  proto,
   WAMessage,
   WAUrlInfo,
 } from '@whiskeysockets/baileys';
@@ -21,18 +22,14 @@ export class BaileysMessageTextService {
       linkPreview?: WAUrlInfo | null;
       mentions?: string[];
     }
-  ) {
+  ): Promise<proto.WebMessageInfo | undefined> {
     const content: AnyMessageContent = {
       text,
       linkPreview: options?.linkPreview ?? undefined,
       mentions: options?.mentions,
     };
 
-    try {
-      await this.baileysHelpersService.send(jid, content, options);
-    } catch (error) {
-      console.error('Error sending message:', error);
-    }
+    return this.baileysHelpersService.send(jid, content, options);
   }
 
   /**
