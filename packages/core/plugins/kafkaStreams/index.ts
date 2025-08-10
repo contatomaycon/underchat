@@ -35,6 +35,7 @@ const kafkaStreamsPlugin: FastifyPluginAsync<
     'retry.backoff.ms': 500,
     'topic.metadata.refresh.interval.ms': 30000,
     'metadata.max.age.ms': 60000,
+    'max.in.flight.requests.per.connection': 1,
   };
 
   const tconf: KafkaStreamsConfig['tconf'] = {
@@ -50,7 +51,7 @@ const kafkaStreamsPlugin: FastifyPluginAsync<
     batchOptions: {
       batchSize: 1,
       commitEveryNBatch: 1,
-      concurrency: 12,
+      concurrency: 1,
       commitSync: true,
       noBatchCommits: false,
     },

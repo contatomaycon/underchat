@@ -24,27 +24,29 @@ export class WorkerSendMessageConsume {
     stream.mapBufferKeyToString();
     stream.mapJSONConvenience();
 
+    let chain: Promise<void> = Promise.resolve();
+
     stream.forEach(async (msg) => {
-      const data = msg.value as IChatMessage;
+      chain = chain.then(async () => {
+        const data = msg.value as IChatMessage;
 
-      if (!data) {
-        throw new Error('Received message without value');
-      }
-
-      if (data.content.type === EMessageType.text) {
-        if (!data.content.message) {
-          throw new Error('Received message without content');
+        if (!data) {
+          throw new Error('Received message without value');
         }
 
-        console.log('data', data);
+        if (data.content.type === EMessageType.text) {
+          if (!data.content.message) {
+            throw new Error('Received message without content');
+          }
 
-        await this.baileysMessageTextService.sendText(
-          data.phone,
-          data.content.message
-        );
+          await this.baileysMessageTextService.sendText(
+            data.phone,
+            data.content.message
+          );
 
-        return;
-      }
+          return;
+        }
+      });
     });
 
     await stream.start();
