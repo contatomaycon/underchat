@@ -25,7 +25,7 @@ export const listMessageResponseSchema = Type.Object({
   quoted_message_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   type_user: Type.String({ enum: Object.values(ETypeUserChat) }),
   user: Type.Optional(Type.Union([userSchema, Type.Null()])),
-  content: contentSchema,
+  content: Type.Optional(Type.Union([contentSchema, Type.Null()])),
   summary: Type.Optional(Type.Union([summarySchema, Type.Null()])),
   date: Type.String(),
 });

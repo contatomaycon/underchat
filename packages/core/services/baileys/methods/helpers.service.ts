@@ -7,6 +7,8 @@ import {
 } from '@whiskeysockets/baileys';
 import { injectable } from 'tsyringe';
 import { BaileysConnectionService } from './connection.service';
+import { isJid } from '@core/common/functions/isJid';
+import { onlyDigits } from '@core/common/functions/onlyDigits';
 
 @injectable()
 export class BaileysHelpersService {
@@ -16,17 +18,30 @@ export class BaileysHelpersService {
     }
   }
 
-  isJid(value: string): boolean {
-    return /^[0-9]{10,15}@s\.whatsapp\.net$/.test(value);
+  async send(
+    phone: string,
+    content: AnyMessageContent,
+    options?: MiscMessageGenerationOptions
+  ): Promise<proto.WebMessageInfo | undefined> {
+    const sock = this.socket();
+
+    let jidSend = phone;
+    if (!isJid(jidSend)) {
+      const { exists, jid } = await this.resolveJidFlexible(sock, phone);
+
+      if (!exists || !jid) {
+        throw new Error(`Number not found on WhatsApp: ${phone}`);
+      }
+
+      jidSend = jid;
+    }
+
+    await this.simulateHumanTyping(jidSend, content);
+
+    return sock.sendMessage(jidSend, content, options);
   }
 
-  toJid(raw: string) {
-    const n = this.onlyDigits(raw);
-
-    return jidNormalizedUser(`${n}@s.whatsapp.net`);
-  }
-
-  async simulateHumanTyping(jid: string, content: AnyMessageContent) {
+  private async simulateHumanTyping(jid: string, content: AnyMessageContent) {
     const sock = this.socket();
     const text = this.extractText(content);
     const durationMs = this.estimateTypingMs(text);
@@ -50,29 +65,6 @@ export class BaileysHelpersService {
     await sock.sendPresenceUpdate('paused', jid);
   }
 
-  async send(
-    phone: string,
-    content: AnyMessageContent,
-    options?: MiscMessageGenerationOptions
-  ): Promise<proto.WebMessageInfo | undefined> {
-    const sock = this.socket();
-
-    let jidSend = phone;
-    if (!this.isJid(jidSend)) {
-      const { exists, jid } = await this.resolveJidFlexible(sock, phone);
-
-      if (!exists || !jid) {
-        throw new Error(`Number not found on WhatsApp: ${phone}`);
-      }
-
-      jidSend = jid;
-    }
-
-    await this.simulateHumanTyping(jidSend, content);
-
-    return sock.sendMessage(jidSend, content, options);
-  }
-
   private socket(): WASocket {
     const s = this.connection.getSocket();
     if (!s) {
@@ -82,16 +74,12 @@ export class BaileysHelpersService {
     return s;
   }
 
-  private onlyDigits(v: string) {
-    return v.replace(/\D/g, '');
-  }
-
   private isBrazil(numeric: string) {
     return numeric.startsWith('55');
   }
 
   private buildCandidatesBR(numeric: string) {
-    const n = this.onlyDigits(numeric);
+    const n = onlyDigits(numeric);
     const rest = n.slice(2);
     if (rest.length < 10) return [n];
 
@@ -105,7 +93,7 @@ export class BaileysHelpersService {
   }
 
   private buildCandidates(numeric: string) {
-    const n = this.onlyDigits(numeric);
+    const n = onlyDigits(numeric);
     if (!this.isBrazil(n)) return [n];
 
     return this.buildCandidatesBR(n);
@@ -115,7 +103,7 @@ export class BaileysHelpersService {
     const candidates = this.buildCandidates(raw);
     const probes = await Promise.all(
       candidates.map(async (c) => {
-        const resp = await sock.onWhatsApp(this.onlyDigits(c));
+        const resp = await sock.onWhatsApp(onlyDigits(c));
         const item = resp?.[0];
 
         return {

@@ -1,0 +1,240 @@
+import { singleton, inject } from 'tsyringe';
+import { KafkaStreams, KStream } from 'kafka-streams';
+import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
+import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
+import { IChat } from '@core/common/interfaces/IChat';
+import { EElasticIndex } from '@core/common/enums/EElasticIndex';
+import { onlyDigits } from '@core/common/functions/onlyDigits';
+import { v4 as uuidv4 } from 'uuid';
+import { AccountService } from '@core/services/account.service';
+import { WorkerService } from '@core/services/worker.service';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { ChatService } from '@core/services/chat.service';
+import { IChatMessage } from '@core/common/interfaces/IChatMessage';
+import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
+import { EMessageType } from '@core/common/enums/EMessageType';
+import { CentrifugoService } from '@core/services/centrifugo.service';
+import { PublishResult } from 'centrifuge';
+import { chatAccountCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+
+@singleton()
+export class MessageUpsertConsume {
+  constructor(
+    @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams,
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    private readonly elasticDatabaseService: ElasticDatabaseService,
+    private readonly accountService: AccountService,
+    private readonly workerService: WorkerService,
+    private readonly chatService: ChatService,
+    private readonly centrifugoService: CentrifugoService
+  ) {}
+
+  private centrifugoPublish(dataPublish: IChatMessage): Promise<PublishResult> {
+    return this.centrifugoService.publishSub(
+      chatAccountCentrifugoQueue(dataPublish.account.id),
+      dataPublish
+    );
+  }
+
+  private async getChat(
+    accountId: string,
+    workerId: string,
+    phone: string,
+    jid?: string | null
+  ): Promise<IChat | null> {
+    const queryElastic = {
+      query: {
+        bool: {
+          must: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: {
+                    'account.id': accountId,
+                  },
+                },
+              },
+            },
+            {
+              nested: {
+                path: 'worker',
+                query: {
+                  term: {
+                    'worker.id': workerId,
+                  },
+                },
+              },
+            },
+            {
+              bool: {
+                should: [
+                  { term: { phone } },
+                  {
+                    nested: {
+                      path: 'message_key',
+                      query: {
+                        term: {
+                          'message_key.jid': jid,
+                        },
+                      },
+                    },
+                  },
+                ],
+                minimum_should_match: 1,
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select(
+      EElasticIndex.chat,
+      queryElastic
+    );
+
+    const data = result?.hits.hits[0]?._source as IChat | null;
+
+    if (!data) {
+      return null;
+    }
+
+    return data;
+  }
+
+  private async createChatMessage(
+    getChat: IChat,
+    data: IUpsertMessage
+  ): Promise<boolean> {
+    let content;
+    if (EMessageType.text === data.type) {
+      content = {
+        type: data.type,
+        message: data.message.message?.conversation,
+      };
+    }
+
+    const inputChatMessage: IChatMessage = {
+      message_id: uuidv4(),
+      chat_id: getChat.chat_id,
+      message_key: {
+        id: data.message.key?.id,
+        jid: data.message.key?.remoteJid,
+      },
+      type_user: ETypeUserChat.client,
+      account: getChat.account,
+      worker: getChat.worker,
+      user: getChat.user,
+      phone: getChat.phone,
+      summary: {
+        is_sent: false,
+        is_delivered: false,
+        is_seen: false,
+      },
+      content,
+      date: new Date().toISOString(),
+    };
+
+    const [, result] = await Promise.all([
+      this.centrifugoPublish(inputChatMessage),
+      this.chatService.saveMessageChat(inputChatMessage),
+    ]);
+
+    return result;
+  }
+
+  private async createChat(data: IUpsertMessage): Promise<IChat> {
+    const [viewAccountName, viewWorkerNameAndId] = await Promise.all([
+      this.accountService.viewAccountName(data.account_id),
+      this.workerService.viewWorkerNameAndId(data.account_id, data.worker_id),
+    ]);
+
+    if (!viewAccountName || !viewWorkerNameAndId) {
+      throw new Error('Account or Worker not found');
+    }
+
+    if (!data.message?.key?.remoteJid) {
+      throw new Error('Received message without remoteJid');
+    }
+
+    const phone = onlyDigits(data.message.key.remoteJid);
+    const chatId = uuidv4();
+
+    const inputChatMessage: IChat = {
+      chat_id: chatId,
+      message_key: {
+        jid: data.message.key?.remoteJid,
+      },
+      account: viewAccountName,
+      worker: viewWorkerNameAndId,
+      name: data.message.pushName ?? null,
+      phone,
+      status: EChatStatus.queue,
+      date: new Date().toISOString(),
+    };
+
+    const result = await this.chatService.saveChat(inputChatMessage);
+
+    if (!result) {
+      throw new Error('Failed to create chat');
+    }
+
+    return inputChatMessage;
+  }
+
+  public async execute(): Promise<void> {
+    const stream: KStream = this.kafkaStreams.getKStream(
+      this.kafkaServiceQueueService.upsertMessage()
+    );
+
+    stream.mapBufferKeyToString();
+    stream.mapJSONConvenience();
+
+    let chain: Promise<void> = Promise.resolve();
+
+    stream.forEach(async (msg) => {
+      chain = chain.then(async () => {
+        const data = msg.value as IUpsertMessage;
+
+        if (!data) {
+          throw new Error('Received message without value');
+        }
+
+        if (!data.message?.key?.remoteJid) {
+          throw new Error('Received message without remoteJid');
+        }
+
+        const phone = onlyDigits(data.message.key.remoteJid);
+
+        const getChat = await this.getChat(
+          data.account_id,
+          data.worker_id,
+          phone,
+          data.message.key.remoteJid
+        );
+
+        if (!getChat) {
+          const createChat = await this.createChat(data);
+
+          if (!createChat) {
+            throw new Error('Failed to create chat');
+          }
+
+          await this.createChatMessage(createChat, data);
+
+          return;
+        }
+
+        await this.createChatMessage(getChat, data);
+      });
+    });
+
+    await stream.start();
+  }
+
+  public async close(): Promise<void> {
+    await this.kafkaStreams.closeAll();
+  }
+}

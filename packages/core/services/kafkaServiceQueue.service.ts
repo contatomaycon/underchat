@@ -9,8 +9,9 @@ export class KafkaServiceQueueService {
     const createServer = this.createServer();
     const workerStatus = this.workerStatus();
     const updateMessage = this.updateMessage();
+    const upsertMessage = this.upsertMessage();
 
-    return [createServer, workerStatus, updateMessage];
+    return [createServer, workerStatus, updateMessage, upsertMessage];
   };
 
   create = (): Promise<void> => {
@@ -39,5 +40,9 @@ export class KafkaServiceQueueService {
 
   updateMessage = () => {
     return `update.message`;
+  };
+
+  upsertMessage = () => {
+    return `upsert.message`;
   };
 }

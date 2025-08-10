@@ -1,4 +1,4 @@
-import { singleton } from 'tsyringe';
+import { singleton, inject } from 'tsyringe';
 import {
   AnyMessageContent,
   MessageUpsertType,
@@ -7,6 +7,11 @@ import {
   proto,
   WASocket,
 } from '@whiskeysockets/baileys';
+import { mapIncomingToType } from '@core/common/functions/mapIncomingToType';
+import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { StreamProducerService } from '@core/services/streamProducer.service';
+import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
+import { baileysEnvironment } from '@core/config/environments';
 
 export type IncomingEvent =
   | {
@@ -28,6 +33,11 @@ export type IncomingEvent =
 export class BaileysIncomingMessageService {
   private currentSocket?: WASocket;
 
+  constructor(
+    private readonly streamProducerService: StreamProducerService,
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService
+  ) {}
+
   bindTo(socket: WASocket) {
     if (this.currentSocket === socket) return;
 
@@ -37,12 +47,26 @@ export class BaileysIncomingMessageService {
     /**
      * Mensagem nova recebida ou enviada (via messages.upsert).
      */
-    socket.ev.on('messages.upsert', (e) => {
+    socket.ev.on('messages.upsert', async (e) => {
       if (!e?.messages?.length) return;
       for (const m of e.messages) {
-        /* console.log('messages.upsert');
-        console.log('New message received:', m);
-        console.log('Message event:', e); */
+        const type = mapIncomingToType(m);
+
+        if (!type) {
+          throw new Error('Unknown message type');
+        }
+
+        const inputUpsert: IUpsertMessage = {
+          worker_id: baileysEnvironment.baileysWorkerId,
+          account_id: baileysEnvironment.baileysAccountId,
+          type,
+          message: m,
+        };
+
+        await this.streamProducerService.send(
+          this.kafkaServiceQueueService.upsertMessage(),
+          inputUpsert
+        );
       }
     });
 

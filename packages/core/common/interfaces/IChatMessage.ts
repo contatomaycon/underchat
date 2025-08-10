@@ -43,7 +43,7 @@ export interface IChatMessage {
   worker: IWorker;
   user?: IUser | null;
   phone: string;
-  content: IContent;
+  content?: IContent | null;
   summary: ISummary;
   date: string;
 }
