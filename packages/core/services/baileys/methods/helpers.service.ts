@@ -1,15 +1,14 @@
 import {
   AnyMessageContent,
-  jidNormalizedUser,
   MiscMessageGenerationOptions,
   proto,
   WASocket,
 } from '@whiskeysockets/baileys';
 import { injectable } from 'tsyringe';
 import { BaileysConnectionService } from './connection.service';
-import { isJid } from '@core/common/functions/isJid';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
+import { normalizeJid } from '@core/common/functions/normalizeJid';
 
 @injectable()
 export class BaileysHelpersService {
@@ -20,26 +19,26 @@ export class BaileysHelpersService {
   }
 
   async send(
-    phone: string,
+    address: string,
     content: AnyMessageContent,
     options?: MiscMessageGenerationOptions
   ): Promise<proto.WebMessageInfo | undefined> {
     const sock = this.socket();
 
-    let jidSend = phone;
-    if (!isJid(jidSend)) {
-      const { exists, jid } = await this.resolveJidFlexible(sock, phone);
+    if (address.includes('@')) {
+      await this.simulateHumanTyping(address, content);
 
-      if (!exists || !jid) {
-        throw new Error(`Number not found on WhatsApp: ${phone}`);
-      }
-
-      jidSend = jid;
+      return sock.sendMessage(address, content, options);
     }
 
-    await this.simulateHumanTyping(jidSend, content);
+    const { exists, jid } = await this.resolveJidFlexible(sock, address);
+    if (!exists || !jid) {
+      throw new Error(`Number not found on WhatsApp: ${address}`);
+    }
 
-    return sock.sendMessage(jidSend, content, options);
+    await this.simulateHumanTyping(jid, content);
+
+    return sock.sendMessage(jid, content, options);
   }
 
   private async simulateHumanTyping(jid: string, content: AnyMessageContent) {
@@ -85,7 +84,7 @@ export class BaileysHelpersService {
         return {
           candidate: c,
           exists: !!item?.exists,
-          jid: item?.jid ? jidNormalizedUser(item.jid) : undefined,
+          jid: item?.jid ? normalizeJid(item.jid) : undefined,
         };
       })
     );

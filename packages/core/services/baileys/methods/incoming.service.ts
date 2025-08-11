@@ -1,4 +1,4 @@
-import { singleton, inject } from 'tsyringe';
+import { singleton } from 'tsyringe';
 import {
   AnyMessageContent,
   MessageUpsertType,
@@ -14,6 +14,7 @@ import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import { baileysEnvironment } from '@core/config/environments';
 import { getChatKind } from '@core/common/functions/getChatKind';
 import { EChatKind } from '@core/common/enums/EChatKind';
+import { EMessageUpsertType } from '@core/common/enums/EMessageUpsertType';
 
 export type IncomingEvent =
   | {
@@ -53,9 +54,18 @@ export class BaileysIncomingMessageService {
       if (!e?.messages?.length) return;
       for (const m of e.messages) {
         const chatKind = getChatKind(m);
+        const upsertType = e.type;
 
-        if (chatKind === EChatKind.user) {
+        console.log('upsertType:', upsertType);
+
+        if (
+          chatKind === EChatKind.user &&
+          upsertType === EMessageUpsertType.notify
+        ) {
           const type = mapIncomingToType(m);
+
+          console.log('New message received:', m);
+          console.log('Message type:', type);
 
           if (!type) {
             throw new Error('Unknown message type');

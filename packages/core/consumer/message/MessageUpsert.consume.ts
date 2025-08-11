@@ -21,6 +21,7 @@ import {
   chatQueueAccountCentrifugo,
 } from '@core/common/functions/centrifugoQueue';
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
+import { remoteJid } from '@core/common/functions/remoteJid';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -135,12 +136,14 @@ export class MessageUpsertConsume {
       };
     }
 
+    const jid = data.message?.key?.remoteJid ?? remoteJid(data.message?.key);
+
     const inputChatMessage: IChatMessage = {
       message_id: uuidv4(),
       chat_id: getChat.chat_id,
       message_key: {
         id: data.message.key?.id,
-        jid: data.message.key?.remoteJid,
+        jid,
       },
       type_user: ETypeUserChat.client,
       account: getChat.account,
@@ -174,17 +177,20 @@ export class MessageUpsertConsume {
       throw new Error('Account or Worker not found');
     }
 
-    if (!data.message?.key?.remoteJid) {
+    const rJid = remoteJid(data.message?.key);
+    const jid = data.message?.key?.remoteJid ?? rJid;
+
+    if (!jid) {
       throw new Error('Received message without remoteJid');
     }
 
-    const phone = onlyDigits(data.message.key.remoteJid);
+    const phone = rJid ? onlyDigits(rJid) : onlyDigits(jid);
     const chatId = uuidv4();
 
     const inputChatMessage: IChat = {
       chat_id: chatId,
       message_key: {
-        jid: data.message.key?.remoteJid,
+        jid,
       },
       account: viewAccountName,
       worker: viewWorkerNameAndId,
@@ -217,21 +223,26 @@ export class MessageUpsertConsume {
       chain = chain.then(async () => {
         const data = msg.value as IUpsertMessage;
 
+        console.log('MessageUpsertConsume data', data);
+
         if (!data) {
           throw new Error('Received message without value');
         }
 
-        if (!data.message?.key?.remoteJid) {
+        const rJid = remoteJid(data.message?.key);
+        const jid = data.message?.key?.remoteJid ?? rJid;
+
+        if (!jid) {
           throw new Error('Received message without remoteJid');
         }
 
-        const phone = onlyDigits(data.message.key.remoteJid);
+        const phone = rJid ? onlyDigits(rJid) : onlyDigits(jid);
 
         const getChat = await this.getChat(
           data.account_id,
           data.worker_id,
           phone,
-          data.message.key.remoteJid
+          jid
         );
 
         if (!getChat) {

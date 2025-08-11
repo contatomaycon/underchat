@@ -1,11 +1,12 @@
 import { WAMessage, WASocket } from '@whiskeysockets/baileys';
+import { remoteJid } from './remoteJid';
 
 function isGroupJid(jid: string | undefined) {
   return !!jid && jid.endsWith('@g.us');
 }
 
 export function isGroupMessage(m: WAMessage): boolean {
-  const jid: string | undefined = m.key?.remoteJid ?? undefined;
+  const jid: string | undefined = remoteJid(m.key) ?? undefined;
 
   return isGroupJid(jid) || Boolean(m.key.participant);
 }
@@ -16,5 +17,5 @@ export function getAuthorJid(m: WAMessage, sock?: WASocket) {
     if (m.key.fromMe && sock?.user?.id) return sock.user.id;
   }
 
-  return m.key.remoteJid;
+  return remoteJid(m.key);
 }

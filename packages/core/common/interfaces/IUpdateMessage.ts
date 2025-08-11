@@ -1,7 +1,7 @@
-import { proto } from '@whiskeysockets/baileys';
+import { proto, WAMessage } from '@whiskeysockets/baileys';
 import { IChatMessage } from './IChatMessage';
 
 export interface IUpdateMessage {
-  message: proto.WebMessageInfo | undefined;
+  message: (proto.WebMessageInfo & WAMessage) | undefined;
   data: IChatMessage;
 }

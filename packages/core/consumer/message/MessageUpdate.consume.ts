@@ -7,6 +7,7 @@ import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import Redis from 'ioredis';
+import { remoteJid } from '@core/common/functions/remoteJid';
 
 @singleton()
 export class MessageUpdateConsume {
@@ -40,8 +41,11 @@ export class MessageUpdateConsume {
         }
 
         if (!data?.data?.message_key?.jid) {
+          const jid =
+            data.message?.key?.remoteJid ?? remoteJid(data.message?.key);
+
           const messageKey: IChat['message_key'] = {
-            jid: data.message?.key.remoteJid ?? null,
+            jid,
           };
 
           await this.elasticDatabaseService.update(
@@ -58,9 +62,12 @@ export class MessageUpdateConsume {
         }
 
         if (!data?.data?.message_key?.id || !data?.data?.message_key?.jid) {
+          const jid =
+            data.message?.key?.remoteJid ?? remoteJid(data.message?.key);
+
           const messageKey: IChatMessage['message_key'] = {
             id: data.message?.key.id ?? null,
-            jid: data.message?.key.remoteJid ?? null,
+            jid,
           };
 
           await this.elasticDatabaseService.update(

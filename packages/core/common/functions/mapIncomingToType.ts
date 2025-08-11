@@ -1,5 +1,6 @@
 import { proto, WAMessage } from '@whiskeysockets/baileys';
 import { EMessageType } from '../enums/EMessageType';
+import { remoteJid } from './remoteJid';
 
 function getText(msg: proto.IMessage): string {
   if (msg.conversation) return msg.conversation;
@@ -46,7 +47,7 @@ export function mapIncomingToType(m: WAMessage): EMessageType | undefined {
   const msg = m.message as proto.IMessage | undefined;
   if (!msg) return;
 
-  const remote = m.key?.remoteJid ?? '';
+  const remote = remoteJid(m.key);
   const isStatus = remote === 'status@broadcast';
 
   const text = getText(msg);

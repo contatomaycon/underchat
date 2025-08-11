@@ -111,7 +111,6 @@
     "@temporalio/workflow": "^1.12.1",
     "@types/lodash": "^4.17.20",
     "@types/uuid": "^10.0.0",
-    "@whiskeysockets/baileys": "^6.7.18",
     "axios": "^1.10.0",
     "centrifuge": "^5.3.5",
     "crypto-js": "^4.2.0",
@@ -150,7 +149,8 @@
     "tsyringe": "^4.10.0",
     "typescript-eslint": "^8.36.0",
     "uuid": "^11.1.0",
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "@whiskeysockets/baileys": "github:WhiskeySockets/Baileys#162ebe1cc203fd91ebf39ec0079513cd17bd271b"
   },
   "pnpm": {
     "overrides": {
