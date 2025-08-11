@@ -1,5 +1,4 @@
 import { injectable, inject } from 'tsyringe';
-import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { v4 as uuidv4 } from 'uuid';
 import { TFunction } from 'i18next';
 import { ChatService } from '@core/services/chat.service';
@@ -7,7 +6,7 @@ import Redis from 'ioredis';
 import { IChat } from '@core/common/interfaces/IChat';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { PublishResult } from 'centrifuge';
-import { chatAccountCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { chatQueueAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { CreateChatRequest } from '@core/schema/chat/createChat/request.schema';
 import { AccountService } from '@core/services/account.service';
 import { UserService } from '@core/services/user.service';
@@ -25,9 +24,11 @@ export class ChatCreatorUseCase {
     private readonly workerService: WorkerService
   ) {}
 
-  private centrifugoPublish(dataPublish: IChatMessage): Promise<PublishResult> {
+  private centrifugoChatQueuePublish(
+    dataPublish: IChat
+  ): Promise<PublishResult> {
     return this.centrifugoService.publishSub(
-      chatAccountCentrifugoQueue(dataPublish.account.id),
+      chatQueueAccountCentrifugo(dataPublish.account.id),
       dataPublish
     );
   }
@@ -60,6 +61,14 @@ export class ChatCreatorUseCase {
       date: new Date().toISOString(),
     };
 
-    return this.chatService.saveChat(inputChatMessage);
+    const result = await this.chatService.saveChat(inputChatMessage);
+
+    if (!result) {
+      throw new Error(t('chat_create_error'));
+    }
+
+    await this.centrifugoChatQueuePublish(inputChatMessage);
+
+    return result;
   }
 }

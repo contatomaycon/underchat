@@ -1,5 +1,9 @@
-export function chatAccountCentrifugoQueue(accountId: string): string {
+export function chatAccountCentrifugo(accountId: string): string {
   return `chat:account#${accountId}`;
+}
+
+export function chatQueueAccountCentrifugo(accountId: string): string {
+  return `chat.queue:account#${accountId}`;
 }
 
 export function workerCentrifugoQueue(accountId: string): string {

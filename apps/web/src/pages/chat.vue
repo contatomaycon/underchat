@@ -12,10 +12,14 @@ import { useChatStore } from '@/@webcore/stores/chat';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
 import { onMessage, publish, unsubscribe } from '@/@webcore/centrifugo';
-import { chatAccountCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import {
+  chatAccountCentrifugo,
+  chatQueueAccountCentrifugo,
+} from '@core/common/functions/centrifugoQueue';
 import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
+import { IChat } from '@core/common/interfaces/IChat';
 
 definePage({
   meta: {
@@ -106,13 +110,18 @@ const chatContentContainerBg = computed(() => {
 onMounted(async () => {
   if (chatStore.user?.account_id) {
     await onMessage(
-      chatAccountCentrifugoQueue(chatStore.user.account_id),
+      chatAccountCentrifugo(chatStore.user.account_id),
       (data: IChatMessage) => {
-        console.log('data', data);
-
         if (chatStore.activeChat?.chat_id !== data.chat_id) return;
 
         chatStore.addMessageActiveChat(data);
+      }
+    );
+
+    await onMessage(
+      chatQueueAccountCentrifugo(chatStore.user.account_id),
+      (data: IChat) => {
+        chatStore.addChat(data);
       }
     );
   }
@@ -120,7 +129,8 @@ onMounted(async () => {
 
 onUnmounted(async () => {
   if (chatStore.user?.account_id) {
-    await unsubscribe(chatAccountCentrifugoQueue(chatStore.user.account_id));
+    await unsubscribe(chatAccountCentrifugo(chatStore.user.account_id));
+    await unsubscribe(chatQueueAccountCentrifugo(chatStore.user.account_id));
   }
 });
 </script>

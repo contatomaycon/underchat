@@ -28,6 +28,13 @@
         "allow_subscribe_for_client": true,
         "allow_publish_for_client": true,
         "presence": true
+      },
+      {
+        "name": "chat.queue",
+        "allow_user_limited_channels": true,
+        "allow_subscribe_for_client": true,
+        "allow_publish_for_client": true,
+        "presence": true
       }
     ]
   }

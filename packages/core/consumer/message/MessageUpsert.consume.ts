@@ -16,7 +16,10 @@ import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { PublishResult } from 'centrifuge';
-import { chatAccountCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import {
+  chatAccountCentrifugo,
+  chatQueueAccountCentrifugo,
+} from '@core/common/functions/centrifugoQueue';
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 
 @singleton()
@@ -31,9 +34,20 @@ export class MessageUpsertConsume {
     private readonly centrifugoService: CentrifugoService
   ) {}
 
-  private centrifugoPublish(dataPublish: IChatMessage): Promise<PublishResult> {
+  private centrifugoChatPublish(
+    dataPublish: IChatMessage
+  ): Promise<PublishResult> {
     return this.centrifugoService.publishSub(
-      chatAccountCentrifugoQueue(dataPublish.account.id),
+      chatAccountCentrifugo(dataPublish.account.id),
+      dataPublish
+    );
+  }
+
+  private centrifugoChatQueuePublish(
+    dataPublish: IChat
+  ): Promise<PublishResult> {
+    return this.centrifugoService.publishSub(
+      chatQueueAccountCentrifugo(dataPublish.account.id),
       dataPublish
     );
   }
@@ -45,8 +59,6 @@ export class MessageUpsertConsume {
     jid?: string | null
   ): Promise<IChat | null> {
     const candidates = buildCandidates(phone);
-
-    console.log('candidates', candidates);
 
     const queryElastic = {
       query: {
@@ -95,14 +107,10 @@ export class MessageUpsertConsume {
       },
     };
 
-    console.log('queryElastic', queryElastic);
-
     const result = await this.elasticDatabaseService.select(
       EElasticIndex.chat,
       queryElastic
     );
-
-    console.log('result', result);
 
     const data = result?.hits.hits[0]?._source as IChat | null;
 
@@ -149,7 +157,7 @@ export class MessageUpsertConsume {
     };
 
     const [, result] = await Promise.all([
-      this.centrifugoPublish(inputChatMessage),
+      this.centrifugoChatPublish(inputChatMessage),
       this.chatService.saveMessageChat(inputChatMessage),
     ]);
 
@@ -234,6 +242,7 @@ export class MessageUpsertConsume {
           }
 
           await this.createChatMessage(createChat, data);
+          await this.centrifugoChatQueuePublish(createChat);
 
           return;
         }

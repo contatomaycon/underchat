@@ -43,7 +43,7 @@ export const listChatsResponseSchema = Type.Object({
   contact: Type.Optional(Type.Union([contactSchema, Type.Null()])),
   photo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   name: Type.Union([Type.String(), Type.Null()]),
-  phone: Type.Number(),
+  phone: Type.String(),
   status: Type.String({ enum: Object.values(EChatStatus) }),
   date: Type.String(),
 });

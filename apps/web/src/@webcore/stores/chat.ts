@@ -15,6 +15,8 @@ import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/reques
 import { ListMessageResponse } from '@core/schema/chat/listMessageChats/response.schema';
 import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
+import { IChat } from '@core/common/interfaces/IChat';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
 
 export const useChatStore = defineStore('chat', {
   state: () => ({
@@ -56,6 +58,30 @@ export const useChatStore = defineStore('chat', {
       };
 
       this.listMessages.push(input);
+    },
+    addChat(chat: IChat) {
+      const input: ListChatsResponse = {
+        chat_id: chat.chat_id,
+        summary: chat.summary,
+        account: chat.account,
+        worker: chat.worker,
+        sector: chat.sector,
+        user: chat.user,
+        contact: chat.contact,
+        photo: chat.photo,
+        name: chat.name,
+        phone: chat.phone,
+        status: chat.status,
+        date: chat.date,
+      };
+
+      if (chat.status === EChatStatus.queue) {
+        this.listQueue.push(input);
+      }
+
+      if (chat.status === EChatStatus.in_chat) {
+        this.listInChat.push(input);
+      }
     },
     updateChatUserImmediate() {
       if (!this.user?.status) return;

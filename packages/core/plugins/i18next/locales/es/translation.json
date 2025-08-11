@@ -104,5 +104,6 @@
   "chat_update_user_not_found": "¡Chat de usuario no encontrado!",
   "chat_create_success": "¡Chat creado con éxito!",
   "chat_create_not_found": "¡Chat no encontrado para crear!",
-  "chat_not_found": "¡Chat no encontrado!"
+  "chat_not_found": "¡Chat no encontrado!",
+  "chat_create_error": "Error al crear el chat"
 }

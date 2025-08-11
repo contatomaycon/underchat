@@ -17,7 +17,7 @@ import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { PublishResult } from 'centrifuge';
-import { chatAccountCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 
 @injectable()
 export class ChatMessageCreatorUseCase {
@@ -83,9 +83,11 @@ export class ChatMessageCreatorUseCase {
     return data;
   }
 
-  private centrifugoPublish(dataPublish: IChatMessage): Promise<PublishResult> {
+  private centrifugoChatPublish(
+    dataPublish: IChatMessage
+  ): Promise<PublishResult> {
     return this.centrifugoService.publishSub(
-      chatAccountCentrifugoQueue(dataPublish.account.id),
+      chatAccountCentrifugo(dataPublish.account.id),
       dataPublish
     );
   }
@@ -134,7 +136,7 @@ export class ChatMessageCreatorUseCase {
     };
 
     const [, , result] = await Promise.all([
-      this.centrifugoPublish(inputChatMessage),
+      this.centrifugoChatPublish(inputChatMessage),
       this.streamProducerService.send(
         this.kafkaBaileysQueueService.workerSendMessage(getChat.worker.id),
         inputChatMessage
