@@ -6,4 +6,5 @@ export interface IUpsertMessage {
   account_id: string;
   type: EMessageType;
   message: proto.IWebMessageInfo;
+  photo?: string | null;
 }

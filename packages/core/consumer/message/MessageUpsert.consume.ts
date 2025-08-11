@@ -22,6 +22,7 @@ import {
 } from '@core/common/functions/centrifugoQueue';
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 import { remoteJid } from '@core/common/functions/remoteJid';
+import { StorageService } from '@core/services/storage.service';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -32,7 +33,8 @@ export class MessageUpsertConsume {
     private readonly accountService: AccountService,
     private readonly workerService: WorkerService,
     private readonly chatService: ChatService,
-    private readonly centrifugoService: CentrifugoService
+    private readonly centrifugoService: CentrifugoService,
+    private readonly storageService: StorageService
   ) {}
 
   private centrifugoChatPublish(
@@ -83,6 +85,15 @@ export class MessageUpsertConsume {
                     'worker.id': workerId,
                   },
                 },
+              },
+            },
+            {
+              terms: {
+                status: [
+                  EChatStatus.in_chat,
+                  EChatStatus.queue,
+                  EChatStatus.ura,
+                ],
               },
             },
             {
@@ -199,6 +210,18 @@ export class MessageUpsertConsume {
       status: EChatStatus.queue,
       date: new Date().toISOString(),
     };
+
+    if (data.photo) {
+      const photoResult = await this.storageService.uploadFromUrl(
+        data.photo,
+        data.account_id,
+        chatId
+      );
+
+      console.log('photoResult', photoResult);
+
+      inputChatMessage.photo = photoResult?.url;
+    }
 
     const result = await this.chatService.saveChat(inputChatMessage);
 

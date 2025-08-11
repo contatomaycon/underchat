@@ -5,12 +5,48 @@ import { ListMessageResponse } from '@core/schema/chat/listMessageChats/response
 
 const chatStore = useChatStore();
 
-const resolveFeedbackIcon = (message: ListMessageResponse) => {
+const isTypeUser = (message: ListMessageResponse): boolean => {
+  return message.type_user === ETypeUserChat.client;
+};
+
+const resolveFeedbackIcon = (
+  message: ListMessageResponse
+): { icon: string; color: string | undefined } => {
   if (message.summary?.is_seen)
     return { icon: 'tabler-checks', color: 'success' };
   else if (message.summary?.is_delivered)
     return { icon: 'tabler-checks', color: undefined };
   else return { icon: 'tabler-check', color: undefined };
+};
+
+const resolvePhoto = (message: ListMessageResponse): string => {
+  if (isTypeUser(message) && chatStore.activeChat?.photo) {
+    return chatStore.activeChat.photo;
+  }
+
+  if (!isTypeUser(message) && message.user?.photo) {
+    return message.user.photo;
+  }
+
+  if (!isTypeUser(message) && chatStore.user?.info.photo) {
+    return chatStore.user.info.photo;
+  }
+
+  return '';
+};
+
+const isPhotoExist = (message: ListMessageResponse): boolean => {
+  return !!resolvePhoto(message);
+};
+
+const avatarChat = (message: ListMessageResponse) => {
+  if (isTypeUser(message) && chatStore.activeChat?.name) {
+    return avatarText(chatStore.activeChat.name);
+  }
+
+  const name = message.user?.name ?? chatStore.user?.info.name;
+
+  return avatarText(name);
 };
 </script>
 
@@ -22,64 +58,48 @@ const resolveFeedbackIcon = (message: ListMessageResponse) => {
       class="chat-group d-flex align-start"
       :class="[
         {
-          'flex-row-reverse': msgGrp.type_user !== ETypeUserChat.client,
+          'flex-row-reverse': !isTypeUser(msgGrp),
           'mb-6': chatStore.listMessages.length - 1 !== index,
         },
       ]"
     >
-      <div
-        class="chat-avatar"
-        :class="msgGrp.type_user !== ETypeUserChat.client ? 'ms-4' : 'me-4'"
-      >
+      <div class="chat-avatar" :class="!isTypeUser(msgGrp) ? 'ms-4' : 'me-4'">
         <VAvatar
           v-if="msgGrp.user"
           size="32"
-          :variant="!msgGrp.user?.photo ? 'tonal' : undefined"
+          :variant="!isPhotoExist(msgGrp) ? 'tonal' : undefined"
         >
-          <VImg v-if="msgGrp.user?.photo" :src="msgGrp.user?.photo" />
-          <span v-else class="text-1xl">{{
-            avatarText(msgGrp.user?.name)
-          }}</span>
+          <VImg v-if="isPhotoExist(msgGrp)" :src="resolvePhoto(msgGrp)" />
+          <span v-else class="text-1xl">{{ avatarChat(msgGrp) }}</span>
         </VAvatar>
         <VAvatar
           v-else
           size="32"
-          :variant="!chatStore.activeChat?.photo ? 'tonal' : undefined"
+          :variant="!isPhotoExist(msgGrp) ? 'tonal' : undefined"
         >
-          <VImg
-            v-if="chatStore.activeChat?.photo"
-            :src="chatStore.activeChat?.photo"
-          />
-          <span v-else class="text-1xl">{{
-            avatarText(chatStore.activeChat?.name)
-          }}</span>
+          <VImg v-if="isPhotoExist(msgGrp)" :src="resolvePhoto(msgGrp)" />
+          <span v-else class="text-1xl">{{ avatarChat(msgGrp) }}</span>
         </VAvatar>
       </div>
 
       <div
         class="chat-body d-inline-flex flex-column"
-        :class="
-          msgGrp.type_user !== ETypeUserChat.client
-            ? 'align-end'
-            : 'align-start'
-        "
+        :class="!isTypeUser(msgGrp) ? 'align-end' : 'align-start'"
       >
         <div
           class="chat-content py-2 px-4 elevation-2"
           style="background-color: rgb(var(--v-theme-surface))"
           :class="[
-            msgGrp.type_user === ETypeUserChat.client
+            isTypeUser(msgGrp)
               ? 'chat-left'
               : 'bg-primary text-white chat-right',
           ]"
         >
           <p class="mb-0 text-base">
-            {{ msgGrp.content.message }}
+            {{ msgGrp.content?.message }}
           </p>
         </div>
-        <div
-          :class="{ 'text-right': msgGrp.type_user !== ETypeUserChat.client }"
-        >
+        <div :class="{ 'text-right': !isTypeUser(msgGrp) }">
           <VIcon size="16" :color="resolveFeedbackIcon(msgGrp).color">
             {{ resolveFeedbackIcon(msgGrp).icon }}
           </VIcon>

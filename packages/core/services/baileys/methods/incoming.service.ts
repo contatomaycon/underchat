@@ -15,6 +15,7 @@ import { baileysEnvironment } from '@core/config/environments';
 import { getChatKind } from '@core/common/functions/getChatKind';
 import { EChatKind } from '@core/common/enums/EChatKind';
 import { EMessageUpsertType } from '@core/common/enums/EMessageUpsertType';
+import { getSenderPhotoUrl } from '@core/common/functions/getSenderPhotoUrl';
 
 export type IncomingEvent =
   | {
@@ -71,11 +72,14 @@ export class BaileysIncomingMessageService {
             throw new Error('Unknown message type');
           }
 
+          const senderPic = await getSenderPhotoUrl(socket, m);
+
           const inputUpsert: IUpsertMessage = {
             worker_id: baileysEnvironment.baileysWorkerId,
             account_id: baileysEnvironment.baileysAccountId,
             type,
             message: m,
+            photo: senderPic,
           };
 
           await this.streamProducerService.send(

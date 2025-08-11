@@ -25,6 +25,7 @@ export const sectorSchema = Type.Object({
 export const userSchema = Type.Object({
   id: Type.String(),
   name: Type.String(),
+  photo: Type.Optional(Type.String()),
 });
 
 export const contactSchema = Type.Object({
