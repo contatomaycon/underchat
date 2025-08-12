@@ -29,8 +29,6 @@ export class BaileysMessageTextService {
       mentions: options?.mentions,
     };
 
-    console.log('content', content);
-
     return this.baileysHelpersService.send(jid, content, options);
   }
 
