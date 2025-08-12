@@ -41,8 +41,7 @@ export class MessageUpdateConsume {
         }
 
         if (!data?.data?.message_key?.jid) {
-          const jid =
-            data.message?.key?.remoteJid ?? remoteJid(data.message?.key);
+          const jid = remoteJid(data.message?.key);
 
           const messageKey: IChat['message_key'] = {
             jid,
@@ -62,8 +61,7 @@ export class MessageUpdateConsume {
         }
 
         if (!data?.data?.message_key?.id || !data?.data?.message_key?.jid) {
-          const jid =
-            data.message?.key?.remoteJid ?? remoteJid(data.message?.key);
+          const jid = remoteJid(data.message?.key);
 
           const messageKey: IChatMessage['message_key'] = {
             id: data.message?.key.id ?? null,

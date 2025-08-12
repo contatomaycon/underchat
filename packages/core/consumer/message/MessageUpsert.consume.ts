@@ -147,7 +147,7 @@ export class MessageUpsertConsume {
       };
     }
 
-    const jid = data.message?.key?.remoteJid ?? remoteJid(data.message?.key);
+    const jid = remoteJid(data.message?.key);
 
     const inputChatMessage: IChatMessage = {
       message_id: uuidv4(),
@@ -156,7 +156,9 @@ export class MessageUpsertConsume {
         id: data.message.key?.id,
         jid,
       },
-      type_user: ETypeUserChat.client,
+      type_user: data.message?.key?.fromMe
+        ? ETypeUserChat.operator
+        : ETypeUserChat.client,
       account: getChat.account,
       worker: getChat.worker,
       user: getChat.user,
@@ -188,14 +190,12 @@ export class MessageUpsertConsume {
       throw new Error('Account or Worker not found');
     }
 
-    const rJid = remoteJid(data.message?.key);
-    const jid = data.message?.key?.remoteJid ?? rJid;
-
+    const jid = remoteJid(data.message?.key);
     if (!jid) {
       throw new Error('Received message without remoteJid');
     }
 
-    const phone = rJid ? onlyDigits(rJid) : onlyDigits(jid);
+    const phone = onlyDigits(jid);
     const chatId = uuidv4();
 
     const inputChatMessage: IChat = {
@@ -217,8 +217,6 @@ export class MessageUpsertConsume {
         data.account_id,
         chatId
       );
-
-      console.log('photoResult', photoResult);
 
       inputChatMessage.photo = photoResult?.url;
     }
@@ -252,14 +250,12 @@ export class MessageUpsertConsume {
           throw new Error('Received message without value');
         }
 
-        const rJid = remoteJid(data.message?.key);
-        const jid = data.message?.key?.remoteJid ?? rJid;
-
+        const jid = remoteJid(data.message?.key);
         if (!jid) {
           throw new Error('Received message without remoteJid');
         }
 
-        const phone = rJid ? onlyDigits(rJid) : onlyDigits(jid);
+        const phone = onlyDigits(jid);
 
         const getChat = await this.getChat(
           data.account_id,
