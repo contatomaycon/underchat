@@ -65,6 +65,32 @@ export const mensageMappings = () => {
                 },
               },
             },
+            link_preview: {
+              type: 'nested',
+              properties: {
+                'canonical-url': {
+                  type: 'keyword',
+                },
+                'matched-text': {
+                  type: 'text',
+                },
+                title: {
+                  type: 'text',
+                },
+                description: {
+                  type: 'text',
+                },
+                jpegThumbnail: {
+                  type: 'binary',
+                },
+                highQualityThumbnail: {
+                  type: 'binary',
+                },
+                originalThumbnailUrl: {
+                  type: 'keyword',
+                },
+              },
+            },
           },
         },
         summary: {

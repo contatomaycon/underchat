@@ -8,6 +8,8 @@ import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
+import { extractFirstUrl } from '@core/common/functions/extractFirstUrl';
+import { buildLinkPreview } from '@core/common/functions/buildLinkPreview';
 
 @singleton()
 export class MessageSendConsume {
@@ -46,9 +48,17 @@ export class MessageSendConsume {
             throw new Error('Received message without content');
           }
 
+          const firstUrl = extractFirstUrl(data.content.message);
+          const linkPreview = firstUrl
+            ? await buildLinkPreview(firstUrl)
+            : null;
+
           const result = await this.baileysMessageTextService.sendText(
             phoneSend,
-            data.content.message
+            data.content.message,
+            {
+              linkPreview,
+            }
           );
 
           if (!result) {
@@ -57,6 +67,7 @@ export class MessageSendConsume {
 
           const inputUpdate: IUpdateMessage = {
             message: result,
+            link_preview: linkPreview,
             data,
           };
 

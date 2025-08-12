@@ -8,6 +8,7 @@ import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import Redis from 'ioredis';
 import { remoteJid } from '@core/common/functions/remoteJid';
+import { normalizeLinkPreview } from '@core/common/functions/normalizeLinkPreview';
 
 @singleton()
 export class MessageUpdateConsume {
@@ -68,9 +69,17 @@ export class MessageUpdateConsume {
             jid,
           };
 
+          const content = {
+            ...data.data.content,
+            link_preview: normalizeLinkPreview(data.link_preview),
+          } as IChatMessage['content'];
+
           await this.elasticDatabaseService.update(
             EElasticIndex.message,
-            { message_key: messageKey },
+            {
+              message_key: messageKey,
+              content,
+            },
             data.data.message_id
           );
         }

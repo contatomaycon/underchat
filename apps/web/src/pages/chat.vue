@@ -50,11 +50,8 @@ const refInputEl = ref<HTMLElement>();
 
 const scrollToBottomInChatLog = () => {
   if (!chatLogPS.value) return;
-
   const scrollEl = chatLogPS.value.$el || chatLogPS.value;
-
   if (!scrollEl) return;
-
   scrollEl.scrollTop = scrollEl.scrollHeight;
 };
 
@@ -65,18 +62,14 @@ const startConversation = () => {
 
 const sendMessage = async () => {
   if (!msg.value) return;
-
   if (chatStore.activeChat?.worker?.id) {
     const inputCreateMessage: CreateMessageChatsBody = {
       type: EMessageType.text,
       message: msg.value,
     };
-
     await chatStore.createMessage(inputCreateMessage);
   }
-
   msg.value = '';
-
   nextTick(() => {
     scrollToBottomInChatLog();
   });
@@ -84,16 +77,12 @@ const sendMessage = async () => {
 
 const openChat = async (chatId: ListChatsResponse['chat_id']) => {
   chatStore.setActiveChat(chatId);
-
   const requestQueue: ListMessageChatsQuery = {
     from: from.value,
     size: size.value,
   };
-
   await chatStore.getChatById(requestQueue);
-
   if (vuetifyDisplays.smAndDown.value) isLeftSidebarOpen.value = false;
-
   nextTick(() => {
     scrollToBottomInChatLog();
   });
@@ -101,9 +90,7 @@ const openChat = async (chatId: ListChatsResponse['chat_id']) => {
 
 const chatContentContainerBg = computed(() => {
   let color = 'transparent';
-
   if (themes) color = themes?.[name.value].colors?.background as string;
-
   return color;
 });
 
@@ -113,11 +100,9 @@ onMounted(async () => {
       chatAccountCentrifugo(chatStore.user.account_id),
       (data: IChatMessage) => {
         if (chatStore.activeChat?.chat_id !== data.chat_id) return;
-
         chatStore.addMessageActiveChat(data);
       }
     );
-
     await onMessage(
       chatQueueAccountCentrifugo(chatStore.user.account_id),
       (data: IChat) => {
@@ -137,7 +122,6 @@ onUnmounted(async () => {
 
 <template>
   <VLayout class="chat-app-layout" style="z-index: 0">
-    <!-- 👉 user profile sidebar -->
     <VNavigationDrawer
       v-model="isUserProfileSidebarOpen"
       data-allow-mismatch
@@ -153,7 +137,6 @@ onUnmounted(async () => {
       />
     </VNavigationDrawer>
 
-    <!-- 👉 Active Chat sidebar -->
     <VNavigationDrawer
       v-model="isActiveChatUserProfileSidebarOpen"
       data-allow-mismatch
@@ -169,7 +152,6 @@ onUnmounted(async () => {
       />
     </VNavigationDrawer>
 
-    <!-- 👉 Left sidebar   -->
     <VNavigationDrawer
       v-model="isLeftSidebarOpen"
       data-allow-mismatch
@@ -253,14 +235,18 @@ onUnmounted(async () => {
           class="chat-log-message-form mb-5 mx-5"
           @submit.prevent="sendMessage"
         >
-          <VTextField
+          <VTextarea
             :key="contact_id"
             v-model="msg"
             variant="solo"
             density="default"
             class="chat-message-input"
             :placeholder="$t('write_your_message')"
+            :auto-grow="true"
+            rows="1"
+            :max-rows="8"
             autofocus
+            @keydown.enter.exact.prevent="sendMessage"
           >
             <template #append-inner>
               <div class="d-flex gap-1">
@@ -280,7 +266,7 @@ onUnmounted(async () => {
                 </IconBtn>
               </div>
             </template>
-          </VTextField>
+          </VTextarea>
 
           <input
             ref="refInputEl"
@@ -321,10 +307,8 @@ onUnmounted(async () => {
 @use '@webcore/scss/base/mixins';
 @use '@layouts/styles/mixins' as layoutsMixins;
 
-// Variables
 $chat-app-header-height: 76px;
 
-// Placeholders
 %chat-header {
   display: flex;
   align-items: center;
@@ -338,9 +322,7 @@ $chat-app-header-height: 76px;
 
 .chat-app-layout {
   border-radius: vuetify.$card-border-radius;
-
   @include mixins.elevation(vuetify.$card-elevation);
-
   $sel-chat-app-layout: &;
 
   @at-root {
@@ -370,16 +352,23 @@ $chat-app-header-height: 76px;
   }
 }
 
+.chat-message-input textarea {
+  resize: none;
+  overflow: hidden;
+  line-height: 1.5rem;
+  padding-top: 1rem !important;
+  padding-bottom: 0.5rem !important;
+}
+
 .chat-content-container {
-  /* stylelint-disable-next-line value-keyword-case */
   background-color: v-bind(chatContentContainerBg);
 
-  // Adjust the padding so text field height stays 48px
   .chat-message-input {
     .v-field__input {
       font-size: 0.9375rem !important;
       line-height: 1.375rem !important;
       padding-block: 0.6rem 0.5rem;
+      white-space: pre-wrap;
     }
 
     .v-field__append-inner {
@@ -395,10 +384,8 @@ $chat-app-header-height: 76px;
 
 .chat-user-profile-badge {
   .v-badge__badge {
-    /* stylelint-disable liberty/use-logical-spec */
     min-width: 12px !important;
     height: 0.75rem;
-    /* stylelint-enable liberty/use-logical-spec */
   }
 }
 </style>

@@ -1,3 +1,4 @@
+import { WAUrlInfo } from '@whiskeysockets/baileys';
 import { EMessageType } from '../enums/EMessageType';
 import { ETypeUserChat } from '../enums/ETypeUserChat';
 
@@ -26,6 +27,7 @@ interface IWorker {
 interface IContent {
   type: EMessageType;
   message?: string | null;
+  link_preview?: WAUrlInfo | null;
 }
 
 interface IMessageKey {

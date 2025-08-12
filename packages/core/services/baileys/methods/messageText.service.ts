@@ -7,8 +7,6 @@ import {
   WAUrlInfo,
 } from '@whiskeysockets/baileys';
 import { BaileysHelpersService } from './helpers.service';
-import { buildLinkPreview } from '@core/common/functions/buildLinkPreview';
-import { extractFirstUrl } from '@core/common/functions/extractFirstUrl';
 
 @injectable()
 export class BaileysMessageTextService {
@@ -25,14 +23,13 @@ export class BaileysMessageTextService {
       mentions?: string[];
     }
   ): Promise<proto.WebMessageInfo | undefined> {
-    const firstUrl = extractFirstUrl(text);
-    const linkPreview = firstUrl ? await buildLinkPreview(firstUrl) : null;
-
     const content: AnyMessageContent = {
       text,
-      linkPreview,
+      linkPreview: options?.linkPreview ?? undefined,
       mentions: options?.mentions,
     };
+
+    console.log('content', content);
 
     return this.baileysHelpersService.send(jid, content, options);
   }
