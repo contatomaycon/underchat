@@ -1,6 +1,7 @@
 import { WAUrlInfo } from '@whiskeysockets/baileys';
 import { EMessageType } from '../enums/EMessageType';
 import { ETypeUserChat } from '../enums/ETypeUserChat';
+import { LinkPreview } from '@core/schema/chat/listMessageChats/response.schema';
 
 interface IAccount {
   id: string;
@@ -10,7 +11,7 @@ interface IAccount {
 interface IUser {
   id: string;
   name: string;
-  photo: string | null;
+  photo?: string | null;
 }
 
 interface ISummary {
@@ -24,20 +25,10 @@ interface IWorker {
   name: string;
 }
 
-export interface ILinkPreview {
-  'canonical-url'?: string | null;
-  'matched-text'?: string | null;
-  title?: string | null;
-  description?: string | null;
-  jpegThumbnail?: string | null;
-  highQualityThumbnail?: string | null;
-  originalThumbnailUrl?: string | null;
-}
-
 interface IContent {
   type: EMessageType;
   message?: string | null;
-  link_preview?: ILinkPreview | WAUrlInfo | null;
+  link_preview?: LinkPreview | WAUrlInfo | null;
 }
 
 interface IMessageKey {

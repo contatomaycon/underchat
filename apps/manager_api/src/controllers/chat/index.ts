@@ -5,6 +5,7 @@ import { updateChatsUser } from './methods/updateChatsUser';
 import { listMessageChats } from './methods/listMessageChats';
 import { createMessageChats } from './methods/createMessageChats';
 import { createChats } from './methods/createChats';
+import { viewChatLinkPreview } from './methods/viewChatLinkPreview';
 
 @injectable()
 class ChatController {
@@ -14,6 +15,7 @@ class ChatController {
   public updateChatsUser = updateChatsUser;
   public createMessageChats = createMessageChats;
   public createChats = createChats;
+  public viewChatLinkPreview = viewChatLinkPreview;
 }
 
 export default ChatController;

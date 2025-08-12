@@ -49,8 +49,8 @@ const avatarChat = (message: ListMessageResponse) => {
 
 const resolvePreviewImage = (lp?: LinkPreview): string => {
   if (!lp) return '';
-  if (lp.jpegThumbnail) return `data:image/jpeg;base64,${lp.jpegThumbnail}`;
   if (lp.originalThumbnailUrl) return lp.originalThumbnailUrl;
+  if (lp.jpegThumbnail) return `data:image/jpeg;base64,${lp.jpegThumbnail}`;
   return '';
 };
 
@@ -106,7 +106,11 @@ const resolvePreviewUrl = (lp?: LinkPreview): string => {
       >
         <div
           class="chat-content py-2 px-4 elevation-2"
-          style="background-color: rgb(var(--v-theme-surface))"
+          :style="{
+            backgroundColor: isTypeUser(msgGrp)
+              ? 'rgb(var(--v-theme-surface))'
+              : 'rgb(217, 253, 211)',
+          }"
           :class="[isTypeUser(msgGrp) ? 'chat-left' : 'chat-right']"
         >
           <div class="message-block">
@@ -192,6 +196,7 @@ const resolvePreviewUrl = (lp?: LinkPreview): string => {
 
     .message-text {
       white-space: pre-line;
+      color: rgb(var(--v-theme-title));
     }
 
     .chat-content {
@@ -211,11 +216,12 @@ const resolvePreviewUrl = (lp?: LinkPreview): string => {
       }
 
       .link-preview {
-        background-color: rgb(var(--v-theme-grey-200));
+        background-color: rgb(214, 243, 207);
         padding: 10px;
         border-radius: 8px;
         border: 1px solid rgb(var(--v-theme-on-secondary));
         transition: border-color 0.2s ease;
+        color: rgb(var(--v-theme-title));
 
         .lp-thumb img {
           inline-size: 48px;

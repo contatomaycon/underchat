@@ -24,7 +24,7 @@ interface ISector {
 interface IUser {
   id: string;
   name: string;
-  photo: string | null;
+  photo?: string | null;
 }
 
 interface IContact {

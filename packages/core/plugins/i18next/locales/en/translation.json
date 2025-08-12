@@ -105,5 +105,7 @@
   "chat_create_success": "Chat created successfully!",
   "chat_create_not_found": "Chat not found for creation!",
   "chat_not_found": "Chat not found!",
-  "chat_create_error": "Error creating chat!"
+  "chat_create_error": "Error creating chat!",
+  "chat_link_preview_found": "Chat link preview found!",
+  "chat_link_preview_not_found": "Chat link preview not found!"
 }

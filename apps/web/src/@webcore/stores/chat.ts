@@ -12,11 +12,16 @@ import { getUser, setUser } from '../localStorage/user';
 import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
-import { ListMessageResponse } from '@core/schema/chat/listMessageChats/response.schema';
+import {
+  ContentMessageChat,
+  ListMessageResponse,
+} from '@core/schema/chat/listMessageChats/response.schema';
 import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { IChat } from '@core/common/interfaces/IChat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { ViewLinkPreviewBody } from '@core/schema/chat/viewLinkPreview/request.schema';
+import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
 
 export const useChatStore = defineStore('chat', {
   state: () => ({
@@ -52,7 +57,7 @@ export const useChatStore = defineStore('chat', {
         chat_id: message.chat_id,
         type_user: message.type_user,
         user: message.user,
-        content: message.content,
+        content: message.content as ContentMessageChat,
         summary: message.summary,
         date: message.date,
       };
@@ -273,6 +278,39 @@ export const useChatStore = defineStore('chat', {
           this.i18n.global.t('chat_message_create_error'),
           EColor.error
         );
+      }
+    },
+
+    async generateLinkPreview(
+      input: ViewLinkPreviewBody
+    ): Promise<ViewLinkPreviewResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<
+          IApiResponse<ViewLinkPreviewResponse>
+        >(`/chat/link-preview`, input);
+
+        this.loading = false;
+
+        const data = response?.data as IApiResponse<ViewLinkPreviewResponse>;
+
+        if (!data?.status) {
+          this.showSnackbar(data.message, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        this.loading = false;
+
+        this.showSnackbar(
+          this.i18n.global.t('chat_message_create_error'),
+          EColor.error
+        );
+
+        return null;
       }
     },
 

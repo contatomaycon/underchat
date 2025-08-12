@@ -11,7 +11,7 @@ import { ListChatsResponse } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
-import { onMessage, publish, unsubscribe } from '@/@webcore/centrifugo';
+import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import {
   chatAccountCentrifugo,
   chatQueueAccountCentrifugo,
@@ -20,6 +20,9 @@ import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/req
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { IChat } from '@core/common/interfaces/IChat';
+import { extractFirstUrl } from '@core/common/functions/extractFirstUrl';
+import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
+import { refDebounced } from '@vueuse/core';
 
 definePage({
   meta: {
@@ -43,33 +46,40 @@ const size = ref(100);
 const chatLogPS = ref();
 const q = ref('');
 const msg = ref('');
-const avatar = ref(false);
 const isUserProfileSidebarOpen = ref(false);
 const isActiveChatUserProfileSidebarOpen = ref(false);
 const refInputEl = ref<HTMLElement>();
+const linkPreview = ref<ViewLinkPreviewResponse | null>(null);
 
 const scrollToBottomInChatLog = () => {
   if (!chatLogPS.value) return;
   const scrollEl = chatLogPS.value.$el || chatLogPS.value;
+
   if (!scrollEl) return;
   scrollEl.scrollTop = scrollEl.scrollHeight;
 };
 
 const startConversation = () => {
   if (vuetifyDisplays.mdAndUp.value) return;
+
   isLeftSidebarOpen.value = true;
 };
 
 const sendMessage = async () => {
   if (!msg.value) return;
+
   if (chatStore.activeChat?.worker?.id) {
     const inputCreateMessage: CreateMessageChatsBody = {
       type: EMessageType.text,
       message: msg.value,
     };
+
     await chatStore.createMessage(inputCreateMessage);
   }
+
   msg.value = '';
+  linkPreview.value = null;
+
   nextTick(() => {
     scrollToBottomInChatLog();
   });
@@ -77,12 +87,18 @@ const sendMessage = async () => {
 
 const openChat = async (chatId: ListChatsResponse['chat_id']) => {
   chatStore.setActiveChat(chatId);
+
   const requestQueue: ListMessageChatsQuery = {
     from: from.value,
     size: size.value,
   };
+
   await chatStore.getChatById(requestQueue);
-  if (vuetifyDisplays.smAndDown.value) isLeftSidebarOpen.value = false;
+
+  if (vuetifyDisplays.smAndDown.value) {
+    isLeftSidebarOpen.value = false;
+  }
+
   nextTick(() => {
     scrollToBottomInChatLog();
   });
@@ -90,9 +106,73 @@ const openChat = async (chatId: ListChatsResponse['chat_id']) => {
 
 const chatContentContainerBg = computed(() => {
   let color = 'transparent';
-  if (themes) color = themes?.[name.value].colors?.background as string;
+
+  if (themes) {
+    color = themes?.[name.value].colors?.background as string;
+  }
+
   return color;
 });
+
+const previewDomain = computed(() => {
+  const u =
+    linkPreview.value?.['canonical-url'] ||
+    linkPreview.value?.['matched-text'] ||
+    '';
+
+  if (!u) return '';
+
+  try {
+    return new URL(u).host;
+  } catch {
+    return u;
+  }
+});
+
+const previewHref = computed(() => {
+  return (
+    linkPreview.value?.['canonical-url'] ||
+    linkPreview.value?.['matched-text'] ||
+    ''
+  );
+});
+
+const previewImage = computed(() => {
+  const p = linkPreview.value;
+  if (!p) {
+    return null;
+  }
+
+  const cand =
+    p.highQualityThumbnail || p.originalThumbnailUrl || p.jpegThumbnail || '';
+
+  if (!cand) return null;
+  if (cand.startsWith('http')) return cand;
+
+  return `data:image/jpeg;base64,${cand}`;
+});
+
+const debouncedMsg = refDebounced(msg, 1000);
+watch(
+  debouncedMsg,
+  async (val) => {
+    const firstUrl = extractFirstUrl(val as string);
+    if (firstUrl) {
+      const linkPreviewResponse = await chatStore.generateLinkPreview({
+        url: firstUrl,
+      });
+
+      if (linkPreviewResponse?.title !== 'Error') {
+        linkPreview.value = linkPreviewResponse as ViewLinkPreviewResponse;
+      }
+
+      return;
+    }
+
+    linkPreview.value = null;
+  },
+  { immediate: true }
+);
 
 onMounted(async () => {
   if (chatStore.user?.account_id) {
@@ -230,6 +310,51 @@ onUnmounted(async () => {
         >
           <ChatLog />
         </PerfectScrollbar>
+
+        <Transition name="fade">
+          <div v-if="linkPreview" class="mx-5 mt-3">
+            <VCard class="link-preview-card">
+              <VBtn
+                class="link-preview-close"
+                icon
+                size="24"
+                variant="text"
+                @click="linkPreview = null"
+              >
+                <VIcon size="18" icon="tabler-x" />
+              </VBtn>
+              <div class="d-flex gap-3">
+                <VAvatar size="56" :rounded="8" variant="tonal">
+                  <VImg v-if="previewImage" :src="previewImage" />
+                </VAvatar>
+                <div class="flex-grow-1 overflow-hidden">
+                  <div class="text-caption text-medium-emphasis">
+                    {{ previewDomain }}
+                  </div>
+                  <div class="text-subtitle-1 font-weight-medium text-truncate">
+                    {{ linkPreview?.title }}
+                  </div>
+                  <div
+                    class="text-body-2 text-medium-emphasis two-line-ellipsis"
+                  >
+                    {{ linkPreview?.description }}
+                  </div>
+                  <div class="mt-2">
+                    <a
+                      v-if="previewHref"
+                      :href="previewHref"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="text-primary text-body-2"
+                    >
+                      {{ previewHref }}
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </VCard>
+          </div>
+        </Transition>
 
         <VForm
           class="chat-log-message-form mb-5 mx-5"
@@ -387,5 +512,35 @@ $chat-app-header-height: 76px;
     min-width: 12px !important;
     height: 0.75rem;
   }
+}
+
+.link-preview-card {
+  position: relative;
+  padding: 14px;
+  margin-bottom: 0.5rem;
+}
+
+.link-preview-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  min-width: 28px !important;
+  width: 28px !important;
+  height: 28px !important;
+}
+
+.two-line-ellipsis {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>
