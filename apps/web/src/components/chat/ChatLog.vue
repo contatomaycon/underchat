@@ -15,23 +15,30 @@ const isTypeUser = (message: ListMessageResponse): boolean => {
 const resolveFeedbackIcon = (
   message: ListMessageResponse
 ): { icon: string; color: string | undefined } => {
-  if (message.summary?.is_seen)
+  if (message.summary?.is_seen) {
     return { icon: 'tabler-checks', color: 'success' };
-  else if (message.summary?.is_delivered)
+  }
+
+  if (message.summary?.is_delivered) {
     return { icon: 'tabler-checks', color: undefined };
-  else return { icon: 'tabler-check', color: undefined };
+  }
+
+  return { icon: 'tabler-check', color: undefined };
 };
 
 const resolvePhoto = (message: ListMessageResponse): string => {
   if (isTypeUser(message) && chatStore.activeChat?.photo) {
     return chatStore.activeChat.photo;
   }
+
   if (!isTypeUser(message) && message.user?.photo) {
     return message.user.photo;
   }
+
   if (!isTypeUser(message) && chatStore.user?.info.photo) {
     return chatStore.user.info.photo;
   }
+
   return '';
 };
 
@@ -43,19 +50,29 @@ const avatarChat = (message: ListMessageResponse) => {
   if (isTypeUser(message) && chatStore.activeChat?.name) {
     return avatarText(chatStore.activeChat.name);
   }
+
   const name = message.user?.name ?? chatStore.user?.info.name;
+
   return avatarText(name);
 };
 
 const resolvePreviewImage = (lp?: LinkPreview): string => {
   if (!lp) return '';
-  if (lp.originalThumbnailUrl) return lp.originalThumbnailUrl;
-  if (lp.jpegThumbnail) return `data:image/jpeg;base64,${lp.jpegThumbnail}`;
+
+  if (lp.originalThumbnailUrl) {
+    return lp.originalThumbnailUrl;
+  }
+
+  if (lp.jpegThumbnail) {
+    return `data:image/jpeg;base64,${lp.jpegThumbnail}`;
+  }
+
   return '';
 };
 
 const domainFromUrl = (u?: string | null): string => {
   if (!u) return '';
+
   try {
     return new URL(u).hostname.replace(/^www\./, '');
   } catch {
@@ -64,7 +81,7 @@ const domainFromUrl = (u?: string | null): string => {
 };
 
 const resolvePreviewUrl = (lp?: LinkPreview): string => {
-  return lp?.['matched-text'] || lp?.['canonical-url'] || '';
+  return lp?.['matched-text'] ?? lp?.['canonical-url'] ?? '';
 };
 </script>
 
@@ -115,8 +132,16 @@ const resolvePreviewUrl = (lp?: LinkPreview): string => {
         >
           <div class="message-block">
             <div
-              v-if="msgGrp.content?.link_preview"
+              v-if="msgGrp.content?.link_preview?.title"
               class="link-preview rounded"
+              :style="{
+                backgroundColor: isTypeUser(msgGrp)
+                  ? 'rgb(var(--v-theme-grey-200))'
+                  : 'rgb(214, 243, 207)',
+                color: isTypeUser(msgGrp)
+                  ? 'rgb(var(--v-theme-on-grey))'
+                  : 'rgb(var(--v-theme-title))',
+              }"
               :class="
                 !isTypeUser(msgGrp)
                   ? 'link-preview--right'
@@ -165,6 +190,11 @@ const resolvePreviewUrl = (lp?: LinkPreview): string => {
             <p
               class="mb-2 text-base message-text"
               v-if="msgGrp.content?.message"
+              :style="{
+                color: isTypeUser(msgGrp)
+                  ? 'rgb(var(--v-theme-on-surface))'
+                  : 'rgb(var(--v-theme-title))',
+              }"
             >
               {{ msgGrp.content?.message }}
             </p>
@@ -196,7 +226,6 @@ const resolvePreviewUrl = (lp?: LinkPreview): string => {
 
     .message-text {
       white-space: pre-line;
-      color: rgb(var(--v-theme-title));
     }
 
     .chat-content {
@@ -216,12 +245,10 @@ const resolvePreviewUrl = (lp?: LinkPreview): string => {
       }
 
       .link-preview {
-        background-color: rgb(214, 243, 207);
         padding: 10px;
         border-radius: 8px;
         border: 1px solid rgb(var(--v-theme-on-secondary));
         transition: border-color 0.2s ease;
-        color: rgb(var(--v-theme-title));
 
         .lp-thumb img {
           inline-size: 48px;

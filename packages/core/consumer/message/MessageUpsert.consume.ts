@@ -23,6 +23,7 @@ import {
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 import { remoteJid } from '@core/common/functions/remoteJid';
 import { StorageService } from '@core/services/storage.service';
+import { LinkPreview } from '@core/schema/chat/listMessageChats/response.schema';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -142,15 +143,13 @@ export class MessageUpsertConsume {
       const extended = data.message.message?.extendedTextMessage;
 
       const linkPreview = extended
-        ? {
+        ? ({
             'canonical-url': extended?.matchedText ?? '',
             'matched-text': extended?.matchedText ?? '',
             title: extended?.title ?? '',
             description: extended?.description ?? '',
-            jpegThumbnail: extended?.jpegThumbnail
-              ? Buffer.from(extended.jpegThumbnail).toString('base64')
-              : undefined,
-          }
+            jpegThumbnail: extended?.jpegThumbnail,
+          } as LinkPreview)
         : undefined;
 
       content = {
