@@ -8,7 +8,7 @@ import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
-import { WAUrlInfo } from '@whiskeysockets/baileys';
+import { WAMessage, WAUrlInfo } from '@whiskeysockets/baileys';
 import { KeyedSequencerService } from '@core/services/keyedSequencer.service';
 
 @singleton()
@@ -36,7 +36,7 @@ export class MessageSendConsume {
       const data = msg.value as IChatMessage;
       if (!data) return;
 
-      const chatId = data.chat_id ?? data.message_key?.jid ?? data.phone;
+      const chatId = data.chat_id ?? data.message_key?.remote_jid ?? data.phone;
 
       if (!chatId) return;
 
@@ -49,16 +49,42 @@ export class MessageSendConsume {
   }
 
   private async processMessage(data: IChatMessage): Promise<void> {
-    const phoneSend = data.message_key?.jid ?? data.phone;
+    const phoneSend = data.message_key?.remote_jid ?? data.phone;
 
-    if (data?.content?.type === EMessageType.text) {
-      if (!data.content?.message)
-        throw new Error('Received message without content');
-
+    if (data?.content?.type === EMessageType.text && data.content?.message) {
       const result = await this.baileysMessageTextService.sendText(
         phoneSend,
         data.content.message,
         { linkPreview: data.content.link_preview as WAUrlInfo }
+      );
+
+      if (!result) throw new Error('Failed to send message');
+
+      const inputUpdate: IUpdateMessage = { message: result, data };
+
+      await this.streamProducerService.send(
+        this.kafkaServiceQueueService.updateMessage(),
+        inputUpdate
+      );
+    }
+
+    if (
+      data?.content?.type === EMessageType.text_quoted &&
+      data.content?.message
+    ) {
+      const quoted = {
+        key: {
+          remoteJid: '556195999040@s.whatsapp.net',
+          fromMe: true,
+          id: '3AAEEDC13408FF632634',
+        },
+        message: 'Oi',
+      } as WAMessage;
+
+      const result = await this.baileysMessageTextService.sendTextQuoted(
+        phoneSend,
+        data.content.message,
+        quoted
       );
 
       if (!result) throw new Error('Failed to send message');

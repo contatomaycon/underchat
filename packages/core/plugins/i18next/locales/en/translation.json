@@ -107,5 +107,8 @@
   "chat_not_found": "Chat not found!",
   "chat_create_error": "Error creating chat!",
   "chat_link_preview_found": "Chat link preview found!",
-  "chat_link_preview_not_found": "Chat link preview not found!"
+  "chat_link_preview_not_found": "Chat link preview not found!",
+  "message_content_required": "Message content is required for text messages",
+  "message_quoted_id_required": "Message quoted ID is required for quoted messages",
+  "message_quoted_not_found": "Message quoted not found"
 }

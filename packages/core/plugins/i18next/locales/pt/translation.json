@@ -107,5 +107,8 @@
   "chat_not_found": "Chat não encontrado!",
   "chat_create_error": "Erro ao criar o chat!",
   "chat_link_preview_found": "Vista prévia do link do chat encontrada!",
-  "chat_link_preview_not_found": "Vista prévia do link do chat não encontrada!"
+  "chat_link_preview_not_found": "Vista prévia do link do chat não encontrada!",
+  "message_content_required": "O conteúdo da mensagem é obrigatório para mensagens de texto!",
+  "message_quoted_id_required": "O ID da mensagem citada é obrigatório para mensagens citadas!",
+  "message_quoted_not_found": "Mensagem citada não encontrada!"
 }

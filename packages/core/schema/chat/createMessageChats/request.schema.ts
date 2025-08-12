@@ -9,6 +9,7 @@ export const createMessageChatsParamsSchema = Type.Object({
 export const createMessageChatsBodySchema = Type.Object({
   type: Type.String({ enum: Object.values(EMessageType) }),
   message: Type.Optional(Type.String()),
+  message_quoted_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   link_preview: Type.Optional(viewLinkPreviewResponseSchema),
 });
 

@@ -25,22 +25,30 @@ interface IWorker {
   name: string;
 }
 
+export interface IQuotedMessage {
+  key: IMessageKey;
+  message?: string | null;
+}
+
 interface IContent {
   type: EMessageType;
   message?: string | null;
+  message_quoted_id?: string | null;
   link_preview?: LinkPreview | WAUrlInfo | null;
+  quoted?: IQuotedMessage | null;
 }
 
 interface IMessageKey {
+  remote_jid?: string | null;
+  from_me?: boolean | null;
   id?: string | null;
-  jid?: string | null;
+  participant?: string | null;
 }
 
 export interface IChatMessage {
   message_id: string;
   chat_id: string;
   message_key?: IMessageKey | null;
-  quoted_message_id?: string | null;
   type_user: ETypeUserChat;
   account: IAccount;
   worker: IWorker;

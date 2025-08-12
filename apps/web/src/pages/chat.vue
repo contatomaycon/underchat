@@ -72,7 +72,9 @@ const sendMessage = async () => {
     const inputCreateMessage: CreateMessageChatsBody = {
       type: EMessageType.text,
       message: msg.value,
-      link_preview: linkPreview.value as ViewLinkPreviewResponse,
+      link_preview: linkPreview.value?.title
+        ? (linkPreview.value as ViewLinkPreviewResponse)
+        : undefined,
     };
 
     await chatStore.createMessage(inputCreateMessage);

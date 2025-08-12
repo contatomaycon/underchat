@@ -11,16 +11,19 @@ export const mensageMappings = () => {
         message_key: {
           type: 'nested',
           properties: {
+            remote_jid: {
+              type: 'keyword',
+            },
+            from_me: {
+              type: 'boolean',
+            },
             id: {
               type: 'keyword',
             },
-            jid: {
+            participant: {
               type: 'keyword',
             },
           },
-        },
-        quoted_message_id: {
-          type: 'keyword',
         },
         type_user: {
           type: 'keyword',
@@ -56,6 +59,31 @@ export const mensageMappings = () => {
             type: {
               type: 'keyword',
             },
+            quoted: {
+              type: 'nested',
+              properties: {
+                key: {
+                  type: 'nested',
+                  properties: {
+                    remote_jid: {
+                      type: 'keyword',
+                    },
+                    from_me: {
+                      type: 'boolean',
+                    },
+                    id: {
+                      type: 'keyword',
+                    },
+                    participant: {
+                      type: 'keyword',
+                    },
+                  },
+                },
+                message: {
+                  type: 'text',
+                },
+              },
+            },
             message: {
               type: 'text',
               fields: {
@@ -64,6 +92,9 @@ export const mensageMappings = () => {
                   ignore_above: 256,
                 },
               },
+            },
+            message_quoted_id: {
+              type: 'keyword',
             },
             link_preview: {
               type: 'nested',

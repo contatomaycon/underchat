@@ -106,7 +106,7 @@ export class MessageUpsertConsume {
                       path: 'message_key',
                       query: {
                         term: {
-                          'message_key.jid': jid,
+                          'message_key.remote_jid': jid,
                         },
                       },
                     },
@@ -167,8 +167,10 @@ export class MessageUpsertConsume {
       message_id: uuidv4(),
       chat_id: getChat.chat_id,
       message_key: {
+        remote_jid: jid,
+        from_me: data.message.key?.fromMe,
         id: data.message.key?.id,
-        jid,
+        participant: data.message.key?.participant,
       },
       type_user: data.message?.key?.fromMe
         ? ETypeUserChat.operator
@@ -215,7 +217,7 @@ export class MessageUpsertConsume {
     const inputChatMessage: IChat = {
       chat_id: chatId,
       message_key: {
-        jid,
+        remote_jid: jid,
       },
       account: viewAccountName,
       worker: viewWorkerNameAndId,

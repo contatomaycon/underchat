@@ -3,7 +3,10 @@ import {
   CreateMessageChatsBody,
   CreateMessageChatsParams,
 } from '@core/schema/chat/createMessageChats/request.schema';
-import { IChatMessage } from '@core/common/interfaces/IChatMessage';
+import {
+  IChatMessage,
+  IQuotedMessage,
+} from '@core/common/interfaces/IChatMessage';
 import { v4 as uuidv4 } from 'uuid';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { TFunction } from 'i18next';
@@ -83,6 +86,44 @@ export class ChatMessageCreatorUseCase {
     return data;
   }
 
+  private async getChatMessage(
+    accountId: string,
+    chatId: string,
+    chatMessageId: string
+  ): Promise<IChatMessage | null> {
+    const queryElastic = {
+      query: {
+        bool: {
+          filter: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: { 'account.id': accountId },
+                },
+              },
+            },
+            { term: { chat_id: chatId } },
+            { term: { message_id: chatMessageId } },
+          ],
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select(
+      EElasticIndex.message,
+      queryElastic
+    );
+
+    const data = result?.hits.hits[0]?._source as IChatMessage | null;
+
+    if (!data) {
+      return null;
+    }
+
+    return data;
+  }
+
   private centrifugoChatPublish(
     dataPublish: IChatMessage
   ): Promise<PublishResult> {
@@ -92,9 +133,16 @@ export class ChatMessageCreatorUseCase {
     );
   }
 
-  private async validate(body: CreateMessageChatsBody) {
+  private validate(
+    t: TFunction<'translation', undefined>,
+    body: CreateMessageChatsBody
+  ) {
     if (body.type === EMessageType.text && !body.message) {
-      throw new Error('Message content is required for text messages');
+      throw new Error(t('message_content_required'));
+    }
+
+    if (body.type === EMessageType.text_quoted && !body.message_quoted_id) {
+      throw new Error(t('message_quoted_id_required'));
     }
   }
 
@@ -104,19 +152,43 @@ export class ChatMessageCreatorUseCase {
     params: CreateMessageChatsParams,
     body: CreateMessageChatsBody
   ): Promise<boolean> {
-    this.validate(body);
+    this.validate(t, body);
 
     const getChat = await this.getChat(accountId, params.chat_id);
-
     if (!getChat) {
       throw new Error(t('chat_not_found'));
+    }
+
+    let quotedMessage: IQuotedMessage | null = null;
+    if (body?.message_quoted_id) {
+      const getChatMessage = await this.getChatMessage(
+        accountId,
+        params.chat_id,
+        body.message_quoted_id
+      );
+
+      if (!getChatMessage) {
+        throw new Error(t('message_quoted_not_found'));
+      }
+
+      if (getChatMessage) {
+        quotedMessage = {
+          key: {
+            remote_jid: getChatMessage.message_key?.remote_jid ?? null,
+            from_me: getChatMessage.message_key?.from_me ?? null,
+            id: getChatMessage.message_key?.id ?? null,
+            participant: getChatMessage.message_key?.participant ?? null,
+          },
+          message: getChatMessage.content?.message ?? null,
+        };
+      }
     }
 
     const inputChatMessage: IChatMessage = {
       message_id: uuidv4(),
       chat_id: params.chat_id,
       message_key: {
-        jid: getChat.message_key?.jid ?? null,
+        remote_jid: getChat.message_key?.remote_jid ?? null,
       },
       type_user: ETypeUserChat.operator,
       account: getChat.account,
@@ -132,25 +204,20 @@ export class ChatMessageCreatorUseCase {
         type: body.type as EMessageType,
         message: body.message,
         link_preview: body.link_preview,
+        quoted: quotedMessage ?? null,
       },
       date: new Date().toISOString(),
     };
 
-    const inputChatMessageNormalize = {
-      ...inputChatMessage,
-      content: {
-        ...inputChatMessage.content,
-        link_preview: body.link_preview,
-      },
-    } as IChatMessage;
+    console.log('inputChatMessage', inputChatMessage);
 
     const [, , result] = await Promise.all([
-      this.centrifugoChatPublish(inputChatMessageNormalize),
+      this.centrifugoChatPublish(inputChatMessage),
       this.streamProducerService.send(
         this.kafkaBaileysQueueService.workerSendMessage(getChat.worker.id),
         inputChatMessage
       ),
-      this.chatService.saveMessageChat(inputChatMessageNormalize),
+      this.chatService.saveMessageChat(inputChatMessage),
     ]);
 
     return result;

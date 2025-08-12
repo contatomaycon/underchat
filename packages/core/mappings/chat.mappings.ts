@@ -11,7 +11,7 @@ export const chatMappings = () => {
             id: {
               type: 'keyword',
             },
-            jid: {
+            remote_jid: {
               type: 'keyword',
             },
           },

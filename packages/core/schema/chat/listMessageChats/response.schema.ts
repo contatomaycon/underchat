@@ -18,6 +18,7 @@ export const summarySchema = Type.Object({
 export const contentSchema = Type.Object({
   type: Type.String({ enum: Object.values(EMessageType) }),
   message: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  message_quoted_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   link_preview: Type.Optional(
     Type.Union([viewLinkPreviewResponseSchema, Type.Null()])
   ),
@@ -26,7 +27,6 @@ export const contentSchema = Type.Object({
 export const listMessageResponseSchema = Type.Object({
   message_id: Type.String(),
   chat_id: Type.String(),
-  quoted_message_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   type_user: Type.String({ enum: Object.values(ETypeUserChat) }),
   user: Type.Optional(Type.Union([userSchema, Type.Null()])),
   content: Type.Optional(Type.Union([contentSchema, Type.Null()])),

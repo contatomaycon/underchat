@@ -34,7 +34,7 @@ interface IContact {
 }
 
 interface IMessageKey {
-  jid?: string | null;
+  remote_jid?: string | null;
 }
 
 export interface IChat {

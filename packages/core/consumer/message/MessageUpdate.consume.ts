@@ -40,11 +40,11 @@ export class MessageUpdateConsume {
           throw new Error('Received message without value');
         }
 
-        if (!data?.data?.message_key?.jid) {
+        if (!data?.data?.message_key?.remote_jid) {
           const jid = remoteJid(data.message?.key);
 
           const messageKey: IChat['message_key'] = {
-            jid,
+            remote_jid: jid,
           };
 
           await this.elasticDatabaseService.update(
@@ -60,12 +60,17 @@ export class MessageUpdateConsume {
           await this.redis.del(cacheChatKey);
         }
 
-        if (!data?.data?.message_key?.id || !data?.data?.message_key?.jid) {
+        if (
+          !data?.data?.message_key?.id ||
+          !data?.data?.message_key?.remote_jid
+        ) {
           const jid = remoteJid(data.message?.key);
 
           const messageKey: IChatMessage['message_key'] = {
+            remote_jid: jid,
+            from_me: data.message?.key.fromMe ?? false,
             id: data.message?.key.id ?? null,
-            jid,
+            participant: data.message?.key.participant ?? null,
           };
 
           await this.elasticDatabaseService.update(
