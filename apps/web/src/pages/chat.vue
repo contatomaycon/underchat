@@ -72,6 +72,7 @@ const sendMessage = async () => {
     const inputCreateMessage: CreateMessageChatsBody = {
       type: EMessageType.text,
       message: msg.value,
+      link_preview: linkPreview.value as ViewLinkPreviewResponse,
     };
 
     await chatStore.createMessage(inputCreateMessage);
@@ -152,7 +153,7 @@ const previewImage = computed(() => {
   return `data:image/jpeg;base64,${cand}`;
 });
 
-const debouncedMsg = refDebounced(msg, 1000);
+const debouncedMsg = refDebounced(msg, 500);
 watch(
   debouncedMsg,
   async (val) => {
