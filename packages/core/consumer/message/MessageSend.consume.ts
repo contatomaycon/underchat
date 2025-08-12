@@ -70,16 +70,10 @@ export class MessageSendConsume {
 
     if (
       data?.content?.type === EMessageType.text_quoted &&
-      data.content?.message
+      data.content?.message &&
+      data.content?.quoted
     ) {
-      const quoted = {
-        key: {
-          remoteJid: '556195999040@s.whatsapp.net',
-          fromMe: true,
-          id: '3AAEEDC13408FF632634',
-        },
-        message: 'Oi',
-      } as WAMessage;
+      const quoted = data.content.quoted as WAMessage;
 
       const result = await this.baileysMessageTextService.sendTextQuoted(
         phoneSend,

@@ -209,8 +209,6 @@ export class ChatMessageCreatorUseCase {
       date: new Date().toISOString(),
     };
 
-    console.log('inputChatMessage', inputChatMessage);
-
     const [, , result] = await Promise.all([
       this.centrifugoChatPublish(inputChatMessage),
       this.streamProducerService.send(
