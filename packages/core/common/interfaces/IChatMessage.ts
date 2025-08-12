@@ -24,10 +24,20 @@ interface IWorker {
   name: string;
 }
 
+export interface ILinkPreview {
+  'canonical-url'?: string | null;
+  'matched-text'?: string | null;
+  title?: string | null;
+  description?: string | null;
+  jpegThumbnail?: string | null;
+  highQualityThumbnail?: string | null;
+  originalThumbnailUrl?: string | null;
+}
+
 interface IContent {
   type: EMessageType;
   message?: string | null;
-  link_preview?: WAUrlInfo | null;
+  link_preview?: ILinkPreview | WAUrlInfo | null;
 }
 
 interface IMessageKey {

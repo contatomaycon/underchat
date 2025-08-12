@@ -1,7 +1,10 @@
 <script lang="ts" setup>
 import { useChatStore } from '@/@webcore/stores/chat';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
-import { ListMessageResponse } from '@core/schema/chat/listMessageChats/response.schema';
+import {
+  LinkPreview,
+  ListMessageResponse,
+} from '@core/schema/chat/listMessageChats/response.schema';
 
 const chatStore = useChatStore();
 
@@ -23,15 +26,12 @@ const resolvePhoto = (message: ListMessageResponse): string => {
   if (isTypeUser(message) && chatStore.activeChat?.photo) {
     return chatStore.activeChat.photo;
   }
-
   if (!isTypeUser(message) && message.user?.photo) {
     return message.user.photo;
   }
-
   if (!isTypeUser(message) && chatStore.user?.info.photo) {
     return chatStore.user.info.photo;
   }
-
   return '';
 };
 
@@ -43,10 +43,28 @@ const avatarChat = (message: ListMessageResponse) => {
   if (isTypeUser(message) && chatStore.activeChat?.name) {
     return avatarText(chatStore.activeChat.name);
   }
-
   const name = message.user?.name ?? chatStore.user?.info.name;
-
   return avatarText(name);
+};
+
+const resolvePreviewImage = (lp?: LinkPreview): string => {
+  if (!lp) return '';
+  if (lp.jpegThumbnail) return `data:image/jpeg;base64,${lp.jpegThumbnail}`;
+  if (lp.originalThumbnailUrl) return lp.originalThumbnailUrl;
+  return '';
+};
+
+const domainFromUrl = (u?: string | null): string => {
+  if (!u) return '';
+  try {
+    return new URL(u).hostname.replace(/^www\./, '');
+  } catch {
+    return u;
+  }
+};
+
+const resolvePreviewUrl = (lp?: LinkPreview): string => {
+  return lp?.['matched-text'] || lp?.['canonical-url'] || '';
 };
 </script>
 
@@ -89,26 +107,78 @@ const avatarChat = (message: ListMessageResponse) => {
         <div
           class="chat-content py-2 px-4 elevation-2"
           style="background-color: rgb(var(--v-theme-surface))"
-          :class="[
-            isTypeUser(msgGrp)
-              ? 'chat-left'
-              : 'bg-primary text-white chat-right',
-          ]"
+          :class="[isTypeUser(msgGrp) ? 'chat-left' : 'chat-right']"
         >
-          <p class="mb-0 text-base">
-            {{ msgGrp.content?.message }}
-          </p>
+          <div class="message-block">
+            <div
+              v-if="msgGrp.content?.link_preview"
+              class="link-preview rounded"
+              :class="
+                !isTypeUser(msgGrp)
+                  ? 'link-preview--right'
+                  : 'link-preview--left'
+              "
+            >
+              <div class="lp-main d-flex">
+                <div
+                  v-if="resolvePreviewImage(msgGrp.content.link_preview)"
+                  class="lp-thumb me-3"
+                >
+                  <img
+                    :src="resolvePreviewImage(msgGrp.content.link_preview)"
+                    alt=""
+                  />
+                </div>
+                <div class="lp-text">
+                  <div class="lp-domain text-xs mb-1">
+                    {{
+                      domainFromUrl(
+                        msgGrp.content.link_preview['canonical-url'] ||
+                          msgGrp.content.link_preview['matched-text']
+                      )
+                    }}
+                  </div>
+                  <div class="lp-title text-sm mb-1">
+                    {{ msgGrp.content.link_preview.title }}
+                  </div>
+                  <div class="lp-desc text-xs">
+                    {{ msgGrp.content.link_preview.description }}
+                  </div>
+                </div>
+              </div>
+
+              <a
+                v-if="resolvePreviewUrl(msgGrp.content.link_preview)"
+                class="lp-url d-block mt-2 text-sm"
+                :href="resolvePreviewUrl(msgGrp.content.link_preview)"
+                target="_blank"
+                rel="noopener"
+              >
+                {{ resolvePreviewUrl(msgGrp.content.link_preview) }}
+              </a>
+            </div>
+
+            <p
+              class="mb-2 text-base message-text"
+              v-if="msgGrp.content?.message"
+            >
+              {{ msgGrp.content?.message }}
+            </p>
+          </div>
         </div>
+
         <div :class="{ 'text-right': !isTypeUser(msgGrp) }">
           <VIcon size="16" :color="resolveFeedbackIcon(msgGrp).color">
             {{ resolveFeedbackIcon(msgGrp).icon }}
           </VIcon>
-          <span class="text-sm ms-2 text-disabled">{{
-            formatDate(msgGrp.date, {
-              hour: 'numeric',
-              minute: 'numeric',
-            })
-          }}</span>
+          <span class="text-sm ms-2 text-disabled">
+            {{
+              formatDate(msgGrp.date, {
+                hour: 'numeric',
+                minute: 'numeric',
+              })
+            }}
+          </span>
         </div>
       </div>
     </div>
@@ -119,6 +189,10 @@ const avatarChat = (message: ListMessageResponse) => {
 .chat-log {
   .chat-body {
     max-inline-size: calc(100% - 6.75rem);
+
+    .message-text {
+      white-space: pre-line;
+    }
 
     .chat-content {
       border-end-end-radius: 6px;
@@ -134,6 +208,41 @@ const avatarChat = (message: ListMessageResponse) => {
 
       &.chat-right {
         border-start-start-radius: 6px;
+      }
+
+      .link-preview {
+        background-color: rgb(var(--v-theme-grey-200));
+        padding: 10px;
+        border-radius: 8px;
+        border: 1px solid rgb(var(--v-theme-on-secondary));
+        transition: border-color 0.2s ease;
+
+        .lp-thumb img {
+          inline-size: 48px;
+          block-size: 48px;
+          object-fit: cover;
+          border-radius: 6px;
+          display: block;
+        }
+
+        .lp-title {
+          font-weight: 600;
+          overflow: hidden;
+          display: -webkit-box;
+          -webkit-box-orient: vertical;
+        }
+
+        .lp-desc {
+          opacity: 0.8;
+          overflow: hidden;
+          display: -webkit-box;
+          -webkit-box-orient: vertical;
+        }
+
+        .lp-url {
+          word-break: break-all;
+          text-decoration: none;
+        }
       }
     }
   }

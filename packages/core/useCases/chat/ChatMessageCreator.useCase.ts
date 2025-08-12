@@ -18,6 +18,9 @@ import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.servi
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { PublishResult } from 'centrifuge';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
+import { extractFirstUrl } from '@core/common/functions/extractFirstUrl';
+import { buildLinkPreview } from '@core/common/functions/buildLinkPreview';
+import { normalizeLinkPreview } from '@core/common/functions/normalizeLinkPreview';
 
 @injectable()
 export class ChatMessageCreatorUseCase {
@@ -112,6 +115,9 @@ export class ChatMessageCreatorUseCase {
       throw new Error(t('chat_not_found'));
     }
 
+    const firstUrl = extractFirstUrl(body.message);
+    const linkPreview = firstUrl ? await buildLinkPreview(firstUrl) : null;
+
     const inputChatMessage: IChatMessage = {
       message_id: uuidv4(),
       chat_id: params.chat_id,
@@ -131,17 +137,26 @@ export class ChatMessageCreatorUseCase {
       content: {
         type: body.type as EMessageType,
         message: body.message,
+        link_preview: linkPreview,
       },
       date: new Date().toISOString(),
     };
 
+    const inputChatMessageNormalize = {
+      ...inputChatMessage,
+      content: {
+        ...inputChatMessage.content,
+        link_preview: normalizeLinkPreview(linkPreview),
+      },
+    } as IChatMessage;
+
     const [, , result] = await Promise.all([
-      this.centrifugoChatPublish(inputChatMessage),
+      this.centrifugoChatPublish(inputChatMessageNormalize),
       this.streamProducerService.send(
         this.kafkaBaileysQueueService.workerSendMessage(getChat.worker.id),
         inputChatMessage
       ),
-      this.chatService.saveMessageChat(inputChatMessage),
+      this.chatService.saveMessageChat(inputChatMessageNormalize),
     ]);
 
     return result;

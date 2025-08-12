@@ -14,9 +14,20 @@ export const summarySchema = Type.Object({
   is_seen: Type.Boolean(),
 });
 
+export const linkPreviewSchema = Type.Object({
+  'canonical-url': Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  'matched-text': Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  title: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  description: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  jpegThumbnail: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  highQualityThumbnail: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  originalThumbnailUrl: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+
 export const contentSchema = Type.Object({
   type: Type.String({ enum: Object.values(EMessageType) }),
   message: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  link_preview: Type.Optional(Type.Union([linkPreviewSchema, Type.Null()])),
 });
 
 export const listMessageResponseSchema = Type.Object({
@@ -31,3 +42,4 @@ export const listMessageResponseSchema = Type.Object({
 });
 
 export type ListMessageResponse = Static<typeof listMessageResponseSchema>;
+export type LinkPreview = Static<typeof linkPreviewSchema>;

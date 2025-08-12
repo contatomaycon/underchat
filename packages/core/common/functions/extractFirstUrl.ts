@@ -1,4 +1,4 @@
-export function extractFirstUrl(text: string): string | null {
+export function extractFirstUrl(text?: string): string | null {
   if (!text) return null;
 
   const re =

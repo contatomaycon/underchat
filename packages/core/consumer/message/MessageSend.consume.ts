@@ -8,8 +8,8 @@ import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
-import { extractFirstUrl } from '@core/common/functions/extractFirstUrl';
-import { buildLinkPreview } from '@core/common/functions/buildLinkPreview';
+import { WAUrlInfo } from '@whiskeysockets/baileys';
+import { KeyedSequencerService } from '@core/services/keyedSequencer.service';
 
 @singleton()
 export class MessageSendConsume {
@@ -18,7 +18,8 @@ export class MessageSendConsume {
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     private readonly baileysMessageTextService: BaileysMessageTextService,
     private readonly streamProducerService: StreamProducerService,
-    private readonly kafkaServiceQueueService: KafkaServiceQueueService
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    private readonly keyedSequencerService: KeyedSequencerService
   ) {}
 
   public async execute(): Promise<void> {
@@ -31,60 +32,48 @@ export class MessageSendConsume {
     stream.mapBufferKeyToString();
     stream.mapJSONConvenience();
 
-    let chain: Promise<void> = Promise.resolve();
+    stream.forEach((msg) => {
+      const data = msg.value as IChatMessage;
+      if (!data) return;
 
-    stream.forEach(async (msg) => {
-      chain = chain.then(async () => {
-        const data = msg.value as IChatMessage;
+      const chatId = data.chat_id ?? data.message_key?.jid ?? data.phone;
 
-        if (!data) {
-          throw new Error('Received message without value');
-        }
+      if (!chatId) return;
 
-        const phoneSend = data.message_key?.jid ?? data.phone;
-
-        if (data?.content?.type === EMessageType.text) {
-          if (!data.content.message) {
-            throw new Error('Received message without content');
-          }
-
-          const firstUrl = extractFirstUrl(data.content.message);
-          const linkPreview = firstUrl
-            ? await buildLinkPreview(firstUrl)
-            : null;
-
-          const result = await this.baileysMessageTextService.sendText(
-            phoneSend,
-            data.content.message,
-            {
-              linkPreview,
-            }
-          );
-
-          if (!result) {
-            throw new Error('Failed to send message');
-          }
-
-          const inputUpdate: IUpdateMessage = {
-            message: result,
-            link_preview: linkPreview,
-            data,
-          };
-
-          await this.streamProducerService.send(
-            this.kafkaServiceQueueService.updateMessage(),
-            inputUpdate
-          );
-
-          return;
-        }
+      this.keyedSequencerService.enqueue(String(chatId), async () => {
+        await this.processMessage(data);
       });
     });
 
     await stream.start();
   }
 
+  private async processMessage(data: IChatMessage): Promise<void> {
+    const phoneSend = data.message_key?.jid ?? data.phone;
+
+    if (data?.content?.type === EMessageType.text) {
+      if (!data.content?.message)
+        throw new Error('Received message without content');
+
+      const result = await this.baileysMessageTextService.sendText(
+        phoneSend,
+        data.content.message,
+        { linkPreview: data.content.link_preview as WAUrlInfo }
+      );
+
+      if (!result) throw new Error('Failed to send message');
+
+      const inputUpdate: IUpdateMessage = { message: result, data };
+
+      await this.streamProducerService.send(
+        this.kafkaServiceQueueService.updateMessage(),
+        inputUpdate
+      );
+    }
+  }
+
   public async close(): Promise<void> {
+    await this.keyedSequencerService.drain();
     await this.kafkaStreams.closeAll();
   }
 }

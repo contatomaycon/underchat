@@ -139,11 +139,26 @@ export class MessageUpsertConsume {
   ): Promise<boolean> {
     let content;
     if (EMessageType.text === data.type) {
+      const extended = data.message.message?.extendedTextMessage;
+
+      const linkPreview = extended
+        ? {
+            'canonical-url': extended?.matchedText ?? '',
+            'matched-text': extended?.matchedText ?? '',
+            title: extended?.title ?? '',
+            description: extended?.description ?? '',
+            jpegThumbnail: extended?.jpegThumbnail
+              ? Buffer.from(extended.jpegThumbnail).toString('base64')
+              : undefined,
+          }
+        : undefined;
+
       content = {
         type: data.type,
         message:
           data.message.message?.extendedTextMessage?.text ??
           data.message.message?.conversation,
+        link_preview: linkPreview,
       };
     }
 
@@ -243,8 +258,6 @@ export class MessageUpsertConsume {
     stream.forEach(async (msg) => {
       chain = chain.then(async () => {
         const data = msg.value as IUpsertMessage;
-
-        console.log('MessageUpsertConsume data', data);
 
         if (!data) {
           throw new Error('Received message without value');
