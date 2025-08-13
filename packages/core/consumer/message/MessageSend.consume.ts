@@ -4,11 +4,14 @@ import { KafkaStreams, KStream } from 'kafka-streams';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { BaileysMessageTextService } from '@core/services/baileys/methods/messageText.service';
 import { EMessageType } from '@core/common/enums/EMessageType';
-import { IChatMessage } from '@core/common/interfaces/IChatMessage';
+import {
+  IChatMessage,
+  IQuotedMessage,
+} from '@core/common/interfaces/IChatMessage';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
-import { WAMessage, WAUrlInfo } from '@whiskeysockets/baileys';
+import { proto, WAMessage, WAUrlInfo } from '@whiskeysockets/baileys';
 import { KeyedSequencerService } from '@core/services/keyedSequencer.service';
 
 @singleton()
@@ -58,7 +61,9 @@ export class MessageSendConsume {
         { linkPreview: data.content.link_preview as WAUrlInfo }
       );
 
-      if (!result) throw new Error('Failed to send message');
+      if (!result) {
+        throw new Error('Failed to send message');
+      }
 
       const inputUpdate: IUpdateMessage = { message: result, data };
 
@@ -73,7 +78,21 @@ export class MessageSendConsume {
       data.content?.message &&
       data.content?.quoted
     ) {
-      const quoted = data.content.quoted as WAMessage;
+      const contentQuoted = data.content?.quoted as IQuotedMessage;
+
+      const quoted: WAMessage = {
+        key: {
+          remoteJid: contentQuoted.key.remote_jid,
+          fromMe: contentQuoted.key.from_me,
+          id: contentQuoted.key.id,
+          senderLid: contentQuoted.key.sender_lid ?? undefined,
+          senderPn: contentQuoted.key.sender_pn ?? undefined,
+          participant: contentQuoted.key.participant,
+          participantLid: contentQuoted.key.participant_lid ?? undefined,
+          participantPn: contentQuoted.key.participant_pn ?? undefined,
+        },
+        message: contentQuoted.message as proto.IMessage | null,
+      };
 
       const result = await this.baileysMessageTextService.sendTextQuoted(
         phoneSend,
@@ -81,7 +100,9 @@ export class MessageSendConsume {
         quoted
       );
 
-      if (!result) throw new Error('Failed to send message');
+      if (!result) {
+        throw new Error('Failed to send message');
+      }
 
       const inputUpdate: IUpdateMessage = { message: result, data };
 

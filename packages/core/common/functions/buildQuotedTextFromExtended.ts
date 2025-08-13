@@ -6,10 +6,10 @@ import { remoteParticipantJid } from './remoteParticipantJid';
 export function buildQuotedTextFromExtended(
   m: WAMessage
 ): IQuotedMessage | null {
-  const ext = m.message?.extendedTextMessage;
+  const ext = m?.message?.extendedTextMessage;
   const ctx = ext?.contextInfo;
 
-  if (!ctx?.stanzaId || !ctx?.quotedMessage || !m.key?.remoteJid) {
+  if (!ctx?.stanzaId || !ctx?.quotedMessage || !m?.key?.remoteJid) {
     return null;
   }
 
@@ -26,7 +26,11 @@ export function buildQuotedTextFromExtended(
       remote_jid: rJid,
       from_me: m.key?.fromMe ?? false,
       id: ctx.stanzaId,
+      sender_lid: m.key?.senderLid ?? null,
+      sender_pn: m.key?.senderPn ?? null,
       participant,
+      participant_pn: m.key?.participantPn ?? null,
+      participant_lid: m.key?.participantLid ?? null,
     },
     message: text,
   };

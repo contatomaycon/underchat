@@ -135,7 +135,7 @@ export class MessageUpsertConsume {
     data: IUpsertMessage
   ): Promise<boolean> {
     let content;
-    const extended = data.message.message?.extendedTextMessage;
+    const extended = data?.message?.message?.extendedTextMessage;
 
     const linkPreview = extended
       ? ({
@@ -150,8 +150,8 @@ export class MessageUpsertConsume {
     content = {
       type: data.type,
       message:
-        data.message.message?.extendedTextMessage?.text ??
-        data.message.message?.conversation,
+        data.message?.message?.extendedTextMessage?.text ??
+        data.message?.message?.conversation,
       link_preview: linkPreview,
       quoted: buildQuotedTextFromExtended(data.message),
     };
@@ -176,9 +176,13 @@ export class MessageUpsertConsume {
       chat_id: getChat.chat_id,
       message_key: {
         remote_jid: jid,
-        from_me: data.message.key?.fromMe,
-        id: data.message.key?.id,
-        participant: data.message.key?.participant,
+        from_me: data.message?.key?.fromMe,
+        id: data.message?.key?.id,
+        sender_lid: data.message?.key?.senderLid ?? null,
+        sender_pn: data.message?.key?.senderPn ?? null,
+        participant: data.message?.key?.participant,
+        participant_lid: data.message?.key?.participantLid ?? null,
+        participant_pn: data.message?.key?.participantPn ?? null,
       },
       type_user: data.message?.key?.fromMe
         ? ETypeUserChat.operator
@@ -207,7 +211,7 @@ export class MessageUpsertConsume {
   private nameChat(data: IUpsertMessage) {
     let name = null;
     if (!data.message?.key?.fromMe) {
-      name = data.message.pushName ?? null;
+      name = data?.message?.pushName ?? null;
     }
 
     return name;
@@ -236,6 +240,8 @@ export class MessageUpsertConsume {
       chat_id: chatId,
       message_key: {
         remote_jid: jid,
+        sender_lid: data.message?.key?.senderLid ?? null,
+        sender_pn: data.message?.key?.senderPn ?? null,
       },
       account: viewAccountName,
       worker: viewWorkerNameAndId,
@@ -244,6 +250,8 @@ export class MessageUpsertConsume {
       status: EChatStatus.queue,
       date: new Date().toISOString(),
     };
+
+    console.log('inputChatMessage', inputChatMessage);
 
     if (data.photo) {
       const photoResult = await this.storageService.uploadFromUrl(
@@ -295,8 +303,6 @@ export class MessageUpsertConsume {
           phone,
           jid
         );
-
-        console.log('getChat', getChat);
 
         if (!getChat) {
           const createChat = await this.createChat(data);

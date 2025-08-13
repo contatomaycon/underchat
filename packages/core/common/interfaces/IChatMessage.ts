@@ -38,11 +38,15 @@ interface IContent {
   quoted?: IQuotedMessage | null;
 }
 
-interface IMessageKey {
+export interface IMessageKey {
   remote_jid?: string | null;
   from_me?: boolean | null;
   id?: string | null;
+  sender_lid?: string | null;
+  sender_pn?: string | null;
   participant?: string | null;
+  participant_pn?: string | null;
+  participant_lid?: string | null;
 }
 
 export interface IChatMessage {

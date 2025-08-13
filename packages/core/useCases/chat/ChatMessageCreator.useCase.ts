@@ -177,7 +177,12 @@ export class ChatMessageCreatorUseCase {
             remote_jid: getChatMessage.message_key?.remote_jid ?? null,
             from_me: getChatMessage.message_key?.from_me ?? null,
             id: getChatMessage.message_key?.id ?? null,
+            sender_lid: getChatMessage.message_key?.sender_lid ?? null,
+            sender_pn: getChatMessage.message_key?.sender_pn ?? null,
             participant: getChatMessage.message_key?.participant ?? null,
+            participant_pn: getChatMessage.message_key?.participant_pn ?? null,
+            participant_lid:
+              getChatMessage.message_key?.participant_lid ?? null,
           },
           message: getChatMessage.content?.message ?? null,
         };
@@ -189,6 +194,8 @@ export class ChatMessageCreatorUseCase {
       chat_id: params.chat_id,
       message_key: {
         remote_jid: getChat.message_key?.remote_jid ?? null,
+        sender_lid: getChat.message_key?.sender_lid ?? null,
+        sender_pn: getChat.message_key?.sender_pn ?? null,
       },
       type_user: ETypeUserChat.operator,
       account: getChat.account,

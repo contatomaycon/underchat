@@ -8,10 +8,13 @@ export const chatMappings = () => {
         message_key: {
           type: 'nested',
           properties: {
-            id: {
+            remote_jid: {
               type: 'keyword',
             },
-            remote_jid: {
+            sender_lid: {
+              type: 'keyword',
+            },
+            sender_pn: {
               type: 'keyword',
             },
           },
