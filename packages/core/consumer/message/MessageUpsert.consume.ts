@@ -11,10 +11,7 @@ import { AccountService } from '@core/services/account.service';
 import { WorkerService } from '@core/services/worker.service';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ChatService } from '@core/services/chat.service';
-import {
-  IChatMessage,
-  IQuotedMessage,
-} from '@core/common/interfaces/IChatMessage';
+import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { CentrifugoService } from '@core/services/centrifugo.service';
@@ -27,8 +24,7 @@ import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 import { remoteJid } from '@core/common/functions/remoteJid';
 import { StorageService } from '@core/services/storage.service';
 import { LinkPreview } from '@core/schema/chat/listMessageChats/response.schema';
-import { WAMessage } from '@whiskeysockets/baileys';
-import { remoteParticipantJid } from '@core/common/functions/remoteParticipantJid';
+import { buildQuotedTextFromExtended } from '@core/common/functions/buildQuotedTextFromExtended';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -135,35 +131,6 @@ export class MessageUpsertConsume {
     return data;
   }
 
-  private buildQuotedFromExtended(m: WAMessage): IQuotedMessage | null {
-    const ext = m.message?.extendedTextMessage;
-    const ctx = ext?.contextInfo;
-
-    if (!ctx?.stanzaId || !ctx?.quotedMessage || !m.key?.remoteJid) {
-      return null;
-    }
-
-    const rJid = remoteJid(m?.key);
-    const participant = remoteParticipantJid(m?.key);
-
-    const text =
-      ctx?.quotedMessage?.conversation ??
-      ctx?.quotedMessage?.extendedTextMessage?.text ??
-      '';
-
-    const quoted: IQuotedMessage = {
-      key: {
-        remote_jid: rJid,
-        from_me: m.key?.fromMe ?? false,
-        id: ctx.stanzaId,
-        participant,
-      },
-      message: text,
-    };
-
-    return quoted;
-  }
-
   private async createChatMessage(
     getChat: IChat,
     data: IUpsertMessage
@@ -191,7 +158,7 @@ export class MessageUpsertConsume {
           data.message.message?.extendedTextMessage?.text ??
           data.message.message?.conversation,
         link_preview: linkPreview,
-        quoted: this.buildQuotedFromExtended(data.message),
+        quoted: buildQuotedTextFromExtended(data.message),
       };
     }
 
