@@ -5,6 +5,7 @@ import {
   ListMessageResponse,
 } from '@core/schema/chat/listMessageChats/response.schema';
 import { isTypeUser } from '@core/common/functions/isTypeUser';
+import { EMessageType } from '@core/common/enums/EMessageType';
 
 const chatStore = useChatStore();
 
@@ -19,18 +20,11 @@ const resolveFeedbackIcon = (
 };
 
 const resolvePhoto = (message: ListMessageResponse): string => {
-  if (isTypeUser(message) && chatStore.activeChat?.photo) {
+  if (isTypeUser(message) && chatStore.activeChat?.photo)
     return chatStore.activeChat.photo;
-  }
-
-  if (!isTypeUser(message) && message.user?.photo) {
-    return message.user.photo;
-  }
-
-  if (!isTypeUser(message) && chatStore.user?.info.photo) {
+  if (!isTypeUser(message) && message.user?.photo) return message.user.photo;
+  if (!isTypeUser(message) && chatStore.user?.info.photo)
     return chatStore.user.info.photo;
-  }
-
   return '';
 };
 
@@ -39,12 +33,9 @@ const isPhotoExist = (message: ListMessageResponse): boolean => {
 };
 
 const avatarChat = (message: ListMessageResponse) => {
-  if (isTypeUser(message) && chatStore.activeChat?.name) {
+  if (isTypeUser(message) && chatStore.activeChat?.name)
     return avatarText(chatStore.activeChat.name);
-  }
-
   const name = message.user?.name ?? chatStore.user?.info.name;
-
   return avatarText(name);
 };
 
@@ -70,7 +61,6 @@ const resolvePreviewUrl = (lp?: LinkPreview): string => {
 
 const onReply = (m: ListMessageResponse) => {
   chatStore.setMessageReply(m);
-
   window.dispatchEvent(new CustomEvent('focus-composer'));
 };
 
@@ -84,8 +74,17 @@ const onCopy = async (m: ListMessageResponse) => {
 };
 
 const onReact = (m: ListMessageResponse) => {};
-
 const onDelete = (m: ListMessageResponse) => {};
+
+const showQuoted = (m: ListMessageResponse) =>
+  m.content?.type === EMessageType.text_quoted && !!m.content?.quoted?.message;
+
+const resolveQuotedName = (m: ListMessageResponse): string => {
+  const fromMe = m.content?.quoted?.key?.from_me ?? null;
+  if (fromMe === true) return chatStore.user?.info.name || 'Você';
+  if (fromMe === false) return chatStore.activeChat?.name || '';
+  return '';
+};
 </script>
 
 <template>
@@ -185,6 +184,24 @@ const onDelete = (m: ListMessageResponse) => {};
           </div>
 
           <div class="message-block">
+            <div
+              v-if="showQuoted(msgGrp)"
+              class="quoted-block"
+              :class="{ 'is-right': !isTypeUser(msgGrp) }"
+            >
+              <div class="quoted-name">{{ resolveQuotedName(msgGrp) }}</div>
+              <div
+                class="quoted-text"
+                :style="{
+                  color: isTypeUser(msgGrp)
+                    ? 'rgb(var(--v-theme-on-surface))'
+                    : 'rgb(var(--v-theme-title))',
+                }"
+              >
+                {{ msgGrp.content?.quoted?.message }}
+              </div>
+            </div>
+
             <div
               v-if="msgGrp.content?.link_preview?.title"
               class="link-preview rounded"
@@ -320,6 +337,27 @@ const onDelete = (m: ListMessageResponse) => {};
 
       &.has-actions {
         padding-inline-end: 36px;
+      }
+
+      .quoted-block {
+        background: rgba(var(--v-theme-primary), 0.08);
+        border-inline-start: 3px solid rgb(var(--v-theme-primary));
+        border-radius: 8px;
+        padding: 8px 10px;
+        margin-bottom: 6px;
+      }
+
+      .quoted-name {
+        color: rgb(var(--v-theme-primary));
+        font-weight: 600;
+        font-size: 0.85rem;
+        margin-bottom: 4px;
+        line-height: 1.1;
+      }
+
+      .quoted-text {
+        font-size: 0.9rem;
+        color: rgb(var(--v-theme-on-surface));
       }
 
       .link-preview {

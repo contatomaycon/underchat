@@ -15,6 +15,16 @@ export const summarySchema = Type.Object({
   is_seen: Type.Boolean(),
 });
 
+export const quotedMessageSchema = Type.Object({
+  key: Type.Object({
+    remote_jid: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    from_me: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
+    id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    participant: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  }),
+  message: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+
 export const contentSchema = Type.Object({
   type: Type.String({ enum: Object.values(EMessageType) }),
   message: Type.Optional(Type.Union([Type.String(), Type.Null()])),
@@ -22,6 +32,7 @@ export const contentSchema = Type.Object({
   link_preview: Type.Optional(
     Type.Union([viewLinkPreviewResponseSchema, Type.Null()])
   ),
+  quoted: Type.Optional(Type.Union([quotedMessageSchema, Type.Null()])),
 });
 
 export const listMessageResponseSchema = Type.Object({
