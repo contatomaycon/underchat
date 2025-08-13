@@ -61,6 +61,7 @@ declare module 'vue' {
     MoreBtn: typeof import('./src/@webcore/components/MoreBtn.vue')['default']
     Notifications: typeof import('./src/@webcore/components/Notifications.vue')['default']
     ProductDescriptionEditor: typeof import('./src/@webcore/components/ProductDescriptionEditor.vue')['default']
+    ReplyPreview: typeof import('./src/components/chat/ReplyPreview.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     ScrollToTop: typeof import('./src/@webcore/components/ScrollToTop.vue')['default']

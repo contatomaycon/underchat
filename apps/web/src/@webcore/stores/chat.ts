@@ -36,6 +36,7 @@ export const useChatStore = defineStore('chat', {
     listMessages: [] as ListMessageResponse[],
     listQueue: [] as ListChatsResponse[],
     listInChat: [] as ListChatsResponse[],
+    messageReply: null as ListMessageResponse | null,
     user: getUser(),
     pagings: {
       from: 0,
@@ -339,6 +340,14 @@ export const useChatStore = defineStore('chat', {
       }
 
       this.activeChat = chat;
+    },
+
+    setMessageReply(m: ListMessageResponse) {
+      this.messageReply = m;
+    },
+
+    clearMessageReply() {
+      this.messageReply = null;
     },
   },
 });

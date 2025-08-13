@@ -77,11 +77,17 @@ const sendMessage = async () => {
         : undefined,
     };
 
+    if (chatStore.messageReply?.message_id) {
+      inputCreateMessage.message_quoted_id = chatStore.messageReply.message_id;
+      inputCreateMessage.type = EMessageType.text_quoted;
+    }
+
     await chatStore.createMessage(inputCreateMessage);
   }
 
   msg.value = '';
   linkPreview.value = null;
+  chatStore.clearMessageReply();
 
   nextTick(() => {
     scrollToBottomInChatLog();
@@ -363,6 +369,8 @@ onUnmounted(async () => {
           class="chat-log-message-form mb-5 mx-5"
           @submit.prevent="sendMessage"
         >
+          <ReplyPreview v-if="chatStore.messageReply" />
+
           <VTextarea
             :key="contact_id"
             v-model="msg"

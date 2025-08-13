@@ -1,28 +1,20 @@
 <script lang="ts" setup>
 import { useChatStore } from '@/@webcore/stores/chat';
-import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import {
   LinkPreview,
   ListMessageResponse,
 } from '@core/schema/chat/listMessageChats/response.schema';
+import { isTypeUser } from '@core/common/functions/isTypeUser';
 
 const chatStore = useChatStore();
-
-const isTypeUser = (message: ListMessageResponse): boolean => {
-  return message.type_user === ETypeUserChat.client;
-};
 
 const resolveFeedbackIcon = (
   message: ListMessageResponse
 ): { icon: string; color: string | undefined } => {
-  if (message.summary?.is_seen) {
+  if (message.summary?.is_seen)
     return { icon: 'tabler-checks', color: 'success' };
-  }
-
-  if (message.summary?.is_delivered) {
+  if (message.summary?.is_delivered)
     return { icon: 'tabler-checks', color: undefined };
-  }
-
   return { icon: 'tabler-check', color: undefined };
 };
 
@@ -58,21 +50,13 @@ const avatarChat = (message: ListMessageResponse) => {
 
 const resolvePreviewImage = (lp?: LinkPreview): string => {
   if (!lp) return '';
-
-  if (lp.originalThumbnailUrl) {
-    return lp.originalThumbnailUrl;
-  }
-
-  if (lp.jpegThumbnail) {
-    return `data:image/jpeg;base64,${lp.jpegThumbnail}`;
-  }
-
+  if (lp.originalThumbnailUrl) return lp.originalThumbnailUrl;
+  if (lp.jpegThumbnail) return `data:image/jpeg;base64,${lp.jpegThumbnail}`;
   return '';
 };
 
 const domainFromUrl = (u?: string | null): string => {
   if (!u) return '';
-
   try {
     return new URL(u).hostname.replace(/^www\./, '');
   } catch {
@@ -83,6 +67,25 @@ const domainFromUrl = (u?: string | null): string => {
 const resolvePreviewUrl = (lp?: LinkPreview): string => {
   return lp?.['matched-text'] ?? lp?.['canonical-url'] ?? '';
 };
+
+const onReply = (m: ListMessageResponse) => {
+  chatStore.setMessageReply(m);
+
+  window.dispatchEvent(new CustomEvent('focus-composer'));
+};
+
+const onCopy = async (m: ListMessageResponse) => {
+  const text =
+    m.content?.message ||
+    m.content?.link_preview?.['matched-text'] ||
+    m.content?.link_preview?.['canonical-url'] ||
+    '';
+  if (text) await navigator.clipboard.writeText(text);
+};
+
+const onReact = (m: ListMessageResponse) => {};
+
+const onDelete = (m: ListMessageResponse) => {};
 </script>
 
 <template>
@@ -122,7 +125,7 @@ const resolvePreviewUrl = (lp?: LinkPreview): string => {
         :class="!isTypeUser(msgGrp) ? 'align-end' : 'align-start'"
       >
         <div
-          class="chat-content py-2 px-4 elevation-2"
+          class="chat-content py-2 px-4 elevation-2 has-actions"
           :style="{
             backgroundColor: isTypeUser(msgGrp)
               ? 'rgb(var(--v-theme-surface))'
@@ -130,6 +133,57 @@ const resolvePreviewUrl = (lp?: LinkPreview): string => {
           }"
           :class="[isTypeUser(msgGrp) ? 'chat-left' : 'chat-right']"
         >
+          <div class="message-actions">
+            <VMenu
+              :close-on-content-click="true"
+              location="bottom end"
+              offset="6"
+            >
+              <template #activator="{ props }">
+                <VBtn
+                  v-bind="props"
+                  icon
+                  size="24"
+                  density="comfortable"
+                  variant="text"
+                  :color="
+                    isTypeUser(msgGrp)
+                      ? 'rgb(var(--v-theme-on-surface))'
+                      : 'rgb(var(--v-theme-title))'
+                  "
+                >
+                  <VIcon size="18">tabler-chevron-down</VIcon>
+                </VBtn>
+              </template>
+              <VList density="compact" min-width="180">
+                <VListItem @click="onReply(msgGrp)">
+                  <template #prepend
+                    ><VIcon size="18">tabler-corner-up-left</VIcon></template
+                  >
+                  <VListItemTitle>Responder</VListItemTitle>
+                </VListItem>
+                <VListItem @click="onCopy(msgGrp)">
+                  <template #prepend
+                    ><VIcon size="18">tabler-copy</VIcon></template
+                  >
+                  <VListItemTitle>Copiar</VListItemTitle>
+                </VListItem>
+                <VListItem @click="onReact(msgGrp)">
+                  <template #prepend
+                    ><VIcon size="18">tabler-mood-smile</VIcon></template
+                  >
+                  <VListItemTitle>Reagir</VListItemTitle>
+                </VListItem>
+                <VListItem @click="onDelete(msgGrp)">
+                  <template #prepend
+                    ><VIcon size="18">tabler-trash</VIcon></template
+                  >
+                  <VListItemTitle>Apagar</VListItemTitle>
+                </VListItem>
+              </VList>
+            </VMenu>
+          </div>
+
           <div class="message-block">
             <div
               v-if="msgGrp.content?.link_preview?.title"
@@ -149,14 +203,13 @@ const resolvePreviewUrl = (lp?: LinkPreview): string => {
               "
             >
               <div class="lp-main d-flex">
-                <div
-                  v-if="resolvePreviewImage(msgGrp.content.link_preview)"
-                  class="lp-thumb me-3"
-                >
-                  <img
-                    :src="resolvePreviewImage(msgGrp.content.link_preview)"
-                    alt=""
-                  />
+                <div v-if="resolvePreviewImage(msgGrp.content.link_preview)">
+                  <div class="lp-thumb me-3">
+                    <img
+                      :src="resolvePreviewImage(msgGrp.content.link_preview)"
+                      alt=""
+                    />
+                  </div>
                 </div>
                 <div class="lp-text">
                   <div class="lp-domain text-xs mb-1">
@@ -188,7 +241,7 @@ const resolvePreviewUrl = (lp?: LinkPreview): string => {
             </div>
 
             <p
-              class="mb-2 text-base message-text"
+              class="mb-2 mr-6 text-base message-text"
               v-if="msgGrp.content?.message"
               :style="{
                 color: isTypeUser(msgGrp)
@@ -229,6 +282,7 @@ const resolvePreviewUrl = (lp?: LinkPreview): string => {
     }
 
     .chat-content {
+      position: relative;
       border-end-end-radius: 6px;
       border-end-start-radius: 6px;
 
@@ -242,6 +296,30 @@ const resolvePreviewUrl = (lp?: LinkPreview): string => {
 
       &.chat-right {
         border-start-start-radius: 6px;
+      }
+
+      .message-actions {
+        position: absolute;
+        top: 4px;
+        inset-inline-end: 6px;
+        opacity: 0;
+        visibility: hidden;
+        z-index: 2;
+        transition: opacity 0.15s ease;
+        .v-btn {
+          width: 28px !important;
+          height: 28px !important;
+          min-width: 28px !important;
+        }
+      }
+
+      &:hover .message-actions {
+        opacity: 1;
+        visibility: visible;
+      }
+
+      &.has-actions {
+        padding-inline-end: 36px;
       }
 
       .link-preview {
