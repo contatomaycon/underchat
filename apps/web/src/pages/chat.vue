@@ -24,6 +24,11 @@ import { extractFirstUrl } from '@core/common/functions/extractFirstUrl';
 import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
 import { refDebounced } from '@vueuse/core';
 import { getOffsetTop } from '@core/common/functions/getOffsetTop';
+import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
+import data from 'emoji-mart-vue-fast/data/all.json';
+import 'emoji-mart-vue-fast/css/emoji-mart.css';
+
+const emojiIndex = new EmojiIndex(data);
 
 definePage({
   meta: {
@@ -51,6 +56,14 @@ const isActiveChatUserProfileSidebarOpen = ref(false);
 const refInputEl = ref<HTMLElement>();
 const linkPreview = ref<ViewLinkPreviewResponse | null>(null);
 const composerRef = ref();
+
+const fileDocRef = ref<HTMLInputElement | null>(null);
+const filePhotoRef = ref<HTMLInputElement | null>(null);
+const fileVideoRef = ref<HTMLInputElement | null>(null);
+const fileAudioRef = ref<HTMLInputElement | null>(null);
+const isEmojiOpen = ref(false);
+
+const hasContent = computed(() => !!msg.value && msg.value.trim().length > 0);
 
 const scrollToBottomInChatLog = () => {
   if (!chatLogPS.value) return;
@@ -212,6 +225,56 @@ const previewImage = computed(() => {
   if (cand.startsWith('http')) return cand;
   return `data:image/jpeg;base64,${cand}`;
 });
+
+const openAttach = (
+  type: 'document' | 'photo' | 'video' | 'audio' | 'contact'
+) => {
+  switch (type) {
+    case 'document':
+      fileDocRef.value?.click();
+      break;
+    case 'photo':
+      filePhotoRef.value?.click();
+      break;
+    case 'video':
+      fileVideoRef.value?.click();
+      break;
+    case 'audio':
+      fileAudioRef.value?.click();
+      break;
+    case 'contact':
+      window.dispatchEvent(new CustomEvent('open-contact-picker'));
+      break;
+  }
+};
+
+const onPickDoc = (e: Event) => {
+  /* TODO: enviar documento */
+};
+const onPickPhoto = (e: Event) => {
+  /* TODO: enviar foto */
+};
+const onPickVideo = (e: Event) => {
+  /* TODO: enviar vídeo */
+};
+const onPickAudio = (e: Event) => {
+  /* TODO: enviar áudio */
+};
+
+const onEmojiSelect = (e: any) => {
+  const ch = e?.native || e?.skins?.[0]?.native || '';
+
+  if (ch) {
+    msg.value = (msg.value || '') + ch;
+    nextTick(() => window.dispatchEvent(new CustomEvent('focus-composer')));
+  }
+};
+
+const onRecordAudio = () => {
+  window.dispatchEvent(new CustomEvent('start-recording-audio'));
+};
+
+const onSendText = () => sendMessage();
 
 const debouncedMsg = refDebounced(msg, 500);
 watch(
@@ -456,41 +519,152 @@ onUnmounted(async () => {
             :key="contact_id"
             v-model="msg"
             variant="solo"
-            density="default"
-            class="chat-message-input"
+            density="comfortable"
+            class="chat-message-input whats-composer"
             :placeholder="$t('write_your_message')"
             :auto-grow="true"
             rows="1"
             :max-rows="8"
-            autofocus
-            @keydown.enter.exact.prevent="sendMessage"
+            @keydown.enter.exact.prevent="onSendText"
           >
-            <template #append-inner>
-              <div class="d-flex gap-1">
-                <IconBtn>
-                  <VIcon icon="tabler-microphone" size="22" />
-                </IconBtn>
-                <IconBtn @click="refInputEl?.click()">
-                  <VIcon icon="tabler-paperclip" size="22" />
-                </IconBtn>
-                <div class="d-none d-md-block">
-                  <VBtn append-icon="tabler-send" @click="sendMessage">
-                    {{ $t('send') }}
-                  </VBtn>
+            <template #prepend-inner>
+              <VMenu
+                offset="8"
+                :close-on-content-click="true"
+                location="top start"
+              >
+                <template #activator="{ props }">
+                  <IconBtn
+                    v-bind="props"
+                    class="composer-btn"
+                    aria-label="Anexar"
+                  >
+                    <VIcon size="22">tabler-plus</VIcon>
+                  </IconBtn>
+                </template>
+
+                <VList
+                  density="comfortable"
+                  min-width="220"
+                  class="attach-menu"
+                >
+                  <VListItem @click="openAttach('document')">
+                    <template #prepend
+                      ><VIcon size="20">tabler-file</VIcon></template
+                    >
+                    <VListItemTitle>Documentos</VListItemTitle>
+                  </VListItem>
+                  <VListItem @click="openAttach('photo')">
+                    <template #prepend
+                      ><VIcon size="20">tabler-photo</VIcon></template
+                    >
+                    <VListItemTitle>Fotos</VListItemTitle>
+                  </VListItem>
+                  <VListItem @click="openAttach('video')">
+                    <template #prepend
+                      ><VIcon size="20">tabler-video</VIcon></template
+                    >
+                    <VListItemTitle>Vídeos</VListItemTitle>
+                  </VListItem>
+                  <VListItem @click="openAttach('audio')">
+                    <template #prepend
+                      ><VIcon size="20">tabler-headphones</VIcon></template
+                    >
+                    <VListItemTitle>Áudio</VListItemTitle>
+                  </VListItem>
+                  <VListItem @click="openAttach('contact')">
+                    <template #prepend
+                      ><VIcon size="20">tabler-user</VIcon></template
+                    >
+                    <VListItemTitle>Contato</VListItemTitle>
+                  </VListItem>
+                </VList>
+              </VMenu>
+
+              <VMenu
+                v-model="isEmojiOpen"
+                location="top start"
+                :close-on-content-click="false"
+                offset="8"
+              >
+                <template #activator="{ props }">
+                  <IconBtn
+                    v-bind="props"
+                    class="composer-btn"
+                    aria-label="Emoji"
+                  >
+                    <VIcon size="22">tabler-mood-smile</VIcon>
+                  </IconBtn>
+                </template>
+
+                <div class="emoji-picker-wrap">
+                  <Picker
+                    :data="emojiIndex"
+                    :per-line="8"
+                    :show-preview="false"
+                    :show-search="true"
+                    :show-skin-tones="false"
+                    @select="onEmojiSelect"
+                  />
                 </div>
-                <IconBtn class="d-block d-md-none" @click="sendMessage">
-                  <VIcon icon="tabler-send" />
+              </VMenu>
+            </template>
+
+            <!-- DIREITA: ÁUDIO (default) OU ENVIAR (se tiver texto) -->
+            <template #append-inner>
+              <div class="d-flex align-center gap-1">
+                <IconBtn
+                  v-if="!hasContent"
+                  class="composer-btn mic-btn"
+                  aria-label="Gravar áudio"
+                  @click="onRecordAudio"
+                >
+                  <VIcon size="22">tabler-microphone</VIcon>
                 </IconBtn>
+
+                <VBtn
+                  v-else
+                  class="send-btn"
+                  icon
+                  color="success"
+                  variant="flat"
+                  rounded="pill"
+                  aria-label="Enviar mensagem"
+                  @click="onSendText"
+                >
+                  <VIcon size="22">tabler-send</VIcon>
+                </VBtn>
               </div>
             </template>
           </VTextarea>
 
           <input
-            ref="refInputEl"
+            ref="fileDocRef"
             type="file"
-            name="file"
-            accept=".jpeg,.png,.jpg,GIF"
             hidden
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            @change="onPickDoc"
+          />
+          <input
+            ref="filePhotoRef"
+            type="file"
+            hidden
+            accept="image/*"
+            @change="onPickPhoto"
+          />
+          <input
+            ref="fileVideoRef"
+            type="file"
+            hidden
+            accept="video/*"
+            @change="onPickVideo"
+          />
+          <input
+            ref="fileAudioRef"
+            type="file"
+            hidden
+            accept="audio/*"
+            @change="onPickAudio"
           />
         </VForm>
       </div>
@@ -573,7 +747,7 @@ $chat-app-header-height: 76px;
   resize: none;
   overflow: hidden;
   line-height: 1.5rem;
-  padding-top: 1rem !important;
+  padding-top: 0.8rem !important;
   padding-bottom: 0.5rem !important;
 }
 
