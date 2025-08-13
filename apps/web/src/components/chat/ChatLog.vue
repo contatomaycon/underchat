@@ -81,9 +81,34 @@ const showQuoted = (m: ListMessageResponse) =>
 
 const resolveQuotedName = (m: ListMessageResponse): string => {
   const fromMe = m.content?.quoted?.key?.from_me ?? null;
-  if (fromMe === true) return chatStore.user?.info.name || 'Você';
-  if (fromMe === false) return chatStore.activeChat?.name || '';
+
+  if (fromMe === true) return chatStore.user?.info.name ?? '';
+  if (fromMe === false) return chatStore.activeChat?.name ?? '';
+
   return '';
+};
+
+const getQuotedTargetId = (m: ListMessageResponse): string | null => {
+  const byExplicitId = m.content?.message_quoted_id || null;
+  if (byExplicitId) return String(byExplicitId);
+
+  const text = m.content?.quoted?.message?.trim();
+  if (!text) return null;
+
+  const found = chatStore.listMessages.find(
+    (x) => x.content?.message?.trim() === text
+  );
+
+  return found?.message_id || null;
+};
+
+const goToQuoted = (m: ListMessageResponse) => {
+  const targetId = getQuotedTargetId(m);
+  if (!targetId) return;
+
+  window.dispatchEvent(
+    new CustomEvent('scroll-to-message', { detail: targetId })
+  );
 };
 </script>
 
@@ -93,6 +118,8 @@ const resolveQuotedName = (m: ListMessageResponse): string => {
       v-for="(msgGrp, index) in chatStore.listMessages"
       :key="msgGrp.message_id"
       class="chat-group d-flex align-start"
+      :id="`msg-${msgGrp.message_id}`"
+      :data-message-id="msgGrp.message_id"
       :class="[
         {
           'flex-row-reverse': !isTypeUser(msgGrp),
@@ -187,7 +214,8 @@ const resolveQuotedName = (m: ListMessageResponse): string => {
             <div
               v-if="showQuoted(msgGrp)"
               class="quoted-block"
-              :class="{ 'is-right': !isTypeUser(msgGrp) }"
+              :class="{ 'is-right': !isTypeUser(msgGrp), 'is-clickable': true }"
+              @click="goToQuoted(msgGrp)"
             >
               <div class="quoted-name">{{ resolveQuotedName(msgGrp) }}</div>
               <div
@@ -277,10 +305,7 @@ const resolveQuotedName = (m: ListMessageResponse): string => {
           </VIcon>
           <span class="text-sm ms-2 text-disabled">
             {{
-              formatDate(msgGrp.date, {
-                hour: 'numeric',
-                minute: 'numeric',
-              })
+              formatDate(msgGrp.date, { hour: 'numeric', minute: 'numeric' })
             }}
           </span>
         </div>
@@ -345,6 +370,10 @@ const resolveQuotedName = (m: ListMessageResponse): string => {
         border-radius: 8px;
         padding: 8px 10px;
         margin-bottom: 6px;
+      }
+
+      .quoted-block.is-clickable {
+        cursor: pointer;
       }
 
       .quoted-name {

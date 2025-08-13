@@ -23,6 +23,7 @@ import { IChat } from '@core/common/interfaces/IChat';
 import { extractFirstUrl } from '@core/common/functions/extractFirstUrl';
 import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
 import { refDebounced } from '@vueuse/core';
+import { getOffsetTop } from '@core/common/functions/getOffsetTop';
 
 definePage({
   meta: {
@@ -36,7 +37,6 @@ const { name } = useTheme();
 const vuetifyDisplays = useDisplay();
 
 const contact_id = ref('contact-id');
-
 const { isLeftSidebarOpen } = useResponsiveLeftSidebar(
   vuetifyDisplays.smAndDown
 );
@@ -54,21 +54,76 @@ const composerRef = ref();
 
 const scrollToBottomInChatLog = () => {
   if (!chatLogPS.value) return;
-  const scrollEl = chatLogPS.value.$el || chatLogPS.value;
 
+  const scrollEl = chatLogPS.value.$el || chatLogPS.value;
   if (!scrollEl) return;
+
   scrollEl.scrollTop = scrollEl.scrollHeight;
+};
+
+const scrollToMessageById = async (id?: string) => {
+  await nextTick();
+
+  const container: HTMLElement = chatLogPS.value?.$el || chatLogPS.value;
+  if (!container) return;
+
+  if (!id) {
+    container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+    chatLogPS.value?.update?.();
+
+    return;
+  }
+
+  const target =
+    (container.querySelector(`[data-message-id="${id}"]`) as HTMLElement) ||
+    (document.getElementById(`msg-${id}`) as HTMLElement);
+
+  if (target) {
+    const top = getOffsetTop(container, target) - 60;
+
+    container.scrollTo({ top, behavior: 'auto' });
+
+    requestAnimationFrame(() => {
+      container.scrollTo({ top, behavior: 'smooth' });
+      chatLogPS.value?.update?.();
+    });
+
+    return;
+  }
+
+  container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+  chatLogPS.value?.update?.();
+};
+
+const highlightAndScrollToMessage = (id: string) => {
+  if (!id || !chatLogPS.value) return;
+
+  const container: HTMLElement = chatLogPS.value.$el || chatLogPS.value;
+  const target =
+    (container.querySelector(`[data-message-id="${id}"]`) as HTMLElement) ||
+    (document.getElementById(`msg-${id}`) as HTMLElement);
+
+  if (!target) return;
+
+  const top = getOffsetTop(container, target) - 60;
+  container.scrollTo({ top, behavior: 'auto' });
+
+  requestAnimationFrame(() => container.scrollTo({ top, behavior: 'smooth' }));
+
+  nextTick(() => (chatLogPS.value?.update ? chatLogPS.value.update() : null));
+
+  target.classList.remove('message-target-flash');
+  target.offsetWidth;
+  target.classList.add('message-target-flash');
 };
 
 const startConversation = () => {
   if (vuetifyDisplays.mdAndUp.value) return;
-
   isLeftSidebarOpen.value = true;
 };
 
 const sendMessage = async () => {
   if (!msg.value) return;
-
   if (chatStore.activeChat?.worker?.id) {
     const inputCreateMessage: CreateMessageChatsBody = {
       type: EMessageType.text,
@@ -88,6 +143,7 @@ const sendMessage = async () => {
 
   msg.value = '';
   linkPreview.value = null;
+
   chatStore.clearMessageReply();
 
   nextTick(() => {
@@ -129,9 +185,7 @@ const previewDomain = computed(() => {
     linkPreview.value?.['canonical-url'] ||
     linkPreview.value?.['matched-text'] ||
     '';
-
   if (!u) return '';
-
   try {
     return new URL(u).host;
   } catch {
@@ -152,13 +206,10 @@ const previewImage = computed(() => {
   if (!p) {
     return null;
   }
-
   const cand =
     p.highQualityThumbnail || p.originalThumbnailUrl || p.jpegThumbnail || '';
-
   if (!cand) return null;
   if (cand.startsWith('http')) return cand;
-
   return `data:image/jpeg;base64,${cand}`;
 });
 
@@ -171,14 +222,11 @@ watch(
       const linkPreviewResponse = await chatStore.generateLinkPreview({
         url: firstUrl,
       });
-
       if (linkPreviewResponse?.title !== 'Error') {
         linkPreview.value = linkPreviewResponse as ViewLinkPreviewResponse;
       }
-
       return;
     }
-
     linkPreview.value = null;
   },
   { immediate: true }
@@ -189,9 +237,13 @@ const focusComposer = () => {
     const el = composerRef.value?.$el?.querySelector(
       'textarea'
     ) as HTMLTextAreaElement | null;
-
     el?.focus({ preventScroll: false });
   }, 120);
+};
+
+const onScrollToMessageEvt = (e: Event) => {
+  const id = (e as CustomEvent<string>).detail;
+  if (id) highlightAndScrollToMessage(id);
 };
 
 onMounted(async () => {
@@ -199,8 +251,14 @@ onMounted(async () => {
     await onMessage(
       chatAccountCentrifugo(chatStore.user.account_id),
       (data: IChatMessage) => {
-        if (chatStore.activeChat?.chat_id !== data.chat_id) return;
+        if (chatStore.activeChat?.chat_id !== data.chat_id) {
+          return;
+        }
+
         chatStore.addMessageActiveChat(data);
+
+        scrollToMessageById(data.message_id);
+        window.dispatchEvent(new CustomEvent('focus-composer'));
       }
     );
     await onMessage(
@@ -209,7 +267,12 @@ onMounted(async () => {
         chatStore.addChat(data);
       }
     );
+
     window.addEventListener('focus-composer', focusComposer);
+    window.addEventListener(
+      'scroll-to-message',
+      onScrollToMessageEvt as EventListener
+    );
   }
 });
 
@@ -218,6 +281,10 @@ onUnmounted(async () => {
     await unsubscribe(chatAccountCentrifugo(chatStore.user.account_id));
     await unsubscribe(chatQueueAccountCentrifugo(chatStore.user.account_id));
     window.removeEventListener('focus-composer', focusComposer);
+    window.removeEventListener(
+      'scroll-to-message',
+      onScrollToMessageEvt as EventListener
+    );
   }
 });
 </script>
@@ -567,5 +634,17 @@ $chat-app-header-height: 76px;
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+.message-target-flash {
+  animation: messageTargetFlash 1.1s ease;
+}
+@keyframes messageTargetFlash {
+  0% {
+    background-color: rgba(var(--v-theme-primary), 0.16);
+  }
+  100% {
+    background-color: transparent;
+  }
 }
 </style>

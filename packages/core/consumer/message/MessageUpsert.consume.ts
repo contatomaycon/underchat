@@ -251,8 +251,6 @@ export class MessageUpsertConsume {
       date: new Date().toISOString(),
     };
 
-    console.log('inputChatMessage', inputChatMessage);
-
     if (data.photo) {
       const photoResult = await this.storageService.uploadFromUrl(
         data.photo,
