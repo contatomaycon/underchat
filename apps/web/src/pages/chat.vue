@@ -50,6 +50,7 @@ const isUserProfileSidebarOpen = ref(false);
 const isActiveChatUserProfileSidebarOpen = ref(false);
 const refInputEl = ref<HTMLElement>();
 const linkPreview = ref<ViewLinkPreviewResponse | null>(null);
+const composerRef = ref();
 
 const scrollToBottomInChatLog = () => {
   if (!chatLogPS.value) return;
@@ -183,6 +184,16 @@ watch(
   { immediate: true }
 );
 
+const focusComposer = () => {
+  setTimeout(() => {
+    const el = composerRef.value?.$el?.querySelector(
+      'textarea'
+    ) as HTMLTextAreaElement | null;
+
+    el?.focus({ preventScroll: false });
+  }, 120);
+};
+
 onMounted(async () => {
   if (chatStore.user?.account_id) {
     await onMessage(
@@ -198,6 +209,7 @@ onMounted(async () => {
         chatStore.addChat(data);
       }
     );
+    window.addEventListener('focus-composer', focusComposer);
   }
 });
 
@@ -205,6 +217,7 @@ onUnmounted(async () => {
   if (chatStore.user?.account_id) {
     await unsubscribe(chatAccountCentrifugo(chatStore.user.account_id));
     await unsubscribe(chatQueueAccountCentrifugo(chatStore.user.account_id));
+    window.removeEventListener('focus-composer', focusComposer);
   }
 });
 </script>
@@ -372,6 +385,7 @@ onUnmounted(async () => {
           <ReplyPreview v-if="chatStore.messageReply" />
 
           <VTextarea
+            ref="composerRef"
             :key="contact_id"
             v-model="msg"
             variant="solo"
