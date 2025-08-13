@@ -13,7 +13,6 @@ import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ChatService } from '@core/services/chat.service';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
-import { EMessageType } from '@core/common/enums/EMessageType';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { PublishResult } from 'centrifuge';
 import {
@@ -136,31 +135,26 @@ export class MessageUpsertConsume {
     data: IUpsertMessage
   ): Promise<boolean> {
     let content;
-    if (
-      EMessageType.text === data.type ||
-      EMessageType.text_quoted === data.type
-    ) {
-      const extended = data.message.message?.extendedTextMessage;
+    const extended = data.message.message?.extendedTextMessage;
 
-      const linkPreview = extended
-        ? ({
-            'canonical-url': extended?.matchedText ?? '',
-            'matched-text': extended?.matchedText ?? '',
-            title: extended?.title ?? '',
-            description: extended?.description ?? '',
-            jpegThumbnail: extended?.jpegThumbnail,
-          } as LinkPreview)
-        : undefined;
+    const linkPreview = extended
+      ? ({
+          'canonical-url': extended?.matchedText ?? '',
+          'matched-text': extended?.matchedText ?? '',
+          title: extended?.title ?? '',
+          description: extended?.description ?? '',
+          jpegThumbnail: extended?.jpegThumbnail,
+        } as LinkPreview)
+      : undefined;
 
-      content = {
-        type: data.type,
-        message:
-          data.message.message?.extendedTextMessage?.text ??
-          data.message.message?.conversation,
-        link_preview: linkPreview,
-        quoted: buildQuotedTextFromExtended(data.message),
-      };
-    }
+    content = {
+      type: data.type,
+      message:
+        data.message.message?.extendedTextMessage?.text ??
+        data.message.message?.conversation,
+      link_preview: linkPreview,
+      quoted: buildQuotedTextFromExtended(data.message),
+    };
 
     const jid = remoteJid(data.message?.key);
     if (!getChat?.name && !data.message?.key?.fromMe) {
