@@ -80,12 +80,26 @@ export const useChatStore = defineStore('chat', {
         date: chat.date,
       };
 
+      const replaceOrPush = (arr: ListChatsResponse[]) => {
+        const idx = arr.findIndex((c) => c.chat_id === input.chat_id);
+
+        if (idx !== -1) {
+          arr.splice(idx, 1, input);
+
+          return;
+        }
+
+        arr.push(input);
+      };
+
       if (chat.status === EChatStatus.queue) {
-        this.listQueue.push(input);
+        replaceOrPush(this.listQueue);
+
+        return;
       }
 
       if (chat.status === EChatStatus.in_chat) {
-        this.listInChat.push(input);
+        replaceOrPush(this.listInChat);
       }
     },
     updateChatUserImmediate() {

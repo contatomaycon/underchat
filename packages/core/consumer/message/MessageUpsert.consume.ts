@@ -64,28 +64,35 @@ export class MessageUpsertConsume {
   ): Promise<IChat | null> {
     const candidates = buildCandidates(phone);
 
+    const shouldClauses: any[] = [];
+
+    if (Array.isArray(candidates) && candidates.length) {
+      shouldClauses.push({ terms: { phone: candidates } });
+    }
+
+    if (jid) {
+      shouldClauses.push({
+        nested: {
+          path: 'message_key',
+          query: { term: { 'message_key.remote_jid': jid } },
+        },
+      });
+    }
+
     const queryElastic = {
       query: {
         bool: {
-          must: [
+          filter: [
             {
               nested: {
                 path: 'account',
-                query: {
-                  term: {
-                    'account.id': accountId,
-                  },
-                },
+                query: { term: { 'account.id': accountId } },
               },
             },
             {
               nested: {
                 path: 'worker',
-                query: {
-                  term: {
-                    'worker.id': workerId,
-                  },
-                },
+                query: { term: { 'worker.id': workerId } },
               },
             },
             {
@@ -97,25 +104,14 @@ export class MessageUpsertConsume {
                 ],
               },
             },
-            {
-              bool: {
-                should: [
-                  { terms: { phone: candidates } },
-                  {
-                    nested: {
-                      path: 'message_key',
-                      query: {
-                        term: {
-                          'message_key.remote_jid': jid,
-                        },
-                      },
-                    },
-                  },
-                ],
-                minimum_should_match: 1,
-              },
-            },
           ],
+          ...(shouldClauses.length
+            ? {
+                must: [
+                  { bool: { should: shouldClauses, minimum_should_match: 1 } },
+                ],
+              }
+            : {}),
         },
       },
     };
@@ -162,6 +158,19 @@ export class MessageUpsertConsume {
     }
 
     const jid = remoteJid(data.message?.key);
+    if (!getChat?.name && !data.message?.key?.fromMe) {
+      const name = this.nameChat(data);
+
+      await this.elasticDatabaseService.update(
+        EElasticIndex.chat,
+        { name },
+        getChat.chat_id
+      );
+
+      getChat.name = name;
+
+      await this.centrifugoChatQueuePublish(getChat);
+    }
 
     const inputChatMessage: IChatMessage = {
       message_id: uuidv4(),
@@ -196,6 +205,15 @@ export class MessageUpsertConsume {
     return result;
   }
 
+  private nameChat(data: IUpsertMessage) {
+    let name = null;
+    if (!data.message?.key?.fromMe) {
+      name = data.message.pushName ?? null;
+    }
+
+    return name;
+  }
+
   private async createChat(data: IUpsertMessage): Promise<IChat> {
     const [viewAccountName, viewWorkerNameAndId] = await Promise.all([
       this.accountService.viewAccountName(data.account_id),
@@ -213,6 +231,7 @@ export class MessageUpsertConsume {
 
     const phone = onlyDigits(jid);
     const chatId = uuidv4();
+    const name = this.nameChat(data);
 
     const inputChatMessage: IChat = {
       chat_id: chatId,
@@ -221,7 +240,7 @@ export class MessageUpsertConsume {
       },
       account: viewAccountName,
       worker: viewWorkerNameAndId,
-      name: data.message.pushName ?? null,
+      name: name,
       phone,
       status: EChatStatus.queue,
       date: new Date().toISOString(),
@@ -277,6 +296,8 @@ export class MessageUpsertConsume {
           phone,
           jid
         );
+
+        console.log('getChat', getChat);
 
         if (!getChat) {
           const createChat = await this.createChat(data);
