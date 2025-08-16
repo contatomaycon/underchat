@@ -4,11 +4,11 @@
   "version": "1.0.0",
   "description": "Underchat",
   "engines": {
-    "node": "22.17.0"
+    "node": "22.18.0"
   },
-  "packageManager": "pnpm@9.3.0",
+  "packageManager": "pnpm@10.14.0",
   "scripts": {
-    "preinstall": "node -e \"if (process.version !== 'v22.17.0') { console.error('Erro: Node.js 22.17.0 é necessário.'); process.exit(1); }\"",
+    "preinstall": "node -e \"if (process.version !== 'v22.18.0') { console.error('Erro: Node.js 22.18.0 é necessário.'); process.exit(1); }\"",
     "dev": "turbo run dev",
     "dev:public": "turbo run dev --filter=public",
     "dev:manager": "turbo run dev --filter=manager",

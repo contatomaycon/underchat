@@ -1,4 +1,4 @@
-FROM node:22.17.0-alpine AS base
+FROM node:22.18.0-alpine AS base
 
 RUN apk add --no-cache bash curl libc6-compat \
       librdkafka-dev \
@@ -25,7 +25,7 @@ RUN pnpm build:public
 RUN mkdir -p /build_locales
 COPY packages/core/plugins/i18next/locales /build_locales
 
-FROM node:22.17.0-alpine AS release
+FROM node:22.18.0-alpine AS release
 WORKDIR /app
 ARG ATLASGO_SHA256
 RUN apk add --no-cache bash curl \
