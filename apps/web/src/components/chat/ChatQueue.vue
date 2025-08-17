@@ -16,48 +16,50 @@ const isChatContactActive = computed(() => {
 </script>
 
 <template>
-  <li
-    :key="chatStore.listQueue.length"
-    class="chat cursor-pointer d-flex align-center"
-    :class="{ 'chat-active': isChatContactActive }"
-  >
-    <VAvatar size="40" :variant="!props.user.photo ? 'tonal' : undefined">
-      <VImg
-        v-if="props.user.photo"
-        :src="props.user.photo"
-        :alt="props.user.name ?? ''"
-      />
-      <span v-else>{{ avatarText(props.user.name) }}</span>
-    </VAvatar>
-    <div class="flex-grow-1 ms-4 overflow-hidden">
-      <p class="text-base text-high-emphasis mb-0">
-        {{ limitCharacters(20, props.user?.name) }}
-      </p>
-      <p class="mb-0 text-truncate text-body-2">
-        {{ formatPhoneBR(props.user?.phone) }}
-      </p>
-      <p class="mb-0 text-truncate text-body-2 text-end">
-        <i>{{
-          limitCharacters(35, props.user?.summary?.last_message, '...')
-        }}</i>
-      </p>
-    </div>
-    <div
-      v-if="props.user?.summary?.last_date"
-      class="d-flex flex-column align-self-start"
+  <ul class="chat-list">
+    <li
+      :key="chatStore.listQueue.length"
+      class="chat cursor-pointer d-flex align-center"
+      :class="{ 'chat-active': isChatContactActive }"
     >
-      <div class="text-body-2 text-disabled whitespace-no-wrap">
-        {{ formatDateToMonthShort(props.user.summary.last_date, $t) }}
+      <VAvatar size="40" :variant="!props.user.photo ? 'tonal' : undefined">
+        <VImg
+          v-if="props.user.photo"
+          :src="props.user.photo"
+          :alt="props.user.name ?? ''"
+        />
+        <span v-else>{{ avatarText(props.user.name) }}</span>
+      </VAvatar>
+      <div class="flex-grow-1 ms-4 overflow-hidden">
+        <p class="text-base text-high-emphasis mb-0">
+          {{ limitCharacters(20, props.user?.name) }}
+        </p>
+        <p class="mb-0 text-truncate text-body-2">
+          {{ formatPhoneBR(props.user?.phone) }}
+        </p>
+        <p class="mb-0 text-truncate text-body-2 text-end">
+          <i>{{
+            limitCharacters(35, props.user?.summary?.last_message, '...')
+          }}</i>
+        </p>
       </div>
-      <VBadge
-        v-if="props.user.summary.unread_count"
-        color="error"
-        inline
-        :content="props.user.summary.unread_count"
-        class="ms-auto"
-      />
-    </div>
-  </li>
+      <div
+        v-if="props.user?.summary?.last_date"
+        class="d-flex flex-column align-self-start"
+      >
+        <div class="text-body-2 text-disabled whitespace-no-wrap">
+          {{ formatDateToMonthShort(props.user.summary.last_date, $t) }}
+        </div>
+        <VBadge
+          v-if="props.user.summary.unread_count"
+          color="error"
+          inline
+          :content="props.user.summary.unread_count"
+          class="ms-auto"
+        />
+      </div>
+    </li>
+  </ul>
 </template>
 
 <style lang="scss">
@@ -65,6 +67,12 @@ const isChatContactActive = computed(() => {
 @use '@styles/variables/vuetify.scss';
 @use '@webcore/scss/base/mixins';
 @use 'vuetify/lib/styles/tools/states' as vuetifyStates;
+
+.chat-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
 
 .chat {
   border-radius: vuetify.$border-radius-root;
@@ -76,10 +84,8 @@ const isChatContactActive = computed(() => {
 
   &.chat-active {
     @include templateMixins.custom-elevation(var(--v-theme-primary), 'sm');
-
     background: rgb(var(--v-theme-primary));
     color: #fff;
-
     --v-theme-on-background: #fff;
   }
 
