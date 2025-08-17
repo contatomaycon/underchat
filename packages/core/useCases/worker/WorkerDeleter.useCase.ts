@@ -8,6 +8,7 @@ import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { KafkaBalanceQueueService } from '@core/services/kafkaBalanceQueue.service';
+import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
 @injectable()
 export class WorkerDeleterUseCase {
@@ -17,10 +18,6 @@ export class WorkerDeleterUseCase {
     private readonly centrifugoService: CentrifugoService,
     private readonly kafkaBalanceQueueService: KafkaBalanceQueueService
   ) {}
-
-  private queueCentrifugo(data: IWorkerPayload): string {
-    return `worker.${data.account_id}`;
-  }
 
   private async validate(
     t: TFunction<'translation', undefined>,
@@ -75,12 +72,12 @@ export class WorkerDeleterUseCase {
       action: EWorkerAction.delete,
       worker_id: workerId,
       server_id: viewWorkerBalancer.server_id,
-      account_id: accountId,
+      account_id: viewWorkerBalancer.account_id,
       is_administrator: isAdministrator,
     };
 
-    await this.centrifugoService.publish(
-      this.queueCentrifugo(inputDeleter),
+    await this.centrifugoService.publishSub(
+      workerCentrifugoQueue(inputDeleter.account_id),
       inputDeleter
     );
 

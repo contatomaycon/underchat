@@ -10,7 +10,7 @@ env:
   SONAR_TOKEN_BACKEND: ${{ vars.SONAR_TOKEN_BACKEND }}
   SONAR_BACKEND_PROJECT_KEY: ${{ vars.SONAR_BACKEND_PROJECT_KEY }}
   TIME_AWAIT: 30s
-  VERSION_NODE: 22.17.0
+  VERSION_NODE: 22.18.0
   VERSION_JAVA: 17
 
 jobs:
@@ -30,6 +30,16 @@ jobs:
         with:
           node-version: ${{ env.VERSION_NODE }}
 
+      - name: Activate package managers
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.14.0 --activate
+          corepack prepare yarn@4.9.2 --activate
+          pnpm -v
+          TMP_DIR=$(mktemp -d)
+          (cd "$TMP_DIR" && yarn -v)
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -40,15 +50,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
+            ~/.local/share/pnpm/store
             ~/.pnpm-store
             **/node_modules
           key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
 
-      - name: Install pnpm
-        run: npm install -g pnpm
-
       - name: Install JQ
-        run: sudo apt-get install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
 
       - name: Install Dependencies
         run: pnpm install
@@ -85,7 +95,6 @@ jobs:
             echo "Quality Gate is OK. Proceeding with the build."
           else
             echo "Quality Gate Status is not OK. Fetching details on failed conditions..."
-            # Fetch details on failed Quality Gate conditions
             conditions_response=$(wget --header="Authorization: Basic $ENCODED_TOKEN" -q -O - "${{ env.SONAR_HOST_URL }}api/qualitygates/project_status?projectKey=${{ env.SONAR_BACKEND_PROJECT_KEY }}" | jq '.projectStatus.conditions[] | select(.status != "OK") | {metricKey, comparator, errorThreshold, actualValue}')
             echo "Failed Quality Gate Conditions Details:"
             echo "$conditions_response"
@@ -101,11 +110,9 @@ jobs:
             echo "Technical debt data not available. Continuing with the build."
           elif [[ "$response" != "\"0\"" ]]; then
             echo "Technical debt is not zero, it's $response minutes. Failing the build."
-
             issues_response=$(wget --header="Authorization: Basic $ENCODED_TOKEN" -q -O - "${{ env.SONAR_HOST_URL }}api/issues/search?componentKeys=${{ env.SONAR_BACKEND_PROJECT_KEY }}" | jq '.issues[] | {key, message, severity, type, component, line}' )
             echo "Issues details:"
             echo "$issues_response"
-
             exit 1
           else
             echo "Technical debt is zero. Proceeding with the build."
@@ -120,11 +127,9 @@ jobs:
             echo "Security hotspots data not available or no security hotspots to review. Continuing with the build."
           elif [[ "$response" != "\"100\"" ]]; then
             echo "Not all security hotspots have been reviewed. Reviewed: $response%. Failing the build."
-
             hotspots_response=$(wget --header="Authorization: Basic $ENCODED_TOKEN" -q -O - "${{ env.SONAR_HOST_URL }}api/hotspots/search?projectKey=${{ env.SONAR_BACKEND_PROJECT_KEY }}&statuses=TO_REVIEW" | jq '.hotspots[] | {key, message, component, line, status}')
             echo "Unresolved Security Hotspots Details:"
             echo "$hotspots_response"
-
             exit 1
           else
             echo "All security hotspots have been reviewed. Proceeding with the build."

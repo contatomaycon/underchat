@@ -112,3 +112,17 @@ export const isValidIP = (value: unknown, message: string) => {
 
   return ipv4Regex.test(ip) || message;
 };
+
+export const maxLengthValidator = (
+  value: unknown,
+  max: number,
+  message: string
+): boolean | string => {
+  if (isEmpty(value)) return true;
+
+  if (Array.isArray(value)) {
+    return value.every((val) => String(val).length <= max) || message;
+  }
+
+  return String(value).length <= max || message;
+};

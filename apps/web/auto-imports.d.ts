@@ -87,6 +87,7 @@ declare global {
   const mapStores: typeof import('pinia')['mapStores']
   const mapWritableState: typeof import('pinia')['mapWritableState']
   const markRaw: typeof import('vue')['markRaw']
+  const maxLengthValidator: typeof import('./src/@webcore/utils/validators')['maxLengthValidator']
   const nextTick: typeof import('vue')['nextTick']
   const onActivated: typeof import('vue')['onActivated']
   const onBeforeMount: typeof import('vue')['onBeforeMount']
@@ -133,6 +134,7 @@ declare global {
   const registerPlugins_: (typeof import('./src/@webcore/utils/plugins'))['registerPlugins_']
   const requiredValidator: typeof import('./src/@webcore/utils/validators')['requiredValidator']
   const resetAbility: (typeof import('./src/plugins/casl/composables/useAbility'))['resetAbility']
+  const resolveAvatarBadgeVariant: typeof import('./src/@webcore/utils/formatters')['resolveAvatarBadgeVariant']
   const resolveComponent: typeof import('vue')['resolveComponent']
   const resolveRef: typeof import('@vueuse/core')['resolveRef']
   const resolveUnref: typeof import('@vueuse/core')['resolveUnref']
@@ -464,6 +466,7 @@ declare module 'vue' {
     readonly mapStores: UnwrapRef<typeof import('pinia')['mapStores']>
     readonly mapWritableState: UnwrapRef<typeof import('pinia')['mapWritableState']>
     readonly markRaw: UnwrapRef<typeof import('vue')['markRaw']>
+    readonly maxLengthValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['maxLengthValidator']>
     readonly nextTick: UnwrapRef<typeof import('vue')['nextTick']>
     readonly onActivated: UnwrapRef<typeof import('vue')['onActivated']>
     readonly onBeforeMount: UnwrapRef<typeof import('vue')['onBeforeMount']>
@@ -508,6 +511,7 @@ declare module 'vue' {
     readonly regexValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['regexValidator']>
     readonly registerPlugins: UnwrapRef<typeof import('./src/@webcore/utils/plugins')['registerPlugins']>
     readonly requiredValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['requiredValidator']>
+    readonly resolveAvatarBadgeVariant: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['resolveAvatarBadgeVariant']>
     readonly resolveComponent: UnwrapRef<typeof import('vue')['resolveComponent']>
     readonly resolveRef: UnwrapRef<typeof import('@vueuse/core')['resolveRef']>
     readonly resolveUnref: UnwrapRef<typeof import('@vueuse/core')['resolveUnref']>

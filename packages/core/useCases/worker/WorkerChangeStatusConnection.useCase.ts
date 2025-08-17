@@ -12,6 +12,7 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
+import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
 @injectable()
 export class WorkerChangeStatusConnectionUseCase {
@@ -198,13 +199,14 @@ export class WorkerChangeStatusConnectionUseCase {
         const payload: IBaileysConnectionState = {
           status: EBaileysConnectionStatus.initial,
           worker_id: input.worker_id,
+          account_id: accountId,
           seconds_until_next_attempt:
             canPhoneConnection.secondsUntilNextAttempt,
           code: ECodeMessage.phoneNotAvailable,
         };
 
-        this.centrifugoService.publish(
-          `worker_${input.worker_id}_qrcode`,
+        this.centrifugoService.publishSub(
+          workerCentrifugoQueue(accountId),
           payload
         );
 

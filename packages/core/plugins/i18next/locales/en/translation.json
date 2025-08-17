@@ -95,5 +95,20 @@
   "worker_recreate_success": "Worker recreated successfully!",
   "worker_recreate_not_found": "Worker not found for recreation!",
   "worker_recreation_failed": "Failed to recreate worker",
-  "worker_balancer_not_available": "Worker balancer not available!"
+  "worker_balancer_not_available": "Worker balancer not available!",
+  "chat_list_success": "Chat list retrieved successfully!",
+  "chat_list_not_found": "No chats found!",
+  "chat_list_user_success": "User chat list retrieved successfully!",
+  "chat_list_user_not_found": "No user chats found!",
+  "chat_update_user_success": "User chat updated successfully!",
+  "chat_update_user_not_found": "User chat not found!",
+  "chat_create_success": "Chat created successfully!",
+  "chat_create_not_found": "Chat not found for creation!",
+  "chat_not_found": "Chat not found!",
+  "chat_create_error": "Error creating chat!",
+  "chat_link_preview_found": "Chat link preview found!",
+  "chat_link_preview_not_found": "Chat link preview not found!",
+  "message_content_required": "Message content is required for text messages",
+  "message_quoted_id_required": "Message quoted ID is required for quoted messages",
+  "message_quoted_not_found": "Message quoted not found"
 }

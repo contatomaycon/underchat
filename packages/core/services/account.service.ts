@@ -3,13 +3,16 @@ import { AccountInfoViewerRepository } from '@core/repositories/account/AccountI
 import { AccountInfoResponse } from '@core/schema/auth/login/response.schema';
 import { AccountQuantityProductViewerRepository } from '@core/repositories/account/AccountQuantityProductViewer.repository';
 import { AccountViewerExistsRepository } from '@core/repositories/account/AccountViewerExists.repository';
+import { AccountNameViewerRepository } from '@core/repositories/account/AccountNameViewer.repository';
+import { IViewAccountName } from '@core/common/interfaces/IViewAccountName';
 
 @injectable()
 export class AccountService {
   constructor(
     private readonly accountInfoViewerRepository: AccountInfoViewerRepository,
     private readonly accountQuantityProductViewerRepository: AccountQuantityProductViewerRepository,
-    private readonly accountViewerExistsRepository: AccountViewerExistsRepository
+    private readonly accountViewerExistsRepository: AccountViewerExistsRepository,
+    private readonly accountNameViewerRepository: AccountNameViewerRepository
   ) {}
 
   viewAccountInfoByAccountId = async (
@@ -32,5 +35,11 @@ export class AccountService {
 
   existsAccountById = async (accountId: string): Promise<boolean> => {
     return this.accountViewerExistsRepository.existsAccountById(accountId);
+  };
+
+  viewAccountName = async (
+    accountId: string
+  ): Promise<IViewAccountName | null> => {
+    return this.accountNameViewerRepository.viewAccountName(accountId);
   };
 }

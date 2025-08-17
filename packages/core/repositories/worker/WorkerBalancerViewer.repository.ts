@@ -27,6 +27,7 @@ export class WorkerBalancerViewerRepository {
         web_domain: serverWeb.web_domain,
         web_port: serverWeb.web_port,
         web_protocol: serverWeb.web_protocol,
+        account_id: worker.account_id,
       })
       .from(worker)
       .innerJoin(apiKey, eq(apiKey.account_id, worker.account_id))

@@ -17,12 +17,9 @@ import { EditWorkerRequest } from '@core/schema/worker/editWorker/request.schema
 import { ViewWorkerResponse } from '@core/schema/worker/viewWorker/response.schema';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
-import { getStatusWorkerConnection } from '@core/common/functions/getStatusWorkerConnection';
-import { currentTime } from '@core/common/functions/currentTime';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { WorkerConnectionLogsQuery } from '@core/schema/worker/workerConnectionLogs/request.schema';
 import { WorkerConnectionLogsResponse } from '@core/schema/worker/workerConnectionLogs/response.schema';
-import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 
 export const useChannelsStore = defineStore('channels', {
   state: () => ({
@@ -391,26 +388,7 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
-    updateInfoChannel(input: IBaileysConnectionState): void {
-      const status = getStatusWorkerConnection(
-        input.status,
-        input.phone ?? null,
-        input.disconnected_user
-      );
-
-      const channel = this.list.find((c) => c.id === input.worker_id);
-
-      if (channel?.status && status !== channel.status.id) {
-        const connectionDate =
-          status === EWorkerStatus.online ? currentTime() : null;
-
-        channel.status.id = status;
-        channel.number = input.phone ?? null;
-        channel.connection_date = connectionDate;
-      }
-    },
-
-    updateStatusChannel(input: IWorkerPayload): void {
+    updateStatusChannel(input: IBaileysConnectionState): void {
       const index = this.list.findIndex(
         (c) => c.account?.id === input.account_id && c.id === input.worker_id
       );

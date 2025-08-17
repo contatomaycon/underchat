@@ -11,8 +11,7 @@ import { ListWorkerResponse } from '@core/schema/worker/listWorker/response.sche
 import { WorkerUpdaterRepository } from '@core/repositories/worker/WorkerUpdater.repository';
 import { WorkerViewerRepository } from '@core/repositories/worker/WorkerViewer.repository';
 import { ViewWorkerResponse } from '@core/schema/worker/viewWorker/response.schema';
-import { WorkerNameAndIdViewerRepository } from '@core/repositories/worker/WorkerNameAndIdViewer.repository';
-import { IViewWorkerNameAndId } from '@core/common/interfaces/IViewWorkerNameAndId';
+import { WorkerNameAndContainerIdViewerRepository } from '@core/repositories/worker/WorkerNameAndContainerIdViewer.repository';
 import { WorkerViewerExistsRepository } from '@core/repositories/worker/WorkerViewerExists.repository';
 import { WorkerBalancerViewerRepository } from '@core/repositories/worker/WorkerBalancerViewer.repository';
 import { WorkerDeleterRepository } from '@core/repositories/worker/WorkerDeleter.repository';
@@ -34,6 +33,9 @@ import { WorkerBaileysActivitiesListerRepository } from '@core/repositories/work
 import { IListWorkerActivities } from '@core/common/interfaces/IListWorkerActivities';
 import { WorkerStatusUpdaterRepository } from '@core/repositories/worker/WorkerStatusUpdater.repository';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { IViewWorkerNameAndContainerId } from '@core/common/interfaces/IViewWorkerNameAndContainerId';
+import { WorkerNameAndIdViewerRepository } from '@core/repositories/worker/WorkerNameAndIdViewer.repository';
+import { IViewWorkerNameAndId } from '@core/common/interfaces/IViewWorkerNameAndId';
 
 @injectable()
 export class WorkerService {
@@ -46,7 +48,7 @@ export class WorkerService {
     private readonly workerListerRepository: WorkerListerRepository,
     private readonly workerUpdaterRepository: WorkerUpdaterRepository,
     private readonly workerViewerRepository: WorkerViewerRepository,
-    private readonly workerNameAndIdViewerRepository: WorkerNameAndIdViewerRepository,
+    private readonly workerNameAndContainerIdViewerRepository: WorkerNameAndContainerIdViewerRepository,
     private readonly workerViewerExistsRepository: WorkerViewerExistsRepository,
     private readonly workerBalancerViewerRepository: WorkerBalancerViewerRepository,
     private readonly workerDeleterRepository: WorkerDeleterRepository,
@@ -57,7 +59,8 @@ export class WorkerService {
     private readonly workerPhoneConnectionCreatorRepository: WorkerPhoneConnectionCreatorRepository,
     private readonly workerTypeViewerRepository: WorkerTypeViewerRepository,
     private readonly workerBaileysActivitiesListerRepository: WorkerBaileysActivitiesListerRepository,
-    private readonly workerStatusUpdaterRepository: WorkerStatusUpdaterRepository
+    private readonly workerStatusUpdaterRepository: WorkerStatusUpdaterRepository,
+    private readonly workerNameAndIdViewerRepository: WorkerNameAndIdViewerRepository
   ) {
     this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
   }
@@ -122,6 +125,7 @@ export class WorkerService {
   public async createContainerWorker(
     imageName: EWorkerImage,
     workerId: string,
+    accountId: string,
     isCreateVolume: boolean = true
   ): Promise<string> {
     const existsContainerById = await this.existsContainerWorkerById(workerId);
@@ -146,7 +150,7 @@ export class WorkerService {
       Volumes: {
         '/app/data': {},
       },
-      Env: [`WORKER_ID=${workerId}`],
+      Env: [`WORKER_ID=${workerId}`, `ACCOUNT_ID=${accountId}`],
     });
 
     await container.start();
@@ -256,12 +260,12 @@ export class WorkerService {
     );
   };
 
-  viewWorkerNameAndId = async (
+  viewWorkerNameAndContainerId = async (
     isAdministrator: boolean,
     accountId: string,
     workerId: string
-  ): Promise<IViewWorkerNameAndId | null> => {
-    return this.workerNameAndIdViewerRepository.viewWorkerNameAndId(
+  ): Promise<IViewWorkerNameAndContainerId | null> => {
+    return this.workerNameAndContainerIdViewerRepository.viewWorkerNameAndContainerId(
       isAdministrator,
       accountId,
       workerId
@@ -373,6 +377,16 @@ export class WorkerService {
     return this.workerStatusUpdaterRepository.updateStatusWorker(
       workerId,
       workerStatusId
+    );
+  };
+
+  viewWorkerNameAndId = async (
+    accountId: string,
+    workerId: string
+  ): Promise<IViewWorkerNameAndId | null> => {
+    return this.workerNameAndIdViewerRepository.viewWorkerNameAndId(
+      accountId,
+      workerId
     );
   };
 }

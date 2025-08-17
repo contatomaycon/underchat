@@ -74,7 +74,7 @@ export class ElasticDatabaseService {
         doc_as_upsert: true,
       });
 
-      return result.result === 'updated';
+      return result.result === 'updated' || result.result === 'created';
     } catch (error) {
       throw new Error(`Failed to update document with ID: ${error}`);
     }

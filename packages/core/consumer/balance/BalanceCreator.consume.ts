@@ -1,4 +1,4 @@
-import { injectable, inject } from 'tsyringe';
+import { singleton, inject } from 'tsyringe';
 import { CreateServerResponse } from '@core/schema/server/createServer/response.schema';
 import { SshService } from '@core/services/ssh.service';
 import { ServerService } from '@core/services/server.service';
@@ -12,7 +12,7 @@ import { IViewServerWebById } from '@core/common/interfaces/IViewServerWebById';
 import { KafkaStreams, KStream } from 'kafka-streams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 
-@injectable()
+@singleton()
 export class BalanceCreatorConsume {
   constructor(
     @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams,

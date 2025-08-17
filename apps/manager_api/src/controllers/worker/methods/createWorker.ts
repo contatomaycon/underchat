@@ -36,6 +36,8 @@ export const createWorker = async (
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
+    console.log(error);
+
     request.server.logger.error(error, request.id);
 
     if (error instanceof Error) {

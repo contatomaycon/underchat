@@ -14,4 +14,13 @@ export class BaileysEnvironment {
 
     return workerId;
   }
+
+  public get baileysAccountId(): string {
+    const accountId = process.env.ACCOUNT_ID;
+    if (!accountId) {
+      throw new InvalidConfigurationError('ACCOUNT_ID is not defined.');
+    }
+
+    return accountId;
+  }
 }

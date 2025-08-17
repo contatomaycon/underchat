@@ -15,7 +15,8 @@ import { DataTableHeader } from 'vuetify';
 import { ListWorkerResponse } from '@core/schema/worker/listWorker/response.schema';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
-import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
+import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
+import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
 definePage({
   meta: {
@@ -222,17 +223,18 @@ watch(
 
 onMounted(async () => {
   if (user?.account_id) {
-    await onMessage(`worker.${user.account_id}`, (data: IWorkerPayload) => {
-      if (data.worker_id && data.account_id) {
+    await onMessage(
+      workerCentrifugoQueue(user.account_id),
+      (data: IBaileysConnectionState) => {
         channelsStore.updateStatusChannel(data);
       }
-    });
+    );
   }
 });
 
 onUnmounted(async () => {
   if (user?.account_id) {
-    await unsubscribe(`worker.${user.account_id}`);
+    await unsubscribe(workerCentrifugoQueue(user.account_id));
   }
 });
 </script>
@@ -460,9 +462,10 @@ onUnmounted(async () => {
       <AppAddChannel v-if="isAddChannelVisible" v-model="isAddChannelVisible" />
 
       <AppConnectChannel
-        v-if="isDialogConnectionChannelShow"
+        v-if="isDialogConnectionChannelShow && user?.account_id"
         v-model="isDialogConnectionChannelShow"
         :channel-id="channelConnectionChannel"
+        :account-id="user.account_id"
       />
 
       <AppLogsChannel

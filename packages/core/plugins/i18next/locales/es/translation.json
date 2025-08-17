@@ -95,5 +95,20 @@
   "worker_recreate_success": "¡Trabajador recreado con éxito!",
   "worker_recreate_not_found": "¡Trabajador no encontrado para recrear!",
   "worker_recreation_failed": "Error al recrear el trabajador",
-  "worker_balancer_not_available": "Trabajador balancer no disponible"
+  "worker_balancer_not_available": "Trabajador balancer no disponible",
+  "chat_list_success": "¡Lista de chats obtenida con éxito!",
+  "chat_list_not_found": "¡No se encontraron chats!",
+  "chat_list_user_success": "¡Lista de chats de usuario obtenida con éxito!",
+  "chat_list_user_not_found": "¡No se encontraron chats de usuario!",
+  "chat_update_user_success": "¡Chat de usuario actualizado con éxito!",
+  "chat_update_user_not_found": "¡Chat de usuario no encontrado!",
+  "chat_create_success": "¡Chat creado con éxito!",
+  "chat_create_not_found": "¡Chat no encontrado para crear!",
+  "chat_not_found": "¡Chat no encontrado!",
+  "chat_create_error": "Error al crear el chat",
+  "chat_link_preview_found": "¡Vista previa del enlace del chat encontrada!",
+  "chat_link_preview_not_found": "¡Vista previa del enlace del chat no encontrada!",
+  "message_content_required": "¡El contenido del mensaje es obligatorio para los mensajes de texto!",
+  "message_quoted_id_required": "¡Se requiere ID de mensaje citado para mensajes citados!",
+  "message_quoted_not_found": "¡Mensaje citado no encontrado!"
 }

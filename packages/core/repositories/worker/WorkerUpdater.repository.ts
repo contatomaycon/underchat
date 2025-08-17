@@ -54,6 +54,10 @@ export class WorkerUpdaterRepository {
 
     const updateInput = this.updateInput(input);
 
+    if (Object.keys(updateInput).length === 0) {
+      return false;
+    }
+
     const result = await this.db
       .update(worker)
       .set(updateInput)

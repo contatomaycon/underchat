@@ -6,7 +6,6 @@ import auth from '@fastify/auth';
 import authenticateJwt from '@core/middlewares/jwt.middleware';
 import i18nextPlugin from '@core/plugins/i18next';
 import { requestHook, responseHook, errorHook } from '@core/hooks';
-import cacheRedisConnector from '@core/config/cache';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { v4 } from 'uuid';
 import swaggerPlugin from '@/plugins/swagger';
@@ -17,6 +16,7 @@ import elasticLogsPlugin from '@core/plugins/elasticLogs';
 import loggerServicePlugin from '@core/plugins/logger';
 import centrifugoPlugin from '@core/plugins/centrifugo';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
+import redisPlugin from '@core/plugins/redis';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -31,7 +31,7 @@ server.decorateRequest('module', ERouteModule.manager);
 
 server.register(centrifugoPlugin, { module: ERouteModule.manager });
 server.register(dbConnector);
-server.register(cacheRedisConnector);
+server.register(redisPlugin);
 server.register(auth);
 server.register(authenticateJwt);
 server.register(i18nextPlugin);

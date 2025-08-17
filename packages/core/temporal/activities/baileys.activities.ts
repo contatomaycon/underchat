@@ -1,5 +1,6 @@
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { IListWorkerActivities } from '@core/common/interfaces/IListWorkerActivities';
 import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { CentrifugoService } from '@core/services/centrifugo.service';
@@ -124,7 +125,7 @@ export async function notifyWorker(
 ): Promise<PublishResult> {
   const centrifugoService = container.resolve(CentrifugoService);
 
-  const topic = `worker.${input.account_id}`;
+  const topic = workerCentrifugoQueue(input.account_id);
 
   const data: IWorkerPayload = {
     action: EWorkerAction.notify,
@@ -135,7 +136,7 @@ export async function notifyWorker(
     worker_status_id: workerStatusId,
   };
 
-  return centrifugoService.publish(topic, data);
+  return centrifugoService.publishSub(topic, data);
 }
 
 export async function updateStatusWorker(

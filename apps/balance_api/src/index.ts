@@ -5,7 +5,6 @@ import dbConnector from '@core/config/database';
 import auth from '@fastify/auth';
 import i18nextPlugin from '@core/plugins/i18next';
 import { requestHook, responseHook, errorHook } from '@core/hooks';
-import cacheRedisConnector from '@core/config/cache';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { v4 } from 'uuid';
 import loggerServicePlugin from '@core/plugins/logger';
@@ -31,7 +30,6 @@ server.decorateRequest('module', ERouteModule.balancer);
 
 server.register(centrifugoPlugin, { module: ERouteModule.balancer });
 server.register(dbConnector);
-server.register(cacheRedisConnector);
 server.register(auth);
 server.register(authenticateKeyApi);
 server.register(i18nextPlugin);

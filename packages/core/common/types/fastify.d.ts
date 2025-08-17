@@ -1,5 +1,4 @@
 import * as schema from '@core/models';
-import { FastifyRedis } from '@fastify/redis';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { LoggerService } from '@core/services/logger.service';
 import { TFunction } from 'i18next';
@@ -14,6 +13,7 @@ import { ITokenKeyData } from '../interfaces/ITokenKeyData';
 import { Centrifuge } from 'centrifuge';
 import { KafkaStreams } from 'kafka-streams';
 import { Kafka } from 'kafkajs';
+import Redis from 'ioredis';
 
 declare module 'fastify' {
   export interface FastifyRequest {
@@ -27,7 +27,7 @@ declare module 'fastify' {
     Centrifuge: Centrifuge;
     KafkaStreams: KafkaStreams;
     Kafka: Kafka;
-    redis: FastifyRedis;
+    Redis: Redis;
     logger: LoggerService;
     authenticateJwt: (
       request: FastifyRequest,

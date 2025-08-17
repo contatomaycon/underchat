@@ -8,8 +8,10 @@ export class KafkaServiceQueueService {
   all = (): string[] => {
     const createServer = this.createServer();
     const workerStatus = this.workerStatus();
+    const updateMessage = this.updateMessage();
+    const upsertMessage = this.upsertMessage();
 
-    return [createServer, workerStatus];
+    return [createServer, workerStatus, updateMessage, upsertMessage];
   };
 
   create = (): Promise<void> => {
@@ -34,5 +36,13 @@ export class KafkaServiceQueueService {
 
   workerStatus = () => {
     return 'worker.status';
+  };
+
+  updateMessage = () => {
+    return `update.message`;
+  };
+
+  upsertMessage = () => {
+    return `upsert.message`;
   };
 }

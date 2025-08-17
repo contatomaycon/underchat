@@ -13,6 +13,7 @@ import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { ICreateWorker } from '@core/common/interfaces/ICreateWorker';
 import { KafkaBalanceQueueService } from '@core/services/kafkaBalanceQueue.service';
+import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
 @injectable()
 export class WorkerCreatorUseCase {
@@ -23,10 +24,6 @@ export class WorkerCreatorUseCase {
     private readonly centrifugoService: CentrifugoService,
     private readonly kafkaBalanceQueueService: KafkaBalanceQueueService
   ) {}
-
-  private queueCentrifugo(data: IWorkerPayload): string {
-    return `worker.${data.account_id}`;
-  }
 
   private async validate(
     t: TFunction<'translation', undefined>,
@@ -111,13 +108,13 @@ export class WorkerCreatorUseCase {
       worker_status_id: EWorkerStatus.new,
       worker_type_id: workerType,
       server_id: viewWorkerServer.server_id,
-      account_id: accountId,
+      account_id: viewWorkerServer.account_id,
       name: input.name,
       is_administrator: isAdministrator,
     };
 
-    await this.centrifugoService.publish(
-      this.queueCentrifugo(payloadCreate),
+    await this.centrifugoService.publishSub(
+      workerCentrifugoQueue(payloadCreate.account_id),
       payloadCreate
     );
 

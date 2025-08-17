@@ -16,6 +16,7 @@
   "dependencies": {
     "@casl/ability": "6.7.3",
     "@casl/vue": "2.2.2",
+    "@emoji-mart/data": "^1.2.1",
     "@floating-ui/dom": "1.7.2",
     "@formkit/drag-and-drop": "0.5.3",
     "@sindresorhus/is": "7.0.2",
@@ -32,6 +33,7 @@
     "chart.js": "4.5.0",
     "cookie-es": "2.0.0",
     "destr": "2.0.5",
+    "emoji-mart-vue-fast": "^15.0.4",
     "eslint-plugin-regexp": "2.9.0",
     "flag-icons": "^7.5.0",
     "flatpickr": "4.6.13",

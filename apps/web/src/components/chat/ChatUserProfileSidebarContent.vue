@@ -1,0 +1,165 @@
+<script lang="ts" setup>
+import { useChatStore } from '@/@webcore/stores/chat';
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
+import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
+import { VForm } from 'vuetify/components';
+
+const chatStore = useChatStore();
+const { t } = useI18n();
+
+const refFormProfileSidebarContent = ref<VForm>();
+
+const userStatusRadioOptions = [
+  { title: t('online'), value: 'online', color: 'success' },
+  { title: t('busy'), value: 'busy', color: 'error' },
+  { title: t('away'), value: 'away', color: 'warning' },
+  { title: t('offline'), value: 'offline', color: 'secondary' },
+  { title: t('do_not_disturb'), value: 'do_not_disturb', color: 'error' },
+];
+
+const updateChatUser = useDebounceFn(chatStore.updateChatUserDebounce, 1000);
+
+const updateProfileSidebarContent = async () => {
+  const validateForm = await refFormProfileSidebarContent?.value?.validate();
+  if (!validateForm?.valid) return;
+
+  chatStore.updateChatUserImmediate();
+  await updateChatUser();
+};
+</script>
+
+<template>
+  <template v-if="chatStore.user?.chat_user">
+    <div class="pt-2 me-2 text-end">
+      <IconBtn @click="$emit('close')">
+        <VIcon class="text-medium-emphasis" color="disabled" icon="tabler-x" />
+      </IconBtn>
+    </div>
+
+    <div class="text-center px-6">
+      <VBadge
+        location="bottom right"
+        offset-x="7"
+        offset-y="4"
+        bordered
+        :color="
+          resolveAvatarBadgeVariant(
+            chatStore.user?.chat_user?.status as EChatUserStatus
+          )
+        "
+        class="chat-user-profile-badge mb-3"
+      >
+        <VAvatar
+          size="84"
+          :variant="!chatStore.user?.info.photo ? 'tonal' : undefined"
+          :color="
+            !chatStore.user?.info.photo
+              ? resolveAvatarBadgeVariant(
+                  chatStore.user?.chat_user?.status as EChatUserStatus
+                )
+              : undefined
+          "
+        >
+          <VImg
+            v-if="chatStore.user?.info.photo"
+            :src="chatStore.user?.info.photo"
+          />
+          <span v-else class="text-3xl">{{
+            avatarText(chatStore.user?.info.name)
+          }}</span>
+        </VAvatar>
+      </VBadge>
+      <h5 class="text-h5">
+        {{ chatStore.user?.info.name }}
+      </h5>
+      <p class="text-capitalize text-medium-emphasis mb-0">
+        {{ chatStore.user?.type.name }}
+      </p>
+    </div>
+
+    <PerfectScrollbar
+      class="ps-chat-user-profile-sidebar-content pb-5 px-6"
+      :options="{ wheelPropagation: false }"
+    >
+      <VForm ref="refFormProfileSidebarContent" @submit.prevent>
+        <div class="my-6 text-medium-emphasis">
+          <div for="textarea-user-about" class="text-base text-disabled">
+            {{ $t('about') }}
+          </div>
+          <AppTextarea
+            id="textarea-user-about"
+            v-model="chatStore.user.chat_user.about"
+            auto-grow
+            class="mt-1"
+            rows="3"
+            :rules="[
+              maxLengthValidator(
+                chatStore.user.chat_user.about,
+                200,
+                $t('max_length_200')
+              ),
+            ]"
+            counter
+            @update:model-value="updateProfileSidebarContent"
+          />
+        </div>
+
+        <div class="mb-6">
+          <div class="text-base text-disabled">{{ $t('status_chat') }}</div>
+          <VRadioGroup
+            v-model="chatStore.user.chat_user.status"
+            @update:model-value="updateProfileSidebarContent"
+            class="mt-1"
+          >
+            <VRadio
+              v-for="(radioOption, index) in userStatusRadioOptions"
+              :id="`${index}`"
+              :key="radioOption.title"
+              :name="radioOption.title"
+              :label="radioOption.title"
+              :value="radioOption.value"
+              :color="radioOption.color"
+            />
+          </VRadioGroup>
+        </div>
+
+        <div class="text-medium-emphasis chat-settings-section">
+          <div class="text-base text-disabled">{{ $t('settings') }}</div>
+
+          <div class="d-flex align-center pa-2">
+            <VIcon
+              class="me-2 text-high-emphasis"
+              icon="tabler-bell"
+              size="22"
+            />
+            <div
+              class="text-high-emphasis d-flex align-center justify-space-between flex-grow-1"
+            >
+              <div class="text-body-1 text-high-emphasis">
+                {{ $t('notification') }}
+              </div>
+              <VSwitch
+                id="chat-notification"
+                v-model="chatStore.user.chat_user.notifications"
+                density="compact"
+                @update:model-value="updateProfileSidebarContent"
+              />
+            </div>
+          </div>
+        </div>
+      </VForm>
+    </PerfectScrollbar>
+  </template>
+</template>
+
+<style lang="scss">
+.chat-settings-section {
+  .v-switch {
+    .v-input__control {
+      .v-selection-control__wrapper {
+        block-size: 18px;
+      }
+    }
+  }
+}
+</style>

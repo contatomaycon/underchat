@@ -14,6 +14,9 @@ importers:
       '@casl/vue':
         specifier: 2.2.2
         version: 2.2.2(@casl/ability@6.7.3)(vue@3.5.17(typescript@5.8.3))
+      '@emoji-mart/data':
+        specifier: ^1.2.1
+        version: 1.2.1
       '@floating-ui/dom':
         specifier: 1.7.2
         version: 1.7.2
@@ -62,6 +65,9 @@ importers:
       destr:
         specifier: 2.0.5
         version: 2.0.5
+      emoji-mart-vue-fast:
+        specifier: ^15.0.4
+        version: 15.0.4(vue@3.5.17(typescript@5.8.3))
       eslint-plugin-regexp:
         specifier: 2.9.0
         version: 2.9.0(eslint@9.31.0)
@@ -562,6 +568,9 @@ packages:
 
   '@emnapi/wasi-threads@1.0.4':
     resolution: {integrity: sha512-PJR+bOmMOPH8AtcTGAyYNiuJ3/Fcoj2XN/gBEWzDIKh254XO+mM9XoXHk5GNEhodxeMznbg7BlRojVbKN+gC6g==}
+
+  '@emoji-mart/data@1.2.1':
+    resolution: {integrity: sha512-no2pQMWiBy6gpBEiqGeU77/bFejDqUTRY7KX+0+iur13op3bqUsXdnwoZs6Xb1zbv0gAj5VvS1PWoUUckSr5Dw==}
 
   '@es-joy/jsdoccomment@0.41.0':
     resolution: {integrity: sha512-aKUhyn1QI5Ksbqcr3fFJj16p99QdjUxXAEuFst1Z47DRyoiMwivIH9MV/ARcJOCXVjPfjITciej8ZD2O/6qUmw==}
@@ -2299,6 +2308,9 @@ packages:
   core-js-compat@3.44.0:
     resolution: {integrity: sha512-JepmAj2zfl6ogy34qfWtcE7nHKAJnKsQFRn++scjVS2bZFllwptzw61BZcZFYBPpUznLfAvh0LGhxKppk04ClA==}
 
+  core-js@3.45.0:
+    resolution: {integrity: sha512-c2KZL9lP4DjkN3hk/an4pWn5b5ZefhRJnAc42n6LJ19kSnbeRbdQZE5dSeE2LBol1OwJD3X1BQvFTAsa8ReeDA==}
+
   cosmiconfig@9.0.0:
     resolution: {integrity: sha512-itvL5h8RETACmOTFc4UfIyB2RfEHi71Ax6E/PivVxq9NseKbOWpeyHEOIbmAw1rs8Ak0VursQNww7lf7YtUwzg==}
     engines: {node: '>=14'}
@@ -2467,6 +2479,11 @@ packages:
 
   electron-to-chromium@1.5.189:
     resolution: {integrity: sha512-y9D1ntS1ruO/pZ/V2FtLE+JXLQe28XoRpZ7QCCo0T8LdQladzdcOVQZH/IWLVJvCw12OGMb6hYOeOAjntCmJRQ==}
+
+  emoji-mart-vue-fast@15.0.4:
+    resolution: {integrity: sha512-OjuxqoMJRTTG7Vevz0mR1ZnqY1DI8gGnmoskuuC8qL8VwwTjrGdwAO4WRWtAUN8P6Di7kxvY6cUgNETNFmbP4A==}
+    peerDependencies:
+      vue: '>2.0.0'
 
   emoji-regex@8.0.0:
     resolution: {integrity: sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A==}
@@ -5398,6 +5415,8 @@ snapshots:
       tslib: 2.8.1
     optional: true
 
+  '@emoji-mart/data@1.2.1': {}
+
   '@es-joy/jsdoccomment@0.41.0':
     dependencies:
       comment-parser: 1.4.1
@@ -7187,6 +7206,8 @@ snapshots:
     dependencies:
       browserslist: 4.25.1
 
+  core-js@3.45.0: {}
+
   cosmiconfig@9.0.0(typescript@5.8.3):
     dependencies:
       env-paths: 2.2.1
@@ -7346,6 +7367,12 @@ snapshots:
   earcut@3.0.2: {}
 
   electron-to-chromium@1.5.189: {}
+
+  emoji-mart-vue-fast@15.0.4(vue@3.5.17(typescript@5.8.3)):
+    dependencies:
+      '@babel/runtime': 7.27.6
+      core-js: 3.45.0
+      vue: 3.5.17(typescript@5.8.3)
 
   emoji-regex@8.0.0: {}
 
