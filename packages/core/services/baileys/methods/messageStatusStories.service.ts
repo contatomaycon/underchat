@@ -2,27 +2,19 @@ import { injectable } from 'tsyringe';
 import { MiscMessageGenerationOptions } from '@whiskeysockets/baileys';
 import { IMediaInput } from '@core/common/interfaces/IMediaInput';
 import { BaileysHelpersService } from './helpers.service';
+import { IStatusOmitKeys } from '@core/common/interfaces/IStatusOmitKeys';
+import { IStatusArgs } from '@core/common/interfaces/IStatusArgs';
+import { IStatusTextArgs } from '@core/common/interfaces/IStatusTextArgs';
 
 @injectable()
 export class BaileysMessageStatusStoriesService {
   constructor(private readonly baileysHelpersService: BaileysHelpersService) {}
 
-  /**
-   * Publica imagem no Status (stories) para contatos específicos.
-   */
   sendStatusImage(
     jid: string,
     media: IMediaInput,
-    args: {
-      caption?: string;
-      statusJidList: string[];
-      backgroundColor?: string;
-      font?: number;
-    },
-    options?: Omit<
-      MiscMessageGenerationOptions,
-      'statusJidList' | 'backgroundColor' | 'font' | 'broadcast'
-    >
+    args: IStatusArgs,
+    options?: Omit<MiscMessageGenerationOptions, IStatusOmitKeys>
   ) {
     return this.baileysHelpersService.send(
       jid,
@@ -37,22 +29,11 @@ export class BaileysMessageStatusStoriesService {
     );
   }
 
-  /**
-   * Publica vídeo no Status.
-   */
   sendStatusVideo(
     jid: string,
     media: IMediaInput,
-    args: {
-      caption?: string;
-      statusJidList: string[];
-      backgroundColor?: string;
-      font?: number;
-    },
-    options?: Omit<
-      MiscMessageGenerationOptions,
-      'statusJidList' | 'backgroundColor' | 'font' | 'broadcast'
-    >
+    args: IStatusArgs,
+    options?: Omit<MiscMessageGenerationOptions, IStatusOmitKeys>
   ) {
     return this.baileysHelpersService.send(
       jid,
@@ -67,17 +48,11 @@ export class BaileysMessageStatusStoriesService {
     );
   }
 
-  /**
-   * Publica texto no Status.
-   */
   sendStatusText(
     jid: string,
     text: string,
-    args: { statusJidList: string[]; backgroundColor?: string; font?: number },
-    options?: Omit<
-      MiscMessageGenerationOptions,
-      'statusJidList' | 'backgroundColor' | 'font' | 'broadcast'
-    >
+    args: IStatusTextArgs,
+    options?: Omit<MiscMessageGenerationOptions, IStatusOmitKeys>
   ) {
     return this.baileysHelpersService.send(
       jid,

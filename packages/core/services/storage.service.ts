@@ -120,12 +120,12 @@ export class StorageService {
   private parseDispositionFilename(disposition?: string | null) {
     if (!disposition) return '';
 
-    const utf8 = disposition.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)?.[1];
-    if (utf8) return decodeURIComponent(utf8);
+    const utf8Match = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(disposition);
+    if (utf8Match?.[1]) return decodeURIComponent(utf8Match[1]);
 
-    const simple =
-      disposition.match(/filename\s*=\s*"([^"]+)"/i)?.[1] ??
-      disposition.match(/filename\s*=\s*([^;]+)/i)?.[1];
+    const quotedMatch = /filename\s*=\s*"([^"]+)"/i.exec(disposition);
+    const simpleMatch = /filename\s*=\s*([^;]+)/i.exec(disposition);
+    const simple = quotedMatch?.[1] ?? simpleMatch?.[1];
 
     return simple?.trim() ?? '';
   }

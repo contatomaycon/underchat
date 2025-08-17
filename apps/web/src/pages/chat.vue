@@ -53,7 +53,6 @@ const q = ref('');
 const msg = ref('');
 const isUserProfileSidebarOpen = ref(false);
 const isActiveChatUserProfileSidebarOpen = ref(false);
-const refInputEl = ref<HTMLElement>();
 const linkPreview = ref<ViewLinkPreviewResponse | null>(null);
 const composerRef = ref();
 
@@ -64,6 +63,7 @@ const fileAudioRef = ref<HTMLInputElement | null>(null);
 const isEmojiOpen = ref(false);
 
 const hasContent = computed(() => !!msg.value && msg.value.trim().length > 0);
+const forceReflow = (el: HTMLElement): number => el.offsetWidth;
 
 const scrollToBottomInChatLog = () => {
   if (!chatLogPS.value) return;
@@ -126,7 +126,9 @@ const highlightAndScrollToMessage = (id: string) => {
   nextTick(() => (chatLogPS.value?.update ? chatLogPS.value.update() : null));
 
   target.classList.remove('message-target-flash');
-  target.offsetWidth;
+
+  forceReflow(target);
+
   target.classList.add('message-target-flash');
 };
 
@@ -249,16 +251,16 @@ const openAttach = (
 };
 
 const onPickDoc = (e: Event) => {
-  /* TODO: enviar documento */
+  console.log(e);
 };
 const onPickPhoto = (e: Event) => {
-  /* TODO: enviar foto */
+  console.log(e);
 };
 const onPickVideo = (e: Event) => {
-  /* TODO: enviar vídeo */
+  console.log(e);
 };
 const onPickAudio = (e: Event) => {
-  /* TODO: enviar áudio */
+  console.log(e);
 };
 
 const onEmojiSelect = (e: any) => {

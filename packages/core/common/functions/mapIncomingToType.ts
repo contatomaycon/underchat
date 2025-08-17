@@ -1,6 +1,7 @@
 import { proto, WAMessage } from '@whiskeysockets/baileys';
 import { EMessageType } from '../enums/EMessageType';
 import { remoteJid } from './remoteJid';
+import { IMapCtx } from '../interfaces/IMapCtx';
 
 function getText(msg: proto.IMessage): string {
   if (msg.conversation) return msg.conversation;
@@ -43,33 +44,30 @@ function getViewOnceInner(msg: proto.IMessage): proto.IMessage | undefined {
   return v1 || v2 || v3;
 }
 
-export function mapIncomingToType(m: WAMessage): EMessageType | undefined {
-  const msg = m.message as proto.IMessage | undefined;
-  if (!msg) return;
-
-  const remote = remoteJid(m.key);
-  const isStatus = remote === 'status@broadcast';
-
-  const text = getText(msg);
-  const vOnce = getViewOnceInner(msg);
-  const ProtocolType = proto.Message.ProtocolMessage.Type;
-  const pType = msg.protocolMessage?.type ?? undefined;
-
+function detectReactionOrPin({ msg }: IMapCtx): EMessageType | undefined {
   if (msg.reactionMessage) return EMessageType.react;
   if ((msg as any).pinInChatMessage || (msg as any).pinInChat)
     return EMessageType.pin_message;
+}
 
-  if (isStatus) {
-    if (msg.imageMessage || vOnce?.imageMessage)
-      return EMessageType.status_image;
-    if (msg.videoMessage || vOnce?.videoMessage)
-      return EMessageType.status_video;
-    if (text) return EMessageType.status_text;
-  }
+function detectStatusTypes({
+  isStatus,
+  msg,
+  vOnce,
+  text,
+}: IMapCtx): EMessageType | undefined {
+  if (!isStatus) return;
+  if (msg.imageMessage || vOnce?.imageMessage) return EMessageType.status_image;
+  if (msg.videoMessage || vOnce?.videoMessage) return EMessageType.status_video;
+  if (text) return EMessageType.status_text;
+}
 
+function detectViewOnce({ vOnce }: IMapCtx): EMessageType | undefined {
   if (vOnce?.imageMessage) return EMessageType.view_once_image;
   if (vOnce?.videoMessage) return EMessageType.view_once_video;
+}
 
+function detectMedia({ msg }: IMapCtx): EMessageType | undefined {
   if (msg.imageMessage) return EMessageType.image;
   if (msg.videoMessage) return EMessageType.video;
   if (msg.audioMessage) return EMessageType.audio;
@@ -78,33 +76,66 @@ export function mapIncomingToType(m: WAMessage): EMessageType | undefined {
   if (msg.locationMessage) return EMessageType.location;
   if (msg.contactMessage) return EMessageType.contact_card;
   if (msg.contactsArrayMessage) return EMessageType.contacts;
+}
 
+function detectInteractive({ msg }: IMapCtx): EMessageType | undefined {
   if (
     (msg as any).buttonsResponseMessage ||
     (msg as any).templateButtonReplyMessage
   )
     return EMessageType.button_reply;
   if (msg.listResponseMessage) return EMessageType.list_reply;
+}
 
+function detectSpecial({ msg }: IMapCtx): EMessageType | undefined {
   if ((msg as any).pollCreationMessage) return EMessageType.poll;
   if ((msg as any).groupInviteMessage) return EMessageType.group_invite;
   if ((msg as any).productMessage) return EMessageType.product;
+}
 
-  if (pType === ProtocolType.REVOKE) return EMessageType.delete_message;
-  if (pType === ProtocolType.MESSAGE_EDIT) return EMessageType.edit_text;
+function detectProtocol({ pType, msg }: IMapCtx): EMessageType | undefined {
+  const T = proto.Message.ProtocolMessage.Type;
+  if (pType === T.REVOKE) return EMessageType.delete_message;
+  if (pType === T.MESSAGE_EDIT) return EMessageType.edit_text;
   if (
-    pType === ProtocolType.EPHEMERAL_SETTING ||
+    pType === T.EPHEMERAL_SETTING ||
     (msg as any).disappearingMessagesInChat !== undefined
-  ) {
+  )
     return EMessageType.set_disappearing_messages;
+}
+
+function detectText({ text, msg }: IMapCtx): EMessageType | undefined {
+  if (!text) return;
+  if (hasQuoted(msg)) return EMessageType.text_quoted;
+  if (hasMentions(msg)) return EMessageType.mention;
+  return EMessageType.text;
+}
+
+export function mapIncomingToType(m: WAMessage): EMessageType | undefined {
+  const msg = m.message as proto.IMessage | undefined;
+  if (!msg) return;
+
+  const ctx: IMapCtx = {
+    msg,
+    text: getText(msg),
+    vOnce: getViewOnceInner(msg),
+    isStatus: remoteJid(m.key) === 'status@broadcast',
+    pType: msg.protocolMessage?.type ?? undefined,
+  };
+
+  const detectors = [
+    detectReactionOrPin,
+    detectStatusTypes,
+    detectViewOnce,
+    detectMedia,
+    detectInteractive,
+    detectSpecial,
+    detectProtocol,
+    detectText,
+  ];
+
+  for (const detect of detectors) {
+    const t = detect(ctx);
+    if (t) return t;
   }
-
-  if (text) {
-    if (hasQuoted(msg)) return EMessageType.text_quoted;
-    if (hasMentions(msg)) return EMessageType.mention;
-
-    return EMessageType.text;
-  }
-
-  return;
 }

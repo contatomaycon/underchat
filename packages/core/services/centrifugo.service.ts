@@ -15,6 +15,16 @@ import { centrifugoEnvironment } from '@core/config/environments';
 export class CentrifugoService {
   constructor(@inject('Centrifuge') private readonly client: Centrifuge) {}
 
+  private toError(e: unknown): Error {
+    if (e instanceof Error) return e;
+    if (typeof e === 'string') return new Error(e);
+    try {
+      return new Error(JSON.stringify(e));
+    } catch {
+      return new Error(String(e));
+    }
+  }
+
   private async waitForConnected(): Promise<void> {
     if (this.client.state === State.Connected) {
       return;
@@ -56,20 +66,9 @@ export class CentrifugoService {
     );
 
     await new Promise<void>((resolve, reject) => {
-      const toError = (e: unknown): Error => {
-        if (e instanceof Error) return e;
-        if (typeof e === 'string') return new Error(e);
-
-        try {
-          return new Error(JSON.stringify(e));
-        } catch {
-          return new Error(String(e));
-        }
-      };
-
       const onError = (err: unknown) => {
         tempClient.off('error', onError);
-        reject(toError(err));
+        reject(this.toError(err));
       };
 
       const onConnect = () => {
@@ -172,7 +171,7 @@ export class CentrifugoService {
 
       const onError = (err: unknown) => {
         tempClient.off('error', onError);
-        reject(err);
+        reject(this.toError(err));
       };
 
       tempClient.on('connected', onConnect);
