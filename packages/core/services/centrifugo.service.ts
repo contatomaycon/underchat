@@ -56,14 +56,27 @@ export class CentrifugoService {
     );
 
     await new Promise<void>((resolve, reject) => {
+      const toError = (e: unknown): Error => {
+        if (e instanceof Error) return e;
+        if (typeof e === 'string') return new Error(e);
+
+        try {
+          return new Error(JSON.stringify(e));
+        } catch {
+          return new Error(String(e));
+        }
+      };
+
       const onConnect = () => {
         tempClient.off('connected', onConnect);
+        tempClient.off('error', onError);
         resolve();
       };
 
       const onError = (err: unknown) => {
+        tempClient.off('connected', onConnect);
         tempClient.off('error', onError);
-        reject(err);
+        reject(toError(err));
       };
 
       tempClient.on('connected', onConnect);

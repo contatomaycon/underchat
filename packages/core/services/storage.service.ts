@@ -42,18 +42,14 @@ export class StorageService {
       ContentType: file.mimetype,
     });
 
-    try {
-      await this.client.send(command);
+    await this.client.send(command);
 
-      return {
-        url: this.createUrl(path),
-        name: file.filename,
-        extension,
-        size: buffer.byteLength,
-      };
-    } catch (err) {
-      throw err;
-    }
+    return {
+      url: this.createUrl(path),
+      name: file.filename,
+      extension,
+      size: buffer.byteLength,
+    };
   }
 
   public async uploadFromUrl(
@@ -80,13 +76,13 @@ export class StorageService {
     })();
 
     const guessedName =
-      filenameHint || dispoName || urlName || `file-${Date.now()}`;
+      filenameHint ?? dispoName ?? urlName ?? `file-${Date.now()}`;
 
     const arrayBuf = await res.arrayBuffer();
     const buffer = Buffer.from(arrayBuf);
 
     let ext =
-      this.getFileExtension(guessedName) || this.extFromMime(contentType);
+      this.getFileExtension(guessedName) ?? this.extFromMime(contentType);
 
     let sniffedMime: string | undefined;
     if (!ext) {
@@ -97,12 +93,12 @@ export class StorageService {
       }
     }
 
-    const finalExt = ext || 'bin';
+    const finalExt = ext ?? 'bin';
     const baseName = this.getFileExtension(guessedName)
       ? guessedName
       : `${guessedName}.${finalExt}`;
     const key = `${accountId}/${baseName}`;
-    const mimeToStore = sniffedMime || contentTypeHeader;
+    const mimeToStore = sniffedMime ?? contentTypeHeader;
 
     await this.client.send(
       new PutObjectCommand({
@@ -128,22 +124,22 @@ export class StorageService {
     if (utf8) return decodeURIComponent(utf8);
 
     const simple =
-      disposition.match(/filename\s*=\s*"([^"]+)"/i)?.[1] ||
+      disposition.match(/filename\s*=\s*"([^"]+)"/i)?.[1] ??
       disposition.match(/filename\s*=\s*([^;]+)/i)?.[1];
 
     return simple?.trim() ?? '';
   }
 
   private getFileExtension(name: string) {
-    const m = name.match(/\.([^.\/\\]+)$/);
+    const m = /\.([^./\\]+)$/.exec(name);
 
     return m ? m[1].toLowerCase() : '';
   }
 
   private extFromMime(m: string): string | null {
-    const clean = (m || '').toLowerCase().split(';')[0].trim();
+    const clean = (m ?? '').toLowerCase().split(';')[0].trim();
 
-    return (mimeToExt(clean) as string) || null;
+    return (mimeToExt(clean) as string) ?? null;
   }
 
   public createUrl = (path: string) =>

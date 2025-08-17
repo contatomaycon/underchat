@@ -78,7 +78,7 @@ export class MessageSendConsume {
       data.content?.message &&
       data.content?.quoted
     ) {
-      const contentQuoted = data.content?.quoted as IQuotedMessage;
+      const contentQuoted = data.content?.quoted;
 
       const quoted: WAMessage = {
         key: {

@@ -2,7 +2,7 @@ import { injectable } from 'tsyringe';
 
 @injectable()
 export class KeyedSequencerService {
-  private chains = new Map<string, Promise<void>>();
+  private readonly chains = new Map<string, Promise<void>>();
 
   enqueue(key: string, task: () => Promise<void>): Promise<void> {
     const prev = this.chains.get(key) ?? Promise.resolve();

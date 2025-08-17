@@ -94,38 +94,28 @@ export class BaileysIncomingMessageService {
      * Alterações em mensagens existentes (reação, edição, status, etc.).
      */
     socket.ev.on('messages.update', (events) => {
-      for (const { key, update } of events) {
-        /*   console.log('messages.update');
-        console.log('Message key:', key);
-        console.log('Message update:', update); */
-      }
+      console.log('events:', events);
     });
 
     /**
      * Mudança no status de entrega/leitura.
      */
     socket.ev.on('message-receipt.update', (events) => {
-      for (const { key, receipt } of events) {
-        /*  console.log('message-receipt.update');
-        console.log('Message key:', key);
-        console.log('Message receipt:', receipt); */
-      }
+      console.log('events:', events);
     });
 
     /**
      * Alguém no chat mudou de status (online, digitando, etc.).
      */
     socket.ev.on('presence.update', (data) => {
-      /*   console.log('presence.update');
-      console.log('Presence data:', data); */
+      console.log('data:', data);
     });
 
     /**
      * Histórico carregado pelo WhatsApp (ao conectar ou sincronizar).
      */
     socket.ev.on('messaging-history.set', (data) => {
-      /*   console.log('messaging-history.set');
-      console.log('Messaging history data:', data); */
+      console.log('data:', data);
     });
   }
 
