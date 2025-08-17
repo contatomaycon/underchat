@@ -9,6 +9,7 @@ import { BaileysConnectionService } from './connection.service';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
+import { webcrypto as nodeCrypto } from 'crypto';
 
 @injectable()
 export class BaileysHelpersService {
@@ -27,7 +28,6 @@ export class BaileysHelpersService {
 
     if (address.includes('@')) {
       await this.simulateHumanTyping(address, content);
-
       return sock.sendMessage(address, content, options);
     }
 
@@ -37,7 +37,6 @@ export class BaileysHelpersService {
     }
 
     await this.simulateHumanTyping(jid, content);
-
     return sock.sendMessage(jid, content, options);
   }
 
@@ -55,7 +54,6 @@ export class BaileysHelpersService {
     while (Date.now() - start < durationMs) {
       const remaining = durationMs - (Date.now() - start);
       const tick = Math.min(5000, remaining);
-
       await this.sleep(tick);
       if (Date.now() - start < durationMs) {
         await sock.sendPresenceUpdate('composing', jid);
@@ -70,7 +68,6 @@ export class BaileysHelpersService {
     if (!s) {
       throw new Error('Socket not connected');
     }
-
     return s;
   }
 
@@ -80,7 +77,6 @@ export class BaileysHelpersService {
       candidates.map(async (c) => {
         const resp = await sock.onWhatsApp(onlyDigits(c));
         const item = resp?.[0];
-
         return {
           candidate: c,
           exists: !!item?.exists,
@@ -91,7 +87,6 @@ export class BaileysHelpersService {
 
     const found = probes.find((p) => p.exists && p.jid);
     if (found) return { exists: true as const, jid: found.jid };
-
     return { exists: false as const, jid: undefined };
   }
 
@@ -99,8 +94,17 @@ export class BaileysHelpersService {
     return new Promise((r) => setTimeout(r, ms));
   }
 
+  private rngFloat() {
+    const cryptoApi = (globalThis as any).crypto ?? nodeCrypto;
+    const arr = new Uint32Array(1);
+    cryptoApi.getRandomValues(arr);
+    return arr[0] / 0x100000000;
+  }
+
   private rand(min: number, max: number) {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
+    const a = Math.ceil(min);
+    const b = Math.floor(max);
+    return Math.floor(this.rngFloat() * (b - a + 1)) + a;
   }
 
   private countGraphemes(str: string) {
@@ -114,7 +118,6 @@ export class BaileysHelpersService {
       return String((content as any).extendedTextMessage.text);
     if ((content as any)?.react?.text)
       return String((content as any).react.text);
-
     return '';
   }
 
@@ -125,7 +128,6 @@ export class BaileysHelpersService {
 
     const punctCount = (text.match(/[.,!?;:]/g) || []).length;
     const newlineCount = (text.match(/\n/g) || []).length;
-
     const emojiCount = (text.match(/\p{Extended_Pictographic}/gu) || []).length;
 
     const punctPause = punctCount * this.rand(200, 500);
@@ -133,13 +135,11 @@ export class BaileysHelpersService {
     const emojiPause = emojiCount * this.rand(150, 350);
 
     const jitter = base * (this.rand(-10, 15) / 100);
-
     const total = base + punctPause + newlinePause + emojiPause + jitter;
 
     const minMs = 800;
     const maxMs = 25000;
     const clamped = Math.max(minMs, Math.min(total, maxMs));
-
     return Math.round(clamped);
   }
 }

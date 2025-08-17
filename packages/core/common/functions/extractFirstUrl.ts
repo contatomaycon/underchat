@@ -1,14 +1,47 @@
 export function extractFirstUrl(text?: string): string | null {
   if (!text) return null;
 
-  const re =
-    /(?:(?:https?:\/\/)|(?:www\.))[\p{L}\p{N}\-._~:/?#[\]@!$&'()*+,;=%]+/iu;
-  const match = re.exec(text);
+  const lower = text.toLowerCase();
+  let pos = -1;
+  for (const n of ['http://', 'https://', 'www.']) {
+    const i = lower.indexOf(n);
+    if (i >= 0 && (pos < 0 || i < pos)) pos = i;
+  }
+  if (pos < 0) return null;
 
-  if (!match) return null;
+  const allowed = "-._~:/?#[\\]@!$&'()*+,;=%";
+  let end = pos;
+  const len = text.length;
 
-  let url = match[0];
-  url = url.replace(/[)\]}>"'.,;:!?]+$/u, '');
+  while (end < len) {
+    const cp = text.codePointAt(end);
+    if (cp === undefined) break;
+    const ch = String.fromCodePoint(cp);
+    const isAsciiNum = cp >= 48 && cp <= 57;
+    const isAsciiUpper = cp >= 65 && cp <= 90;
+    const isAsciiLower = cp >= 97 && cp <= 122;
+    const isUnicode = cp > 127;
+    if (
+      !(
+        isAsciiNum ||
+        isAsciiUpper ||
+        isAsciiLower ||
+        isUnicode ||
+        allowed.includes(ch)
+      )
+    )
+      break;
+    end += ch.length;
+  }
+
+  let url = text.slice(pos, end);
+
+  while (
+    url.length > 0 &&
+    ')]}>"\'.,;:!?'.includes(url.charAt(url.length - 1))
+  ) {
+    url = url.slice(0, -1);
+  }
 
   if (url.startsWith('www.')) {
     url = `https://${url}`;
