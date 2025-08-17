@@ -33,13 +33,12 @@ jobs:
       - name: Activate package managers
         shell: bash
         run: |
-          TMP_DIR=$(mktemp -d)
-          (cd "$TMP_DIR" && corepack enable)
+          corepack enable
           corepack prepare pnpm@10.14.0 --activate
           corepack prepare yarn@4.9.2 --activate
-          node -v
           pnpm -v
-          yarn -v
+          TMP_DIR=$(mktemp -d)
+          (cd "$TMP_DIR" && yarn -v)
 
       - name: Setup Java
         uses: actions/setup-java@v4
