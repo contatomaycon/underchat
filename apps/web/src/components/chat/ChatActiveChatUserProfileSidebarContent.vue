@@ -1,10 +1,6 @@
 <script lang="ts" setup>
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 
-defineEmits<{
-  (e: 'close'): void;
-}>();
-
 const avatar = ref(false);
 </script>
 

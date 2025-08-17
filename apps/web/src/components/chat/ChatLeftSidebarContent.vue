@@ -102,47 +102,48 @@ onMounted(async () => {
   </div>
   <VDivider />
 
-  <PerfectScrollbar
-    tag="ul"
-    class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none"
-    :options="{ wheelPropagation: false }"
-  >
-    <li class="list-none">
-      <h5 class="chat-header text-primary text-h5">
-        {{ $t('in_service') }}
-      </h5>
-    </li>
+  <PerfectScrollbar :options="{ wheelPropagation: false }">
+    <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
+      <li class="list-none">
+        <h5 class="chat-header text-primary text-h5">
+          {{ $t('in_service') }}
+        </h5>
+      </li>
 
-    <ChatQueue
-      v-for="inChat in chatStore.listInChat"
-      :key="`chat-${inChat.chat_id}`"
-      :user="inChat"
-      @click="$emit('openChat', inChat.chat_id)"
-    />
+      <ChatQueue
+        v-for="inChat in chatStore.listInChat"
+        :key="`chat-${inChat.chat_id}`"
+        :user="inChat"
+        @click="$emit('openChat', inChat.chat_id)"
+      />
 
-    <span
-      v-show="!chatStore.listInChat.length"
-      class="no-chat-items-text text-disabled"
-      >{{ $t('no_chat_in_service') }}
-    </span>
-    <li class="list-none pt-2">
-      <h5 class="chat-header text-primary text-h5">
-        {{ $t('waiting_for_service') }}
-      </h5>
-    </li>
+      <li
+        v-if="!chatStore.listInChat.length"
+        class="no-chat-items-text text-disabled"
+      >
+        {{ $t('no_chat_in_service') }}
+      </li>
 
-    <ChatQueue
-      v-for="queue in chatStore.listQueue"
-      :key="`chat-${queue.chat_id}`"
-      :user="queue"
-      @click="$emit('openChat', queue.chat_id)"
-    />
+      <li class="list-none pt-2">
+        <h5 class="chat-header text-primary text-h5">
+          {{ $t('waiting_for_service') }}
+        </h5>
+      </li>
 
-    <span
-      v-show="!chatStore.listQueue.length"
-      class="no-chat-items-text text-disabled"
-      >{{ $t('no_chat_in_queue') }}
-    </span>
+      <ChatQueue
+        v-for="queue in chatStore.listQueue"
+        :key="`chat-${queue.chat_id}`"
+        :user="queue"
+        @click="$emit('openChat', queue.chat_id)"
+      />
+
+      <li
+        v-if="!chatStore.listQueue.length"
+        class="no-chat-items-text text-disabled"
+      >
+        {{ $t('no_chat_in_queue') }}
+      </li>
+    </ul>
   </PerfectScrollbar>
 </template>
 

@@ -2,7 +2,7 @@ import { getLinkPreview } from 'link-preview-js';
 import sharp from 'sharp';
 import { WAUrlInfo } from '@whiskeysockets/baileys';
 
-function isHttpUrl(u: string) {
+function isHttpUrl(u: string): boolean {
   try {
     const x = new URL(u);
 
@@ -65,10 +65,10 @@ export async function buildLinkPreview(url: string): Promise<WAUrlInfo | null> {
   }
 
   const title =
-    (meta as any).title || (meta as any).siteName || (meta as any).url || url;
+    (meta as any).title ?? (meta as any).siteName ?? (meta as any).url ?? url;
 
   const description =
-    (meta as any).description || (meta as any).mediaType || undefined;
+    (meta as any).description ?? (meta as any).mediaType ?? undefined;
 
   const images: string[] = Array.isArray((meta as any).images)
     ? (meta as any).images
@@ -76,7 +76,7 @@ export async function buildLinkPreview(url: string): Promise<WAUrlInfo | null> {
   const favicons: string[] = Array.isArray((meta as any).favicons)
     ? (meta as any).favicons
     : [];
-  const bestImg = images[0] || favicons[0];
+  const bestImg = images[0] ?? favicons[0];
 
   let jpegThumbnail: Buffer | undefined;
 
@@ -93,12 +93,12 @@ export async function buildLinkPreview(url: string): Promise<WAUrlInfo | null> {
   }
 
   const linkPreview: WAUrlInfo = {
-    'canonical-url': (meta as any).url || url,
+    'canonical-url': (meta as any).url ?? url,
     'matched-text': url,
     title: String(title),
     description: description ? String(description) : undefined,
     jpegThumbnail,
-    originalThumbnailUrl: bestImg || undefined,
+    originalThumbnailUrl: bestImg ?? undefined,
   };
 
   return linkPreview;

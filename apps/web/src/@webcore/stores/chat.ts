@@ -332,7 +332,7 @@ export const useChatStore = defineStore('chat', {
     setActiveChat(chatId: string): void {
       this.activeChat = {} as ListChatsResponse;
 
-      const chat = (this.listQueue.find((c) => c.chat_id === chatId) ||
+      const chat = (this.listQueue.find((c) => c.chat_id === chatId) ??
         this.listInChat.find((c) => c.chat_id === chatId)) as ListChatsResponse;
 
       if (!chat.chat_id) {
