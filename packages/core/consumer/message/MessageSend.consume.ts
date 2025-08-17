@@ -4,10 +4,7 @@ import { KafkaStreams, KStream } from 'kafka-streams';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { BaileysMessageTextService } from '@core/services/baileys/methods/messageText.service';
 import { EMessageType } from '@core/common/enums/EMessageType';
-import {
-  IChatMessage,
-  IQuotedMessage,
-} from '@core/common/interfaces/IChatMessage';
+import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';

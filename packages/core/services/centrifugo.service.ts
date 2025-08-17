@@ -67,16 +67,14 @@ export class CentrifugoService {
         }
       };
 
-      const onConnect = () => {
-        tempClient.off('connected', onConnect);
-        tempClient.off('error', onError);
-        resolve();
-      };
-
       const onError = (err: unknown) => {
-        tempClient.off('connected', onConnect);
         tempClient.off('error', onError);
         reject(toError(err));
+      };
+
+      const onConnect = () => {
+        tempClient.off('connected', onConnect);
+        resolve();
       };
 
       tempClient.on('connected', onConnect);
