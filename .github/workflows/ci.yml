@@ -30,17 +30,16 @@ jobs:
         with:
           node-version: ${{ env.VERSION_NODE }}
 
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Activate pnpm 10.14.0 and Yarn 4.9.2
+      - name: Activate package managers
         shell: bash
         run: |
-          corepack prepare pnpm@10.14.0 --activate
           TMP_DIR=$(mktemp -d)
-          pushd "$TMP_DIR" >/dev/null
+          (cd "$TMP_DIR" && corepack enable)
+          corepack prepare pnpm@10.14.0 --activate
           corepack prepare yarn@4.9.2 --activate
-          popd >/dev/null
+          node -v
+          pnpm -v
+          yarn -v
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -56,9 +55,6 @@ jobs:
             ~/.pnpm-store
             **/node_modules
           key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
-
-      - name: Install pnpm
-        run: npm install -g pnpm
 
       - name: Install JQ
         run: |
