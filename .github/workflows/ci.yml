@@ -47,6 +47,9 @@ jobs:
       - name: Install pnpm
         run: npm install -g pnpm
 
+      - name: Install yarn
+        run: npm install -g yarn
+
       - name: Install JQ
         run: sudo apt-get install jq
 
