@@ -53,7 +53,7 @@ export class BaileysMessageExtrasUtilitiesService {
     options?: MiscMessageGenerationOptions
   ) {
     return this.baileysHelpersService.send(jid, content, {
-      ...(options || {}),
+      ...(options ?? {}),
       statusJidList,
       backgroundColor: args?.backgroundColor,
       font: args?.font,
@@ -86,7 +86,7 @@ export class BaileysMessageExtrasUtilitiesService {
     options?: MiscMessageGenerationOptions
   ) {
     return this.baileysHelpersService.send(jid, inner, {
-      ...(options || {}),
+      ...(options ?? {}),
       ephemeralExpiration: seconds,
     });
   }
@@ -101,7 +101,7 @@ export class BaileysMessageExtrasUtilitiesService {
     options?: MiscMessageGenerationOptions
   ) {
     return this.baileysHelpersService.send(jid, inner, {
-      ...(options || {}),
+      ...(options ?? {}),
       quoted,
     });
   }
@@ -115,7 +115,7 @@ export class BaileysMessageExtrasUtilitiesService {
     options?: MiscMessageGenerationOptions
   ) {
     return this.baileysHelpersService.send('status@broadcast', content, {
-      ...(options || {}),
+      ...(options ?? {}),
       statusJidList: recipients,
       broadcast: true,
     });
