@@ -6,6 +6,7 @@ import centrifugoRoutes from '@/routes/centrifugo.route';
 import roleRoutes from './role.route';
 import workerRoutes from '@/routes/worker.route';
 import sectorRoutes from './sector.route';
+import userRoutes from './user.route';
 
 export default async function (server: FastifyInstance) {
   await server.register(authRoutes);
@@ -15,4 +16,5 @@ export default async function (server: FastifyInstance) {
   await server.register(roleRoutes);
   await server.register(workerRoutes);
   await server.register(sectorRoutes);
+  await server.register(userRoutes);
 }

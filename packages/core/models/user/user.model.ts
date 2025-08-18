@@ -4,6 +4,7 @@ import {
   userStatus,
   userAddress,
   userInfo,
+  userDocument,
   account,
   permissionAssignment,
 } from '@core/models';
@@ -47,6 +48,10 @@ export const userRelations = relations(user, ({ one }) => ({
   uui: one(userInfo, {
     fields: [user.user_id],
     references: [userInfo.user_id],
+  }),
+  uud: one(userDocument, {
+    fields: [user.user_id],
+    references: [userDocument.user_id],
   }),
   upa: one(permissionAssignment, {
     fields: [user.user_id],

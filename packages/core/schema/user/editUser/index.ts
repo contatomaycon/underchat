@@ -1,12 +1,14 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { listSectorRoleAccountSectorResponseSchema } from './response.schema';
-import { createSectorRoleAccountSectorRequestSchema } from './request.schema';
+import {
+  editUserParamsRequestSchema,
+  updateUserRequestSchema,
+} from './request.schema';
 
-export const listSectorRoleAccountSectorSchema = {
-  description: 'Lista os papéis existentes de contas no setor',
-  tags: [ETagSwagger.sectorRole],
+export const editUserSchema = {
+  description: 'Edita um usuário existente',
+  tags: [ETagSwagger.user],
   produces: ['application/json'],
   security: [
     {
@@ -22,14 +24,15 @@ export const listSectorRoleAccountSectorSchema = {
       })
     ),
   }),
-  params: createSectorRoleAccountSectorRequestSchema,
+  params: editUserParamsRequestSchema,
+  body: updateUserRequestSchema,
   response: {
     200: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: Type.Array(listSectorRoleAccountSectorResponseSchema),
+        data: Type.Null(),
       },
       { description: 'Successful' }
     ),
