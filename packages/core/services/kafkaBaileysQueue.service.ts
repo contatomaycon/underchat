@@ -7,8 +7,9 @@ export class KafkaBaileysQueueService {
 
   all = (workerId: string): string[] => {
     const worker = this.workerConnection(workerId);
+    const sendMessage = this.workerSendMessage(workerId);
 
-    return [worker];
+    return [worker, sendMessage];
   };
 
   create = (workerId: string): Promise<void> => {
@@ -29,5 +30,9 @@ export class KafkaBaileysQueueService {
 
   workerConnection = (workerId: string) => {
     return `worker.${workerId}.connection`;
+  };
+
+  workerSendMessage = (workerId: string) => {
+    return `worker.${workerId}.send.message`;
   };
 }

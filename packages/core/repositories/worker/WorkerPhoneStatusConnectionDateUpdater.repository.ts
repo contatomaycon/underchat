@@ -34,13 +34,27 @@ export class WorkerPhoneStatusConnectionDateUpdaterRepository {
       input.status === EWorkerStatus.disponible ? null : input.number;
     const connectionDate = this.connectionDate(input);
 
+    const updateData: Partial<typeof worker.$inferInsert> = {};
+
+    if (input.status) {
+      updateData.worker_status_id = input.status;
+    }
+
+    if (phoneNumber) {
+      updateData.number = phoneNumber;
+    }
+
+    if (connectionDate) {
+      updateData.connection_date = connectionDate;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return false;
+    }
+
     const result = await this.db
       .update(worker)
-      .set({
-        worker_status_id: input.status,
-        number: phoneNumber,
-        connection_date: connectionDate,
-      })
+      .set(updateData)
       .where(and(eq(worker.worker_id, input.worker_id)))
       .execute();
 

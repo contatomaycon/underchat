@@ -59,6 +59,10 @@ export class ServerUpdaterRepository {
       updateServer.ssh_password = input.ssh_password;
     }
 
+    if (Object.keys(updateServer).length === 0) {
+      return false;
+    }
+
     const result = await tx
       .update(serverSsh)
       .set(updateServer)

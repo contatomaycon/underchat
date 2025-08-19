@@ -9,6 +9,7 @@ import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { container } from 'tsyringe';
 import { kafkaEnvironment } from '@core/config/environments';
 import { Kafka } from 'kafkajs';
+import { EAutoOffsetReset } from '@core/common/enums/EAutoOffsetReset';
 
 interface KafkaStreamsPluginOptions {
   module: ERouteModule;
@@ -34,10 +35,11 @@ const kafkaStreamsPlugin: FastifyPluginAsync<
     'retry.backoff.ms': 500,
     'topic.metadata.refresh.interval.ms': 30000,
     'metadata.max.age.ms': 60000,
+    'max.in.flight.requests.per.connection': 1,
   };
 
   const tconf: KafkaStreamsConfig['tconf'] = {
-    'auto.offset.reset': 'latest',
+    'auto.offset.reset': EAutoOffsetReset.earliest,
     'request.required.acks': 1,
   };
 

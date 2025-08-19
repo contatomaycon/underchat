@@ -13,7 +13,9 @@ export const connectionHealthCheck = async (
 
   const status = baileysService.getStatus();
   if (status === EBaileysConnectionStatus.disconnected) {
-    baileysService.reconnect();
+    baileysService.reconnect({
+      initial_connection: false,
+    });
   }
 
   return sendResponse(reply, {

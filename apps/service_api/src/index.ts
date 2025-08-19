@@ -4,7 +4,6 @@ import fastify from 'fastify';
 import dbConnector from '@core/config/database';
 import i18nextPlugin from '@core/plugins/i18next';
 import { requestHook, responseHook, errorHook } from '@core/hooks';
-import cacheRedisConnector from '@core/config/cache';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { v4 } from 'uuid';
 import swaggerPlugin from '@/plugins/swagger';
@@ -19,6 +18,7 @@ import temporalConsumerPlugin from './temporal';
 import centrifugoPlugin from '@core/plugins/centrifugo';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 import temporalPlugin from '@core/plugins/temporal';
+import redisPlugin from '@core/plugins/redis';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -33,7 +33,7 @@ server.decorateRequest('module', ERouteModule.service);
 
 server.register(centrifugoPlugin, { module: ERouteModule.service });
 server.register(dbConnector);
-server.register(cacheRedisConnector);
+server.register(redisPlugin);
 server.register(authenticateKeyApi);
 server.register(i18nextPlugin);
 server.register(corsPlugin);

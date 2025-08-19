@@ -10,4 +10,5 @@ export enum ETagSwagger {
   sectorRole = 'Setores e Funções',
   connection = 'Conexão',
   user = 'Usuários',
+  chat = 'Chat',
 }

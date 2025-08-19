@@ -51,6 +51,7 @@ export const themes: Record<string, ThemeDefinition> = {
       'skin-bordered-background': '#fff',
       'skin-bordered-surface': '#fff',
       'expansion-panel-text-custom-bg': '#fafafa',
+      title: '#2F2B3D',
     },
 
     variables: {
@@ -122,6 +123,7 @@ export const themes: Record<string, ThemeDefinition> = {
       'perfect-scrollbar-thumb': '#4A5072',
       'skin-bordered-background': '#2F3349',
       'skin-bordered-surface': '#2F3349',
+      title: '#2F2B3D',
     },
     variables: {
       'code-color': '#d400ff',

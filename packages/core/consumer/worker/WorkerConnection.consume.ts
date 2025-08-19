@@ -1,11 +1,10 @@
-import { injectable, inject } from 'tsyringe';
+import { singleton, inject } from 'tsyringe';
 import { KafkaStreams, KStream } from 'kafka-streams';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { WorkerService } from '@core/services/worker.service';
-import { getStatusWorkerConnection } from '@core/common/functions/getStatusWorkerConnection';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 
-@injectable()
+@singleton()
 export class WorkerConnectionConsume {
   constructor(
     @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams,
@@ -37,15 +36,9 @@ export class WorkerConnectionConsume {
 
       const phoneNumber = data.phone ?? viewWorkerPhoneConnectionDate.number;
 
-      const status = getStatusWorkerConnection(
-        data.status,
-        phoneNumber,
-        data.disconnected_user
-      );
-
       await this.workerService.updateWorkerPhoneStatusConnectionDate({
         worker_id: data.worker_id,
-        status,
+        status: data.worker_status_id,
         number: phoneNumber,
         connection_date: viewWorkerPhoneConnectionDate.connection_date,
       });

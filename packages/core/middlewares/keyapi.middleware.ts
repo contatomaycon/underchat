@@ -7,7 +7,6 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import { container } from 'tsyringe';
 import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
-import { FastifyRedis } from '@fastify/redis';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { IApiKeyMiddleware } from '@core/common/interfaces/IApiKeyMiddleware';
 import { IApiKeyGroupHierarchy } from '@core/common/interfaces/IApiKeyGroupHierarchy';
@@ -15,9 +14,10 @@ import { ITokenKeyData } from '@core/common/interfaces/ITokenKeyData';
 import { routePathWithoutPrefix } from '@core/common/functions/routePathWithoutPrefix';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { EPermissionRole } from '@core/common/enums/EPermissionRole';
+import Redis from 'ioredis';
 
 async function handleApiKeyCache(
-  redis: FastifyRedis,
+  redis: Redis,
   cacheKey: string,
   keyapi: string | string[] | undefined,
   routeModule: string,
@@ -77,7 +77,7 @@ async function authenticateKeyApi(
   permissions: EPermissionsRoles[] | null
 ): Promise<void> {
   const { t } = request;
-  const { redis } = request.server;
+  const { Redis } = request.server;
   const { keyapi } = request.headers;
   const routePath = routePathWithoutPrefix(request);
 
@@ -92,7 +92,7 @@ async function authenticateKeyApi(
     const routeModule = getRootPath(routePath, request.module);
     const cacheKey = createCacheKey('keyCache', keyapi, routeModule);
     const responseAuth = await handleApiKeyCache(
-      redis,
+      Redis,
       cacheKey,
       keyapi,
       routeModule,

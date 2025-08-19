@@ -70,6 +70,10 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
           description: 'End-points relacionados à canais',
         },
         {
+          name: ETagSwagger.chat,
+          description: 'End-points relacionados à chats',
+        },
+        {
           name: ETagSwagger.sector,
           description: 'End-points relacionados à setores',
         },
