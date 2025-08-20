@@ -38,6 +38,11 @@ function formatPhone(e: Event) {
   input.value = value;
 }
 
+const emailValidator = (value: string) => {
+  const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return regex.test(value) || t('email_invalid');
+};
+
 const itemsStatus = ref([
   { id: EUserStatus.active, text: t('active') },
   { id: EUserStatus.inactive, text: t('inactive') },
@@ -71,8 +76,8 @@ const docConfig = {
   },
 };
 
-const currentType = computed(() =>
-  isCPF.value ? 'cpf' : isCNPJ.value ? 'cnpj' : null
+const currentType = computed<'cpf' | 'cnpj' | null>(
+  () => (isCPF.value && 'cpf') || (isCNPJ.value && 'cnpj') || null
 );
 
 const docMask = computed(() =>
@@ -111,12 +116,17 @@ const docRules = computed(() => [
   },
 ]);
 
-const toYmd = (v: unknown) =>
-  v == null
-    ? null
-    : typeof v === 'string'
-      ? v.split('T')[0]
-      : new Date(v as any).toISOString().slice(0, 10);
+function toYmd(v: unknown): string | null {
+  if (v == null) {
+    return null;
+  }
+
+  if (typeof v === 'string') {
+    return v.split('T')[0];
+  }
+
+  return new Date(v as any).toISOString().slice(0, 10);
+}
 
 const tab = ref('user_data');
 
@@ -299,7 +309,7 @@ watch(password, () => {
 
 let timer: number | null = null;
 watch(zip_code, () => {
-  if (!country_id.value) return;
+  if (!country_id.value || !zip_code.value || zip_code.value.length < 8) return;
 
   if (timer) window.clearTimeout(timer);
 
@@ -359,59 +369,53 @@ watch(zip_code, () => {
                       ]"
                     />
                   </VCol>
+                  <VCol cols="12" md="6">
+                    <AppTextField
+                      id="new-password"
+                      name="new-password"
+                      v-model="password"
+                      :label="$t('password') + ':'"
+                      :placeholder="$t('password')"
+                      :type="isPasswordVisible ? 'text' : 'password'"
+                      :autocomplete="isPasswordVisible ? 'off' : 'new-password'"
+                      autocapitalize="off"
+                      autocorrect="off"
+                      spellcheck="false"
+                      :append-inner-icon="
+                        isPasswordVisible ? 'tabler-eye-off' : 'tabler-eye'
+                      "
+                      :rules="[
+                        rules.passwordMinIfFilled,
+                        requiredValidator(password, $t('password_required')),
+                      ]"
+                      @click:append-inner="
+                        isPasswordVisible = !isPasswordVisible
+                      "
+                    />
+                  </VCol>
 
-                  <VRow>
-                    <VCol cols="12" md="6">
-                      <AppTextField
-                        id="new-password"
-                        name="new-password"
-                        v-model="password"
-                        :label="$t('password') + ':'"
-                        :placeholder="$t('password')"
-                        :type="isPasswordVisible ? 'text' : 'password'"
-                        autocomplete="new-password"
-                        autocapitalize="off"
-                        autocorrect="off"
-                        spellcheck="false"
-                        :append-inner-icon="
-                          isPasswordVisible ? 'tabler-eye-off' : 'tabler-eye'
-                        "
-                        :rules="[
-                          rules.passwordMinIfFilled,
-                          requiredValidator(password, $t('password_required')),
-                        ]"
-                        @click:append-inner="
-                          isPasswordVisible = !isPasswordVisible
-                        "
-                      />
-                    </VCol>
-
-                    <VCol cols="12" md="6">
-                      <AppTextField
-                        id="confirm-new-password"
-                        name="confirm-password"
-                        v-model="confirmPassword"
-                        :label="$t('confirm_password') + ':'"
-                        :placeholder="$t('confirm_password')"
-                        :type="isConfirmVisible ? 'text' : 'password'"
-                        autocomplete="new-password"
-                        autocapitalize="off"
-                        autocorrect="off"
-                        spellcheck="false"
-                        :append-inner-icon="
-                          isConfirmVisible ? 'tabler-eye-off' : 'tabler-eye'
-                        "
-                        :rules="[
-                          rules.confirmRequiredIfPassword,
-                          rules.confirmMatches,
-                        ]"
-                        @click:append-inner="
-                          isConfirmVisible = !isConfirmVisible
-                        "
-                      />
-                    </VCol>
-                  </VRow>
-
+                  <VCol cols="12" md="6">
+                    <AppTextField
+                      id="confirm-new-password"
+                      name="new-password"
+                      v-model="confirmPassword"
+                      :label="$t('confirm_password') + ':'"
+                      :placeholder="$t('confirm_password')"
+                      :type="isConfirmVisible ? 'text' : 'password'"
+                      :autocomplete="isConfirmVisible ? 'off' : 'new-password'"
+                      autocapitalize="off"
+                      autocorrect="off"
+                      spellcheck="false"
+                      :append-inner-icon="
+                        isConfirmVisible ? 'tabler-eye-off' : 'tabler-eye'
+                      "
+                      :rules="[
+                        rules.confirmRequiredIfPassword,
+                        rules.confirmMatches,
+                      ]"
+                      @click:append-inner="isConfirmVisible = !isConfirmVisible"
+                    />
+                  </VCol>
                   <VCol md="6" cols="12">
                     <VLabel>{{ $t('status') }}:</VLabel>
                     <AppAutocomplete

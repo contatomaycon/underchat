@@ -218,18 +218,16 @@ export class UserListerRepository {
             name: user.uus.name,
           }
         : null,
-      user_info: isAdministrator
-        ? user.uui
-          ? {
-              user_info_id: user.uui.user_info_id,
-              phone_ddi: user.uui.phone_ddi,
-              phone_partial: user.uui.phone_partial,
-              name: user.uui.name,
-              last_name: user.uui.last_name,
-              birth_date: user.uui.birth_date,
-            }
-          : null
-        : undefined,
+      user_info: user.uui
+        ? {
+            user_info_id: user.uui.user_info_id,
+            phone_ddi: user.uui.phone_ddi,
+            phone_partial: user.uui.phone_partial,
+            name: user.uui.name,
+            last_name: user.uui.last_name,
+            birth_date: user.uui.birth_date,
+          }
+        : null,
       user_document: user.uud
         ? {
             user_document_id: user.uud.user_document_id,

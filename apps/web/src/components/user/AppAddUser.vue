@@ -33,6 +33,11 @@ function formatPhone(e: Event) {
   input.value = value;
 }
 
+const emailValidator = (value: string) => {
+  const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return regex.test(value) || t('email_invalid');
+};
+
 const itemsDocuments = ref([
   { value: EUserDocumentType.CPF, title: t('cpf') },
   { value: EUserDocumentType.CNPJ, title: t('cnpj') },
@@ -60,8 +65,8 @@ const docConfig = {
   },
 };
 
-const currentType = computed(() =>
-  isCPF.value ? 'cpf' : isCNPJ.value ? 'cnpj' : null
+const currentType = computed<'cpf' | 'cnpj' | null>(
+  () => (isCPF.value && 'cpf') || (isCNPJ.value && 'cnpj') || null
 );
 
 const docMask = computed(() =>
@@ -74,7 +79,6 @@ const docPlaceholder = computed(() =>
   currentType.value ? docConfig[currentType.value].placeholder : ''
 );
 
-// Validações simples (apenas dígitos)
 const onlyDigits = (s: string) => s.replace(/\D+/g, '');
 const cpfRegex = /^\d{11}$/;
 const cnpjRegex = /^\d{14}$/;
@@ -259,7 +263,7 @@ watch(isVisible, (visible) => {
 
 let timer: number | null = null;
 watch(zip_code, () => {
-  if (!country_id.value) return;
+  if (!country_id.value || !zip_code.value || zip_code.value.length < 8) return;
 
   if (timer) window.clearTimeout(timer);
 
@@ -316,6 +320,7 @@ onMounted(resetForm);
                   <VCol md="6" cols="12">
                     <AppTextField
                       v-model="email"
+                      type="email"
                       :label="$t('email') + ':'"
                       :placeholder="$t('email')"
                       :rules="[
@@ -333,7 +338,7 @@ onMounted(resetForm);
                       :label="$t('password') + ':'"
                       :placeholder="$t('password')"
                       :type="isPasswordVisible ? 'text' : 'password'"
-                      autocomplete="new-password"
+                      :autocomplete="isPasswordVisible ? 'off' : 'new-password'"
                       autocapitalize="off"
                       autocorrect="off"
                       spellcheck="false"
@@ -353,12 +358,12 @@ onMounted(resetForm);
                   <VCol cols="12" md="6">
                     <AppTextField
                       id="confirm-new-password"
-                      name="confirm-password"
+                      name="new-password"
                       v-model="confirmPassword"
                       :label="$t('confirm_password') + ':'"
                       :placeholder="$t('confirm_password')"
                       :type="isConfirmVisible ? 'text' : 'password'"
-                      autocomplete="new-password"
+                      :autocomplete="isConfirmVisible ? 'off' : 'new-password'"
                       autocapitalize="off"
                       autocorrect="off"
                       spellcheck="false"
