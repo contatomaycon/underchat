@@ -132,5 +132,8 @@
   "chat_link_preview_not_found": "¡Vista previa del enlace del chat no encontrada!",
   "message_content_required": "¡El contenido del mensaje es obligatorio para los mensajes de texto!",
   "message_quoted_id_required": "¡Se requiere ID de mensaje citado para mensajes citados!",
-  "message_quoted_not_found": "¡Mensaje citado no encontrado!"
+  "message_quoted_not_found": "¡Mensaje citado no encontrado!",
+  "zipcode_view_successfully": "¡Código postal visualizado con éxito!",
+  "zipcode_not_found": "¡Código postal no encontrado!",
+  "username_already_exists": "¡El nombre de usuario ya existe!"
 }

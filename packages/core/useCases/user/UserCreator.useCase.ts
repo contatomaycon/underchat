@@ -25,6 +25,14 @@ export class UserCreatorUseCase {
       throw new Error(t('account_not_found'));
     }
 
+    const usernameExists = await this.userService.existsUsernameByUser(
+      input.username
+    );
+
+    if (usernameExists) {
+      throw new Error(t('username_already_exists'));
+    }
+
     const documentTypeExists =
       await this.userService.existsUserDocumentTypeById(
         input.user_document.user_document_type_id

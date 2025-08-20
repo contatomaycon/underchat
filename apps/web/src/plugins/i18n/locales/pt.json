@@ -264,5 +264,6 @@
     "write_your_message": "Escreva sua mensagem",
     "start_conversation": "Iniciar conversa",
     "send": "Enviar",
-    "chat_message_create_error": "Erro ao criar mensagem do chat. Por favor, tente novamente."
+    "chat_message_create_error": "Erro ao criar mensagem do chat. Por favor, tente novamente.",
+    "zipcode_view_error": "Ocorreu um erro ao ver o código postal. Por favor, tente novamente."
 }

@@ -261,5 +261,6 @@
     "write_your_message": "Write your message",
     "start_conversation": "Start conversation",
     "send": "Send",
-    "chat_message_create_error": "Error creating chat message. Please try again."
+    "chat_message_create_error": "Error creating chat message. Please try again.",
+    "zipcode_view_error": "An error occurred while viewing the zipcode. Please try again."
 }

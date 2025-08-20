@@ -132,5 +132,8 @@
   "chat_link_preview_not_found": "Chat link preview not found!",
   "message_content_required": "Message content is required for text messages",
   "message_quoted_id_required": "Message quoted ID is required for quoted messages",
-  "message_quoted_not_found": "Message quoted not found"
+  "message_quoted_not_found": "Message quoted not found",
+  "zipcode_view_successfully": "Zipcode viewed successfully!",
+  "zipcode_not_found": "Zipcode not found!",
+  "username_already_exists": "Username already exists!"
 }

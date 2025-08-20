@@ -18,6 +18,8 @@ import {
   EditUserParamsRequest,
   UpdateUserRequest,
 } from '@core/schema/user/editUser/request.schema';
+import { ZipcodeResponseSchema } from '@core/schema/zipcode/viewZipcode/response.schema';
+import { ViewZipcodeRequest } from '@core/schema/zipcode/viewZipcode/request.schema';
 
 export const useUsersStore = defineStore('users', {
   state: () => ({
@@ -120,6 +122,42 @@ export const useUsersStore = defineStore('users', {
         return data.data;
       } catch (error) {
         let errorMessage = this.i18n.global.t('user_view_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async viewZipcode(
+      params: ViewZipcodeRequest
+    ): Promise<ZipcodeResponseSchema | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<IApiResponse<ZipcodeResponseSchema>>(
+          `/zipcode`,
+          {
+            params,
+          }
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('zipcode_view_error');
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }

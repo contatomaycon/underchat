@@ -4,3 +4,4 @@ export * from './server.permissions';
 export * from './chat.permissions';
 export * from './sector.permissions';
 export * from './user.permissions';
+export * from './zipcode.permissions';

@@ -81,6 +81,10 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
           name: ETagSwagger.user,
           description: 'End-points relacionados à usuários',
         },
+        {
+          name: ETagSwagger.zipcode,
+          description: 'End-points relacionados à CEPs',
+        },
       ],
     },
   });

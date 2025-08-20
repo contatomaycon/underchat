@@ -21,6 +21,7 @@ import { UserAddressUpdaterRepository } from '@core/repositories/user/UserAddres
 import { IUpdateUserAddress } from '@core/common/interfaces/IUpdateUserAddress';
 import { UserNamePhotoViewerRepository } from '@core/repositories/user/UserNamePhotoViewer.repository';
 import { IViewUserNamePhoto } from '@core/common/interfaces/IViewUserNamePhoto';
+import { UserUsernameViewerExistsRepository } from '@core/repositories/user/UserUsernameViewerExists.repository';
 
 @injectable()
 export class UserService {
@@ -36,7 +37,8 @@ export class UserService {
     private readonly userInfoUpdaterRepository: UserInfoUpdaterRepository,
     private readonly userDocumentUpdaterRepository: UserDocumentUpdaterRepository,
     private readonly userAddressUpdaterRepository: UserAddressUpdaterRepository,
-    private readonly userNamePhotoViewerRepository: UserNamePhotoViewerRepository
+    private readonly userNamePhotoViewerRepository: UserNamePhotoViewerRepository,
+    private readonly userUsernameViewerExistsRepository: UserUsernameViewerExistsRepository
   ) {}
 
   listUsers = async (
@@ -165,5 +167,11 @@ export class UserService {
     userId: string
   ): Promise<IViewUserNamePhoto | null> => {
     return this.userNamePhotoViewerRepository.viewUserNamePhoto(userId);
+  };
+
+  existsUsernameByUser = async (username: string): Promise<boolean> => {
+    return this.userUsernameViewerExistsRepository.existsUsernameByUser(
+      username
+    );
   };
 }

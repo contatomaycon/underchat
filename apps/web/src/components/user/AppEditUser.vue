@@ -7,6 +7,7 @@ import {
   EditUserParamsRequest,
   UpdateUserRequest,
 } from '@core/schema/user/editUser/request.schema';
+import { ViewZipcodeRequest } from '@core/schema/zipcode/viewZipcode/request.schema';
 import { VForm } from 'vuetify/components/VForm';
 
 const userStore = useUsersStore();
@@ -25,18 +26,16 @@ const isVisible = computed({
 });
 
 function formatPhone(e: Event) {
-  let value = (e.target as HTMLInputElement).value || '';
-  value = value.replace(/\D/g, '').slice(0, 9);
+  const input = e.target as HTMLInputElement;
+  let value = input.value.replace(/\D/g, '').slice(0, 9);
 
-  if (value.length <= 4) {
-    value = value;
-  } else if (value.length <= 8) {
+  if (value.length > 4 && value.length <= 8) {
     value = `${value.slice(0, value.length - 4)}-${value.slice(-4)}`;
-  } else {
+  } else if (value.length > 8) {
     value = `${value.slice(0, 5)}-${value.slice(5)}`;
   }
 
-  phone.value = value;
+  input.value = value;
 }
 
 const itemsStatus = ref([
@@ -59,15 +58,31 @@ const isCNPJ = computed(
   () => user_document_type_id.value === EUserDocumentType.CNPJ
 );
 
-const docMask = computed(() =>
-  isCPF.value ? '###.###.###-##' : isCNPJ.value ? '##.###.###/####-##' : ''
+const docConfig = {
+  cpf: {
+    mask: '###.###.###-##',
+    label: t('cpf'),
+    placeholder: '000.000.000-00',
+  },
+  cnpj: {
+    mask: '##.###.###/####-##',
+    label: t('cnpj'),
+    placeholder: '00.000.000/0000-00',
+  },
+};
+
+const currentType = computed(() =>
+  isCPF.value ? 'cpf' : isCNPJ.value ? 'cnpj' : null
 );
 
+const docMask = computed(() =>
+  currentType.value ? docConfig[currentType.value].mask : ''
+);
 const docLabel = computed(() =>
-  isCPF.value ? t('cpf') : isCNPJ.value ? t('cnpj') : ''
+  currentType.value ? docConfig[currentType.value].label : ''
 );
 const docPlaceholder = computed(() =>
-  isCPF.value ? '000.000.000-00' : isCNPJ.value ? '00.000.000/0000-00' : ''
+  currentType.value ? docConfig[currentType.value].placeholder : ''
 );
 
 const onlyDigits = (s: string) => s.replace(/\D+/g, '');
@@ -135,6 +150,8 @@ const isConfirmVisible = ref(false);
 const refFormStep1 = ref<VForm>();
 const refFormStep2 = ref<VForm>();
 
+const zipInputRef = ref<HTMLInputElement | null>(null);
+
 async function goNext() {
   if (tab.value === 'user_data') {
     const v = await refFormStep1.value?.validate();
@@ -161,6 +178,26 @@ const rules = {
 
   confirmMatches: (v: string | null) =>
     !password.value || v === password.value || t('the_password_do_not_match'),
+};
+
+const viewZipcode = async () => {
+  if (!country_id.value || !zip_code.value) {
+    return;
+  }
+
+  const params: ViewZipcodeRequest = {
+    country_id: country_id.value,
+    zipcode: zip_code.value,
+  };
+
+  const response = await userStore.viewZipcode(params);
+  if (response) {
+    address1.value = response.address_1;
+    address2.value = response.address_2;
+    city.value = response.city;
+    state.value = response.state;
+    district.value = response.district;
+  }
 };
 
 const updateUser = async () => {
@@ -211,6 +248,23 @@ const updateUser = async () => {
   }
 };
 
+const onCountryChange = async (val: number | null) => {
+  country_id.value = val;
+
+  address1.value = '';
+  address2.value = '';
+  city.value = '';
+  state.value = '';
+  district.value = '';
+
+  if (country_id.value && zip_code.value) {
+    await viewZipcode();
+  } else {
+    await nextTick();
+    zipInputRef.value?.focus?.();
+  }
+};
+
 onMounted(async () => {
   if (!userId.value) return;
 
@@ -241,6 +295,17 @@ onMounted(async () => {
 
 watch(password, () => {
   confirmPassword.value = null;
+});
+
+let timer: number | null = null;
+watch(zip_code, () => {
+  if (!country_id.value) return;
+
+  if (timer) window.clearTimeout(timer);
+
+  timer = window.setTimeout(() => {
+    viewZipcode();
+  }, 400);
 });
 </script>
 
@@ -295,40 +360,57 @@ watch(password, () => {
                     />
                   </VCol>
 
-                  <VCol cols="12" md="6">
-                    <AppTextField
-                      v-model="password"
-                      :label="$t('password') + ':'"
-                      :placeholder="$t('password')"
-                      :type="isPasswordVisible ? 'text' : 'password'"
-                      autocomplete="new-password"
-                      :append-inner-icon="
-                        isPasswordVisible ? 'tabler-eye-off' : 'tabler-eye'
-                      "
-                      :rules="[rules.passwordMinIfFilled]"
-                      @click:append-inner="
-                        isPasswordVisible = !isPasswordVisible
-                      "
-                    />
-                  </VCol>
+                  <VRow>
+                    <VCol cols="12" md="6">
+                      <AppTextField
+                        id="new-password"
+                        name="new-password"
+                        v-model="password"
+                        :label="$t('password') + ':'"
+                        :placeholder="$t('password')"
+                        :type="isPasswordVisible ? 'text' : 'password'"
+                        autocomplete="new-password"
+                        autocapitalize="off"
+                        autocorrect="off"
+                        spellcheck="false"
+                        :append-inner-icon="
+                          isPasswordVisible ? 'tabler-eye-off' : 'tabler-eye'
+                        "
+                        :rules="[
+                          rules.passwordMinIfFilled,
+                          requiredValidator(password, $t('password_required')),
+                        ]"
+                        @click:append-inner="
+                          isPasswordVisible = !isPasswordVisible
+                        "
+                      />
+                    </VCol>
 
-                  <VCol cols="12" md="6">
-                    <AppTextField
-                      v-model="confirmPassword"
-                      :label="$t('confirm_password') + ':'"
-                      :placeholder="$t('confirm_password')"
-                      :type="isConfirmVisible ? 'text' : 'password'"
-                      autocomplete="new-password"
-                      :append-inner-icon="
-                        isConfirmVisible ? 'tabler-eye-off' : 'tabler-eye'
-                      "
-                      :rules="[
-                        rules.confirmRequiredIfPassword,
-                        rules.confirmMatches,
-                      ]"
-                      @click:append-inner="isConfirmVisible = !isConfirmVisible"
-                    />
-                  </VCol>
+                    <VCol cols="12" md="6">
+                      <AppTextField
+                        id="confirm-new-password"
+                        name="confirm-password"
+                        v-model="confirmPassword"
+                        :label="$t('confirm_password') + ':'"
+                        :placeholder="$t('confirm_password')"
+                        :type="isConfirmVisible ? 'text' : 'password'"
+                        autocomplete="new-password"
+                        autocapitalize="off"
+                        autocorrect="off"
+                        spellcheck="false"
+                        :append-inner-icon="
+                          isConfirmVisible ? 'tabler-eye-off' : 'tabler-eye'
+                        "
+                        :rules="[
+                          rules.confirmRequiredIfPassword,
+                          rules.confirmMatches,
+                        ]"
+                        @click:append-inner="
+                          isConfirmVisible = !isConfirmVisible
+                        "
+                      />
+                    </VCol>
+                  </VRow>
 
                   <VCol md="6" cols="12">
                     <VLabel>{{ $t('status') }}:</VLabel>
@@ -463,19 +545,23 @@ watch(password, () => {
                       :placeholder="$t('country')"
                       :model-value="country_id"
                       :items="itemsCountry"
-                      @update:model-value="country_id = $event"
+                      @update:model-value="onCountryChange"
                     />
                   </VCol>
                   <VCol cols="12" md="6">
                     <AppTextField
+                      ref="zipInputRef"
                       v-model="zip_code"
+                      :disabled="!country_id"
                       :label="$t('zip_code') + ':'"
                       :placeholder="$t('zip_code')"
+                      maxlength="8"
                     />
                   </VCol>
                   <VCol cols="12" md="6">
                     <AppTextField
                       v-model="address1"
+                      :disabled="!country_id"
                       :label="$t('address') + ':'"
                       :placeholder="$t('address')"
                     />
@@ -483,6 +569,7 @@ watch(password, () => {
                   <VCol cols="12" md="6">
                     <AppTextField
                       v-model="address2"
+                      :disabled="!country_id"
                       :label="$t('address_secondary') + ':'"
                       :placeholder="$t('address_secondary')"
                     />
@@ -490,6 +577,7 @@ watch(password, () => {
                   <VCol cols="12" md="6">
                     <AppTextField
                       v-model="city"
+                      :disabled="!country_id"
                       :label="$t('city') + ':'"
                       :placeholder="$t('city')"
                     />
@@ -497,6 +585,7 @@ watch(password, () => {
                   <VCol cols="12" md="6">
                     <AppTextField
                       v-model="state"
+                      :disabled="!country_id"
                       :label="$t('state') + ':'"
                       :placeholder="$t('state')"
                     />
@@ -504,6 +593,7 @@ watch(password, () => {
                   <VCol cols="12" md="6">
                     <AppTextField
                       v-model="district"
+                      :disabled="!country_id"
                       :label="$t('district') + ':'"
                       :placeholder="$t('district')"
                     />

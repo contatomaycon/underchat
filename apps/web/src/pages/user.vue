@@ -64,7 +64,7 @@ const isAddUserVisible = ref(false);
 const userToEdit = ref<string | null>(null);
 
 const headers: DataTableHeader<ListUserResponse>[] = [
-  { title: t('name'), key: 'username' },
+  { title: t('username'), key: 'username' },
   { title: t('account'), key: 'account' },
   { title: t('status'), key: 'status' },
   { title: t('email_partial'), key: 'email_partial' },
