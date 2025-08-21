@@ -38,9 +38,11 @@ function formatPhone(e: Event) {
   input.value = value;
 }
 
-const emailValidator = (value: string) => {
-  const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return regex.test(value) || t('email_invalid');
+const emailValidator = (v: string | null | undefined) => {
+  const s = (v ?? '').trim();
+  if (!s) return true;
+  const re = /^[^\s@]+@(?:[^\s@.]+\.)+[^\s@.]{2,}$/;
+  return re.test(s) || t('email_invalid');
 };
 
 const itemsStatus = ref([
