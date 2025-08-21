@@ -110,18 +110,16 @@ export class UserViewerRepository {
             name: result.uus.name,
           }
         : null,
-      user_info: isAdministrator
-        ? result.uui
-          ? {
-              user_info_id: result.uui.user_info_id,
-              phone_ddi: result.uui.phone_ddi,
-              phone_partial: result.uui.phone_partial,
-              name: result.uui.name,
-              last_name: result.uui.last_name,
-              birth_date: result.uui.birth_date,
-            }
-          : null
-        : undefined,
+      user_info: result.uui
+        ? {
+            user_info_id: result.uui.user_info_id,
+            phone_ddi: result.uui.phone_ddi,
+            phone_partial: result.uui.phone_partial,
+            name: result.uui.name,
+            last_name: result.uui.last_name,
+            birth_date: result.uui.birth_date,
+          }
+        : null,
       user_document: result.uud
         ? {
             user_document_id: result.uud.user_document_id,
