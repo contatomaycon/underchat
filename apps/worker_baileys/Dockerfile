@@ -54,6 +54,9 @@ RUN apk update && \
       lz4 \
       lz4-libs \
       librdkafka \
+      cyrus-sasl \
+      openssl \
+      zstd-libs \
       curl
 
 WORKDIR /app
