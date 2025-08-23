@@ -36,7 +36,10 @@ WORKDIR /app
 
 COPY --from=pruned /app/out/json/ .
 
-RUN pnpm install
+ENV npm_config_build_from_source=true \
+    npm_config_loglevel=verbose
+RUN pnpm install --unsafe-perm
+RUN pnpm rebuild node-rdkafka
 
 FROM deps AS builder
 
