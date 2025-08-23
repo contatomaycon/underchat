@@ -155,6 +155,11 @@ export class SshService {
               date,
             };
 
+            console.dir(
+              { command: commandStripAnsi, output: outputStripAnsi },
+              { depth: null, colors: true }
+            );
+
             results.push({
               command: commandStripAnsi,
               output: outputStripAnsi,

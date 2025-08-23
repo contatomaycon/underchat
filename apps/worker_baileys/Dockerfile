@@ -13,7 +13,10 @@ RUN apk update && \
       musl-dev \
       python3
 
-RUN npm add -g pnpm turbo
+RUN corepack enable && \
+    corepack prepare pnpm@10.14.0 --activate && \
+    corepack prepare yarn@4.9.2 --activate && \
+    npm add -g turbo
  
 FROM turbo AS pruned
 
