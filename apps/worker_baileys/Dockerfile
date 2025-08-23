@@ -11,7 +11,11 @@ RUN apk update && \
       librdkafka-dev \
       make \
       musl-dev \
-      python3
+      python3 \
+      pkgconf \
+      openssl-dev \
+      cyrus-sasl-dev \
+      zstd-dev
 
 RUN corepack enable && \
     corepack prepare pnpm@10.14.0 --activate && \
