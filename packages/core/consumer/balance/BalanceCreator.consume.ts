@@ -24,28 +24,39 @@ export class BalanceCreatorConsume {
     private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 
+  private get consumerOrThrow(): Consumer {
+    if (!this.consumer) throw new Error('Consumer not initialized');
+
+    return this.consumer;
+  }
+
   async execute(server: FastifyInstance): Promise<void> {
     if (this.consumer) {
       return;
     }
 
     const topic = this.kafkaServiceQueueService.createServer();
-    this.consumer = this.createConsumer();
+    const consumer = this.createConsumer();
 
-    await this.consumer.connect();
-    await this.consumer.subscribe({ topic, fromBeginning: true });
+    this.consumer = consumer;
 
-    await this.consumer.run({
-      eachMessage: async ({ message }) => {
+    await consumer.connect();
+    await consumer.subscribe({ topic, fromBeginning: false });
+
+    await consumer.run({
+      autoCommit: false,
+      eachMessage: async ({ topic, partition, message, heartbeat }) => {
         const data = this.parseMessage(message.value);
 
         if (!data) {
           server.log.warn('Skipping message without value or invalid JSON');
+          await this.commitNext(topic, partition, message.offset);
 
           return;
         }
 
-        await this.handleCreateServerMessage(server, data);
+        await this.handleCreateServerMessage(server, data, heartbeat);
+        await this.commitNext(topic, partition, message.offset);
       },
     });
   }
@@ -68,46 +79,67 @@ export class BalanceCreatorConsume {
       groupId: 'group-underchat-balance-creator',
       retry: { retries: 8, initialRetryTime: 300 },
       allowAutoTopicCreation: true,
+      sessionTimeout: 900_000,
+      rebalanceTimeout: 1_200_000,
+      heartbeatInterval: 3_000,
     });
 
     return consumer;
   }
 
+  private async commitNext(
+    topic: string,
+    partition: number,
+    offset: string
+  ): Promise<void> {
+    const next = (BigInt(offset) + 1n).toString();
+
+    await this.consumerOrThrow.commitOffsets([
+      { topic, partition, offset: next },
+    ]);
+  }
+
   private async handleCreateServerMessage(
     server: FastifyInstance,
-    data: CreateServerResponse
+    data: CreateServerResponse,
+    heartbeat: () => Promise<void>
   ): Promise<void> {
     let serverId: string | null = null;
 
     try {
       serverId = data.server_id ?? null;
-
-      if (!serverId) {
-        throw new Error('Server ID is not defined in the message');
-      }
+      if (!serverId) throw new Error('Server ID is not defined in the message');
 
       const { getDistroAndVersion, sshConfig, webView } =
         await this.validate(serverId);
+
+      await heartbeat();
 
       await this.serverService.updateServerStatusById(
         serverId,
         EServerStatus.installing
       );
 
+      await heartbeat();
+
       const installCommands = await this.sshService.getInstallCommands(
         getDistroAndVersion,
         webView
       );
+
       const logs = await this.sshService.runCommands(
         serverId,
         sshConfig,
         installCommands
       );
 
+      await heartbeat();
+
       const built = await this.imageIsBuilt(
         serverId,
         getDistroAndVersion,
-        sshConfig
+        sshConfig,
+        heartbeat
       );
 
       if (!built) {
@@ -115,7 +147,6 @@ export class BalanceCreatorConsume {
           serverId,
           EServerStatus.error
         );
-
         throw new Error('Docker image is not built');
       }
 
@@ -126,8 +157,10 @@ export class BalanceCreatorConsume {
         serverId,
         getDistroAndVersion,
         sshConfig,
-        webView
+        webView,
+        heartbeat
       );
+
       const finalStatus = installed
         ? EServerStatus.online
         : EServerStatus.error;
@@ -176,13 +209,11 @@ export class BalanceCreatorConsume {
     };
 
     const connected = await this.sshService.testSSHConnection(sshConfig);
-
     if (!connected) {
       throw new Error('SSH connection failed');
     }
 
     const distro = await this.sshService.getDistroAndVersion(sshConfig);
-
     if (!distro) {
       throw new Error('Failed to retrieve distribution and version');
     }
@@ -199,6 +230,7 @@ export class BalanceCreatorConsume {
     getDistroAndVersion: IDistroInfo,
     sshConfig: ConnectConfig,
     webView: IViewServerWebById,
+    heartbeat: () => Promise<void>,
     attempts = 20
   ): Promise<boolean> {
     if (!sshConfig.host) {
@@ -212,6 +244,7 @@ export class BalanceCreatorConsume {
     );
 
     for (let i = 0; i < attempts; i++) {
+      await heartbeat();
       await this.delay(1000);
 
       const result = await this.sshService.runCommands(
@@ -239,12 +272,14 @@ export class BalanceCreatorConsume {
     serverId: string,
     getDistroAndVersion: IDistroInfo,
     sshConfig: ConnectConfig,
+    heartbeat: () => Promise<void>,
     attempts = 20
   ): Promise<boolean> {
     const getImagesCommands =
       this.sshService.getImagesCommands(getDistroAndVersion);
 
     for (let i = 0; i < attempts; i++) {
+      await heartbeat();
       await this.delay(1000);
 
       const result = await this.sshService.runCommands(
@@ -274,14 +309,12 @@ export class BalanceCreatorConsume {
     }
 
     const raw = value.toString('utf8').trim();
-
     if (!raw) {
       return null;
     }
 
     try {
       const parsed = JSON.parse(raw) as CreateServerResponse;
-
       return parsed ?? null;
     } catch {
       return null;
@@ -290,7 +323,6 @@ export class BalanceCreatorConsume {
 
   private async delay(ms: number): Promise<void> {
     await new Promise<void>((resolve) => setTimeout(resolve, ms));
-
     return;
   }
 }
