@@ -33,19 +33,49 @@ export class BalanceCreatorConsume {
     this.consumer = this.createConsumer();
 
     await this.consumer.connect();
-    await this.consumer.subscribe({ topic, fromBeginning: true });
+    await this.consumer.subscribe({ topic, fromBeginning: false });
 
     await this.consumer.run({
-      eachMessage: async ({ message }) => {
-        const data = this.parseMessage(message.value);
+      autoCommit: false,
+      eachBatchAutoResolve: false,
+      partitionsConsumedConcurrently: 1,
+      eachBatch: async ({
+        batch,
+        resolveOffset,
+        heartbeat,
+        commitOffsetsIfNecessary,
+        uncommittedOffsets,
+        isRunning,
+        isStale,
+      }) => {
+        for (const message of batch.messages) {
+          if (!isRunning() || isStale()) break;
 
-        if (!data) {
-          server.log.warn('Skipping message without value or invalid JSON');
+          const data = this.parseMessage(message.value);
+          if (!data) {
+            server.log.warn('Skipping message without value or invalid JSON');
+            resolveOffset(message.offset);
 
-          return;
+            await commitOffsetsIfNecessary(uncommittedOffsets());
+            await heartbeat();
+
+            continue;
+          }
+
+          const hb = setInterval(() => {
+            heartbeat().catch(() => {});
+          }, 2000);
+
+          try {
+            await this.handleCreateServerMessage(server, data);
+          } finally {
+            clearInterval(hb);
+          }
+
+          resolveOffset(message.offset);
+          await commitOffsetsIfNecessary(uncommittedOffsets());
+          await heartbeat();
         }
-
-        await this.handleCreateServerMessage(server, data);
       },
     });
   }
@@ -68,6 +98,10 @@ export class BalanceCreatorConsume {
       groupId: 'group-underchat-balance-creator',
       retry: { retries: 8, initialRetryTime: 300 },
       allowAutoTopicCreation: true,
+      sessionTimeout: 90000,
+      rebalanceTimeout: 180000,
+      heartbeatInterval: 3000,
+      metadataMaxAge: 30000,
     });
 
     return consumer;
@@ -115,7 +149,6 @@ export class BalanceCreatorConsume {
           serverId,
           EServerStatus.error
         );
-
         throw new Error('Docker image is not built');
       }
 
@@ -135,13 +168,24 @@ export class BalanceCreatorConsume {
       await this.serverService.updateServerStatusById(serverId, finalStatus);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
+
+      if (msg === 'Server is not in new status') {
+        server.log.info(`Skipping server ${serverId ?? 'unknown'}: ${msg}`);
+        return;
+      }
+
       server.log.warn(`Skipping server ${serverId ?? 'unknown'}: ${msg}`);
 
       if (serverId) {
-        await this.serverService.updateServerStatusById(
-          serverId,
-          EServerStatus.error
-        );
+        try {
+          const view = await this.serverService.viewServerSshById(serverId);
+          if (view?.server_status_id === EServerStatus.installing) {
+            await this.serverService.updateServerStatusById(
+              serverId,
+              EServerStatus.error
+            );
+          }
+        } catch {}
       }
     }
   }
