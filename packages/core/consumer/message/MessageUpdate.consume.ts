@@ -21,30 +21,116 @@ export class MessageUpdateConsume {
   ) {}
 
   private cacheChatKey(accountId: string, chatId: string): string {
-    return `chat:${accountId}:${chatId}`;
+    const key = `chat:${accountId}:${chatId}`;
+
+    return key;
+  }
+
+  private createConsumer(): Consumer {
+    const consumer = this.kafka.consumer({
+      groupId: 'group-underchat-message-update',
+      retry: { retries: 8, initialRetryTime: 300 },
+      allowAutoTopicCreation: true,
+    });
+
+    return consumer;
   }
 
   private parseMessage(value: Buffer | null): IUpdateMessage | null {
-    if (!value) return null;
+    if (!value) {
+      return null;
+    }
+
     const raw = value.toString('utf8').trim();
-    if (!raw) return null;
+
+    if (!raw) {
+      return null;
+    }
+
     try {
-      return JSON.parse(raw) as IUpdateMessage;
+      const parsed = JSON.parse(raw) as IUpdateMessage;
+
+      return parsed ?? null;
     } catch {
       return null;
     }
   }
 
+  private async updateChatIfMissingRemoteJid(
+    data: IUpdateMessage
+  ): Promise<void> {
+    const hasRemote = Boolean(data.data?.message_key?.remote_jid);
+
+    if (hasRemote) {
+      return;
+    }
+
+    const jid = remoteJid(data.message?.key);
+    const messageKey: IChat['message_key'] = {
+      remote_jid: jid,
+      sender_lid: data.message?.key?.senderLid ?? null,
+      sender_pn: data.message?.key?.senderPn ?? null,
+    };
+
+    await this.elasticDatabaseService.update(
+      EElasticIndex.chat,
+      { message_key: messageKey },
+      data.data?.chat_id ?? ''
+    );
+
+    const cacheKey = this.cacheChatKey(
+      data.data?.account?.id ?? '',
+      data.data?.chat_id ?? ''
+    );
+
+    await this.redis.del(cacheKey);
+
+    return;
+  }
+
+  private async updateMessageIfMissingKey(data: IUpdateMessage): Promise<void> {
+    const hasId = Boolean(data.data?.message_key?.id);
+    const hasRemote = Boolean(data.data?.message_key?.remote_jid);
+
+    if (hasId && hasRemote) {
+      return;
+    }
+
+    const jid = remoteJid(data.message?.key);
+    const messageKey: IChatMessage['message_key'] = {
+      remote_jid: jid,
+      from_me: data.message?.key?.fromMe ?? false,
+      id: data.message?.key?.id ?? null,
+      sender_lid: data.message?.key?.senderLid ?? null,
+      sender_pn: data.message?.key?.senderPn ?? null,
+      participant: data.message?.key?.participant ?? null,
+      participant_pn: data.message?.key?.participantPn ?? null,
+      participant_lid: data.message?.key?.participantLid ?? null,
+    };
+
+    await this.elasticDatabaseService.update(
+      EElasticIndex.message,
+      { message_key: messageKey },
+      data.data?.message_id ?? ''
+    );
+
+    return;
+  }
+
+  private async handleMessage(data: IUpdateMessage): Promise<void> {
+    await this.updateChatIfMissingRemoteJid(data);
+    await this.updateMessageIfMissingKey(data);
+
+    return;
+  }
+
   public async execute(): Promise<void> {
-    if (this.consumer) return;
+    if (this.consumer) {
+      return;
+    }
 
     const topic = this.kafkaServiceQueueService.updateMessage();
-
-    this.consumer = this.kafka.consumer({
-      groupId: 'group-underchat-message-update',
-      retry: { retries: 8, initialRetryTime: 300 },
-      allowAutoTopicCreation: true,
-    });
+    this.consumer = this.createConsumer();
 
     await this.consumer.connect();
     await this.consumer.subscribe({ topic, fromBeginning: false });
@@ -55,61 +141,36 @@ export class MessageUpdateConsume {
       partitionsConsumedConcurrently: 1,
       eachMessage: async ({ message }) => {
         const data = this.parseMessage(message.value);
-        if (!data) return;
+
+        if (!data) {
+          return;
+        }
 
         chain = chain.then(async () => {
-          if (!data.data?.message_key?.remote_jid) {
-            const jid = remoteJid(data.message?.key);
-            const messageKey: IChat['message_key'] = {
-              remote_jid: jid,
-              sender_lid: data.message?.key.senderLid ?? null,
-              sender_pn: data.message?.key.senderPn ?? null,
-            };
-            await this.elasticDatabaseService.update(
-              EElasticIndex.chat,
-              { message_key: messageKey },
-              data.data.chat_id
-            );
-            const cacheChatKey = this.cacheChatKey(
-              data.data.account.id,
-              data.data.chat_id
-            );
-            await this.redis.del(cacheChatKey);
-          }
+          await this.handleMessage(data);
 
-          if (
-            !data.data?.message_key?.id ||
-            !data.data?.message_key?.remote_jid
-          ) {
-            const jid = remoteJid(data.message?.key);
-            const messageKey: IChatMessage['message_key'] = {
-              remote_jid: jid,
-              from_me: data.message?.key.fromMe ?? false,
-              id: data.message?.key.id ?? null,
-              sender_lid: data.message?.key.senderLid ?? null,
-              sender_pn: data.message?.key.senderPn ?? null,
-              participant: data.message?.key.participant ?? null,
-              participant_pn: data.message?.key.participantPn ?? null,
-              participant_lid: data.message?.key.participantLid ?? null,
-            };
-            await this.elasticDatabaseService.update(
-              EElasticIndex.message,
-              { message_key: messageKey },
-              data.data.message_id
-            );
-          }
+          return;
         });
+
+        return;
       },
     });
+
+    return;
   }
 
   public async close(): Promise<void> {
-    if (!this.consumer) return;
+    if (!this.consumer) {
+      return;
+    }
+
     try {
       await this.consumer.stop();
     } finally {
       await this.consumer.disconnect();
       this.consumer = null;
     }
+
+    return;
   }
 }

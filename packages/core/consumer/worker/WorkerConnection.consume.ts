@@ -14,27 +14,13 @@ export class WorkerConnectionConsume {
     private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 
-  private parseMessage(value: Buffer | null): IBaileysConnectionState | null {
-    if (!value) return null;
-    const raw = value.toString('utf8').trim();
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw) as IBaileysConnectionState;
-    } catch {
-      return null;
-    }
-  }
-
   public async execute(): Promise<void> {
-    if (this.consumer) return;
+    if (this.consumer) {
+      return;
+    }
 
-    const topic = this.kafkaServiceQueueService.workerStatus();
-
-    this.consumer = this.kafka.consumer({
-      groupId: 'group-underchat-worker-connection',
-      retry: { retries: 8, initialRetryTime: 300 },
-      allowAutoTopicCreation: true,
-    });
+    const topic = this.getTopic();
+    this.consumer = this.createConsumer();
 
     await this.consumer.connect();
     await this.consumer.subscribe({ topic, fromBeginning: false });
@@ -43,34 +29,89 @@ export class WorkerConnectionConsume {
       partitionsConsumedConcurrently: 1,
       eachMessage: async ({ message }) => {
         const data = this.parseMessage(message.value);
-        if (!data) return;
 
-        const viewWorkerPhoneConnectionDate =
-          await this.workerService.viewWorkerPhoneConnectionDate(
-            data.worker_id
-          );
+        if (!data) {
+          return;
+        }
 
-        if (!viewWorkerPhoneConnectionDate) return;
+        await this.handleMessage(data);
 
-        const phoneNumber = data.phone ?? viewWorkerPhoneConnectionDate.number;
-
-        await this.workerService.updateWorkerPhoneStatusConnectionDate({
-          worker_id: data.worker_id,
-          status: data.worker_status_id,
-          number: phoneNumber,
-          connection_date: viewWorkerPhoneConnectionDate.connection_date,
-        });
+        return;
       },
     });
+
+    return;
   }
 
   public async close(): Promise<void> {
-    if (!this.consumer) return;
+    if (!this.consumer) {
+      return;
+    }
+
     try {
       await this.consumer.stop();
     } finally {
       await this.consumer.disconnect();
       this.consumer = null;
     }
+
+    return;
+  }
+
+  private getTopic(): string {
+    const topic = this.kafkaServiceQueueService.workerStatus();
+
+    return topic;
+  }
+
+  private createConsumer(): Consumer {
+    const consumer = this.kafka.consumer({
+      groupId: 'group-underchat-worker-connection',
+      retry: { retries: 8, initialRetryTime: 300 },
+      allowAutoTopicCreation: true,
+    });
+
+    return consumer;
+  }
+
+  private parseMessage(value: Buffer | null): IBaileysConnectionState | null {
+    if (!value) {
+      return null;
+    }
+
+    const raw = value.toString('utf8').trim();
+
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as IBaileysConnectionState;
+
+      return parsed ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async handleMessage(data: IBaileysConnectionState): Promise<void> {
+    const view = await this.workerService.viewWorkerPhoneConnectionDate(
+      data.worker_id
+    );
+
+    if (!view) {
+      return;
+    }
+
+    const phoneNumber = data.phone ?? view.number;
+
+    await this.workerService.updateWorkerPhoneStatusConnectionDate({
+      worker_id: data.worker_id,
+      status: data.worker_status_id,
+      number: phoneNumber,
+      connection_date: view.connection_date,
+    });
+
+    return;
   }
 }

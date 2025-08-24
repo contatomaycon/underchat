@@ -43,19 +43,23 @@ export class MessageUpsertConsume {
   private centrifugoChatPublish(
     dataPublish: IChatMessage
   ): Promise<PublishResult> {
-    return this.centrifugoService.publishSub(
+    const promise = this.centrifugoService.publishSub(
       chatAccountCentrifugo(dataPublish.account.id),
       dataPublish
     );
+
+    return promise;
   }
 
   private centrifugoChatQueuePublish(
     dataPublish: IChat
   ): Promise<PublishResult> {
-    return this.centrifugoService.publishSub(
+    const promise = this.centrifugoService.publishSub(
       chatQueueAccountCentrifugo(dataPublish.account.id),
       dataPublish
     );
+
+    return promise;
   }
 
   private async getChat(
@@ -66,9 +70,11 @@ export class MessageUpsertConsume {
   ): Promise<IChat | null> {
     const candidates = buildCandidates(phone);
     const shouldClauses: any[] = [];
+
     if (Array.isArray(candidates) && candidates.length) {
       shouldClauses.push({ terms: { phone: candidates } });
     }
+
     if (jid) {
       shouldClauses.push({
         nested: {
@@ -77,6 +83,7 @@ export class MessageUpsertConsume {
         },
       });
     }
+
     const queryElastic = {
       query: {
         bool: {
@@ -113,12 +120,17 @@ export class MessageUpsertConsume {
         },
       },
     };
+
     const result = await this.elasticDatabaseService.select(
       EElasticIndex.chat,
       queryElastic
     );
     const data = result?.hits.hits[0]?._source as IChat | null;
-    if (!data) return null;
+
+    if (!data) {
+      return null;
+    }
+
     return data;
   }
 
@@ -127,6 +139,7 @@ export class MessageUpsertConsume {
     data: IUpsertMessage
   ): Promise<boolean> {
     const extended = data?.message?.message?.extendedTextMessage;
+
     const linkPreview = extended
       ? ({
           'canonical-url': extended?.matchedText ?? '',
@@ -147,6 +160,7 @@ export class MessageUpsertConsume {
     };
 
     const jid = remoteJid(data.message?.key);
+
     if (!getChat?.name && !data.message?.key?.fromMe) {
       const name = this.nameChat(data);
       await this.elasticDatabaseService.update(
@@ -193,9 +207,11 @@ export class MessageUpsertConsume {
 
   private nameChat(data: IUpsertMessage) {
     let name = null;
+
     if (!data.message?.key?.fromMe) {
       name = data?.message?.pushName ?? null;
     }
+
     return name;
   }
 
@@ -210,6 +226,7 @@ export class MessageUpsertConsume {
     }
 
     const jid = remoteJid(data.message?.key);
+
     if (!jid) {
       throw new Error('Received message without remoteJid');
     }
@@ -243,6 +260,7 @@ export class MessageUpsertConsume {
     }
 
     const result = await this.chatService.saveChat(inputChatMessage);
+
     if (!result) {
       throw new Error('Failed to create chat');
     }
@@ -251,18 +269,29 @@ export class MessageUpsertConsume {
   }
 
   private parseMessage(value: Buffer | null): IUpsertMessage | null {
-    if (!value) return null;
+    if (!value) {
+      return null;
+    }
+
     const raw = value.toString('utf8').trim();
-    if (!raw) return null;
+
+    if (!raw) {
+      return null;
+    }
+
     try {
-      return JSON.parse(raw) as IUpsertMessage;
+      const parsed = JSON.parse(raw) as IUpsertMessage;
+
+      return parsed ?? null;
     } catch {
       return null;
     }
   }
 
   public async execute(): Promise<void> {
-    if (this.consumer) return;
+    if (this.consumer) {
+      return;
+    }
 
     const topic = this.kafkaServiceQueueService.upsertMessage();
 
@@ -281,10 +310,14 @@ export class MessageUpsertConsume {
       partitionsConsumedConcurrently: 1,
       eachMessage: async ({ message }) => {
         const data = this.parseMessage(message.value);
-        if (!data) return;
+
+        if (!data) {
+          return;
+        }
 
         chain = chain.then(async () => {
           const jid = remoteJid(data.message?.key);
+
           if (!jid) {
             throw new Error('Received message without remoteJid');
           }
@@ -300,27 +333,41 @@ export class MessageUpsertConsume {
 
           if (!getChat) {
             const createChat = await this.createChat(data);
+
             if (!createChat) {
               throw new Error('Failed to create chat');
             }
+
             await this.createChatMessage(createChat, data);
             await this.centrifugoChatQueuePublish(createChat);
+
             return;
           }
 
           await this.createChatMessage(getChat, data);
+
+          return;
         });
+
+        return;
       },
     });
+
+    return;
   }
 
   public async close(): Promise<void> {
-    if (!this.consumer) return;
+    if (!this.consumer) {
+      return;
+    }
+
     try {
       await this.consumer.stop();
     } finally {
       await this.consumer.disconnect();
       this.consumer = null;
     }
+
+    return;
   }
 }

@@ -34,13 +34,119 @@ export class WorkerConsume {
     private readonly streamProducerService: StreamProducerService
   ) {}
 
+  public async execute(): Promise<void> {
+    if (this.consumer) {
+      return;
+    }
+
+    const topic = this.getTopic();
+    this.consumer = this.createConsumer();
+
+    await this.consumer.connect();
+    await this.consumer.subscribe({ topic, fromBeginning: false });
+
+    await this.consumer.run({
+      partitionsConsumedConcurrently: 1,
+      eachMessage: async ({ message }) => {
+        const data = this.parseMessage(message.value);
+
+        if (!data) {
+          return;
+        }
+
+        await this.handleMessage(data);
+
+        return;
+      },
+    });
+
+    return;
+  }
+
+  public async close(): Promise<void> {
+    if (!this.consumer) {
+      return;
+    }
+
+    try {
+      await this.consumer.stop();
+    } finally {
+      await this.consumer.disconnect();
+      this.consumer = null;
+    }
+
+    return;
+  }
+
+  private getTopic(): string {
+    const topic = this.kafkaBalanceQueueService.worker(
+      balanceEnvironment.serverId
+    );
+
+    return topic;
+  }
+
+  private createConsumer(): Consumer {
+    const consumer = this.kafka.consumer({
+      groupId: `group-underchat-worker-${balanceEnvironment.serverId}`,
+      retry: { retries: 8, initialRetryTime: 300 },
+      allowAutoTopicCreation: true,
+    });
+
+    return consumer;
+  }
+
+  private parseMessage(value: Buffer | null): IWorkerPayload | null {
+    if (!value) {
+      return null;
+    }
+
+    const raw = value.toString('utf8').trim();
+
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as IWorkerPayload;
+
+      return parsed ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async handleMessage(data: IWorkerPayload): Promise<void> {
+    if (data.action === EWorkerAction.create) {
+      await this.createWorker(data);
+
+      return;
+    }
+
+    if (data.action === EWorkerAction.delete) {
+      await this.kafkaBaileysQueueService.delete(data.worker_id);
+      await this.deleteWorker(data);
+
+      return;
+    }
+
+    if (data.action === EWorkerAction.recreate) {
+      await this.kafkaBaileysQueueService.delete(data.worker_id);
+      await this.recreateWorker(data);
+
+      return;
+    }
+
+    return;
+  }
+
   private centrifugoPublish(
     dataPublish: IBaileysConnectionState
   ): Promise<PublishResult> {
-    return this.centrifugoService.publishSub(
-      workerCentrifugoQueue(dataPublish.account_id),
-      dataPublish
-    );
+    const channel = workerCentrifugoQueue(dataPublish.account_id);
+    const promise = this.centrifugoService.publishSub(channel, dataPublish);
+
+    return promise;
   }
 
   private async updateWorkerErrorStatus(
@@ -67,7 +173,9 @@ export class WorkerConsume {
       worker_status_id: EWorkerStatus.error,
     };
 
-    return this.centrifugoPublish(dataPublish);
+    const result = await this.centrifugoPublish(dataPublish);
+
+    return result;
   }
 
   private async recreateWorker(data: IWorkerPayload): Promise<PublishResult> {
@@ -83,18 +191,22 @@ export class WorkerConsume {
         data.account_id,
         data.is_administrator
       );
+
       throw new Error('Worker not found');
     }
 
-    const removeContainerWorker =
-      await this.workerService.removeContainerWorker(data.worker_id, false);
+    const removed = await this.workerService.removeContainerWorker(
+      data.worker_id,
+      false
+    );
 
-    if (!removeContainerWorker) {
+    if (!removed) {
       await this.updateWorkerErrorStatus(
         data.worker_id,
         data.account_id,
         data.is_administrator
       );
+
       throw new Error('Worker removal failed');
     }
 
@@ -114,6 +226,7 @@ export class WorkerConsume {
         data.account_id,
         data.is_administrator
       );
+
       throw new Error('Worker creation failed');
     }
 
@@ -126,6 +239,7 @@ export class WorkerConsume {
         data.account_id,
         data.is_administrator
       );
+
       throw new Error('Worker service is not healthy');
     }
 
@@ -136,18 +250,19 @@ export class WorkerConsume {
       container_id: containerId,
     };
 
-    const updateWorkerById = await this.workerService.updateWorkerById(
+    const updated = await this.workerService.updateWorkerById(
       data.is_administrator,
       data.account_id,
       inputUpdate
     );
 
-    if (!updateWorkerById) {
+    if (!updated) {
       await this.updateWorkerErrorStatus(
         data.worker_id,
         data.account_id,
         data.is_administrator
       );
+
       throw new Error('Failed to update worker status');
     }
 
@@ -171,22 +286,25 @@ export class WorkerConsume {
       worker_status_id: EWorkerStatus.disponible,
     };
 
-    return this.centrifugoPublish(dataPublish);
+    const result = await this.centrifugoPublish(dataPublish);
+
+    return result;
   }
 
   private async deleteWorker(data: IWorkerPayload): Promise<PublishResult> {
-    const existsWorkerById = await this.workerService.existsWorkerById(
+    const exists = await this.workerService.existsWorkerById(
       data.is_administrator,
       data.account_id,
       data.worker_id
     );
 
-    if (!existsWorkerById) {
+    if (!exists) {
       await this.updateWorkerErrorStatus(
         data.worker_id,
         data.account_id,
         data.is_administrator
       );
+
       throw new Error('Worker not found');
     }
 
@@ -200,21 +318,23 @@ export class WorkerConsume {
         data.account_id,
         data.is_administrator
       );
+
       throw new Error('Worker removal failed');
     }
 
-    const deleteWorkerById = await this.workerService.deleteWorkerById(
+    const deleted = await this.workerService.deleteWorkerById(
       data.is_administrator,
       data.account_id,
       data.worker_id
     );
 
-    if (!deleteWorkerById) {
+    if (!deleted) {
       await this.updateWorkerErrorStatus(
         data.worker_id,
         data.account_id,
         data.is_administrator
       );
+
       throw new Error('Failed to delete worker');
     }
 
@@ -226,7 +346,9 @@ export class WorkerConsume {
       worker_status_id: EWorkerStatus.delete,
     };
 
-    return this.centrifugoPublish(dataPublish);
+    const result = await this.centrifugoPublish(dataPublish);
+
+    return result;
   }
 
   private async createWorker(data: IWorkerPayload): Promise<PublishResult> {
@@ -236,6 +358,7 @@ export class WorkerConsume {
         data.account_id,
         data.is_administrator
       );
+
       throw new Error('Worker type ID is required');
     }
 
@@ -253,6 +376,7 @@ export class WorkerConsume {
         data.account_id,
         data.is_administrator
       );
+
       throw new Error('Failed to create worker container');
     }
 
@@ -265,6 +389,7 @@ export class WorkerConsume {
         data.account_id,
         data.is_administrator
       );
+
       throw new Error('Worker service is not healthy');
     }
 
@@ -274,18 +399,19 @@ export class WorkerConsume {
       container_id: containerId,
     };
 
-    const updateWorkerById = await this.workerService.updateWorkerById(
+    const updated = await this.workerService.updateWorkerById(
       data.is_administrator,
       data.account_id,
       inputUpdate
     );
 
-    if (!updateWorkerById) {
+    if (!updated) {
       await this.updateWorkerErrorStatus(
         data.worker_id,
         data.account_id,
         data.is_administrator
       );
+
       throw new Error('Failed to update worker status');
     }
 
@@ -297,69 +423,8 @@ export class WorkerConsume {
       worker_status_id: EWorkerStatus.disponible,
     };
 
-    return this.centrifugoPublish(dataPublish);
-  }
+    const result = await this.centrifugoPublish(dataPublish);
 
-  private parseMessage(value: Buffer | null): IWorkerPayload | null {
-    if (!value) return null;
-    const raw = value.toString('utf8').trim();
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw) as IWorkerPayload;
-    } catch {
-      return null;
-    }
-  }
-
-  public async execute(): Promise<void> {
-    if (this.consumer) return;
-
-    const topic = this.kafkaBalanceQueueService.worker(
-      balanceEnvironment.serverId
-    );
-
-    this.consumer = this.kafka.consumer({
-      groupId: `group-underchat-worker-${balanceEnvironment.serverId}`,
-      retry: { retries: 8, initialRetryTime: 300 },
-      allowAutoTopicCreation: true,
-    });
-
-    await this.consumer.connect();
-    await this.consumer.subscribe({ topic, fromBeginning: false });
-
-    await this.consumer.run({
-      partitionsConsumedConcurrently: 1,
-      eachMessage: async ({ message }) => {
-        const data = this.parseMessage(message.value);
-        if (!data) return;
-
-        if (data.action === EWorkerAction.create) {
-          await this.createWorker(data);
-          return;
-        }
-
-        if (data.action === EWorkerAction.delete) {
-          await this.kafkaBaileysQueueService.delete(data.worker_id);
-          await this.deleteWorker(data);
-          return;
-        }
-
-        if (data.action === EWorkerAction.recreate) {
-          await this.kafkaBaileysQueueService.delete(data.worker_id);
-          await this.recreateWorker(data);
-          return;
-        }
-      },
-    });
-  }
-
-  public async close(): Promise<void> {
-    if (!this.consumer) return;
-    try {
-      await this.consumer.stop();
-    } finally {
-      await this.consumer.disconnect();
-      this.consumer = null;
-    }
+    return result;
   }
 }

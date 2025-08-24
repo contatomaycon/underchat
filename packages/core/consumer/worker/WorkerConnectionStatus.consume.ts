@@ -17,31 +17,13 @@ export class WorkerConnectionStatusConsume {
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService
   ) {}
 
-  private parseMessage(
-    value: Buffer | null
-  ): StatusConnectionWorkerRequest | null {
-    if (!value) return null;
-    const raw = value.toString('utf8').trim();
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw) as StatusConnectionWorkerRequest;
-    } catch {
-      return null;
-    }
-  }
-
   public async execute(): Promise<void> {
-    if (this.consumer) return;
+    if (this.consumer) {
+      return;
+    }
 
-    const topic = this.kafkaBaileysQueueService.workerConnection(
-      baileysEnvironment.baileysWorkerId
-    );
-
-    this.consumer = this.kafka.consumer({
-      groupId: `group-underchat-worker-connection-status-${baileysEnvironment.baileysWorkerId}`,
-      retry: { retries: 8, initialRetryTime: 300 },
-      allowAutoTopicCreation: true,
-    });
+    const topic = this.getWorkerConnectionTopic();
+    this.consumer = this.createConsumer();
 
     await this.consumer.connect();
     await this.consumer.subscribe({ topic, fromBeginning: false });
@@ -50,40 +32,123 @@ export class WorkerConnectionStatusConsume {
       partitionsConsumedConcurrently: 1,
       eachMessage: async ({ message }) => {
         const data = this.parseMessage(message.value);
-        if (!data) return;
 
-        if (data.status === EWorkerStatus.online) {
-          await this.baileysService.connect({
-            initial_connection: true,
-            type: data.type as EBaileysConnectionType,
-            phone_connection: data.phone_connection,
-          });
+        if (!data) {
           return;
         }
 
-        if (data.status === EWorkerStatus.recreating) {
-          this.baileysService.reconnect({ initial_connection: true });
-          return;
-        }
+        await this.handleConnectionStatus(data);
 
-        if (data.status === EWorkerStatus.disponible) {
-          this.baileysService.disconnect({
-            initial_connection: true,
-            disconnected_user: true,
-          });
-          return;
-        }
+        return;
       },
     });
+
+    return;
   }
 
   public async close(): Promise<void> {
-    if (!this.consumer) return;
+    if (!this.consumer) {
+      return;
+    }
+
     try {
       await this.consumer.stop();
     } finally {
       await this.consumer.disconnect();
       this.consumer = null;
     }
+
+    return;
+  }
+
+  private getWorkerConnectionTopic(): string {
+    const topic = this.kafkaBaileysQueueService.workerConnection(
+      baileysEnvironment.baileysWorkerId
+    );
+
+    return topic;
+  }
+
+  private createConsumer(): Consumer {
+    const consumer = this.kafka.consumer({
+      groupId: `group-underchat-worker-connection-status-${baileysEnvironment.baileysWorkerId}`,
+      retry: { retries: 8, initialRetryTime: 300 },
+      allowAutoTopicCreation: true,
+    });
+
+    return consumer;
+  }
+
+  private parseMessage(
+    value: Buffer | null
+  ): StatusConnectionWorkerRequest | null {
+    if (!value) {
+      return null;
+    }
+
+    const raw = value.toString('utf8').trim();
+
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as StatusConnectionWorkerRequest;
+
+      return parsed ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async handleConnectionStatus(
+    data: StatusConnectionWorkerRequest
+  ): Promise<void> {
+    if (data.status === EWorkerStatus.online) {
+      await this.handleOnline(data);
+
+      return;
+    }
+
+    if (data.status === EWorkerStatus.recreating) {
+      await this.handleRecreating();
+
+      return;
+    }
+
+    if (data.status === EWorkerStatus.disponible) {
+      await this.handleDisponible();
+
+      return;
+    }
+
+    return;
+  }
+
+  private async handleOnline(
+    data: StatusConnectionWorkerRequest
+  ): Promise<void> {
+    await this.baileysService.connect({
+      initial_connection: true,
+      type: data.type as EBaileysConnectionType,
+      phone_connection: data.phone_connection,
+    });
+
+    return;
+  }
+
+  private async handleRecreating(): Promise<void> {
+    this.baileysService.reconnect({ initial_connection: true });
+
+    return;
+  }
+
+  private async handleDisponible(): Promise<void> {
+    this.baileysService.disconnect({
+      initial_connection: true,
+      disconnected_user: true,
+    });
+
+    return;
   }
 }
