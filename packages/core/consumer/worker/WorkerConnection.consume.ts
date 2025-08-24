@@ -3,6 +3,7 @@ import { Kafka, Consumer } from 'kafkajs';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { WorkerService } from '@core/services/worker.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 
 @singleton()
 export class WorkerConnectionConsume {
@@ -14,27 +15,46 @@ export class WorkerConnectionConsume {
     private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 
+  private get consumerOrThrow(): Consumer {
+    if (!this.consumer) {
+      throw new Error('Consumer not initialized');
+    }
+
+    return this.consumer;
+  }
+
   public async execute(): Promise<void> {
     if (this.consumer) {
       return;
     }
 
     const topic = this.getTopic();
-    this.consumer = this.createConsumer();
+    const consumer = this.createConsumer();
 
-    await this.consumer.connect();
-    await this.consumer.subscribe({ topic, fromBeginning: false });
+    this.consumer = consumer;
 
-    await this.consumer.run({
+    await consumer.connect();
+    await consumer.subscribe({ topic, fromBeginning: false });
+
+    await consumer.run({
+      autoCommit: false,
       partitionsConsumedConcurrently: 1,
-      eachMessage: async ({ message }) => {
+      eachMessage: async ({ topic, partition, message, heartbeat }) => {
         const data = this.parseMessage(message.value);
-
         if (!data) {
+          await this.commitNext(topic, partition, message.offset);
+
           return;
         }
 
-        await this.handleMessage(data);
+        const stop = startHeartbeat(heartbeat);
+        try {
+          await this.handleMessage(data);
+        } finally {
+          stop();
+        }
+
+        await this.commitNext(topic, partition, message.offset);
 
         return;
       },
@@ -59,9 +79,7 @@ export class WorkerConnectionConsume {
   }
 
   private getTopic(): string {
-    const topic = this.kafkaServiceQueueService.workerStatus();
-
-    return topic;
+    return this.kafkaServiceQueueService.workerStatus();
   }
 
   private createConsumer(): Consumer {
@@ -69,6 +87,9 @@ export class WorkerConnectionConsume {
       groupId: 'group-underchat-worker-connection',
       retry: { retries: 8, initialRetryTime: 300 },
       allowAutoTopicCreation: true,
+      sessionTimeout: 900_000,
+      rebalanceTimeout: 1_200_000,
+      heartbeatInterval: 3_000,
     });
 
     return consumer;
@@ -80,14 +101,12 @@ export class WorkerConnectionConsume {
     }
 
     const raw = value.toString('utf8').trim();
-
     if (!raw) {
       return null;
     }
 
     try {
       const parsed = JSON.parse(raw) as IBaileysConnectionState;
-
       return parsed ?? null;
     } catch {
       return null;
@@ -113,5 +132,17 @@ export class WorkerConnectionConsume {
     });
 
     return;
+  }
+
+  private async commitNext(
+    topic: string,
+    partition: number,
+    offset: string
+  ): Promise<void> {
+    const next = (BigInt(offset) + 1n).toString();
+
+    await this.consumerOrThrow.commitOffsets([
+      { topic, partition, offset: next },
+    ]);
   }
 }

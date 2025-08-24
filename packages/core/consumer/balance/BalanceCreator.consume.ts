@@ -11,6 +11,7 @@ import { FastifyInstance } from 'fastify';
 import { IViewServerWebById } from '@core/common/interfaces/IViewServerWebById';
 import { Kafka, Consumer } from 'kafkajs';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { delay } from '@core/common/functions/delay';
 
 @singleton()
 export class BalanceCreatorConsume {
@@ -245,7 +246,7 @@ export class BalanceCreatorConsume {
 
     for (let i = 0; i < attempts; i++) {
       await heartbeat();
-      await this.delay(1000);
+      await delay(1000);
 
       const result = await this.sshService.runCommands(
         serverId,
@@ -280,7 +281,7 @@ export class BalanceCreatorConsume {
 
     for (let i = 0; i < attempts; i++) {
       await heartbeat();
-      await this.delay(1000);
+      await delay(1000);
 
       const result = await this.sshService.runCommands(
         serverId,
@@ -319,10 +320,5 @@ export class BalanceCreatorConsume {
     } catch {
       return null;
     }
-  }
-
-  private async delay(ms: number): Promise<void> {
-    await new Promise<void>((resolve) => setTimeout(resolve, ms));
-    return;
   }
 }

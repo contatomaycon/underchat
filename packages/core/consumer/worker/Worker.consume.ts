@@ -19,6 +19,7 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 
 @singleton()
 export class WorkerConsume {
@@ -34,27 +35,46 @@ export class WorkerConsume {
     private readonly streamProducerService: StreamProducerService
   ) {}
 
+  private get consumerOrThrow(): Consumer {
+    if (!this.consumer) {
+      throw new Error('Consumer not initialized');
+    }
+
+    return this.consumer;
+  }
+
   public async execute(): Promise<void> {
     if (this.consumer) {
       return;
     }
 
     const topic = this.getTopic();
-    this.consumer = this.createConsumer();
+    const consumer = this.createConsumer();
 
-    await this.consumer.connect();
-    await this.consumer.subscribe({ topic, fromBeginning: false });
+    this.consumer = consumer;
 
-    await this.consumer.run({
+    await consumer.connect();
+    await consumer.subscribe({ topic, fromBeginning: false });
+
+    await consumer.run({
+      autoCommit: false,
       partitionsConsumedConcurrently: 1,
-      eachMessage: async ({ message }) => {
+      eachMessage: async ({ topic, partition, message, heartbeat }) => {
         const data = this.parseMessage(message.value);
 
         if (!data) {
+          await this.commitNext(topic, partition, message.offset);
           return;
         }
 
-        await this.handleMessage(data);
+        const stop = startHeartbeat(heartbeat);
+        try {
+          await this.handleMessage(data);
+        } finally {
+          stop();
+        }
+
+        await this.commitNext(topic, partition, message.offset);
 
         return;
       },
@@ -91,6 +111,9 @@ export class WorkerConsume {
       groupId: `group-underchat-worker-${balanceEnvironment.serverId}`,
       retry: { retries: 8, initialRetryTime: 300 },
       allowAutoTopicCreation: true,
+      sessionTimeout: 900_000,
+      rebalanceTimeout: 1_200_000,
+      heartbeatInterval: 3_000,
     });
 
     return consumer;
@@ -102,14 +125,12 @@ export class WorkerConsume {
     }
 
     const raw = value.toString('utf8').trim();
-
     if (!raw) {
       return null;
     }
 
     try {
       const parsed = JSON.parse(raw) as IWorkerPayload;
-
       return parsed ?? null;
     } catch {
       return null;
@@ -173,9 +194,7 @@ export class WorkerConsume {
       worker_status_id: EWorkerStatus.error,
     };
 
-    const result = await this.centrifugoPublish(dataPublish);
-
-    return result;
+    return this.centrifugoPublish(dataPublish);
   }
 
   private async recreateWorker(data: IWorkerPayload): Promise<PublishResult> {
@@ -239,7 +258,6 @@ export class WorkerConsume {
         data.account_id,
         data.is_administrator
       );
-
       throw new Error('Worker service is not healthy');
     }
 
@@ -286,9 +304,7 @@ export class WorkerConsume {
       worker_status_id: EWorkerStatus.disponible,
     };
 
-    const result = await this.centrifugoPublish(dataPublish);
-
-    return result;
+    return this.centrifugoPublish(dataPublish);
   }
 
   private async deleteWorker(data: IWorkerPayload): Promise<PublishResult> {
@@ -346,9 +362,7 @@ export class WorkerConsume {
       worker_status_id: EWorkerStatus.delete,
     };
 
-    const result = await this.centrifugoPublish(dataPublish);
-
-    return result;
+    return this.centrifugoPublish(dataPublish);
   }
 
   private async createWorker(data: IWorkerPayload): Promise<PublishResult> {
@@ -423,8 +437,18 @@ export class WorkerConsume {
       worker_status_id: EWorkerStatus.disponible,
     };
 
-    const result = await this.centrifugoPublish(dataPublish);
+    return this.centrifugoPublish(dataPublish);
+  }
 
-    return result;
+  private async commitNext(
+    topic: string,
+    partition: number,
+    offset: string
+  ): Promise<void> {
+    const next = (BigInt(offset) + 1n).toString();
+
+    await this.consumerOrThrow.commitOffsets([
+      { topic, partition, offset: next },
+    ]);
   }
 }

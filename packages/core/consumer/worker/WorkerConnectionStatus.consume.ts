@@ -6,6 +6,7 @@ import { BaileysService } from '@core/services/baileys';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { Kafka, Consumer } from 'kafkajs';
+import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 
 @singleton()
 export class WorkerConnectionStatusConsume {
@@ -17,27 +18,46 @@ export class WorkerConnectionStatusConsume {
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService
   ) {}
 
+  private get consumerOrThrow(): Consumer {
+    if (!this.consumer) {
+      throw new Error('Consumer not initialized');
+    }
+
+    return this.consumer;
+  }
+
   public async execute(): Promise<void> {
     if (this.consumer) {
       return;
     }
 
     const topic = this.getWorkerConnectionTopic();
-    this.consumer = this.createConsumer();
+    const consumer = this.createConsumer();
 
-    await this.consumer.connect();
-    await this.consumer.subscribe({ topic, fromBeginning: false });
+    this.consumer = consumer;
 
-    await this.consumer.run({
+    await consumer.connect();
+    await consumer.subscribe({ topic, fromBeginning: false });
+
+    await consumer.run({
+      autoCommit: false,
       partitionsConsumedConcurrently: 1,
-      eachMessage: async ({ message }) => {
+      eachMessage: async ({ topic, partition, message, heartbeat }) => {
         const data = this.parseMessage(message.value);
-
         if (!data) {
+          await this.commitNext(topic, partition, message.offset);
+
           return;
         }
 
-        await this.handleConnectionStatus(data);
+        const stop = startHeartbeat(heartbeat);
+        try {
+          await this.handleConnectionStatus(data);
+        } finally {
+          stop();
+        }
+
+        await this.commitNext(topic, partition, message.offset);
 
         return;
       },
@@ -74,6 +94,9 @@ export class WorkerConnectionStatusConsume {
       groupId: `group-underchat-worker-connection-status-${baileysEnvironment.baileysWorkerId}`,
       retry: { retries: 8, initialRetryTime: 300 },
       allowAutoTopicCreation: true,
+      sessionTimeout: 900_000,
+      rebalanceTimeout: 1_200_000,
+      heartbeatInterval: 3_000,
     });
 
     return consumer;
@@ -87,14 +110,12 @@ export class WorkerConnectionStatusConsume {
     }
 
     const raw = value.toString('utf8').trim();
-
     if (!raw) {
       return null;
     }
 
     try {
       const parsed = JSON.parse(raw) as StatusConnectionWorkerRequest;
-
       return parsed ?? null;
     } catch {
       return null;
@@ -111,13 +132,13 @@ export class WorkerConnectionStatusConsume {
     }
 
     if (data.status === EWorkerStatus.recreating) {
-      await this.handleRecreating();
+      this.handleRecreating();
 
       return;
     }
 
     if (data.status === EWorkerStatus.disponible) {
-      await this.handleDisponible();
+      this.handleDisponible();
 
       return;
     }
@@ -133,22 +154,28 @@ export class WorkerConnectionStatusConsume {
       type: data.type as EBaileysConnectionType,
       phone_connection: data.phone_connection,
     });
-
-    return;
   }
 
-  private async handleRecreating(): Promise<void> {
+  private handleRecreating(): void {
     this.baileysService.reconnect({ initial_connection: true });
-
-    return;
   }
 
-  private async handleDisponible(): Promise<void> {
+  private handleDisponible(): void {
     this.baileysService.disconnect({
       initial_connection: true,
       disconnected_user: true,
     });
+  }
 
-    return;
+  private async commitNext(
+    topic: string,
+    partition: number,
+    offset: string
+  ): Promise<void> {
+    const next = (BigInt(offset) + 1n).toString();
+
+    await this.consumerOrThrow.commitOffsets([
+      { topic, partition, offset: next },
+    ]);
   }
 }

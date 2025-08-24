@@ -8,10 +8,12 @@ import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import Redis from 'ioredis';
 import { remoteJid } from '@core/common/functions/remoteJid';
+import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 
 @singleton()
 export class MessageUpdateConsume {
   private consumer: Consumer | null = null;
+  private processingChain: Promise<void> = Promise.resolve();
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
@@ -20,10 +22,16 @@ export class MessageUpdateConsume {
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 
-  private cacheChatKey(accountId: string, chatId: string): string {
-    const key = `chat:${accountId}:${chatId}`;
+  private get consumerOrThrow(): Consumer {
+    if (!this.consumer) {
+      throw new Error('Consumer not initialized');
+    }
 
-    return key;
+    return this.consumer;
+  }
+
+  private cacheChatKey(accountId: string, chatId: string): string {
+    return `chat:${accountId}:${chatId}`;
   }
 
   private createConsumer(): Consumer {
@@ -31,6 +39,9 @@ export class MessageUpdateConsume {
       groupId: 'group-underchat-message-update',
       retry: { retries: 8, initialRetryTime: 300 },
       allowAutoTopicCreation: true,
+      sessionTimeout: 900_000,
+      rebalanceTimeout: 1_200_000,
+      heartbeatInterval: 3_000,
     });
 
     return consumer;
@@ -42,7 +53,6 @@ export class MessageUpdateConsume {
     }
 
     const raw = value.toString('utf8').trim();
-
     if (!raw) {
       return null;
     }
@@ -60,7 +70,6 @@ export class MessageUpdateConsume {
     data: IUpdateMessage
   ): Promise<void> {
     const hasRemote = Boolean(data.data?.message_key?.remote_jid);
-
     if (hasRemote) {
       return;
     }
@@ -130,26 +139,37 @@ export class MessageUpdateConsume {
     }
 
     const topic = this.kafkaServiceQueueService.updateMessage();
-    this.consumer = this.createConsumer();
+    const consumer = this.createConsumer();
 
-    await this.consumer.connect();
-    await this.consumer.subscribe({ topic, fromBeginning: false });
+    this.consumer = consumer;
 
-    let chain: Promise<void> = Promise.resolve();
+    await consumer.connect();
+    await consumer.subscribe({ topic, fromBeginning: false });
 
-    await this.consumer.run({
+    await consumer.run({
+      autoCommit: false,
       partitionsConsumedConcurrently: 1,
-      eachMessage: async ({ message }) => {
+      eachMessage: async ({ topic, partition, message, heartbeat }) => {
         const data = this.parseMessage(message.value);
 
         if (!data) {
+          await this.commitNext(topic, partition, message.offset);
+
           return;
         }
 
-        chain = chain.then(async () => {
-          await this.handleMessage(data);
+        const offset = message.offset;
 
-          return;
+        this.processingChain = this.processingChain.then(async () => {
+          const stop = startHeartbeat(heartbeat);
+
+          try {
+            await this.handleMessage(data);
+          } finally {
+            stop();
+          }
+
+          await this.commitNext(topic, partition, offset);
         });
 
         return;
@@ -160,6 +180,8 @@ export class MessageUpdateConsume {
   }
 
   public async close(): Promise<void> {
+    await this.processingChain;
+
     if (!this.consumer) {
       return;
     }
@@ -172,5 +194,17 @@ export class MessageUpdateConsume {
     }
 
     return;
+  }
+
+  private async commitNext(
+    topic: string,
+    partition: number,
+    offset: string
+  ): Promise<void> {
+    const next = (BigInt(offset) + 1n).toString();
+
+    await this.consumerOrThrow.commitOffsets([
+      { topic, partition, offset: next },
+    ]);
   }
 }

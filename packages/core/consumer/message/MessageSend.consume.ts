@@ -10,6 +10,7 @@ import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
 import { proto, WAMessage, WAUrlInfo } from '@whiskeysockets/baileys';
 import { KeyedSequencerService } from '@core/services/keyedSequencer.service';
 import { Kafka, Consumer } from 'kafkajs';
+import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 
 @singleton()
 export class MessageSendConsume {
@@ -24,6 +25,14 @@ export class MessageSendConsume {
     private readonly keyedSequencerService: KeyedSequencerService
   ) {}
 
+  private get consumerOrThrow(): Consumer {
+    if (!this.consumer) {
+      throw new Error('Consumer not initialized');
+    }
+
+    return this.consumer;
+  }
+
   public async execute(): Promise<void> {
     if (this.consumer) {
       return;
@@ -32,31 +41,43 @@ export class MessageSendConsume {
     const topic = this.kafkaBaileysQueueService.workerSendMessage(
       baileysEnvironment.baileysWorkerId
     );
-    this.consumer = this.createConsumer();
+    const consumer = this.createConsumer();
 
-    await this.consumer.connect();
-    await this.consumer.subscribe({ topic, fromBeginning: false });
+    this.consumer = consumer;
 
-    await this.consumer.run({
+    await consumer.connect();
+    await consumer.subscribe({ topic, fromBeginning: false });
+
+    await consumer.run({
+      autoCommit: false,
       partitionsConsumedConcurrently: 1,
-      eachMessage: async ({ message }) => {
+      eachMessage: async ({ topic, partition, message, heartbeat }) => {
         const data = this.parseMessage(message.value);
-
         if (!data) {
+          await this.commitNext(topic, partition, message.offset);
+
           return;
         }
 
         const chatId = this.resolveChatId(data);
-
         if (!chatId) {
+          await this.commitNext(topic, partition, message.offset);
+
           return;
         }
 
-        await this.enqueueByChatId(chatId, async () => {
-          await this.processMessage(data);
+        const stop = startHeartbeat(heartbeat);
+        try {
+          await this.enqueueByChatId(chatId, async () => {
+            await this.processMessage(data, heartbeat);
 
-          return;
-        });
+            return;
+          });
+        } finally {
+          stop();
+        }
+
+        await this.commitNext(topic, partition, message.offset);
 
         return;
       },
@@ -87,9 +108,24 @@ export class MessageSendConsume {
       groupId: `group-underchat-baileys-send-${baileysEnvironment.baileysWorkerId}`,
       retry: { retries: 8, initialRetryTime: 300 },
       allowAutoTopicCreation: true,
+      sessionTimeout: 900_000,
+      rebalanceTimeout: 1_200_000,
+      heartbeatInterval: 3_000,
     });
 
     return consumer;
+  }
+
+  private async commitNext(
+    topic: string,
+    partition: number,
+    offset: string
+  ): Promise<void> {
+    const next = (BigInt(offset) + 1n).toString();
+
+    await this.consumerOrThrow.commitOffsets([
+      { topic, partition, offset: next },
+    ]);
   }
 
   private parseMessage(value: Buffer | null): IChatMessage | null {
@@ -98,14 +134,12 @@ export class MessageSendConsume {
     }
 
     const raw = value.toString('utf8').trim();
-
     if (!raw) {
       return null;
     }
 
     try {
       const parsed = JSON.parse(raw) as IChatMessage;
-
       return parsed ?? null;
     } catch {
       return null;
@@ -127,15 +161,17 @@ export class MessageSendConsume {
     task: () => Promise<void>
   ): Promise<void> {
     await this.keyedSequencerService.enqueue(chatId, task);
-
-    return;
   }
 
-  private async processMessage(data: IChatMessage): Promise<void> {
+  private async processMessage(
+    data: IChatMessage,
+    heartbeat: () => Promise<void>
+  ): Promise<void> {
     const phone = data.message_key?.remote_jid ?? data.phone;
 
     if (data?.content?.type === EMessageType.text && data.content?.message) {
-      await this.processText(phone, data);
+      await heartbeat();
+      await this.processText(phone, data, heartbeat);
 
       return;
     }
@@ -145,7 +181,8 @@ export class MessageSendConsume {
       data.content?.message &&
       data.content?.quoted
     ) {
-      await this.processTextQuoted(phone, data);
+      await heartbeat();
+      await this.processTextQuoted(phone, data, heartbeat);
 
       return;
     }
@@ -155,9 +192,11 @@ export class MessageSendConsume {
 
   private async processText(
     phone: string | null | undefined,
-    data: IChatMessage
+    data: IChatMessage,
+    heartbeat: () => Promise<void>
   ): Promise<void> {
     const to = phone ?? '';
+    await heartbeat();
 
     const result = await this.baileysMessageTextService.sendText(
       to,
@@ -165,6 +204,8 @@ export class MessageSendConsume {
       { linkPreview: data.content?.link_preview as WAUrlInfo }
     );
 
+    await heartbeat();
+
     if (!result) {
       throw new Error('Failed to send message');
     }
@@ -172,15 +213,17 @@ export class MessageSendConsume {
     const update: IUpdateMessage = { message: result, data };
     await this.pushUpdate(update);
 
-    return;
+    await heartbeat();
   }
 
   private async processTextQuoted(
     phone: string | null | undefined,
-    data: IChatMessage
+    data: IChatMessage,
+    heartbeat: () => Promise<void>
   ): Promise<void> {
     const to = phone ?? '';
     const quoted = this.composeQuotedMessage(data);
+    await heartbeat();
 
     const result = await this.baileysMessageTextService.sendTextQuoted(
       to,
@@ -188,6 +231,8 @@ export class MessageSendConsume {
       quoted
     );
 
+    await heartbeat();
+
     if (!result) {
       throw new Error('Failed to send message');
     }
@@ -195,7 +240,7 @@ export class MessageSendConsume {
     const update: IUpdateMessage = { message: result, data };
     await this.pushUpdate(update);
 
-    return;
+    await heartbeat();
   }
 
   private composeQuotedMessage(data: IChatMessage): WAMessage {
@@ -222,7 +267,5 @@ export class MessageSendConsume {
     const topic = this.kafkaServiceQueueService.updateMessage();
 
     await this.streamProducerService.send(topic, input);
-
-    return;
   }
 }
