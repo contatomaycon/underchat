@@ -40,6 +40,7 @@ export class WorkerConnectionStatusConsume {
     this.consumer = this.kafka.consumer({
       groupId: `group-underchat-worker-connection-status-${baileysEnvironment.baileysWorkerId}`,
       retry: { retries: 8, initialRetryTime: 300 },
+      allowAutoTopicCreation: true,
     });
 
     await this.consumer.connect();

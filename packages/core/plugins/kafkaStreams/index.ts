@@ -22,6 +22,7 @@ const kafkaPlugin: FastifyPluginAsync<KafkaPluginOptions> = async (
   });
 
   container.register<Kafka>('Kafka', { useValue: kafka });
+
   fastify.decorate('kafka', kafka);
 };
 

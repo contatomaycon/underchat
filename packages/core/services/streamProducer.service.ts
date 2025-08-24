@@ -11,23 +11,32 @@ export class StreamProducerService {
     if (!this.producer) {
       this.producer = this.kafka.producer({
         retry: { retries: 8, initialRetryTime: 300 },
+        allowAutoTopicCreation: true,
       });
+
       await this.producer.connect();
     }
+
     return this.producer;
   }
 
   async send(topic: string, payload: unknown, key?: string): Promise<void> {
     const producer = await this.ensureProducer();
+
     const value = JSON.stringify(payload);
     const messages = key === undefined ? [{ value }] : [{ key, value }];
+
     await producer.send({ topic, messages });
   }
 
   async close(): Promise<boolean[]> {
-    if (!this.producer) return [];
+    if (!this.producer) {
+      return [];
+    }
+
     try {
       await this.producer.disconnect();
+
       return [true];
     } finally {
       this.producer = null;

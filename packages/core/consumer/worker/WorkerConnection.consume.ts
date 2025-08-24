@@ -33,6 +33,7 @@ export class WorkerConnectionConsume {
     this.consumer = this.kafka.consumer({
       groupId: 'group-underchat-worker-connection',
       retry: { retries: 8, initialRetryTime: 300 },
+      allowAutoTopicCreation: true,
     });
 
     await this.consumer.connect();

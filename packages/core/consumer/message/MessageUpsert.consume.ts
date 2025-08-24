@@ -269,6 +269,7 @@ export class MessageUpsertConsume {
     this.consumer = this.kafka.consumer({
       groupId: 'group-underchat-message-upsert',
       retry: { retries: 8, initialRetryTime: 300 },
+      allowAutoTopicCreation: true,
     });
 
     await this.consumer.connect();

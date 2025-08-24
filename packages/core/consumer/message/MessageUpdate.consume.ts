@@ -43,6 +43,7 @@ export class MessageUpdateConsume {
     this.consumer = this.kafka.consumer({
       groupId: 'group-underchat-message-update',
       retry: { retries: 8, initialRetryTime: 300 },
+      allowAutoTopicCreation: true,
     });
 
     await this.consumer.connect();

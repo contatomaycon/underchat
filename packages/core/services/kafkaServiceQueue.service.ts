@@ -14,12 +14,6 @@ export class KafkaServiceQueueService {
     return [createServer, workerStatus, updateMessage, upsertMessage];
   };
 
-  create = (): Promise<void> => {
-    const allTopics = this.all();
-
-    return this.kafkaService.createTopics(allTopics);
-  };
-
   delete = (): Promise<void> => {
     const allTopics = this.all();
 

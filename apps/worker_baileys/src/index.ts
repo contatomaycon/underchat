@@ -9,7 +9,6 @@ import consumerPlugin from './consumer';
 import centrifugoPlugin from '@core/plugins/centrifugo';
 import databaseElasticPlugin from '@core/plugins/dbElastic';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
-import queueKafkaPlugin from './queue';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -27,7 +26,6 @@ server.register(databaseElasticPlugin, {
 
 server.register(kafkaStreamsPlugin, { module: ERouteModule.worker_baileys });
 server.register(centrifugoPlugin, { module: ERouteModule.worker_baileys });
-server.register(queueKafkaPlugin);
 server.register(consumerPlugin);
 
 const start = async () => {

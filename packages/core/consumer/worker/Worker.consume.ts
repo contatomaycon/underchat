@@ -321,6 +321,7 @@ export class WorkerConsume {
     this.consumer = this.kafka.consumer({
       groupId: `group-underchat-worker-${balanceEnvironment.serverId}`,
       retry: { retries: 8, initialRetryTime: 300 },
+      allowAutoTopicCreation: true,
     });
 
     await this.consumer.connect();

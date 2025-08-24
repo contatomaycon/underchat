@@ -34,6 +34,7 @@ export class MessageSendConsume {
     this.consumer = this.kafka.consumer({
       groupId: `group-underchat-baileys-send-${baileysEnvironment.baileysWorkerId}`,
       retry: { retries: 8, initialRetryTime: 300 },
+      allowAutoTopicCreation: true,
     });
 
     await this.consumer.connect();
