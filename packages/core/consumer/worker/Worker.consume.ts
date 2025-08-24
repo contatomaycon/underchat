@@ -1,5 +1,5 @@
 import { singleton, inject } from 'tsyringe';
-import { KafkaStreams, KStream } from 'kafka-streams';
+import { Kafka, Consumer } from 'kafkajs';
 import { WorkerService } from '@core/services/worker.service';
 import { getImageWorker } from '@core/common/functions/getImageWorker';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
@@ -22,8 +22,10 @@ import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
 @singleton()
 export class WorkerConsume {
+  private consumer: Consumer | null = null;
+
   constructor(
-    @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams,
+    @inject('Kafka') private readonly kafka: Kafka,
     private readonly workerService: WorkerService,
     private readonly centrifugoService: CentrifugoService,
     private readonly kafkaBalanceQueueService: KafkaBalanceQueueService,
@@ -81,7 +83,6 @@ export class WorkerConsume {
         data.account_id,
         data.is_administrator
       );
-
       throw new Error('Worker not found');
     }
 
@@ -94,7 +95,6 @@ export class WorkerConsume {
         data.account_id,
         data.is_administrator
       );
-
       throw new Error('Worker removal failed');
     }
 
@@ -114,7 +114,6 @@ export class WorkerConsume {
         data.account_id,
         data.is_administrator
       );
-
       throw new Error('Worker creation failed');
     }
 
@@ -127,7 +126,6 @@ export class WorkerConsume {
         data.account_id,
         data.is_administrator
       );
-
       throw new Error('Worker service is not healthy');
     }
 
@@ -150,7 +148,6 @@ export class WorkerConsume {
         data.account_id,
         data.is_administrator
       );
-
       throw new Error('Failed to update worker status');
     }
 
@@ -190,7 +187,6 @@ export class WorkerConsume {
         data.account_id,
         data.is_administrator
       );
-
       throw new Error('Worker not found');
     }
 
@@ -204,7 +200,6 @@ export class WorkerConsume {
         data.account_id,
         data.is_administrator
       );
-
       throw new Error('Worker removal failed');
     }
 
@@ -220,7 +215,6 @@ export class WorkerConsume {
         data.account_id,
         data.is_administrator
       );
-
       throw new Error('Failed to delete worker');
     }
 
@@ -242,7 +236,6 @@ export class WorkerConsume {
         data.account_id,
         data.is_administrator
       );
-
       throw new Error('Worker type ID is required');
     }
 
@@ -260,7 +253,6 @@ export class WorkerConsume {
         data.account_id,
         data.is_administrator
       );
-
       throw new Error('Failed to create worker container');
     }
 
@@ -273,7 +265,6 @@ export class WorkerConsume {
         data.account_id,
         data.is_administrator
       );
-
       throw new Error('Worker service is not healthy');
     }
 
@@ -295,7 +286,6 @@ export class WorkerConsume {
         data.account_id,
         data.is_administrator
       );
-
       throw new Error('Failed to update worker status');
     }
 
@@ -310,43 +300,65 @@ export class WorkerConsume {
     return this.centrifugoPublish(dataPublish);
   }
 
+  private parseMessage(value: Buffer | null): IWorkerPayload | null {
+    if (!value) return null;
+    const raw = value.toString('utf8').trim();
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as IWorkerPayload;
+    } catch {
+      return null;
+    }
+  }
+
   public async execute(): Promise<void> {
-    const worker = this.kafkaBalanceQueueService.worker(
+    if (this.consumer) return;
+
+    const topic = this.kafkaBalanceQueueService.worker(
       balanceEnvironment.serverId
     );
-    const stream: KStream = this.kafkaStreams.getKStream(worker);
 
-    stream.mapBufferKeyToString();
-    stream.mapJSONConvenience();
-
-    stream.forEach(async (msg) => {
-      const data = msg.value as IWorkerPayload;
-
-      if (!data) {
-        throw new Error('Received message without value');
-      }
-
-      if (data.action === EWorkerAction.create) {
-        return this.createWorker(data);
-      }
-
-      if (data.action === EWorkerAction.delete) {
-        await this.kafkaBaileysQueueService.delete(data.worker_id);
-
-        return this.deleteWorker(data);
-      }
-
-      if (data.action === EWorkerAction.recreate) {
-        await this.kafkaBaileysQueueService.delete(data.worker_id);
-
-        return this.recreateWorker(data);
-      }
+    this.consumer = this.kafka.consumer({
+      groupId: `group-underchat-worker-${balanceEnvironment.serverId}`,
+      retry: { retries: 8, initialRetryTime: 300 },
     });
 
-    await stream.start();
+    await this.consumer.connect();
+    await this.consumer.subscribe({ topic, fromBeginning: false });
+
+    await this.consumer.run({
+      partitionsConsumedConcurrently: 1,
+      eachMessage: async ({ message }) => {
+        const data = this.parseMessage(message.value);
+        if (!data) return;
+
+        if (data.action === EWorkerAction.create) {
+          await this.createWorker(data);
+          return;
+        }
+
+        if (data.action === EWorkerAction.delete) {
+          await this.kafkaBaileysQueueService.delete(data.worker_id);
+          await this.deleteWorker(data);
+          return;
+        }
+
+        if (data.action === EWorkerAction.recreate) {
+          await this.kafkaBaileysQueueService.delete(data.worker_id);
+          await this.recreateWorker(data);
+          return;
+        }
+      },
+    });
   }
 
   public async close(): Promise<void> {
-    await this.kafkaStreams.closeAll();
+    if (!this.consumer) return;
+    try {
+      await this.consumer.stop();
+    } finally {
+      await this.consumer.disconnect();
+      this.consumer = null;
+    }
   }
 }

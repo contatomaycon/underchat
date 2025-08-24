@@ -1,5 +1,5 @@
 import { singleton, inject } from 'tsyringe';
-import { KafkaStreams, KStream } from 'kafka-streams';
+import { Kafka, Consumer } from 'kafkajs';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
@@ -27,8 +27,10 @@ import { buildQuotedTextFromExtended } from '@core/common/functions/buildQuotedT
 
 @singleton()
 export class MessageUpsertConsume {
+  private consumer: Consumer | null = null;
+
   constructor(
-    @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams,
+    @inject('Kafka') private readonly kafka: Kafka,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly elasticDatabaseService: ElasticDatabaseService,
     private readonly accountService: AccountService,
@@ -63,13 +65,10 @@ export class MessageUpsertConsume {
     jid?: string | null
   ): Promise<IChat | null> {
     const candidates = buildCandidates(phone);
-
     const shouldClauses: any[] = [];
-
     if (Array.isArray(candidates) && candidates.length) {
       shouldClauses.push({ terms: { phone: candidates } });
     }
-
     if (jid) {
       shouldClauses.push({
         nested: {
@@ -78,7 +77,6 @@ export class MessageUpsertConsume {
         },
       });
     }
-
     const queryElastic = {
       query: {
         bool: {
@@ -115,18 +113,12 @@ export class MessageUpsertConsume {
         },
       },
     };
-
     const result = await this.elasticDatabaseService.select(
       EElasticIndex.chat,
       queryElastic
     );
-
     const data = result?.hits.hits[0]?._source as IChat | null;
-
-    if (!data) {
-      return null;
-    }
-
+    if (!data) return null;
     return data;
   }
 
@@ -134,9 +126,7 @@ export class MessageUpsertConsume {
     getChat: IChat,
     data: IUpsertMessage
   ): Promise<boolean> {
-    let content;
     const extended = data?.message?.message?.extendedTextMessage;
-
     const linkPreview = extended
       ? ({
           'canonical-url': extended?.matchedText ?? '',
@@ -147,7 +137,7 @@ export class MessageUpsertConsume {
         } as LinkPreview)
       : undefined;
 
-    content = {
+    const content = {
       type: data.type,
       message:
         data.message?.message?.extendedTextMessage?.text ??
@@ -159,15 +149,12 @@ export class MessageUpsertConsume {
     const jid = remoteJid(data.message?.key);
     if (!getChat?.name && !data.message?.key?.fromMe) {
       const name = this.nameChat(data);
-
       await this.elasticDatabaseService.update(
         EElasticIndex.chat,
         { name },
         getChat.chat_id
       );
-
       getChat.name = name;
-
       await this.centrifugoChatQueuePublish(getChat);
     }
 
@@ -191,11 +178,7 @@ export class MessageUpsertConsume {
       worker: getChat.worker,
       user: getChat.user,
       phone: getChat.phone,
-      summary: {
-        is_sent: false,
-        is_delivered: false,
-        is_seen: false,
-      },
+      summary: { is_sent: false, is_delivered: false, is_seen: false },
       content,
       date: new Date().toISOString(),
     };
@@ -213,7 +196,6 @@ export class MessageUpsertConsume {
     if (!data.message?.key?.fromMe) {
       name = data?.message?.pushName ?? null;
     }
-
     return name;
   }
 
@@ -245,7 +227,7 @@ export class MessageUpsertConsume {
       },
       account: viewAccountName,
       worker: viewWorkerNameAndId,
-      name: name,
+      name,
       phone,
       status: EChatStatus.queue,
       date: new Date().toISOString(),
@@ -257,12 +239,10 @@ export class MessageUpsertConsume {
         data.account_id,
         chatId
       );
-
       inputChatMessage.photo = photoResult?.url;
     }
 
     const result = await this.chatService.saveChat(inputChatMessage);
-
     if (!result) {
       throw new Error('Failed to create chat');
     }
@@ -270,59 +250,76 @@ export class MessageUpsertConsume {
     return inputChatMessage;
   }
 
-  public async execute(): Promise<void> {
-    const stream: KStream = this.kafkaStreams.getKStream(
-      this.kafkaServiceQueueService.upsertMessage()
-    );
+  private parseMessage(value: Buffer | null): IUpsertMessage | null {
+    if (!value) return null;
+    const raw = value.toString('utf8').trim();
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as IUpsertMessage;
+    } catch {
+      return null;
+    }
+  }
 
-    stream.mapBufferKeyToString();
-    stream.mapJSONConvenience();
+  public async execute(): Promise<void> {
+    if (this.consumer) return;
+
+    const topic = this.kafkaServiceQueueService.upsertMessage();
+
+    this.consumer = this.kafka.consumer({
+      groupId: 'group-underchat-message-upsert',
+      retry: { retries: 8, initialRetryTime: 300 },
+    });
+
+    await this.consumer.connect();
+    await this.consumer.subscribe({ topic, fromBeginning: false });
 
     let chain: Promise<void> = Promise.resolve();
 
-    stream.forEach(async (msg) => {
-      chain = chain.then(async () => {
-        const data = msg.value as IUpsertMessage;
+    await this.consumer.run({
+      partitionsConsumedConcurrently: 1,
+      eachMessage: async ({ message }) => {
+        const data = this.parseMessage(message.value);
+        if (!data) return;
 
-        if (!data) {
-          throw new Error('Received message without value');
-        }
-
-        const jid = remoteJid(data.message?.key);
-        if (!jid) {
-          throw new Error('Received message without remoteJid');
-        }
-
-        const phone = onlyDigits(jid);
-
-        const getChat = await this.getChat(
-          data.account_id,
-          data.worker_id,
-          phone,
-          jid
-        );
-
-        if (!getChat) {
-          const createChat = await this.createChat(data);
-
-          if (!createChat) {
-            throw new Error('Failed to create chat');
+        chain = chain.then(async () => {
+          const jid = remoteJid(data.message?.key);
+          if (!jid) {
+            throw new Error('Received message without remoteJid');
           }
 
-          await this.createChatMessage(createChat, data);
-          await this.centrifugoChatQueuePublish(createChat);
+          const phone = onlyDigits(jid);
 
-          return;
-        }
+          const getChat = await this.getChat(
+            data.account_id,
+            data.worker_id,
+            phone,
+            jid
+          );
 
-        await this.createChatMessage(getChat, data);
-      });
+          if (!getChat) {
+            const createChat = await this.createChat(data);
+            if (!createChat) {
+              throw new Error('Failed to create chat');
+            }
+            await this.createChatMessage(createChat, data);
+            await this.centrifugoChatQueuePublish(createChat);
+            return;
+          }
+
+          await this.createChatMessage(getChat, data);
+        });
+      },
     });
-
-    await stream.start();
   }
 
   public async close(): Promise<void> {
-    await this.kafkaStreams.closeAll();
+    if (!this.consumer) return;
+    try {
+      await this.consumer.stop();
+    } finally {
+      await this.consumer.disconnect();
+      this.consumer = null;
+    }
   }
 }

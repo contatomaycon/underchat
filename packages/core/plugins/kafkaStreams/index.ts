@@ -1,80 +1,28 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import fp from 'fastify-plugin';
-import {
-  KafkaStreams,
-  KafkaStreamsConfig,
-  CommonKafkaOptions,
-} from 'kafka-streams';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { container } from 'tsyringe';
 import { kafkaEnvironment } from '@core/config/environments';
 import { Kafka } from 'kafkajs';
-import { EAutoOffsetReset } from '@core/common/enums/EAutoOffsetReset';
 
-interface KafkaStreamsPluginOptions {
+interface KafkaPluginOptions {
   module: ERouteModule;
 }
 
-const kafkaStreamsPlugin: FastifyPluginAsync<
-  KafkaStreamsPluginOptions
-> = async (fastify: FastifyInstance, opts) => {
+const kafkaPlugin: FastifyPluginAsync<KafkaPluginOptions> = async (
+  fastify: FastifyInstance,
+  opts
+) => {
   const module = opts.module;
 
-  const noptions: CommonKafkaOptions = {
-    'metadata.broker.list': kafkaEnvironment.kafkaBroker,
-    'group.id': `group-underchat-streams-${module}`,
-    'client.id': `client-stream-${module}`,
-    'compression.codec': 'snappy',
-    'enable.auto.commit': false,
-    'socket.keepalive.enable': true,
-    'session.timeout.ms': 6000,
-    'fetch.wait.max.ms': 500,
-    'fetch.message.max.bytes': 10 * 1024 * 1024,
-    'queued.max.messages.kbytes': 102_400,
-    'batch.num.messages': 10_000,
-    'retry.backoff.ms': 500,
-    'topic.metadata.refresh.interval.ms': 30000,
-    'metadata.max.age.ms': 60000,
-    'max.in.flight.requests.per.connection': 1,
-  };
-
-  const tconf: KafkaStreamsConfig['tconf'] = {
-    'auto.offset.reset': EAutoOffsetReset.earliest,
-    'request.required.acks': 1,
-  };
-
-  const config: KafkaStreamsConfig = {
-    kafkaHost: kafkaEnvironment.kafkaBroker,
-    clientName: `client-stream-${module}`,
-    groupId: `group-underchat-streams-${module}`,
-    workerPerPartition: 1,
-    batchOptions: {
-      batchSize: 1,
-      commitEveryNBatch: 1,
-      concurrency: 12,
-      commitSync: true,
-      noBatchCommits: false,
-    },
-    noptions,
-    tconf,
-  };
-
-  const kafkaStreams = new KafkaStreams(config);
-
-  container.register<KafkaStreams>('KafkaStreams', { useValue: kafkaStreams });
-  fastify.decorate('KafkaStreams', kafkaStreams);
-
   const kafka = new Kafka({
-    clientId: `client-admin-${module}`,
+    clientId: `client-${module}`,
     brokers: [kafkaEnvironment.kafkaBroker],
+    retry: { initialRetryTime: 300, retries: 8 },
   });
 
   container.register<Kafka>('Kafka', { useValue: kafka });
   fastify.decorate('kafka', kafka);
-
-  fastify.addHook('onClose', async () => {
-    await kafkaStreams.closeAll();
-  });
 };
 
-export default fp(kafkaStreamsPlugin, { name: 'kafka-streams-plugin' });
+export default fp(kafkaPlugin, { name: 'kafka-plugin' });

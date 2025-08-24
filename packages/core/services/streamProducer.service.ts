@@ -1,38 +1,36 @@
 import { injectable, inject } from 'tsyringe';
-import { KafkaStreams, KStream } from 'kafka-streams';
+import { Kafka, Producer } from 'kafkajs';
 
 @injectable()
 export class StreamProducerService {
-  private readonly streams = new Map<string, KStream>();
+  private producer: Producer | null = null;
 
-  constructor(
-    @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams
-  ) {}
+  constructor(@inject('Kafka') private readonly kafka: Kafka) {}
+
+  private async ensureProducer(): Promise<Producer> {
+    if (!this.producer) {
+      this.producer = this.kafka.producer({
+        retry: { retries: 8, initialRetryTime: 300 },
+      });
+      await this.producer.connect();
+    }
+    return this.producer;
+  }
 
   async send(topic: string, payload: unknown, key?: string): Promise<void> {
-    let stream = this.streams.get(topic);
-
-    if (!stream) {
-      stream = this.kafkaStreams.getKStream();
-
-      await stream.to(topic);
-      await stream.start();
-
-      this.streams.set(topic, stream);
-    }
-
-    const data = JSON.stringify(payload);
-
-    if (key === undefined) {
-      stream.writeToStream(data);
-
-      return;
-    }
-
-    stream.writeToStream({ key, value: data });
+    const producer = await this.ensureProducer();
+    const value = JSON.stringify(payload);
+    const messages = key === undefined ? [{ value }] : [{ key, value }];
+    await producer.send({ topic, messages });
   }
 
   async close(): Promise<boolean[]> {
-    return Promise.all([...this.streams.values()].map((s) => s.close()));
+    if (!this.producer) return [];
+    try {
+      await this.producer.disconnect();
+      return [true];
+    } finally {
+      this.producer = null;
+    }
   }
 }

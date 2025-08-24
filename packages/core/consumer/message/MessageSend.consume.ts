@@ -1,6 +1,5 @@
 import { singleton, inject } from 'tsyringe';
 import { baileysEnvironment } from '@core/config/environments';
-import { KafkaStreams, KStream } from 'kafka-streams';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { BaileysMessageTextService } from '@core/services/baileys/methods/messageText.service';
 import { EMessageType } from '@core/common/enums/EMessageType';
@@ -10,11 +9,14 @@ import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.servi
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
 import { proto, WAMessage, WAUrlInfo } from '@whiskeysockets/baileys';
 import { KeyedSequencerService } from '@core/services/keyedSequencer.service';
+import { Kafka, Consumer } from 'kafkajs';
 
 @singleton()
 export class MessageSendConsume {
+  private consumer: Consumer | null = null;
+
   constructor(
-    @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams,
+    @inject('Kafka') private readonly kafka: Kafka,
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     private readonly baileysMessageTextService: BaileysMessageTextService,
     private readonly streamProducerService: StreamProducerService,
@@ -23,29 +25,46 @@ export class MessageSendConsume {
   ) {}
 
   public async execute(): Promise<void> {
-    const stream: KStream = this.kafkaStreams.getKStream(
-      this.kafkaBaileysQueueService.workerSendMessage(
-        baileysEnvironment.baileysWorkerId
-      )
+    if (this.consumer) return;
+
+    const topic = this.kafkaBaileysQueueService.workerSendMessage(
+      baileysEnvironment.baileysWorkerId
     );
 
-    stream.mapBufferKeyToString();
-    stream.mapJSONConvenience();
-
-    stream.forEach((msg) => {
-      const data = msg.value as IChatMessage;
-      if (!data) return;
-
-      const chatId = data.chat_id ?? data.message_key?.remote_jid ?? data.phone;
-
-      if (!chatId) return;
-
-      this.keyedSequencerService.enqueue(String(chatId), async () => {
-        await this.processMessage(data);
-      });
+    this.consumer = this.kafka.consumer({
+      groupId: `group-underchat-baileys-send-${baileysEnvironment.baileysWorkerId}`,
+      retry: { retries: 8, initialRetryTime: 300 },
     });
 
-    await stream.start();
+    await this.consumer.connect();
+    await this.consumer.subscribe({ topic, fromBeginning: false });
+
+    await this.consumer.run({
+      eachMessage: async ({ message }) => {
+        const data = this.parseMessage(message.value);
+        if (!data) return;
+
+        const chatId =
+          data.chat_id ?? data.message_key?.remote_jid ?? data.phone;
+        if (!chatId) return;
+
+        await this.keyedSequencerService.enqueue(String(chatId), async () => {
+          await this.processMessage(data);
+        });
+      },
+      partitionsConsumedConcurrently: 1,
+    });
+  }
+
+  private parseMessage(value: Buffer | null): IChatMessage | null {
+    if (!value) return null;
+    const raw = value.toString('utf8').trim();
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as IChatMessage;
+    } catch {
+      return null;
+    }
   }
 
   private async processMessage(data: IChatMessage): Promise<void> {
@@ -112,6 +131,12 @@ export class MessageSendConsume {
 
   public async close(): Promise<void> {
     await this.keyedSequencerService.drain();
-    await this.kafkaStreams.closeAll();
+    if (!this.consumer) return;
+    try {
+      await this.consumer.stop();
+    } finally {
+      await this.consumer.disconnect();
+      this.consumer = null;
+    }
   }
 }

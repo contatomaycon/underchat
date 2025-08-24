@@ -8,7 +8,6 @@ RUN apk update && \
       git \
       g++ \
       libc6-compat \
-      librdkafka-dev \
       make \
       musl-dev \
       python3 \
@@ -54,16 +53,6 @@ RUN mkdir -p /build_locales
 COPY packages/core/plugins/i18next/locales /build_locales
 
 FROM node:22.18.0-alpine
-
-RUN apk update && \
-    apk add --no-cache \
-      lz4 \
-      lz4-libs \
-      librdkafka \
-      cyrus-sasl \
-      openssl \
-      zstd-libs \
-      curl
 
 WORKDIR /app
 
