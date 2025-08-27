@@ -1,0 +1,1 @@
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('5fdd5b69-3581-494c-acce-46a825cd537d', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'zipcode_view');

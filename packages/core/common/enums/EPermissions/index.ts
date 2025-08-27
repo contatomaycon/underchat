@@ -8,6 +8,7 @@ import { EWorkerPermissions } from './worker';
 import { ERolePermissions } from './role';
 import { EChatPermissions } from './chat';
 import { ESectorPermissions } from './sector';
+import { EZipcodePermissions } from './zipcode';
 
 export type EPermissionsRoles =
   | EUserPermissions
@@ -19,4 +20,5 @@ export type EPermissionsRoles =
   | EWorkerPermissions
   | ERolePermissions
   | EChatPermissions
-  | ESectorPermissions;
+  | ESectorPermissions
+  | EZipcodePermissions;
