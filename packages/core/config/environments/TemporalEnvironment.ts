@@ -1,9 +1,4 @@
-import * as dotenv from 'dotenv';
 import InvalidConfigurationError from '@core/common/exceptions/InvalidConfigurationError';
-
-dotenv.config({
-  path: '../../.env',
-});
 
 export class TemporalEnvironment {
   public getTemporalHost(): string {

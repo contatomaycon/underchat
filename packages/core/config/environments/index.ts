@@ -1,3 +1,9 @@
+import * as dotenv from 'dotenv';
+
+dotenv.config({
+  path: '../../.env',
+});
+
 import { CacheEnvironment } from './CacheEnvironment';
 import { DatabaseEnvironment } from './DatabaseEnvironment';
 import { GeneralEnvironment } from './GeneralEnvironment';
