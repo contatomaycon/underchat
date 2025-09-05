@@ -8,6 +8,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AppAddAccount: typeof import('./src/components/account/AppAddAccount.vue')['default']
     AppAddChannel: typeof import('./src/components/channel/AppAddChannel.vue')['default']
     AppAddRole: typeof import('./src/components/role/AppAddRole.vue')['default']
     AppAddSector: typeof import('./src/components/sector/AppAddSector.vue')['default']
@@ -23,6 +24,7 @@ declare module 'vue' {
     AppConsoleServer: typeof import('./src/components/server/AppConsoleServer.vue')['default']
     AppDateTimePicker: typeof import('./src/@webcore/components/app-form-elements/AppDateTimePicker.vue')['default']
     AppDrawerHeaderSection: typeof import('./src/@webcore/components/AppDrawerHeaderSection.vue')['default']
+    AppEditAccount: typeof import('./src/components/account/AppEditAccount.vue')['default']
     AppEditChannel: typeof import('./src/components/channel/AppEditChannel.vue')['default']
     AppEditRole: typeof import('./src/components/role/AppEditRole.vue')['default']
     AppEditSector: typeof import('./src/components/sector/AppEditSector.vue')['default']

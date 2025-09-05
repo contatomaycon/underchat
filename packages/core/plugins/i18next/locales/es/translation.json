@@ -135,5 +135,16 @@
   "message_quoted_not_found": "¡Mensaje citado no encontrado!",
   "zipcode_view_successfully": "¡Código postal visualizado con éxito!",
   "zipcode_not_found": "¡Código postal no encontrado!",
-  "username_already_exists": "¡El nombre de usuario ya existe!"
+  "username_already_exists": "¡El nombre de usuario ya existe!",
+  "account_list_successfully": "¡Lista de cuentas obtenida con éxito!",
+  "account_list_not_found": "¡No se encontraron cuentas!",
+  "is_not_administrator": "El usuario no es un administrador",
+  "account_creator_success": "¡Cuenta creada con éxito!",
+  "account_creator_error": "Error al crear la cuenta",
+  "account_creation_failed": "¡Error al crear la cuenta!",
+  "account_view_successfully": "¡Cuenta visualizada con éxito!",
+  "account_deleted_successfully": "¡Cuenta eliminada con éxito!",
+  "account_deleter_error": "Error al eliminar la cuenta",
+  "account_update_successfully": "¡Cuenta actualizada con éxito!",
+  "account_update_error": "Error al actualizar la cuenta"
 }

@@ -6,6 +6,7 @@ import { EWorkerPermissions } from '@core/common/enums/EPermissions/worker';
 import { ERolePermissions } from '@core/common/enums/EPermissions/role';
 import { ESectorPermissions } from '@core/common/enums/EPermissions/sector';
 import { EUserPermissions } from '@core/common/enums/EPermissions/user';
+import { EAccountPermissions } from '@core/common/enums/EPermissions/account';
 
 export default [
   {
@@ -69,6 +70,19 @@ export default [
       EUserPermissions.user_create,
       EUserPermissions.user_update,
       EUserPermissions.user_delete,
+    ],
+  },
+  {
+    title: 'accounts',
+    to: { name: 'account' as keyof RouteNamedMap },
+    icon: { icon: 'tabler-user' },
+    permissions: [
+      EGeneralPermissions.full_access,
+      EAccountPermissions.account_list,
+      EAccountPermissions.account_view,
+      EAccountPermissions.account_create,
+      EAccountPermissions.account_update,
+      EAccountPermissions.account_delete,
     ],
   },
   {

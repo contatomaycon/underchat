@@ -135,5 +135,16 @@
   "message_quoted_not_found": "Message quoted not found",
   "zipcode_view_successfully": "Zipcode viewed successfully!",
   "zipcode_not_found": "Zipcode not found!",
-  "username_already_exists": "Username already exists!"
+  "username_already_exists": "Username already exists!",
+  "account_list_successfully": "Account list retrieved successfully!",
+  "account_list_not_found": "No accounts found!",
+  "is_not_administrator": "User is not an administrator",
+  "account_creator_success": "Account created successfully!",
+  "account_creator_error": "Error creating account!",
+  "account_creation_failed": "Account creation failed!",
+  "account_view_successfully": "Account viewed successfully!",
+  "account_deleted_successfully": "Account deleted successfully!",
+  "account_deleter_error": "Error deleting account!",
+  "account_update_successfully": "Account updated successfully!",
+  "account_update_error": "Error updating account!"
 }
