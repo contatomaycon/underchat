@@ -79,8 +79,8 @@ importers:
         specifier: ^10.0.0
         version: 10.0.0
       '@whiskeysockets/baileys':
-        specifier: github:WhiskeySockets/Baileys#162ebe1cc203fd91ebf39ec0079513cd17bd271b
-        version: baileys@https://codeload.github.com/WhiskeySockets/Baileys/tar.gz/162ebe1cc203fd91ebf39ec0079513cd17bd271b(link-preview-js@3.1.0)(sharp@0.34.3)
+        specifier: github:WhiskeySockets/Baileys#478b08bf791d8f84b56a5f0d416dcbb0a7ae5077
+        version: baileys@https://codeload.github.com/WhiskeySockets/Baileys/tar.gz/478b08bf791d8f84b56a5f0d416dcbb0a7ae5077(link-preview-js@3.1.0)(sharp@0.34.3)
       axios:
         specifier: ^1.10.0
         version: 1.11.0
@@ -4010,8 +4010,8 @@ packages:
     peerDependencies:
       '@babel/core': ^7.11.0
 
-  baileys@https://codeload.github.com/WhiskeySockets/Baileys/tar.gz/162ebe1cc203fd91ebf39ec0079513cd17bd271b:
-    resolution: {tarball: https://codeload.github.com/WhiskeySockets/Baileys/tar.gz/162ebe1cc203fd91ebf39ec0079513cd17bd271b}
+  baileys@https://codeload.github.com/WhiskeySockets/Baileys/tar.gz/478b08bf791d8f84b56a5f0d416dcbb0a7ae5077:
+    resolution: {tarball: https://codeload.github.com/WhiskeySockets/Baileys/tar.gz/478b08bf791d8f84b56a5f0d416dcbb0a7ae5077}
     version: 6.7.18
     engines: {node: '>=20.0.0'}
     peerDependencies:
@@ -13216,7 +13216,7 @@ snapshots:
       babel-plugin-jest-hoist: 30.0.1
       babel-preset-current-node-syntax: 1.2.0(@babel/core@7.28.3)
 
-  baileys@https://codeload.github.com/WhiskeySockets/Baileys/tar.gz/162ebe1cc203fd91ebf39ec0079513cd17bd271b(link-preview-js@3.1.0)(sharp@0.34.3):
+  baileys@https://codeload.github.com/WhiskeySockets/Baileys/tar.gz/478b08bf791d8f84b56a5f0d416dcbb0a7ae5077(link-preview-js@3.1.0)(sharp@0.34.3):
     dependencies:
       '@cacheable/node-cache': 1.7.0
       '@hapi/boom': 9.1.4

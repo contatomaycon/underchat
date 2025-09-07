@@ -238,6 +238,8 @@ onMounted(async () => {
     await onMessage(
       workerCentrifugoQueue(accountId.value),
       (data: IBaileysConnectionState) => {
+        console.log('data', data);
+
         if (statusCode.value === ECodeMessage.phoneNotAvailable) return;
 
         if (data.status) {
