@@ -1,16 +1,14 @@
 import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AccountService } from '@core/services/account.service';
-import { UserService } from '@core/services/user.service';
-import { CountryService } from '@core/services/country.service';
 import { CreateAccountRequest } from '@core/schema/account/createAccount/request.schema';
+import { ApiKeyService } from '@core/services/apiKey.service';
 
 @injectable()
 export class AccountCreatorUseCase {
   constructor(
-    private readonly userService: UserService,
-    private readonly accountService: AccountService,
-    private readonly countryService: CountryService
+    private readonly apiKeyService: ApiKeyService,
+    private readonly accountService: AccountService
   ) {}
 
   async execute(
@@ -30,6 +28,15 @@ export class AccountCreatorUseCase {
 
     if (!createUser) {
       throw new Error(t('account_creation_failed'));
+    }
+
+    const createApiKey = await this.apiKeyService.createApiKey(
+      createUser,
+      input.name
+    );
+
+    if (!createApiKey) {
+      throw new Error(t('api_key_creation_failed'));
     }
 
     return true;

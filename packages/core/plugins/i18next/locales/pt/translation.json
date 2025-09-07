@@ -149,5 +149,7 @@
   "account_update_error": "Erro ao atualizar a conta!",
   "plan_list_successfully": "Lista de planos obtida com sucesso!",
   "plan_list_not_found": "Nenhum plano encontrado!",
-  "account_name_cannot_exceed_10_characters": "O nome da conta não pode exceder mais que 10 caracteres!"
+  "account_name_cannot_exceed_10_characters": "O nome da conta não pode exceder mais que 10 caracteres!",
+  "api_key_creation_failed": "Falha ao criar a chave API!",
+  "api_key_deleter_error": "Erro ao eliminar a chave API!"
 }
