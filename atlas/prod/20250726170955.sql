@@ -1,0 +1,1 @@
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('0984acd4-1450-4f2c-9d46-73a8d3323832', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'home_view');

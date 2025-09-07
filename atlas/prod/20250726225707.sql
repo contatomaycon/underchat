@@ -1,0 +1,5 @@
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('4bd707da-a027-46e2-a0f6-26601dbe8c9f', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'role_view');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('b285e932-af75-4d1c-9ef1-7e1b7cb4ee79', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'role_list');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('a0cbd859-f555-4709-bd63-246e796c3d75', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'role_create');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('5cb14751-c913-4fd0-a632-f73bc128b745', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'role_update');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('150ea57c-9b48-44d2-87c8-458be2d9e7ff', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'role_delete');

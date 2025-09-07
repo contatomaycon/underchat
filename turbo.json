@@ -4,7 +4,7 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**"],
-      "cache": true
+      "cache": false
     },
     "lint": {
       "outputs": [],
@@ -12,6 +12,7 @@
     },
     "dev": {
       "outputs": [],
+      "persistent": true,
       "cache": false
     },
     "sonar": {

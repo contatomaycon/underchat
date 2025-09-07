@@ -1,0 +1,1 @@
+INSERT INTO "account" ("account_id", "account_status_id", "plan_id", "name") VALUES ('46d209e9-2df0-4033-a176-3d592e000c5c', '0f9fe9c1-540a-4696-8a4f-90ab8f1b7a6f', '26493655-0281-4858-8837-c5a261a063b9', 'Underchat');

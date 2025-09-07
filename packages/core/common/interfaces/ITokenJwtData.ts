@@ -1,7 +1,9 @@
 import { IJwtGroupHierarchy } from './IJwtGroupHierarchy';
 
 export interface ITokenJwtData {
-  user_id: string;
   account_id: string;
+  user_id: string;
+  permission_role_id: string;
+  is_administrator: boolean;
   actions: IJwtGroupHierarchy[];
 }

@@ -1,0 +1,1 @@
+INSERT INTO "country" ("country_id", "name", "iso_code") VALUES (1, 'Brasil', 'BR');

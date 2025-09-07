@@ -1,8 +1,8 @@
 version: '3'
 services:
-  db:
+  under-db:
     image: postgres:latest
-    container_name: db
+    container_name: under-db
     environment:
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=admin
@@ -24,9 +24,9 @@ services:
       - db_postgresql:/var/lib/postgresql
       - db_postgresql_data:/var/lib/postgresql/data
 
-  db-elastic:
+  under-db-elastic:
     image: docker.elastic.co/elasticsearch/elasticsearch:9.0.1
-    container_name: db-elastic
+    container_name: under-db-elastic
     environment:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
@@ -47,8 +47,8 @@ services:
       - underchat
     restart: always
 
-  redis:
-    container_name: backend-cache-redis
+  under-redis:
+    container_name: under-redis
     image: redis:7.2.4
     command: redis-server --requirepass dY5MRW2^!jxHX
     ports:
@@ -57,9 +57,9 @@ services:
     networks:
       - underchat
 
-  elasticsearch:
+  under-elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:9.0.1
-    container_name: elasticsearch
+    container_name: under-elasticsearch
     environment:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
@@ -80,9 +80,9 @@ services:
       - underchat
     restart: always
 
-  temporal-db:
+  under-temporal-db:
     image: postgres:latest
-    container_name: temporal-db
+    container_name: under-temporal-db
     environment:
       - POSTGRES_USER=temporal
       - POSTGRES_PASSWORD=temporal
@@ -93,51 +93,51 @@ services:
     volumes:
       - temporal_postgresql:/var/lib/postgresql/data
 
-  temporal:
+  under-temporal:
     image: temporalio/auto-setup:latest
-    container_name: temporal
+    container_name: under-temporal
     ports:
       - '7233:7233'
     restart: always
     environment:
-      - TEMPORAL_CLI_ADDRESS=temporal:7233
+      - TEMPORAL_CLI_ADDRESS=under-temporal:7233
       - DB=postgres12
       - POSTGRES_USER=temporal
       - POSTGRES_PWD=temporal
-      - POSTGRES_SEEDS=temporal-db
+      - POSTGRES_SEEDS=under-temporal-db
       - DB_PORT=5432
     depends_on:
-      - temporal-db
+      - under-temporal-db
     networks:
       - underchat
 
-  temporal-admin-tools:
+  under-temporal-admin-tools:
     image: temporalio/admin-tools:latest
-    container_name: temporal-admin-tools
+    container_name: under-temporal-admin-tools
     restart: always
     environment:
-      - TEMPORAL_CLI_ADDRESS=temporal:7233
+      - TEMPORAL_CLI_ADDRESS=under-temporal:7233
     depends_on:
-      - temporal
+      - under-temporal
     networks:
       - underchat
 
-  temporal-web:
+  under-temporal-web:
     image: temporalio/ui:latest
-    container_name: temporal-web
+    container_name: under-temporal-web
     restart: always
     ports:
       - '8088:8080'
     environment:
-      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_ADDRESS=under-temporal:7233
     depends_on:
-      - temporal
+      - under-temporal
     networks:
       - underchat
 
-  atlas-db:
+  under-atlas-db:
     image: postgres:latest
-    container_name: atlas-db
+    container_name: under-atlas-db
     environment:
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=admin
@@ -149,20 +149,104 @@ services:
       - atlas_db_postgresql:/var/lib/postgresql
       - atlas_db_postgresql_data:/var/lib/postgresql/data
 
-  atlas:
+  under-atlas:
     build:
       context: .
-      dockerfile: ./docker/atlas.Dockerfile
-    container_name: atlas
+      dockerfile: ./infra/atlas/Dockerfile
+    container_name: under-atlas
+    user: '1000:1000'
     env_file:
       - .env
     networks:
       - underchat
     depends_on:
-      - db
-      - atlas-db
+      - under-db
+      - under-atlas-db
     volumes:
       - ./:/app
+
+  under-kafka:
+    image: bitnami/kafka:latest
+    container_name: under-kafka
+    ports:
+      - '9092:9092'
+      - '29092:29092'
+    environment:
+      - KAFKA_CFG_NODE_ID=0
+      - KAFKA_CFG_PROCESS_ROLES=broker,controller
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://under-kafka:9092,EXTERNAL://10.0.2.2:29092
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@under-kafka:9093
+    networks:
+      - underchat
+    volumes:
+      - kafka_data:/bitnami/kafka
+    restart: always
+
+  under-kafdrop:
+    image: obsidiandynamics/kafdrop:latest
+    container_name: under-kafdrop
+    ports:
+      - '9000:9000'
+    environment:
+      - KAFKA_BROKERCONNECT=under-kafka:9092
+      - JVM_OPTS=-Xms32M -Xmx64M
+    depends_on:
+      - under-kafka
+    networks:
+      - underchat
+    restart: always
+
+  under-centrifugo:
+    image: centrifugo/centrifugo:latest
+    container_name: under-centrifugo
+    restart: unless-stopped
+    ports:
+      - '8000:8000'
+    volumes:
+      - ./infra/centrifugo/config.json:/etc/centrifugo/config.json:ro
+    entrypoint: ['centrifugo']
+    command: ['--config', '/etc/centrifugo/config.json']
+
+  under-minio:
+    image: minio/minio:latest
+    container_name: under-minio
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=adminadmin
+    ports:
+      - '9002:9000'
+      - '9003:9001'
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+    networks:
+      - underchat
+
+  under-minio-setup:
+    image: minio/mc:latest
+    container_name: under-minio-setup
+    depends_on:
+      under-minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://under-minio:9000 admin adminadmin && \
+      mc anonymous set download local/under-storage && \
+      mc mb -p local/under-storage || true && \
+      mc admin info local
+      "
+    networks:
+      - underchat
+    restart: 'no'
 
 networks:
   underchat:
@@ -177,3 +261,5 @@ volumes:
   atlas_db_postgresql:
   atlas_db_postgresql_data:
   elasticsearch_data:
+  kafka_data:
+  minio_data:

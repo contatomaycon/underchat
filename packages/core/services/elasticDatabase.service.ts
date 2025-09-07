@@ -2,6 +2,7 @@ import { Client } from '@elastic/elasticsearch';
 import { inject, injectable } from 'tsyringe';
 import type {
   AggregationsAggregate,
+  QueryDslQueryContainer,
   SearchResponse,
 } from '@elastic/elasticsearch/lib/api/types';
 
@@ -73,9 +74,63 @@ export class ElasticDatabaseService {
         doc_as_upsert: true,
       });
 
-      return result.result === 'updated';
+      return result.result === 'updated' || result.result === 'created';
     } catch (error) {
       throw new Error(`Failed to update document with ID: ${error}`);
+    }
+  };
+
+  bulkUpdate = async <T extends object>(
+    index: string,
+    documents: T[],
+    getId: (doc: T) => string | null
+  ): Promise<boolean> => {
+    const body = documents.flatMap((doc) => {
+      const id = getId(doc);
+      if (!id) return [];
+
+      return [
+        { update: { _index: index, _id: id } },
+        { doc, doc_as_upsert: true },
+      ];
+    });
+
+    if (body.length === 0) {
+      return false;
+    }
+
+    try {
+      const response = await this.client.bulk({ body });
+
+      return !response.errors;
+    } catch (error) {
+      throw new Error(`Failed to bulk update documents: ${error}`);
+    }
+  };
+
+  deleteIndex = async (index: string): Promise<boolean> => {
+    try {
+      const result = await this.client.indices.delete({ index });
+
+      return result.acknowledged;
+    } catch (error) {
+      throw new Error(`Failed to delete index: ${error}`);
+    }
+  };
+
+  deleteAllByQuery = async (
+    index: string,
+    query: QueryDslQueryContainer
+  ): Promise<boolean> => {
+    try {
+      const { deleted = 0 } = await this.client.deleteByQuery({
+        index,
+        query,
+      });
+
+      return deleted > 0;
+    } catch {
+      return false;
     }
   };
 

@@ -134,3 +134,6 @@ dist
 
 #asfd
 *.tool-versions
+
+# storage de worker_baileys 
+apps/worker_baileys/storage

@@ -1,0 +1,23 @@
+import { EServerWebProtocol } from '@core/common/enums/EServerWebProtocol';
+import { Static, Type } from '@sinclair/typebox';
+
+export const editServerRequestSchema = Type.Object({
+  name: Type.String(),
+  quantity_workers: Type.Number(),
+  ssh_ip: Type.String(),
+  ssh_port: Type.Number(),
+  ssh_username: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  ssh_password: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  web_domain: Type.String(),
+  web_port: Type.Number(),
+  web_protocol: Type.String({ enum: Object.values(EServerWebProtocol) }),
+});
+
+export const editServerParamsRequestSchema = Type.Object({
+  server_id: Type.String(),
+});
+
+export type EditServerRequest = Static<typeof editServerRequestSchema>;
+export type EditServerParamsRequest = Static<
+  typeof editServerParamsRequestSchema
+>;

@@ -1,0 +1,660 @@
+import {
+  Browsers,
+  fetchLatestBaileysVersion,
+  makeWASocket,
+  useMultiFileAuthState,
+  type WASocket,
+} from '@whiskeysockets/baileys';
+import QRCode from 'qrcode';
+import P from 'pino';
+import fs from 'fs';
+import path from 'path';
+import { singleton } from 'tsyringe';
+import { CentrifugoService } from '@core/services/centrifugo.service';
+import { baileysEnvironment } from '@core/config/environments';
+import { EBaileysConnectionStatus as Status } from '@core/common/enums/EBaileysConnectionStatus';
+import { ECodeMessage } from '@core/common/enums/ECodeMessage';
+import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
+import { IBaileysUpdateEvent } from '@core/common/interfaces/IBaileysUpdateEvent';
+import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
+import { EWppConnection } from '@core/common/enums/EWppConnection';
+import { wppConnectionMappings } from '@core/mappings/wppConnection.mappings';
+import { EElasticIndex } from '@core/common/enums/EElasticIndex';
+import { v4 as uuidv4 } from 'uuid';
+import { StreamProducerService } from '@core/services/streamProducer.service';
+import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
+import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
+import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { BaileysIncomingMessageService } from './incoming.service';
+import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
+
+const FOLDER = `/app/data/storage/${baileysEnvironment.baileysWorkerId}`;
+const CHANNEL = workerCentrifugoQueue(baileysEnvironment.baileysAccountId);
+const WORKER = baileysEnvironment.baileysWorkerId;
+const ACCOUNT = baileysEnvironment.baileysAccountId;
+
+@singleton()
+export class BaileysConnectionService {
+  private readonly retryDelay = 2_000;
+  private readonly maxRetries = 5;
+
+  private socket?: WASocket;
+  private status: Status = Status.initial;
+  private code: ECodeMessage = ECodeMessage.awaitConnection;
+
+  private socketId = 0;
+  private qrHash?: string;
+  private initialConnection = false;
+  private awaitingNewLogin = false;
+  private lastPayload: string | null = null;
+  private typeConnection: EBaileysConnectionType =
+    EBaileysConnectionType.qrcode;
+  private phoneConnection?: string = undefined;
+
+  private connecting = false;
+  private retryCount = 0;
+  private currentPromise?: Promise<IBaileysConnectionState>;
+  private pendingResolve?: (s: IBaileysConnectionState) => void;
+
+  constructor(
+    private readonly centrifugo: CentrifugoService,
+    private readonly elasticDatabaseService: ElasticDatabaseService,
+    private readonly streamProducerService: StreamProducerService,
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    private readonly baileysIncomingMessageService: BaileysIncomingMessageService
+  ) {
+    process.on('unhandledRejection', () => this.handleFatal());
+  }
+
+  get connected(): boolean {
+    return this.status === Status.connected && !!this.socket?.user;
+  }
+
+  getStatus(): Status {
+    return this.status;
+  }
+
+  getSocket(): WASocket | undefined {
+    return this.socket;
+  }
+
+  async connect(input: IBaileysConnection): Promise<IBaileysConnectionState> {
+    const {
+      initial_connection: initialConnection = false,
+      allow_restore: allowRestore = true,
+      type: typeConnection = EBaileysConnectionType.qrcode,
+      phone_connection: phoneConnection,
+    } = input;
+
+    this.initialConnection = initialConnection;
+    this.typeConnection = typeConnection;
+    this.phoneConnection = phoneConnection;
+
+    if (this.connected) {
+      return this.reportConnected();
+    }
+
+    if (this.connecting) {
+      if (initialConnection) {
+        this.cancelAttempt();
+      }
+
+      if (this.currentPromise) {
+        return this.currentPromise;
+      }
+    }
+
+    if (allowRestore && this.status === Status.initial && this.hasSession()) {
+      return this.restoreWithRetries();
+    }
+
+    this.prepareFolder();
+    this.connecting = true;
+    this.retryCount = 0;
+    this.socketId += 1;
+
+    const { socket, saveCreds } = await this.createSocket();
+    this.socket = socket;
+    this.baileysIncomingMessageService.bindTo(socket);
+
+    if (this.typeConnection === EBaileysConnectionType.phone) {
+      await this.requestPairing(socket);
+    }
+
+    socket.ev.on('creds.update', saveCreds);
+
+    this.currentPromise = this.wait(socket, this.socketId).finally(() => {
+      this.connecting = false;
+      this.currentPromise = undefined;
+    });
+
+    return this.currentPromise;
+  }
+
+  disconnect(input: IBaileysConnection): void {
+    const {
+      initial_connection: initialConnection = false,
+      disconnected_user: disconnectedUser = false,
+    } = input;
+
+    this.initialConnection = initialConnection;
+
+    this.cancelAttempt();
+    this.safeLogout();
+    this.clearFolder();
+
+    this.saveLogWppConnection({
+      worker_id: WORKER,
+      status: this.status,
+      code: this.code?.toString(),
+      message: 'BaileysConnectionService disconnected',
+      date: new Date(),
+    });
+
+    if (!this.initialConnection) {
+      return;
+    }
+
+    this.setStatus(Status.disconnected, ECodeMessage.connectionClosed);
+
+    const payload: IBaileysConnectionState = {
+      status: this.status,
+      worker_id: WORKER,
+      account_id: ACCOUNT,
+      code: this.code,
+      disconnected_user: disconnectedUser,
+      worker_status_id: EWorkerStatus.disponible,
+    };
+
+    this.publishSub(payload);
+
+    this.streamProducerService.send(
+      this.kafkaServiceQueueService.workerStatus(),
+      payload,
+      WORKER
+    );
+
+    this.connect({
+      initial_connection: true,
+    });
+  }
+
+  reconnect(input: IBaileysConnection): void {
+    const { initial_connection: initialConnection = true } = input;
+
+    this.connect({
+      initial_connection: initialConnection,
+    }).catch(() => {
+      this.saveLogWppConnection({
+        worker_id: WORKER,
+        status: this.status ?? Status.disconnected,
+        code: this.code ?? ECodeMessage.connectionLost,
+        message: 'Reconnect failed',
+        date: new Date(),
+      });
+    });
+  }
+
+  private async createSocket() {
+    const { state, saveCreds } = await useMultiFileAuthState(FOLDER);
+    const { version } = await fetchLatestBaileysVersion();
+
+    return {
+      socket: makeWASocket({
+        auth: state,
+        version,
+        browser: Browsers.windows('Chrome'),
+        logger: P({ level: 'silent' }),
+        printQRInTerminal: false,
+        connectTimeoutMs: 60_000,
+        defaultQueryTimeoutMs: 0,
+      }),
+      saveCreds,
+    };
+  }
+
+  private async requestPairing(socket: WASocket): Promise<void> {
+    if (!this.phoneConnection) {
+      return;
+    }
+
+    if (!socket.authState.creds.registered) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      const code = await socket.requestPairingCode(this.phoneConnection);
+
+      const payload: IBaileysConnectionState = {
+        status: Status.connecting,
+        worker_id: WORKER,
+        account_id: ACCOUNT,
+        pairing_code: code,
+        code: ECodeMessage.awaitingPairingCode,
+        worker_status_id: EWorkerStatus.disponible,
+      };
+
+      this.publishSub(payload);
+    }
+  }
+
+  private wait(socket: WASocket, id: number): Promise<IBaileysConnectionState> {
+    return new Promise<IBaileysConnectionState>((resolve) => {
+      this.pendingResolve = resolve;
+      let opened = false;
+
+      socket.ev.on('connection.update', async (u: IBaileysUpdateEvent) => {
+        if (id !== this.socketId) {
+          return;
+        }
+
+        const { qr, connection, isNewLogin, lastDisconnect } = u;
+
+        if (isNewLogin) {
+          return this.onNewLoginAttempt();
+        }
+
+        if (
+          qr &&
+          this.canShowQr() &&
+          this.typeConnection === EBaileysConnectionType.qrcode &&
+          !this.awaitingNewLogin
+        ) {
+          return this.onQr(qr, resolve);
+        }
+
+        if (connection === 'open' && !opened) {
+          opened = true;
+          this.retryCount = 0;
+
+          return this.onOpen(resolve);
+        }
+
+        if (connection === 'close') {
+          return this.onClose(lastDisconnect, resolve);
+        }
+
+        this.awaitingNewLogin = false;
+      });
+    });
+  }
+
+  private async onQr(
+    qr: string,
+    resolve: (s: IBaileysConnectionState) => void
+  ): Promise<void> {
+    if (qr.slice(-20) === this.qrHash) {
+      return;
+    }
+
+    this.qrHash = qr.slice(-20);
+    this.setStatus(Status.connecting, ECodeMessage.awaitingReadQrCode);
+
+    const img = await QRCode.toDataURL(qr);
+
+    this.publishSub({
+      status: this.status,
+      code: this.code,
+      qrcode: img,
+      worker_id: WORKER,
+      account_id: ACCOUNT,
+      worker_status_id: EWorkerStatus.disponible,
+    });
+
+    if (!this.initialConnection) {
+      this.saveLogWppConnection({
+        worker_id: WORKER,
+        status: this.status,
+        code: this.code?.toString(),
+        message: 'QR Code received',
+        date: new Date(),
+      });
+    }
+
+    resolve(this.state(img));
+
+    this.pendingResolve = undefined;
+  }
+
+  private onOpen(resolve: (s: IBaileysConnectionState) => void): void {
+    this.qrHash = undefined;
+    this.setStatus(Status.connected, ECodeMessage.connectionEstablished);
+
+    const payload: IBaileysConnectionState = {
+      status: this.status,
+      worker_id: WORKER,
+      account_id: ACCOUNT,
+      code: this.code,
+      phone: getPhoneNumber(this.socket?.user?.id),
+      worker_status_id: EWorkerStatus.online,
+    };
+
+    this.publishSub(payload);
+
+    this.streamProducerService.send(
+      this.kafkaServiceQueueService.workerStatus(),
+      payload,
+      WORKER
+    );
+
+    resolve(this.state());
+
+    this.pendingResolve = undefined;
+  }
+
+  private onClose(
+    last: IBaileysUpdateEvent['lastDisconnect'],
+    resolve: (s: IBaileysConnectionState) => void
+  ): void {
+    const statusCode = (last?.error as any)?.output?.statusCode as
+      | ECodeMessage
+      | undefined;
+    const statusMessage: string | undefined = last?.error?.message;
+
+    if (statusCode) {
+      this.setStatus(Status.disconnected, statusCode);
+    }
+
+    if (!this.awaitingNewLogin) {
+      const payload: IBaileysConnectionState = {
+        status: this.status,
+        worker_id: WORKER,
+        account_id: ACCOUNT,
+        code: this.code ?? statusCode,
+      };
+
+      this.publishSub(payload);
+
+      this.streamProducerService.send(
+        this.kafkaServiceQueueService.workerStatus(),
+        payload,
+        WORKER
+      );
+
+      this.saveLogWppConnection({
+        worker_id: WORKER,
+        status: this.status,
+        code: this.code?.toString(),
+        message: statusMessage ?? 'BaileysConnectionService disconnected',
+        date: new Date(),
+      });
+    }
+
+    if (statusCode === ECodeMessage.loggedOut) {
+      this.clearFolder();
+
+      const payload: IBaileysConnectionState = {
+        status: this.status,
+        worker_id: WORKER,
+        code: this.code ?? statusCode,
+        disconnected_user: true,
+        account_id: ACCOUNT,
+        worker_status_id: EWorkerStatus.disponible,
+      };
+
+      this.streamProducerService.send(
+        this.kafkaServiceQueueService.workerStatus(),
+        payload,
+        WORKER
+      );
+    }
+
+    resolve(this.state());
+    this.pendingResolve = undefined;
+
+    if (this.retryCount < this.maxRetries) {
+      setTimeout(() => {
+        this.retryCount++;
+
+        this.connect({
+          initial_connection: this.initialConnection,
+        }).catch(() => {
+          this.saveLogWppConnection({
+            worker_id: WORKER,
+            status: this.status ?? Status.disconnected,
+            code: this.code ?? ECodeMessage.connectionLost,
+            message: 'Retry failed',
+            date: new Date(),
+          });
+        });
+      }, this.retryDelay);
+    }
+  }
+
+  private onNewLoginAttempt() {
+    this.awaitingNewLogin = true;
+
+    const payload: IBaileysConnectionState = {
+      status: this.status,
+      worker_id: WORKER,
+      account_id: ACCOUNT,
+      is_new_login: true,
+      code: ECodeMessage.newLoginAttempt,
+      worker_status_id: EWorkerStatus.disponible,
+    };
+
+    this.centrifugo.publishSub(CHANNEL, payload);
+  }
+
+  private canShowQr(): boolean {
+    return this.initialConnection && !this.connected && !this.awaitingNewLogin;
+  }
+
+  private hasSession(): boolean {
+    return fs.existsSync(FOLDER) && fs.readdirSync(FOLDER).length > 0;
+  }
+
+  private async restoreWithRetries(): Promise<IBaileysConnectionState> {
+    for (let i = 0; i < this.maxRetries; i++) {
+      try {
+        const s = await this.connect({
+          initial_connection: this.initialConnection,
+          allow_restore: false,
+        });
+
+        if (s.status === Status.connected) {
+          return s;
+        }
+      } catch (e) {
+        this.saveLogWppConnection({
+          worker_id: WORKER,
+          status: Status.disconnected,
+          code: ECodeMessage.connectionLost,
+          message: `Failed to restore session: ${e instanceof Error ? e.message : String(e)}`,
+          date: new Date(),
+        });
+      }
+
+      await new Promise((r) => setTimeout(r, this.retryDelay));
+    }
+    this.setStatus(Status.disconnected, ECodeMessage.badSession);
+
+    return this.state();
+  }
+
+  private publishSub(payload: IBaileysConnectionState): void {
+    if (!this.initialConnection) {
+      return;
+    }
+
+    const data = JSON.stringify(payload);
+    if (data === this.lastPayload) {
+      return;
+    }
+
+    this.lastPayload = data;
+    this.centrifugo.publishSub(CHANNEL, payload);
+  }
+
+  private safeLogout(): void {
+    if (this.socket) {
+      if (this.socket.user) {
+        this.socket.logout().catch(() => {
+          this.saveLogWppConnection({
+            worker_id: WORKER,
+            status: Status.disconnected,
+            code: ECodeMessage.connectionLost,
+            message: 'Error during logout',
+            date: new Date(),
+          });
+        });
+      }
+    }
+
+    try {
+      const ws: import('ws').WebSocket | undefined = (this.socket as any).ws;
+      if (!ws) {
+        return;
+      }
+
+      switch (ws.readyState) {
+        case ws.OPEN:
+          ws.close(1000, 'logout');
+          break;
+
+        case ws.CONNECTING:
+        case ws.CLOSING:
+          ws.terminate?.();
+          break;
+
+        default:
+          break;
+      }
+    } catch {
+      this.saveLogWppConnection({
+        worker_id: WORKER,
+        status: Status.disconnected,
+        code: ECodeMessage.connectionLost,
+        message: 'Error during WebSocket close',
+        date: new Date(),
+      });
+    }
+
+    this.socket = undefined;
+    this.setStatus(Status.disconnected, ECodeMessage.loggedOut);
+  }
+
+  private cancelAttempt() {
+    try {
+      this.socket?.ev.removeAllListeners('connection.update');
+    } catch {
+      this.saveLogWppConnection({
+        worker_id: WORKER,
+        status: Status.disconnected,
+        code: ECodeMessage.connectionLost,
+        message: 'Error during cancel attempt',
+        date: new Date(),
+      });
+    }
+
+    this.baileysIncomingMessageService.unbind();
+    this.safeLogout();
+    this.pendingResolve?.(this.state());
+    this.pendingResolve = undefined;
+
+    this.currentPromise = undefined;
+    this.connecting = false;
+    this.awaitingNewLogin = false;
+  }
+
+  private reportConnected(): IBaileysConnectionState {
+    if (this.initialConnection) {
+      this.lastPayload = null;
+
+      this.publishSub({
+        status: this.status,
+        code: ECodeMessage.connectionEstablished,
+        worker_id: WORKER,
+        account_id: ACCOUNT,
+        phone: getPhoneNumber(this.socket?.user?.id),
+        worker_status_id: EWorkerStatus.online,
+      });
+    }
+
+    return this.state();
+  }
+
+  private prepareFolder() {
+    if (!fs.existsSync(FOLDER)) {
+      fs.mkdirSync(FOLDER, {
+        recursive: true,
+      });
+    }
+  }
+
+  private clearFolder() {
+    fs.readdirSync(FOLDER).forEach((f) =>
+      fs.rmSync(path.join(FOLDER, f), {
+        recursive: true,
+        force: true,
+      })
+    );
+  }
+
+  private setStatus(s: Status, c?: ECodeMessage) {
+    this.status = s;
+
+    if (c) {
+      this.code = c;
+    }
+  }
+
+  private state(qr?: string): IBaileysConnectionState {
+    return {
+      status: this.status,
+      worker_id: WORKER,
+      account_id: ACCOUNT,
+      qrcode: qr,
+      code: this.code,
+    };
+  }
+
+  private handleFatal() {
+    this.setStatus(Status.disconnected, ECodeMessage.connectionLost);
+
+    const payload: IBaileysConnectionState = {
+      status: this.status,
+      worker_id: WORKER,
+      account_id: ACCOUNT,
+      code: this.code,
+      worker_status_id: EWorkerStatus.error,
+    };
+
+    this.publishSub(payload);
+
+    this.streamProducerService.send(
+      this.kafkaServiceQueueService.workerStatus(),
+      payload,
+      WORKER
+    );
+
+    this.saveLogWppConnection({
+      worker_id: WORKER,
+      status: this.status,
+      code: this.code?.toString(),
+      message: 'Unhandled Rejection – BaileysConnectionService',
+      date: new Date(),
+    });
+  }
+
+  private readonly saveLogWppConnection = async (
+    wppLog: EWppConnection
+  ): Promise<boolean> => {
+    const mappings = wppConnectionMappings();
+
+    const result = await this.elasticDatabaseService.indices(
+      EElasticIndex.wpp_connection,
+      mappings
+    );
+
+    if (!result || !wppLog) {
+      return false;
+    }
+
+    return this.elasticDatabaseService.update(
+      EElasticIndex.wpp_connection,
+      wppLog,
+      uuidv4()
+    );
+  };
+}
