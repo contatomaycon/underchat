@@ -148,5 +148,6 @@
   "account_update_successfully": "¡Cuenta actualizada con éxito!",
   "account_update_error": "Error al actualizar la cuenta",
   "plan_list_successfully": "¡Lista de planes obtenida con éxito!",
-  "plan_list_not_found": "¡No se encontraron planes!"
+  "plan_list_not_found": "¡No se encontraron planes!",
+  "account_name_cannot_exceed_10_characters": "¡El nombre de la cuenta no puede exceder los 10 caracteres!"
 }

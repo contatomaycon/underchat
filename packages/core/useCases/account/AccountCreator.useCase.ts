@@ -22,6 +22,10 @@ export class AccountCreatorUseCase {
       throw new Error(t('is_not_administrator'));
     }
 
+    if (input.name.length >= 10) {
+      throw new Error(t('account_name_cannot_exceed_10_characters'));
+    }
+
     const createUser = await this.accountService.createAccount(input);
 
     if (!createUser) {

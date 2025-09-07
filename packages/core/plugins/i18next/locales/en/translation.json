@@ -148,5 +148,6 @@
   "account_update_successfully": "Account updated successfully!",
   "account_update_error": "Error updating account!",
   "plan_list_successfully": "Plan list retrieved successfully!",
-  "plan_list_not_found": "No plans found!"
+  "plan_list_not_found": "No plans found!",
+  "account_name_cannot_exceed_10_characters": "Account name cannot exceed 10 characters"
 }
