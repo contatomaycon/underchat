@@ -146,5 +146,7 @@
   "account_deleted_successfully": "¡Cuenta eliminada con éxito!",
   "account_deleter_error": "Error al eliminar la cuenta",
   "account_update_successfully": "¡Cuenta actualizada con éxito!",
-  "account_update_error": "Error al actualizar la cuenta"
+  "account_update_error": "Error al actualizar la cuenta",
+  "plan_list_successfully": "¡Lista de planes obtenida con éxito!",
+  "plan_list_not_found": "¡No se encontraron planes!"
 }

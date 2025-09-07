@@ -6,3 +6,4 @@ export * from './sector.permissions';
 export * from './user.permissions';
 export * from './zipcode.permissions';
 export * from './account.permissions';
+export * from './plan.permissions';

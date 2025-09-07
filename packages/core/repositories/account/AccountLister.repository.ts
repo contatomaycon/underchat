@@ -11,7 +11,6 @@ import {
   or,
   ilike,
   inArray,
-  SQL,
 } from 'drizzle-orm';
 import { ListAccountRequest } from '@core/schema/account/listAccount/request.schema';
 import { ListAccountResponse } from '@core/schema/account/listAccount/response.schema';
@@ -52,22 +51,6 @@ export class AccountListerRepository {
 
     return filters;
   };
-
-  private setFilterPlan(query: ListAccountRequest): SQL<unknown> | undefined {
-    if (query.plan) {
-      return inArray(
-        account.plan_id,
-        this.db
-          .select({
-            plan_id: plan.plan_id,
-          })
-          .from(plan)
-          .where(ilike(plan.name, `%${query.plan}%`))
-      );
-    }
-
-    return undefined;
-  }
 
   listAccounts = async (
     perPage: number,

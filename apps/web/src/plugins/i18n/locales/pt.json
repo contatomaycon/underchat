@@ -287,5 +287,6 @@
     "diamante": "Diamante",
     "prata": "Prata",
     "bronze": "Bronze",
-    "add_account": "Adicionar Conta"
+    "add_account": "Adicionar Conta",
+    "plan_list_error": "Ocorreu um erro ao listar os planos. Por favor, tente novamente."
 }

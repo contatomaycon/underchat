@@ -284,5 +284,6 @@
     "diamante": "Diamond",
     "prata": "Silver",
     "bronze": "Bronze",
-    "add_account": "Add Account"
+    "add_account": "Add Account",
+    "plan_list_error": "An error occurred while listing plans. Please try again."
 }

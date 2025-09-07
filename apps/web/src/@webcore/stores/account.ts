@@ -18,6 +18,12 @@ import { IListAccounts } from '../interfaces/IListAccounts';
 import { ListAccountRequest } from '@core/schema/account/listAccount/request.schema';
 import { ViewAccountResponse } from '@core/schema/account/viewAccount/response.schema';
 import { CreateAccountRequest } from '@core/schema/account/createAccount/request.schema';
+import { IListPlans } from '../interfaces/IListPlans';
+import {
+  ListPlanFinalResponse,
+  ListPlanResponse,
+} from '@core/schema/plan/listPlan/response.schema';
+import { ListPlanRequest } from '@core/schema/plan/listPlan/request.schema';
 
 export const useAccountStore = defineStore('account', {
   state: () => ({
@@ -29,6 +35,7 @@ export const useAccountStore = defineStore('account', {
     i18n: getI18n(),
     loading: false,
     list: [] as ListAccountResponse[],
+    listAllPlan: [] as ListPlanResponse[],
     pagings: {
       current_page: 1 as number,
       total_pages: 1 as number,
@@ -264,6 +271,59 @@ export const useAccountStore = defineStore('account', {
         this.loading = false;
 
         return false;
+      }
+    },
+
+    async listPlan(input?: IListPlans): Promise<ListPlanFinalResponse | null> {
+      try {
+        this.loading = true;
+
+        const request: ListPlanRequest | undefined = input
+          ? {
+              current_page: input.page,
+              per_page: input.per_page,
+              sort_by: input.sort_by,
+              plan_id: input.search,
+              name: input.name,
+              price: input.search,
+            }
+          : undefined;
+
+        const response = await axios.get<IApiResponse<ListPlanFinalResponse>>(
+          `/plan`,
+          {
+            params: request,
+          }
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('plan_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        this.listAllPlan = data.data.results;
+        this.pagings = data.data.pagings;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('plan_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
       }
     },
   },

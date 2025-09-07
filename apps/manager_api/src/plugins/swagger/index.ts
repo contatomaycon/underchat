@@ -89,6 +89,10 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
           name: ETagSwagger.account,
           description: 'End-points relacionados à contas',
         },
+        {
+          name: ETagSwagger.plan,
+          description: 'End-points relacionados à planos',
+        },
       ],
     },
   });

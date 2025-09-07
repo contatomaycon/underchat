@@ -3,7 +3,6 @@ import { useAccountStore } from '@/@webcore/stores/account';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { CreateAccountRequest } from '@core/schema/account/createAccount/request.schema';
 import { VForm } from 'vuetify/components/VForm';
-import { EPlan } from '@core/common/enums/EPlan';
 
 const accountStore = useAccountStore();
 const { t } = useI18n();
@@ -25,11 +24,12 @@ const itemsStatus = ref([
   { value: EAccountStatus.blocked, text: t('blocked') },
 ]);
 
-const itemsPlan = ref([
-  { value: EPlan.Diamante, text: t('diamante') },
-  { value: EPlan.Ouro, text: t('ouro') },
-  { value: EPlan.Bronze, text: t('bronze') },
-]);
+const itemsPlan = computed(() =>
+  accountStore.listAllPlan.map((p) => ({
+    value: p.plan_id,
+    text: p.name,
+  }))
+);
 
 const name = ref<string | null>(null);
 const account_status_id = ref<string | null>(null);
@@ -71,11 +71,16 @@ const resetForm = () => {
   refFormAddAccount.value?.resetValidation();
 };
 
+onMounted(async () => {
+  resetForm();
+  if (!accountStore.listAllPlan.length) {
+    await accountStore.listPlan();
+  }
+});
+
 watch(isVisible, (visible) => {
   if (visible) resetForm();
 });
-
-onMounted(resetForm);
 </script>
 
 <template>

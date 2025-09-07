@@ -13,4 +13,5 @@ export enum ETagSwagger {
   chat = 'Chat',
   zipcode = 'CEP',
   account = 'Conta',
+  plan = 'Planos',
 }

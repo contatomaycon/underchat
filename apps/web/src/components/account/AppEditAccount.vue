@@ -6,7 +6,6 @@ import {
   EditAccountParamsRequest,
   UpdateAccountRequest,
 } from '@core/schema/account/editAccount/request.schema';
-import { EPlan } from '@core/common/enums/EPlan';
 
 const accountStore = useAccountStore();
 const { t } = useI18n();
@@ -34,10 +33,12 @@ const accountStatusOptions = Object.entries(EAccountStatus).map(
   })
 );
 
-const planOptions = Object.entries(EPlan).map(([key, value]) => ({
-  name: t(`${key}`) || key,
-  id: value,
-}));
+const planOptions = computed(() =>
+  accountStore.listAllPlan.map((p) => ({
+    id: p.plan_id,
+    name: p.name,
+  }))
+);
 
 const refFormEditAccount = ref<VForm>();
 
@@ -72,6 +73,12 @@ const updateAccount = async () => {
   }
 };
 
+watch(isVisible, async (visible) => {
+  if (visible && !accountStore.listAllPlan.length) {
+    await accountStore.listPlan();
+  }
+});
+
 onMounted(async () => {
   if (!accountId.value) return;
 
@@ -80,6 +87,10 @@ onMounted(async () => {
     name.value = account.name;
     accountStatus.value = account.account_status?.account_status_id ?? null;
     plan.value = account.plan?.plan_id ?? null;
+  }
+
+  if (!accountStore.listAllPlan.length) {
+    await accountStore.listPlan();
   }
 });
 </script>
