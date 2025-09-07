@@ -24,7 +24,7 @@ export class AccountUpdaterUseCase {
       throw new Error(t('account_not_found'));
     }
 
-    const accountUpdater = this.accountService.updateAccountById(
+    const accountUpdater = await this.accountService.updateAccountById(
       body,
       accountId
     );
