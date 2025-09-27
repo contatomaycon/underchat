@@ -9,6 +9,8 @@ import chatRoutes from '@/routes/chat.route';
 import sectorRoutes from './sector.route';
 import userRoutes from './user.route';
 import zipcodeRoutes from './zipcode.route';
+import accountRoutes from './account.route';
+import planRoutes from './plan.route';
 
 export default async function (server: FastifyInstance) {
   await server.register(authRoutes);
@@ -21,4 +23,6 @@ export default async function (server: FastifyInstance) {
   await server.register(sectorRoutes);
   await server.register(userRoutes);
   await server.register(zipcodeRoutes);
+  await server.register(accountRoutes);
+  await server.register(planRoutes);
 }
