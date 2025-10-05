@@ -1,0 +1,5 @@
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('2275491e-8d67-4efb-9bf4-cf735f49855c', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'plan_view');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('dc3cd5e0-6fe0-4f96-bc7d-e9280d22fa41', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'plan_list');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('84f0473d-8347-47bd-899e-e9f80917a51d', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'plan_create');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('041ce6a8-fb20-4e06-a9b7-219f152e798f', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'plan_update');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('e0f0a3dd-c007-47d0-835d-2015d35e0c26', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'plan_delete');

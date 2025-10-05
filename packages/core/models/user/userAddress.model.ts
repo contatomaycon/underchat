@@ -40,4 +40,8 @@ export const userAddressRelations = relations(userAddress, ({ one }) => ({
     fields: [userAddress.user_id],
     references: [user.user_id],
   }),
+  uuc: one(country, {
+    fields: [userAddress.country_id],
+    references: [country.country_id],
+  }),
 }));

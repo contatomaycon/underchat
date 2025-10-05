@@ -3,7 +3,7 @@ import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { SectorRoleAccountSectorListerUseCase } from '@core/useCases/sector/SectorRoleAccountSectorViewer.useCase';
-import { CreateSectorRoleAccountSectorRequest } from '@core/schema/sector/listSectorRoleAccountSector/request.schema';
+import { CreateSectorRoleAccountSectorRequest } from '@core/schema/sector/viewSectorRoleAccountSector/request.schema';
 
 export const listSectorRoleAccountSector = async (
   request: FastifyRequest<{

@@ -8,11 +8,13 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AppAddAccount: typeof import('./src/components/account/AppAddAccount.vue')['default']
     AppAddChannel: typeof import('./src/components/channel/AppAddChannel.vue')['default']
     AppAddRole: typeof import('./src/components/role/AppAddRole.vue')['default']
     AppAddSector: typeof import('./src/components/sector/AppAddSector.vue')['default']
     AppAddSectorRole: typeof import('./src/components/sector/AppAddSectorRole.vue')['default']
     AppAddServer: typeof import('./src/components/server/AppAddServer.vue')['default']
+    AppAddUser: typeof import('./src/components/user/AppAddUser.vue')['default']
     AppAutocomplete: typeof import('./src/@webcore/components/app-form-elements/AppAutocomplete.vue')['default']
     AppBarSearch: typeof import('./src/@webcore/components/AppBarSearch.vue')['default']
     AppCardActions: typeof import('./src/@webcore/components/cards/AppCardActions.vue')['default']
@@ -22,10 +24,12 @@ declare module 'vue' {
     AppConsoleServer: typeof import('./src/components/server/AppConsoleServer.vue')['default']
     AppDateTimePicker: typeof import('./src/@webcore/components/app-form-elements/AppDateTimePicker.vue')['default']
     AppDrawerHeaderSection: typeof import('./src/@webcore/components/AppDrawerHeaderSection.vue')['default']
+    AppEditAccount: typeof import('./src/components/account/AppEditAccount.vue')['default']
     AppEditChannel: typeof import('./src/components/channel/AppEditChannel.vue')['default']
     AppEditRole: typeof import('./src/components/role/AppEditRole.vue')['default']
     AppEditSector: typeof import('./src/components/sector/AppEditSector.vue')['default']
     AppEditServer: typeof import('./src/components/server/AppEditServer.vue')['default']
+    AppEditUser: typeof import('./src/components/user/AppEditUser.vue')['default']
     AppLoadingIndicator: typeof import('./src/components/AppLoadingIndicator.vue')['default']
     AppLogsChannel: typeof import('./src/components/channel/AppLogsChannel.vue')['default']
     AppLogsServer: typeof import('./src/components/server/AppLogsServer.vue')['default']

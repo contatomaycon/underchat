@@ -20,8 +20,8 @@ import {
 } from '@core/schema/sector/editSector/request.schema';
 import { ViewSectorResponse } from '@core/schema/sector/viewSector/response.schema';
 import { ListRoleAccountResponse } from '@core/schema/sector/listSectorRoleAccount/response.schema';
-import { ListSectorRoleAccountSectorResponse } from '@core/schema/sector/listSectorRoleAccountSector/response.schema';
 import { CreateSectorRoleRequest } from '@core/schema/sector/createSectorRole/request.schema';
+import { ListSectorRoleAccountSectorResponse } from '@core/schema/sector/viewSectorRoleAccountSector/response.schema';
 
 export const useSectorsStore = defineStore('sectors', {
   state: () => ({

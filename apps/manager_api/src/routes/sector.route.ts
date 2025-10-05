@@ -14,7 +14,7 @@ import { listSectorSchema } from '@core/schema/sector/listSector';
 import { viewSectorSchema } from '@core/schema/sector/viewSector';
 import { editSectorSchema } from '@core/schema/sector/editSector';
 import { listSectorRoleAccountSchema } from '@core/schema/sector/listSectorRoleAccount';
-import { listSectorRoleAccountSectorSchema } from '@core/schema/sector/listSectorRoleAccountSector';
+import { viewSectorRoleAccountSectorSchema } from '@core/schema/sector/viewSectorRoleAccountSector';
 import { createSectorRoleSchema } from '@core/schema/sector/createSectorRole';
 
 export default async function sectorRoutes(server: FastifyInstance) {
@@ -75,11 +75,11 @@ export default async function sectorRoutes(server: FastifyInstance) {
   });
 
   server.get('/sector-role/account/:sector_id', {
-    schema: listSectorRoleAccountSectorSchema,
+    schema: viewSectorRoleAccountSectorSchema,
     handler: sectorController.listSectorRoleAccountSector,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, sectorListPermissions),
+        server.authenticateJwt(request, reply, sectorViewPermissions),
     ],
   });
 

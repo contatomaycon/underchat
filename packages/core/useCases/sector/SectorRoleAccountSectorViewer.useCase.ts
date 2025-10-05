@@ -1,7 +1,7 @@
 import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AccountService } from '@core/services/account.service';
-import { ListSectorRoleAccountSectorResponse } from '@core/schema/sector/listSectorRoleAccountSector/response.schema';
+import { ListSectorRoleAccountSectorResponse } from '@core/schema/sector/viewSectorRoleAccountSector/response.schema';
 import { SectorService } from '@core/services/sector.service';
 
 @injectable()

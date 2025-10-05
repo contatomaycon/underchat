@@ -3,7 +3,7 @@ import { sectorRole, permissionRole } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq } from 'drizzle-orm';
-import { ListSectorRoleAccountSectorResponse } from '@core/schema/sector/listSectorRoleAccountSector/response.schema';
+import { ListSectorRoleAccountSectorResponse } from '@core/schema/sector/viewSectorRoleAccountSector/response.schema';
 
 @injectable()
 export class SectorRoleListerRepository {
