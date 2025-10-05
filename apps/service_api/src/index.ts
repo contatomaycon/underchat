@@ -49,8 +49,8 @@ server.register(elasticLogsPlugin, {
 server.register(loggerServicePlugin);
 server.register(consumerPlugin);
 server.register(swaggerPlugin);
-server.register(temporalPlugin);
-server.register(temporalConsumerPlugin);
+//server.register(temporalPlugin);
+//server.register(temporalConsumerPlugin);
 
 const start = async () => {
   try {

@@ -107,10 +107,26 @@ export class BalanceCreatorConsume {
         this.sshService.getInstallCommands(getDistroAndVersion, webView),
       ]);
 
-      const [logs, built] = await Promise.all([
-        this.sshService.runCommands(serverId, sshConfig, installCommands),
-        this.imageIsBuilt(serverId, getDistroAndVersion, sshConfig),
-      ]);
+      const logs = await this.sshService.runCommands(
+        serverId,
+        sshConfig,
+        installCommands
+      );
+
+      if (logs.length === 0) {
+        await this.serverService.updateServerStatusById(
+          serverId,
+          EServerStatus.error
+        );
+
+        throw new Error('Docker installation logs are empty');
+      }
+
+      const built = await this.imageIsBuilt(
+        serverId,
+        getDistroAndVersion,
+        sshConfig
+      );
 
       if (!built) {
         await this.serverService.updateServerStatusById(
@@ -227,10 +243,12 @@ export class BalanceCreatorConsume {
         await this.serverService.updateLogInstallServerBulk(result);
       }
 
-      const lastOutput = result[result.length - 1]?.output?.trim();
-      const status = Number(lastOutput ?? 0);
+      const lastOutput = (result.at(-1)?.output ?? '')
+        .replace(/\r/g, '')
+        .trim();
+      const status = /^(200|true|1)$/i.test(lastOutput);
 
-      if (status === 200) {
+      if (status) {
         return true;
       }
     }
@@ -260,8 +278,10 @@ export class BalanceCreatorConsume {
         await this.serverService.updateLogInstallServerBulk(result);
       }
 
-      const lastOutput = result[result.length - 1]?.output?.trim();
-      const status = Boolean(lastOutput ?? false);
+      const lastOutput = (result.at(-1)?.output ?? '')
+        .replace(/\r/g, '')
+        .trim();
+      const status = /^(true|1)$/i.test(lastOutput);
 
       if (status) {
         return true;
