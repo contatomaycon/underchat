@@ -61,6 +61,8 @@ export class BalanceCreatorConsume {
         const stop = startHeartbeat(heartbeat);
         try {
           await this.handleCreateServerMessage(server, data);
+        } catch {
+          await this.commitNext(topic, partition, message.offset);
         } finally {
           stop();
         }

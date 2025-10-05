@@ -51,6 +51,8 @@ export class WorkerConnectionConsume {
         const stop = startHeartbeat(heartbeat);
         try {
           await this.handleMessage(data);
+        } catch {
+          await this.commitNext(topic, partition, message.offset);
         } finally {
           stop();
         }

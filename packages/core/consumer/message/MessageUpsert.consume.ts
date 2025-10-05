@@ -345,6 +345,8 @@ export class MessageUpsertConsume {
             } else {
               await this.createChatMessage(getChat, data);
             }
+          } catch {
+            await this.commitNext(topic, partition, message.offset);
           } finally {
             stop();
           }

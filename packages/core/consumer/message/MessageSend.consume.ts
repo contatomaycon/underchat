@@ -74,6 +74,8 @@ export class MessageSendConsume {
 
             return;
           });
+        } catch {
+          await this.commitNext(topic, partition, message.offset);
         } finally {
           stop();
         }

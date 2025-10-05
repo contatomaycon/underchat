@@ -145,6 +145,8 @@ export class MessageUpdateConsume {
 
           try {
             await this.handleMessage(data);
+          } catch {
+            await this.commitNext(topic, partition, message.offset);
           } finally {
             stop();
           }
