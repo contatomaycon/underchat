@@ -302,6 +302,8 @@ export class WorkerConsume {
       data.worker_id
     );
 
+    console.log('exists', exists);
+
     if (!exists) {
       await this.updateWorkerErrorStatus(
         data.worker_id,
@@ -315,6 +317,8 @@ export class WorkerConsume {
     const containerId = await this.workerService.removeContainerWorker(
       data.worker_id
     );
+
+    console.log('containerId', containerId);
 
     if (!containerId) {
       await this.updateWorkerErrorStatus(
@@ -331,6 +335,8 @@ export class WorkerConsume {
       data.account_id,
       data.worker_id
     );
+
+    console.log('deleted', deleted);
 
     if (!deleted) {
       await this.updateWorkerErrorStatus(
@@ -349,6 +355,8 @@ export class WorkerConsume {
       account_id: data.account_id,
       worker_status_id: EWorkerStatus.delete,
     };
+
+    console.log('dataPublish', dataPublish);
 
     return this.centrifugoPublish(dataPublish);
   }
