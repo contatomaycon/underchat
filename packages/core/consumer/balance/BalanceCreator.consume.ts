@@ -47,7 +47,7 @@ export class BalanceCreatorConsume {
 
     await this.consumer.run({
       autoCommit: false,
-      eachMessage: async ({ topic, partition, message, heartbeat }) => {
+      eachMessage: async ({ topic, partition, message }) => {
         const data = this.parseMessage(message.value);
 
         if (!data) {
@@ -57,16 +57,14 @@ export class BalanceCreatorConsume {
           return;
         }
 
-        await this.handleCreateServerMessage(server, data, heartbeat);
+        await this.handleCreateServerMessage(server, data);
         await this.commitNext(topic, partition, message.offset);
       },
     });
   }
 
   public async close(): Promise<void> {
-    if (!this.consumer) {
-      return;
-    }
+    if (!this.consumer) return;
 
     try {
       await this.consumer.stop();
@@ -90,8 +88,7 @@ export class BalanceCreatorConsume {
 
   private async handleCreateServerMessage(
     server: FastifyInstance,
-    data: CreateServerResponse,
-    heartbeat: () => Promise<void>
+    data: CreateServerResponse
   ): Promise<void> {
     let serverId: string | null = null;
 
@@ -102,52 +99,38 @@ export class BalanceCreatorConsume {
       const { getDistroAndVersion, sshConfig, webView } =
         await this.validate(serverId);
 
-      await heartbeat();
+      const [, installCommands] = await Promise.all([
+        this.serverService.updateServerStatusById(
+          serverId,
+          EServerStatus.installing
+        ),
+        this.sshService.getInstallCommands(getDistroAndVersion, webView),
+      ]);
 
-      await this.serverService.updateServerStatusById(
-        serverId,
-        EServerStatus.installing
-      );
-
-      await heartbeat();
-
-      const installCommands = await this.sshService.getInstallCommands(
-        getDistroAndVersion,
-        webView
-      );
-
-      const logs = await this.sshService.runCommands(
-        serverId,
-        sshConfig,
-        installCommands
-      );
-
-      await heartbeat();
-
-      const built = await this.imageIsBuilt(
-        serverId,
-        getDistroAndVersion,
-        sshConfig,
-        heartbeat
-      );
+      const [logs, built] = await Promise.all([
+        this.sshService.runCommands(serverId, sshConfig, installCommands),
+        this.imageIsBuilt(serverId, getDistroAndVersion, sshConfig),
+      ]);
 
       if (!built) {
         await this.serverService.updateServerStatusById(
           serverId,
           EServerStatus.error
         );
+
         throw new Error('Docker image is not built');
       }
 
-      await this.serverService.deleteLogInstallServer(serverId);
-      await this.serverService.updateLogInstallServerBulk(logs);
+      await Promise.all([
+        this.serverService.deleteLogInstallServer(serverId),
+        this.serverService.updateLogInstallServerBulk(logs),
+      ]);
 
       const installed = await this.isInstalled(
         serverId,
         getDistroAndVersion,
         sshConfig,
-        webView,
-        heartbeat
+        webView
       );
 
       const finalStatus = installed
@@ -219,7 +202,6 @@ export class BalanceCreatorConsume {
     getDistroAndVersion: IDistroInfo,
     sshConfig: ConnectConfig,
     webView: IViewServerWebById,
-    heartbeat: () => Promise<void>,
     attempts = 20
   ): Promise<boolean> {
     if (!sshConfig.host) {
@@ -233,7 +215,6 @@ export class BalanceCreatorConsume {
     );
 
     for (let i = 0; i < attempts; i++) {
-      await heartbeat();
       await delay(1000);
 
       const result = await this.sshService.runCommands(
@@ -261,14 +242,12 @@ export class BalanceCreatorConsume {
     serverId: string,
     getDistroAndVersion: IDistroInfo,
     sshConfig: ConnectConfig,
-    heartbeat: () => Promise<void>,
     attempts = 20
   ): Promise<boolean> {
     const getImagesCommands =
       this.sshService.getImagesCommands(getDistroAndVersion);
 
     for (let i = 0; i < attempts; i++) {
-      await heartbeat();
       await delay(1000);
 
       const result = await this.sshService.runCommands(
