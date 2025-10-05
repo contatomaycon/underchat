@@ -70,7 +70,7 @@ export class MessageSendConsume {
         const stop = startHeartbeat(heartbeat);
         try {
           await this.enqueueByChatId(chatId, async () => {
-            await this.processMessage(data, heartbeat);
+            await this.processMessage(data);
 
             return;
           });
@@ -151,15 +151,11 @@ export class MessageSendConsume {
     await this.keyedSequencerService.enqueue(chatId, task);
   }
 
-  private async processMessage(
-    data: IChatMessage,
-    heartbeat: () => Promise<void>
-  ): Promise<void> {
+  private async processMessage(data: IChatMessage): Promise<void> {
     const phone = data.message_key?.remote_jid ?? data.phone;
 
     if (data?.content?.type === EMessageType.text && data.content?.message) {
-      await heartbeat();
-      await this.processText(phone, data, heartbeat);
+      await this.processText(phone, data);
 
       return;
     }
@@ -169,8 +165,7 @@ export class MessageSendConsume {
       data.content?.message &&
       data.content?.quoted
     ) {
-      await heartbeat();
-      await this.processTextQuoted(phone, data, heartbeat);
+      await this.processTextQuoted(phone, data);
 
       return;
     }
@@ -180,11 +175,9 @@ export class MessageSendConsume {
 
   private async processText(
     phone: string | null | undefined,
-    data: IChatMessage,
-    heartbeat: () => Promise<void>
+    data: IChatMessage
   ): Promise<void> {
     const to = phone ?? '';
-    await heartbeat();
 
     const result = await this.baileysMessageTextService.sendText(
       to,
@@ -192,26 +185,20 @@ export class MessageSendConsume {
       { linkPreview: data.content?.link_preview as WAUrlInfo }
     );
 
-    await heartbeat();
-
     if (!result) {
       throw new Error('Failed to send message');
     }
 
     const update: IUpdateMessage = { message: result, data };
     await this.pushUpdate(update);
-
-    await heartbeat();
   }
 
   private async processTextQuoted(
     phone: string | null | undefined,
-    data: IChatMessage,
-    heartbeat: () => Promise<void>
+    data: IChatMessage
   ): Promise<void> {
     const to = phone ?? '';
     const quoted = this.composeQuotedMessage(data);
-    await heartbeat();
 
     const result = await this.baileysMessageTextService.sendTextQuoted(
       to,
@@ -219,16 +206,12 @@ export class MessageSendConsume {
       quoted
     );
 
-    await heartbeat();
-
     if (!result) {
       throw new Error('Failed to send message');
     }
 
     const update: IUpdateMessage = { message: result, data };
     await this.pushUpdate(update);
-
-    await heartbeat();
   }
 
   private composeQuotedMessage(data: IChatMessage): WAMessage {

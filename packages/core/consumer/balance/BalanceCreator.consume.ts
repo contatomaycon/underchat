@@ -13,6 +13,7 @@ import { Kafka, Consumer } from 'kafkajs';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { delay } from '@core/common/functions/delay';
 import { createConsumer } from '@core/common/functions/createConsumer';
+import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 
 @singleton()
 export class BalanceCreatorConsume {
@@ -47,7 +48,7 @@ export class BalanceCreatorConsume {
 
     await this.consumer.run({
       autoCommit: false,
-      eachMessage: async ({ topic, partition, message }) => {
+      eachMessage: async ({ topic, partition, message, heartbeat }) => {
         const data = this.parseMessage(message.value);
 
         if (!data) {
@@ -57,7 +58,13 @@ export class BalanceCreatorConsume {
           return;
         }
 
-        await this.handleCreateServerMessage(server, data);
+        const stop = startHeartbeat(heartbeat);
+        try {
+          await this.handleCreateServerMessage(server, data);
+        } finally {
+          stop();
+        }
+
         await this.commitNext(topic, partition, message.offset);
       },
     });
