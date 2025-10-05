@@ -239,11 +239,7 @@ export class MessageSendConsume {
         remoteJid: q?.key.remote_jid ?? '',
         fromMe: q?.key.from_me ?? false,
         id: q?.key.id ?? '',
-        senderLid: q?.key.sender_lid ?? undefined,
-        senderPn: q?.key.sender_pn ?? undefined,
         participant: q?.key.participant ?? undefined,
-        participantLid: q?.key.participant_lid ?? undefined,
-        participantPn: q?.key.participant_pn ?? undefined,
       },
       message: (q?.message as proto.IMessage | null) ?? null,
     };

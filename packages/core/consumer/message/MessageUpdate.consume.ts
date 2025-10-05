@@ -65,8 +65,6 @@ export class MessageUpdateConsume {
     const jid = remoteJid(data.message?.key);
     const messageKey: IChat['message_key'] = {
       remote_jid: jid,
-      sender_lid: data.message?.key?.senderLid ?? null,
-      sender_pn: data.message?.key?.senderPn ?? null,
     };
 
     await this.elasticDatabaseService.update(
@@ -87,22 +85,16 @@ export class MessageUpdateConsume {
 
   private async updateMessageIfMissingKey(data: IUpdateMessage): Promise<void> {
     const hasId = Boolean(data.data?.message_key?.id);
-    const hasRemote = Boolean(data.data?.message_key?.remote_jid);
 
-    if (hasId && hasRemote) {
-      return;
-    }
+    const hasRemote = Boolean(data.data?.message_key?.remote_jid);
+    if (hasId && hasRemote) return;
 
     const jid = remoteJid(data.message?.key);
     const messageKey: IChatMessage['message_key'] = {
       remote_jid: jid,
       from_me: data.message?.key?.fromMe ?? false,
       id: data.message?.key?.id ?? null,
-      sender_lid: data.message?.key?.senderLid ?? null,
-      sender_pn: data.message?.key?.senderPn ?? null,
       participant: data.message?.key?.participant ?? null,
-      participant_pn: data.message?.key?.participantPn ?? null,
-      participant_lid: data.message?.key?.participantLid ?? null,
     };
 
     await this.elasticDatabaseService.update(

@@ -192,11 +192,7 @@ export class MessageUpsertConsume {
         remote_jid: jid,
         from_me: data.message?.key?.fromMe,
         id: data.message?.key?.id,
-        sender_lid: data.message?.key?.senderLid ?? null,
-        sender_pn: data.message?.key?.senderPn ?? null,
         participant: data.message?.key?.participant,
-        participant_lid: data.message?.key?.participantLid ?? null,
-        participant_pn: data.message?.key?.participantPn ?? null,
       },
       type_user: data.message?.key?.fromMe
         ? ETypeUserChat.operator
@@ -251,8 +247,6 @@ export class MessageUpsertConsume {
       chat_id: chatId,
       message_key: {
         remote_jid: jid,
-        sender_lid: data.message?.key?.senderLid ?? null,
-        sender_pn: data.message?.key?.senderPn ?? null,
       },
       account: viewAccountName,
       worker: viewWorkerNameAndId,

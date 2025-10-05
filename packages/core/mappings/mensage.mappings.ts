@@ -20,19 +20,7 @@ export const mensageMappings = () => {
             id: {
               type: 'keyword',
             },
-            sender_lid: {
-              type: 'keyword',
-            },
-            sender_pn: {
-              type: 'keyword',
-            },
             participant: {
-              type: 'keyword',
-            },
-            participant_pn: {
-              type: 'keyword',
-            },
-            participant_lid: {
               type: 'keyword',
             },
           },
@@ -86,19 +74,7 @@ export const mensageMappings = () => {
                     id: {
                       type: 'keyword',
                     },
-                    sender_lid: {
-                      type: 'keyword',
-                    },
-                    sender_pn: {
-                      type: 'keyword',
-                    },
                     participant: {
-                      type: 'keyword',
-                    },
-                    participant_pn: {
-                      type: 'keyword',
-                    },
-                    participant_lid: {
                       type: 'keyword',
                     },
                   },
