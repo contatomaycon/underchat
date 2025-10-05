@@ -12,6 +12,7 @@ import { IViewServerWebById } from '@core/common/interfaces/IViewServerWebById';
 import { Kafka, Consumer } from 'kafkajs';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { delay } from '@core/common/functions/delay';
+import { createConsumer } from '@core/common/functions/createConsumer';
 
 @singleton()
 export class BalanceCreatorConsume {
@@ -32,19 +33,19 @@ export class BalanceCreatorConsume {
   }
 
   async execute(server: FastifyInstance): Promise<void> {
-    if (this.consumer) {
-      return;
-    }
+    if (this.consumer) return;
+
+    this.consumer = createConsumer(
+      this.kafka,
+      'group-underchat-balance-creator'
+    );
 
     const topic = this.kafkaServiceQueueService.createServer();
-    const consumer = this.createConsumer();
 
-    this.consumer = consumer;
+    await this.consumer.connect();
+    await this.consumer.subscribe({ topic, fromBeginning: true });
 
-    await consumer.connect();
-    await consumer.subscribe({ topic, fromBeginning: false });
-
-    await consumer.run({
+    await this.consumer.run({
       autoCommit: false,
       eachMessage: async ({ topic, partition, message, heartbeat }) => {
         const data = this.parseMessage(message.value);
@@ -73,19 +74,6 @@ export class BalanceCreatorConsume {
       await this.consumer.disconnect();
       this.consumer = null;
     }
-  }
-
-  private createConsumer(): Consumer {
-    const consumer = this.kafka.consumer({
-      groupId: 'group-underchat-balance-creator',
-      retry: { retries: 8, initialRetryTime: 300 },
-      allowAutoTopicCreation: true,
-      sessionTimeout: 900_000,
-      rebalanceTimeout: 1_200_000,
-      heartbeatInterval: 3_000,
-    });
-
-    return consumer;
   }
 
   private async commitNext(

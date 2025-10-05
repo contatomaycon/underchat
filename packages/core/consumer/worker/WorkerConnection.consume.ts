@@ -4,6 +4,7 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { WorkerService } from '@core/services/worker.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
+import { createConsumer } from '@core/common/functions/createConsumer';
 
 @singleton()
 export class WorkerConnectionConsume {
@@ -24,19 +25,19 @@ export class WorkerConnectionConsume {
   }
 
   public async execute(): Promise<void> {
-    if (this.consumer) {
-      return;
-    }
+    if (this.consumer) return;
+
+    this.consumer = createConsumer(
+      this.kafka,
+      `group-underchat-worker-connection`
+    );
 
     const topic = this.getTopic();
-    const consumer = this.createConsumer();
 
-    this.consumer = consumer;
+    await this.consumer.connect();
+    await this.consumer.subscribe({ topic, fromBeginning: true });
 
-    await consumer.connect();
-    await consumer.subscribe({ topic, fromBeginning: false });
-
-    await consumer.run({
+    await this.consumer.run({
       autoCommit: false,
       partitionsConsumedConcurrently: 1,
       eachMessage: async ({ topic, partition, message, heartbeat }) => {
@@ -80,19 +81,6 @@ export class WorkerConnectionConsume {
 
   private getTopic(): string {
     return this.kafkaServiceQueueService.workerStatus();
-  }
-
-  private createConsumer(): Consumer {
-    const consumer = this.kafka.consumer({
-      groupId: 'group-underchat-worker-connection',
-      retry: { retries: 8, initialRetryTime: 300 },
-      allowAutoTopicCreation: true,
-      sessionTimeout: 900_000,
-      rebalanceTimeout: 1_200_000,
-      heartbeatInterval: 3_000,
-    });
-
-    return consumer;
   }
 
   private parseMessage(value: Buffer | null): IBaileysConnectionState | null {

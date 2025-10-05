@@ -25,6 +25,7 @@ import { StorageService } from '@core/services/storage.service';
 import { LinkPreview } from '@core/schema/chat/listMessageChats/response.schema';
 import { buildQuotedTextFromExtended } from '@core/common/functions/buildQuotedTextFromExtended';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
+import { createConsumer } from '@core/common/functions/createConsumer';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -297,25 +298,19 @@ export class MessageUpsertConsume {
   }
 
   public async execute(): Promise<void> {
-    if (this.consumer) {
-      return;
-    }
+    if (this.consumer) return;
+
+    this.consumer = createConsumer(
+      this.kafka,
+      'group-underchat-message-upsert'
+    );
 
     const topic = this.kafkaServiceQueueService.upsertMessage();
-    const consumer = this.kafka.consumer({
-      groupId: 'group-underchat-message-upsert',
-      retry: { retries: 8, initialRetryTime: 300 },
-      allowAutoTopicCreation: true,
-      sessionTimeout: 900_000,
-      rebalanceTimeout: 1_200_000,
-      heartbeatInterval: 3_000,
-    });
-    this.consumer = consumer;
 
-    await consumer.connect();
-    await consumer.subscribe({ topic, fromBeginning: false });
+    await this.consumer.connect();
+    await this.consumer.subscribe({ topic, fromBeginning: true });
 
-    await consumer.run({
+    await this.consumer.run({
       autoCommit: false,
       partitionsConsumedConcurrently: 1,
       eachMessage: async ({ topic, partition, message, heartbeat }) => {

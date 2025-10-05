@@ -20,6 +20,7 @@ import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
+import { createConsumer } from '@core/common/functions/createConsumer';
 
 @singleton()
 export class WorkerConsume {
@@ -44,19 +45,19 @@ export class WorkerConsume {
   }
 
   public async execute(): Promise<void> {
-    if (this.consumer) {
-      return;
-    }
+    if (this.consumer) return;
+
+    this.consumer = createConsumer(
+      this.kafka,
+      `group-underchat-worker-${balanceEnvironment.serverId}`
+    );
 
     const topic = this.getTopic();
-    const consumer = this.createConsumer();
 
-    this.consumer = consumer;
+    await this.consumer.connect();
+    await this.consumer.subscribe({ topic, fromBeginning: true });
 
-    await consumer.connect();
-    await consumer.subscribe({ topic, fromBeginning: false });
-
-    await consumer.run({
+    await this.consumer.run({
       autoCommit: false,
       partitionsConsumedConcurrently: 1,
       eachMessage: async ({ topic, partition, message, heartbeat }) => {
@@ -104,19 +105,6 @@ export class WorkerConsume {
     );
 
     return topic;
-  }
-
-  private createConsumer(): Consumer {
-    const consumer = this.kafka.consumer({
-      groupId: `group-underchat-worker-${balanceEnvironment.serverId}`,
-      retry: { retries: 8, initialRetryTime: 300 },
-      allowAutoTopicCreation: true,
-      sessionTimeout: 900_000,
-      rebalanceTimeout: 1_200_000,
-      heartbeatInterval: 3_000,
-    });
-
-    return consumer;
   }
 
   private parseMessage(value: Buffer | null): IWorkerPayload | null {

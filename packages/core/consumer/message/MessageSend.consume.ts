@@ -11,6 +11,7 @@ import { proto, WAMessage, WAUrlInfo } from '@whiskeysockets/baileys';
 import { KeyedSequencerService } from '@core/services/keyedSequencer.service';
 import { Kafka, Consumer } from 'kafkajs';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
+import { createConsumer } from '@core/common/functions/createConsumer';
 
 @singleton()
 export class MessageSendConsume {
@@ -34,21 +35,21 @@ export class MessageSendConsume {
   }
 
   public async execute(): Promise<void> {
-    if (this.consumer) {
-      return;
-    }
+    if (this.consumer) return;
+
+    this.consumer = createConsumer(
+      this.kafka,
+      `group-underchat-baileys-send-${baileysEnvironment.baileysWorkerId}`
+    );
 
     const topic = this.kafkaBaileysQueueService.workerSendMessage(
       baileysEnvironment.baileysWorkerId
     );
-    const consumer = this.createConsumer();
 
-    this.consumer = consumer;
+    await this.consumer.connect();
+    await this.consumer.subscribe({ topic, fromBeginning: true });
 
-    await consumer.connect();
-    await consumer.subscribe({ topic, fromBeginning: false });
-
-    await consumer.run({
+    await this.consumer.run({
       autoCommit: false,
       partitionsConsumedConcurrently: 1,
       eachMessage: async ({ topic, partition, message, heartbeat }) => {
@@ -101,19 +102,6 @@ export class MessageSendConsume {
     }
 
     return;
-  }
-
-  private createConsumer(): Consumer {
-    const consumer = this.kafka.consumer({
-      groupId: `group-underchat-baileys-send-${baileysEnvironment.baileysWorkerId}`,
-      retry: { retries: 8, initialRetryTime: 300 },
-      allowAutoTopicCreation: true,
-      sessionTimeout: 900_000,
-      rebalanceTimeout: 1_200_000,
-      heartbeatInterval: 3_000,
-    });
-
-    return consumer;
   }
 
   private async commitNext(

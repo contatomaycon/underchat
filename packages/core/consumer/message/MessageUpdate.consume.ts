@@ -9,6 +9,7 @@ import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import Redis from 'ioredis';
 import { remoteJid } from '@core/common/functions/remoteJid';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
+import { createConsumer } from '@core/common/functions/createConsumer';
 
 @singleton()
 export class MessageUpdateConsume {
@@ -32,19 +33,6 @@ export class MessageUpdateConsume {
 
   private cacheChatKey(accountId: string, chatId: string): string {
     return `chat:${accountId}:${chatId}`;
-  }
-
-  private createConsumer(): Consumer {
-    const consumer = this.kafka.consumer({
-      groupId: 'group-underchat-message-update',
-      retry: { retries: 8, initialRetryTime: 300 },
-      allowAutoTopicCreation: true,
-      sessionTimeout: 900_000,
-      rebalanceTimeout: 1_200_000,
-      heartbeatInterval: 3_000,
-    });
-
-    return consumer;
   }
 
   private parseMessage(value: Buffer | null): IUpdateMessage | null {
@@ -134,19 +122,19 @@ export class MessageUpdateConsume {
   }
 
   public async execute(): Promise<void> {
-    if (this.consumer) {
-      return;
-    }
+    if (this.consumer) return;
+
+    this.consumer = createConsumer(
+      this.kafka,
+      'group-underchat-message-update'
+    );
 
     const topic = this.kafkaServiceQueueService.updateMessage();
-    const consumer = this.createConsumer();
 
-    this.consumer = consumer;
+    await this.consumer.connect();
+    await this.consumer.subscribe({ topic, fromBeginning: true });
 
-    await consumer.connect();
-    await consumer.subscribe({ topic, fromBeginning: false });
-
-    await consumer.run({
+    await this.consumer.run({
       autoCommit: false,
       partitionsConsumedConcurrently: 1,
       eachMessage: async ({ topic, partition, message, heartbeat }) => {
