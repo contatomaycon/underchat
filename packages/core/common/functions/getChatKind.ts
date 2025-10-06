@@ -5,6 +5,7 @@ import {
   isJidStatusBroadcast,
   isLidUser,
   WAMessage,
+  isPnUser,
 } from '@whiskeysockets/baileys';
 import { EChatKind } from '../enums/EChatKind';
 import { normalizeJid } from './normalizeJid';
@@ -25,6 +26,7 @@ export function getChatKind(m: WAMessage): EChatKind {
   if (isJidBroadcast(jid)) return EChatKind.broadcast;
   if (isJidNewsletter(jid)) return EChatKind.newsletter;
   if (isLidUser(jid)) return EChatKind.user;
+  if (isPnUser(jid)) return EChatKind.user;
 
   return EChatKind.unknown;
 }

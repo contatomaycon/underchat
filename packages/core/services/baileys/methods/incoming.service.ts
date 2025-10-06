@@ -58,6 +58,7 @@ export class BaileysIncomingMessageService {
         const upsertType = e.type;
 
         console.log('upsertType:', upsertType);
+        console.log('chatKind:', chatKind);
 
         if (
           chatKind === EChatKind.user &&
