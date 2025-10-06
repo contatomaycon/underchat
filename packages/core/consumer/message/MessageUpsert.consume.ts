@@ -26,6 +26,7 @@ import { LinkPreview } from '@core/schema/chat/listMessageChats/response.schema'
 import { buildQuotedTextFromExtended } from '@core/common/functions/buildQuotedTextFromExtended';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -301,6 +302,7 @@ export class MessageUpsertConsume {
 
     const topic = this.kafkaServiceQueueService.upsertMessage();
 
+    await ensureKafkaTopic(this.kafka, topic);
     await this.consumer.connect();
     await this.consumer.subscribe({ topic, fromBeginning: true });
 

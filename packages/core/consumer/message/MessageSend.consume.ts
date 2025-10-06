@@ -12,6 +12,7 @@ import { KeyedSequencerService } from '@core/services/keyedSequencer.service';
 import { Kafka, Consumer } from 'kafkajs';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 @singleton()
 export class MessageSendConsume {
@@ -46,6 +47,7 @@ export class MessageSendConsume {
       baileysEnvironment.baileysWorkerId
     );
 
+    await ensureKafkaTopic(this.kafka, topic);
     await this.consumer.connect();
     await this.consumer.subscribe({ topic, fromBeginning: true });
 

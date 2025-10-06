@@ -5,6 +5,7 @@ import { WorkerService } from '@core/services/worker.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 @singleton()
 export class WorkerConnectionConsume {
@@ -34,6 +35,7 @@ export class WorkerConnectionConsume {
 
     const topic = this.getTopic();
 
+    await ensureKafkaTopic(this.kafka, topic);
     await this.consumer.connect();
     await this.consumer.subscribe({ topic, fromBeginning: true });
 

@@ -10,6 +10,7 @@ import Redis from 'ioredis';
 import { remoteJid } from '@core/common/functions/remoteJid';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 @singleton()
 export class MessageUpdateConsume {
@@ -123,6 +124,7 @@ export class MessageUpdateConsume {
 
     const topic = this.kafkaServiceQueueService.updateMessage();
 
+    await ensureKafkaTopic(this.kafka, topic);
     await this.consumer.connect();
     await this.consumer.subscribe({ topic, fromBeginning: true });
 

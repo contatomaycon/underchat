@@ -14,6 +14,7 @@ import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.servi
 import { delay } from '@core/common/functions/delay';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 @singleton()
 export class BalanceCreatorConsume {
@@ -43,6 +44,7 @@ export class BalanceCreatorConsume {
 
     const topic = this.kafkaServiceQueueService.createServer();
 
+    await ensureKafkaTopic(this.kafka, topic);
     await this.consumer.connect();
     await this.consumer.subscribe({ topic, fromBeginning: true });
 

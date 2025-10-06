@@ -21,6 +21,7 @@ import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionS
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 @singleton()
 export class WorkerConsume {
@@ -54,6 +55,7 @@ export class WorkerConsume {
 
     const topic = this.getTopic();
 
+    await ensureKafkaTopic(this.kafka, topic);
     await this.consumer.connect();
     await this.consumer.subscribe({ topic, fromBeginning: true });
 
@@ -62,8 +64,6 @@ export class WorkerConsume {
       partitionsConsumedConcurrently: 1,
       eachMessage: async ({ topic, partition, message, heartbeat }) => {
         const data = this.parseMessage(message.value);
-
-        console.log('data', data);
 
         if (!data) {
           await this.commitNext(topic, partition, message.offset);
@@ -131,8 +131,6 @@ export class WorkerConsume {
 
   private async handleMessage(data: IWorkerPayload): Promise<void> {
     if (data.action === EWorkerAction.create) {
-      console.log('create worker', data);
-
       await this.createWorker(data);
 
       return;
@@ -146,8 +144,6 @@ export class WorkerConsume {
     }
 
     if (data.action === EWorkerAction.recreate) {
-      console.log('recreate worker', data);
-
       await this.kafkaBaileysQueueService.delete(data.worker_id);
       await this.recreateWorker(data);
 
@@ -200,8 +196,6 @@ export class WorkerConsume {
       data.worker_id
     );
 
-    console.log('viewWorkerType', viewWorkerType);
-
     if (!viewWorkerType) {
       await this.updateWorkerErrorStatus(
         data.worker_id,
@@ -217,8 +211,6 @@ export class WorkerConsume {
       false
     );
 
-    console.log('removed', removed);
-
     if (!removed) {
       await this.updateWorkerErrorStatus(
         data.worker_id,
@@ -232,17 +224,12 @@ export class WorkerConsume {
     const workerType = viewWorkerType.worker_type_id as EWorkerType;
     const imageName = getImageWorker(workerType);
 
-    console.log('workerType', workerType);
-    console.log('imageName', imageName);
-
     const containerId = await this.workerService.createContainerWorker(
       imageName,
       data.worker_id,
       data.account_id,
       false
     );
-
-    console.log('containerId', containerId);
 
     if (!containerId) {
       await this.updateWorkerErrorStatus(
@@ -256,8 +243,6 @@ export class WorkerConsume {
 
     const healthy =
       await this.containerHealthService.isServiceHealthy(containerId);
-
-    console.log('healthy', healthy);
 
     if (!healthy) {
       await this.updateWorkerErrorStatus(
@@ -275,15 +260,11 @@ export class WorkerConsume {
       container_id: containerId,
     };
 
-    console.log('inputUpdate', inputUpdate);
-
     const updated = await this.workerService.updateWorkerById(
       data.is_administrator,
       data.account_id,
       inputUpdate
     );
-
-    console.log('updated', updated);
 
     if (!updated) {
       await this.updateWorkerErrorStatus(
@@ -300,8 +281,6 @@ export class WorkerConsume {
       status: EWorkerStatus.recreating,
       type: data.worker_type_id as EWorkerType,
     };
-
-    console.log('payload', payload);
 
     await this.streamProducerService.send(
       this.kafkaBaileysQueueService.workerConnection(data.worker_id),
@@ -327,8 +306,6 @@ export class WorkerConsume {
       data.worker_id
     );
 
-    console.log('exists', exists);
-
     if (!exists) {
       await this.updateWorkerErrorStatus(
         data.worker_id,
@@ -342,8 +319,6 @@ export class WorkerConsume {
     const containerId = await this.workerService.removeContainerWorker(
       data.worker_id
     );
-
-    console.log('containerId', containerId);
 
     if (!containerId) {
       await this.updateWorkerErrorStatus(
@@ -360,8 +335,6 @@ export class WorkerConsume {
       data.account_id,
       data.worker_id
     );
-
-    console.log('deleted', deleted);
 
     if (!deleted) {
       await this.updateWorkerErrorStatus(
@@ -380,8 +353,6 @@ export class WorkerConsume {
       account_id: data.account_id,
       worker_status_id: EWorkerStatus.delete,
     };
-
-    console.log('dataPublish', dataPublish);
 
     return this.centrifugoPublish(dataPublish);
   }

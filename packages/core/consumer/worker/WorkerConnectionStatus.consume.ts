@@ -8,6 +8,7 @@ import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.servi
 import { Kafka, Consumer } from 'kafkajs';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 @singleton()
 export class WorkerConnectionStatusConsume {
@@ -37,6 +38,7 @@ export class WorkerConnectionStatusConsume {
 
     const topic = this.getWorkerConnectionTopic();
 
+    await ensureKafkaTopic(this.kafka, topic);
     await this.consumer.connect();
     await this.consumer.subscribe({ topic, fromBeginning: true });
 

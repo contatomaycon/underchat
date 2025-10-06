@@ -14,7 +14,8 @@ RUN apk update && \
       pkgconf \
       openssl-dev \
       cyrus-sasl-dev \
-      zstd-dev
+      zstd-dev \
+      curl
 
 RUN corepack enable && \
     corepack prepare pnpm@10.14.0 --activate && \
@@ -58,6 +59,11 @@ COPY --from=builder /app/apps/worker_baileys/dist ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/apps/worker_baileys/package*.json ./apps/worker_baileys
+
+
+RUN apk update && \
+    apk add --no-cache \
+    curl
 
 EXPOSE 3005
 
