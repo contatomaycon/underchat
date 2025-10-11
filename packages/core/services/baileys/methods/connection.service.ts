@@ -64,9 +64,7 @@ export class BaileysConnectionService {
     private readonly streamProducerService: StreamProducerService,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly baileysIncomingMessageService: BaileysIncomingMessageService
-  ) {
-    process.on('unhandledRejection', () => this.handleFatal());
-  }
+  ) {}
 
   get connected(): boolean {
     return this.status === Status.connected && !!this.socket?.user;
@@ -607,34 +605,6 @@ export class BaileysConnectionService {
       qrcode: qr,
       code: this.code,
     };
-  }
-
-  private handleFatal() {
-    this.setStatus(Status.disconnected, ECodeMessage.connectionLost);
-
-    const payload: IBaileysConnectionState = {
-      status: this.status,
-      worker_id: WORKER,
-      account_id: ACCOUNT,
-      code: this.code,
-      worker_status_id: EWorkerStatus.error,
-    };
-
-    this.publishSub(payload);
-
-    this.streamProducerService.send(
-      this.kafkaServiceQueueService.workerStatus(),
-      payload,
-      WORKER
-    );
-
-    this.saveLogWppConnection({
-      worker_id: WORKER,
-      status: this.status,
-      code: this.code?.toString(),
-      message: 'Unhandled Rejection – BaileysConnectionService',
-      date: new Date(),
-    });
   }
 
   private readonly saveLogWppConnection = async (

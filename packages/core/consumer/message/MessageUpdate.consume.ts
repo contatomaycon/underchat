@@ -1,5 +1,5 @@
 import { singleton, inject } from 'tsyringe';
-import { KafkaStreams, KStream } from 'kafka-streams';
+import { Kafka, Consumer } from 'kafkajs';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
 import { IChat } from '@core/common/interfaces/IChat';
@@ -8,92 +8,187 @@ import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import Redis from 'ioredis';
 import { remoteJid } from '@core/common/functions/remoteJid';
+import { startHeartbeat } from '@core/common/functions/startHeartbeat';
+import { createConsumer } from '@core/common/functions/createConsumer';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 @singleton()
 export class MessageUpdateConsume {
+  private consumer: Consumer | null = null;
+  private processingChain: Promise<void> = Promise.resolve();
+
   constructor(
     @inject('Redis') private readonly redis: Redis,
-    @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams,
+    @inject('Kafka') private readonly kafka: Kafka,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
+
+  private get consumerOrThrow(): Consumer {
+    if (!this.consumer) {
+      throw new Error('Consumer not initialized');
+    }
+
+    return this.consumer;
+  }
 
   private cacheChatKey(accountId: string, chatId: string): string {
     return `chat:${accountId}:${chatId}`;
   }
 
-  public async execute(): Promise<void> {
-    const stream: KStream = this.kafkaStreams.getKStream(
-      this.kafkaServiceQueueService.updateMessage()
+  private parseMessage(value: Buffer | null): IUpdateMessage | null {
+    if (!value) {
+      return null;
+    }
+
+    const raw = value.toString('utf8').trim();
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as IUpdateMessage;
+
+      return parsed ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async updateChatIfMissingRemoteJid(
+    data: IUpdateMessage
+  ): Promise<void> {
+    const hasRemote = Boolean(data.data?.message_key?.remote_jid);
+    if (hasRemote) {
+      return;
+    }
+
+    const jid = remoteJid(data.message?.key);
+    const messageKey: IChat['message_key'] = {
+      remote_jid: jid,
+    };
+
+    await this.elasticDatabaseService.update(
+      EElasticIndex.chat,
+      { message_key: messageKey },
+      data.data?.chat_id ?? ''
     );
 
-    stream.mapBufferKeyToString();
-    stream.mapJSONConvenience();
+    const cacheKey = this.cacheChatKey(
+      data.data?.account?.id ?? '',
+      data.data?.chat_id ?? ''
+    );
 
-    let chain: Promise<void> = Promise.resolve();
+    await this.redis.del(cacheKey);
 
-    stream.forEach(async (msg) => {
-      chain = chain.then(async () => {
-        const data = msg.value as IUpdateMessage;
+    return;
+  }
+
+  private async updateMessageIfMissingKey(data: IUpdateMessage): Promise<void> {
+    const hasId = Boolean(data.data?.message_key?.id);
+
+    const hasRemote = Boolean(data.data?.message_key?.remote_jid);
+    if (hasId && hasRemote) return;
+
+    const jid = remoteJid(data.message?.key);
+    const messageKey: IChatMessage['message_key'] = {
+      remote_jid: jid,
+      from_me: data.message?.key?.fromMe ?? false,
+      id: data.message?.key?.id ?? null,
+      participant: data.message?.key?.participant ?? null,
+    };
+
+    await this.elasticDatabaseService.update(
+      EElasticIndex.message,
+      { message_key: messageKey },
+      data.data?.message_id ?? ''
+    );
+
+    return;
+  }
+
+  private async handleMessage(data: IUpdateMessage): Promise<void> {
+    await this.updateChatIfMissingRemoteJid(data);
+    await this.updateMessageIfMissingKey(data);
+
+    return;
+  }
+
+  public async execute(): Promise<void> {
+    if (this.consumer) return;
+
+    this.consumer = createConsumer(
+      this.kafka,
+      'group-underchat-message-update'
+    );
+
+    const topic = this.kafkaServiceQueueService.updateMessage();
+
+    await ensureKafkaTopic(this.kafka, topic);
+    await this.consumer.connect();
+    await this.consumer.subscribe({ topic, fromBeginning: true });
+
+    await this.consumer.run({
+      autoCommit: false,
+      partitionsConsumedConcurrently: 1,
+      eachMessage: async ({ topic, partition, message, heartbeat }) => {
+        const data = this.parseMessage(message.value);
 
         if (!data) {
-          throw new Error('Received message without value');
+          await this.commitNext(topic, partition, message.offset);
+
+          return;
         }
 
-        if (!data?.data?.message_key?.remote_jid) {
-          const jid = remoteJid(data.message?.key);
+        const offset = message.offset;
 
-          const messageKey: IChat['message_key'] = {
-            remote_jid: jid,
-            sender_lid: data.message?.key.senderLid ?? null,
-            sender_pn: data.message?.key.senderPn ?? null,
-          };
+        this.processingChain = this.processingChain.then(async () => {
+          const stop = startHeartbeat(heartbeat);
 
-          await this.elasticDatabaseService.update(
-            EElasticIndex.chat,
-            { message_key: messageKey },
-            data.data.chat_id
-          );
+          try {
+            await this.handleMessage(data);
+          } catch {
+            await this.commitNext(topic, partition, message.offset);
+          } finally {
+            stop();
+          }
 
-          const cacheChatKey = this.cacheChatKey(
-            data.data.account.id,
-            data.data.chat_id
-          );
-          await this.redis.del(cacheChatKey);
-        }
+          await this.commitNext(topic, partition, offset);
+        });
 
-        if (
-          !data?.data?.message_key?.id ||
-          !data?.data?.message_key?.remote_jid
-        ) {
-          const jid = remoteJid(data.message?.key);
-
-          const messageKey: IChatMessage['message_key'] = {
-            remote_jid: jid,
-            from_me: data.message?.key.fromMe ?? false,
-            id: data.message?.key.id ?? null,
-            sender_lid: data.message?.key.senderLid ?? null,
-            sender_pn: data.message?.key.senderPn ?? null,
-            participant: data.message?.key.participant ?? null,
-            participant_pn: data.message?.key.participantPn ?? null,
-            participant_lid: data.message?.key.participantLid ?? null,
-          };
-
-          await this.elasticDatabaseService.update(
-            EElasticIndex.message,
-            {
-              message_key: messageKey,
-            },
-            data.data.message_id
-          );
-        }
-      });
+        return;
+      },
     });
 
-    await stream.start();
+    return;
   }
 
   public async close(): Promise<void> {
-    await this.kafkaStreams.closeAll();
+    await this.processingChain;
+
+    if (!this.consumer) {
+      return;
+    }
+
+    try {
+      await this.consumer.stop();
+    } finally {
+      await this.consumer.disconnect();
+      this.consumer = null;
+    }
+
+    return;
+  }
+
+  private async commitNext(
+    topic: string,
+    partition: number,
+    offset: string
+  ): Promise<void> {
+    const next = (BigInt(offset) + 1n).toString();
+
+    await this.consumerOrThrow.commitOffsets([
+      { topic, partition, offset: next },
+    ]);
   }
 }

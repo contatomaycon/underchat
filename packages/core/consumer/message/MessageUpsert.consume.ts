@@ -1,5 +1,5 @@
 import { singleton, inject } from 'tsyringe';
-import { KafkaStreams, KStream } from 'kafka-streams';
+import { Kafka, Consumer } from 'kafkajs';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
@@ -24,11 +24,20 @@ import { remoteJid } from '@core/common/functions/remoteJid';
 import { StorageService } from '@core/services/storage.service';
 import { LinkPreview } from '@core/schema/chat/listMessageChats/response.schema';
 import { buildQuotedTextFromExtended } from '@core/common/functions/buildQuotedTextFromExtended';
+import { startHeartbeat } from '@core/common/functions/startHeartbeat';
+import { createConsumer } from '@core/common/functions/createConsumer';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
+import Redis from 'ioredis';
 
 @singleton()
 export class MessageUpsertConsume {
+  private consumer: Consumer | null = null;
+  private processingChain: Promise<void> = Promise.resolve();
+
   constructor(
-    @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams,
+    @inject('Redis') private readonly redis: Redis,
+    @inject('Kafka') private readonly kafka: Kafka,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly elasticDatabaseService: ElasticDatabaseService,
     private readonly accountService: AccountService,
@@ -38,22 +47,34 @@ export class MessageUpsertConsume {
     private readonly storageService: StorageService
   ) {}
 
+  private get consumerOrThrow(): Consumer {
+    if (!this.consumer) {
+      throw new Error('Consumer not initialized');
+    }
+
+    return this.consumer;
+  }
+
   private centrifugoChatPublish(
     dataPublish: IChatMessage
   ): Promise<PublishResult> {
-    return this.centrifugoService.publishSub(
+    const promise = this.centrifugoService.publishSub(
       chatAccountCentrifugo(dataPublish.account.id),
       dataPublish
     );
+
+    return promise;
   }
 
   private centrifugoChatQueuePublish(
     dataPublish: IChat
   ): Promise<PublishResult> {
-    return this.centrifugoService.publishSub(
+    const promise = this.centrifugoService.publishSub(
       chatQueueAccountCentrifugo(dataPublish.account.id),
       dataPublish
     );
+
+    return promise;
   }
 
   private async getChat(
@@ -62,8 +83,12 @@ export class MessageUpsertConsume {
     phone: string,
     jid?: string | null
   ): Promise<IChat | null> {
-    const candidates = buildCandidates(phone);
+    const cached = await this.getChatFromCache(accountId, workerId, phone);
+    if (cached) {
+      return cached;
+    }
 
+    const candidates = buildCandidates(phone);
     const shouldClauses: any[] = [];
 
     if (Array.isArray(candidates) && candidates.length) {
@@ -120,7 +145,6 @@ export class MessageUpsertConsume {
       EElasticIndex.chat,
       queryElastic
     );
-
     const data = result?.hits.hits[0]?._source as IChat | null;
 
     if (!data) {
@@ -134,82 +158,82 @@ export class MessageUpsertConsume {
     getChat: IChat,
     data: IUpsertMessage
   ): Promise<boolean> {
-    let content;
-    const extended = data?.message?.message?.extendedTextMessage;
+    try {
+      const extended = data?.message?.message?.extendedTextMessage;
 
-    const linkPreview = extended
-      ? ({
-          'canonical-url': extended?.matchedText ?? '',
-          'matched-text': extended?.matchedText ?? '',
-          title: extended?.title ?? '',
-          description: extended?.description ?? '',
-          jpegThumbnail: extended?.jpegThumbnail,
-        } as LinkPreview)
-      : undefined;
+      const linkPreview = extended
+        ? ({
+            'canonical-url': extended?.matchedText ?? '',
+            'matched-text': extended?.matchedText ?? '',
+            title: extended?.title ?? '',
+            description: extended?.description ?? '',
+            jpegThumbnail: extended?.jpegThumbnail,
+          } as LinkPreview)
+        : undefined;
 
-    content = {
-      type: data.type,
-      message:
-        data.message?.message?.extendedTextMessage?.text ??
-        data.message?.message?.conversation,
-      link_preview: linkPreview,
-      quoted: buildQuotedTextFromExtended(data.message),
-    };
+      const content = {
+        type: data.type,
+        message:
+          data.message?.message?.extendedTextMessage?.text ??
+          data.message?.message?.conversation,
+        link_preview: linkPreview,
+        quoted: buildQuotedTextFromExtended(data.message),
+      };
 
-    const jid = remoteJid(data.message?.key);
-    if (!getChat?.name && !data.message?.key?.fromMe) {
-      const name = this.nameChat(data);
+      const jid = remoteJid(data.message?.key);
+      const jidAlt = remoteJidAlt(data.message?.key);
 
-      await this.elasticDatabaseService.update(
-        EElasticIndex.chat,
-        { name },
-        getChat.chat_id
-      );
+      if (!getChat?.name && !data.message?.key?.fromMe) {
+        const name = this.nameChat(data);
 
-      getChat.name = name;
+        await this.elasticDatabaseService.update(
+          EElasticIndex.chat,
+          { name },
+          getChat.chat_id
+        );
+        getChat.name = name;
 
-      await this.centrifugoChatQueuePublish(getChat);
+        await this.centrifugoChatQueuePublish(getChat);
+      }
+
+      const inputChatMessage: IChatMessage = {
+        message_id: uuidv4(),
+        chat_id: getChat.chat_id,
+        message_key: {
+          remote_jid: jid,
+          remote_jid_alt: jidAlt,
+          from_me: data.message?.key?.fromMe,
+          id: data.message?.key?.id,
+          participant: data.message?.key?.participant,
+          participant_alt: data.message?.key?.participantAlt,
+          addressing_mode: data.message?.key?.addressingMode,
+        },
+        type_user: data.message?.key?.fromMe
+          ? ETypeUserChat.operator
+          : ETypeUserChat.client,
+        account: getChat.account,
+        worker: getChat.worker,
+        user: getChat.user,
+        phone: getChat.phone,
+        summary: { is_sent: false, is_delivered: false, is_seen: false },
+        content,
+        date: new Date().toISOString(),
+      };
+
+      const [, result] = await Promise.all([
+        this.centrifugoChatPublish(inputChatMessage),
+        this.chatService.saveMessageChat(inputChatMessage),
+      ]);
+
+      return result;
+    } catch {
+      return false;
     }
-
-    const inputChatMessage: IChatMessage = {
-      message_id: uuidv4(),
-      chat_id: getChat.chat_id,
-      message_key: {
-        remote_jid: jid,
-        from_me: data.message?.key?.fromMe,
-        id: data.message?.key?.id,
-        sender_lid: data.message?.key?.senderLid ?? null,
-        sender_pn: data.message?.key?.senderPn ?? null,
-        participant: data.message?.key?.participant,
-        participant_lid: data.message?.key?.participantLid ?? null,
-        participant_pn: data.message?.key?.participantPn ?? null,
-      },
-      type_user: data.message?.key?.fromMe
-        ? ETypeUserChat.operator
-        : ETypeUserChat.client,
-      account: getChat.account,
-      worker: getChat.worker,
-      user: getChat.user,
-      phone: getChat.phone,
-      summary: {
-        is_sent: false,
-        is_delivered: false,
-        is_seen: false,
-      },
-      content,
-      date: new Date().toISOString(),
-    };
-
-    const [, result] = await Promise.all([
-      this.centrifugoChatPublish(inputChatMessage),
-      this.chatService.saveMessageChat(inputChatMessage),
-    ]);
-
-    return result;
   }
 
   private nameChat(data: IUpsertMessage) {
     let name = null;
+
     if (!data.message?.key?.fromMe) {
       name = data?.message?.pushName ?? null;
     }
@@ -218,111 +242,205 @@ export class MessageUpsertConsume {
   }
 
   private async createChat(data: IUpsertMessage): Promise<IChat> {
-    const [viewAccountName, viewWorkerNameAndId] = await Promise.all([
-      this.accountService.viewAccountName(data.account_id),
-      this.workerService.viewWorkerNameAndId(data.account_id, data.worker_id),
-    ]);
+    try {
+      const [viewAccountName, viewWorkerNameAndId] = await Promise.all([
+        this.accountService.viewAccountName(data.account_id),
+        this.workerService.viewWorkerNameAndId(data.account_id, data.worker_id),
+      ]);
 
-    if (!viewAccountName || !viewWorkerNameAndId) {
-      throw new Error('Account or Worker not found');
+      if (!viewAccountName || !viewWorkerNameAndId) {
+        throw new Error('Account or Worker not found');
+      }
+
+      const jid = remoteJid(data.message?.key);
+      if (!jid) {
+        throw new Error('Received message without remoteJid');
+      }
+
+      const jidAlt = remoteJidAlt(data.message?.key);
+      const phone = onlyDigits(jid);
+      const chatId = uuidv4();
+      const name = this.nameChat(data);
+
+      const inputChatMessage: IChat = {
+        chat_id: chatId,
+        message_key: {
+          remote_jid: jid,
+          remote_jid_alt: jidAlt,
+        },
+        account: viewAccountName,
+        worker: viewWorkerNameAndId,
+        name,
+        phone,
+        status: EChatStatus.queue,
+        date: new Date().toISOString(),
+      };
+
+      if (data.photo) {
+        const photoResult = await this.storageService.uploadFromUrl(
+          data.photo,
+          data.account_id,
+          chatId
+        );
+        inputChatMessage.photo = photoResult?.url;
+      }
+
+      await this.cacheChat(inputChatMessage);
+
+      const result = await this.chatService.saveChat(inputChatMessage);
+      if (!result) {
+        throw new Error('Failed to create chat');
+      }
+
+      return inputChatMessage;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  private parseMessage(value: Buffer | null): IUpsertMessage | null {
+    if (!value) {
+      return null;
     }
 
-    const jid = remoteJid(data.message?.key);
-    if (!jid) {
-      throw new Error('Received message without remoteJid');
+    const raw = value.toString('utf8').trim();
+    if (!raw) {
+      return null;
     }
 
-    const phone = onlyDigits(jid);
-    const chatId = uuidv4();
-    const name = this.nameChat(data);
+    try {
+      const parsed = JSON.parse(raw) as IUpsertMessage;
 
-    const inputChatMessage: IChat = {
-      chat_id: chatId,
-      message_key: {
-        remote_jid: jid,
-        sender_lid: data.message?.key?.senderLid ?? null,
-        sender_pn: data.message?.key?.senderPn ?? null,
-      },
-      account: viewAccountName,
-      worker: viewWorkerNameAndId,
-      name: name,
+      return parsed ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async createOrUpdateChat(
+    data: IUpsertMessage,
+    phone: string,
+    jid: string
+  ): Promise<void> {
+    const getChat = await this.getChat(
+      data.account_id,
+      data.worker_id,
       phone,
-      status: EChatStatus.queue,
-      date: new Date().toISOString(),
-    };
+      jid
+    );
 
-    if (data.photo) {
-      const photoResult = await this.storageService.uploadFromUrl(
-        data.photo,
-        data.account_id,
-        chatId
-      );
+    if (!getChat) {
+      const createChat = await this.createChat(data);
+      if (!createChat) {
+        throw new Error('Failed to create chat');
+      }
 
-      inputChatMessage.photo = photoResult?.url;
+      await this.createChatMessage(createChat, data);
+      await this.centrifugoChatQueuePublish(createChat);
+
+      return;
     }
 
-    const result = await this.chatService.saveChat(inputChatMessage);
-
-    if (!result) {
-      throw new Error('Failed to create chat');
-    }
-
-    return inputChatMessage;
+    await this.createChatMessage(getChat, data);
   }
 
   public async execute(): Promise<void> {
-    const stream: KStream = this.kafkaStreams.getKStream(
-      this.kafkaServiceQueueService.upsertMessage()
+    if (this.consumer) return;
+
+    this.consumer = createConsumer(
+      this.kafka,
+      'group-underchat-message-upsert'
     );
 
-    stream.mapBufferKeyToString();
-    stream.mapJSONConvenience();
+    const topic = this.kafkaServiceQueueService.upsertMessage();
 
-    let chain: Promise<void> = Promise.resolve();
+    await ensureKafkaTopic(this.kafka, topic);
+    await this.consumer.connect();
+    await this.consumer.subscribe({ topic, fromBeginning: true });
 
-    stream.forEach(async (msg) => {
-      chain = chain.then(async () => {
-        const data = msg.value as IUpsertMessage;
-
+    await this.consumer.run({
+      autoCommit: false,
+      partitionsConsumedConcurrently: 1,
+      eachMessage: async ({ topic, partition, message, heartbeat }) => {
+        const data = this.parseMessage(message.value);
         if (!data) {
-          throw new Error('Received message without value');
-        }
-
-        const jid = remoteJid(data.message?.key);
-        if (!jid) {
-          throw new Error('Received message without remoteJid');
-        }
-
-        const phone = onlyDigits(jid);
-
-        const getChat = await this.getChat(
-          data.account_id,
-          data.worker_id,
-          phone,
-          jid
-        );
-
-        if (!getChat) {
-          const createChat = await this.createChat(data);
-
-          if (!createChat) {
-            throw new Error('Failed to create chat');
-          }
-
-          await this.createChatMessage(createChat, data);
-          await this.centrifugoChatQueuePublish(createChat);
+          await this.commitNext(topic, partition, message.offset);
 
           return;
         }
 
-        await this.createChatMessage(getChat, data);
-      });
+        const offset = message.offset;
+
+        this.processingChain = this.processingChain.then(async () => {
+          const stop = startHeartbeat(heartbeat);
+          try {
+            const jid = remoteJid(data.message?.key);
+            if (!jid) {
+              throw new Error('Received message without remoteJid');
+            }
+
+            const phone = onlyDigits(jid);
+            await this.createOrUpdateChat(data, phone, jid);
+          } catch {
+            await this.commitNext(topic, partition, message.offset);
+          } finally {
+            stop();
+          }
+
+          await this.commitNext(topic, partition, offset);
+        });
+
+        return;
+      },
     });
 
-    await stream.start();
+    return;
   }
 
   public async close(): Promise<void> {
-    await this.kafkaStreams.closeAll();
+    await this.processingChain;
+
+    if (!this.consumer) {
+      return;
+    }
+
+    try {
+      await this.consumer.stop();
+    } finally {
+      await this.consumer.disconnect();
+      this.consumer = null;
+    }
+  }
+
+  private async commitNext(
+    topic: string,
+    partition: number,
+    offset: string
+  ): Promise<void> {
+    const next = (BigInt(offset) + 1n).toString();
+
+    await this.consumerOrThrow.commitOffsets([
+      { topic, partition, offset: next },
+    ]);
+  }
+
+  private cacheKeyChat(accountId: string, workerId: string, phone: string) {
+    return `underchat:chat:${accountId}:${workerId}:${phone}`;
+  }
+
+  private async cacheChat(chat: IChat): Promise<void> {
+    const key = this.cacheKeyChat(chat.account.id, chat.worker.id, chat.phone);
+    await this.redis.set(key, JSON.stringify(chat), 'PX', 60_000);
+  }
+
+  private async getChatFromCache(
+    accountId: string,
+    workerId: string,
+    phone: string
+  ): Promise<IChat | null> {
+    const key = this.cacheKeyChat(accountId, workerId, phone);
+    const raw = await this.redis.get(key);
+
+    return raw ? (JSON.parse(raw) as IChat) : null;
   }
 }

@@ -1,5 +1,5 @@
 import { singleton, inject } from 'tsyringe';
-import { KafkaStreams, KStream } from 'kafka-streams';
+import { Kafka, Consumer } from 'kafkajs';
 import { WorkerService } from '@core/services/worker.service';
 import { getImageWorker } from '@core/common/functions/getImageWorker';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
@@ -19,11 +19,16 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { startHeartbeat } from '@core/common/functions/startHeartbeat';
+import { createConsumer } from '@core/common/functions/createConsumer';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 @singleton()
 export class WorkerConsume {
+  private consumer: Consumer | null = null;
+
   constructor(
-    @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams,
+    @inject('Kafka') private readonly kafka: Kafka,
     private readonly workerService: WorkerService,
     private readonly centrifugoService: CentrifugoService,
     private readonly kafkaBalanceQueueService: KafkaBalanceQueueService,
@@ -32,13 +37,129 @@ export class WorkerConsume {
     private readonly streamProducerService: StreamProducerService
   ) {}
 
+  private get consumerOrThrow(): Consumer {
+    if (!this.consumer) {
+      throw new Error('Consumer not initialized');
+    }
+
+    return this.consumer;
+  }
+
+  public async execute(): Promise<void> {
+    if (this.consumer) return;
+
+    this.consumer = createConsumer(
+      this.kafka,
+      `group-underchat-worker-${balanceEnvironment.serverId}`
+    );
+
+    const topic = this.getTopic();
+
+    await ensureKafkaTopic(this.kafka, topic);
+    await this.consumer.connect();
+    await this.consumer.subscribe({ topic, fromBeginning: true });
+
+    await this.consumer.run({
+      autoCommit: false,
+      partitionsConsumedConcurrently: 1,
+      eachMessage: async ({ topic, partition, message, heartbeat }) => {
+        const data = this.parseMessage(message.value);
+
+        if (!data) {
+          await this.commitNext(topic, partition, message.offset);
+          return;
+        }
+
+        const stop = startHeartbeat(heartbeat);
+        try {
+          await this.handleMessage(data);
+        } catch {
+          await this.commitNext(topic, partition, message.offset);
+        } finally {
+          stop();
+        }
+
+        await this.commitNext(topic, partition, message.offset);
+
+        return;
+      },
+    });
+
+    return;
+  }
+
+  public async close(): Promise<void> {
+    if (!this.consumer) {
+      return;
+    }
+
+    try {
+      await this.consumer.stop();
+    } finally {
+      await this.consumer.disconnect();
+      this.consumer = null;
+    }
+
+    return;
+  }
+
+  private getTopic(): string {
+    const topic = this.kafkaBalanceQueueService.worker(
+      balanceEnvironment.serverId
+    );
+
+    return topic;
+  }
+
+  private parseMessage(value: Buffer | null): IWorkerPayload | null {
+    if (!value) {
+      return null;
+    }
+
+    const raw = value.toString('utf8').trim();
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as IWorkerPayload;
+      return parsed ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async handleMessage(data: IWorkerPayload): Promise<void> {
+    if (data.action === EWorkerAction.create) {
+      await this.createWorker(data);
+
+      return;
+    }
+
+    if (data.action === EWorkerAction.delete) {
+      await this.kafkaBaileysQueueService.delete(data.worker_id);
+      await this.deleteWorker(data);
+
+      return;
+    }
+
+    if (data.action === EWorkerAction.recreate) {
+      await this.kafkaBaileysQueueService.delete(data.worker_id);
+      await this.recreateWorker(data);
+
+      return;
+    }
+
+    return;
+  }
+
   private centrifugoPublish(
     dataPublish: IBaileysConnectionState
   ): Promise<PublishResult> {
-    return this.centrifugoService.publishSub(
-      workerCentrifugoQueue(dataPublish.account_id),
-      dataPublish
-    );
+    const channel = workerCentrifugoQueue(dataPublish.account_id);
+    const promise = this.centrifugoService.publishSub(channel, dataPublish);
+
+    return promise;
   }
 
   private async updateWorkerErrorStatus(
@@ -85,10 +206,12 @@ export class WorkerConsume {
       throw new Error('Worker not found');
     }
 
-    const removeContainerWorker =
-      await this.workerService.removeContainerWorker(data.worker_id, false);
+    const removed = await this.workerService.removeContainerWorker(
+      data.worker_id,
+      false
+    );
 
-    if (!removeContainerWorker) {
+    if (!removed) {
       await this.updateWorkerErrorStatus(
         data.worker_id,
         data.account_id,
@@ -127,7 +250,6 @@ export class WorkerConsume {
         data.account_id,
         data.is_administrator
       );
-
       throw new Error('Worker service is not healthy');
     }
 
@@ -138,13 +260,13 @@ export class WorkerConsume {
       container_id: containerId,
     };
 
-    const updateWorkerById = await this.workerService.updateWorkerById(
+    const updated = await this.workerService.updateWorkerById(
       data.is_administrator,
       data.account_id,
       inputUpdate
     );
 
-    if (!updateWorkerById) {
+    if (!updated) {
       await this.updateWorkerErrorStatus(
         data.worker_id,
         data.account_id,
@@ -178,13 +300,13 @@ export class WorkerConsume {
   }
 
   private async deleteWorker(data: IWorkerPayload): Promise<PublishResult> {
-    const existsWorkerById = await this.workerService.existsWorkerById(
+    const exists = await this.workerService.existsWorkerById(
       data.is_administrator,
       data.account_id,
       data.worker_id
     );
 
-    if (!existsWorkerById) {
+    if (!exists) {
       await this.updateWorkerErrorStatus(
         data.worker_id,
         data.account_id,
@@ -208,13 +330,13 @@ export class WorkerConsume {
       throw new Error('Worker removal failed');
     }
 
-    const deleteWorkerById = await this.workerService.deleteWorkerById(
+    const deleted = await this.workerService.deleteWorkerById(
       data.is_administrator,
       data.account_id,
       data.worker_id
     );
 
-    if (!deleteWorkerById) {
+    if (!deleted) {
       await this.updateWorkerErrorStatus(
         data.worker_id,
         data.account_id,
@@ -283,13 +405,13 @@ export class WorkerConsume {
       container_id: containerId,
     };
 
-    const updateWorkerById = await this.workerService.updateWorkerById(
+    const updated = await this.workerService.updateWorkerById(
       data.is_administrator,
       data.account_id,
       inputUpdate
     );
 
-    if (!updateWorkerById) {
+    if (!updated) {
       await this.updateWorkerErrorStatus(
         data.worker_id,
         data.account_id,
@@ -310,43 +432,15 @@ export class WorkerConsume {
     return this.centrifugoPublish(dataPublish);
   }
 
-  public async execute(): Promise<void> {
-    const worker = this.kafkaBalanceQueueService.worker(
-      balanceEnvironment.serverId
-    );
-    const stream: KStream = this.kafkaStreams.getKStream(worker);
+  private async commitNext(
+    topic: string,
+    partition: number,
+    offset: string
+  ): Promise<void> {
+    const next = (BigInt(offset) + 1n).toString();
 
-    stream.mapBufferKeyToString();
-    stream.mapJSONConvenience();
-
-    stream.forEach(async (msg) => {
-      const data = msg.value as IWorkerPayload;
-
-      if (!data) {
-        throw new Error('Received message without value');
-      }
-
-      if (data.action === EWorkerAction.create) {
-        return this.createWorker(data);
-      }
-
-      if (data.action === EWorkerAction.delete) {
-        await this.kafkaBaileysQueueService.delete(data.worker_id);
-
-        return this.deleteWorker(data);
-      }
-
-      if (data.action === EWorkerAction.recreate) {
-        await this.kafkaBaileysQueueService.delete(data.worker_id);
-
-        return this.recreateWorker(data);
-      }
-    });
-
-    await stream.start();
-  }
-
-  public async close(): Promise<void> {
-    await this.kafkaStreams.closeAll();
+    await this.consumerOrThrow.commitOffsets([
+      { topic, partition, offset: next },
+    ]);
   }
 }

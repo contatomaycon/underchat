@@ -15,7 +15,6 @@ export class ContainerHealthService {
   async isServiceHealthy(containerId: string): Promise<boolean> {
     for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
       const code = await this.getStatusCode(containerId);
-
       if (Number(code) === 200) {
         return true;
       }

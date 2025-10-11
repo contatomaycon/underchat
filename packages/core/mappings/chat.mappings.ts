@@ -11,10 +11,7 @@ export const chatMappings = () => {
             remote_jid: {
               type: 'keyword',
             },
-            sender_lid: {
-              type: 'keyword',
-            },
-            sender_pn: {
+            remote_jid_alt: {
               type: 'keyword',
             },
           },

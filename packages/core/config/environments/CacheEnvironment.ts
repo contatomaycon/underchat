@@ -1,9 +1,4 @@
 import InvalidConfigurationError from '@core/common/exceptions/InvalidConfigurationError';
-import * as dotenv from 'dotenv';
-
-dotenv.config({
-  path: '../../.env',
-});
 
 export class CacheEnvironment {
   public get cacheHost(): string {

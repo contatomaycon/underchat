@@ -9,18 +9,174 @@ import { isDistroVersionAllowed } from '@core/common/functions/isDistroVersionAl
 import { IDistroInfo } from '@core/common/interfaces/IDistroInfo';
 import { FastifyInstance } from 'fastify';
 import { IViewServerWebById } from '@core/common/interfaces/IViewServerWebById';
-import { KafkaStreams, KStream } from 'kafka-streams';
+import { Kafka, Consumer } from 'kafkajs';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { delay } from '@core/common/functions/delay';
+import { createConsumer } from '@core/common/functions/createConsumer';
+import { startHeartbeat } from '@core/common/functions/startHeartbeat';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 @singleton()
 export class BalanceCreatorConsume {
+  private consumer: Consumer | null = null;
+
   constructor(
-    @inject('KafkaStreams') private readonly kafkaStreams: KafkaStreams,
+    @inject('Kafka') private readonly kafka: Kafka,
     private readonly sshService: SshService,
     private readonly serverService: ServerService,
     private readonly passwordEncryptorService: PasswordEncryptorService,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
+
+  private get consumerOrThrow(): Consumer {
+    if (!this.consumer) throw new Error('Consumer not initialized');
+
+    return this.consumer;
+  }
+
+  async execute(server: FastifyInstance): Promise<void> {
+    if (this.consumer) return;
+
+    this.consumer = createConsumer(
+      this.kafka,
+      'group-underchat-balance-creator'
+    );
+
+    const topic = this.kafkaServiceQueueService.createServer();
+
+    await ensureKafkaTopic(this.kafka, topic);
+    await this.consumer.connect();
+    await this.consumer.subscribe({ topic, fromBeginning: true });
+
+    await this.consumer.run({
+      autoCommit: false,
+      eachMessage: async ({ topic, partition, message, heartbeat }) => {
+        const data = this.parseMessage(message.value);
+
+        if (!data) {
+          server.log.warn('Skipping message without value or invalid JSON');
+          await this.commitNext(topic, partition, message.offset);
+
+          return;
+        }
+
+        const stop = startHeartbeat(heartbeat);
+        try {
+          await this.handleCreateServerMessage(server, data);
+        } catch {
+          await this.commitNext(topic, partition, message.offset);
+        } finally {
+          stop();
+        }
+
+        await this.commitNext(topic, partition, message.offset);
+      },
+    });
+  }
+
+  public async close(): Promise<void> {
+    if (!this.consumer) return;
+
+    try {
+      await this.consumer.stop();
+    } finally {
+      await this.consumer.disconnect();
+      this.consumer = null;
+    }
+  }
+
+  private async commitNext(
+    topic: string,
+    partition: number,
+    offset: string
+  ): Promise<void> {
+    const next = (BigInt(offset) + 1n).toString();
+
+    await this.consumerOrThrow.commitOffsets([
+      { topic, partition, offset: next },
+    ]);
+  }
+
+  private async handleCreateServerMessage(
+    server: FastifyInstance,
+    data: CreateServerResponse
+  ): Promise<void> {
+    let serverId: string | null = null;
+
+    try {
+      serverId = data.server_id ?? null;
+      if (!serverId) throw new Error('Server ID is not defined in the message');
+
+      const { getDistroAndVersion, sshConfig, webView } =
+        await this.validate(serverId);
+
+      const [, installCommands] = await Promise.all([
+        this.serverService.updateServerStatusById(
+          serverId,
+          EServerStatus.installing
+        ),
+        this.sshService.getInstallCommands(getDistroAndVersion, webView),
+      ]);
+
+      const logs = await this.sshService.runCommands(
+        serverId,
+        sshConfig,
+        installCommands
+      );
+
+      if (logs.length === 0) {
+        await this.serverService.updateServerStatusById(
+          serverId,
+          EServerStatus.error
+        );
+
+        throw new Error('Docker installation logs are empty');
+      }
+
+      const built = await this.imageIsBuilt(
+        serverId,
+        getDistroAndVersion,
+        sshConfig
+      );
+
+      if (!built) {
+        await this.serverService.updateServerStatusById(
+          serverId,
+          EServerStatus.error
+        );
+
+        throw new Error('Docker image is not built');
+      }
+
+      await Promise.all([
+        this.serverService.deleteLogInstallServer(serverId),
+        this.serverService.updateLogInstallServerBulk(logs),
+      ]);
+
+      const installed = await this.isInstalled(
+        serverId,
+        getDistroAndVersion,
+        sshConfig,
+        webView
+      );
+
+      const finalStatus = installed
+        ? EServerStatus.online
+        : EServerStatus.error;
+
+      await this.serverService.updateServerStatusById(serverId, finalStatus);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      server.log.warn(`Skipping server ${serverId ?? 'unknown'}: ${msg}`);
+
+      if (serverId) {
+        await this.serverService.updateServerStatusById(
+          serverId,
+          EServerStatus.error
+        );
+      }
+    }
+  }
 
   private async validate(serverId: string): Promise<{
     getDistroAndVersion: IDistroInfo;
@@ -52,13 +208,11 @@ export class BalanceCreatorConsume {
     };
 
     const connected = await this.sshService.testSSHConnection(sshConfig);
-
     if (!connected) {
       throw new Error('SSH connection failed');
     }
 
     const distro = await this.sshService.getDistroAndVersion(sshConfig);
-
     if (!distro) {
       throw new Error('Failed to retrieve distribution and version');
     }
@@ -88,7 +242,7 @@ export class BalanceCreatorConsume {
     );
 
     for (let i = 0; i < attempts; i++) {
-      await new Promise((r) => setTimeout(r, 1000));
+      await delay(1000);
 
       const result = await this.sshService.runCommands(
         serverId,
@@ -100,11 +254,12 @@ export class BalanceCreatorConsume {
         await this.serverService.updateLogInstallServerBulk(result);
       }
 
-      const lastOutput = result[result.length - 1]?.output?.trim();
+      const lastOutput = (result.at(-1)?.output ?? '')
+        .replace(/\r/g, '')
+        .trim();
+      const status = /^(200|true|1)$/i.test(lastOutput);
 
-      const status = Number(lastOutput ?? 0);
-
-      if (status === 200) {
+      if (status) {
         return true;
       }
     }
@@ -122,7 +277,7 @@ export class BalanceCreatorConsume {
       this.sshService.getImagesCommands(getDistroAndVersion);
 
     for (let i = 0; i < attempts; i++) {
-      await new Promise((r) => setTimeout(r, 1000));
+      await delay(1000);
 
       const result = await this.sshService.runCommands(
         serverId,
@@ -134,8 +289,10 @@ export class BalanceCreatorConsume {
         await this.serverService.updateLogInstallServerBulk(result);
       }
 
-      const lastOutput = result[result.length - 1]?.output?.trim();
-      const status = Boolean(lastOutput ?? false);
+      const lastOutput = (result.at(-1)?.output ?? '')
+        .replace(/\r/g, '')
+        .trim();
+      const status = /^(true|1)$/i.test(lastOutput);
 
       if (status) {
         return true;
@@ -145,102 +302,21 @@ export class BalanceCreatorConsume {
     return false;
   }
 
-  async execute(server: FastifyInstance): Promise<void> {
-    const stream: KStream = this.kafkaStreams.getKStream(
-      this.kafkaServiceQueueService.createServer()
-    );
+  private parseMessage(value: Buffer | null): CreateServerResponse | null {
+    if (!value) {
+      return null;
+    }
 
-    stream.mapBufferKeyToString();
-    stream.mapJSONConvenience();
-
-    stream.forEach(async (message) => {
-      const data = message.value as CreateServerResponse;
-
-      if (!data) {
-        throw new Error('Received message without value');
-      }
-
-      let serverId: string | null = null;
-
-      try {
-        serverId = data.server_id;
-        if (!serverId) {
-          throw new Error('Server ID is not defined in the message');
-        }
-
-        const { getDistroAndVersion, sshConfig, webView } =
-          await this.validate(serverId);
-
-        await this.serverService.updateServerStatusById(
-          serverId,
-          EServerStatus.installing
-        );
-
-        const installCommands = await this.sshService.getInstallCommands(
-          getDistroAndVersion,
-          webView
-        );
-
-        const logs = await this.sshService.runCommands(
-          serverId,
-          sshConfig,
-          installCommands
-        );
-
-        const imageIsBuilt = await this.imageIsBuilt(
-          serverId,
-          getDistroAndVersion,
-          sshConfig
-        );
-
-        if (!imageIsBuilt) {
-          await this.serverService.updateServerStatusById(
-            serverId,
-            EServerStatus.error
-          );
-
-          throw new Error('Docker image is not built');
-        }
-
-        await this.serverService.deleteLogInstallServer(serverId);
-        await this.serverService.updateLogInstallServerBulk(logs);
-
-        const installed = await this.isInstalled(
-          serverId,
-          getDistroAndVersion,
-          sshConfig,
-          webView
-        );
-
-        const finalStatus = installed
-          ? EServerStatus.online
-          : EServerStatus.error;
-
-        await this.serverService.updateServerStatusById(serverId, finalStatus);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-
-        server.logger.warn(`Skipping server ${serverId ?? 'unknown'}: ${msg}`);
-
-        if (serverId) {
-          await this.serverService.updateServerStatusById(
-            serverId,
-            EServerStatus.error
-          );
-        }
-      }
-    });
+    const raw = value.toString('utf8').trim();
+    if (!raw) {
+      return null;
+    }
 
     try {
-      await stream.start();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-
-      server.logger.error(`Error starting stream: ${msg}`);
+      const parsed = JSON.parse(raw) as CreateServerResponse;
+      return parsed ?? null;
+    } catch {
+      return null;
     }
-  }
-
-  public async close(): Promise<void> {
-    await this.kafkaStreams.closeAll();
   }
 }

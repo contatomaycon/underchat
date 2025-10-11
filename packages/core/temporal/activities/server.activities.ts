@@ -72,10 +72,10 @@ export async function statusWebServer(
     false
   );
 
-  const lastOutput = result[result.length - 1]?.output?.trim();
-  const status = Number(lastOutput ?? 0);
+  const lastOutput = (result.at(-1)?.output ?? '').replace(/\r/g, '').trim();
+  const status = /^(200|true|1)$/i.test(lastOutput);
 
-  return status === 200;
+  return status === true;
 }
 
 export async function testServers(): Promise<void> {

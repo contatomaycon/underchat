@@ -2,7 +2,6 @@ import { injectable } from 'tsyringe';
 import {
   AnyMessageContent,
   MiscMessageGenerationOptions,
-  proto,
   WAMessage,
   WAUrlInfo,
 } from '@whiskeysockets/baileys';
@@ -22,7 +21,7 @@ export class BaileysMessageTextService {
       linkPreview?: WAUrlInfo | null;
       mentions?: string[];
     }
-  ): Promise<proto.WebMessageInfo | undefined> {
+  ): Promise<WAMessage | undefined> {
     const content: AnyMessageContent = {
       text,
       linkPreview: options?.linkPreview ?? undefined,
