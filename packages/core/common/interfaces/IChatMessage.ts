@@ -40,9 +40,12 @@ interface IContent {
 
 export interface IMessageKey {
   remote_jid?: string | null;
+  remote_jid_alt?: string | null;
   from_me?: boolean | null;
   id?: string | null;
   participant?: string | null;
+  participant_alt?: string | null;
+  addressing_mode?: string | null;
 }
 
 export interface IChatMessage {

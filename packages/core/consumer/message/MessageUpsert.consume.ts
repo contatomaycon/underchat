@@ -27,6 +27,8 @@ import { buildQuotedTextFromExtended } from '@core/common/functions/buildQuotedT
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
+import Redis from 'ioredis';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -34,6 +36,7 @@ export class MessageUpsertConsume {
   private processingChain: Promise<void> = Promise.resolve();
 
   constructor(
+    @inject('Redis') private readonly redis: Redis,
     @inject('Kafka') private readonly kafka: Kafka,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly elasticDatabaseService: ElasticDatabaseService,
@@ -80,6 +83,11 @@ export class MessageUpsertConsume {
     phone: string,
     jid?: string | null
   ): Promise<IChat | null> {
+    const cached = await this.getChatFromCache(accountId, workerId, phone);
+    if (cached) {
+      return cached;
+    }
+
     const candidates = buildCandidates(phone);
     const shouldClauses: any[] = [];
 
@@ -150,69 +158,77 @@ export class MessageUpsertConsume {
     getChat: IChat,
     data: IUpsertMessage
   ): Promise<boolean> {
-    const extended = data?.message?.message?.extendedTextMessage;
+    try {
+      const extended = data?.message?.message?.extendedTextMessage;
 
-    const linkPreview = extended
-      ? ({
-          'canonical-url': extended?.matchedText ?? '',
-          'matched-text': extended?.matchedText ?? '',
-          title: extended?.title ?? '',
-          description: extended?.description ?? '',
-          jpegThumbnail: extended?.jpegThumbnail,
-        } as LinkPreview)
-      : undefined;
+      const linkPreview = extended
+        ? ({
+            'canonical-url': extended?.matchedText ?? '',
+            'matched-text': extended?.matchedText ?? '',
+            title: extended?.title ?? '',
+            description: extended?.description ?? '',
+            jpegThumbnail: extended?.jpegThumbnail,
+          } as LinkPreview)
+        : undefined;
 
-    const content = {
-      type: data.type,
-      message:
-        data.message?.message?.extendedTextMessage?.text ??
-        data.message?.message?.conversation,
-      link_preview: linkPreview,
-      quoted: buildQuotedTextFromExtended(data.message),
-    };
+      const content = {
+        type: data.type,
+        message:
+          data.message?.message?.extendedTextMessage?.text ??
+          data.message?.message?.conversation,
+        link_preview: linkPreview,
+        quoted: buildQuotedTextFromExtended(data.message),
+      };
 
-    const jid = remoteJid(data.message?.key);
+      const jid = remoteJid(data.message?.key);
+      const jidAlt = remoteJidAlt(data.message?.key);
 
-    if (!getChat?.name && !data.message?.key?.fromMe) {
-      const name = this.nameChat(data);
+      if (!getChat?.name && !data.message?.key?.fromMe) {
+        const name = this.nameChat(data);
 
-      await this.elasticDatabaseService.update(
-        EElasticIndex.chat,
-        { name },
-        getChat.chat_id
-      );
-      getChat.name = name;
+        await this.elasticDatabaseService.update(
+          EElasticIndex.chat,
+          { name },
+          getChat.chat_id
+        );
+        getChat.name = name;
 
-      await this.centrifugoChatQueuePublish(getChat);
+        await this.centrifugoChatQueuePublish(getChat);
+      }
+
+      const inputChatMessage: IChatMessage = {
+        message_id: uuidv4(),
+        chat_id: getChat.chat_id,
+        message_key: {
+          remote_jid: jid,
+          remote_jid_alt: jidAlt,
+          from_me: data.message?.key?.fromMe,
+          id: data.message?.key?.id,
+          participant: data.message?.key?.participant,
+          participant_alt: data.message?.key?.participantAlt,
+          addressing_mode: data.message?.key?.addressingMode,
+        },
+        type_user: data.message?.key?.fromMe
+          ? ETypeUserChat.operator
+          : ETypeUserChat.client,
+        account: getChat.account,
+        worker: getChat.worker,
+        user: getChat.user,
+        phone: getChat.phone,
+        summary: { is_sent: false, is_delivered: false, is_seen: false },
+        content,
+        date: new Date().toISOString(),
+      };
+
+      const [, result] = await Promise.all([
+        this.centrifugoChatPublish(inputChatMessage),
+        this.chatService.saveMessageChat(inputChatMessage),
+      ]);
+
+      return result;
+    } catch {
+      return false;
     }
-
-    const inputChatMessage: IChatMessage = {
-      message_id: uuidv4(),
-      chat_id: getChat.chat_id,
-      message_key: {
-        remote_jid: jid,
-        from_me: data.message?.key?.fromMe,
-        id: data.message?.key?.id,
-        participant: data.message?.key?.participant,
-      },
-      type_user: data.message?.key?.fromMe
-        ? ETypeUserChat.operator
-        : ETypeUserChat.client,
-      account: getChat.account,
-      worker: getChat.worker,
-      user: getChat.user,
-      phone: getChat.phone,
-      summary: { is_sent: false, is_delivered: false, is_seen: false },
-      content,
-      date: new Date().toISOString(),
-    };
-
-    const [, result] = await Promise.all([
-      this.centrifugoChatPublish(inputChatMessage),
-      this.chatService.saveMessageChat(inputChatMessage),
-    ]);
-
-    return result;
   }
 
   private nameChat(data: IUpsertMessage) {
@@ -226,52 +242,60 @@ export class MessageUpsertConsume {
   }
 
   private async createChat(data: IUpsertMessage): Promise<IChat> {
-    const [viewAccountName, viewWorkerNameAndId] = await Promise.all([
-      this.accountService.viewAccountName(data.account_id),
-      this.workerService.viewWorkerNameAndId(data.account_id, data.worker_id),
-    ]);
+    try {
+      const [viewAccountName, viewWorkerNameAndId] = await Promise.all([
+        this.accountService.viewAccountName(data.account_id),
+        this.workerService.viewWorkerNameAndId(data.account_id, data.worker_id),
+      ]);
 
-    if (!viewAccountName || !viewWorkerNameAndId) {
-      throw new Error('Account or Worker not found');
+      if (!viewAccountName || !viewWorkerNameAndId) {
+        throw new Error('Account or Worker not found');
+      }
+
+      const jid = remoteJid(data.message?.key);
+      if (!jid) {
+        throw new Error('Received message without remoteJid');
+      }
+
+      const jidAlt = remoteJidAlt(data.message?.key);
+      const phone = onlyDigits(jid);
+      const chatId = uuidv4();
+      const name = this.nameChat(data);
+
+      const inputChatMessage: IChat = {
+        chat_id: chatId,
+        message_key: {
+          remote_jid: jid,
+          remote_jid_alt: jidAlt,
+        },
+        account: viewAccountName,
+        worker: viewWorkerNameAndId,
+        name,
+        phone,
+        status: EChatStatus.queue,
+        date: new Date().toISOString(),
+      };
+
+      if (data.photo) {
+        const photoResult = await this.storageService.uploadFromUrl(
+          data.photo,
+          data.account_id,
+          chatId
+        );
+        inputChatMessage.photo = photoResult?.url;
+      }
+
+      await this.cacheChat(inputChatMessage);
+
+      const result = await this.chatService.saveChat(inputChatMessage);
+      if (!result) {
+        throw new Error('Failed to create chat');
+      }
+
+      return inputChatMessage;
+    } catch (error) {
+      throw error;
     }
-
-    const jid = remoteJid(data.message?.key);
-    if (!jid) {
-      throw new Error('Received message without remoteJid');
-    }
-
-    const phone = onlyDigits(jid);
-    const chatId = uuidv4();
-    const name = this.nameChat(data);
-
-    const inputChatMessage: IChat = {
-      chat_id: chatId,
-      message_key: {
-        remote_jid: jid,
-      },
-      account: viewAccountName,
-      worker: viewWorkerNameAndId,
-      name,
-      phone,
-      status: EChatStatus.queue,
-      date: new Date().toISOString(),
-    };
-
-    if (data.photo) {
-      const photoResult = await this.storageService.uploadFromUrl(
-        data.photo,
-        data.account_id,
-        chatId
-      );
-      inputChatMessage.photo = photoResult?.url;
-    }
-
-    const result = await this.chatService.saveChat(inputChatMessage);
-    if (!result) {
-      throw new Error('Failed to create chat');
-    }
-
-    return inputChatMessage;
   }
 
   private parseMessage(value: Buffer | null): IUpsertMessage | null {
@@ -286,10 +310,38 @@ export class MessageUpsertConsume {
 
     try {
       const parsed = JSON.parse(raw) as IUpsertMessage;
+
       return parsed ?? null;
     } catch {
       return null;
     }
+  }
+
+  private async createOrUpdateChat(
+    data: IUpsertMessage,
+    phone: string,
+    jid: string
+  ): Promise<void> {
+    const getChat = await this.getChat(
+      data.account_id,
+      data.worker_id,
+      phone,
+      jid
+    );
+
+    if (!getChat) {
+      const createChat = await this.createChat(data);
+      if (!createChat) {
+        throw new Error('Failed to create chat');
+      }
+
+      await this.createChatMessage(createChat, data);
+      await this.centrifugoChatQueuePublish(createChat);
+
+      return;
+    }
+
+    await this.createChatMessage(getChat, data);
   }
 
   public async execute(): Promise<void> {
@@ -328,25 +380,7 @@ export class MessageUpsertConsume {
             }
 
             const phone = onlyDigits(jid);
-
-            const getChat = await this.getChat(
-              data.account_id,
-              data.worker_id,
-              phone,
-              jid
-            );
-
-            if (!getChat) {
-              const createChat = await this.createChat(data);
-              if (!createChat) {
-                throw new Error('Failed to create chat');
-              }
-
-              await this.createChatMessage(createChat, data);
-              await this.centrifugoChatQueuePublish(createChat);
-            } else {
-              await this.createChatMessage(getChat, data);
-            }
+            await this.createOrUpdateChat(data, phone, jid);
           } catch {
             await this.commitNext(topic, partition, message.offset);
           } finally {
@@ -388,5 +422,25 @@ export class MessageUpsertConsume {
     await this.consumerOrThrow.commitOffsets([
       { topic, partition, offset: next },
     ]);
+  }
+
+  private cacheKeyChat(accountId: string, workerId: string, phone: string) {
+    return `underchat:chat:${accountId}:${workerId}:${phone}`;
+  }
+
+  private async cacheChat(chat: IChat): Promise<void> {
+    const key = this.cacheKeyChat(chat.account.id, chat.worker.id, chat.phone);
+    await this.redis.set(key, JSON.stringify(chat), 'PX', 60_000);
+  }
+
+  private async getChatFromCache(
+    accountId: string,
+    workerId: string,
+    phone: string
+  ): Promise<IChat | null> {
+    const key = this.cacheKeyChat(accountId, workerId, phone);
+    const raw = await this.redis.get(key);
+
+    return raw ? (JSON.parse(raw) as IChat) : null;
   }
 }
