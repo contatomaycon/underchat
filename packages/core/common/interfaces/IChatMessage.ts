@@ -1,7 +1,10 @@
 import { WAUrlInfo } from '@whiskeysockets/baileys';
 import { EMessageType } from '../enums/EMessageType';
 import { ETypeUserChat } from '../enums/ETypeUserChat';
-import { LinkPreview } from '@core/schema/chat/listMessageChats/response.schema';
+import {
+  ImageMessageChat,
+  LinkPreview,
+} from '@core/schema/chat/listMessageChats/response.schema';
 
 interface IAccount {
   id: string;
@@ -30,12 +33,13 @@ export interface IQuotedMessage {
   message?: string | null;
 }
 
-interface IContent {
+export interface IContent {
   type: EMessageType;
   message?: string | null;
   message_quoted_id?: string | null;
   link_preview?: LinkPreview | WAUrlInfo | null;
   quoted?: IQuotedMessage | null;
+  image?: ImageMessageChat | null;
 }
 
 export interface IMessageKey {

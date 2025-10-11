@@ -68,40 +68,6 @@ export const mensageMappings = () => {
             type: {
               type: 'keyword',
             },
-            quoted: {
-              type: 'nested',
-              properties: {
-                key: {
-                  type: 'nested',
-                  properties: {
-                    remote_jid: {
-                      type: 'keyword',
-                    },
-                    remote_jid_alt: {
-                      type: 'keyword',
-                    },
-                    from_me: {
-                      type: 'boolean',
-                    },
-                    id: {
-                      type: 'keyword',
-                    },
-                    participant: {
-                      type: 'keyword',
-                    },
-                    participant_alt: {
-                      type: 'keyword',
-                    },
-                    addressing_mode: {
-                      type: 'text',
-                    },
-                  },
-                },
-                message: {
-                  type: 'text',
-                },
-              },
-            },
             message: {
               type: 'text',
               fields: {
@@ -137,6 +103,72 @@ export const mensageMappings = () => {
                 },
                 originalThumbnailUrl: {
                   type: 'keyword',
+                },
+              },
+            },
+            quoted: {
+              type: 'nested',
+              properties: {
+                key: {
+                  type: 'nested',
+                  properties: {
+                    remote_jid: {
+                      type: 'keyword',
+                    },
+                    remote_jid_alt: {
+                      type: 'keyword',
+                    },
+                    from_me: {
+                      type: 'boolean',
+                    },
+                    id: {
+                      type: 'keyword',
+                    },
+                    participant: {
+                      type: 'keyword',
+                    },
+                    participant_alt: {
+                      type: 'keyword',
+                    },
+                    addressing_mode: {
+                      type: 'text',
+                    },
+                  },
+                },
+                message: {
+                  type: 'text',
+                },
+              },
+            },
+            image: {
+              type: 'nested',
+              properties: {
+                url: {
+                  type: 'keyword',
+                },
+                caption: {
+                  type: 'text',
+                  fields: {
+                    keyword: {
+                      type: 'keyword',
+                      ignore_above: 256,
+                    },
+                  },
+                },
+                mimetype: {
+                  type: 'keyword',
+                },
+                extension: {
+                  type: 'keyword',
+                },
+                size: {
+                  type: 'long',
+                },
+                height: {
+                  type: 'integer',
+                },
+                width: {
+                  type: 'integer',
                 },
               },
             },

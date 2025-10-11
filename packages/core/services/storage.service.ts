@@ -117,6 +117,33 @@ export class StorageService {
     };
   }
 
+  public async uploadFromBuffer(
+    buffer: Buffer<ArrayBufferLike>,
+    accountId: string
+  ): Promise<UploadFileResponse | null> {
+    const ft = await fileTypeFromBuffer(buffer).catch(() => null);
+    const ext = ft?.ext ?? 'bin';
+    const mime = ft?.mime ?? 'application/octet-stream';
+    const baseName = `${accountId}-${Date.now()}.${ext}`;
+    const key = `${accountId}/${baseName}`;
+
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: s3Environment.s3BucketName,
+        Key: key,
+        Body: buffer,
+        ContentType: mime,
+      })
+    );
+
+    return {
+      url: this.createUrl(key),
+      name: baseName,
+      extension: ext,
+      size: buffer.byteLength,
+    };
+  }
+
   private parseDispositionFilename(disposition?: string | null) {
     if (!disposition) return '';
 

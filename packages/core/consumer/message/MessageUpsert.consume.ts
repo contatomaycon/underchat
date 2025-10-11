@@ -11,7 +11,7 @@ import { AccountService } from '@core/services/account.service';
 import { WorkerService } from '@core/services/worker.service';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ChatService } from '@core/services/chat.service';
-import { IChatMessage } from '@core/common/interfaces/IChatMessage';
+import { IChatMessage, IContent } from '@core/common/interfaces/IChatMessage';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { PublishResult } from 'centrifuge';
@@ -29,6 +29,8 @@ import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
 import Redis from 'ioredis';
+import { EMessageType } from '@core/common/enums/EMessageType';
+import { downloadMediaMessage } from '@whiskeysockets/baileys';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -171,7 +173,7 @@ export class MessageUpsertConsume {
           } as LinkPreview)
         : undefined;
 
-      const content = {
+      const content: IContent = {
         type: data.type,
         message:
           data.message?.message?.extendedTextMessage?.text ??
@@ -194,6 +196,32 @@ export class MessageUpsertConsume {
         getChat.name = name;
 
         await this.centrifugoChatQueuePublish(getChat);
+      }
+
+      if (
+        content.type === EMessageType.image &&
+        data.message?.message?.imageMessage?.url
+      ) {
+        const buffer = await downloadMediaMessage(data.message, 'buffer', {
+          startByte: 0,
+        });
+
+        const photoResult = await this.storageService.uploadFromBuffer(
+          buffer,
+          data.account_id
+        );
+
+        content.image = photoResult
+          ? {
+              url: photoResult.url,
+              caption: data.message.message.imageMessage.caption ?? null,
+              mimetype: data.message.message.imageMessage.mimetype,
+              extension: photoResult.extension,
+              size: photoResult.size,
+              height: data.message.message.imageMessage.height,
+              width: data.message.message.imageMessage.width,
+            }
+          : undefined;
       }
 
       const inputChatMessage: IChatMessage = {

@@ -326,6 +326,7 @@ onMounted(async () => {
         window.dispatchEvent(new CustomEvent('focus-composer'));
       }
     );
+
     await onMessage(
       chatQueueAccountCentrifugo(chatStore.user.account_id),
       (data: IChat) => {
@@ -345,6 +346,7 @@ onUnmounted(async () => {
   if (chatStore.user?.account_id) {
     await unsubscribe(chatAccountCentrifugo(chatStore.user.account_id));
     await unsubscribe(chatQueueAccountCentrifugo(chatStore.user.account_id));
+
     window.removeEventListener('focus-composer', focusComposer);
     window.removeEventListener(
       'scroll-to-message',
