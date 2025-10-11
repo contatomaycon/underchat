@@ -151,5 +151,13 @@
   "plan_list_not_found": "No plans found!",
   "account_name_cannot_exceed_10_characters": "Account name cannot exceed 10 characters",
   "api_key_creation_failed": "API key creation failed",
-  "api_key_deleter_error": "Error deleting API key!"
+  "api_key_deleter_error": "Error deleting API key!",
+  "account_info_view_successfully": "Account info viewed successfully!",
+  "account_info_not_found": "Account info not found!",
+  "account_info_creator_success": "Account info created successfully!",
+  "account_info_creator_error": "Error creating account info!",
+  "account_info_update_successfully": "Account info updated successfully!",
+  "account_info_update_error": "Error updating account info!",
+  "account_info_deleted_successfully": "Account info deleted successfully!",
+  "account_info_deleter_error": "Error deleting account info!"
 }

@@ -15,6 +15,13 @@ import { ViewAccountResponse } from '@core/schema/account/viewAccount/response.s
 import { AccountDeleterRepository } from '@core/repositories/account/AccountDeleter.repository';
 import { AccountUpdaterRepository } from '@core/repositories/account/AccountUpdater.repository';
 import { UpdateAccountRequest } from '@core/schema/account/editAccount/request.schema';
+import { AccountInfoViewerExistsRepository } from '@core/repositories/account/AccountInfoViewerExists.repository';
+import { AccountInfoCreatorRepository } from '@core/repositories/account/AccountInfoCreator.repository';
+import { CreateAccountInfoRequest } from '@core/schema/account/createAccountInfo/request.schema';
+import { AccountInfoUpdaterRepository } from '@core/repositories/account/AccountInfoUpdater.repository';
+import { EditAccountInfoResponse } from '@core/schema/account/editAccountInfo/request.schema';
+import { AccountInfoDeleterRepository } from '@core/repositories/account/AccountInfoDeleter.repository';
+import { AccountInfoByIdViewerExistsRepository } from '@core/repositories/account/AccountInfoByIdViewerExists.repository';
 
 @injectable()
 export class AccountService {
@@ -27,7 +34,12 @@ export class AccountService {
     private readonly accountCreatorRepository: AccountCreatorRepository,
     private readonly accountViewerRepository: AccountViewerRepository,
     private readonly accountDeleterRepository: AccountDeleterRepository,
-    private readonly accountUpdaterRepository: AccountUpdaterRepository
+    private readonly accountUpdaterRepository: AccountUpdaterRepository,
+    private readonly accountInfoViewerExistsRepository: AccountInfoViewerExistsRepository,
+    private readonly accountInfoCreatorRepository: AccountInfoCreatorRepository,
+    private readonly accountInfoUpdaterRepository: AccountInfoUpdaterRepository,
+    private readonly accountInfoDeleterRepository: AccountInfoDeleterRepository,
+    private readonly accountInfoByIdViewerExistsRepository: AccountInfoByIdViewerExistsRepository
   ) {}
 
   viewAccountInfoByAccountId = async (
@@ -102,5 +114,42 @@ export class AccountService {
     accountId: string
   ): Promise<boolean> => {
     return this.accountUpdaterRepository.updateAccountById(input, accountId);
+  };
+
+  existsAccountInfoById = async (accountId: string): Promise<boolean> => {
+    return this.accountInfoViewerExistsRepository.existsAccountInfoById(
+      accountId
+    );
+  };
+
+  createAccountInfo = async (
+    input: CreateAccountInfoRequest,
+    urlLogo: string | null
+  ): Promise<string | null> => {
+    return this.accountInfoCreatorRepository.createAccountInfo(input, urlLogo);
+  };
+
+  updateAccountInfoById = async (
+    accountInfoId: string,
+    input: EditAccountInfoResponse,
+    urlLogo: string | null
+  ): Promise<boolean> => {
+    return this.accountInfoUpdaterRepository.updateAccountInfoById(
+      accountInfoId,
+      input,
+      urlLogo
+    );
+  };
+
+  deleteAccountInfoById = async (accountInfoId: string): Promise<boolean> => {
+    return this.accountInfoDeleterRepository.deleteAccountInfoById(
+      accountInfoId
+    );
+  };
+
+  accountInfoByIdExists = async (accountInfoId: string): Promise<boolean> => {
+    return this.accountInfoByIdViewerExistsRepository.accountInfoByIdExists(
+      accountInfoId
+    );
   };
 }

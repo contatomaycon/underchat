@@ -151,5 +151,13 @@
   "plan_list_not_found": "¡No se encontraron planes!",
   "account_name_cannot_exceed_10_characters": "¡El nombre de la cuenta no puede exceder los 10 caracteres!",
   "api_key_creation_failed": "Error al crear la clave API",
-  "api_key_deleter_error": "Error al eliminar la clave API"
+  "api_key_deleter_error": "Error al eliminar la clave API",
+  "account_info_view_successfully": "¡Información de la cuenta visualizada con éxito!",
+  "account_info_not_found": "¡Información de la cuenta no encontrada!",
+  "account_info_creator_success": "¡Información de la cuenta creada con éxito!",
+  "account_info_creator_error": "Error al crear la información de la cuenta!",
+  "account_info_update_successfully": "¡Información de la cuenta actualizada con éxito!",
+  "account_info_update_error": "Error al actualizar la información de la cuenta!",
+  "account_info_deleted_successfully": "¡Información de la cuenta eliminada con éxito!",
+  "account_info_deleter_error": "Error al eliminar la información de la cuenta!"
 }

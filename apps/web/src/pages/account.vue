@@ -91,6 +91,8 @@ const accountToDelete = ref<string | null>(null);
 const isDialogEditAccountShow = ref(false);
 const isAddAccountVisible = ref(false);
 const accountToEdit = ref<string | null>(null);
+const accountInfo = ref<string | null>(null);
+const isDialogAccountInfoShow = ref(false);
 
 const headers: DataTableHeader<ListAccountResponse>[] = [
   { title: t('name'), key: 'name' },
@@ -154,6 +156,12 @@ const openEditDialog = (id: string) => {
   accountToEdit.value = id;
 
   isDialogEditAccountShow.value = true;
+};
+
+const openAddRoleDialog = (id: string) => {
+  accountInfo.value = id;
+
+  isDialogAccountInfoShow.value = true;
 };
 
 watch(
@@ -271,6 +279,18 @@ watch(
         <template #item.actions="{ item }">
           <div class="d-flex gap-1">
             <IconBtn
+              ><VTooltip
+                location="top"
+                transition="scale-transition"
+                activator="parent"
+              >
+                <span>{{ $t('account_info') }}</span> </VTooltip
+              ><VIcon
+                icon="tabler-square-rounded-plus"
+                @click="openAddRoleDialog(item.account_id)"
+            /></IconBtn>
+
+            <IconBtn
               v-if="
                 $canPermission(permissionsEdit) &&
                 (item?.account_id || isAdministrator)
@@ -329,6 +349,12 @@ watch(
         v-if="isDialogEditAccountShow"
         v-model="isDialogEditAccountShow"
         :account-id="accountToEdit"
+      />
+
+      <AppAccountInfo
+        v-if="isDialogAccountInfoShow"
+        v-model="isDialogAccountInfoShow"
+        :account-id="accountInfo"
       />
 
       <AppAddAccount v-if="isAddAccountVisible" v-model="isAddAccountVisible" />

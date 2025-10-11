@@ -8,6 +8,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AppAccountInfo: typeof import('./src/components/account/AppAccountInfo.vue')['default']
     AppAddAccount: typeof import('./src/components/account/AppAddAccount.vue')['default']
     AppAddChannel: typeof import('./src/components/channel/AppAddChannel.vue')['default']
     AppAddRole: typeof import('./src/components/role/AppAddRole.vue')['default']

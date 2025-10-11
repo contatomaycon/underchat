@@ -13,6 +13,10 @@ import { createAccountSchema } from '@core/schema/account/createAccount';
 import { viewAccountSchema } from '@core/schema/account/viewAccount';
 import { deleteAccountSchema } from '@core/schema/account/deleteAccount';
 import { editAccountSchema } from '@core/schema/account/editAccount';
+import { viewAccountInfoSchema } from '@core/schema/account/viewAccountInfo';
+import { createAccountInfoSchema } from '@core/schema/account/createAccountInfo';
+import { editAccountInfoSchema } from '@core/schema/account/editAccountInfo';
+import { deleteAccountInfoSchema } from '@core/schema/account/deleteAccountInfo';
 
 export default async function accountRoutes(server: FastifyInstance) {
   const accountController = container.resolve(AccountController);
@@ -59,6 +63,42 @@ export default async function accountRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, accountUpdatePermissions),
+    ],
+  });
+
+  server.get('/account-info/:account_id', {
+    schema: viewAccountInfoSchema,
+    handler: accountController.viewAccountInfo,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountViewPermissions),
+    ],
+  });
+
+  server.post('/account-info', {
+    schema: createAccountInfoSchema,
+    handler: accountController.createAccountInfo,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountCreatePermissions),
+    ],
+  });
+
+  server.patch('/account-info/:account_info_id', {
+    schema: editAccountInfoSchema,
+    handler: accountController.updateAccountInfo,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountUpdatePermissions),
+    ],
+  });
+
+  server.delete('/account-info/:account_info_id', {
+    schema: deleteAccountInfoSchema,
+    handler: accountController.deleteAccountInfo,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountDeletePermissions),
     ],
   });
 }

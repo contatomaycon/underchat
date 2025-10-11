@@ -17,6 +17,8 @@ import loggerServicePlugin from '@core/plugins/logger';
 import centrifugoPlugin from '@core/plugins/centrifugo';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 import redisPlugin from '@core/plugins/redis';
+import multipartFile from '@fastify/multipart';
+import { generalEnvironment } from '@core/config/environments';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -29,6 +31,10 @@ server.addHook('onError', errorHook);
 
 server.decorateRequest('module', ERouteModule.manager);
 
+server.register(multipartFile, {
+  attachFieldsToBody: true,
+  limits: { fileSize: generalEnvironment.uploadLimitInBytes },
+});
 server.register(centrifugoPlugin, { module: ERouteModule.manager });
 server.register(dbConnector);
 server.register(redisPlugin);

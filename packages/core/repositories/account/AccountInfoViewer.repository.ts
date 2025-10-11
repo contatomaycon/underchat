@@ -34,7 +34,13 @@ export class AccountInfoViewerRepository {
       })
       .from(accountInfo)
       .innerJoin(account, eq(accountInfo.account_id, account.account_id))
-      .where(and(eq(account.account_id, accountId), isNull(account.deleted_at)))
+      .where(
+        and(
+          eq(account.account_id, accountId),
+          isNull(account.deleted_at),
+          isNull(accountInfo.deleted_at)
+        )
+      )
       .execute();
 
     if (!result.length) {
