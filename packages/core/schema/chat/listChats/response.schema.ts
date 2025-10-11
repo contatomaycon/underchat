@@ -1,4 +1,5 @@
 import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { pagingResponseSchema } from '@core/schema/common/pagingResponseSchema';
 import { Static, Type } from '@sinclair/typebox';
 
 export const accountSchema = Type.Object({
@@ -34,7 +35,7 @@ export const contactSchema = Type.Object({
   phone: Type.String(),
 });
 
-export const listChatsResponseSchema = Type.Object({
+export const listChatsResultSchema = Type.Object({
   chat_id: Type.String(),
   summary: Type.Optional(Type.Union([summarySchema, Type.Null()])),
   account: accountSchema,
@@ -49,4 +50,10 @@ export const listChatsResponseSchema = Type.Object({
   date: Type.String(),
 });
 
+export const listChatsResponseSchema = Type.Object({
+  ...pagingResponseSchema.properties,
+  results: Type.Array(listChatsResultSchema),
+});
+
+export type ListChatsResult = Static<typeof listChatsResultSchema>;
 export type ListChatsResponse = Static<typeof listChatsResponseSchema>;

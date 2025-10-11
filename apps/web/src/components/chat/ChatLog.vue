@@ -2,7 +2,7 @@
 import { useChatStore } from '@/@webcore/stores/chat';
 import {
   LinkPreview,
-  ListMessageResponse,
+  ListMessageResult,
 } from '@core/schema/chat/listMessageChats/response.schema';
 import { isTypeUser } from '@core/common/functions/isTypeUser';
 import { EMessageType } from '@core/common/enums/EMessageType';
@@ -10,7 +10,7 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 const chatStore = useChatStore();
 
 const resolveFeedbackIcon = (
-  message: ListMessageResponse
+  message: ListMessageResult
 ): { icon: string; color: string | undefined } => {
   if (message.summary?.is_seen)
     return { icon: 'tabler-checks', color: 'success' };
@@ -19,7 +19,7 @@ const resolveFeedbackIcon = (
   return { icon: 'tabler-check', color: undefined };
 };
 
-const resolvePhoto = (message: ListMessageResponse): string => {
+const resolvePhoto = (message: ListMessageResult): string => {
   if (isTypeUser(message) && chatStore.activeChat?.photo)
     return chatStore.activeChat.photo;
   if (!isTypeUser(message) && message.user?.photo) return message.user.photo;
@@ -28,11 +28,11 @@ const resolvePhoto = (message: ListMessageResponse): string => {
   return '';
 };
 
-const isPhotoExist = (message: ListMessageResponse): boolean => {
+const isPhotoExist = (message: ListMessageResult): boolean => {
   return !!resolvePhoto(message);
 };
 
-const avatarChat = (message: ListMessageResponse) => {
+const avatarChat = (message: ListMessageResult) => {
   if (isTypeUser(message) && chatStore.activeChat?.name)
     return avatarText(chatStore.activeChat.name);
   const name = message.user?.name ?? chatStore.user?.info.name;
@@ -59,12 +59,12 @@ const resolvePreviewUrl = (lp?: LinkPreview): string => {
   return lp?.['matched-text'] ?? lp?.['canonical-url'] ?? '';
 };
 
-const onReply = (m: ListMessageResponse) => {
+const onReply = (m: ListMessageResult) => {
   chatStore.setMessageReply(m);
   window.dispatchEvent(new CustomEvent('focus-composer'));
 };
 
-const onCopy = async (m: ListMessageResponse) => {
+const onCopy = async (m: ListMessageResult) => {
   const text =
     m.content?.message ||
     m.content?.link_preview?.['matched-text'] ||
@@ -73,13 +73,13 @@ const onCopy = async (m: ListMessageResponse) => {
   if (text) await navigator.clipboard.writeText(text);
 };
 
-const onReact = (m: ListMessageResponse) => {};
-const onDelete = (m: ListMessageResponse) => {};
+const onReact = (m: ListMessageResult) => {};
+const onDelete = (m: ListMessageResult) => {};
 
-const showQuoted = (m: ListMessageResponse) =>
+const showQuoted = (m: ListMessageResult) =>
   m.content?.type === EMessageType.text_quoted && !!m.content?.quoted?.message;
 
-const resolveQuotedName = (m: ListMessageResponse): string => {
+const resolveQuotedName = (m: ListMessageResult): string => {
   const fromMe = m.content?.quoted?.key?.from_me ?? null;
 
   if (fromMe === true) return chatStore.user?.info.name ?? '';
@@ -88,7 +88,7 @@ const resolveQuotedName = (m: ListMessageResponse): string => {
   return '';
 };
 
-const getQuotedTargetId = (m: ListMessageResponse): string | null => {
+const getQuotedTargetId = (m: ListMessageResult): string | null => {
   const byExplicitId = m.content?.message_quoted_id || null;
   if (byExplicitId) return String(byExplicitId);
 
@@ -102,7 +102,7 @@ const getQuotedTargetId = (m: ListMessageResponse): string | null => {
   return found?.message_id || null;
 };
 
-const goToQuoted = (m: ListMessageResponse) => {
+const goToQuoted = (m: ListMessageResult) => {
   const targetId = getQuotedTargetId(m);
   if (!targetId) return;
 

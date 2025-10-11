@@ -1,8 +1,8 @@
+import { pagingRequestSchema } from '@core/schema/common/pagingRequestSchema';
 import { Static, Type } from '@sinclair/typebox';
 
 export const listMessageChatsQuerySchema = Type.Object({
-  from: Type.Optional(Type.Number({ default: 0 })),
-  size: Type.Optional(Type.Number({ default: 100 })),
+  ...pagingRequestSchema.properties,
 });
 
 export const listMessageChatsParamsSchema = Type.Object({

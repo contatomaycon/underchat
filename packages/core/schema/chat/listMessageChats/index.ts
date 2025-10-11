@@ -33,7 +33,7 @@ export const listMessageChatsSchema = {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: Type.Array(listMessageResponseSchema),
+        data: listMessageResponseSchema,
       },
       { description: 'Successful' }
     ),

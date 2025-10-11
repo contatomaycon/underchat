@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
-import { ListMessageResponse } from '@core/schema/chat/listMessageChats/response.schema';
+import { ListMessageResult } from '@core/schema/chat/listMessageChats/response.schema';
 
 const chatStore = useChatStore();
 
@@ -10,7 +10,7 @@ const inputRef = ref<HTMLInputElement | null>(null);
 
 const replying = computed(() => chatStore.messageReply);
 
-const isClient = (m: ListMessageResponse | null) =>
+const isClient = (m: ListMessageResult | null) =>
   !!m && m.type_user === ETypeUserChat.client;
 
 const replyName = computed(() => {

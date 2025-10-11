@@ -2,7 +2,11 @@ import { injectable } from 'tsyringe';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
-import { ListChatsResponse } from '@core/schema/chat/listChats/response.schema';
+import {
+  ListChatsResponse,
+  ListChatsResult,
+} from '@core/schema/chat/listChats/response.schema';
+import { setPaginationData } from '@core/common/functions/createPaginationData';
 
 @injectable()
 export class ChatListerUseCase {
@@ -13,13 +17,13 @@ export class ChatListerUseCase {
   async execute(
     accountId: string,
     query: ListChatsQuery
-  ): Promise<ListChatsResponse[]> {
-    const from = query.from ?? 0;
-    const size = query.size ?? 100;
+  ): Promise<ListChatsResponse> {
+    const currentPage = query.current_page ?? 1;
+    const perPage = query.per_page ?? 10;
 
     const queryElastic = {
-      from,
-      size,
+      from: (currentPage - 1) * perPage,
+      size: perPage,
       sort: [{ date: { order: 'desc' } }],
       query: {
         bool: {
@@ -52,9 +56,29 @@ export class ChatListerUseCase {
     );
 
     if (!result) {
-      return [];
+      const pagings = setPaginationData(0, 0, perPage, currentPage);
+
+      return {
+        pagings,
+        results: [],
+      };
     }
 
-    return result.hits.hits.map((hit) => hit._source) as ListChatsResponse[];
+    const chats = result.hits.hits.map(
+      (hit) => hit._source
+    ) as ListChatsResult[];
+    const total = result.hits.total as { value: number; relation: string };
+
+    const pagings = setPaginationData(
+      chats.length,
+      total.value,
+      perPage,
+      currentPage
+    );
+
+    return {
+      pagings,
+      results: chats,
+    };
   }
 }

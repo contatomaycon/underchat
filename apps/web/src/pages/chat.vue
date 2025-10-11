@@ -7,7 +7,7 @@ import ChatLeftSidebarContent from '@/components/chat/ChatLeftSidebarContent.vue
 import ChatLog from '@/components/chat/ChatLog.vue';
 import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSidebarContent.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
-import { ListChatsResponse } from '@core/schema/chat/listChats/response.schema';
+import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
@@ -46,8 +46,8 @@ const { isLeftSidebarOpen } = useResponsiveLeftSidebar(
   vuetifyDisplays.smAndDown
 );
 
-const from = ref(0);
-const size = ref(100);
+const currentPage = ref(1);
+const perPage = ref(10);
 const chatLogPS = ref();
 const q = ref('');
 const msg = ref('');
@@ -166,12 +166,12 @@ const sendMessage = async () => {
   });
 };
 
-const openChat = async (chatId: ListChatsResponse['chat_id']) => {
+const openChat = async (chatId: ListChatsResult['chat_id']) => {
   chatStore.setActiveChat(chatId);
 
   const requestQueue: ListMessageChatsQuery = {
-    from: from.value,
-    size: size.value,
+    current_page: currentPage.value,
+    per_page: perPage.value,
   };
 
   await chatStore.getChatById(requestQueue);

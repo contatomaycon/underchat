@@ -5,8 +5,12 @@ import {
   ListMessageChatsParams,
   ListMessageChatsQuery,
 } from '@core/schema/chat/listMessageChats/request.schema';
-import { ListMessageResponse } from '@core/schema/chat/listMessageChats/response.schema';
+import {
+  ListMessageResponse,
+  ListMessageResult,
+} from '@core/schema/chat/listMessageChats/response.schema';
 import { IChat } from '@core/common/interfaces/IChat';
+import { setPaginationData } from '@core/common/functions/createPaginationData';
 
 @injectable()
 export class ChatMessageListerUseCase {
@@ -31,13 +35,13 @@ export class ChatMessageListerUseCase {
     accountId: string,
     query: ListMessageChatsQuery,
     params: ListMessageChatsParams
-  ): Promise<ListMessageResponse[]> {
-    const from = query.from ?? 0;
-    const size = query.size ?? 100;
+  ): Promise<[ListMessageResult[], number]> {
+    const currentPage = query.current_page ?? 1;
+    const perPage = query.per_page ?? 10;
 
     const queryElastic = {
-      from,
-      size,
+      from: (currentPage - 1) * perPage,
+      size: perPage,
       sort: [{ date: { order: 'asc' } }],
       query: {
         bool: {
@@ -70,25 +74,52 @@ export class ChatMessageListerUseCase {
     );
 
     if (!result) {
-      return [];
+      return [[], 0];
     }
 
-    return result.hits.hits.map((hit) => hit._source) as ListMessageResponse[];
+    const total = result.hits.total as { value: number; relation: string };
+    const messages = result.hits.hits.map(
+      (hit) => hit._source
+    ) as ListMessageResult[];
+
+    return [messages, total.value];
   }
 
   async execute(
     accountId: string,
     query: ListMessageChatsQuery,
     params: ListMessageChatsParams
-  ): Promise<ListMessageResponse[]> {
-    const chatMessages = await this.getChatMessage(accountId, query, params);
+  ): Promise<ListMessageResponse> {
+    const currentPage = query.current_page ?? 1;
+    const perPage = query.per_page ?? 10;
+
+    const [chatMessages, total] = await this.getChatMessage(
+      accountId,
+      query,
+      params
+    );
 
     if (!chatMessages) {
-      return [] as ListMessageResponse[];
+      const pagings = setPaginationData(0, 0, perPage, currentPage);
+
+      return {
+        pagings,
+        results: [],
+      };
     }
+
+    const pagings = setPaginationData(
+      chatMessages.length,
+      total,
+      perPage,
+      currentPage
+    );
 
     await this.updateChat(params.chat_id);
 
-    return chatMessages;
+    return {
+      pagings,
+      results: chatMessages,
+    };
   }
 }

@@ -2,6 +2,7 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { Static, Type } from '@sinclair/typebox';
 import { viewLinkPreviewResponseSchema } from '../viewLinkPreview/response.schema';
+import { pagingResponseSchema } from '@core/schema/common/pagingResponseSchema';
 
 export const userSchema = Type.Object({
   id: Type.String(),
@@ -49,7 +50,7 @@ export const contentSchema = Type.Object({
   image: Type.Optional(Type.Union([imageSchema, Type.Null()])),
 });
 
-export const listMessageResponseSchema = Type.Object({
+export const listMessageResultSchema = Type.Object({
   message_id: Type.String(),
   chat_id: Type.String(),
   type_user: Type.String({ enum: Object.values(ETypeUserChat) }),
@@ -59,7 +60,13 @@ export const listMessageResponseSchema = Type.Object({
   date: Type.String(),
 });
 
-export type ListMessageResponse = Static<typeof listMessageResponseSchema>;
+export const listMessageResponseSchema = Type.Object({
+  ...pagingResponseSchema.properties,
+  results: Type.Array(listMessageResultSchema),
+});
+
+export type ListMessageResult = Static<typeof listMessageResultSchema>;
 export type LinkPreview = Static<typeof viewLinkPreviewResponseSchema>;
 export type ContentMessageChat = Static<typeof contentSchema>;
 export type ImageMessageChat = Static<typeof imageSchema>;
+export type ListMessageResponse = Static<typeof listMessageResponseSchema>;
