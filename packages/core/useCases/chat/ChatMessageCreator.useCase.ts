@@ -175,9 +175,14 @@ export class ChatMessageCreatorUseCase {
         quotedMessage = {
           key: {
             remote_jid: getChatMessage.message_key?.remote_jid ?? null,
+            remote_jid_alt: getChatMessage.message_key?.remote_jid_alt ?? null,
             from_me: getChatMessage.message_key?.from_me ?? null,
             id: getChatMessage.message_key?.id ?? null,
             participant: getChatMessage.message_key?.participant ?? null,
+            participant_alt:
+              getChatMessage.message_key?.participant_alt ?? null,
+            addressing_mode:
+              getChatMessage.message_key?.addressing_mode ?? null,
           },
           message: getChatMessage.content?.message ?? null,
         };
@@ -189,6 +194,7 @@ export class ChatMessageCreatorUseCase {
       chat_id: params.chat_id,
       message_key: {
         remote_jid: getChat.message_key?.remote_jid ?? null,
+        remote_jid_alt: getChat.message_key?.remote_jid_alt ?? null,
       },
       type_user: ETypeUserChat.operator,
       account: getChat.account,

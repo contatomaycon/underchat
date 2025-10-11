@@ -77,6 +77,9 @@ export const mensageMappings = () => {
                     remote_jid: {
                       type: 'keyword',
                     },
+                    remote_jid_alt: {
+                      type: 'keyword',
+                    },
                     from_me: {
                       type: 'boolean',
                     },
@@ -85,6 +88,12 @@ export const mensageMappings = () => {
                     },
                     participant: {
                       type: 'keyword',
+                    },
+                    participant_alt: {
+                      type: 'keyword',
+                    },
+                    addressing_mode: {
+                      type: 'text',
                     },
                   },
                 },
