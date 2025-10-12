@@ -39,8 +39,8 @@ export class BaileysIncomingMessageService {
         const chatKind = getChatKind(m);
         const upsertType = e.type;
 
-        console.log('upsertType:', upsertType);
-        console.log('chatKind:', chatKind);
+        console.dir(upsertType, { depth: null, colors: true });
+        console.dir(chatKind, { depth: null, colors: true });
 
         if (
           chatKind === EChatKind.user &&
@@ -48,8 +48,8 @@ export class BaileysIncomingMessageService {
         ) {
           const type = mapIncomingToType(m);
 
-          console.log('New message received:', m);
-          console.log('Message type:', type);
+          console.dir(m, { depth: null, colors: true });
+          console.dir(type, { depth: null, colors: true });
 
           if (!type) {
             throw new Error('Unknown message type');

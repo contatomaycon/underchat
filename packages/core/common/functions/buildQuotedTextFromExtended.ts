@@ -24,9 +24,12 @@ export function buildQuotedTextFromExtended(
   const quoted: IQuotedMessage = {
     key: {
       remote_jid: rJid,
+      remote_jid_alt: m.key?.remoteJidAlt ?? undefined,
       from_me: m.key?.fromMe ?? false,
       id: ctx.stanzaId,
       participant,
+      participant_alt: m.key?.participantAlt ?? undefined,
+      addressing_mode: m.key?.addressingMode ?? undefined,
     },
     message: text,
   };
