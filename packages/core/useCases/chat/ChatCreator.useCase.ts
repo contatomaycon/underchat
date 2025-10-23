@@ -1,8 +1,7 @@
-import { injectable, inject } from 'tsyringe';
+import { injectable } from 'tsyringe';
 import { v4 as uuidv4 } from 'uuid';
 import { TFunction } from 'i18next';
 import { ChatService } from '@core/services/chat.service';
-import Redis from 'ioredis';
 import { IChat } from '@core/common/interfaces/IChat';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { PublishResult } from 'centrifuge';
@@ -16,7 +15,6 @@ import { EChatStatus } from '@core/common/enums/EChatStatus';
 @injectable()
 export class ChatCreatorUseCase {
   constructor(
-    @inject('Redis') private readonly redis: Redis,
     private readonly chatService: ChatService,
     private readonly centrifugoService: CentrifugoService,
     private readonly accountService: AccountService,

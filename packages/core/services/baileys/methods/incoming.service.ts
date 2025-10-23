@@ -1,10 +1,8 @@
 import { singleton } from 'tsyringe';
 import {
   AnyMessageContent,
-  MessageUpsertType,
   WAMessage,
   WAMessageKey,
-  proto,
   WASocket,
 } from '@whiskeysockets/baileys';
 import { mapIncomingToType } from '@core/common/functions/mapIncomingToType';
@@ -16,22 +14,6 @@ import { getChatKind } from '@core/common/functions/getChatKind';
 import { EChatKind } from '@core/common/enums/EChatKind';
 import { EMessageUpsertType } from '@core/common/enums/EMessageUpsertType';
 import { getSenderPhotoUrl } from '@core/common/functions/getSenderPhotoUrl';
-
-export type IncomingEvent =
-  | {
-      type: 'message';
-      data: { upsertType: MessageUpsertType; message: WAMessage };
-    }
-  | {
-      type: 'message.update';
-      data: { key: WAMessageKey; update: Partial<WAMessage> };
-    }
-  | {
-      type: 'message.receipt';
-      data: { key: WAMessageKey; receipt: proto.IUserReceipt };
-    }
-  | { type: 'presence.update'; data: any }
-  | { type: 'messages.history'; data: any };
 
 @singleton()
 export class BaileysIncomingMessageService {
@@ -58,6 +40,7 @@ export class BaileysIncomingMessageService {
         const upsertType = e.type;
 
         console.log('upsertType:', upsertType);
+        console.log('chatKind:', chatKind);
 
         if (
           chatKind === EChatKind.user &&

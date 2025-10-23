@@ -14,26 +14,23 @@ export const mensageMappings = () => {
             remote_jid: {
               type: 'keyword',
             },
+            remote_jid_alt: {
+              type: 'keyword',
+            },
             from_me: {
               type: 'boolean',
             },
             id: {
               type: 'keyword',
             },
-            sender_lid: {
-              type: 'keyword',
-            },
-            sender_pn: {
-              type: 'keyword',
-            },
             participant: {
               type: 'keyword',
             },
-            participant_pn: {
+            participant_alt: {
               type: 'keyword',
             },
-            participant_lid: {
-              type: 'keyword',
+            addressing_mode: {
+              type: 'text',
             },
           },
         },
@@ -86,19 +83,7 @@ export const mensageMappings = () => {
                     id: {
                       type: 'keyword',
                     },
-                    sender_lid: {
-                      type: 'keyword',
-                    },
-                    sender_pn: {
-                      type: 'keyword',
-                    },
                     participant: {
-                      type: 'keyword',
-                    },
-                    participant_pn: {
-                      type: 'keyword',
-                    },
-                    participant_lid: {
                       type: 'keyword',
                     },
                   },

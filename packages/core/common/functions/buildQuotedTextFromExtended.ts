@@ -26,11 +26,7 @@ export function buildQuotedTextFromExtended(
       remote_jid: rJid,
       from_me: m.key?.fromMe ?? false,
       id: ctx.stanzaId,
-      sender_lid: m.key?.senderLid ?? null,
-      sender_pn: m.key?.senderPn ?? null,
       participant,
-      participant_pn: m.key?.participantPn ?? null,
-      participant_lid: m.key?.participantLid ?? null,
     },
     message: text,
   };

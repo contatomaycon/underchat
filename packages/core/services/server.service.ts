@@ -123,7 +123,7 @@ export class ServerService {
       last_sync: date,
     };
 
-    this.centrifugoService.publish(
+    await this.centrifugoService.publish(
       statusServerCentrifugoQueue(),
       statusServerCentrifugo
     );

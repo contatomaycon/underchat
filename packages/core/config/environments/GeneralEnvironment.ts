@@ -1,10 +1,5 @@
 import InvalidConfigurationError from '@core/common/exceptions/InvalidConfigurationError';
 import { EAppEnvironment } from '@core/common/enums/EAppEnvironment';
-import * as dotenv from 'dotenv';
-
-dotenv.config({
-  path: '../../.env',
-});
 
 export class GeneralEnvironment {
   public get appEnvironment(): EAppEnvironment {

@@ -1,7 +1,7 @@
 import {
   AnyMessageContent,
   MiscMessageGenerationOptions,
-  proto,
+  WAMessage,
   WASocket,
 } from '@whiskeysockets/baileys';
 import { injectable } from 'tsyringe';
@@ -23,7 +23,7 @@ export class BaileysHelpersService {
     address: string,
     content: AnyMessageContent,
     options?: MiscMessageGenerationOptions
-  ): Promise<proto.WebMessageInfo | undefined> {
+  ): Promise<WAMessage | undefined> {
     const sock = this.socket();
 
     if (address.includes('@')) {
