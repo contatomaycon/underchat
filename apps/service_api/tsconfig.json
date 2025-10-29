@@ -13,15 +13,15 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "baseUrl": ".",
-    "typeRoots": ["./node_modules/@types", "../../packages/core/common/types"],
+    "typeRoots": ["./node_modules/@types", "../../packages/common/types"],
     "paths": {
       "@/*": ["src/*"],
-      "@core/*": ["../../packages/core/*"],
+      "@core/*": ["../../packages/*"],
       "@elastic/elasticsearch/lib/api/types": [
         "../../node_modules/@elastic/elasticsearch/lib/api/types"
       ]
     }
   },
-  "include": ["src/**/*", "../../packages/core/common/types/**/*.d.ts"],
+  "include": ["src/**/*", "../../packages/common/types/**/*.d.ts"],
   "exclude": ["node_modules"]
 }

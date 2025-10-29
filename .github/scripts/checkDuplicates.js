@@ -32,8 +32,8 @@ function checkDuplicatesInFile(filePath) {
 }
 
 const paths = [
-  'packages/core/plugins/i18next/locales/en/translation.json',
-  'packages/core/plugins/i18next/locales/pt/translation.json',
+  '@core/plugins/i18next/locales/en/translation.json',
+  '@core/plugins/i18next/locales/pt/translation.json',
 ];
 
 paths.forEach((path) => checkDuplicatesInFile(path));
