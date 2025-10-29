@@ -9,6 +9,9 @@ import consumerPlugin from './consumer';
 import centrifugoPlugin from '@core/plugins/centrifugo';
 import databaseElasticPlugin from '@core/plugins/dbElastic';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
+import fastifyQs from 'fastify-qs';
+import routes from '@/routes';
+import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -18,7 +21,10 @@ const server = fastify({
 server.decorateRequest('module', ERouteModule.worker_baileys);
 
 server.register(corsPlugin);
+
 server.register(swaggerPlugin);
+server.register(routes, { prefix: EPrefixRoutes.v1 });
+server.register(fastifyQs);
 
 server.register(databaseElasticPlugin, {
   prefix: ERouteModule.service,

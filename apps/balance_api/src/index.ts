@@ -15,6 +15,9 @@ import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 import centrifugoPlugin from '@core/plugins/centrifugo';
 import consumerPlugin from './consumer';
+import fastifyQs from 'fastify-qs';
+import routes from '@/routes';
+import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 
 const server = fastify({
   genReqId: () => v4(),
@@ -41,7 +44,10 @@ server.register(elasticLogsPlugin, {
 });
 
 server.register(loggerServicePlugin);
+
 server.register(swaggerPlugin);
+server.register(routes, { prefix: EPrefixRoutes.v1 });
+server.register(fastifyQs);
 
 server.register(consumerPlugin);
 

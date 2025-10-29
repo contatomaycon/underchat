@@ -8,14 +8,11 @@ import {
 } from 'fastify';
 import fp from 'fastify-plugin';
 import { generalEnvironment } from '@core/config/environments';
-import routes from '@/routes';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import { getPackageVersion } from '@core/common/functions/getPackageVersion';
 import { EDocumentation } from '@core/common/enums/EDocumentation';
 import path from 'path';
-import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
-import qs from 'fastify-qs';
 
 const swaggerPlugin = async (fastify: FastifyInstance) => {
   const patchPackage = path.join(__dirname, '../../../package.json');
@@ -92,8 +89,6 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
   });
 
   fastify.withTypeProvider<TypeBoxTypeProvider>();
-  fastify.register(routes, { prefix: EPrefixRoutes.v1 });
-  fastify.register(qs);
 };
 
 export default fp(swaggerPlugin, { name: 'swagger' });
