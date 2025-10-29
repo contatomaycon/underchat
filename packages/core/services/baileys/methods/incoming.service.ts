@@ -51,9 +51,7 @@ export class BaileysIncomingMessageService {
           console.dir(m, { depth: null, colors: true });
           console.dir(type, { depth: null, colors: true });
 
-          if (!type) {
-            throw new Error('Unknown message type');
-          }
+          if (!type) return;
 
           const senderPic = await getSenderPhotoUrl(socket, m);
 
