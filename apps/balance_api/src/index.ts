@@ -31,29 +31,29 @@ server.addHook('onError', errorHook);
 
 server.decorateRequest('module', ERouteModule.balancer);
 
-server.register(safePlugin(centrifugoPlugin, 'centrifugo', false), {
+server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
   module: ERouteModule.balancer,
 });
-server.register(safePlugin(dbConnector, 'database', false));
-server.register(safePlugin(authenticateKeyApi, 'authenticateKeyApi', false));
-server.register(safePlugin(i18nextPlugin, 'i18next', false));
+server.register(safePlugin(dbConnector, 'database'));
+server.register(safePlugin(authenticateKeyApi, 'authenticateKeyApi'));
+server.register(safePlugin(i18nextPlugin, 'i18next'));
 server.register(safePlugin(corsPlugin, 'cors'));
 
-server.register(safePlugin(kafkaStreamsPlugin, 'kafkaStreams', false), {
+server.register(safePlugin(kafkaStreamsPlugin, 'kafkaStreams'), {
   module: ERouteModule.balancer,
 });
 
-server.register(safePlugin(elasticLogsPlugin, 'elasticLogs', false), {
+server.register(safePlugin(elasticLogsPlugin, 'elasticLogs'), {
   prefix: ERouteModule.balancer,
 });
 
-server.register(safePlugin(loggerServicePlugin, 'loggerService', false));
+server.register(safePlugin(loggerServicePlugin, 'loggerService'));
 server.register(safePlugin(swaggerPlugin, 'swagger'));
-server.register(safePlugin(routes, 'routes'), {
+server.register(safePlugin(routes, 'routes', true), {
   prefix: EPrefixRoutes.v1,
 });
-server.register(safePlugin(fastifyQs, 'fastifyQs', false));
-server.register(safePlugin(consumerPlugin, 'consumer', false));
+server.register(safePlugin(fastifyQs, 'fastifyQs'));
+server.register(safePlugin(consumerPlugin, 'consumer'));
 
 const start = async () => {
   try {

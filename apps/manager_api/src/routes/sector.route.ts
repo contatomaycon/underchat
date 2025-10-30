@@ -17,7 +17,7 @@ import { listSectorRoleAccountSchema } from '@core/schema/sector/listSectorRoleA
 import { viewSectorRoleAccountSectorSchema } from '@core/schema/sector/viewSectorRoleAccountSector';
 import { createSectorRoleSchema } from '@core/schema/sector/createSectorRole';
 
-export default async function sectorRoutes(server: FastifyInstance) {
+export default function sectorRoutes(server: FastifyInstance) {
   const sectorController = container.resolve(SectorController);
 
   server.get('/sector', {

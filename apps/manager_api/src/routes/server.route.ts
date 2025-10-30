@@ -17,7 +17,7 @@ import { listServerSchema } from '@core/schema/server/listServer';
 import { serverLogsInstallSchema } from '@core/schema/server/serverLogsInstall';
 import { reinstallServerSchema } from '@core/schema/server/reinstallServer';
 
-export default async function serverRoutes(server: FastifyInstance) {
+export default function serverRoutes(server: FastifyInstance) {
   const serverController = container.resolve(ServerController);
 
   server.post('/server', {

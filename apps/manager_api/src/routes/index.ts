@@ -12,17 +12,17 @@ import zipcodeRoutes from './zipcode.route';
 import accountRoutes from './account.route';
 import planRoutes from './plan.route';
 
-export default async function registerRoutes(server: FastifyInstance) {
-  await server.register(authRoutes);
-  await server.register(healthRoutes);
-  await server.register(serverRoutes);
-  await server.register(centrifugoRoutes);
-  await server.register(roleRoutes);
-  await server.register(workerRoutes);
-  await server.register(chatRoutes);
-  await server.register(sectorRoutes);
-  await server.register(userRoutes);
-  await server.register(zipcodeRoutes);
-  await server.register(accountRoutes);
-  await server.register(planRoutes);
+export default function registerRoutes(server: FastifyInstance) {
+  server.register(authRoutes);
+  server.register(healthRoutes);
+  server.register(serverRoutes);
+  server.register(centrifugoRoutes);
+  server.register(roleRoutes);
+  server.register(workerRoutes);
+  server.register(chatRoutes);
+  server.register(sectorRoutes);
+  server.register(userRoutes);
+  server.register(zipcodeRoutes);
+  server.register(accountRoutes);
+  server.register(planRoutes);
 }

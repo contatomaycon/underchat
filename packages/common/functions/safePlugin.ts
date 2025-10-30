@@ -72,7 +72,7 @@ function runAsyncPlugin<Options extends FastifyPluginOptions>(
 
 export function safePlugin<
   Options extends FastifyPluginOptions = Record<string, unknown>,
->(plugin: IAsyncOrCb<Options>, name?: string, encapsulate = true) {
+>(plugin: IAsyncOrCb<Options>, name?: string, encapsulate = false) {
   const finalName = name ?? plugin.name ?? 'anonymous-plugin';
 
   const wrapped: FastifyPluginAsync<Options> = async (

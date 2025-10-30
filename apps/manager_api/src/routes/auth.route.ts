@@ -4,7 +4,7 @@ import { container } from 'tsyringe';
 import { loginSchema } from '@core/schema/auth/login';
 import { refreshTokenSchema } from '@core/schema/auth/refrehToken';
 
-export default async function authRoutes(server: FastifyInstance) {
+export default function authRoutes(server: FastifyInstance) {
   const authController = container.resolve(AuthController);
 
   server.post('/auth/login', {

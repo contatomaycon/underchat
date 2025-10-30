@@ -4,7 +4,7 @@ import { planListPermissions } from '@/permissions';
 import PlanController from '@/controllers/plan';
 import { listPlanSchema } from '@core/schema/plan/listPlan';
 
-export default async function planRoutes(server: FastifyInstance) {
+export default function planRoutes(server: FastifyInstance) {
   const planController = container.resolve(PlanController);
 
   server.get('/plan', {

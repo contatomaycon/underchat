@@ -14,7 +14,7 @@ import { deleteRoleSchema } from '@core/schema/role/deleteRole';
 import { editRoleSchema } from '@core/schema/role/editRole';
 import { createRoleSchema } from '@core/schema/role/createRole';
 
-export default async function roleRoutes(server: FastifyInstance) {
+export default function roleRoutes(server: FastifyInstance) {
   const roleController = container.resolve(RoleController);
 
   server.get('/role', {

@@ -18,7 +18,7 @@ import { statusConnectionWorkerSchema } from '@core/schema/worker/statusConnecti
 import { workerConnectionLogsSchema } from '@core/schema/worker/workerConnectionLogs';
 import { recreateWorkerSchema } from '@core/schema/worker/recreateWorker';
 
-export default async function workerRoutes(server: FastifyInstance) {
+export default function workerRoutes(server: FastifyInstance) {
   const workerController = container.resolve(WorkerController);
 
   server.post('/worker', {

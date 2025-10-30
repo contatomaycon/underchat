@@ -25,20 +25,22 @@ server.decorateRequest('module', ERouteModule.worker_baileys);
 server.register(safePlugin(corsPlugin, 'cors'));
 
 server.register(safePlugin(swaggerPlugin, 'swagger'));
-server.register(safePlugin(routes, 'routes'), { prefix: EPrefixRoutes.v1 });
-server.register(safePlugin(fastifyQs, 'fastifyQs', false));
+server.register(safePlugin(routes, 'routes', true), {
+  prefix: EPrefixRoutes.v1,
+});
+server.register(safePlugin(fastifyQs, 'fastifyQs'));
 
-server.register(safePlugin(databaseElasticPlugin, 'databaseElastic', false), {
+server.register(safePlugin(databaseElasticPlugin, 'databaseElastic'), {
   prefix: ERouteModule.worker_baileys,
 });
 
-server.register(safePlugin(kafkaStreamsPlugin, 'kafkaStreams', false), {
+server.register(safePlugin(kafkaStreamsPlugin, 'kafkaStreams'), {
   module: ERouteModule.worker_baileys,
 });
-server.register(safePlugin(centrifugoPlugin, 'centrifugo', false), {
+server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
   module: ERouteModule.worker_baileys,
 });
-server.register(safePlugin(consumerPlugin, 'consumer', false));
+server.register(safePlugin(consumerPlugin, 'consumer'));
 
 const start = async () => {
   try {

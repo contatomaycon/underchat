@@ -17,7 +17,7 @@ import path from 'node:path';
 const swaggerPlugin = async (fastify: FastifyInstance) => {
   const patchPackage = path.join(__dirname, '../../../package.json');
 
-  await fastify.register(fastifySwagger, {
+  fastify.register(fastifySwagger, {
     openapi: {
       openapi: '3.1.0',
       info: {
@@ -53,14 +53,14 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
   const ScalarApiReference = (await import('@scalar/fastify-api-reference'))
     .default;
 
-  await fastify.register(ScalarApiReference, {
+  fastify.register(ScalarApiReference, {
     routePrefix: EDocumentation.scalar,
     configuration: {
       layout: 'classic',
     },
   });
 
-  await fastify.register(fastifySwaggerUi, {
+  fastify.register(fastifySwaggerUi, {
     routePrefix: EDocumentation.swagger,
     uiConfig: {
       docExpansion: 'none',

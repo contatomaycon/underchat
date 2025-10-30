@@ -15,7 +15,7 @@ import { createMessageChatsSchema } from '@core/schema/chat/createMessageChats';
 import { createChatSchema } from '@core/schema/chat/createChat';
 import { viewLinkPreviewSchema } from '@core/schema/chat/viewLinkPreview';
 
-export default async function chatRoutes(server: FastifyInstance) {
+export default function chatRoutes(server: FastifyInstance) {
   const chatController = container.resolve(ChatController);
 
   server.get('/chat', {

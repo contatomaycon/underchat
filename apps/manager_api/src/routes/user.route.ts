@@ -14,7 +14,7 @@ import { viewUserSchema } from '@core/schema/user/viewUser';
 import { createUserSchema } from '@core/schema/user/createUser';
 import { editUserSchema } from '@core/schema/user/editUser';
 
-export default async function userRoutes(server: FastifyInstance) {
+export default function userRoutes(server: FastifyInstance) {
   const userController = container.resolve(UserController);
 
   server.get('/user', {

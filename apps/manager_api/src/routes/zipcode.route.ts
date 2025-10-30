@@ -4,7 +4,7 @@ import { zipcodeViewPermissions } from '@/permissions';
 import ZipcodeController from '@/controllers/zipcode';
 import { getZipcodeSchema } from '@core/schema/zipcode/viewZipcode';
 
-export default async function zipcodeRoutes(server: FastifyInstance) {
+export default function zipcodeRoutes(server: FastifyInstance) {
   const zipcodeController = container.resolve(ZipcodeController);
 
   server.get('/zipcode', {
