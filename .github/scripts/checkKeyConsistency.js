@@ -35,8 +35,9 @@ function checkKeyConsistency(baseFilePath, comparisonFilePath) {
   }
 }
 
-const englishJson = '@core/plugins/i18next/locales/en/translation.json';
-const portugueseJson = '@core/plugins/i18next/locales/pt/translation.json';
+const englishJson = 'packages/core/plugins/i18next/locales/en/translation.json';
+const portugueseJson =
+  'packages/core/plugins/i18next/locales/pt/translation.json';
 
 checkKeyConsistency(englishJson, portugueseJson);
 checkKeyConsistency(portugueseJson, englishJson);
