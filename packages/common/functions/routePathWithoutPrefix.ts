@@ -3,10 +3,9 @@ import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 
 export function routePathWithoutPrefix(request: FastifyRequest): string | null {
   let routePath = request.routeOptions.url ?? request.raw.url ?? '';
-
-  Object.values(EPrefixRoutes).forEach((prefix) => {
-    routePath = routePath.replaceAll(new RegExp(`/${prefix}`, 'g'), '');
-  });
+  for (const prefix of Object.values(EPrefixRoutes)) {
+    routePath = routePath.replaceAll(`/${prefix}`, '');
+  }
 
   return routePath ?? null;
 }

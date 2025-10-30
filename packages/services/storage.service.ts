@@ -68,11 +68,17 @@ export class StorageService {
     const dispoName = this.parseDispositionFilename(
       res.headers.get('content-disposition')
     );
+
     const urlName = (() => {
       const u = new URL(url);
-      const last = /[^/]+$/.exec(u.pathname.replace(/\/+$/, ''))?.[0];
-
-      return decodeURIComponent(last ?? '');
+      let p = u.pathname;
+      while (p.length && p.charCodeAt(p.length - 1) === 47) p = p.slice(0, -1);
+      const last = p.slice(p.lastIndexOf('/') + 1);
+      try {
+        return decodeURIComponent(last);
+      } catch {
+        return last;
+      }
     })();
 
     const guessedName =
