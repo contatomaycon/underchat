@@ -76,7 +76,7 @@ export async function isHelm(
     );
 
     const lastOutput = (result.at(-1)?.output ?? '')
-      .replaceAll(/\r/g, '')
+      .replaceAll('\r', '')
       .trim();
     const status = /^(200|true|1)$/i.test(lastOutput);
 
@@ -111,7 +111,7 @@ export async function isHelmConnection(
     );
 
     const lastOutput = (result.at(-1)?.output ?? '')
-      .replaceAll(/\r/g, '')
+      .replaceAll('\r', '')
       .trim();
     const status = /^(200|true|1)$/i.test(lastOutput);
 

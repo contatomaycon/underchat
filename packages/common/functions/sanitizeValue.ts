@@ -3,7 +3,7 @@ import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
 export const sanitizationMap: Record<ETypeSanetize, (value: string) => string> =
   {
     [ETypeSanetize.document]: (value) => {
-      const cleaned = value.replace(/\D/g, '');
+      const cleaned = value.replaceAll(/\D/g, '');
 
       if (cleaned.length === 11) {
         return `${cleaned.slice(0, 3)}.***.***-${cleaned.slice(-2)}`;
@@ -28,7 +28,7 @@ export const sanitizationMap: Record<ETypeSanetize, (value: string) => string> =
     },
 
     [ETypeSanetize.phone]: (value) => {
-      const cleaned = value.replace(/\D/g, '');
+      const cleaned = value.replaceAll(/\D/g, '');
 
       if (cleaned.length === 11) {
         return `(${cleaned.slice(0, 2)}) *****-${cleaned.slice(-4)}`;

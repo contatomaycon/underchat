@@ -1,7 +1,7 @@
 import { ETypeSanetize } from '../enums/ETypeSanetize';
 
 export function detectDocumentType(value: string): ETypeSanetize {
-  const cleaned = value.replace(/\D/g, '');
+  const cleaned = value.replaceAll(/\D/g, '');
 
   if (/^\d{11}$/.test(cleaned) || /^\d{14}$/.test(cleaned))
     return ETypeSanetize.document;
