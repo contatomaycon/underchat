@@ -111,13 +111,20 @@ async function processSvgSources(
     const iconSet = await importDirectory(source.dir, {
       prefix: source.prefix,
     });
+
     const entries: Array<[string, string]> = [];
-    iconSet.forEach((name: string, type: string) => {
-      entries.push([name, type]);
-    });
+    const exported = iconSet.export();
+    for (const name of Object.keys(exported.icons)) {
+      entries.push([name, 'icon']);
+    }
+    for (const name of Object.keys(exported.aliases ?? {})) {
+      entries.push([name, 'alias']);
+    }
+
     for (const [name, type] of entries) {
       await processSVGIcon(name, type, source, iconSet);
     }
+
     allIcons.push(iconSet.export());
   }
 }

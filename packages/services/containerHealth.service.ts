@@ -1,6 +1,6 @@
 import { injectable } from 'tsyringe';
 import Docker from 'dockerode';
-import { PassThrough } from 'stream';
+import { PassThrough } from 'node:stream';
 
 @injectable()
 export class ContainerHealthService {

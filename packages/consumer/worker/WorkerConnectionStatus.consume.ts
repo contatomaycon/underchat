@@ -63,12 +63,8 @@ export class WorkerConnectionStatusConsume {
         }
 
         await this.commitNext(topic, partition, message.offset);
-
-        return;
       },
     });
-
-    return;
   }
 
   public async close(): Promise<void> {
@@ -82,8 +78,6 @@ export class WorkerConnectionStatusConsume {
       await this.consumer.disconnect();
       this.consumer = null;
     }
-
-    return;
   }
 
   private getWorkerConnectionTopic(): string {
@@ -131,11 +125,7 @@ export class WorkerConnectionStatusConsume {
 
     if (data.status === EWorkerStatus.disponible) {
       this.handleDisponible();
-
-      return;
     }
-
-    return;
   }
 
   private async handleOnline(

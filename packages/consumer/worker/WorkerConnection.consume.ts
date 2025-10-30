@@ -75,8 +75,6 @@ export class WorkerConnectionConsume {
       await this.consumer.disconnect();
       this.consumer = null;
     }
-
-    return;
   }
 
   private getTopic(): string {
@@ -118,8 +116,6 @@ export class WorkerConnectionConsume {
       number: phoneNumber,
       connection_date: view.connection_date,
     });
-
-    return;
   }
 
   private async commitNext(

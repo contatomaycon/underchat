@@ -27,18 +27,18 @@ export class SectorListerRepository {
 
   private readonly setOrders = (query: ListSectorRequest): SQL[] => {
     const orders: SQL[] = [];
+    const sort = query.sort_by;
 
-    if (query.sort_by?.length) {
-      query.sort_by.forEach(({ key, order }) => {
-        if (key === ESortBySector.name)
-          orders.push(
-            order === ESortOrder.asc ? asc(sector.name) : desc(sector.name)
-          );
-      });
+    if (!sort || !sort.length) {
+      orders.push(asc(sector.created_at), desc(sector.sector_id));
+      return orders;
     }
 
-    if (!query.sort_by?.length) {
-      orders.push(asc(sector.created_at), desc(sector.sector_id));
+    for (const { key, order } of sort) {
+      if (key !== ESortBySector.name) continue;
+      orders.push(
+        order === ESortOrder.asc ? asc(sector.name) : desc(sector.name)
+      );
     }
 
     return orders;

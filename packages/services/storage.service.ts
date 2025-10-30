@@ -70,9 +70,9 @@ export class StorageService {
     );
     const urlName = (() => {
       const u = new URL(url);
-      return decodeURIComponent(
-        u.pathname.split('/').filter(Boolean).pop() ?? ''
-      );
+      const last = u.pathname.replace(/\/+$/, '').match(/[^/]+$/)?.[0];
+
+      return decodeURIComponent(last ?? '');
     })();
 
     const guessedName =

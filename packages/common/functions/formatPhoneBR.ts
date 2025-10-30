@@ -1,5 +1,5 @@
 export function formatPhoneBR(number: string | number): string {
-  const digits = String(number).replace(/\D/g, '');
+  const digits = String(number).replaceAll(/\D/g, '');
 
   if (!digits.startsWith('55') || digits.length < 12) {
     return digits;

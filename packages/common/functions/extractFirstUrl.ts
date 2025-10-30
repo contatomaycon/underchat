@@ -42,13 +42,11 @@ function scanUrlEnd(text: string, start: number, allowed: string): number {
 }
 
 function trimTrailingPunctuation(url: string): string {
-  while (
-    url.length > 0 &&
-    ')]}>"\'.,;:!?'.includes(url.charAt(url.length - 1))
-  ) {
+  for (;;) {
+    const last = url.at(-1);
+    if (!last || !')]}>"\'.,;:!?'.includes(last)) break;
     url = url.slice(0, -1);
   }
-
   return url;
 }
 
@@ -77,7 +75,7 @@ export function extractFirstUrl(text?: string): string | null {
   const pos = findFirstUrlStart(text);
   if (pos < 0) return null;
 
-  const allowed = "-._~:/?#[\\]@!$&'()*+,;=%";
+  const allowed = String.raw`-._~:/?#[\]@!$&'()*+,;=%`;
   const end = scanUrlEnd(text, pos, allowed);
 
   let url = text.slice(pos, end);

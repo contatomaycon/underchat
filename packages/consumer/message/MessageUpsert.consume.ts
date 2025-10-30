@@ -270,60 +270,56 @@ export class MessageUpsertConsume {
   }
 
   private async createChat(data: IUpsertMessage): Promise<IChat> {
-    try {
-      const [viewAccountName, viewWorkerNameAndId] = await Promise.all([
-        this.accountService.viewAccountName(data.account_id),
-        this.workerService.viewWorkerNameAndId(data.account_id, data.worker_id),
-      ]);
+    const [viewAccountName, viewWorkerNameAndId] = await Promise.all([
+      this.accountService.viewAccountName(data.account_id),
+      this.workerService.viewWorkerNameAndId(data.account_id, data.worker_id),
+    ]);
 
-      if (!viewAccountName || !viewWorkerNameAndId) {
-        throw new Error('Account or Worker not found');
-      }
-
-      const jid = remoteJid(data.message?.key);
-      if (!jid) {
-        throw new Error('Received message without remoteJid');
-      }
-
-      const jidAlt = remoteJidAlt(data.message?.key);
-      const phone = onlyDigits(jid);
-      const chatId = uuidv4();
-      const name = this.nameChat(data);
-
-      const inputChatMessage: IChat = {
-        chat_id: chatId,
-        message_key: {
-          remote_jid: jid,
-          remote_jid_alt: jidAlt,
-        },
-        account: viewAccountName,
-        worker: viewWorkerNameAndId,
-        name,
-        phone,
-        status: EChatStatus.queue,
-        date: new Date().toISOString(),
-      };
-
-      if (data.photo) {
-        const photoResult = await this.storageService.uploadFromUrl(
-          data.photo,
-          data.account_id,
-          chatId
-        );
-        inputChatMessage.photo = photoResult?.url;
-      }
-
-      await this.cacheChat(inputChatMessage);
-
-      const result = await this.chatService.saveChat(inputChatMessage);
-      if (!result) {
-        throw new Error('Failed to create chat');
-      }
-
-      return inputChatMessage;
-    } catch (error) {
-      throw error;
+    if (!viewAccountName || !viewWorkerNameAndId) {
+      throw new Error('Account or Worker not found');
     }
+
+    const jid = remoteJid(data.message?.key);
+    if (!jid) {
+      throw new Error('Received message without remoteJid');
+    }
+
+    const jidAlt = remoteJidAlt(data.message?.key);
+    const phone = onlyDigits(jid);
+    const chatId = uuidv4();
+    const name = this.nameChat(data);
+
+    const inputChatMessage: IChat = {
+      chat_id: chatId,
+      message_key: {
+        remote_jid: jid,
+        remote_jid_alt: jidAlt,
+      },
+      account: viewAccountName,
+      worker: viewWorkerNameAndId,
+      name,
+      phone,
+      status: EChatStatus.queue,
+      date: new Date().toISOString(),
+    };
+
+    if (data.photo) {
+      const photoResult = await this.storageService.uploadFromUrl(
+        data.photo,
+        data.account_id,
+        chatId
+      );
+      inputChatMessage.photo = photoResult?.url;
+    }
+
+    await this.cacheChat(inputChatMessage);
+
+    const result = await this.chatService.saveChat(inputChatMessage);
+    if (!result) {
+      throw new Error('Failed to create chat');
+    }
+
+    return inputChatMessage;
   }
 
   private parseMessage(value: Buffer | null): IUpsertMessage | null {
@@ -417,12 +413,8 @@ export class MessageUpsertConsume {
 
           await this.commitNext(topic, partition, offset);
         });
-
-        return;
       },
     });
-
-    return;
   }
 
   public async close(): Promise<void> {

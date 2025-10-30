@@ -73,8 +73,6 @@ export class MessageSendConsume {
         try {
           await this.enqueueByChatId(chatId, async () => {
             await this.processMessage(data);
-
-            return;
           });
         } catch {
           await this.commitNext(topic, partition, message.offset);
@@ -83,12 +81,8 @@ export class MessageSendConsume {
         }
 
         await this.commitNext(topic, partition, message.offset);
-
-        return;
       },
     });
-
-    return;
   }
 
   public async close(): Promise<void> {
@@ -102,10 +96,9 @@ export class MessageSendConsume {
       await this.consumer.stop();
     } finally {
       await this.consumer.disconnect();
+
       this.consumer = null;
     }
-
-    return;
   }
 
   private async commitNext(
@@ -170,11 +163,7 @@ export class MessageSendConsume {
       data.content?.quoted
     ) {
       await this.processTextQuoted(phone, data);
-
-      return;
     }
-
-    return;
   }
 
   private async processText(

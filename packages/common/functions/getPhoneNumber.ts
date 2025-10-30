@@ -5,5 +5,5 @@ export function getPhoneNumber(jid: string | undefined): string | undefined {
     ? jid.split(':')[0]
     : jid.split('@')[0];
 
-  return withoutSuffix.replace(/\D/g, '');
+  return withoutSuffix.replaceAll(/\D/g, '');
 }

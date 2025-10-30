@@ -27,46 +27,38 @@ export class ServerListerRepository {
 
   private readonly setOrders = (query: ListServerRequest): SQL[] => {
     const orders: SQL[] = [];
+    const sort = query.sort_by;
 
-    if (query.sort_by?.length) {
-      query.sort_by.forEach(({ key, order }) => {
-        if (key === ESortByServer.name)
-          orders.push(
-            order === ESortOrder.asc ? asc(server.name) : desc(server.name)
-          );
-
-        if (key === ESortByServer.ssh_ip)
-          orders.push(
-            order === ESortOrder.asc
-              ? asc(serverSsh.ssh_ip)
-              : desc(serverSsh.ssh_ip)
-          );
-
-        if (key === ESortByServer.ssh_port)
-          orders.push(
-            order === ESortOrder.asc
-              ? asc(serverSsh.ssh_port)
-              : desc(serverSsh.ssh_port)
-          );
-
-        if (key === ESortByServer.web_domain)
-          orders.push(
-            order === ESortOrder.asc
-              ? asc(serverWeb.web_domain)
-              : desc(serverWeb.web_domain)
-          );
-
-        if (key === ESortByServer.status)
-          orders.push(
-            order === ESortOrder.asc
-              ? asc(serverStatus.server_status_id)
-              : desc(serverStatus.server_status_id)
-          );
-      });
+    if (!sort || !sort.length) {
+      orders.push(asc(server.created_at), desc(server.server_id));
+      return orders;
     }
 
-    if (!query.sort_by?.length) {
-      orders.push(asc(server.created_at), desc(server.server_id));
+    const map: Partial<Record<ESortByServer, { asc: SQL; desc: SQL }>> = {
+      [ESortByServer.name]: { asc: asc(server.name), desc: desc(server.name) },
+      [ESortByServer.ssh_ip]: {
+        asc: asc(serverSsh.ssh_ip),
+        desc: desc(serverSsh.ssh_ip),
+      },
+      [ESortByServer.ssh_port]: {
+        asc: asc(serverSsh.ssh_port),
+        desc: desc(serverSsh.ssh_port),
+      },
+      [ESortByServer.web_domain]: {
+        asc: asc(serverWeb.web_domain),
+        desc: desc(serverWeb.web_domain),
+      },
+      [ESortByServer.status]: {
+        asc: asc(serverStatus.server_status_id),
+        desc: desc(serverStatus.server_status_id),
+      },
+    };
+
+    for (const { key, order } of sort) {
+      const entry = map[key as ESortByServer];
+      if (!entry) continue;
+      const isAsc = order === ESortOrder.asc;
+      orders.push(isAsc ? entry.asc : entry.desc);
     }
 
     return orders;

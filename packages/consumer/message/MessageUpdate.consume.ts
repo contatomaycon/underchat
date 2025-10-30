@@ -80,8 +80,6 @@ export class MessageUpdateConsume {
     );
 
     await this.redis.del(cacheKey);
-
-    return;
   }
 
   private async updateMessageIfMissingKey(data: IUpdateMessage): Promise<void> {
@@ -103,15 +101,11 @@ export class MessageUpdateConsume {
       { message_key: messageKey },
       data.data?.message_id ?? ''
     );
-
-    return;
   }
 
   private async handleMessage(data: IUpdateMessage): Promise<void> {
     await this.updateChatIfMissingRemoteJid(data);
     await this.updateMessageIfMissingKey(data);
-
-    return;
   }
 
   public async execute(): Promise<void> {
@@ -155,12 +149,8 @@ export class MessageUpdateConsume {
 
           await this.commitNext(topic, partition, offset);
         });
-
-        return;
       },
     });
-
-    return;
   }
 
   public async close(): Promise<void> {
@@ -176,8 +166,6 @@ export class MessageUpdateConsume {
       await this.consumer.disconnect();
       this.consumer = null;
     }
-
-    return;
   }
 
   private async commitNext(

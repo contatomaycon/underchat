@@ -20,7 +20,7 @@ export class BaileysMessageStatusStoriesService {
       jid,
       { image: media, caption: args.caption },
       {
-        ...(options || {}),
+        ...options,
         statusJidList: args.statusJidList,
         backgroundColor: args.backgroundColor,
         font: args.font,
@@ -39,7 +39,7 @@ export class BaileysMessageStatusStoriesService {
       jid,
       { video: media, caption: args.caption },
       {
-        ...(options || {}),
+        ...options,
         statusJidList: args.statusJidList,
         backgroundColor: args.backgroundColor,
         font: args.font,
@@ -58,7 +58,7 @@ export class BaileysMessageStatusStoriesService {
       jid,
       { text },
       {
-        ...(options || {}),
+        ...options,
         statusJidList: args.statusJidList,
         backgroundColor: args.backgroundColor,
         font: args.font,

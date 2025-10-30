@@ -1,3 +1,3 @@
 export function onlyDigits(v: string) {
-  return v.replace(/\D/g, '');
+  return v.replaceAll(/\D/g, '');
 }

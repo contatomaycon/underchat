@@ -1,4 +1,4 @@
-import { promises as fs } from 'fs';
+import { promises as fs } from 'node:fs';
 
 export async function readEnvFile(filePath: string): Promise<string> {
   try {
@@ -10,8 +10,8 @@ export async function readEnvFile(filePath: string): Promise<string> {
 
     const escapedEnvContent = content
       .split('\n')
-      .map((line) => line.replace(/(["`\\$])/g, '\\$1'))
-      .join('\\n');
+      .map((line) => line.replaceAll(/(["`\\$])/g, String.raw`\$1`))
+      .join(String.raw`\n`);
 
     return escapedEnvContent;
   } catch (err) {

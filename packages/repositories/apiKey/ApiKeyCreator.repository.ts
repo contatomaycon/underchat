@@ -3,7 +3,7 @@ import { apiKey } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { v4 as uuidv4 } from 'uuid';
-import { randomBytes } from 'crypto';
+import { randomBytes } from 'node:crypto';
 
 @injectable()
 export class ApiKeyCreatorRepository {

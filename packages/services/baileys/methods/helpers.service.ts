@@ -9,7 +9,7 @@ import { BaileysConnectionService } from './connection.service';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
-import { webcrypto as nodeCrypto } from 'crypto';
+import { webcrypto as nodeCrypto } from 'node:crypto';
 
 @injectable()
 export class BaileysHelpersService {

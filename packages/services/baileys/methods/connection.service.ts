@@ -7,7 +7,7 @@ import {
 } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
 import P from 'pino';
-import fs from 'fs';
+import fs from 'node:fs';
 import path from 'node:path';
 import { singleton } from 'tsyringe';
 import { CentrifugoService } from '@core/services/centrifugo.service';
@@ -37,7 +37,7 @@ const ACCOUNT = baileysEnvironment.baileysAccountId;
 
 @singleton()
 export class BaileysConnectionService {
-  private readonly retryDelay = 2_000;
+  private readonly retryDelay = 2000;
   private readonly maxRetries = 5;
 
   private socket?: WASocket;
@@ -581,12 +581,12 @@ export class BaileysConnectionService {
   }
 
   private clearFolder() {
-    fs.readdirSync(FOLDER).forEach((f) =>
+    for (const f of fs.readdirSync(FOLDER)) {
       fs.rmSync(path.join(FOLDER, f), {
         recursive: true,
         force: true,
-      })
-    );
+      });
+    }
   }
 
   private setStatus(s: Status, c?: ECodeMessage) {

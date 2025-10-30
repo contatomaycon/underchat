@@ -5,7 +5,7 @@ import {
   createCipheriv,
   createDecipheriv,
   scryptSync,
-} from 'crypto';
+} from 'node:crypto';
 
 @injectable()
 export class PasswordEncryptorService {

@@ -16,8 +16,7 @@ export class KeyedSequencerService {
   }
 
   async drain(): Promise<void> {
-    await Promise.allSettled([...this.chains.values()]);
-
+    await Promise.allSettled(this.chains.values());
     this.chains.clear();
   }
 }

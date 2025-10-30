@@ -27,22 +27,22 @@ export class RoleListerRepository {
 
   private readonly setOrders = (query: ListRoleRequest): SQL[] => {
     const orders: SQL[] = [];
+    const sort = query.sort_by;
 
-    if (query.sort_by?.length) {
-      query.sort_by.forEach(({ key, order }) => {
-        if (key === ESortByRole.name)
-          orders.push(
-            order === ESortOrder.asc
-              ? asc(permissionRole.name)
-              : desc(permissionRole.name)
-          );
-      });
-    }
-
-    if (!query.sort_by?.length) {
+    if (!sort || !sort.length) {
       orders.push(
         asc(permissionRole.created_at),
         desc(permissionRole.permission_role_id)
+      );
+      return orders;
+    }
+
+    for (const { key, order } of sort) {
+      if (key !== ESortByRole.name) continue;
+      orders.push(
+        order === ESortOrder.asc
+          ? asc(permissionRole.name)
+          : desc(permissionRole.name)
       );
     }
 

@@ -8,7 +8,7 @@ export function createConsumer(kafka: Kafka, groupId: string): Consumer {
     sessionTimeout: 30_000,
     rebalanceTimeout: 60_000,
     heartbeatInterval: 3_000,
-    metadataMaxAge: 10000,
+    metadataMaxAge: 10_000,
   });
 
   return consumer;
