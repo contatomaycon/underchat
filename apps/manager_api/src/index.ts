@@ -16,6 +16,8 @@ import loggerServicePlugin from '@core/plugins/logger';
 import centrifugoPlugin from '@core/plugins/centrifugo';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 import redisPlugin from '@core/plugins/redis';
+import multipartFile from '@fastify/multipart';
+import { generalEnvironment } from '@core/config/environments';
 import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
@@ -44,6 +46,11 @@ server.register(safePlugin(jwtPlugin, 'jwt', false));
 server.register(safePlugin(corsPlugin, 'cors'));
 server.register(safePlugin(kafkaStreamsPlugin, 'kafkaStreams', false), {
   module: ERouteModule.balancer,
+});
+
+server.register(safePlugin(multipartFile, 'multipartFile', false), {
+  attachFieldsToBody: true,
+  limits: { fileSize: generalEnvironment.uploadLimitInBytes },
 });
 
 server.register(safePlugin(databaseElasticPlugin, 'databaseElastic', false), {
