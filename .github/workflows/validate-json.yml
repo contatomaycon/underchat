@@ -24,8 +24,8 @@ jobs:
 
       - name: Validate JSON structure
         run: |
-          jsonlint @core/plugins/i18next/locales/en/translation.json -q
-          jsonlint @core/plugins/i18next/locales/pt/translation.json -q
+          jsonlint packages/plugins/i18next/locales/en/translation.json -q
+          jsonlint packages/plugins/i18next/locales/pt/translation.json -q
 
       - name: Check for duplicate keys
         run: node .github/scripts/checkDuplicates.js
