@@ -4,7 +4,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { v4 as uuidv4 } from 'uuid';
 import { currentTime } from '@core/common/functions/currentTime';
-import { CreateAccountInfoRequest } from '@core/core/schema/account/createAccountInfo/request.schema';
+import { CreateAccountInfoRequest } from '@core/schema/account/createAccountInfo/request.schema';
 
 @injectable()
 export class AccountInfoCreatorRepository {

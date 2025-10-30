@@ -1,7 +1,7 @@
 import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AccountService } from '@core/services/account.service';
-import { ViewAccountInfoResponse } from '@core/core/schema/account/viewAccountInfo/response.schema';
+import { ViewAccountInfoResponse } from '@core/schema/account/viewAccountInfo/response.schema';
 
 @injectable()
 export class AccountInfoViewerUseCase {

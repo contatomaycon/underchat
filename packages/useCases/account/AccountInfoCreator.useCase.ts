@@ -2,7 +2,7 @@ import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AccountService } from '@core/services/account.service';
 import { StorageService } from '@core/services/storage.service';
-import { CreateAccountInfoRequest } from '@core/core/schema/account/createAccountInfo/request.schema';
+import { CreateAccountInfoRequest } from '@core/schema/account/createAccountInfo/request.schema';
 
 @injectable()
 export class AccountInfoCreatorUseCase {

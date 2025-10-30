@@ -3,7 +3,7 @@ import { accountInfo } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { eq } from 'drizzle-orm';
-import { EditAccountInfoResponse } from '@core/core/schema/account/editAccountInfo/request.schema';
+import { EditAccountInfoResponse } from '@core/schema/account/editAccountInfo/request.schema';
 
 @injectable()
 export class AccountInfoUpdaterRepository {
