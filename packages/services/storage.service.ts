@@ -72,7 +72,9 @@ export class StorageService {
     const urlName = (() => {
       const u = new URL(url);
       let p = u.pathname;
-      while (p.length && p.charCodeAt(p.length - 1) === 47) p = p.slice(0, -1);
+
+      while (p.endsWith('/')) p = p.slice(0, -1);
+
       const last = p.slice(p.lastIndexOf('/') + 1);
       try {
         return decodeURIComponent(last);
