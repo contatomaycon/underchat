@@ -80,12 +80,8 @@ export class WorkerConsume {
         }
 
         await this.commitNext(topic, partition, message.offset);
-
-        return;
       },
     });
-
-    return;
   }
 
   public async close(): Promise<void> {
@@ -99,8 +95,6 @@ export class WorkerConsume {
       await this.consumer.disconnect();
       this.consumer = null;
     }
-
-    return;
   }
 
   private getTopic(): string {
@@ -146,11 +140,7 @@ export class WorkerConsume {
     if (data.action === EWorkerAction.recreate) {
       await this.kafkaBaileysQueueService.delete(data.worker_id);
       await this.recreateWorker(data);
-
-      return;
     }
-
-    return;
   }
 
   private centrifugoPublish(

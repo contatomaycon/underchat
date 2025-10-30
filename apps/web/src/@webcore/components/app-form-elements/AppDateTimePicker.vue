@@ -99,14 +99,13 @@ const vuetifyTheme = useTheme();
 const vuetifyThemesName = Object.keys(vuetifyTheme.themes.value);
 
 const updateThemeClassInCalendar = () => {
-  if (!refFlatPicker.value.fp.calendarContainer) return;
+  const container = refFlatPicker.value.fp.calendarContainer;
+  if (!container) return;
 
-  vuetifyThemesName.forEach((t) => {
-    refFlatPicker.value.fp.calendarContainer.classList.remove(`v-theme--${t}`);
-  });
-  refFlatPicker.value.fp.calendarContainer.classList.add(
-    `v-theme--${vuetifyTheme.global.name.value}`
-  );
+  for (const t of vuetifyThemesName) {
+    container.classList.remove(`v-theme--${t}`);
+  }
+  container.classList.add(`v-theme--${vuetifyTheme.global.name.value}`);
 };
 
 watch(() => configStore.theme, updateThemeClassInCalendar);

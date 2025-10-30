@@ -44,13 +44,15 @@ const isAnyChildOpen = (children: NavGroup['children']): boolean => {
 };
 
 const collapseChildren = (children: NavGroup['children']) => {
-  children.forEach((child) => {
-    if ('children' in child) collapseChildren(child.children);
+  for (const child of children) {
+    if ('children' in child) {
+      collapseChildren(child.children);
+    }
 
     openGroups.value = openGroups.value.filter(
       (group) => group !== child.title
     );
-  });
+  }
 };
 
 watch(

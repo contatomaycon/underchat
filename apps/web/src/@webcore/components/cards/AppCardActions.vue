@@ -37,14 +37,16 @@ const _loading = ref(false);
 
 const $loading = computed<boolean>({
   get() {
-    return props.loading !== undefined ? props.loading : _loading.value;
+    return props.loading === undefined ? _loading.value : props.loading;
   },
   set(value: boolean) {
-    if (props.loading !== undefined) {
-      emit('update:loading', value);
-    } else {
+    if (props.loading === undefined) {
       _loading.value = value;
+
+      return;
     }
+
+    emit('update:loading', value);
   },
 });
 

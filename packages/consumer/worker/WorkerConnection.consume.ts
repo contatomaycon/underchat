@@ -60,12 +60,8 @@ export class WorkerConnectionConsume {
         }
 
         await this.commitNext(topic, partition, message.offset);
-
-        return;
       },
     });
-
-    return;
   }
 
   public async close(): Promise<void> {

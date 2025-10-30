@@ -26,7 +26,8 @@ axiosAuth.interceptors.request.use(
   },
   (error) => {
     const err = error instanceof Error ? error : new Error(String(error));
-    return Promise.reject(err);
+
+    throw err;
   }
 );
 

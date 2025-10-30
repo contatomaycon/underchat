@@ -44,7 +44,7 @@ export const canNavigate = (to: RouteLocationNormalized): boolean => {
     return false;
   };
 
-  const target = to.matched[to.matched.length - 1];
+  const target = to.matched.at(-1);
   if (hasPermission(target?.meta?.permissions)) {
     return true;
   }
