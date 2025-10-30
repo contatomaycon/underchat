@@ -12,7 +12,7 @@ import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import { getPackageVersion } from '@core/common/functions/getPackageVersion';
 import { EDocumentation } from '@core/common/enums/EDocumentation';
-import path from 'path';
+import path from 'node:path';
 
 const swaggerPlugin = async (fastify: FastifyInstance) => {
   const patchPackage = path.join(__dirname, '../../../package.json');

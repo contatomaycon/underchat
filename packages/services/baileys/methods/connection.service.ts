@@ -8,7 +8,7 @@ import {
 import QRCode from 'qrcode';
 import P from 'pino';
 import fs from 'fs';
-import path from 'path';
+import path from 'node:path';
 import { singleton } from 'tsyringe';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { baileysEnvironment } from '@core/config/environments';

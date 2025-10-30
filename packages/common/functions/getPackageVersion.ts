@@ -1,5 +1,5 @@
 import fs from 'fs';
-import path from 'path';
+import path from 'node:path';
 
 export function getPackageVersion(patch: string): string {
   const packageJsonPath = path.resolve(patch);

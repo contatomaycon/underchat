@@ -1,4 +1,4 @@
-import path from 'path';
+import path from 'node:path';
 import { getPackageNodeVersion } from './getPackageNodeVersion';
 import { generalEnvironment } from '@core/config/environments';
 import { readEnvFile } from './readEnvFile';
