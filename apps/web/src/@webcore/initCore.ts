@@ -22,11 +22,16 @@ const _syncAppRtl = () => {
         document.documentElement.setAttribute('lang', val);
       }
       storedLang.value = val;
-      themeConfig.app.i18n?.langConfig?.forEach((lang) => {
-        if (lang.i18nLang === storedLang.value) {
-          configStore.isAppRTL = lang.isRTL;
+
+      const cfg = themeConfig.app.i18n?.langConfig;
+      if (cfg) {
+        for (const lang of cfg) {
+          if (lang.i18nLang === storedLang.value) {
+            configStore.isAppRTL = lang.isRTL;
+            break;
+          }
         }
-      });
+      }
     },
     { immediate: true }
   );
@@ -36,18 +41,18 @@ const _handleSkinChanges = () => {
   const { themes } = useTheme();
   const configStore = useConfigStore();
 
-  Object.values(themes.value).forEach((t) => {
+  for (const t of Object.values(themes.value)) {
     t.colors['skin-default-background'] = t.colors.background;
     t.colors['skin-default-surface'] = t.colors.surface;
-  });
+  }
 
   watch(
     () => configStore.skin,
     (val) => {
-      Object.values(themes.value).forEach((t) => {
+      for (const t of Object.values(themes.value)) {
         t.colors.background = t.colors[`skin-${val}-background`];
         t.colors.surface = t.colors[`skin-${val}-surface`];
-      });
+      }
     },
     { immediate: true }
   );

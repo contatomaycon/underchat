@@ -47,9 +47,12 @@ const replyText = computed(() => {
 });
 
 onMounted(() => {
-  window.addEventListener('focus-composer', () => {
-    inputRef.value?.focus();
-  });
+  (globalThis as Window & typeof globalThis).addEventListener(
+    'focus-composer',
+    () => {
+      inputRef.value?.focus();
+    }
+  );
 });
 </script>
 

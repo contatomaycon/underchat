@@ -70,7 +70,9 @@ const resolvePreviewUrl = (lp?: LinkPreview): string =>
 
 const onReply = (m: ListMessageResult) => {
   chatStore.setMessageReply(m);
-  window.dispatchEvent(new CustomEvent('focus-composer'));
+  (globalThis as Window & typeof globalThis).dispatchEvent(
+    new CustomEvent('focus-composer')
+  );
 };
 
 const onCopy = async (m: ListMessageResult) => {
@@ -111,7 +113,8 @@ const getQuotedTargetId = (m: ListMessageResult): string | null => {
 const goToQuoted = (m: ListMessageResult) => {
   const targetId = getQuotedTargetId(m);
   if (!targetId) return;
-  window.dispatchEvent(
+
+  (globalThis as Window & typeof globalThis).dispatchEvent(
     new CustomEvent('scroll-to-message', { detail: targetId })
   );
 };
