@@ -5,7 +5,7 @@ import { abilitiesPlugin } from '@casl/vue';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { getPermissions } from '@webcore/localStorage/user';
 
-export default function (app: App) {
+export default function applyCasl(app: App) {
   const permissions = getPermissions();
 
   const roles = permissions.map((permission: EPermissionsRoles) => ({

@@ -21,7 +21,7 @@ export const setupGuards = (router: Router) => {
             name: 'login',
             query: {
               ...to.query,
-              to: to.fullPath !== '/' ? to.path : undefined,
+              to: to.fullPath === '/' ? undefined : to.path,
             },
           };
     }

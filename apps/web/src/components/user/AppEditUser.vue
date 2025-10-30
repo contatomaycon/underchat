@@ -27,10 +27,10 @@ const isVisible = computed({
 
 function formatPhone(e: Event) {
   const input = e.target as HTMLInputElement;
-  let value = input.value.replace(/\D/g, '').slice(0, 9);
+  let value = input.value.replaceAll(/\D/g, '').slice(0, 9);
 
   if (value.length > 4 && value.length <= 8) {
-    value = `${value.slice(0, value.length - 4)}-${value.slice(-4)}`;
+    value = `${value.slice(0, -4)}-${value.slice(-4)}`;
   } else if (value.length > 8) {
     value = `${value.slice(0, 5)}-${value.slice(5)}`;
   }
@@ -92,7 +92,7 @@ const docPlaceholder = computed(() =>
   currentType.value ? docConfig[currentType.value].placeholder : ''
 );
 
-const onlyDigits = (s: string) => s.replace(/\D+/g, '');
+const onlyDigits = (s: string) => s.replaceAll(/\D+/g, '');
 const isPartialMasked = (v: string | null) => !!v && v.includes('*');
 
 const docEditing = ref(false);
@@ -313,9 +313,9 @@ let timer: number | null = null;
 watch(zip_code, () => {
   if (!country_id.value || !zip_code.value || zip_code.value.length < 8) return;
 
-  if (timer) window.clearTimeout(timer);
+  if (timer) (globalThis as Window & typeof globalThis).clearTimeout(timer);
 
-  timer = window.setTimeout(() => {
+  timer = (globalThis as Window & typeof globalThis).setTimeout(() => {
     viewZipcode();
   }, 400);
 });
@@ -454,7 +454,7 @@ watch(zip_code, () => {
                       maxlength="2"
                       @input="
                         phone_ddi = phone_ddi
-                          ? phone_ddi.replace(/\D/g, '').slice(0, 2)
+                          ? phone_ddi.replaceAll(/\D/g, '').slice(0, 2)
                           : null
                       "
                     />

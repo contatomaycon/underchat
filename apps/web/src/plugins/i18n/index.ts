@@ -27,6 +27,6 @@ export const getI18n = () => {
   return _i18n;
 };
 
-export default function (app: App) {
+export default function applyI18n(app: App) {
   app.use(getI18n());
 }

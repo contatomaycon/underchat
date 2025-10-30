@@ -30,7 +30,7 @@ export default defineConfig(() => {
       VueRouter({
         getRouteName: (routeNode) =>
           getPascalCaseRouteName(routeNode)
-            .replace(/([a-z\d])([A-Z])/g, '$1-$2')
+            .replaceAll(/([a-z\d])([A-Z])/g, '$1-$2')
             .toLowerCase(),
       }),
       vue({
