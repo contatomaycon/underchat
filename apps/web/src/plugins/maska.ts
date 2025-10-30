@@ -1,6 +1,8 @@
-import { App } from 'vue';
+import type { App } from 'vue';
 import { vMaska } from 'maska/vue';
 
-export default (app: App) => {
+function installMaska(app: App): void {
   app.directive('maska', vMaska);
-};
+}
+
+export default installMaska;

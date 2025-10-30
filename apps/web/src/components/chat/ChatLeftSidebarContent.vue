@@ -4,11 +4,11 @@ import ChatQueue from './ChatQueue.vue';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
-import { ListChatsResponse } from '@core/schema/chat/listChats/response.schema';
+import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 
 const emit = defineEmits<{
-  (e: 'openChat', id: ListChatsResponse['chat_id']): void;
+  (e: 'openChat', id: ListChatsResult['chat_id']): void;
   (e: 'showUserProfile'): void;
   (e: 'close'): void;
   (e: 'update:search', value: string): void;
@@ -21,10 +21,10 @@ const props = defineProps<{
 
 const chatStore = useChatStore();
 
-const fromQueue = ref(0);
-const sizeQueue = ref(100);
-const fromInChat = ref(0);
-const sizeInChat = ref(100);
+const currentPageQueue = ref(1);
+const perPageQueue = ref(10);
+const currentPageInChat = ref(1);
+const perPageInChat = ref(10);
 
 const modelSearch = computed({
   get: () => props.search,
@@ -33,14 +33,14 @@ const modelSearch = computed({
 
 onMounted(async () => {
   const requestQueue: ListChatsQuery = {
-    from: fromQueue.value,
-    size: sizeQueue.value,
+    current_page: currentPageQueue.value,
+    per_page: perPageQueue.value,
     status: EChatStatus.queue,
   };
 
   const requestInChat: ListChatsQuery = {
-    from: fromInChat.value,
-    size: sizeInChat.value,
+    current_page: currentPageInChat.value,
+    per_page: perPageInChat.value,
     status: EChatStatus.in_chat,
   };
 

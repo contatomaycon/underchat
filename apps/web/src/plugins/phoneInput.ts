@@ -1,9 +1,9 @@
 import 'flag-icons/css/flag-icons.min.css';
 import 'v-phone-input/dist/v-phone-input.css';
 import { createVPhoneInput } from 'v-phone-input';
-import { App } from 'vue';
+import type { App } from 'vue';
 
-export default (app: App) => {
+function installVPhoneInput(app: App): void {
   const vPhoneInput = createVPhoneInput({
     countryIconMode: 'svg',
     defaultCountry: 'BR',
@@ -11,4 +11,6 @@ export default (app: App) => {
   });
 
   app.use(vPhoneInput);
-};
+}
+
+export default installVPhoneInput;

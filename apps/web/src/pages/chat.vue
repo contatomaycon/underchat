@@ -7,7 +7,7 @@ import ChatLeftSidebarContent from '@/components/chat/ChatLeftSidebarContent.vue
 import ChatLog from '@/components/chat/ChatLog.vue';
 import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSidebarContent.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
-import { ListChatsResponse } from '@core/schema/chat/listChats/response.schema';
+import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
@@ -46,8 +46,8 @@ const { isLeftSidebarOpen } = useResponsiveLeftSidebar(
   vuetifyDisplays.smAndDown
 );
 
-const from = ref(0);
-const size = ref(100);
+const currentPage = ref(1);
+const perPage = ref(10);
 const chatLogPS = ref();
 const q = ref('');
 const msg = ref('');
@@ -166,12 +166,12 @@ const sendMessage = async () => {
   });
 };
 
-const openChat = async (chatId: ListChatsResponse['chat_id']) => {
+const openChat = async (chatId: ListChatsResult['chat_id']) => {
   chatStore.setActiveChat(chatId);
 
   const requestQueue: ListMessageChatsQuery = {
-    from: from.value,
-    size: size.value,
+    current_page: currentPage.value,
+    per_page: perPage.value,
   };
 
   await chatStore.getChatById(requestQueue);
@@ -245,7 +245,7 @@ const openAttach = (
       fileAudioRef.value?.click();
       break;
     case 'contact':
-      window.dispatchEvent(new CustomEvent('open-contact-picker'));
+      globalThis.dispatchEvent(new CustomEvent('open-contact-picker'));
       break;
   }
 };
@@ -268,12 +268,12 @@ const onEmojiSelect = (e: any) => {
 
   if (ch) {
     msg.value = (msg.value || '') + ch;
-    nextTick(() => window.dispatchEvent(new CustomEvent('focus-composer')));
+    nextTick(() => globalThis.dispatchEvent(new CustomEvent('focus-composer')));
   }
 };
 
 const onRecordAudio = () => {
-  window.dispatchEvent(new CustomEvent('start-recording-audio'));
+  globalThis.dispatchEvent(new CustomEvent('start-recording-audio'));
 };
 
 const onSendText = () => sendMessage();
@@ -323,9 +323,10 @@ onMounted(async () => {
         chatStore.addMessageActiveChat(data);
 
         scrollToMessageById(data.message_id);
-        window.dispatchEvent(new CustomEvent('focus-composer'));
+        globalThis.dispatchEvent(new CustomEvent('focus-composer'));
       }
     );
+
     await onMessage(
       chatQueueAccountCentrifugo(chatStore.user.account_id),
       (data: IChat) => {
@@ -333,8 +334,8 @@ onMounted(async () => {
       }
     );
 
-    window.addEventListener('focus-composer', focusComposer);
-    window.addEventListener(
+    globalThis.addEventListener('focus-composer', focusComposer);
+    globalThis.addEventListener(
       'scroll-to-message',
       onScrollToMessageEvt as EventListener
     );
@@ -345,8 +346,9 @@ onUnmounted(async () => {
   if (chatStore.user?.account_id) {
     await unsubscribe(chatAccountCentrifugo(chatStore.user.account_id));
     await unsubscribe(chatQueueAccountCentrifugo(chatStore.user.account_id));
-    window.removeEventListener('focus-composer', focusComposer);
-    window.removeEventListener(
+
+    globalThis.removeEventListener('focus-composer', focusComposer);
+    globalThis.removeEventListener(
       'scroll-to-message',
       onScrollToMessageEvt as EventListener
     );
@@ -612,7 +614,6 @@ onUnmounted(async () => {
               </VMenu>
             </template>
 
-            <!-- DIREITA: ÁUDIO (default) OU ENVIAR (se tiver texto) -->
             <template #append-inner>
               <div class="d-flex align-center gap-1">
                 <IconBtn

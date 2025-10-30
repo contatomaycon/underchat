@@ -211,7 +211,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(async () => {
-  await Promise.all([unsubscribe(statusServerCentrifugoQueue())]);
+  await unsubscribe(statusServerCentrifugoQueue());
 });
 </script>
 

@@ -19,6 +19,6 @@ setupGuards(router);
 
 export { router };
 
-export default function (app: App) {
+export default function applyRouter(app: App) {
   app.use(router);
 }

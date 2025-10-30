@@ -4,7 +4,7 @@ import workerConsume from './worker.consume';
 import messageUpdateConsume from './updateMessage.consume';
 import messageUpsertMessage from './upsertMessage.consume';
 
-export default async function (server: FastifyInstance) {
+export default async function registerConsumer(server: FastifyInstance) {
   await server.register(balanceConsume);
   await server.register(workerConsume);
   await server.register(messageUpdateConsume);

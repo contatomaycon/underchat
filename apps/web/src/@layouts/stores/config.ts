@@ -48,7 +48,7 @@ export const useLayoutConfigStore = defineStore('layoutConfig', () => {
     _setDirAttr(val ? 'rtl' : 'ltr');
   });
 
-  const mql = window.matchMedia(
+  const mql = globalThis.matchMedia?.(
     `(max-width: ${layoutConfig.app.overlayNavFromBreakpoint}px)`
   );
   const isLessThanOverlayNavBreakpoint = ref(mql.matches);

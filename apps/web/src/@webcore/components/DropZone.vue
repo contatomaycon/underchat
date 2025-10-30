@@ -11,19 +11,16 @@ const fileData = ref<FileData[]>([]);
 const { open, onChange } = useFileDialog({ accept: 'image/*' });
 
 function onDrop(DroppedFiles: File[] | null) {
-  DroppedFiles?.forEach((file) => {
-    if (file.type.slice(0, 6) !== 'image/') {
-      // eslint-disable-next-line no-alert
-      alert('Only image files are allowed');
+  if (!DroppedFiles) return;
 
-      return;
-    }
+  for (const file of DroppedFiles) {
+    if (file.type.slice(0, 6) !== 'image/') continue;
 
     fileData.value.push({
       file,
       url: useObjectUrl(file).value ?? '',
     });
-  });
+  }
 }
 
 onChange((selectedFiles: any) => {

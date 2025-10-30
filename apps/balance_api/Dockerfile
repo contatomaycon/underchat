@@ -49,7 +49,7 @@ COPY --from=pruned /app/out/full/ .
 RUN pnpm build:balancer
 RUN mkdir -p /build_locales
 
-COPY packages/core/plugins/i18next/locales /build_locales
+COPY @core/plugins/i18next/locales /build_locales
 
 FROM node:22.18.0-alpine
 
@@ -61,7 +61,7 @@ COPY --from=builder /app/apps/balance_api/dist ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/apps/balance_api/package*.json ./apps/balance_api
-COPY --from=builder /build_locales ./packages/core/plugins/i18next/locales
+COPY --from=builder /build_locales ./@core/plugins/i18next/locales
 
 EXPOSE 3003
 

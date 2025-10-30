@@ -113,12 +113,12 @@ export const hexToRgb = (hex: string) => {
 
 export const rgbaToHex = (rgba: string, forceRemoveAlpha = false) => {
   return `#${rgba
-    .replace(/^(rgba?\(|\s+|\))$/g, '')
+    .replaceAll(/^(rgba?\(|\s+|\))$/g, '')
     .split(',')
-    .filter((string, index) => !forceRemoveAlpha || index !== 3)
-    .map((string) => Number.parseFloat(string))
-    .map((number, index) => (index === 3 ? Math.round(number * 255) : number))
-    .map((number) => number.toString(16))
-    .map((string) => (string.length === 1 ? `0${string}` : string))
+    .filter((_, index) => !forceRemoveAlpha || index !== 3)
+    .map((s) => Number.parseFloat(s))
+    .map((n, i) => (i === 3 ? Math.round(n * 255) : n))
+    .map((n) => n.toString(16))
+    .map((s) => (s.length === 1 ? `0${s}` : s))
     .join('')}`;
 };

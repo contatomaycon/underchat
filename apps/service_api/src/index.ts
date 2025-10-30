@@ -18,8 +18,13 @@ import centrifugoPlugin from '@core/plugins/centrifugo';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 import temporalPlugin from '@core/plugins/temporal';
 import redisPlugin from '@core/plugins/redis';
+import fastifyQs from 'fastify-qs';
+import routes from '@/routes';
+import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
+import { safePlugin } from '@core/common/functions/safePlugin';
 
 const server = fastify({
+  pluginTimeout: 120000,
   genReqId: () => v4(),
   logger: true,
 });
@@ -30,27 +35,37 @@ server.addHook('onError', errorHook);
 
 server.decorateRequest('module', ERouteModule.service);
 
-server.register(centrifugoPlugin, { module: ERouteModule.service });
-server.register(dbConnector);
-server.register(redisPlugin);
-server.register(authenticateKeyApi);
-server.register(i18nextPlugin);
-server.register(corsPlugin);
-server.register(kafkaStreamsPlugin, { module: ERouteModule.service });
+server.register(safePlugin(centrifugoPlugin, 'centrifugo', false), {
+  module: ERouteModule.service,
+});
+server.register(safePlugin(dbConnector, 'database', false));
+server.register(safePlugin(redisPlugin, 'redis', false));
+server.register(safePlugin(authenticateKeyApi, 'authenticateKeyApi', false));
+server.register(safePlugin(i18nextPlugin, 'i18next', false));
+server.register(safePlugin(corsPlugin, 'cors'));
+server.register(safePlugin(kafkaStreamsPlugin, 'kafkaStreams', false), {
+  module: ERouteModule.service,
+});
 
-server.register(databaseElasticPlugin, {
+server.register(safePlugin(databaseElasticPlugin, 'databaseElastic', false), {
   prefix: ERouteModule.service,
 });
 
-server.register(elasticLogsPlugin, {
+server.register(safePlugin(elasticLogsPlugin, 'elasticLogs', false), {
   prefix: ERouteModule.service,
 });
 
-server.register(loggerServicePlugin);
-server.register(consumerPlugin);
-server.register(swaggerPlugin);
-server.register(temporalPlugin);
-server.register(temporalConsumerPlugin);
+server.register(safePlugin(loggerServicePlugin, 'loggerService', false));
+server.register(safePlugin(consumerPlugin, 'consumer', false));
+
+server.register(safePlugin(swaggerPlugin, 'swagger'));
+server.register(safePlugin(routes, 'routes'), {
+  prefix: EPrefixRoutes.v1,
+});
+server.register(safePlugin(fastifyQs, 'fastifyQs', false));
+
+server.register(safePlugin(temporalPlugin, 'temporal', false));
+server.register(safePlugin(temporalConsumerPlugin, 'temporalConsumer', false));
 
 const start = async () => {
   try {

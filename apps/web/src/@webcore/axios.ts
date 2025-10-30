@@ -1,4 +1,4 @@
-import axios, { type AxiosResponse } from 'axios';
+import axios, { InternalAxiosRequestConfig, type AxiosResponse } from 'axios';
 import { getToken, removeUserData } from './localStorage/user';
 import { router } from '@/plugins/1.router';
 import { getI18n } from '@/plugins/i18n';
@@ -12,21 +12,22 @@ const createAxiosInstance = () =>
 const axiosAuth = createAxiosInstance();
 
 axiosAuth.interceptors.request.use(
-  (config) => {
+  (config: InternalAxiosRequestConfig) => {
     const token = getToken();
     const i18n = getI18n();
     const currentLocale = i18n.global.locale.value;
 
-    if (token && config.headers) {
-      config.headers['Authorization'] = `Bearer ${token}`;
+    if (config.headers) {
+      if (token) config.headers['Authorization'] = `Bearer ${token}`;
       config.headers['Accept-Language'] = currentLocale;
     }
 
     return config;
   },
-  (error) => {
-    const err = error instanceof Error ? error : new Error(String(error));
-    return Promise.reject(err);
+  (error: unknown) => {
+    if (error instanceof Error) throw error;
+
+    throw new Error(String(error));
   }
 );
 
@@ -46,7 +47,7 @@ axiosAuth.interceptors.response.use(
     }
 
     const err = error instanceof Error ? error : new Error(String(error));
-    return Promise.reject(err);
+    throw err;
   }
 );
 

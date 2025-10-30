@@ -85,4 +85,4 @@ export const createLayouts = (
 };
 
 export * from './components';
-export { layoutConfig };
+export { layoutConfig } from '@layouts/config';
