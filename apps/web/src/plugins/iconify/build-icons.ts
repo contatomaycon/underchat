@@ -37,12 +37,9 @@ function organizeIconsList(icons: string[]): Record<string, string[]> {
   for (const icon of icons) {
     const item = stringToIcon(icon);
     if (!item) continue;
-    if (!sorted[item.prefix]) {
-      sorted[item.prefix] = [];
-    }
-    if (!sorted[item.prefix].includes(item.name)) {
+    if (!sorted[item.prefix]) sorted[item.prefix] = [];
+    if (!sorted[item.prefix].includes(item.name))
       sorted[item.prefix].push(item.name);
-    }
   }
   return sorted;
 }
@@ -89,17 +86,16 @@ async function processJsonSources(
     ) as IconifyJSON;
     if (content.prefix === 'tabler') {
       for (const key in content.icons) {
-        content.icons[key].body = content.icons[key].body.replace(
-          /stroke-width="2"/g,
+        content.icons[key].body = content.icons[key].body.replaceAll(
+          'stroke-width="2"',
           'stroke-width="1.5"'
         );
       }
     }
     if (typeof item !== 'string' && item.icons?.length) {
       const filtered = getIcons(content, item.icons);
-      if (!filtered) {
+      if (!filtered)
         throw new Error(`Cannot find required icons in ${filename}`);
-      }
       allIcons.push(filtered);
       continue;
     }
@@ -115,9 +111,20 @@ async function processSvgSources(
     const iconSet = await importDirectory(source.dir, {
       prefix: source.prefix,
     });
-    await iconSet.forEach((name, type) =>
-      processSVGIcon(name, type, source, iconSet)
-    );
+
+    const entries: Array<[string, string]> = [];
+    const exported = iconSet.export();
+    for (const name of Object.keys(exported.icons)) {
+      entries.push([name, 'icon']);
+    }
+    for (const name of Object.keys(exported.aliases ?? {})) {
+      entries.push([name, 'alias']);
+    }
+
+    for (const [name, type] of entries) {
+      await processSVGIcon(name, type, source, iconSet);
+    }
+
     allIcons.push(iconSet.export());
   }
 }
@@ -126,12 +133,8 @@ async function processSources(
   sources: BundleScriptConfig,
   allIcons: IconifyJSON[]
 ) {
-  if (sources.json) {
-    await processJsonSources(sources.json, allIcons);
-  }
-  if (sources.svg) {
-    await processSvgSources(sources.svg, allIcons);
-  }
+  if (sources.json) await processJsonSources(sources.json, allIcons);
+  if (sources.svg) await processSvgSources(sources.svg, allIcons);
 }
 
 async function generateCSS(target: string, allIcons: IconifyJSON[]) {
@@ -164,19 +167,17 @@ const sources: BundleScriptConfig = {
 
 const target = join(__dirname, 'icons.css');
 
-(async function () {
-  await fs.mkdir(dirname(target), { recursive: true });
-  const allIcons: IconifyJSON[] = [];
-  if (sources.icons) {
-    const sourcesJSON = sources.json || (sources.json = []);
-    const organizedList = organizeIconsList(sources.icons);
-    for (const prefix in organizedList) {
-      sourcesJSON.push({
-        filename: require.resolve(`@iconify/json/json/${prefix}.json`),
-        icons: organizedList[prefix],
-      });
-    }
+await fs.mkdir(dirname(target), { recursive: true });
+const allIcons: IconifyJSON[] = [];
+if (sources.icons) {
+  const sourcesJSON = sources.json || (sources.json = []);
+  const organizedList = organizeIconsList(sources.icons);
+  for (const prefix in organizedList) {
+    sourcesJSON.push({
+      filename: require.resolve(`@iconify/json/json/${prefix}.json`),
+      icons: organizedList[prefix],
+    });
   }
-  await processSources(sources, allIcons);
-  await generateCSS(target, allIcons);
-})();
+}
+await processSources(sources, allIcons);
+await generateCSS(target, allIcons);

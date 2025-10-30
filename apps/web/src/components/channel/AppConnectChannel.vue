@@ -169,33 +169,33 @@ function startTimer() {
   elapsedSeconds.value = 0;
   clearTimer();
 
-  intervalId.value = window.setInterval(() => {
-    if (
-      (!phoneSent.value &&
-        connectionType.value === EBaileysConnectionType.phone) ||
-      statusCode.value === ECodeMessage.phoneNotAvailable
-    ) {
+  intervalId.value = (globalThis as Window & typeof globalThis).setInterval(
+    () => {
+      if (
+        (!phoneSent.value &&
+          connectionType.value === EBaileysConnectionType.phone) ||
+        statusCode.value === ECodeMessage.phoneNotAvailable
+      ) {
+        clearTimer();
+        return;
+      }
+
+      if (elapsedSeconds.value < totalSeconds.value) {
+        elapsedSeconds.value++;
+        return;
+      }
+
+      elapsedSeconds.value = 0;
+      if (attempt.value <= maxAttempts.value) {
+        attempt.value++;
+        reconnectChannel();
+        return;
+      }
+
       clearTimer();
-
-      return;
-    }
-
-    if (elapsedSeconds.value < totalSeconds.value) {
-      elapsedSeconds.value++;
-
-      return;
-    }
-
-    elapsedSeconds.value = 0;
-    if (attempt.value <= maxAttempts.value) {
-      attempt.value++;
-      reconnectChannel();
-
-      return;
-    }
-
-    clearTimer();
-  }, 1000);
+    },
+    1000
+  );
 }
 
 function clearTimer() {
@@ -220,7 +220,10 @@ function buildRequest(status: EWorkerStatus): StatusConnectionWorkerRequest {
 
 function startNextAttemptCountdown() {
   clearInterval(intervalIdNextAttempt.value!);
-  intervalIdNextAttempt.value = window.setInterval(() => {
+
+  intervalIdNextAttempt.value = (
+    globalThis as Window & typeof globalThis
+  ).setInterval(() => {
     if (secondsNextAttempt.value > 0) {
       secondsNextAttempt.value--;
       return;

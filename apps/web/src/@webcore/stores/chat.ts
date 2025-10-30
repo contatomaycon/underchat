@@ -4,8 +4,10 @@ import { getI18n } from '@/plugins/i18n';
 import { EColor } from '@core/common/enums/EColor';
 import { ISnackbar } from '@core/common/interfaces/ISnackbar';
 import axios from '@webcore/axios';
-import { IPagingElastic } from '@core/common/interfaces/IPagingElastic';
-import { ListChatsResponse } from '@core/schema/chat/listChats/response.schema';
+import {
+  ListChatsResponse,
+  ListChatsResult,
+} from '@core/schema/chat/listChats/response.schema';
 import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
 import { UpdateChatsUserRequest } from '@core/schema/chat/updateChatsUser/request.schema';
 import { getUser, setUser } from '../localStorage/user';
@@ -15,6 +17,7 @@ import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/reques
 import {
   ContentMessageChat,
   ListMessageResponse,
+  ListMessageResult,
 } from '@core/schema/chat/listMessageChats/response.schema';
 import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
@@ -32,16 +35,12 @@ export const useChatStore = defineStore('chat', {
     } as ISnackbar,
     i18n: getI18n(),
     loading: false,
-    activeChat: null as ListChatsResponse | null,
-    listMessages: [] as ListMessageResponse[],
-    listQueue: [] as ListChatsResponse[],
-    listInChat: [] as ListChatsResponse[],
-    messageReply: null as ListMessageResponse | null,
+    activeChat: null as ListChatsResult | null,
+    listMessages: [] as ListMessageResult[],
+    listQueue: [] as ListChatsResult[],
+    listInChat: [] as ListChatsResult[],
+    messageReply: null as ListMessageResult | null,
     user: getUser(),
-    pagings: {
-      from: 0,
-      size: 100,
-    } as IPagingElastic,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -53,7 +52,7 @@ export const useChatStore = defineStore('chat', {
       this.snackbar.status = false;
     },
     addMessageActiveChat(message: IChatMessage) {
-      const input: ListMessageResponse = {
+      const input: ListMessageResult = {
         message_id: message.message_id,
         chat_id: message.chat_id,
         type_user: message.type_user,
@@ -66,7 +65,7 @@ export const useChatStore = defineStore('chat', {
       this.listMessages.push(input);
     },
     addChat(chat: IChat) {
-      const input: ListChatsResponse = {
+      const input: ListChatsResult = {
         chat_id: chat.chat_id,
         summary: chat.summary,
         account: chat.account,
@@ -81,7 +80,7 @@ export const useChatStore = defineStore('chat', {
         date: chat.date,
       };
 
-      const replaceOrPush = (arr: ListChatsResponse[]) => {
+      const replaceOrPush = (arr: ListChatsResult[]) => {
         const idx = arr.findIndex((c) => c.chat_id === input.chat_id);
 
         if (idx !== -1) {
@@ -134,17 +133,17 @@ export const useChatStore = defineStore('chat', {
       });
     },
 
-    async listQueueChats(input: ListChatsQuery): Promise<ListChatsResponse[]> {
+    async listQueueChats(input: ListChatsQuery): Promise<ListChatsResult[]> {
       try {
         this.loading = true;
 
         const request: ListChatsQuery = {
-          from: input.from,
-          size: input.size,
+          current_page: input.current_page,
+          per_page: input.per_page,
           status: input.status,
         };
 
-        const response = await axios.get<IApiResponse<ListChatsResponse[]>>(
+        const response = await axios.get<IApiResponse<ListChatsResponse>>(
           `/chat`,
           {
             params: request,
@@ -153,35 +152,35 @@ export const useChatStore = defineStore('chat', {
 
         this.loading = false;
 
-        const data = response?.data as IApiResponse<ListChatsResponse[]>;
+        const data = response?.data as IApiResponse<ListChatsResponse>;
 
         if (!data?.status || !data?.data) {
           this.listQueue = [];
 
-          return [] as ListChatsResponse[];
+          return [] as ListChatsResult[];
         }
 
-        this.listQueue = data.data;
+        this.listQueue = data.data.results;
 
-        return data.data;
+        return data.data.results;
       } catch {
         this.listQueue = [];
 
-        return [] as ListChatsResponse[];
+        return [] as ListChatsResult[];
       }
     },
 
-    async listInChatChats(input: ListChatsQuery): Promise<ListChatsResponse[]> {
+    async listInChatChats(input: ListChatsQuery): Promise<ListChatsResult[]> {
       try {
         this.loading = true;
 
         const request: ListChatsQuery = {
-          from: input.from,
-          size: input.size,
+          current_page: input.current_page,
+          per_page: input.per_page,
           status: input.status,
         };
 
-        const response = await axios.get<IApiResponse<ListChatsResponse[]>>(
+        const response = await axios.get<IApiResponse<ListChatsResponse>>(
           `/chat`,
           {
             params: request,
@@ -190,21 +189,21 @@ export const useChatStore = defineStore('chat', {
 
         this.loading = false;
 
-        const data = response?.data as IApiResponse<ListChatsResponse[]>;
+        const data = response?.data as IApiResponse<ListChatsResponse>;
 
         if (!data?.status || !data?.data) {
           this.listInChat = [];
 
-          return [] as ListChatsResponse[];
+          return [] as ListChatsResult[];
         }
 
-        this.listInChat = data.data;
+        this.listInChat = data.data.results;
 
-        return data.data;
+        return data.data.results;
       } catch {
         this.listInChat = [];
 
-        return [] as ListChatsResponse[];
+        return [] as ListChatsResult[];
       }
     },
 
@@ -241,14 +240,14 @@ export const useChatStore = defineStore('chat', {
         this.loading = true;
         this.listMessages = [];
 
-        const response = await axios.get<IApiResponse<ListMessageResponse[]>>(
+        const response = await axios.get<IApiResponse<ListMessageResponse>>(
           `/chat/${this.activeChat?.chat_id}`,
           {
             params: query,
           }
         );
 
-        const data = response?.data as IApiResponse<ListMessageResponse[]>;
+        const data = response?.data as IApiResponse<ListMessageResponse>;
 
         if (!data?.status || !data?.data) {
           this.listMessages = [];
@@ -259,7 +258,7 @@ export const useChatStore = defineStore('chat', {
 
         this.loading = false;
 
-        this.listMessages = data.data;
+        this.listMessages = data.data.results;
       } catch {
         this.loading = false;
         this.listMessages = [];
@@ -330,10 +329,10 @@ export const useChatStore = defineStore('chat', {
     },
 
     setActiveChat(chatId: string): void {
-      this.activeChat = {} as ListChatsResponse;
+      this.activeChat = {} as ListChatsResult;
 
       const chat = (this.listQueue.find((c) => c.chat_id === chatId) ??
-        this.listInChat.find((c) => c.chat_id === chatId)) as ListChatsResponse;
+        this.listInChat.find((c) => c.chat_id === chatId)) as ListChatsResult;
 
       if (!chat.chat_id) {
         return;
@@ -342,7 +341,7 @@ export const useChatStore = defineStore('chat', {
       this.activeChat = chat;
     },
 
-    setMessageReply(m: ListMessageResponse) {
+    setMessageReply(m: ListMessageResult) {
       this.messageReply = m;
     },
 

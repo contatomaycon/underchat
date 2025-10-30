@@ -1,13 +1,13 @@
 <script lang="ts" setup>
 import { useChatStore } from '@/@webcore/stores/chat';
-import { ListChatsResponse } from '@core/schema/chat/listChats/response.schema';
+import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { limitCharacters } from '@core/common/functions/limitCharacters';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 
 const chatStore = useChatStore();
 
 const props = defineProps<{
-  user: ListChatsResponse;
+  user: ListChatsResult;
 }>();
 
 const isChatContactActive = computed(() => {

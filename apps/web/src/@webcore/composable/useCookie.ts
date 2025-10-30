@@ -43,7 +43,7 @@ export const useCookie = <T = string | null | undefined>(
   name: string,
   _opts?: CookieOptions<T>
 ): CookieRef<T> => {
-  const opts = { ...CookieDefaults, ...(_opts || {}) };
+  const opts = { ...CookieDefaults, ..._opts };
   const cookies = parse(document.cookie, opts);
 
   const cookie = ref<T | undefined>((cookies[name] as any) ?? opts.default?.());

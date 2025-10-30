@@ -24,7 +24,7 @@
       "@validators": ["./src/@webcore/utils/validators"],
       "@masks": ["./src/@webcore/utils/masks"],
       "@api-utils/*": ["./src/plugins/fake-api/utils/*"],
-      "@core/*": ["../../packages/core/*"]
+      "@core/*": ["../../packages/*"]
     },
     "lib": ["esnext", "dom", "dom.iterable", "scripthost"],
     "skipLibCheck": true,

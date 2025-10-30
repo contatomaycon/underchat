@@ -2,7 +2,6 @@ import 'reflect-metadata';
 import 'module-alias/register';
 import fastify from 'fastify';
 import dbConnector from '@core/config/database';
-import auth from '@fastify/auth';
 import authenticateJwt from '@core/middlewares/jwt.middleware';
 import i18nextPlugin from '@core/plugins/i18next';
 import { requestHook, responseHook, errorHook } from '@core/hooks';
@@ -19,8 +18,13 @@ import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 import redisPlugin from '@core/plugins/redis';
 import multipartFile from '@fastify/multipart';
 import { generalEnvironment } from '@core/config/environments';
+import fastifyQs from 'fastify-qs';
+import routes from '@/routes';
+import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
+import { safePlugin } from '@core/common/functions/safePlugin';
 
 const server = fastify({
+  pluginTimeout: 120000,
   genReqId: () => v4(),
   logger: true,
 });
@@ -31,30 +35,38 @@ server.addHook('onError', errorHook);
 
 server.decorateRequest('module', ERouteModule.manager);
 
-server.register(multipartFile, {
+server.register(safePlugin(centrifugoPlugin, 'centrifugo', false), {
+  module: ERouteModule.balancer,
+});
+server.register(safePlugin(dbConnector, 'database', false));
+server.register(safePlugin(redisPlugin, 'redis', false));
+server.register(safePlugin(authenticateJwt, 'authenticateJwt', false));
+server.register(safePlugin(i18nextPlugin, 'i18next', false));
+server.register(safePlugin(jwtPlugin, 'jwt', false));
+server.register(safePlugin(corsPlugin, 'cors'));
+server.register(safePlugin(kafkaStreamsPlugin, 'kafkaStreams', false), {
+  module: ERouteModule.balancer,
+});
+
+server.register(safePlugin(multipartFile, 'multipartFile', false), {
   attachFieldsToBody: true,
   limits: { fileSize: generalEnvironment.uploadLimitInBytes },
 });
-server.register(centrifugoPlugin, { module: ERouteModule.manager });
-server.register(dbConnector);
-server.register(redisPlugin);
-server.register(auth);
-server.register(authenticateJwt);
-server.register(i18nextPlugin);
-server.register(jwtPlugin);
-server.register(corsPlugin);
-server.register(kafkaStreamsPlugin, { module: ERouteModule.manager });
 
-server.register(databaseElasticPlugin, {
-  prefix: ERouteModule.manager,
+server.register(safePlugin(databaseElasticPlugin, 'databaseElastic', false), {
+  prefix: ERouteModule.balancer,
 });
 
-server.register(elasticLogsPlugin, {
-  prefix: ERouteModule.manager,
+server.register(safePlugin(elasticLogsPlugin, 'elasticLogs', false), {
+  prefix: ERouteModule.balancer,
 });
 
-server.register(loggerServicePlugin);
-server.register(swaggerPlugin);
+server.register(safePlugin(loggerServicePlugin, 'loggerService', false));
+server.register(safePlugin(swaggerPlugin, 'swagger'));
+server.register(safePlugin(routes, 'routes'), {
+  prefix: EPrefixRoutes.v1,
+});
+server.register(safePlugin(fastifyQs, 'fastifyQs', false));
 
 const start = async () => {
   try {

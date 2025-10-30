@@ -12,7 +12,7 @@ import zipcodeRoutes from './zipcode.route';
 import accountRoutes from './account.route';
 import planRoutes from './plan.route';
 
-export default async function (server: FastifyInstance) {
+export default async function registerRoutes(server: FastifyInstance) {
   await server.register(authRoutes);
   await server.register(healthRoutes);
   await server.register(serverRoutes);
