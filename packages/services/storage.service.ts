@@ -70,7 +70,7 @@ export class StorageService {
     );
     const urlName = (() => {
       const u = new URL(url);
-      const last = u.pathname.replace(/\/+$/, '').match(/[^/]+$/)?.[0];
+      const last = /[^/]+$/.exec(u.pathname.replace(/\/+$/, ''))?.[0];
 
       return decodeURIComponent(last ?? '');
     })();

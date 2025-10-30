@@ -6,10 +6,10 @@ import {
   ViewMetricsSocketsResponse,
 } from '@core/schema/metrics/viewMetrics/response.schema';
 import si from 'systeminformation';
-import os from 'os';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import { promises } from 'fs';
+import os from 'node:os';
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
+import { promises } from 'node:fs';
 import { generalEnvironment } from '@core/config/environments';
 
 @injectable()
@@ -41,7 +41,7 @@ export class MetricsViewerUseCase {
         const nums = line.match(/\d+/g);
 
         if (nums?.length) {
-          maxFds = parseInt(nums[0], 10);
+          maxFds = Number.parseInt(nums[0], 10);
         }
       }
     } catch {
@@ -50,7 +50,7 @@ export class MetricsViewerUseCase {
       try {
         const { stdout } = await execAsync('ulimit -n', { timeout: 500 });
 
-        maxFds = parseInt(stdout.trim(), 10) || 0;
+        maxFds = Number.parseInt(stdout.trim(), 10) || 0;
       } catch {
         maxFds = 0;
       }
@@ -77,8 +77,8 @@ export class MetricsViewerUseCase {
     const parseLine = (line: string) => {
       const cols = line.trim().split(/\s+/);
       return {
-        sectorsRead: parseInt(cols[5], 10),
-        ioTimeMs: parseInt(cols[12], 10),
+        sectorsRead: Number.parseInt(cols[5], 10),
+        ioTimeMs: Number.parseInt(cols[12], 10),
       };
     };
 
@@ -126,7 +126,7 @@ export class MetricsViewerUseCase {
         .trim()
         .split(/\s+/)
         .slice(1)
-        .map((v) => parseInt(v, 10));
+        .map((v) => Number.parseInt(v, 10));
       const total = parts.reduce((sum, n) => sum + n, 0);
 
       return { total, iowait: parts[4] };
@@ -192,8 +192,8 @@ export class MetricsViewerUseCase {
 
         if (idxOutSegs === -1 || idxRetrans === -1) break;
 
-        const outSegs = parseInt(vals[idxOutSegs], 10);
-        const retrans = parseInt(vals[idxRetrans], 10);
+        const outSegs = Number.parseInt(vals[idxOutSegs], 10);
+        const retrans = Number.parseInt(vals[idxRetrans], 10);
 
         const pct = outSegs ? (retrans / outSegs) * 100 : 0;
 
@@ -281,9 +281,9 @@ export class MetricsViewerUseCase {
 
         let end = part.length;
         while (end > 0) {
-          const c = part.charCodeAt(end - 1);
-          if (c < 48 || c > 57) break;
-
+          const cp = part.codePointAt(end - 1);
+          if (cp === undefined) break;
+          if (cp < 48 || cp > 57) break;
           end--;
         }
         const device = part.slice(0, end);
@@ -367,7 +367,7 @@ export class MetricsViewerUseCase {
       si.inetLatency(generalEnvironment.ipLatencyDnsIp),
     ]);
 
-    const usage = parseFloat(currentLoad.currentLoad.toFixed(2));
+    const usage = Number.parseFloat(currentLoad.currentLoad.toFixed(2));
 
     const [networksInfo, cpuIowait, diskInfo, getOpenFileDescriptors] =
       await Promise.all([

@@ -9,7 +9,7 @@ export class ZipcodeService {
   constructor(private readonly zipcodeViewRepository: ZipcodeViewRepository) {}
 
   private readonly clearCode = (zipCode: string): string => {
-    return zipCode.replace(/\D/g, '');
+    return zipCode.replaceAll(/\D/g, '');
   };
 
   private readonly axiosViaCepInstance = () => {

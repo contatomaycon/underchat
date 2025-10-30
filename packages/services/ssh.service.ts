@@ -100,14 +100,14 @@ export class SshService {
         lines
           .find((l) => l.startsWith('NAME='))
           ?.split('=')[1]
-          .replaceAll(/"/g, '')
+          ?.replaceAll('"', '')
           .trim() ?? 'unknown';
 
       const version =
         lines
           .find((l) => l.startsWith('VERSION_ID='))
           ?.split('=')[1]
-          .replaceAll(/"/g, '')
+          ?.replaceAll('"', '')
           .trim() ?? 'unknown';
 
       return { distro, version };

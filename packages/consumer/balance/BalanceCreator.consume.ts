@@ -255,7 +255,7 @@ export class BalanceCreatorConsume {
       }
 
       const lastOutput = (result.at(-1)?.output ?? '')
-        .replaceAll(/\r/g, '')
+        .replaceAll('\r', '')
         .trim();
       const status = /^(200|true|1)$/i.test(lastOutput);
 
@@ -290,7 +290,7 @@ export class BalanceCreatorConsume {
       }
 
       const lastOutput = (result.at(-1)?.output ?? '')
-        .replaceAll(/\r/g, '')
+        .replaceAll('\r', '')
         .trim();
       const status = /^(true|1)$/i.test(lastOutput);
 

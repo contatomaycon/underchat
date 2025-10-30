@@ -29,8 +29,9 @@ export class ServerListerRepository {
     const orders: SQL[] = [];
     const sort = query.sort_by;
 
-    if (!sort || !sort.length) {
+    if (!sort?.length) {
       orders.push(asc(server.created_at), desc(server.server_id));
+
       return orders;
     }
 

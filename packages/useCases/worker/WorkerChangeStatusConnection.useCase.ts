@@ -27,7 +27,7 @@ export class WorkerChangeStatusConnectionUseCase {
   private readonly WINDOW_MINUTES = 30;
 
   private cleanPhoneNumber(phone?: string): string {
-    return phone ? phone.replace(/\D/g, '') : '';
+    return phone ? phone.replaceAll(/\D/g, '') : '';
   }
 
   private isWindowExpired(firstAttemptDate: string): boolean {

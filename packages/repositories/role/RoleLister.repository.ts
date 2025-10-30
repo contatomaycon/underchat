@@ -29,11 +29,12 @@ export class RoleListerRepository {
     const orders: SQL[] = [];
     const sort = query.sort_by;
 
-    if (!sort || !sort.length) {
+    if (!sort?.length) {
       orders.push(
         asc(permissionRole.created_at),
         desc(permissionRole.permission_role_id)
       );
+
       return orders;
     }
 

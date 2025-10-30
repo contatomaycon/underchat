@@ -29,8 +29,9 @@ export class SectorListerRepository {
     const orders: SQL[] = [];
     const sort = query.sort_by;
 
-    if (!sort || !sort.length) {
+    if (!sort?.length) {
       orders.push(asc(sector.created_at), desc(sector.sector_id));
+
       return orders;
     }
 
