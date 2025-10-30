@@ -12,27 +12,33 @@ import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
+import { safePlugin } from '@core/common/functions/safePlugin';
 
 const server = fastify({
+  pluginTimeout: 120000,
   genReqId: () => v4(),
   logger: true,
 });
 
 server.decorateRequest('module', ERouteModule.worker_baileys);
 
-server.register(corsPlugin);
+server.register(safePlugin(corsPlugin, 'cors'));
 
-server.register(swaggerPlugin);
-server.register(routes, { prefix: EPrefixRoutes.v1 });
-server.register(fastifyQs);
+server.register(safePlugin(swaggerPlugin, 'swagger'));
+server.register(safePlugin(routes, 'routes'), { prefix: EPrefixRoutes.v1 });
+server.register(safePlugin(fastifyQs, 'fastifyQs', false));
 
-server.register(databaseElasticPlugin, {
-  prefix: ERouteModule.service,
+server.register(safePlugin(databaseElasticPlugin, 'databaseElastic', false), {
+  prefix: ERouteModule.worker_baileys,
 });
 
-server.register(kafkaStreamsPlugin, { module: ERouteModule.worker_baileys });
-server.register(centrifugoPlugin, { module: ERouteModule.worker_baileys });
-server.register(consumerPlugin);
+server.register(safePlugin(kafkaStreamsPlugin, 'kafkaStreams', false), {
+  module: ERouteModule.worker_baileys,
+});
+server.register(safePlugin(centrifugoPlugin, 'centrifugo', false), {
+  module: ERouteModule.worker_baileys,
+});
+server.register(safePlugin(consumerPlugin, 'consumer', false));
 
 const start = async () => {
   try {
