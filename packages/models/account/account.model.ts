@@ -9,6 +9,7 @@ import {
   plan,
   sector,
   messageTemplate,
+  labelTemplate,
 } from '@core/models';
 
 export const account = pgTable('account', {
@@ -52,4 +53,5 @@ export const accountRelations = relations(account, ({ one, many }) => ({
   swk: many(worker),
   sct: many(sector),
   amt: many(messageTemplate),
+  alt: many(labelTemplate),
 }));
