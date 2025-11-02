@@ -9,3 +9,4 @@ export * from './worker';
 export * from './plan';
 export * from './sector';
 export * from './chat';
+export * from './message';
