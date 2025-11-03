@@ -7,3 +7,4 @@ export * from './user.permissions';
 export * from './zipcode.permissions';
 export * from './account.permissions';
 export * from './plan.permissions';
+export * from './messageTemplate.permissions';

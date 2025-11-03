@@ -14,4 +14,5 @@ export enum ETagSwagger {
   zipcode = 'CEP',
   account = 'Conta',
   plan = 'Planos',
+  messageTemplate = 'Templates de Mensagem',
 }

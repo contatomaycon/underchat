@@ -159,5 +159,17 @@
   "account_info_update_successfully": "¡Información de la cuenta actualizada con éxito!",
   "account_info_update_error": "Error al actualizar la información de la cuenta!",
   "account_info_deleted_successfully": "¡Información de la cuenta eliminada con éxito!",
-  "account_info_deleter_error": "Error al eliminar la información de la cuenta!"
+  "account_info_deleter_error": "Error al eliminar la información de la cuenta!",
+  "message_template_list_successfully": "¡Lista de plantillas de mensajes obtenida con éxito!",
+  "message_template_list_not_found": "¡No se encontraron plantillas de mensajes!",
+  "message_template_creator_success": "¡Plantilla de mensaje creada con éxito!",
+  "message_template_creator_error": "Error al crear la plantilla de mensaje!",
+  "message_template_creation_failed": "¡Error al crear la plantilla de mensaje!",
+  "message_status_not_found": "¡Estado del mensaje no encontrado!",
+  "message_template_view_successfully": "¡Plantilla de mensaje visualizada con éxito!",
+  "message_template_not_found": "¡Plantilla de mensaje no encontrada!",
+  "message_template_deleted_successfully": "¡Plantilla de mensaje eliminada con éxito!",
+  "message_template_deleter_error": "Error al eliminar la plantilla de mensaje",
+  "message_template_update_successfully": "¡Plantilla de mensaje actualizada con éxito!",
+  "message_template_update_error": "Error al actualizar la plantilla de mensaje"
 }

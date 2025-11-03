@@ -159,5 +159,17 @@
   "account_info_update_successfully": "Informações da conta atualizadas com sucesso!",
   "account_info_update_error": "Erro ao atualizar as informações da conta!",
   "account_info_deleted_successfully": "Informações da conta eliminadas com sucesso!",
-  "account_info_deleter_error": "Erro ao eliminar as informações da conta!"
+  "account_info_deleter_error": "Erro ao eliminar as informações da conta!",
+  "message_template_list_successfully": "Lista de modelos de mensagem obtida com sucesso!",
+  "message_template_list_not_found": "Nenhum modelo de mensagem encontrado!",
+  "message_template_creator_success": "Modelo de mensagem criado com sucesso!",
+  "message_template_creator_error": "Erro ao criar o modelo de mensagem!",
+  "message_template_creation_failed": "Falha na criação do modelo de mensagem!",
+  "message_status_not_found": "Status da mensagem não encontrado!",
+  "message_template_view_successfully": "Modelo de mensagem visualizado com sucesso!",
+  "message_template_not_found": "Modelo de mensagem não encontrado!",
+  "message_template_deleted_successfully": "Modelo de mensagem excluído com sucesso!",
+  "message_template_deleter_error": "Erro ao excluir o modelo de mensagem!",
+  "message_template_update_successfully": "Modelo de mensagem atualizado com sucesso!",
+  "message_template_update_error": "Erro ao atualizar o modelo de mensagem!"
 }
