@@ -1,9 +1,5 @@
 <script lang="ts" setup>
 import { VForm } from 'vuetify/components/VForm';
-import {
-  EditMessageTemplateParamsRequest,
-  UpdateMessageTemplateRequest,
-} from '@core/schema/messageTemplate/editMessageTemplate/request.schema';
 import { useLabelTemplateStore } from '@/@webcore/stores/labelTemplate';
 import { ELabelStatus } from '@core/common/enums/ELabelStatus';
 import {

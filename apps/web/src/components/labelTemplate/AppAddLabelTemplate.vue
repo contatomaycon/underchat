@@ -2,7 +2,6 @@
 import { useLabelTemplateStore } from '@/@webcore/stores/labelTemplate';
 import { ELabelStatus } from '@core/common/enums/ELabelStatus';
 import { CreateLabelTemplateRequest } from '@core/schema/labelTemplate/createLabelTemplate/request.schema';
-import { CreateMessageTemplateRequest } from '@core/schema/messageTemplate/createMessageTemplate/request.schema';
 import { VForm } from 'vuetify/components/VForm';
 
 const labelTemplateStore = useLabelTemplateStore();
