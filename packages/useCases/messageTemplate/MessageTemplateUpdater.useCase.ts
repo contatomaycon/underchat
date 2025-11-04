@@ -23,6 +23,17 @@ export class MessageTemplateUpdaterUseCase {
       throw new Error(t('message_template_not_found'));
     }
 
+    if (body.message_status?.message_status_id) {
+      const messageStatusExists =
+        await this.messageTemplateService.existsMessageStatusById(
+          body.message_status.message_status_id
+        );
+
+      if (!messageStatusExists) {
+        throw new Error(t('message_status_not_found'));
+      }
+    }
+
     const messageTemplateUpdater =
       await this.messageTemplateService.updateMessageTemplateById(
         messageTemplateId,

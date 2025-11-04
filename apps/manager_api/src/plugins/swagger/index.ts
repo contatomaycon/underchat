@@ -94,6 +94,10 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
           name: ETagSwagger.messageTemplate,
           description: 'End-points relacionados à modelos de mensagem',
         },
+        {
+          name: ETagSwagger.labelTemplate,
+          description: 'End-points relacionados à modelos de etiqueta',
+        },
       ],
     },
   });

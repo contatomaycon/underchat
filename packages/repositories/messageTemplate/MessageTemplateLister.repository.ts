@@ -15,10 +15,9 @@ import {
   ilike,
 } from 'drizzle-orm';
 import { ESortOrder } from '@core/common/enums/ESortOrder';
-import { ListSectorRequest } from '@core/schema/sector/listSector/request.schema';
-import { ESortBySector } from '@core/common/enums/ESortBySector';
 import { ListMessageTemplateResponse } from '@core/schema/messageTemplate/listMessageTemplate/response.schema';
 import { ListMessageTemplateRequest } from '@core/schema/messageTemplate/listMessageTemplate/request.schema';
+import { ESortByMessage } from '@core/common/enums/ESortByMessage';
 
 @injectable()
 export class MessageTemplateListerRepository {
@@ -26,7 +25,7 @@ export class MessageTemplateListerRepository {
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  private readonly setOrders = (query: ListSectorRequest): SQL[] => {
+  private readonly setOrders = (query: ListMessageTemplateRequest): SQL[] => {
     const orders: SQL[] = [];
     const sort = query.sort_by;
 
@@ -40,7 +39,7 @@ export class MessageTemplateListerRepository {
     }
 
     for (const { key, order } of sort) {
-      if (key !== ESortBySector.name) continue;
+      if (key !== ESortByMessage.command) continue;
       orders.push(
         order === ESortOrder.asc
           ? asc(messageTemplate.command)

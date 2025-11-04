@@ -12,6 +12,7 @@ import { EZipcodePermissions } from './zipcode';
 import { EAccountPermissions } from './account';
 import { EPlanPermissions } from './plan';
 import { EMessageTemplatePermissions } from './messageTemplate';
+import { ELabelTemplatePermissions } from './labelTemplate';
 
 export type EPermissionsRoles =
   | EUserPermissions
@@ -27,4 +28,5 @@ export type EPermissionsRoles =
   | EZipcodePermissions
   | EAccountPermissions
   | EPlanPermissions
-  | EMessageTemplatePermissions;
+  | EMessageTemplatePermissions
+  | ELabelTemplatePermissions;

@@ -15,4 +15,5 @@ export enum ETagSwagger {
   account = 'Conta',
   plan = 'Planos',
   messageTemplate = 'Templates de Mensagem',
+  labelTemplate = 'Templates de Etiqueta',
 }

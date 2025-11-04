@@ -171,5 +171,17 @@
   "message_template_deleted_successfully": "Message template deleted successfully!",
   "message_template_deleter_error": "Error deleting message template!",
   "message_template_update_successfully": "Message template updated successfully!",
-  "message_template_update_error": "Error updating message template!"
+  "message_template_update_error": "Error updating message template!",
+  "label_template_list_successfully": "Label template list retrieved successfully!",
+  "label_template_list_not_found": "No label templates found!",
+  "label_template_creator_success": "Label template created successfully!",
+  "label_template_creator_error": "Error creating label template!",
+  "label_status_not_found": "Label status not found!",
+  "label_template_creation_failed": "Label template creation failed!",
+  "label_template_view_successfully": "Label template viewed successfully!",
+  "label_template_not_found": "Label template not found!",
+  "label_template_deleted_successfully": "Label template deleted successfully!",
+  "label_template_deleter_error": "Error deleting label template!",
+  "label_template_update_successfully": "Label template updated successfully!",
+  "label_template_update_error": "Error updating label template!"
 }
