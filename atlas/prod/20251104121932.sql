@@ -1,0 +1,5 @@
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('48478c0c-d319-443a-a63f-1e6e11d6db34', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'label_view');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('382325c3-5ba9-41e1-befd-2c0c6a6951da', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'label_list');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('bbd806b2-34e4-4fd7-b830-bc2c98e85b40', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'label_create');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('fa5be4b6-a8d7-4dfb-af8d-94be67266d5b', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'label_update');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('64adbf38-b52d-4cf9-a5b6-a6551f94e54c', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'label_delete');

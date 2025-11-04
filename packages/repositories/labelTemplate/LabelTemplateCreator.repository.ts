@@ -1,0 +1,37 @@
+import * as schema from '@core/models';
+import { labelTemplate } from '@core/models';
+import { CreateLabelTemplateRequest } from '@core/schema/labelTemplate/createLabelTemplate/request.schema';
+import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { inject, injectable } from 'tsyringe';
+import { v4 as uuidv4 } from 'uuid';
+
+@injectable()
+export class LabelTemplateCreatorRepository {
+  constructor(
+    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+  ) {}
+
+  createLabelTemplate = async (
+    input: CreateLabelTemplateRequest,
+    accountId: string
+  ): Promise<string | null> => {
+    const labelTemplateId = uuidv4();
+
+    const result = await this.db
+      .insert(labelTemplate)
+      .values({
+        label_template_id: labelTemplateId,
+        account_id: accountId,
+        label_status_id: input.label_status.label_status_id,
+        label: input.label,
+        color: input.color,
+      })
+      .execute();
+
+    if (!result) {
+      return null;
+    }
+
+    return labelTemplateId;
+  };
+}

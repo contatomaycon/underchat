@@ -171,5 +171,17 @@
   "message_template_deleted_successfully": "¡Plantilla de mensaje eliminada con éxito!",
   "message_template_deleter_error": "Error al eliminar la plantilla de mensaje",
   "message_template_update_successfully": "¡Plantilla de mensaje actualizada con éxito!",
-  "message_template_update_error": "Error al actualizar la plantilla de mensaje"
+  "message_template_update_error": "Error al actualizar la plantilla de mensaje",
+  "label_template_list_successfully": "¡Lista de plantillas de etiquetas obtenida con éxito!",
+  "label_template_list_not_found": "¡No se encontraron plantillas de etiquetas!",
+  "label_template_creator_success": "¡Plantilla de etiqueta creada con éxito!",
+  "label_template_creator_error": "Error al crear la plantilla de etiqueta!",
+  "label_status_not_found": "¡Estado de la etiqueta no encontrado!",
+  "label_template_creation_failed": "¡Error al crear la plantilla de etiqueta!",
+  "label_template_view_successfully": "¡Plantilla de etiqueta visualizada con éxito!",
+  "label_template_not_found": "¡Plantilla de etiqueta no encontrada!",
+  "label_template_deleted_successfully": "¡Plantilla de etiqueta eliminada con éxito!",
+  "label_template_deleter_error": "Error al eliminar la plantilla de etiqueta",
+  "label_template_update_successfully": "¡Plantilla de etiqueta actualizada con éxito!",
+  "label_template_update_error": "Error al actualizar la plantilla de etiqueta"
 }

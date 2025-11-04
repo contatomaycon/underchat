@@ -128,6 +128,12 @@ watch(isVisible, (visible) => {
                 item-value="value"
                 :label="$t('message_status') + ':'"
                 :placeholder="$t('message_status')"
+                :rules="[
+                  requiredValidator(
+                    message_status_id,
+                    $t('message_status_id_required')
+                  ),
+                ]"
               />
             </VCol>
           </VRow>

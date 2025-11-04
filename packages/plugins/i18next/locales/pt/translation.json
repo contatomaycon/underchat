@@ -171,5 +171,17 @@
   "message_template_deleted_successfully": "Modelo de mensagem excluído com sucesso!",
   "message_template_deleter_error": "Erro ao excluir o modelo de mensagem!",
   "message_template_update_successfully": "Modelo de mensagem atualizado com sucesso!",
-  "message_template_update_error": "Erro ao atualizar o modelo de mensagem!"
+  "message_template_update_error": "Erro ao atualizar o modelo de mensagem!",
+  "label_template_list_successfully": "Lista de modelos de etiqueta obtida com sucesso!",
+  "label_template_list_not_found": "Nenhum modelo de etiqueta encontrado!",
+  "label_template_creator_success": "Modelo de etiqueta criado com sucesso!",
+  "label_template_creator_error": "Erro ao criar o modelo de etiqueta!",
+  "label_status_not_found": "Status da etiqueta não encontrado!",
+  "label_template_creation_failed": "Falha na criação do modelo de etiqueta!",
+  "label_template_view_successfully": "Modelo de etiqueta visualizado com sucesso!",
+  "label_template_not_found": "Modelo de etiqueta não encontrado!",
+  "label_template_deleted_successfully": "Modelo de etiqueta excluído com sucesso!",
+  "label_template_deleter_error": "Erro ao excluir o modelo de etiqueta!",
+  "label_template_update_successfully": "Modelo de etiqueta atualizado com sucesso!",
+  "label_template_update_error": "Erro ao atualizar o modelo de etiqueta!"
 }

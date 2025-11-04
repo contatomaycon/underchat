@@ -23,6 +23,7 @@ declare module 'vue-router/auto-routes' {
     'account': RouteRecordInfo<'account', '/account', Record<never, never>, Record<never, never>>,
     'channels': RouteRecordInfo<'channels', '/channels', Record<never, never>, Record<never, never>>,
     'chat': RouteRecordInfo<'chat', '/chat', Record<never, never>, Record<never, never>>,
+    'label': RouteRecordInfo<'label', '/label', Record<never, never>, Record<never, never>>,
     'login': RouteRecordInfo<'login', '/login', Record<never, never>, Record<never, never>>,
     'message': RouteRecordInfo<'message', '/message', Record<never, never>, Record<never, never>>,
     'not-authorized': RouteRecordInfo<'not-authorized', '/not-authorized', Record<never, never>, Record<never, never>>,

@@ -1,9 +1,9 @@
 import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
-import { ListAccountRequest } from '@core/schema/account/listAccount/request.schema';
 import { ListMessageTemplateFinalResponse } from '@core/schema/messageTemplate/listMessageTemplate/response.schema';
 import { MessageTemplateService } from '@core/services/messageTemplate.service';
+import { ListMessageTemplateRequest } from '@core/schema/messageTemplate/listMessageTemplate/request.schema';
 
 @injectable()
 export class MessageTemplateListerUseCase {
@@ -13,7 +13,7 @@ export class MessageTemplateListerUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    query: ListAccountRequest,
+    query: ListMessageTemplateRequest,
     isAdministrator: boolean,
     accountId: string
   ): Promise<ListMessageTemplateFinalResponse> {

@@ -11,8 +11,8 @@ export const labelTemplate = pgTable('label_template', {
   label_status_id: uuid()
     .references(() => labelStatus.label_status_id)
     .notNull(),
-  command: varchar({ length: 100 }).notNull(),
-  message: text().notNull(),
+  label: text().notNull(),
+  color: varchar({ length: 20 }).notNull(),
   created_at: timestamp({
     mode: 'string',
     withTimezone: true,

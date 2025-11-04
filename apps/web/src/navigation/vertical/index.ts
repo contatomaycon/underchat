@@ -8,6 +8,7 @@ import { ESectorPermissions } from '@core/common/enums/EPermissions/sector';
 import { EUserPermissions } from '@core/common/enums/EPermissions/user';
 import { EAccountPermissions } from '@core/common/enums/EPermissions/account';
 import { EMessageTemplatePermissions } from '@core/common/enums/EPermissions/messageTemplate';
+import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
 
 export default [
   {
@@ -35,9 +36,22 @@ export default [
     ],
   },
   {
+    title: 'label_templates',
+    to: { name: 'label' as keyof RouteNamedMap },
+    icon: { icon: 'tabler-label' },
+    permissions: [
+      EGeneralPermissions.full_access,
+      ELabelTemplatePermissions.label_list,
+      ELabelTemplatePermissions.label_view,
+      ELabelTemplatePermissions.label_create,
+      ELabelTemplatePermissions.label_update,
+      ELabelTemplatePermissions.label_delete,
+    ],
+  },
+  {
     title: 'messages_template',
     to: { name: 'message' as keyof RouteNamedMap },
-    icon: { icon: 'tabler-message-circle' },
+    icon: { icon: 'tabler-message' },
     permissions: [
       EGeneralPermissions.full_access,
       EMessageTemplatePermissions.message_list,
