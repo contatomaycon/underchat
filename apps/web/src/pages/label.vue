@@ -73,6 +73,28 @@ const backgroundColor = (s: string): string => {
   return EColor.primary;
 };
 
+const textColor = (s: string): string => {
+  const hex = backgroundColor(s);
+
+  if (!isHexColor(hex)) return '#FFFFFF';
+
+  let c = hex.substring(1);
+  if (c.length === 3) {
+    c = c
+      .split('')
+      .map((ch) => ch + ch)
+      .join('');
+  }
+
+  const r = Number.parseInt(c.slice(0, 2), 16);
+  const g = Number.parseInt(c.slice(2, 4), 16);
+  const b = Number.parseInt(c.slice(4, 6), 16);
+
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+
+  return yiq >= 128 ? '#000000' : '#FFFFFF';
+};
+
 const headers: DataTableHeader<ListLabelTemplateResponse>[] = [
   { title: t('label'), key: 'label' },
   { title: t('label_status'), key: 'label_status' },
@@ -210,7 +232,10 @@ watch(
       >
         <template #item.label="{ item }">
           <VChip
-            :style="{ backgroundColor: backgroundColor(item.color) }"
+            :style="{
+              backgroundColor: backgroundColor(item.color),
+              color: textColor(item.color),
+            }"
             size="small"
           >
             {{ item.label }}

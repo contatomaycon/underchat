@@ -113,9 +113,11 @@ onMounted(async () => {
         <VCardText>
           <VRow>
             <VCol cols="12">
-              <AppTextField
+              <label class="text-body-2 mb-1" for="message-textarea">
+                {{ $t('message') }}:
+              </label>
+              <VTextarea
                 v-model="message"
-                :label="$t('message') + ':'"
                 :placeholder="$t('message')"
                 :rules="[requiredValidator(message, $t('message_required'))]"
               />

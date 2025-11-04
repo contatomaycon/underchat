@@ -350,5 +350,7 @@
     "label_required": "Label is required",
     "color_required": "Color is required",
     "label_status_id_required": "Label Status is required",
-    "message_status_id_required": "Message Status is required"
+    "message_status_id_required": "Message Status is required",
+    "shortcut": "Shortcut",
+    "shortcut_required": "Shortcut is required"
 }

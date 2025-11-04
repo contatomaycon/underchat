@@ -353,5 +353,7 @@
     "label_required": "Etiqueta é obrigatória",
     "color_required": "Cor é obrigatória",
     "label_status_id_required": "Status da Etiqueta é obrigatório",
-    "message_status_id_required": "Status da Mensagem é obrigatório"
+    "message_status_id_required": "Status da Mensagem é obrigatório",
+    "shortcut": "Atalho",
+    "shortcut_required": "Atalho é obrigatório"
 }
