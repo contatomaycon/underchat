@@ -351,5 +351,7 @@
     "label_required": "La etiqueta es obligatoria",
     "color_required": "El color es obligatorio",
     "label_status_id_required": "El estado de la etiqueta es obligatorio",
-    "message_status_id_required": "El estado del mensaje es obligatorio"
+    "message_status_id_required": "El estado del mensaje es obligatorio",
+    "shortcut": "Atajo",
+    "shortcut_required": "El atajo es obligatorio"
 }

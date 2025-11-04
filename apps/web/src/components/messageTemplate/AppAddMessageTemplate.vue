@@ -102,9 +102,11 @@ watch(isVisible, (visible) => {
         <VCardText>
           <VRow>
             <VCol cols="12">
-              <AppTextField
+              <label class="text-body-2 mb-1" for="message-textarea">
+                {{ $t('message') }}:
+              </label>
+              <VTextarea
                 v-model="message"
-                :label="$t('message') + ':'"
                 :placeholder="$t('message')"
                 :rules="[requiredValidator(message, $t('message_required'))]"
               />
@@ -112,10 +114,10 @@ watch(isVisible, (visible) => {
             <VCol cols="12">
               <AppTextField
                 v-model="command"
-                :label="$t('command') + ':'"
-                :placeholder="$t('command')"
+                :label="$t('shortcut') + ':'"
+                :placeholder="$t('shortcut')"
                 :rules="[
-                  requiredValidator(command, $t('command_required')),
+                  requiredValidator(command, $t('shortcut_required')),
                   noSlashRule,
                 ]"
               />

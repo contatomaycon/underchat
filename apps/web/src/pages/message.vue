@@ -66,7 +66,7 @@ const messageTemplateToEdit = ref<string | null>(null);
 
 const headers: DataTableHeader<ListMessageTemplateResponse>[] = [
   { title: t('message'), key: 'message' },
-  { title: t('command'), key: 'command' },
+  { title: t('shortcut'), key: 'command' },
   { title: t('message_status'), key: 'message_status' },
   { title: t('created_at'), key: 'created_at' },
   { title: t('actions'), key: 'actions', sortable: false },
@@ -201,7 +201,9 @@ watch(
         :loading-text="$t('loading_text')"
       >
         <template #item.message="{ item }">
-          {{ $t(`${item.message}`) }}
+          <span class="d-inline-block text-truncate" style="max-width: 350px">
+            {{ item.message }}
+          </span>
         </template>
 
         <template #item.command="{ item }">
