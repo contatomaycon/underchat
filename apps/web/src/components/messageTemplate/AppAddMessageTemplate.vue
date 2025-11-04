@@ -58,7 +58,7 @@ const noSlashRule = (value: string) => {
   if (!value) return true;
 
   if (/[\\/]/.test(value)) {
-    return 'Não é permitido usar / ou \\ no comando.';
+    return String.raw`Não é permitido usar / ou \ no comando.`;
   }
 
   if (value.trim() === '.') {
