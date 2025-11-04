@@ -11,6 +11,7 @@ import { ESectorPermissions } from './sector';
 import { EZipcodePermissions } from './zipcode';
 import { EAccountPermissions } from './account';
 import { EPlanPermissions } from './plan';
+import { EMessageTemplatePermissions } from './messageTemplate';
 
 export type EPermissionsRoles =
   | EUserPermissions
@@ -25,4 +26,5 @@ export type EPermissionsRoles =
   | ESectorPermissions
   | EZipcodePermissions
   | EAccountPermissions
-  | EPlanPermissions;
+  | EPlanPermissions
+  | EMessageTemplatePermissions;

@@ -7,6 +7,7 @@ import { ERolePermissions } from '@core/common/enums/EPermissions/role';
 import { ESectorPermissions } from '@core/common/enums/EPermissions/sector';
 import { EUserPermissions } from '@core/common/enums/EPermissions/user';
 import { EAccountPermissions } from '@core/common/enums/EPermissions/account';
+import { EMessageTemplatePermissions } from '@core/common/enums/EPermissions/messageTemplate';
 
 export default [
   {
@@ -31,6 +32,19 @@ export default [
       EWorkerPermissions.update_worker,
       EWorkerPermissions.view_worker,
       EWorkerPermissions.delete_worker,
+    ],
+  },
+  {
+    title: 'messages_template',
+    to: { name: 'message' as keyof RouteNamedMap },
+    icon: { icon: 'tabler-message-circle' },
+    permissions: [
+      EGeneralPermissions.full_access,
+      EMessageTemplatePermissions.message_list,
+      EMessageTemplatePermissions.message_view,
+      EMessageTemplatePermissions.message_create,
+      EMessageTemplatePermissions.message_update,
+      EMessageTemplatePermissions.message_delete,
     ],
   },
   {
