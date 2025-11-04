@@ -86,9 +86,9 @@ const textColor = (s: string): string => {
       .join('');
   }
 
-  const r = parseInt(c.slice(0, 2), 16);
-  const g = parseInt(c.slice(2, 4), 16);
-  const b = parseInt(c.slice(4, 6), 16);
+  const r = Number.parseInt(c.slice(0, 2), 16);
+  const g = Number.parseInt(c.slice(2, 4), 16);
+  const b = Number.parseInt(c.slice(4, 6), 16);
 
   const yiq = (r * 299 + g * 587 + b * 114) / 1000;
 
