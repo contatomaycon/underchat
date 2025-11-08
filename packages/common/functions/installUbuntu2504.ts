@@ -46,15 +46,14 @@ export async function installUbuntu2504(
         | gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg && \
       chmod a+r /etc/apt/keyrings/docker.gpg"`,
 
-    `DEBIAN_FRONTEND=noninteractive bash -c "DISTRO=$(lsb_release -cs) && \
-      if [ \"$DISTRO\" = \"noble\" ] || [ \"$DISTRO\" = \"oracular\" ]; then \
-        DISTRO=\"jammy\"; \
+    `DEBIAN_FRONTEND=noninteractive bash -c 'DISTRO=$(lsb_release -cs) && \
+      if [ "$DISTRO" = "noble" ] || [ "$DISTRO" = "oracular" ]; then \
+        DISTRO="jammy"; \
       fi && \
-      echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-      https://download.docker.com/linux/ubuntu \
-      $DISTRO stable\" \
-      | tee /etc/apt/sources.list.d/docker.list > /dev/null && \
-      apt-get update"`,
+      ARCH=$(dpkg --print-architecture) && \
+      rm -f /etc/apt/sources.list.d/docker.list && \
+      printf "deb [arch=%s signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu %s stable\\n" "$ARCH" "$DISTRO" > /etc/apt/sources.list.d/docker.list && \
+      apt-get update'`,
 
     `DEBIAN_FRONTEND=noninteractive bash -c "apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || \
       (apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true) && \
