@@ -33,11 +33,7 @@ export class UserListerRepository {
   private readonly setFiltersUser = (query: ListUserRequest): SQLWrapper[] => {
     const filters: SQLWrapper[] = [];
 
-    if (
-      query.email_partial ||
-      query.phone_partial ||
-      query.document_partial
-    ) {
+    if (query.email_partial || query.phone_partial || query.document_partial) {
       const conditions: (SQLWrapper | undefined)[] = [
         query.email_partial
           ? ilike(user.email_partial, `%${query.email_partial}%`)
