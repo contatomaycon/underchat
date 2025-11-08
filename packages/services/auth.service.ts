@@ -15,7 +15,6 @@ export class AuthService {
     const loginEncrypted = this.encryptService.encrypt(login);
 
     const input: IAuthenticate = {
-      username: login,
       email: loginEncrypted,
       password: passwordEncrypted,
     };

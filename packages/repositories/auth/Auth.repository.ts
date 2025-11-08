@@ -13,7 +13,7 @@ import {
   chatUser,
 } from '@core/models';
 import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
-import { and, eq, isNull, or } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 
@@ -94,7 +94,7 @@ export class AuthRepository {
       .leftJoin(chatUser, eq(chatUser.user_id, user.user_id))
       .where(
         and(
-          or(eq(user.username, input.username), eq(user.email, input.email)),
+          eq(user.email, input.email),
           eq(user.password, input.password),
           eq(user.user_status_id, EUserStatus.active),
           isNull(user.deleted_at)

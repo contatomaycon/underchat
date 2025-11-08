@@ -101,7 +101,6 @@ const docRules = computed(() => [
 
 const tab = ref('user_data');
 
-const username = ref<string | null>(null);
 const email = ref<string | null>(null);
 const password = ref<string | null>(null);
 const confirmPassword = ref<string | null>(null);
@@ -182,7 +181,6 @@ const addUser = async () => {
   if (!validateForm?.valid) return;
 
   if (
-    !username.value ||
     !email.value ||
     !password.value ||
     !phone_ddi.value ||
@@ -203,7 +201,6 @@ const addUser = async () => {
   }
 
   const payload: CreateUserRequest = {
-    username: username.value,
     email: email.value,
     password: password.value,
     user_info: {
@@ -308,17 +305,6 @@ onMounted(resetForm);
             <VWindowItem value="user_data">
               <VForm class="mt-2" ref="refFormStep1" @submit.prevent>
                 <VRow>
-                  <VCol md="6" cols="12">
-                    <AppTextField
-                      v-model="username"
-                      :label="$t('username') + ':'"
-                      :placeholder="$t('username')"
-                      :rules="[
-                        requiredValidator(username, $t('username_required')),
-                      ]"
-                    />
-                  </VCol>
-
                   <VCol md="6" cols="12">
                     <AppTextField
                       v-model="email"

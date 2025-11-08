@@ -64,7 +64,6 @@ export class UserTransactionCreatorRepository {
 
       const createUserInput: ICreateUser = {
         account_id: accountId,
-        username: input.username,
         email: emailCEncrypted,
         email_partial: emailPartialEncrypted,
         password: passwordEncrypted,

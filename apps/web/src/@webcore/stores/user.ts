@@ -57,7 +57,6 @@ export const useUsersStore = defineStore('users', {
               current_page: input.page,
               per_page: input.per_page,
               sort_by: input.sort_by,
-              username: input.search,
               email_partial: input.search,
               phone_partial: input.search,
               document_partial: input.search,
