@@ -43,18 +43,27 @@ export async function installUbuntu2504(
 
     `DEBIAN_FRONTEND=noninteractive bash -c "mkdir -p /etc/apt/keyrings && \
       curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-        | gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg"`,
+        | gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg && \
+      chmod a+r /etc/apt/keyrings/docker.gpg"`,
 
-    `DEBIAN_FRONTEND=noninteractive bash -c "echo 'deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+    `DEBIAN_FRONTEND=noninteractive bash -c "DISTRO=$(lsb_release -cs) && \
+      if [ \"$DISTRO\" = \"noble\" ] || [ \"$DISTRO\" = \"oracular\" ]; then \
+        DISTRO=\"jammy\"; \
+      fi && \
+      echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
       https://download.docker.com/linux/ubuntu \
-      $(lsb_release -cs) stable' \
-      | tee /etc/apt/sources.list.d/docker.list > /dev/null"`,
+      $DISTRO stable\" \
+      | tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+      apt-get update"`,
 
-    `DEBIAN_FRONTEND=noninteractive bash -c "apt-get update && \
-      apt-get install -y docker-ce docker-ce-cli containerd.io"`,
+    `DEBIAN_FRONTEND=noninteractive bash -c "apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || \
+      (apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true) && \
+      apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin"`,
 
-    `DEBIAN_FRONTEND=noninteractive bash -c "apt-get update && \
-      apt-get install -y docker-compose-plugin"`,
+    `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
+      hash -r && \
+      which docker && \
+      docker --version"`,
 
     `bash -c "rm -f /usr/local/bin/docker-compose || true"`,
 
