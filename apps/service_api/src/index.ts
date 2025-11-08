@@ -64,8 +64,8 @@ server.register(safePlugin(routes, 'routes', true), {
 });
 server.register(safePlugin(fastifyQs, 'fastifyQs'));
 
-server.register(safePlugin(temporalPlugin, 'temporal'));
-server.register(safePlugin(temporalConsumerPlugin, 'temporalConsumer'));
+/* server.register(safePlugin(temporalPlugin, 'temporal'));
+server.register(safePlugin(temporalConsumerPlugin, 'temporalConsumer')); */
 
 const start = async () => {
   try {

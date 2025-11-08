@@ -148,6 +148,9 @@ export class SshService {
             const outputStripAnsi = stripAnsi(linha);
             const commandStripAnsi = stripAnsi(cmd);
 
+            console.dir(outputStripAnsi, { depth: null });
+            console.dir(commandStripAnsi, { depth: null });
+
             const serverSshCentrifugo: IServerSshCentrifugo = {
               server_id: serverId,
               command: commandStripAnsi,

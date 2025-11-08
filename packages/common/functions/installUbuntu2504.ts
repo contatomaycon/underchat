@@ -7,10 +7,10 @@ import { IViewServerWebById } from '../interfaces/IViewServerWebById';
 export async function installUbuntu2504(
   webView: IViewServerWebById
 ): Promise<string[]> {
-  const patchPackage = path.join(__dirname, '../../../../package.json');
+  const patchPackage = path.join(__dirname, '../../../package.json');
   const nodeVersion = getPackageNodeVersion(patchPackage);
 
-  const patchEnv = path.join(__dirname, '../../../../.env');
+  const patchEnv = path.join(__dirname, '../../../.env');
   const envContent = await readEnvFile(patchEnv);
 
   return [
@@ -41,55 +41,69 @@ export async function installUbuntu2504(
       nvm use ${nodeVersion} && \
       nvm alias default ${nodeVersion}'`,
 
-    `bash -ic "mkdir -p /etc/apt/keyrings && \
+    `DEBIAN_FRONTEND=noninteractive bash -c "mkdir -p /etc/apt/keyrings && \
       curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
         | gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg"`,
 
-    `bash -ic "echo 'deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+    `DEBIAN_FRONTEND=noninteractive bash -c "echo 'deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
       https://download.docker.com/linux/ubuntu \
       $(lsb_release -cs) stable' \
       | tee /etc/apt/sources.list.d/docker.list > /dev/null"`,
 
-    `bash -ic "apt-get update && \
+    `DEBIAN_FRONTEND=noninteractive bash -c "apt-get update && \
       apt-get install -y docker-ce docker-ce-cli containerd.io"`,
 
-    `bash -ic "apt-get update && \
+    `DEBIAN_FRONTEND=noninteractive bash -c "apt-get update && \
       apt-get install -y docker-compose-plugin"`,
 
-    `bash -ic "rm -f /usr/local/bin/docker-compose || true"`,
+    `bash -c "rm -f /usr/local/bin/docker-compose || true"`,
 
-    `bash -ic "mkdir -p /usr/local/bin && \
+    `bash -c "mkdir -p /usr/local/bin && \
       ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose"`,
 
-    `bash -ic "groupadd docker && \
+    `bash -c "groupadd docker 2>/dev/null || true && \
       usermod -aG docker $USER && \
       systemctl enable docker && \
-      systemctl start docker"`,
+      systemctl start docker && \
+      sleep 3 && \
+      hash -r"`,
 
-    `bash -ic "mkdir -p /home/app && \
+    `bash -c "mkdir -p /home/app && \
       chown $USER:$USER /home/app && \
       git clone --single-branch --branch ${generalEnvironment.gitBranch} https://oauth2:${generalEnvironment.gitToken}@${generalEnvironment.gitRepo} /home/app"`,
 
-    `bash -ic "printf '%b' '${envContent}' > /home/app/.env && chown $USER:$USER /home/app/.env"`,
+    `bash -c "printf '%b' '${envContent}' > /home/app/.env && chown $USER:$USER /home/app/.env"`,
 
-    `bash -ic "cd /home/app && \
-      docker network create underchat || true"`,
+    `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
+      hash -r && \
+      cd /home/app && \
+      docker network create underchat 2>/dev/null || true"`,
 
-    `bash -ic "cd /home/app && \
-      docker stop under-worker-baileys || true && \
-      docker rm under-worker-baileys || true"`,
+    `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
+      hash -r && \
+      cd /home/app && \
+      docker stop under-worker-baileys 2>/dev/null || true && \
+      docker rm -f under-worker-baileys 2>/dev/null || true"`,
 
-    `bash -ic "cd /home/app && \
+    `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
+      hash -r && \
+      cd /home/app && \
       docker build --no-cache -t under-worker-baileys:latest -f ./apps/worker_baileys/Dockerfile ."`,
 
-    `bash -ic "cd /home/app && \
-      docker stop under-balance-api || true && \
-      docker rm under-balance-api || true"`,
+    `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
+      hash -r && \
+      cd /home/app && \
+      docker stop under-balance-api 2>/dev/null || true && \
+      docker rm -f under-balance-api 2>/dev/null || true"`,
 
-    `bash -ic "cd /home/app && \
+    `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
+      hash -r && \
+      cd /home/app && \
       docker build --no-cache -t under-balance-api:latest -f ./apps/balance_api/Dockerfile ."`,
 
-    `bash -ic "cd /home/app && \
+    `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
+      hash -r && \
+      cd /home/app && \
       docker run -d --name under-balance-api \
         --restart always \
         -p ${webView.web_port}:3003 \
