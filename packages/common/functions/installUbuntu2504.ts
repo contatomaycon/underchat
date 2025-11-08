@@ -14,6 +14,7 @@ export async function installUbuntu2504(
   const envContent = await readEnvFile(patchEnv);
 
   return [
+    'dpkg --configure -a',
     'apt-get update',
     'apt-get upgrade -y',
 
@@ -55,8 +56,10 @@ export async function installUbuntu2504(
       printf "deb [arch=%s signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu %s stable\\n" "$ARCH" "$DISTRO" > /etc/apt/sources.list.d/docker.list && \
       apt-get update'`,
 
-    `DEBIAN_FRONTEND=noninteractive bash -c "apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || \
+    `DEBIAN_FRONTEND=noninteractive bash -c "dpkg --configure -a && \
+      apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || \
       (apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true) && \
+      dpkg --configure -a && \
       apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin"`,
 
     `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
