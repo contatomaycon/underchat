@@ -112,17 +112,31 @@ export async function installUbuntu2504(
       cd /home/app && \
       docker build --no-cache -t under-balance-api:latest -f ./apps/balance_api/Dockerfile ."`,
 
-    `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
+    `bash -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \
       cd /home/app && \
-      docker run -d --name under-balance-api \
+      CONTAINER_ID=$(docker run -d --name under-balance-api \
         --restart always \
         -p ${webView.web_port}:3003 \
         -v /var/run/docker.sock:/var/run/docker.sock \
         --network underchat \
         -e DOCKER_HOST=unix:///var/run/docker.sock \
         -e SERVER_ID=${webView.server_id} \
-        under-balance-api:latest"`,
+        under-balance-api:latest 2>&1) && \
+      EXIT_CODE=$? && \
+      if [ $EXIT_CODE -eq 0 ] && [ -n "$CONTAINER_ID" ] && echo "$CONTAINER_ID" | grep -qE "^[a-f0-9]{64}$"; then \
+        sleep 2 && \
+        if docker ps --filter id=$CONTAINER_ID --filter status=running --format "{{.ID}}" | grep -q .; then \
+          echo "SUCCESS: Container under-balance-api started with ID: $CONTAINER_ID"; \
+        else \
+          echo "ERROR: Container under-balance-api failed to start. ID: $CONTAINER_ID"; \
+          docker logs under-balance-api 2>&1 | tail -20; \
+          exit 1; \
+        fi; \
+      else \
+        echo "ERROR: Failed to create container. Exit code: $EXIT_CODE. Output: $CONTAINER_ID"; \
+        exit 1; \
+      fi'`,
 
     'rm -rf /home/app || true',
   ];
