@@ -2,6 +2,7 @@ import { pgTable, uuid, timestamp, varchar, text } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { labelStatus } from './labelStatus.model';
 import { account } from '../account';
+import { contact } from '../contact';
 
 export const labelTemplate = pgTable('label_template', {
   label_template_id: uuid().primaryKey().notNull(),
@@ -24,7 +25,7 @@ export const labelTemplate = pgTable('label_template', {
   deleted_at: timestamp({ mode: 'string', withTimezone: true }),
 });
 
-export const labelTemplateRelations = relations(labelTemplate, ({ one }) => ({
+export const labelTemplateRelations = relations(labelTemplate, ({ one, many }) => ({
   lta: one(account, {
     fields: [labelTemplate.account_id],
     references: [account.account_id],
@@ -33,4 +34,5 @@ export const labelTemplateRelations = relations(labelTemplate, ({ one }) => ({
     fields: [labelTemplate.label_status_id],
     references: [labelStatus.label_status_id],
   }),
+  ltc: many(contact),
 }));

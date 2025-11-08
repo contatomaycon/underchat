@@ -11,3 +11,4 @@ export * from './sector';
 export * from './chat';
 export * from './message';
 export * from './label';
+export * from './contact';
