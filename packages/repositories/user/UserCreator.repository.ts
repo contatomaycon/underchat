@@ -33,7 +33,6 @@ export class UserCreatorRepository {
         user_id: userId,
         account_id: input.account_id,
         user_status_id: EUserStatus.active,
-        username: input.username,
         email: input.email,
         email_partial: input.email_partial,
         password: input.password,

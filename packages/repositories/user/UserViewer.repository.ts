@@ -86,7 +86,6 @@ export class UserViewerRepository {
       },
       columns: {
         user_id: true,
-        username: true,
         email_partial: true,
         created_at: true,
       },
@@ -102,7 +101,6 @@ export class UserViewerRepository {
         account_id: result.aac.account_id,
         name: result.aac.name,
       },
-      username: result.username,
       email_partial: result.email_partial,
       user_status: result.uus
         ? {

@@ -34,15 +34,11 @@ export class UserListerRepository {
     const filters: SQLWrapper[] = [];
 
     if (
-      query.username ||
       query.email_partial ||
       query.phone_partial ||
       query.document_partial
     ) {
       const conditions: (SQLWrapper | undefined)[] = [
-        query.username
-          ? ilike(user.username, `%${query.username}%`)
-          : undefined,
         query.email_partial
           ? ilike(user.email_partial, `%${query.email_partial}%`)
           : undefined,
@@ -190,7 +186,6 @@ export class UserListerRepository {
       },
       columns: {
         user_id: true,
-        username: true,
         email_partial: true,
         created_at: true,
       },
@@ -210,7 +205,6 @@ export class UserListerRepository {
             name: user.aac.name,
           }
         : null,
-      username: user.username,
       email_partial: user.email_partial,
       user_status: user.uus
         ? {

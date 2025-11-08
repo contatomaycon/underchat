@@ -64,7 +64,6 @@ const isAddUserVisible = ref(false);
 const userToEdit = ref<string | null>(null);
 
 const headers: DataTableHeader<ListUserResponse>[] = [
-  { title: t('username'), key: 'username' },
   { title: t('account'), key: 'account' },
   { title: t('status'), key: 'status' },
   { title: t('email_partial'), key: 'email_partial' },
@@ -200,16 +199,6 @@ watch(
         @update:options="handleTableChange"
         :loading-text="$t('loading_text')"
       >
-        <template #item.name="{ item }">
-          <div class="d-flex flex-column ms-3">
-            <span
-              class="d-block font-weight-medium text-high-emphasis text-truncate"
-            >
-              {{ item.username }}
-            </span>
-          </div>
-        </template>
-
         <template #item.account="{ item }">
           {{ item.account?.name }}
         </template>

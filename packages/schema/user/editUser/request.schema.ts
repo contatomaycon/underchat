@@ -33,7 +33,6 @@ const userAddressSchema = Type.Object({
 });
 
 export const updateUserRequestSchema = Type.Object({
-  username: Type.Union([Type.String(), Type.Null()]),
   email: Type.Union([Type.String(), Type.Null()]),
   password: Type.Union([Type.String(), Type.Null()]),
   user_status_id: Type.Optional(

@@ -133,7 +133,6 @@ function toYmd(v: unknown): string | null {
 const tab = ref('user_data');
 
 const userId = toRef(props, 'userId');
-const username = ref<string | null>(null);
 const email = ref<string | null>(null);
 const password = ref<string | null>(null);
 const confirmPassword = ref<string | null>(null);
@@ -225,7 +224,6 @@ const updateUser = async () => {
   };
 
   const body: UpdateUserRequest = {
-    username: username.value,
     email: email.value,
     password: password.value,
     user_status_id: user_status_id.value,
@@ -282,7 +280,6 @@ onMounted(async () => {
 
   const responseUser = await userStore.viewUserById(userId.value);
   if (responseUser) {
-    username.value = responseUser.username;
     email.value = responseUser.email_partial;
     phone_ddi.value = responseUser.user_info?.phone_ddi ?? null;
     phone.value = responseUser.user_info?.phone_partial ?? null;
@@ -352,14 +349,6 @@ watch(zip_code, () => {
             <VWindowItem value="user_data">
               <VForm class="mt-2" ref="refFormStep1" @submit.prevent>
                 <VRow>
-                  <VCol md="6" cols="12">
-                    <AppTextField
-                      v-model="username"
-                      :label="$t('username') + ':'"
-                      :placeholder="$t('username')"
-                    />
-                  </VCol>
-
                   <VCol md="6" cols="12">
                     <AppTextField
                       v-model="email"

@@ -71,7 +71,6 @@ export class UserUpdaterUseCase {
 
     const createUserInput: IUpdateUser = {
       user_status_id: body.user_status_id ?? null,
-      username: body.username ?? null,
       email: emailCEncrypted,
       email_partial: emailPartialEncrypted,
       password: passwordEncrypted,
@@ -241,7 +240,7 @@ export class UserUpdaterUseCase {
       throw new Error(t('user_not_found'));
     }
 
-    if (body.email || body.password || body.username || body.user_status_id) {
+    if (body.email || body.password || body.user_status_id) {
       await this.insertUser(t, userId, body, accountId);
     }
 

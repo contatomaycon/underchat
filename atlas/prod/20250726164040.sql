@@ -107,7 +107,6 @@ CREATE TABLE "user" (
   "user_id" uuid NOT NULL,
   "account_id" uuid NOT NULL,
   "user_status_id" uuid NOT NULL,
-  "username" character varying(50) NULL,
   "email" character varying(500) NOT NULL,
   "email_partial" character varying(25) NOT NULL,
   "password" character varying(255) NOT NULL,

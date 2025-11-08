@@ -50,7 +50,6 @@ const userAddressSchema = Type.Object({
 export const viewUserResponseSchema = Type.Object({
   user_id: Type.String({ format: 'uuid' }),
   account: accountSchema,
-  username: Type.Union([Type.String(), Type.Null()]),
   email_partial: Type.String(),
   user_status: Type.Optional(Type.Union([userStatusSchema, Type.Null()])),
   user_info: Type.Optional(Type.Union([userInfoSchema, Type.Null()])),

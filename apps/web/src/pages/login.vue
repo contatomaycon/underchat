@@ -132,15 +132,10 @@ const handleLogin = async () => {
                 <AppTextField
                   v-model="form.login"
                   autofocus
-                  :label="$t('email_or_username')"
+                  :label="$t('email')"
                   type="text"
                   placeholder="email@email.com"
-                  :rules="[
-                    requiredValidator(
-                      form.login,
-                      $t('email_or_username_required')
-                    ),
-                  ]"
+                  :rules="[requiredValidator(form.login, $t('email_required'))]"
                 />
               </VCol>
 
