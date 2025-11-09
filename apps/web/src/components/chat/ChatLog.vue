@@ -8,6 +8,7 @@ import {
 import { isTypeUser } from '@core/common/functions/isTypeUser';
 import { EMessageType } from '@core/common/enums/EMessageType';
 
+const { t } = useI18n();
 const chatStore = useChatStore();
 
 const viewerOpen = ref(false);
@@ -312,7 +313,8 @@ watch(
             <div
               v-if="
                 msgGrp.content?.type === EMessageType.image &&
-                msgGrp.content?.image?.url
+                msgGrp.content?.image?.url &&
+                msgGrp.message_key?.is_view_once !== true
               "
               class="image-bubble"
               :class="
@@ -348,9 +350,23 @@ watch(
             </div>
 
             <p
+              v-if="msgGrp.message_key?.is_view_once === true"
+              class="mb-2 mr-6 text-base message-text"
+              style="font-style: italic"
+              :style="{
+                color: isTypeUser(msgGrp)
+                  ? 'rgb(var(--v-theme-on-surface))'
+                  : 'rgb(var(--v-theme-title))',
+              }"
+            >
+              {{ t('view_once_message') }}
+            </p>
+
+            <p
               v-if="
                 msgGrp.content?.message &&
-                msgGrp.content?.type !== EMessageType.image
+                msgGrp.content?.type !== EMessageType.image &&
+                msgGrp.message_key?.is_view_once !== true
               "
               class="mb-2 mr-6 text-base message-text"
               :style="{
