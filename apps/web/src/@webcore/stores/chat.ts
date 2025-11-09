@@ -55,6 +55,7 @@ export const useChatStore = defineStore('chat', {
       const input: ListMessageResult = {
         message_id: message.message_id,
         chat_id: message.chat_id,
+        message_key: message.message_key,
         type_user: message.type_user,
         user: message.user,
         content: message.content as ContentMessageChat,
