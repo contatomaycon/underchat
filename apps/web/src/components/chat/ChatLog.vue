@@ -125,13 +125,6 @@ const openImage = (m: ListMessageResult) => {
   viewerCaption.value = m.content?.image?.caption || '';
   viewerOpen.value = true;
 };
-
-watch(
-  () => chatStore.listMessages,
-  () => {
-    console.log('listMessages changed', chatStore.listMessages);
-  }
-);
 </script>
 
 <template>

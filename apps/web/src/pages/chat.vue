@@ -18,6 +18,7 @@ import {
 } from '@core/common/functions/centrifugoQueue';
 import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
 import { EMessageType } from '@core/common/enums/EMessageType';
+import { EColor } from '@core/common/enums/EColor';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { IChat } from '@core/common/interfaces/IChat';
 import { extractFirstUrl } from '@core/common/functions/extractFirstUrl';
@@ -27,8 +28,10 @@ import { getOffsetTop } from '@core/common/functions/getOffsetTop';
 import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
 import data from 'emoji-mart-vue-fast/data/all.json';
 import 'emoji-mart-vue-fast/css/emoji-mart.css';
+import { useI18n } from 'vue-i18n';
 
 const emojiIndex = new EmojiIndex(data);
+const { t } = useI18n();
 
 definePage({
   meta: {
@@ -61,8 +64,12 @@ const filePhotoRef = ref<HTMLInputElement | null>(null);
 const fileVideoRef = ref<HTMLInputElement | null>(null);
 const fileAudioRef = ref<HTMLInputElement | null>(null);
 const isEmojiOpen = ref(false);
+const selectedPhotos = ref<{ file: File; preview: string }[]>([]);
 
 const hasContent = computed(() => !!msg.value && msg.value.trim().length > 0);
+const hasImagesOrContent = computed(
+  () => hasContent.value || selectedPhotos.value.length > 0
+);
 const forceReflow = (el: HTMLElement): number => el.offsetWidth;
 
 const scrollToBottomInChatLog = () => {
@@ -158,6 +165,7 @@ const sendMessage = async () => {
 
   msg.value = '';
   linkPreview.value = null;
+  selectedPhotos.value = [];
 
   chatStore.clearMessageReply();
 
@@ -254,7 +262,57 @@ const onPickDoc = (e: Event) => {
   console.log(e);
 };
 const onPickPhoto = (e: Event) => {
-  console.log(e);
+  const target = e.target as HTMLInputElement;
+  const files = target.files;
+
+  if (!files || files.length === 0) {
+    target.value = '';
+    return;
+  }
+
+  const imageFiles = Array.from(files).filter((file) =>
+    file.type.startsWith('image/')
+  );
+
+  if (imageFiles.length === 0) {
+    target.value = '';
+    return;
+  }
+
+  const currentCount = selectedPhotos.value.length;
+  const totalAfterSelection = currentCount + imageFiles.length;
+
+  if (totalAfterSelection > 10) {
+    chatStore.showSnackbar(t('max_images_selected'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
+  const remainingSlots = 10 - currentCount;
+
+  if (imageFiles.length > remainingSlots) {
+    chatStore.showSnackbar(
+      t('can_select_more_images', { count: remainingSlots }),
+      EColor.warning
+    );
+    target.value = '';
+    return;
+  }
+
+  imageFiles.forEach((file) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (event.target?.result) {
+        selectedPhotos.value.push({
+          file,
+          preview: event.target.result as string,
+        });
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+
+  target.value = '';
 };
 const onPickVideo = (e: Event) => {
   console.log(e);
@@ -514,6 +572,58 @@ onUnmounted(async () => {
           </div>
         </Transition>
 
+        <Transition name="fade">
+          <div v-if="selectedPhotos.length > 0" class="mx-5 mt-3">
+            <VCard>
+              <VCardTitle class="d-flex align-center justify-space-between">
+                <span
+                  >{{ t('images_selected') }} ({{
+                    selectedPhotos.length
+                  }}/10)</span
+                >
+                <VBtn
+                  icon
+                  size="24"
+                  variant="text"
+                  @click="selectedPhotos = []"
+                >
+                  <VIcon size="18" icon="tabler-x" />
+                </VBtn>
+              </VCardTitle>
+              <VCardText>
+                <div class="d-flex flex-wrap" style="gap: 8px">
+                  <div
+                    v-for="(photo, index) in selectedPhotos"
+                    :key="index"
+                    class="photo-preview-wrapper"
+                    style="
+                      position: relative;
+                      width: calc((100% - 32px) / 5);
+                      aspect-ratio: 1;
+                    "
+                  >
+                    <VImg
+                      :src="photo.preview"
+                      cover
+                      style="border-radius: 8px"
+                    />
+                    <VBtn
+                      icon
+                      size="20"
+                      variant="flat"
+                      color="error"
+                      style="position: absolute; top: 4px; right: 4px"
+                      @click="selectedPhotos.splice(index, 1)"
+                    >
+                      <VIcon size="14" icon="tabler-x" />
+                    </VBtn>
+                  </div>
+                </div>
+              </VCardText>
+            </VCard>
+          </div>
+        </Transition>
+
         <VForm
           class="chat-log-message-form mb-5 mx-5"
           @submit.prevent="sendMessage"
@@ -619,7 +729,7 @@ onUnmounted(async () => {
             <template #append-inner>
               <div class="d-flex align-center gap-1">
                 <IconBtn
-                  v-if="!hasContent"
+                  v-if="!hasImagesOrContent"
                   class="composer-btn mic-btn"
                   aria-label="Gravar áudio"
                   @click="onRecordAudio"
@@ -655,6 +765,7 @@ onUnmounted(async () => {
             type="file"
             hidden
             accept="image/*"
+            multiple
             @change="onPickPhoto"
           />
           <input
@@ -696,6 +807,15 @@ onUnmounted(async () => {
       </div>
     </VMain>
   </VLayout>
+
+  <VSnackbar
+    v-model="chatStore.snackbar.status"
+    transition="scroll-y-reverse-transition"
+    location="top end"
+    :color="chatStore.snackbar.color"
+  >
+    {{ chatStore.snackbar.message }}
+  </VSnackbar>
 </template>
 
 <style lang="scss">

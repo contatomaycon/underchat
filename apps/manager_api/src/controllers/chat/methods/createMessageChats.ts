@@ -11,7 +11,9 @@ import { ChatMessageCreatorUseCase } from '@core/useCases/chat/ChatMessageCreato
 export const createMessageChats = async (
   request: FastifyRequest<{
     Params: CreateMessageChatsParams;
-    Body: CreateMessageChatsBody;
+    Body: CreateMessageChatsBody & {
+      images?: any[];
+    };
   }>,
   reply: FastifyReply
 ) => {
@@ -21,11 +23,22 @@ export const createMessageChats = async (
   const { t, tokenJwtData } = request;
 
   try {
+    const images = Array.isArray(request.body.images)
+      ? request.body.images
+      : request.body.images
+        ? [request.body.images]
+        : [];
+
+    const body = {
+      ...request.body,
+      images,
+    };
+
     const response = await chatMessageCreatorUseCase.execute(
       t,
       tokenJwtData.account_id,
       request.params,
-      request.body
+      body
     );
 
     if (response) {

@@ -354,5 +354,8 @@
     "message_status_id_required": "Status da Mensagem é obrigatório",
     "shortcut": "Atalho",
     "shortcut_required": "Atalho é obrigatório",
-    "view_once_message": "Esta é uma mensagem de visualização única. Por favor, verifique a mensagem em seu dispositivo"
+    "view_once_message": "Esta é uma mensagem de visualização única. Por favor, verifique a mensagem em seu dispositivo",
+    "max_images_selected": "Você já selecionou o máximo de 10 imagens",
+    "can_select_more_images": "Você pode selecionar apenas mais {count} imagem(ns)",
+    "images_selected": "Imagens selecionadas"
 }
