@@ -314,7 +314,7 @@ watch(
               v-if="
                 msgGrp.content?.type === EMessageType.image &&
                 msgGrp.content?.image?.url &&
-                msgGrp.message_key?.is_view_once !== true
+                !msgGrp.message_key?.is_view_once
               "
               class="image-bubble"
               :class="
@@ -350,7 +350,7 @@ watch(
             </div>
 
             <p
-              v-if="msgGrp.message_key?.is_view_once === true"
+              v-if="msgGrp.message_key?.is_view_once"
               class="mb-2 mr-6 text-base message-text"
               style="font-style: italic"
               :style="{
@@ -366,7 +366,7 @@ watch(
               v-if="
                 msgGrp.content?.message &&
                 msgGrp.content?.type !== EMessageType.image &&
-                msgGrp.message_key?.is_view_once !== true
+                !msgGrp.message_key?.is_view_once
               "
               class="mb-2 mr-6 text-base message-text"
               :style="{

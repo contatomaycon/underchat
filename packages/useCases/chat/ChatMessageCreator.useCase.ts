@@ -183,7 +183,7 @@ export class ChatMessageCreatorUseCase {
               getChatMessage.message_key?.participant_alt ?? null,
             addressing_mode:
               getChatMessage.message_key?.addressing_mode ?? null,
-            is_view_once: getChatMessage.message_key?.is_view_once ?? null,
+            is_view_once: getChatMessage.message_key?.is_view_once ?? false,
           },
           message: getChatMessage.content?.message ?? null,
         };
@@ -196,6 +196,7 @@ export class ChatMessageCreatorUseCase {
       message_key: {
         remote_jid: getChat.message_key?.remote_jid ?? null,
         remote_jid_alt: getChat.message_key?.remote_jid_alt ?? null,
+        is_view_once: false,
       },
       type_user: ETypeUserChat.operator,
       account: getChat.account,

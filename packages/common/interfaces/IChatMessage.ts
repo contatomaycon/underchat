@@ -50,7 +50,7 @@ export interface IMessageKey {
   participant?: string | null;
   participant_alt?: string | null;
   addressing_mode?: string | null;
-  is_view_once?: boolean | null;
+  is_view_once: boolean;
 }
 
 export interface IChatMessage {

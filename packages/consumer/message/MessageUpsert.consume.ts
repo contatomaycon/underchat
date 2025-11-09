@@ -178,11 +178,62 @@ export class MessageUpsertConsume {
     return data;
   }
 
+  private async messageIdExists(
+    accountId: string,
+    workerId: string,
+    messageId: string
+  ): Promise<boolean> {
+    if (!messageId) return false;
+
+    const queryElastic = {
+      query: {
+        bool: {
+          must: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: { 'account.id': accountId },
+                },
+              },
+            },
+            {
+              nested: {
+                path: 'worker',
+                query: {
+                  term: { 'worker.id': workerId },
+                },
+              },
+            },
+            {
+              nested: {
+                path: 'message_key',
+                query: {
+                  term: { 'message_key.id': messageId },
+                },
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select(
+      EElasticIndex.message,
+      queryElastic
+    );
+
+    return (result?.hits.total as { value: number })?.value > 0;
+  }
+
   private async createChatMessage(
     getChat: IChat,
     data: IUpsertMessage
   ): Promise<boolean> {
     try {
+      const jid = remoteJid(data.message?.key);
+      const jidAlt = remoteJidAlt(data.message?.key);
+
       const extended = data?.message?.message?.extendedTextMessage;
 
       const linkPreview = extended
@@ -203,9 +254,6 @@ export class MessageUpsertConsume {
         link_preview: linkPreview,
         quoted: buildQuotedTextFromExtended(data.message),
       };
-
-      const jid = remoteJid(data.message?.key);
-      const jidAlt = remoteJidAlt(data.message?.key);
 
       if (!getChat?.name && !data.message?.key?.fromMe) {
         const name = this.nameChat(data);
@@ -428,6 +476,20 @@ export class MessageUpsertConsume {
         this.processingChain = this.processingChain.then(async () => {
           const stop = startHeartbeat(heartbeat);
           try {
+            const messageId = data.message?.key?.id;
+            if (messageId) {
+              const exists = await this.messageIdExists(
+                data.account_id,
+                data.worker_id,
+                messageId
+              );
+
+              if (exists) {
+                await this.commitNext(topic, partition, offset);
+                return;
+              }
+            }
+
             const jid = remoteJid(data.message?.key);
             const jidAlt = remoteJidAlt(data.message?.key);
 

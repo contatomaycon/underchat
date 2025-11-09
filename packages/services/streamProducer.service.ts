@@ -1,5 +1,5 @@
 import { injectable, inject } from 'tsyringe';
-import { Kafka, Producer } from 'kafkajs';
+import { Kafka, Producer, Partitioners } from 'kafkajs';
 
 @injectable()
 export class StreamProducerService {
@@ -12,6 +12,7 @@ export class StreamProducerService {
       this.producer = this.kafka.producer({
         retry: { retries: 8, initialRetryTime: 300 },
         allowAutoTopicCreation: true,
+        createPartitioner: Partitioners.LegacyPartitioner,
       });
 
       await this.producer.connect();

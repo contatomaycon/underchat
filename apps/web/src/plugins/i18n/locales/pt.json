@@ -353,5 +353,6 @@
     "label_status_id_required": "Status da Etiqueta é obrigatório",
     "message_status_id_required": "Status da Mensagem é obrigatório",
     "shortcut": "Atalho",
-    "shortcut_required": "Atalho é obrigatório"
+    "shortcut_required": "Atalho é obrigatório",
+    "view_once_message": "Você recebeu uma mensagem de visualização única. Por favor, verificar a mensagem em seu dispositivo"
 }

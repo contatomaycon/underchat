@@ -24,7 +24,7 @@ export const messageKeySchema = Type.Object({
   participant: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   participant_alt: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   addressing_mode: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-  is_view_once: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
+  is_view_once: Type.Optional(Type.Boolean()),
 });
 
 export const quotedMessageSchema = Type.Object({

@@ -14,15 +14,52 @@ import { getChatKind } from '@core/common/functions/getChatKind';
 import { EChatKind } from '@core/common/enums/EChatKind';
 import { EMessageUpsertType } from '@core/common/enums/EMessageUpsertType';
 import { getSenderPhotoUrl } from '@core/common/functions/getSenderPhotoUrl';
+import { remoteJid } from '@core/common/functions/remoteJid';
+import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
 
 @singleton()
 export class BaileysIncomingMessageService {
   private currentSocket?: WASocket;
+  private processedMessages = new Set<string>();
+  private cleanupInterval?: NodeJS.Timeout;
 
   constructor(
     private readonly streamProducerService: StreamProducerService,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService
-  ) {}
+  ) {
+    this.startCleanupInterval();
+  }
+
+  private getMessageKey(m: WAMessage): string | null {
+    const jid = remoteJid(m.key);
+    const jidAlt = remoteJidAlt(m.key);
+    const id = m.key?.id;
+    const fromMe = m.key?.fromMe ?? false;
+
+    if (!id) return null;
+
+    const jidToUse = jid || jidAlt;
+    if (!jidToUse) return null;
+
+    return `${jidToUse}:${id}:${fromMe}`;
+  }
+
+  private startCleanupInterval() {
+    if (this.cleanupInterval) return;
+
+    this.cleanupInterval = setInterval(() => {
+      if (this.processedMessages.size > 10000) {
+        this.processedMessages.clear();
+      }
+    }, 300000);
+  }
+
+  private stopCleanupInterval() {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = undefined;
+    }
+  }
 
   bindTo(socket: WASocket) {
     if (this.currentSocket === socket) return;
@@ -30,9 +67,6 @@ export class BaileysIncomingMessageService {
     this.unbind();
     this.currentSocket = socket;
 
-    /**
-     * Mensagem nova recebida ou enviada (via messages.upsert).
-     */
     socket.ev.on('messages.upsert', async (e) => {
       if (!e?.messages?.length) return;
       for (const m of e.messages) {
@@ -46,12 +80,24 @@ export class BaileysIncomingMessageService {
           chatKind === EChatKind.user &&
           upsertType === EMessageUpsertType.notify
         ) {
+          const messageKey = this.getMessageKey(m);
+          if (!messageKey) continue;
+
+          if (this.processedMessages.has(messageKey)) {
+            continue;
+          }
+
+          this.processedMessages.add(messageKey);
+
           const type = mapIncomingToType(m);
 
           console.dir(m, { depth: null, colors: true });
           console.dir(type, { depth: null, colors: true });
 
-          if (!type) return;
+          if (!type) {
+            this.processedMessages.delete(messageKey);
+            continue;
+          }
 
           const senderPic = await getSenderPhotoUrl(socket, m);
 
@@ -110,6 +156,12 @@ export class BaileysIncomingMessageService {
       this.currentSocket.ev.removeAllListeners('messaging-history.set');
     } catch {}
     this.currentSocket = undefined;
+  }
+
+  destroy() {
+    this.stopCleanupInterval();
+    this.processedMessages.clear();
+    this.unbind();
   }
 
   async markRead(keys: WAMessageKey[]) {

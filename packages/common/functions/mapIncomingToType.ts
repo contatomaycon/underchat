@@ -112,6 +112,8 @@ function detectText({ text, msg }: IMapCtx): EMessageType | undefined {
 }
 
 export function mapIncomingToType(m: WAMessage): EMessageType | undefined {
+  if (m.key?.isViewOnce === true) return EMessageType.view_once;
+
   const msg = m.message as proto.IMessage | undefined;
   if (!msg) return;
 

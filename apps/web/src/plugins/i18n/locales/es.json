@@ -351,5 +351,6 @@
     "label_status_id_required": "El estado de la etiqueta es obligatorio",
     "message_status_id_required": "El estado del mensaje es obligatorio",
     "shortcut": "Atajo",
-    "shortcut_required": "El atajo es obligatorio"
+    "shortcut_required": "El atajo es obligatorio",
+    "view_once_message": "Has recibido un mensaje de visualización única. Por favor, verificar el mensaje en tu dispositivo"
 }
