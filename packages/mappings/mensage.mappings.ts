@@ -32,6 +32,9 @@ export const mensageMappings = () => {
             addressing_mode: {
               type: 'text',
             },
+            is_view_once: {
+              type: 'boolean',
+            },
           },
         },
         type_user: {
@@ -132,6 +135,9 @@ export const mensageMappings = () => {
                     },
                     addressing_mode: {
                       type: 'text',
+                    },
+                    is_view_once: {
+                      type: 'boolean',
                     },
                   },
                 },

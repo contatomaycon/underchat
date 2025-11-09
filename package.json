@@ -113,7 +113,7 @@
     "@types/lodash": "^4.17.20",
     "@types/mime-types": "^3.0.1",
     "@types/uuid": "^10.0.0",
-    "@whiskeysockets/baileys": "github:WhiskeySockets/Baileys#f9abf44994fb523726cece06cc029ddfdd4c6842",
+    "@whiskeysockets/baileys": "github:WhiskeySockets/Baileys#abf5af0e725f9b9cada58901b5661a2d6f9a462b",
     "axios": "^1.10.0",
     "centrifuge": "^5.3.5",
     "crypto-js": "^4.2.0",

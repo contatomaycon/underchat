@@ -183,6 +183,7 @@ export class ChatMessageCreatorUseCase {
               getChatMessage.message_key?.participant_alt ?? null,
             addressing_mode:
               getChatMessage.message_key?.addressing_mode ?? null,
+            is_view_once: getChatMessage.message_key?.is_view_once ?? null,
           },
           message: getChatMessage.content?.message ?? null,
         };

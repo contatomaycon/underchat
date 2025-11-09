@@ -5,7 +5,7 @@ import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import { IChat } from '@core/common/interfaces/IChat';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
-import { onlyDigits } from '@core/common/functions/onlyDigits';
+import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import { v4 as uuidv4 } from 'uuid';
 import { AccountService } from '@core/services/account.service';
 import { WorkerService } from '@core/services/worker.service';
@@ -83,7 +83,8 @@ export class MessageUpsertConsume {
     accountId: string,
     workerId: string,
     phone: string,
-    jid?: string | null
+    jid?: string | null,
+    jidAlt?: string | null
   ): Promise<IChat | null> {
     const cached = await this.getChatFromCache(accountId, workerId, phone);
     if (cached) {
@@ -97,13 +98,34 @@ export class MessageUpsertConsume {
       shouldClauses.push({ terms: { phone: candidates } });
     }
 
-    if (jid) {
-      shouldClauses.push({
-        nested: {
-          path: 'message_key',
-          query: { term: { 'message_key.remote_jid': jid } },
-        },
-      });
+    if (jid || jidAlt) {
+      const messageKeyQueries: any[] = [];
+
+      if (jid) {
+        messageKeyQueries.push({
+          term: { 'message_key.remote_jid': jid },
+        });
+      }
+
+      if (jidAlt) {
+        messageKeyQueries.push({
+          term: { 'message_key.remote_jid_alt': jidAlt },
+        });
+      }
+
+      if (messageKeyQueries.length > 0) {
+        shouldClauses.push({
+          nested: {
+            path: 'message_key',
+            query: {
+              bool: {
+                should: messageKeyQueries,
+                minimum_should_match: 1,
+              },
+            },
+          },
+        });
+      }
     }
 
     const queryElastic = {
@@ -235,6 +257,7 @@ export class MessageUpsertConsume {
           participant: data.message?.key?.participant,
           participant_alt: data.message?.key?.participantAlt,
           addressing_mode: data.message?.key?.addressingMode,
+          is_view_once: data.message?.key?.isViewOnce ?? false,
         },
         type_user: data.message?.key?.fromMe
           ? ETypeUserChat.operator
@@ -280,12 +303,17 @@ export class MessageUpsertConsume {
     }
 
     const jid = remoteJid(data.message?.key);
-    if (!jid) {
+    const jidAlt = remoteJidAlt(data.message?.key);
+
+    if (!jid && !jidAlt) {
       throw new Error('Received message without remoteJid');
     }
 
-    const jidAlt = remoteJidAlt(data.message?.key);
-    const phone = onlyDigits(jid);
+    const phone = getPhoneFromJid(jid, jidAlt);
+    if (!phone) {
+      throw new Error('Received message without valid phone');
+    }
+
     const chatId = uuidv4();
     const name = this.nameChat(data);
 
@@ -344,13 +372,15 @@ export class MessageUpsertConsume {
   private async createOrUpdateChat(
     data: IUpsertMessage,
     phone: string,
-    jid: string
+    jid?: string | null,
+    jidAlt?: string | null
   ): Promise<void> {
     const getChat = await this.getChat(
       data.account_id,
       data.worker_id,
       phone,
-      jid
+      jid,
+      jidAlt
     );
 
     if (!getChat) {
@@ -399,12 +429,17 @@ export class MessageUpsertConsume {
           const stop = startHeartbeat(heartbeat);
           try {
             const jid = remoteJid(data.message?.key);
-            if (!jid) {
+            const jidAlt = remoteJidAlt(data.message?.key);
+
+            if (!jid && !jidAlt) {
               throw new Error('Received message without remoteJid');
             }
 
-            const phone = onlyDigits(jid);
-            await this.createOrUpdateChat(data, phone, jid);
+            const phone = getPhoneFromJid(jid, jidAlt);
+            if (!phone) {
+              throw new Error('Received message without valid phone');
+            }
+            await this.createOrUpdateChat(data, phone, jid, jidAlt);
           } catch {
             await this.commitNext(topic, partition, message.offset);
           } finally {

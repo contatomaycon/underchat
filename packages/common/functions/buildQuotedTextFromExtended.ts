@@ -30,6 +30,7 @@ export function buildQuotedTextFromExtended(
       participant,
       participant_alt: m.key?.participantAlt ?? undefined,
       addressing_mode: m.key?.addressingMode ?? undefined,
+      is_view_once: m.key?.isViewOnce ?? false,
     },
     message: text,
   };

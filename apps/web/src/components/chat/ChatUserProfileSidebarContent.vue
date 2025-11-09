@@ -4,6 +4,10 @@ import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { VForm } from 'vuetify/components';
 
+defineEmits<{
+  close: [];
+}>();
+
 const chatStore = useChatStore();
 const { t } = useI18n();
 

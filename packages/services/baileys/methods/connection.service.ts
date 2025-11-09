@@ -49,6 +49,8 @@ export class BaileysConnectionService {
   private initialConnection = false;
   private awaitingNewLogin = false;
   private lastPayload: string | null = null;
+  private lastStatusPayload: string | null = null;
+  private lastConnectedTime: number = 0;
   private typeConnection: EBaileysConnectionType =
     EBaileysConnectionType.qrcode;
   private phoneConnection?: string = undefined;
@@ -317,6 +319,7 @@ export class BaileysConnectionService {
   private onOpen(resolve: (s: IBaileysConnectionState) => void): void {
     this.qrHash = undefined;
     this.setStatus(Status.connected, ECodeMessage.connectionEstablished);
+    this.lastConnectedTime = Date.now();
 
     const payload: IBaileysConnectionState = {
       status: this.status,
@@ -328,6 +331,7 @@ export class BaileysConnectionService {
     };
 
     this.publishSub(payload);
+    this.lastStatusPayload = JSON.stringify(payload);
 
     this.streamProducerService.send(
       this.kafkaServiceQueueService.workerStatus(),
@@ -344,6 +348,12 @@ export class BaileysConnectionService {
     last: IBaileysUpdateEvent['lastDisconnect'],
     resolve: (s: IBaileysConnectionState) => void
   ): void {
+    // Ignora desconexões se acabou de conectar (menos de 5 segundos)
+    const timeSinceConnected = Date.now() - this.lastConnectedTime;
+    if (timeSinceConnected < 5000 && this.status === Status.connected) {
+      return;
+    }
+
     const statusCode = (last?.error as any)?.output?.statusCode as
       | ECodeMessage
       | undefined;
@@ -361,21 +371,25 @@ export class BaileysConnectionService {
         code: this.code ?? statusCode,
       };
 
-      this.publishSub(payload);
+      const payloadStr = JSON.stringify(payload);
+      if (payloadStr !== this.lastStatusPayload) {
+        this.publishSub(payload);
+        this.lastStatusPayload = payloadStr;
 
-      this.streamProducerService.send(
-        this.kafkaServiceQueueService.workerStatus(),
-        payload,
-        WORKER
-      );
+        this.streamProducerService.send(
+          this.kafkaServiceQueueService.workerStatus(),
+          payload,
+          WORKER
+        );
 
-      this.saveLogWppConnection({
-        worker_id: WORKER,
-        status: this.status,
-        code: this.code?.toString(),
-        message: statusMessage ?? 'BaileysConnectionService disconnected',
-        date: new Date(),
-      });
+        this.saveLogWppConnection({
+          worker_id: WORKER,
+          status: this.status,
+          code: this.code?.toString(),
+          message: statusMessage ?? 'BaileysConnectionService disconnected',
+          date: new Date(),
+        });
+      }
     }
 
     if (statusCode === ECodeMessage.loggedOut) {
