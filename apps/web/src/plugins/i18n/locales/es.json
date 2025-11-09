@@ -352,5 +352,5 @@
     "message_status_id_required": "El estado del mensaje es obligatorio",
     "shortcut": "Atajo",
     "shortcut_required": "El atajo es obligatorio",
-    "view_once_message": "Has recibido un mensaje de visualización única. Por favor, verificar el mensaje en tu dispositivo"
+    "view_once_message": "Esta es una mensaja de visualización única. Por favor, verifique la mensaja en su dispositivo"
 }

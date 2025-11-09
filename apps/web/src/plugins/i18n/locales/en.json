@@ -351,5 +351,5 @@
     "message_status_id_required": "Message Status is required",
     "shortcut": "Shortcut",
     "shortcut_required": "Shortcut is required",
-    "view_once_message": "You received a view-once message. Please check the message on your device"
+    "view_once_message": "This is a view-once message. Please check the message on your device"
 }
