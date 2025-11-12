@@ -24,6 +24,7 @@ declare module 'vue-router/auto-routes' {
     'channels': RouteRecordInfo<'channels', '/channels', Record<never, never>, Record<never, never>>,
     'chat': RouteRecordInfo<'chat', '/chat', Record<never, never>, Record<never, never>>,
     'contact': RouteRecordInfo<'contact', '/contact', Record<never, never>, Record<never, never>>,
+    'contact-and-groups': RouteRecordInfo<'contact-and-groups', '/contactAndGroups', Record<never, never>, Record<never, never>>,
     'contact-group': RouteRecordInfo<'contact-group', '/contactGroup', Record<never, never>, Record<never, never>>,
     'label': RouteRecordInfo<'label', '/label', Record<never, never>, Record<never, never>>,
     'login': RouteRecordInfo<'login', '/login', Record<never, never>, Record<never, never>>,

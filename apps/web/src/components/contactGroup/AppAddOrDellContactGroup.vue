@@ -295,18 +295,21 @@ watch(searchDebounced, async (value) => {
                 <template #item.label_template="{ item }">
                   <VChip
                     v-if="item.label_template"
+                    class="uc-chip"
+                    size="small"
                     :style="{
                       backgroundColor: backgroundColor(
                         item.label_template.color
                       ),
                       color: textColor(item.label_template.color),
                     }"
-                    size="small"
                   >
                     {{ item.label_template.label }}
                   </VChip>
 
-                  <VChip v-else size="small"> - </VChip>
+                  <VChip v-else class="uc-chip uc-badge--muted" size="small"
+                    >-</VChip
+                  >
                 </template>
               </VDataTable>
             </VCol>
@@ -323,3 +326,15 @@ watch(searchDebounced, async (value) => {
     </VForm>
   </VDialog>
 </template>
+
+<style lang="scss">
+.uc-chip {
+  height: 24px;
+  min-width: 88px;
+  justify-content: center;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+</style>
