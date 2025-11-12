@@ -16,4 +16,7 @@ export enum ETagSwagger {
   plan = 'Planos',
   messageTemplate = 'Templates de Mensagem',
   labelTemplate = 'Templates de Etiqueta',
+  contact = 'Contatos',
+  contactGroup = 'Grupos de Contatos',
+  contactGroupAssignment = 'Atribuições de Grupos de Contatos',
 }

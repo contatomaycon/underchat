@@ -9,6 +9,8 @@ import { EUserPermissions } from '@core/common/enums/EPermissions/user';
 import { EAccountPermissions } from '@core/common/enums/EPermissions/account';
 import { EMessageTemplatePermissions } from '@core/common/enums/EPermissions/messageTemplate';
 import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
+import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
+import { EContactGroupPermissions } from '@core/common/enums/EPermissions/contactGroup';
 
 export default [
   {
@@ -59,6 +61,32 @@ export default [
       EMessageTemplatePermissions.message_create,
       EMessageTemplatePermissions.message_update,
       EMessageTemplatePermissions.message_delete,
+    ],
+  },
+  {
+    title: 'contacts',
+    to: { name: 'contact' as keyof RouteNamedMap },
+    icon: { icon: 'tabler-address-book' },
+    permissions: [
+      EGeneralPermissions.full_access,
+      EContactPermissions.contact_list,
+      EContactPermissions.contact_view,
+      EContactPermissions.contact_create,
+      EContactPermissions.contact_update,
+      EContactPermissions.contact_delete,
+    ],
+  },
+  {
+    title: 'contact_groups',
+    to: { name: 'contact-group' as keyof RouteNamedMap },
+    icon: { icon: 'tabler-users-group' },
+    permissions: [
+      EGeneralPermissions.full_access,
+      EContactGroupPermissions.contact_group_list,
+      EContactGroupPermissions.contact_group_view,
+      EContactGroupPermissions.contact_group_create,
+      EContactGroupPermissions.contact_group_update,
+      EContactGroupPermissions.contact_group_delete,
     ],
   },
   {

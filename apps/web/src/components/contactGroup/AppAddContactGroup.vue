@@ -1,0 +1,246 @@
+<script lang="ts" setup>
+import { useContactStore } from '@/@webcore/stores/contact';
+import { useContactGroupStore } from '@/@webcore/stores/contactGroup';
+import { ListContactResponse } from '@core/schema/contact/listContact/response.schema';
+import { CreateContactGroupRequest } from '@core/schema/contactGroup/createContactGroup/request.schema';
+import { VForm } from 'vuetify/components/VForm';
+import { ref, computed, watch } from 'vue';
+import { refDebounced } from '@vueuse/core';
+import { EColor } from '@core/common/enums/EColor';
+
+const contactGroupStore = useContactGroupStore();
+const contactStore = useContactStore();
+
+const { t } = useI18n();
+
+const props = defineProps<{
+  modelValue: boolean;
+}>();
+
+const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
+
+const isVisible = computed({
+  get: () => props.modelValue,
+  set: (v) => emit('update:modelValue', v),
+});
+
+const isHexColor = (s: string) => /^#([0-9A-F]{6}|[0-9A-F]{3})$/i.test(s);
+
+const backgroundColor = (s: string): string => {
+  if (isHexColor(s)) return s;
+
+  return EColor.primary;
+};
+
+const textColor = (s: string): string => {
+  const hex = backgroundColor(s);
+
+  if (!isHexColor(hex)) return '#FFFFFF';
+
+  let c = hex.substring(1);
+  if (c.length === 3) {
+    c = c
+      .split('')
+      .map((ch) => ch + ch)
+      .join('');
+  }
+
+  const r = Number.parseInt(c.slice(0, 2), 16);
+  const g = Number.parseInt(c.slice(2, 4), 16);
+  const b = Number.parseInt(c.slice(4, 6), 16);
+
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+
+  return yiq >= 128 ? '#000000' : '#FFFFFF';
+};
+
+const headers = [
+  { title: t('name'), key: 'name' },
+  { title: t('phone'), key: 'phone_partial' },
+  { title: t('label'), key: 'label_template' },
+];
+
+const search = ref<string>('');
+const searchDebounced = refDebounced(search, 500);
+
+const contactItems = computed(() => contactStore.list);
+const selectedContacts = ref<ListContactResponse[]>([]);
+const name = ref<string | null>(null);
+const description = ref<string | null>(null);
+
+const refFormAddContactGroup = ref<VForm>();
+
+const addContact = async () => {
+  const validateForm = await refFormAddContactGroup?.value?.validate();
+  if (!validateForm?.valid) return;
+
+  if (!name.value) {
+    return;
+  }
+
+  const payload: CreateContactGroupRequest = {
+    name: name.value,
+    description: description.value ?? null,
+    contacts: selectedContacts.value.map((contact) => ({
+      contact_id: contact.contact_id,
+    })),
+  };
+
+  const result = await contactGroupStore.addContactGroup(payload);
+
+  if (result) {
+    isVisible.value = false;
+
+    await contactGroupStore.listContactGroup();
+  }
+};
+
+const resetForm = () => {
+  name.value = null;
+  description.value = null;
+  search.value = '';
+  selectedContacts.value = [];
+  refFormAddContactGroup.value?.resetValidation();
+};
+
+onMounted(async () => {
+  resetForm();
+  await contactStore.listContact();
+});
+
+watch(isVisible, async (visible) => {
+  if (visible) {
+    resetForm();
+    await contactStore.listContact({
+      page: 1,
+      per_page: 10,
+      sort_by: [],
+      search: undefined,
+    });
+  }
+});
+
+watch(searchDebounced, async (value) => {
+  await contactStore.listContact({
+    page: 1,
+    per_page: 10,
+    sort_by: [],
+    search: value ?? undefined,
+  });
+});
+</script>
+
+<template>
+  <VDialog v-model="isVisible" max-width="600">
+    <DialogCloseBtn @click="isVisible = false" />
+
+    <template v-if="contactGroupStore.loading">
+      <VOverlay
+        :model-value="contactGroupStore.loading"
+        class="align-center justify-center"
+      >
+        <VProgressCircular color="primary" indeterminate size="32" />
+      </VOverlay>
+    </template>
+
+    <VForm ref="refFormAddContactGroup" @submit.prevent>
+      <VCard :title="$t('add_contact_group')">
+        <VCardText>
+          <VRow>
+            <VCol cols="12">
+              <AppTextField
+                v-model="name"
+                :label="$t('name') + ':'"
+                :placeholder="$t('name')"
+                :rules="[requiredValidator(name, $t('name_required'))]"
+              />
+            </VCol>
+
+            <VCol cols="12">
+              <AppTextField
+                v-model="description"
+                :label="$t('description') + ':'"
+                :placeholder="$t('description')"
+              />
+            </VCol>
+          </VRow>
+
+          <VRow>
+            <VCol cols="12">
+              <VCardText
+                class="d-flex align-center justify-space-between px-0 flex-wrap gap-4"
+              >
+                <div class="d-flex align-center gap-2">
+                  <span class="text-caption text-medium-emphasis">
+                    {{ $t('selected') }} ({{ selectedContacts.length }}):
+                  </span>
+                </div>
+
+                <div class="invoice-list-filter d-flex align-center gap-2">
+                  <VLabel>{{ $t('search') }}:</VLabel>
+                  <AppTextField
+                    v-model="search"
+                    :placeholder="$t('search') + '...'"
+                    append-inner-icon="tabler-search"
+                    single-line
+                    hide-details
+                    dense
+                    outlined
+                  />
+                </div>
+              </VCardText>
+            </VCol>
+          </VRow>
+
+          <VRow>
+            <VCol cols="12">
+              <VDataTable
+                v-model="selectedContacts"
+                :headers="headers"
+                :items="contactItems"
+                item-value="contact_id"
+                show-select
+                return-object
+                :items-per-page="10"
+              >
+                <template #item.name="{ item }">
+                  <span class="font-weight-medium">
+                    {{ item.name }}
+                  </span>
+                </template>
+
+                <template #item.phone_partial="{ item }">
+                  <span>{{ item.phone_partial }}</span>
+                </template>
+
+                <template #item.label_template="{ item }">
+                  <VChip
+                    v-if="item.label_template"
+                    :style="{
+                      backgroundColor: backgroundColor(
+                        item.label_template.color
+                      ),
+                      color: textColor(item.label_template.color),
+                    }"
+                    size="small"
+                  >
+                    {{ item.label_template.label }}
+                  </VChip>
+
+                  <VChip v-else size="small"> - </VChip>
+                </template>
+              </VDataTable>
+            </VCol>
+          </VRow>
+        </VCardText>
+
+        <VCardText class="d-flex justify-end flex-wrap gap-3">
+          <VBtn variant="tonal" color="secondary" @click="isVisible = false">
+            {{ $t('cancel') }}
+          </VBtn>
+          <VBtn @click="addContact"> {{ $t('add') }} </VBtn>
+        </VCardText>
+      </VCard>
+    </VForm>
+  </VDialog>
+</template>

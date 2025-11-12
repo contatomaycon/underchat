@@ -9,3 +9,5 @@ export * from './account.permissions';
 export * from './plan.permissions';
 export * from './messageTemplate.permissions';
 export * from './labelTemplate.permissions';
+export * from './contact.permissions';
+export * from './contactGroup.permissions';

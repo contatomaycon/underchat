@@ -13,6 +13,8 @@ import accountRoutes from './account.route';
 import planRoutes from './plan.route';
 import messageTemplateRoutes from './messageTemplate.route';
 import labelTemplateRoutes from './labelTemplate.route';
+import contactRoutes from './contact.route';
+import contactGroupRoutes from './contactGroup.route';
 
 export default function registerRoutes(server: FastifyInstance) {
   server.register(authRoutes);
@@ -29,4 +31,6 @@ export default function registerRoutes(server: FastifyInstance) {
   server.register(planRoutes);
   server.register(messageTemplateRoutes);
   server.register(labelTemplateRoutes);
+  server.register(contactRoutes);
+  server.register(contactGroupRoutes);
 }
