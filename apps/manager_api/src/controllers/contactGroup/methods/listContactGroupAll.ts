@@ -2,7 +2,7 @@ import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { ContactGroupAllListerUseCase } from '@core/useCases/contactGroup/ContacGroupAllLister.useCase';
+import { ContactGroupAllListerUseCase } from '@core/useCases/contactGroup/ContactGroupAllLister.useCase';
 
 export const listContactGroupAll = async (
   request: FastifyRequest<{}>,

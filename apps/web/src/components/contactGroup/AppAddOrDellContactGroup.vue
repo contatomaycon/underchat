@@ -250,7 +250,7 @@ watch(searchDebounced, async (value) => {
               >
                 <VCheckbox
                   v-model="onlyGroup"
-                  :label="$t('group_contacts')"
+                  :label="`${$t('selected_contacts')} (${selectedContacts.length})`"
                   hide-details
                   density="compact"
                 />
@@ -268,16 +268,6 @@ watch(searchDebounced, async (value) => {
                   />
                 </div>
               </VCardText>
-            </VCol>
-          </VRow>
-
-          <VRow v-if="selectedContacts.length">
-            <VCol cols="12">
-              <div class="d-flex flex-wrap align-center gap-2 mb-4">
-                <span class="text-caption text-medium-emphasis">
-                  {{ $t('selected') }} ({{ selectedContacts.length }}):
-                </span>
-              </div>
             </VCol>
           </VRow>
 

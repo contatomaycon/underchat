@@ -395,6 +395,5 @@
     "add_or_delete_contact_group": "Adicionar ou Excluir Contato do Grupo",
     "contact_group_assignment_deleted_error": "Ocorreu um erro ao excluir a atribuição do grupo de contatos. Por favor, tente novamente.",
     "contact_group_assignment_deleted_success": "Atribuição do grupo de contatos excluída com sucesso!",
-    "group_contacts": "Contatos do Grupo",
     "selected": "Selecionados"
 }

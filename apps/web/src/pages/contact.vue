@@ -84,11 +84,10 @@ const textColor = (s: string): string => {
 const escapeCsv = (value: unknown): string => {
   if (value === null || value === undefined) return '';
 
-  const s = String(value).replace(/\r?\n/g, ' ');
+  const s = String(value).replaceAll(/\r?\n/g, ' ');
 
-  // coloca entre aspas se tiver separador/aspas
   if (s.includes('"') || s.includes(';') || s.includes(',')) {
-    return `"${s.replace(/"/g, '""')}"`;
+    return `"${s.replaceAll('"', '""')}"`;
   }
 
   return s;
@@ -120,23 +119,25 @@ const exportContactsToCsv = () => {
   const delimiter = ';';
   const csv = [
     header.map(escapeCsv).join(delimiter),
-    ...rows.map((row) => row.map(escapeCsv).join(delimiter)),
+    ...rows.map((r) => r.map(escapeCsv).join(delimiter)),
   ].join('\r\n');
 
-  const blob = new Blob([csv], {
-    type: 'text/csv;charset=utf-8;',
-  });
-
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
 
-  const date = new Date().toISOString().slice(0, 10);
-  link.href = url;
-  link.setAttribute('download', `contacts-${date}.csv`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  try {
+    link.href = url;
+    link.setAttribute(
+      'download',
+      `contacts-${new Date().toISOString().slice(0, 10)}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+  } finally {
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
 };
 
 const isDialogDeleterShow = ref(false);

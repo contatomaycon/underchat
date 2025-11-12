@@ -8,7 +8,7 @@ import { AccountService } from '@core/services/account.service';
 export class ContactGroupAllListerUseCase {
   constructor(
     private readonly contactGroupService: ContactGroupService,
-    private accountService: AccountService
+    private readonly accountService: AccountService
   ) {}
 
   async execute(

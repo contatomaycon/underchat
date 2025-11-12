@@ -392,6 +392,5 @@
     "add_or_delete_contact_group": "Add or Delete Contact Group",
     "contact_group_assignment_deleted_error": "An error occurred while deleting the contact group assignment. Please try again.",
     "contact_group_assignment_deleted_success": "Contact group assignment deleted successfully!",
-    "group_contacts": "Group Contacts",
     "selected": "Selected"
 }
