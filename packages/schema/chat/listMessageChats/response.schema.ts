@@ -27,19 +27,22 @@ export const messageKeySchema = Type.Object({
   is_view_once: Type.Optional(Type.Boolean()),
 });
 
-export const quotedMessageSchema = Type.Object({
-  key: messageKeySchema,
-  message: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-});
-
 export const imageSchema = Type.Object({
-  url: Type.String(),
+  url: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   caption: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   mimetype: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   extension: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   size: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   height: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   width: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  thumbnail: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+
+export const quotedMessageSchema = Type.Object({
+  key: messageKeySchema,
+  message: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  type: Type.Optional(Type.String({ enum: Object.values(EMessageType) })),
+  image: Type.Optional(Type.Union([imageSchema, Type.Null()])),
 });
 
 export const reactionSchema = Type.Object({

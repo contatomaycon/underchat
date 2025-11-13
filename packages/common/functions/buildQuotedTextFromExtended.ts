@@ -1,7 +1,9 @@
 import { WAMessage } from '@whiskeysockets/baileys';
+import { Buffer } from 'node:buffer';
 import { IQuotedMessage } from '../interfaces/IChatMessage';
 import { remoteJid } from './remoteJid';
 import { remoteParticipantJid } from './remoteParticipantJid';
+import { EMessageType } from '../enums/EMessageType';
 
 export function buildQuotedTextFromExtended(
   m: WAMessage
@@ -19,7 +21,12 @@ export function buildQuotedTextFromExtended(
   const text =
     ctx?.quotedMessage?.conversation ??
     ctx?.quotedMessage?.extendedTextMessage?.text ??
+    ctx?.quotedMessage?.buttonsMessage?.contentText ??
+    ctx?.quotedMessage?.listMessage?.description ??
     '';
+
+  const imageMessage = ctx?.quotedMessage?.imageMessage;
+  const type = imageMessage ? EMessageType.image : EMessageType.text;
 
   const quoted: IQuotedMessage = {
     key: {
@@ -32,8 +39,35 @@ export function buildQuotedTextFromExtended(
       addressing_mode: m.key?.addressingMode ?? undefined,
       is_view_once: m.key?.isViewOnce ?? false,
     },
-    message: text,
+    message: text || null,
+    type,
   };
+
+  if (imageMessage) {
+    const thumbnail =
+      imageMessage.jpegThumbnail && imageMessage.jpegThumbnail.length > 0
+        ? `data:image/jpeg;base64,${Buffer.from(
+            imageMessage.jpegThumbnail
+          ).toString('base64')}`
+        : null;
+
+    quoted.image = {
+      url: null,
+      caption: imageMessage.caption ?? null,
+      mimetype: imageMessage.mimetype ?? null,
+      extension: null,
+      size: imageMessage.fileLength
+        ? Number(imageMessage.fileLength.toString())
+        : null,
+      height: imageMessage.height ?? null,
+      width: imageMessage.width ?? null,
+      thumbnail,
+    };
+
+    if (!quoted.message && imageMessage.caption) {
+      quoted.message = imageMessage.caption;
+    }
+  }
 
   return quoted;
 }

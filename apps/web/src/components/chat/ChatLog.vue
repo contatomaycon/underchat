@@ -97,6 +97,7 @@ const showReactionPicker = ref<string | null>(null);
 const showEmojiPicker = ref<string | null>(null);
 
 const quickReactions = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+const ignoreOutsideOnce = ref(false);
 
 const onReact = async (m: ListMessageResult, emoji: string) => {
   if (!chatStore.activeChat?.chat_id) return;
@@ -122,6 +123,7 @@ const onMouseLeave = () => {
 };
 
 const toggleReactionPicker = (messageId: string) => {
+  ignoreOutsideOnce.value = true;
   if (showReactionPicker.value === messageId) {
     showReactionPicker.value = null;
     return;
@@ -131,6 +133,10 @@ const toggleReactionPicker = (messageId: string) => {
 };
 
 const onClickOutside = (event: MouseEvent) => {
+  if (ignoreOutsideOnce.value) {
+    ignoreOutsideOnce.value = false;
+    return;
+  }
   const target = event.target as HTMLElement;
   if (
     !target.closest('.reaction-picker') &&
@@ -184,8 +190,17 @@ const getReactionsSummary = (
 
 const onDelete = (_m: ListMessageResult) => {};
 
-const showQuoted = (m: ListMessageResult) =>
-  m.content?.type === EMessageType.text_quoted && !!m.content?.quoted?.message;
+const showQuoted = (m: ListMessageResult) => {
+  if (m.content?.type !== EMessageType.text_quoted || !m.content?.quoted) {
+    return false;
+  }
+
+  if (m.content.quoted.type === EMessageType.image) {
+    return !!(m.content.quoted.image?.url || m.content.quoted.image?.thumbnail);
+  }
+
+  return !!m.content.quoted.message;
+};
 
 const resolveQuotedName = (m: ListMessageResult): string => {
   const fromMe = m.content?.quoted?.key?.from_me ?? null;
@@ -194,9 +209,43 @@ const resolveQuotedName = (m: ListMessageResult): string => {
   return '';
 };
 
+const resolveQuotedText = (m: ListMessageResult): string => {
+  if (!m.content?.quoted) {
+    return '';
+  }
+
+  if (m.content.quoted.type === EMessageType.image || m.content.quoted.image) {
+    return m.content.quoted.image?.caption || t('photo_label');
+  }
+
+  return m.content.quoted.message ?? '';
+};
+
+const resolveQuotedImageSrc = (m: ListMessageResult): string => {
+  const image = m.content?.quoted?.image;
+  if (!image) return '';
+  return image.url || image.thumbnail || '';
+};
+
+const hasQuotedImage = (m: ListMessageResult): boolean => {
+  const image = m.content?.quoted?.image;
+  if (!image) return false;
+  return !!(image.url || image.thumbnail);
+};
+
 const getQuotedTargetId = (m: ListMessageResult): string | null => {
   const byExplicitId = m.content?.message_quoted_id || null;
   if (byExplicitId) return String(byExplicitId);
+
+  const byKeyId = m.content?.quoted?.key?.id || null;
+  if (byKeyId) {
+    const matchByKey = chatStore.listMessages.find(
+      (x) => x.message_key?.id === byKeyId
+    );
+    if (matchByKey) {
+      return matchByKey.message_id;
+    }
+  }
 
   const text = m.content?.quoted?.message?.trim();
   if (!text) return null;
@@ -383,21 +432,17 @@ onUnmounted(() => {
                     <VListItemTitle>Copiar</VListItemTitle>
                   </VListItem>
 
-                  <VListItem
-                    @click="
-                      showReactionPicker =
-                        showReactionPicker === msgGrp.message_id
-                          ? null
-                          : msgGrp.message_id
-                    "
-                  >
+                  <VListItem @click="toggleReactionPicker(msgGrp.message_id)">
                     <template #prepend>
                       <VIcon size="18">tabler-mood-smile</VIcon>
                     </template>
                     <VListItemTitle>Reagir</VListItemTitle>
                   </VListItem>
 
-                  <VListItem @click="onDelete(msgGrp)">
+                  <VListItem
+                    v-if="!isTypeUser(msgGrp)"
+                    @click="onDelete(msgGrp)"
+                  >
                     <template #prepend>
                       <VIcon size="18">tabler-trash</VIcon>
                     </template>
@@ -417,19 +462,29 @@ onUnmounted(() => {
                 }"
                 @click="goToQuoted(msgGrp)"
               >
-                <div class="quoted-name">
-                  {{ resolveQuotedName(msgGrp) }}
+                <div v-if="hasQuotedImage(msgGrp)" class="quoted-media">
+                  <VImg
+                    :src="resolveQuotedImageSrc(msgGrp)"
+                    width="44"
+                    height="44"
+                    cover
+                  />
                 </div>
+                <div class="quoted-body">
+                  <div class="quoted-name">
+                    {{ resolveQuotedName(msgGrp) }}
+                  </div>
 
-                <div
-                  class="quoted-text"
-                  :style="{
-                    color: isTypeUser(msgGrp)
-                      ? 'rgb(var(--v-theme-on-surface))'
-                      : 'rgb(var(--v-theme-title))',
-                  }"
-                >
-                  {{ msgGrp.content?.quoted?.message }}
+                  <div
+                    class="quoted-text"
+                    :style="{
+                      color: isTypeUser(msgGrp)
+                        ? 'rgb(var(--v-theme-on-surface))'
+                        : 'rgb(var(--v-theme-title))',
+                    }"
+                  >
+                    {{ resolveQuotedText(msgGrp) }}
+                  </div>
                 </div>
               </div>
 
@@ -751,6 +806,9 @@ onUnmounted(() => {
       }
 
       .quoted-block {
+        display: flex;
+        align-items: center;
+        gap: 10px;
         background: rgba(var(--v-theme-primary), 0.08);
         border-inline-start: 3px solid rgb(var(--v-theme-primary));
         border-radius: 8px;
@@ -760,6 +818,24 @@ onUnmounted(() => {
 
       .quoted-block.is-clickable {
         cursor: pointer;
+      }
+
+      .quoted-media {
+        inline-size: 44px;
+        block-size: 44px;
+        border-radius: 6px;
+        overflow: hidden;
+        flex-shrink: 0;
+
+        .v-img {
+          inline-size: 100%;
+          block-size: 100%;
+        }
+      }
+
+      .quoted-body {
+        min-inline-size: 0;
+        flex: 1;
       }
 
       .quoted-name {
@@ -773,6 +849,9 @@ onUnmounted(() => {
       .quoted-text {
         font-size: 0.9rem;
         color: rgb(var(--v-theme-on-surface));
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
 
       .link-preview {

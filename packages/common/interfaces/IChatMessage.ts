@@ -31,6 +31,8 @@ interface IWorker {
 export interface IQuotedMessage {
   key: IMessageKey;
   message?: string | null;
+  type?: EMessageType | null;
+  image?: ImageMessageChat | null;
 }
 
 export interface IReaction {

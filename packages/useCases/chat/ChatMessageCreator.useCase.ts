@@ -249,6 +249,7 @@ export class ChatMessageCreatorUseCase {
     type: EMessageType,
     message: string | null,
     linkPreview: CreateMessageChatsBody['link_preview'],
+    messageQuotedId: string | null,
     quotedMessage: IQuotedMessage | null
   ): IChatMessage {
     return {
@@ -273,6 +274,7 @@ export class ChatMessageCreatorUseCase {
         type,
         message,
         link_preview: linkPreview,
+        message_quoted_id: messageQuotedId,
         quoted: quotedMessage,
       },
       date: new Date().toISOString(),
@@ -295,6 +297,8 @@ export class ChatMessageCreatorUseCase {
     }
 
     return {
+      type: chatMessage.content?.type ?? null,
+      image: chatMessage.content?.image ?? null,
       key: {
         remote_jid: chatMessage.message_key?.remote_jid ?? null,
         remote_jid_alt: chatMessage.message_key?.remote_jid_alt ?? null,
@@ -404,6 +408,7 @@ export class ChatMessageCreatorUseCase {
       type,
       message,
       linkPreview,
+      messageQuotedId ?? null,
       quotedMessage
     );
 

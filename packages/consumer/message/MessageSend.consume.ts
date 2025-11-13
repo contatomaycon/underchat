@@ -10,6 +10,7 @@ import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
 import { proto, WAMessage, WAUrlInfo } from '@whiskeysockets/baileys';
+import { Buffer } from 'node:buffer';
 import { KeyedSequencerService } from '@core/services/keyedSequencer.service';
 import { Kafka, Consumer } from 'kafkajs';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
@@ -312,6 +313,29 @@ export class MessageSendConsume {
       },
       message: (q?.message as proto.IMessage | null) ?? null,
     };
+
+    if (!quoted.message) {
+      if (q?.type === EMessageType.text && q?.message) {
+        quoted.message = {
+          conversation: q.message,
+        };
+      }
+
+      if (q?.type === EMessageType.image) {
+        const thumb = q.image?.thumbnail ?? null;
+        const base64 =
+          thumb && thumb.startsWith('data:')
+            ? (thumb.split(',')[1] ?? null)
+            : thumb;
+
+        quoted.message = {
+          imageMessage: {
+            caption: q.image?.caption ?? undefined,
+            jpegThumbnail: base64 ? Buffer.from(base64, 'base64') : undefined,
+          },
+        };
+      }
+    }
 
     return quoted;
   }

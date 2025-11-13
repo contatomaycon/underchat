@@ -11,9 +11,10 @@ import databaseElasticPlugin from '@core/plugins/dbElastic';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
-import baileysHooks from './hooks/baileys.hooks';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 import { safePlugin } from '@core/common/functions/safePlugin';
+import { container } from 'tsyringe';
+import { BaileysService } from '@core/services/baileys';
 
 const server = fastify({
   pluginTimeout: 120000,
@@ -42,7 +43,17 @@ server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
   module: ERouteModule.worker_baileys,
 });
 server.register(safePlugin(consumerPlugin, 'consumer'));
-server.register(safePlugin(baileysHooks, 'baileysHooks'));
+
+server.addHook('onReady', async () => {
+  const baileysService = container.resolve(BaileysService);
+  try {
+    await baileysService.connect({ initial_connection: true });
+  } catch (error) {
+    server.log.error({ err: error }, 'Failed to start Baileys connection');
+
+    throw error;
+  }
+});
 
 const start = async () => {
   try {

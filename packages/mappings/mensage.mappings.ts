@@ -144,6 +144,44 @@ export const mensageMappings = () => {
                 message: {
                   type: 'text',
                 },
+                type: {
+                  type: 'keyword',
+                },
+                image: {
+                  type: 'nested',
+                  properties: {
+                    url: {
+                      type: 'keyword',
+                    },
+                    caption: {
+                      type: 'text',
+                      fields: {
+                        keyword: {
+                          type: 'keyword',
+                          ignore_above: 256,
+                        },
+                      },
+                    },
+                    mimetype: {
+                      type: 'keyword',
+                    },
+                    extension: {
+                      type: 'keyword',
+                    },
+                    size: {
+                      type: 'long',
+                    },
+                    height: {
+                      type: 'integer',
+                    },
+                    width: {
+                      type: 'integer',
+                    },
+                    thumbnail: {
+                      type: 'text',
+                    },
+                  },
+                },
               },
             },
             image: {
