@@ -1,8 +1,9 @@
 <script lang="ts" setup>
+import { ref, computed, watch, onMounted } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { VForm } from 'vuetify/components/VForm';
 import { useContactStore } from '@/@webcore/stores/contact';
 import { useContactGroupStore } from '@/@webcore/stores/contactGroup';
-import { CreateContactGroupAssignmentRequest } from '@core/schema/contactGroup/createContactGroupAssignment/request.schema';
 
 const contactStore = useContactStore();
 const contactGroupStore = useContactGroupStore();
@@ -32,29 +33,34 @@ const contactFile = ref<File | null>(null);
 
 const refFormAddContact = ref<VForm>();
 
-const allowedExts = ['csv', 'vcf', 'vcard'];
+const allowedExts = new Set(['csv', 'vcf', 'vcard']);
+
+const allowedMimes = new Set(['text/csv', 'text/vcard', 'text/x-vcard']);
+
+function getExt(filename: string): string {
+  const i = filename.lastIndexOf('.');
+  return i >= 0 ? filename.slice(i + 1).toLowerCase() : '';
+}
 
 function isAllowedFile(file: File) {
-  const name = file.name.toLowerCase();
-  const ext = name.split('.').pop() || '';
-  return allowedExts.includes(ext);
+  const extOk = allowedExts.has(getExt(file.name));
+  const mimeOk = file.type ? allowedMimes.has(file.type) : false;
+  return extOk || mimeOk;
 }
 
 const onFileChange = (files: File[] | File | null) => {
-  const file = Array.isArray(files) ? files[0] : files;
+  const file = Array.isArray(files) ? (files?.[0] ?? null) : files;
   if (!file) {
     contactFile.value = null;
     return;
   }
 
   if (!isAllowedFile(file)) {
-    // use seu snackbar/toast, se tiver
     console.warn('Arquivo inválido. Envie .csv, .vcf ou .vcard.');
     contactFile.value = null;
     return;
   }
 
-  // opcional: limite de 10MB
   if (file.size > 10 * 1024 * 1024) {
     console.warn('Arquivo muito grande (máx 10MB).');
     contactFile.value = null;

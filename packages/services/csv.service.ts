@@ -1,4 +1,3 @@
-// src/services/ContactFileReaderService.ts
 import { ICreateContact } from '@core/common/interfaces/ICreateContact';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { injectable } from 'tsyringe';
@@ -17,18 +16,15 @@ export class CsvFileReaderService {
     return this._parseCsv(text);
   }
 
-  // ---------- CSV ----------
   private _parseCsv(content: string): ICreateContact[] {
     const lines = content.split(/\r?\n/).filter((l) => l.trim().length > 0);
     if (!lines.length) return [];
 
-    // detecta separador simples
     const sep =
       (lines[0].match(/;/g)?.length || 0) > (lines[0].match(/,/g)?.length || 0)
         ? ';'
         : ',';
 
-    // normaliza cabeçalhos (pt/en mais comuns)
     const header = this._splitCsvLine(lines[0], sep).map((h) =>
       h.trim().toLowerCase()
     );
@@ -55,7 +51,6 @@ export class CsvFileReaderService {
       const first = this._val(cols, idx.nome);
       const last = this._val(cols, idx.sobrenome);
 
-      // se nem nome e nem identificadores, pula
       if (
         !first &&
         !last &&
@@ -81,13 +76,23 @@ export class CsvFileReaderService {
     const res: string[] = [];
     let cur = '';
     let inQ = false;
+    let skipNext = false;
+
     for (let i = 0; i < line.length; i++) {
+      if (skipNext) {
+        skipNext = false;
+        continue;
+      }
+
       const ch = line[i];
+
       if (ch === '"') {
         if (inQ && line[i + 1] === '"') {
           cur += '"';
-          i++;
-        } else inQ = !inQ;
+          skipNext = true;
+        } else {
+          inQ = !inQ;
+        }
       } else if (!inQ && ch === sep) {
         res.push(cur);
         cur = '';
@@ -95,11 +100,11 @@ export class CsvFileReaderService {
         cur += ch;
       }
     }
+
     res.push(cur);
     return res.map((s) => s?.trim() ?? '');
   }
 
-  // ---------- vCard ----------
   private _parseVcard(content: string): ICreateContact[] {
     const lines = this._unfold(content.split(/\r?\n/));
     const cards: string[][] = [];
@@ -115,7 +120,6 @@ export class CsvFileReaderService {
     for (const raw of cards) {
       const map = this._vmap(raw);
 
-      // N: sobrenome;nome;...
       const n = map.get('N')?.[0] ?? '';
       const parts = n.split(';');
       const last = (parts[0] ?? '').trim();
@@ -172,22 +176,21 @@ export class CsvFileReaderService {
     return vals?.[0];
   }
 
-  // ---------- helpers ----------
   private _ext(name: string) {
     const m = /\.([^./\\]+)$/.exec(name);
     return (m ? m[1] : '').toLowerCase();
   }
 
   private _val(cols: string[], idx: number) {
-    return idx >= 0 ? (cols[idx] ?? '') : '';
+    if (idx < 0) return '';
+    return cols[idx] ?? '';
   }
 
   private _toNull(v?: string) {
     const s = (v ?? '').trim();
-    return s ? s : null;
+    return s || null;
   }
 
-  // aceita: YYYY-MM-DD | DD/MM/YYYY | DD-MM-YYYY | YYYY/MM/DD
   private _normDate(v?: string | null): string | null {
     const s = (v ?? '').trim();
     if (!s) return null;

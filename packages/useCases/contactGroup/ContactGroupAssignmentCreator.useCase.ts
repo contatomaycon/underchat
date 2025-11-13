@@ -2,7 +2,6 @@ import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { CreateContactGroupAssignmentRequest } from '@core/schema/contactGroup/createContactGroupAssignment/request.schema';
 import { CsvFileReaderService } from '@core/services/csv.service';
-import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { ContactService } from '@core/services/contact.service';
 
 @injectable()
@@ -18,9 +17,7 @@ export class ContactGroupAssignmentCreatorUseCase {
     accountId: string
   ): Promise<boolean> {
     if (!input.contacts) return true;
-    const contacts = await this.csvFileReaderService.read(
-      input.contacts as UploadFileRequest
-    );
+    const contacts = await this.csvFileReaderService.read(input.contacts);
 
     if (!contacts.length) {
       throw new Error(t('no_contacts_found_in_file'));
