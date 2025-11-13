@@ -263,6 +263,7 @@
     "start_conversation": "Iniciar conversa",
     "send": "Enviar",
     "chat_message_create_error": "Erro ao criar mensagem do chat. Por favor, tente novamente.",
+    "loading_more_messages": "Carregando mais mensagens...",
     "zipcode_view_error": "Ocorreu um erro ao ver o código postal. Por favor, tente novamente.",
     "email_invalid": "Formato de e-mail inválido.",
     "account_list_error": "Ocorreu um erro ao listar as contas. Por favor, tente novamente.",

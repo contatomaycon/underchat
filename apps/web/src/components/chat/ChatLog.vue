@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, watch } from 'vue';
+import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { useChatStore } from '@/@webcore/stores/chat';
 import {
   LinkPreview,
@@ -10,6 +10,7 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 
 const { t } = useI18n();
 const chatStore = useChatStore();
+const chatLogContainer = ref<HTMLElement | null>(null);
 
 const viewerOpen = ref(false);
 const viewerSrc = ref<string>('');
@@ -125,10 +126,70 @@ const openImage = (m: ListMessageResult) => {
   viewerCaption.value = m.content?.image?.caption || '';
   viewerOpen.value = true;
 };
+
+const handleScroll = async (e: Event) => {
+  const target = e.target as HTMLElement;
+  if (!target) return;
+
+  const scrollTop = target.scrollTop;
+  const threshold = 200;
+
+  if (
+    scrollTop < threshold &&
+    !chatStore.loadingMoreMessages &&
+    chatStore.currentPage < chatStore.totalPages
+  ) {
+    const previousScrollHeight = target.scrollHeight;
+    const previousScrollTop = target.scrollTop;
+
+    const success = await chatStore.loadMoreMessages();
+
+    if (success) {
+      await nextTick();
+      const newScrollHeight = target.scrollHeight;
+      const scrollDifference = newScrollHeight - previousScrollHeight;
+      target.scrollTop = previousScrollTop + scrollDifference;
+    }
+  }
+};
+
+onMounted(() => {
+  nextTick(() => {
+    const psContainer = chatLogContainer.value?.closest('.ps') as HTMLElement;
+    const scrollElement =
+      (psContainer?.querySelector('.ps__rail-y')
+        ?.parentElement as HTMLElement) || psContainer;
+
+    if (scrollElement) {
+      scrollElement.addEventListener('scroll', handleScroll, { passive: true });
+    }
+  });
+});
+
+onUnmounted(() => {
+  const psContainer = chatLogContainer.value?.closest('.ps') as HTMLElement;
+  const scrollElement =
+    (psContainer?.querySelector('.ps__rail-y')?.parentElement as HTMLElement) ||
+    psContainer;
+
+  if (scrollElement) {
+    scrollElement.removeEventListener('scroll', handleScroll);
+  }
+});
 </script>
 
 <template>
-  <div class="chat-log pa-6">
+  <div ref="chatLogContainer" class="chat-log pa-6">
+    <div
+      v-if="chatStore.loadingMoreMessages"
+      class="d-flex justify-center align-center py-4"
+    >
+      <VChip color="primary" variant="flat" size="small">
+        <VIcon start icon="tabler-loader-2" class="spin" />
+        {{ t('loading_more_messages') }}
+      </VChip>
+    </div>
+
     <div
       v-for="(msgGrp, index) in chatStore.listMessages"
       :key="msgGrp.message_id"
@@ -608,5 +669,18 @@ const openImage = (m: ListMessageResult) => {
   opacity: 0.9;
   white-space: pre-line;
   user-select: text;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

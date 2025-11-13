@@ -35,12 +35,15 @@ export const useChatStore = defineStore('chat', {
     } as ISnackbar,
     i18n: getI18n(),
     loading: false,
+    loadingMoreMessages: false,
     activeChat: null as ListChatsResult | null,
     listMessages: [] as ListMessageResult[],
     listQueue: [] as ListChatsResult[],
     listInChat: [] as ListChatsResult[],
     messageReply: null as ListMessageResult | null,
     user: getUser(),
+    currentPage: 1,
+    totalPages: 1,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -240,6 +243,7 @@ export const useChatStore = defineStore('chat', {
       try {
         this.loading = true;
         this.listMessages = [];
+        this.currentPage = 1;
 
         const response = await axios.get<IApiResponse<ListMessageResponse>>(
           `/chat/${this.activeChat?.chat_id}`,
@@ -259,12 +263,55 @@ export const useChatStore = defineStore('chat', {
 
         this.loading = false;
 
-        this.listMessages = data.data.results;
+        this.listMessages = [...data.data.results].reverse();
+        this.currentPage = data.data.pagings.current_page;
+        this.totalPages = data.data.pagings.total_pages;
       } catch {
         this.loading = false;
         this.listMessages = [];
 
         return;
+      }
+    },
+
+    async loadMoreMessages(): Promise<boolean> {
+      if (
+        this.loadingMoreMessages ||
+        this.currentPage >= this.totalPages
+      ) {
+        return false;
+      }
+
+      try {
+        this.loadingMoreMessages = true;
+
+        const response = await axios.get<IApiResponse<ListMessageResponse>>(
+          `/chat/${this.activeChat?.chat_id}`,
+          {
+            params: {
+              current_page: this.currentPage + 1,
+              per_page: 10,
+            },
+          }
+        );
+
+        const data = response?.data as IApiResponse<ListMessageResponse>;
+
+        if (!data?.status || !data?.data) {
+          this.loadingMoreMessages = false;
+
+          return false;
+        }
+
+        this.currentPage = data.data.pagings.current_page;
+        this.listMessages = [...data.data.results.reverse(), ...this.listMessages];
+        this.loadingMoreMessages = false;
+
+        return true;
+      } catch {
+        this.loadingMoreMessages = false;
+
+        return false;
       }
     },
 
