@@ -213,5 +213,9 @@
   "contact_group_assignment_deleted_successfully": "Atribuição do grupo de contatos excluída com sucesso!",
   "contact_group_assignment_deleter_error": "Erro ao excluir a atribuição do grupo de contatos!",
   "contact_group_assignment_creator_success": "Atribuição do grupo de contatos criada com sucesso!",
-  "contact_group_assignment_creator_error": "Erro ao criar a atribuição do grupo de contatos!"
+  "contact_group_assignment_creator_error": "Erro ao criar a atribuição do grupo de contatos!",
+  "contact_group_assignment_create_success": "Atribuição do grupo de contatos criada com sucesso!",
+  "contact_group_assignment_create_error": "Erro ao criar a atribuição do grupo de contatos!",
+  "contact_group_assignment_creation_failed": "Falha ao criar a atribuição do grupo de contatos!",
+  "no_contacts_found_in_file": "Nenhum contato encontrado no arquivo!"
 }

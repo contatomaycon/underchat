@@ -19,6 +19,7 @@ import {
   UpdateContactGroupRequest,
 } from '@core/schema/contactGroup/editContactGroup/request.schema';
 import { ListContactGroupAllResponse } from '@core/schema/contactGroup/listContactGroupAll/response.schema';
+import { CreateContactGroupAssignmentRequest } from '@core/schema/contactGroup/createContactGroupAssignment/request.schema';
 
 export const useContactGroupStore = defineStore('contact-group', {
   state: () => ({
@@ -297,6 +298,53 @@ export const useContactGroupStore = defineStore('contact-group', {
         return true;
       } catch (error) {
         let errorMessage = this.i18n.global.t('contact_group_deleted_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async addContactGroupAssignment(
+      payload: CreateContactGroupAssignmentRequest
+    ): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<boolean>>(
+          `/contact-group-assignment`,
+          payload
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ??
+            this.i18n.global.t('contact_group_assignment_add_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('contact_group_assignment_add_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          'contact_group_assignment_add_error'
+        );
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }

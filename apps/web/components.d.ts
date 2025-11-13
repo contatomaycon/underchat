@@ -40,6 +40,7 @@ declare module 'vue' {
     AppEditSector: typeof import('./src/components/sector/AppEditSector.vue')['default']
     AppEditServer: typeof import('./src/components/server/AppEditServer.vue')['default']
     AppEditUser: typeof import('./src/components/user/AppEditUser.vue')['default']
+    AppImportContacts: typeof import('./src/components/contact/AppImportContacts.vue')['default']
     AppListContactGroup: typeof import('./src/components/contactGroup/AppListContactGroup.vue')['default']
     AppLoadingIndicator: typeof import('./src/components/AppLoadingIndicator.vue')['default']
     AppLogsChannel: typeof import('./src/components/channel/AppLogsChannel.vue')['default']

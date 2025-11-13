@@ -85,92 +85,77 @@ export class ContactGroupListerRepository {
     accountId: string
   ): Promise<ListContactGroupResponse[]> => {
     const filters = this.setFilters(query);
-    const orders = this.setOrders(query);
     const accountCondition = isAdministrator
       ? undefined
       : eq(contactGroup.account_id, accountId);
 
-    const queryBuilder = this.db
-      .select({
-        contact_group_id: contactGroup.contact_group_id,
-        account: {
-          account_id: account.account_id,
-          name: account.name,
+    const result = await this.db.query.contactGroup.findMany({
+      where: and(isNull(contactGroup.deleted_at), ...filters, accountCondition),
+      with: {
+        cga: {
+          columns: {
+            account_id: true,
+            name: true,
+          },
         },
-        name: contactGroup.name,
-        description: contactGroup.description,
-        contacts: {
-          contact_id: contact.contact_id,
-          name: contact.name,
-          phone_partial: contact.phone_partial,
-        },
-        label_template: {
-          label_template_id: labelTemplate.label_template_id,
-          label: labelTemplate.label,
-          color: labelTemplate.color,
-        },
-        created_at: contactGroup.created_at,
-      })
-      .from(contactGroup)
-      .innerJoin(account, eq(contactGroup.account_id, account.account_id))
-      .leftJoin(
-        contactGroupAssignment,
-        eq(
-          contactGroup.contact_group_id,
-          contactGroupAssignment.contact_group_id
-        )
-      )
-      .leftJoin(
-        contact,
-        eq(contactGroupAssignment.contact_id, contact.contact_id)
-      )
-      .leftJoin(
-        labelTemplate,
-        eq(contact.label_template_id, labelTemplate.label_template_id)
-      )
-      .where(
-        and(accountCondition, isNull(contactGroup.deleted_at), ...filters)
-      );
-
-    if (orders.length) {
-      queryBuilder.orderBy(...orders);
-    }
-
-    const result = await queryBuilder
-      .limit(perPage)
-      .offset((currentPage - 1) * perPage)
-      .execute();
-
-    if (!result?.length) {
-      return [] as ListContactGroupResponse[];
-    }
-
-    return result.map((contactGroup) => ({
-      contact_group_id: contactGroup.contact_group_id,
-      account: {
-        account_id: contactGroup.account?.account_id,
-        name: contactGroup.account?.name,
-      },
-      contacts: contactGroup.contacts
-        ? [
-            {
-              contact_id: contactGroup.contacts.contact_id,
-              name: contactGroup.contacts.name,
-              phone_partial: contactGroup.contacts.phone_partial,
+        cgaa: {
+          with: {
+            cga: {
+              columns: {
+                contact_id: true,
+                name: true,
+                phone_partial: true,
+              },
+              with: {
+                clt: {
+                  columns: {
+                    label_template_id: true,
+                    label: true,
+                    color: true,
+                  },
+                },
+              },
             },
-          ]
-        : null,
-      label_template: contactGroup.label_template
-        ? {
-            label_template_id: contactGroup.label_template.label_template_id,
-            label: contactGroup.label_template.label,
-            color: contactGroup.label_template.color,
-          }
-        : null,
-      name: contactGroup.name,
-      description: contactGroup.description ?? null,
-      created_at: contactGroup.created_at,
-    })) as ListContactGroupResponse[];
+          },
+        },
+      },
+      columns: {
+        contact_group_id: true,
+        name: true,
+        description: true,
+        created_at: true,
+      },
+      limit: perPage,
+      offset: (currentPage - 1) * perPage,
+    });
+
+    if (!result) {
+      return [];
+    }
+
+    return result.map((item) => ({
+      contact_group_id: item.contact_group_id,
+      account: {
+        account_id: item.cga.account_id,
+        name: item.cga.name,
+      },
+      name: item.name,
+      description: item.description,
+      contacts: item.cgaa.map((contactGroupAssignment) => ({
+        contact_id: contactGroupAssignment.cga.contact_id,
+        name: contactGroupAssignment.cga.name,
+        phone_partial: contactGroupAssignment.cga.phone_partial,
+        label_template: contactGroupAssignment.cga.clt
+          ? {
+              label_template_id:
+                contactGroupAssignment.cga.clt.label_template_id,
+              label: contactGroupAssignment.cga.clt.label,
+              color: contactGroupAssignment.cga.clt.color,
+            }
+          : null,
+      })),
+      created_at: item.created_at,
+    }));
   };
 
   listContactGroupTotal = async (

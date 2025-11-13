@@ -5,6 +5,7 @@ import { deleteContactGroup } from './methods/deleteContactGroup';
 import { editContactGroup } from './methods/editContactGroup';
 import { createContactGroup } from './methods/createContactGroup';
 import { listContactGroupAll } from './methods/listContactGroupAll';
+import { createContactGroupAssignment } from './methods/createContactGroupAssignment';
 
 @injectable()
 class ContactGroupController {
@@ -14,6 +15,7 @@ class ContactGroupController {
   public deleteContactGroup = deleteContactGroup;
   public updateContactGroup = editContactGroup;
   public createContactGroup = createContactGroup;
+  public createContactGroupAssignment = createContactGroupAssignment;
 }
 
 export default ContactGroupController;

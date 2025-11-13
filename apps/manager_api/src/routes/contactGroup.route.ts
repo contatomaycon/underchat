@@ -14,6 +14,7 @@ import { createContactGroupSchema } from '@core/schema/contactGroup/createContac
 import { viewContactGroupSchema } from '@core/schema/contactGroup/viewContactGroup';
 import { deleteContactGroupSchema } from '@core/schema/contactGroup/deleteContactGroup';
 import { editContactGroupSchema } from '@core/schema/contactGroup/editContactGroup';
+import { createContactGroupAssignmentSchema } from '@core/schema/contactGroup/createContactGroupAssignment';
 
 export default async function contactGroupRoutes(server: FastifyInstance) {
   const contactGroupController = container.resolve(ContactGroupController);
@@ -69,6 +70,15 @@ export default async function contactGroupRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactGroupUpdatePermissions),
+    ],
+  });
+
+  server.post('/contact-group-assignment', {
+    schema: createContactGroupAssignmentSchema,
+    handler: contactGroupController.createContactGroupAssignment,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactGroupCreatePermissions),
     ],
   });
 }

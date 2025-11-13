@@ -145,6 +145,7 @@ const contactToDelete = ref<string | null>(null);
 
 const isDialogEditContactShow = ref(false);
 const isAddContactVisible = ref(false);
+const isAddImportContactVisible = ref(false);
 const contactToEdit = ref<string | null>(null);
 
 const headers: DataTableHeader<ListContactResponse>[] = [
@@ -241,6 +242,14 @@ watch(
               @click="isAddContactVisible = true"
             >
               {{ $t('add') }}
+            </VBtn>
+
+            <VBtn
+              v-if="$canPermission(permissionsCreate)"
+              prepend-icon="tabler-upload"
+              @click="isAddImportContactVisible = true"
+            >
+              {{ $t('import_contacts') }}
             </VBtn>
 
             <VBtn
@@ -379,6 +388,11 @@ watch(
       />
 
       <AppAddContact v-if="isAddContactVisible" v-model="isAddContactVisible" />
+
+      <AppImportContacts
+        v-if="isAddImportContactVisible"
+        v-model="isAddImportContactVisible"
+      />
     </VCard>
 
     <VSnackbar

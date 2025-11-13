@@ -14,6 +14,8 @@ import { ContactDeleterRepository } from '@core/repositories/contact/ContactDele
 import { ContactUpdaterRepository } from '@core/repositories/contact/ContactUpdater.repository';
 import { IUpdateContact } from '@core/common/interfaces/IUpdateContact';
 import { UpdateContactRequest } from '@core/schema/contact/editContact/request.schema';
+import { ContactCreatorTransactionRepository } from '@core/repositories/contact/ContactCreatorTransaction.repository';
+import { TFunction } from 'i18next';
 
 @injectable()
 export class ContactService {
@@ -24,7 +26,8 @@ export class ContactService {
     private readonly contactCreatorRepository: ContactCreatorRepository,
     private readonly contactViewerRepository: ContactViewerRepository,
     private readonly contactDeleterRepository: ContactDeleterRepository,
-    private readonly contactUpdaterRepository: ContactUpdaterRepository
+    private readonly contactUpdaterRepository: ContactUpdaterRepository,
+    private readonly contactCreatorTransactionRepository: ContactCreatorTransactionRepository
   ) {}
 
   listContacts = async (
@@ -139,5 +142,49 @@ export class ContactService {
     };
 
     return this.contactUpdaterRepository.updateContactById(contactId, payload);
+  };
+
+  createContactTx = async (
+    t: TFunction<'translation', undefined>,
+    input: ICreateContact,
+    contactGroupId: string,
+    accountId: string
+  ): Promise<boolean | null> => {
+    const emailCEncrypted = input?.email
+      ? this.encryptService.encrypt(input.email)
+      : null;
+
+    const emailPartialEncrypted = input.email
+      ? this.encryptService.sanitize(input.email, ETypeSanetize.email)
+      : null;
+
+    const phoneCEncrypted = input.phone
+      ? this.encryptService.encrypt(input.phone)
+      : null;
+
+    const phonePartialEncrypted = input.phone
+      ? this.encryptService.sanitize(input.phone, ETypeSanetize.phone)
+      : null;
+
+    const payload: ICreateContact = {
+      account_id: accountId,
+      label_template_id: input.label_template_id,
+      name: input.name,
+      last_name: input.last_name,
+      email: emailCEncrypted,
+      email_partial: emailPartialEncrypted,
+      phone_ddi: input.phone_ddi ?? '55',
+      phone: phoneCEncrypted,
+      phone_partial: phonePartialEncrypted,
+      nickname: input.nickname,
+      birthday: input.birthday,
+      notes: input.notes,
+    };
+
+    return this.contactCreatorTransactionRepository.createContactTx(
+      t,
+      contactGroupId,
+      payload
+    );
   };
 }

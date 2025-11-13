@@ -392,5 +392,9 @@
     "add_or_delete_contact_group": "Add or Delete Contact Group",
     "contact_group_assignment_deleted_error": "An error occurred while deleting the contact group assignment. Please try again.",
     "contact_group_assignment_deleted_success": "Contact group assignment deleted successfully!",
-    "selected": "Selected"
+    "selected": "Selected",
+    "import_contacts": "Import Contacts",
+    "file": "File",
+    "select_file": "Select File",
+    "msg_csv_or_vcard": "The file must be in CSV or vCard (.vcf) format and follow the column pattern: First Name, Last Name, Email, Phone, Nickname, Birthday, and Notes."
 }

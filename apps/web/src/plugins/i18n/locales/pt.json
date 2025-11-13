@@ -395,5 +395,9 @@
     "add_or_delete_contact_group": "Adicionar ou Excluir Contato do Grupo",
     "contact_group_assignment_deleted_error": "Ocorreu um erro ao excluir a atribuição do grupo de contatos. Por favor, tente novamente.",
     "contact_group_assignment_deleted_success": "Atribuição do grupo de contatos excluída com sucesso!",
-    "selected": "Selecionados"
+    "selected": "Selecionados",
+    "import_contacts": "Importar Contatos",
+    "file": "Arquivo",
+    "select_file": "Selecionar Arquivo",
+    "msg_csv_or_vcard": "O arquivo deve estar no formato CSV ou vCard (.vcf) e seguir o padrão de colunas: Nome, Sobrenome, Email, Telefone, Apelido, Aniversario e Notas."
 }

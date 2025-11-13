@@ -213,5 +213,9 @@
   "contact_group_assignment_deleted_successfully": "Contact group assignment deleted successfully!",
   "contact_group_assignment_deleter_error": "Error deleting contact group assignment!",
   "contact_group_assignment_creator_success": "Contact group assignment created successfully!",
-  "contact_group_assignment_creator_error": "Error creating contact group assignment!"
+  "contact_group_assignment_creator_error": "Error creating contact group assignment!",
+  "contact_group_assignment_create_success": "Contact group assignment created successfully!",
+  "contact_group_assignment_create_error": "Error creating contact group assignment!",
+  "contact_group_assignment_creation_failed": "Contact group assignment creation failed!",
+  "no_contacts_found_in_file": "No contacts found in file!"
 }
