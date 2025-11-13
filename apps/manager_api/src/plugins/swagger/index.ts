@@ -98,6 +98,19 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
           name: ETagSwagger.labelTemplate,
           description: 'End-points relacionados à modelos de etiqueta',
         },
+        {
+          name: ETagSwagger.contact,
+          description: 'End-points relacionados à contatos',
+        },
+        {
+          name: ETagSwagger.contactGroup,
+          description: 'End-points relacionados à grupos de contatos',
+        },
+        {
+          name: ETagSwagger.contactGroupAssignment,
+          description:
+            'End-points relacionados à atribuições de grupos de contatos',
+        },
       ],
     },
   });

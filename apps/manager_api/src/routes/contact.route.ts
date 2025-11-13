@@ -1,0 +1,64 @@
+import { FastifyInstance } from 'fastify';
+import { container } from 'tsyringe';
+import {
+  contactListPermissions,
+  contactCreatePermissions,
+  contactDeletePermissions,
+  contactUpdatePermissions,
+  contactViewPermissions,
+} from '@/permissions';
+import ContactController from '@/controllers/contact';
+import { listContactSchema } from '@core/schema/contact/listContact';
+import { createContactSchema } from '@core/schema/contact/createContact';
+import { viewContactSchema } from '@core/schema/contact/viewContact';
+import { deleteContactSchema } from '@core/schema/contact/deleteContact';
+import { editContactSchema } from '@core/schema/contact/editContact';
+
+export default async function contactRoutes(server: FastifyInstance) {
+  const contactController = container.resolve(ContactController);
+
+  server.get('/contact', {
+    schema: listContactSchema,
+    handler: contactController.listContact,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactListPermissions),
+    ],
+  });
+
+  server.post('/contact', {
+    schema: createContactSchema,
+    handler: contactController.createContact,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactCreatePermissions),
+    ],
+  });
+
+  server.get('/contact/:contact_id', {
+    schema: viewContactSchema,
+    handler: contactController.viewContact,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactViewPermissions),
+    ],
+  });
+
+  server.delete('/contact/:contact_id', {
+    schema: deleteContactSchema,
+    handler: contactController.deleteContact,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactDeletePermissions),
+    ],
+  });
+
+  server.patch('/contact/:contact_id', {
+    schema: editContactSchema,
+    handler: contactController.updateContact,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactUpdatePermissions),
+    ],
+  });
+}

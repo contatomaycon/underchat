@@ -6,8 +6,11 @@ import {
   EditAccountParamsRequest,
   UpdateAccountRequest,
 } from '@core/schema/account/editAccount/request.schema';
+import { usePlanStore } from '@/@webcore/stores/plan';
 
 const accountStore = useAccountStore();
+const planStore = usePlanStore();
+
 const { t } = useI18n();
 
 const props = defineProps<{
@@ -34,7 +37,7 @@ const accountStatusOptions = Object.entries(EAccountStatus).map(
 );
 
 const planOptions = computed(() =>
-  accountStore.listAllPlan.map((p) => ({
+  planStore.listAll.map((p) => ({
     id: p.plan_id,
     name: p.name,
   }))
@@ -74,8 +77,8 @@ const updateAccount = async () => {
 };
 
 watch(isVisible, async (visible) => {
-  if (visible && !accountStore.listAllPlan.length) {
-    await accountStore.listPlan();
+  if (visible && !planStore.listAll.length) {
+    await planStore.listPlanAll();
   }
 });
 
@@ -89,8 +92,8 @@ onMounted(async () => {
     plan.value = account.plan?.plan_id ?? null;
   }
 
-  if (!accountStore.listAllPlan.length) {
-    await accountStore.listPlan();
+  if (!planStore.listAll.length) {
+    await planStore.listPlanAll();
   }
 });
 </script>
@@ -117,6 +120,7 @@ onMounted(async () => {
                 v-model="name"
                 :label="$t('name') + ':'"
                 :placeholder="$t('name')"
+                maxlength="10"
                 :rules="[requiredValidator(name, $t('name_required'))]"
               />
             </VCol>

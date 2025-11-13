@@ -13,6 +13,7 @@ import { createLabelTemplateSchema } from '@core/schema/labelTemplate/createLabe
 import { viewLabelTemplateSchema } from '@core/schema/labelTemplate/viewLabelTemplate';
 import { deleteLabelTemplateSchema } from '@core/schema/labelTemplate/deleteLabelTemplate';
 import { editLabelTemplateSchema } from '@core/schema/labelTemplate/editLabelTemplate';
+import { listLabelTemplateAllSchema } from '@core/schema/labelTemplate/listLabelTemplateAll';
 
 export default async function labelTemplateRoutes(server: FastifyInstance) {
   const labelTemplateController = container.resolve(LabelTemplateController);
@@ -20,6 +21,15 @@ export default async function labelTemplateRoutes(server: FastifyInstance) {
   server.get('/label-template', {
     schema: listLabelTemplateSchema,
     handler: labelTemplateController.listLabelTemplate,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, labelTemplateListPermissions),
+    ],
+  });
+
+  server.get('/label-template/all', {
+    schema: listLabelTemplateAllSchema,
+    handler: labelTemplateController.listLabelTemplateAll,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, labelTemplateListPermissions),

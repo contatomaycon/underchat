@@ -4,6 +4,7 @@ import { viewLabelTemplate } from './methods/viewLabelTemplate';
 import { deleteLabelTemplate } from './methods/deleteLabelTemplate';
 import { editLabelTemplate } from './methods/editLabelTemplate';
 import { createLabelTemplate } from './methods/createLabelTemplate';
+import { listLabelTemplateAll } from './methods/listLabelTemplateAll';
 
 @injectable()
 class LabelTemplateController {
@@ -12,6 +13,7 @@ class LabelTemplateController {
   public deleteLabelTemplate = deleteLabelTemplate;
   public updateLabelTemplate = editLabelTemplate;
   public createLabelTemplate = createLabelTemplate;
+  public listLabelTemplateAll = listLabelTemplateAll;
 }
 
 export default LabelTemplateController;

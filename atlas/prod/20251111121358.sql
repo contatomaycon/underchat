@@ -1,0 +1,5 @@
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('9c75a451-7cbc-4042-9822-592a3f64fcc9', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'contact_group_view');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('2cd5948b-ff1c-4bcc-9114-6492b83733b8', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'contact_group_list');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('4fb557d8-eed9-40be-912d-d52bc819e99f', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'contact_group_create');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('f9af585d-5ec0-4f50-bcad-ebbec04c5468', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'contact_group_update');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('ebc6b283-8a0b-42c9-992e-6ca7a7630780', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'contact_group_delete');

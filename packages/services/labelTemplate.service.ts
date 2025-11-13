@@ -11,6 +11,8 @@ import { ViewLabelTemplateResponse } from '@core/schema/labelTemplate/viewLabelT
 import { LabelTemplateDeleterRepository } from '@core/repositories/labelTemplate/LabelTemplateDeleter.repository';
 import { LabelTemplateUpdaterRepository } from '@core/repositories/labelTemplate/LabelTemplateUpdater.repository';
 import { UpdateLabelTemplateRequest } from '@core/schema/labelTemplate/editLabelTemplate/request.schema';
+import { LabelTemplateAllListerRepository } from '@core/repositories/labelTemplate/LabelTemplateAllLister.repository';
+import { ListLabelTemplateAllResponse } from '@core/schema/labelTemplate/listLabelTemplateAll/response.schema';
 
 @injectable()
 export class LabelTemplateService {
@@ -21,7 +23,8 @@ export class LabelTemplateService {
     private readonly labelTemplateCreatorRepository: LabelTemplateCreatorRepository,
     private readonly labelTemplateViewerRepository: LabelTemplateViewerRepository,
     private readonly labelTemplateDeleterRepository: LabelTemplateDeleterRepository,
-    private readonly labelTemplateUpdaterRepository: LabelTemplateUpdaterRepository
+    private readonly labelTemplateUpdaterRepository: LabelTemplateUpdaterRepository,
+    private readonly labelTemplateAllListerRepository: LabelTemplateAllListerRepository
   ) {}
 
   listLabelTemplates = async (
@@ -96,6 +99,14 @@ export class LabelTemplateService {
     return this.labelTemplateUpdaterRepository.updateLabelTemplateById(
       labelTemplateId,
       input
+    );
+  };
+
+  listLabelTemplateAll = async (
+    accountId: string
+  ): Promise<ListLabelTemplateAllResponse[] | null> => {
+    return this.labelTemplateAllListerRepository.listLabelTemplateAll(
+      accountId
     );
   };
 }
