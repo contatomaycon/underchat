@@ -1,10 +1,13 @@
 <script lang="ts" setup>
 import { useAccountStore } from '@/@webcore/stores/account';
+import { usePlanStore } from '@/@webcore/stores/plan';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { CreateAccountRequest } from '@core/schema/account/createAccount/request.schema';
 import { VForm } from 'vuetify/components/VForm';
 
 const accountStore = useAccountStore();
+const planStore = usePlanStore();
+
 const { t } = useI18n();
 
 const props = defineProps<{
@@ -25,7 +28,7 @@ const itemsStatus = ref([
 ]);
 
 const itemsPlan = computed(() =>
-  accountStore.listAllPlan.map((p) => ({
+  planStore.listAll.map((p) => ({
     value: p.plan_id,
     text: p.name,
   }))
@@ -73,8 +76,8 @@ const resetForm = () => {
 
 onMounted(async () => {
   resetForm();
-  if (!accountStore.listAllPlan.length) {
-    await accountStore.listPlan();
+  if (!planStore.listAll.length) {
+    await planStore.listPlanAll();
   }
 });
 
@@ -105,6 +108,7 @@ watch(isVisible, (visible) => {
                 v-model="name"
                 :label="$t('name') + ':'"
                 :placeholder="$t('name')"
+                maxlength="10"
                 :rules="[requiredValidator(name, $t('name_required'))]"
               />
             </VCol>

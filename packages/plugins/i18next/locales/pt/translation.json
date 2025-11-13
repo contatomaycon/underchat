@@ -217,5 +217,8 @@
   "contact_group_assignment_create_success": "Atribuição do grupo de contatos criada com sucesso!",
   "contact_group_assignment_create_error": "Erro ao criar a atribuição do grupo de contatos!",
   "contact_group_assignment_creation_failed": "Falha ao criar a atribuição do grupo de contatos!",
-  "no_contacts_found_in_file": "Nenhum contato encontrado no arquivo!"
+  "no_contacts_found_in_file": "Nenhum contato encontrado no arquivo!",
+  "plan_list_all_successfully": "Lista de planos obtida com sucesso!",
+  "plan_list_all_not_found": "Nenhum plano encontrado!",
+  "plan_list_all_unauthorized": "Você não está autorizado a visualizar os planos!"
 }

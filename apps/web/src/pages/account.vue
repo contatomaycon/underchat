@@ -252,11 +252,15 @@ watch(
 
         <template #item.plan="{ item }">
           <VChip
+            v-if="item.plan"
             :color="resolvePlanVariant(item.plan?.name).color"
+            class="uc-chip"
             size="small"
           >
             {{ resolvePlanVariant(item.plan?.name).text }}
           </VChip>
+
+          <VChip v-else class="uc-chip uc-badge--muted" size="small">-</VChip>
         </template>
 
         <template #item.price="{ item }">
@@ -378,5 +382,15 @@ watch(
 
 .invoice-list-filter {
   inline-size: 20rem;
+}
+
+.uc-chip {
+  height: 24px;
+  min-width: 88px;
+  justify-content: center;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

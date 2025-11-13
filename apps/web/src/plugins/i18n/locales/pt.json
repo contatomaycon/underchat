@@ -399,5 +399,6 @@
     "import_contacts": "Importar Contatos",
     "file": "Arquivo",
     "select_file": "Selecionar Arquivo",
-    "msg_csv_or_vcard": "O arquivo deve estar no formato CSV ou vCard (.vcf) e seguir o padrão de colunas: Nome, Sobrenome, Email, Telefone, Apelido, Aniversario e Notas."
+    "msg_csv_or_vcard": "O arquivo deve estar no formato CSV ou vCard (.vcf) e seguir o padrão de colunas: Nome, Sobrenome, Email, Telefone, Apelido, Aniversario e Notas.",
+    "plan_all_list_error": "Ocorreu um erro ao listar todos os planos. Por favor, tente novamente."
 }
