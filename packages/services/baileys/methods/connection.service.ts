@@ -135,10 +135,6 @@ export class BaileysConnectionService {
       return this.reportConnecting();
     }
 
-    if (this.hasSession() && !allowRestore && initialConnection) {
-      return this.reportConnecting();
-    }
-
     if (this.status === Status.connected) {
       return this.reportConnected();
     }
@@ -548,8 +544,12 @@ export class BaileysConnectionService {
       await new Promise((r) => setTimeout(r, this.retryDelay));
     }
     this.setStatus(Status.disconnected, ECodeMessage.badSession);
+    this.clearFolder();
 
-    return this.state();
+    return this.connect({
+      initial_connection: this.initialConnection,
+      allow_restore: true,
+    });
   }
 
   private publishSub(payload: IBaileysConnectionState): void {

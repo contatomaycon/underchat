@@ -44,15 +44,19 @@ server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
 });
 server.register(safePlugin(consumerPlugin, 'consumer'));
 
-server.addHook('onReady', async () => {
+server.addHook('onReady', () => {
   const baileysService = container.resolve(BaileysService);
-  try {
-    await baileysService.connect({ initial_connection: true });
-  } catch (error) {
-    server.log.error({ err: error }, 'Failed to start Baileys connection');
-
-    throw error;
-  }
+  baileysService
+    .connect({ initial_connection: true })
+    .then((state) => {
+      server.log.info(
+        { status: state.status },
+        'Baileys connection attempt started'
+      );
+    })
+    .catch((error) => {
+      server.log.error({ err: error }, 'Failed to start Baileys connection');
+    });
 });
 
 const start = async () => {
