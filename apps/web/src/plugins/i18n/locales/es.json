@@ -356,5 +356,11 @@
     "view_once_message": "Esta es una mensaja de visualización única. Por favor, verifique la mensaja en su dispositivo",
     "max_images_selected": "Ya has seleccionado el máximo de 10 imágenes",
     "can_select_more_images": "Puedes seleccionar solo {count} imagen(es) más",
-    "images_selected": "Imágenes seleccionadas"
+    "images_selected": "Imágenes seleccionadas",
+    "chat_reaction_success": "¡Reacción enviada con éxito!",
+    "chat_reaction_error": "Error al enviar reacción. Por favor, inténtalo de nuevo.",
+    "message_not_found": "Mensaje no encontrado",
+    "message_key_not_found": "Clave de mensaje no encontrada",
+    "message_jid_not_found": "JID de mensaje no encontrado",
+    "reaction_send_error": "Error al enviar reacción"
 }

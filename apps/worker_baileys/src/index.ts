@@ -11,6 +11,7 @@ import databaseElasticPlugin from '@core/plugins/dbElastic';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
+import baileysHooks from './hooks/baileys.hooks';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 import { safePlugin } from '@core/common/functions/safePlugin';
 
@@ -41,6 +42,7 @@ server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
   module: ERouteModule.worker_baileys,
 });
 server.register(safePlugin(consumerPlugin, 'consumer'));
+server.register(safePlugin(baileysHooks, 'baileysHooks'));
 
 const start = async () => {
   try {

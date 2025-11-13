@@ -226,6 +226,58 @@ export class MessageUpsertConsume {
     return (result?.hits.total as { value: number })?.value > 0;
   }
 
+  private async findMessageByKeyId(
+    accountId: string,
+    chatId: string,
+    messageId: string
+  ): Promise<IChatMessage | null> {
+    if (!messageId) return null;
+
+    const must: Array<Record<string, unknown>> = [
+      {
+        term: { chat_id: chatId },
+      },
+      {
+        nested: {
+          path: 'message_key',
+          query: {
+            term: { 'message_key.id': messageId },
+          },
+        },
+      },
+    ];
+
+    if (accountId) {
+      must.push({
+        nested: {
+          path: 'account',
+          query: {
+            term: { 'account.id': accountId },
+          },
+        },
+      });
+    }
+
+    const queryElastic = {
+      query: {
+        bool: {
+          must,
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select(
+      EElasticIndex.message,
+      queryElastic
+    );
+
+    if (!result || result.hits.hits.length === 0) {
+      return null;
+    }
+
+    return result.hits.hits[0]._source as IChatMessage;
+  }
+
   private async createChatMessage(
     getChat: IChat,
     data: IUpsertMessage
@@ -254,6 +306,75 @@ export class MessageUpsertConsume {
         link_preview: linkPreview,
         quoted: buildQuotedTextFromExtended(data.message),
       };
+
+      if (
+        data.type === EMessageType.react &&
+        data.message?.message?.reactionMessage?.key?.id
+      ) {
+        const reactionMsg = data.message.message.reactionMessage;
+        const targetMessageId = reactionMsg.key?.id;
+        if (!targetMessageId) {
+          return true;
+        }
+
+        const targetMessage = await this.findMessageByKeyId(
+          data.account_id,
+          getChat.chat_id,
+          targetMessageId
+        );
+
+        if (!targetMessage) {
+          return true;
+        }
+
+        const userId = data.message?.key?.fromMe
+          ? getChat.worker.id
+          : (getChat.user?.id ?? '');
+        const userName = data.message?.key?.fromMe
+          ? getChat.worker.name
+          : (getChat.user?.name ?? '');
+        const emoji = reactionMsg.text ?? '';
+
+        const existingReactions = targetMessage.content?.reactions || [];
+        const reactionsWithoutUser = existingReactions.filter(
+          (reaction) => reaction.user_id !== userId
+        );
+
+        let updatedReactions = reactionsWithoutUser;
+        if (emoji) {
+          updatedReactions = [
+            ...reactionsWithoutUser,
+            {
+              emoji,
+              user_id: userId,
+              user_name: userName,
+            },
+          ];
+        }
+
+        let reactionsValue: IContent['reactions'] = null;
+        if (updatedReactions.length > 0) {
+          reactionsValue = updatedReactions;
+        }
+
+        const updatedContent: IContent = {
+          ...targetMessage.content,
+          type: targetMessage.content?.type ?? EMessageType.text,
+          reactions: reactionsValue,
+        };
+
+        const updatedMessage: IChatMessage = {
+          ...targetMessage,
+          content: updatedContent,
+        };
+
+        await Promise.all([
+          this.chatService.saveMessageChat(updatedMessage),
+          this.centrifugoChatPublish(updatedMessage),
+        ]);
+
+        return true;
+      }
 
       if (!getChat?.name && !data.message?.key?.fromMe) {
         const name = this.nameChat(data);

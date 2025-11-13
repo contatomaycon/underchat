@@ -42,6 +42,12 @@ export const imageSchema = Type.Object({
   width: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
 });
 
+export const reactionSchema = Type.Object({
+  emoji: Type.String(),
+  user_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  user_name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+
 export const contentSchema = Type.Object({
   type: Type.String({ enum: Object.values(EMessageType) }),
   message: Type.Optional(Type.Union([Type.String(), Type.Null()])),
@@ -51,6 +57,9 @@ export const contentSchema = Type.Object({
   ),
   quoted: Type.Optional(Type.Union([quotedMessageSchema, Type.Null()])),
   image: Type.Optional(Type.Union([imageSchema, Type.Null()])),
+  reactions: Type.Optional(
+    Type.Union([Type.Array(reactionSchema), Type.Null()])
+  ),
 });
 
 export const listMessageResultSchema = Type.Object({

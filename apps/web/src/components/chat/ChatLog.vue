@@ -7,10 +7,16 @@ import {
 } from '@core/schema/chat/listMessageChats/response.schema';
 import { isTypeUser } from '@core/common/functions/isTypeUser';
 import { EMessageType } from '@core/common/enums/EMessageType';
+import { IReaction } from '@core/common/interfaces/IChatMessage';
+import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
+import data from 'emoji-mart-vue-fast/data/all.json';
+import 'emoji-mart-vue-fast/css/emoji-mart.css';
 
 const { t } = useI18n();
 const chatStore = useChatStore();
 const chatLogContainer = ref<HTMLElement | null>(null);
+
+const reactionEmojiIndex = new EmojiIndex(data);
 
 const viewerOpen = ref(false);
 const viewerSrc = ref<string>('');
@@ -86,7 +92,96 @@ const onCopy = async (m: ListMessageResult) => {
   if (text) await navigator.clipboard.writeText(text);
 };
 
-const onReact = (_m: ListMessageResult) => {};
+const hoveredMessageId = ref<string | null>(null);
+const showReactionPicker = ref<string | null>(null);
+const showEmojiPicker = ref<string | null>(null);
+
+const quickReactions = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
+const onReact = async (m: ListMessageResult, emoji: string) => {
+  if (!chatStore.activeChat?.chat_id) return;
+
+  const success = await chatStore.reactToMessage(
+    chatStore.activeChat.chat_id,
+    m.message_id,
+    emoji
+  );
+
+  if (success) {
+    showReactionPicker.value = null;
+    showEmojiPicker.value = null;
+  }
+};
+
+const onMouseEnter = (messageId: string) => {
+  hoveredMessageId.value = messageId;
+};
+
+const onMouseLeave = () => {
+  hoveredMessageId.value = null;
+};
+
+const toggleReactionPicker = (messageId: string) => {
+  if (showReactionPicker.value === messageId) {
+    showReactionPicker.value = null;
+    return;
+  }
+  showReactionPicker.value = messageId;
+  showEmojiPicker.value = null;
+};
+
+const onClickOutside = (event: MouseEvent) => {
+  const target = event.target as HTMLElement;
+  if (
+    !target.closest('.reaction-picker') &&
+    !target.closest('.reaction-trigger')
+  ) {
+    showReactionPicker.value = null;
+    showEmojiPicker.value = null;
+  }
+};
+
+const toggleEmojiPicker = (messageId: string) => {
+  if (showEmojiPicker.value === messageId) {
+    showEmojiPicker.value = null;
+    return;
+  }
+  showEmojiPicker.value = messageId;
+};
+
+const onSelectReactionEmoji = async (
+  m: ListMessageResult,
+  emoji: { native?: string; id?: string }
+) => {
+  const value = emoji?.native ?? emoji?.id;
+  if (!value) return;
+
+  await onReact(m, value);
+  showEmojiPicker.value = null;
+};
+
+const getReactionsSummary = (
+  reactions?: IReaction[] | null
+): Array<{ emoji: string; count: number }> => {
+  if (!reactions?.length) return [];
+  const summary = new Map<string, { emoji: string; count: number }>();
+  reactions.forEach((reaction) => {
+    if (!reaction?.emoji) return;
+    const current = summary.get(reaction.emoji);
+    if (!current) {
+      summary.set(reaction.emoji, { emoji: reaction.emoji, count: 1 });
+
+      return;
+    }
+    current.count += 1;
+  });
+
+  return Array.from(summary.values()).sort((a, b) => {
+    if (b.count !== a.count) return b.count - a.count;
+    return a.emoji.localeCompare(b.emoji);
+  });
+};
+
 const onDelete = (_m: ListMessageResult) => {};
 
 const showQuoted = (m: ListMessageResult) =>
@@ -163,6 +258,8 @@ onMounted(() => {
     if (scrollElement) {
       scrollElement.addEventListener('scroll', handleScroll, { passive: true });
     }
+
+    document.addEventListener('click', onClickOutside);
   });
 });
 
@@ -175,6 +272,8 @@ onUnmounted(() => {
   if (scrollElement) {
     scrollElement.removeEventListener('scroll', handleScroll);
   }
+
+  document.removeEventListener('click', onClickOutside);
 });
 </script>
 
@@ -195,13 +294,15 @@ onUnmounted(() => {
       :key="msgGrp.message_id"
       :id="`msg-${msgGrp.message_id}`"
       :data-message-id="msgGrp.message_id"
-      class="chat-group d-flex align-start"
+      class="chat-group d-flex align-start position-relative"
       :class="[
         {
           'flex-row-reverse': !isTypeUser(msgGrp),
           'mb-6': chatStore.listMessages.length - 1 !== index,
         },
       ]"
+      @mouseenter="onMouseEnter(msgGrp.message_id)"
+      @mouseleave="onMouseLeave"
     >
       <div class="chat-avatar" :class="!isTypeUser(msgGrp) ? 'ms-4' : 'me-4'">
         <VAvatar
@@ -209,241 +310,349 @@ onUnmounted(() => {
           :variant="!isPhotoExist(msgGrp) ? 'tonal' : undefined"
         >
           <VImg v-if="isPhotoExist(msgGrp)" :src="resolvePhoto(msgGrp)" />
-          <span v-else class="text-1xl">
+          <span v-if="!isPhotoExist(msgGrp)" class="text-1xl">
             {{ avatarChat(msgGrp) }}
           </span>
         </VAvatar>
       </div>
 
       <div
-        class="chat-body d-inline-flex flex-column"
+        class="chat-body d-inline-flex flex-column position-relative"
         :class="!isTypeUser(msgGrp) ? 'align-end' : 'align-start'"
       >
         <div
-          class="chat-content py-2 px-2 elevation-2 has-actions"
-          :class="[isTypeUser(msgGrp) ? 'chat-left' : 'chat-right']"
-          :style="{
-            backgroundColor: isTypeUser(msgGrp)
-              ? 'rgb(var(--v-theme-surface))'
-              : 'rgb(217, 253, 211)',
-          }"
+          class="chat-content-wrapper"
+          :class="!isTypeUser(msgGrp) ? 'wrapper-operator' : 'wrapper-client'"
         >
-          <div class="message-actions">
-            <VMenu
-              :close-on-content-click="true"
-              location="bottom end"
-              offset="6"
-            >
-              <template #activator="{ props }">
-                <VBtn
-                  v-bind="props"
-                  icon
-                  size="24"
-                  density="comfortable"
-                  variant="text"
-                  :color="
-                    isTypeUser(msgGrp)
+          <VBtn
+            v-if="hoveredMessageId === msgGrp.message_id"
+            icon
+            size="28"
+            variant="flat"
+            class="reaction-trigger"
+            color="grey-600"
+            @click.stop="toggleReactionPicker(msgGrp.message_id)"
+          >
+            <VIcon size="18">tabler-mood-smile</VIcon>
+          </VBtn>
+
+          <div
+            class="chat-content py-2 px-2 elevation-2 has-actions"
+            :class="[isTypeUser(msgGrp) ? 'chat-left' : 'chat-right']"
+            :style="{
+              backgroundColor: isTypeUser(msgGrp)
+                ? 'rgb(var(--v-theme-surface))'
+                : 'rgb(217, 253, 211)',
+            }"
+          >
+            <div class="message-actions">
+              <VMenu
+                :close-on-content-click="true"
+                location="bottom end"
+                offset="6"
+              >
+                <template #activator="{ props }">
+                  <VBtn
+                    v-bind="props"
+                    icon
+                    size="24"
+                    density="comfortable"
+                    variant="text"
+                    :color="
+                      isTypeUser(msgGrp)
+                        ? 'rgb(var(--v-theme-on-surface))'
+                        : 'rgb(var(--v-theme-title))'
+                    "
+                  >
+                    <VIcon size="18">tabler-chevron-down</VIcon>
+                  </VBtn>
+                </template>
+
+                <VList density="compact" min-width="180">
+                  <VListItem @click="onReply(msgGrp)">
+                    <template #prepend>
+                      <VIcon size="18">tabler-corner-up-left</VIcon>
+                    </template>
+                    <VListItemTitle>Responder</VListItemTitle>
+                  </VListItem>
+
+                  <VListItem @click="onCopy(msgGrp)">
+                    <template #prepend>
+                      <VIcon size="18">tabler-copy</VIcon>
+                    </template>
+                    <VListItemTitle>Copiar</VListItemTitle>
+                  </VListItem>
+
+                  <VListItem
+                    @click="
+                      showReactionPicker =
+                        showReactionPicker === msgGrp.message_id
+                          ? null
+                          : msgGrp.message_id
+                    "
+                  >
+                    <template #prepend>
+                      <VIcon size="18">tabler-mood-smile</VIcon>
+                    </template>
+                    <VListItemTitle>Reagir</VListItemTitle>
+                  </VListItem>
+
+                  <VListItem @click="onDelete(msgGrp)">
+                    <template #prepend>
+                      <VIcon size="18">tabler-trash</VIcon>
+                    </template>
+                    <VListItemTitle>Apagar</VListItemTitle>
+                  </VListItem>
+                </VList>
+              </VMenu>
+            </div>
+
+            <div class="message-block">
+              <div
+                v-if="showQuoted(msgGrp)"
+                class="quoted-block"
+                :class="{
+                  'is-right': !isTypeUser(msgGrp),
+                  'is-clickable': true,
+                }"
+                @click="goToQuoted(msgGrp)"
+              >
+                <div class="quoted-name">
+                  {{ resolveQuotedName(msgGrp) }}
+                </div>
+
+                <div
+                  class="quoted-text"
+                  :style="{
+                    color: isTypeUser(msgGrp)
                       ? 'rgb(var(--v-theme-on-surface))'
-                      : 'rgb(var(--v-theme-title))'
-                  "
+                      : 'rgb(var(--v-theme-title))',
+                  }"
                 >
-                  <VIcon size="18">tabler-chevron-down</VIcon>
-                </VBtn>
-              </template>
-
-              <VList density="compact" min-width="180">
-                <VListItem @click="onReply(msgGrp)">
-                  <template #prepend>
-                    <VIcon size="18">tabler-corner-up-left</VIcon>
-                  </template>
-                  <VListItemTitle>Responder</VListItemTitle>
-                </VListItem>
-
-                <VListItem @click="onCopy(msgGrp)">
-                  <template #prepend>
-                    <VIcon size="18">tabler-copy</VIcon>
-                  </template>
-                  <VListItemTitle>Copiar</VListItemTitle>
-                </VListItem>
-
-                <VListItem @click="onReact(msgGrp)">
-                  <template #prepend>
-                    <VIcon size="18">tabler-mood-smile</VIcon>
-                  </template>
-                  <VListItemTitle>Reagir</VListItemTitle>
-                </VListItem>
-
-                <VListItem @click="onDelete(msgGrp)">
-                  <template #prepend>
-                    <VIcon size="18">tabler-trash</VIcon>
-                  </template>
-                  <VListItemTitle>Apagar</VListItemTitle>
-                </VListItem>
-              </VList>
-            </VMenu>
-          </div>
-
-          <div class="message-block">
-            <div
-              v-if="showQuoted(msgGrp)"
-              class="quoted-block"
-              :class="{ 'is-right': !isTypeUser(msgGrp), 'is-clickable': true }"
-              @click="goToQuoted(msgGrp)"
-            >
-              <div class="quoted-name">
-                {{ resolveQuotedName(msgGrp) }}
+                  {{ msgGrp.content?.quoted?.message }}
+                </div>
               </div>
 
               <div
-                class="quoted-text"
+                v-if="msgGrp.content?.link_preview?.title"
+                class="link-preview rounded"
+                :class="
+                  !isTypeUser(msgGrp)
+                    ? 'link-preview--right'
+                    : 'link-preview--left'
+                "
                 :style="{
+                  backgroundColor: isTypeUser(msgGrp)
+                    ? 'rgb(var(--v-theme-grey-200))'
+                    : 'rgb(214, 243, 207)',
                   color: isTypeUser(msgGrp)
-                    ? 'rgb(var(--v-theme-on-surface))'
+                    ? 'rgb(var(--v-theme-on-grey))'
                     : 'rgb(var(--v-theme-title))',
                 }"
               >
-                {{ msgGrp.content?.quoted?.message }}
-              </div>
-            </div>
+                <div class="lp-main d-flex">
+                  <div v-if="resolvePreviewImage(msgGrp.content.link_preview)">
+                    <div class="lp-thumb me-3">
+                      <img
+                        :src="resolvePreviewImage(msgGrp.content.link_preview)"
+                        alt=""
+                      />
+                    </div>
+                  </div>
 
-            <div
-              v-if="msgGrp.content?.link_preview?.title"
-              class="link-preview rounded"
-              :class="
-                !isTypeUser(msgGrp)
-                  ? 'link-preview--right'
-                  : 'link-preview--left'
-              "
-              :style="{
-                backgroundColor: isTypeUser(msgGrp)
-                  ? 'rgb(var(--v-theme-grey-200))'
-                  : 'rgb(214, 243, 207)',
-                color: isTypeUser(msgGrp)
-                  ? 'rgb(var(--v-theme-on-grey))'
-                  : 'rgb(var(--v-theme-title))',
-              }"
-            >
-              <div class="lp-main d-flex">
-                <div v-if="resolvePreviewImage(msgGrp.content.link_preview)">
-                  <div class="lp-thumb me-3">
-                    <img
-                      :src="resolvePreviewImage(msgGrp.content.link_preview)"
-                      alt=""
-                    />
+                  <div class="lp-text">
+                    <div class="lp-domain text-xs mb-1">
+                      {{
+                        domainFromUrl(
+                          msgGrp.content.link_preview['canonical-url'] ||
+                            msgGrp.content.link_preview['matched-text']
+                        )
+                      }}
+                    </div>
+
+                    <div class="lp-title text-sm mb-1">
+                      {{ msgGrp.content.link_preview.title }}
+                    </div>
+
+                    <div class="lp-desc text-xs">
+                      {{ msgGrp.content.link_preview.description }}
+                    </div>
                   </div>
                 </div>
 
-                <div class="lp-text">
-                  <div class="lp-domain text-xs mb-1">
-                    {{
-                      domainFromUrl(
-                        msgGrp.content.link_preview['canonical-url'] ||
-                          msgGrp.content.link_preview['matched-text']
-                      )
-                    }}
-                  </div>
-
-                  <div class="lp-title text-sm mb-1">
-                    {{ msgGrp.content.link_preview.title }}
-                  </div>
-
-                  <div class="lp-desc text-xs">
-                    {{ msgGrp.content.link_preview.description }}
-                  </div>
-                </div>
+                <a
+                  v-if="resolvePreviewUrl(msgGrp.content.link_preview)"
+                  class="lp-url d-block mt-2 text-sm"
+                  :href="resolvePreviewUrl(msgGrp.content.link_preview)"
+                  target="_blank"
+                  rel="noopener"
+                >
+                  {{ resolvePreviewUrl(msgGrp.content.link_preview) }}
+                </a>
               </div>
 
-              <a
-                v-if="resolvePreviewUrl(msgGrp.content.link_preview)"
-                class="lp-url d-block mt-2 text-sm"
-                :href="resolvePreviewUrl(msgGrp.content.link_preview)"
-                target="_blank"
-                rel="noopener"
-              >
-                {{ resolvePreviewUrl(msgGrp.content.link_preview) }}
-              </a>
-            </div>
-
-            <div
-              v-if="
-                msgGrp.content?.type === EMessageType.image &&
-                msgGrp.content?.image?.url &&
-                !msgGrp.message_key?.is_view_once
-              "
-              class="image-bubble"
-              :class="
-                !isTypeUser(msgGrp)
-                  ? 'image-bubble--right'
-                  : 'image-bubble--left'
-              "
-              @click="openImage(msgGrp)"
-            >
-              <VImg
-                :src="msgGrp.content.image.url"
-                :aspect-ratio="
-                  msgGrp.content.image.width && msgGrp.content.image.height
-                    ? msgGrp.content.image.width / msgGrp.content.image.height
-                    : undefined
+              <div
+                v-if="
+                  msgGrp.content?.type === EMessageType.image &&
+                  msgGrp.content?.image?.url &&
+                  !msgGrp.message_key?.is_view_once
                 "
-                class="image-thumb"
-                width="120"
-                cover
-              />
+                class="image-bubble"
+                :class="
+                  !isTypeUser(msgGrp)
+                    ? 'image-bubble--right'
+                    : 'image-bubble--left'
+                "
+                @click="openImage(msgGrp)"
+              >
+                <VImg
+                  :src="msgGrp.content.image.url"
+                  :aspect-ratio="
+                    msgGrp.content.image.width && msgGrp.content.image.height
+                      ? msgGrp.content.image.width / msgGrp.content.image.height
+                      : undefined
+                  "
+                  class="image-thumb"
+                  width="120"
+                  cover
+                />
+
+                <p
+                  v-if="msgGrp.content.image.caption"
+                  class="image-caption mt-2"
+                  :style="{
+                    color: isTypeUser(msgGrp)
+                      ? 'rgb(var(--v-theme-on-surface))'
+                      : 'rgb(var(--v-theme-title))',
+                  }"
+                >
+                  {{ msgGrp.content.image.caption }}
+                </p>
+              </div>
 
               <p
-                v-if="msgGrp.content.image.caption"
-                class="image-caption mt-2"
+                v-if="msgGrp.message_key?.is_view_once"
+                class="mb-2 mr-6 text-base message-text"
+                style="font-style: italic"
                 :style="{
                   color: isTypeUser(msgGrp)
                     ? 'rgb(var(--v-theme-on-surface))'
                     : 'rgb(var(--v-theme-title))',
                 }"
               >
-                {{ msgGrp.content.image.caption }}
+                {{ t('view_once_message') }}
+              </p>
+
+              <p
+                v-if="
+                  msgGrp.content?.message &&
+                  msgGrp.content?.type !== EMessageType.image &&
+                  !msgGrp.message_key?.is_view_once
+                "
+                class="mb-2 mr-6 text-base message-text"
+                :style="{
+                  color: isTypeUser(msgGrp)
+                    ? 'rgb(var(--v-theme-on-surface))'
+                    : 'rgb(var(--v-theme-title))',
+                }"
+              >
+                {{ msgGrp.content?.message }}
               </p>
             </div>
 
-            <p
-              v-if="msgGrp.message_key?.is_view_once"
-              class="mb-2 mr-6 text-base message-text"
-              style="font-style: italic"
-              :style="{
-                color: isTypeUser(msgGrp)
-                  ? 'rgb(var(--v-theme-on-surface))'
-                  : 'rgb(var(--v-theme-title))',
-              }"
-            >
-              {{ t('view_once_message') }}
-            </p>
+            <div class="message-meta">
+              <span class="message-time text-xs">
+                {{
+                  formatDate(msgGrp.date, {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false,
+                  })
+                }}
+              </span>
+              <VIcon size="16" :color="resolveFeedbackIcon(msgGrp).color">
+                {{ resolveFeedbackIcon(msgGrp).icon }}
+              </VIcon>
+            </div>
 
-            <p
-              v-if="
-                msgGrp.content?.message &&
-                msgGrp.content?.type !== EMessageType.image &&
-                !msgGrp.message_key?.is_view_once
-              "
-              class="mb-2 mr-6 text-base message-text"
-              :style="{
-                color: isTypeUser(msgGrp)
-                  ? 'rgb(var(--v-theme-on-surface))'
-                  : 'rgb(var(--v-theme-title))',
+            <div
+              v-if="getReactionsSummary(msgGrp.content?.reactions).length"
+              class="reactions-summary"
+              :class="{
+                'reactions-summary--right': !isTypeUser(msgGrp),
+                'reactions-summary--left': isTypeUser(msgGrp),
               }"
             >
-              {{ msgGrp.content?.message }}
-            </p>
+              <div class="reaction-summary-bubble">
+                <template
+                  v-for="reaction in getReactionsSummary(
+                    msgGrp.content?.reactions
+                  )"
+                  :key="`${msgGrp.message_id}-${reaction.emoji}`"
+                >
+                  <span class="reaction-summary-item">
+                    <span class="reaction-summary-emoji">
+                      {{ reaction.emoji }}
+                    </span>
+                    <span
+                      v-if="reaction.count > 1"
+                      class="reaction-summary-count"
+                    >
+                      {{ reaction.count }}
+                    </span>
+                  </span>
+                </template>
+              </div>
+            </div>
           </div>
-        </div>
 
-        <div :class="{ 'text-right': !isTypeUser(msgGrp) }">
-          <VIcon size="16" :color="resolveFeedbackIcon(msgGrp).color">
-            {{ resolveFeedbackIcon(msgGrp).icon }}
-          </VIcon>
-
-          <span class="text-sm ms-2 text-disabled">
-            {{
-              formatDate(msgGrp.date, { hour: 'numeric', minute: 'numeric' })
-            }}
-          </span>
+          <div
+            v-if="showReactionPicker === msgGrp.message_id"
+            class="reaction-picker"
+            :class="
+              !isTypeUser(msgGrp)
+                ? 'reaction-picker-operator'
+                : 'reaction-picker-client'
+            "
+            @click.stop
+          >
+            <div class="reaction-picker-content d-flex align-center ga-1">
+              <VBtn
+                v-for="emoji in quickReactions"
+                :key="emoji"
+                icon
+                size="32"
+                variant="text"
+                class="reaction-btn"
+                @click="onReact(msgGrp, emoji)"
+              >
+                <span class="text-h6">{{ emoji }}</span>
+              </VBtn>
+              <VDivider vertical class="mx-1" />
+              <VBtn
+                icon
+                size="32"
+                variant="text"
+                class="reaction-btn"
+                @click.stop="toggleEmojiPicker(msgGrp.message_id)"
+              >
+                <VIcon size="20">tabler-plus</VIcon>
+              </VBtn>
+            </div>
+            <div
+              v-if="showEmojiPicker === msgGrp.message_id"
+              class="reaction-picker-full"
+            >
+              <Picker
+                :data="reactionEmojiIndex"
+                :per-line="8"
+                :show-preview="false"
+                :show-skin-tones="false"
+                :show-search="true"
+                @select="onSelectReactionEmoji(msgGrp, $event)"
+              />
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -481,6 +690,10 @@ onUnmounted(() => {
 .chat-log {
   .chat-body {
     max-inline-size: calc(100% - 6.75rem);
+    .chat-content-wrapper {
+      position: relative;
+      display: inline-flex;
+    }
 
     .message-text {
       white-space: pre-line;
@@ -491,6 +704,7 @@ onUnmounted(() => {
       border-end-end-radius: 6px;
       border-end-start-radius: 6px;
       padding-right: 1.8rem !important;
+      padding-bottom: 1.4rem !important;
 
       p {
         overflow-wrap: anywhere;
@@ -498,10 +712,16 @@ onUnmounted(() => {
 
       &.chat-left {
         border-start-end-radius: 6px;
+        .message-meta {
+          color: rgba(var(--v-theme-on-surface), 0.6);
+        }
       }
 
       &.chat-right {
         border-start-start-radius: 6px;
+        .message-meta {
+          color: rgba(17, 27, 33, 0.6);
+        }
       }
 
       .message-actions {
@@ -616,6 +836,139 @@ onUnmounted(() => {
       .image-bubble--right .image-thumb {
         border-start-start-radius: 6px;
       }
+    }
+  }
+
+  .reaction-trigger {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 10;
+    background: rgb(var(--v-theme-surface));
+    border-radius: 50%;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+    min-width: 28px;
+    height: 28px;
+    border: 0.5px solid rgba(var(--v-theme-on-surface), 0.06);
+    color: rgba(var(--v-theme-on-surface), 0.6);
+  }
+
+  .reaction-picker {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 11;
+    background: rgb(var(--v-theme-surface));
+    border-radius: 24px;
+    padding: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+
+    .reaction-picker-content {
+      .reaction-btn {
+        min-width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        transition: transform 0.2s;
+
+        &:hover {
+          transform: scale(1.1);
+        }
+      }
+    }
+  }
+
+  .wrapper-operator {
+    .reaction-trigger {
+      right: calc(100% + 4px);
+    }
+
+    .reaction-picker {
+      right: calc(100% + 4px);
+    }
+  }
+
+  .wrapper-client {
+    .reaction-trigger {
+      left: calc(100% + 4px);
+    }
+
+    .reaction-picker {
+      left: calc(100% + 4px);
+    }
+  }
+
+  .reaction-picker-operator {
+    right: calc(100% + 4px);
+  }
+
+  .reaction-picker-client {
+    left: calc(100% + 4px);
+  }
+
+  .reactions-summary {
+    position: absolute;
+    display: inline-flex;
+    gap: 4px;
+    bottom: -2px;
+    transform: translateY(60%);
+    margin-inline-start: auto;
+
+    &--right {
+      justify-content: flex-end;
+      right: 16px;
+    }
+
+    &--left {
+      justify-content: flex-start;
+      margin-inline-start: 0;
+      left: 16px;
+    }
+
+    .reaction-summary-bubble {
+      display: inline-flex;
+      align-items: center;
+      background: rgb(var(--v-theme-surface));
+      border-radius: 999px;
+      padding: 2px 8px;
+      min-height: 22px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+      border: 0.5px solid rgba(var(--v-theme-on-surface), 0.08);
+      gap: 8px;
+    }
+
+    .reaction-summary-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .reaction-summary-emoji {
+      font-size: 0.9rem;
+      line-height: 1;
+    }
+
+    .reaction-summary-count {
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: rgba(var(--v-theme-on-surface), 0.7);
+    }
+  }
+
+  .message-meta {
+    position: absolute;
+    right: 12px;
+    bottom: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.75rem;
+
+    .v-icon {
+      font-size: 0.95rem;
+    }
+
+    .message-time {
+      line-height: 1;
     }
   }
 }

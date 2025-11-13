@@ -3,6 +3,7 @@ import { baileysEnvironment } from '@core/config/environments';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { BaileysMessageTextService } from '@core/services/baileys/methods/messageText.service';
 import { BaileysMessageMediaService } from '@core/services/baileys/methods/messageMedia.service';
+import { BaileysMessageReactionsInteractionsService } from '@core/services/baileys/methods/messageReactionsInteractions.service';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { StreamProducerService } from '@core/services/streamProducer.service';
@@ -26,6 +27,7 @@ export class MessageSendConsume {
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     private readonly baileysMessageTextService: BaileysMessageTextService,
     private readonly baileysMessageMediaService: BaileysMessageMediaService,
+    private readonly baileysMessageReactionsInteractionsService: BaileysMessageReactionsInteractionsService,
     private readonly streamProducerService: StreamProducerService,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly keyedSequencerService: KeyedSequencerService
@@ -158,6 +160,7 @@ export class MessageSendConsume {
 
   private async processMessage(data: IChatMessage): Promise<void> {
     const jid = selectJidChat(data);
+
     if (!jid) {
       throw new Error('Received message without remoteJid');
     }
@@ -197,7 +200,46 @@ export class MessageSendConsume {
     ) {
       await this.processTextQuoted(jid, data);
       this.lastMessageTypeByChatId.set(chatId, EMessageType.text_quoted);
+
+      return;
     }
+
+    if (currentType === EMessageType.react && data.message_key?.id) {
+      await this.processReact(jid, data);
+      this.lastMessageTypeByChatId.set(chatId, EMessageType.react);
+    }
+  }
+
+  private async processReact(jid: string, data: IChatMessage): Promise<void> {
+    if (!data.message_key?.id || !data.content?.reactions) {
+      return;
+    }
+
+    const lastReaction =
+      data.content.reactions[data.content.reactions.length - 1];
+    if (!lastReaction) {
+      return;
+    }
+
+    const messageKey = {
+      remoteJid: data.message_key.remote_jid ?? '',
+      fromMe: data.message_key.from_me ?? false,
+      id: data.message_key.id,
+      participant: data.message_key.participant ?? undefined,
+    };
+
+    const result = await this.baileysMessageReactionsInteractionsService.react(
+      jid,
+      messageKey,
+      lastReaction.emoji
+    );
+
+    if (!result) {
+      throw new Error('Failed to send reaction');
+    }
+
+    const update: IUpdateMessage = { message: result, data };
+    await this.pushUpdate(update);
   }
 
   private async processText(jid: string, data: IChatMessage): Promise<void> {

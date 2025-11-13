@@ -33,6 +33,12 @@ export interface IQuotedMessage {
   message?: string | null;
 }
 
+export interface IReaction {
+  emoji: string;
+  user_id?: string | null;
+  user_name?: string | null;
+}
+
 export interface IContent {
   type: EMessageType;
   message?: string | null;
@@ -40,6 +46,7 @@ export interface IContent {
   link_preview?: LinkPreview | WAUrlInfo | null;
   quoted?: IQuotedMessage | null;
   image?: ImageMessageChat | null;
+  reactions?: IReaction[] | null;
 }
 
 export interface IMessageKey {

@@ -111,6 +111,8 @@ export class WorkerConnectionStatusConsume {
   private async handleConnectionStatus(
     data: StatusConnectionWorkerRequest
   ): Promise<void> {
+    console.log('data', data);
+
     if (data.status === EWorkerStatus.online) {
       await this.handleOnline(data);
 

@@ -178,6 +178,20 @@ export const mensageMappings = () => {
                 },
               },
             },
+            reactions: {
+              type: 'nested',
+              properties: {
+                emoji: {
+                  type: 'keyword',
+                },
+                user_id: {
+                  type: 'keyword',
+                },
+                user_name: {
+                  type: 'text',
+                },
+              },
+            },
           },
         },
         summary: {

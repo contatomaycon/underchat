@@ -106,8 +106,57 @@ export class BaileysConnectionService {
       }
     }
 
-    if (allowRestore && this.status === Status.initial && this.hasSession()) {
+    const canRestore =
+      allowRestore &&
+      (this.status === Status.initial || this.status === Status.disconnected) &&
+      this.hasSession();
+
+    if (canRestore) {
+      if (!this.restoreSessionInProgress()) {
+        return this.restoreWithRetries();
+      }
+
+      if (this.currentPromise) {
+        return this.currentPromise;
+      }
+
+      return this.reportConnecting();
+    }
+
+    if (this.connected) {
+      return this.reportConnected();
+    }
+
+    if (this.connecting) {
+      if (this.currentPromise) {
+        return this.currentPromise;
+      }
+
+      return this.reportConnecting();
+    }
+
+    if (this.hasSession() && !allowRestore && initialConnection) {
+      return this.reportConnecting();
+    }
+
+    if (this.status === Status.connected) {
+      return this.reportConnected();
+    }
+
+    if (
+      allowRestore &&
+      this.status === Status.disconnected &&
+      this.hasSession()
+    ) {
       return this.restoreWithRetries();
+    }
+
+    if (
+      allowRestore &&
+      this.status === Status.connecting &&
+      this.currentPromise
+    ) {
+      return this.currentPromise;
     }
 
     this.prepareFolder();
@@ -236,6 +285,23 @@ export class BaileysConnectionService {
 
       this.publishSub(payload);
     }
+  }
+
+  private restoreSessionInProgress(): boolean {
+    return (
+      this.connecting &&
+      !!this.currentPromise &&
+      this.hasSession() &&
+      (this.status === Status.connecting || this.status === Status.initial)
+    );
+  }
+
+  private reportConnecting(): IBaileysConnectionState {
+    if (this.status !== Status.connecting) {
+      this.setStatus(Status.connecting, ECodeMessage.awaitConnection);
+    }
+
+    return this.state();
   }
 
   private wait(socket: WASocket, id: number): Promise<IBaileysConnectionState> {
@@ -468,6 +534,8 @@ export class BaileysConnectionService {
           return s;
         }
       } catch (e) {
+        console.dir(e, { depth: null, colors: true });
+
         this.saveLogWppConnection({
           worker_id: WORKER,
           status: Status.disconnected,

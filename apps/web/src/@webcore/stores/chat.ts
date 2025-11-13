@@ -66,6 +66,16 @@ export const useChatStore = defineStore('chat', {
         date: message.date,
       };
 
+      const existingIndex = this.listMessages.findIndex(
+        (item) => item.message_id === input.message_id
+      );
+
+      if (existingIndex !== -1) {
+        this.listMessages.splice(existingIndex, 1, input);
+
+        return;
+      }
+
       this.listMessages.push(input);
     },
     addChat(chat: IChat) {
@@ -428,6 +438,29 @@ export const useChatStore = defineStore('chat', {
 
     clearMessageReply() {
       this.messageReply = null;
+    },
+
+    async reactToMessage(
+      chatId: string,
+      messageId: string,
+      emoji: string
+    ): Promise<boolean> {
+      try {
+        const response = await axios.post(
+          `/chat/${chatId}/message/${messageId}/react`,
+          { emoji }
+        );
+
+        const data = response?.data as IApiResponse<boolean>;
+
+        if (!data?.status) {
+          return false;
+        }
+
+        return true;
+      } catch {
+        return false;
+      }
     },
   },
 });

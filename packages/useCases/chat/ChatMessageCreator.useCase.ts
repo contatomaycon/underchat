@@ -6,6 +6,7 @@ import {
 import {
   IChatMessage,
   IQuotedMessage,
+  IReaction,
 } from '@core/common/interfaces/IChatMessage';
 import { v4 as uuidv4 } from 'uuid';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
@@ -422,6 +423,17 @@ export class ChatMessageCreatorUseCase {
       throw new Error(t('chat_not_found'));
     }
 
+    if (body.reaction_message_id && body.reaction_emoji) {
+      return this.processReaction(
+        chat,
+        params.chat_id,
+        accountId,
+        body.reaction_message_id,
+        body.reaction_emoji,
+        t
+      );
+    }
+
     const images = this.normalizeImagesArray(body.images);
     const type = this.normalizeType(body.type);
     const message = this.normalizeMessage(body.message);
@@ -447,5 +459,167 @@ export class ChatMessageCreatorUseCase {
       accountId,
       t
     );
+  }
+
+  private async getMessage(
+    accountId: string,
+    messageId: string
+  ): Promise<IChatMessage | null> {
+    const query = {
+      query: {
+        bool: {
+          must: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: {
+                    'account.id': accountId,
+                  },
+                },
+              },
+            },
+            {
+              term: {
+                message_id: messageId,
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select(
+      EElasticIndex.message,
+      query
+    );
+
+    if (!result || result.hits.hits.length === 0) {
+      return null;
+    }
+
+    return result.hits.hits[0]._source as IChatMessage;
+  }
+
+  private async updateMessageReaction(
+    message: IChatMessage,
+    emoji: string,
+    userId: string,
+    userName: string
+  ): Promise<void> {
+    const existingReactions = message.content?.reactions || [];
+    const reactionsWithoutUser = existingReactions.filter(
+      (reaction) => reaction.user_id !== userId
+    );
+
+    let updatedReactions: IReaction[] = reactionsWithoutUser;
+    if (emoji) {
+      updatedReactions = [
+        ...reactionsWithoutUser,
+        {
+          emoji,
+          user_id: userId,
+          user_name: userName,
+        },
+      ];
+    }
+
+    let reactionsValue: IReaction[] | null = null;
+    if (updatedReactions.length > 0) {
+      reactionsValue = updatedReactions;
+    }
+
+    const updatedContent: IChatMessage['content'] = {
+      ...message.content,
+      type: message.content?.type ?? EMessageType.text,
+      reactions: reactionsValue,
+    };
+
+    await this.chatService.saveMessageChat({
+      ...message,
+      content: updatedContent,
+    });
+  }
+
+  private async processReaction(
+    chat: IChat,
+    chatId: string,
+    accountId: string,
+    reactionMessageId: string,
+    emoji: string,
+    t: TFunction<'translation', undefined>
+  ): Promise<boolean> {
+    const targetMessage = await this.getMessage(accountId, reactionMessageId);
+
+    if (!targetMessage) {
+      throw new Error(t('message_not_found'));
+    }
+
+    if (
+      !targetMessage.message_key?.id ||
+      !targetMessage.message_key?.remote_jid
+    ) {
+      throw new Error(t('message_key_not_found'));
+    }
+
+    const userId = chat.worker.id ?? '';
+    const userName = chat.worker.name ?? '';
+
+    await this.updateMessageReaction(targetMessage, emoji, userId, userName);
+
+    const updatedMessage = await this.getMessage(accountId, reactionMessageId);
+    if (!updatedMessage) {
+      return false;
+    }
+
+    const reactionMessage = this.createReactionMessage(
+      chat,
+      chatId,
+      updatedMessage
+    );
+
+    await Promise.all([
+      this.streamProducerService.send(
+        this.kafkaBaileysQueueService.workerSendMessage(chat.worker.id),
+        reactionMessage
+      ),
+      this.centrifugoChatPublish(updatedMessage),
+    ]);
+
+    return true;
+  }
+
+  private createReactionMessage(
+    chat: IChat,
+    chatId: string,
+    targetMessage: IChatMessage
+  ): IChatMessage {
+    return {
+      message_id: uuidv4(),
+      chat_id: chatId,
+      message_key: {
+        remote_jid: targetMessage.message_key?.remote_jid ?? null,
+        remote_jid_alt: targetMessage.message_key?.remote_jid_alt ?? null,
+        from_me: targetMessage.message_key?.from_me ?? false,
+        id: targetMessage.message_key?.id ?? null,
+        participant: targetMessage.message_key?.participant ?? null,
+        is_view_once: false,
+      },
+      type_user: ETypeUserChat.operator,
+      account: chat.account,
+      worker: chat.worker,
+      user: chat.user,
+      phone: chat.phone,
+      summary: {
+        is_sent: false,
+        is_delivered: false,
+        is_seen: false,
+      },
+      content: {
+        type: EMessageType.react,
+        reactions: targetMessage.content?.reactions ?? null,
+      },
+      date: new Date().toISOString(),
+    };
   }
 }
