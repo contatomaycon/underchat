@@ -506,7 +506,7 @@ export class ChatMessageCreatorUseCase {
     emoji: string,
     userId: string,
     userName: string
-  ): Promise<void> {
+  ): Promise<IChatMessage> {
     const existingReactions = message.content?.reactions || [];
     const reactionsWithoutUser = existingReactions.filter(
       (reaction) => reaction.user_id !== userId
@@ -535,10 +535,14 @@ export class ChatMessageCreatorUseCase {
       reactions: reactionsValue,
     };
 
-    await this.chatService.saveMessageChat({
+    const updatedMessage: IChatMessage = {
       ...message,
       content: updatedContent,
-    });
+    };
+
+    await this.chatService.saveMessageChat(updatedMessage);
+
+    return updatedMessage;
   }
 
   private async processReaction(
@@ -565,12 +569,12 @@ export class ChatMessageCreatorUseCase {
     const userId = chat.worker.id ?? '';
     const userName = chat.worker.name ?? '';
 
-    await this.updateMessageReaction(targetMessage, emoji, userId, userName);
-
-    const updatedMessage = await this.getMessage(accountId, reactionMessageId);
-    if (!updatedMessage) {
-      return false;
-    }
+    const updatedMessage = await this.updateMessageReaction(
+      targetMessage,
+      emoji,
+      userId,
+      userName
+    );
 
     const reactionMessage = this.createReactionMessage(
       chat,
