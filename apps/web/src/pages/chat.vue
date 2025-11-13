@@ -144,30 +144,75 @@ const startConversation = () => {
   isLeftSidebarOpen.value = true;
 };
 
-const sendMessage = async () => {
-  if (!msg.value) return;
-  if (chatStore.activeChat?.worker?.id) {
-    const inputCreateMessage: CreateMessageChatsBody = {
-      type: EMessageType.text,
-      message: msg.value,
-      link_preview: linkPreview.value?.title
-        ? (linkPreview.value as ViewLinkPreviewResponse)
-        : undefined,
-    };
-
-    if (chatStore.messageReply?.message_id) {
-      inputCreateMessage.message_quoted_id = chatStore.messageReply.message_id;
-      inputCreateMessage.type = EMessageType.text_quoted;
-    }
-
-    await chatStore.createMessage(inputCreateMessage);
+const createImageFormData = (): FormData => {
+  const formData = new FormData();
+  formData.append('type', EMessageType.image);
+  if (msg.value) {
+    formData.append('message', msg.value);
   }
 
+  selectedPhotos.value.forEach((photo) => {
+    formData.append('images', photo.file);
+  });
+
+  return formData;
+};
+
+const createTextMessageBody = (): CreateMessageChatsBody => {
+  const inputCreateMessage: CreateMessageChatsBody = {
+    type: EMessageType.text,
+    message: msg.value,
+    link_preview: linkPreview.value?.title
+      ? (linkPreview.value as ViewLinkPreviewResponse)
+      : undefined,
+  };
+
+  if (chatStore.messageReply?.message_id) {
+    inputCreateMessage.message_quoted_id = chatStore.messageReply.message_id;
+    inputCreateMessage.type = EMessageType.text_quoted;
+  }
+
+  return inputCreateMessage;
+};
+
+const clearMessageFields = () => {
   msg.value = '';
   linkPreview.value = null;
   selectedPhotos.value = [];
-
   chatStore.clearMessageReply();
+};
+
+const canSendMessage = (): boolean => {
+  return !!(msg.value || selectedPhotos.value.length > 0);
+};
+
+const hasActiveChat = (): boolean => {
+  return !!chatStore.activeChat?.worker?.id;
+};
+
+const sendImageMessage = async (): Promise<void> => {
+  const formData = createImageFormData();
+  await chatStore.createMessageWithImages(formData);
+};
+
+const sendTextMessage = async (): Promise<void> => {
+  const messageBody = createTextMessageBody();
+  await chatStore.createMessage(messageBody);
+};
+
+const sendMessage = async () => {
+  if (!canSendMessage()) return;
+  if (!hasActiveChat()) return;
+
+  if (selectedPhotos.value.length > 0) {
+    await sendImageMessage();
+  }
+
+  if (selectedPhotos.value.length === 0) {
+    await sendTextMessage();
+  }
+
+  clearMessageFields();
 
   nextTick(() => {
     scrollToBottomInChatLog();
@@ -491,7 +536,9 @@ onUnmounted(async () => {
                 :src="chatStore.activeChat.photo"
                 :alt="chatStore.activeChat.name ?? ''"
               />
-              <span v-else>{{ avatarText(chatStore.activeChat.name) }}</span>
+              <span v-if="!chatStore.activeChat.photo">{{
+                avatarText(chatStore.activeChat.name)
+              }}</span>
             </VAvatar>
 
             <div class="flex-grow-1 ms-4 overflow-hidden">
@@ -738,7 +785,7 @@ onUnmounted(async () => {
                 </IconBtn>
 
                 <VBtn
-                  v-else
+                  v-if="hasImagesOrContent"
                   class="send-btn"
                   icon
                   color="success"
@@ -785,7 +832,10 @@ onUnmounted(async () => {
         </VForm>
       </div>
 
-      <div v-else class="d-flex h-100 align-center justify-center flex-column">
+      <div
+        v-if="!chatStore.activeChat"
+        class="d-flex h-100 align-center justify-center flex-column"
+      >
         <VAvatar size="98" variant="tonal" color="primary" class="mb-4">
           <VIcon size="50" class="rounded-0" icon="tabler-message-2" />
         </VAvatar>
@@ -798,7 +848,7 @@ onUnmounted(async () => {
         </VBtn>
 
         <p
-          v-else
+          v-if="!$vuetify.display.smAndDown"
           style="max-inline-size: 40ch; text-wrap: balance"
           class="text-center text-disabled"
         >

@@ -9,6 +9,7 @@ import {
 export const createMessageChatsSchema = {
   description: 'Cria uma nova mensagem em um chat',
   tags: [ETagSwagger.chat],
+  consumes: ['multipart/form-data'],
   produces: ['application/json'],
   security: [
     {

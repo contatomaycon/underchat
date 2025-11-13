@@ -21,6 +21,9 @@ import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.servi
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { PublishResult } from 'centrifuge';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
+import { StorageService } from '@core/services/storage.service';
+import { UploadFileRequest } from '@core/schema/upload/request.schema';
+import { UploadFileResponse } from '@core/schema/upload/response.schema';
 
 @injectable()
 export class ChatMessageCreatorUseCase {
@@ -30,7 +33,8 @@ export class ChatMessageCreatorUseCase {
     private readonly elasticDatabaseService: ElasticDatabaseService,
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     private readonly streamProducerService: StreamProducerService,
-    private readonly centrifugoService: CentrifugoService
+    private readonly centrifugoService: CentrifugoService,
+    private readonly storageService: StorageService
   ) {}
 
   private async getChat(
@@ -146,6 +150,265 @@ export class ChatMessageCreatorUseCase {
     }
   }
 
+  private normalizeImagesArray(
+    images?: UploadFileRequest | UploadFileRequest[] | null
+  ): UploadFileRequest[] {
+    if (!images) return [];
+
+    if (Array.isArray(images)) {
+      return images;
+    }
+
+    return [images];
+  }
+
+  private normalizeType(type: string | { value?: string }): EMessageType {
+    if (type && typeof type === 'object' && 'value' in type && type.value) {
+      return type.value as EMessageType;
+    }
+
+    return type as EMessageType;
+  }
+
+  private normalizeMessage(
+    message?: string | { value?: string }
+  ): string | null {
+    if (
+      message &&
+      typeof message === 'object' &&
+      'value' in message &&
+      message.value
+    ) {
+      return message.value;
+    }
+
+    return message as string | null;
+  }
+
+  private async uploadImages(
+    images: UploadFileRequest[],
+    accountId: string
+  ): Promise<UploadFileResponse[]> {
+    const uploadPromises = images.map((image) =>
+      this.storageService.uploadImage(image, accountId)
+    );
+
+    const uploadedImages = await Promise.all(uploadPromises);
+
+    return uploadedImages.filter(
+      (img): img is UploadFileResponse => img !== null
+    );
+  }
+
+  private createImageMessage(
+    chat: IChat,
+    chatId: string,
+    type: EMessageType,
+    message: string | null,
+    imageData: UploadFileResponse
+  ): IChatMessage {
+    return {
+      message_id: uuidv4(),
+      chat_id: chatId,
+      message_key: {
+        remote_jid: chat.message_key?.remote_jid ?? null,
+        remote_jid_alt: chat.message_key?.remote_jid_alt ?? null,
+        is_view_once: false,
+      },
+      type_user: ETypeUserChat.operator,
+      account: chat.account,
+      worker: chat.worker,
+      user: chat.user,
+      phone: chat.phone,
+      summary: {
+        is_sent: false,
+        is_delivered: false,
+        is_seen: false,
+      },
+      content: {
+        type,
+        message,
+        image: {
+          url: imageData.url,
+          caption: message,
+          mimetype: imageData.mimetype,
+          extension: imageData.extension,
+          size: imageData.size,
+          width: imageData.width,
+          height: imageData.height,
+        },
+      },
+      date: new Date().toISOString(),
+    };
+  }
+
+  private createTextMessage(
+    chat: IChat,
+    chatId: string,
+    type: EMessageType,
+    message: string | null,
+    linkPreview: CreateMessageChatsBody['link_preview'],
+    quotedMessage: IQuotedMessage | null
+  ): IChatMessage {
+    return {
+      message_id: uuidv4(),
+      chat_id: chatId,
+      message_key: {
+        remote_jid: chat.message_key?.remote_jid ?? null,
+        remote_jid_alt: chat.message_key?.remote_jid_alt ?? null,
+        is_view_once: false,
+      },
+      type_user: ETypeUserChat.operator,
+      account: chat.account,
+      worker: chat.worker,
+      user: chat.user,
+      phone: chat.phone,
+      summary: {
+        is_sent: false,
+        is_delivered: false,
+        is_seen: false,
+      },
+      content: {
+        type,
+        message,
+        link_preview: linkPreview,
+        quoted: quotedMessage,
+      },
+      date: new Date().toISOString(),
+    };
+  }
+
+  private async getQuotedMessage(
+    accountId: string,
+    chatId: string,
+    messageQuotedId: string
+  ): Promise<IQuotedMessage | null> {
+    const chatMessage = await this.getChatMessage(
+      accountId,
+      chatId,
+      messageQuotedId
+    );
+
+    if (!chatMessage) {
+      return null;
+    }
+
+    return {
+      key: {
+        remote_jid: chatMessage.message_key?.remote_jid ?? null,
+        remote_jid_alt: chatMessage.message_key?.remote_jid_alt ?? null,
+        from_me: chatMessage.message_key?.from_me ?? null,
+        id: chatMessage.message_key?.id ?? null,
+        participant: chatMessage.message_key?.participant ?? null,
+        participant_alt: chatMessage.message_key?.participant_alt ?? null,
+        addressing_mode: chatMessage.message_key?.addressing_mode ?? null,
+        is_view_once: chatMessage.message_key?.is_view_once ?? false,
+      },
+      message: chatMessage.content?.message ?? null,
+    };
+  }
+
+  private async publishMessage(message: IChatMessage): Promise<boolean> {
+    const [result, ,] = await Promise.all([
+      this.chatService.saveMessageChat(message),
+      this.centrifugoChatPublish(message),
+      this.streamProducerService.send(
+        this.kafkaBaileysQueueService.workerSendMessage(message.worker.id),
+        message
+      ),
+    ]);
+
+    return result;
+  }
+
+  private getRandomDelay(): number {
+    return Math.floor(Math.random() * (2000 - 500 + 1)) + 500;
+  }
+
+  private async processImageMessages(
+    chat: IChat,
+    chatId: string,
+    images: UploadFileRequest[],
+    accountId: string,
+    type: EMessageType,
+    message: string | null
+  ): Promise<boolean> {
+    const validImages = await this.uploadImages(images, accountId);
+
+    if (validImages.length === 0) {
+      return false;
+    }
+
+    if (validImages.length === 1) {
+      const imageMessage = this.createImageMessage(
+        chat,
+        chatId,
+        type,
+        message,
+        validImages[0]
+      );
+
+      await this.publishMessage(imageMessage);
+
+      return true;
+    }
+
+    for (let i = 0; i < validImages.length; i++) {
+      if (i > 0) {
+        const delay = this.getRandomDelay();
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+
+      const imageMessage = this.createImageMessage(
+        chat,
+        chatId,
+        type,
+        message,
+        validImages[i]
+      );
+
+      await this.publishMessage(imageMessage);
+    }
+
+    return true;
+  }
+
+  private async processTextMessage(
+    chat: IChat,
+    chatId: string,
+    type: EMessageType,
+    message: string | null,
+    linkPreview: CreateMessageChatsBody['link_preview'],
+    messageQuotedId: string | null | undefined,
+    accountId: string,
+    t: TFunction<'translation', undefined>
+  ): Promise<boolean> {
+    let quotedMessage: IQuotedMessage | null = null;
+
+    if (messageQuotedId) {
+      quotedMessage = await this.getQuotedMessage(
+        accountId,
+        chatId,
+        messageQuotedId
+      );
+
+      if (!quotedMessage) {
+        throw new Error(t('message_quoted_not_found'));
+      }
+    }
+
+    const textMessage = this.createTextMessage(
+      chat,
+      chatId,
+      type,
+      message,
+      linkPreview,
+      quotedMessage
+    );
+
+    return this.publishMessage(textMessage);
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -154,78 +417,35 @@ export class ChatMessageCreatorUseCase {
   ): Promise<boolean> {
     this.validate(t, body);
 
-    const getChat = await this.getChat(accountId, params.chat_id);
-    if (!getChat) {
+    const chat = await this.getChat(accountId, params.chat_id);
+    if (!chat) {
       throw new Error(t('chat_not_found'));
     }
 
-    let quotedMessage: IQuotedMessage | null = null;
-    if (body?.message_quoted_id) {
-      const getChatMessage = await this.getChatMessage(
-        accountId,
+    const images = this.normalizeImagesArray(body.images);
+    const type = this.normalizeType(body.type);
+    const message = this.normalizeMessage(body.message);
+
+    if (images.length > 0) {
+      return this.processImageMessages(
+        chat,
         params.chat_id,
-        body.message_quoted_id
+        images,
+        accountId,
+        type,
+        message
       );
-
-      if (!getChatMessage) {
-        throw new Error(t('message_quoted_not_found'));
-      }
-
-      if (getChatMessage) {
-        quotedMessage = {
-          key: {
-            remote_jid: getChatMessage.message_key?.remote_jid ?? null,
-            remote_jid_alt: getChatMessage.message_key?.remote_jid_alt ?? null,
-            from_me: getChatMessage.message_key?.from_me ?? null,
-            id: getChatMessage.message_key?.id ?? null,
-            participant: getChatMessage.message_key?.participant ?? null,
-            participant_alt:
-              getChatMessage.message_key?.participant_alt ?? null,
-            addressing_mode:
-              getChatMessage.message_key?.addressing_mode ?? null,
-            is_view_once: getChatMessage.message_key?.is_view_once ?? false,
-          },
-          message: getChatMessage.content?.message ?? null,
-        };
-      }
     }
 
-    const inputChatMessage: IChatMessage = {
-      message_id: uuidv4(),
-      chat_id: params.chat_id,
-      message_key: {
-        remote_jid: getChat.message_key?.remote_jid ?? null,
-        remote_jid_alt: getChat.message_key?.remote_jid_alt ?? null,
-        is_view_once: false,
-      },
-      type_user: ETypeUserChat.operator,
-      account: getChat.account,
-      worker: getChat.worker,
-      user: getChat.user,
-      phone: getChat.phone,
-      summary: {
-        is_sent: false,
-        is_delivered: false,
-        is_seen: false,
-      },
-      content: {
-        type: body.type as EMessageType,
-        message: body.message,
-        link_preview: body.link_preview,
-        quoted: quotedMessage ?? null,
-      },
-      date: new Date().toISOString(),
-    };
-
-    const [, , result] = await Promise.all([
-      this.centrifugoChatPublish(inputChatMessage),
-      this.streamProducerService.send(
-        this.kafkaBaileysQueueService.workerSendMessage(getChat.worker.id),
-        inputChatMessage
-      ),
-      this.chatService.saveMessageChat(inputChatMessage),
-    ]);
-
-    return result;
+    return this.processTextMessage(
+      chat,
+      params.chat_id,
+      type,
+      message,
+      body.link_preview,
+      body.message_quoted_id,
+      accountId,
+      t
+    );
   }
 }

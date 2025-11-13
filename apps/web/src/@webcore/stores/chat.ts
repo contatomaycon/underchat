@@ -296,6 +296,39 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
+    async createMessageWithImages(formData: FormData): Promise<void> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<boolean>>(
+          `/chat/${this.activeChat?.chat_id}`,
+          formData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+            },
+          }
+        );
+
+        this.loading = false;
+
+        const data = response?.data as IApiResponse<boolean>;
+
+        if (!data?.status) {
+          this.showSnackbar(data.message, EColor.error);
+
+          return;
+        }
+      } catch {
+        this.loading = false;
+
+        this.showSnackbar(
+          this.i18n.global.t('chat_message_create_error'),
+          EColor.error
+        );
+      }
+    },
+
     async generateLinkPreview(
       input: ViewLinkPreviewBody
     ): Promise<ViewLinkPreviewResponse | null> {

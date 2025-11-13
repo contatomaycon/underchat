@@ -21,13 +21,53 @@ export class StreamProducerService {
     return this.producer;
   }
 
-  async send(topic: string, payload: unknown, key?: string): Promise<void> {
-    const producer = await this.ensureProducer();
+  private async reconnectProducer(): Promise<Producer> {
+    if (this.producer) {
+      try {
+        await this.producer.disconnect();
+      } catch {}
+      this.producer = null;
+    }
 
+    return this.ensureProducer();
+  }
+
+  async send(topic: string, payload: unknown, key?: string): Promise<void> {
     const value = JSON.stringify(payload);
     const messages = key === undefined ? [{ value }] : [{ key, value }];
 
-    await producer.send({ topic, messages });
+    const maxRetries = 3;
+    let lastError: any;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        let producer = await this.ensureProducer();
+        await producer.send({ topic, messages });
+        return;
+      } catch (error: any) {
+        lastError = error;
+
+        const isDisconnectedError =
+          error?.message?.includes('disconnected') ||
+          error?.code === 'ECONNREFUSED' ||
+          error?.message?.includes('The producer is disconnected') ||
+          error?.type === 'NOT_CONNECTED';
+
+        if (isDisconnectedError && attempt < maxRetries - 1) {
+          await this.reconnectProducer();
+          await new Promise((resolve) =>
+            setTimeout(resolve, 100 * (attempt + 1))
+          );
+          continue;
+        }
+
+        if (!isDisconnectedError) {
+          throw error;
+        }
+      }
+    }
+
+    throw lastError;
   }
 
   async close(): Promise<boolean[]> {

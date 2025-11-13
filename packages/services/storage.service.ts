@@ -5,6 +5,7 @@ import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { extension as mimeToExt } from 'mime-types';
 import { fileTypeFromBuffer } from 'file-type';
+import sharp from 'sharp';
 
 @injectable()
 export class StorageService {
@@ -22,6 +23,10 @@ export class StorageService {
     });
   }
 
+  private converterFilename(filename: string): string {
+    return filename.replace(/ /g, '_');
+  }
+
   public async uploadImage(
     file: UploadFileRequest,
     accountId: string
@@ -33,13 +38,31 @@ export class StorageService {
     }
 
     const buffer = await file.toBuffer();
-    const path = `${accountId}/${file.filename}`;
+    const path = `${accountId}/${this.converterFilename(file.filename)}`;
+
+    let width: number | null = null;
+    let height: number | null = null;
+    let mimetype: string | null = file.mimetype ?? null;
+
+    try {
+      const metadata = await sharp(buffer).metadata();
+
+      width = metadata.width ?? null;
+      height = metadata.height ?? null;
+
+      if (!mimetype && metadata.format) {
+        mimetype = `image/${metadata.format}`;
+      }
+    } catch {
+      width = null;
+      height = null;
+    }
 
     const command = new PutObjectCommand({
       Bucket: s3Environment.s3BucketName,
       Key: path,
       Body: buffer,
-      ContentType: file.mimetype,
+      ContentType: mimetype ?? file.mimetype,
     });
 
     await this.client.send(command);
@@ -49,6 +72,9 @@ export class StorageService {
       name: file.filename,
       extension,
       size: buffer.byteLength,
+      width,
+      height,
+      mimetype,
     };
   }
 
@@ -105,8 +131,27 @@ export class StorageService {
     const baseName = this.getFileExtension(guessedName)
       ? guessedName
       : `${guessedName}.${finalExt}`;
-    const key = `${accountId}/${baseName}`;
+    const key = `${accountId}/${this.converterFilename(baseName)}`;
     const mimeToStore = sniffedMime ?? contentTypeHeader;
+
+    let width: number | null = null;
+    let height: number | null = null;
+    let mimetype: string | null = mimeToStore;
+
+    const isImage = mimeToStore.startsWith('image/');
+    if (isImage) {
+      try {
+        const metadata = await sharp(buffer).metadata();
+        width = metadata.width ?? null;
+        height = metadata.height ?? null;
+        if (!mimetype && metadata.format) {
+          mimetype = `image/${metadata.format}`;
+        }
+      } catch {
+        width = null;
+        height = null;
+      }
+    }
 
     await this.client.send(
       new PutObjectCommand({
@@ -122,6 +167,9 @@ export class StorageService {
       name: baseName,
       extension: finalExt,
       size: buffer.byteLength,
+      width,
+      height,
+      mimetype,
     };
   }
 

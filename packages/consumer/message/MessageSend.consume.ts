@@ -2,6 +2,7 @@ import { singleton, inject } from 'tsyringe';
 import { baileysEnvironment } from '@core/config/environments';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { BaileysMessageTextService } from '@core/services/baileys/methods/messageText.service';
+import { BaileysMessageMediaService } from '@core/services/baileys/methods/messageMedia.service';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { StreamProducerService } from '@core/services/streamProducer.service';
@@ -13,15 +14,18 @@ import { Kafka, Consumer } from 'kafkajs';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { selectJidChat } from '@core/common/functions/selectJidChat';
 
 @singleton()
 export class MessageSendConsume {
   private consumer: Consumer | null = null;
+  private lastMessageTypeByChatId: Map<string, EMessageType> = new Map();
 
   constructor(
     @inject('Kafka') private readonly kafka: Kafka,
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     private readonly baileysMessageTextService: BaileysMessageTextService,
+    private readonly baileysMessageMediaService: BaileysMessageMediaService,
     private readonly streamProducerService: StreamProducerService,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly keyedSequencerService: KeyedSequencerService
@@ -148,32 +152,57 @@ export class MessageSendConsume {
     await this.keyedSequencerService.enqueue(chatId, task);
   }
 
-  private async processMessage(data: IChatMessage): Promise<void> {
-    const phone = data.message_key?.remote_jid ?? data.phone;
+  private getRandomDelay(): number {
+    return Math.floor(Math.random() * (2000 - 500 + 1)) + 500;
+  }
 
-    if (data?.content?.type === EMessageType.text && data.content?.message) {
-      await this.processText(phone, data);
+  private async processMessage(data: IChatMessage): Promise<void> {
+    const jid = selectJidChat(data);
+    if (!jid) {
+      throw new Error('Received message without remoteJid');
+    }
+
+    const chatId = this.resolveChatId(data);
+    if (!chatId) {
+      throw new Error('Received message without chatId');
+    }
+
+    const currentType = data?.content?.type;
+    const lastType = this.lastMessageTypeByChatId.get(chatId);
+
+    if (currentType === EMessageType.image && data.content?.image?.url) {
+      if (lastType === EMessageType.image) {
+        const delay = this.getRandomDelay();
+
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+
+      await this.processImage(jid, data);
+      this.lastMessageTypeByChatId.set(chatId, EMessageType.image);
+
+      return;
+    }
+
+    if (currentType === EMessageType.text && data.content?.message) {
+      await this.processText(jid, data);
+      this.lastMessageTypeByChatId.set(chatId, EMessageType.text);
 
       return;
     }
 
     if (
-      data?.content?.type === EMessageType.text_quoted &&
+      currentType === EMessageType.text_quoted &&
       data.content?.message &&
       data.content?.quoted
     ) {
-      await this.processTextQuoted(phone, data);
+      await this.processTextQuoted(jid, data);
+      this.lastMessageTypeByChatId.set(chatId, EMessageType.text_quoted);
     }
   }
 
-  private async processText(
-    phone: string | null | undefined,
-    data: IChatMessage
-  ): Promise<void> {
-    const to = phone ?? '';
-
+  private async processText(jid: string, data: IChatMessage): Promise<void> {
     const result = await this.baileysMessageTextService.sendText(
-      to,
+      jid,
       data.content?.message ?? '',
       { linkPreview: data.content?.link_preview as WAUrlInfo }
     );
@@ -186,15 +215,37 @@ export class MessageSendConsume {
     await this.pushUpdate(update);
   }
 
+  private async processImage(jid: string, data: IChatMessage): Promise<void> {
+    const imageUrl = data.content?.image?.url;
+
+    if (!imageUrl) {
+      throw new Error('Image URL is required');
+    }
+
+    const result = await this.baileysMessageMediaService.sendImage(
+      jid,
+      { url: imageUrl },
+      {
+        caption: data.content?.image?.caption ?? undefined,
+      }
+    );
+
+    if (!result) {
+      throw new Error('Failed to send image');
+    }
+
+    const update: IUpdateMessage = { message: result, data };
+    await this.pushUpdate(update);
+  }
+
   private async processTextQuoted(
-    phone: string | null | undefined,
+    jid: string,
     data: IChatMessage
   ): Promise<void> {
-    const to = phone ?? '';
     const quoted = this.composeQuotedMessage(data);
 
     const result = await this.baileysMessageTextService.sendTextQuoted(
-      to,
+      jid,
       data.content?.message ?? '',
       quoted
     );
