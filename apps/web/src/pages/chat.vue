@@ -109,6 +109,12 @@ const recordedAudioBlob = ref<Blob | null>(null);
 const recordedAudioUrl = ref<string | null>(null);
 const audioRecordingDurationSeconds = ref<number | null>(null);
 
+const viewerOpen = ref(false);
+const viewerSrc = ref<string>('');
+const viewerCaption = ref<string>('');
+const viewerDownloadName = ref<string>('');
+const viewerKind = ref<'image' | 'video'>('image');
+
 const hasContent = computed(() => !!msg.value && msg.value.trim().length > 0);
 const hasAttachmentsOrContent = computed(
   () =>
@@ -1302,6 +1308,91 @@ const onPickAudio = (e: Event) => {
   }
 };
 
+const openPreviewImage = (photo: { file: File; preview: string }) => {
+  viewerKind.value = 'image';
+  viewerSrc.value = photo.preview;
+  viewerCaption.value = '';
+  viewerDownloadName.value = photo.file.name;
+  viewerOpen.value = true;
+};
+
+const openPreviewVideo = (video: SelectedVideoPreview) => {
+  viewerKind.value = 'video';
+  viewerSrc.value = video.preview;
+  viewerCaption.value = '';
+  viewerDownloadName.value = video.name;
+  viewerOpen.value = true;
+};
+
+const downloadPreviewImage = async (url: string, filename?: string | null) => {
+  if (!url) return;
+
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+
+    const anchor = document.createElement('a');
+    anchor.href = blobUrl;
+    anchor.download = filename || 'image.jpg';
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+
+    setTimeout(() => {
+      window.URL.revokeObjectURL(blobUrl);
+    }, 100);
+  } catch (error) {
+    console.error('Erro ao baixar imagem:', error);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.target = '_blank';
+    anchor.download = filename || 'image.jpg';
+    anchor.rel = 'noopener';
+    anchor.click();
+  }
+};
+
+const downloadPreviewVideo = async (url: string, filename?: string | null) => {
+  if (!url) return;
+
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+
+    const anchor = document.createElement('a');
+    anchor.href = blobUrl;
+    anchor.download = filename || 'video.mp4';
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+
+    setTimeout(() => {
+      window.URL.revokeObjectURL(blobUrl);
+    }, 100);
+  } catch (error) {
+    console.error('Erro ao baixar vídeo:', error);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.target = '_blank';
+    anchor.download = filename || 'video.mp4';
+    anchor.rel = 'noopener';
+    anchor.click();
+  }
+};
+
+const downloadViewerMedia = () => {
+  if (!viewerSrc.value) return;
+  if (viewerKind.value === 'video') {
+    downloadPreviewVideo(viewerSrc.value, viewerDownloadName.value);
+    return;
+  }
+  downloadPreviewImage(viewerSrc.value, viewerDownloadName.value);
+};
+
 const onEmojiSelect = (e: any) => {
   const ch = e?.native || e?.skins?.[0]?.native || '';
 
@@ -1732,13 +1823,22 @@ onBeforeUnmount(() => {
                       :key="`${video.name}-${index}`"
                       class="video-preview-wrapper"
                     >
-                      <video
-                        :src="video.preview"
-                        class="video-preview"
-                        preload="metadata"
-                        muted
-                        playsinline
-                      ></video>
+                      <div class="video-preview-container">
+                        <video
+                          :src="video.preview"
+                          class="video-preview"
+                          preload="metadata"
+                          muted
+                          playsinline
+                          @click="openPreviewVideo(video)"
+                        ></video>
+                        <div
+                          class="video-preview-play-overlay"
+                          @click="openPreviewVideo(video)"
+                        >
+                          <VIcon size="24">tabler-player-play</VIcon>
+                        </div>
+                      </div>
                       <div class="video-preview-meta">
                         <VTooltip location="bottom">
                           <template #activator="{ props }">
@@ -1764,7 +1864,7 @@ onBeforeUnmount(() => {
                         variant="flat"
                         color="error"
                         class="video-preview-remove"
-                        @click="removeVideo(index)"
+                        @click.stop="removeVideo(index)"
                       >
                         <VIcon size="14" icon="tabler-x" />
                       </VBtn>
@@ -1807,6 +1907,7 @@ onBeforeUnmount(() => {
                         :src="photo.preview"
                         cover
                         class="photo-preview-image"
+                        @click="openPreviewImage(photo)"
                       />
                       <VBtn
                         icon
@@ -1814,7 +1915,7 @@ onBeforeUnmount(() => {
                         variant="flat"
                         color="error"
                         class="photo-preview-remove"
-                        @click="selectedPhotos.splice(index, 1)"
+                        @click.stop="selectedPhotos.splice(index, 1)"
                       >
                         <VIcon size="14" icon="tabler-x" />
                       </VBtn>
@@ -2082,6 +2183,61 @@ onBeforeUnmount(() => {
   >
     {{ chatStore.snackbar.message }}
   </VSnackbar>
+
+  <VDialog
+    v-model="viewerOpen"
+    fullscreen
+    scrim="rgba(0,0,0,.9)"
+    :scrollable="false"
+  >
+    <div class="viewer-wrap" @click="viewerOpen = false">
+      <div class="viewer-box" @click.stop>
+        <div class="viewer-media-container">
+          <img
+            v-if="viewerKind === 'image'"
+            :src="viewerSrc"
+            alt=""
+            class="viewer-img"
+            loading="eager"
+            decoding="async"
+          />
+          <video
+            v-if="viewerKind === 'video'"
+            :src="viewerSrc"
+            class="viewer-video"
+            controls
+            playsinline
+          ></video>
+
+          <div class="viewer-actions">
+            <VBtn
+              v-if="viewerSrc"
+              class="viewer-download"
+              icon
+              size="36"
+              variant="text"
+              @click.stop="downloadViewerMedia"
+            >
+              <VIcon size="20">tabler-download</VIcon>
+            </VBtn>
+            <VBtn
+              class="viewer-close"
+              icon
+              size="36"
+              variant="text"
+              @click="viewerOpen = false"
+            >
+              <VIcon size="20">tabler-x</VIcon>
+            </VBtn>
+          </div>
+        </div>
+
+        <div v-if="viewerCaption" class="viewer-caption">
+          {{ viewerCaption }}
+        </div>
+      </div>
+    </div>
+  </VDialog>
 </template>
 
 <style lang="scss">
@@ -2306,12 +2462,50 @@ $chat-app-header-height: 76px;
   overflow: hidden;
 }
 
-.video-preview {
+.video-preview-container {
+  position: relative;
   inline-size: 100%;
   block-size: 120px;
   border-radius: 8px;
+  overflow: hidden;
+}
+
+.video-preview {
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: 8px;
   background: #000;
   object-fit: cover;
+  cursor: pointer;
+  display: block;
+}
+
+.video-preview-play-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.95);
+  background: rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
+  z-index: 1;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.video-preview-play-overlay .v-icon {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform: scale(1);
+}
+
+.video-preview-wrapper:hover .video-preview-play-overlay {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.video-preview-wrapper:hover .video-preview-play-overlay .v-icon {
+  transform: scale(1.2);
 }
 
 .video-preview-meta {
@@ -2351,12 +2545,92 @@ $chat-app-header-height: 76px;
   inline-size: 100%;
   block-size: 100%;
   border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.photo-preview-wrapper:hover .photo-preview-image {
+  opacity: 0.9;
 }
 
 .photo-preview-remove {
   position: absolute;
   inset-block-start: 4px;
   inset-inline-end: 4px;
+}
+
+.viewer-wrap {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  padding: 16px;
+  overflow: hidden;
+}
+
+.viewer-box {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  max-width: 90vw;
+  max-height: 90vh;
+}
+
+.viewer-media-container {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.viewer-img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 90vw;
+  max-height: 85vh;
+  object-fit: contain;
+  border-radius: 12px;
+}
+
+.viewer-video {
+  display: block;
+  max-width: 90vw;
+  max-height: 85vh;
+  border-radius: 12px;
+  background: #000;
+}
+
+.viewer-actions {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 10;
+}
+
+.viewer-close,
+.viewer-download {
+  color: white !important;
+  background: rgba(0, 0, 0, 0.5) !important;
+  border-radius: 50%;
+  min-width: 36px;
+  height: 36px;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.7) !important;
+  }
+}
+
+.viewer-caption {
+  color: white;
+  text-align: center;
+  margin: 12px;
 }
 
 .message-target-flash {
