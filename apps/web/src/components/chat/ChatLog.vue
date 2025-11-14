@@ -2302,15 +2302,25 @@ onUnmounted(() => {
         display: flex;
         align-items: center;
         justify-content: center;
-        color: rgba(255, 255, 255, 0.92);
-        background: rgba(0, 0, 0, 0.25);
-        opacity: 0;
+        color: rgba(255, 255, 255, 0.95);
+        background: rgba(0, 0, 0, 0.3);
         pointer-events: none;
-        transition: opacity 0.2s ease;
+        z-index: 1;
+        transition: background 0.3s ease;
       }
 
       .video-bubble:hover .video-play-overlay {
-        opacity: 1;
+        background: rgba(0, 0, 0, 0.4);
+      }
+
+      .video-play-overlay .v-icon {
+        filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+        transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        transform: scale(1);
+      }
+
+      .video-bubble:hover .video-play-overlay .v-icon {
+        transform: scale(1.2);
       }
 
       .video-details {
