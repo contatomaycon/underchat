@@ -569,14 +569,34 @@ const openImage = (m: ListMessageResult) => {
   viewerOpen.value = true;
 };
 
-const downloadImage = (url: string, filename?: string | null) => {
+const downloadImage = async (url: string, filename?: string | null) => {
   if (!url) return;
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.target = '_blank';
-  if (filename) anchor.download = filename;
-  anchor.rel = 'noopener';
-  anchor.click();
+
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+
+    const anchor = document.createElement('a');
+    anchor.href = blobUrl;
+    anchor.download = filename || 'image.jpg';
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+
+    setTimeout(() => {
+      window.URL.revokeObjectURL(blobUrl);
+    }, 100);
+  } catch (error) {
+    console.error('Erro ao baixar imagem:', error);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.target = '_blank';
+    anchor.download = filename || 'image.jpg';
+    anchor.rel = 'noopener';
+    anchor.click();
+  }
 };
 
 const handleScroll = async (e: Event) => {
