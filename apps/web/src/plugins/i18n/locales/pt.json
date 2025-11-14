@@ -380,5 +380,7 @@
     "message_not_found": "Mensagem não encontrada",
     "message_key_not_found": "Chave da mensagem não encontrada",
     "message_jid_not_found": "JID da mensagem não encontrada",
-    "reaction_send_error": "Erro ao enviar reação"
+    "reaction_send_error": "Erro ao enviar reação",
+    "document_size_exceeded": "Arquivo excede o tamanho máximo permitido de 2 GB.",
+    "image_size_exceeded": "Imagem excede o tamanho máximo permitido de 16 MB."
 }

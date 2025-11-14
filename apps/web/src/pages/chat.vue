@@ -33,6 +33,9 @@ import { useI18n } from 'vue-i18n';
 const emojiIndex = new EmojiIndex(data);
 const { t } = useI18n();
 
+const MAX_DOCUMENT_SIZE_BYTES = 2 * 1024 * 1024 * 1024;
+const MAX_IMAGE_SIZE_BYTES = 16 * 1024 * 1024;
+
 definePage({
   meta: {
     layoutWrapperClasses: 'layout-content-height-fixed',
@@ -477,7 +480,18 @@ const onPickDoc = (e: Event) => {
     );
   }
 
-  filesToAdd.forEach((file) => {
+  const oversizedDocs = filesToAdd.filter(
+    (file) => file.size > MAX_DOCUMENT_SIZE_BYTES
+  );
+  const validDocs = filesToAdd.filter(
+    (file) => file.size <= MAX_DOCUMENT_SIZE_BYTES
+  );
+
+  if (oversizedDocs.length > 0) {
+    chatStore.showSnackbar(t('document_size_exceeded'), EColor.error);
+  }
+
+  validDocs.forEach((file) => {
     selectedDocuments.value.push({
       file,
       name: file.name,
@@ -513,8 +527,24 @@ const onPickPhoto = (e: Event) => {
     return;
   }
 
+  const oversizedImages = imageFiles.filter(
+    (file) => file.size > MAX_IMAGE_SIZE_BYTES
+  );
+  const validImages = imageFiles.filter(
+    (file) => file.size <= MAX_IMAGE_SIZE_BYTES
+  );
+
+  if (oversizedImages.length > 0) {
+    chatStore.showSnackbar(t('image_size_exceeded'), EColor.error);
+  }
+
+  if (validImages.length === 0) {
+    target.value = '';
+    return;
+  }
+
   const currentCount = selectedPhotos.value.length;
-  const totalAfterSelection = currentCount + imageFiles.length;
+  const totalAfterSelection = currentCount + validImages.length;
 
   if (totalAfterSelection > 10) {
     chatStore.showSnackbar(t('max_images_selected'), EColor.warning);
@@ -524,7 +554,7 @@ const onPickPhoto = (e: Event) => {
 
   const remainingSlots = 10 - currentCount;
 
-  if (imageFiles.length > remainingSlots) {
+  if (validImages.length > remainingSlots) {
     chatStore.showSnackbar(
       t('can_select_more_images', { count: remainingSlots }),
       EColor.warning
@@ -533,7 +563,7 @@ const onPickPhoto = (e: Event) => {
     return;
   }
 
-  imageFiles.forEach((file) => {
+  validImages.forEach((file) => {
     const reader = new FileReader();
     reader.onload = (event) => {
       if (event.target?.result) {

@@ -129,6 +129,8 @@
   "chat_not_found": "Chat not found!",
   "chat_create_error": "Error creating chat!",
   "documents_required": "Select at least one document!",
+  "document_size_exceeded": "File exceeds the maximum allowed size of 2 GB!",
+  "image_size_exceeded": "Image exceeds the maximum allowed size of 16 MB!",
   "chat_link_preview_found": "Chat link preview found!",
   "chat_link_preview_not_found": "Chat link preview not found!",
   "message_content_required": "Message content is required for text messages",

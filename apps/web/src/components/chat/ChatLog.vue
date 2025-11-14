@@ -221,6 +221,12 @@ const pendingMessages = computed<PendingMessage[]>(() => {
     .sort((a, b) => a.created_at.localeCompare(b.created_at));
 });
 
+const isPendingDocument = (pending: PendingMessage): boolean =>
+  pending.type === EMessageType.document;
+
+const isPendingImage = (pending: PendingMessage): boolean =>
+  pending.type === EMessageType.image;
+
 const pendingDocumentMeta = (pending: PendingMessage): string => {
   if (!pending.document) return '';
   const ext = pending.document.extension?.toUpperCase();
@@ -244,18 +250,15 @@ const resolvePendingDocumentIcon = (pending: PendingMessage): string => {
 
 const pendingStatusText = (pending: PendingMessage): string => {
   if (pending.status === 'error') {
-    return pending.type === EMessageType.document
-      ? t('document_upload_failed')
-      : t('image_upload_failed');
+    if (pending.type === EMessageType.document)
+      return t('document_upload_failed');
+    return t('image_upload_failed');
   }
 
   const percent = Math.max(0, Math.min(100, Math.round(pending.progress)));
-  const label =
-    pending.type === EMessageType.document
-      ? t('document_uploading')
-      : t('image_uploading');
-
-  return `${label} • ${percent}%`;
+  if (pending.type === EMessageType.document)
+    return `${t('document_uploading')} • ${percent}%`;
+  return `${t('image_uploading')} • ${percent}%`;
 };
 
 const pendingImageMeta = (pending: PendingMessage): string => {
@@ -727,10 +730,7 @@ onUnmounted(() => {
                     />
                   </div>
 
-                  <div
-                    v-else-if="hasQuotedDocument(msgGrp)"
-                    class="quoted-document"
-                  >
+                  <div v-if="hasQuotedDocument(msgGrp)" class="quoted-document">
                     <VIcon
                       :icon="resolveQuotedDocumentIcon(msgGrp)"
                       size="26"
@@ -1063,7 +1063,7 @@ onUnmounted(() => {
             v-if="chatStore.user?.info.photo"
             :src="chatStore.user.info.photo"
           />
-          <span v-else class="text-1xl">
+          <span v-if="!chatStore.user?.info.photo" class="text-1xl">
             {{ avatarText(chatStore.user?.info.name) }}
           </span>
         </VAvatar>
@@ -1074,7 +1074,7 @@ onUnmounted(() => {
       >
         <div class="chat-content-wrapper wrapper-operator">
           <div class="chat-content py-2 px-2 elevation-2 pending-content">
-            <template v-if="pending.type === EMessageType.document">
+            <template v-if="isPendingDocument(pending)">
               <div
                 class="document-bubble document-bubble--right pending-document"
               >
@@ -1110,7 +1110,7 @@ onUnmounted(() => {
                       </span>
                     </VProgressCircular>
                   </div>
-                  <div v-else class="pending-error">
+                  <div v-if="pending.status === 'error'" class="pending-error">
                     <VIcon size="28" color="error">tabler-alert-triangle</VIcon>
                   </div>
                   <VBtn
@@ -1129,7 +1129,7 @@ onUnmounted(() => {
                 {{ pending.message }}
               </p>
             </template>
-            <template v-else-if="pending.type === EMessageType.image">
+            <template v-if="isPendingImage(pending)">
               <div class="pending-image-wrapper">
                 <VImg
                   :src="pendingImageSrc(pending)"
@@ -1152,7 +1152,10 @@ onUnmounted(() => {
                     </span>
                   </VProgressCircular>
                 </div>
-                <div v-else class="pending-image-error">
+                <div
+                  v-if="pending.status === 'error'"
+                  class="pending-image-error"
+                >
                   <VIcon size="34" color="error">tabler-alert-triangle</VIcon>
                 </div>
                 <VBtn

@@ -7,6 +7,9 @@ import { extension as mimeToExt } from 'mime-types';
 import { fileTypeFromBuffer } from 'file-type';
 import sharp from 'sharp';
 
+const MAX_IMAGE_UPLOAD_BYTES = 16 * 1024 * 1024;
+const MAX_DOCUMENT_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
+
 @injectable()
 export class StorageService {
   private readonly client: S3Client;
@@ -38,6 +41,11 @@ export class StorageService {
     }
 
     const buffer = await file.toBuffer();
+
+    if (buffer.byteLength > MAX_IMAGE_UPLOAD_BYTES) {
+      throw new Error('IMAGE_SIZE_LIMIT_EXCEEDED');
+    }
+
     const path = `${accountId}/${this.converterFilename(file.filename)}`;
 
     let width: number | null = null;
@@ -83,6 +91,11 @@ export class StorageService {
     accountId: string
   ): Promise<UploadFileResponse | null> {
     const buffer = await file.toBuffer();
+
+    if (buffer.byteLength > MAX_DOCUMENT_UPLOAD_BYTES) {
+      throw new Error('DOCUMENT_SIZE_LIMIT_EXCEEDED');
+    }
+
     const initialExtension = this.getFileExtension(file.filename);
     const fallbackExtension = this.extFromMime(file.mimetype ?? '') ?? 'bin';
     const extension = initialExtension || fallbackExtension;

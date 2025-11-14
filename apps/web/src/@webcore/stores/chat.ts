@@ -5,6 +5,7 @@ import { EColor } from '@core/common/enums/EColor';
 import { ISnackbar } from '@core/common/interfaces/ISnackbar';
 import axios from '@webcore/axios';
 import type { AxiosRequestConfig } from 'axios';
+import { isAxiosError } from 'axios';
 import {
   ListChatsResponse,
   ListChatsResult,
@@ -521,15 +522,18 @@ export const useChatStore = defineStore('chat', {
         }
 
         return true;
-      } catch {
+      } catch (error) {
         if (shouldHandleLoading) {
           this.loading = false;
         }
 
-        this.showSnackbar(
-          this.i18n.global.t('chat_message_create_error'),
-          EColor.error
-        );
+        const message =
+          isAxiosError(error) &&
+          typeof error.response?.data?.message === 'string'
+            ? (error.response.data.message as string)
+            : this.i18n.global.t('chat_message_create_error');
+
+        this.showSnackbar(message, EColor.error);
 
         return false;
       }
@@ -587,15 +591,18 @@ export const useChatStore = defineStore('chat', {
         }
 
         return true;
-      } catch {
+      } catch (error) {
         if (shouldHandleLoading) {
           this.loading = false;
         }
 
-        this.showSnackbar(
-          this.i18n.global.t('chat_message_create_error'),
-          EColor.error
-        );
+        const message =
+          isAxiosError(error) &&
+          typeof error.response?.data?.message === 'string'
+            ? (error.response.data.message as string)
+            : this.i18n.global.t('chat_message_create_error');
+
+        this.showSnackbar(message, EColor.error);
 
         return false;
       }

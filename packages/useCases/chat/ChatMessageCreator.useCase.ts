@@ -391,7 +391,18 @@ export class ChatMessageCreatorUseCase {
     messageQuotedId: string | null | undefined,
     t: TFunction<'translation', undefined>
   ): Promise<boolean> {
-    const validImages = await this.uploadImages(images, accountId);
+    let validImages: UploadFileResponse[];
+    try {
+      validImages = await this.uploadImages(images, accountId);
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.message === 'IMAGE_SIZE_LIMIT_EXCEEDED') {
+          throw new Error(t('image_size_exceeded'));
+        }
+      }
+
+      throw error;
+    }
 
     if (validImages.length === 0) {
       return false;
@@ -457,11 +468,25 @@ export class ChatMessageCreatorUseCase {
     messageQuotedId: string | null | undefined,
     t: TFunction<'translation', undefined>
   ): Promise<boolean> {
-    const uploadedDocuments = await Promise.all(
-      documents.map((document) =>
-        this.storageService.uploadDocument(document, accountId)
-      )
-    );
+    let uploadedDocuments: Array<UploadFileResponse | null>;
+    try {
+      uploadedDocuments = await Promise.all(
+        documents.map((document) =>
+          this.storageService.uploadDocument(document, accountId)
+        )
+      );
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.message === 'DOCUMENT_SIZE_LIMIT_EXCEEDED') {
+          throw new Error(t('document_size_exceeded'));
+        }
+        if (error.message === 'IMAGE_SIZE_LIMIT_EXCEEDED') {
+          throw new Error(t('image_size_exceeded'));
+        }
+      }
+
+      throw error;
+    }
 
     const validDocuments = uploadedDocuments.filter(
       (doc): doc is UploadFileResponse => doc !== null
