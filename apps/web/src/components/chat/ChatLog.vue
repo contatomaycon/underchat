@@ -2634,7 +2634,7 @@ onUnmounted(() => {
       }
 
       .audio-bubble--right .audio-waveform-bar-placeholder {
-        background: rgba(255, 255, 255, 0.3);
+        background: rgba(17, 27, 33, 0.35);
       }
 
       @keyframes pulse {
@@ -2660,7 +2660,7 @@ onUnmounted(() => {
       }
 
       .audio-bubble--right .audio-waveform-bar {
-        background: rgba(255, 255, 255, 0.5);
+        background: rgba(17, 27, 33, 0.45);
       }
 
       .audio-waveform-bar--active {
@@ -2668,7 +2668,7 @@ onUnmounted(() => {
       }
 
       .audio-bubble--right .audio-waveform-bar--active {
-        background: rgba(255, 255, 255, 0.95);
+        background: rgba(17, 27, 33, 0.9);
       }
 
       .audio-progress-indicator {
@@ -2683,7 +2683,7 @@ onUnmounted(() => {
       }
 
       .audio-bubble--right .audio-progress-indicator {
-        background: rgba(255, 255, 255, 0.9);
+        background: rgba(17, 27, 33, 0.85);
       }
 
       .audio-caption {
