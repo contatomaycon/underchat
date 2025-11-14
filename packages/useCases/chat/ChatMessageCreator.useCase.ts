@@ -657,6 +657,9 @@ export class ChatMessageCreatorUseCase {
         if (error.message === 'IMAGE_SIZE_LIMIT_EXCEEDED') {
           throw new Error(t('image_size_exceeded'));
         }
+        if (error.message === 'INVALID_IMAGE_FORMAT') {
+          throw new Error(t('invalid_image_format'));
+        }
       }
 
       throw error;
@@ -734,6 +737,9 @@ export class ChatMessageCreatorUseCase {
       if (error instanceof Error) {
         if (error.message === 'VIDEO_SIZE_LIMIT_EXCEEDED') {
           throw new Error(t('video_size_exceeded'));
+        }
+        if (error.message === 'INVALID_VIDEO_FORMAT') {
+          throw new Error(t('invalid_video_format'));
         }
       }
 

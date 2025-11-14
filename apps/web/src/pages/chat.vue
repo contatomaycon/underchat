@@ -774,13 +774,38 @@ const onPickPhoto = (e: Event) => {
     return;
   }
 
-  const imageFiles = Array.from(files).filter((file) =>
-    file.type.startsWith('image/')
-  );
+  const allowedImageTypes = [
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/gif',
+  ];
+  const allowedExtensions = ['jpg', 'jpeg', 'png', 'gif'];
+
+  const imageFiles = Array.from(files).filter((file) => {
+    const fileExtension = file.name.split('.').pop()?.toLowerCase();
+    return (
+      allowedImageTypes.includes(file.type) ||
+      (fileExtension && allowedExtensions.includes(fileExtension))
+    );
+  });
 
   if (imageFiles.length === 0) {
+    chatStore.showSnackbar(t('invalid_image_format'), EColor.error);
     target.value = '';
     return;
+  }
+
+  const invalidImages = Array.from(files).filter((file) => {
+    const fileExtension = file.name.split('.').pop()?.toLowerCase();
+    return (
+      !allowedImageTypes.includes(file.type) &&
+      (!fileExtension || !allowedExtensions.includes(fileExtension))
+    );
+  });
+
+  if (invalidImages.length > 0) {
+    chatStore.showSnackbar(t('invalid_image_format'), EColor.error);
   }
 
   const oversizedImages = imageFiles.filter(
@@ -1184,13 +1209,40 @@ const onPickVideo = async (e: Event) => {
     return;
   }
 
-  const videoFiles = Array.from(files).filter((file) =>
-    file.type.startsWith('video/')
-  );
+  const allowedVideoTypes = [
+    'video/mp4',
+    'video/avi',
+    'video/x-flv',
+    'video/x-matroska',
+    'video/quicktime',
+    'video/3gpp',
+  ];
+  const allowedExtensions = ['mp4', 'avi', 'flv', 'mkv', 'mov', '3gp'];
+
+  const videoFiles = Array.from(files).filter((file) => {
+    const fileExtension = file.name.split('.').pop()?.toLowerCase();
+    return (
+      allowedVideoTypes.includes(file.type) ||
+      (fileExtension && allowedExtensions.includes(fileExtension))
+    );
+  });
 
   if (videoFiles.length === 0) {
+    chatStore.showSnackbar(t('invalid_video_format'), EColor.error);
     target.value = '';
     return;
+  }
+
+  const invalidVideos = Array.from(files).filter((file) => {
+    const fileExtension = file.name.split('.').pop()?.toLowerCase();
+    return (
+      !allowedVideoTypes.includes(file.type) &&
+      (!fileExtension || !allowedExtensions.includes(fileExtension))
+    );
+  });
+
+  if (invalidVideos.length > 0) {
+    chatStore.showSnackbar(t('invalid_video_format'), EColor.error);
   }
 
   const limit = 10;
@@ -1975,7 +2027,7 @@ onBeforeUnmount(() => {
             ref="filePhotoRef"
             type="file"
             hidden
-            accept="image/*"
+            accept="image/jpeg,image/jpg,image/png,image/gif,.jpg,.jpeg,.png,.gif"
             multiple
             @change="onPickPhoto"
           />
@@ -1983,7 +2035,7 @@ onBeforeUnmount(() => {
             ref="fileVideoRef"
             type="file"
             hidden
-            accept="video/*"
+            accept="video/mp4,video/avi,video/x-flv,video/x-matroska,video/quicktime,video/3gpp,.mp4,.avi,.flv,.mkv,.mov,.3gp"
             @change="onPickVideo"
           />
           <input

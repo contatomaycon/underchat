@@ -42,6 +42,25 @@ export class StorageService {
       return null;
     }
 
+    const allowedExtensions = ['jpg', 'jpeg', 'png', 'gif'];
+    const allowedMimetypes = [
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/gif',
+    ];
+
+    if (!allowedExtensions.includes(extension.toLowerCase())) {
+      throw new Error('INVALID_IMAGE_FORMAT');
+    }
+
+    if (
+      file.mimetype &&
+      !allowedMimetypes.includes(file.mimetype.toLowerCase())
+    ) {
+      throw new Error('INVALID_IMAGE_FORMAT');
+    }
+
     const buffer = await file.toBuffer();
 
     if (buffer.byteLength > MAX_IMAGE_UPLOAD_BYTES) {
@@ -132,15 +151,36 @@ export class StorageService {
     file: UploadFileRequest,
     accountId: string
   ): Promise<UploadFileResponse | null> {
+    const initialExtension = this.getFileExtension(file.filename);
+    const fallbackExtension = this.extFromMime(file.mimetype ?? '') ?? 'mp4';
+    const extension = initialExtension || fallbackExtension;
+
+    const allowedExtensions = ['mp4', 'avi', 'flv', 'mkv', 'mov', '3gp'];
+    const allowedMimetypes = [
+      'video/mp4',
+      'video/avi',
+      'video/x-flv',
+      'video/x-matroska',
+      'video/quicktime',
+      'video/3gpp',
+    ];
+
+    if (!allowedExtensions.includes(extension.toLowerCase())) {
+      throw new Error('INVALID_VIDEO_FORMAT');
+    }
+
+    if (
+      file.mimetype &&
+      !allowedMimetypes.includes(file.mimetype.toLowerCase())
+    ) {
+      throw new Error('INVALID_VIDEO_FORMAT');
+    }
+
     const buffer = await file.toBuffer();
 
     if (buffer.byteLength > MAX_VIDEO_UPLOAD_BYTES) {
       throw new Error('VIDEO_SIZE_LIMIT_EXCEEDED');
     }
-
-    const initialExtension = this.getFileExtension(file.filename);
-    const fallbackExtension = this.extFromMime(file.mimetype ?? '') ?? 'mp4';
-    const extension = initialExtension || fallbackExtension;
 
     const normalizedName = initialExtension
       ? file.filename
@@ -218,7 +258,8 @@ export class StorageService {
       throw new Error('AUDIO_SIZE_LIMIT_EXCEEDED');
     }
 
-    const extension = this.getFileExtension(filename) || this.extFromMime(mimetype) || 'ogg';
+    const extension =
+      this.getFileExtension(filename) || this.extFromMime(mimetype) || 'ogg';
     const normalizedName = filename.endsWith(`.${extension}`)
       ? filename
       : `${filename}.${extension}`;
