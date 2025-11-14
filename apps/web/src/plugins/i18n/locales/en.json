@@ -359,6 +359,8 @@
     "images_selected": "Selected images",
     "chat_reaction_success": "Reaction sent successfully!",
     "chat_reaction_error": "Error sending reaction. Please try again.",
+  "chat_delete_success": "Message deleted successfully!",
+  "chat_delete_error": "Error deleting message. Please try again.",
     "message_not_found": "Message not found",
     "message_key_not_found": "Message key not found",
     "message_jid_not_found": "Message JID not found",

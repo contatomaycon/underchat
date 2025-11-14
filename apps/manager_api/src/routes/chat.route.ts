@@ -15,6 +15,7 @@ import { createMessageChatsSchema } from '@core/schema/chat/createMessageChats';
 import { createChatSchema } from '@core/schema/chat/createChat';
 import { viewLinkPreviewSchema } from '@core/schema/chat/viewLinkPreview';
 import { reactMessageSchema } from '@core/schema/chat/reactMessage';
+import { deleteMessageSchema } from '@core/schema/chat/deleteMessage';
 
 export default function chatRoutes(server: FastifyInstance) {
   const chatController = container.resolve(ChatController);
@@ -85,6 +86,15 @@ export default function chatRoutes(server: FastifyInstance) {
   server.post('/chat/:chat_id/message/:message_id/react', {
     schema: reactMessageSchema,
     handler: chatController.reactMessage,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, createChatPermissions),
+    ],
+  });
+
+  server.post('/chat/:chat_id/message/:message_id/delete', {
+    schema: deleteMessageSchema,
+    handler: chatController.deleteMessage,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, createChatPermissions),

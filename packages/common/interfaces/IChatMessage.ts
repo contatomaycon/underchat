@@ -74,4 +74,5 @@ export interface IChatMessage {
   content?: IContent | null;
   summary: ISummary;
   date: string;
+  deleted?: boolean;
 }

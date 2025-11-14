@@ -4,6 +4,7 @@ import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.servi
 import { BaileysMessageTextService } from '@core/services/baileys/methods/messageText.service';
 import { BaileysMessageMediaService } from '@core/services/baileys/methods/messageMedia.service';
 import { BaileysMessageReactionsInteractionsService } from '@core/services/baileys/methods/messageReactionsInteractions.service';
+import { BaileysMessageEditDeleteService } from '@core/services/baileys/methods/messageEditDelete.service';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { StreamProducerService } from '@core/services/streamProducer.service';
@@ -29,6 +30,7 @@ export class MessageSendConsume {
     private readonly baileysMessageTextService: BaileysMessageTextService,
     private readonly baileysMessageMediaService: BaileysMessageMediaService,
     private readonly baileysMessageReactionsInteractionsService: BaileysMessageReactionsInteractionsService,
+    private readonly baileysMessageEditDeleteService: BaileysMessageEditDeleteService,
     private readonly streamProducerService: StreamProducerService,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly keyedSequencerService: KeyedSequencerService
@@ -205,10 +207,32 @@ export class MessageSendConsume {
       return;
     }
 
+    if (currentType === EMessageType.delete_message && data.message_key?.id) {
+      await this.processDelete(jid, data);
+      this.lastMessageTypeByChatId.set(chatId, EMessageType.delete_message);
+
+      return;
+    }
+
     if (currentType === EMessageType.react && data.message_key?.id) {
       await this.processReact(jid, data);
       this.lastMessageTypeByChatId.set(chatId, EMessageType.react);
     }
+  }
+
+  private async processDelete(jid: string, data: IChatMessage): Promise<void> {
+    if (!data.message_key?.id) {
+      return;
+    }
+
+    const messageKey = {
+      remoteJid: data.message_key.remote_jid ?? '',
+      fromMe: data.message_key.from_me ?? false,
+      id: data.message_key.id,
+      participant: data.message_key.participant ?? undefined,
+    };
+
+    await this.baileysMessageEditDeleteService.deleteMessage(jid, messageKey);
   }
 
   private async processReact(jid: string, data: IChatMessage): Promise<void> {

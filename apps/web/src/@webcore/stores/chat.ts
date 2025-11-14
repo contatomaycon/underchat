@@ -64,6 +64,7 @@ export const useChatStore = defineStore('chat', {
         content: message.content as ContentMessageChat,
         summary: message.summary,
         date: message.date,
+        deleted: message.deleted ?? false,
       };
 
       const existingIndex = this.listMessages.findIndex(
@@ -449,6 +450,28 @@ export const useChatStore = defineStore('chat', {
         const response = await axios.post(
           `/chat/${chatId}/message/${messageId}/react`,
           { emoji }
+        );
+
+        const data = response?.data as IApiResponse<boolean>;
+
+        if (!data?.status) {
+          return false;
+        }
+
+        return true;
+      } catch {
+        return false;
+      }
+    },
+
+    async deleteMessage(
+      chatId: string,
+      messageId: string
+    ): Promise<boolean> {
+      try {
+        const response = await axios.post(
+          `/chat/${chatId}/message/${messageId}/delete`,
+          {}
         );
 
         const data = response?.data as IApiResponse<boolean>;

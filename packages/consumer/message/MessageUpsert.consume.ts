@@ -376,6 +376,39 @@ export class MessageUpsertConsume {
         return true;
       }
 
+      if (
+        data.type === EMessageType.delete_message &&
+        data.message?.message?.protocolMessage?.key?.id
+      ) {
+        const protocolMessage = data.message.message.protocolMessage;
+        const targetMessageId = protocolMessage?.key?.id;
+        if (!targetMessageId) {
+          return true;
+        }
+
+        const targetMessage = await this.findMessageByKeyId(
+          data.account_id,
+          getChat.chat_id,
+          targetMessageId
+        );
+
+        if (!targetMessage) {
+          return true;
+        }
+
+        const updatedMessage: IChatMessage = {
+          ...targetMessage,
+          deleted: true,
+        };
+
+        await Promise.all([
+          this.chatService.saveMessageChat(updatedMessage),
+          this.centrifugoChatPublish(updatedMessage),
+        ]);
+
+        return true;
+      }
+
       if (!getChat?.name && !data.message?.key?.fromMe) {
         const name = this.nameChat(data);
 
@@ -438,6 +471,7 @@ export class MessageUpsertConsume {
         summary: { is_sent: false, is_delivered: false, is_seen: false },
         content,
         date: new Date().toISOString(),
+        deleted: false,
       };
 
       const [, result] = await Promise.all([

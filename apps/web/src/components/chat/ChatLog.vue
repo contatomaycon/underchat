@@ -7,6 +7,7 @@ import {
 } from '@core/schema/chat/listMessageChats/response.schema';
 import { isTypeUser } from '@core/common/functions/isTypeUser';
 import { EMessageType } from '@core/common/enums/EMessageType';
+import { EColor } from '@core/common/enums/EColor';
 import { IReaction } from '@core/common/interfaces/IChatMessage';
 import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
 import data from 'emoji-mart-vue-fast/data/all.json';
@@ -76,7 +77,11 @@ const domainFromUrl = (u?: string | null): string => {
 const resolvePreviewUrl = (lp?: LinkPreview): string =>
   lp?.['matched-text'] ?? lp?.['canonical-url'] ?? '';
 
+const isDeleted = (m: ListMessageResult): boolean => m.deleted === true;
+
 const onReply = (m: ListMessageResult) => {
+  if (isDeleted(m)) return;
+
   chatStore.setMessageReply(m);
   (globalThis as Window & typeof globalThis).dispatchEvent(
     new CustomEvent('focus-composer')
@@ -84,6 +89,8 @@ const onReply = (m: ListMessageResult) => {
 };
 
 const onCopy = async (m: ListMessageResult) => {
+  if (isDeleted(m)) return;
+
   const text =
     m.content?.message ||
     m.content?.link_preview?.['matched-text'] ||
@@ -100,6 +107,7 @@ const quickReactions = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 const ignoreOutsideOnce = ref(false);
 
 const onReact = async (m: ListMessageResult, emoji: string) => {
+  if (isDeleted(m)) return;
   if (!chatStore.activeChat?.chat_id) return;
 
   const success = await chatStore.reactToMessage(
@@ -114,21 +122,25 @@ const onReact = async (m: ListMessageResult, emoji: string) => {
   }
 };
 
-const onMouseEnter = (messageId: string) => {
-  hoveredMessageId.value = messageId;
+const onMouseEnter = (message: ListMessageResult) => {
+  if (isDeleted(message)) return;
+
+  hoveredMessageId.value = message.message_id;
 };
 
 const onMouseLeave = () => {
   hoveredMessageId.value = null;
 };
 
-const toggleReactionPicker = (messageId: string) => {
+const toggleReactionPicker = (message: ListMessageResult) => {
+  if (isDeleted(message)) return;
+
   ignoreOutsideOnce.value = true;
-  if (showReactionPicker.value === messageId) {
+  if (showReactionPicker.value === message.message_id) {
     showReactionPicker.value = null;
     return;
   }
-  showReactionPicker.value = messageId;
+  showReactionPicker.value = message.message_id;
   showEmojiPicker.value = null;
 };
 
@@ -188,7 +200,30 @@ const getReactionsSummary = (
   });
 };
 
-const onDelete = (_m: ListMessageResult) => {};
+const onDelete = async (m: ListMessageResult) => {
+  if (isDeleted(m)) return;
+  if (!chatStore.activeChat?.chat_id) return;
+
+  if (hoveredMessageId.value === m.message_id) {
+    hoveredMessageId.value = null;
+  }
+  if (showReactionPicker.value === m.message_id) {
+    showReactionPicker.value = null;
+    showEmojiPicker.value = null;
+  }
+
+  const success = await chatStore.deleteMessage(
+    chatStore.activeChat.chat_id,
+    m.message_id
+  );
+
+  if (success) {
+    chatStore.showSnackbar(t('chat_delete_success'), EColor.success);
+    return;
+  }
+
+  chatStore.showSnackbar(t('chat_delete_error'), EColor.error);
+};
 
 const showQuoted = (m: ListMessageResult) => {
   if (m.content?.type !== EMessageType.text_quoted || !m.content?.quoted) {
@@ -257,6 +292,8 @@ const getQuotedTargetId = (m: ListMessageResult): string | null => {
 };
 
 const goToQuoted = (m: ListMessageResult) => {
+  if (isDeleted(m)) return;
+
   const targetId = getQuotedTargetId(m);
   if (!targetId) return;
 
@@ -266,6 +303,8 @@ const goToQuoted = (m: ListMessageResult) => {
 };
 
 const openImage = (m: ListMessageResult) => {
+  if (isDeleted(m)) return;
+
   viewerSrc.value = m.content?.image?.url || '';
   viewerCaption.value = m.content?.image?.caption || '';
   viewerOpen.value = true;
@@ -350,7 +389,7 @@ onUnmounted(() => {
           'mb-6': chatStore.listMessages.length - 1 !== index,
         },
       ]"
-      @mouseenter="onMouseEnter(msgGrp.message_id)"
+      @mouseenter="onMouseEnter(msgGrp)"
       @mouseleave="onMouseLeave"
     >
       <div class="chat-avatar" :class="!isTypeUser(msgGrp) ? 'ms-4' : 'me-4'">
@@ -374,27 +413,36 @@ onUnmounted(() => {
           :class="!isTypeUser(msgGrp) ? 'wrapper-operator' : 'wrapper-client'"
         >
           <VBtn
-            v-if="hoveredMessageId === msgGrp.message_id"
+            v-if="hoveredMessageId === msgGrp.message_id && !msgGrp.deleted"
             icon
             size="28"
             variant="flat"
-            class="reaction-trigger"
+            :class="[
+              'reaction-trigger',
+              !isTypeUser(msgGrp) ? 'wrapper-operator' : 'wrapper-client',
+            ]"
             color="grey-600"
-            @click.stop="toggleReactionPicker(msgGrp.message_id)"
+            @click.stop="toggleReactionPicker(msgGrp)"
           >
             <VIcon size="18">tabler-mood-smile</VIcon>
           </VBtn>
 
           <div
-            class="chat-content py-2 px-2 elevation-2 has-actions"
-            :class="[isTypeUser(msgGrp) ? 'chat-left' : 'chat-right']"
+            class="chat-content py-2 px-2 elevation-2"
+            :class="[
+              isTypeUser(msgGrp) ? 'chat-left' : 'chat-right',
+              {
+                'is-deleted': msgGrp.deleted,
+                'has-actions': !msgGrp.deleted,
+              },
+            ]"
             :style="{
               backgroundColor: isTypeUser(msgGrp)
                 ? 'rgb(var(--v-theme-surface))'
                 : 'rgb(217, 253, 211)',
             }"
           >
-            <div class="message-actions">
+            <div v-if="!msgGrp.deleted" class="message-actions">
               <VMenu
                 :close-on-content-click="true"
                 location="bottom end"
@@ -432,7 +480,7 @@ onUnmounted(() => {
                     <VListItemTitle>Copiar</VListItemTitle>
                   </VListItem>
 
-                  <VListItem @click="toggleReactionPicker(msgGrp.message_id)">
+                  <VListItem @click="toggleReactionPicker(msgGrp)">
                     <template #prepend>
                       <VIcon size="18">tabler-mood-smile</VIcon>
                     </template>
@@ -458,7 +506,7 @@ onUnmounted(() => {
                 class="quoted-block"
                 :class="{
                   'is-right': !isTypeUser(msgGrp),
-                  'is-clickable': true,
+                  'is-clickable': !msgGrp.deleted,
                 }"
                 @click="goToQuoted(msgGrp)"
               >
@@ -552,12 +600,13 @@ onUnmounted(() => {
                   msgGrp.content?.image?.url &&
                   !msgGrp.message_key?.is_view_once
                 "
-                class="image-bubble"
-                :class="
+                :class="[
+                  'image-bubble',
                   !isTypeUser(msgGrp)
                     ? 'image-bubble--right'
-                    : 'image-bubble--left'
-                "
+                    : 'image-bubble--left',
+                  { 'is-deleted': msgGrp.deleted },
+                ]"
                 @click="openImage(msgGrp)"
               >
                 <VImg
@@ -631,7 +680,10 @@ onUnmounted(() => {
             </div>
 
             <div
-              v-if="getReactionsSummary(msgGrp.content?.reactions).length"
+              v-if="
+                !msgGrp.deleted &&
+                getReactionsSummary(msgGrp.content?.reactions).length
+              "
               class="reactions-summary"
               :class="{
                 'reactions-summary--right': !isTypeUser(msgGrp),
@@ -662,7 +714,7 @@ onUnmounted(() => {
           </div>
 
           <div
-            v-if="showReactionPicker === msgGrp.message_id"
+            v-if="showReactionPicker === msgGrp.message_id && !msgGrp.deleted"
             class="reaction-picker"
             :class="
               !isTypeUser(msgGrp)
@@ -777,6 +829,27 @@ onUnmounted(() => {
         .message-meta {
           color: rgba(17, 27, 33, 0.6);
         }
+      }
+
+      &.is-deleted {
+        opacity: 0.7;
+      }
+
+      &.is-deleted .message-text,
+      &.is-deleted .image-caption {
+        text-decoration: line-through;
+      }
+
+      &.is-deleted .link-preview,
+      &.is-deleted .quoted-block {
+        pointer-events: none;
+        cursor: default;
+        opacity: 0.75;
+      }
+
+      &.is-deleted a {
+        pointer-events: none;
+        cursor: default;
       }
 
       .message-actions {
@@ -905,6 +978,13 @@ onUnmounted(() => {
           line-height: 1.25rem;
           white-space: pre-line;
           margin-bottom: 0 !important;
+        }
+
+        &.is-deleted {
+          cursor: default;
+          pointer-events: none;
+          filter: grayscale(0.85);
+          opacity: 0.6;
         }
       }
 

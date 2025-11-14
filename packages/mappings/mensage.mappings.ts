@@ -65,6 +65,9 @@ export const mensageMappings = () => {
             },
           },
         },
+        deleted: {
+          type: 'boolean',
+        },
         content: {
           type: 'nested',
           properties: {

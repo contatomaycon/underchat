@@ -226,6 +226,7 @@ export class ChatMessageCreatorUseCase {
         is_delivered: false,
         is_seen: false,
       },
+      deleted: false,
       content: {
         type,
         message,
@@ -270,6 +271,7 @@ export class ChatMessageCreatorUseCase {
         is_delivered: false,
         is_seen: false,
       },
+      deleted: false,
       content: {
         type,
         message,
@@ -428,7 +430,23 @@ export class ChatMessageCreatorUseCase {
       throw new Error(t('chat_not_found'));
     }
 
-    if (body.reaction_message_id && body.reaction_emoji) {
+    const type = this.normalizeType(body.type);
+
+    if (type === EMessageType.delete_message && body.delete_message_id) {
+      return this.processDelete(
+        chat,
+        params.chat_id,
+        accountId,
+        body.delete_message_id,
+        t
+      );
+    }
+
+    if (
+      type === EMessageType.react &&
+      body.reaction_message_id &&
+      body.reaction_emoji
+    ) {
       return this.processReaction(
         chat,
         params.chat_id,
@@ -440,7 +458,6 @@ export class ChatMessageCreatorUseCase {
     }
 
     const images = this.normalizeImagesArray(body.images);
-    const type = this.normalizeType(body.type);
     const message = this.normalizeMessage(body.message);
 
     if (images.length > 0) {
@@ -624,9 +641,100 @@ export class ChatMessageCreatorUseCase {
         is_delivered: false,
         is_seen: false,
       },
+      deleted: targetMessage.deleted ?? false,
       content: {
         type: EMessageType.react,
         reactions: targetMessage.content?.reactions ?? null,
+      },
+      date: new Date().toISOString(),
+    };
+  }
+
+  private async processDelete(
+    chat: IChat,
+    chatId: string,
+    accountId: string,
+    deleteMessageId: string,
+    t: TFunction<'translation', undefined>
+  ): Promise<boolean> {
+    const targetMessage = await this.getMessage(accountId, deleteMessageId);
+
+    if (!targetMessage) {
+      throw new Error(t('message_not_found'));
+    }
+
+    if (
+      !targetMessage.message_key?.id ||
+      !targetMessage.message_key?.remote_jid
+    ) {
+      throw new Error(t('message_key_not_found'));
+    }
+
+    const updatedMessage = await this.markMessageAsDeleted(targetMessage);
+
+    const deleteMessage = this.createDeleteMessage(
+      chat,
+      chatId,
+      updatedMessage
+    );
+
+    await Promise.all([
+      this.streamProducerService.send(
+        this.kafkaBaileysQueueService.workerSendMessage(chat.worker.id),
+        deleteMessage
+      ),
+      this.centrifugoChatPublish(updatedMessage),
+    ]);
+
+    return true;
+  }
+
+  private async markMessageAsDeleted(
+    message: IChatMessage
+  ): Promise<IChatMessage> {
+    if (message.deleted) {
+      return message;
+    }
+
+    const updatedMessage: IChatMessage = {
+      ...message,
+      deleted: true,
+    };
+
+    await this.chatService.saveMessageChat(updatedMessage);
+
+    return updatedMessage;
+  }
+
+  private createDeleteMessage(
+    chat: IChat,
+    chatId: string,
+    targetMessage: IChatMessage
+  ): IChatMessage {
+    return {
+      message_id: uuidv4(),
+      chat_id: chatId,
+      message_key: {
+        remote_jid: targetMessage.message_key?.remote_jid ?? null,
+        remote_jid_alt: targetMessage.message_key?.remote_jid_alt ?? null,
+        from_me: targetMessage.message_key?.from_me ?? false,
+        id: targetMessage.message_key?.id ?? null,
+        participant: targetMessage.message_key?.participant ?? null,
+        is_view_once: false,
+      },
+      type_user: ETypeUserChat.operator,
+      account: chat.account,
+      worker: chat.worker,
+      user: chat.user,
+      phone: chat.phone,
+      summary: {
+        is_sent: false,
+        is_delivered: false,
+        is_seen: false,
+      },
+      deleted: true,
+      content: {
+        type: EMessageType.delete_message,
       },
       date: new Date().toISOString(),
     };

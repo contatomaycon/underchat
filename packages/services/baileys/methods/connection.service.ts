@@ -51,7 +51,6 @@ export class BaileysConnectionService {
   private awaitingNewLogin = false;
   private lastPayload: string | null = null;
   private lastStatusPayload: string | null = null;
-  private lastConnectedTime: number = 0;
   private typeConnection: EBaileysConnectionType =
     EBaileysConnectionType.qrcode;
   private phoneConnection?: string = undefined;
@@ -383,7 +382,6 @@ export class BaileysConnectionService {
   private onOpen(resolve: (s: IBaileysConnectionState) => void): void {
     this.qrHash = undefined;
     this.setStatus(Status.connected, ECodeMessage.connectionEstablished);
-    this.lastConnectedTime = Date.now();
     this.connectionEstablished = true;
 
     const payload: IBaileysConnectionState = {

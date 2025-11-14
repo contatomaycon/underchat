@@ -362,6 +362,8 @@
     "images_selected": "Imagens selecionadas",
     "chat_reaction_success": "Reação enviada com sucesso!",
     "chat_reaction_error": "Erro ao enviar reação. Por favor, tente novamente.",
+  "chat_delete_success": "Mensagem apagada com sucesso!",
+  "chat_delete_error": "Erro ao apagar mensagem. Por favor, tente novamente.",
     "message_not_found": "Mensagem não encontrada",
     "message_key_not_found": "Chave da mensagem não encontrada",
     "message_jid_not_found": "JID da mensagem não encontrada",
