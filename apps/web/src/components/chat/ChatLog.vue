@@ -501,6 +501,18 @@ onUnmounted(() => {
             </div>
 
             <div class="message-block">
+              <p
+                v-if="msgGrp.deleted"
+                class="deleted-label"
+                :style="{
+                  color: isTypeUser(msgGrp)
+                    ? 'rgba(var(--v-theme-on-surface), 0.65)'
+                    : 'rgba(var(--v-theme-title), 0.65)',
+                }"
+              >
+                {{ t('chat_deleted_message_label') }}
+              </p>
+
               <div
                 v-if="showQuoted(msgGrp)"
                 class="quoted-block"
@@ -994,6 +1006,12 @@ onUnmounted(() => {
 
       .image-bubble--right .image-thumb {
         border-start-start-radius: 6px;
+      }
+
+      .deleted-label {
+        font-style: italic;
+        font-size: 0.75rem;
+        margin: 0 0 0.35rem;
       }
     }
   }
