@@ -19,6 +19,7 @@ import {
   ListMessageResponse,
   ListMessageResult,
 } from '@core/schema/chat/listMessageChats/response.schema';
+import { EMessageType } from '@core/common/enums/EMessageType';
 import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { IChat } from '@core/common/interfaces/IChat';
@@ -489,6 +490,50 @@ export const useChatStore = defineStore('chat', {
 
         if (!data?.status) {
           return false;
+        }
+
+        const messageIndex = this.listMessages.findIndex(
+          (message) => message.message_id === messageId
+        );
+
+        if (messageIndex !== -1) {
+          const message = this.listMessages[messageIndex];
+          const reactions = message.content?.reactions ?? [];
+          const workerId = this.activeChat?.worker?.id ?? '';
+          const workerName = this.activeChat?.worker?.name ?? '';
+          const reactionsWithoutUser = reactions.filter(
+            (reaction) => reaction?.user_id !== workerId
+          );
+          let updatedReactions = reactionsWithoutUser;
+          if (emoji) {
+            updatedReactions = [
+              ...reactionsWithoutUser,
+              {
+                emoji,
+                user_id: workerId,
+                user_name: workerName,
+              },
+            ];
+          }
+
+          const reactionsValue =
+            updatedReactions.length > 0 ? updatedReactions : null;
+
+          const baseContent: ContentMessageChat = message.content
+            ? { ...message.content }
+            : {
+                type: message.content?.type ?? EMessageType.text,
+              } as ContentMessageChat;
+
+          const updatedMessage: ListMessageResult = {
+            ...message,
+            content: {
+              ...baseContent,
+              reactions: reactionsValue,
+            },
+          };
+
+          this.listMessages.splice(messageIndex, 1, updatedMessage);
         }
 
         return true;

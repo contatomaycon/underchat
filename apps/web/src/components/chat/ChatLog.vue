@@ -868,6 +868,36 @@ onUnmounted(() => {
 
               <div
                 v-if="
+                  msgGrp.content?.reactions &&
+                  msgGrp.content.reactions.length > 0
+                "
+                :class="[
+                  'reactions-summary',
+                  !isTypeUser(msgGrp)
+                    ? 'reactions-summary--right'
+                    : 'reactions-summary--left',
+                ]"
+              >
+                <div class="reaction-summary-bubble">
+                  <div
+                    v-for="(reaction, idx) in getReactionsSummary(
+                      msgGrp.content.reactions
+                    )"
+                    :key="idx"
+                    class="reaction-summary-item"
+                  >
+                    <span class="reaction-summary-emoji">
+                      {{ reaction.emoji }}
+                    </span>
+                    <span class="reaction-summary-count">
+                      {{ reaction.count }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                v-if="
                   showReactionPicker === msgGrp.message_id && !msgGrp.deleted
                 "
                 class="reaction-picker"
