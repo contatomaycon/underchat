@@ -5,6 +5,7 @@ import {
   LinkPreview,
   ListMessageResult,
   DocumentMessageChat,
+  VideoMessageChat,
 } from '@core/schema/chat/listMessageChats/response.schema';
 import type { PendingMessage } from '@/@webcore/stores/chat';
 import { isTypeUser } from '@core/common/functions/isTypeUser';
@@ -25,6 +26,7 @@ const viewerOpen = ref(false);
 const viewerSrc = ref<string>('');
 const viewerCaption = ref<string>('');
 const viewerDownloadName = ref<string>('');
+const viewerKind = ref<'image' | 'video'>('image');
 
 const resolveFeedbackIcon = (
   message: ListMessageResult
@@ -244,15 +246,25 @@ const isDownloadableImage = (message: ListMessageResult): boolean => {
   return message.content?.type === EMessageType.image;
 };
 
+const isDownloadableVideo = (message: ListMessageResult): boolean => {
+  const video = message.content?.video;
+  if (!video) return false;
+  if (!video.url) return false;
+  if (message.message_key?.is_view_once) return false;
+  return message.content?.type === EMessageType.video;
+};
+
 const shouldShowCopy = (message: ListMessageResult): boolean => {
   if (isDownloadableDocument(message)) return false;
   if (isDownloadableImage(message)) return false;
+  if (isDownloadableVideo(message)) return false;
   return isTextMessage(message);
 };
 
 const shouldShowDownload = (message: ListMessageResult): boolean => {
   if (isDownloadableDocument(message)) return true;
   if (isDownloadableImage(message)) return true;
+  if (isDownloadableVideo(message)) return true;
   return false;
 };
 
@@ -260,6 +272,11 @@ const downloadMessage = (message: ListMessageResult) => {
   const docUrl = message.content?.document?.url;
   if (docUrl) {
     window.open(docUrl, '_blank');
+    return;
+  }
+  const video = message.content?.video;
+  if (video?.url) {
+    downloadVideo(video.url, videoDownloadName(video));
     return;
   }
   const imageUrl = message.content?.image?.url;
@@ -276,6 +293,9 @@ const isPendingDocument = (pending: PendingMessage): boolean =>
 
 const isPendingImage = (pending: PendingMessage): boolean =>
   pending.type === EMessageType.image;
+
+const isPendingVideo = (pending: PendingMessage): boolean =>
+  pending.type === EMessageType.video;
 
 const pendingDocumentMeta = (pending: PendingMessage): string => {
   if (!pending.document) return '';
@@ -302,12 +322,15 @@ const pendingStatusText = (pending: PendingMessage): string => {
   if (pending.status === 'error') {
     if (pending.type === EMessageType.document)
       return t('document_upload_failed');
+    if (pending.type === EMessageType.video) return t('video_upload_failed');
     return t('image_upload_failed');
   }
 
   const percent = Math.max(0, Math.min(100, Math.round(pending.progress)));
   if (pending.type === EMessageType.document)
     return `${t('document_uploading')} • ${percent}%`;
+  if (pending.type === EMessageType.video)
+    return `${t('video_uploading')} • ${percent}%`;
   return `${t('image_uploading')} • ${percent}%`;
 };
 
@@ -316,8 +339,17 @@ const pendingImageMeta = (pending: PendingMessage): string => {
   return [sizeText].filter(Boolean).join('');
 };
 
+const pendingVideoMeta = (pending: PendingMessage): string => {
+  const sizeText = formatDocumentSize(pending.video?.size ?? null);
+  return [sizeText].filter(Boolean).join('');
+};
+
 const pendingImageSrc = (pending: PendingMessage): string => {
   return pending.image?.preview ?? '';
+};
+
+const pendingVideoSrc = (pending: PendingMessage): string => {
+  return pending.video?.preview || '';
 };
 
 const documentIconMap: Record<string, string> = {
@@ -387,9 +419,36 @@ const truncateDocumentName = (name?: string | null, max = 36): string => {
   return `${base}...${ext}`;
 };
 
+const truncateVideoName = (name?: string | null, max = 36): string => {
+  if (!name) return t('video_label');
+  if (name.length <= max) return name;
+  const extIndex = name.lastIndexOf('.');
+  if (extIndex <= 0) {
+    return `${name.slice(0, max - 3)}...`;
+  }
+
+  const ext = name.slice(extIndex);
+  const base = name.slice(0, max - ext.length - 3);
+  return `${base}...${ext}`;
+};
+
 const documentDownloadName = (doc?: DocumentMessageChat | null): string => {
   if (!doc?.name) return t('document_label');
   return doc.name;
+};
+
+const videoDownloadName = (video?: VideoMessageChat | null): string => {
+  if (!video) return 'video.mp4';
+  if (video.name) return video.name;
+  const ext = video.extension ? video.extension.toLowerCase() : 'mp4';
+  return `video.${ext}`;
+};
+
+const resolveVideoMeta = (video?: VideoMessageChat | null): string => {
+  if (!video) return '';
+  const ext = video.extension ? video.extension.toUpperCase() : 'VIDEO';
+  const size = video.size ? formatDocumentSize(video.size) : null;
+  return [ext, size].filter(Boolean).join(' • ');
 };
 
 const onDelete = async (m: ListMessageResult) => {
@@ -417,37 +476,7 @@ const onDelete = async (m: ListMessageResult) => {
   chatStore.showSnackbar(t('chat_delete_error'), EColor.error);
 };
 
-const showQuoted = (m: ListMessageResult) => {
-  const quoted = m.content?.quoted;
-  if (!quoted) {
-    return false;
-  }
-
-  if (quoted.type === EMessageType.image) {
-    const image = quoted.image;
-    if (image?.url || image?.thumbnail) {
-      return true;
-    }
-  }
-
-  if (quoted.type === EMessageType.document && quoted.document) {
-    return true;
-  }
-
-  if (quoted.message) {
-    return true;
-  }
-
-  if (quoted.image?.url || quoted.image?.thumbnail) {
-    return true;
-  }
-
-  if (quoted.document) {
-    return true;
-  }
-
-  return false;
-};
+const showQuoted = (m: ListMessageResult) => !!m.content?.quoted;
 
 const resolveQuotedName = (m: ListMessageResult): string => {
   const fromMe = m.content?.quoted?.key?.from_me ?? null;
@@ -472,6 +501,10 @@ const resolveQuotedText = (m: ListMessageResult): string => {
     return m.content.quoted.message ?? '';
   }
 
+  if (m.content.quoted.type === EMessageType.video) {
+    return m.content.quoted.video?.caption || t('video_label');
+  }
+
   return m.content.quoted.message ?? '';
 };
 
@@ -479,6 +512,16 @@ const resolveQuotedImageSrc = (m: ListMessageResult): string => {
   const image = m.content?.quoted?.image;
   if (!image) return '';
   return image.url || image.thumbnail || '';
+};
+
+const resolveQuotedVideoUrl = (m: ListMessageResult): string => {
+  return m.content?.quoted?.video?.url ?? '';
+};
+
+const resolveQuotedVideoPoster = (m: ListMessageResult): string => {
+  const poster = m.content?.quoted?.video?.thumbnail;
+  if (!poster) return '';
+  return poster;
 };
 
 const hasQuotedImage = (m: ListMessageResult): boolean => {
@@ -494,6 +537,9 @@ const hasQuotedDocument = (m: ListMessageResult): boolean => {
     !!m.content.quoted.document
   );
 };
+
+const hasQuotedVideo = (m: ListMessageResult): boolean =>
+  m.content?.quoted?.type === EMessageType.video;
 
 const resolveQuotedDocumentIcon = (m: ListMessageResult): string => {
   const ext = m.content?.quoted?.document?.extension?.toLowerCase();
@@ -559,6 +605,7 @@ const goToQuoted = (m: ListMessageResult) => {
 };
 
 const openImage = (m: ListMessageResult) => {
+  viewerKind.value = 'image';
   viewerSrc.value = m.content?.image?.url || '';
   viewerCaption.value = m.content?.image?.caption || '';
   viewerDownloadName.value = documentDownloadName({
@@ -567,6 +614,17 @@ const openImage = (m: ListMessageResult) => {
     mimetype: m.content?.image?.mimetype ?? undefined,
     extension: m.content?.image?.extension ?? undefined,
   } as DocumentMessageChat);
+  viewerOpen.value = true;
+};
+
+const openVideo = (m: ListMessageResult) => {
+  const video = m.content?.video;
+  if (!video?.url) return;
+
+  viewerKind.value = 'video';
+  viewerSrc.value = video.url;
+  viewerCaption.value = video.caption || m.content?.message || '';
+  viewerDownloadName.value = videoDownloadName(video);
   viewerOpen.value = true;
 };
 
@@ -598,6 +656,47 @@ const downloadImage = async (url: string, filename?: string | null) => {
     anchor.rel = 'noopener';
     anchor.click();
   }
+};
+
+const downloadVideo = async (url: string, filename?: string | null) => {
+  if (!url) return;
+
+  const fallback = filename || 'video.mp4';
+
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+
+    const anchor = document.createElement('a');
+    anchor.href = blobUrl;
+    anchor.download = fallback;
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+
+    setTimeout(() => {
+      window.URL.revokeObjectURL(blobUrl);
+    }, 100);
+  } catch (error) {
+    console.error('Erro ao baixar vídeo:', error);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.target = '_blank';
+    anchor.download = fallback;
+    anchor.rel = 'noopener';
+    anchor.click();
+  }
+};
+
+const downloadViewerMedia = () => {
+  if (!viewerSrc.value) return;
+  if (viewerKind.value === 'video') {
+    downloadVideo(viewerSrc.value, viewerDownloadName.value);
+    return;
+  }
+  downloadImage(viewerSrc.value, viewerDownloadName.value);
 };
 
 const handleScroll = async (e: Event) => {
@@ -855,6 +954,28 @@ onUnmounted(() => {
                   </div>
 
                   <div
+                    v-if="hasQuotedVideo(msgGrp)"
+                    class="quoted-media quoted-media--video"
+                  >
+                    <template v-if="resolveQuotedVideoUrl(msgGrp)">
+                      <video
+                        :src="resolveQuotedVideoUrl(msgGrp)"
+                        :poster="resolveQuotedVideoPoster(msgGrp) || undefined"
+                        class="quoted-video-thumb"
+                        preload="metadata"
+                        muted
+                        playsinline
+                      ></video>
+                      <div class="quoted-video-overlay">
+                        <VIcon size="16">tabler-player-play</VIcon>
+                      </div>
+                    </template>
+                    <div v-else class="quoted-video-placeholder">
+                      <VIcon size="20">tabler-player-play</VIcon>
+                    </div>
+                  </div>
+
+                  <div
                     v-if="resolveQuotedText(msgGrp)"
                     class="quoted-text"
                     :style="{
@@ -968,8 +1089,73 @@ onUnmounted(() => {
 
               <div
                 v-if="
+                  msgGrp.content?.type === EMessageType.video &&
+                  msgGrp.content?.video?.url &&
+                  !msgGrp.message_key?.is_view_once
+                "
+                :class="[
+                  'video-bubble',
+                  !isTypeUser(msgGrp)
+                    ? 'video-bubble--right'
+                    : 'video-bubble--left',
+                  { 'is-deleted': msgGrp.deleted },
+                ]"
+                @click="openVideo(msgGrp)"
+              >
+                <div class="video-thumb-wrapper">
+                  <video
+                    :src="msgGrp.content.video.url"
+                    class="video-thumb"
+                    preload="metadata"
+                    muted
+                    playsinline
+                  ></video>
+                  <div class="video-play-overlay">
+                    <VIcon size="28">tabler-player-play</VIcon>
+                  </div>
+                </div>
+                <div class="video-details">
+                  <VTooltip location="bottom">
+                    <template #activator="{ props }">
+                      <span v-bind="props" class="video-name">
+                        {{
+                          truncateVideoName(
+                            msgGrp.content.video.name ||
+                              msgGrp.content.video.caption ||
+                              ''
+                          )
+                        }}
+                      </span>
+                    </template>
+                    <span>
+                      {{
+                        msgGrp.content.video.name ||
+                        msgGrp.content.video.caption
+                      }}
+                    </span>
+                  </VTooltip>
+                  <span class="video-meta text-caption text-disabled">
+                    {{ resolveVideoMeta(msgGrp.content.video) }}
+                  </span>
+                </div>
+                <p
+                  v-if="msgGrp.content.video.caption"
+                  class="video-caption mt-2"
+                  :style="{
+                    color: isTypeUser(msgGrp)
+                      ? 'rgb(var(--v-theme-on-surface))'
+                      : 'rgb(var(--v-theme-title))',
+                  }"
+                >
+                  {{ msgGrp.content.video.caption }}
+                </p>
+              </div>
+
+              <div
+                v-if="
                   msgGrp.content?.message &&
                   msgGrp.content?.type !== EMessageType.image &&
+                  msgGrp.content?.type !== EMessageType.video &&
                   msgGrp.content?.type !== EMessageType.document &&
                   !msgGrp.message_key?.is_view_once
                 "
@@ -1242,6 +1428,55 @@ onUnmounted(() => {
                 {{ pending.message }}
               </p>
             </template>
+            <template v-if="isPendingVideo(pending)">
+              <div class="pending-video-wrapper">
+                <video
+                  :src="pendingVideoSrc(pending)"
+                  class="pending-video-thumb"
+                  preload="metadata"
+                  muted
+                  playsinline
+                ></video>
+                <div
+                  v-if="pending.status !== 'error'"
+                  class="pending-video-overlay"
+                >
+                  <VProgressCircular
+                    :model-value="pending.progress"
+                    :indeterminate="pending.progress <= 0"
+                    size="52"
+                    width="4"
+                    color="primary"
+                  >
+                    <span class="pending-progress-label">
+                      {{ Math.max(0, Math.round(pending.progress)) }}%
+                    </span>
+                  </VProgressCircular>
+                </div>
+                <div
+                  v-if="pending.status === 'error'"
+                  class="pending-video-error"
+                >
+                  <VIcon size="34" color="error">tabler-alert-triangle</VIcon>
+                </div>
+                <VBtn
+                  v-if="pending.status === 'error'"
+                  icon
+                  size="22"
+                  variant="text"
+                  class="pending-video-dismiss"
+                  @click="chatStore.removePendingMessage(pending.id)"
+                >
+                  <VIcon size="16">tabler-x</VIcon>
+                </VBtn>
+              </div>
+              <div class="pending-video-meta text-caption text-disabled mt-2">
+                {{ pendingVideoMeta(pending) }}
+              </div>
+              <p v-if="pending.message" class="pending-caption mt-2">
+                {{ pending.message }}
+              </p>
+            </template>
             <template v-if="isPendingImage(pending)">
               <div class="pending-image-wrapper">
                 <VImg
@@ -1311,14 +1546,22 @@ onUnmounted(() => {
   >
     <div class="viewer-wrap" @click="viewerOpen = false">
       <div class="viewer-box" @click.stop>
-        <div class="viewer-image-container">
+        <div class="viewer-media-container">
           <img
+            v-if="viewerKind === 'image'"
             :src="viewerSrc"
             alt=""
             class="viewer-img"
             loading="eager"
             decoding="async"
           />
+          <video
+            v-if="viewerKind === 'video'"
+            :src="viewerSrc"
+            class="viewer-video"
+            controls
+            playsinline
+          ></video>
 
           <div class="viewer-actions">
             <VBtn
@@ -1327,7 +1570,7 @@ onUnmounted(() => {
               icon
               size="36"
               variant="text"
-              @click.stop="downloadImage(viewerSrc, viewerDownloadName)"
+              @click.stop="downloadViewerMedia"
             >
               <VIcon size="20">tabler-download</VIcon>
             </VBtn>
@@ -1470,6 +1713,44 @@ onUnmounted(() => {
         }
       }
 
+      .quoted-media--video {
+        position: relative;
+        background: rgba(var(--v-theme-primary), 0.12);
+
+        video {
+          inline-size: 100%;
+          block-size: 100%;
+          object-fit: cover;
+          border-radius: 6px;
+        }
+
+        .quoted-video-overlay {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          pointer-events: none;
+
+          .v-icon {
+            color: #fff;
+            background: rgba(0, 0, 0, 0.45);
+            border-radius: 999px;
+            padding: 4px;
+          }
+        }
+
+        .quoted-video-placeholder {
+          inline-size: 100%;
+          block-size: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: rgb(var(--v-theme-primary));
+          background: rgba(var(--v-theme-primary), 0.15);
+        }
+      }
+
       .quoted-document {
         display: inline-flex;
         align-items: center;
@@ -1585,6 +1866,89 @@ onUnmounted(() => {
 
       .image-bubble--right .image-thumb {
         border-start-start-radius: 6px;
+      }
+
+      .video-bubble {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-inline-size: 260px;
+        inline-size: 100%;
+        cursor: pointer;
+        border-radius: 10px;
+        background: rgba(var(--v-theme-on-surface), 0.04);
+        padding: 10px;
+      }
+
+      .video-bubble--left {
+        border-start-end-radius: 6px;
+      }
+
+      .video-bubble--right {
+        border-start-start-radius: 6px;
+      }
+
+      .video-bubble.is-deleted {
+        pointer-events: none;
+        opacity: 0.7;
+      }
+
+      .video-thumb-wrapper {
+        position: relative;
+        inline-size: 100%;
+        block-size: 160px;
+        border-radius: 8px;
+        overflow: hidden;
+        background: #000;
+      }
+
+      .video-thumb {
+        inline-size: 100%;
+        block-size: 100%;
+        object-fit: cover;
+        display: block;
+      }
+
+      .video-play-overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: rgba(255, 255, 255, 0.92);
+        background: rgba(0, 0, 0, 0.25);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease;
+      }
+
+      .video-bubble:hover .video-play-overlay {
+        opacity: 1;
+      }
+
+      .video-details {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .video-name {
+        font-weight: 600;
+        color: rgb(var(--v-theme-primary));
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .video-meta {
+        color: rgba(var(--v-theme-on-surface), 0.65);
+      }
+
+      .video-caption {
+        font-size: 0.95rem;
+        line-height: 1.25rem;
+        white-space: pre-line;
+        margin-bottom: 0 !important;
       }
 
       .document-bubble {
@@ -1706,6 +2070,51 @@ onUnmounted(() => {
         border-radius: 12px;
         overflow: hidden;
         display: flex;
+      }
+
+      .pending-video-wrapper {
+        position: relative;
+        inline-size: clamp(180px, 45vw, 260px);
+        block-size: clamp(160px, 40vw, 220px);
+        border-radius: 12px;
+        overflow: hidden;
+        background: #000;
+      }
+
+      .pending-video-thumb {
+        inline-size: 100%;
+        block-size: 100%;
+        object-fit: cover;
+        display: block;
+      }
+
+      .pending-video-overlay,
+      .pending-video-error {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.25);
+      }
+
+      .pending-video-error {
+        background: rgba(0, 0, 0, 0.35);
+      }
+
+      .pending-video-dismiss {
+        position: absolute;
+        inset-block-start: 6px;
+        inset-inline-end: 6px;
+        min-width: 28px !important;
+        width: 28px !important;
+        height: 28px !important;
+        background: rgba(0, 0, 0, 0.35) !important;
+        color: rgb(var(--v-theme-on-primary)) !important;
+      }
+
+      .pending-video-meta {
+        color: rgba(var(--v-theme-on-surface), 0.6);
       }
 
       .pending-image-thumb {
@@ -1998,7 +2407,7 @@ onUnmounted(() => {
   max-height: 90vh;
 }
 
-.viewer-image-container {
+.viewer-media-container {
   position: relative;
   display: inline-block;
   max-width: 100%;
@@ -2013,6 +2422,14 @@ onUnmounted(() => {
   max-height: 85vh;
   object-fit: contain;
   border-radius: 12px;
+}
+
+.viewer-video {
+  display: block;
+  max-width: 90vw;
+  max-height: 85vh;
+  border-radius: 12px;
+  background: #000;
 }
 
 .viewer-actions {

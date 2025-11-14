@@ -9,6 +9,7 @@ import sharp from 'sharp';
 
 const MAX_IMAGE_UPLOAD_BYTES = 16 * 1024 * 1024;
 const MAX_DOCUMENT_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
+const MAX_VIDEO_UPLOAD_BYTES = 200 * 1024 * 1024;
 
 @injectable()
 export class StorageService {
@@ -105,6 +106,46 @@ export class StorageService {
       : `${file.filename}.${extension}`;
     const key = `${accountId}/${this.converterFilename(normalizedName)}`;
     const mimetype = file.mimetype ?? 'application/octet-stream';
+
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: s3Environment.s3BucketName,
+        Key: key,
+        Body: buffer,
+        ContentType: mimetype,
+      })
+    );
+
+    return {
+      url: this.createUrl(key),
+      name: normalizedName,
+      extension,
+      size: buffer.byteLength,
+      mimetype,
+      width: null,
+      height: null,
+    };
+  }
+
+  public async uploadVideo(
+    file: UploadFileRequest,
+    accountId: string
+  ): Promise<UploadFileResponse | null> {
+    const buffer = await file.toBuffer();
+
+    if (buffer.byteLength > MAX_VIDEO_UPLOAD_BYTES) {
+      throw new Error('VIDEO_SIZE_LIMIT_EXCEEDED');
+    }
+
+    const initialExtension = this.getFileExtension(file.filename);
+    const fallbackExtension = this.extFromMime(file.mimetype ?? '') ?? 'mp4';
+    const extension = initialExtension || fallbackExtension;
+
+    const normalizedName = initialExtension
+      ? file.filename
+      : `${file.filename}.${extension}`;
+    const key = `${accountId}/${this.converterFilename(normalizedName)}`;
+    const mimetype = file.mimetype ?? 'video/mp4';
 
     await this.client.send(
       new PutObjectCommand({

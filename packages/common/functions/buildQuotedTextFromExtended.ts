@@ -47,6 +47,8 @@ export function buildQuotedTextFromExtended(
   let type = EMessageType.text;
   if (quotedMessage.documentMessage) {
     type = EMessageType.document;
+  } else if (quotedMessage.videoMessage) {
+    type = EMessageType.video;
   } else if (quotedMessage.imageMessage) {
     type = EMessageType.image;
   }
@@ -92,6 +94,35 @@ export function buildQuotedTextFromExtended(
 
     if (!quoted.message && imageMessage.caption) {
       quoted.message = imageMessage.caption;
+    }
+  }
+
+  const videoMessage = quotedMessage.videoMessage;
+  if (videoMessage) {
+    const thumbnail =
+      videoMessage.jpegThumbnail && videoMessage.jpegThumbnail.length > 0
+        ? `data:image/jpeg;base64,${Buffer.from(
+            videoMessage.jpegThumbnail
+          ).toString('base64')}`
+        : null;
+
+    quoted.video = {
+      url: null,
+      caption: videoMessage.caption ?? null,
+      name: videoMessage.fileName ?? null,
+      mimetype: videoMessage.mimetype ?? null,
+      extension: null,
+      size: videoMessage.fileLength
+        ? Number(videoMessage.fileLength.toString())
+        : null,
+      duration: videoMessage.seconds ?? null,
+      height: videoMessage.height ?? null,
+      width: videoMessage.width ?? null,
+      thumbnail,
+    };
+
+    if (!quoted.message && videoMessage.caption) {
+      quoted.message = videoMessage.caption;
     }
   }
 

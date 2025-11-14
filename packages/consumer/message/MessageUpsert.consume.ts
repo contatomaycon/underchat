@@ -31,6 +31,7 @@ import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
 import Redis from 'ioredis';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { downloadMediaMessage } from '@whiskeysockets/baileys';
+import { Buffer } from 'node:buffer';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -453,6 +454,51 @@ export class MessageUpsertConsume {
               size: photoResult.size,
               height: data.message.message.imageMessage.height,
               width: data.message.message.imageMessage.width,
+            }
+          : undefined;
+      }
+
+      if (
+        content.type === EMessageType.video &&
+        data.message?.message?.videoMessage?.url
+      ) {
+        const videoMsg = data.message.message.videoMessage;
+        const buffer = await downloadMediaMessage(data.message, 'buffer', {
+          startByte: 0,
+        });
+
+        const inferredVideoName =
+          (videoMsg as { fileName?: string | null })?.fileName ?? undefined;
+
+        const videoResult = await this.storageService.uploadFromBuffer(
+          buffer,
+          data.account_id,
+          {
+            fileName: inferredVideoName,
+            mimetype: videoMsg.mimetype ?? undefined,
+          }
+        );
+
+        const thumb =
+          videoMsg.jpegThumbnail && videoMsg.jpegThumbnail.length > 0
+            ? `data:image/jpeg;base64,${Buffer.from(
+                videoMsg.jpegThumbnail
+              ).toString('base64')}`
+            : null;
+
+        content.video = videoResult
+          ? {
+              url: videoResult.url,
+              caption: videoMsg.caption ?? null,
+              name: inferredVideoName ?? videoResult.name,
+              mimetype:
+                videoMsg.mimetype ?? videoResult.mimetype ?? 'video/mp4',
+              extension: videoResult.extension,
+              size: videoResult.size,
+              duration: videoMsg.seconds ?? null,
+              height: videoMsg.height ?? null,
+              width: videoMsg.width ?? null,
+              thumbnail: thumb,
             }
           : undefined;
       }

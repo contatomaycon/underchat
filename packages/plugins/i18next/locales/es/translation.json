@@ -131,6 +131,8 @@
   "documents_required": "¡Seleccione al menos un documento!",
   "document_size_exceeded": "El archivo supera el tamaño máximo permitido de 2 GB!",
   "image_size_exceeded": "La imagen supera el tamaño máximo permitido de 16 MB!",
+  "videos_required": "¡Seleccione al menos un video!",
+  "video_size_exceeded": "El video supera el tamaño máximo permitido de 200 MB!",
   "chat_link_preview_found": "¡Vista previa del enlace de chat encontrada!",
   "chat_link_preview_not_found": "¡Vista previa del enlace del chat no encontrada!",
   "message_content_required": "¡El contenido del mensaje es obligatorio para los mensajes de texto!",

@@ -36,6 +36,10 @@ const replyIsDocument = computed(
   () => replying.value?.content?.type === EMessageType.document
 );
 
+const replyIsVideo = computed(
+  () => replying.value?.content?.type === EMessageType.video
+);
+
 const replyImageSrc = computed(() => {
   const img = replying.value?.content?.image;
   if (!img) {
@@ -57,6 +61,12 @@ const replyText = computed(() => {
 
   if (m.content?.type === EMessageType.document) {
     return m.content.document?.name || t('document_label');
+  }
+
+  if (m.content?.type === EMessageType.video) {
+    return (
+      m.content.video?.caption || m.content.video?.name || t('video_label')
+    );
   }
 
   if (m.content?.message) {
@@ -132,6 +142,17 @@ const replyDocumentMeta = computed(() => {
   return items.join(' • ');
 });
 
+const replyVideoMeta = computed(() => {
+  const video = replying.value?.content?.video;
+  if (!video) return '';
+  const items: string[] = [];
+  const ext = video.extension?.toUpperCase();
+  if (ext) items.push(ext);
+  const sizeText = formatFileSize(video.size ?? undefined);
+  if (sizeText) items.push(sizeText);
+  return items.join(' • ');
+});
+
 onMounted(() => {
   (globalThis as Window & typeof globalThis).addEventListener(
     'focus-composer',
@@ -150,11 +171,17 @@ onMounted(() => {
     <div v-else-if="replyIsDocument" class="rp-doc-icon">
       <VIcon :icon="replyDocumentIcon" size="26" color="primary" />
     </div>
+    <div v-else-if="replyIsVideo" class="rp-doc-icon rp-video-icon">
+      <VIcon size="26" color="primary">tabler-player-play</VIcon>
+    </div>
     <div class="rp-content">
       <div class="rp-name">{{ replyName }}</div>
       <div class="rp-text">{{ replyText }}</div>
       <div v-if="replyIsDocument && replyDocumentMeta" class="rp-meta">
         {{ replyDocumentMeta }}
+      </div>
+      <div v-if="replyIsVideo && replyVideoMeta" class="rp-meta">
+        {{ replyVideoMeta }}
       </div>
     </div>
     <VBtn

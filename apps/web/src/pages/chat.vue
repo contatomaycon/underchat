@@ -35,6 +35,7 @@ const { t } = useI18n();
 
 const MAX_DOCUMENT_SIZE_BYTES = 2 * 1024 * 1024 * 1024;
 const MAX_IMAGE_SIZE_BYTES = 16 * 1024 * 1024;
+const MAX_VIDEO_SIZE_BYTES = 200 * 1024 * 1024;
 
 definePage({
   meta: {
@@ -76,13 +77,22 @@ type SelectedDocumentPreview = {
   type: string;
 };
 const selectedDocuments = ref<SelectedDocumentPreview[]>([]);
+type SelectedVideoPreview = {
+  file: File;
+  preview: string;
+  name: string;
+  size: number;
+  type: string;
+};
+const selectedVideos = ref<SelectedVideoPreview[]>([]);
 
 const hasContent = computed(() => !!msg.value && msg.value.trim().length > 0);
 const hasAttachmentsOrContent = computed(
   () =>
     hasContent.value ||
     selectedPhotos.value.length > 0 ||
-    selectedDocuments.value.length > 0
+    selectedDocuments.value.length > 0 ||
+    selectedVideos.value.length > 0
 );
 const forceReflow = (el: HTMLElement): number => el.offsetWidth;
 
@@ -198,6 +208,26 @@ const createDocumentFormData = (
   return formData;
 };
 
+const createVideoFormData = (
+  video: SelectedVideoPreview,
+  messageValue: string | null,
+  quotedId: string | null
+): FormData => {
+  const formData = new FormData();
+  formData.append('type', EMessageType.video);
+  if (messageValue) {
+    formData.append('message', messageValue);
+  }
+
+  if (quotedId) {
+    formData.append('message_quoted_id', quotedId);
+  }
+
+  formData.append('videos', video.file);
+
+  return formData;
+};
+
 const createTextMessageBody = (): CreateMessageChatsBody => {
   const inputCreateMessage: CreateMessageChatsBody = {
     type: EMessageType.text,
@@ -214,9 +244,29 @@ const createTextMessageBody = (): CreateMessageChatsBody => {
   return inputCreateMessage;
 };
 
+const revokeVideoPreview = (preview: string) => {
+  if (preview && preview.startsWith('blob:')) {
+    URL.revokeObjectURL(preview);
+  }
+};
+
+const removeVideo = (index: number) => {
+  const video = selectedVideos.value[index];
+  if (video) {
+    revokeVideoPreview(video.preview);
+  }
+  selectedVideos.value.splice(index, 1);
+};
+
+const clearSelectedVideos = () => {
+  selectedVideos.value.forEach((video) => revokeVideoPreview(video.preview));
+  selectedVideos.value = [];
+};
+
 const clearMessageFields = () => {
   msg.value = '';
   linkPreview.value = null;
+  clearSelectedVideos();
   selectedPhotos.value = [];
   selectedDocuments.value = [];
   chatStore.clearMessageReply();
@@ -226,7 +276,8 @@ const canSendMessage = (): boolean => {
   return !!(
     msg.value ||
     selectedPhotos.value.length > 0 ||
-    selectedDocuments.value.length > 0
+    selectedDocuments.value.length > 0 ||
+    selectedVideos.value.length > 0
   );
 };
 
@@ -264,6 +315,53 @@ const sendImageMessage = async (): Promise<void> => {
       const formData = createImageFormData(photo, messageValue, replyId);
 
       const success = await chatStore.createMessageWithImages(formData, {
+        skipLoading: true,
+        onUploadProgress: (progress) => {
+          chatStore.updatePendingMessageProgress(tempId, progress);
+        },
+      });
+
+      if (!success) {
+        chatStore.updatePendingMessageStatus(tempId, 'error');
+        return;
+      }
+
+      chatStore.updatePendingMessageProgress(tempId, 100);
+      chatStore.removePendingMessage(tempId);
+    })
+  );
+};
+
+const sendVideoMessage = async (): Promise<void> => {
+  if (!chatStore.activeChat?.chat_id) return;
+  const videos = [...selectedVideos.value];
+  if (videos.length === 0) return;
+
+  const replyId = chatStore.messageReply?.message_id ?? null;
+  const messageValue = msg.value ? msg.value : null;
+  const chatId = chatStore.activeChat.chat_id;
+
+  await Promise.all(
+    videos.map(async (video) => {
+      const tempId = crypto.randomUUID();
+
+      chatStore.addPendingVideoMessage({
+        id: tempId,
+        chatId,
+        preview: video.preview,
+        size: video.size,
+        name: video.name,
+        mimetype: video.type,
+        message: messageValue,
+        quotedMessageId: replyId,
+      });
+
+      await nextTick();
+      scrollToBottomInChatLog();
+
+      const formData = createVideoFormData(video, messageValue, replyId);
+
+      const success = await chatStore.createMessageWithVideos(formData, {
         skipLoading: true,
         onUploadProgress: (progress) => {
           chatStore.updatePendingMessageProgress(tempId, progress);
@@ -349,6 +447,12 @@ const sendMessage = async () => {
 
   if (selectedDocuments.value.length > 0) {
     await sendDocumentMessage();
+    finalizeSend();
+    return;
+  }
+
+  if (selectedVideos.value.length > 0) {
+    await sendVideoMessage();
     finalizeSend();
     return;
   }
@@ -456,6 +560,12 @@ const onPickDoc = (e: Event) => {
     return;
   }
 
+  if (selectedVideos.value.length > 0) {
+    chatStore.showSnackbar(t('clear_videos_before_documents'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
   if (selectedPhotos.value.length > 0) {
     chatStore.showSnackbar(t('clear_images_before_documents'), EColor.warning);
     target.value = '';
@@ -508,6 +618,12 @@ const onPickPhoto = (e: Event) => {
   const files = target.files;
 
   if (!files || files.length === 0) {
+    target.value = '';
+    return;
+  }
+
+  if (selectedVideos.value.length > 0) {
+    chatStore.showSnackbar(t('clear_videos_before_images'), EColor.warning);
     target.value = '';
     return;
   }
@@ -579,7 +695,75 @@ const onPickPhoto = (e: Event) => {
   target.value = '';
 };
 const onPickVideo = (e: Event) => {
-  console.log(e);
+  const target = e.target as HTMLInputElement;
+  const files = target.files;
+
+  if (!files || files.length === 0) {
+    target.value = '';
+    return;
+  }
+
+  if (selectedDocuments.value.length > 0) {
+    chatStore.showSnackbar(t('clear_documents_before_videos'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
+  if (selectedPhotos.value.length > 0) {
+    chatStore.showSnackbar(t('clear_images_before_videos'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
+  const videoFiles = Array.from(files).filter((file) =>
+    file.type.startsWith('video/')
+  );
+
+  if (videoFiles.length === 0) {
+    target.value = '';
+    return;
+  }
+
+  const limit = 10;
+  const currentCount = selectedVideos.value.length;
+  if (currentCount >= limit) {
+    chatStore.showSnackbar(t('max_videos_selected'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
+  const spaceLeft = limit - currentCount;
+  const filesToAdd = videoFiles.slice(0, spaceLeft);
+  if (videoFiles.length > spaceLeft) {
+    chatStore.showSnackbar(
+      t('can_select_more_videos', { count: spaceLeft }),
+      EColor.warning
+    );
+  }
+
+  const oversizedVideos = filesToAdd.filter(
+    (file) => file.size > MAX_VIDEO_SIZE_BYTES
+  );
+  const validVideos = filesToAdd.filter(
+    (file) => file.size <= MAX_VIDEO_SIZE_BYTES
+  );
+
+  if (oversizedVideos.length > 0) {
+    chatStore.showSnackbar(t('video_size_exceeded'), EColor.error);
+  }
+
+  validVideos.forEach((file) => {
+    const preview = URL.createObjectURL(file);
+    selectedVideos.value.push({
+      file,
+      preview,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+    });
+  });
+
+  target.value = '';
 };
 const onPickAudio = (e: Event) => {
   console.log(e);
@@ -980,6 +1164,77 @@ onUnmounted(async () => {
 
           <Transition name="fade">
             <div
+              v-if="selectedVideos.length > 0"
+              class="composer-attachment mt-3"
+            >
+              <VCard class="composer-attachment-card">
+                <VCardTitle class="d-flex align-center justify-space-between">
+                  <span
+                    >{{ t('videos_selected') }} ({{
+                      selectedVideos.length
+                    }}/10)</span
+                  >
+                  <VBtn
+                    icon
+                    size="24"
+                    variant="text"
+                    @click="clearSelectedVideos()"
+                  >
+                    <VIcon size="18" icon="tabler-x" />
+                  </VBtn>
+                </VCardTitle>
+                <VCardText>
+                  <div class="attachment-grid attachment-grid--videos">
+                    <div
+                      v-for="(video, index) in selectedVideos"
+                      :key="`${video.name}-${index}`"
+                      class="video-preview-wrapper"
+                    >
+                      <video
+                        :src="video.preview"
+                        class="video-preview"
+                        preload="metadata"
+                        muted
+                        playsinline
+                      ></video>
+                      <div class="video-preview-meta">
+                        <VTooltip location="bottom">
+                          <template #activator="{ props }">
+                            <span v-bind="props" class="video-preview-name">
+                              {{ truncateFileName(video.name) }}
+                            </span>
+                          </template>
+                          <span>{{ video.name }}</span>
+                        </VTooltip>
+                        <span
+                          class="video-preview-info text-caption text-disabled"
+                        >
+                          {{
+                            (video.name.split('.').pop() || '').toUpperCase()
+                          }}
+                          •
+                          {{ formatFileSize(video.size) }}
+                        </span>
+                      </div>
+                      <VBtn
+                        icon
+                        size="20"
+                        variant="flat"
+                        color="error"
+                        class="video-preview-remove"
+                        @click="removeVideo(index)"
+                      >
+                        <VIcon size="14" icon="tabler-x" />
+                      </VBtn>
+                    </div>
+                  </div>
+                </VCardText>
+              </VCard>
+            </div>
+          </Transition>
+
+          <Transition name="fade">
+            <div
               v-if="selectedPhotos.length > 0"
               class="composer-attachment mt-3"
             >
@@ -1351,6 +1606,55 @@ $chat-app-header-height: 76px;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.attachment-grid--videos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.video-preview-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: 10px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+  padding: 8px;
+  overflow: hidden;
+}
+
+.video-preview {
+  inline-size: 100%;
+  block-size: 120px;
+  border-radius: 8px;
+  background: #000;
+  object-fit: cover;
+}
+
+.video-preview-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.video-preview-name {
+  font-weight: 600;
+  color: rgb(var(--v-theme-primary));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.video-preview-info {
+  white-space: nowrap;
+}
+
+.video-preview-remove {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: 6px;
 }
 
 .photo-preview-wrapper {

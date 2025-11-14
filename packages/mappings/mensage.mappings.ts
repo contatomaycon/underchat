@@ -188,6 +188,44 @@ export const mensageMappings = () => {
                     },
                   },
                 },
+                video: {
+                  type: 'nested',
+                  properties: {
+                    url: {
+                      type: 'keyword',
+                    },
+                    caption: {
+                      type: 'text',
+                      fields: {
+                        keyword: {
+                          type: 'keyword',
+                          ignore_above: 256,
+                        },
+                      },
+                    },
+                    mimetype: {
+                      type: 'keyword',
+                    },
+                    extension: {
+                      type: 'keyword',
+                    },
+                    size: {
+                      type: 'long',
+                    },
+                    duration: {
+                      type: 'integer',
+                    },
+                    height: {
+                      type: 'integer',
+                    },
+                    width: {
+                      type: 'integer',
+                    },
+                    thumbnail: {
+                      type: 'text',
+                    },
+                  },
+                },
                 document: {
                   type: 'nested',
                   properties: {
@@ -239,6 +277,44 @@ export const mensageMappings = () => {
                 },
                 size: {
                   type: 'long',
+                },
+                height: {
+                  type: 'integer',
+                },
+                width: {
+                  type: 'integer',
+                },
+                thumbnail: {
+                  type: 'text',
+                },
+              },
+            },
+            video: {
+              type: 'nested',
+              properties: {
+                url: {
+                  type: 'keyword',
+                },
+                caption: {
+                  type: 'text',
+                  fields: {
+                    keyword: {
+                      type: 'keyword',
+                      ignore_above: 256,
+                    },
+                  },
+                },
+                mimetype: {
+                  type: 'keyword',
+                },
+                extension: {
+                  type: 'keyword',
+                },
+                size: {
+                  type: 'long',
+                },
+                duration: {
+                  type: 'integer',
                 },
                 height: {
                   type: 'integer',

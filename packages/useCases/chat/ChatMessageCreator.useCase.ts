@@ -171,6 +171,18 @@ export class ChatMessageCreatorUseCase {
     return [documents];
   }
 
+  private normalizeVideosArray(
+    videos?: UploadFileRequest | UploadFileRequest[] | null
+  ): UploadFileRequest[] {
+    if (!videos) return [];
+
+    if (Array.isArray(videos)) {
+      return videos;
+    }
+
+    return [videos];
+  }
+
   private normalizeType(type: string | { value?: string }): EMessageType {
     if (type && typeof type === 'object' && 'value' in type && type.value) {
       return type.value as EMessageType;
@@ -247,6 +259,21 @@ export class ChatMessageCreatorUseCase {
     );
   }
 
+  private async uploadVideos(
+    videos: UploadFileRequest[],
+    accountId: string
+  ): Promise<UploadFileResponse[]> {
+    const uploadPromises = videos.map((video) =>
+      this.storageService.uploadVideo(video, accountId)
+    );
+
+    const uploadedVideos = await Promise.all(uploadPromises);
+
+    return uploadedVideos.filter(
+      (vid): vid is UploadFileResponse => vid !== null
+    );
+  }
+
   private createImageMessage(
     chat: IChat,
     chatId: string,
@@ -289,6 +316,57 @@ export class ChatMessageCreatorUseCase {
           size: imageData.size,
           width: imageData.width,
           height: imageData.height,
+        },
+      },
+      date: new Date().toISOString(),
+    };
+  }
+
+  private createVideoMessage(
+    chat: IChat,
+    chatId: string,
+    type: EMessageType,
+    message: string | null,
+    videoData: UploadFileResponse,
+    messageQuotedId: string | null,
+    quotedMessage: IQuotedMessage | null
+  ): IChatMessage {
+    return {
+      message_id: uuidv4(),
+      chat_id: chatId,
+      message_key: {
+        remote_jid: chat.message_key?.remote_jid ?? null,
+        remote_jid_alt: chat.message_key?.remote_jid_alt ?? null,
+        is_view_once: false,
+      },
+      type_user: ETypeUserChat.operator,
+      account: chat.account,
+      worker: chat.worker,
+      user: chat.user,
+      phone: chat.phone,
+      summary: {
+        is_sent: false,
+        is_delivered: false,
+        is_seen: false,
+      },
+      deleted: false,
+      has_quoted: !!quotedMessage,
+      content: {
+        type,
+        message,
+        message_quoted_id: messageQuotedId,
+        quoted: quotedMessage,
+        video: {
+          url: videoData.url,
+          caption: message,
+          name: videoData.name,
+          mimetype: videoData.mimetype,
+          extension: videoData.extension,
+          size: videoData.size,
+          duration: null,
+          width: videoData.width,
+          height: videoData.height,
+          thumbnail: null,
         },
       },
       date: new Date().toISOString(),
@@ -350,10 +428,21 @@ export class ChatMessageCreatorUseCase {
       return null;
     }
 
+    const quotedImage = chatMessage.content?.image ?? null;
+    const quotedVideo = chatMessage.content?.video ?? null;
+    const quotedDocument = chatMessage.content?.document ?? null;
+
+    let inferredType: EMessageType | null = null;
+    if (quotedVideo) inferredType = EMessageType.video;
+    else if (quotedImage) inferredType = EMessageType.image;
+    else if (quotedDocument) inferredType = EMessageType.document;
+    else inferredType = chatMessage.content?.type ?? null;
+
     return {
-      type: chatMessage.content?.type ?? null,
-      image: chatMessage.content?.image ?? null,
-      document: chatMessage.content?.document ?? null,
+      type: inferredType,
+      image: quotedImage,
+      video: quotedVideo,
+      document: quotedDocument,
       key: {
         remote_jid: chatMessage.message_key?.remote_jid ?? null,
         remote_jid_alt: chatMessage.message_key?.remote_jid_alt ?? null,
@@ -451,6 +540,83 @@ export class ChatMessageCreatorUseCase {
       );
 
       return this.publishMessage(imageMessage);
+    });
+
+    await Promise.all(publishTasks);
+
+    return true;
+  }
+
+  private async processVideoMessages(
+    chat: IChat,
+    chatId: string,
+    videos: UploadFileRequest[],
+    accountId: string,
+    type: EMessageType,
+    message: string | null,
+    messageQuotedId: string | null | undefined,
+    t: TFunction<'translation', undefined>
+  ): Promise<boolean> {
+    let validVideos: UploadFileResponse[];
+    try {
+      validVideos = await this.uploadVideos(videos, accountId);
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.message === 'VIDEO_SIZE_LIMIT_EXCEEDED') {
+          throw new Error(t('video_size_exceeded'));
+        }
+      }
+
+      throw error;
+    }
+
+    if (validVideos.length === 0) {
+      return false;
+    }
+
+    let quotedMessage: IQuotedMessage | null = null;
+    if (messageQuotedId) {
+      quotedMessage = await this.getQuotedMessage(
+        accountId,
+        chatId,
+        messageQuotedId
+      );
+
+      if (!quotedMessage) {
+        throw new Error(t('message_quoted_not_found'));
+      }
+    }
+
+    const quotedId = messageQuotedId ?? null;
+
+    if (validVideos.length === 1) {
+      const videoMessage = this.createVideoMessage(
+        chat,
+        chatId,
+        type,
+        message,
+        validVideos[0],
+        quotedId,
+        quotedMessage
+      );
+
+      await this.publishMessage(videoMessage);
+
+      return true;
+    }
+
+    const publishTasks = validVideos.map((videoData) => {
+      const videoMessage = this.createVideoMessage(
+        chat,
+        chatId,
+        type,
+        message,
+        videoData,
+        quotedId,
+        quotedMessage
+      );
+
+      return this.publishMessage(videoMessage);
     });
 
     await Promise.all(publishTasks);
@@ -600,6 +766,7 @@ export class ChatMessageCreatorUseCase {
     const message = this.normalizeMessage(body.message);
     const images = this.normalizeImagesArray(body.images);
     const documents = this.normalizeDocumentsArray(body.documents);
+    const videos = this.normalizeVideosArray(body.videos);
     const messageQuotedId = this.normalizeMessageQuotedId(
       body.message_quoted_id
     );
@@ -638,6 +805,23 @@ export class ChatMessageCreatorUseCase {
         chat,
         params.chat_id,
         documents,
+        accountId,
+        type,
+        message,
+        messageQuotedId,
+        t
+      );
+    }
+
+    if (type === EMessageType.video) {
+      if (videos.length === 0) {
+        throw new Error(t('videos_required'));
+      }
+
+      return this.processVideoMessages(
+        chat,
+        params.chat_id,
+        videos,
         accountId,
         type,
         message,

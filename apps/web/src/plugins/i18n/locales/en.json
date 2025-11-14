@@ -369,6 +369,8 @@
     "document_upload_failed": "Failed to upload document",
     "image_uploading": "Uploading image",
     "image_upload_failed": "Failed to upload image",
+    "video_uploading": "Uploading video",
+    "video_upload_failed": "Failed to upload video",
     "document_size_exceeded": "File exceeds the maximum allowed size of 2 GB.",
     "image_size_exceeded": "Image exceeds the maximum allowed size of 16 MB.",
     "chat_action_download": "Download",

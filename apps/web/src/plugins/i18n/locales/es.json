@@ -370,6 +370,8 @@
     "document_upload_failed": "Error al enviar el documento",
     "image_uploading": "Enviando imagen",
     "image_upload_failed": "Error al enviar la imagen",
+    "video_uploading": "Enviando video",
+    "video_upload_failed": "Error al enviar el video",
     "document_type_not_allowed": "Tipo de archivo no permitido para documentos.",
     "document_some_filtered": "Algunos archivos fueron omitidos por no ser compatibles.",
     "clear_images_before_documents": "Elimina las imágenes seleccionadas antes de enviar documentos.",

@@ -203,6 +203,19 @@ export class MessageSendConsume {
       return;
     }
 
+    if (currentType === EMessageType.video && data.content?.video?.url) {
+      if (lastType === EMessageType.video) {
+        const delay = this.getRandomDelay();
+
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+
+      await this.processVideo(jid, data);
+      this.lastMessageTypeByChatId.set(chatId, EMessageType.video);
+
+      return;
+    }
+
     if (currentType === EMessageType.text && data.content?.message) {
       if (hasQuoted && data.content?.quoted) {
         await this.processTextQuoted(jid, data);
@@ -270,6 +283,34 @@ export class MessageSendConsume {
 
     if (!result) {
       throw new Error('Failed to send document');
+    }
+
+    const update: IUpdateMessage = { message: result, data };
+    await this.pushUpdate(update);
+  }
+
+  private async processVideo(jid: string, data: IChatMessage): Promise<void> {
+    const video = data.content?.video;
+
+    if (!video?.url) {
+      throw new Error('Video URL is required');
+    }
+
+    const quotedMessage = data.content?.quoted
+      ? this.composeQuotedMessage(data)
+      : undefined;
+
+    const result = await this.baileysMessageMediaService.sendVideo(
+      jid,
+      { url: video.url },
+      {
+        caption: video.caption ?? data.content?.message ?? undefined,
+      },
+      quotedMessage ? { quoted: quotedMessage } : undefined
+    );
+
+    if (!result) {
+      throw new Error('Failed to send video');
     }
 
     const update: IUpdateMessage = { message: result, data };
@@ -402,6 +443,23 @@ export class MessageSendConsume {
           imageMessage: {
             caption: q.image?.caption ?? undefined,
             jpegThumbnail: base64 ? Buffer.from(base64, 'base64') : undefined,
+          },
+        };
+      }
+
+      if (q?.type === EMessageType.video) {
+        const thumb = q.video?.thumbnail ?? null;
+        const base64 =
+          thumb && thumb.startsWith('data:')
+            ? (thumb.split(',')[1] ?? null)
+            : thumb;
+
+        quoted.message = {
+          videoMessage: {
+            caption: q.video?.caption ?? undefined,
+            jpegThumbnail: base64 ? Buffer.from(base64, 'base64') : undefined,
+            fileLength: q.video?.size ?? undefined,
+            mimetype: q.video?.mimetype ?? undefined,
           },
         };
       }
