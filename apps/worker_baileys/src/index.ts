@@ -13,8 +13,7 @@ import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 import { safePlugin } from '@core/common/functions/safePlugin';
-import { container } from 'tsyringe';
-import { BaileysService } from '@core/services/baileys';
+import baileysReadyHook from './hooks/baileysReady.hook';
 
 const server = fastify({
   pluginTimeout: 120000,
@@ -43,21 +42,7 @@ server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
   module: ERouteModule.worker_baileys,
 });
 server.register(safePlugin(consumerPlugin, 'consumer'));
-
-server.addHook('onReady', () => {
-  const baileysService = container.resolve(BaileysService);
-  baileysService
-    .connect({ initial_connection: true })
-    .then((state) => {
-      server.log.info(
-        { status: state.status },
-        'Baileys connection attempt started'
-      );
-    })
-    .catch((error) => {
-      server.log.error({ err: error }, 'Failed to start Baileys connection');
-    });
-});
+server.register(safePlugin(baileysReadyHook, 'baileysReady'));
 
 const start = async () => {
   try {
