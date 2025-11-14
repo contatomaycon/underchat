@@ -27,10 +27,95 @@ const isVisible = computed({
   set: (v) => emit('update:modelValue', v),
 });
 
+const allowedExts = new Set([
+  'jpg',
+  'jpeg',
+  'png',
+  'gif',
+  'webp',
+  'pdf',
+  'mp3',
+  'wav',
+  'ogg',
+  'm4a',
+  'aac',
+  'flac',
+  'opus',
+]);
+const allowedMimes = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'application/pdf',
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/wav',
+  'audio/x-wav',
+  'audio/ogg',
+  'audio/aac',
+  'audio/flac',
+  'audio/opus',
+  'audio/mp4',
+]);
+
+function getExt(filename: string): string {
+  const i = filename.lastIndexOf('.');
+  return i >= 0 ? filename.slice(i + 1).toLowerCase() : '';
+}
+
+function isAllowedFile(file: File) {
+  const extOk = allowedExts.has(getExt(file.name));
+  const mimeOk = file.type ? allowedMimes.has(file.type) : false;
+  return extOk || mimeOk;
+}
+
+const onFileChange = (files: File[] | File | null) => {
+  const file = Array.isArray(files) ? (files?.[0] ?? null) : files;
+
+  if (!file) {
+    attachment_url.value = null;
+    hasNewFile.value = false;
+    return;
+  }
+
+  if (!isAllowedFile(file)) {
+    console.warn('Arquivo inválido. Envie imagem, PDF ou áudio');
+    attachment_url.value = null;
+    hasNewFile.value = false;
+    return;
+  }
+
+  if (file.size > 10 * 1024 * 1024) {
+    console.warn('Arquivo muito grande (máx 10MB).');
+    attachment_url.value = null;
+    hasNewFile.value = false;
+    return;
+  }
+
+  attachment_url.value = file;
+  hasNewFile.value = true;
+};
+
+function fileNameFromUrl(url: string) {
+  try {
+    const u = new URL(url);
+    const path = u.pathname;
+    const last = path.split('/').filter(Boolean).pop() ?? '';
+    return decodeURIComponent(last);
+  } catch {
+    const parts = url.split('/').filter(Boolean);
+    return decodeURIComponent(parts.pop() ?? url);
+  }
+}
+
 const messageTemplateId = toRef(props, 'messageTemplateId');
 const message = ref<string | null>(null);
 const message_status_id = ref<string | null>(null);
 const command = ref<string | null>(null);
+const attachment_url = ref<File | string | null>(null);
+const existingAttachmentUrl = ref<string | null>(null);
+const hasNewFile = ref(false);
 
 const refFormEditMessageTemplate = ref<VForm>();
 
@@ -46,17 +131,17 @@ const updateMessageTemplate = async () => {
     message_template_id: messageTemplateId.value,
   };
 
-  const body: UpdateMessageTemplateRequest = {
-    message: message.value,
-    command: command.value,
-    message_status: {
-      message_status_id: message_status_id.value,
-    },
-  };
+  const form = new FormData();
+  form.append('message', message.value ?? '');
+  form.append('command', command.value ?? '');
+  form.append('message_status_id', message_status_id.value ?? '');
+  if (attachment_url.value && hasNewFile.value) {
+    form.append('attachment_url', attachment_url.value);
+  }
 
   const result = await messageTemplateStore.updateMessageTemplate(
     payload,
-    body
+    form as any
   );
 
   if (result) {
@@ -91,6 +176,10 @@ onMounted(async () => {
     command.value = messageTemplate.command;
     message_status_id.value =
       messageTemplate.message_status?.message_status_id ?? null;
+    existingAttachmentUrl.value = messageTemplate?.attachment_url ?? null;
+
+    attachment_url.value = null;
+    hasNewFile.value = false;
   }
 });
 </script>
@@ -132,6 +221,40 @@ onMounted(async () => {
                   noSlashRule,
                 ]"
               />
+            </VCol>
+            <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('file') + ':' }}</VLabel>
+              <VFileInput
+                variant="outlined"
+                density="comfortable"
+                :placeholder="$t('select_file')"
+                accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.mp3,.wav,.ogg,.m4a,.aac,.flac,.opus,image/jpeg,image/png,image/gif,image/webp,application/pdf,audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/ogg,audio/aac,audio/flac,audio/opus,audio/mp4"
+                show-size
+                :chips="!!attachment_url"
+                :clearable="true"
+                hide-details="auto"
+                :prepend-icon="''"
+                @update:model-value="onFileChange"
+                class="w-100"
+              >
+                <template #prepend-inner>
+                  <VIcon icon="tabler-upload" />
+                </template>
+              </VFileInput>
+              <div v-if="existingAttachmentUrl && !hasNewFile" class="mt-2">
+                <VChip
+                  size="small"
+                  variant="tonal"
+                  color="primary"
+                  class="cursor-default"
+                >
+                  <VIcon start icon="tabler-paperclip" class="mr-1" />
+                  {{ fileNameFromUrl(existingAttachmentUrl) }}
+                </VChip>
+              </div>
+              <small class="text-caption text-medium-emphasis mt-1 d-block">
+                {{ $t('msg_image_pdf_or_audio') }}
+              </small>
             </VCol>
             <VCol cols="12" md="6">
               <AppSelect

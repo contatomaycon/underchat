@@ -37,29 +37,35 @@ export default [
     ],
   },
   {
-    title: 'label_templates',
-    to: { name: 'label' as keyof RouteNamedMap },
-    icon: { icon: 'tabler-label' },
-    permissions: [
-      EGeneralPermissions.full_access,
-      ELabelTemplatePermissions.label_list,
-      ELabelTemplatePermissions.label_view,
-      ELabelTemplatePermissions.label_create,
-      ELabelTemplatePermissions.label_update,
-      ELabelTemplatePermissions.label_delete,
-    ],
-  },
-  {
-    title: 'messages_template',
-    to: { name: 'message' as keyof RouteNamedMap },
-    icon: { icon: 'tabler-message' },
-    permissions: [
-      EGeneralPermissions.full_access,
-      EMessageTemplatePermissions.message_list,
-      EMessageTemplatePermissions.message_view,
-      EMessageTemplatePermissions.message_create,
-      EMessageTemplatePermissions.message_update,
-      EMessageTemplatePermissions.message_delete,
+    title: 'utilities',
+    icon: { icon: 'tabler-tool' },
+    children: [
+      {
+        title: 'labels',
+        to: { name: 'label' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-label' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          ELabelTemplatePermissions.label_list,
+          ELabelTemplatePermissions.label_view,
+          ELabelTemplatePermissions.label_create,
+          ELabelTemplatePermissions.label_update,
+          ELabelTemplatePermissions.label_delete,
+        ],
+      },
+      {
+        title: 'quick_messages',
+        to: { name: 'message' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-message' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EMessageTemplatePermissions.message_list,
+          EMessageTemplatePermissions.message_view,
+          EMessageTemplatePermissions.message_create,
+          EMessageTemplatePermissions.message_update,
+          EMessageTemplatePermissions.message_delete,
+        ],
+      },
     ],
   },
   {

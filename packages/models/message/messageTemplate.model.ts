@@ -12,6 +12,7 @@ export const messageTemplate = pgTable('message_template', {
     .notNull(),
   command: varchar({ length: 100 }).notNull(),
   message: text().notNull(),
+  attachment_url: varchar({ length: 500 }),
   created_at: timestamp({
     mode: 'string',
     withTimezone: true,

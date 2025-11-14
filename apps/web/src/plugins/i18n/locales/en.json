@@ -397,5 +397,11 @@
     "file": "File",
     "select_file": "Select File",
     "msg_csv_or_vcard": "The file must be in CSV or vCard (.vcf) format and follow the column pattern: First Name, Last Name, Email, Phone, Nickname, Birthday, and Notes.",
-    "plan_all_list_error": "An error occurred while listing all plans. Please try again."
+    "plan_all_list_error": "An error occurred while listing all plans. Please try again.",
+    "msg_image_pdf_or_audio": "The attachment must be an image, PDF, or audio file. Allowed size up to 10MB.",
+    "attachment": "Attachment",
+    "messages": "Messages",
+    "labels": "Labels",
+    "quick_messages": "Quick Messages",
+    "utilities": "Utilities"
 }

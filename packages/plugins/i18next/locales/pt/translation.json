@@ -220,5 +220,7 @@
   "no_contacts_found_in_file": "Nenhum contato encontrado no arquivo!",
   "plan_list_all_successfully": "Lista de planos obtida com sucesso!",
   "plan_list_all_not_found": "Nenhum plano encontrado!",
-  "plan_list_all_unauthorized": "Você não está autorizado a visualizar os planos!"
+  "plan_list_all_unauthorized": "Você não está autorizado a visualizar os planos!",
+  "invalid_attachment_type": "Tipo de anexo inválido!",
+  "attachment_size_exceeded": "Tamanho do anexo excedido!"
 }

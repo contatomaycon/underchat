@@ -400,5 +400,11 @@
     "file": "Arquivo",
     "select_file": "Selecionar Arquivo",
     "msg_csv_or_vcard": "O arquivo deve estar no formato CSV ou vCard (.vcf) e seguir o padrão de colunas: Nome, Sobrenome, Email, Telefone, Apelido, Aniversario e Notas.",
-    "plan_all_list_error": "Ocorreu um erro ao listar todos os planos. Por favor, tente novamente."
+    "plan_all_list_error": "Ocorreu um erro ao listar todos os planos. Por favor, tente novamente.",
+    "msg_image_pdf_or_audio": "O anexo deve ser uma imagem, PDF ou arquivo de áudio. Tamanho permitido de até 10MB.",
+    "attachment": "Anexo",
+    "messages": "Mensagens",
+    "labels": "Etiquetas",
+    "quick_messages": "Mensagens Rápidas",
+    "utilities": "Utilidades"
 }

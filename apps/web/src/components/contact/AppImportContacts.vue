@@ -34,7 +34,6 @@ const contactFile = ref<File | null>(null);
 const refFormAddContact = ref<VForm>();
 
 const allowedExts = new Set(['csv', 'vcf', 'vcard']);
-
 const allowedMimes = new Set(['text/csv', 'text/vcard', 'text/x-vcard']);
 
 function getExt(filename: string): string {
