@@ -2,10 +2,7 @@
 import { VForm } from 'vuetify/components/VForm';
 import { useMessageTemplateStore } from '@/@webcore/stores/messageTemplate';
 import { EMessageStatus } from '@core/common/enums/EMessageStatus';
-import {
-  EditMessageTemplateParamsRequest,
-  UpdateMessageTemplateRequest,
-} from '@core/schema/messageTemplate/editMessageTemplate/request.schema';
+import { EditMessageTemplateParamsRequest } from '@core/schema/messageTemplate/editMessageTemplate/request.schema';
 
 const messageTemplateStore = useMessageTemplateStore();
 const { t } = useI18n();
@@ -101,11 +98,16 @@ function fileNameFromUrl(url: string) {
   try {
     const u = new URL(url);
     const path = u.pathname;
-    const last = path.split('/').filter(Boolean).pop() ?? '';
+
+    const last =
+      path.split('/').findLast((segment) => segment.length > 0) ?? '';
+
     return decodeURIComponent(last);
   } catch {
-    const parts = url.split('/').filter(Boolean);
-    return decodeURIComponent(parts.pop() ?? url);
+    const last =
+      url.split('/').findLast((segment) => segment.length > 0) ?? url;
+
+    return decodeURIComponent(last);
   }
 }
 

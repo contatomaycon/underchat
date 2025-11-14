@@ -64,15 +64,18 @@ const audioExts = new Set(['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac', 'opus']);
 function getExtFromUrl(url: string | null | undefined): string {
   if (!url) return '';
 
+  const getLastSegment = (value: string) => {
+    const clean = value.split(/[?#]/)[0];
+    return clean.split('/').findLast((segment) => segment.length > 0) ?? '';
+  };
+
   try {
     const u = new URL(url);
-    const path = u.pathname;
-    const last = path.split('/').filter(Boolean).pop() ?? '';
+    const last = getLastSegment(u.pathname);
     const i = last.lastIndexOf('.');
     return i >= 0 ? last.slice(i + 1).toLowerCase() : '';
   } catch {
-    const clean = url.split(/[?#]/)[0];
-    const last = clean.split('/').filter(Boolean).pop() ?? '';
+    const last = getLastSegment(url);
     const i = last.lastIndexOf('.');
     return i >= 0 ? last.slice(i + 1).toLowerCase() : '';
   }
