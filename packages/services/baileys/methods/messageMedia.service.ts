@@ -52,6 +52,7 @@ export class BaileysMessageMediaService {
       width?: number;
       height?: number;
       viewOnce?: boolean;
+      seconds?: number;
     },
     options?: MiscMessageGenerationOptions
   ) {
@@ -64,6 +65,7 @@ export class BaileysMessageMediaService {
       width: args?.width,
       height: args?.height,
       viewOnce: args?.viewOnce,
+      seconds: args?.seconds,
     };
 
     return this.baileysHelpersService.send(jid, content, options);

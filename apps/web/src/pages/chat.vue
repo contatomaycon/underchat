@@ -83,6 +83,7 @@ type SelectedVideoPreview = {
   name: string;
   size: number;
   type: string;
+  duration: number | null;
 };
 const selectedVideos = ref<SelectedVideoPreview[]>([]);
 
@@ -224,6 +225,9 @@ const createVideoFormData = (
   }
 
   formData.append('videos', video.file);
+  if (typeof video.duration === 'number' && !Number.isNaN(video.duration)) {
+    formData.append('video_duration', Math.round(video.duration).toString());
+  }
 
   return formData;
 };
@@ -352,6 +356,7 @@ const sendVideoMessage = async (): Promise<void> => {
         size: video.size,
         name: video.name,
         mimetype: video.type,
+        duration: video.duration ?? null,
         message: messageValue,
         quotedMessageId: replyId,
       });
@@ -694,7 +699,30 @@ const onPickPhoto = (e: Event) => {
 
   target.value = '';
 };
-const onPickVideo = (e: Event) => {
+const getVideoDuration = (src: string): Promise<number | null> =>
+  new Promise((resolve) => {
+    const videoEl = document.createElement('video');
+    const clean = () => {
+      videoEl.removeAttribute('src');
+      videoEl.load();
+      videoEl.remove();
+    };
+
+    videoEl.preload = 'metadata';
+    videoEl.muted = true;
+    videoEl.onloadedmetadata = () => {
+      const dur = Number.isFinite(videoEl.duration) ? videoEl.duration : null;
+      clean();
+      resolve(dur);
+    };
+    videoEl.onerror = () => {
+      clean();
+      resolve(null);
+    };
+    videoEl.src = src;
+  });
+
+const onPickVideo = async (e: Event) => {
   const target = e.target as HTMLInputElement;
   const files = target.files;
 
@@ -752,15 +780,24 @@ const onPickVideo = (e: Event) => {
     chatStore.showSnackbar(t('video_size_exceeded'), EColor.error);
   }
 
-  validVideos.forEach((file) => {
-    const preview = URL.createObjectURL(file);
-    selectedVideos.value.push({
-      file,
-      preview,
-      name: file.name,
-      size: file.size,
-      type: file.type,
-    });
+  const loadedVideos = await Promise.all(
+    validVideos.map(async (file) => {
+      const preview = URL.createObjectURL(file);
+      const duration = await getVideoDuration(preview);
+
+      return {
+        file,
+        preview,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        duration: duration ?? null,
+      };
+    })
+  );
+
+  loadedVideos.forEach((video) => {
+    selectedVideos.value.push(video);
   });
 
   target.value = '';

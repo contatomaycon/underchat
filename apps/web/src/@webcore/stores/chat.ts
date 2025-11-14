@@ -166,6 +166,7 @@ export const useChatStore = defineStore('chat', {
       size: number;
       name?: string | null;
       mimetype?: string | null;
+      duration?: number | null;
       message?: string | null;
       quotedMessageId?: string | null;
     }) {
@@ -185,7 +186,10 @@ export const useChatStore = defineStore('chat', {
           size: input.size,
           name: input.name ?? null,
           mimetype: input.mimetype ?? null,
-          duration: null,
+          duration:
+            typeof input.duration === 'number' && !Number.isNaN(input.duration)
+              ? input.duration
+              : null,
         },
       };
 

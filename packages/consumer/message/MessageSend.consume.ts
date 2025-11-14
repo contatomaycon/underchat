@@ -305,6 +305,7 @@ export class MessageSendConsume {
       { url: video.url },
       {
         caption: video.caption ?? data.content?.message ?? undefined,
+        seconds: data.content?.video?.duration ?? undefined,
       },
       quotedMessage ? { quoted: quotedMessage } : undefined
     );

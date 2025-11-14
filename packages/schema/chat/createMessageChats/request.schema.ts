@@ -53,6 +53,15 @@ export const createMessageChatsBodySchema = Type.Object({
       Type.Null(),
     ])
   ),
+  video_duration: Type.Optional(
+    Type.Union([
+      Type.Number(),
+      Type.String(),
+      Type.Object({
+        value: Type.String(),
+      }),
+    ])
+  ),
   reaction_message_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   reaction_emoji: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   delete_message_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),

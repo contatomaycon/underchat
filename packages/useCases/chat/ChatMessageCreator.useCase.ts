@@ -206,6 +206,31 @@ export class ChatMessageCreatorUseCase {
     return message as string | null;
   }
 
+  private normalizeDurationField(value: unknown): number | null {
+    if (value === null || typeof value === 'undefined') {
+      return null;
+    }
+
+    if (Array.isArray(value) && value.length > 0) {
+      return this.normalizeDurationField(value[0]);
+    }
+
+    if (typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      if ('value' in record) {
+        return this.normalizeDurationField(record.value);
+      }
+      return null;
+    }
+
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      return null;
+    }
+
+    return numeric;
+  }
+
   private extractFieldValue(value: unknown): string | null {
     if (value === null || typeof value === 'undefined') {
       return null;
@@ -329,7 +354,8 @@ export class ChatMessageCreatorUseCase {
     message: string | null,
     videoData: UploadFileResponse,
     messageQuotedId: string | null,
-    quotedMessage: IQuotedMessage | null
+    quotedMessage: IQuotedMessage | null,
+    videoDuration: number | null
   ): IChatMessage {
     return {
       message_id: uuidv4(),
@@ -363,7 +389,10 @@ export class ChatMessageCreatorUseCase {
           mimetype: videoData.mimetype,
           extension: videoData.extension,
           size: videoData.size,
-          duration: null,
+          duration:
+            videoDuration && Number.isFinite(videoDuration)
+              ? videoDuration
+              : null,
           width: videoData.width,
           height: videoData.height,
           thumbnail: null,
@@ -555,6 +584,7 @@ export class ChatMessageCreatorUseCase {
     type: EMessageType,
     message: string | null,
     messageQuotedId: string | null | undefined,
+    videoDuration: number | null,
     t: TFunction<'translation', undefined>
   ): Promise<boolean> {
     let validVideos: UploadFileResponse[];
@@ -597,7 +627,8 @@ export class ChatMessageCreatorUseCase {
         message,
         validVideos[0],
         quotedId,
-        quotedMessage
+        quotedMessage,
+        videoDuration
       );
 
       await this.publishMessage(videoMessage);
@@ -613,7 +644,8 @@ export class ChatMessageCreatorUseCase {
         message,
         videoData,
         quotedId,
-        quotedMessage
+        quotedMessage,
+        videoDuration
       );
 
       return this.publishMessage(videoMessage);
@@ -767,6 +799,7 @@ export class ChatMessageCreatorUseCase {
     const images = this.normalizeImagesArray(body.images);
     const documents = this.normalizeDocumentsArray(body.documents);
     const videos = this.normalizeVideosArray(body.videos);
+    const videoDuration = this.normalizeDurationField(body.video_duration);
     const messageQuotedId = this.normalizeMessageQuotedId(
       body.message_quoted_id
     );
@@ -826,6 +859,7 @@ export class ChatMessageCreatorUseCase {
         type,
         message,
         messageQuotedId,
+        videoDuration,
         t
       );
     }

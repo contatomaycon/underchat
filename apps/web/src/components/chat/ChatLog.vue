@@ -341,7 +341,8 @@ const pendingImageMeta = (pending: PendingMessage): string => {
 
 const pendingVideoMeta = (pending: PendingMessage): string => {
   const sizeText = formatDocumentSize(pending.video?.size ?? null);
-  return [sizeText].filter(Boolean).join('');
+  const duration = formatVideoDuration(pending.video?.duration ?? null);
+  return [sizeText, duration].filter(Boolean).join(' • ');
 };
 
 const pendingImageSrc = (pending: PendingMessage): string => {
@@ -448,7 +449,17 @@ const resolveVideoMeta = (video?: VideoMessageChat | null): string => {
   if (!video) return '';
   const ext = video.extension ? video.extension.toUpperCase() : 'VIDEO';
   const size = video.size ? formatDocumentSize(video.size) : null;
-  return [ext, size].filter(Boolean).join(' • ');
+  const duration = formatVideoDuration(video.duration);
+  return [ext, size, duration].filter(Boolean).join(' • ');
+};
+const formatVideoDuration = (duration?: number | null): string => {
+  if (!duration || duration <= 0) return '';
+  const totalSeconds = Math.floor(duration);
+  const minutes = Math.floor(totalSeconds / 60)
+    .toString()
+    .padStart(2, '0');
+  const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+  return `${minutes}:${seconds}`;
 };
 
 const onDelete = async (m: ListMessageResult) => {
@@ -502,7 +513,7 @@ const resolveQuotedText = (m: ListMessageResult): string => {
   }
 
   if (m.content.quoted.type === EMessageType.video) {
-    return m.content.quoted.video?.caption || t('video_label');
+    return m.content.quoted.video?.caption || '';
   }
 
   return m.content.quoted.message ?? '';
@@ -539,7 +550,7 @@ const hasQuotedDocument = (m: ListMessageResult): boolean => {
 };
 
 const hasQuotedVideo = (m: ListMessageResult): boolean =>
-  m.content?.quoted?.type === EMessageType.video;
+  !!m.content?.quoted?.video;
 
 const resolveQuotedDocumentIcon = (m: ListMessageResult): string => {
   const ext = m.content?.quoted?.document?.extension?.toLowerCase();
@@ -568,6 +579,21 @@ const resolveQuotedDocumentMeta = (m: ListMessageResult): string => {
   const ext = doc.extension ? doc.extension.toUpperCase() : 'FILE';
   if (!doc.size) return ext;
   return `${ext} • ${formatDocumentSize(doc.size)}`;
+};
+
+const resolveQuotedVideoName = (m: ListMessageResult): string => {
+  const video = m.content?.quoted?.video;
+  const candidate = video?.name ?? video?.caption ?? null;
+  return truncateVideoName(candidate);
+};
+
+const resolveQuotedVideoMeta = (m: ListMessageResult): string => {
+  const video = m.content?.quoted?.video;
+  if (!video) return '';
+  const ext = video.extension ? video.extension.toUpperCase() : 'VIDEO';
+  const size = video.size ? formatDocumentSize(video.size) : null;
+  const duration = formatVideoDuration(video.duration);
+  return [ext, size, duration].filter(Boolean).join(' • ');
 };
 
 const getQuotedTargetId = (m: ListMessageResult): string | null => {
@@ -975,8 +1001,23 @@ onUnmounted(() => {
                     </div>
                   </div>
 
+                  <div v-if="hasQuotedVideo(msgGrp)" class="quoted-video-info">
+                    <span class="quoted-video-name">
+                      {{ resolveQuotedVideoName(msgGrp) }}
+                    </span>
+                    <span
+                      v-if="resolveQuotedVideoMeta(msgGrp)"
+                      class="quoted-video-meta"
+                    >
+                      {{ resolveQuotedVideoMeta(msgGrp) }}
+                    </span>
+                  </div>
+
                   <div
-                    v-if="resolveQuotedText(msgGrp)"
+                    v-if="
+                      resolveQuotedText(msgGrp) &&
+                      msgGrp.content?.quoted?.type !== EMessageType.video
+                    "
                     class="quoted-text"
                     :style="{
                       color: isTypeUser(msgGrp)
@@ -1749,6 +1790,23 @@ onUnmounted(() => {
           color: rgb(var(--v-theme-primary));
           background: rgba(var(--v-theme-primary), 0.15);
         }
+      }
+
+      .quoted-video-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .quoted-video-name {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: rgb(var(--v-theme-primary));
+      }
+
+      .quoted-video-meta {
+        font-size: 0.7rem;
+        color: rgba(var(--v-theme-on-surface), 0.6);
       }
 
       .quoted-document {
