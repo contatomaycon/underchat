@@ -203,6 +203,19 @@ export class MessageSendConsume {
       return;
     }
 
+    if (currentType === EMessageType.audio && data.content?.audio?.url) {
+      if (lastType === EMessageType.audio) {
+        const delay = this.getRandomDelay();
+
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+
+      await this.processAudio(jid, data);
+      this.lastMessageTypeByChatId.set(chatId, EMessageType.audio);
+
+      return;
+    }
+
     if (currentType === EMessageType.video && data.content?.video?.url) {
       if (lastType === EMessageType.video) {
         const delay = this.getRandomDelay();
@@ -219,12 +232,11 @@ export class MessageSendConsume {
     if (currentType === EMessageType.text && data.content?.message) {
       if (hasQuoted && data.content?.quoted) {
         await this.processTextQuoted(jid, data);
-      } else {
-        await this.processText(jid, data);
+        this.lastMessageTypeByChatId.set(chatId, EMessageType.text);
+        return;
       }
-
+      await this.processText(jid, data);
       this.lastMessageTypeByChatId.set(chatId, EMessageType.text);
-
       return;
     }
 
@@ -312,6 +324,37 @@ export class MessageSendConsume {
 
     if (!result) {
       throw new Error('Failed to send video');
+    }
+
+    const update: IUpdateMessage = { message: result, data };
+    await this.pushUpdate(update);
+  }
+
+  private async processAudio(jid: string, data: IChatMessage): Promise<void> {
+    const audio = data.content?.audio;
+
+    if (!audio?.url) {
+      throw new Error('Audio URL is required');
+    }
+
+    const quotedMessage = data.content?.quoted
+      ? this.composeQuotedMessage(data)
+      : undefined;
+
+    const result = await this.baileysMessageMediaService.sendAudio(
+      jid,
+      { url: audio.url },
+      {
+        ptt: audio.ptt ?? true,
+        seconds: audio.duration ?? undefined,
+        mimetype: audio.mimetype ?? undefined,
+        viewOnce: data.message_key?.is_view_once ?? audio.view_once ?? false,
+      },
+      quotedMessage ? { quoted: quotedMessage } : undefined
+    );
+
+    if (!result) {
+      throw new Error('Failed to send audio');
     }
 
     const update: IUpdateMessage = { message: result, data };
@@ -472,6 +515,16 @@ export class MessageSendConsume {
             mimetype: q.document.mimetype ?? undefined,
             caption: q.message ?? undefined,
             fileLength: q.document.size ?? undefined,
+          },
+        };
+      }
+
+      if (q?.type === EMessageType.audio && q?.audio) {
+        quoted.message = {
+          audioMessage: {
+            ptt: q.audio.ptt ?? true,
+            seconds: q.audio.duration ?? undefined,
+            mimetype: q.audio.mimetype ?? undefined,
           },
         };
       }

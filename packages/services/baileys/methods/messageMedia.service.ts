@@ -81,6 +81,7 @@ export class BaileysMessageMediaService {
       ptt?: boolean;
       seconds?: number;
       mimetype?: string;
+      viewOnce?: boolean;
     },
     options?: MiscMessageGenerationOptions
   ) {
@@ -89,6 +90,7 @@ export class BaileysMessageMediaService {
       ptt: !!args?.ptt,
       seconds: args?.seconds,
       mimetype: args?.mimetype,
+      viewOnce: args?.viewOnce,
     };
 
     return this.baileysHelpersService.send(jid, content, options);

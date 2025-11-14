@@ -6,6 +6,7 @@ import {
   LinkPreview,
   DocumentMessageChat,
   VideoMessageChat,
+  AudioMessageChat,
 } from '@core/schema/chat/listMessageChats/response.schema';
 
 interface IAccount {
@@ -37,6 +38,7 @@ export interface IQuotedMessage {
   image?: ImageMessageChat | null;
   video?: VideoMessageChat | null;
   document?: DocumentMessageChat | null;
+  audio?: AudioMessageChat | null;
 }
 
 export interface IReaction {
@@ -54,6 +56,7 @@ export interface IContent {
   image?: ImageMessageChat | null;
   video?: VideoMessageChat | null;
   document?: DocumentMessageChat | null;
+  audio?: AudioMessageChat | null;
   reactions?: IReaction[] | null;
 }
 

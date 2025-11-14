@@ -53,6 +53,13 @@ export const createMessageChatsBodySchema = Type.Object({
       Type.Null(),
     ])
   ),
+  audios: Type.Optional(
+    Type.Union([
+      uploadFileRequestSchema,
+      Type.Array(uploadFileRequestSchema),
+      Type.Null(),
+    ])
+  ),
   video_duration: Type.Optional(
     Type.Union([
       Type.Number(),
@@ -60,6 +67,25 @@ export const createMessageChatsBodySchema = Type.Object({
       Type.Object({
         value: Type.String(),
       }),
+    ])
+  ),
+  audio_duration: Type.Optional(
+    Type.Union([
+      Type.Number(),
+      Type.String(),
+      Type.Object({
+        value: Type.String(),
+      }),
+    ])
+  ),
+  audio_view_once: Type.Optional(
+    Type.Union([
+      Type.Boolean(),
+      Type.String(),
+      Type.Object({
+        value: Type.String(),
+      }),
+      Type.Null(),
     ])
   ),
   reaction_message_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),

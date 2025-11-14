@@ -504,6 +504,41 @@ export class MessageUpsertConsume {
       }
 
       if (
+        content.type === EMessageType.audio &&
+        data.message?.message?.audioMessage?.url
+      ) {
+        const audioMsg = data.message.message.audioMessage;
+        const buffer = await downloadMediaMessage(data.message, 'buffer', {
+          startByte: 0,
+        });
+
+        const inferredAudioName =
+          (audioMsg as { fileName?: string | null })?.fileName ?? undefined;
+
+        const audioResult = await this.storageService.uploadFromBuffer(
+          buffer,
+          data.account_id,
+          {
+            fileName: inferredAudioName,
+            mimetype: audioMsg.mimetype ?? undefined,
+          }
+        );
+
+        content.audio = audioResult
+          ? {
+              url: audioResult.url,
+              name: inferredAudioName ?? audioResult.name,
+              mimetype: audioMsg.mimetype ?? audioResult.mimetype ?? null,
+              extension: audioResult.extension,
+              size: audioResult.size,
+              duration: audioMsg.seconds ?? null,
+              ptt: audioMsg.ptt ?? false,
+              view_once: data.message?.key?.isViewOnce ?? false,
+            }
+          : undefined;
+      }
+
+      if (
         content.type === EMessageType.document &&
         data.message?.message?.documentMessage?.url
       ) {

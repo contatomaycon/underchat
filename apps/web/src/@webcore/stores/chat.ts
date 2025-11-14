@@ -59,6 +59,14 @@ export interface PendingMessage {
     mimetype?: string | null;
     duration?: number | null;
   } | null;
+  audio?: {
+    preview: string;
+    size: number;
+    name?: string | null;
+    mimetype?: string | null;
+    duration?: number | null;
+    viewOnce?: boolean | null;
+  } | null;
 }
 
 type UploadOptions = {
@@ -124,6 +132,7 @@ export const useChatStore = defineStore('chat', {
         },
         image: null,
         video: null,
+        audio: null,
       };
 
       this.pendingMessages.push(pending);
@@ -155,6 +164,7 @@ export const useChatStore = defineStore('chat', {
           mimetype: input.mimetype ?? null,
         },
         video: null,
+        audio: null,
       };
 
       this.pendingMessages.push(pending);
@@ -191,6 +201,46 @@ export const useChatStore = defineStore('chat', {
               ? input.duration
               : null,
         },
+        audio: null,
+      };
+
+      this.pendingMessages.push(pending);
+    },
+    addPendingAudioMessage(input: {
+      id: string;
+      chatId: string;
+      preview: string;
+      size: number;
+      name?: string | null;
+      mimetype?: string | null;
+      duration?: number | null;
+      viewOnce?: boolean | null;
+      message?: string | null;
+      quotedMessageId?: string | null;
+    }) {
+      const pending: PendingMessage = {
+        id: input.id,
+        chat_id: input.chatId,
+        type: EMessageType.audio,
+        status: 'uploading',
+        progress: 0,
+        created_at: new Date().toISOString(),
+        message: input.message ?? null,
+        quoted_message_id: input.quotedMessageId ?? null,
+        document: null,
+        image: null,
+        video: null,
+        audio: {
+          preview: input.preview,
+          size: input.size,
+          name: input.name ?? null,
+          mimetype: input.mimetype ?? null,
+          duration:
+            typeof input.duration === 'number' && !Number.isNaN(input.duration)
+              ? input.duration
+              : null,
+          viewOnce: input.viewOnce ?? null,
+        },
       };
 
       this.pendingMessages.push(pending);
@@ -210,8 +260,19 @@ export const useChatStore = defineStore('chat', {
     },
     removePendingMessage(id: string) {
       const index = this.pendingMessages.findIndex((item) => item.id === id);
-      if (index !== -1) {
-        this.pendingMessages.splice(index, 1);
+      if (index === -1) return;
+      const [removed] = this.pendingMessages.splice(index, 1);
+      const imagePreview = removed?.image?.preview;
+      if (imagePreview && imagePreview.startsWith('blob:')) {
+        URL.revokeObjectURL(imagePreview);
+      }
+      const videoPreview = removed?.video?.preview;
+      if (videoPreview && videoPreview.startsWith('blob:')) {
+        URL.revokeObjectURL(videoPreview);
+      }
+      const audioPreview = removed?.audio?.preview;
+      if (audioPreview && audioPreview.startsWith('blob:')) {
+        URL.revokeObjectURL(audioPreview);
       }
     },
     addMessageActiveChat(message: IChatMessage) {
@@ -654,6 +715,74 @@ export const useChatStore = defineStore('chat', {
     },
 
     async createMessageWithVideos(
+      formData: FormData,
+      options?: UploadOptions
+    ): Promise<boolean> {
+      const shouldHandleLoading = !options?.skipLoading;
+
+      try {
+        if (shouldHandleLoading) {
+          this.loading = true;
+        }
+
+        const config: AxiosRequestConfig<FormData> = {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        };
+
+        if (options?.onUploadProgress) {
+          config.onUploadProgress = (event) => {
+            if (!event.total) {
+              options.onUploadProgress?.(0);
+
+              return;
+            }
+
+            const progress = Math.min(
+              99,
+              Math.round((event.loaded / event.total) * 100)
+            );
+            options.onUploadProgress?.(progress);
+          };
+        }
+
+        const response = await axios.post<IApiResponse<boolean>>(
+          `/chat/${this.activeChat?.chat_id}`,
+          formData,
+          config
+        );
+
+        if (shouldHandleLoading) {
+          this.loading = false;
+        }
+
+        const data = response?.data as IApiResponse<boolean>;
+
+        if (!data?.status) {
+          this.showSnackbar(data.message, EColor.error);
+
+          return false;
+        }
+
+        return true;
+      } catch (error) {
+        if (shouldHandleLoading) {
+          this.loading = false;
+        }
+
+        const message =
+          isAxiosError(error) &&
+          typeof error.response?.data?.message === 'string'
+            ? (error.response.data.message as string)
+            : this.i18n.global.t('chat_message_create_error');
+
+        this.showSnackbar(message, EColor.error);
+
+        return false;
+      }
+    },
+    async createMessageWithAudios(
       formData: FormData,
       options?: UploadOptions
     ): Promise<boolean> {

@@ -183,6 +183,18 @@ export class ChatMessageCreatorUseCase {
     return [videos];
   }
 
+  private normalizeAudiosArray(
+    audios?: UploadFileRequest | UploadFileRequest[] | null
+  ): UploadFileRequest[] {
+    if (!audios) return [];
+
+    if (Array.isArray(audios)) {
+      return audios;
+    }
+
+    return [audios];
+  }
+
   private normalizeType(type: string | { value?: string }): EMessageType {
     if (type && typeof type === 'object' && 'value' in type && type.value) {
       return type.value as EMessageType;
@@ -229,6 +241,45 @@ export class ChatMessageCreatorUseCase {
     }
 
     return numeric;
+  }
+
+  private normalizeBooleanField(value: unknown): boolean {
+    if (value === null || typeof value === 'undefined') {
+      return false;
+    }
+
+    if (Array.isArray(value) && value.length > 0) {
+      return this.normalizeBooleanField(value[0]);
+    }
+
+    if (typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      if ('value' in record) {
+        return this.normalizeBooleanField(record.value);
+      }
+      return false;
+    }
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim().toLowerCase();
+      if (!trimmed) {
+        return false;
+      }
+      if (trimmed === 'true') return true;
+      if (trimmed === '1') return true;
+      if (trimmed === 'on') return true;
+      return false;
+    }
+
+    if (typeof value === 'number') {
+      return value === 1;
+    }
+
+    if (typeof value === 'boolean') {
+      return value;
+    }
+
+    return false;
   }
 
   private extractFieldValue(value: unknown): string | null {
@@ -296,6 +347,21 @@ export class ChatMessageCreatorUseCase {
 
     return uploadedVideos.filter(
       (vid): vid is UploadFileResponse => vid !== null
+    );
+  }
+
+  private async uploadAudios(
+    audios: UploadFileRequest[],
+    accountId: string
+  ): Promise<UploadFileResponse[]> {
+    const uploadPromises = audios.map((audio) =>
+      this.storageService.uploadAudio(audio, accountId)
+    );
+
+    const uploadedAudios = await Promise.all(uploadPromises);
+
+    return uploadedAudios.filter(
+      (audio): audio is UploadFileResponse => audio !== null
     );
   }
 
@@ -402,6 +468,58 @@ export class ChatMessageCreatorUseCase {
     };
   }
 
+  private createAudioMessage(
+    chat: IChat,
+    chatId: string,
+    type: EMessageType,
+    message: string | null,
+    audioData: UploadFileResponse,
+    messageQuotedId: string | null,
+    quotedMessage: IQuotedMessage | null,
+    duration: number | null,
+    isViewOnce: boolean,
+    isPtt: boolean
+  ): IChatMessage {
+    return {
+      message_id: uuidv4(),
+      chat_id: chatId,
+      message_key: {
+        remote_jid: chat.message_key?.remote_jid ?? null,
+        remote_jid_alt: chat.message_key?.remote_jid_alt ?? null,
+        is_view_once: isViewOnce,
+      },
+      type_user: ETypeUserChat.operator,
+      account: chat.account,
+      worker: chat.worker,
+      user: chat.user,
+      phone: chat.phone,
+      summary: {
+        is_sent: false,
+        is_delivered: false,
+        is_seen: false,
+      },
+      deleted: false,
+      has_quoted: !!quotedMessage,
+      content: {
+        type,
+        message,
+        message_quoted_id: messageQuotedId,
+        quoted: quotedMessage,
+        audio: {
+          url: audioData.url,
+          name: audioData.name,
+          mimetype: audioData.mimetype ?? null,
+          extension: audioData.extension,
+          size: audioData.size,
+          duration: duration && Number.isFinite(duration) ? duration : null,
+          ptt: isPtt,
+          view_once: isViewOnce,
+        },
+      },
+      date: new Date().toISOString(),
+    };
+  }
+
   private createTextMessage(
     chat: IChat,
     chatId: string,
@@ -459,18 +577,22 @@ export class ChatMessageCreatorUseCase {
 
     const quotedImage = chatMessage.content?.image ?? null;
     const quotedVideo = chatMessage.content?.video ?? null;
+    const quotedAudio = chatMessage.content?.audio ?? null;
     const quotedDocument = chatMessage.content?.document ?? null;
 
-    let inferredType: EMessageType | null = null;
+    let inferredType: EMessageType | null = chatMessage.content?.type ?? null;
     if (quotedVideo) inferredType = EMessageType.video;
-    else if (quotedImage) inferredType = EMessageType.image;
-    else if (quotedDocument) inferredType = EMessageType.document;
-    else inferredType = chatMessage.content?.type ?? null;
+    if (!quotedVideo && quotedImage) inferredType = EMessageType.image;
+    if (!quotedVideo && !quotedImage && quotedDocument)
+      inferredType = EMessageType.document;
+    if (!quotedVideo && !quotedImage && !quotedDocument && quotedAudio)
+      inferredType = EMessageType.audio;
 
     return {
       type: inferredType,
       image: quotedImage,
       video: quotedVideo,
+      audio: quotedAudio,
       document: quotedDocument,
       key: {
         remote_jid: chatMessage.message_key?.remote_jid ?? null,
@@ -656,6 +778,93 @@ export class ChatMessageCreatorUseCase {
     return true;
   }
 
+  private async processAudioMessages(
+    chat: IChat,
+    chatId: string,
+    audios: UploadFileRequest[],
+    accountId: string,
+    type: EMessageType,
+    message: string | null,
+    messageQuotedId: string | null | undefined,
+    audioDuration: number | null,
+    isViewOnce: boolean,
+    t: TFunction<'translation', undefined>
+  ): Promise<boolean> {
+    let validAudios: UploadFileResponse[];
+
+    try {
+      validAudios = await this.uploadAudios(audios, accountId);
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.message === 'AUDIO_SIZE_LIMIT_EXCEEDED') {
+          throw new Error(t('audio_size_exceeded'));
+        }
+      }
+
+      throw error;
+    }
+
+    if (validAudios.length === 0) {
+      return false;
+    }
+
+    let quotedMessage: IQuotedMessage | null = null;
+    if (messageQuotedId) {
+      quotedMessage = await this.getQuotedMessage(
+        accountId,
+        chatId,
+        messageQuotedId
+      );
+
+      if (!quotedMessage) {
+        throw new Error(t('message_quoted_not_found'));
+      }
+    }
+
+    const quotedId = messageQuotedId ?? null;
+    const isPtt = true;
+
+    if (validAudios.length === 1) {
+      const audioMessage = this.createAudioMessage(
+        chat,
+        chatId,
+        type,
+        message,
+        validAudios[0],
+        quotedId,
+        quotedMessage,
+        audioDuration,
+        isViewOnce,
+        isPtt
+      );
+
+      await this.publishMessage(audioMessage);
+
+      return true;
+    }
+
+    const publishTasks = validAudios.map((audioData) => {
+      const audioMessage = this.createAudioMessage(
+        chat,
+        chatId,
+        type,
+        message,
+        audioData,
+        quotedId,
+        quotedMessage,
+        audioDuration,
+        isViewOnce,
+        isPtt
+      );
+
+      return this.publishMessage(audioMessage);
+    });
+
+    await Promise.all(publishTasks);
+
+    return true;
+  }
+
   private async processDocumentMessages(
     chat: IChat,
     chatId: string,
@@ -800,6 +1009,9 @@ export class ChatMessageCreatorUseCase {
     const documents = this.normalizeDocumentsArray(body.documents);
     const videos = this.normalizeVideosArray(body.videos);
     const videoDuration = this.normalizeDurationField(body.video_duration);
+    const audios = this.normalizeAudiosArray(body.audios);
+    const audioDuration = this.normalizeDurationField(body.audio_duration);
+    const audioViewOnce = this.normalizeBooleanField(body.audio_view_once);
     const messageQuotedId = this.normalizeMessageQuotedId(
       body.message_quoted_id
     );
@@ -860,6 +1072,25 @@ export class ChatMessageCreatorUseCase {
         message,
         messageQuotedId,
         videoDuration,
+        t
+      );
+    }
+
+    if (type === EMessageType.audio) {
+      if (audios.length === 0) {
+        throw new Error(t('audio_required'));
+      }
+
+      return this.processAudioMessages(
+        chat,
+        params.chat_id,
+        audios,
+        accountId,
+        type,
+        message,
+        messageQuotedId,
+        audioDuration,
+        audioViewOnce,
         t
       );
     }

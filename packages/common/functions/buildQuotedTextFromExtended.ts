@@ -9,9 +9,7 @@ export function buildQuotedTextFromExtended(
   m: WAMessage
 ): IQuotedMessage | null {
   const message = m?.message;
-  if (!message) {
-    return null;
-  }
+  if (!message) return null;
 
   const contextSources = [
     message.extendedTextMessage?.contextInfo,
@@ -44,14 +42,17 @@ export function buildQuotedTextFromExtended(
     quotedMessage.imageMessage?.caption ??
     '';
 
+  const hasDocument = !!quotedMessage.documentMessage;
+  const hasVideo = !!quotedMessage.videoMessage;
+  const hasImage = !!quotedMessage.imageMessage;
+  const hasAudio = !!quotedMessage.audioMessage;
+
   let type = EMessageType.text;
-  if (quotedMessage.documentMessage) {
-    type = EMessageType.document;
-  } else if (quotedMessage.videoMessage) {
-    type = EMessageType.video;
-  } else if (quotedMessage.imageMessage) {
-    type = EMessageType.image;
-  }
+  if (hasDocument) type = EMessageType.document;
+  if (!hasDocument && hasVideo) type = EMessageType.video;
+  if (!hasDocument && !hasVideo && hasImage) type = EMessageType.image;
+  if (!hasDocument && !hasVideo && !hasImage && hasAudio)
+    type = EMessageType.audio;
 
   const quoted: IQuotedMessage = {
     key: {
@@ -141,6 +142,22 @@ export function buildQuotedTextFromExtended(
     if (!quoted.message && documentMessage.fileName) {
       quoted.message = documentMessage.fileName;
     }
+  }
+
+  const audioMessage = quotedMessage.audioMessage;
+  if (audioMessage) {
+    quoted.audio = {
+      url: null,
+      name: (audioMessage as any).fileName ?? null,
+      mimetype: audioMessage.mimetype ?? null,
+      extension: null,
+      size: audioMessage.fileLength
+        ? Number(audioMessage.fileLength.toString())
+        : null,
+      duration: audioMessage.seconds ?? null,
+      ptt: audioMessage.ptt ?? false,
+      view_once: false,
+    };
   }
 
   return quoted;

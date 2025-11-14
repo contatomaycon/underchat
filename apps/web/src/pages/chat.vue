@@ -36,6 +36,7 @@ const { t } = useI18n();
 const MAX_DOCUMENT_SIZE_BYTES = 100 * 1024 * 1024;
 const MAX_IMAGE_SIZE_BYTES = 16 * 1024 * 1024;
 const MAX_VIDEO_SIZE_BYTES = 100 * 1024 * 1024;
+const MAX_AUDIO_SIZE_BYTES = 16 * 1024 * 1024;
 
 definePage({
   meta: {
@@ -90,6 +91,7 @@ const selectedVideos = ref<SelectedVideoPreview[]>([]);
 const isRecordingAudio = ref(false);
 const isRecordingPaused = ref(false);
 const audioViewOnce = ref(false);
+const audioPendingViewOnce = ref(false);
 const audioRecordingStartAt = ref<number | null>(null);
 const audioRecordingAccumulated = ref(0);
 const audioRecordingElapsedMs = ref(0);
@@ -268,6 +270,38 @@ const createVideoFormData = (
   return formData;
 };
 
+const createAudioFormData = (
+  audio: {
+    blob: Blob;
+    fileName: string;
+    mimeType: string;
+  },
+  messageValue: string | null,
+  quotedId: string | null,
+  viewOnce: boolean,
+  duration: number | null
+): FormData => {
+  const formData = new FormData();
+  formData.append('type', EMessageType.audio);
+  if (messageValue) {
+    formData.append('message', messageValue);
+  }
+
+  if (quotedId) {
+    formData.append('message_quoted_id', quotedId);
+  }
+
+  formData.append('audios', audio.blob, audio.fileName);
+  if (typeof duration === 'number' && !Number.isNaN(duration)) {
+    formData.append('audio_duration', Math.round(duration).toString());
+  }
+  if (viewOnce) {
+    formData.append('audio_view_once', 'true');
+  }
+
+  return formData;
+};
+
 const createTextMessageBody = (): CreateMessageChatsBody => {
   const inputCreateMessage: CreateMessageChatsBody = {
     type: EMessageType.text,
@@ -418,6 +452,71 @@ const sendVideoMessage = async (): Promise<void> => {
       chatStore.removePendingMessage(tempId);
     })
   );
+};
+
+const sendAudioMessage = async (
+  blob: Blob,
+  mimeType: string,
+  duration: number | null,
+  viewOnce: boolean
+): Promise<void> => {
+  if (!chatStore.activeChat?.chat_id) return;
+
+  if (blob.size > MAX_AUDIO_SIZE_BYTES) {
+    chatStore.showSnackbar(t('audio_size_exceeded'), EColor.error);
+    return;
+  }
+
+  const replyId = chatStore.messageReply?.message_id ?? null;
+  const messageValue = msg.value ? msg.value : null;
+  const chatId = chatStore.activeChat.chat_id;
+  const tempId = crypto.randomUUID();
+  const extensionFromMime = mimeType.split('/')[1] || 'ogg';
+  const fileName = `audio-${Date.now()}.${extensionFromMime}`;
+  const previewUrl =
+    recordedAudioUrl.value && recordedAudioUrl.value.startsWith('blob:')
+      ? recordedAudioUrl.value
+      : URL.createObjectURL(blob);
+
+  chatStore.addPendingAudioMessage({
+    id: tempId,
+    chatId,
+    preview: previewUrl,
+    size: blob.size,
+    name: fileName,
+    mimetype: mimeType,
+    duration,
+    viewOnce,
+    message: messageValue,
+    quotedMessageId: replyId,
+  });
+
+  await nextTick();
+  scrollToBottomInChatLog();
+
+  const formData = createAudioFormData(
+    { blob, fileName, mimeType },
+    messageValue,
+    replyId,
+    viewOnce,
+    duration
+  );
+
+  const success = await chatStore.createMessageWithAudios(formData, {
+    skipLoading: true,
+    onUploadProgress: (progress) => {
+      chatStore.updatePendingMessageProgress(tempId, progress);
+    },
+  });
+
+  if (!success) {
+    chatStore.updatePendingMessageStatus(tempId, 'error');
+    return;
+  }
+
+  chatStore.updatePendingMessageProgress(tempId, 100);
+  chatStore.removePendingMessage(tempId);
+  chatStore.clearMessageReply();
 };
 
 const sendDocumentMessage = async (): Promise<void> => {
@@ -759,13 +858,13 @@ const getVideoDuration = (src: string): Promise<number | null> =>
   });
 
 const updateRecordingElapsed = () => {
-  if (audioRecordingStartAt.value !== null) {
-    audioRecordingElapsedMs.value =
-      audioRecordingAccumulated.value +
-      (performance.now() - audioRecordingStartAt.value);
-  } else {
+  if (audioRecordingStartAt.value === null) {
     audioRecordingElapsedMs.value = audioRecordingAccumulated.value;
+    return;
   }
+  audioRecordingElapsedMs.value =
+    audioRecordingAccumulated.value +
+    (performance.now() - audioRecordingStartAt.value);
 };
 
 const setupAudioCanvas = () => {
@@ -832,8 +931,12 @@ const drawAudioWaveform = () => {
   for (let i = 0; i < bufferLength; i += 4) {
     const v = data[i] / 128.0;
     const y = (v * height) / 2;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+    if (i === 0) {
+      ctx.moveTo(x, y);
+    }
+    if (i !== 0) {
+      ctx.lineTo(x, y);
+    }
     x += sliceWidth * 4;
   }
 
@@ -869,6 +972,7 @@ const resetRecordingState = () => {
   isRecordingAudio.value = false;
   isRecordingPaused.value = false;
   audioViewOnce.value = false;
+  audioPendingViewOnce.value = false;
   audioRecordingStartAt.value = null;
   audioRecordingAccumulated.value = 0;
   audioRecordingElapsedMs.value = 0;
@@ -876,7 +980,7 @@ const resetRecordingState = () => {
   audioChunksRef.value = [];
 };
 
-const handleRecorderStop = () => {
+const handleRecorderStop = async () => {
   const recorder = mediaRecorderRef.value;
   const saveRecording = shouldPersistRecording.value;
   shouldPersistRecording.value = false;
@@ -895,12 +999,25 @@ const handleRecorderStop = () => {
     audioRecordingDurationSeconds.value = Math.round(
       audioRecordingElapsedMs.value / 1000
     );
-    console.log('Áudio gravado:', {
-      blob,
-      duration: audioRecordingDurationSeconds.value,
-      viewOnce: audioViewOnce.value,
-    });
-    chatStore.showSnackbar(t('audio_recording_saved'), EColor.success);
+
+    const audioWithinLimit = blob.size <= MAX_AUDIO_SIZE_BYTES;
+    if (!audioWithinLimit) {
+      chatStore.showSnackbar(t('audio_size_exceeded'), EColor.error);
+      if (recordedAudioUrl.value) {
+        URL.revokeObjectURL(recordedAudioUrl.value);
+      }
+      recordedAudioUrl.value = null;
+    }
+    if (audioWithinLimit) {
+      await sendAudioMessage(
+        blob,
+        mimeType,
+        audioRecordingDurationSeconds.value,
+        audioPendingViewOnce.value
+      );
+      recordedAudioUrl.value = null;
+    }
+    recordedAudioBlob.value = null;
   }
 
   releaseAudioResources();
@@ -923,7 +1040,7 @@ const stopAudioRecordingInternal = () => {
     }
   }
 
-  handleRecorderStop();
+  void handleRecorderStop();
 };
 
 const cancelAudioRecording = () => {
@@ -937,7 +1054,8 @@ const cancelAudioRecording = () => {
 const finalizeAudioRecording = () => {
   if (!isRecordingAudio.value) return;
   shouldPersistRecording.value = true;
-  stopAudioRecordingInternal();
+  audioPendingViewOnce.value = audioViewOnce.value;
+  void stopAudioRecordingInternal();
 };
 
 const togglePauseAudioRecording = async () => {
@@ -961,18 +1079,18 @@ const togglePauseAudioRecording = async () => {
       audioRecordingRAFId.value = null;
     }
     isRecordingPaused.value = true;
-  } else {
-    if (mediaRecorderRef.value.state === 'paused') {
-      mediaRecorderRef.value.resume();
-    }
-    if (audioContextRef.value?.state === 'suspended') {
-      await audioContextRef.value.resume().catch(() => null);
-    }
-    audioRecordingStartAt.value = performance.now();
-    updateRecordingElapsed();
-    isRecordingPaused.value = false;
-    drawAudioWaveform();
+    return;
   }
+  if (mediaRecorderRef.value.state === 'paused') {
+    mediaRecorderRef.value.resume();
+  }
+  if (audioContextRef.value?.state === 'suspended') {
+    await audioContextRef.value.resume().catch(() => null);
+  }
+  audioRecordingStartAt.value = performance.now();
+  updateRecordingElapsed();
+  isRecordingPaused.value = false;
+  drawAudioWaveform();
 };
 
 const toggleViewOnceAudio = () => {
@@ -987,6 +1105,7 @@ const startAudioRecording = async () => {
   }
   recordedAudioBlob.value = null;
   audioRecordingDurationSeconds.value = null;
+  audioPendingViewOnce.value = false;
 
   try {
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -1125,7 +1244,10 @@ const onPickVideo = async (e: Event) => {
   target.value = '';
 };
 const onPickAudio = (e: Event) => {
-  console.log(e);
+  const target = e.target as HTMLInputElement | null;
+  if (target) {
+    target.value = '';
+  }
 };
 
 const onEmojiSelect = (e: any) => {
@@ -1719,7 +1841,7 @@ onBeforeUnmount(() => {
           </div>
 
           <VTextarea
-            v-else
+            v-if="!isRecordingAudio"
             ref="composerRef"
             :key="contact_id"
             v-model="msg"

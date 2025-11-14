@@ -40,6 +40,10 @@ const replyIsVideo = computed(
   () => replying.value?.content?.type === EMessageType.video
 );
 
+const replyIsAudio = computed(
+  () => replying.value?.content?.type === EMessageType.audio
+);
+
 const replyImageSrc = computed(() => {
   const img = replying.value?.content?.image;
   if (!img) {
@@ -67,6 +71,10 @@ const replyText = computed(() => {
     return (
       m.content.video?.caption || m.content.video?.name || t('video_label')
     );
+  }
+
+  if (m.content?.type === EMessageType.audio) {
+    return m.content.audio?.name || t('audio_label');
   }
 
   if (m.content?.message) {
@@ -142,6 +150,16 @@ const replyDocumentMeta = computed(() => {
   return items.join(' • ');
 });
 
+const formatDuration = (seconds?: number | null): string => {
+  if (!seconds || seconds <= 0) return '';
+  const total = Math.floor(seconds);
+  const minutes = Math.floor(total / 60)
+    .toString()
+    .padStart(2, '0');
+  const secs = (total % 60).toString().padStart(2, '0');
+  return `${minutes}:${secs}`;
+};
+
 const replyVideoMeta = computed(() => {
   const video = replying.value?.content?.video;
   if (!video) return '';
@@ -150,6 +168,17 @@ const replyVideoMeta = computed(() => {
   if (ext) items.push(ext);
   const sizeText = formatFileSize(video.size ?? undefined);
   if (sizeText) items.push(sizeText);
+  return items.join(' • ');
+});
+
+const replyAudioMeta = computed(() => {
+  const audio = replying.value?.content?.audio;
+  if (!audio) return '';
+  const items: string[] = [];
+  const sizeText = formatFileSize(audio.size ?? undefined);
+  if (sizeText) items.push(sizeText);
+  const durationText = formatDuration(audio.duration ?? null);
+  if (durationText) items.push(durationText);
   return items.join(' • ');
 });
 
@@ -168,11 +197,20 @@ onMounted(() => {
     <div v-if="replyIsImage && replyImageSrc" class="rp-media">
       <img :src="replyImageSrc" alt="preview" />
     </div>
-    <div v-else-if="replyIsDocument" class="rp-doc-icon">
+    <div v-if="!replyIsImage && replyIsDocument" class="rp-doc-icon">
       <VIcon :icon="replyDocumentIcon" size="26" color="primary" />
     </div>
-    <div v-else-if="replyIsVideo" class="rp-doc-icon rp-video-icon">
+    <div
+      v-if="!replyIsImage && !replyIsDocument && replyIsVideo"
+      class="rp-doc-icon rp-video-icon"
+    >
       <VIcon size="26" color="primary">tabler-player-play</VIcon>
+    </div>
+    <div
+      v-if="!replyIsImage && !replyIsDocument && !replyIsVideo && replyIsAudio"
+      class="rp-doc-icon rp-audio-icon"
+    >
+      <VIcon size="26" color="primary">tabler-microphone</VIcon>
     </div>
     <div class="rp-content">
       <div class="rp-name">{{ replyName }}</div>
@@ -182,6 +220,9 @@ onMounted(() => {
       </div>
       <div v-if="replyIsVideo && replyVideoMeta" class="rp-meta">
         {{ replyVideoMeta }}
+      </div>
+      <div v-if="replyIsAudio && replyAudioMeta" class="rp-meta">
+        {{ replyAudioMeta }}
       </div>
     </div>
     <VBtn

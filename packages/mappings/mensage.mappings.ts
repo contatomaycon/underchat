@@ -252,6 +252,41 @@ export const mensageMappings = () => {
                     },
                   },
                 },
+                audio: {
+                  type: 'nested',
+                  properties: {
+                    url: {
+                      type: 'keyword',
+                    },
+                    name: {
+                      type: 'text',
+                      fields: {
+                        keyword: {
+                          type: 'keyword',
+                          ignore_above: 256,
+                        },
+                      },
+                    },
+                    mimetype: {
+                      type: 'keyword',
+                    },
+                    extension: {
+                      type: 'keyword',
+                    },
+                    size: {
+                      type: 'long',
+                    },
+                    duration: {
+                      type: 'integer',
+                    },
+                    ptt: {
+                      type: 'boolean',
+                    },
+                    view_once: {
+                      type: 'boolean',
+                    },
+                  },
+                },
               },
             },
             image: {
@@ -350,6 +385,41 @@ export const mensageMappings = () => {
                 },
                 size: {
                   type: 'long',
+                },
+              },
+            },
+            audio: {
+              type: 'nested',
+              properties: {
+                url: {
+                  type: 'keyword',
+                },
+                name: {
+                  type: 'text',
+                  fields: {
+                    keyword: {
+                      type: 'keyword',
+                      ignore_above: 256,
+                    },
+                  },
+                },
+                mimetype: {
+                  type: 'keyword',
+                },
+                extension: {
+                  type: 'keyword',
+                },
+                size: {
+                  type: 'long',
+                },
+                duration: {
+                  type: 'integer',
+                },
+                ptt: {
+                  type: 'boolean',
+                },
+                view_once: {
+                  type: 'boolean',
                 },
               },
             },

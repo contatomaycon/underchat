@@ -6,6 +6,7 @@ import {
   ListMessageResult,
   DocumentMessageChat,
   VideoMessageChat,
+  AudioMessageChat,
 } from '@core/schema/chat/listMessageChats/response.schema';
 import type { PendingMessage } from '@/@webcore/stores/chat';
 import { isTypeUser } from '@core/common/functions/isTypeUser';
@@ -254,10 +255,25 @@ const isDownloadableVideo = (message: ListMessageResult): boolean => {
   return message.content?.type === EMessageType.video;
 };
 
+const isDownloadableAudio = (message: ListMessageResult): boolean => {
+  const audio = message.content?.audio;
+  if (!audio) return false;
+  if (!audio.url) return false;
+  if (message.message_key?.is_view_once) return false;
+  return message.content?.type === EMessageType.audio;
+};
+
+const isAudioViewOnce = (message: ListMessageResult): boolean => {
+  if (message.message_key?.is_view_once) return true;
+  if (message.content?.audio?.view_once) return true;
+  return false;
+};
+
 const shouldShowCopy = (message: ListMessageResult): boolean => {
   if (isDownloadableDocument(message)) return false;
   if (isDownloadableImage(message)) return false;
   if (isDownloadableVideo(message)) return false;
+  if (isDownloadableAudio(message)) return false;
   return isTextMessage(message);
 };
 
@@ -265,10 +281,16 @@ const shouldShowDownload = (message: ListMessageResult): boolean => {
   if (isDownloadableDocument(message)) return true;
   if (isDownloadableImage(message)) return true;
   if (isDownloadableVideo(message)) return true;
+  if (isDownloadableAudio(message)) return true;
   return false;
 };
 
 const downloadMessage = (message: ListMessageResult) => {
+  const audio = message.content?.audio;
+  if (audio?.url && isDownloadableAudio(message)) {
+    downloadAudio(audio.url, audioDownloadName(audio));
+    return;
+  }
   const docUrl = message.content?.document?.url;
   if (docUrl) {
     window.open(docUrl, '_blank');
@@ -297,6 +319,9 @@ const isPendingImage = (pending: PendingMessage): boolean =>
 const isPendingVideo = (pending: PendingMessage): boolean =>
   pending.type === EMessageType.video;
 
+const isPendingAudio = (pending: PendingMessage): boolean =>
+  pending.type === EMessageType.audio;
+
 const pendingDocumentMeta = (pending: PendingMessage): string => {
   if (!pending.document) return '';
   const ext = pending.document.extension?.toUpperCase();
@@ -323,6 +348,7 @@ const pendingStatusText = (pending: PendingMessage): string => {
     if (pending.type === EMessageType.document)
       return t('document_upload_failed');
     if (pending.type === EMessageType.video) return t('video_upload_failed');
+    if (pending.type === EMessageType.audio) return t('audio_upload_failed');
     return t('image_upload_failed');
   }
 
@@ -331,6 +357,8 @@ const pendingStatusText = (pending: PendingMessage): string => {
     return `${t('document_uploading')} • ${percent}%`;
   if (pending.type === EMessageType.video)
     return `${t('video_uploading')} • ${percent}%`;
+  if (pending.type === EMessageType.audio)
+    return `${t('audio_uploading')} • ${percent}%`;
   return `${t('image_uploading')} • ${percent}%`;
 };
 
@@ -345,6 +373,12 @@ const pendingVideoMeta = (pending: PendingMessage): string => {
   return [sizeText, duration].filter(Boolean).join(' • ');
 };
 
+const pendingAudioMeta = (pending: PendingMessage): string => {
+  const sizeText = formatDocumentSize(pending.audio?.size ?? null);
+  const duration = formatVideoDuration(pending.audio?.duration ?? null);
+  return [sizeText, duration].filter(Boolean).join(' • ');
+};
+
 const pendingImageSrc = (pending: PendingMessage): string => {
   return pending.image?.preview ?? '';
 };
@@ -352,6 +386,9 @@ const pendingImageSrc = (pending: PendingMessage): string => {
 const pendingVideoSrc = (pending: PendingMessage): string => {
   return pending.video?.preview || '';
 };
+
+const pendingAudioSrc = (pending: PendingMessage): string =>
+  pending.audio?.preview ?? '';
 
 const documentIconMap: Record<string, string> = {
   pdf: 'tabler-file-type-pdf',
@@ -445,11 +482,26 @@ const videoDownloadName = (video?: VideoMessageChat | null): string => {
   return `video.${ext}`;
 };
 
+const audioDownloadName = (audio?: AudioMessageChat | null): string => {
+  if (!audio) return 'audio.ogg';
+  if (audio.name) return audio.name;
+  const ext = audio.extension ? audio.extension.toLowerCase() : 'ogg';
+  return `audio.${ext}`;
+};
+
 const resolveVideoMeta = (video?: VideoMessageChat | null): string => {
   if (!video) return '';
   const ext = video.extension ? video.extension.toUpperCase() : 'VIDEO';
   const size = video.size ? formatDocumentSize(video.size) : null;
   const duration = formatVideoDuration(video.duration);
+  return [ext, size, duration].filter(Boolean).join(' • ');
+};
+
+const resolveAudioMeta = (audio?: AudioMessageChat | null): string => {
+  if (!audio) return '';
+  const ext = audio.extension ? audio.extension.toUpperCase() : 'AUDIO';
+  const size = audio.size ? formatDocumentSize(audio.size) : null;
+  const duration = formatVideoDuration(audio.duration);
   return [ext, size, duration].filter(Boolean).join(' • ');
 };
 const formatVideoDuration = (duration?: number | null): string => {
@@ -516,6 +568,10 @@ const resolveQuotedText = (m: ListMessageResult): string => {
     return m.content.quoted.video?.caption || '';
   }
 
+  if (m.content.quoted.type === EMessageType.audio) {
+    return m.content.quoted.message ?? t('audio_label');
+  }
+
   return m.content.quoted.message ?? '';
 };
 
@@ -551,6 +607,9 @@ const hasQuotedDocument = (m: ListMessageResult): boolean => {
 
 const hasQuotedVideo = (m: ListMessageResult): boolean =>
   !!m.content?.quoted?.video;
+
+const hasQuotedAudio = (m: ListMessageResult): boolean =>
+  !!m.content?.quoted?.audio;
 
 const resolveQuotedDocumentIcon = (m: ListMessageResult): string => {
   const ext = m.content?.quoted?.document?.extension?.toLowerCase();
@@ -604,6 +663,21 @@ const resolveQuotedVideoMeta = (m: ListMessageResult): string => {
   const size = video.size ? formatDocumentSize(video.size) : null;
   const duration = formatVideoDuration(video.duration);
   return [ext, size, duration].filter(Boolean).join(' • ');
+};
+
+const resolveQuotedAudioName = (m: ListMessageResult): string => {
+  const audio = m.content?.quoted?.audio;
+  if (!audio) return t('audio_label');
+  if (audio.name) return audio.name;
+  return t('audio_label');
+};
+
+const resolveQuotedAudioMeta = (m: ListMessageResult): string => {
+  const audio = m.content?.quoted?.audio;
+  if (!audio) return '';
+  const size = audio.size ? formatDocumentSize(audio.size) : null;
+  const duration = formatVideoDuration(audio.duration);
+  return [size, duration].filter(Boolean).join(' • ');
 };
 
 const getQuotedTargetId = (m: ListMessageResult): string | null => {
@@ -717,6 +791,38 @@ const downloadVideo = async (url: string, filename?: string | null) => {
     }, 100);
   } catch (error) {
     console.error('Erro ao baixar vídeo:', error);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.target = '_blank';
+    anchor.download = fallback;
+    anchor.rel = 'noopener';
+    anchor.click();
+  }
+};
+
+const downloadAudio = async (url: string, filename?: string | null) => {
+  if (!url) return;
+
+  const fallback = filename || 'audio.ogg';
+
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+
+    const anchor = document.createElement('a');
+    anchor.href = blobUrl;
+    anchor.download = fallback;
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+
+    setTimeout(() => {
+      window.URL.revokeObjectURL(blobUrl);
+    }, 100);
+  } catch (error) {
+    console.error('Erro ao baixar áudio:', error);
     const anchor = document.createElement('a');
     anchor.href = url;
     anchor.target = '_blank';
@@ -1009,7 +1115,10 @@ onUnmounted(() => {
                         <VIcon size="16">tabler-player-play</VIcon>
                       </div>
                     </template>
-                    <div v-else class="quoted-video-placeholder">
+                    <div
+                      v-if="!resolveQuotedVideoUrl(msgGrp)"
+                      class="quoted-video-placeholder"
+                    >
                       <VIcon size="20">tabler-player-play</VIcon>
                     </div>
                   </div>
@@ -1024,6 +1133,21 @@ onUnmounted(() => {
                     >
                       {{ resolveQuotedVideoMeta(msgGrp) }}
                     </span>
+                  </div>
+
+                  <div v-if="hasQuotedAudio(msgGrp)" class="quoted-audio">
+                    <VIcon size="22" color="primary">tabler-microphone</VIcon>
+                    <div class="quoted-audio-info">
+                      <span class="quoted-audio-name">
+                        {{ resolveQuotedAudioName(msgGrp) }}
+                      </span>
+                      <span
+                        v-if="resolveQuotedAudioMeta(msgGrp)"
+                        class="quoted-audio-meta"
+                      >
+                        {{ resolveQuotedAudioMeta(msgGrp) }}
+                      </span>
+                    </div>
                   </div>
 
                   <div v-if="hasQuotedImage(msgGrp)" class="quoted-image-info">
@@ -1042,7 +1166,8 @@ onUnmounted(() => {
                     v-if="
                       resolveQuotedText(msgGrp) &&
                       msgGrp.content?.quoted?.type !== EMessageType.video &&
-                      msgGrp.content?.quoted?.type !== EMessageType.image
+                      msgGrp.content?.quoted?.type !== EMessageType.image &&
+                      msgGrp.content?.quoted?.type !== EMessageType.audio
                     "
                     class="quoted-text"
                     :style="{
@@ -1196,6 +1321,55 @@ onUnmounted(() => {
                   }"
                 >
                   {{ msgGrp.content.video.caption }}
+                </p>
+              </div>
+
+              <div
+                v-if="
+                  msgGrp.content?.type === EMessageType.audio &&
+                  msgGrp.content?.audio?.url
+                "
+                :class="[
+                  'audio-bubble',
+                  !isTypeUser(msgGrp)
+                    ? 'audio-bubble--right'
+                    : 'audio-bubble--left',
+                  { 'is-deleted': msgGrp.deleted },
+                ]"
+              >
+                <audio
+                  :src="msgGrp.content.audio.url"
+                  class="audio-player"
+                  controls
+                  preload="metadata"
+                  :controlslist="
+                    isAudioViewOnce(msgGrp)
+                      ? 'nodownload noplaybackrate'
+                      : 'noplaybackrate'
+                  "
+                ></audio>
+                <div class="audio-details">
+                  <span class="audio-meta text-caption text-disabled">
+                    {{ resolveAudioMeta(msgGrp.content.audio) }}
+                  </span>
+                  <VIcon
+                    v-if="isAudioViewOnce(msgGrp)"
+                    size="16"
+                    class="audio-view-once text-disabled"
+                  >
+                    tabler-eye-off
+                  </VIcon>
+                </div>
+                <p
+                  v-if="msgGrp.content?.message"
+                  class="audio-caption mt-2"
+                  :style="{
+                    color: isTypeUser(msgGrp)
+                      ? 'rgb(var(--v-theme-on-surface))'
+                      : 'rgb(var(--v-theme-title))',
+                  }"
+                >
+                  {{ msgGrp.content.message }}
                 </p>
               </div>
 
@@ -1525,6 +1699,54 @@ onUnmounted(() => {
                 {{ pending.message }}
               </p>
             </template>
+            <template v-if="isPendingAudio(pending)">
+              <div class="pending-audio-wrapper">
+                <audio
+                  :src="pendingAudioSrc(pending)"
+                  class="pending-audio-player"
+                  controls
+                  preload="metadata"
+                ></audio>
+                <div
+                  v-if="pending.status !== 'error'"
+                  class="pending-audio-overlay"
+                >
+                  <VProgressCircular
+                    :model-value="pending.progress"
+                    :indeterminate="pending.progress <= 0"
+                    size="52"
+                    width="4"
+                    color="primary"
+                  >
+                    <span class="pending-progress-label">
+                      {{ Math.max(0, Math.round(pending.progress)) }}%
+                    </span>
+                  </VProgressCircular>
+                </div>
+                <div
+                  v-if="pending.status === 'error'"
+                  class="pending-audio-error"
+                >
+                  <VIcon size="34" color="error">tabler-alert-triangle</VIcon>
+                </div>
+                <VBtn
+                  v-if="pending.status === 'error'"
+                  icon
+                  size="22"
+                  variant="text"
+                  class="pending-audio-dismiss"
+                  @click="chatStore.removePendingMessage(pending.id)"
+                >
+                  <VIcon size="16">tabler-x</VIcon>
+                </VBtn>
+              </div>
+              <div class="pending-audio-meta text-caption text-disabled mt-2">
+                {{ pendingAudioMeta(pending) }}
+              </div>
+              <p v-if="pending.message" class="pending-caption mt-2">
+                {{ pending.message }}
+              </p>
+            </template>
             <template v-if="isPendingImage(pending)">
               <div class="pending-image-wrapper">
                 <VImg
@@ -1843,6 +2065,33 @@ onUnmounted(() => {
         color: rgba(var(--v-theme-on-surface), 0.6);
       }
 
+      .quoted-audio {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .quoted-audio-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .quoted-audio-name {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: rgb(var(--v-theme-primary));
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .quoted-audio-meta {
+        font-size: 0.7rem;
+        color: rgba(var(--v-theme-on-surface), 0.6);
+      }
+
       .quoted-document {
         display: inline-flex;
         align-items: center;
@@ -1983,6 +2232,52 @@ onUnmounted(() => {
       .video-bubble.is-deleted {
         pointer-events: none;
         opacity: 0.7;
+      }
+
+      .audio-bubble {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-inline-size: 260px;
+        inline-size: 100%;
+        border-radius: 10px;
+        background: rgba(var(--v-theme-on-surface), 0.04);
+        padding: 12px;
+      }
+
+      .audio-bubble--left {
+        border-start-end-radius: 6px;
+      }
+
+      .audio-bubble--right {
+        border-start-start-radius: 6px;
+      }
+
+      .audio-bubble.is-deleted {
+        pointer-events: none;
+        opacity: 0.7;
+      }
+
+      .audio-player {
+        inline-size: 100%;
+      }
+
+      .audio-details {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .audio-meta {
+        color: rgba(var(--v-theme-on-surface), 0.65);
+      }
+
+      .audio-caption {
+        font-size: 0.95rem;
+        line-height: 1.25rem;
+        white-space: pre-line;
+        margin-bottom: 0 !important;
       }
 
       .video-thumb-wrapper {
@@ -2206,6 +2501,55 @@ onUnmounted(() => {
       }
 
       .pending-video-meta {
+        color: rgba(var(--v-theme-on-surface), 0.6);
+      }
+
+      .pending-audio-wrapper {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        inline-size: clamp(200px, 45vw, 260px);
+        border-radius: 12px;
+        padding: 16px;
+        background: rgba(var(--v-theme-on-surface), 0.04);
+      }
+
+      .pending-audio-player {
+        inline-size: 100%;
+      }
+
+      .pending-audio-overlay,
+      .pending-audio-error {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 12px;
+      }
+
+      .pending-audio-overlay {
+        background: rgba(0, 0, 0, 0.25);
+        pointer-events: none;
+      }
+
+      .pending-audio-error {
+        background: rgba(0, 0, 0, 0.2);
+      }
+
+      .pending-audio-dismiss {
+        position: absolute;
+        inset-block-start: 6px;
+        inset-inline-end: 6px;
+        min-width: 28px !important;
+        width: 28px !important;
+        height: 28px !important;
+        background: rgba(0, 0, 0, 0.35) !important;
+        color: rgb(var(--v-theme-on-primary)) !important;
+      }
+
+      .pending-audio-meta {
         color: rgba(var(--v-theme-on-surface), 0.6);
       }
 
