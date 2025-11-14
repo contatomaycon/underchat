@@ -1,5 +1,13 @@
 <script lang="ts" setup>
-import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue';
+import {
+  ref,
+  reactive,
+  watch,
+  onMounted,
+  onUnmounted,
+  nextTick,
+  computed,
+} from 'vue';
 import { useChatStore } from '@/@webcore/stores/chat';
 import {
   LinkPreview,
@@ -16,6 +24,8 @@ import { IReaction } from '@core/common/interfaces/IChatMessage';
 import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
 import data from 'emoji-mart-vue-fast/data/all.json';
 import 'emoji-mart-vue-fast/css/emoji-mart.css';
+import { formatDate } from '@/@webcore/utils/formatters';
+import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
 const chatStore = useChatStore();
@@ -28,6 +38,13 @@ const viewerSrc = ref<string>('');
 const viewerCaption = ref<string>('');
 const viewerDownloadName = ref<string>('');
 const viewerKind = ref<'image' | 'video'>('image');
+
+const audioPlayers = ref<Map<string, HTMLAudioElement>>(new Map());
+const audioPlayStates = reactive<Record<string, boolean>>({});
+const audioCurrentTimes = reactive<Record<string, number>>({});
+const audioDurations = reactive<Record<string, number>>({});
+const audioWaveforms = reactive<Record<string, number[]>>({});
+const audioLoadingWaveforms = reactive<Record<string, boolean>>({});
 
 const resolveFeedbackIcon = (
   message: ListMessageResult
@@ -504,6 +521,189 @@ const resolveAudioMeta = (audio?: AudioMessageChat | null): string => {
   const duration = formatVideoDuration(audio.duration);
   return [ext, size, duration].filter(Boolean).join(' • ');
 };
+
+const formatAudioTime = (seconds: number): string => {
+  const totalSeconds = Math.floor(seconds);
+  const minutes = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  return `${minutes}:${secs.toString().padStart(2, '0')}`;
+};
+
+const getOrCreateAudioPlayer = (
+  messageId: string,
+  url: string
+): HTMLAudioElement => {
+  if (audioPlayers.value.has(messageId)) {
+    return audioPlayers.value.get(messageId)!;
+  }
+
+  const audio = new Audio(url);
+  audio.preload = 'metadata';
+  audioPlayers.value.set(messageId, audio);
+
+  audio.addEventListener('loadedmetadata', () => {
+    audioDurations[messageId] = audio.duration;
+  });
+
+  audio.addEventListener('timeupdate', () => {
+    audioCurrentTimes[messageId] = audio.currentTime;
+  });
+
+  audio.addEventListener('play', () => {
+    audioPlayStates[messageId] = true;
+  });
+
+  audio.addEventListener('pause', () => {
+    audioPlayStates[messageId] = false;
+  });
+
+  audio.addEventListener('ended', () => {
+    audioPlayStates[messageId] = false;
+    audioCurrentTimes[messageId] = 0;
+  });
+
+  return audio;
+};
+
+const toggleAudioPlay = (messageId: string, url: string) => {
+  const audio = getOrCreateAudioPlayer(messageId, url);
+  const isPlaying = audioPlayStates[messageId] || false;
+
+  if (isPlaying) {
+    audio.pause();
+  } else {
+    audio.play().catch(() => {
+      audioPlayStates[messageId] = false;
+    });
+  }
+};
+
+const generateAudioWaveform = async (
+  messageId: string,
+  url: string
+): Promise<void> => {
+  if (audioWaveforms[messageId]) return;
+  if (audioLoadingWaveforms[messageId]) return;
+
+  audioLoadingWaveforms[messageId] = true;
+
+  try {
+    const response = await fetch(url);
+    const arrayBuffer = await response.arrayBuffer();
+    const audioContext = new AudioContext();
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+    const rawData = audioBuffer.getChannelData(0);
+    const samples = 80;
+    const blockSize = Math.floor(rawData.length / samples);
+    const waveform: number[] = [];
+
+    for (let i = 0; i < samples; i++) {
+      const blockStart = blockSize * i;
+      let sum = 0;
+      let maxInBlock = 0;
+      for (let j = 0; j < blockSize; j++) {
+        const value = Math.abs(rawData[blockStart + j]);
+        sum += value;
+        if (value > maxInBlock) {
+          maxInBlock = value;
+        }
+      }
+      const avg = sum / blockSize;
+      waveform.push(Math.max(avg, maxInBlock * 0.3));
+    }
+
+    const max = Math.max(...waveform);
+    if (max > 0) {
+      const normalizedWaveform = waveform.map((value) => {
+        const normalized = value / max;
+        return Math.max(0.15, Math.min(1, normalized));
+      });
+      audioWaveforms[messageId] = normalizedWaveform;
+    } else {
+      const defaultWaveform = new Array(80).fill(0.3);
+      audioWaveforms[messageId] = defaultWaveform;
+    }
+  } catch (error) {
+    const defaultWaveform = new Array(80).fill(0.3);
+    audioWaveforms[messageId] = defaultWaveform;
+  } finally {
+    audioLoadingWaveforms[messageId] = false;
+  }
+};
+
+const getAudioProgress = (messageId: string): number => {
+  const currentTime = audioCurrentTimes[messageId] || 0;
+  const duration = audioDurations[messageId] || 0;
+  if (duration === 0) return 0;
+  return (currentTime / duration) * 100;
+};
+
+const getAudioCurrentTime = (messageId: string): string => {
+  const currentTime = audioCurrentTimes[messageId] || 0;
+  return formatAudioTime(currentTime);
+};
+
+const getAudioDuration = (
+  messageId: string,
+  fallbackDuration?: number | null
+): string => {
+  const duration = audioDurations[messageId];
+  if (duration && duration > 0) {
+    return formatAudioTime(duration);
+  }
+  if (fallbackDuration && fallbackDuration > 0) {
+    return formatAudioTime(fallbackDuration);
+  }
+  return '0:00';
+};
+
+const isAudioPlaying = (messageId: string): boolean => {
+  return !!audioPlayStates[messageId];
+};
+
+const getAudioWaveform = (messageId: string): number[] => {
+  const waveform = audioWaveforms[messageId];
+  if (!waveform || !Array.isArray(waveform) || waveform.length === 0) {
+    return [];
+  }
+  return Array.from(waveform);
+};
+
+const hasAudioWaveform = (messageId: string): boolean => {
+  const waveform = audioWaveforms[messageId];
+  return !!(waveform && Array.isArray(waveform) && waveform.length > 0);
+};
+
+const getDisplayTime = (
+  messageId: string,
+  fallbackDuration?: number | null
+): string => {
+  if (isAudioPlaying(messageId)) {
+    const currentTime = getAudioCurrentTime(messageId);
+    if (currentTime !== '0:00') {
+      return currentTime;
+    }
+  }
+  return getAudioDuration(messageId, fallbackDuration);
+};
+
+onUnmounted(() => {
+  audioPlayers.value.forEach((audio) => {
+    audio.pause();
+    audio.src = '';
+  });
+  audioPlayers.value.clear();
+  Object.keys(audioPlayStates).forEach((key) => delete audioPlayStates[key]);
+  Object.keys(audioCurrentTimes).forEach(
+    (key) => delete audioCurrentTimes[key]
+  );
+  Object.keys(audioDurations).forEach((key) => delete audioDurations[key]);
+  Object.keys(audioWaveforms).forEach((key) => delete audioWaveforms[key]);
+  Object.keys(audioLoadingWaveforms).forEach(
+    (key) => delete audioLoadingWaveforms[key]
+  );
+});
 const formatVideoDuration = (duration?: number | null): string => {
   if (!duration || duration <= 0) return '';
   const totalSeconds = Math.floor(duration);
@@ -867,6 +1067,24 @@ const handleScroll = async (e: Event) => {
   }
 };
 
+watch(
+  () => chatStore.listMessages,
+  (messages) => {
+    nextTick(() => {
+      messages.forEach((msg) => {
+        if (
+          msg.content?.type === EMessageType.audio &&
+          msg.content?.audio?.url &&
+          !audioWaveforms[msg.message_id]
+        ) {
+          generateAudioWaveform(msg.message_id, msg.content.audio.url);
+        }
+      });
+    });
+  },
+  { deep: true, immediate: true }
+);
+
 onMounted(() => {
   nextTick(() => {
     const psContainer = chatLogContainer.value?.closest('.ps') as HTMLElement;
@@ -879,6 +1097,12 @@ onMounted(() => {
     }
 
     document.addEventListener('click', onClickOutside);
+
+    chatStore.listMessages.forEach((msg) => {
+      if (msg.content?.type === EMessageType.audio && msg.content?.audio?.url) {
+        generateAudioWaveform(msg.message_id, msg.content.audio.url);
+      }
+    });
   });
 });
 
@@ -1337,29 +1561,87 @@ onUnmounted(() => {
                   { 'is-deleted': msgGrp.deleted },
                 ]"
               >
-                <audio
-                  :src="msgGrp.content.audio.url"
-                  class="audio-player"
-                  controls
-                  preload="metadata"
-                  :controlslist="
-                    isAudioViewOnce(msgGrp)
-                      ? 'nodownload noplaybackrate'
-                      : 'noplaybackrate'
-                  "
-                ></audio>
-                <div class="audio-details">
-                  <span class="audio-meta text-caption text-disabled">
-                    {{ resolveAudioMeta(msgGrp.content.audio) }}
-                  </span>
-                  <VIcon
-                    v-if="isAudioViewOnce(msgGrp)"
-                    size="16"
-                    class="audio-view-once text-disabled"
+                <div class="audio-player-container">
+                  <VBtn
+                    icon
+                    size="36"
+                    variant="text"
+                    class="audio-play-btn"
+                    @click="
+                      toggleAudioPlay(
+                        msgGrp.message_id,
+                        msgGrp.content.audio.url
+                      )
+                    "
                   >
-                    tabler-eye-off
-                  </VIcon>
+                    <VIcon size="18">
+                      {{
+                        isAudioPlaying(msgGrp.message_id)
+                          ? 'tabler-player-pause'
+                          : 'tabler-player-play'
+                      }}
+                    </VIcon>
+                  </VBtn>
+
+                  <div class="audio-waveform-container">
+                    <template
+                      v-if="
+                        (() => {
+                          const waveform = audioWaveforms[msgGrp.message_id];
+                          return (
+                            waveform &&
+                            Array.isArray(waveform) &&
+                            waveform.length > 0
+                          );
+                        })()
+                      "
+                    >
+                      <div class="audio-waveform">
+                        <div
+                          v-for="(barValue, index) in audioWaveforms[
+                            msgGrp.message_id
+                          ]"
+                          :key="`${msgGrp.message_id}-${index}`"
+                          class="audio-waveform-bar"
+                          :class="{
+                            'audio-waveform-bar--active':
+                              getAudioProgress(msgGrp.message_id) >
+                              (index /
+                                (audioWaveforms[msgGrp.message_id]?.length ||
+                                  80)) *
+                                100,
+                          }"
+                          :style="{
+                            height: `${Math.max(2, barValue * 100)}%`,
+                          }"
+                        ></div>
+                      </div>
+                      <div
+                        class="audio-progress-indicator"
+                        :style="{
+                          left: `${getAudioProgress(msgGrp.message_id)}%`,
+                        }"
+                      ></div>
+                    </template>
+                    <div v-else class="audio-waveform-placeholder">
+                      <div
+                        v-for="i in 80"
+                        :key="`placeholder-${msgGrp.message_id}-${i}`"
+                        class="audio-waveform-bar-placeholder"
+                      ></div>
+                    </div>
+                  </div>
                 </div>
+
+                <div class="audio-time-overlay">
+                  {{
+                    getDisplayTime(
+                      msgGrp.message_id,
+                      msgGrp.content.audio.duration
+                    )
+                  }}
+                </div>
+
                 <p
                   v-if="msgGrp.content?.message"
                   class="audio-caption mt-2"
@@ -2237,12 +2519,10 @@ onUnmounted(() => {
       .audio-bubble {
         display: flex;
         flex-direction: column;
-        gap: 8px;
-        max-inline-size: 260px;
+        gap: 6px;
+        max-inline-size: 380px;
         inline-size: 100%;
-        border-radius: 10px;
-        background: rgba(var(--v-theme-on-surface), 0.04);
-        padding: 12px;
+        position: relative;
       }
 
       .audio-bubble--left {
@@ -2258,19 +2538,159 @@ onUnmounted(() => {
         opacity: 0.7;
       }
 
-      .audio-player {
+      .audio-player-container {
+        display: flex;
+        align-items: center;
+        gap: 12px;
         inline-size: 100%;
+        padding: 8px 14px;
+        border-radius: 20px;
       }
 
-      .audio-details {
+      .audio-play-btn {
+        flex-shrink: 0;
+        min-width: 36px;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.95);
+        border: 2px solid rgb(var(--v-theme-primary));
+        color: rgb(var(--v-theme-primary));
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+
+        :deep(.v-icon) {
+          color: rgb(var(--v-theme-primary));
+          font-size: 18px;
+        }
+      }
+
+      .audio-bubble--right .audio-play-btn {
+        background: rgba(255, 255, 255, 0.95);
+        border: 2px solid rgba(255, 255, 255, 0.8);
+        color: rgb(var(--v-theme-primary));
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+
+        :deep(.v-icon) {
+          color: rgb(var(--v-theme-primary));
+          font-size: 18px;
+        }
+      }
+
+      .audio-waveform-container {
+        position: relative;
+        flex: 1 1 auto;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        overflow: hidden;
+        min-width: 100px;
+      }
+
+      .audio-time-overlay {
+        position: absolute;
+        left: 62px;
+        bottom: calc(1.4rem + 6px);
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: rgba(var(--v-theme-on-surface), 0.6);
+        z-index: 1;
+        pointer-events: none;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        height: fit-content;
+        margin: 0;
+        padding: 0;
+      }
+
+      .chat-content.chat-right .audio-time-overlay {
+        color: rgba(17, 27, 33, 0.6);
+      }
+
+      .audio-waveform {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 3px;
+        padding: 6px 0;
+        z-index: 1;
+        height: 100%;
+        width: 100%;
+      }
+
+      .audio-waveform-placeholder {
+        position: absolute;
+        inset: 0;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 8px;
+        gap: 3px;
+        padding: 6px 0;
       }
 
-      .audio-meta {
-        color: rgba(var(--v-theme-on-surface), 0.65);
+      .audio-waveform-bar-placeholder {
+        flex: 1;
+        min-width: 3px;
+        max-width: 4px;
+        height: 20%;
+        background: rgba(var(--v-theme-on-surface), 0.2);
+        border-radius: 2px;
+        animation: pulse 1.5s ease-in-out infinite;
+      }
+
+      .audio-bubble--right .audio-waveform-bar-placeholder {
+        background: rgba(255, 255, 255, 0.3);
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 0.3;
+        }
+        50% {
+          opacity: 0.6;
+        }
+      }
+
+      .audio-waveform-bar {
+        flex: 1 1 0;
+        min-width: 3px;
+        max-width: 4px;
+        min-height: 4px;
+        background: rgba(var(--v-theme-on-surface), 0.4);
+        border-radius: 2px;
+        transition:
+          background 0.2s ease,
+          height 0.1s ease;
+      }
+
+      .audio-bubble--right .audio-waveform-bar {
+        background: rgba(255, 255, 255, 0.5);
+      }
+
+      .audio-waveform-bar--active {
+        background: rgb(var(--v-theme-primary));
+      }
+
+      .audio-bubble--right .audio-waveform-bar--active {
+        background: rgba(255, 255, 255, 0.95);
+      }
+
+      .audio-progress-indicator {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: rgb(var(--v-theme-primary));
+        transform: translateX(-50%);
+        z-index: 1;
+        border-radius: 1px;
+      }
+
+      .audio-bubble--right .audio-progress-indicator {
+        background: rgba(255, 255, 255, 0.9);
       }
 
       .audio-caption {
@@ -2278,6 +2698,7 @@ onUnmounted(() => {
         line-height: 1.25rem;
         white-space: pre-line;
         margin-bottom: 0 !important;
+        margin-top: 8px;
       }
 
       .video-thumb-wrapper {
