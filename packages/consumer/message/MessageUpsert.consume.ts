@@ -448,6 +448,35 @@ export class MessageUpsertConsume {
           : undefined;
       }
 
+      if (
+        content.type === EMessageType.document &&
+        data.message?.message?.documentMessage?.url
+      ) {
+        const documentMsg = data.message.message.documentMessage;
+        const buffer = await downloadMediaMessage(data.message, 'buffer', {
+          startByte: 0,
+        });
+
+        const documentResult = await this.storageService.uploadFromBuffer(
+          buffer,
+          data.account_id,
+          {
+            fileName: documentMsg.fileName ?? undefined,
+            mimetype: documentMsg.mimetype ?? undefined,
+          }
+        );
+
+        content.document = documentResult
+          ? {
+              url: documentResult.url,
+              name: documentMsg.fileName ?? documentResult.name,
+              mimetype: documentMsg.mimetype ?? documentResult.mimetype ?? null,
+              extension: documentResult.extension,
+              size: documentResult.size,
+            }
+          : undefined;
+      }
+
       const inputChatMessage: IChatMessage = {
         message_id: uuidv4(),
         chat_id: getChat.chat_id,

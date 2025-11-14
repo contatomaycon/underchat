@@ -78,6 +78,41 @@ export class StorageService {
     };
   }
 
+  public async uploadDocument(
+    file: UploadFileRequest,
+    accountId: string
+  ): Promise<UploadFileResponse | null> {
+    const buffer = await file.toBuffer();
+    const initialExtension = this.getFileExtension(file.filename);
+    const fallbackExtension = this.extFromMime(file.mimetype ?? '') ?? 'bin';
+    const extension = initialExtension || fallbackExtension;
+
+    const normalizedName = initialExtension
+      ? file.filename
+      : `${file.filename}.${extension}`;
+    const key = `${accountId}/${this.converterFilename(normalizedName)}`;
+    const mimetype = file.mimetype ?? 'application/octet-stream';
+
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: s3Environment.s3BucketName,
+        Key: key,
+        Body: buffer,
+        ContentType: mimetype,
+      })
+    );
+
+    return {
+      url: this.createUrl(key),
+      name: normalizedName,
+      extension,
+      size: buffer.byteLength,
+      mimetype,
+      width: null,
+      height: null,
+    };
+  }
+
   public async uploadFromUrl(
     url: string,
     accountId: string,
@@ -175,13 +210,26 @@ export class StorageService {
 
   public async uploadFromBuffer(
     buffer: Buffer<ArrayBufferLike>,
-    accountId: string
+    accountId: string,
+    options?: {
+      fileName?: string;
+      mimetype?: string;
+    }
   ): Promise<UploadFileResponse | null> {
     const ft = await fileTypeFromBuffer(buffer).catch(() => null);
-    const ext = ft?.ext ?? 'bin';
-    const mime = ft?.mime ?? 'application/octet-stream';
-    const baseName = `${accountId}-${Date.now()}.${ext}`;
-    const key = `${accountId}/${baseName}`;
+    const providedName = options?.fileName;
+    const providedExt = providedName ? this.getFileExtension(providedName) : '';
+    const detectedExt = ft?.ext;
+    const ext = providedExt || detectedExt || 'bin';
+    const detectedMime = ft?.mime ?? 'application/octet-stream';
+    const mime = options?.mimetype ?? detectedMime;
+
+    const baseName = providedName
+      ? providedExt
+        ? providedName
+        : `${providedName}.${ext}`
+      : `${accountId}-${Date.now()}.${ext}`;
+    const key = `${accountId}/${this.converterFilename(baseName)}`;
 
     await this.client.send(
       new PutObjectCommand({
@@ -197,6 +245,9 @@ export class StorageService {
       name: baseName,
       extension: ext,
       size: buffer.byteLength,
+      mimetype: mime,
+      width: null,
+      height: null,
     };
   }
 

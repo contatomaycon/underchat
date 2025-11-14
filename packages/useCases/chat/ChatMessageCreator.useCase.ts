@@ -163,6 +163,18 @@ export class ChatMessageCreatorUseCase {
     return [images];
   }
 
+  private normalizeDocumentsArray(
+    documents?: UploadFileRequest | UploadFileRequest[] | null
+  ): UploadFileRequest[] {
+    if (!documents) return [];
+
+    if (Array.isArray(documents)) {
+      return documents;
+    }
+
+    return [documents];
+  }
+
   private normalizeType(type: string | { value?: string }): EMessageType {
     if (type && typeof type === 'object' && 'value' in type && type.value) {
       return type.value as EMessageType;
@@ -301,6 +313,7 @@ export class ChatMessageCreatorUseCase {
     return {
       type: chatMessage.content?.type ?? null,
       image: chatMessage.content?.image ?? null,
+      document: chatMessage.content?.document ?? null,
       key: {
         remote_jid: chatMessage.message_key?.remote_jid ?? null,
         remote_jid_alt: chatMessage.message_key?.remote_jid_alt ?? null,
@@ -326,10 +339,6 @@ export class ChatMessageCreatorUseCase {
     ]);
 
     return result;
-  }
-
-  private getRandomDelay(): number {
-    return Math.floor(Math.random() * (2000 - 500 + 1)) + 500;
   }
 
   private async processImageMessages(
@@ -360,22 +369,72 @@ export class ChatMessageCreatorUseCase {
       return true;
     }
 
-    for (let i = 0; i < validImages.length; i++) {
-      if (i > 0) {
-        const delay = this.getRandomDelay();
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
-
+    const publishTasks = validImages.map((imageData) => {
       const imageMessage = this.createImageMessage(
         chat,
         chatId,
         type,
         message,
-        validImages[i]
+        imageData
       );
 
-      await this.publishMessage(imageMessage);
+      return this.publishMessage(imageMessage);
+    });
+
+    await Promise.all(publishTasks);
+
+    return true;
+  }
+
+  private async processDocumentMessages(
+    chat: IChat,
+    chatId: string,
+    documents: UploadFileRequest[],
+    accountId: string,
+    type: EMessageType,
+    message: string | null
+  ): Promise<boolean> {
+    const uploadedDocuments = await Promise.all(
+      documents.map((document) =>
+        this.storageService.uploadDocument(document, accountId)
+      )
+    );
+
+    const validDocuments = uploadedDocuments.filter(
+      (doc): doc is UploadFileResponse => doc !== null
+    );
+
+    if (validDocuments.length === 0) {
+      return false;
     }
+
+    if (validDocuments.length === 1) {
+      const documentMessage = this.createDocumentMessage(
+        chat,
+        chatId,
+        type,
+        message,
+        validDocuments[0]
+      );
+
+      await this.publishMessage(documentMessage);
+
+      return true;
+    }
+
+    const publishTasks = validDocuments.map((documentData) => {
+      const documentMessage = this.createDocumentMessage(
+        chat,
+        chatId,
+        type,
+        message,
+        documentData
+      );
+
+      return this.publishMessage(documentMessage);
+    });
+
+    await Promise.all(publishTasks);
 
     return true;
   }
@@ -431,6 +490,9 @@ export class ChatMessageCreatorUseCase {
     }
 
     const type = this.normalizeType(body.type);
+    const message = this.normalizeMessage(body.message);
+    const images = this.normalizeImagesArray(body.images);
+    const documents = this.normalizeDocumentsArray(body.documents);
 
     if (type === EMessageType.delete_message && body.delete_message_id) {
       return this.processDelete(
@@ -457,8 +519,20 @@ export class ChatMessageCreatorUseCase {
       );
     }
 
-    const images = this.normalizeImagesArray(body.images);
-    const message = this.normalizeMessage(body.message);
+    if (type === EMessageType.document) {
+      if (documents.length === 0) {
+        throw new Error(t('documents_required'));
+      }
+
+      return this.processDocumentMessages(
+        chat,
+        params.chat_id,
+        documents,
+        accountId,
+        type,
+        message
+      );
+    }
 
     if (images.length > 0) {
       return this.processImageMessages(
@@ -735,6 +809,47 @@ export class ChatMessageCreatorUseCase {
       deleted: true,
       content: {
         type: EMessageType.delete_message,
+      },
+      date: new Date().toISOString(),
+    };
+  }
+
+  private createDocumentMessage(
+    chat: IChat,
+    chatId: string,
+    type: EMessageType,
+    message: string | null,
+    documentData: UploadFileResponse
+  ): IChatMessage {
+    return {
+      message_id: uuidv4(),
+      chat_id: chatId,
+      message_key: {
+        remote_jid: chat.message_key?.remote_jid ?? null,
+        remote_jid_alt: chat.message_key?.remote_jid_alt ?? null,
+        is_view_once: false,
+      },
+      type_user: ETypeUserChat.operator,
+      account: chat.account,
+      worker: chat.worker,
+      user: chat.user,
+      phone: chat.phone,
+      summary: {
+        is_sent: false,
+        is_delivered: false,
+        is_seen: false,
+      },
+      deleted: false,
+      content: {
+        type,
+        message,
+        document: {
+          url: documentData.url,
+          name: documentData.name,
+          mimetype: documentData.mimetype ?? null,
+          extension: documentData.extension,
+          size: documentData.size,
+        },
       },
       date: new Date().toISOString(),
     };

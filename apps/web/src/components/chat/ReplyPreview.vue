@@ -32,6 +32,10 @@ const replyIsImage = computed(
   () => replying.value?.content?.type === EMessageType.image
 );
 
+const replyIsDocument = computed(
+  () => replying.value?.content?.type === EMessageType.document
+);
+
 const replyImageSrc = computed(() => {
   const img = replying.value?.content?.image;
   if (!img) {
@@ -51,6 +55,10 @@ const replyText = computed(() => {
     return m.content.image?.caption || t('photo_label');
   }
 
+  if (m.content?.type === EMessageType.document) {
+    return m.content.document?.name || t('document_label');
+  }
+
   if (m.content?.message) {
     return m.content.message;
   }
@@ -64,6 +72,30 @@ const replyText = computed(() => {
   }
 
   return '';
+});
+
+const replyDocumentIcon = computed(() => {
+  const ext = replying.value?.content?.document?.extension?.toLowerCase();
+  if (!ext) return 'tabler-file-description';
+
+  const map: Record<string, string> = {
+    pdf: 'tabler-file-type-pdf',
+    doc: 'tabler-file-type-doc',
+    docx: 'tabler-file-type-doc',
+    xls: 'tabler-file-type-xls',
+    xlsx: 'tabler-file-type-xls',
+    ppt: 'tabler-file-type-ppt',
+    pptx: 'tabler-file-type-ppt',
+    txt: 'tabler-file-type-txt',
+    csv: 'tabler-file-type-xls',
+    zip: 'tabler-file-type-zip',
+    rar: 'tabler-file-type-zip',
+    '7z': 'tabler-file-type-zip',
+    json: 'tabler-file-code',
+    xml: 'tabler-file-code',
+  };
+
+  return map[ext] ?? 'tabler-file-description';
 });
 
 onMounted(() => {
@@ -80,6 +112,9 @@ onMounted(() => {
   <div v-if="replying" class="reply-preview">
     <div v-if="replyIsImage && replyImageSrc" class="rp-media">
       <img :src="replyImageSrc" alt="preview" />
+    </div>
+    <div v-else-if="replyIsDocument" class="rp-doc-icon">
+      <VIcon :icon="replyDocumentIcon" size="26" color="primary" />
     </div>
     <div class="rp-content">
       <div class="rp-name">{{ replyName }}</div>
@@ -123,6 +158,16 @@ onMounted(() => {
     object-fit: cover;
     display: block;
   }
+}
+.rp-doc-icon {
+  inline-size: 40px;
+  block-size: 40px;
+  border-radius: 6px;
+  background: rgba(var(--v-theme-primary), 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 .rp-content {
   flex: 1;

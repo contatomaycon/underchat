@@ -4,6 +4,7 @@ import { useChatStore } from '@/@webcore/stores/chat';
 import {
   LinkPreview,
   ListMessageResult,
+  DocumentMessageChat,
 } from '@core/schema/chat/listMessageChats/response.schema';
 import { isTypeUser } from '@core/common/functions/isTypeUser';
 import { EMessageType } from '@core/common/enums/EMessageType';
@@ -198,6 +199,78 @@ const getReactionsSummary = (
     if (b.count !== a.count) return b.count - a.count;
     return a.emoji.localeCompare(b.emoji);
   });
+};
+
+const documentIconMap: Record<string, string> = {
+  pdf: 'tabler-file-type-pdf',
+  doc: 'tabler-file-type-doc',
+  docx: 'tabler-file-type-doc',
+  xls: 'tabler-file-type-xls',
+  xlsx: 'tabler-file-type-xls',
+  csv: 'tabler-file-type-xls',
+  ppt: 'tabler-file-type-ppt',
+  pptx: 'tabler-file-type-ppt',
+  txt: 'tabler-file-type-txt',
+  zip: 'tabler-file-type-zip',
+  rar: 'tabler-file-type-zip',
+  '7z': 'tabler-file-type-zip',
+  json: 'tabler-file-code',
+  xml: 'tabler-file-code',
+};
+
+const resolveDocumentIcon = (doc?: DocumentMessageChat | null): string => {
+  if (!doc) return 'tabler-file-description';
+  const ext = doc.extension?.toLowerCase();
+  if (ext && documentIconMap[ext]) {
+    return documentIconMap[ext];
+  }
+
+  const mimetype = doc.mimetype ?? '';
+  if (mimetype.includes('pdf')) return 'tabler-file-type-pdf';
+  if (mimetype.includes('word')) return 'tabler-file-type-doc';
+  if (mimetype.includes('sheet') || mimetype.includes('excel'))
+    return 'tabler-file-type-xls';
+  if (mimetype.includes('presentation')) return 'tabler-file-type-ppt';
+  if (mimetype.includes('zip') || mimetype.includes('compressed'))
+    return 'tabler-file-type-zip';
+
+  return 'tabler-file-description';
+};
+
+const formatDocumentSize = (size?: number | null): string => {
+  if (!size) return '—';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const exponent = Math.min(
+    Math.floor(Math.log(size) / Math.log(1024)),
+    units.length - 1
+  );
+  const value = size / Math.pow(1024, exponent);
+  const formatted =
+    value >= 100
+      ? value.toFixed(0)
+      : value >= 10
+        ? value.toFixed(1)
+        : value.toFixed(2);
+
+  return `${formatted} ${units[exponent]}`;
+};
+
+const truncateDocumentName = (name?: string | null, max = 36): string => {
+  if (!name) return t('document_label');
+  if (name.length <= max) return name;
+  const extIndex = name.lastIndexOf('.');
+  if (extIndex <= 0) {
+    return `${name.slice(0, max - 3)}...`;
+  }
+
+  const ext = name.slice(extIndex);
+  const base = name.slice(0, max - ext.length - 3);
+  return `${base}...${ext}`;
+};
+
+const documentDownloadName = (doc?: DocumentMessageChat | null): string => {
+  if (!doc?.name) return t('document_label');
+  return doc.name;
 };
 
 const onDelete = async (m: ListMessageResult) => {
@@ -646,130 +719,148 @@ onUnmounted(() => {
                 </p>
               </div>
 
-              <p
-                v-if="msgGrp.message_key?.is_view_once"
-                class="mb-2 mr-6 text-base message-text"
-                style="font-style: italic"
-                :style="{
-                  color: isTypeUser(msgGrp)
-                    ? 'rgb(var(--v-theme-on-surface))'
-                    : 'rgb(var(--v-theme-title))',
-                }"
-              >
-                {{ t('view_once_message') }}
-              </p>
-
-              <p
+              <div
                 v-if="
                   msgGrp.content?.message &&
                   msgGrp.content?.type !== EMessageType.image &&
+                  msgGrp.content?.type !== EMessageType.document &&
                   !msgGrp.message_key?.is_view_once
                 "
-                class="mb-2 mr-6 text-base message-text"
-                :style="{
-                  color: isTypeUser(msgGrp)
-                    ? 'rgb(var(--v-theme-on-surface))'
-                    : 'rgb(var(--v-theme-title))',
-                }"
               >
-                {{ msgGrp.content?.message }}
-              </p>
-            </div>
-
-            <div class="message-meta">
-              <span class="message-time text-xs">
-                {{
-                  formatDate(msgGrp.date, {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    hour12: false,
-                  })
-                }}
-              </span>
-              <VIcon size="16" :color="resolveFeedbackIcon(msgGrp).color">
-                {{ resolveFeedbackIcon(msgGrp).icon }}
-              </VIcon>
-            </div>
-
-            <div
-              v-if="
-                !msgGrp.deleted &&
-                getReactionsSummary(msgGrp.content?.reactions).length
-              "
-              class="reactions-summary"
-              :class="{
-                'reactions-summary--right': !isTypeUser(msgGrp),
-                'reactions-summary--left': isTypeUser(msgGrp),
-              }"
-            >
-              <div class="reaction-summary-bubble">
-                <template
-                  v-for="reaction in getReactionsSummary(
-                    msgGrp.content?.reactions
-                  )"
-                  :key="`${msgGrp.message_id}-${reaction.emoji}`"
+                <p
+                  class="mb-2 mr-6 text-base message-text"
+                  :style="{
+                    color: isTypeUser(msgGrp)
+                      ? 'rgb(var(--v-theme-on-surface))'
+                      : 'rgb(var(--v-theme-title))',
+                  }"
                 >
-                  <span class="reaction-summary-item">
-                    <span class="reaction-summary-emoji">
-                      {{ reaction.emoji }}
-                    </span>
-                    <span
-                      v-if="reaction.count > 1"
-                      class="reaction-summary-count"
-                    >
-                      {{ reaction.count }}
-                    </span>
-                  </span>
-                </template>
+                  {{ msgGrp.content?.message }}
+                </p>
               </div>
-            </div>
-          </div>
 
-          <div
-            v-if="showReactionPicker === msgGrp.message_id && !msgGrp.deleted"
-            class="reaction-picker"
-            :class="
-              !isTypeUser(msgGrp)
-                ? 'reaction-picker-operator'
-                : 'reaction-picker-client'
-            "
-            @click.stop
-          >
-            <div class="reaction-picker-content d-flex align-center ga-1">
-              <VBtn
-                v-for="emoji in quickReactions"
-                :key="emoji"
-                icon
-                size="32"
-                variant="text"
-                class="reaction-btn"
-                @click="onReact(msgGrp, emoji)"
+              <div
+                v-if="
+                  msgGrp.content?.type === EMessageType.document &&
+                  msgGrp.content?.document?.url
+                "
+                :class="[
+                  'document-bubble',
+                  !isTypeUser(msgGrp)
+                    ? 'document-bubble--right'
+                    : 'document-bubble--left',
+                  { 'is-deleted': msgGrp.deleted },
+                ]"
               >
-                <span class="text-h6">{{ emoji }}</span>
-              </VBtn>
-              <VDivider vertical class="mx-1" />
-              <VBtn
-                icon
-                size="32"
-                variant="text"
-                class="reaction-btn"
-                @click.stop="toggleEmojiPicker(msgGrp.message_id)"
+                <div class="document-icon">
+                  <VIcon
+                    :icon="resolveDocumentIcon(msgGrp.content?.document)"
+                    size="30"
+                    color="primary"
+                  />
+                </div>
+                <div class="document-details">
+                  <VTooltip location="bottom">
+                    <template #activator="{ props }">
+                      <a
+                        v-bind="props"
+                        class="document-name"
+                        :href="msgGrp.content.document.url"
+                        :download="
+                          documentDownloadName(msgGrp.content.document)
+                        "
+                        target="_blank"
+                        rel="noopener"
+                      >
+                        {{ truncateDocumentName(msgGrp.content.document.name) }}
+                      </a>
+                    </template>
+                    <span>{{ msgGrp.content.document.name }}</span>
+                  </VTooltip>
+                  <span class="document-meta text-caption text-disabled">
+                    {{
+                      (msgGrp.content.document.extension || '').toUpperCase() ||
+                      'FILE'
+                    }}
+                    •
+                    {{ formatDocumentSize(msgGrp.content.document.size) }}
+                  </span>
+                </div>
+                <a
+                  class="document-download"
+                  :href="msgGrp.content.document.url"
+                  :download="documentDownloadName(msgGrp.content.document)"
+                  target="_blank"
+                  rel="noopener"
+                >
+                  <VIcon size="22">tabler-download</VIcon>
+                </a>
+              </div>
+
+              <div
+                v-if="
+                  showReactionPicker === msgGrp.message_id && !msgGrp.deleted
+                "
+                class="reaction-picker"
+                :class="
+                  !isTypeUser(msgGrp)
+                    ? 'reaction-picker-operator'
+                    : 'reaction-picker-client'
+                "
+                @click.stop
               >
-                <VIcon size="20">tabler-plus</VIcon>
-              </VBtn>
-            </div>
-            <div
-              v-if="showEmojiPicker === msgGrp.message_id"
-              class="reaction-picker-full"
-            >
-              <Picker
-                :data="reactionEmojiIndex"
-                :per-line="8"
-                :show-preview="false"
-                :show-skin-tones="false"
-                :show-search="true"
-                @select="onSelectReactionEmoji(msgGrp, $event)"
-              />
+                <div class="reaction-picker-content d-flex align-center ga-1">
+                  <VBtn
+                    v-for="emoji in quickReactions"
+                    :key="emoji"
+                    icon
+                    size="32"
+                    variant="text"
+                    class="reaction-btn"
+                    @click="onReact(msgGrp, emoji)"
+                  >
+                    <span class="text-h6">{{ emoji }}</span>
+                  </VBtn>
+                  <VDivider vertical class="mx-1" />
+                  <VBtn
+                    icon
+                    size="32"
+                    variant="text"
+                    class="reaction-btn"
+                    @click.stop="toggleEmojiPicker(msgGrp.message_id)"
+                  >
+                    <VIcon size="20">tabler-plus</VIcon>
+                  </VBtn>
+                </div>
+                <div
+                  v-if="showEmojiPicker === msgGrp.message_id"
+                  class="reaction-picker-full"
+                >
+                  <Picker
+                    :data="reactionEmojiIndex"
+                    :per-line="8"
+                    :show-preview="false"
+                    :show-skin-tones="false"
+                    :show-search="true"
+                    @select="onSelectReactionEmoji(msgGrp, $event)"
+                  />
+                </div>
+              </div>
+
+              <div class="message-meta">
+                <span class="message-time">
+                  {{
+                    formatDate(msgGrp.date, {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: false,
+                    })
+                  }}
+                </span>
+                <VIcon size="16" :color="resolveFeedbackIcon(msgGrp).color">
+                  {{ resolveFeedbackIcon(msgGrp).icon }}
+                </VIcon>
+              </div>
             </div>
           </div>
         </div>
@@ -1006,6 +1097,77 @@ onUnmounted(() => {
 
       .image-bubble--right .image-thumb {
         border-start-start-radius: 6px;
+      }
+
+      .document-bubble {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px;
+        border-radius: 10px;
+        background: rgba(var(--v-theme-on-surface), 0.04);
+        margin-bottom: 6px;
+      }
+
+      .document-bubble--left {
+        border-start-end-radius: 6px;
+      }
+
+      .document-bubble--right {
+        border-start-start-radius: 6px;
+      }
+
+      .document-bubble.is-deleted {
+        pointer-events: none;
+        opacity: 0.7;
+      }
+
+      .document-icon {
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        inline-size: 40px;
+        block-size: 40px;
+        border-radius: 50%;
+        background: rgba(var(--v-theme-primary), 0.12);
+      }
+
+      .document-details {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-inline-size: 0;
+      }
+
+      .document-name {
+        font-weight: 600;
+        color: rgb(var(--v-theme-primary));
+        text-decoration: none;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .document-meta {
+        white-space: nowrap;
+      }
+
+      .document-download {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        inline-size: 34px;
+        block-size: 34px;
+        border-radius: 50%;
+        background: rgba(var(--v-theme-primary), 0.1);
+        color: rgb(var(--v-theme-primary));
+        text-decoration: none;
+        transition: background-color 0.2s ease;
+      }
+
+      .document-download:hover {
+        background: rgba(var(--v-theme-primary), 0.18);
       }
 
       .deleted-label {

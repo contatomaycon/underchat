@@ -26,7 +26,13 @@ export function buildQuotedTextFromExtended(
     '';
 
   const imageMessage = ctx?.quotedMessage?.imageMessage;
-  const type = imageMessage ? EMessageType.image : EMessageType.text;
+  const documentMessage = ctx?.quotedMessage?.documentMessage;
+  let type = EMessageType.text;
+  if (documentMessage) {
+    type = EMessageType.document;
+  } else if (imageMessage) {
+    type = EMessageType.image;
+  }
 
   const quoted: IQuotedMessage = {
     key: {
@@ -66,6 +72,22 @@ export function buildQuotedTextFromExtended(
 
     if (!quoted.message && imageMessage.caption) {
       quoted.message = imageMessage.caption;
+    }
+  }
+
+  if (documentMessage) {
+    quoted.document = {
+      url: null,
+      name: documentMessage.fileName ?? null,
+      mimetype: documentMessage.mimetype ?? null,
+      extension: null,
+      size: documentMessage.fileLength
+        ? Number(documentMessage.fileLength.toString())
+        : null,
+    };
+
+    if (!quoted.message && documentMessage.fileName) {
+      quoted.message = documentMessage.fileName;
     }
   }
 

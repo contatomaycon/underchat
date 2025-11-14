@@ -65,10 +65,21 @@ const fileVideoRef = ref<HTMLInputElement | null>(null);
 const fileAudioRef = ref<HTMLInputElement | null>(null);
 const isEmojiOpen = ref(false);
 const selectedPhotos = ref<{ file: File; preview: string }[]>([]);
+type SelectedDocumentPreview = {
+  file: File;
+  name: string;
+  size: number;
+  extension: string;
+  type: string;
+};
+const selectedDocuments = ref<SelectedDocumentPreview[]>([]);
 
 const hasContent = computed(() => !!msg.value && msg.value.trim().length > 0);
-const hasImagesOrContent = computed(
-  () => hasContent.value || selectedPhotos.value.length > 0
+const hasAttachmentsOrContent = computed(
+  () =>
+    hasContent.value ||
+    selectedPhotos.value.length > 0 ||
+    selectedDocuments.value.length > 0
 );
 const forceReflow = (el: HTMLElement): number => el.offsetWidth;
 
@@ -158,6 +169,20 @@ const createImageFormData = (): FormData => {
   return formData;
 };
 
+const createDocumentFormData = (): FormData => {
+  const formData = new FormData();
+  formData.append('type', EMessageType.document);
+  if (msg.value) {
+    formData.append('message', msg.value);
+  }
+
+  selectedDocuments.value.forEach((doc) => {
+    formData.append('documents', doc.file);
+  });
+
+  return formData;
+};
+
 const createTextMessageBody = (): CreateMessageChatsBody => {
   const inputCreateMessage: CreateMessageChatsBody = {
     type: EMessageType.text,
@@ -179,11 +204,16 @@ const clearMessageFields = () => {
   msg.value = '';
   linkPreview.value = null;
   selectedPhotos.value = [];
+  selectedDocuments.value = [];
   chatStore.clearMessageReply();
 };
 
 const canSendMessage = (): boolean => {
-  return !!(msg.value || selectedPhotos.value.length > 0);
+  return !!(
+    msg.value ||
+    selectedPhotos.value.length > 0 ||
+    selectedDocuments.value.length > 0
+  );
 };
 
 const hasActiveChat = (): boolean => {
@@ -195,28 +225,42 @@ const sendImageMessage = async (): Promise<void> => {
   await chatStore.createMessageWithImages(formData);
 };
 
+const sendDocumentMessage = async (): Promise<void> => {
+  const formData = createDocumentFormData();
+  await chatStore.createMessageWithDocuments(formData);
+};
+
 const sendTextMessage = async (): Promise<void> => {
   const messageBody = createTextMessageBody();
   await chatStore.createMessage(messageBody);
+};
+
+const finalizeSend = () => {
+  clearMessageFields();
+
+  nextTick(() => {
+    scrollToBottomInChatLog();
+  });
 };
 
 const sendMessage = async () => {
   if (!canSendMessage()) return;
   if (!hasActiveChat()) return;
 
+  if (selectedDocuments.value.length > 0) {
+    await sendDocumentMessage();
+    finalizeSend();
+    return;
+  }
+
   if (selectedPhotos.value.length > 0) {
     await sendImageMessage();
+    finalizeSend();
+    return;
   }
 
-  if (selectedPhotos.value.length === 0) {
-    await sendTextMessage();
-  }
-
-  clearMessageFields();
-
-  nextTick(() => {
-    scrollToBottomInChatLog();
-  });
+  await sendTextMessage();
+  finalizeSend();
 };
 
 const openChat = async (chatId: ListChatsResult['chat_id']) => {
@@ -304,13 +348,61 @@ const openAttach = (
 };
 
 const onPickDoc = (e: Event) => {
-  console.log(e);
+  const target = e.target as HTMLInputElement;
+  const files = target.files;
+
+  if (!files || files.length === 0) {
+    target.value = '';
+    return;
+  }
+
+  if (selectedPhotos.value.length > 0) {
+    chatStore.showSnackbar(t('clear_images_before_documents'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
+  const limit = 10;
+  const currentCount = selectedDocuments.value.length;
+  if (currentCount >= limit) {
+    chatStore.showSnackbar(t('max_documents_selected'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
+  const spaceLeft = limit - currentCount;
+  const filesArray = Array.from(files);
+  const filesToAdd = filesArray.slice(0, spaceLeft);
+  if (filesArray.length > spaceLeft) {
+    chatStore.showSnackbar(
+      t('can_select_more_documents', { count: spaceLeft }),
+      EColor.warning
+    );
+  }
+
+  filesToAdd.forEach((file) => {
+    selectedDocuments.value.push({
+      file,
+      name: file.name,
+      size: file.size,
+      extension: (file.name.split('.').pop() || '').toLowerCase(),
+      type: file.type,
+    });
+  });
+
+  target.value = '';
 };
 const onPickPhoto = (e: Event) => {
   const target = e.target as HTMLInputElement;
   const files = target.files;
 
   if (!files || files.length === 0) {
+    target.value = '';
+    return;
+  }
+
+  if (selectedDocuments.value.length > 0) {
+    chatStore.showSnackbar(t('clear_documents_before_images'), EColor.warning);
     target.value = '';
     return;
   }
@@ -380,6 +472,74 @@ const onRecordAudio = () => {
 };
 
 const onSendText = () => sendMessage();
+
+const removeDocument = (index: number) => {
+  selectedDocuments.value.splice(index, 1);
+};
+
+const documentIconMap: Record<string, string> = {
+  pdf: 'tabler-file-type-pdf',
+  doc: 'tabler-file-type-doc',
+  docx: 'tabler-file-type-doc',
+  xls: 'tabler-file-type-xls',
+  xlsx: 'tabler-file-type-xls',
+  csv: 'tabler-file-type-xls',
+  ppt: 'tabler-file-type-ppt',
+  pptx: 'tabler-file-type-ppt',
+  txt: 'tabler-file-type-txt',
+  zip: 'tabler-file-type-zip',
+  rar: 'tabler-file-type-zip',
+  '7z': 'tabler-file-type-zip',
+  json: 'tabler-file-code',
+  xml: 'tabler-file-code',
+};
+
+const resolveDocumentIcon = (extension?: string, mimetype?: string): string => {
+  const ext = extension?.toLowerCase();
+  if (ext && documentIconMap[ext]) {
+    return documentIconMap[ext];
+  }
+
+  if (mimetype?.includes('pdf')) return 'tabler-file-type-pdf';
+  if (mimetype?.includes('word')) return 'tabler-file-type-doc';
+  if (mimetype?.includes('sheet') || mimetype?.includes('excel'))
+    return 'tabler-file-type-xls';
+  if (mimetype?.includes('presentation')) return 'tabler-file-type-ppt';
+  if (mimetype?.includes('zip') || mimetype?.includes('compressed'))
+    return 'tabler-file-type-zip';
+
+  return 'tabler-file-description';
+};
+
+const truncateFileName = (name: string, max = 32): string => {
+  if (name.length <= max) return name;
+  const extIndex = name.lastIndexOf('.');
+  if (extIndex === -1 || extIndex < name.length - 6) {
+    return `${name.slice(0, max - 3)}...`;
+  }
+
+  const ext = name.slice(extIndex);
+  const base = name.slice(0, max - ext.length - 3);
+  return `${base}...${ext}`;
+};
+
+const formatFileSize = (bytes: number): string => {
+  if (!bytes) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const exponent = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(1024)),
+    units.length - 1
+  );
+  const value = bytes / Math.pow(1024, exponent);
+  const formatted =
+    value >= 100
+      ? value.toFixed(0)
+      : value >= 10
+        ? value.toFixed(1)
+        : value.toFixed(2);
+
+  return `${formatted} ${units[exponent]}`;
+};
 
 const debouncedMsg = refDebounced(msg, 500);
 watch(
@@ -620,6 +780,69 @@ onUnmounted(async () => {
         </Transition>
 
         <Transition name="fade">
+          <div v-if="selectedDocuments.length > 0" class="mx-5 mt-3">
+            <VCard>
+              <VCardTitle class="d-flex align-center justify-space-between">
+                <span
+                  >{{ t('documents_selected') }} (
+                  {{ selectedDocuments.length }}/10 )</span
+                >
+                <VBtn
+                  icon
+                  size="24"
+                  variant="text"
+                  @click="selectedDocuments = []"
+                >
+                  <VIcon size="18" icon="tabler-x" />
+                </VBtn>
+              </VCardTitle>
+              <VCardText>
+                <div class="document-preview-list">
+                  <div
+                    v-for="(doc, index) in selectedDocuments"
+                    :key="`${doc.name}-${index}`"
+                    class="document-preview-item d-flex align-center justify-space-between px-3 py-2"
+                  >
+                    <div class="d-flex align-center gap-3 overflow-hidden">
+                      <VIcon
+                        :icon="resolveDocumentIcon(doc.extension, doc.type)"
+                        size="28"
+                        color="primary"
+                      />
+                      <div class="d-flex flex-column overflow-hidden">
+                        <VTooltip location="bottom">
+                          <template #activator="{ props }">
+                            <span
+                              v-bind="props"
+                              class="text-body-2 fw-medium document-preview-name"
+                            >
+                              {{ truncateFileName(doc.name) }}
+                            </span>
+                          </template>
+                          <span>{{ doc.name }}</span>
+                        </VTooltip>
+                        <span class="text-caption text-disabled">
+                          {{ formatFileSize(doc.size) }}
+                        </span>
+                      </div>
+                    </div>
+                    <VBtn
+                      icon
+                      size="20"
+                      variant="flat"
+                      color="error"
+                      @click="removeDocument(index)"
+                    >
+                      <VIcon size="14" icon="tabler-x" />
+                    </VBtn>
+                  </div>
+                </div>
+              </VCardText>
+            </VCard>
+          </div>
+        </Transition>
+
+        <Transition name="fade">
           <div v-if="selectedPhotos.length > 0" class="mx-5 mt-3">
             <VCard>
               <VCardTitle class="d-flex align-center justify-space-between">
@@ -776,7 +999,7 @@ onUnmounted(async () => {
             <template #append-inner>
               <div class="d-flex align-center gap-1">
                 <IconBtn
-                  v-if="!hasImagesOrContent"
+                  v-if="!hasAttachmentsOrContent"
                   class="composer-btn mic-btn"
                   aria-label="Gravar áudio"
                   @click="onRecordAudio"
@@ -785,7 +1008,7 @@ onUnmounted(async () => {
                 </IconBtn>
 
                 <VBtn
-                  v-if="hasImagesOrContent"
+                  v-if="hasAttachmentsOrContent"
                   class="send-btn"
                   icon
                   color="success"
@@ -804,7 +1027,7 @@ onUnmounted(async () => {
             ref="fileDocRef"
             type="file"
             hidden
-            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            multiple
             @change="onPickDoc"
           />
           <input
@@ -995,5 +1218,27 @@ $chat-app-header-height: 76px;
   100% {
     background-color: transparent;
   }
+}
+
+.document-preview-item {
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+}
+
+.document-preview-name {
+  display: inline-block;
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.document-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-inline-end: 4px;
 }
 </style>

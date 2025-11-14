@@ -4,6 +4,7 @@ import { ETypeUserChat } from '../enums/ETypeUserChat';
 import {
   ImageMessageChat,
   LinkPreview,
+  DocumentMessageChat,
 } from '@core/schema/chat/listMessageChats/response.schema';
 
 interface IAccount {
@@ -33,6 +34,7 @@ export interface IQuotedMessage {
   message?: string | null;
   type?: EMessageType | null;
   image?: ImageMessageChat | null;
+  document?: DocumentMessageChat | null;
 }
 
 export interface IReaction {
@@ -48,6 +50,7 @@ export interface IContent {
   link_preview?: LinkPreview | WAUrlInfo | null;
   quoted?: IQuotedMessage | null;
   image?: ImageMessageChat | null;
+  document?: DocumentMessageChat | null;
   reactions?: IReaction[] | null;
 }
 

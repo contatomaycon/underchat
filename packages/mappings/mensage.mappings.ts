@@ -185,6 +185,32 @@ export const mensageMappings = () => {
                     },
                   },
                 },
+                document: {
+                  type: 'nested',
+                  properties: {
+                    url: {
+                      type: 'keyword',
+                    },
+                    name: {
+                      type: 'text',
+                      fields: {
+                        keyword: {
+                          type: 'keyword',
+                          ignore_above: 256,
+                        },
+                      },
+                    },
+                    mimetype: {
+                      type: 'keyword',
+                    },
+                    extension: {
+                      type: 'keyword',
+                    },
+                    size: {
+                      type: 'long',
+                    },
+                  },
+                },
               },
             },
             image: {
@@ -216,6 +242,35 @@ export const mensageMappings = () => {
                 },
                 width: {
                   type: 'integer',
+                },
+                thumbnail: {
+                  type: 'text',
+                },
+              },
+            },
+            document: {
+              type: 'nested',
+              properties: {
+                url: {
+                  type: 'keyword',
+                },
+                name: {
+                  type: 'text',
+                  fields: {
+                    keyword: {
+                      type: 'keyword',
+                      ignore_above: 256,
+                    },
+                  },
+                },
+                mimetype: {
+                  type: 'keyword',
+                },
+                extension: {
+                  type: 'keyword',
+                },
+                size: {
+                  type: 'long',
                 },
               },
             },

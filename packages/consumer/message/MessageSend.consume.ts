@@ -189,6 +189,19 @@ export class MessageSendConsume {
       return;
     }
 
+    if (currentType === EMessageType.document && data.content?.document?.url) {
+      if (lastType === EMessageType.document) {
+        const delay = this.getRandomDelay();
+
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+
+      await this.processDocument(jid, data);
+      this.lastMessageTypeByChatId.set(chatId, EMessageType.document);
+
+      return;
+    }
+
     if (currentType === EMessageType.text && data.content?.message) {
       await this.processText(jid, data);
       this.lastMessageTypeByChatId.set(chatId, EMessageType.text);
@@ -233,6 +246,34 @@ export class MessageSendConsume {
     };
 
     await this.baileysMessageEditDeleteService.deleteMessage(jid, messageKey);
+  }
+
+  private async processDocument(
+    jid: string,
+    data: IChatMessage
+  ): Promise<void> {
+    const document = data.content?.document;
+
+    if (!document?.url) {
+      throw new Error('Document URL is required');
+    }
+
+    const result = await this.baileysMessageMediaService.sendDocument(
+      jid,
+      { url: document.url },
+      {
+        mimetype: document.mimetype ?? 'application/octet-stream',
+        fileName: document.name ?? undefined,
+        caption: data.content?.message ?? undefined,
+      }
+    );
+
+    if (!result) {
+      throw new Error('Failed to send document');
+    }
+
+    const update: IUpdateMessage = { message: result, data };
+    await this.pushUpdate(update);
   }
 
   private async processReact(jid: string, data: IChatMessage): Promise<void> {
