@@ -24,6 +24,7 @@ const reactionEmojiIndex = new EmojiIndex(data);
 const viewerOpen = ref(false);
 const viewerSrc = ref<string>('');
 const viewerCaption = ref<string>('');
+const viewerDownloadName = ref<string>('');
 
 const resolveFeedbackIcon = (
   message: ListMessageResult
@@ -262,7 +263,10 @@ const downloadMessage = (message: ListMessageResult) => {
   }
   const imageUrl = message.content?.image?.url;
   if (imageUrl) {
-    window.open(imageUrl, '_blank');
+    downloadImage(
+      imageUrl,
+      viewerDownloadName.value || message.content?.image?.caption
+    );
   }
 };
 
@@ -554,11 +558,25 @@ const goToQuoted = (m: ListMessageResult) => {
 };
 
 const openImage = (m: ListMessageResult) => {
-  if (isDeleted(m)) return;
-
   viewerSrc.value = m.content?.image?.url || '';
   viewerCaption.value = m.content?.image?.caption || '';
+  viewerDownloadName.value = documentDownloadName({
+    url: viewerSrc.value,
+    name: m.content?.image?.caption ?? undefined,
+    mimetype: m.content?.image?.mimetype ?? undefined,
+    extension: m.content?.image?.extension ?? undefined,
+  } as DocumentMessageChat);
   viewerOpen.value = true;
+};
+
+const downloadImage = (url: string, filename?: string | null) => {
+  if (!url) return;
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.target = '_blank';
+  if (filename) anchor.download = filename;
+  anchor.rel = 'noopener';
+  anchor.click();
 };
 
 const handleScroll = async (e: Event) => {
@@ -1258,17 +1276,37 @@ onUnmounted(() => {
   >
     <div class="viewer-wrap" @click="viewerOpen = false">
       <div class="viewer-box" @click.stop>
-        <button class="viewer-close" @click="viewerOpen = false">
-          <VIcon size="28">tabler-x</VIcon>
-        </button>
+        <div class="viewer-image-container">
+          <img
+            :src="viewerSrc"
+            alt=""
+            class="viewer-img"
+            loading="eager"
+            decoding="async"
+          />
 
-        <img
-          :src="viewerSrc"
-          alt=""
-          class="viewer-img"
-          loading="eager"
-          decoding="async"
-        />
+          <div class="viewer-actions">
+            <VBtn
+              v-if="viewerSrc"
+              class="viewer-download"
+              icon
+              size="36"
+              variant="text"
+              @click.stop="downloadImage(viewerSrc, viewerDownloadName)"
+            >
+              <VIcon size="20">tabler-download</VIcon>
+            </VBtn>
+            <VBtn
+              class="viewer-close"
+              icon
+              size="36"
+              variant="text"
+              @click="viewerOpen = false"
+            >
+              <VIcon size="20">tabler-x</VIcon>
+            </VBtn>
+          </div>
+        </div>
 
         <div v-if="viewerCaption" class="viewer-caption">
           {{ viewerCaption }}
@@ -1849,44 +1887,59 @@ onUnmounted(() => {
 }
 
 .viewer-box {
-  position: relative;
-  display: grid;
-  place-items: center;
-  gap: 8px;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  max-width: 90vw;
+  max-height: 90vh;
 }
 
-.viewer-close {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  inline-size: 40px;
-  block-size: 40px;
-  display: grid;
-  place-items: center;
-  border: none;
-  background: transparent;
-  color: #fff;
-  cursor: pointer;
+.viewer-image-container {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  max-height: 100%;
 }
 
 .viewer-img {
   display: block;
   width: auto;
   height: auto;
-  max-width: 96vw;
-  max-height: 96vh;
+  max-width: 90vw;
+  max-height: 85vh;
   object-fit: contain;
   border-radius: 12px;
 }
 
+.viewer-actions {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 10;
+}
+
+.viewer-close,
+.viewer-download {
+  color: white !important;
+  background: rgba(0, 0, 0, 0.5) !important;
+  border-radius: 50%;
+  min-width: 36px;
+  height: 36px;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.7) !important;
+  }
+}
+
 .viewer-caption {
-  margin-top: 6px;
-  color: #fff;
+  color: white;
   text-align: center;
-  font-size: 0.95rem;
-  opacity: 0.9;
-  white-space: pre-line;
-  user-select: text;
+  margin: 12px;
 }
 
 .spin {
