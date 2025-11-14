@@ -23,19 +23,22 @@ export class AudioConverterService {
     inputBuffer: Buffer,
     inputMimetype?: string | null
   ): Promise<ConvertAudioResult> {
-    const acceptedFormats = ['ogg', 'opus', 'mp3', 'aac', 'amr'];
-    const currentFormat = this.getExtensionFromMimetype(inputMimetype);
+    const currentFormat = this.detectFormatFromBuffer(
+      inputBuffer,
+      inputMimetype
+    );
 
-    if (acceptedFormats.includes(currentFormat)) {
+    if (currentFormat === this.targetFormat) {
       return {
         buffer: inputBuffer,
         mimetype: inputMimetype || this.targetMimetype,
-        extension: currentFormat,
+        extension: this.targetFormat,
       };
     }
 
     const inputExtension =
-      this.getExtensionFromMimetype(inputMimetype) || 'webm';
+      this.getExtensionFromMimetype(inputMimetype) || currentFormat || 'webm';
+
     const inputPath = join(
       tmpdir(),
       `audio-input-${Date.now()}-${Math.random().toString(36).substring(7)}.${inputExtension}`
@@ -69,15 +72,86 @@ export class AudioConverterService {
     }
   }
 
+  private detectFormatFromBuffer(
+    buffer: Buffer,
+    mimetype?: string | null
+  ): string {
+    if (buffer.length < 4) return this.getExtensionFromMimetype(mimetype);
+
+    const b0 = buffer[0];
+    const b1 = buffer[1];
+    const b2 = buffer[2];
+    const b3 = buffer[3];
+
+    if (b0 === 0x4f && b1 === 0x67 && b2 === 0x67 && b3 === 0x53) {
+      return 'ogg';
+    }
+
+    if (b0 === 0x1a && b1 === 0x45 && b2 === 0xdf && b3 === 0xa3) {
+      return 'webm';
+    }
+
+    if (buffer.length >= 6) {
+      if (b0 === 0x23 && b1 === 0x21 && b2 === 0x41 && b3 === 0x4d) {
+        if (buffer[4] === 0x52) {
+          return 'amr';
+        }
+      }
+    }
+
+    if (buffer.length >= 3) {
+      if (b0 === 0xff && (b1 === 0xfb || b1 === 0xf3 || b1 === 0xf2)) {
+        return 'mp3';
+      }
+    }
+
+    if (buffer.length >= 2) {
+      if (b0 === 0xff && (b1 === 0xf1 || b1 === 0xf9)) {
+        return 'aac';
+      }
+    }
+
+    if (buffer.length >= 12) {
+      if (
+        (b0 === 0x00 && b1 === 0x00 && b2 === 0x00 && b3 >= 0x18) ||
+        (b0 === 0x00 && b1 === 0x00 && b2 === 0x00 && b3 === 0x20)
+      ) {
+        const ftyp = buffer.toString('ascii', 4, 8);
+        if (ftyp === 'ftyp') {
+          const brand = buffer.toString('ascii', 8, 12);
+          if (
+            brand.includes('mp4') ||
+            brand.includes('isom') ||
+            brand.includes('M4A')
+          ) {
+            return 'mp4';
+          }
+        }
+      }
+    }
+
+    if (buffer.length >= 3) {
+      const id3 = buffer.toString('ascii', 0, 3);
+      if (id3 === 'ID3') {
+        return 'mp3';
+      }
+    }
+
+    return this.getExtensionFromMimetype(mimetype);
+  }
+
   private getExtensionFromMimetype(mimetype?: string | null): string {
-    if (!mimetype) return this.targetFormat;
+    if (!mimetype) return '';
 
-    if (mimetype.includes('ogg') || mimetype.includes('opus')) return 'ogg';
-    if (mimetype.includes('mp3')) return 'mp3';
-    if (mimetype.includes('aac')) return 'aac';
-    if (mimetype.includes('amr')) return 'amr';
-    if (mimetype.includes('mp4')) return 'mp4';
+    const lower = mimetype.toLowerCase();
 
-    return this.targetFormat;
+    if (lower.includes('ogg') || lower.includes('opus')) return 'ogg';
+    if (lower.includes('webm')) return 'webm';
+    if (lower.includes('mp3')) return 'mp3';
+    if (lower.includes('aac')) return 'aac';
+    if (lower.includes('amr')) return 'amr';
+    if (lower.includes('mp4')) return 'mp4';
+
+    return '';
   }
 }
