@@ -155,38 +155,42 @@ const startConversation = () => {
   isLeftSidebarOpen.value = true;
 };
 
-const createImageFormData = (): FormData => {
+const createImageFormData = (
+  photo: { file: File; preview: string },
+  messageValue: string | null,
+  quotedId: string | null
+): FormData => {
   const formData = new FormData();
   formData.append('type', EMessageType.image);
-  if (msg.value) {
-    formData.append('message', msg.value);
+  if (messageValue) {
+    formData.append('message', messageValue);
   }
 
-  if (chatStore.messageReply?.message_id) {
-    formData.append('message_quoted_id', chatStore.messageReply.message_id);
+  if (quotedId) {
+    formData.append('message_quoted_id', quotedId);
   }
 
-  selectedPhotos.value.forEach((photo) => {
-    formData.append('images', photo.file);
-  });
+  formData.append('images', photo.file);
 
   return formData;
 };
 
-const createDocumentFormData = (): FormData => {
+const createDocumentFormData = (
+  doc: SelectedDocumentPreview,
+  messageValue: string | null,
+  quotedId: string | null
+): FormData => {
   const formData = new FormData();
   formData.append('type', EMessageType.document);
-  if (msg.value) {
-    formData.append('message', msg.value);
+  if (messageValue) {
+    formData.append('message', messageValue);
   }
 
-  if (chatStore.messageReply?.message_id) {
-    formData.append('message_quoted_id', chatStore.messageReply.message_id);
+  if (quotedId) {
+    formData.append('message_quoted_id', quotedId);
   }
 
-  selectedDocuments.value.forEach((doc) => {
-    formData.append('documents', doc.file);
-  });
+  formData.append('documents', doc.file);
 
   return formData;
 };
@@ -228,13 +232,99 @@ const hasActiveChat = (): boolean => {
 };
 
 const sendImageMessage = async (): Promise<void> => {
-  const formData = createImageFormData();
-  await chatStore.createMessageWithImages(formData);
+  if (!chatStore.activeChat?.chat_id) return;
+  const photos = [...selectedPhotos.value];
+  if (photos.length === 0) return;
+
+  const replyId = chatStore.messageReply?.message_id ?? null;
+  const messageValue = msg.value ? msg.value : null;
+  const chatId = chatStore.activeChat.chat_id;
+
+  await Promise.all(
+    photos.map(async (photo) => {
+      const tempId = crypto.randomUUID();
+
+      chatStore.addPendingImageMessage({
+        id: tempId,
+        chatId,
+        preview: photo.preview,
+        size: photo.file.size,
+        name: photo.file.name ?? null,
+        mimetype: photo.file.type ?? null,
+        message: messageValue,
+        quotedMessageId: replyId,
+      });
+
+      await nextTick();
+      scrollToBottomInChatLog();
+
+      const formData = createImageFormData(photo, messageValue, replyId);
+
+      const success = await chatStore.createMessageWithImages(formData, {
+        skipLoading: true,
+        onUploadProgress: (progress) => {
+          chatStore.updatePendingMessageProgress(tempId, progress);
+        },
+      });
+
+      if (!success) {
+        chatStore.updatePendingMessageStatus(tempId, 'error');
+        return;
+      }
+
+      chatStore.updatePendingMessageProgress(tempId, 100);
+      chatStore.removePendingMessage(tempId);
+    })
+  );
 };
 
 const sendDocumentMessage = async (): Promise<void> => {
-  const formData = createDocumentFormData();
-  await chatStore.createMessageWithDocuments(formData);
+  if (!chatStore.activeChat?.chat_id) return;
+  const docs = [...selectedDocuments.value];
+  if (docs.length === 0) return;
+
+  const replyId = chatStore.messageReply?.message_id ?? null;
+  const messageValue = msg.value ? msg.value : null;
+  const chatId = chatStore.activeChat.chat_id;
+
+  await Promise.all(
+    docs.map(async (doc) => {
+      const tempId = crypto.randomUUID();
+
+      chatStore.addPendingDocumentMessage({
+        id: tempId,
+        chatId,
+        document: {
+          name: doc.name,
+          size: doc.size,
+          extension: doc.extension,
+          mimetype: doc.type,
+        },
+        message: messageValue,
+        quotedMessageId: replyId,
+      });
+
+      await nextTick();
+      scrollToBottomInChatLog();
+
+      const formData = createDocumentFormData(doc, messageValue, replyId);
+
+      const success = await chatStore.createMessageWithDocuments(formData, {
+        skipLoading: true,
+        onUploadProgress: (progress) => {
+          chatStore.updatePendingMessageProgress(tempId, progress);
+        },
+      });
+
+      if (!success) {
+        chatStore.updatePendingMessageStatus(tempId, 'error');
+        return;
+      }
+
+      chatStore.updatePendingMessageProgress(tempId, 100);
+      chatStore.removePendingMessage(tempId);
+    })
+  );
 };
 
 const sendTextMessage = async (): Promise<void> => {

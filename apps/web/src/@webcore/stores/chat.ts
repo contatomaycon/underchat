@@ -4,6 +4,7 @@ import { getI18n } from '@/plugins/i18n';
 import { EColor } from '@core/common/enums/EColor';
 import { ISnackbar } from '@core/common/interfaces/ISnackbar';
 import axios from '@webcore/axios';
+import type { AxiosRequestConfig } from 'axios';
 import {
   ListChatsResponse,
   ListChatsResult,
@@ -27,6 +28,36 @@ import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ViewLinkPreviewBody } from '@core/schema/chat/viewLinkPreview/request.schema';
 import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
 
+export interface PendingMessage {
+  id: string;
+  chat_id: string;
+  type: EMessageType;
+  status: 'uploading' | 'error';
+  progress: number;
+  created_at: string;
+  message?: string | null;
+  quoted_message_id?: string | null;
+  document?: {
+    name: string;
+    size: number;
+    extension: string;
+    mimetype: string;
+  } | null;
+  image?: {
+    preview: string;
+    size: number;
+    name?: string | null;
+    mimetype?: string | null;
+    width?: number | null;
+    height?: number | null;
+  } | null;
+}
+
+type UploadOptions = {
+  onUploadProgress?: (progress: number) => void;
+  skipLoading?: boolean;
+};
+
 export const useChatStore = defineStore('chat', {
   state: () => ({
     snackbar: {
@@ -45,6 +76,7 @@ export const useChatStore = defineStore('chat', {
     user: getUser(),
     currentPage: 1,
     totalPages: 1,
+    pendingMessages: [] as PendingMessage[],
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -54,6 +86,87 @@ export const useChatStore = defineStore('chat', {
     },
     hideSnackbar() {
       this.snackbar.status = false;
+    },
+    addPendingDocumentMessage(input: {
+      id: string;
+      chatId: string;
+      document: {
+        name: string;
+        size: number;
+        extension: string;
+        mimetype: string;
+      };
+      message?: string | null;
+      quotedMessageId?: string | null;
+    }) {
+      const pending: PendingMessage = {
+        id: input.id,
+        chat_id: input.chatId,
+        type: EMessageType.document,
+        status: 'uploading',
+        progress: 0,
+        created_at: new Date().toISOString(),
+        message: input.message ?? null,
+        quoted_message_id: input.quotedMessageId ?? null,
+        document: {
+          name: input.document.name,
+          size: input.document.size,
+          extension: input.document.extension,
+          mimetype: input.document.mimetype,
+        },
+        image: null,
+      };
+
+      this.pendingMessages.push(pending);
+    },
+    addPendingImageMessage(input: {
+      id: string;
+      chatId: string;
+      preview: string;
+      size: number;
+      name?: string | null;
+      mimetype?: string | null;
+      message?: string | null;
+      quotedMessageId?: string | null;
+    }) {
+      const pending: PendingMessage = {
+        id: input.id,
+        chat_id: input.chatId,
+        type: EMessageType.image,
+        status: 'uploading',
+        progress: 0,
+        created_at: new Date().toISOString(),
+        message: input.message ?? null,
+        quoted_message_id: input.quotedMessageId ?? null,
+        document: null,
+        image: {
+          preview: input.preview,
+          size: input.size,
+          name: input.name ?? null,
+          mimetype: input.mimetype ?? null,
+        },
+      };
+
+      this.pendingMessages.push(pending);
+    },
+    updatePendingMessageProgress(id: string, progress: number) {
+      const target = this.pendingMessages.find((item) => item.id === id);
+      if (!target || target.status === 'error') return;
+      target.progress = Math.max(0, Math.min(progress, 100));
+    },
+    updatePendingMessageStatus(id: string, status: PendingMessage['status']) {
+      const target = this.pendingMessages.find((item) => item.id === id);
+      if (!target) return;
+      target.status = status;
+      if (status === 'error') {
+        target.progress = 0;
+      }
+    },
+    removePendingMessage(id: string) {
+      const index = this.pendingMessages.findIndex((item) => item.id === id);
+      if (index !== -1) {
+        this.pendingMessages.splice(index, 1);
+      }
     },
     addMessageActiveChat(message: IChatMessage) {
       const input: ListMessageResult = {
@@ -356,69 +469,135 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    async createMessageWithImages(formData: FormData): Promise<void> {
+    async createMessageWithImages(
+      formData: FormData,
+      options?: UploadOptions
+    ): Promise<boolean> {
+      const shouldHandleLoading = !options?.skipLoading;
+
       try {
-        this.loading = true;
+        if (shouldHandleLoading) {
+          this.loading = true;
+        }
+
+        const config: AxiosRequestConfig<FormData> = {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        };
+
+        if (options?.onUploadProgress) {
+          config.onUploadProgress = (event) => {
+            if (!event.total) {
+              options.onUploadProgress?.(0);
+
+              return;
+            }
+
+            const progress = Math.min(
+              99,
+              Math.round((event.loaded / event.total) * 100)
+            );
+            options.onUploadProgress?.(progress);
+          };
+        }
 
         const response = await axios.post<IApiResponse<boolean>>(
           `/chat/${this.activeChat?.chat_id}`,
           formData,
-          {
-            headers: {
-              'Content-Type': 'multipart/form-data',
-            },
-          }
+          config
         );
 
-        this.loading = false;
+        if (shouldHandleLoading) {
+          this.loading = false;
+        }
 
         const data = response?.data as IApiResponse<boolean>;
 
         if (!data?.status) {
           this.showSnackbar(data.message, EColor.error);
 
-          return;
+          return false;
         }
+
+        return true;
       } catch {
-        this.loading = false;
+        if (shouldHandleLoading) {
+          this.loading = false;
+        }
 
         this.showSnackbar(
           this.i18n.global.t('chat_message_create_error'),
           EColor.error
         );
+
+        return false;
       }
     },
 
-    async createMessageWithDocuments(formData: FormData): Promise<void> {
+    async createMessageWithDocuments(
+      formData: FormData,
+      options?: UploadOptions
+    ): Promise<boolean> {
+      const shouldHandleLoading = !options?.skipLoading;
+
       try {
-        this.loading = true;
+        if (shouldHandleLoading) {
+          this.loading = true;
+        }
+
+        const config: AxiosRequestConfig<FormData> = {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        };
+
+        if (options?.onUploadProgress) {
+          config.onUploadProgress = (event) => {
+            if (!event.total) {
+              options.onUploadProgress?.(0);
+
+              return;
+            }
+
+            const progress = Math.min(
+              99,
+              Math.round((event.loaded / event.total) * 100)
+            );
+            options.onUploadProgress?.(progress);
+          };
+        }
 
         const response = await axios.post<IApiResponse<boolean>>(
           `/chat/${this.activeChat?.chat_id}`,
           formData,
-          {
-            headers: {
-              'Content-Type': 'multipart/form-data',
-            },
-          }
+          config
         );
 
-        this.loading = false;
+        if (shouldHandleLoading) {
+          this.loading = false;
+        }
 
         const data = response?.data as IApiResponse<boolean>;
 
         if (!data?.status) {
           this.showSnackbar(data.message, EColor.error);
 
-          return;
+          return false;
         }
+
+        return true;
       } catch {
-        this.loading = false;
+        if (shouldHandleLoading) {
+          this.loading = false;
+        }
 
         this.showSnackbar(
           this.i18n.global.t('chat_message_create_error'),
           EColor.error
         );
+
+        return false;
       }
     },
 

@@ -1,11 +1,12 @@
 <script lang="ts" setup>
-import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue';
 import { useChatStore } from '@/@webcore/stores/chat';
 import {
   LinkPreview,
   ListMessageResult,
   DocumentMessageChat,
 } from '@core/schema/chat/listMessageChats/response.schema';
+import type { PendingMessage } from '@/@webcore/stores/chat';
 import { isTypeUser } from '@core/common/functions/isTypeUser';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { EColor } from '@core/common/enums/EColor';
@@ -209,6 +210,61 @@ const getReactionsSummary = (
     if (b.count !== a.count) return b.count - a.count;
     return a.emoji.localeCompare(b.emoji);
   });
+};
+
+const pendingMessages = computed<PendingMessage[]>(() => {
+  const chatId = chatStore.activeChat?.chat_id;
+  if (!chatId) return [];
+
+  return chatStore.pendingMessages
+    .filter((message) => message.chat_id === chatId)
+    .sort((a, b) => a.created_at.localeCompare(b.created_at));
+});
+
+const pendingDocumentMeta = (pending: PendingMessage): string => {
+  if (!pending.document) return '';
+  const ext = pending.document.extension?.toUpperCase();
+  const sizeText = formatDocumentSize(pending.document.size ?? null);
+  return [ext, sizeText].filter(Boolean).join(' • ');
+};
+
+const resolvePendingDocumentIcon = (pending: PendingMessage): string => {
+  if (!pending.document) return 'tabler-file-description';
+
+  const doc = {
+    url: null,
+    name: pending.document.name ?? null,
+    mimetype: pending.document.mimetype ?? null,
+    extension: pending.document.extension ?? null,
+    size: pending.document.size ?? null,
+  } as DocumentMessageChat;
+
+  return resolveDocumentIcon(doc);
+};
+
+const pendingStatusText = (pending: PendingMessage): string => {
+  if (pending.status === 'error') {
+    return pending.type === EMessageType.document
+      ? t('document_upload_failed')
+      : t('image_upload_failed');
+  }
+
+  const percent = Math.max(0, Math.min(100, Math.round(pending.progress)));
+  const label =
+    pending.type === EMessageType.document
+      ? t('document_uploading')
+      : t('image_uploading');
+
+  return `${label} • ${percent}%`;
+};
+
+const pendingImageMeta = (pending: PendingMessage): string => {
+  const sizeText = formatDocumentSize(pending.image?.size ?? null);
+  return [sizeText].filter(Boolean).join('');
+};
+
+const pendingImageSrc = (pending: PendingMessage): string => {
+  return pending.image?.preview ?? '';
 };
 
 const documentIconMap: Record<string, string> = {
@@ -992,6 +1048,143 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+
+    <div
+      v-for="pending in pendingMessages"
+      :key="`pending-${pending.id}`"
+      class="chat-group d-flex align-start position-relative flex-row-reverse"
+    >
+      <div class="chat-avatar ms-4">
+        <VAvatar
+          size="32"
+          :variant="chatStore.user?.info.photo ? undefined : 'tonal'"
+        >
+          <VImg
+            v-if="chatStore.user?.info.photo"
+            :src="chatStore.user.info.photo"
+          />
+          <span v-else class="text-1xl">
+            {{ avatarText(chatStore.user?.info.name) }}
+          </span>
+        </VAvatar>
+      </div>
+
+      <div
+        class="chat-body d-inline-flex flex-column position-relative align-end"
+      >
+        <div class="chat-content-wrapper wrapper-operator">
+          <div class="chat-content py-2 px-2 elevation-2 pending-content">
+            <template v-if="pending.type === EMessageType.document">
+              <div
+                class="document-bubble document-bubble--right pending-document"
+              >
+                <div class="document-icon">
+                  <VIcon
+                    :icon="resolvePendingDocumentIcon(pending)"
+                    size="30"
+                    color="primary"
+                  />
+                </div>
+                <div class="document-details">
+                  <span class="document-name">
+                    {{ truncateDocumentName(pending.document?.name) }}
+                  </span>
+                  <span class="document-meta text-caption text-disabled">
+                    {{ pendingDocumentMeta(pending) }}
+                  </span>
+                </div>
+                <div class="pending-actions">
+                  <div
+                    v-if="pending.status !== 'error'"
+                    class="pending-progress"
+                  >
+                    <VProgressCircular
+                      :model-value="pending.progress"
+                      :indeterminate="pending.progress <= 0"
+                      size="42"
+                      width="4"
+                      color="primary"
+                    >
+                      <span class="pending-progress-label">
+                        {{ Math.max(0, Math.round(pending.progress)) }}%
+                      </span>
+                    </VProgressCircular>
+                  </div>
+                  <div v-else class="pending-error">
+                    <VIcon size="28" color="error">tabler-alert-triangle</VIcon>
+                  </div>
+                  <VBtn
+                    v-if="pending.status === 'error'"
+                    icon
+                    size="22"
+                    variant="text"
+                    class="pending-dismiss"
+                    @click="chatStore.removePendingMessage(pending.id)"
+                  >
+                    <VIcon size="16">tabler-x</VIcon>
+                  </VBtn>
+                </div>
+              </div>
+              <p v-if="pending.message" class="pending-caption mt-2">
+                {{ pending.message }}
+              </p>
+            </template>
+            <template v-else-if="pending.type === EMessageType.image">
+              <div class="pending-image-wrapper">
+                <VImg
+                  :src="pendingImageSrc(pending)"
+                  cover
+                  class="pending-image-thumb"
+                />
+                <div
+                  v-if="pending.status !== 'error'"
+                  class="pending-image-overlay"
+                >
+                  <VProgressCircular
+                    :model-value="pending.progress"
+                    :indeterminate="pending.progress <= 0"
+                    size="52"
+                    width="4"
+                    color="primary"
+                  >
+                    <span class="pending-progress-label">
+                      {{ Math.max(0, Math.round(pending.progress)) }}%
+                    </span>
+                  </VProgressCircular>
+                </div>
+                <div v-else class="pending-image-error">
+                  <VIcon size="34" color="error">tabler-alert-triangle</VIcon>
+                </div>
+                <VBtn
+                  v-if="pending.status === 'error'"
+                  icon
+                  size="22"
+                  variant="text"
+                  class="pending-image-dismiss"
+                  @click="chatStore.removePendingMessage(pending.id)"
+                >
+                  <VIcon size="16">tabler-x</VIcon>
+                </VBtn>
+              </div>
+              <div class="pending-image-meta text-caption text-disabled mt-2">
+                {{ pendingImageMeta(pending) }}
+              </div>
+              <p v-if="pending.message" class="pending-caption mt-2">
+                {{ pending.message }}
+              </p>
+            </template>
+            <div
+              class="pending-status text-caption mt-2"
+              :class="{
+                'pending-status--error': pending.status === 'error',
+              }"
+            >
+              {{ pendingStatusText(pending) }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <VDialog
@@ -1327,6 +1520,109 @@ onUnmounted(() => {
 
       .document-download:hover {
         background: rgba(var(--v-theme-primary), 0.18);
+      }
+
+      .pending-content {
+        min-inline-size: 280px;
+        max-inline-size: min(100%, 360px);
+      }
+
+      .pending-document {
+        position: relative;
+        padding-inline-end: 12px;
+      }
+
+      .pending-actions {
+        margin-inline-start: auto;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .pending-progress {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .pending-progress-label {
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: rgb(var(--v-theme-primary));
+      }
+
+      .pending-error {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .pending-dismiss {
+        min-width: 28px !important;
+        width: 28px !important;
+        height: 28px !important;
+      }
+
+      .pending-image-wrapper {
+        position: relative;
+        inline-size: clamp(160px, 40vw, 220px);
+        block-size: clamp(160px, 40vw, 220px);
+        border-radius: 12px;
+        overflow: hidden;
+        display: flex;
+      }
+
+      .pending-image-thumb {
+        inline-size: 100%;
+        block-size: 100%;
+      }
+
+      .pending-image-overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.3);
+      }
+
+      .pending-image-error {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.15);
+      }
+
+      .pending-image-dismiss {
+        position: absolute;
+        inset-block-start: 6px;
+        inset-inline-end: 6px;
+        min-width: 28px !important;
+        width: 28px !important;
+        height: 28px !important;
+        background: rgba(0, 0, 0, 0.35) !important;
+        color: rgb(var(--v-theme-on-primary)) !important;
+      }
+
+      .pending-image-meta {
+        color: rgba(var(--v-theme-on-surface), 0.6);
+      }
+
+      .pending-caption {
+        color: rgba(var(--v-theme-on-surface), 0.75);
+        margin: 0;
+      }
+
+      .pending-status {
+        margin-top: 6px;
+        color: rgba(var(--v-theme-on-surface), 0.6);
+      }
+
+      .pending-status--error {
+        color: rgb(var(--v-theme-error));
+        font-weight: 600;
       }
 
       .deleted-label-wrapper {
