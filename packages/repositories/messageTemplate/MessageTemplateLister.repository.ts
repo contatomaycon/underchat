@@ -100,6 +100,7 @@ export class MessageTemplateListerRepository {
           message_status_id: messageStatus.message_status_id,
           name: messageStatus.name,
         },
+        attachment_url: messageTemplate.attachment_url,
         created_at: messageTemplate.created_at,
       })
       .from(messageTemplate)
@@ -139,6 +140,7 @@ export class MessageTemplateListerRepository {
         : null,
       command: message.command,
       message: message.message,
+      attachment_url: message.attachment_url ?? null,
       created_at: message.created_at ? message.created_at : null,
     })) as ListMessageTemplateResponse[];
   };

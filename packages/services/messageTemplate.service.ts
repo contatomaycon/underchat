@@ -3,14 +3,14 @@ import { MessageTemplateListerRepository } from '@core/repositories/messageTempl
 import { ListMessageTemplateRequest } from '@core/schema/messageTemplate/listMessageTemplate/request.schema';
 import { ListMessageTemplateResponse } from '@core/schema/messageTemplate/listMessageTemplate/response.schema';
 import { MessageTemplateCreatorRepository } from '@core/repositories/messageTemplate/MessageTemplateCreator.repository';
-import { CreateMessageTemplateRequest } from '@core/schema/messageTemplate/createMessageTemplate/request.schema';
 import { MessageStatusViewerExistsRepository } from '@core/repositories/messageTemplate/MessageStatusViewerExists.repository';
 import { MessageTemplateViewerExistsRepository } from '@core/repositories/messageTemplate/MessageTemplateViewerExists.repository';
 import { MessageTemplateViewerRepository } from '@core/repositories/messageTemplate/MessageTemplateViewer.repository';
 import { ViewMessageTemplateResponse } from '@core/schema/messageTemplate/viewMessageTemplate/response.schema';
 import { MessageTemplateDeleterRepository } from '@core/repositories/messageTemplate/MessageTemplateDeleter.repository';
 import { MessageTemplateUpdaterRepository } from '@core/repositories/messageTemplate/MessageTemplateUpdater.repository';
-import { UpdateMessageTemplateRequest } from '@core/schema/messageTemplate/editMessageTemplate/request.schema';
+import { ICreateMessageTemplate } from '@core/interfaces/repositories/messageTemplate/ICreateMessageTemplate';
+import { IUpdateMessageTemplate } from '@core/interfaces/repositories/messageTemplate/IUpdateMessageTemplate';
 
 @injectable()
 export class MessageTemplateService {
@@ -50,13 +50,9 @@ export class MessageTemplateService {
   };
 
   createMessageTemplate = async (
-    input: CreateMessageTemplateRequest,
-    accountId: string
+    input: ICreateMessageTemplate
   ): Promise<string | null> => {
-    return this.messageTemplateCreatorRepository.createMessageTemplate(
-      input,
-      accountId
-    );
+    return this.messageTemplateCreatorRepository.createMessageTemplate(input);
   };
 
   existsMessageStatusById = async (
@@ -92,11 +88,9 @@ export class MessageTemplateService {
   };
 
   updateMessageTemplateById = async (
-    messageTemplateId: string,
-    input: UpdateMessageTemplateRequest
+    input: IUpdateMessageTemplate
   ): Promise<boolean> => {
     return this.messageTemplateUpdaterRepository.updateMessageTemplateById(
-      messageTemplateId,
       input
     );
   };

@@ -57,6 +57,45 @@ const itemsStatus = ref([
   { id: EMessageStatus.inactive, text: t('inactive') },
 ]);
 
+const imageExts = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp']);
+const pdfExts = new Set(['pdf']);
+const audioExts = new Set(['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac', 'opus']);
+
+function getExtFromUrl(url: string | null | undefined): string {
+  if (!url) return '';
+
+  const getLastSegment = (value: string) => {
+    const clean = value.split(/[?#]/)[0];
+    return clean.split('/').findLast((segment) => segment.length > 0) ?? '';
+  };
+
+  try {
+    const u = new URL(url);
+    const last = getLastSegment(u.pathname);
+    const i = last.lastIndexOf('.');
+    return i >= 0 ? last.slice(i + 1).toLowerCase() : '';
+  } catch {
+    const last = getLastSegment(url);
+    const i = last.lastIndexOf('.');
+    return i >= 0 ? last.slice(i + 1).toLowerCase() : '';
+  }
+}
+
+function getAttachmentIcon(url: string | null | undefined): string {
+  const ext = getExtFromUrl(url);
+
+  if (imageExts.has(ext)) return 'tabler-photo';
+  if (pdfExts.has(ext)) return 'tabler-file-type-pdf';
+  if (audioExts.has(ext)) return 'tabler-music';
+
+  return 'tabler-file';
+}
+
+function openAttachment(url: string | null | undefined) {
+  if (!url) return;
+  window.open(url, '_blank');
+}
+
 const isDialogDeleterShow = ref(false);
 const messageTemplateToDelete = ref<string | null>(null);
 
@@ -68,6 +107,7 @@ const headers: DataTableHeader<ListMessageTemplateResponse>[] = [
   { title: t('message'), key: 'message' },
   { title: t('shortcut'), key: 'command' },
   { title: t('message_status'), key: 'message_status' },
+  { title: t('attachment'), key: 'attachment_url' },
   { title: t('created_at'), key: 'created_at' },
   { title: t('actions'), key: 'actions', sortable: false },
 ];
@@ -212,6 +252,22 @@ watch(
 
         <template #item.message_status="{ item }">
           {{ $t(`${item.message_status?.name}`) }}
+        </template>
+
+        <template #item.attachment_url="{ item }">
+          <div v-if="item.attachment_url" class="d-flex align-center">
+            <IconBtn @click="openAttachment(item.attachment_url)">
+              <VTooltip
+                location="top"
+                transition="scale-transition"
+                activator="parent"
+              >
+                <span>{{ item.attachment_url }}</span>
+              </VTooltip>
+              <VIcon :icon="getAttachmentIcon(item.attachment_url)" />
+            </IconBtn>
+          </div>
+          <span v-else class="text-medium-emphasis">-</span>
         </template>
 
         <template #item.created_at="{ item }">

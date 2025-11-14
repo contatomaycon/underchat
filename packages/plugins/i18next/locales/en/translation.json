@@ -220,5 +220,7 @@
   "no_contacts_found_in_file": "No contacts found in file!",
   "plan_list_all_successfully": "Plan list retrieved successfully!",
   "plan_list_all_not_found": "No plans found!",
-  "plan_list_all_unauthorized": "You are not authorized to view the plans!"
+  "plan_list_all_unauthorized": "You are not authorized to view the plans!",
+  "invalid_attachment_type": "Invalid attachment type!",
+  "attachment_size_exceeded": "Attachment size exceeded!"
 }

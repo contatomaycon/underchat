@@ -13,6 +13,7 @@ CREATE TABLE "message_template" (
   "message_status_id" uuid NOT NULL,
   "command" character varying(100) NOT NULL,
   "message" text NOT NULL,
+  "attachment_url" character varying(500) NULL,
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
   "deleted_at" timestamptz NULL,

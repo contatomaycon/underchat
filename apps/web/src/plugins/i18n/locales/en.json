@@ -397,5 +397,17 @@
     "file": "File",
     "select_file": "Select File",
     "msg_csv_or_vcard": "The file must be in CSV or vCard (.vcf) format and follow the column pattern: First Name, Last Name, Email, Phone, Nickname, Birthday, and Notes.",
-    "plan_all_list_error": "An error occurred while listing all plans. Please try again."
+    "plan_all_list_error": "An error occurred while listing all plans. Please try again.",
+    "msg_image_pdf_or_audio": "The attachment must be an image, PDF, or audio file. Allowed size up to 10MB.",
+    "attachment": "Attachment",
+    "messages": "Messages",
+    "labels": "Labels",
+    "quick_messages": "Quick Messages",
+    "utilities": "Utilities",
+    "invalid_file_message": "Invalid file. Please upload an image, PDF, or audio file.",
+    "file_too_large": "File too large (max 10MB).",
+    "command_no_slash": "It is not allowed to use / or \\ in the command.",
+    "command_only_dot_not_allowed": "The command cannot be just a dot.",
+    "invalid_contacts_file": "Invalid file. Please upload .csv, .vcf, or .vcard.",
+    "required": "Required"
 }
