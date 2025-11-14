@@ -33,9 +33,9 @@ import { useI18n } from 'vue-i18n';
 const emojiIndex = new EmojiIndex(data);
 const { t } = useI18n();
 
-const MAX_DOCUMENT_SIZE_BYTES = 2 * 1024 * 1024 * 1024;
+const MAX_DOCUMENT_SIZE_BYTES = 100 * 1024 * 1024;
 const MAX_IMAGE_SIZE_BYTES = 16 * 1024 * 1024;
-const MAX_VIDEO_SIZE_BYTES = 200 * 1024 * 1024;
+const MAX_VIDEO_SIZE_BYTES = 100 * 1024 * 1024;
 
 definePage({
   meta: {

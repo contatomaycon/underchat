@@ -582,16 +582,7 @@ const resolveQuotedDocumentMeta = (m: ListMessageResult): string => {
 };
 
 const resolveQuotedImageName = (m: ListMessageResult): string => {
-  const image = m.content?.quoted?.image;
-  if (!image) return t('photo_label');
-
-  const name = image.caption || image.url || image.thumbnail;
-  if (!name) return t('photo_label');
-
-  const segments = name.split('/');
-  const filename = segments[segments.length - 1] || name;
-
-  return truncateVideoName(filename);
+  return t('photo_label');
 };
 
 const resolveQuotedImageMeta = (m: ListMessageResult): string => {
@@ -603,9 +594,7 @@ const resolveQuotedImageMeta = (m: ListMessageResult): string => {
 };
 
 const resolveQuotedVideoName = (m: ListMessageResult): string => {
-  const video = m.content?.quoted?.video;
-  const candidate = video?.name ?? video?.caption ?? null;
-  return truncateVideoName(candidate);
+  return t('video_label');
 };
 
 const resolveQuotedVideoMeta = (m: ListMessageResult): string => {
@@ -1193,25 +1182,6 @@ onUnmounted(() => {
                   </div>
                 </div>
                 <div class="video-details">
-                  <VTooltip location="bottom">
-                    <template #activator="{ props }">
-                      <span v-bind="props" class="video-name">
-                        {{
-                          truncateVideoName(
-                            msgGrp.content.video.name ||
-                              msgGrp.content.video.caption ||
-                              ''
-                          )
-                        }}
-                      </span>
-                    </template>
-                    <span>
-                      {{
-                        msgGrp.content.video.name ||
-                        msgGrp.content.video.caption
-                      }}
-                    </span>
-                  </VTooltip>
                   <span class="video-meta text-caption text-disabled">
                     {{ resolveVideoMeta(msgGrp.content.video) }}
                   </span>

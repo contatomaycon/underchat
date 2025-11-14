@@ -404,7 +404,8 @@
     "message_key_not_found": "Chave da mensagem não encontrada",
     "message_jid_not_found": "JID da mensagem não encontrada",
     "reaction_send_error": "Erro ao enviar reação",
-    "document_size_exceeded": "Arquivo excede o tamanho máximo permitido de 2 GB.",
+    "document_size_exceeded": "Arquivo excede o tamanho máximo permitido de 100 MB.",
     "image_size_exceeded": "Imagem excede o tamanho máximo permitido de 16 MB.",
+    "video_size_exceeded": "Vídeo excede o tamanho máximo permitido de 100 MB.",
     "chat_action_download": "Baixar"
 }

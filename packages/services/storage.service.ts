@@ -8,8 +8,8 @@ import { fileTypeFromBuffer } from 'file-type';
 import sharp from 'sharp';
 
 const MAX_IMAGE_UPLOAD_BYTES = 16 * 1024 * 1024;
-const MAX_DOCUMENT_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
-const MAX_VIDEO_UPLOAD_BYTES = 200 * 1024 * 1024;
+const MAX_DOCUMENT_UPLOAD_BYTES = 100 * 1024 * 1024;
+const MAX_VIDEO_UPLOAD_BYTES = 100 * 1024 * 1024;
 
 @injectable()
 export class StorageService {
