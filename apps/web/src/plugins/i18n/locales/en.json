@@ -364,7 +364,7 @@
   "chat_deleted_message_label": "Message removed",
     "documents_selected": "Documents selected",
     "max_documents_selected": "You have already selected the maximum of 10 documents.",
-    "can_select_more_documents": "You can select {count} more document(s).",
+    "can_select_more_documents": "You can select up to {count} document(s).",
     "document_type_not_allowed": "File type not allowed for documents.",
     "document_some_filtered": "Some files were skipped because they are not supported.",
     "clear_images_before_documents": "Remove the selected images before sending documents.",

@@ -367,7 +367,7 @@
   "chat_deleted_message_label": "Mensagem removida",
     "documents_selected": "Documentos selecionados",
     "max_documents_selected": "Você já selecionou o número máximo de documentos (10).",
-    "can_select_more_documents": "Você pode selecionar mais {count} documento(s).",
+    "can_select_more_documents": "Você pode selecionar até {count} documento(s).",
     "document_type_not_allowed": "Tipo de arquivo não permitido para documentos.",
     "document_some_filtered": "Alguns arquivos foram ignorados por não serem suportados.",
     "clear_images_before_documents": "Remova as imagens selecionadas antes de enviar documentos.",
