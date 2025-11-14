@@ -162,6 +162,10 @@ const createImageFormData = (): FormData => {
     formData.append('message', msg.value);
   }
 
+  if (chatStore.messageReply?.message_id) {
+    formData.append('message_quoted_id', chatStore.messageReply.message_id);
+  }
+
   selectedPhotos.value.forEach((photo) => {
     formData.append('images', photo.file);
   });
@@ -782,126 +786,127 @@ onUnmounted(async () => {
           </div>
         </Transition>
 
-        <Transition name="fade">
-          <div v-if="selectedDocuments.length > 0" class="mx-5 mt-3">
-            <VCard>
-              <VCardTitle class="d-flex align-center justify-space-between">
-                <span
-                  >{{ t('documents_selected') }} (
-                  {{ selectedDocuments.length }}/10 )</span
-                >
-                <VBtn
-                  icon
-                  size="24"
-                  variant="text"
-                  @click="selectedDocuments = []"
-                >
-                  <VIcon size="18" icon="tabler-x" />
-                </VBtn>
-              </VCardTitle>
-              <VCardText>
-                <div class="document-preview-list">
-                  <div
-                    v-for="(doc, index) in selectedDocuments"
-                    :key="`${doc.name}-${index}`"
-                    class="document-preview-item d-flex align-center justify-space-between px-3 py-2"
-                  >
-                    <div class="d-flex align-center gap-3 overflow-hidden">
-                      <VIcon
-                        :icon="resolveDocumentIcon(doc.extension, doc.type)"
-                        size="28"
-                        color="primary"
-                      />
-                      <div class="d-flex flex-column overflow-hidden">
-                        <VTooltip location="bottom">
-                          <template #activator="{ props }">
-                            <span
-                              v-bind="props"
-                              class="text-body-2 fw-medium document-preview-name"
-                            >
-                              {{ truncateFileName(doc.name) }}
-                            </span>
-                          </template>
-                          <span>{{ doc.name }}</span>
-                        </VTooltip>
-                        <span class="text-caption text-disabled">
-                          {{ formatFileSize(doc.size) }}
-                        </span>
-                      </div>
-                    </div>
-                    <VBtn
-                      icon
-                      size="20"
-                      variant="flat"
-                      color="error"
-                      @click="removeDocument(index)"
-                    >
-                      <VIcon size="14" icon="tabler-x" />
-                    </VBtn>
-                  </div>
-                </div>
-              </VCardText>
-            </VCard>
-          </div>
-        </Transition>
-
-        <Transition name="fade">
-          <div v-if="selectedPhotos.length > 0" class="mx-5 mt-3">
-            <VCard>
-              <VCardTitle class="d-flex align-center justify-space-between">
-                <span
-                  >{{ t('images_selected') }} ({{
-                    selectedPhotos.length
-                  }}/10)</span
-                >
-                <VBtn
-                  icon
-                  size="24"
-                  variant="text"
-                  @click="selectedPhotos = []"
-                >
-                  <VIcon size="18" icon="tabler-x" />
-                </VBtn>
-              </VCardTitle>
-              <VCardText>
-                <div class="d-flex flex-wrap" style="gap: 8px">
-                  <div
-                    v-for="(photo, index) in selectedPhotos"
-                    :key="index"
-                    class="photo-preview-wrapper"
-                    style="
-                      position: relative;
-                      width: calc((100% - 32px) / 5);
-                      aspect-ratio: 1;
-                    "
-                  >
-                    <VImg
-                      :src="photo.preview"
-                      cover
-                      style="border-radius: 8px"
-                    />
-                    <VBtn
-                      icon
-                      size="20"
-                      variant="flat"
-                      color="error"
-                      style="position: absolute; top: 4px; right: 4px"
-                      @click="selectedPhotos.splice(index, 1)"
-                    >
-                      <VIcon size="14" icon="tabler-x" />
-                    </VBtn>
-                  </div>
-                </div>
-              </VCardText>
-            </VCard>
-          </div>
-        </Transition>
-
         <VForm
           class="chat-log-message-form mb-5 mx-5"
           @submit.prevent="sendMessage"
         >
           <ReplyPreview v-if="chatStore.messageReply" />
+
+          <Transition name="fade">
+            <div
+              v-if="selectedDocuments.length > 0"
+              class="composer-attachment mt-3"
+            >
+              <VCard class="composer-attachment-card">
+                <VCardTitle class="d-flex align-center justify-space-between">
+                  <span
+                    >{{ t('documents_selected') }} (
+                    {{ selectedDocuments.length }}/10 )</span
+                  >
+                  <VBtn
+                    icon
+                    size="24"
+                    variant="text"
+                    @click="selectedDocuments = []"
+                  >
+                    <VIcon size="18" icon="tabler-x" />
+                  </VBtn>
+                </VCardTitle>
+                <VCardText>
+                  <div class="document-preview-list">
+                    <div
+                      v-for="(doc, index) in selectedDocuments"
+                      :key="`${doc.name}-${index}`"
+                      class="document-preview-item d-flex align-center justify-space-between px-3 py-2"
+                    >
+                      <div class="d-flex align-center gap-3 overflow-hidden">
+                        <VIcon
+                          :icon="resolveDocumentIcon(doc.extension, doc.type)"
+                          size="28"
+                          color="primary"
+                        />
+                        <div class="d-flex flex-column overflow-hidden">
+                          <VTooltip location="bottom">
+                            <template #activator="{ props }">
+                              <span
+                                v-bind="props"
+                                class="text-body-2 fw-medium document-preview-name"
+                              >
+                                {{ truncateFileName(doc.name) }}
+                              </span>
+                            </template>
+                            <span>{{ doc.name }}</span>
+                          </VTooltip>
+                          <span class="text-caption text-disabled">
+                            {{ formatFileSize(doc.size) }}
+                          </span>
+                        </div>
+                      </div>
+                      <VBtn
+                        icon
+                        size="20"
+                        variant="flat"
+                        color="error"
+                        @click="removeDocument(index)"
+                      >
+                        <VIcon size="14" icon="tabler-x" />
+                      </VBtn>
+                    </div>
+                  </div>
+                </VCardText>
+              </VCard>
+            </div>
+          </Transition>
+
+          <Transition name="fade">
+            <div
+              v-if="selectedPhotos.length > 0"
+              class="composer-attachment mt-3"
+            >
+              <VCard class="composer-attachment-card">
+                <VCardTitle class="d-flex align-center justify-space-between">
+                  <span
+                    >{{ t('images_selected') }} ({{
+                      selectedPhotos.length
+                    }}/10)</span
+                  >
+                  <VBtn
+                    icon
+                    size="24"
+                    variant="text"
+                    @click="selectedPhotos = []"
+                  >
+                    <VIcon size="18" icon="tabler-x" />
+                  </VBtn>
+                </VCardTitle>
+                <VCardText>
+                  <div class="attachment-grid">
+                    <div
+                      v-for="(photo, index) in selectedPhotos"
+                      :key="index"
+                      class="photo-preview-wrapper"
+                    >
+                      <VImg
+                        :src="photo.preview"
+                        cover
+                        class="photo-preview-image"
+                      />
+                      <VBtn
+                        icon
+                        size="20"
+                        variant="flat"
+                        color="error"
+                        class="photo-preview-remove"
+                        @click="selectedPhotos.splice(index, 1)"
+                      >
+                        <VIcon size="14" icon="tabler-x" />
+                      </VBtn>
+                    </div>
+                  </div>
+                </VCardText>
+              </VCard>
+            </div>
+          </Transition>
 
           <VTextarea
             ref="composerRef"
@@ -1209,6 +1214,44 @@ $chat-app-header-height: 76px;
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+.composer-attachment {
+  display: flex;
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.composer-attachment-card {
+  inline-size: 100%;
+  max-inline-size: 100%;
+}
+
+.attachment-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.photo-preview-wrapper {
+  position: relative;
+  inline-size: 132px;
+  block-size: 132px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.photo-preview-image {
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: 8px;
+}
+
+.photo-preview-remove {
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 4px;
 }
 
 .message-target-flash {

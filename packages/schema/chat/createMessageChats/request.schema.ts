@@ -22,7 +22,15 @@ export const createMessageChatsBodySchema = Type.Object({
       }),
     ])
   ),
-  message_quoted_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  message_quoted_id: Type.Optional(
+    Type.Union([
+      Type.String(),
+      Type.Null(),
+      Type.Object({
+        value: Type.String(),
+      }),
+    ])
+  ),
   link_preview: Type.Optional(viewLinkPreviewResponseSchema),
   images: Type.Optional(
     Type.Union([

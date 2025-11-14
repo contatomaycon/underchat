@@ -194,6 +194,44 @@ export class ChatMessageCreatorUseCase {
     return message as string | null;
   }
 
+  private extractFieldValue(value: unknown): string | null {
+    if (value === null || typeof value === 'undefined') {
+      return null;
+    }
+
+    if (Array.isArray(value)) {
+      return this.extractFieldValue(value[0]);
+    }
+
+    if (typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+
+      if ('value' in record) {
+        return this.extractFieldValue(record.value);
+      }
+
+      return null;
+    }
+
+    return String(value);
+  }
+
+  private normalizeMessageQuotedId(
+    messageQuotedId: CreateMessageChatsBody['message_quoted_id']
+  ): string | null {
+    const rawValue = this.extractFieldValue(messageQuotedId);
+    if (!rawValue) {
+      return null;
+    }
+
+    const trimmed = rawValue.trim();
+    if (!trimmed || trimmed === 'null' || trimmed === 'undefined') {
+      return null;
+    }
+
+    return trimmed;
+  }
+
   private async uploadImages(
     images: UploadFileRequest[],
     accountId: string
@@ -537,6 +575,9 @@ export class ChatMessageCreatorUseCase {
     const message = this.normalizeMessage(body.message);
     const images = this.normalizeImagesArray(body.images);
     const documents = this.normalizeDocumentsArray(body.documents);
+    const messageQuotedId = this.normalizeMessageQuotedId(
+      body.message_quoted_id
+    );
 
     if (type === EMessageType.delete_message && body.delete_message_id) {
       return this.processDelete(
@@ -575,7 +616,7 @@ export class ChatMessageCreatorUseCase {
         accountId,
         type,
         message,
-        body.message_quoted_id,
+        messageQuotedId,
         t
       );
     }
@@ -588,7 +629,7 @@ export class ChatMessageCreatorUseCase {
         accountId,
         type,
         message,
-        body.message_quoted_id,
+        messageQuotedId,
         t
       );
     }
@@ -599,7 +640,7 @@ export class ChatMessageCreatorUseCase {
       type,
       message,
       body.link_preview,
-      body.message_quoted_id,
+      messageQuotedId,
       accountId,
       t
     );

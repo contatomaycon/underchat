@@ -107,6 +107,31 @@ const replyDocumentIcon = computed(() => {
   return 'tabler-file-description';
 });
 
+const formatFileSize = (bytes?: number | null): string => {
+  if (!bytes) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  const precision = value >= 10 ? 0 : 1;
+  return `${value.toFixed(precision)} ${units[unitIndex]}`;
+};
+
+const replyDocumentMeta = computed(() => {
+  const doc = replying.value?.content?.document;
+  if (!doc) return '';
+  const items: string[] = [];
+  const ext = doc.extension?.toUpperCase();
+  if (ext) items.push(ext);
+  const sizeText = formatFileSize(doc.size ?? undefined);
+  if (sizeText) items.push(sizeText);
+  return items.join(' • ');
+});
+
 onMounted(() => {
   (globalThis as Window & typeof globalThis).addEventListener(
     'focus-composer',
@@ -128,6 +153,9 @@ onMounted(() => {
     <div class="rp-content">
       <div class="rp-name">{{ replyName }}</div>
       <div class="rp-text">{{ replyText }}</div>
+      <div v-if="replyIsDocument && replyDocumentMeta" class="rp-meta">
+        {{ replyDocumentMeta }}
+      </div>
     </div>
     <VBtn
       class="rp-close"
@@ -195,6 +223,11 @@ onMounted(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.rp-meta {
+  font-size: 12px;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  margin-top: 2px;
 }
 .rp-close {
   position: absolute;
