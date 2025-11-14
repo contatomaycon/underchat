@@ -136,18 +136,22 @@ const onMouseLeave = () => {
 const toggleReactionPicker = (message: ListMessageResult) => {
   if (isDeleted(message)) return;
 
-  ignoreOutsideOnce.value = true;
   if (showReactionPicker.value === message.message_id) {
     showReactionPicker.value = null;
     return;
   }
+
   showReactionPicker.value = message.message_id;
   showEmojiPicker.value = null;
+
+  ignoreOutsideOnce.value = true;
+  setTimeout(() => {
+    ignoreOutsideOnce.value = false;
+  }, 100);
 };
 
 const onClickOutside = (event: MouseEvent) => {
   if (ignoreOutsideOnce.value) {
-    ignoreOutsideOnce.value = false;
     return;
   }
   const target = event.target as HTMLElement;
@@ -165,7 +169,13 @@ const toggleEmojiPicker = (messageId: string) => {
     showEmojiPicker.value = null;
     return;
   }
+
   showEmojiPicker.value = messageId;
+
+  ignoreOutsideOnce.value = true;
+  setTimeout(() => {
+    ignoreOutsideOnce.value = false;
+  }, 100);
 };
 
 const onSelectReactionEmoji = async (

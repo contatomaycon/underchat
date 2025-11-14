@@ -522,9 +522,9 @@ export const useChatStore = defineStore('chat', {
 
           const baseContent: ContentMessageChat = message.content
             ? { ...message.content }
-            : ({
-                type: message.content?.type ?? EMessageType.text,
-              } as ContentMessageChat);
+            : {
+                type: EMessageType.text,
+              };
 
           const updatedMessage: ListMessageResult = {
             ...message,
