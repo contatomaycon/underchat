@@ -221,6 +221,51 @@ const pendingMessages = computed<PendingMessage[]>(() => {
     .sort((a, b) => a.created_at.localeCompare(b.created_at));
 });
 
+const isTextMessage = (message: ListMessageResult): boolean => {
+  if (!message.content) return false;
+  return message.content.type === EMessageType.text;
+};
+
+const isDownloadableDocument = (message: ListMessageResult): boolean => {
+  const doc = message.content?.document;
+  if (!doc) return false;
+  if (!doc.url) return false;
+  if (message.content?.type !== EMessageType.document) return false;
+  return true;
+};
+
+const isDownloadableImage = (message: ListMessageResult): boolean => {
+  const image = message.content?.image;
+  if (!image) return false;
+  if (!image.url) return false;
+  if (message.message_key?.is_view_once) return false;
+  return message.content?.type === EMessageType.image;
+};
+
+const shouldShowCopy = (message: ListMessageResult): boolean => {
+  if (isDownloadableDocument(message)) return false;
+  if (isDownloadableImage(message)) return false;
+  return isTextMessage(message);
+};
+
+const shouldShowDownload = (message: ListMessageResult): boolean => {
+  if (isDownloadableDocument(message)) return true;
+  if (isDownloadableImage(message)) return true;
+  return false;
+};
+
+const downloadMessage = (message: ListMessageResult) => {
+  const docUrl = message.content?.document?.url;
+  if (docUrl) {
+    window.open(docUrl, '_blank');
+    return;
+  }
+  const imageUrl = message.content?.image?.url;
+  if (imageUrl) {
+    window.open(imageUrl, '_blank');
+  }
+};
+
 const isPendingDocument = (pending: PendingMessage): boolean =>
   pending.type === EMessageType.document;
 
@@ -679,11 +724,26 @@ onUnmounted(() => {
                     <VListItemTitle>Responder</VListItemTitle>
                   </VListItem>
 
-                  <VListItem @click="onCopy(msgGrp)">
+                  <VListItem
+                    v-if="shouldShowCopy(msgGrp)"
+                    @click="onCopy(msgGrp)"
+                  >
                     <template #prepend>
                       <VIcon size="18">tabler-copy</VIcon>
                     </template>
                     <VListItemTitle>Copiar</VListItemTitle>
+                  </VListItem>
+
+                  <VListItem
+                    v-if="shouldShowDownload(msgGrp)"
+                    @click="downloadMessage(msgGrp)"
+                  >
+                    <template #prepend>
+                      <VIcon size="18">tabler-download</VIcon>
+                    </template>
+                    <VListItemTitle>{{
+                      t('chat_action_download')
+                    }}</VListItemTitle>
                   </VListItem>
 
                   <VListItem @click="toggleReactionPicker(msgGrp)">

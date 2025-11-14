@@ -380,5 +380,6 @@
     "message_jid_not_found": "JID de mensaje no encontrado",
     "reaction_send_error": "Error al enviar reacción",
     "document_size_exceeded": "El archivo supera el tamaño máximo permitido de 2 GB.",
-    "image_size_exceeded": "La imagen supera el tamaño máximo permitido de 16 MB."
+    "image_size_exceeded": "La imagen supera el tamaño máximo permitido de 16 MB.",
+    "chat_action_download": "Descargar"
 }

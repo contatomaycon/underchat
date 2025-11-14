@@ -371,6 +371,7 @@
     "image_upload_failed": "Failed to upload image",
     "document_size_exceeded": "File exceeds the maximum allowed size of 2 GB.",
     "image_size_exceeded": "Image exceeds the maximum allowed size of 16 MB.",
+    "chat_action_download": "Download",
     "document_type_not_allowed": "File type not allowed for documents.",
     "document_some_filtered": "Some files were skipped because they are not supported.",
     "clear_images_before_documents": "Remove the selected images before sending documents.",
