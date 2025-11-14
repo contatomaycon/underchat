@@ -400,6 +400,17 @@ export class MessageSendConsume {
           },
         };
       }
+
+      if (q?.type === EMessageType.document && q?.document) {
+        quoted.message = {
+          documentMessage: {
+            fileName: q.document.name ?? undefined,
+            mimetype: q.document.mimetype ?? undefined,
+            caption: q.message ?? undefined,
+            fileLength: q.document.size ?? undefined,
+          },
+        };
+      }
     }
 
     return quoted;

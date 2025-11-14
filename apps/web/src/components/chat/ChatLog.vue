@@ -307,6 +307,10 @@ const showQuoted = (m: ListMessageResult) => {
     return !!(m.content.quoted.image?.url || m.content.quoted.image?.thumbnail);
   }
 
+  if (m.content.quoted.type === EMessageType.document) {
+    return !!m.content.quoted.document;
+  }
+
   return !!m.content.quoted.message;
 };
 
@@ -326,6 +330,13 @@ const resolveQuotedText = (m: ListMessageResult): string => {
     return m.content.quoted.image?.caption || t('photo_label');
   }
 
+  if (
+    m.content.quoted.type === EMessageType.document &&
+    m.content.quoted.document
+  ) {
+    return m.content.quoted.message ?? '';
+  }
+
   return m.content.quoted.message ?? '';
 };
 
@@ -339,6 +350,43 @@ const hasQuotedImage = (m: ListMessageResult): boolean => {
   const image = m.content?.quoted?.image;
   if (!image) return false;
   return !!(image.url || image.thumbnail);
+};
+
+const hasQuotedDocument = (m: ListMessageResult): boolean => {
+  if (!m.content?.quoted) return false;
+  return (
+    m.content.quoted.type === EMessageType.document &&
+    !!m.content.quoted.document
+  );
+};
+
+const resolveQuotedDocumentIcon = (m: ListMessageResult): string => {
+  const ext = m.content?.quoted?.document?.extension?.toLowerCase();
+  if (ext && documentIconMap[ext]) {
+    return documentIconMap[ext];
+  }
+
+  const mimetype = m.content?.quoted?.document?.mimetype ?? '';
+  if (mimetype.includes('pdf')) return 'tabler-file-type-pdf';
+  if (mimetype.includes('word')) return 'tabler-file-type-doc';
+  if (mimetype.includes('sheet') || mimetype.includes('excel'))
+    return 'tabler-file-type-xls';
+  if (mimetype.includes('presentation')) return 'tabler-file-type-ppt';
+  if (mimetype.includes('zip') || mimetype.includes('compressed'))
+    return 'tabler-file-type-zip';
+
+  return 'tabler-file-description';
+};
+
+const resolveQuotedDocumentName = (m: ListMessageResult): string =>
+  m.content?.quoted?.document?.name ?? t('document_label');
+
+const resolveQuotedDocumentMeta = (m: ListMessageResult): string => {
+  const doc = m.content?.quoted?.document;
+  if (!doc) return '';
+  const ext = doc.extension ? doc.extension.toUpperCase() : 'FILE';
+  if (!doc.size) return ext;
+  return `${ext} • ${formatDocumentSize(doc.size)}`;
 };
 
 const getQuotedTargetId = (m: ListMessageResult): string | null => {
@@ -595,20 +643,41 @@ onUnmounted(() => {
                 }"
                 @click="goToQuoted(msgGrp)"
               >
-                <div v-if="hasQuotedImage(msgGrp)" class="quoted-media">
-                  <VImg
-                    :src="resolveQuotedImageSrc(msgGrp)"
-                    width="44"
-                    height="44"
-                    cover
-                  />
+                <div class="quoted-name">
+                  {{ resolveQuotedName(msgGrp) }}
                 </div>
-                <div class="quoted-body">
-                  <div class="quoted-name">
-                    {{ resolveQuotedName(msgGrp) }}
+
+                <div class="quoted-content">
+                  <div v-if="hasQuotedImage(msgGrp)" class="quoted-media">
+                    <VImg
+                      :src="resolveQuotedImageSrc(msgGrp)"
+                      width="44"
+                      height="44"
+                      cover
+                    />
                   </div>
 
                   <div
+                    v-else-if="hasQuotedDocument(msgGrp)"
+                    class="quoted-document"
+                  >
+                    <VIcon
+                      :icon="resolveQuotedDocumentIcon(msgGrp)"
+                      size="26"
+                      color="primary"
+                    />
+                    <div class="quoted-document-info">
+                      <span class="quoted-document-name">
+                        {{ resolveQuotedDocumentName(msgGrp) }}
+                      </span>
+                      <span class="quoted-document-meta">
+                        {{ resolveQuotedDocumentMeta(msgGrp) }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="resolveQuotedText(msgGrp)"
                     class="quoted-text"
                     :style="{
                       color: isTypeUser(msgGrp)
@@ -983,8 +1052,8 @@ onUnmounted(() => {
 
       .quoted-block {
         display: flex;
-        align-items: center;
-        gap: 10px;
+        flex-direction: column;
+        gap: 6px;
         background: rgba(var(--v-theme-primary), 0.08);
         border-inline-start: 3px solid rgb(var(--v-theme-primary));
         border-radius: 8px;
@@ -994,6 +1063,12 @@ onUnmounted(() => {
 
       .quoted-block.is-clickable {
         cursor: pointer;
+      }
+
+      .quoted-content {
+        display: flex;
+        align-items: center;
+        gap: 10px;
       }
 
       .quoted-media {
@@ -1007,6 +1082,33 @@ onUnmounted(() => {
           inline-size: 100%;
           block-size: 100%;
         }
+      }
+
+      .quoted-document {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(var(--v-theme-primary), 0.12);
+        padding: 6px 10px;
+        border-radius: 6px;
+        flex-shrink: 0;
+      }
+
+      .quoted-document-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .quoted-document-name {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: rgb(var(--v-theme-primary));
+      }
+
+      .quoted-document-meta {
+        font-size: 0.7rem;
+        color: rgba(var(--v-theme-on-surface), 0.6);
       }
 
       .quoted-body {

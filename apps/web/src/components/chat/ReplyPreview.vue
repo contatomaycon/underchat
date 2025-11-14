@@ -74,28 +74,37 @@ const replyText = computed(() => {
   return '';
 });
 
+const documentIconMap: Record<string, string> = {
+  pdf: 'tabler-file-type-pdf',
+  doc: 'tabler-file-type-doc',
+  docx: 'tabler-file-type-doc',
+  xls: 'tabler-file-type-xls',
+  xlsx: 'tabler-file-type-xls',
+  csv: 'tabler-file-type-xls',
+  ppt: 'tabler-file-type-ppt',
+  pptx: 'tabler-file-type-ppt',
+  txt: 'tabler-file-type-txt',
+  zip: 'tabler-file-type-zip',
+  rar: 'tabler-file-type-zip',
+  '7z': 'tabler-file-type-zip',
+  json: 'tabler-file-code',
+  xml: 'tabler-file-code',
+};
+
 const replyDocumentIcon = computed(() => {
   const ext = replying.value?.content?.document?.extension?.toLowerCase();
-  if (!ext) return 'tabler-file-description';
-
-  const map: Record<string, string> = {
-    pdf: 'tabler-file-type-pdf',
-    doc: 'tabler-file-type-doc',
-    docx: 'tabler-file-type-doc',
-    xls: 'tabler-file-type-xls',
-    xlsx: 'tabler-file-type-xls',
-    ppt: 'tabler-file-type-ppt',
-    pptx: 'tabler-file-type-ppt',
-    txt: 'tabler-file-type-txt',
-    csv: 'tabler-file-type-xls',
-    zip: 'tabler-file-type-zip',
-    rar: 'tabler-file-type-zip',
-    '7z': 'tabler-file-type-zip',
-    json: 'tabler-file-code',
-    xml: 'tabler-file-code',
-  };
-
-  return map[ext] ?? 'tabler-file-description';
+  if (ext && documentIconMap[ext]) {
+    return documentIconMap[ext];
+  }
+  const mimetype = replying.value?.content?.document?.mimetype ?? '';
+  if (mimetype.includes('pdf')) return 'tabler-file-type-pdf';
+  if (mimetype.includes('word')) return 'tabler-file-type-doc';
+  if (mimetype.includes('sheet') || mimetype.includes('excel'))
+    return 'tabler-file-type-xls';
+  if (mimetype.includes('presentation')) return 'tabler-file-type-ppt';
+  if (mimetype.includes('zip') || mimetype.includes('compressed'))
+    return 'tabler-file-type-zip';
+  return 'tabler-file-description';
 });
 
 onMounted(() => {

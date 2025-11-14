@@ -176,6 +176,10 @@ const createDocumentFormData = (): FormData => {
     formData.append('message', msg.value);
   }
 
+  if (chatStore.messageReply?.message_id) {
+    formData.append('message_quoted_id', chatStore.messageReply.message_id);
+  }
+
   selectedDocuments.value.forEach((doc) => {
     formData.append('documents', doc.file);
   });
