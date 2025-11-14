@@ -138,18 +138,17 @@ const onMouseLeave = () => {
 const toggleReactionPicker = (message: ListMessageResult) => {
   if (isDeleted(message)) return;
 
-  if (showReactionPicker.value === message.message_id) {
-    showReactionPicker.value = null;
-    return;
-  }
+  const wasOpen = showReactionPicker.value === message.message_id;
 
-  showReactionPicker.value = message.message_id;
+  showReactionPicker.value = wasOpen ? null : message.message_id;
   showEmojiPicker.value = null;
 
-  ignoreOutsideOnce.value = true;
-  setTimeout(() => {
-    ignoreOutsideOnce.value = false;
-  }, 100);
+  if (!wasOpen) {
+    ignoreOutsideOnce.value = true;
+    setTimeout(() => {
+      ignoreOutsideOnce.value = false;
+    }, 0);
+  }
 };
 
 const onClickOutside = (event: MouseEvent) => {
@@ -157,27 +156,29 @@ const onClickOutside = (event: MouseEvent) => {
     return;
   }
   const target = event.target as HTMLElement;
-  if (
-    !target.closest('.reaction-picker') &&
-    !target.closest('.reaction-trigger')
-  ) {
+
+  const isInsidePicker = target.closest('.reaction-picker');
+  const isInsideTrigger = target.closest('.reaction-trigger');
+
+  if (!isInsidePicker && !isInsideTrigger) {
     showReactionPicker.value = null;
     showEmojiPicker.value = null;
   }
 };
 
 const toggleEmojiPicker = (messageId: string) => {
-  if (showEmojiPicker.value === messageId) {
+  const wasOpen = showEmojiPicker.value === messageId;
+
+  if (wasOpen) {
     showEmojiPicker.value = null;
     return;
   }
 
   showEmojiPicker.value = messageId;
-
   ignoreOutsideOnce.value = true;
   setTimeout(() => {
     ignoreOutsideOnce.value = false;
-  }, 100);
+  }, 0);
 };
 
 const onSelectReactionEmoji = async (
@@ -701,20 +702,29 @@ onUnmounted(() => {
           class="chat-content-wrapper"
           :class="!isTypeUser(msgGrp) ? 'wrapper-operator' : 'wrapper-client'"
         >
-          <VBtn
-            v-if="hoveredMessageId === msgGrp.message_id && !msgGrp.deleted"
-            icon
-            size="28"
-            variant="flat"
+          <div
+            v-if="
+              hoveredMessageId === msgGrp.message_id &&
+              !msgGrp.deleted &&
+              showReactionPicker !== msgGrp.message_id
+            "
             :class="[
-              'reaction-trigger',
+              'reaction-trigger-container',
               !isTypeUser(msgGrp) ? 'wrapper-operator' : 'wrapper-client',
             ]"
-            color="grey-600"
             @click.stop="toggleReactionPicker(msgGrp)"
           >
-            <VIcon size="18">tabler-mood-smile</VIcon>
-          </VBtn>
+            <VBtn
+              icon
+              size="32"
+              variant="flat"
+              class="reaction-trigger-btn"
+              color="grey-600"
+              tabindex="-1"
+            >
+              <VIcon size="22">tabler-mood-smile</VIcon>
+            </VBtn>
+          </div>
 
           <div
             class="chat-content py-2 px-2 elevation-2"
@@ -1102,15 +1112,20 @@ onUnmounted(() => {
                     <span class="text-h6">{{ emoji }}</span>
                   </VBtn>
                   <VDivider vertical class="mx-1" />
-                  <VBtn
-                    icon
-                    size="32"
-                    variant="text"
-                    class="reaction-btn"
+                  <div
+                    class="reaction-btn-container"
                     @click.stop="toggleEmojiPicker(msgGrp.message_id)"
                   >
-                    <VIcon size="20">tabler-plus</VIcon>
-                  </VBtn>
+                    <VBtn
+                      icon
+                      size="32"
+                      variant="text"
+                      class="reaction-btn reaction-btn-emoji"
+                      tabindex="-1"
+                    >
+                      <VIcon size="20">tabler-plus</VIcon>
+                    </VBtn>
+                  </div>
                 </div>
                 <div
                   v-if="showEmojiPicker === msgGrp.message_id"
@@ -1762,18 +1777,49 @@ onUnmounted(() => {
     }
   }
 
-  .reaction-trigger {
+  .reaction-trigger-container {
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
-    z-index: 10;
-    background: rgb(var(--v-theme-surface));
+    z-index: 12;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-    min-width: 28px;
-    height: 28px;
-    border: 0.5px solid rgba(var(--v-theme-on-surface), 0.06);
-    color: rgba(var(--v-theme-on-surface), 0.6);
+    cursor: pointer;
+
+    &:hover .reaction-trigger-btn {
+      transform: scale(1.08);
+    }
+
+    * {
+      pointer-events: none;
+    }
+  }
+
+  .reaction-trigger-btn {
+    min-width: 28px !important;
+    height: 28px !important;
+    border-radius: 999px;
+    background: #fff !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    box-shadow:
+      0 4px 10px rgba(15, 15, 15, 0.12),
+      0 2px 4px rgba(15, 15, 15, 0.08);
+    color: #1f1f1f !important;
+    pointer-events: none;
+    transition: transform 0.2s ease;
+
+    .v-btn__content {
+      width: 100%;
+      height: 100%;
+    }
+
+    .v-icon {
+      font-size: 20px !important;
+    }
   }
 
   .reaction-picker {
@@ -1787,6 +1833,26 @@ onUnmounted(() => {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 
     .reaction-picker-content {
+      .reaction-btn-container {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        cursor: pointer;
+        transition: transform 0.2s;
+        margin: -4px;
+
+        &:hover {
+          transform: scale(1.1);
+        }
+
+        * {
+          pointer-events: none !important;
+        }
+      }
+
       .reaction-btn {
         min-width: 36px;
         height: 36px;
@@ -1801,7 +1867,7 @@ onUnmounted(() => {
   }
 
   .wrapper-operator {
-    .reaction-trigger {
+    .reaction-trigger-container {
       right: calc(100% + 4px);
     }
 
@@ -1811,12 +1877,28 @@ onUnmounted(() => {
   }
 
   .wrapper-client {
-    .reaction-trigger {
+    .reaction-trigger-container {
       left: calc(100% + 4px);
     }
 
     .reaction-picker {
       left: calc(100% + 4px);
+    }
+  }
+
+  :global(.v-theme--dark) & {
+    .reaction-trigger-container {
+      width: 34px;
+      height: 34px;
+    }
+
+    .reaction-trigger-btn {
+      background: rgba(255, 255, 255, 0.14) !important;
+      border: 1px solid rgba(255, 255, 255, 0.22) !important;
+      box-shadow:
+        0 6px 16px rgba(0, 0, 0, 0.5),
+        0 2px 6px rgba(0, 0, 0, 0.35);
+      color: rgba(var(--v-theme-on-surface), 0.92) !important;
     }
   }
 
