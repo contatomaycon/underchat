@@ -208,6 +208,42 @@ export class StorageService {
     };
   }
 
+  public async uploadAudioFromBuffer(
+    buffer: Buffer,
+    filename: string,
+    mimetype: string,
+    accountId: string
+  ): Promise<UploadFileResponse | null> {
+    if (buffer.byteLength > MAX_AUDIO_UPLOAD_BYTES) {
+      throw new Error('AUDIO_SIZE_LIMIT_EXCEEDED');
+    }
+
+    const extension = this.getFileExtension(filename) || this.extFromMime(mimetype) || 'ogg';
+    const normalizedName = filename.endsWith(`.${extension}`)
+      ? filename
+      : `${filename}.${extension}`;
+    const key = `${accountId}/${this.converterFilename(normalizedName)}`;
+
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: s3Environment.s3BucketName,
+        Key: key,
+        Body: buffer,
+        ContentType: mimetype,
+      })
+    );
+
+    return {
+      url: this.createUrl(key),
+      name: normalizedName,
+      extension,
+      size: buffer.byteLength,
+      mimetype,
+      width: null,
+      height: null,
+    };
+  }
+
   public async uploadFromUrl(
     url: string,
     accountId: string,

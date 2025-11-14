@@ -23,6 +23,7 @@ import { CentrifugoService } from '@core/services/centrifugo.service';
 import { PublishResult } from 'centrifuge';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { StorageService } from '@core/services/storage.service';
+import { AudioConverterService } from '@core/services/audioConverter.service';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { UploadFileResponse } from '@core/schema/upload/response.schema';
 
@@ -35,7 +36,8 @@ export class ChatMessageCreatorUseCase {
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     private readonly streamProducerService: StreamProducerService,
     private readonly centrifugoService: CentrifugoService,
-    private readonly storageService: StorageService
+    private readonly storageService: StorageService,
+    private readonly audioConverterService: AudioConverterService
   ) {}
 
   private async getChat(
@@ -354,9 +356,25 @@ export class ChatMessageCreatorUseCase {
     audios: UploadFileRequest[],
     accountId: string
   ): Promise<UploadFileResponse[]> {
-    const uploadPromises = audios.map((audio) =>
-      this.storageService.uploadAudio(audio, accountId)
-    );
+    const uploadPromises = audios.map(async (audio) => {
+      const originalBuffer = await audio.toBuffer();
+      const originalMimetype = audio.mimetype || null;
+
+      const converted = await this.audioConverterService.convertAudio(
+        originalBuffer,
+        originalMimetype
+      );
+
+      const filename = audio.filename.replace(/\.[^.]+$/, '') || 'audio';
+      const newFilename = `${filename}.${converted.extension}`;
+
+      return this.storageService.uploadAudioFromBuffer(
+        converted.buffer,
+        newFilename,
+        converted.mimetype,
+        accountId
+      );
+    });
 
     const uploadedAudios = await Promise.all(uploadPromises);
 
