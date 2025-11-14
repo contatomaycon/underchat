@@ -404,5 +404,11 @@
     "messages": "Mensajes",
     "labels": "Etiquetas",
     "quick_messages": "Mensajes Rápidos",
-    "utilities": "Utilidades"
+    "utilities": "Utilidades",
+    "invalid_file_message": "Archivo inválido. Envía imagen, PDF o audio",
+    "file_too_large": "Archivo muy grande (máx 10MB).",
+    "invalid_contacts_file": "Archivo inválido. Envía .csv, .vcf o .vcard.",
+    "command_no_slash": "No se permite usar / o \\ en el comando.",
+    "command_only_dot_not_allowed": "El comando no puede ser solo un punto.",
+    "required": "Obligatorio"
 }

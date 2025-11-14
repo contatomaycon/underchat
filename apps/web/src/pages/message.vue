@@ -88,7 +88,7 @@ function getAttachmentIcon(url: string | null | undefined): string {
   if (pdfExts.has(ext)) return 'tabler-file-type-pdf';
   if (audioExts.has(ext)) return 'tabler-music';
 
-  return 'tabler-file'; // default
+  return 'tabler-file';
 }
 
 function openAttachment(url: string | null | undefined) {

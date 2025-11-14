@@ -55,13 +55,13 @@ const onFileChange = (files: File[] | File | null) => {
   }
 
   if (!isAllowedFile(file)) {
-    console.warn('Arquivo inválido. Envie .csv, .vcf ou .vcard.');
+    console.warn(t('invalid_contacts_file'));
     contactFile.value = null;
     return;
   }
 
   if (file.size > 10 * 1024 * 1024) {
-    console.warn('Arquivo muito grande (máx 10MB).');
+    console.warn(t('file_too_large'));
     contactFile.value = null;
     return;
   }

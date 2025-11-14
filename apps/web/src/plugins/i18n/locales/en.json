@@ -403,5 +403,11 @@
     "messages": "Messages",
     "labels": "Labels",
     "quick_messages": "Quick Messages",
-    "utilities": "Utilities"
+    "utilities": "Utilities",
+    "invalid_file_message": "Invalid file. Please upload an image, PDF, or audio file.",
+    "file_too_large": "File too large (max 10MB).",
+    "command_no_slash": "It is not allowed to use / or \\ in the command.",
+    "command_only_dot_not_allowed": "The command cannot be just a dot.",
+    "invalid_contacts_file": "Invalid file. Please upload .csv, .vcf, or .vcard.",
+    "required": "Required"
 }

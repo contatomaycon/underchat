@@ -108,7 +108,7 @@ const cnpjRegex = /^\d{14}$/;
 
 const docRules = computed(() => [
   (v: string | null) =>
-    showingPartial.value || (!!v && onlyDigits(v).length > 0) || 'Obrigatório',
+    showingPartial.value || (!!v && onlyDigits(v).length > 0) || t('required'),
   (v: string | null) => {
     if (!v || showingPartial.value) return true;
     const digits = onlyDigits(v);

@@ -77,14 +77,14 @@ const onFileChange = (files: File[] | File | null) => {
   }
 
   if (!isAllowedFile(file)) {
-    console.warn('Arquivo inválido. Envie imagem, PDF ou áudio');
+    console.warn(t('invalid_file_message'));
     attachment_url.value = null;
     hasNewFile.value = false;
     return;
   }
 
   if (file.size > 10 * 1024 * 1024) {
-    console.warn('Arquivo muito grande (máx 10MB).');
+    console.warn(t('file_too_large'));
     attachment_url.value = null;
     hasNewFile.value = false;
     return;
@@ -157,11 +157,11 @@ const noSlashRule = (value: string) => {
   if (!value) return true;
 
   if (/[\\/]/.test(value)) {
-    return String.raw`Não é permitido usar / ou \ no comando.`;
+    return t('command_no_slash');
   }
 
   if (value.trim() === '.') {
-    return 'O comando não pode ser apenas um ponto.';
+    return t('command_only_dot_not_allowed');
   }
 
   return true;
