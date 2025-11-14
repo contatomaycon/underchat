@@ -145,10 +145,6 @@ export class ChatMessageCreatorUseCase {
     if (body.type === EMessageType.text && !body.message) {
       throw new Error(t('message_content_required'));
     }
-
-    if (body.type === EMessageType.text_quoted && !body.message_quoted_id) {
-      throw new Error(t('message_quoted_id_required'));
-    }
   }
 
   private normalizeImagesArray(
@@ -218,7 +214,9 @@ export class ChatMessageCreatorUseCase {
     chatId: string,
     type: EMessageType,
     message: string | null,
-    imageData: UploadFileResponse
+    imageData: UploadFileResponse,
+    messageQuotedId: string | null,
+    quotedMessage: IQuotedMessage | null
   ): IChatMessage {
     return {
       message_id: uuidv4(),
@@ -239,9 +237,12 @@ export class ChatMessageCreatorUseCase {
         is_seen: false,
       },
       deleted: false,
+      has_quoted: !!quotedMessage,
       content: {
         type,
         message,
+        message_quoted_id: messageQuotedId,
+        quoted: quotedMessage,
         image: {
           url: imageData.url,
           caption: message,
@@ -284,6 +285,7 @@ export class ChatMessageCreatorUseCase {
         is_seen: false,
       },
       deleted: false,
+      has_quoted: !!quotedMessage,
       content: {
         type,
         message,
@@ -347,7 +349,9 @@ export class ChatMessageCreatorUseCase {
     images: UploadFileRequest[],
     accountId: string,
     type: EMessageType,
-    message: string | null
+    message: string | null,
+    messageQuotedId: string | null | undefined,
+    t: TFunction<'translation', undefined>
   ): Promise<boolean> {
     const validImages = await this.uploadImages(images, accountId);
 
@@ -355,13 +359,30 @@ export class ChatMessageCreatorUseCase {
       return false;
     }
 
+    let quotedMessage: IQuotedMessage | null = null;
+    if (messageQuotedId) {
+      quotedMessage = await this.getQuotedMessage(
+        accountId,
+        chatId,
+        messageQuotedId
+      );
+
+      if (!quotedMessage) {
+        throw new Error(t('message_quoted_not_found'));
+      }
+    }
+
+    const quotedId = messageQuotedId ?? null;
+
     if (validImages.length === 1) {
       const imageMessage = this.createImageMessage(
         chat,
         chatId,
         type,
         message,
-        validImages[0]
+        validImages[0],
+        quotedId,
+        quotedMessage
       );
 
       await this.publishMessage(imageMessage);
@@ -375,7 +396,9 @@ export class ChatMessageCreatorUseCase {
         chatId,
         type,
         message,
-        imageData
+        imageData,
+        quotedId,
+        quotedMessage
       );
 
       return this.publishMessage(imageMessage);
@@ -392,7 +415,9 @@ export class ChatMessageCreatorUseCase {
     documents: UploadFileRequest[],
     accountId: string,
     type: EMessageType,
-    message: string | null
+    message: string | null,
+    messageQuotedId: string | null | undefined,
+    t: TFunction<'translation', undefined>
   ): Promise<boolean> {
     const uploadedDocuments = await Promise.all(
       documents.map((document) =>
@@ -408,13 +433,30 @@ export class ChatMessageCreatorUseCase {
       return false;
     }
 
+    let quotedMessage: IQuotedMessage | null = null;
+    if (messageQuotedId) {
+      quotedMessage = await this.getQuotedMessage(
+        accountId,
+        chatId,
+        messageQuotedId
+      );
+
+      if (!quotedMessage) {
+        throw new Error(t('message_quoted_not_found'));
+      }
+    }
+
+    const quotedId = messageQuotedId ?? null;
+
     if (validDocuments.length === 1) {
       const documentMessage = this.createDocumentMessage(
         chat,
         chatId,
         type,
         message,
-        validDocuments[0]
+        validDocuments[0],
+        quotedId,
+        quotedMessage
       );
 
       await this.publishMessage(documentMessage);
@@ -428,7 +470,9 @@ export class ChatMessageCreatorUseCase {
         chatId,
         type,
         message,
-        documentData
+        documentData,
+        quotedId,
+        quotedMessage
       );
 
       return this.publishMessage(documentMessage);
@@ -530,7 +574,9 @@ export class ChatMessageCreatorUseCase {
         documents,
         accountId,
         type,
-        message
+        message,
+        body.message_quoted_id,
+        t
       );
     }
 
@@ -541,7 +587,9 @@ export class ChatMessageCreatorUseCase {
         images,
         accountId,
         type,
-        message
+        message,
+        body.message_quoted_id,
+        t
       );
     }
 
@@ -634,6 +682,7 @@ export class ChatMessageCreatorUseCase {
     const updatedMessage: IChatMessage = {
       ...message,
       content: updatedContent,
+      has_quoted: message.has_quoted,
     };
 
     await this.chatService.saveMessageChat(updatedMessage);
@@ -716,6 +765,7 @@ export class ChatMessageCreatorUseCase {
         is_seen: false,
       },
       deleted: targetMessage.deleted ?? false,
+      has_quoted: targetMessage.has_quoted ?? false,
       content: {
         type: EMessageType.react,
         reactions: targetMessage.content?.reactions ?? null,
@@ -773,6 +823,7 @@ export class ChatMessageCreatorUseCase {
     const updatedMessage: IChatMessage = {
       ...message,
       deleted: true,
+      has_quoted: message.has_quoted,
     };
 
     await this.chatService.saveMessageChat(updatedMessage);
@@ -807,6 +858,7 @@ export class ChatMessageCreatorUseCase {
         is_seen: false,
       },
       deleted: true,
+      has_quoted: targetMessage.has_quoted ?? false,
       content: {
         type: EMessageType.delete_message,
       },
@@ -819,7 +871,9 @@ export class ChatMessageCreatorUseCase {
     chatId: string,
     type: EMessageType,
     message: string | null,
-    documentData: UploadFileResponse
+    documentData: UploadFileResponse,
+    messageQuotedId: string | null,
+    quotedMessage: IQuotedMessage | null
   ): IChatMessage {
     return {
       message_id: uuidv4(),
@@ -840,9 +894,12 @@ export class ChatMessageCreatorUseCase {
         is_seen: false,
       },
       deleted: false,
+      has_quoted: !!quotedMessage,
       content: {
         type,
         message,
+        message_quoted_id: messageQuotedId,
+        quoted: quotedMessage,
         document: {
           url: documentData.url,
           name: documentData.name,

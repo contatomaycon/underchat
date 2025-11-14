@@ -5,7 +5,10 @@ import {
   WAMessageKey,
   WASocket,
 } from '@whiskeysockets/baileys';
-import { mapIncomingToType } from '@core/common/functions/mapIncomingToType';
+import {
+  mapIncomingToType,
+  messageHasQuoted,
+} from '@core/common/functions/mapIncomingToType';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
@@ -90,6 +93,7 @@ export class BaileysIncomingMessageService {
           this.processedMessages.add(messageKey);
 
           const type = mapIncomingToType(m);
+          const hasQuoted = messageHasQuoted(m);
 
           console.dir(m, { depth: null, colors: true });
           console.dir(type, { depth: null, colors: true });
@@ -107,6 +111,7 @@ export class BaileysIncomingMessageService {
             type,
             message: m,
             photo: senderPic,
+            has_quoted: hasQuoted,
           };
 
           await this.streamProducerService.send(

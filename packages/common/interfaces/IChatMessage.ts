@@ -78,4 +78,5 @@ export interface IChatMessage {
   summary: ISummary;
   date: string;
   deleted?: boolean;
+  has_quoted?: boolean;
 }

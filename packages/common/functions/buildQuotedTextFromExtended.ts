@@ -8,29 +8,46 @@ import { EMessageType } from '../enums/EMessageType';
 export function buildQuotedTextFromExtended(
   m: WAMessage
 ): IQuotedMessage | null {
-  const ext = m?.message?.extendedTextMessage;
-  const ctx = ext?.contextInfo;
+  const message = m?.message;
+  if (!message) {
+    return null;
+  }
+
+  const contextSources = [
+    message.extendedTextMessage?.contextInfo,
+    message.imageMessage?.contextInfo,
+    message.videoMessage?.contextInfo,
+    message.documentMessage?.contextInfo,
+    message.audioMessage?.contextInfo,
+    message.stickerMessage?.contextInfo,
+    (message as any).buttonsMessage?.contextInfo,
+    (message as any).templateButtonReplyMessage?.contextInfo,
+    (message as any).interactiveResponseMessage?.contextInfo,
+  ];
+
+  const ctx = contextSources.find((context) => context?.quotedMessage);
 
   if (!ctx?.stanzaId || !ctx?.quotedMessage || !m?.key?.remoteJid) {
     return null;
   }
 
+  const quotedMessage = ctx.quotedMessage as any;
   const rJid = remoteJid(m?.key);
-  const participant = remoteParticipantJid(m?.key);
+  const participant = ctx.participant ?? remoteParticipantJid(m?.key);
 
   const text =
-    ctx?.quotedMessage?.conversation ??
-    ctx?.quotedMessage?.extendedTextMessage?.text ??
-    ctx?.quotedMessage?.buttonsMessage?.contentText ??
-    ctx?.quotedMessage?.listMessage?.description ??
+    quotedMessage.conversation ??
+    quotedMessage.extendedTextMessage?.text ??
+    quotedMessage.buttonsMessage?.contentText ??
+    quotedMessage.listMessage?.description ??
+    quotedMessage.documentMessage?.caption ??
+    quotedMessage.imageMessage?.caption ??
     '';
 
-  const imageMessage = ctx?.quotedMessage?.imageMessage;
-  const documentMessage = ctx?.quotedMessage?.documentMessage;
   let type = EMessageType.text;
-  if (documentMessage) {
+  if (quotedMessage.documentMessage) {
     type = EMessageType.document;
-  } else if (imageMessage) {
+  } else if (quotedMessage.imageMessage) {
     type = EMessageType.image;
   }
 
@@ -38,7 +55,9 @@ export function buildQuotedTextFromExtended(
     key: {
       remote_jid: rJid,
       remote_jid_alt: m.key?.remoteJidAlt ?? undefined,
-      from_me: m.key?.fromMe ?? false,
+      from_me: ctx.participant
+        ? ctx.participant === m.key?.participant
+        : (m.key?.fromMe ?? false),
       id: ctx.stanzaId,
       participant,
       participant_alt: m.key?.participantAlt ?? undefined,
@@ -49,6 +68,7 @@ export function buildQuotedTextFromExtended(
     type,
   };
 
+  const imageMessage = quotedMessage.imageMessage;
   if (imageMessage) {
     const thumbnail =
       imageMessage.jpegThumbnail && imageMessage.jpegThumbnail.length > 0
@@ -75,6 +95,7 @@ export function buildQuotedTextFromExtended(
     }
   }
 
+  const documentMessage = quotedMessage.documentMessage;
   if (documentMessage) {
     quoted.document = {
       url: null,

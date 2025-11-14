@@ -66,6 +66,7 @@ export const useChatStore = defineStore('chat', {
         summary: message.summary,
         date: message.date,
         deleted: message.deleted ?? false,
+        has_quoted: message.has_quoted ?? false,
       };
 
       const existingIndex = this.listMessages.findIndex(
@@ -287,10 +288,7 @@ export const useChatStore = defineStore('chat', {
     },
 
     async loadMoreMessages(): Promise<boolean> {
-      if (
-        this.loadingMoreMessages ||
-        this.currentPage >= this.totalPages
-      ) {
+      if (this.loadingMoreMessages || this.currentPage >= this.totalPages) {
         return false;
       }
 
@@ -316,7 +314,10 @@ export const useChatStore = defineStore('chat', {
         }
 
         this.currentPage = data.data.pagings.current_page;
-        this.listMessages = [...data.data.results.reverse(), ...this.listMessages];
+        this.listMessages = [
+          ...data.data.results.reverse(),
+          ...this.listMessages,
+        ];
         this.loadingMoreMessages = false;
 
         return true;
@@ -521,9 +522,9 @@ export const useChatStore = defineStore('chat', {
 
           const baseContent: ContentMessageChat = message.content
             ? { ...message.content }
-            : {
+            : ({
                 type: message.content?.type ?? EMessageType.text,
-              } as ContentMessageChat;
+              } as ContentMessageChat);
 
           const updatedMessage: ListMessageResult = {
             ...message,
@@ -542,10 +543,7 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    async deleteMessage(
-      chatId: string,
-      messageId: string
-    ): Promise<boolean> {
+    async deleteMessage(chatId: string, messageId: string): Promise<boolean> {
       try {
         const response = await axios.post(
           `/chat/${chatId}/message/${messageId}/delete`,

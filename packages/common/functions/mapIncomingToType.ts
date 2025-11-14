@@ -12,10 +12,27 @@ function getText(msg: proto.IMessage): string {
   return '';
 }
 
-function hasQuoted(msg: proto.IMessage): boolean {
-  if (msg.extendedTextMessage?.contextInfo?.quotedMessage) return true;
+function hasQuotedRecursive(msg: proto.IMessage): boolean {
+  const contextSources = [
+    msg.extendedTextMessage,
+    msg.imageMessage,
+    msg.videoMessage,
+    msg.audioMessage,
+    msg.documentMessage,
+    msg.stickerMessage,
+    (msg as any).buttonsMessage,
+    (msg as any).templateButtonReplyMessage,
+    (msg as any).interactiveResponseMessage,
+  ]
+    .map((entry) => (entry as any)?.contextInfo)
+    .filter(Boolean);
+
+  if (contextSources.some((ctx) => ctx?.quotedMessage)) return true;
+
   if ((msg as any).ephemeralMessage?.message)
-    return hasQuoted((msg as any).ephemeralMessage.message as proto.IMessage);
+    return hasQuotedRecursive(
+      (msg as any).ephemeralMessage.message as proto.IMessage
+    );
 
   return false;
 }
@@ -106,7 +123,6 @@ function detectProtocol({ pType, msg }: IMapCtx): EMessageType | undefined {
 
 function detectText({ text, msg }: IMapCtx): EMessageType | undefined {
   if (!text) return;
-  if (hasQuoted(msg)) return EMessageType.text_quoted;
   if (hasMentions(msg)) return EMessageType.mention;
   return EMessageType.text;
 }
@@ -140,4 +156,10 @@ export function mapIncomingToType(m: WAMessage): EMessageType | undefined {
     const t = detect(ctx);
     if (t) return t;
   }
+}
+
+export function messageHasQuoted(m: WAMessage): boolean {
+  const msg = m.message as proto.IMessage | undefined;
+  if (!msg) return false;
+  return hasQuotedRecursive(msg);
 }

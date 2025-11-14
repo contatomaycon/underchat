@@ -299,19 +299,35 @@ const onDelete = async (m: ListMessageResult) => {
 };
 
 const showQuoted = (m: ListMessageResult) => {
-  if (m.content?.type !== EMessageType.text_quoted || !m.content?.quoted) {
+  const quoted = m.content?.quoted;
+  if (!quoted) {
     return false;
   }
 
-  if (m.content.quoted.type === EMessageType.image) {
-    return !!(m.content.quoted.image?.url || m.content.quoted.image?.thumbnail);
+  if (quoted.type === EMessageType.image) {
+    const image = quoted.image;
+    if (image?.url || image?.thumbnail) {
+      return true;
+    }
   }
 
-  if (m.content.quoted.type === EMessageType.document) {
-    return !!m.content.quoted.document;
+  if (quoted.type === EMessageType.document && quoted.document) {
+    return true;
   }
 
-  return !!m.content.quoted.message;
+  if (quoted.message) {
+    return true;
+  }
+
+  if (quoted.image?.url || quoted.image?.thumbnail) {
+    return true;
+  }
+
+  if (quoted.document) {
+    return true;
+  }
+
+  return false;
 };
 
 const resolveQuotedName = (m: ListMessageResult): string => {

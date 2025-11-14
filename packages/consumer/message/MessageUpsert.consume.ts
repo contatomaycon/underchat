@@ -307,6 +307,13 @@ export class MessageUpsertConsume {
         quoted: buildQuotedTextFromExtended(data.message),
       };
 
+      const messageQuotedId = content.quoted?.key.id ?? null;
+      if (messageQuotedId) {
+        content.message_quoted_id = messageQuotedId;
+      }
+
+      const hasQuotedFlag = data.has_quoted || !!content.quoted;
+
       if (
         data.type === EMessageType.react &&
         data.message?.message?.reactionMessage?.key?.id
@@ -366,6 +373,7 @@ export class MessageUpsertConsume {
         const updatedMessage: IChatMessage = {
           ...targetMessage,
           content: updatedContent,
+          has_quoted: targetMessage.has_quoted,
         };
 
         await Promise.all([
@@ -399,6 +407,7 @@ export class MessageUpsertConsume {
         const updatedMessage: IChatMessage = {
           ...targetMessage,
           deleted: true,
+          has_quoted: targetMessage.has_quoted,
         };
 
         await Promise.all([
@@ -501,6 +510,7 @@ export class MessageUpsertConsume {
         content,
         date: new Date().toISOString(),
         deleted: false,
+        has_quoted: hasQuotedFlag,
       };
 
       const [, result] = await Promise.all([
@@ -593,9 +603,13 @@ export class MessageUpsertConsume {
     }
 
     try {
-      const parsed = JSON.parse(raw) as IUpsertMessage;
+      const parsed = JSON.parse(raw) as IUpsertMessage | null;
 
-      return parsed ?? null;
+      if (!parsed) return null;
+
+      parsed.has_quoted = !!parsed.has_quoted;
+
+      return parsed;
     } catch {
       return null;
     }

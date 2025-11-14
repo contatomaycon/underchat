@@ -198,7 +198,6 @@ const createTextMessageBody = (): CreateMessageChatsBody => {
 
   if (chatStore.messageReply?.message_id) {
     inputCreateMessage.message_quoted_id = chatStore.messageReply.message_id;
-    inputCreateMessage.type = EMessageType.text_quoted;
   }
 
   return inputCreateMessage;

@@ -175,6 +175,7 @@ export class MessageSendConsume {
 
     const currentType = data?.content?.type;
     const lastType = this.lastMessageTypeByChatId.get(chatId);
+    const hasQuoted = data.has_quoted ?? !!data.content?.quoted;
 
     if (currentType === EMessageType.image && data.content?.image?.url) {
       if (lastType === EMessageType.image) {
@@ -203,19 +204,13 @@ export class MessageSendConsume {
     }
 
     if (currentType === EMessageType.text && data.content?.message) {
-      await this.processText(jid, data);
+      if (hasQuoted && data.content?.quoted) {
+        await this.processTextQuoted(jid, data);
+      } else {
+        await this.processText(jid, data);
+      }
+
       this.lastMessageTypeByChatId.set(chatId, EMessageType.text);
-
-      return;
-    }
-
-    if (
-      currentType === EMessageType.text_quoted &&
-      data.content?.message &&
-      data.content?.quoted
-    ) {
-      await this.processTextQuoted(jid, data);
-      this.lastMessageTypeByChatId.set(chatId, EMessageType.text_quoted);
 
       return;
     }
@@ -258,6 +253,10 @@ export class MessageSendConsume {
       throw new Error('Document URL is required');
     }
 
+    const quotedMessage = data.content?.quoted
+      ? this.composeQuotedMessage(data)
+      : undefined;
+
     const result = await this.baileysMessageMediaService.sendDocument(
       jid,
       { url: document.url },
@@ -265,7 +264,8 @@ export class MessageSendConsume {
         mimetype: document.mimetype ?? 'application/octet-stream',
         fileName: document.name ?? undefined,
         caption: data.content?.message ?? undefined,
-      }
+      },
+      quotedMessage ? { quoted: quotedMessage } : undefined
     );
 
     if (!result) {
@@ -330,12 +330,17 @@ export class MessageSendConsume {
       throw new Error('Image URL is required');
     }
 
+    const quotedMessage = data.content?.quoted
+      ? this.composeQuotedMessage(data)
+      : undefined;
+
     const result = await this.baileysMessageMediaService.sendImage(
       jid,
       { url: imageUrl },
       {
         caption: data.content?.image?.caption ?? undefined,
-      }
+      },
+      quotedMessage ? { quoted: quotedMessage } : undefined
     );
 
     if (!result) {

@@ -1,6 +1,5 @@
 export enum EMessageType {
   text = 'text',
-  text_quoted = 'text_quoted',
   mention = 'mention',
   forward = 'forward',
   location = 'location',

@@ -68,6 +68,9 @@ export const mensageMappings = () => {
         deleted: {
           type: 'boolean',
         },
+        has_quoted: {
+          type: 'boolean',
+        },
         content: {
           type: 'nested',
           properties: {

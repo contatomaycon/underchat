@@ -85,6 +85,7 @@ export const listMessageResultSchema = Type.Object({
   summary: Type.Optional(Type.Union([summarySchema, Type.Null()])),
   date: Type.String(),
   deleted: Type.Optional(Type.Boolean()),
+  has_quoted: Type.Optional(Type.Boolean()),
 });
 
 export const listMessageResponseSchema = Type.Object({
