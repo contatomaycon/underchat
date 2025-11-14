@@ -1633,15 +1633,6 @@ onUnmounted(() => {
                   </div>
                 </div>
 
-                <div class="audio-time-overlay">
-                  {{
-                    getDisplayTime(
-                      msgGrp.message_id,
-                      msgGrp.content.audio.duration
-                    )
-                  }}
-                </div>
-
                 <p
                   v-if="msgGrp.content?.message"
                   class="audio-caption mt-2"
@@ -1832,7 +1823,30 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <div class="message-meta">
+              <div
+                :class="[
+                  'message-meta',
+                  {
+                    'message-meta--audio':
+                      msgGrp.content?.type === EMessageType.audio &&
+                      msgGrp.content?.audio?.url,
+                  },
+                ]"
+              >
+                <span
+                  v-if="
+                    msgGrp.content?.type === EMessageType.audio &&
+                    msgGrp.content?.audio?.url
+                  "
+                  class="message-audio-duration"
+                >
+                  {{
+                    getDisplayTime(
+                      msgGrp.message_id,
+                      msgGrp.content.audio.duration
+                    )
+                  }}
+                </span>
                 <span class="message-time">
                   {{
                     formatDate(msgGrp.date, {
@@ -2586,27 +2600,6 @@ onUnmounted(() => {
         min-width: 100px;
       }
 
-      .audio-time-overlay {
-        position: absolute;
-        left: 62px;
-        bottom: calc(1.4rem + 6px);
-        font-size: 0.75rem;
-        font-weight: 500;
-        color: rgba(var(--v-theme-on-surface), 0.6);
-        z-index: 1;
-        pointer-events: none;
-        line-height: 1;
-        display: inline-flex;
-        align-items: center;
-        height: fit-content;
-        margin: 0;
-        padding: 0;
-      }
-
-      .chat-content.chat-right .audio-time-overlay {
-        color: rgba(17, 27, 33, 0.6);
-      }
-
       .audio-waveform {
         position: absolute;
         inset: 0;
@@ -3237,11 +3230,14 @@ onUnmounted(() => {
 
   .message-meta {
     position: absolute;
-    right: 12px;
+    left: 0;
+    right: 0;
     bottom: 6px;
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: 4px;
+    justify-content: flex-end;
+    padding-inline: 16px 12px;
     font-size: 0.75rem;
 
     .v-icon {
@@ -3251,6 +3247,15 @@ onUnmounted(() => {
     .message-time {
       line-height: 1;
     }
+
+    .message-audio-duration {
+      margin-right: auto;
+      font-weight: 500;
+    }
+  }
+
+  .message-meta--audio {
+    padding-inline-start: 70px;
   }
 }
 
