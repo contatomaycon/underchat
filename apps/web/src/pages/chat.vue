@@ -87,14 +87,50 @@ type SelectedVideoPreview = {
 };
 const selectedVideos = ref<SelectedVideoPreview[]>([]);
 
+const isRecordingAudio = ref(false);
+const isRecordingPaused = ref(false);
+const audioViewOnce = ref(false);
+const audioRecordingStartAt = ref<number | null>(null);
+const audioRecordingAccumulated = ref(0);
+const audioRecordingElapsedMs = ref(0);
+const audioRecordingTimerId = ref<number | null>(null);
+const audioRecordingRAFId = ref<number | null>(null);
+const mediaRecorderRef = ref<MediaRecorder | null>(null);
+const audioStreamRef = ref<MediaStream | null>(null);
+const audioContextRef = ref<AudioContext | null>(null);
+const audioAnalyserRef = ref<AnalyserNode | null>(null);
+const audioDataArrayRef = ref<Uint8Array | null>(null);
+const audioCanvasRef = ref<HTMLCanvasElement | null>(null);
+const audioChunksRef = ref<Blob[]>([]);
+const shouldPersistRecording = ref(false);
+const recordedAudioBlob = ref<Blob | null>(null);
+const recordedAudioUrl = ref<string | null>(null);
+const audioRecordingDurationSeconds = ref<number | null>(null);
+
 const hasContent = computed(() => !!msg.value && msg.value.trim().length > 0);
 const hasAttachmentsOrContent = computed(
   () =>
     hasContent.value ||
     selectedPhotos.value.length > 0 ||
     selectedDocuments.value.length > 0 ||
-    selectedVideos.value.length > 0
+    selectedVideos.value.length > 0 ||
+    isRecordingAudio.value
 );
+function formatRecordingLabel(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60)
+    .toString()
+    .padStart(2, '0');
+  const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+  return `${minutes}:${seconds}`;
+}
+
+const formattedRecordingTime = computed(() => {
+  if (!isRecordingAudio.value && !audioRecordingElapsedMs.value) {
+    return '00:00';
+  }
+  return formatRecordingLabel(audioRecordingElapsedMs.value) ?? '00:00';
+});
 const forceReflow = (el: HTMLElement): number => el.offsetWidth;
 
 const scrollToBottomInChatLog = () => {
@@ -722,6 +758,292 @@ const getVideoDuration = (src: string): Promise<number | null> =>
     videoEl.src = src;
   });
 
+const updateRecordingElapsed = () => {
+  if (audioRecordingStartAt.value !== null) {
+    audioRecordingElapsedMs.value =
+      audioRecordingAccumulated.value +
+      (performance.now() - audioRecordingStartAt.value);
+  } else {
+    audioRecordingElapsedMs.value = audioRecordingAccumulated.value;
+  }
+};
+
+const setupAudioCanvas = () => {
+  const canvas = audioCanvasRef.value;
+  if (!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const width = canvas.offsetWidth * dpr;
+  const height = canvas.offsetHeight * dpr;
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+};
+
+const drawAudioWaveform = () => {
+  if (!isRecordingAudio.value || !audioAnalyserRef.value) {
+    return;
+  }
+  const analyser = audioAnalyserRef.value;
+  const canvas = audioCanvasRef.value;
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const bufferLength = analyser.fftSize;
+  if (
+    !audioDataArrayRef.value ||
+    audioDataArrayRef.value.length !== bufferLength
+  ) {
+    audioDataArrayRef.value = new Uint8Array(bufferLength);
+  }
+
+  const byteArray = audioDataArrayRef.value!;
+  analyser.getByteTimeDomainData(
+    byteArray as unknown as Uint8Array<ArrayBuffer>
+  );
+  setupAudioCanvas();
+
+  const dpr = window.devicePixelRatio || 1;
+  const width = canvas.width / dpr;
+  const height = canvas.height / dpr;
+
+  ctx.save();
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, width, height);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(34, 197, 94, 0.95)';
+  ctx.fillStyle = 'rgba(34, 197, 94, 0.15)';
+  ctx.beginPath();
+
+  const data = byteArray;
+  const sliceWidth = width / bufferLength;
+  let x = 0;
+  const centerY = height / 2;
+  ctx.beginPath();
+  ctx.moveTo(0, centerY);
+  ctx.lineTo(width, centerY);
+  ctx.strokeStyle = 'rgba(34, 197, 94, 0.35)';
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgba(34, 197, 94, 0.9)';
+
+  for (let i = 0; i < bufferLength; i += 4) {
+    const v = data[i] / 128.0;
+    const y = (v * height) / 2;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+    x += sliceWidth * 4;
+  }
+
+  ctx.stroke();
+  ctx.restore();
+
+  audioRecordingRAFId.value = requestAnimationFrame(drawAudioWaveform);
+};
+
+const releaseAudioResources = () => {
+  if (audioRecordingTimerId.value) {
+    clearInterval(audioRecordingTimerId.value);
+    audioRecordingTimerId.value = null;
+  }
+  if (audioRecordingRAFId.value) {
+    cancelAnimationFrame(audioRecordingRAFId.value);
+    audioRecordingRAFId.value = null;
+  }
+  if (audioStreamRef.value) {
+    audioStreamRef.value.getTracks().forEach((track) => track.stop());
+    audioStreamRef.value = null;
+  }
+  if (audioContextRef.value) {
+    audioContextRef.value.close().catch(() => null);
+    audioContextRef.value = null;
+  }
+  audioAnalyserRef.value = null;
+  audioDataArrayRef.value = null;
+  mediaRecorderRef.value = null;
+};
+
+const resetRecordingState = () => {
+  isRecordingAudio.value = false;
+  isRecordingPaused.value = false;
+  audioViewOnce.value = false;
+  audioRecordingStartAt.value = null;
+  audioRecordingAccumulated.value = 0;
+  audioRecordingElapsedMs.value = 0;
+  audioRecordingDurationSeconds.value = null;
+  audioChunksRef.value = [];
+};
+
+const handleRecorderStop = () => {
+  const recorder = mediaRecorderRef.value;
+  const saveRecording = shouldPersistRecording.value;
+  shouldPersistRecording.value = false;
+
+  if (!saveRecording && recordedAudioUrl.value) {
+    URL.revokeObjectURL(recordedAudioUrl.value);
+    recordedAudioUrl.value = null;
+  }
+
+  if (saveRecording && recorder && audioChunksRef.value.length > 0) {
+    const mimeType = recorder.mimeType || 'audio/webm;codecs=opus';
+    const blob = new Blob(audioChunksRef.value, { type: mimeType });
+    recordedAudioBlob.value = blob;
+    if (recordedAudioUrl.value) URL.revokeObjectURL(recordedAudioUrl.value);
+    recordedAudioUrl.value = URL.createObjectURL(blob);
+    audioRecordingDurationSeconds.value = Math.round(
+      audioRecordingElapsedMs.value / 1000
+    );
+    console.log('Áudio gravado:', {
+      blob,
+      duration: audioRecordingDurationSeconds.value,
+      viewOnce: audioViewOnce.value,
+    });
+    chatStore.showSnackbar(t('audio_recording_saved'), EColor.success);
+  }
+
+  releaseAudioResources();
+  resetRecordingState();
+};
+
+const stopAudioRecordingInternal = () => {
+  if (audioRecordingStartAt.value !== null) {
+    audioRecordingAccumulated.value +=
+      performance.now() - audioRecordingStartAt.value;
+    audioRecordingStartAt.value = null;
+  }
+  updateRecordingElapsed();
+
+  if (mediaRecorderRef.value) {
+    mediaRecorderRef.value.onstop = handleRecorderStop;
+    if (mediaRecorderRef.value.state !== 'inactive') {
+      mediaRecorderRef.value.stop();
+      return;
+    }
+  }
+
+  handleRecorderStop();
+};
+
+const cancelAudioRecording = () => {
+  if (!isRecordingAudio.value && !mediaRecorderRef.value) {
+    return;
+  }
+  shouldPersistRecording.value = false;
+  stopAudioRecordingInternal();
+};
+
+const finalizeAudioRecording = () => {
+  if (!isRecordingAudio.value) return;
+  shouldPersistRecording.value = true;
+  stopAudioRecordingInternal();
+};
+
+const togglePauseAudioRecording = async () => {
+  if (!isRecordingAudio.value || !mediaRecorderRef.value) return;
+
+  if (!isRecordingPaused.value) {
+    if (mediaRecorderRef.value.state === 'recording') {
+      mediaRecorderRef.value.pause();
+    }
+    if (audioRecordingStartAt.value !== null) {
+      audioRecordingAccumulated.value +=
+        performance.now() - audioRecordingStartAt.value;
+      audioRecordingStartAt.value = null;
+      updateRecordingElapsed();
+    }
+    if (audioContextRef.value?.state === 'running') {
+      await audioContextRef.value.suspend().catch(() => null);
+    }
+    if (audioRecordingRAFId.value) {
+      cancelAnimationFrame(audioRecordingRAFId.value);
+      audioRecordingRAFId.value = null;
+    }
+    isRecordingPaused.value = true;
+  } else {
+    if (mediaRecorderRef.value.state === 'paused') {
+      mediaRecorderRef.value.resume();
+    }
+    if (audioContextRef.value?.state === 'suspended') {
+      await audioContextRef.value.resume().catch(() => null);
+    }
+    audioRecordingStartAt.value = performance.now();
+    updateRecordingElapsed();
+    isRecordingPaused.value = false;
+    drawAudioWaveform();
+  }
+};
+
+const toggleViewOnceAudio = () => {
+  audioViewOnce.value = !audioViewOnce.value;
+};
+
+const startAudioRecording = async () => {
+  if (isRecordingAudio.value) return;
+  if (recordedAudioUrl.value) {
+    URL.revokeObjectURL(recordedAudioUrl.value);
+    recordedAudioUrl.value = null;
+  }
+  recordedAudioBlob.value = null;
+  audioRecordingDurationSeconds.value = null;
+
+  try {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      chatStore.showSnackbar(t('audio_recording_error'), EColor.error);
+      return;
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioStreamRef.value = stream;
+    const mediaRecorder = new MediaRecorder(stream);
+    mediaRecorderRef.value = mediaRecorder;
+    audioChunksRef.value = [];
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data?.size > 0) {
+        audioChunksRef.value.push(event.data);
+      }
+    };
+    mediaRecorder.onstop = handleRecorderStop;
+
+    const audioCtx = new AudioContext();
+    audioContextRef.value = audioCtx;
+    const source = audioCtx.createMediaStreamSource(stream);
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    audioAnalyserRef.value = analyser;
+    source.connect(analyser);
+
+    mediaRecorder.start(250);
+    isRecordingAudio.value = true;
+    isRecordingPaused.value = false;
+    audioViewOnce.value = false;
+    audioRecordingAccumulated.value = 0;
+    audioRecordingElapsedMs.value = 0;
+    audioRecordingStartAt.value = performance.now();
+    updateRecordingElapsed();
+    if (audioRecordingTimerId.value) {
+      clearInterval(audioRecordingTimerId.value);
+    }
+    audioRecordingTimerId.value = window.setInterval(
+      updateRecordingElapsed,
+      200
+    );
+
+    await nextTick(() => {
+      setupAudioCanvas();
+    });
+    drawAudioWaveform();
+  } catch (error: any) {
+    releaseAudioResources();
+    resetRecordingState();
+    const message =
+      error?.name === 'NotAllowedError'
+        ? t('audio_recording_permission_denied')
+        : t('audio_recording_error');
+    chatStore.showSnackbar(message, EColor.error);
+  }
+};
+
 const onPickVideo = async (e: Event) => {
   const target = e.target as HTMLInputElement;
   const files = target.files;
@@ -816,7 +1138,7 @@ const onEmojiSelect = (e: any) => {
 };
 
 const onRecordAudio = () => {
-  globalThis.dispatchEvent(new CustomEvent('start-recording-audio'));
+  startAudioRecording();
 };
 
 const onSendText = () => sendMessage();
@@ -965,6 +1287,15 @@ onUnmounted(async () => {
       'scroll-to-message',
       onScrollToMessageEvt as EventListener
     );
+  }
+});
+
+onBeforeUnmount(() => {
+  shouldPersistRecording.value = false;
+  cancelAudioRecording();
+  if (recordedAudioUrl.value) {
+    URL.revokeObjectURL(recordedAudioUrl.value);
+    recordedAudioUrl.value = null;
   }
 });
 </script>
@@ -1320,7 +1651,75 @@ onUnmounted(async () => {
             </div>
           </Transition>
 
+          <div
+            v-if="isRecordingAudio"
+            class="audio-recording-inline whats-composer d-flex align-center gap-3 px-4"
+          >
+            <IconBtn
+              class="record-action"
+              aria-label="Cancelar gravação"
+              @click="cancelAudioRecording"
+            >
+              <VIcon size="20">tabler-trash</VIcon>
+            </IconBtn>
+
+            <span
+              class="recording-dot"
+              :class="{ 'is-paused': isRecordingPaused }"
+            ></span>
+
+            <span class="audio-recording-clock">{{
+              formattedRecordingTime
+            }}</span>
+
+            <div class="audio-recording-info flex-grow-1">
+              <canvas
+                ref="audioCanvasRef"
+                class="audio-wave-canvas"
+                height="32"
+              ></canvas>
+            </div>
+
+            <IconBtn
+              class="record-action"
+              aria-label="Pausar ou retomar gravação"
+              @click="togglePauseAudioRecording"
+            >
+              <VIcon size="20">
+                {{
+                  isRecordingPaused
+                    ? 'tabler-player-play'
+                    : 'tabler-player-pause'
+                }}
+              </VIcon>
+            </IconBtn>
+
+            <IconBtn
+              class="record-action view-once-toggle"
+              :class="{ 'is-active': audioViewOnce }"
+              aria-label="Visualização única"
+              @click="toggleViewOnceAudio"
+            >
+              <VIcon size="20">
+                {{ audioViewOnce ? 'tabler-eye-off' : 'tabler-eye' }}
+              </VIcon>
+            </IconBtn>
+
+            <VBtn
+              class="record-send-btn"
+              color="success"
+              variant="flat"
+              icon
+              rounded="pill"
+              aria-label="Enviar áudio gravado"
+              @click="finalizeAudioRecording"
+            >
+              <VIcon size="20">tabler-send</VIcon>
+            </VBtn>
+          </div>
+
           <VTextarea
+            v-else
             ref="composerRef"
             :key="contact_id"
             v-model="msg"
@@ -1637,6 +2036,77 @@ $chat-app-header-height: 76px;
 .composer-attachment-card {
   inline-size: 100%;
   max-inline-size: 100%;
+}
+
+.audio-recording-inline {
+  background: rgb(var(--v-theme-surface));
+  border-radius: 12px;
+  min-height: 56px;
+}
+
+.audio-recording-inline .record-action {
+  color: rgba(var(--v-theme-on-surface), 0.7) !important;
+}
+
+.audio-recording-inline .record-send-btn {
+  min-width: 42px !important;
+  height: 42px !important;
+}
+
+.audio-recording-info {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.audio-wave-canvas {
+  width: min(220px, 35vw);
+  height: 28px;
+  background: transparent;
+}
+
+.audio-recording-clock {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  min-width: 52px;
+  text-align: center;
+}
+
+.recording-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgb(var(--v-theme-error));
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.recording-dot.is-paused {
+  background: rgba(var(--v-theme-on-surface), 0.4);
+  animation: none;
+}
+
+.record-action {
+  color: rgba(var(--v-theme-on-surface), 0.6) !important;
+}
+
+.view-once-toggle.is-active {
+  color: rgb(var(--v-theme-primary)) !important;
+}
+
+.audio-recording-controls {
+  gap: 8px !important;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 0.65;
+  }
 }
 
 .attachment-grid {
