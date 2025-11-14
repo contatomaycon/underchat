@@ -522,8 +522,15 @@ const resolveAudioMeta = (audio?: AudioMessageChat | null): string => {
   return [ext, size, duration].filter(Boolean).join(' • ');
 };
 
-const formatAudioTime = (seconds: number): string => {
-  const totalSeconds = Math.floor(seconds);
+const normalizeTimeValue = (value?: number | null): number | null => {
+  if (typeof value !== 'number') return null;
+  if (!Number.isFinite(value)) return null;
+  if (value < 0) return null;
+  return value;
+};
+
+const formatAudioTime = (seconds?: number | null): string => {
+  const totalSeconds = Math.floor(normalizeTimeValue(seconds) ?? 0);
   const minutes = Math.floor(totalSeconds / 60);
   const secs = totalSeconds % 60;
   return `${minutes}:${secs.toString().padStart(2, '0')}`;
@@ -542,11 +549,17 @@ const getOrCreateAudioPlayer = (
   audioPlayers.value.set(messageId, audio);
 
   audio.addEventListener('loadedmetadata', () => {
-    audioDurations[messageId] = audio.duration;
+    const duration = normalizeTimeValue(audio.duration);
+    if (duration !== null) {
+      audioDurations[messageId] = duration;
+    }
   });
 
   audio.addEventListener('timeupdate', () => {
-    audioCurrentTimes[messageId] = audio.currentTime;
+    const currentTime = normalizeTimeValue(audio.currentTime);
+    if (currentTime !== null) {
+      audioCurrentTimes[messageId] = currentTime;
+    }
   });
 
   audio.addEventListener('play', () => {
@@ -633,14 +646,14 @@ const generateAudioWaveform = async (
 };
 
 const getAudioProgress = (messageId: string): number => {
-  const currentTime = audioCurrentTimes[messageId] || 0;
-  const duration = audioDurations[messageId] || 0;
+  const currentTime = normalizeTimeValue(audioCurrentTimes[messageId]) ?? 0;
+  const duration = normalizeTimeValue(audioDurations[messageId]) ?? 0;
   if (duration === 0) return 0;
   return (currentTime / duration) * 100;
 };
 
 const getAudioCurrentTime = (messageId: string): string => {
-  const currentTime = audioCurrentTimes[messageId] || 0;
+  const currentTime = normalizeTimeValue(audioCurrentTimes[messageId]);
   return formatAudioTime(currentTime);
 };
 
@@ -648,14 +661,10 @@ const getAudioDuration = (
   messageId: string,
   fallbackDuration?: number | null
 ): string => {
-  const duration = audioDurations[messageId];
-  if (duration && duration > 0) {
-    return formatAudioTime(duration);
-  }
-  if (fallbackDuration && fallbackDuration > 0) {
-    return formatAudioTime(fallbackDuration);
-  }
-  return '0:00';
+  const duration =
+    normalizeTimeValue(audioDurations[messageId]) ??
+    normalizeTimeValue(fallbackDuration);
+  return formatAudioTime(duration);
 };
 
 const isAudioPlaying = (messageId: string): boolean => {
@@ -679,13 +688,23 @@ const getDisplayTime = (
   messageId: string,
   fallbackDuration?: number | null
 ): string => {
-  if (isAudioPlaying(messageId)) {
-    const currentTime = getAudioCurrentTime(messageId);
-    if (currentTime !== '0:00') {
-      return currentTime;
+  const isPlaying = isAudioPlaying(messageId);
+  const currentTime = normalizeTimeValue(audioCurrentTimes[messageId]);
+  const duration =
+    normalizeTimeValue(audioDurations[messageId]) ??
+    normalizeTimeValue(fallbackDuration);
+
+  if (isPlaying) {
+    if (currentTime !== null) {
+      return formatAudioTime(currentTime);
     }
+    if (duration !== null) {
+      return formatAudioTime(duration);
+    }
+    return '0:00';
   }
-  return getAudioDuration(messageId, fallbackDuration);
+
+  return formatAudioTime(duration);
 };
 
 onUnmounted(() => {
@@ -866,9 +885,6 @@ const resolveQuotedVideoMeta = (m: ListMessageResult): string => {
 };
 
 const resolveQuotedAudioName = (m: ListMessageResult): string => {
-  const audio = m.content?.quoted?.audio;
-  if (!audio) return t('audio_label');
-  if (audio.name) return audio.name;
   return t('audio_label');
 };
 

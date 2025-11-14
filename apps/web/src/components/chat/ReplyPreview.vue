@@ -68,13 +68,11 @@ const replyText = computed(() => {
   }
 
   if (m.content?.type === EMessageType.video) {
-    return (
-      m.content.video?.caption || m.content.video?.name || t('video_label')
-    );
+    return m.content.video?.caption || t('video_label');
   }
 
   if (m.content?.type === EMessageType.audio) {
-    return m.content.audio?.name || t('audio_label');
+    return t('audio_label');
   }
 
   if (m.content?.message) {
