@@ -581,6 +581,27 @@ const resolveQuotedDocumentMeta = (m: ListMessageResult): string => {
   return `${ext} • ${formatDocumentSize(doc.size)}`;
 };
 
+const resolveQuotedImageName = (m: ListMessageResult): string => {
+  const image = m.content?.quoted?.image;
+  if (!image) return t('photo_label');
+
+  const name = image.caption || image.url || image.thumbnail;
+  if (!name) return t('photo_label');
+
+  const segments = name.split('/');
+  const filename = segments[segments.length - 1] || name;
+
+  return truncateVideoName(filename);
+};
+
+const resolveQuotedImageMeta = (m: ListMessageResult): string => {
+  const image = m.content?.quoted?.image;
+  if (!image) return '';
+  const ext = image.extension ? image.extension.toUpperCase() : 'IMAGE';
+  const size = image.size ? formatDocumentSize(image.size) : null;
+  return [ext, size].filter(Boolean).join(' • ');
+};
+
 const resolveQuotedVideoName = (m: ListMessageResult): string => {
   const video = m.content?.quoted?.video;
   const candidate = video?.name ?? video?.caption ?? null;
@@ -954,7 +975,10 @@ onUnmounted(() => {
                 </div>
 
                 <div class="quoted-content">
-                  <div v-if="hasQuotedImage(msgGrp)" class="quoted-media">
+                  <div
+                    v-if="hasQuotedImage(msgGrp)"
+                    class="quoted-media quoted-media--image"
+                  >
                     <VImg
                       :src="resolveQuotedImageSrc(msgGrp)"
                       width="44"
@@ -1013,10 +1037,23 @@ onUnmounted(() => {
                     </span>
                   </div>
 
+                  <div v-if="hasQuotedImage(msgGrp)" class="quoted-image-info">
+                    <span class="quoted-image-name">
+                      {{ resolveQuotedImageName(msgGrp) }}
+                    </span>
+                    <span
+                      v-if="resolveQuotedImageMeta(msgGrp)"
+                      class="quoted-image-meta"
+                    >
+                      {{ resolveQuotedImageMeta(msgGrp) }}
+                    </span>
+                  </div>
+
                   <div
                     v-if="
                       resolveQuotedText(msgGrp) &&
-                      msgGrp.content?.quoted?.type !== EMessageType.video
+                      msgGrp.content?.quoted?.type !== EMessageType.video &&
+                      msgGrp.content?.quoted?.type !== EMessageType.image
                     "
                     class="quoted-text"
                     :style="{
@@ -1754,6 +1791,16 @@ onUnmounted(() => {
         }
       }
 
+      .quoted-media--image {
+        position: relative;
+        background: rgba(var(--v-theme-primary), 0.12);
+
+        .v-img {
+          inline-size: 100%;
+          block-size: 100%;
+        }
+      }
+
       .quoted-media--video {
         position: relative;
         background: rgba(var(--v-theme-primary), 0.12);
@@ -1790,6 +1837,23 @@ onUnmounted(() => {
           color: rgb(var(--v-theme-primary));
           background: rgba(var(--v-theme-primary), 0.15);
         }
+      }
+
+      .quoted-image-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .quoted-image-name {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: rgb(var(--v-theme-primary));
+      }
+
+      .quoted-image-meta {
+        font-size: 0.7rem;
+        color: rgba(var(--v-theme-on-surface), 0.6);
       }
 
       .quoted-video-info {
