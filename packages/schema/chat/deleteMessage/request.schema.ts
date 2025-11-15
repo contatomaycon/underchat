@@ -9,4 +9,3 @@ export const deleteMessageBodySchema = Type.Object({});
 
 export type DeleteMessageParams = Static<typeof deleteMessageParamsSchema>;
 export type DeleteMessageBody = Static<typeof deleteMessageBodySchema>;
-

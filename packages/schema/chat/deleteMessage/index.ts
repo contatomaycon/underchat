@@ -8,4 +8,3 @@ export const deleteMessageSchema: FastifySchema = {
   params: deleteMessageParamsSchema,
   body: deleteMessageBodySchema,
 };
-

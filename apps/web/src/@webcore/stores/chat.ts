@@ -4,8 +4,7 @@ import { getI18n } from '@/plugins/i18n';
 import { EColor } from '@core/common/enums/EColor';
 import { ISnackbar } from '@core/common/interfaces/ISnackbar';
 import axios from '@webcore/axios';
-import type { AxiosRequestConfig } from 'axios';
-import { isAxiosError } from 'axios';
+import { isAxiosError, type AxiosRequestConfig } from 'axios';
 import {
   ListChatsResponse,
   ListChatsResult,

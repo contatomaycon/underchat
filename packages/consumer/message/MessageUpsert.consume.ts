@@ -279,11 +279,321 @@ export class MessageUpsertConsume {
     return result.hits.hits[0]._source as IChatMessage;
   }
 
+  private async handleReactionMessage(
+    getChat: IChat,
+    data: IUpsertMessage
+  ): Promise<boolean | null> {
+    if (
+      data.type !== EMessageType.react ||
+      !data.message?.message?.reactionMessage?.key?.id
+    ) {
+      return null;
+    }
+
+    const reactionMsg = data.message.message.reactionMessage;
+    const targetMessageId = reactionMsg.key?.id;
+    if (!targetMessageId) {
+      return true;
+    }
+
+    const targetMessage = await this.findMessageByKeyId(
+      data.account_id,
+      getChat.chat_id,
+      targetMessageId
+    );
+
+    if (!targetMessage) {
+      return true;
+    }
+
+    const userId = data.message?.key?.fromMe
+      ? getChat.worker.id
+      : (getChat.user?.id ?? '');
+    const userName = data.message?.key?.fromMe
+      ? getChat.worker.name
+      : (getChat.user?.name ?? '');
+    const emoji = reactionMsg.text ?? '';
+
+    const existingReactions = targetMessage.content?.reactions || [];
+    const reactionsWithoutUser = existingReactions.filter(
+      (reaction) => reaction.user_id !== userId
+    );
+
+    let updatedReactions = reactionsWithoutUser;
+    if (emoji) {
+      updatedReactions = [
+        ...reactionsWithoutUser,
+        {
+          emoji,
+          user_id: userId,
+          user_name: userName,
+        },
+      ];
+    }
+
+    let reactionsValue: IContent['reactions'] = null;
+    if (updatedReactions.length > 0) {
+      reactionsValue = updatedReactions;
+    }
+
+    const updatedContent: IContent = {
+      ...targetMessage.content,
+      type: targetMessage.content?.type ?? EMessageType.text,
+      reactions: reactionsValue,
+    };
+
+    const updatedMessage: IChatMessage = {
+      ...targetMessage,
+      content: updatedContent,
+      has_quoted: targetMessage.has_quoted,
+    };
+
+    await Promise.all([
+      this.chatService.saveMessageChat(updatedMessage),
+      this.centrifugoChatPublish(updatedMessage),
+    ]);
+
+    return true;
+  }
+
+  private async handleDeleteMessage(
+    getChat: IChat,
+    data: IUpsertMessage
+  ): Promise<boolean | null> {
+    if (
+      data.type !== EMessageType.delete_message ||
+      !data.message?.message?.protocolMessage?.key?.id
+    ) {
+      return null;
+    }
+
+    const protocolMessage = data.message.message.protocolMessage;
+    const targetMessageId = protocolMessage?.key?.id;
+    if (!targetMessageId) {
+      return true;
+    }
+
+    const targetMessage = await this.findMessageByKeyId(
+      data.account_id,
+      getChat.chat_id,
+      targetMessageId
+    );
+
+    if (!targetMessage) {
+      return true;
+    }
+
+    const updatedMessage: IChatMessage = {
+      ...targetMessage,
+      deleted: true,
+      has_quoted: targetMessage.has_quoted,
+    };
+
+    await Promise.all([
+      this.chatService.saveMessageChat(updatedMessage),
+      this.centrifugoChatPublish(updatedMessage),
+    ]);
+
+    return true;
+  }
+
+  private async updateChatNameIfNeeded(
+    getChat: IChat,
+    data: IUpsertMessage
+  ): Promise<void> {
+    if (getChat?.name || data.message?.key?.fromMe) {
+      return;
+    }
+
+    const name = this.nameChat(data);
+
+    await this.elasticDatabaseService.update(
+      EElasticIndex.chat,
+      { name },
+      getChat.chat_id
+    );
+    getChat.name = name;
+
+    await this.centrifugoChatQueuePublish(getChat);
+  }
+
+  private async handleImageMessage(
+    content: IContent,
+    data: IUpsertMessage
+  ): Promise<void> {
+    if (
+      content.type !== EMessageType.image ||
+      !data.message?.message?.imageMessage?.url
+    ) {
+      return;
+    }
+
+    const buffer = await downloadMediaMessage(data.message, 'buffer', {
+      startByte: 0,
+    });
+
+    const photoResult = await this.storageService.uploadFromBuffer(
+      buffer,
+      data.account_id
+    );
+
+    content.image = photoResult
+      ? {
+          url: photoResult.url,
+          caption: data.message.message.imageMessage.caption ?? null,
+          mimetype: data.message.message.imageMessage.mimetype,
+          extension: photoResult.extension,
+          size: photoResult.size,
+          height: data.message.message.imageMessage.height,
+          width: data.message.message.imageMessage.width,
+        }
+      : undefined;
+  }
+
+  private async handleVideoMessage(
+    content: IContent,
+    data: IUpsertMessage
+  ): Promise<void> {
+    if (
+      content.type !== EMessageType.video ||
+      !data.message?.message?.videoMessage?.url
+    ) {
+      return;
+    }
+
+    const videoMsg = data.message.message.videoMessage;
+    const buffer = await downloadMediaMessage(data.message, 'buffer', {
+      startByte: 0,
+    });
+
+    const inferredVideoName =
+      (videoMsg as { fileName?: string | null })?.fileName ?? undefined;
+
+    const videoResult = await this.storageService.uploadFromBuffer(
+      buffer,
+      data.account_id,
+      {
+        fileName: inferredVideoName,
+        mimetype: videoMsg.mimetype ?? undefined,
+      }
+    );
+
+    const thumb =
+      videoMsg.jpegThumbnail && videoMsg.jpegThumbnail.length > 0
+        ? `data:image/jpeg;base64,${Buffer.from(
+            videoMsg.jpegThumbnail
+          ).toString('base64')}`
+        : null;
+
+    content.video = videoResult
+      ? {
+          url: videoResult.url,
+          caption: videoMsg.caption ?? null,
+          name: inferredVideoName ?? videoResult.name,
+          mimetype: videoMsg.mimetype ?? videoResult.mimetype ?? 'video/mp4',
+          extension: videoResult.extension,
+          size: videoResult.size,
+          duration: videoMsg.seconds ?? null,
+          height: videoMsg.height ?? null,
+          width: videoMsg.width ?? null,
+          thumbnail: thumb,
+        }
+      : undefined;
+  }
+
+  private async handleAudioMessage(
+    content: IContent,
+    data: IUpsertMessage
+  ): Promise<void> {
+    if (
+      content.type !== EMessageType.audio ||
+      !data.message?.message?.audioMessage?.url
+    ) {
+      return;
+    }
+
+    const audioMsg = data.message.message.audioMessage;
+    const buffer = await downloadMediaMessage(data.message, 'buffer', {
+      startByte: 0,
+    });
+
+    const inferredAudioName =
+      (audioMsg as { fileName?: string | null })?.fileName ?? undefined;
+
+    const audioResult = await this.storageService.uploadFromBuffer(
+      buffer,
+      data.account_id,
+      {
+        fileName: inferredAudioName,
+        mimetype: audioMsg.mimetype ?? undefined,
+      }
+    );
+
+    content.audio = audioResult
+      ? {
+          url: audioResult.url,
+          name: inferredAudioName ?? audioResult.name,
+          mimetype: audioMsg.mimetype ?? audioResult.mimetype ?? null,
+          extension: audioResult.extension,
+          size: audioResult.size,
+          duration: audioMsg.seconds ?? null,
+          ptt: audioMsg.ptt ?? false,
+          view_once: data.message?.key?.isViewOnce ?? false,
+        }
+      : undefined;
+  }
+
+  private async handleDocumentMessage(
+    content: IContent,
+    data: IUpsertMessage
+  ): Promise<void> {
+    if (
+      content.type !== EMessageType.document ||
+      !data.message?.message?.documentMessage?.url
+    ) {
+      return;
+    }
+
+    const documentMsg = data.message.message.documentMessage;
+    const buffer = await downloadMediaMessage(data.message, 'buffer', {
+      startByte: 0,
+    });
+
+    const documentResult = await this.storageService.uploadFromBuffer(
+      buffer,
+      data.account_id,
+      {
+        fileName: documentMsg.fileName ?? undefined,
+        mimetype: documentMsg.mimetype ?? undefined,
+      }
+    );
+
+    content.document = documentResult
+      ? {
+          url: documentResult.url,
+          name: documentMsg.fileName ?? documentResult.name,
+          mimetype: documentMsg.mimetype ?? documentResult.mimetype ?? null,
+          extension: documentResult.extension,
+          size: documentResult.size,
+        }
+      : undefined;
+  }
+
   private async createChatMessage(
     getChat: IChat,
     data: IUpsertMessage
   ): Promise<boolean> {
     try {
+      const reactionResult = await this.handleReactionMessage(getChat, data);
+      if (reactionResult !== null) {
+        return reactionResult;
+      }
+
+      const deleteResult = await this.handleDeleteMessage(getChat, data);
+      if (deleteResult !== null) {
+        return deleteResult;
+      }
+
       const jid = remoteJid(data.message?.key);
       const jidAlt = remoteJidAlt(data.message?.key);
 
@@ -315,257 +625,12 @@ export class MessageUpsertConsume {
 
       const hasQuotedFlag = data.has_quoted || !!content.quoted;
 
-      if (
-        data.type === EMessageType.react &&
-        data.message?.message?.reactionMessage?.key?.id
-      ) {
-        const reactionMsg = data.message.message.reactionMessage;
-        const targetMessageId = reactionMsg.key?.id;
-        if (!targetMessageId) {
-          return true;
-        }
+      await this.updateChatNameIfNeeded(getChat, data);
 
-        const targetMessage = await this.findMessageByKeyId(
-          data.account_id,
-          getChat.chat_id,
-          targetMessageId
-        );
-
-        if (!targetMessage) {
-          return true;
-        }
-
-        const userId = data.message?.key?.fromMe
-          ? getChat.worker.id
-          : (getChat.user?.id ?? '');
-        const userName = data.message?.key?.fromMe
-          ? getChat.worker.name
-          : (getChat.user?.name ?? '');
-        const emoji = reactionMsg.text ?? '';
-
-        const existingReactions = targetMessage.content?.reactions || [];
-        const reactionsWithoutUser = existingReactions.filter(
-          (reaction) => reaction.user_id !== userId
-        );
-
-        let updatedReactions = reactionsWithoutUser;
-        if (emoji) {
-          updatedReactions = [
-            ...reactionsWithoutUser,
-            {
-              emoji,
-              user_id: userId,
-              user_name: userName,
-            },
-          ];
-        }
-
-        let reactionsValue: IContent['reactions'] = null;
-        if (updatedReactions.length > 0) {
-          reactionsValue = updatedReactions;
-        }
-
-        const updatedContent: IContent = {
-          ...targetMessage.content,
-          type: targetMessage.content?.type ?? EMessageType.text,
-          reactions: reactionsValue,
-        };
-
-        const updatedMessage: IChatMessage = {
-          ...targetMessage,
-          content: updatedContent,
-          has_quoted: targetMessage.has_quoted,
-        };
-
-        await Promise.all([
-          this.chatService.saveMessageChat(updatedMessage),
-          this.centrifugoChatPublish(updatedMessage),
-        ]);
-
-        return true;
-      }
-
-      if (
-        data.type === EMessageType.delete_message &&
-        data.message?.message?.protocolMessage?.key?.id
-      ) {
-        const protocolMessage = data.message.message.protocolMessage;
-        const targetMessageId = protocolMessage?.key?.id;
-        if (!targetMessageId) {
-          return true;
-        }
-
-        const targetMessage = await this.findMessageByKeyId(
-          data.account_id,
-          getChat.chat_id,
-          targetMessageId
-        );
-
-        if (!targetMessage) {
-          return true;
-        }
-
-        const updatedMessage: IChatMessage = {
-          ...targetMessage,
-          deleted: true,
-          has_quoted: targetMessage.has_quoted,
-        };
-
-        await Promise.all([
-          this.chatService.saveMessageChat(updatedMessage),
-          this.centrifugoChatPublish(updatedMessage),
-        ]);
-
-        return true;
-      }
-
-      if (!getChat?.name && !data.message?.key?.fromMe) {
-        const name = this.nameChat(data);
-
-        await this.elasticDatabaseService.update(
-          EElasticIndex.chat,
-          { name },
-          getChat.chat_id
-        );
-        getChat.name = name;
-
-        await this.centrifugoChatQueuePublish(getChat);
-      }
-
-      if (
-        content.type === EMessageType.image &&
-        data.message?.message?.imageMessage?.url
-      ) {
-        const buffer = await downloadMediaMessage(data.message, 'buffer', {
-          startByte: 0,
-        });
-
-        const photoResult = await this.storageService.uploadFromBuffer(
-          buffer,
-          data.account_id
-        );
-
-        content.image = photoResult
-          ? {
-              url: photoResult.url,
-              caption: data.message.message.imageMessage.caption ?? null,
-              mimetype: data.message.message.imageMessage.mimetype,
-              extension: photoResult.extension,
-              size: photoResult.size,
-              height: data.message.message.imageMessage.height,
-              width: data.message.message.imageMessage.width,
-            }
-          : undefined;
-      }
-
-      if (
-        content.type === EMessageType.video &&
-        data.message?.message?.videoMessage?.url
-      ) {
-        const videoMsg = data.message.message.videoMessage;
-        const buffer = await downloadMediaMessage(data.message, 'buffer', {
-          startByte: 0,
-        });
-
-        const inferredVideoName =
-          (videoMsg as { fileName?: string | null })?.fileName ?? undefined;
-
-        const videoResult = await this.storageService.uploadFromBuffer(
-          buffer,
-          data.account_id,
-          {
-            fileName: inferredVideoName,
-            mimetype: videoMsg.mimetype ?? undefined,
-          }
-        );
-
-        const thumb =
-          videoMsg.jpegThumbnail && videoMsg.jpegThumbnail.length > 0
-            ? `data:image/jpeg;base64,${Buffer.from(
-                videoMsg.jpegThumbnail
-              ).toString('base64')}`
-            : null;
-
-        content.video = videoResult
-          ? {
-              url: videoResult.url,
-              caption: videoMsg.caption ?? null,
-              name: inferredVideoName ?? videoResult.name,
-              mimetype:
-                videoMsg.mimetype ?? videoResult.mimetype ?? 'video/mp4',
-              extension: videoResult.extension,
-              size: videoResult.size,
-              duration: videoMsg.seconds ?? null,
-              height: videoMsg.height ?? null,
-              width: videoMsg.width ?? null,
-              thumbnail: thumb,
-            }
-          : undefined;
-      }
-
-      if (
-        content.type === EMessageType.audio &&
-        data.message?.message?.audioMessage?.url
-      ) {
-        const audioMsg = data.message.message.audioMessage;
-        const buffer = await downloadMediaMessage(data.message, 'buffer', {
-          startByte: 0,
-        });
-
-        const inferredAudioName =
-          (audioMsg as { fileName?: string | null })?.fileName ?? undefined;
-
-        const audioResult = await this.storageService.uploadFromBuffer(
-          buffer,
-          data.account_id,
-          {
-            fileName: inferredAudioName,
-            mimetype: audioMsg.mimetype ?? undefined,
-          }
-        );
-
-        content.audio = audioResult
-          ? {
-              url: audioResult.url,
-              name: inferredAudioName ?? audioResult.name,
-              mimetype: audioMsg.mimetype ?? audioResult.mimetype ?? null,
-              extension: audioResult.extension,
-              size: audioResult.size,
-              duration: audioMsg.seconds ?? null,
-              ptt: audioMsg.ptt ?? false,
-              view_once: data.message?.key?.isViewOnce ?? false,
-            }
-          : undefined;
-      }
-
-      if (
-        content.type === EMessageType.document &&
-        data.message?.message?.documentMessage?.url
-      ) {
-        const documentMsg = data.message.message.documentMessage;
-        const buffer = await downloadMediaMessage(data.message, 'buffer', {
-          startByte: 0,
-        });
-
-        const documentResult = await this.storageService.uploadFromBuffer(
-          buffer,
-          data.account_id,
-          {
-            fileName: documentMsg.fileName ?? undefined,
-            mimetype: documentMsg.mimetype ?? undefined,
-          }
-        );
-
-        content.document = documentResult
-          ? {
-              url: documentResult.url,
-              name: documentMsg.fileName ?? documentResult.name,
-              mimetype: documentMsg.mimetype ?? documentResult.mimetype ?? null,
-              extension: documentResult.extension,
-              size: documentResult.size,
-            }
-          : undefined;
-      }
+      await this.handleImageMessage(content, data);
+      await this.handleVideoMessage(content, data);
+      await this.handleAudioMessage(content, data);
+      await this.handleDocumentMessage(content, data);
 
       const inputChatMessage: IChatMessage = {
         message_id: uuidv4(),

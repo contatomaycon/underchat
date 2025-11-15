@@ -11,4 +11,3 @@ export const reactMessageBodySchema = Type.Object({
 
 export type ReactMessageParams = Static<typeof reactMessageParamsSchema>;
 export type ReactMessageBody = Static<typeof reactMessageBodySchema>;
-

@@ -19,7 +19,9 @@ export const reactMessage = async (
   }>,
   reply: FastifyReply
 ) => {
-  const chatMessageCreatorUseCase = container.resolve(ChatMessageCreatorUseCase);
+  const chatMessageCreatorUseCase = container.resolve(
+    ChatMessageCreatorUseCase
+  );
   const { t, tokenJwtData } = request;
 
   try {
@@ -70,4 +72,3 @@ export const reactMessage = async (
     });
   }
 };
-

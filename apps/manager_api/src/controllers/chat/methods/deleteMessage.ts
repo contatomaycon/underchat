@@ -19,7 +19,9 @@ export const deleteMessage = async (
   }>,
   reply: FastifyReply
 ) => {
-  const chatMessageCreatorUseCase = container.resolve(ChatMessageCreatorUseCase);
+  const chatMessageCreatorUseCase = container.resolve(
+    ChatMessageCreatorUseCase
+  );
   const { t, tokenJwtData } = request;
 
   try {
@@ -69,4 +71,3 @@ export const deleteMessage = async (
     });
   }
 };
-

@@ -56,4 +56,3 @@ const baileysReadyHook = fp(async (fastify) => {
 });
 
 export default baileysReadyHook;
-
