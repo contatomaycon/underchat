@@ -28,6 +28,7 @@ import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
+import { convertWaveformToBase64 } from '@core/common/functions/convertWaveform';
 import Redis from 'ioredis';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { downloadMediaMessage } from '@whiskeysockets/baileys';
@@ -529,6 +530,8 @@ export class MessageUpsertConsume {
       }
     );
 
+    const waveform = convertWaveformToBase64(audioMsg.waveform);
+
     content.audio = audioResult
       ? {
           url: audioResult.url,
@@ -539,6 +542,7 @@ export class MessageUpsertConsume {
           duration: audioMsg.seconds ?? null,
           ptt: audioMsg.ptt ?? false,
           view_once: data.message?.key?.isViewOnce ?? false,
+          waveform: waveform ?? null,
         }
       : undefined;
   }

@@ -286,7 +286,7 @@ export const mensageMappings = () => {
                       type: 'boolean',
                     },
                     waveform: {
-                      type: 'integer',
+                      type: 'keyword',
                     },
                   },
                 },
@@ -425,7 +425,7 @@ export const mensageMappings = () => {
                   type: 'boolean',
                 },
                 waveform: {
-                  type: 'integer',
+                  type: 'keyword',
                 },
               },
             },

@@ -18,6 +18,7 @@ import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { selectJidChat } from '@core/common/functions/selectJidChat';
+import { convertWaveformBase64ToUint8Array } from '@core/common/functions/convertWaveform';
 import { webcrypto } from 'node:crypto';
 
 @singleton()
@@ -419,8 +420,8 @@ export class MessageSendConsume {
     const isPtt = audio.ptt ?? true;
 
     let waveform: Uint8Array | undefined;
-    if (isPtt && audio.waveform && Array.isArray(audio.waveform)) {
-      waveform = new Uint8Array(audio.waveform);
+    if (isPtt && audio.waveform) {
+      waveform = convertWaveformBase64ToUint8Array(audio.waveform);
     }
 
     const result = await this.baileysMessageMediaService.sendAudio(
@@ -431,7 +432,7 @@ export class MessageSendConsume {
         seconds: audio.duration ?? undefined,
         mimetype: audio.mimetype ?? undefined,
         viewOnce: data.message_key?.is_view_once ?? audio.view_once ?? false,
-        waveform: isPtt ? waveform : undefined,
+        waveform,
       },
       quotedMessage ? { quoted: quotedMessage } : undefined
     );

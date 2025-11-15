@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Buffer } from 'node:buffer';
 import { randomBytes } from 'node:crypto';
+import { getAudioWaveform } from '@whiskeysockets/baileys';
 
 const execAsync = promisify(exec);
 
@@ -36,6 +37,7 @@ export class AudioConverterService {
       );
 
       let duration: number | undefined;
+
       try {
         await writeFile(tempPath, inputBuffer);
 
@@ -77,6 +79,7 @@ export class AudioConverterService {
           try {
             await unlink(tempPath);
           } catch {}
+
           return {
             buffer: inputBuffer,
             mimetype: this.targetMimetype,
@@ -132,6 +135,7 @@ export class AudioConverterService {
       const outputBuffer = await readFile(outputPath);
 
       let duration: number | undefined;
+
       try {
         const probeCommand = [
           'ffprobe',
@@ -346,90 +350,18 @@ export class AudioConverterService {
 
   async generateWaveformWithFfmpeg(
     audioBuffer: Buffer
-  ): Promise<Uint8Array | undefined> {
-    const tempInputPath = join(
-      tmpdir(),
-      `audio-waveform-input-${Date.now()}-${randomBytes(8).toString('hex')}.ogg`
-    );
-    const tempOutputPath = join(
-      tmpdir(),
-      `audio-waveform-output-${Date.now()}-${randomBytes(8).toString('hex')}.raw`
-    );
-
+  ): Promise<string | undefined> {
     try {
-      await writeFile(tempInputPath, audioBuffer);
+      const wave = await getAudioWaveform(audioBuffer);
+      if (!wave) return undefined;
 
-      const ffmpegCommand = [
-        'ffmpeg',
-        '-i',
-        `"${tempInputPath}"`,
-        '-vn',
-        '-acodec pcm_s16le',
-        '-ac 1',
-        '-ar 8000',
-        '-f s16le',
-        `"${tempOutputPath}"`,
-        '-y',
-      ].join(' ');
-
-      await execAsync(ffmpegCommand);
-
-      const pcmData = await readFile(tempOutputPath);
-      const samples = 64;
-      const blockSize = Math.floor(pcmData.length / 2 / samples);
-
-      if (blockSize < 1) {
-        return undefined;
-      }
-
-      const filteredData: number[] = [];
-      for (let i = 0; i < samples; i++) {
-        const blockStart = blockSize * i * 2;
-        let sumSquares = 0;
-        let sampleCount = 0;
-        for (let j = 0; j < blockSize; j++) {
-          const offset = blockStart + j * 2;
-          if (offset + 1 < pcmData.length) {
-            const sample = pcmData.readInt16LE(offset);
-            sumSquares += sample * sample;
-            sampleCount++;
-          }
-        }
-        const rms = sampleCount > 0 ? Math.sqrt(sumSquares / sampleCount) : 0;
-        filteredData.push(rms);
-      }
-
-      const max = Math.max(...filteredData);
-      if (max === 0) {
-        return undefined;
-      }
-
-      const normalizedData = filteredData.map((n) => {
-        const normalized = n / max;
-        const amplified = Math.pow(normalized, 0.5);
-        const minThreshold = 0.15;
-        return Math.max(minThreshold, amplified);
-      });
-
-      const maxAmplified = Math.max(...normalizedData);
-      const finalMultiplier = 100 / maxAmplified;
-      const waveform = new Uint8Array(
-        normalizedData.map((n) =>
-          Math.min(100, Math.floor(n * finalMultiplier))
-        )
-      );
-
-      return waveform;
+      return Buffer.from(wave).toString('base64');
     } catch (error) {
-      console.error('Failed to generate waveform with ffmpeg:', error);
+      console.error(
+        'Failed to generate waveform with getAudioWaveform:',
+        error
+      );
       return undefined;
-    } finally {
-      try {
-        await unlink(tempInputPath);
-      } catch {}
-      try {
-        await unlink(tempOutputPath);
-      } catch {}
     }
   }
 }

@@ -159,15 +159,7 @@
   "pnpm": {
     "overrides": {
       "glob": "^8.0.0",
-      "inflight": "^1.0.6",
-      "eslint": "^9.31.0",
-      "@typescript-eslint/eslint-plugin": "^8.38.0",
-      "@typescript-eslint/parser": "^8.38.0",
-      "@typescript-eslint/utils": "^8.38.0",
-      "@typescript-eslint/type-utils": "^8.38.0",
-      "vue-eslint-parser": "^10.0.0",
-      "video.js": "^8.23.3",
-      "vite": "^7.0.5"
+      "inflight": "^1.0.6"
     }
   }
 }

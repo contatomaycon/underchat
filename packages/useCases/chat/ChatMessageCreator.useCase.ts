@@ -367,7 +367,7 @@ export class ChatMessageCreatorUseCase {
     audios: UploadFileRequest[],
     accountId: string
   ): Promise<
-    Array<UploadFileResponse & { duration?: number; waveform?: number[] }>
+    Array<UploadFileResponse & { duration?: number; waveform?: string }>
   > {
     const uploadPromises = audios.map(async (audio) => {
       const originalBuffer = await audio.toBuffer();
@@ -381,7 +381,7 @@ export class ChatMessageCreatorUseCase {
       const filename = audio.filename.replace(/\.[^.]+$/, '') || 'audio';
       const newFilename = `${filename}.${converted.extension}`;
 
-      const [uploadResult, waveformUint8] = await Promise.all([
+      const [uploadResult, waveformBase64] = await Promise.all([
         this.storageService.uploadAudioFromBuffer(
           converted.buffer,
           newFilename,
@@ -400,13 +400,11 @@ export class ChatMessageCreatorUseCase {
         return null;
       }
 
-      const waveform = waveformUint8 ? Array.from(waveformUint8) : undefined;
-
       return {
         ...uploadResult,
         mimetype: converted.mimetype,
         duration: converted.duration,
-        waveform,
+        waveform: waveformBase64 ?? undefined,
       };
     });
 
@@ -416,7 +414,7 @@ export class ChatMessageCreatorUseCase {
       (audio): audio is NonNullable<typeof audio> => audio !== null
     );
     return filtered as Array<
-      UploadFileResponse & { duration?: number; waveform?: number[] }
+      UploadFileResponse & { duration?: number; waveform?: string }
     >;
   }
 
@@ -573,7 +571,7 @@ export class ChatMessageCreatorUseCase {
           duration: duration && Number.isFinite(duration) ? duration : null,
           ptt: isPtt,
           view_once: isViewOnce,
-          waveform: (audioData as { waveform?: number[] }).waveform ?? null,
+          waveform: (audioData as { waveform?: string }).waveform ?? null,
         },
       },
       date: new Date().toISOString(),
@@ -845,7 +843,7 @@ export class ChatMessageCreatorUseCase {
     const { chat, chatId, accountId, type, message, messageQuotedId, t } =
       params;
     let validAudios: Array<
-      UploadFileResponse & { duration?: number; waveform?: number[] }
+      UploadFileResponse & { duration?: number; waveform?: string }
     >;
 
     try {

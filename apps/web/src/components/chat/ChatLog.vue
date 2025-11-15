@@ -586,12 +586,31 @@ const toggleAudioPlay = (messageId: string, url: string) => {
 
 const loadAudioWaveform = (
   messageId: string,
-  waveform: number[] | null | undefined
+  waveform: string | number[] | null | undefined
 ): void => {
   if (audioWaveforms[messageId]) return;
 
-  if (waveform && Array.isArray(waveform) && waveform.length > 0) {
-    const normalizedWaveform = waveform.map((value) => {
+  let waveformArray: number[] | null = null;
+
+  if (waveform) {
+    if (typeof waveform === 'string') {
+      try {
+        const binaryString = atob(waveform);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        waveformArray = Array.from(bytes);
+      } catch {
+        waveformArray = null;
+      }
+    } else if (Array.isArray(waveform) && waveform.length > 0) {
+      waveformArray = waveform;
+    }
+  }
+
+  if (waveformArray && waveformArray.length > 0) {
+    const normalizedWaveform = waveformArray.map((value) => {
       const normalized = value / 100;
       return Math.max(0.15, Math.min(1, normalized));
     });

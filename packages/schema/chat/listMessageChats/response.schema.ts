@@ -60,7 +60,7 @@ export const audioSchema = Type.Object({
   duration: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   ptt: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
   view_once: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
-  waveform: Type.Optional(Type.Union([Type.Array(Type.Number()), Type.Null()])),
+  waveform: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export const documentSchema = Type.Object({
