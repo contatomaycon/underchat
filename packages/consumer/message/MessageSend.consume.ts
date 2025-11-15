@@ -417,9 +417,6 @@ export class MessageSendConsume {
       : undefined;
 
     const isPtt = audio.ptt ?? true;
-    const mimetype = isPtt
-      ? 'audio/ogg; codecs=opus'
-      : (audio.mimetype ?? 'audio/mpeg');
 
     let waveform: Uint8Array | undefined;
     if (isPtt && audio.waveform && Array.isArray(audio.waveform)) {
@@ -432,9 +429,9 @@ export class MessageSendConsume {
       {
         ptt: isPtt,
         seconds: audio.duration ?? undefined,
-        mimetype,
+        mimetype: audio.mimetype ?? undefined,
         viewOnce: data.message_key?.is_view_once ?? audio.view_once ?? false,
-        waveform,
+        waveform: isPtt ? waveform : undefined,
       },
       quotedMessage ? { quoted: quotedMessage } : undefined
     );
