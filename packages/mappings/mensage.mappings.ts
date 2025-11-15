@@ -457,7 +457,13 @@ export const mensageMappings = () => {
             is_seen: {
               type: 'boolean',
             },
+            is_sent_to_internal: {
+              type: 'boolean',
+            },
           },
+        },
+        hash: {
+          type: 'keyword',
         },
         date: {
           type: 'date',

@@ -656,11 +656,17 @@ export class MessageUpsertConsume {
         worker: getChat.worker,
         user: getChat.user,
         phone: getChat.phone,
-        summary: { is_sent: false, is_delivered: false, is_seen: false },
+        summary: {
+          is_sent: false,
+          is_delivered: false,
+          is_seen: false,
+          is_sent_to_internal: true,
+        },
         content,
         date: new Date().toISOString(),
         deleted: false,
         has_quoted: hasQuotedFlag,
+        hash: uuidv4(),
       };
 
       const [, result] = await Promise.all([

@@ -28,49 +28,29 @@ import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ViewLinkPreviewBody } from '@core/schema/chat/viewLinkPreview/request.schema';
 import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
 
-export interface PendingMessage {
-  id: string;
-  chat_id: string;
-  type: EMessageType;
+type LocalMessageState = {
   status: 'uploading' | 'error';
   progress: number;
-  created_at: string;
-  message?: string | null;
-  quoted_message_id?: string | null;
-  document?: {
-    name: string;
-    size: number;
-    extension: string;
-    mimetype: string;
-  } | null;
-  image?: {
-    preview: string;
-    size: number;
-    name?: string | null;
-    mimetype?: string | null;
-    width?: number | null;
-    height?: number | null;
-  } | null;
-  video?: {
-    preview: string;
-    size: number;
-    name?: string | null;
-    mimetype?: string | null;
-    duration?: number | null;
-  } | null;
-  audio?: {
-    preview: string;
-    size: number;
-    name?: string | null;
-    mimetype?: string | null;
-    duration?: number | null;
-    viewOnce?: boolean | null;
-  } | null;
-}
+  errorMessage?: string;
+};
 
 type UploadOptions = {
   onUploadProgress?: (progress: number) => void;
   skipLoading?: boolean;
+};
+
+const revokeIfBlob = (url?: string | null) => {
+  if (url && typeof url === 'string' && url.startsWith('blob:')) {
+    URL.revokeObjectURL(url);
+  }
+};
+
+const cleanupMessageMedia = (message?: ListMessageResult) => {
+  if (!message?.content) return;
+  revokeIfBlob(message.content.image?.url ?? undefined);
+  revokeIfBlob(message.content.video?.url ?? undefined);
+  revokeIfBlob(message.content.audio?.url ?? undefined);
+  revokeIfBlob(message.content.document?.url ?? undefined);
 };
 
 export const useChatStore = defineStore('chat', {
@@ -91,7 +71,7 @@ export const useChatStore = defineStore('chat', {
     user: getUser(),
     currentPage: 1,
     totalPages: 1,
-    pendingMessages: [] as PendingMessage[],
+    localMessageState: {} as Record<string, LocalMessageState>,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -102,177 +82,61 @@ export const useChatStore = defineStore('chat', {
     hideSnackbar() {
       this.snackbar.status = false;
     },
-    addPendingDocumentMessage(input: {
-      id: string;
-      chatId: string;
-      document: {
-        name: string;
-        size: number;
-        extension: string;
-        mimetype: string;
-      };
-      message?: string | null;
-      quotedMessageId?: string | null;
-    }) {
-      const pending: PendingMessage = {
-        id: input.id,
-        chat_id: input.chatId,
-        type: EMessageType.document,
+    initializeLocalMessageState(hash: string) {
+      if (!hash) return;
+      this.localMessageState[hash] = {
         status: 'uploading',
         progress: 0,
-        created_at: new Date().toISOString(),
-        message: input.message ?? null,
-        quoted_message_id: input.quotedMessageId ?? null,
-        document: {
-          name: input.document.name,
-          size: input.document.size,
-          extension: input.document.extension,
-          mimetype: input.document.mimetype,
-        },
-        image: null,
-        video: null,
-        audio: null,
       };
-
-      this.pendingMessages.push(pending);
     },
-    addPendingImageMessage(input: {
-      id: string;
-      chatId: string;
-      preview: string;
-      size: number;
-      name?: string | null;
-      mimetype?: string | null;
-      message?: string | null;
-      quotedMessageId?: string | null;
-    }) {
-      const pending: PendingMessage = {
-        id: input.id,
-        chat_id: input.chatId,
-        type: EMessageType.image,
-        status: 'uploading',
-        progress: 0,
-        created_at: new Date().toISOString(),
-        message: input.message ?? null,
-        quoted_message_id: input.quotedMessageId ?? null,
-        document: null,
-        image: {
-          preview: input.preview,
-          size: input.size,
-          name: input.name ?? null,
-          mimetype: input.mimetype ?? null,
-        },
-        video: null,
-        audio: null,
-      };
-
-      this.pendingMessages.push(pending);
-    },
-    addPendingVideoMessage(input: {
-      id: string;
-      chatId: string;
-      preview: string;
-      size: number;
-      name?: string | null;
-      mimetype?: string | null;
-      duration?: number | null;
-      message?: string | null;
-      quotedMessageId?: string | null;
-    }) {
-      const pending: PendingMessage = {
-        id: input.id,
-        chat_id: input.chatId,
-        type: EMessageType.video,
-        status: 'uploading',
-        progress: 0,
-        created_at: new Date().toISOString(),
-        message: input.message ?? null,
-        quoted_message_id: input.quotedMessageId ?? null,
-        document: null,
-        image: null,
-        video: {
-          preview: input.preview,
-          size: input.size,
-          name: input.name ?? null,
-          mimetype: input.mimetype ?? null,
-          duration:
-            typeof input.duration === 'number' && !Number.isNaN(input.duration)
-              ? input.duration
-              : null,
-        },
-        audio: null,
-      };
-
-      this.pendingMessages.push(pending);
-    },
-    addPendingAudioMessage(input: {
-      id: string;
-      chatId: string;
-      preview: string;
-      size: number;
-      name?: string | null;
-      mimetype?: string | null;
-      duration?: number | null;
-      viewOnce?: boolean | null;
-      message?: string | null;
-      quotedMessageId?: string | null;
-    }) {
-      const pending: PendingMessage = {
-        id: input.id,
-        chat_id: input.chatId,
-        type: EMessageType.audio,
-        status: 'uploading',
-        progress: 0,
-        created_at: new Date().toISOString(),
-        message: input.message ?? null,
-        quoted_message_id: input.quotedMessageId ?? null,
-        document: null,
-        image: null,
-        video: null,
-        audio: {
-          preview: input.preview,
-          size: input.size,
-          name: input.name ?? null,
-          mimetype: input.mimetype ?? null,
-          duration:
-            typeof input.duration === 'number' && !Number.isNaN(input.duration)
-              ? input.duration
-              : null,
-          viewOnce: input.viewOnce ?? null,
-        },
-      };
-
-      this.pendingMessages.push(pending);
-    },
-    updatePendingMessageProgress(id: string, progress: number) {
-      const target = this.pendingMessages.find((item) => item.id === id);
-      if (!target || target.status === 'error') return;
+    updateLocalMessageProgress(hash: string, progress: number) {
+      if (!hash) return;
+      const target = this.localMessageState[hash];
+      if (!target) return;
       target.progress = Math.max(0, Math.min(progress, 100));
     },
-    updatePendingMessageStatus(id: string, status: PendingMessage['status']) {
-      const target = this.pendingMessages.find((item) => item.id === id);
-      if (!target) return;
-      target.status = status;
-      if (status === 'error') {
-        target.progress = 0;
+    markLocalMessageError(hash: string, errorMessage?: string) {
+      if (!hash) return;
+      const target = this.localMessageState[hash];
+      if (!target) {
+        this.localMessageState[hash] = {
+          status: 'error',
+          progress: 0,
+          errorMessage,
+        };
+        return;
       }
+      target.status = 'error';
+      target.errorMessage = errorMessage;
     },
-    removePendingMessage(id: string) {
-      const index = this.pendingMessages.findIndex((item) => item.id === id);
-      if (index === -1) return;
-      const [removed] = this.pendingMessages.splice(index, 1);
-      const imagePreview = removed?.image?.preview;
-      if (imagePreview?.startsWith('blob:')) {
-        URL.revokeObjectURL(imagePreview);
+    clearLocalMessageState(hash?: string | null) {
+      if (!hash) return;
+      delete this.localMessageState[hash];
+    },
+    upsertLocalMessage(message: ListMessageResult) {
+      if (!message.hash) {
+        this.listMessages.push(message);
+        return;
       }
-      const videoPreview = removed?.video?.preview;
-      if (videoPreview?.startsWith('blob:')) {
-        URL.revokeObjectURL(videoPreview);
+
+      const idx = this.listMessages.findIndex(
+        (item) => item.hash === message.hash
+      );
+      if (idx !== -1) {
+        cleanupMessageMedia(this.listMessages[idx]);
+        this.listMessages.splice(idx, 1, message);
+        return;
       }
-      const audioPreview = removed?.audio?.preview;
-      if (audioPreview?.startsWith('blob:')) {
-        URL.revokeObjectURL(audioPreview);
+      this.listMessages.push(message);
+    },
+    removeMessageByHash(hash: string) {
+      if (!hash) return;
+      const idx = this.listMessages.findIndex((item) => item.hash === hash);
+      if (idx !== -1) {
+        const [removed] = this.listMessages.splice(idx, 1);
+        cleanupMessageMedia(removed);
       }
+      this.clearLocalMessageState(hash);
     },
     addMessageActiveChat(message: IChatMessage): 'created' | 'updated' {
       const input: ListMessageResult = {
@@ -286,18 +150,35 @@ export const useChatStore = defineStore('chat', {
         date: message.date,
         deleted: message.deleted ?? false,
         has_quoted: message.has_quoted ?? false,
+        hash: message.hash ?? null,
       };
 
-      const existingIndex = this.listMessages.findIndex(
-        (item) => item.message_id === input.message_id
-      );
+      let existingIndex = -1;
+      if (message.hash) {
+        existingIndex = this.listMessages.findIndex(
+          (item) => item.hash === message.hash
+        );
+      }
+
+      if (existingIndex === -1) {
+        existingIndex = this.listMessages.findIndex(
+          (item) => item.message_id === input.message_id
+        );
+      }
 
       if (existingIndex !== -1) {
-        this.listMessages.splice(existingIndex, 1, input);
+        const [removed] = this.listMessages.splice(existingIndex, 1, input);
+        cleanupMessageMedia(removed);
+        if (message.hash) {
+          this.clearLocalMessageState(message.hash);
+        }
         return 'updated';
       }
 
       this.listMessages.push(input);
+      if (message.hash) {
+        this.clearLocalMessageState(message.hash);
+      }
       return 'created';
     },
     addChat(chat: IChat) {
@@ -547,7 +428,7 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    async createMessage(input: CreateMessageChatsBody): Promise<void> {
+    async createMessage(input: CreateMessageChatsBody): Promise<boolean> {
       try {
         this.loading = true;
 
@@ -563,8 +444,10 @@ export const useChatStore = defineStore('chat', {
         if (!data?.status) {
           this.showSnackbar(data.message, EColor.error);
 
-          return;
+          return false;
         }
+
+        return true;
       } catch {
         this.loading = false;
 
@@ -572,6 +455,8 @@ export const useChatStore = defineStore('chat', {
           this.i18n.global.t('chat_message_create_error'),
           EColor.error
         );
+
+        return false;
       }
     },
 

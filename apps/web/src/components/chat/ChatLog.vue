@@ -16,7 +16,6 @@ import {
   VideoMessageChat,
   AudioMessageChat,
 } from '@core/schema/chat/listMessageChats/response.schema';
-import type { PendingMessage } from '@/@webcore/stores/chat';
 import { isTypeUser } from '@core/common/functions/isTypeUser';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { EColor } from '@core/common/enums/EColor';
@@ -232,14 +231,83 @@ const getReactionsSummary = (
   });
 };
 
-const pendingMessages = computed<PendingMessage[]>(() => {
-  const chatId = chatStore.activeChat?.chat_id;
-  if (!chatId) return [];
+type LocalUploadState = {
+  status: 'uploading' | 'error';
+  progress: number;
+  errorMessage?: string;
+};
 
-  return chatStore.pendingMessages
-    .filter((message) => message.chat_id === chatId)
-    .sort((a, b) => a.created_at.localeCompare(b.created_at));
-});
+const clampProgress = (value?: number | null): number => {
+  if (typeof value !== 'number' || Number.isNaN(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+};
+
+const getLocalMessageState = (
+  message: ListMessageResult
+): LocalUploadState | null => {
+  if (!message.hash) return null;
+  return chatStore.localMessageState[message.hash] ?? null;
+};
+
+const hasLocalUploadState = (message: ListMessageResult): boolean => {
+  return !!getLocalMessageState(message);
+};
+
+const isMessageUploading = (message: ListMessageResult): boolean => {
+  return getLocalMessageState(message)?.status === 'uploading';
+};
+
+const isMessageUploadError = (message: ListMessageResult): boolean => {
+  return getLocalMessageState(message)?.status === 'error';
+};
+
+const getMessageUploadProgress = (message: ListMessageResult): number => {
+  return getLocalMessageState(message)?.progress ?? 0;
+};
+
+const getMessageUploadProgressLabel = (message: ListMessageResult): number => {
+  return clampProgress(getMessageUploadProgress(message));
+};
+
+const resolveUploadingText = (message: ListMessageResult): string => {
+  const percent = getMessageUploadProgressLabel(message);
+  if (message.content?.type === EMessageType.document)
+    return `${t('document_uploading')} • ${percent}%`;
+  if (message.content?.type === EMessageType.video)
+    return `${t('video_uploading')} • ${percent}%`;
+  if (message.content?.type === EMessageType.audio)
+    return `${t('audio_uploading')} • ${percent}%`;
+  if (message.content?.type === EMessageType.image)
+    return `${t('image_uploading')} • ${percent}%`;
+  return `${t('message_sending')} • ${percent}%`;
+};
+
+const resolveUploadErrorText = (message: ListMessageResult): string => {
+  const state = getLocalMessageState(message);
+  if (state?.errorMessage) return state.errorMessage;
+  if (message.content?.type === EMessageType.document)
+    return t('document_upload_failed');
+  if (message.content?.type === EMessageType.video)
+    return t('video_upload_failed');
+  if (message.content?.type === EMessageType.audio)
+    return t('audio_upload_failed');
+  if (message.content?.type === EMessageType.image)
+    return t('image_upload_failed');
+  return t('message_send_failed');
+};
+
+const getMessageUploadStatusText = (message: ListMessageResult): string => {
+  if (!hasLocalUploadState(message)) return '';
+  if (isMessageUploadError(message)) {
+    return resolveUploadErrorText(message);
+  }
+  return resolveUploadingText(message);
+};
+
+const dismissLocalMessage = (message: ListMessageResult) => {
+  if (!message.hash) return;
+  chatStore.removeMessageByHash(message.hash);
+};
 
 const isTextMessage = (message: ListMessageResult): boolean => {
   if (!message.content) return false;
@@ -324,86 +392,6 @@ const downloadMessage = (message: ListMessageResult) => {
     );
   }
 };
-
-const isPendingDocument = (pending: PendingMessage): boolean =>
-  pending.type === EMessageType.document;
-
-const isPendingImage = (pending: PendingMessage): boolean =>
-  pending.type === EMessageType.image;
-
-const isPendingVideo = (pending: PendingMessage): boolean =>
-  pending.type === EMessageType.video;
-
-const isPendingAudio = (pending: PendingMessage): boolean =>
-  pending.type === EMessageType.audio;
-
-const pendingDocumentMeta = (pending: PendingMessage): string => {
-  if (!pending.document) return '';
-  const ext = pending.document.extension?.toUpperCase();
-  const sizeText = formatDocumentSize(pending.document.size ?? null);
-  return [ext, sizeText].filter(Boolean).join(' • ');
-};
-
-const resolvePendingDocumentIcon = (pending: PendingMessage): string => {
-  if (!pending.document) return 'tabler-file-description';
-
-  const doc = {
-    url: null,
-    name: pending.document.name ?? null,
-    mimetype: pending.document.mimetype ?? null,
-    extension: pending.document.extension ?? null,
-    size: pending.document.size ?? null,
-  } as DocumentMessageChat;
-
-  return resolveDocumentIcon(doc);
-};
-
-const pendingStatusText = (pending: PendingMessage): string => {
-  if (pending.status === 'error') {
-    if (pending.type === EMessageType.document)
-      return t('document_upload_failed');
-    if (pending.type === EMessageType.video) return t('video_upload_failed');
-    if (pending.type === EMessageType.audio) return t('audio_upload_failed');
-    return t('image_upload_failed');
-  }
-
-  const percent = Math.max(0, Math.min(100, Math.round(pending.progress)));
-  if (pending.type === EMessageType.document)
-    return `${t('document_uploading')} • ${percent}%`;
-  if (pending.type === EMessageType.video)
-    return `${t('video_uploading')} • ${percent}%`;
-  if (pending.type === EMessageType.audio)
-    return `${t('audio_uploading')} • ${percent}%`;
-  return `${t('image_uploading')} • ${percent}%`;
-};
-
-const pendingImageMeta = (pending: PendingMessage): string => {
-  const sizeText = formatDocumentSize(pending.image?.size ?? null);
-  return [sizeText].filter(Boolean).join('');
-};
-
-const pendingVideoMeta = (pending: PendingMessage): string => {
-  const sizeText = formatDocumentSize(pending.video?.size ?? null);
-  const duration = formatVideoDuration(pending.video?.duration ?? null);
-  return [sizeText, duration].filter(Boolean).join(' • ');
-};
-
-const pendingAudioMeta = (pending: PendingMessage): string => {
-  const sizeText = formatDocumentSize(pending.audio?.size ?? null);
-  const duration = formatVideoDuration(pending.audio?.duration ?? null);
-  return [sizeText, duration].filter(Boolean).join(' • ');
-};
-
-const pendingImageSrc = (pending: PendingMessage): string => {
-  return pending.image?.preview ?? '';
-};
-
-const pendingVideoSrc = (pending: PendingMessage): string => {
-  return pending.video?.preview || '';
-};
-
-const pendingAudioSrc = (pending: PendingMessage): string =>
-  pending.audio?.preview ?? '';
 
 const documentIconMap: Record<string, string> = {
   pdf: 'tabler-file-type-pdf',
@@ -1686,6 +1674,54 @@ onUnmounted(() => {
                     </template>
                     <span>{{ msgGrp.content.document.name }}</span>
                   </VTooltip>
+
+                  <div
+                    v-if="hasLocalUploadState(msgGrp)"
+                    class="message-upload-state mt-2"
+                    :class="{
+                      'message-upload-state--error':
+                        isMessageUploadError(msgGrp),
+                    }"
+                  >
+                    <VProgressLinear
+                      v-if="isMessageUploading(msgGrp)"
+                      class="message-upload-progress mb-1"
+                      :model-value="getMessageUploadProgressLabel(msgGrp)"
+                      :indeterminate="
+                        getMessageUploadProgressLabel(msgGrp) <= 0
+                      "
+                      color="primary"
+                      height="4"
+                    />
+                    <div class="message-upload-info">
+                      <VIcon
+                        :color="
+                          isMessageUploadError(msgGrp) ? 'error' : 'primary'
+                        "
+                        size="18"
+                        class="me-2"
+                      >
+                        {{
+                          isMessageUploadError(msgGrp)
+                            ? 'tabler-alert-triangle'
+                            : 'tabler-loader-2'
+                        }}
+                      </VIcon>
+                      <span class="message-upload-text">
+                        {{ getMessageUploadStatusText(msgGrp) }}
+                      </span>
+                      <VBtn
+                        v-if="isMessageUploadError(msgGrp)"
+                        icon
+                        size="20"
+                        variant="text"
+                        class="message-upload-dismiss ms-2"
+                        @click.stop="dismissLocalMessage(msgGrp)"
+                      >
+                        <VIcon size="16">tabler-x</VIcon>
+                      </VBtn>
+                    </div>
+                  </div>
                   <span class="document-meta text-caption text-disabled">
                     {{
                       (msgGrp.content.document.extension || '').toUpperCase() ||
@@ -1841,245 +1877,6 @@ onUnmounted(() => {
                   {{ resolveFeedbackIcon(msgGrp).icon }}
                 </VIcon>
               </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div
-      v-for="pending in pendingMessages"
-      :key="`pending-${pending.id}`"
-      class="chat-group d-flex align-start position-relative flex-row-reverse"
-    >
-      <div class="chat-avatar ms-4">
-        <VAvatar
-          size="32"
-          :variant="chatStore.user?.info.photo ? undefined : 'tonal'"
-        >
-          <VImg
-            v-if="chatStore.user?.info.photo"
-            :src="chatStore.user.info.photo"
-          />
-          <span v-if="!chatStore.user?.info.photo" class="text-1xl">
-            {{ avatarText(chatStore.user?.info.name) }}
-          </span>
-        </VAvatar>
-      </div>
-
-      <div
-        class="chat-body d-inline-flex flex-column position-relative align-end"
-      >
-        <div class="chat-content-wrapper wrapper-operator">
-          <div class="chat-content py-2 px-2 elevation-2 pending-content">
-            <template v-if="isPendingDocument(pending)">
-              <div
-                class="document-bubble document-bubble--right pending-document"
-              >
-                <div class="document-icon">
-                  <VIcon
-                    :icon="resolvePendingDocumentIcon(pending)"
-                    size="30"
-                    color="primary"
-                  />
-                </div>
-                <div class="document-details">
-                  <span class="document-name">
-                    {{ truncateDocumentName(pending.document?.name) }}
-                  </span>
-                  <span class="document-meta text-caption text-disabled">
-                    {{ pendingDocumentMeta(pending) }}
-                  </span>
-                </div>
-                <div class="pending-actions">
-                  <div
-                    v-if="pending.status !== 'error'"
-                    class="pending-progress"
-                  >
-                    <VProgressCircular
-                      :model-value="pending.progress"
-                      :indeterminate="pending.progress <= 0"
-                      size="42"
-                      width="4"
-                      color="primary"
-                    >
-                      <span class="pending-progress-label">
-                        {{ Math.max(0, Math.round(pending.progress)) }}%
-                      </span>
-                    </VProgressCircular>
-                  </div>
-                  <div v-if="pending.status === 'error'" class="pending-error">
-                    <VIcon size="28" color="error">tabler-alert-triangle</VIcon>
-                  </div>
-                  <VBtn
-                    v-if="pending.status === 'error'"
-                    icon
-                    size="22"
-                    variant="text"
-                    class="pending-dismiss"
-                    @click="chatStore.removePendingMessage(pending.id)"
-                  >
-                    <VIcon size="16">tabler-x</VIcon>
-                  </VBtn>
-                </div>
-              </div>
-              <p v-if="pending.message" class="pending-caption mt-2">
-                {{ pending.message }}
-              </p>
-            </template>
-            <template v-if="isPendingVideo(pending)">
-              <div class="pending-video-wrapper">
-                <video
-                  :src="pendingVideoSrc(pending)"
-                  class="pending-video-thumb"
-                  preload="metadata"
-                  muted
-                  playsinline
-                >
-                  <track kind="captions" />
-                </video>
-                <div
-                  v-if="pending.status !== 'error'"
-                  class="pending-video-overlay"
-                >
-                  <VProgressCircular
-                    :model-value="pending.progress"
-                    :indeterminate="pending.progress <= 0"
-                    size="52"
-                    width="4"
-                    color="primary"
-                  >
-                    <span class="pending-progress-label">
-                      {{ Math.max(0, Math.round(pending.progress)) }}%
-                    </span>
-                  </VProgressCircular>
-                </div>
-                <div
-                  v-if="pending.status === 'error'"
-                  class="pending-video-error"
-                >
-                  <VIcon size="34" color="error">tabler-alert-triangle</VIcon>
-                </div>
-                <VBtn
-                  v-if="pending.status === 'error'"
-                  icon
-                  size="22"
-                  variant="text"
-                  class="pending-video-dismiss"
-                  @click="chatStore.removePendingMessage(pending.id)"
-                >
-                  <VIcon size="16">tabler-x</VIcon>
-                </VBtn>
-              </div>
-              <div class="pending-video-meta text-caption text-disabled mt-2">
-                {{ pendingVideoMeta(pending) }}
-              </div>
-              <p v-if="pending.message" class="pending-caption mt-2">
-                {{ pending.message }}
-              </p>
-            </template>
-            <template v-if="isPendingAudio(pending)">
-              <div class="pending-audio-wrapper">
-                <audio
-                  :src="pendingAudioSrc(pending)"
-                  class="pending-audio-player"
-                  controls
-                  preload="metadata"
-                ></audio>
-                <div
-                  v-if="pending.status !== 'error'"
-                  class="pending-audio-overlay"
-                >
-                  <VProgressCircular
-                    :model-value="pending.progress"
-                    :indeterminate="pending.progress <= 0"
-                    size="52"
-                    width="4"
-                    color="primary"
-                  >
-                    <span class="pending-progress-label">
-                      {{ Math.max(0, Math.round(pending.progress)) }}%
-                    </span>
-                  </VProgressCircular>
-                </div>
-                <div
-                  v-if="pending.status === 'error'"
-                  class="pending-audio-error"
-                >
-                  <VIcon size="34" color="error">tabler-alert-triangle</VIcon>
-                </div>
-                <VBtn
-                  v-if="pending.status === 'error'"
-                  icon
-                  size="22"
-                  variant="text"
-                  class="pending-audio-dismiss"
-                  @click="chatStore.removePendingMessage(pending.id)"
-                >
-                  <VIcon size="16">tabler-x</VIcon>
-                </VBtn>
-              </div>
-              <div class="pending-audio-meta text-caption text-disabled mt-2">
-                {{ pendingAudioMeta(pending) }}
-              </div>
-              <p v-if="pending.message" class="pending-caption mt-2">
-                {{ pending.message }}
-              </p>
-            </template>
-            <template v-if="isPendingImage(pending)">
-              <div class="pending-image-wrapper">
-                <VImg
-                  :src="pendingImageSrc(pending)"
-                  cover
-                  class="pending-image-thumb"
-                />
-                <div
-                  v-if="pending.status !== 'error'"
-                  class="pending-image-overlay"
-                >
-                  <VProgressCircular
-                    :model-value="pending.progress"
-                    :indeterminate="pending.progress <= 0"
-                    size="52"
-                    width="4"
-                    color="primary"
-                  >
-                    <span class="pending-progress-label">
-                      {{ Math.max(0, Math.round(pending.progress)) }}%
-                    </span>
-                  </VProgressCircular>
-                </div>
-                <div
-                  v-if="pending.status === 'error'"
-                  class="pending-image-error"
-                >
-                  <VIcon size="34" color="error">tabler-alert-triangle</VIcon>
-                </div>
-                <VBtn
-                  v-if="pending.status === 'error'"
-                  icon
-                  size="22"
-                  variant="text"
-                  class="pending-image-dismiss"
-                  @click="chatStore.removePendingMessage(pending.id)"
-                >
-                  <VIcon size="16">tabler-x</VIcon>
-                </VBtn>
-              </div>
-              <div class="pending-image-meta text-caption text-disabled mt-2">
-                {{ pendingImageMeta(pending) }}
-              </div>
-              <p v-if="pending.message" class="pending-caption mt-2">
-                {{ pending.message }}
-              </p>
-            </template>
-            <div
-              class="pending-status text-caption mt-2"
-              :class="{
-                'pending-status--error': pending.status === 'error',
-              }"
-            >
-              {{ pendingStatusText(pending) }}
             </div>
           </div>
         </div>

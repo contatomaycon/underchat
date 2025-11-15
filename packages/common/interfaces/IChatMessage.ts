@@ -24,6 +24,7 @@ interface ISummary {
   is_sent: boolean;
   is_delivered: boolean;
   is_seen: boolean;
+  is_sent_to_internal: boolean;
 }
 
 interface IWorker {
@@ -85,4 +86,5 @@ export interface IChatMessage {
   date: string;
   deleted?: boolean;
   has_quoted?: boolean;
+  hash?: string | null;
 }

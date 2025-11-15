@@ -11,6 +11,10 @@ import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
+import {
+  ContentMessageChat,
+  ListMessageResult,
+} from '@core/schema/chat/listMessageChats/response.schema';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import {
   chatAccountCentrifugo,
@@ -18,8 +22,12 @@ import {
 } from '@core/common/functions/centrifugoQueue';
 import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
 import { EMessageType } from '@core/common/enums/EMessageType';
+import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { EColor } from '@core/common/enums/EColor';
-import { IChatMessage } from '@core/common/interfaces/IChatMessage';
+import {
+  IChatMessage,
+  IQuotedMessage,
+} from '@core/common/interfaces/IChatMessage';
 import { IChat } from '@core/common/interfaces/IChat';
 import { extractFirstUrl } from '@core/common/functions/extractFirstUrl';
 import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
@@ -124,6 +132,120 @@ const hasAttachmentsOrContent = computed(
     selectedVideos.value.length > 0 ||
     isRecordingAudio.value
 );
+
+const createMessageHash = () => crypto.randomUUID();
+
+const cloneLinkPreview = (): ViewLinkPreviewResponse | undefined => {
+  const preview = linkPreview.value;
+  if (!preview) return undefined;
+
+  if (typeof structuredClone === 'function') {
+    return structuredClone(preview);
+  }
+
+  return JSON.parse(JSON.stringify(preview)) as ViewLinkPreviewResponse;
+};
+
+const buildQuotedPayload = (): IQuotedMessage | null => {
+  const reply = chatStore.messageReply;
+  if (!reply) return null;
+
+  const key = {
+    remote_jid: reply.message_key?.remote_jid ?? null,
+    remote_jid_alt: reply.message_key?.remote_jid_alt ?? null,
+    from_me: reply.message_key?.from_me ?? null,
+    id: reply.message_key?.id ?? reply.message_id,
+    participant: reply.message_key?.participant ?? null,
+    participant_alt: reply.message_key?.participant_alt ?? null,
+    addressing_mode: reply.message_key?.addressing_mode ?? null,
+    is_view_once: reply.message_key?.is_view_once ?? false,
+  } satisfies IQuotedMessage['key'];
+
+  const quotedType = reply.content?.type as EMessageType | undefined;
+
+  return {
+    key,
+    message: reply.content?.message ?? null,
+    type: quotedType ?? undefined,
+    image: reply.content?.image ?? null,
+    video: reply.content?.video ?? null,
+    document: reply.content?.document ?? null,
+    audio: reply.content?.audio ?? null,
+  } satisfies IQuotedMessage;
+};
+
+const getQuotedContent = (): ContentMessageChat['quoted'] | undefined => {
+  const payload = buildQuotedPayload();
+  if (!payload) return undefined;
+
+  const { type, ...rest } = payload;
+
+  return {
+    ...rest,
+    type: type ?? undefined,
+  } as ContentMessageChat['quoted'];
+};
+
+const createLocalMessageSummary = () => ({
+  is_sent: false,
+  is_delivered: false,
+  is_seen: false,
+  is_sent_to_internal: false,
+});
+
+const createLocalMessageEntry = (
+  content: ContentMessageChat,
+  hash: string
+): ListMessageResult => {
+  if (!chatStore.activeChat?.chat_id) {
+    throw new Error('Cannot create local message without an active chat.');
+  }
+
+  const userInfo = chatStore.user?.info;
+
+  return {
+    message_id: hash,
+    chat_id: chatStore.activeChat.chat_id,
+    type_user: ETypeUserChat.operator,
+    user: userInfo
+      ? {
+          id: userInfo.user_info_id,
+          name: userInfo.name,
+          photo: userInfo.photo ?? null,
+        }
+      : null,
+    content,
+    summary: createLocalMessageSummary(),
+    date: new Date().toISOString(),
+    deleted: false,
+    has_quoted: Boolean(content.message_quoted_id),
+    hash,
+  };
+};
+
+const registerLocalMessage = async (
+  content: ContentMessageChat,
+  hash: string
+) => {
+  const entry = createLocalMessageEntry(content, hash);
+  chatStore.initializeLocalMessageState(hash);
+  chatStore.upsertLocalMessage(entry);
+  await nextTick();
+  scrollToBottomInChatLog();
+};
+
+const markUploadProgress = (hash: string, progress: number) => {
+  chatStore.updateLocalMessageProgress(hash, progress);
+};
+
+const markUploadError = (hash: string, message?: string) => {
+  chatStore.markLocalMessageError(hash, message);
+};
+
+const getComposerMessage = (): string | null => {
+  if (!msg.value) return null;
+  return msg.value.trim().length > 0 ? msg.value : null;
+};
 function formatRecordingLabel(ms: number): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
   const minutes = Math.floor(totalSeconds / 60)
@@ -250,7 +372,8 @@ const startConversation = () => {
 const createImageFormData = (
   photo: { file: File; preview: string },
   messageValue: string | null,
-  quotedId: string | null
+  quotedId: string | null,
+  hash: string
 ): FormData => {
   const formData = new FormData();
   formData.append('type', EMessageType.image);
@@ -263,6 +386,7 @@ const createImageFormData = (
   }
 
   formData.append('images', photo.file);
+  formData.append('hash', hash);
 
   return formData;
 };
@@ -270,7 +394,8 @@ const createImageFormData = (
 const createDocumentFormData = (
   doc: SelectedDocumentPreview,
   messageValue: string | null,
-  quotedId: string | null
+  quotedId: string | null,
+  hash: string
 ): FormData => {
   const formData = new FormData();
   formData.append('type', EMessageType.document);
@@ -283,6 +408,7 @@ const createDocumentFormData = (
   }
 
   formData.append('documents', doc.file);
+  formData.append('hash', hash);
 
   return formData;
 };
@@ -290,7 +416,8 @@ const createDocumentFormData = (
 const createVideoFormData = (
   video: SelectedVideoPreview,
   messageValue: string | null,
-  quotedId: string | null
+  quotedId: string | null,
+  hash: string
 ): FormData => {
   const formData = new FormData();
   formData.append('type', EMessageType.video);
@@ -307,6 +434,8 @@ const createVideoFormData = (
     formData.append('video_duration', Math.round(video.duration).toString());
   }
 
+  formData.append('hash', hash);
+
   return formData;
 };
 
@@ -319,7 +448,8 @@ const createAudioFormData = (
   messageValue: string | null,
   quotedId: string | null,
   viewOnce: boolean,
-  duration: number | null
+  duration: number | null,
+  hash: string
 ): FormData => {
   const formData = new FormData();
   formData.append('type', EMessageType.audio);
@@ -339,16 +469,19 @@ const createAudioFormData = (
     formData.append('audio_view_once', 'true');
   }
 
+  formData.append('hash', hash);
+
   return formData;
 };
 
-const createTextMessageBody = (): CreateMessageChatsBody => {
+const createTextMessageBody = (hash: string): CreateMessageChatsBody => {
   const inputCreateMessage: CreateMessageChatsBody = {
     type: EMessageType.text,
     message: msg.value,
     link_preview: linkPreview.value?.title
       ? (linkPreview.value as ViewLinkPreviewResponse)
       : undefined,
+    hash,
   };
 
   if (chatStore.messageReply?.message_id) {
@@ -407,43 +540,44 @@ const sendImageMessage = async (): Promise<void> => {
   if (photos.length === 0) return;
 
   const replyId = chatStore.messageReply?.message_id ?? null;
-  const messageValue = msg.value ? msg.value : null;
-  const chatId = chatStore.activeChat.chat_id;
+  const quotedPayload = getQuotedContent();
+  const messageValue = getComposerMessage();
 
   await Promise.all(
     photos.map(async (photo) => {
-      const tempId = crypto.randomUUID();
-
-      chatStore.addPendingImageMessage({
-        id: tempId,
-        chatId,
-        preview: photo.preview,
-        size: photo.file.size,
-        name: photo.file.name ?? null,
-        mimetype: photo.file.type ?? null,
+      const hash = createMessageHash();
+      const extension = (photo.file.name.split('.').pop() || '').toLowerCase();
+      const content: ContentMessageChat = {
+        type: EMessageType.image,
         message: messageValue,
-        quotedMessageId: replyId,
-      });
+        message_quoted_id: replyId ?? undefined,
+        quoted: quotedPayload,
+        image: {
+          url: photo.preview,
+          caption: messageValue,
+          mimetype: photo.file.type,
+          size: photo.file.size,
+          extension: extension || null,
+        },
+      };
 
-      await nextTick();
-      scrollToBottomInChatLog();
+      await registerLocalMessage(content, hash);
 
-      const formData = createImageFormData(photo, messageValue, replyId);
+      const formData = createImageFormData(photo, messageValue, replyId, hash);
 
       const success = await chatStore.createMessageWithImages(formData, {
         skipLoading: true,
         onUploadProgress: (progress) => {
-          chatStore.updatePendingMessageProgress(tempId, progress);
+          markUploadProgress(hash, progress);
         },
       });
 
       if (!success) {
-        chatStore.updatePendingMessageStatus(tempId, 'error');
+        markUploadError(hash);
         return;
       }
 
-      chatStore.updatePendingMessageProgress(tempId, 100);
-      chatStore.removePendingMessage(tempId);
+      markUploadProgress(hash, 100);
     })
   );
 };
@@ -454,44 +588,46 @@ const sendVideoMessage = async (): Promise<void> => {
   if (videos.length === 0) return;
 
   const replyId = chatStore.messageReply?.message_id ?? null;
-  const messageValue = msg.value ? msg.value : null;
-  const chatId = chatStore.activeChat.chat_id;
+  const quotedPayload = getQuotedContent();
+  const messageValue = getComposerMessage();
 
   await Promise.all(
     videos.map(async (video) => {
-      const tempId = crypto.randomUUID();
-
-      chatStore.addPendingVideoMessage({
-        id: tempId,
-        chatId,
-        preview: video.preview,
-        size: video.size,
-        name: video.name,
-        mimetype: video.type,
-        duration: video.duration ?? null,
+      const hash = createMessageHash();
+      const extension = (video.name.split('.').pop() || '').toLowerCase();
+      const content: ContentMessageChat = {
+        type: EMessageType.video,
         message: messageValue,
-        quotedMessageId: replyId,
-      });
+        message_quoted_id: replyId ?? undefined,
+        quoted: quotedPayload,
+        video: {
+          url: video.preview,
+          caption: messageValue,
+          mimetype: video.type,
+          size: video.size,
+          duration: video.duration ?? null,
+          name: video.name,
+          extension: extension || null,
+        },
+      };
 
-      await nextTick();
-      scrollToBottomInChatLog();
+      await registerLocalMessage(content, hash);
 
-      const formData = createVideoFormData(video, messageValue, replyId);
+      const formData = createVideoFormData(video, messageValue, replyId, hash);
 
       const success = await chatStore.createMessageWithVideos(formData, {
         skipLoading: true,
         onUploadProgress: (progress) => {
-          chatStore.updatePendingMessageProgress(tempId, progress);
+          markUploadProgress(hash, progress);
         },
       });
 
       if (!success) {
-        chatStore.updatePendingMessageStatus(tempId, 'error');
+        markUploadError(hash);
         return;
       }
 
-      chatStore.updatePendingMessageProgress(tempId, 100);
-      chatStore.removePendingMessage(tempId);
+      markUploadProgress(hash, 100);
     })
   );
 };
@@ -510,54 +646,53 @@ const sendAudioMessage = async (
   }
 
   const replyId = chatStore.messageReply?.message_id ?? null;
-  const messageValue = msg.value ? msg.value : null;
-  const chatId = chatStore.activeChat.chat_id;
-  const tempId = crypto.randomUUID();
+  const quotedPayload = getQuotedContent();
+  const messageValue = getComposerMessage();
+  const hash = createMessageHash();
   const extensionFromMime = mimeType.split('/')[1] || 'ogg';
   const fileName = `audio-${Date.now()}.${extensionFromMime}`;
-  const previewUrl =
-    recordedAudioUrl.value && recordedAudioUrl.value.startsWith('blob:')
-      ? recordedAudioUrl.value
-      : URL.createObjectURL(blob);
+  const localUrl = URL.createObjectURL(blob);
 
-  chatStore.addPendingAudioMessage({
-    id: tempId,
-    chatId,
-    preview: previewUrl,
-    size: blob.size,
-    name: fileName,
-    mimetype: mimeType,
-    duration,
-    viewOnce,
+  const content: ContentMessageChat = {
+    type: EMessageType.audio,
     message: messageValue,
-    quotedMessageId: replyId,
-  });
+    message_quoted_id: replyId ?? undefined,
+    quoted: quotedPayload,
+    audio: {
+      url: localUrl,
+      name: fileName,
+      mimetype: mimeType,
+      size: blob.size,
+      duration: duration ?? null,
+      extension: extensionFromMime,
+      view_once: viewOnce ? true : undefined,
+    },
+  };
 
-  await nextTick();
-  scrollToBottomInChatLog();
+  await registerLocalMessage(content, hash);
 
   const formData = createAudioFormData(
     { blob, fileName, mimeType },
     messageValue,
     replyId,
     viewOnce,
-    duration
+    duration,
+    hash
   );
 
   const success = await chatStore.createMessageWithAudios(formData, {
     skipLoading: true,
     onUploadProgress: (progress) => {
-      chatStore.updatePendingMessageProgress(tempId, progress);
+      markUploadProgress(hash, progress);
     },
   });
 
   if (!success) {
-    chatStore.updatePendingMessageStatus(tempId, 'error');
+    markUploadError(hash);
     return;
   }
 
-  chatStore.updatePendingMessageProgress(tempId, 100);
-  chatStore.removePendingMessage(tempId);
+  markUploadProgress(hash, 100);
   chatStore.clearMessageReply();
 };
 
@@ -567,52 +702,74 @@ const sendDocumentMessage = async (): Promise<void> => {
   if (docs.length === 0) return;
 
   const replyId = chatStore.messageReply?.message_id ?? null;
-  const messageValue = msg.value ? msg.value : null;
-  const chatId = chatStore.activeChat.chat_id;
+  const quotedPayload = getQuotedContent();
+  const messageValue = getComposerMessage();
 
   await Promise.all(
     docs.map(async (doc) => {
-      const tempId = crypto.randomUUID();
-
-      chatStore.addPendingDocumentMessage({
-        id: tempId,
-        chatId,
-        document: {
-          name: doc.name,
-          size: doc.size,
-          extension: doc.extension,
-          mimetype: doc.type,
-        },
+      const hash = createMessageHash();
+      const localUrl = URL.createObjectURL(doc.file);
+      const content: ContentMessageChat = {
+        type: EMessageType.document,
         message: messageValue,
-        quotedMessageId: replyId,
-      });
+        message_quoted_id: replyId ?? undefined,
+        quoted: quotedPayload,
+        document: {
+          url: localUrl,
+          name: doc.name,
+          mimetype: doc.type,
+          extension: doc.extension,
+          size: doc.size,
+        },
+      };
 
-      await nextTick();
-      scrollToBottomInChatLog();
+      await registerLocalMessage(content, hash);
 
-      const formData = createDocumentFormData(doc, messageValue, replyId);
+      const formData = createDocumentFormData(doc, messageValue, replyId, hash);
 
       const success = await chatStore.createMessageWithDocuments(formData, {
         skipLoading: true,
         onUploadProgress: (progress) => {
-          chatStore.updatePendingMessageProgress(tempId, progress);
+          markUploadProgress(hash, progress);
         },
       });
 
       if (!success) {
-        chatStore.updatePendingMessageStatus(tempId, 'error');
+        markUploadError(hash);
         return;
       }
 
-      chatStore.updatePendingMessageProgress(tempId, 100);
-      chatStore.removePendingMessage(tempId);
+      markUploadProgress(hash, 100);
     })
   );
 };
 
 const sendTextMessage = async (): Promise<void> => {
-  const messageBody = createTextMessageBody();
-  await chatStore.createMessage(messageBody);
+  if (!chatStore.activeChat?.chat_id) return;
+  const hash = createMessageHash();
+  const replyId = chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent();
+  const preview = cloneLinkPreview();
+
+  const content: ContentMessageChat = {
+    type: EMessageType.text,
+    message: msg.value,
+    message_quoted_id: replyId ?? undefined,
+    quoted: quotedPayload,
+    link_preview: preview,
+  };
+
+  await registerLocalMessage(content, hash);
+
+  const messageBody = createTextMessageBody(hash);
+  const success = await chatStore.createMessage(messageBody);
+
+  if (!success) {
+    markUploadError(hash);
+    return;
+  }
+
+  markUploadProgress(hash, 100);
 };
 
 const finalizeSend = () => {

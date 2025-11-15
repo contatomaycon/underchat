@@ -333,6 +333,20 @@ export class ChatMessageCreatorUseCase {
     return trimmed;
   }
 
+  private normalizeHash(hash: CreateMessageChatsBody['hash']): string | null {
+    const rawValue = this.extractFieldValue(hash);
+    if (!rawValue) {
+      return null;
+    }
+
+    const trimmed = rawValue.trim();
+    if (!trimmed || trimmed === 'null' || trimmed === 'undefined') {
+      return null;
+    }
+
+    return trimmed;
+  }
+
   private async uploadImages(
     images: UploadFileRequest[],
     accountId: string
@@ -425,7 +439,8 @@ export class ChatMessageCreatorUseCase {
     message: string | null,
     imageData: UploadFileResponse,
     messageQuotedId: string | null,
-    quotedMessage: IQuotedMessage | null
+    quotedMessage: IQuotedMessage | null,
+    hash: string | null
   ): IChatMessage {
     return {
       message_id: uuidv4(),
@@ -444,6 +459,7 @@ export class ChatMessageCreatorUseCase {
         is_sent: false,
         is_delivered: false,
         is_seen: false,
+        is_sent_to_internal: true,
       },
       deleted: false,
       has_quoted: !!quotedMessage,
@@ -463,10 +479,14 @@ export class ChatMessageCreatorUseCase {
         },
       },
       date: new Date().toISOString(),
+      hash: hash,
     };
   }
 
-  private createVideoMessage(params: ICreateVideoMessageParams): IChatMessage {
+  private createVideoMessage(
+    params: ICreateVideoMessageParams,
+    hash: string | null
+  ): IChatMessage {
     const {
       chat,
       chatId,
@@ -494,6 +514,7 @@ export class ChatMessageCreatorUseCase {
         is_sent: false,
         is_delivered: false,
         is_seen: false,
+        is_sent_to_internal: true,
       },
       deleted: false,
       has_quoted: !!quotedMessage,
@@ -519,10 +540,14 @@ export class ChatMessageCreatorUseCase {
         },
       },
       date: new Date().toISOString(),
+      hash: hash,
     };
   }
 
-  private createAudioMessage(params: ICreateAudioMessageParams): IChatMessage {
+  private createAudioMessage(
+    params: ICreateAudioMessageParams,
+    hash: string | null
+  ): IChatMessage {
     const {
       chat,
       chatId,
@@ -552,6 +577,7 @@ export class ChatMessageCreatorUseCase {
         is_sent: false,
         is_delivered: false,
         is_seen: false,
+        is_sent_to_internal: true,
       },
       deleted: false,
       has_quoted: !!quotedMessage,
@@ -575,6 +601,7 @@ export class ChatMessageCreatorUseCase {
         },
       },
       date: new Date().toISOString(),
+      hash: hash,
     };
   }
 
@@ -585,7 +612,8 @@ export class ChatMessageCreatorUseCase {
     message: string | null,
     linkPreview: CreateMessageChatsBody['link_preview'],
     messageQuotedId: string | null,
-    quotedMessage: IQuotedMessage | null
+    quotedMessage: IQuotedMessage | null,
+    hash: string | null
   ): IChatMessage {
     return {
       message_id: uuidv4(),
@@ -604,6 +632,7 @@ export class ChatMessageCreatorUseCase {
         is_sent: false,
         is_delivered: false,
         is_seen: false,
+        is_sent_to_internal: true,
       },
       deleted: false,
       has_quoted: !!quotedMessage,
@@ -615,6 +644,7 @@ export class ChatMessageCreatorUseCase {
         quoted: quotedMessage,
       },
       date: new Date().toISOString(),
+      hash: hash,
     };
   }
 
@@ -683,7 +713,7 @@ export class ChatMessageCreatorUseCase {
     images: UploadFileRequest[],
     params: IProcessMediaMessagesParams
   ): Promise<boolean> {
-    const { chat, chatId, accountId, type, message, messageQuotedId, t } =
+    const { chat, chatId, accountId, type, message, messageQuotedId, t, hash } =
       params;
     let validImages: UploadFileResponse[];
     try {
@@ -728,7 +758,8 @@ export class ChatMessageCreatorUseCase {
         message,
         validImages[0],
         quotedId,
-        quotedMessage
+        quotedMessage,
+        hash
       );
 
       await this.publishMessage(imageMessage);
@@ -744,7 +775,8 @@ export class ChatMessageCreatorUseCase {
         message,
         imageData,
         quotedId,
-        quotedMessage
+        quotedMessage,
+        hash
       );
 
       return this.publishMessage(imageMessage);
@@ -760,7 +792,7 @@ export class ChatMessageCreatorUseCase {
     videoDuration: number | null,
     params: IProcessMediaMessagesParams
   ): Promise<boolean> {
-    const { chat, chatId, accountId, type, message, messageQuotedId, t } =
+    const { chat, chatId, accountId, type, message, messageQuotedId, t, hash } =
       params;
     let validVideos: UploadFileResponse[];
     try {
@@ -798,16 +830,19 @@ export class ChatMessageCreatorUseCase {
     const quotedId = messageQuotedId ?? null;
 
     if (validVideos.length === 1) {
-      const videoMessage = this.createVideoMessage({
-        chat,
-        chatId,
-        type,
-        message,
-        videoData: validVideos[0],
-        messageQuotedId: quotedId,
-        quotedMessage,
-        videoDuration,
-      });
+      const videoMessage = this.createVideoMessage(
+        {
+          chat,
+          chatId,
+          type,
+          message,
+          videoData: validVideos[0],
+          messageQuotedId: quotedId,
+          quotedMessage,
+          videoDuration,
+        },
+        hash
+      );
 
       await this.publishMessage(videoMessage);
 
@@ -815,16 +850,19 @@ export class ChatMessageCreatorUseCase {
     }
 
     const publishTasks = validVideos.map((videoData) => {
-      const videoMessage = this.createVideoMessage({
-        chat,
-        chatId,
-        type,
-        message,
-        videoData,
-        messageQuotedId: quotedId,
-        quotedMessage,
-        videoDuration,
-      });
+      const videoMessage = this.createVideoMessage(
+        {
+          chat,
+          chatId,
+          type,
+          message,
+          videoData,
+          messageQuotedId: quotedId,
+          quotedMessage,
+          videoDuration,
+        },
+        hash
+      );
 
       return this.publishMessage(videoMessage);
     });
@@ -840,7 +878,7 @@ export class ChatMessageCreatorUseCase {
     isViewOnce: boolean,
     params: IProcessMediaMessagesParams
   ): Promise<boolean> {
-    const { chat, chatId, accountId, type, message, messageQuotedId, t } =
+    const { chat, chatId, accountId, type, message, messageQuotedId, t, hash } =
       params;
     let validAudios: Array<
       UploadFileResponse & { duration?: number; waveform?: string }
@@ -880,18 +918,21 @@ export class ChatMessageCreatorUseCase {
 
     if (validAudios.length === 1) {
       const finalDuration = audioDuration ?? validAudios[0].duration ?? null;
-      const audioMessage = this.createAudioMessage({
-        chat,
-        chatId,
-        type,
-        message,
-        audioData: validAudios[0],
-        messageQuotedId: quotedId,
-        quotedMessage,
-        duration: finalDuration,
-        isViewOnce,
-        isPtt,
-      });
+      const audioMessage = this.createAudioMessage(
+        {
+          chat,
+          chatId,
+          type,
+          message,
+          audioData: validAudios[0],
+          messageQuotedId: quotedId,
+          quotedMessage,
+          duration: finalDuration,
+          isViewOnce,
+          isPtt,
+        },
+        hash
+      );
 
       await this.publishMessage(audioMessage);
 
@@ -900,18 +941,21 @@ export class ChatMessageCreatorUseCase {
 
     const publishTasks = validAudios.map((audioData) => {
       const finalDuration = audioDuration ?? audioData.duration ?? null;
-      const audioMessage = this.createAudioMessage({
-        chat,
-        chatId,
-        type,
-        message,
-        audioData,
-        messageQuotedId: quotedId,
-        quotedMessage,
-        duration: finalDuration,
-        isViewOnce,
-        isPtt,
-      });
+      const audioMessage = this.createAudioMessage(
+        {
+          chat,
+          chatId,
+          type,
+          message,
+          audioData,
+          messageQuotedId: quotedId,
+          quotedMessage,
+          duration: finalDuration,
+          isViewOnce,
+          isPtt,
+        },
+        hash
+      );
 
       return this.publishMessage(audioMessage);
     });
@@ -925,7 +969,7 @@ export class ChatMessageCreatorUseCase {
     documents: UploadFileRequest[],
     params: IProcessMediaMessagesParams
   ): Promise<boolean> {
-    const { chat, chatId, accountId, type, message, messageQuotedId, t } =
+    const { chat, chatId, accountId, type, message, messageQuotedId, t, hash } =
       params;
     let uploadedDocuments: Array<UploadFileResponse | null>;
     try {
@@ -978,7 +1022,8 @@ export class ChatMessageCreatorUseCase {
         message,
         validDocuments[0],
         quotedId,
-        quotedMessage
+        quotedMessage,
+        hash
       );
 
       await this.publishMessage(documentMessage);
@@ -994,7 +1039,8 @@ export class ChatMessageCreatorUseCase {
         message,
         documentData,
         quotedId,
-        quotedMessage
+        quotedMessage,
+        hash
       );
 
       return this.publishMessage(documentMessage);
@@ -1017,6 +1063,7 @@ export class ChatMessageCreatorUseCase {
       messageQuotedId,
       accountId,
       t,
+      hash,
     } = params;
     let quotedMessage: IQuotedMessage | null = null;
 
@@ -1039,7 +1086,8 @@ export class ChatMessageCreatorUseCase {
       message,
       linkPreview,
       messageQuotedId ?? null,
-      quotedMessage
+      quotedMessage,
+      hash
     );
 
     return this.publishMessage(textMessage);
@@ -1070,6 +1118,7 @@ export class ChatMessageCreatorUseCase {
     const messageQuotedId = this.normalizeMessageQuotedId(
       body.message_quoted_id
     );
+    const hash = this.normalizeHash(body.hash);
 
     if (type === EMessageType.delete_message && body.delete_message_id) {
       return this.processDelete(
@@ -1077,7 +1126,8 @@ export class ChatMessageCreatorUseCase {
         params.chat_id,
         accountId,
         body.delete_message_id,
-        t
+        t,
+        hash
       );
     }
 
@@ -1092,7 +1142,8 @@ export class ChatMessageCreatorUseCase {
         accountId,
         body.reaction_message_id,
         body.reaction_emoji,
-        t
+        t,
+        hash
       );
     }
 
@@ -1109,6 +1160,7 @@ export class ChatMessageCreatorUseCase {
         message,
         messageQuotedId,
         t,
+        hash,
       });
     }
 
@@ -1125,6 +1177,7 @@ export class ChatMessageCreatorUseCase {
         message,
         messageQuotedId,
         t,
+        hash,
       });
     }
 
@@ -1141,6 +1194,7 @@ export class ChatMessageCreatorUseCase {
         message,
         messageQuotedId,
         t,
+        hash,
       });
     }
 
@@ -1153,6 +1207,7 @@ export class ChatMessageCreatorUseCase {
         message,
         messageQuotedId,
         t,
+        hash,
       });
     }
 
@@ -1165,6 +1220,7 @@ export class ChatMessageCreatorUseCase {
       messageQuotedId,
       linkPreview: body.link_preview,
       t,
+      hash,
     });
   }
 
@@ -1259,7 +1315,8 @@ export class ChatMessageCreatorUseCase {
     accountId: string,
     reactionMessageId: string,
     emoji: string,
-    t: TFunction<'translation', undefined>
+    t: TFunction<'translation', undefined>,
+    hash: string | null
   ): Promise<boolean> {
     const targetMessage = await this.getMessage(accountId, reactionMessageId);
 
@@ -1287,7 +1344,8 @@ export class ChatMessageCreatorUseCase {
     const reactionMessage = this.createReactionMessage(
       chat,
       chatId,
-      updatedMessage
+      updatedMessage,
+      hash
     );
 
     await Promise.all([
@@ -1304,7 +1362,8 @@ export class ChatMessageCreatorUseCase {
   private createReactionMessage(
     chat: IChat,
     chatId: string,
-    targetMessage: IChatMessage
+    targetMessage: IChatMessage,
+    hash: string | null
   ): IChatMessage {
     return {
       message_id: uuidv4(),
@@ -1326,6 +1385,7 @@ export class ChatMessageCreatorUseCase {
         is_sent: false,
         is_delivered: false,
         is_seen: false,
+        is_sent_to_internal: true,
       },
       deleted: targetMessage.deleted ?? false,
       has_quoted: targetMessage.has_quoted ?? false,
@@ -1334,6 +1394,7 @@ export class ChatMessageCreatorUseCase {
         reactions: targetMessage.content?.reactions ?? null,
       },
       date: new Date().toISOString(),
+      hash: hash,
     };
   }
 
@@ -1342,7 +1403,8 @@ export class ChatMessageCreatorUseCase {
     chatId: string,
     accountId: string,
     deleteMessageId: string,
-    t: TFunction<'translation', undefined>
+    t: TFunction<'translation', undefined>,
+    hash: string | null
   ): Promise<boolean> {
     const targetMessage = await this.getMessage(accountId, deleteMessageId);
 
@@ -1362,7 +1424,8 @@ export class ChatMessageCreatorUseCase {
     const deleteMessage = this.createDeleteMessage(
       chat,
       chatId,
-      updatedMessage
+      updatedMessage,
+      hash
     );
 
     await Promise.all([
@@ -1397,7 +1460,8 @@ export class ChatMessageCreatorUseCase {
   private createDeleteMessage(
     chat: IChat,
     chatId: string,
-    targetMessage: IChatMessage
+    targetMessage: IChatMessage,
+    hash: string | null
   ): IChatMessage {
     return {
       message_id: uuidv4(),
@@ -1419,6 +1483,7 @@ export class ChatMessageCreatorUseCase {
         is_sent: false,
         is_delivered: false,
         is_seen: false,
+        is_sent_to_internal: true,
       },
       deleted: true,
       has_quoted: targetMessage.has_quoted ?? false,
@@ -1426,6 +1491,7 @@ export class ChatMessageCreatorUseCase {
         type: EMessageType.delete_message,
       },
       date: new Date().toISOString(),
+      hash: hash,
     };
   }
 
@@ -1436,7 +1502,8 @@ export class ChatMessageCreatorUseCase {
     message: string | null,
     documentData: UploadFileResponse,
     messageQuotedId: string | null,
-    quotedMessage: IQuotedMessage | null
+    quotedMessage: IQuotedMessage | null,
+    hash: string | null
   ): IChatMessage {
     return {
       message_id: uuidv4(),
@@ -1455,6 +1522,7 @@ export class ChatMessageCreatorUseCase {
         is_sent: false,
         is_delivered: false,
         is_seen: false,
+        is_sent_to_internal: true,
       },
       deleted: false,
       has_quoted: !!quotedMessage,
@@ -1472,6 +1540,7 @@ export class ChatMessageCreatorUseCase {
         },
       },
       date: new Date().toISOString(),
+      hash: hash,
     };
   }
 }

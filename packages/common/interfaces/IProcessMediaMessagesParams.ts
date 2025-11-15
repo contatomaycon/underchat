@@ -10,4 +10,5 @@ export interface IProcessMediaMessagesParams {
   message: string | null;
   messageQuotedId: string | null | undefined;
   t: TFunction<'translation', undefined>;
+  hash: string | null;
 }

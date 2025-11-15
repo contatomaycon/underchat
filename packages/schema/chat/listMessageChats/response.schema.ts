@@ -14,6 +14,7 @@ export const summarySchema = Type.Object({
   is_sent: Type.Boolean(),
   is_delivered: Type.Boolean(),
   is_seen: Type.Boolean(),
+  is_sent_to_internal: Type.Boolean(),
 });
 
 export const messageKeySchema = Type.Object({
@@ -115,6 +116,7 @@ export const listMessageResultSchema = Type.Object({
   date: Type.String(),
   deleted: Type.Optional(Type.Boolean()),
   has_quoted: Type.Optional(Type.Boolean()),
+  hash: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export const listMessageResponseSchema = Type.Object({
