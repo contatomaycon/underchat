@@ -262,15 +262,15 @@ export const useChatStore = defineStore('chat', {
       if (index === -1) return;
       const [removed] = this.pendingMessages.splice(index, 1);
       const imagePreview = removed?.image?.preview;
-      if (imagePreview && imagePreview.startsWith('blob:')) {
+      if (imagePreview?.startsWith('blob:')) {
         URL.revokeObjectURL(imagePreview);
       }
       const videoPreview = removed?.video?.preview;
-      if (videoPreview && videoPreview.startsWith('blob:')) {
+      if (videoPreview?.startsWith('blob:')) {
         URL.revokeObjectURL(videoPreview);
       }
       const audioPreview = removed?.audio?.preview;
-      if (audioPreview && audioPreview.startsWith('blob:')) {
+      if (audioPreview?.startsWith('blob:')) {
         URL.revokeObjectURL(audioPreview);
       }
     },

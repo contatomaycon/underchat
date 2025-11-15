@@ -4,7 +4,7 @@ import { container } from 'tsyringe';
 import { BaileysService } from '@core/services/baileys';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 
-const RETRY_DELAY = 5_000;
+const RETRY_DELAY = 5000;
 
 const ensureConnected = async (
   attempt: number,

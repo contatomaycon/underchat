@@ -217,16 +217,15 @@ const getReactionsSummary = (
 ): Array<{ emoji: string; count: number }> => {
   if (!reactions?.length) return [];
   const summary = new Map<string, { emoji: string; count: number }>();
-  reactions.forEach((reaction) => {
-    if (!reaction?.emoji) return;
+  for (const reaction of reactions) {
+    if (!reaction?.emoji) continue;
     const current = summary.get(reaction.emoji);
     if (!current) {
       summary.set(reaction.emoji, { emoji: reaction.emoji, count: 1 });
-
-      return;
+      continue;
     }
     current.count += 1;
-  });
+  }
 
   return Array.from(summary.values()).sort((a, b) => {
     if (b.count !== a.count) return b.count - a.count;
@@ -310,7 +309,7 @@ const downloadMessage = (message: ListMessageResult) => {
   }
   const docUrl = message.content?.document?.url;
   if (docUrl) {
-    window.open(docUrl, '_blank');
+    globalThis.open(docUrl, '_blank');
     return;
   }
   const video = message.content?.video;
@@ -451,13 +450,16 @@ const formatDocumentSize = (size?: number | null): string => {
     units.length - 1
   );
   const value = size / Math.pow(1024, exponent);
-  const formatted =
-    value >= 100
-      ? value.toFixed(0)
-      : value >= 10
-        ? value.toFixed(1)
-        : value.toFixed(2);
-
+  let formatted: string;
+  if (value >= 100) {
+    formatted = value.toFixed(0);
+    return `${formatted} ${units[exponent]}`;
+  }
+  if (value >= 10) {
+    formatted = value.toFixed(1);
+    return `${formatted} ${units[exponent]}`;
+  }
+  formatted = value.toFixed(2);
   return `${formatted} ${units[exponent]}`;
 };
 
@@ -584,11 +586,11 @@ const toggleAudioPlay = (messageId: string, url: string) => {
 
   if (isPlaying) {
     audio.pause();
-  } else {
-    audio.play().catch(() => {
-      audioPlayStates[messageId] = false;
-    });
+    return;
   }
+  audio.play().catch(() => {
+    audioPlayStates[messageId] = false;
+  });
 };
 
 const generateAudioWaveform = async (
@@ -633,11 +635,12 @@ const generateAudioWaveform = async (
         return Math.max(0.15, Math.min(1, normalized));
       });
       audioWaveforms[messageId] = normalizedWaveform;
-    } else {
-      const defaultWaveform = new Array(80).fill(0.3);
-      audioWaveforms[messageId] = defaultWaveform;
+      return;
     }
+    const defaultWaveform = new Array(80).fill(0.3);
+    audioWaveforms[messageId] = defaultWaveform;
   } catch (error) {
+    console.error('Failed to generate audio waveform:', error);
     const defaultWaveform = new Array(80).fill(0.3);
     audioWaveforms[messageId] = defaultWaveform;
   } finally {
@@ -708,20 +711,26 @@ const getDisplayTime = (
 };
 
 onUnmounted(() => {
-  audioPlayers.value.forEach((audio) => {
+  for (const audio of audioPlayers.value.values()) {
     audio.pause();
     audio.src = '';
-  });
+  }
   audioPlayers.value.clear();
-  Object.keys(audioPlayStates).forEach((key) => delete audioPlayStates[key]);
-  Object.keys(audioCurrentTimes).forEach(
-    (key) => delete audioCurrentTimes[key]
-  );
-  Object.keys(audioDurations).forEach((key) => delete audioDurations[key]);
-  Object.keys(audioWaveforms).forEach((key) => delete audioWaveforms[key]);
-  Object.keys(audioLoadingWaveforms).forEach(
-    (key) => delete audioLoadingWaveforms[key]
-  );
+  for (const key of Object.keys(audioPlayStates)) {
+    delete audioPlayStates[key];
+  }
+  for (const key of Object.keys(audioCurrentTimes)) {
+    delete audioCurrentTimes[key];
+  }
+  for (const key of Object.keys(audioDurations)) {
+    delete audioDurations[key];
+  }
+  for (const key of Object.keys(audioWaveforms)) {
+    delete audioWaveforms[key];
+  }
+  for (const key of Object.keys(audioLoadingWaveforms)) {
+    delete audioLoadingWaveforms[key];
+  }
 });
 const formatVideoDuration = (duration?: number | null): string => {
   if (!duration || duration <= 0) return '';
@@ -954,13 +963,16 @@ const openVideo = (m: ListMessageResult) => {
   viewerOpen.value = true;
 };
 
-const downloadImage = async (url: string, filename?: string | null) => {
+const downloadImage = async (
+  url: string,
+  filename: string | null = 'image.jpg'
+) => {
   if (!url) return;
 
   try {
     const response = await fetch(url);
     const blob = await response.blob();
-    const blobUrl = window.URL.createObjectURL(blob);
+    const blobUrl = globalThis.URL.createObjectURL(blob);
 
     const anchor = document.createElement('a');
     anchor.href = blobUrl;
@@ -968,10 +980,10 @@ const downloadImage = async (url: string, filename?: string | null) => {
     anchor.style.display = 'none';
     document.body.appendChild(anchor);
     anchor.click();
-    document.body.removeChild(anchor);
+    anchor.remove();
 
     setTimeout(() => {
-      window.URL.revokeObjectURL(blobUrl);
+      globalThis.URL.revokeObjectURL(blobUrl);
     }, 100);
   } catch (error) {
     console.error('Erro ao baixar imagem:', error);
@@ -984,65 +996,67 @@ const downloadImage = async (url: string, filename?: string | null) => {
   }
 };
 
-const downloadVideo = async (url: string, filename?: string | null) => {
+const downloadVideo = async (
+  url: string,
+  filename: string | null = 'video.mp4'
+) => {
   if (!url) return;
-
-  const fallback = filename || 'video.mp4';
 
   try {
     const response = await fetch(url);
     const blob = await response.blob();
-    const blobUrl = window.URL.createObjectURL(blob);
+    const blobUrl = globalThis.URL.createObjectURL(blob);
 
     const anchor = document.createElement('a');
     anchor.href = blobUrl;
-    anchor.download = fallback;
+    anchor.download = filename || 'video.mp4';
     anchor.style.display = 'none';
     document.body.appendChild(anchor);
     anchor.click();
-    document.body.removeChild(anchor);
+    anchor.remove();
 
     setTimeout(() => {
-      window.URL.revokeObjectURL(blobUrl);
+      globalThis.URL.revokeObjectURL(blobUrl);
     }, 100);
   } catch (error) {
     console.error('Erro ao baixar vídeo:', error);
     const anchor = document.createElement('a');
     anchor.href = url;
     anchor.target = '_blank';
-    anchor.download = fallback;
+    anchor.download = filename || 'video.mp4';
     anchor.rel = 'noopener';
     anchor.click();
   }
 };
 
-const downloadAudio = async (url: string, filename?: string | null) => {
+const downloadAudio = async (
+  url: string,
+  filename: string | null = 'audio.ogg'
+) => {
   if (!url) return;
-
-  const fallback = filename || 'audio.ogg';
 
   try {
     const response = await fetch(url);
     const blob = await response.blob();
-    const blobUrl = window.URL.createObjectURL(blob);
+    const blobUrl = globalThis.URL.createObjectURL(blob);
 
     const anchor = document.createElement('a');
     anchor.href = blobUrl;
-    anchor.download = fallback;
+    anchor.download = filename || 'audio.ogg';
     anchor.style.display = 'none';
     document.body.appendChild(anchor);
     anchor.click();
-    document.body.removeChild(anchor);
+    anchor.remove();
 
     setTimeout(() => {
-      window.URL.revokeObjectURL(blobUrl);
+      globalThis.URL.revokeObjectURL(blobUrl);
     }, 100);
   } catch (error) {
     console.error('Erro ao baixar áudio:', error);
     const anchor = document.createElement('a');
     anchor.href = url;
     anchor.target = '_blank';
-    anchor.download = fallback;
+    anchor.download = filename || 'audio.ogg';
     anchor.rel = 'noopener';
     anchor.click();
   }

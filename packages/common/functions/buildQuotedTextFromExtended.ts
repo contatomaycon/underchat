@@ -5,6 +5,123 @@ import { remoteJid } from './remoteJid';
 import { remoteParticipantJid } from './remoteParticipantJid';
 import { EMessageType } from '../enums/EMessageType';
 
+function createThumbnail(jpegThumbnail?: Uint8Array | null): string | null {
+  if (!jpegThumbnail || jpegThumbnail.length === 0) {
+    return null;
+  }
+  return `data:image/jpeg;base64,${Buffer.from(jpegThumbnail).toString('base64')}`;
+}
+
+function determineMessageType(quotedMessage: any): EMessageType {
+  if (quotedMessage.documentMessage) return EMessageType.document;
+  if (quotedMessage.videoMessage) return EMessageType.video;
+  if (quotedMessage.imageMessage) return EMessageType.image;
+  if (quotedMessage.audioMessage) return EMessageType.audio;
+  return EMessageType.text;
+}
+
+function extractText(quotedMessage: any): string {
+  return (
+    quotedMessage.conversation ??
+    quotedMessage.extendedTextMessage?.text ??
+    quotedMessage.buttonsMessage?.contentText ??
+    quotedMessage.listMessage?.description ??
+    quotedMessage.documentMessage?.caption ??
+    quotedMessage.imageMessage?.caption ??
+    ''
+  );
+}
+
+function processImageMessage(quotedMessage: any, quoted: IQuotedMessage): void {
+  const imageMessage = quotedMessage.imageMessage;
+  if (!imageMessage) return;
+
+  const thumbnail = createThumbnail(imageMessage.jpegThumbnail);
+
+  quoted.image = {
+    url: null,
+    caption: imageMessage.caption ?? null,
+    mimetype: imageMessage.mimetype ?? null,
+    extension: null,
+    size: imageMessage.fileLength
+      ? Number(imageMessage.fileLength.toString())
+      : null,
+    height: imageMessage.height ?? null,
+    width: imageMessage.width ?? null,
+    thumbnail,
+  };
+
+  if (!quoted.message && imageMessage.caption) {
+    quoted.message = imageMessage.caption;
+  }
+}
+
+function processVideoMessage(quotedMessage: any, quoted: IQuotedMessage): void {
+  const videoMessage = quotedMessage.videoMessage;
+  if (!videoMessage) return;
+
+  const thumbnail = createThumbnail(videoMessage.jpegThumbnail);
+
+  quoted.video = {
+    url: null,
+    caption: videoMessage.caption ?? null,
+    name: videoMessage.fileName ?? null,
+    mimetype: videoMessage.mimetype ?? null,
+    extension: null,
+    size: videoMessage.fileLength
+      ? Number(videoMessage.fileLength.toString())
+      : null,
+    duration: videoMessage.seconds ?? null,
+    height: videoMessage.height ?? null,
+    width: videoMessage.width ?? null,
+    thumbnail,
+  };
+
+  if (!quoted.message && videoMessage.caption) {
+    quoted.message = videoMessage.caption;
+  }
+}
+
+function processDocumentMessage(
+  quotedMessage: any,
+  quoted: IQuotedMessage
+): void {
+  const documentMessage = quotedMessage.documentMessage;
+  if (!documentMessage) return;
+
+  quoted.document = {
+    url: null,
+    name: documentMessage.fileName ?? null,
+    mimetype: documentMessage.mimetype ?? null,
+    extension: null,
+    size: documentMessage.fileLength
+      ? Number(documentMessage.fileLength.toString())
+      : null,
+  };
+
+  if (!quoted.message && documentMessage.fileName) {
+    quoted.message = documentMessage.fileName;
+  }
+}
+
+function processAudioMessage(quotedMessage: any, quoted: IQuotedMessage): void {
+  const audioMessage = quotedMessage.audioMessage;
+  if (!audioMessage) return;
+
+  quoted.audio = {
+    url: null,
+    name: (audioMessage as any).fileName ?? null,
+    mimetype: audioMessage.mimetype ?? null,
+    extension: null,
+    size: audioMessage.fileLength
+      ? Number(audioMessage.fileLength.toString())
+      : null,
+    duration: audioMessage.seconds ?? null,
+    ptt: audioMessage.ptt ?? false,
+    view_once: false,
+  };
+}
+
 export function buildQuotedTextFromExtended(
   m: WAMessage
 ): IQuotedMessage | null {
@@ -32,27 +149,8 @@ export function buildQuotedTextFromExtended(
   const quotedMessage = ctx.quotedMessage as any;
   const rJid = remoteJid(m?.key);
   const participant = ctx.participant ?? remoteParticipantJid(m?.key);
-
-  const text =
-    quotedMessage.conversation ??
-    quotedMessage.extendedTextMessage?.text ??
-    quotedMessage.buttonsMessage?.contentText ??
-    quotedMessage.listMessage?.description ??
-    quotedMessage.documentMessage?.caption ??
-    quotedMessage.imageMessage?.caption ??
-    '';
-
-  const hasDocument = !!quotedMessage.documentMessage;
-  const hasVideo = !!quotedMessage.videoMessage;
-  const hasImage = !!quotedMessage.imageMessage;
-  const hasAudio = !!quotedMessage.audioMessage;
-
-  let type = EMessageType.text;
-  if (hasDocument) type = EMessageType.document;
-  if (!hasDocument && hasVideo) type = EMessageType.video;
-  if (!hasDocument && !hasVideo && hasImage) type = EMessageType.image;
-  if (!hasDocument && !hasVideo && !hasImage && hasAudio)
-    type = EMessageType.audio;
+  const text = extractText(quotedMessage);
+  const type = determineMessageType(quotedMessage);
 
   const quoted: IQuotedMessage = {
     key: {
@@ -71,94 +169,10 @@ export function buildQuotedTextFromExtended(
     type,
   };
 
-  const imageMessage = quotedMessage.imageMessage;
-  if (imageMessage) {
-    const thumbnail =
-      imageMessage.jpegThumbnail && imageMessage.jpegThumbnail.length > 0
-        ? `data:image/jpeg;base64,${Buffer.from(
-            imageMessage.jpegThumbnail
-          ).toString('base64')}`
-        : null;
-
-    quoted.image = {
-      url: null,
-      caption: imageMessage.caption ?? null,
-      mimetype: imageMessage.mimetype ?? null,
-      extension: null,
-      size: imageMessage.fileLength
-        ? Number(imageMessage.fileLength.toString())
-        : null,
-      height: imageMessage.height ?? null,
-      width: imageMessage.width ?? null,
-      thumbnail,
-    };
-
-    if (!quoted.message && imageMessage.caption) {
-      quoted.message = imageMessage.caption;
-    }
-  }
-
-  const videoMessage = quotedMessage.videoMessage;
-  if (videoMessage) {
-    const thumbnail =
-      videoMessage.jpegThumbnail && videoMessage.jpegThumbnail.length > 0
-        ? `data:image/jpeg;base64,${Buffer.from(
-            videoMessage.jpegThumbnail
-          ).toString('base64')}`
-        : null;
-
-    quoted.video = {
-      url: null,
-      caption: videoMessage.caption ?? null,
-      name: videoMessage.fileName ?? null,
-      mimetype: videoMessage.mimetype ?? null,
-      extension: null,
-      size: videoMessage.fileLength
-        ? Number(videoMessage.fileLength.toString())
-        : null,
-      duration: videoMessage.seconds ?? null,
-      height: videoMessage.height ?? null,
-      width: videoMessage.width ?? null,
-      thumbnail,
-    };
-
-    if (!quoted.message && videoMessage.caption) {
-      quoted.message = videoMessage.caption;
-    }
-  }
-
-  const documentMessage = quotedMessage.documentMessage;
-  if (documentMessage) {
-    quoted.document = {
-      url: null,
-      name: documentMessage.fileName ?? null,
-      mimetype: documentMessage.mimetype ?? null,
-      extension: null,
-      size: documentMessage.fileLength
-        ? Number(documentMessage.fileLength.toString())
-        : null,
-    };
-
-    if (!quoted.message && documentMessage.fileName) {
-      quoted.message = documentMessage.fileName;
-    }
-  }
-
-  const audioMessage = quotedMessage.audioMessage;
-  if (audioMessage) {
-    quoted.audio = {
-      url: null,
-      name: (audioMessage as any).fileName ?? null,
-      mimetype: audioMessage.mimetype ?? null,
-      extension: null,
-      size: audioMessage.fileLength
-        ? Number(audioMessage.fileLength.toString())
-        : null,
-      duration: audioMessage.seconds ?? null,
-      ptt: audioMessage.ptt ?? false,
-      view_once: false,
-    };
-  }
+  processImageMessage(quotedMessage, quoted);
+  processVideoMessage(quotedMessage, quoted);
+  processDocumentMessage(quotedMessage, quoted);
+  processAudioMessage(quotedMessage, quoted);
 
   return quoted;
 }

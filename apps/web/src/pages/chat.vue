@@ -158,10 +158,10 @@ const applyPersistentHighlight = (target: HTMLElement, id: string) => {
   const existingTimer = highlightedMessageTimers.get(id);
   if (existingTimer) clearTimeout(existingTimer);
 
-  const timeoutId = window.setTimeout(() => {
+  const timeoutId = globalThis.setTimeout(() => {
     target.classList.remove('message-target-persistent');
     highlightedMessageTimers.delete(id);
-  }, 30_000);
+  }, 30_000) as unknown as number;
 
   highlightedMessageTimers.set(id, timeoutId);
 };
@@ -373,7 +373,9 @@ const removeVideo = (index: number) => {
 };
 
 const clearSelectedVideos = () => {
-  selectedVideos.value.forEach((video) => revokeVideoPreview(video.preview));
+  for (const video of selectedVideos.value) {
+    revokeVideoPreview(video.preview);
+  }
   selectedVideos.value = [];
 };
 
@@ -781,7 +783,7 @@ const onPickDoc = (e: Event) => {
     chatStore.showSnackbar(t('document_size_exceeded'), EColor.error);
   }
 
-  validDocs.forEach((file) => {
+  for (const file of validDocs) {
     selectedDocuments.value.push({
       file,
       name: file.name,
@@ -789,7 +791,7 @@ const onPickDoc = (e: Event) => {
       extension: (file.name.split('.').pop() || '').toLowerCase(),
       type: file.type,
     });
-  });
+  }
 
   target.value = '';
 };
@@ -814,19 +816,19 @@ const onPickPhoto = (e: Event) => {
     return;
   }
 
-  const allowedImageTypes = [
+  const allowedImageTypes = new Set([
     'image/jpeg',
     'image/jpg',
     'image/png',
     'image/gif',
-  ];
-  const allowedExtensions = ['jpg', 'jpeg', 'png', 'gif'];
+  ]);
+  const allowedExtensions = new Set(['jpg', 'jpeg', 'png', 'gif']);
 
   const imageFiles = Array.from(files).filter((file) => {
     const fileExtension = file.name.split('.').pop()?.toLowerCase();
     return (
-      allowedImageTypes.includes(file.type) ||
-      (fileExtension && allowedExtensions.includes(fileExtension))
+      allowedImageTypes.has(file.type) ||
+      (fileExtension && allowedExtensions.has(fileExtension))
     );
   });
 
@@ -839,8 +841,8 @@ const onPickPhoto = (e: Event) => {
   const invalidImages = Array.from(files).filter((file) => {
     const fileExtension = file.name.split('.').pop()?.toLowerCase();
     return (
-      !allowedImageTypes.includes(file.type) &&
-      (!fileExtension || !allowedExtensions.includes(fileExtension))
+      !allowedImageTypes.has(file.type) &&
+      (!fileExtension || !allowedExtensions.has(fileExtension))
     );
   });
 
@@ -884,7 +886,7 @@ const onPickPhoto = (e: Event) => {
     return;
   }
 
-  validImages.forEach((file) => {
+  for (const file of validImages) {
     const reader = new FileReader();
     reader.onload = (event) => {
       if (event.target?.result) {
@@ -895,7 +897,7 @@ const onPickPhoto = (e: Event) => {
       }
     };
     reader.readAsDataURL(file);
-  });
+  }
 
   target.value = '';
 };
@@ -994,7 +996,7 @@ const drawAudioWaveform = () => {
   ctx.strokeStyle = 'rgba(34, 197, 94, 0.9)';
 
   for (let i = 0; i < bufferLength; i += 4) {
-    const v = data[i] / 128.0;
+    const v = data[i] / 128;
     const y = (v * height) / 2;
     if (i === 0) {
       ctx.moveTo(x, y);
@@ -1021,7 +1023,9 @@ const releaseAudioResources = () => {
     audioRecordingRAFId.value = null;
   }
   if (audioStreamRef.value) {
-    audioStreamRef.value.getTracks().forEach((track) => track.stop());
+    for (const track of audioStreamRef.value.getTracks()) {
+      track.stop();
+    }
     audioStreamRef.value = null;
   }
   if (audioContextRef.value) {
@@ -1208,10 +1212,10 @@ const startAudioRecording = async () => {
     if (audioRecordingTimerId.value) {
       clearInterval(audioRecordingTimerId.value);
     }
-    audioRecordingTimerId.value = window.setInterval(
+    audioRecordingTimerId.value = globalThis.setInterval(
       updateRecordingElapsed,
       200
-    );
+    ) as unknown as number;
 
     await nextTick(() => {
       setupAudioCanvas();
@@ -1249,21 +1253,21 @@ const onPickVideo = async (e: Event) => {
     return;
   }
 
-  const allowedVideoTypes = [
+  const allowedVideoTypes = new Set([
     'video/mp4',
     'video/avi',
     'video/x-flv',
     'video/x-matroska',
     'video/quicktime',
     'video/3gpp',
-  ];
-  const allowedExtensions = ['mp4', 'avi', 'flv', 'mkv', 'mov', '3gp'];
+  ]);
+  const allowedExtensions = new Set(['mp4', 'avi', 'flv', 'mkv', 'mov', '3gp']);
 
   const videoFiles = Array.from(files).filter((file) => {
     const fileExtension = file.name.split('.').pop()?.toLowerCase();
     return (
-      allowedVideoTypes.includes(file.type) ||
-      (fileExtension && allowedExtensions.includes(fileExtension))
+      allowedVideoTypes.has(file.type) ||
+      (fileExtension && allowedExtensions.has(fileExtension))
     );
   });
 
@@ -1276,8 +1280,8 @@ const onPickVideo = async (e: Event) => {
   const invalidVideos = Array.from(files).filter((file) => {
     const fileExtension = file.name.split('.').pop()?.toLowerCase();
     return (
-      !allowedVideoTypes.includes(file.type) &&
-      (!fileExtension || !allowedExtensions.includes(fileExtension))
+      !allowedVideoTypes.has(file.type) &&
+      (!fileExtension || !allowedExtensions.has(fileExtension))
     );
   });
 
@@ -1329,9 +1333,9 @@ const onPickVideo = async (e: Event) => {
     })
   );
 
-  loadedVideos.forEach((video) => {
+  for (const video of loadedVideos) {
     selectedVideos.value.push(video);
-  });
+  }
 
   target.value = '';
 };
@@ -1364,7 +1368,7 @@ const downloadPreviewImage = async (url: string, filename?: string | null) => {
   try {
     const response = await fetch(url);
     const blob = await response.blob();
-    const blobUrl = window.URL.createObjectURL(blob);
+    const blobUrl = globalThis.URL.createObjectURL(blob);
 
     const anchor = document.createElement('a');
     anchor.href = blobUrl;
@@ -1372,10 +1376,10 @@ const downloadPreviewImage = async (url: string, filename?: string | null) => {
     anchor.style.display = 'none';
     document.body.appendChild(anchor);
     anchor.click();
-    document.body.removeChild(anchor);
+    anchor.remove();
 
     setTimeout(() => {
-      window.URL.revokeObjectURL(blobUrl);
+      globalThis.URL.revokeObjectURL(blobUrl);
     }, 100);
   } catch (error) {
     console.error('Erro ao baixar imagem:', error);
@@ -1394,7 +1398,7 @@ const downloadPreviewVideo = async (url: string, filename?: string | null) => {
   try {
     const response = await fetch(url);
     const blob = await response.blob();
-    const blobUrl = window.URL.createObjectURL(blob);
+    const blobUrl = globalThis.URL.createObjectURL(blob);
 
     const anchor = document.createElement('a');
     anchor.href = blobUrl;
@@ -1402,10 +1406,10 @@ const downloadPreviewVideo = async (url: string, filename?: string | null) => {
     anchor.style.display = 'none';
     document.body.appendChild(anchor);
     anchor.click();
-    document.body.removeChild(anchor);
+    anchor.remove();
 
     setTimeout(() => {
-      window.URL.revokeObjectURL(blobUrl);
+      globalThis.URL.revokeObjectURL(blobUrl);
     }, 100);
   } catch (error) {
     console.error('Erro ao baixar vídeo:', error);
@@ -1500,13 +1504,16 @@ const formatFileSize = (bytes: number): string => {
     units.length - 1
   );
   const value = bytes / Math.pow(1024, exponent);
-  const formatted =
-    value >= 100
-      ? value.toFixed(0)
-      : value >= 10
-        ? value.toFixed(1)
-        : value.toFixed(2);
-
+  let formatted: string;
+  if (value >= 100) {
+    formatted = value.toFixed(0);
+    return `${formatted} ${units[exponent]}`;
+  }
+  if (value >= 10) {
+    formatted = value.toFixed(1);
+    return `${formatted} ${units[exponent]}`;
+  }
+  formatted = value.toFixed(2);
   return `${formatted} ${units[exponent]}`;
 };
 
@@ -1590,9 +1597,9 @@ onUnmounted(async () => {
     );
   }
 
-  highlightedMessageTimers.forEach((timeoutId) => {
+  for (const timeoutId of highlightedMessageTimers.values()) {
     clearTimeout(timeoutId);
-  });
+  }
   highlightedMessageTimers.clear();
 });
 
@@ -1872,7 +1879,9 @@ onBeforeUnmount(() => {
                           muted
                           playsinline
                           @click="openPreviewVideo(video)"
-                        ></video>
+                        >
+                          <track kind="captions" />
+                        </video>
                         <div
                           class="video-preview-play-overlay"
                           @click="openPreviewVideo(video)"
@@ -2248,7 +2257,9 @@ onBeforeUnmount(() => {
             class="viewer-video"
             controls
             playsinline
-          ></video>
+          >
+            <track kind="captions" />
+          </video>
 
           <div class="viewer-actions">
             <VBtn
