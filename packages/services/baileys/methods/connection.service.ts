@@ -81,7 +81,9 @@ export class BaileysConnectionService {
     return this.socket;
   }
 
-  private handleInitialConnectionState(initialConnection: boolean): Promise<IBaileysConnectionState> | null {
+  private handleInitialConnectionState(
+    initialConnection: boolean
+  ): Promise<IBaileysConnectionState> | null {
     if (!this.connecting) return null;
 
     if (initialConnection) {
@@ -96,9 +98,11 @@ export class BaileysConnectionService {
   }
 
   private canRestoreSession(allowRestore: boolean): boolean {
-    return allowRestore &&
+    return (
+      allowRestore &&
       (this.status === Status.initial || this.status === Status.disconnected) &&
-      this.hasSession();
+      this.hasSession()
+    );
   }
 
   private handleRestoreSession(): Promise<IBaileysConnectionState> | null {
@@ -110,36 +114,40 @@ export class BaileysConnectionService {
       return this.currentPromise;
     }
 
-    return this.reportConnecting();
+    return Promise.resolve(this.reportConnecting());
   }
 
   private handleExistingConnection(): Promise<IBaileysConnectionState> | null {
     if (this.connected) {
-      return this.reportConnected();
+      return Promise.resolve(this.reportConnected());
     }
 
     if (this.connecting) {
       if (this.currentPromise) {
         return this.currentPromise;
       }
-      return this.reportConnecting();
+      return Promise.resolve(this.reportConnecting());
     }
 
     if (this.status === Status.connected) {
-      return this.reportConnected();
+      return Promise.resolve(this.reportConnected());
     }
 
     return null;
   }
 
-  private handleDisconnectedWithRestore(allowRestore: boolean): Promise<IBaileysConnectionState> | null {
+  private handleDisconnectedWithRestore(
+    allowRestore: boolean
+  ): Promise<IBaileysConnectionState> | null {
     if (!allowRestore) return null;
     if (this.status !== Status.disconnected) return null;
     if (!this.hasSession()) return null;
     return this.restoreWithRetries();
   }
 
-  private handleConnectingWithRestore(allowRestore: boolean): Promise<IBaileysConnectionState> | null {
+  private handleConnectingWithRestore(
+    allowRestore: boolean
+  ): Promise<IBaileysConnectionState> | null {
     if (!allowRestore) return null;
     if (this.status !== Status.connecting) return null;
     if (!this.currentPromise) return null;
