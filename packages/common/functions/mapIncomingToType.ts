@@ -24,7 +24,7 @@ function hasQuotedRecursive(msg: proto.IMessage): boolean {
     (msg as any).templateButtonReplyMessage,
     (msg as any).interactiveResponseMessage,
   ]
-    .map((entry) => (entry as any)?.contextInfo)
+    .map((entry) => entry?.contextInfo)
     .filter(Boolean);
 
   if (contextSources.some((ctx) => ctx?.quotedMessage)) return true;

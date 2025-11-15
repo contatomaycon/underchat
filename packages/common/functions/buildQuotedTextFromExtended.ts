@@ -110,7 +110,7 @@ function processAudioMessage(quotedMessage: any, quoted: IQuotedMessage): void {
 
   quoted.audio = {
     url: null,
-    name: (audioMessage as any).fileName ?? null,
+    name: audioMessage.fileName ?? null,
     mimetype: audioMessage.mimetype ?? null,
     extension: null,
     size: audioMessage.fileLength
@@ -146,7 +146,7 @@ export function buildQuotedTextFromExtended(
     return null;
   }
 
-  const quotedMessage = ctx.quotedMessage as any;
+  const quotedMessage = ctx.quotedMessage;
   const rJid = remoteJid(m?.key);
   const participant = ctx.participant ?? remoteParticipantJid(m?.key);
   const text = extractText(quotedMessage);

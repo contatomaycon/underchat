@@ -27,6 +27,43 @@ import { AudioConverterService } from '@core/services/audioConverter.service';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { UploadFileResponse } from '@core/schema/upload/response.schema';
 
+interface CreateMessageParams {
+  chat: IChat;
+  chatId: string;
+  type: EMessageType;
+  message: string | null;
+  messageQuotedId: string | null;
+  quotedMessage: IQuotedMessage | null;
+}
+
+interface CreateVideoMessageParams extends CreateMessageParams {
+  videoData: UploadFileResponse;
+  videoDuration: number | null;
+}
+
+interface CreateAudioMessageParams extends CreateMessageParams {
+  audioData: UploadFileResponse;
+  duration: number | null;
+  isViewOnce: boolean;
+  isPtt: boolean;
+}
+
+interface ProcessMediaMessagesParams {
+  chat: IChat;
+  chatId: string;
+  accountId: string;
+  type: EMessageType;
+  message: string | null;
+  messageQuotedId: string | null | undefined;
+  t: TFunction<'translation', undefined>;
+}
+
+interface ProcessTextMessageParams extends ProcessMediaMessagesParams {
+  linkPreview: CreateMessageChatsBody['link_preview'];
+}
+
+type ImagesInput = UploadFileRequest | UploadFileRequest[] | null | undefined;
+
 @injectable()
 export class ChatMessageCreatorUseCase {
   constructor(
@@ -149,9 +186,7 @@ export class ChatMessageCreatorUseCase {
     }
   }
 
-  private normalizeImagesArray(
-    images?: UploadFileRequest | UploadFileRequest[] | null
-  ): UploadFileRequest[] {
+  private normalizeImagesArray(images?: ImagesInput): UploadFileRequest[] {
     if (!images) return [];
 
     if (Array.isArray(images)) {
@@ -221,7 +256,7 @@ export class ChatMessageCreatorUseCase {
   }
 
   private normalizeDurationField(value: unknown): number | null {
-    if (value === null || typeof value === 'undefined') {
+    if (value === null || value === undefined) {
       return null;
     }
 
@@ -245,8 +280,19 @@ export class ChatMessageCreatorUseCase {
     return numeric;
   }
 
+  private normalizeBooleanFromString(value: string): boolean {
+    const trimmed = value.trim().toLowerCase();
+    if (!trimmed) {
+      return false;
+    }
+    if (trimmed === 'true') return true;
+    if (trimmed === '1') return true;
+    if (trimmed === 'on') return true;
+    return false;
+  }
+
   private normalizeBooleanField(value: unknown): boolean {
-    if (value === null || typeof value === 'undefined') {
+    if (value === null || value === undefined) {
       return false;
     }
 
@@ -263,14 +309,7 @@ export class ChatMessageCreatorUseCase {
     }
 
     if (typeof value === 'string') {
-      const trimmed = value.trim().toLowerCase();
-      if (!trimmed) {
-        return false;
-      }
-      if (trimmed === 'true') return true;
-      if (trimmed === '1') return true;
-      if (trimmed === 'on') return true;
-      return false;
+      return this.normalizeBooleanFromString(value);
     }
 
     if (typeof value === 'number') {
@@ -285,7 +324,7 @@ export class ChatMessageCreatorUseCase {
   }
 
   private extractFieldValue(value: unknown): string | null {
-    if (value === null || typeof value === 'undefined') {
+    if (value === null || value === undefined) {
       return null;
     }
 
@@ -303,7 +342,15 @@ export class ChatMessageCreatorUseCase {
       return null;
     }
 
-    return String(value);
+    if (typeof value === 'string') {
+      return value;
+    }
+
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+
+    return null;
   }
 
   private normalizeMessageQuotedId(
@@ -431,16 +478,17 @@ export class ChatMessageCreatorUseCase {
     };
   }
 
-  private createVideoMessage(
-    chat: IChat,
-    chatId: string,
-    type: EMessageType,
-    message: string | null,
-    videoData: UploadFileResponse,
-    messageQuotedId: string | null,
-    quotedMessage: IQuotedMessage | null,
-    videoDuration: number | null
-  ): IChatMessage {
+  private createVideoMessage(params: CreateVideoMessageParams): IChatMessage {
+    const {
+      chat,
+      chatId,
+      type,
+      message,
+      videoData,
+      messageQuotedId,
+      quotedMessage,
+      videoDuration,
+    } = params;
     return {
       message_id: uuidv4(),
       chat_id: chatId,
@@ -486,18 +534,19 @@ export class ChatMessageCreatorUseCase {
     };
   }
 
-  private createAudioMessage(
-    chat: IChat,
-    chatId: string,
-    type: EMessageType,
-    message: string | null,
-    audioData: UploadFileResponse,
-    messageQuotedId: string | null,
-    quotedMessage: IQuotedMessage | null,
-    duration: number | null,
-    isViewOnce: boolean,
-    isPtt: boolean
-  ): IChatMessage {
+  private createAudioMessage(params: CreateAudioMessageParams): IChatMessage {
+    const {
+      chat,
+      chatId,
+      type,
+      message,
+      audioData,
+      messageQuotedId,
+      quotedMessage,
+      duration,
+      isViewOnce,
+      isPtt,
+    } = params;
     return {
       message_id: uuidv4(),
       chat_id: chatId,
@@ -640,15 +689,11 @@ export class ChatMessageCreatorUseCase {
   }
 
   private async processImageMessages(
-    chat: IChat,
-    chatId: string,
     images: UploadFileRequest[],
-    accountId: string,
-    type: EMessageType,
-    message: string | null,
-    messageQuotedId: string | null | undefined,
-    t: TFunction<'translation', undefined>
+    params: ProcessMediaMessagesParams
   ): Promise<boolean> {
+    const { chat, chatId, accountId, type, message, messageQuotedId, t } =
+      params;
     let validImages: UploadFileResponse[];
     try {
       validImages = await this.uploadImages(images, accountId);
@@ -720,16 +765,12 @@ export class ChatMessageCreatorUseCase {
   }
 
   private async processVideoMessages(
-    chat: IChat,
-    chatId: string,
     videos: UploadFileRequest[],
-    accountId: string,
-    type: EMessageType,
-    message: string | null,
-    messageQuotedId: string | null | undefined,
     videoDuration: number | null,
-    t: TFunction<'translation', undefined>
+    params: ProcessMediaMessagesParams
   ): Promise<boolean> {
+    const { chat, chatId, accountId, type, message, messageQuotedId, t } =
+      params;
     let validVideos: UploadFileResponse[];
     try {
       validVideos = await this.uploadVideos(videos, accountId);
@@ -766,16 +807,16 @@ export class ChatMessageCreatorUseCase {
     const quotedId = messageQuotedId ?? null;
 
     if (validVideos.length === 1) {
-      const videoMessage = this.createVideoMessage(
+      const videoMessage = this.createVideoMessage({
         chat,
         chatId,
         type,
         message,
-        validVideos[0],
-        quotedId,
+        videoData: validVideos[0],
+        messageQuotedId: quotedId,
         quotedMessage,
-        videoDuration
-      );
+        videoDuration,
+      });
 
       await this.publishMessage(videoMessage);
 
@@ -783,16 +824,16 @@ export class ChatMessageCreatorUseCase {
     }
 
     const publishTasks = validVideos.map((videoData) => {
-      const videoMessage = this.createVideoMessage(
+      const videoMessage = this.createVideoMessage({
         chat,
         chatId,
         type,
         message,
         videoData,
-        quotedId,
+        messageQuotedId: quotedId,
         quotedMessage,
-        videoDuration
-      );
+        videoDuration,
+      });
 
       return this.publishMessage(videoMessage);
     });
@@ -803,17 +844,13 @@ export class ChatMessageCreatorUseCase {
   }
 
   private async processAudioMessages(
-    chat: IChat,
-    chatId: string,
     audios: UploadFileRequest[],
-    accountId: string,
-    type: EMessageType,
-    message: string | null,
-    messageQuotedId: string | null | undefined,
     audioDuration: number | null,
     isViewOnce: boolean,
-    t: TFunction<'translation', undefined>
+    params: ProcessMediaMessagesParams
   ): Promise<boolean> {
+    const { chat, chatId, accountId, type, message, messageQuotedId, t } =
+      params;
     let validAudios: UploadFileResponse[];
 
     try {
@@ -849,18 +886,18 @@ export class ChatMessageCreatorUseCase {
     const isPtt = true;
 
     if (validAudios.length === 1) {
-      const audioMessage = this.createAudioMessage(
+      const audioMessage = this.createAudioMessage({
         chat,
         chatId,
         type,
         message,
-        validAudios[0],
-        quotedId,
+        audioData: validAudios[0],
+        messageQuotedId: quotedId,
         quotedMessage,
-        audioDuration,
+        duration: audioDuration,
         isViewOnce,
-        isPtt
-      );
+        isPtt,
+      });
 
       await this.publishMessage(audioMessage);
 
@@ -868,18 +905,18 @@ export class ChatMessageCreatorUseCase {
     }
 
     const publishTasks = validAudios.map((audioData) => {
-      const audioMessage = this.createAudioMessage(
+      const audioMessage = this.createAudioMessage({
         chat,
         chatId,
         type,
         message,
         audioData,
-        quotedId,
+        messageQuotedId: quotedId,
         quotedMessage,
-        audioDuration,
+        duration: audioDuration,
         isViewOnce,
-        isPtt
-      );
+        isPtt,
+      });
 
       return this.publishMessage(audioMessage);
     });
@@ -890,15 +927,11 @@ export class ChatMessageCreatorUseCase {
   }
 
   private async processDocumentMessages(
-    chat: IChat,
-    chatId: string,
     documents: UploadFileRequest[],
-    accountId: string,
-    type: EMessageType,
-    message: string | null,
-    messageQuotedId: string | null | undefined,
-    t: TFunction<'translation', undefined>
+    params: ProcessMediaMessagesParams
   ): Promise<boolean> {
+    const { chat, chatId, accountId, type, message, messageQuotedId, t } =
+      params;
     let uploadedDocuments: Array<UploadFileResponse | null>;
     try {
       uploadedDocuments = await Promise.all(
@@ -978,15 +1011,18 @@ export class ChatMessageCreatorUseCase {
   }
 
   private async processTextMessage(
-    chat: IChat,
-    chatId: string,
-    type: EMessageType,
-    message: string | null,
-    linkPreview: CreateMessageChatsBody['link_preview'],
-    messageQuotedId: string | null | undefined,
-    accountId: string,
-    t: TFunction<'translation', undefined>
+    params: ProcessTextMessageParams
   ): Promise<boolean> {
+    const {
+      chat,
+      chatId,
+      type,
+      message,
+      linkPreview,
+      messageQuotedId,
+      accountId,
+      t,
+    } = params;
     let quotedMessage: IQuotedMessage | null = null;
 
     if (messageQuotedId) {
@@ -1070,16 +1106,15 @@ export class ChatMessageCreatorUseCase {
         throw new Error(t('documents_required'));
       }
 
-      return this.processDocumentMessages(
+      return this.processDocumentMessages(documents, {
         chat,
-        params.chat_id,
-        documents,
+        chatId: params.chat_id,
         accountId,
         type,
         message,
         messageQuotedId,
-        t
-      );
+        t,
+      });
     }
 
     if (type === EMessageType.video) {
@@ -1087,17 +1122,15 @@ export class ChatMessageCreatorUseCase {
         throw new Error(t('videos_required'));
       }
 
-      return this.processVideoMessages(
+      return this.processVideoMessages(videos, videoDuration, {
         chat,
-        params.chat_id,
-        videos,
+        chatId: params.chat_id,
         accountId,
         type,
         message,
         messageQuotedId,
-        videoDuration,
-        t
-      );
+        t,
+      });
     }
 
     if (type === EMessageType.audio) {
@@ -1105,43 +1138,39 @@ export class ChatMessageCreatorUseCase {
         throw new Error(t('audio_required'));
       }
 
-      return this.processAudioMessages(
+      return this.processAudioMessages(audios, audioDuration, audioViewOnce, {
         chat,
-        params.chat_id,
-        audios,
+        chatId: params.chat_id,
         accountId,
         type,
         message,
         messageQuotedId,
-        audioDuration,
-        audioViewOnce,
-        t
-      );
+        t,
+      });
     }
 
     if (images.length > 0) {
-      return this.processImageMessages(
+      return this.processImageMessages(images, {
         chat,
-        params.chat_id,
-        images,
+        chatId: params.chat_id,
         accountId,
         type,
         message,
         messageQuotedId,
-        t
-      );
+        t,
+      });
     }
 
-    return this.processTextMessage(
+    return this.processTextMessage({
       chat,
-      params.chat_id,
+      chatId: params.chat_id,
+      accountId,
       type,
       message,
-      body.link_preview,
       messageQuotedId,
-      accountId,
-      t
-    );
+      linkPreview: body.link_preview,
+      t,
+    });
   }
 
   private async getMessage(

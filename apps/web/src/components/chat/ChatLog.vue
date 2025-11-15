@@ -1101,7 +1101,7 @@ watch(
   () => chatStore.listMessages,
   (messages) => {
     nextTick(() => {
-      messages.forEach((msg) => {
+      for (const msg of messages) {
         if (
           msg.content?.type === EMessageType.audio &&
           msg.content?.audio?.url &&
@@ -1109,7 +1109,7 @@ watch(
         ) {
           generateAudioWaveform(msg.message_id, msg.content.audio.url);
         }
-      });
+      }
     });
   },
   { deep: true, immediate: true }
@@ -1128,11 +1128,11 @@ onMounted(() => {
 
     document.addEventListener('click', onClickOutside);
 
-    chatStore.listMessages.forEach((msg) => {
+    for (const msg of chatStore.listMessages) {
       if (msg.content?.type === EMessageType.audio && msg.content?.audio?.url) {
         generateAudioWaveform(msg.message_id, msg.content.audio.url);
       }
-    });
+    }
   });
 });
 
@@ -1364,7 +1364,9 @@ onUnmounted(() => {
                         preload="metadata"
                         muted
                         playsinline
-                      ></video>
+                      >
+                        <track kind="captions" />
+                      </video>
                       <div class="quoted-video-overlay">
                         <VIcon size="16">tabler-player-play</VIcon>
                       </div>
@@ -1555,7 +1557,9 @@ onUnmounted(() => {
                     preload="metadata"
                     muted
                     playsinline
-                  ></video>
+                  >
+                    <track kind="captions" />
+                  </video>
                   <div class="video-play-overlay">
                     <VIcon size="28">tabler-player-play</VIcon>
                   </div>
@@ -1984,7 +1988,9 @@ onUnmounted(() => {
                   preload="metadata"
                   muted
                   playsinline
-                ></video>
+                >
+                  <track kind="captions" />
+                </video>
                 <div
                   v-if="pending.status !== 'error'"
                   class="pending-video-overlay"
@@ -2157,7 +2163,9 @@ onUnmounted(() => {
             class="viewer-video"
             controls
             playsinline
-          ></video>
+          >
+            <track kind="captions" />
+          </video>
 
           <div class="viewer-actions">
             <VBtn

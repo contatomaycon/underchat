@@ -18,11 +18,13 @@ import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { selectJidChat } from '@core/common/functions/selectJidChat';
+import { webcrypto } from 'node:crypto';
 
 @singleton()
 export class MessageSendConsume {
   private consumer: Consumer | null = null;
-  private lastMessageTypeByChatId: Map<string, EMessageType> = new Map();
+  private readonly lastMessageTypeByChatId: Map<string, EMessageType> =
+    new Map();
 
   constructor(
     @inject('Kafka') private readonly kafka: Kafka,
@@ -158,7 +160,33 @@ export class MessageSendConsume {
   }
 
   private getRandomDelay(): number {
-    return Math.floor(Math.random() * (2000 - 500 + 1)) + 500;
+    const array = new Uint32Array(1);
+    webcrypto.getRandomValues(array);
+    const randomValue = array[0] / (0xffffffff + 1);
+    return Math.floor(randomValue * (2000 - 500 + 1)) + 500;
+  }
+
+  private async applyDelayIfNeeded(
+    currentType: EMessageType | undefined,
+    lastType: EMessageType | undefined
+  ): Promise<void> {
+    if (currentType && currentType === lastType) {
+      const delay = this.getRandomDelay();
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  private async processMessageWithDelay(
+    jid: string,
+    chatId: string,
+    data: IChatMessage,
+    currentType: EMessageType,
+    lastType: EMessageType | undefined,
+    processor: (jid: string, data: IChatMessage) => Promise<void>
+  ): Promise<void> {
+    await this.applyDelayIfNeeded(currentType, lastType);
+    await processor(jid, data);
+    this.lastMessageTypeByChatId.set(chatId, currentType);
   }
 
   private async processMessage(data: IChatMessage): Promise<void> {
@@ -178,54 +206,50 @@ export class MessageSendConsume {
     const hasQuoted = data.has_quoted ?? !!data.content?.quoted;
 
     if (currentType === EMessageType.image && data.content?.image?.url) {
-      if (lastType === EMessageType.image) {
-        const delay = this.getRandomDelay();
-
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
-
-      await this.processImage(jid, data);
-      this.lastMessageTypeByChatId.set(chatId, EMessageType.image);
-
+      await this.processMessageWithDelay(
+        jid,
+        chatId,
+        data,
+        EMessageType.image,
+        lastType,
+        (j, d) => this.processImage(j, d)
+      );
       return;
     }
 
     if (currentType === EMessageType.document && data.content?.document?.url) {
-      if (lastType === EMessageType.document) {
-        const delay = this.getRandomDelay();
-
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
-
-      await this.processDocument(jid, data);
-      this.lastMessageTypeByChatId.set(chatId, EMessageType.document);
-
+      await this.processMessageWithDelay(
+        jid,
+        chatId,
+        data,
+        EMessageType.document,
+        lastType,
+        (j, d) => this.processDocument(j, d)
+      );
       return;
     }
 
     if (currentType === EMessageType.audio && data.content?.audio?.url) {
-      if (lastType === EMessageType.audio) {
-        const delay = this.getRandomDelay();
-
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
-
-      await this.processAudio(jid, data);
-      this.lastMessageTypeByChatId.set(chatId, EMessageType.audio);
-
+      await this.processMessageWithDelay(
+        jid,
+        chatId,
+        data,
+        EMessageType.audio,
+        lastType,
+        (j, d) => this.processAudio(j, d)
+      );
       return;
     }
 
     if (currentType === EMessageType.video && data.content?.video?.url) {
-      if (lastType === EMessageType.video) {
-        const delay = this.getRandomDelay();
-
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
-
-      await this.processVideo(jid, data);
-      this.lastMessageTypeByChatId.set(chatId, EMessageType.video);
-
+      await this.processMessageWithDelay(
+        jid,
+        chatId,
+        data,
+        EMessageType.video,
+        lastType,
+        (j, d) => this.processVideo(j, d)
+      );
       return;
     }
 
@@ -243,7 +267,6 @@ export class MessageSendConsume {
     if (currentType === EMessageType.delete_message && data.message_key?.id) {
       await this.processDelete(jid, data);
       this.lastMessageTypeByChatId.set(chatId, EMessageType.delete_message);
-
       return;
     }
 
@@ -366,8 +389,7 @@ export class MessageSendConsume {
       return;
     }
 
-    const lastReaction =
-      data.content.reactions[data.content.reactions.length - 1];
+    const lastReaction = data.content.reactions.at(-1);
     if (!lastReaction) {
       return;
     }
@@ -456,6 +478,85 @@ export class MessageSendConsume {
     await this.pushUpdate(update);
   }
 
+  private extractBase64FromThumbnail(thumb: string | null): string | null {
+    if (!thumb) return null;
+    if (!thumb.startsWith('data:')) return thumb;
+    return thumb.split(',')[1] ?? null;
+  }
+
+  private createQuotedImageMessage(
+    q: NonNullable<IChatMessage['content']>['quoted']
+  ): proto.IMessage | null {
+    if (q?.type !== EMessageType.image) return null;
+
+    const thumb = q.image?.thumbnail ?? null;
+    const base64 = this.extractBase64FromThumbnail(thumb);
+
+    return {
+      imageMessage: {
+        caption: q.image?.caption ?? undefined,
+        jpegThumbnail: base64 ? Buffer.from(base64, 'base64') : undefined,
+      },
+    };
+  }
+
+  private createQuotedVideoMessage(
+    q: NonNullable<IChatMessage['content']>['quoted']
+  ): proto.IMessage | null {
+    if (q?.type !== EMessageType.video) return null;
+
+    const thumb = q.video?.thumbnail ?? null;
+    const base64 = this.extractBase64FromThumbnail(thumb);
+
+    return {
+      videoMessage: {
+        caption: q.video?.caption ?? undefined,
+        jpegThumbnail: base64 ? Buffer.from(base64, 'base64') : undefined,
+        fileLength: q.video?.size ?? undefined,
+        mimetype: q.video?.mimetype ?? undefined,
+      },
+    };
+  }
+
+  private createQuotedDocumentMessage(
+    q: NonNullable<IChatMessage['content']>['quoted']
+  ): proto.IMessage | null {
+    if (q?.type !== EMessageType.document || !q?.document) return null;
+
+    return {
+      documentMessage: {
+        fileName: q.document.name ?? undefined,
+        mimetype: q.document.mimetype ?? undefined,
+        caption: q.message ?? undefined,
+        fileLength: q.document.size ?? undefined,
+      },
+    };
+  }
+
+  private createQuotedAudioMessage(
+    q: NonNullable<IChatMessage['content']>['quoted']
+  ): proto.IMessage | null {
+    if (q?.type !== EMessageType.audio || !q?.audio) return null;
+
+    return {
+      audioMessage: {
+        ptt: q.audio.ptt ?? true,
+        seconds: q.audio.duration ?? undefined,
+        mimetype: q.audio.mimetype ?? undefined,
+      },
+    };
+  }
+
+  private createQuotedTextMessage(
+    q: NonNullable<IChatMessage['content']>['quoted']
+  ): proto.IMessage | null {
+    if (q?.type !== EMessageType.text || !q?.message) return null;
+
+    return {
+      conversation: q.message,
+    };
+  }
+
   private composeQuotedMessage(data: IChatMessage): WAMessage {
     const q = data.content?.quoted;
 
@@ -469,64 +570,27 @@ export class MessageSendConsume {
       message: (q?.message as proto.IMessage | null) ?? null,
     };
 
-    if (!quoted.message) {
-      if (q?.type === EMessageType.text && q?.message) {
-        quoted.message = {
-          conversation: q.message,
-        };
-      }
+    if (quoted.message) {
+      return quoted;
+    }
 
-      if (q?.type === EMessageType.image) {
-        const thumb = q.image?.thumbnail ?? null;
-        const base64 =
-          thumb && thumb.startsWith('data:')
-            ? (thumb.split(',')[1] ?? null)
-            : thumb;
+    if (!q) {
+      return quoted;
+    }
 
-        quoted.message = {
-          imageMessage: {
-            caption: q.image?.caption ?? undefined,
-            jpegThumbnail: base64 ? Buffer.from(base64, 'base64') : undefined,
-          },
-        };
-      }
+    const messageCreators = [
+      () => this.createQuotedTextMessage(q),
+      () => this.createQuotedImageMessage(q),
+      () => this.createQuotedVideoMessage(q),
+      () => this.createQuotedDocumentMessage(q),
+      () => this.createQuotedAudioMessage(q),
+    ];
 
-      if (q?.type === EMessageType.video) {
-        const thumb = q.video?.thumbnail ?? null;
-        const base64 =
-          thumb && thumb.startsWith('data:')
-            ? (thumb.split(',')[1] ?? null)
-            : thumb;
-
-        quoted.message = {
-          videoMessage: {
-            caption: q.video?.caption ?? undefined,
-            jpegThumbnail: base64 ? Buffer.from(base64, 'base64') : undefined,
-            fileLength: q.video?.size ?? undefined,
-            mimetype: q.video?.mimetype ?? undefined,
-          },
-        };
-      }
-
-      if (q?.type === EMessageType.document && q?.document) {
-        quoted.message = {
-          documentMessage: {
-            fileName: q.document.name ?? undefined,
-            mimetype: q.document.mimetype ?? undefined,
-            caption: q.message ?? undefined,
-            fileLength: q.document.size ?? undefined,
-          },
-        };
-      }
-
-      if (q?.type === EMessageType.audio && q?.audio) {
-        quoted.message = {
-          audioMessage: {
-            ptt: q.audio.ptt ?? true,
-            seconds: q.audio.duration ?? undefined,
-            mimetype: q.audio.mimetype ?? undefined,
-          },
-        };
+    for (const creator of messageCreators) {
+      const message = creator();
+      if (message) {
+        quoted.message = message;
+        break;
       }
     }
 

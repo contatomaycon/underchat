@@ -29,7 +29,24 @@ export class StorageService {
   }
 
   private converterFilename(filename: string): string {
-    return filename.replace(/ /g, '_');
+    return filename.replaceAll(' ', '_');
+  }
+
+  private determineBaseName(
+    providedName: string | null | undefined,
+    providedExt: string | null | undefined,
+    ext: string,
+    accountId: string
+  ): string {
+    if (!providedName) {
+      return `${accountId}-${Date.now()}.${ext}`;
+    }
+
+    if (providedExt) {
+      return providedName;
+    }
+
+    return `${providedName}.${ext}`;
   }
 
   public async uploadImage(
@@ -396,11 +413,12 @@ export class StorageService {
     const detectedMime = ft?.mime ?? 'application/octet-stream';
     const mime = options?.mimetype ?? detectedMime;
 
-    const baseName = providedName
-      ? providedExt
-        ? providedName
-        : `${providedName}.${ext}`
-      : `${accountId}-${Date.now()}.${ext}`;
+    const baseName = this.determineBaseName(
+      providedName,
+      providedExt,
+      ext,
+      accountId
+    );
     const key = `${accountId}/${this.converterFilename(baseName)}`;
 
     await this.client.send(

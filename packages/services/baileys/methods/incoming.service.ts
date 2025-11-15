@@ -23,7 +23,7 @@ import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
 @singleton()
 export class BaileysIncomingMessageService {
   private currentSocket?: WASocket;
-  private processedMessages = new Set<string>();
+  private readonly processedMessages = new Set<string>();
   private cleanupInterval?: NodeJS.Timeout;
 
   constructor(

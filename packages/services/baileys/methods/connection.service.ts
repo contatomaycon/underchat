@@ -81,6 +81,71 @@ export class BaileysConnectionService {
     return this.socket;
   }
 
+  private handleInitialConnectionState(initialConnection: boolean): Promise<IBaileysConnectionState> | null {
+    if (!this.connecting) return null;
+
+    if (initialConnection) {
+      this.cancelAttempt();
+    }
+
+    if (this.currentPromise) {
+      return this.currentPromise;
+    }
+
+    return null;
+  }
+
+  private canRestoreSession(allowRestore: boolean): boolean {
+    return allowRestore &&
+      (this.status === Status.initial || this.status === Status.disconnected) &&
+      this.hasSession();
+  }
+
+  private handleRestoreSession(): Promise<IBaileysConnectionState> | null {
+    if (!this.restoreSessionInProgress()) {
+      return this.restoreWithRetries();
+    }
+
+    if (this.currentPromise) {
+      return this.currentPromise;
+    }
+
+    return this.reportConnecting();
+  }
+
+  private handleExistingConnection(): Promise<IBaileysConnectionState> | null {
+    if (this.connected) {
+      return this.reportConnected();
+    }
+
+    if (this.connecting) {
+      if (this.currentPromise) {
+        return this.currentPromise;
+      }
+      return this.reportConnecting();
+    }
+
+    if (this.status === Status.connected) {
+      return this.reportConnected();
+    }
+
+    return null;
+  }
+
+  private handleDisconnectedWithRestore(allowRestore: boolean): Promise<IBaileysConnectionState> | null {
+    if (!allowRestore) return null;
+    if (this.status !== Status.disconnected) return null;
+    if (!this.hasSession()) return null;
+    return this.restoreWithRetries();
+  }
+
+  private handleConnectingWithRestore(allowRestore: boolean): Promise<IBaileysConnectionState> | null {
+    if (!allowRestore) return null;
+    if (this.status !== Status.connecting) return null;
+    if (!this.currentPromise) return null;
+    return this.currentPromise;
+  }
+
   async connect(input: IBaileysConnection): Promise<IBaileysConnectionState> {
     const {
       initial_connection: initialConnection = false,
@@ -97,63 +162,31 @@ export class BaileysConnectionService {
       return this.reportConnected();
     }
 
-    if (this.connecting) {
-      if (initialConnection) {
-        this.cancelAttempt();
+    const initialState = this.handleInitialConnectionState(initialConnection);
+    if (initialState) {
+      return initialState;
+    }
+
+    if (this.canRestoreSession(allowRestore)) {
+      const restoreState = this.handleRestoreSession();
+      if (restoreState) {
+        return restoreState;
       }
-
-      if (this.currentPromise) {
-        return this.currentPromise;
-      }
     }
 
-    const canRestore =
-      allowRestore &&
-      (this.status === Status.initial || this.status === Status.disconnected) &&
-      this.hasSession();
-
-    if (canRestore) {
-      if (!this.restoreSessionInProgress()) {
-        return this.restoreWithRetries();
-      }
-
-      if (this.currentPromise) {
-        return this.currentPromise;
-      }
-
-      return this.reportConnecting();
+    const existingState = this.handleExistingConnection();
+    if (existingState) {
+      return existingState;
     }
 
-    if (this.connected) {
-      return this.reportConnected();
+    const disconnectedState = this.handleDisconnectedWithRestore(allowRestore);
+    if (disconnectedState) {
+      return disconnectedState;
     }
 
-    if (this.connecting) {
-      if (this.currentPromise) {
-        return this.currentPromise;
-      }
-
-      return this.reportConnecting();
-    }
-
-    if (this.status === Status.connected) {
-      return this.reportConnected();
-    }
-
-    if (
-      allowRestore &&
-      this.status === Status.disconnected &&
-      this.hasSession()
-    ) {
-      return this.restoreWithRetries();
-    }
-
-    if (
-      allowRestore &&
-      this.status === Status.connecting &&
-      this.currentPromise
-    ) {
-      return this.currentPromise;
+    const connectingState = this.handleConnectingWithRestore(allowRestore);
+    if (connectingState) {
+      return connectingState;
     }
 
     this.prepareFolder();
