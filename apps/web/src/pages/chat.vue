@@ -2965,16 +2965,6 @@ onBeforeUnmount(() => {
                           <span v-if="contact.phone_partial">
                             {{ contact.phone_partial }}
                           </span>
-                          <span
-                            v-if="
-                              contact.phone_partial && contact.email_partial
-                            "
-                          >
-                            •
-                          </span>
-                          <span v-if="contact.email_partial">
-                            {{ contact.email_partial }}
-                          </span>
                         </span>
                       </div>
                       <VBtn
