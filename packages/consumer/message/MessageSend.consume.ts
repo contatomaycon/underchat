@@ -189,6 +189,54 @@ export class MessageSendConsume {
     this.lastMessageTypeByChatId.set(chatId, currentType);
   }
 
+  private async processMediaMessage(
+    jid: string,
+    chatId: string,
+    data: IChatMessage,
+    type: EMessageType,
+    lastType: EMessageType | undefined,
+    processor: (jid: string, data: IChatMessage) => Promise<void>
+  ): Promise<boolean> {
+    await this.processMessageWithDelay(
+      jid,
+      chatId,
+      data,
+      type,
+      lastType,
+      processor
+    );
+    return true;
+  }
+
+  private async processTextMessage(
+    jid: string,
+    chatId: string,
+    data: IChatMessage,
+    hasQuoted: boolean
+  ): Promise<boolean> {
+    if (hasQuoted && data.content?.quoted) {
+      await this.processTextQuoted(jid, data);
+      this.lastMessageTypeByChatId.set(chatId, EMessageType.text);
+      return true;
+    }
+
+    await this.processText(jid, data);
+    this.lastMessageTypeByChatId.set(chatId, EMessageType.text);
+    return true;
+  }
+
+  private async processActionMessage(
+    jid: string,
+    chatId: string,
+    data: IChatMessage,
+    type: EMessageType,
+    processor: (jid: string, data: IChatMessage) => Promise<void>
+  ): Promise<boolean> {
+    await processor(jid, data);
+    this.lastMessageTypeByChatId.set(chatId, type);
+    return true;
+  }
+
   private async processMessage(data: IChatMessage): Promise<void> {
     const jid = selectJidChat(data);
 
@@ -206,7 +254,7 @@ export class MessageSendConsume {
     const hasQuoted = data.has_quoted ?? !!data.content?.quoted;
 
     if (currentType === EMessageType.image && data.content?.image?.url) {
-      await this.processMessageWithDelay(
+      await this.processMediaMessage(
         jid,
         chatId,
         data,
@@ -218,7 +266,7 @@ export class MessageSendConsume {
     }
 
     if (currentType === EMessageType.document && data.content?.document?.url) {
-      await this.processMessageWithDelay(
+      await this.processMediaMessage(
         jid,
         chatId,
         data,
@@ -230,7 +278,7 @@ export class MessageSendConsume {
     }
 
     if (currentType === EMessageType.audio && data.content?.audio?.url) {
-      await this.processMessageWithDelay(
+      await this.processMediaMessage(
         jid,
         chatId,
         data,
@@ -242,7 +290,7 @@ export class MessageSendConsume {
     }
 
     if (currentType === EMessageType.video && data.content?.video?.url) {
-      await this.processMessageWithDelay(
+      await this.processMediaMessage(
         jid,
         chatId,
         data,
@@ -254,25 +302,29 @@ export class MessageSendConsume {
     }
 
     if (currentType === EMessageType.text && data.content?.message) {
-      if (hasQuoted && data.content?.quoted) {
-        await this.processTextQuoted(jid, data);
-        this.lastMessageTypeByChatId.set(chatId, EMessageType.text);
-        return;
-      }
-      await this.processText(jid, data);
-      this.lastMessageTypeByChatId.set(chatId, EMessageType.text);
+      await this.processTextMessage(jid, chatId, data, hasQuoted);
       return;
     }
 
     if (currentType === EMessageType.delete_message && data.message_key?.id) {
-      await this.processDelete(jid, data);
-      this.lastMessageTypeByChatId.set(chatId, EMessageType.delete_message);
+      await this.processActionMessage(
+        jid,
+        chatId,
+        data,
+        EMessageType.delete_message,
+        (j, d) => this.processDelete(j, d)
+      );
       return;
     }
 
     if (currentType === EMessageType.react && data.message_key?.id) {
-      await this.processReact(jid, data);
-      this.lastMessageTypeByChatId.set(chatId, EMessageType.react);
+      await this.processActionMessage(
+        jid,
+        chatId,
+        data,
+        EMessageType.react,
+        (j, d) => this.processReact(j, d)
+      );
     }
   }
 

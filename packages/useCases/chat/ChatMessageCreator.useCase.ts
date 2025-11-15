@@ -26,43 +26,11 @@ import { StorageService } from '@core/services/storage.service';
 import { AudioConverterService } from '@core/services/audioConverter.service';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { UploadFileResponse } from '@core/schema/upload/response.schema';
-
-interface CreateMessageParams {
-  chat: IChat;
-  chatId: string;
-  type: EMessageType;
-  message: string | null;
-  messageQuotedId: string | null;
-  quotedMessage: IQuotedMessage | null;
-}
-
-interface CreateVideoMessageParams extends CreateMessageParams {
-  videoData: UploadFileResponse;
-  videoDuration: number | null;
-}
-
-interface CreateAudioMessageParams extends CreateMessageParams {
-  audioData: UploadFileResponse;
-  duration: number | null;
-  isViewOnce: boolean;
-  isPtt: boolean;
-}
-
-interface ProcessMediaMessagesParams {
-  chat: IChat;
-  chatId: string;
-  accountId: string;
-  type: EMessageType;
-  message: string | null;
-  messageQuotedId: string | null | undefined;
-  t: TFunction<'translation', undefined>;
-}
-
-interface ProcessTextMessageParams extends ProcessMediaMessagesParams {
-  linkPreview: CreateMessageChatsBody['link_preview'];
-}
-
-type ImagesInput = UploadFileRequest | UploadFileRequest[] | null | undefined;
+import { ICreateVideoMessageParams } from '@core/common/interfaces/ICreateVideoMessageParams';
+import { ICreateAudioMessageParams } from '@core/common/interfaces/ICreateAudioMessageParams';
+import { IProcessMediaMessagesParams } from '@core/common/interfaces/IProcessMediaMessagesParams';
+import { IProcessTextMessageParams } from '@core/common/interfaces/IProcessTextMessageParams';
+import { IUploadFileInput } from '@core/common/interfaces/IUploadFileInput';
 
 @injectable()
 export class ChatMessageCreatorUseCase {
@@ -186,7 +154,7 @@ export class ChatMessageCreatorUseCase {
     }
   }
 
-  private normalizeImagesArray(images?: ImagesInput): UploadFileRequest[] {
+  private normalizeImagesArray(images?: IUploadFileInput): UploadFileRequest[] {
     if (!images) return [];
 
     if (Array.isArray(images)) {
@@ -197,7 +165,7 @@ export class ChatMessageCreatorUseCase {
   }
 
   private normalizeDocumentsArray(
-    documents?: UploadFileRequest | UploadFileRequest[] | null
+    documents?: IUploadFileInput
   ): UploadFileRequest[] {
     if (!documents) return [];
 
@@ -208,9 +176,7 @@ export class ChatMessageCreatorUseCase {
     return [documents];
   }
 
-  private normalizeVideosArray(
-    videos?: UploadFileRequest | UploadFileRequest[] | null
-  ): UploadFileRequest[] {
+  private normalizeVideosArray(videos?: IUploadFileInput): UploadFileRequest[] {
     if (!videos) return [];
 
     if (Array.isArray(videos)) {
@@ -220,9 +186,7 @@ export class ChatMessageCreatorUseCase {
     return [videos];
   }
 
-  private normalizeAudiosArray(
-    audios?: UploadFileRequest | UploadFileRequest[] | null
-  ): UploadFileRequest[] {
+  private normalizeAudiosArray(audios?: IUploadFileInput): UploadFileRequest[] {
     if (!audios) return [];
 
     if (Array.isArray(audios)) {
@@ -478,7 +442,7 @@ export class ChatMessageCreatorUseCase {
     };
   }
 
-  private createVideoMessage(params: CreateVideoMessageParams): IChatMessage {
+  private createVideoMessage(params: ICreateVideoMessageParams): IChatMessage {
     const {
       chat,
       chatId,
@@ -534,7 +498,7 @@ export class ChatMessageCreatorUseCase {
     };
   }
 
-  private createAudioMessage(params: CreateAudioMessageParams): IChatMessage {
+  private createAudioMessage(params: ICreateAudioMessageParams): IChatMessage {
     const {
       chat,
       chatId,
@@ -690,7 +654,7 @@ export class ChatMessageCreatorUseCase {
 
   private async processImageMessages(
     images: UploadFileRequest[],
-    params: ProcessMediaMessagesParams
+    params: IProcessMediaMessagesParams
   ): Promise<boolean> {
     const { chat, chatId, accountId, type, message, messageQuotedId, t } =
       params;
@@ -767,7 +731,7 @@ export class ChatMessageCreatorUseCase {
   private async processVideoMessages(
     videos: UploadFileRequest[],
     videoDuration: number | null,
-    params: ProcessMediaMessagesParams
+    params: IProcessMediaMessagesParams
   ): Promise<boolean> {
     const { chat, chatId, accountId, type, message, messageQuotedId, t } =
       params;
@@ -847,7 +811,7 @@ export class ChatMessageCreatorUseCase {
     audios: UploadFileRequest[],
     audioDuration: number | null,
     isViewOnce: boolean,
-    params: ProcessMediaMessagesParams
+    params: IProcessMediaMessagesParams
   ): Promise<boolean> {
     const { chat, chatId, accountId, type, message, messageQuotedId, t } =
       params;
@@ -928,7 +892,7 @@ export class ChatMessageCreatorUseCase {
 
   private async processDocumentMessages(
     documents: UploadFileRequest[],
-    params: ProcessMediaMessagesParams
+    params: IProcessMediaMessagesParams
   ): Promise<boolean> {
     const { chat, chatId, accountId, type, message, messageQuotedId, t } =
       params;
@@ -1011,7 +975,7 @@ export class ChatMessageCreatorUseCase {
   }
 
   private async processTextMessage(
-    params: ProcessTextMessageParams
+    params: IProcessTextMessageParams
   ): Promise<boolean> {
     const {
       chat,
