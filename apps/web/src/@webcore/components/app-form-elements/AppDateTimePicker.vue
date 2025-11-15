@@ -151,58 +151,54 @@ const onClear = (el: MouseEvent) => {
   });
 };
 
+const normalizeDay = (day: string): string => {
+  const dayNum = Number.parseInt(day, 10);
+  return dayNum > 31 ? '31' : day;
+};
+
+const normalizeMonth = (month: string): string => {
+  const monthNum = Number.parseInt(month, 10);
+  return monthNum > 12 ? '12' : month;
+};
+
+const formatPartialDate = (
+  digits: string,
+  day: string,
+  month: string
+): string => {
+  if (digits.length === 1) {
+    const d = Number.parseInt(digits[0], 10);
+    return d > 3 ? '' : digits;
+  }
+
+  if (digits.length === 2) {
+    return normalizeDay(day);
+  }
+
+  if (digits.length === 3) {
+    return `${normalizeDay(day)}/${digits[2]}`;
+  }
+
+  if (digits.length === 4) {
+    return `${normalizeDay(day)}/${normalizeMonth(month)}`;
+  }
+
+  return '';
+};
+
 const applyDateMask = (value: string): string => {
   const digits = value.replace(/\D/g, '').slice(0, 8);
   if (digits.length === 0) return '';
 
-  let day = digits.slice(0, 2);
-  let month = digits.slice(2, 4);
-  let year = digits.slice(4, 8);
+  const day = digits.slice(0, 2);
+  const month = digits.slice(2, 4);
+  const year = digits.slice(4, 8);
 
-  if (digits.length === 1) {
-    const d = Number.parseInt(digits[0], 10);
-    if (d > 3) return '';
-    return digits;
+  if (digits.length < 5) {
+    return formatPartialDate(digits, day, month);
   }
 
-  if (digits.length === 2) {
-    const dayNum = Number.parseInt(day, 10);
-    if (dayNum > 31) {
-      day = '31';
-    }
-    return day;
-  }
-
-  if (digits.length === 3) {
-    const dayNum = Number.parseInt(day, 10);
-    if (dayNum > 31) {
-      day = '31';
-    }
-    return `${day}/${digits[2]}`;
-  }
-
-  if (digits.length === 4) {
-    const dayNum = Number.parseInt(day, 10);
-    const monthNum = Number.parseInt(month, 10);
-    if (dayNum > 31) {
-      day = '31';
-    }
-    if (monthNum > 12) {
-      month = '12';
-    }
-    return `${day}/${month}`;
-  }
-
-  const dayNum = Number.parseInt(day, 10);
-  const monthNum = Number.parseInt(month, 10);
-  if (dayNum > 31) {
-    day = '31';
-  }
-  if (monthNum > 12) {
-    month = '12';
-  }
-
-  return `${day}/${month}/${year}`;
+  return `${normalizeDay(day)}/${normalizeMonth(month)}/${year}`;
 };
 
 const validateDateInput = (value: string): boolean => {
@@ -340,6 +336,84 @@ const setupInputMask = () => {
     input.removeEventListener('paste', inputMaskHandlers.handlePaste);
   }
 
+  const findDigitPosition = (
+    value: string,
+    targetDigit: number
+  ): number => {
+    let digitCount = 0;
+    for (let i = 0; i < value.length; i++) {
+      if (/\d/.test(value[i])) {
+        digitCount++;
+        if (digitCount === targetDigit) {
+          return i + 1;
+        }
+      }
+    }
+    return value.length;
+  };
+
+  const calculateCursorPosition = (
+    maskedValue: string,
+    maskedDigits: string,
+    digitsBeforeCursor: number,
+    digitsAfter: number
+  ): number => {
+    if (digitsAfter > digitsBeforeCursor) {
+      const digitsAdded = digitsAfter - digitsBeforeCursor;
+      const newDigitPosition = digitsBeforeCursor + digitsAdded;
+
+      if (newDigitPosition === 2 && maskedDigits.length >= 2) {
+        return 3;
+      }
+      if (newDigitPosition === 4 && maskedDigits.length >= 4) {
+        return 6;
+      }
+      return findDigitPosition(maskedValue, newDigitPosition);
+    }
+
+    return findDigitPosition(maskedValue, digitsBeforeCursor);
+  };
+
+  const updateCursorPosition = (
+    target: HTMLInputElement,
+    maskedValue: string,
+    maskedDigits: string,
+    digitsBeforeCursor: number,
+    digitsAfter: number
+  ): void => {
+    const newCursorPos = Math.min(
+      calculateCursorPosition(
+        maskedValue,
+        maskedDigits,
+        digitsBeforeCursor,
+        digitsAfter
+      ),
+      maskedValue.length
+    );
+
+    nextTick(() => {
+      target.setSelectionRange(newCursorPos, newCursorPos);
+    });
+  };
+
+  const validateAndSetError = (
+    target: HTMLInputElement,
+    maskedValue: string
+  ): void => {
+    if (maskedValue.length === 10 && !validateDateInput(maskedValue)) {
+      target.setCustomValidity('Data inválida');
+      target.reportValidity();
+      setTimeout(() => {
+        target.setCustomValidity('');
+      }, 2000);
+      return;
+    }
+
+    if (maskedValue.length < 10) {
+      target.setCustomValidity('');
+    }
+  };
+
   const handleInput = (e: Event) => {
     const target = e.target as HTMLInputElement;
     const originalValue = target.value;
@@ -356,66 +430,16 @@ const setupInputMask = () => {
 
     if (maskedValue !== originalValue) {
       target.value = maskedValue;
-
-      let newCursorPos = 0;
-
-      if (digitsAfter > digitsBeforeCursor) {
-        const digitsAdded = digitsAfter - digitsBeforeCursor;
-        const newDigitPosition = digitsBeforeCursor + digitsAdded;
-
-        if (newDigitPosition === 2 && maskedDigits.length >= 2) {
-          newCursorPos = 3;
-        } else if (newDigitPosition === 4 && maskedDigits.length >= 4) {
-          newCursorPos = 6;
-        } else {
-          let digitCount = 0;
-          for (let i = 0; i < maskedValue.length; i++) {
-            if (/\d/.test(maskedValue[i])) {
-              digitCount++;
-              if (digitCount === newDigitPosition) {
-                newCursorPos = i + 1;
-                break;
-              }
-            }
-          }
-          if (newCursorPos === 0) {
-            newCursorPos = maskedValue.length;
-          }
-        }
-      } else {
-        let digitCount = 0;
-        for (let i = 0; i < maskedValue.length; i++) {
-          if (/\d/.test(maskedValue[i])) {
-            digitCount++;
-            if (digitCount === digitsBeforeCursor) {
-              newCursorPos = i + 1;
-              break;
-            }
-          }
-        }
-        if (newCursorPos === 0) {
-          newCursorPos = maskedValue.length;
-        }
-      }
-
-      newCursorPos = Math.min(newCursorPos, maskedValue.length);
-
-      nextTick(() => {
-        target.setSelectionRange(newCursorPos, newCursorPos);
-      });
+      updateCursorPosition(
+        target,
+        maskedValue,
+        maskedDigits,
+        digitsBeforeCursor,
+        digitsAfter
+      );
     }
 
-    if (maskedValue.length === 10 && !validateDateInput(maskedValue)) {
-      target.setCustomValidity('Data inválida');
-      target.reportValidity();
-      setTimeout(() => {
-        target.setCustomValidity('');
-      }, 2000);
-    }
-
-    if (maskedValue.length < 10) {
-      target.setCustomValidity('');
-    }
+    validateAndSetError(target, maskedValue);
   };
 
   const handleKeyDown = (e: KeyboardEvent) => {

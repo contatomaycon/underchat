@@ -2046,6 +2046,215 @@ const onScrollToMessageEvt = (e: Event) => {
   if (id) void highlightAndScrollToMessage(id);
 };
 
+const retryTextMessage = async (
+  content: NonNullable<ListMessageResult['content']>,
+  hash: string
+): Promise<void> => {
+  const messageBody: CreateMessageChatsBody = {
+    type: EMessageType.text,
+    message: content.message ?? '',
+    hash,
+  };
+
+  if (content.link_preview) {
+    messageBody.link_preview = content.link_preview as ViewLinkPreviewResponse;
+  }
+
+  if (content.message_quoted_id) {
+    messageBody.message_quoted_id = content.message_quoted_id;
+  }
+
+  const success = await chatStore.createMessage(messageBody);
+  if (!success) {
+    markUploadError(hash);
+  }
+};
+
+const retryImageMessage = async (
+  content: NonNullable<ListMessageResult['content']>,
+  hash: string
+): Promise<void> => {
+  try {
+    const response = await fetch(content.image!.url!);
+    const blob = await response.blob();
+    const file = new File(
+      [blob],
+      `image.${content.image!.extension || 'jpg'}`,
+      {
+        type: content.image!.mimetype || 'image/jpeg',
+      }
+    );
+
+    const photo = {
+      file,
+      preview: content.image!.url!,
+    };
+
+    const replyId = content.message_quoted_id ?? null;
+    const formData = createImageFormData(
+      photo,
+      content.message ?? null,
+      replyId,
+      hash
+    );
+
+    chatStore.updateLocalMessageProgress(hash, 0);
+    const success = await chatStore.createMessageWithImages(formData, {
+      skipLoading: true,
+      onUploadProgress: (progress) => {
+        markUploadProgress(hash, progress);
+      },
+    });
+
+    if (!success) {
+      markUploadError(hash);
+    }
+  } catch (error) {
+    console.error('Erro ao reenviar mensagem:', error);
+    markUploadError(hash);
+  }
+};
+
+const retryVideoMessage = async (
+  content: NonNullable<ListMessageResult['content']>,
+  hash: string
+): Promise<void> => {
+  try {
+    const response = await fetch(content.video!.url!);
+    const blob = await response.blob();
+    const file = new File(
+      [blob],
+      content.video!.name || `video.${content.video!.extension || 'mp4'}`,
+      {
+        type: content.video!.mimetype || 'video/mp4',
+      }
+    );
+
+    const video = {
+      file,
+      preview: content.video!.url!,
+      name: content.video!.name || file.name,
+      type: content.video!.mimetype || 'video/mp4',
+      size: content.video!.size || file.size,
+      duration: content.video!.duration ?? null,
+    };
+
+    const replyId = content.message_quoted_id ?? null;
+    const formData = createVideoFormData(
+      video,
+      content.message ?? null,
+      replyId,
+      hash
+    );
+
+    chatStore.updateLocalMessageProgress(hash, 0);
+    const success = await chatStore.createMessageWithVideos(formData, {
+      skipLoading: true,
+      onUploadProgress: (progress) => {
+        markUploadProgress(hash, progress);
+      },
+    });
+
+    if (!success) {
+      markUploadError(hash);
+    }
+  } catch (error) {
+    console.error('Erro ao reenviar mensagem:', error);
+    markUploadError(hash);
+  }
+};
+
+const retryAudioMessage = async (
+  content: NonNullable<ListMessageResult['content']>,
+  hash: string
+): Promise<void> => {
+  try {
+    const response = await fetch(content.audio!.url!);
+    const blob = await response.blob();
+
+    const audioData = {
+      blob,
+      fileName:
+        content.audio!.name || `audio.${content.audio!.extension || 'ogg'}`,
+      mimeType: content.audio!.mimetype || 'audio/ogg',
+    };
+
+    const replyId = content.message_quoted_id ?? null;
+    const formData = createAudioFormData(
+      audioData,
+      content.message ?? null,
+      replyId,
+      content.audio!.view_once ?? false,
+      content.audio!.duration ?? null,
+      hash
+    );
+
+    chatStore.updateLocalMessageProgress(hash, 0);
+    const success = await chatStore.createMessageWithAudios(formData, {
+      skipLoading: true,
+      onUploadProgress: (progress) => {
+        markUploadProgress(hash, progress);
+      },
+    });
+
+    if (!success) {
+      markUploadError(hash);
+    }
+  } catch (error) {
+    console.error('Erro ao reenviar mensagem:', error);
+    markUploadError(hash);
+  }
+};
+
+const retryDocumentMessage = async (
+  content: NonNullable<ListMessageResult['content']>,
+  hash: string
+): Promise<void> => {
+  try {
+    const response = await fetch(content.document!.url!);
+    const blob = await response.blob();
+    const file = new File(
+      [blob],
+      content.document!.name ||
+        `document.${content.document!.extension || 'pdf'}`,
+      {
+        type: content.document!.mimetype || 'application/pdf',
+      }
+    );
+
+    const doc = {
+      file,
+      name: content.document!.name || file.name,
+      type: content.document!.mimetype || 'application/pdf',
+      size: content.document!.size || file.size,
+      extension: content.document!.extension || 'pdf',
+    };
+
+    const replyId = content.message_quoted_id ?? null;
+    const formData = createDocumentFormData(
+      doc,
+      content.message ?? null,
+      replyId,
+      hash
+    );
+
+    chatStore.updateLocalMessageProgress(hash, 0);
+    const success = await chatStore.createMessageWithDocuments(formData, {
+      skipLoading: true,
+      onUploadProgress: (progress) => {
+        markUploadProgress(hash, progress);
+      },
+    });
+
+    if (!success) {
+      markUploadError(hash);
+    }
+  } catch (error) {
+    console.error('Erro ao reenviar mensagem:', error);
+    markUploadError(hash);
+  }
+};
+
 const onRetryMessage = async (e: Event) => {
   const { message } = (e as CustomEvent<{ message: ListMessageResult }>).detail;
   if (!message?.hash) return;
@@ -2054,206 +2263,30 @@ const onRetryMessage = async (e: Event) => {
   if (!content) return;
 
   const hash = message.hash;
-
   chatStore.clearLocalMessageState(hash);
 
   if (content.type === EMessageType.text) {
-    const messageBody: CreateMessageChatsBody = {
-      type: EMessageType.text,
-      message: content.message ?? '',
-      hash,
-    };
-
-    if (content.link_preview) {
-      messageBody.link_preview =
-        content.link_preview as ViewLinkPreviewResponse;
-    }
-
-    if (content.message_quoted_id) {
-      messageBody.message_quoted_id = content.message_quoted_id;
-    }
-
-    const success = await chatStore.createMessage(messageBody);
-    if (!success) {
-      markUploadError(hash);
-    }
+    await retryTextMessage(content, hash);
     return;
   }
 
   if (content.type === EMessageType.image && content.image?.url) {
-    try {
-      const response = await fetch(content.image.url);
-      const blob = await response.blob();
-      const file = new File(
-        [blob],
-        `image.${content.image.extension || 'jpg'}`,
-        {
-          type: content.image.mimetype || 'image/jpeg',
-        }
-      );
-
-      const photo = {
-        file,
-        preview: content.image.url,
-      };
-
-      const replyId = content.message_quoted_id ?? null;
-      const formData = createImageFormData(
-        photo,
-        content.message ?? null,
-        replyId,
-        hash
-      );
-
-      chatStore.updateLocalMessageProgress(hash, 0);
-      const success = await chatStore.createMessageWithImages(formData, {
-        skipLoading: true,
-        onUploadProgress: (progress) => {
-          markUploadProgress(hash, progress);
-        },
-      });
-
-      if (!success) {
-        markUploadError(hash);
-      }
-    } catch (error) {
-      console.error('Erro ao reenviar mensagem:', error);
-      markUploadError(hash);
-    }
+    await retryImageMessage(content, hash);
     return;
   }
 
   if (content.type === EMessageType.video && content.video?.url) {
-    try {
-      const response = await fetch(content.video.url);
-      const blob = await response.blob();
-      const file = new File(
-        [blob],
-        content.video.name || `video.${content.video.extension || 'mp4'}`,
-        {
-          type: content.video.mimetype || 'video/mp4',
-        }
-      );
-
-      const video = {
-        file,
-        preview: content.video.url,
-        name: content.video.name || file.name,
-        type: content.video.mimetype || 'video/mp4',
-        size: content.video.size || file.size,
-        duration: content.video.duration ?? null,
-      };
-
-      const replyId = content.message_quoted_id ?? null;
-      const formData = createVideoFormData(
-        video,
-        content.message ?? null,
-        replyId,
-        hash
-      );
-
-      chatStore.updateLocalMessageProgress(hash, 0);
-      const success = await chatStore.createMessageWithVideos(formData, {
-        skipLoading: true,
-        onUploadProgress: (progress) => {
-          markUploadProgress(hash, progress);
-        },
-      });
-
-      if (!success) {
-        markUploadError(hash);
-      }
-    } catch (error) {
-      console.error('Erro ao reenviar mensagem:', error);
-      markUploadError(hash);
-    }
+    await retryVideoMessage(content, hash);
     return;
   }
 
   if (content.type === EMessageType.audio && content.audio?.url) {
-    try {
-      const response = await fetch(content.audio.url);
-      const blob = await response.blob();
-
-      const audioData = {
-        blob,
-        fileName:
-          content.audio.name || `audio.${content.audio.extension || 'ogg'}`,
-        mimeType: content.audio.mimetype || 'audio/ogg',
-      };
-
-      const replyId = content.message_quoted_id ?? null;
-      const formData = createAudioFormData(
-        audioData,
-        content.message ?? null,
-        replyId,
-        content.audio.view_once ?? false,
-        content.audio.duration ?? null,
-        hash
-      );
-
-      chatStore.updateLocalMessageProgress(hash, 0);
-      const success = await chatStore.createMessageWithAudios(formData, {
-        skipLoading: true,
-        onUploadProgress: (progress) => {
-          markUploadProgress(hash, progress);
-        },
-      });
-
-      if (!success) {
-        markUploadError(hash);
-      }
-    } catch (error) {
-      console.error('Erro ao reenviar mensagem:', error);
-      markUploadError(hash);
-    }
+    await retryAudioMessage(content, hash);
     return;
   }
 
   if (content.type === EMessageType.document && content.document?.url) {
-    try {
-      const response = await fetch(content.document.url);
-      const blob = await response.blob();
-      const file = new File(
-        [blob],
-        content.document.name ||
-          `document.${content.document.extension || 'pdf'}`,
-        {
-          type: content.document.mimetype || 'application/pdf',
-        }
-      );
-
-      const doc = {
-        file,
-        name: content.document.name || file.name,
-        type: content.document.mimetype || 'application/pdf',
-        size: content.document.size || file.size,
-        extension: content.document.extension || 'pdf',
-      };
-
-      const replyId = content.message_quoted_id ?? null;
-      const formData = createDocumentFormData(
-        doc,
-        content.message ?? null,
-        replyId,
-        hash
-      );
-
-      chatStore.updateLocalMessageProgress(hash, 0);
-      const success = await chatStore.createMessageWithDocuments(formData, {
-        skipLoading: true,
-        onUploadProgress: (progress) => {
-          markUploadProgress(hash, progress);
-        },
-      });
-
-      if (!success) {
-        markUploadError(hash);
-      }
-    } catch (error) {
-      console.error('Erro ao reenviar mensagem:', error);
-      markUploadError(hash);
-    }
+    await retryDocumentMessage(content, hash);
   }
 };
 

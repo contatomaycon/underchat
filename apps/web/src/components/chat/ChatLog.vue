@@ -593,43 +593,63 @@ const toggleAudioPlay = (messageId: string, url: string) => {
   });
 };
 
+const decodeBase64Waveform = (base64String: string): number[] | null => {
+  try {
+    const binaryString = atob(base64String);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      const codePoint = binaryString.codePointAt(i);
+      bytes[i] = codePoint ?? 0;
+    }
+    return Array.from(bytes);
+  } catch {
+    return null;
+  }
+};
+
+const normalizeWaveformValues = (waveformArray: number[]): number[] => {
+  return waveformArray.map((value) => {
+    const normalized = value / 100;
+    return Math.max(0.15, Math.min(1, normalized));
+  });
+};
+
+const createDefaultWaveform = (): number[] => {
+  return new Array(64).fill(0.3);
+};
+
+const parseWaveform = (
+  waveform: string | number[] | null | undefined
+): number[] | null => {
+  if (!waveform) {
+    return null;
+  }
+
+  if (typeof waveform === 'string') {
+    return decodeBase64Waveform(waveform);
+  }
+
+  if (Array.isArray(waveform) && waveform.length > 0) {
+    return waveform;
+  }
+
+  return null;
+};
+
 const loadAudioWaveform = (
   messageId: string,
   waveform: string | number[] | null | undefined
 ): void => {
   if (audioWaveforms[messageId]) return;
 
-  let waveformArray: number[] | null = null;
-
-  if (waveform) {
-    if (typeof waveform === 'string') {
-      try {
-        const binaryString = atob(waveform);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          const codePoint = binaryString.codePointAt(i);
-          bytes[i] = codePoint !== undefined ? codePoint : 0;
-        }
-        waveformArray = Array.from(bytes);
-      } catch {
-        waveformArray = null;
-      }
-    } else if (Array.isArray(waveform) && waveform.length > 0) {
-      waveformArray = waveform;
-    }
-  }
+  const waveformArray = parseWaveform(waveform);
 
   if (waveformArray && waveformArray.length > 0) {
-    const normalizedWaveform = waveformArray.map((value) => {
-      const normalized = value / 100;
-      return Math.max(0.15, Math.min(1, normalized));
-    });
-    audioWaveforms[messageId] = normalizedWaveform;
+    audioWaveforms[messageId] = normalizeWaveformValues(waveformArray);
     return;
   }
 
-  const defaultWaveform = new Array(64).fill(0.3);
-  audioWaveforms[messageId] = defaultWaveform;
+  audioWaveforms[messageId] = createDefaultWaveform();
 };
 
 const getAudioProgress = (messageId: string): number => {
