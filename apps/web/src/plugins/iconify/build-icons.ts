@@ -167,19 +167,17 @@ const sources: BundleScriptConfig = {
 
 const target = join(__dirname, 'icons.css');
 
-(async () => {
-  await fs.mkdir(dirname(target), { recursive: true });
-  const allIcons: IconifyJSON[] = [];
-  if (sources.icons) {
-    const sourcesJSON = sources.json || (sources.json = []);
-    const organizedList = organizeIconsList(sources.icons);
-    for (const prefix in organizedList) {
-      sourcesJSON.push({
-        filename: require.resolve(`@iconify/json/json/${prefix}.json`),
-        icons: organizedList[prefix],
-      });
-    }
+await fs.mkdir(dirname(target), { recursive: true });
+const allIcons: IconifyJSON[] = [];
+if (sources.icons) {
+  const sourcesJSON = sources.json || (sources.json = []);
+  const organizedList = organizeIconsList(sources.icons);
+  for (const prefix in organizedList) {
+    sourcesJSON.push({
+      filename: require.resolve(`@iconify/json/json/${prefix}.json`),
+      icons: organizedList[prefix],
+    });
   }
-  await processSources(sources, allIcons);
-  await generateCSS(target, allIcons);
-})();
+}
+await processSources(sources, allIcons);
+await generateCSS(target, allIcons);

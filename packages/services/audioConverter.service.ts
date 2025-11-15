@@ -31,71 +31,100 @@ export class AudioConverterService {
     const currentFormat = headerFormat || extensionFromMimetype || 'webm';
 
     if (currentFormat === this.targetFormat) {
-      const tempPath = join(
-        tmpdir(),
-        `audio-probe-${Date.now()}-${randomBytes(8).toString('hex')}.ogg`
-      );
-
-      let duration: number | undefined;
-
-      try {
-        await writeFile(tempPath, inputBuffer);
-
-        const probeCommand = [
-          'ffprobe',
-          '-v',
-          'error',
-          '-show_entries',
-          'format=duration,stream=codec_name,stream=channels,stream=sample_rate,stream=bit_rate',
-          '-of',
-          'json',
-          `"${tempPath}"`,
-        ].join(' ');
-
-        const { stdout } = await execAsync(probeCommand);
-        const probeData = JSON.parse(stdout);
-        const format = probeData.format;
-        const stream = probeData.streams?.[0];
-
-        if (format?.duration) {
-          const parsedDuration = parseFloat(format.duration);
-          if (Number.isFinite(parsedDuration) && parsedDuration > 0) {
-            duration = Math.round(parsedDuration);
-          }
-        }
-
-        const codecName = stream?.codec_name;
-        const channels = stream?.channels;
-        const sampleRate = stream?.sample_rate;
-        const bitRate = stream?.bit_rate ? parseInt(stream.bit_rate, 10) : null;
-
-        const isOpus = codecName === 'opus';
-        const isMono = channels === 1;
-        const is48kHz = sampleRate === 48000;
-        const isCorrectBitrate =
-          !bitRate || (bitRate >= 16000 && bitRate <= 64000);
-
-        if (isOpus && isMono && is48kHz && isCorrectBitrate) {
-          try {
-            await unlink(tempPath);
-          } catch {}
-
-          return {
-            buffer: inputBuffer,
-            mimetype: this.targetMimetype,
-            extension: this.targetFormat,
-            duration,
-          };
-        }
-      } catch {
-        duration = undefined;
-      } finally {
-        try {
-          await unlink(tempPath);
-        } catch {}
+      const result = await this.checkAndReturnIfValidFormat(inputBuffer);
+      if (result) {
+        return result;
       }
     }
 
+    return this.convertAudioWithFfmpeg(inputBuffer, currentFormat);
+  }
+
+  private async checkAndReturnIfValidFormat(
+    inputBuffer: Buffer
+  ): Promise<ConvertAudioResult | null> {
+    const tempPath = join(
+      tmpdir(),
+      `audio-probe-${Date.now()}-${randomBytes(8).toString('hex')}.ogg`
+    );
+
+    try {
+      await writeFile(tempPath, inputBuffer);
+
+      const probeData = await this.probeAudioMetadata(tempPath);
+      const duration = this.extractDurationFromProbe(probeData);
+      const isValid = this.validateAudioFormat(probeData);
+
+      if (isValid) {
+        await this.safeUnlink(tempPath);
+        return {
+          buffer: inputBuffer,
+          mimetype: this.targetMimetype,
+          extension: this.targetFormat,
+          duration,
+        };
+      }
+    } catch {
+      // Ignore errors during probe
+    } finally {
+      await this.safeUnlink(tempPath);
+    }
+
+    return null;
+  }
+
+  private async probeAudioMetadata(filePath: string): Promise<any> {
+    const probeCommand = [
+      'ffprobe',
+      '-v',
+      'error',
+      '-show_entries',
+      'format=duration,stream=codec_name,stream=channels,stream=sample_rate,stream=bit_rate',
+      '-of',
+      'json',
+      `"${filePath}"`,
+    ].join(' ');
+
+    const { stdout } = await execAsync(probeCommand);
+    return JSON.parse(stdout);
+  }
+
+  private extractDurationFromProbe(probeData: any): number | undefined {
+    const format = probeData.format;
+    if (!format?.duration) {
+      return undefined;
+    }
+
+    const parsedDuration = Number.parseFloat(format.duration);
+    if (Number.isFinite(parsedDuration) && parsedDuration > 0) {
+      return Math.round(parsedDuration);
+    }
+
+    return undefined;
+  }
+
+  private validateAudioFormat(probeData: any): boolean {
+    const stream = probeData.streams?.[0];
+    const codecName = stream?.codec_name;
+    const channels = stream?.channels;
+    const sampleRate = stream?.sample_rate;
+    const bitRate = stream?.bit_rate
+      ? Number.parseInt(stream.bit_rate, 10)
+      : null;
+
+    const isOpus = codecName === 'opus';
+    const isMono = channels === 1;
+    const is48kHz = sampleRate === 48000;
+    const isCorrectBitrate =
+      !bitRate || (bitRate >= 16000 && bitRate <= 64000);
+
+    return isOpus && isMono && is48kHz && isCorrectBitrate;
+  }
+
+  private async convertAudioWithFfmpeg(
+    inputBuffer: Buffer,
+    currentFormat: string
+  ): Promise<ConvertAudioResult> {
     const inputRandomId = randomBytes(8).toString('hex');
     const outputRandomId = randomBytes(8).toString('hex');
 
@@ -111,54 +140,9 @@ export class AudioConverterService {
 
     try {
       await writeFile(inputPath, inputBuffer);
-
-      const ffmpegCommand = [
-        'ffmpeg',
-        '-i',
-        `"${inputPath}"`,
-        '-vn',
-        '-c:a libopus',
-        '-b:a 32k',
-        '-ar 48000',
-        '-ac 1',
-        '-application voip',
-        '-frame_duration 60',
-        '-packet_loss 0',
-        '-compression_level 10',
-        '-f ogg',
-        `"${outputPath}"`,
-        '-y',
-      ].join(' ');
-
-      await execAsync(ffmpegCommand);
-
+      await this.runFfmpegConversion(inputPath, outputPath);
       const outputBuffer = await readFile(outputPath);
-
-      let duration: number | undefined;
-
-      try {
-        const probeCommand = [
-          'ffprobe',
-          '-v',
-          'error',
-          '-show_entries',
-          'format=duration',
-          '-of',
-          'default=noprint_wrappers=1:nokey=1',
-          `"${outputPath}"`,
-        ].join(' ');
-
-        const { stdout } = await execAsync(probeCommand);
-        const durationStr = stdout.trim();
-        if (durationStr) {
-          const parsedDuration = parseFloat(durationStr);
-          if (Number.isFinite(parsedDuration) && parsedDuration > 0) {
-            duration = Math.round(parsedDuration);
-          }
-        }
-      } catch {
-        duration = undefined;
-      }
+      const duration = await this.probeAudioDuration(outputPath);
 
       return {
         buffer: outputBuffer,
@@ -167,12 +151,71 @@ export class AudioConverterService {
         duration,
       };
     } finally {
-      try {
-        await unlink(inputPath);
-      } catch {}
-      try {
-        await unlink(outputPath);
-      } catch {}
+      await this.safeUnlink(inputPath);
+      await this.safeUnlink(outputPath);
+    }
+  }
+
+  private async runFfmpegConversion(
+    inputPath: string,
+    outputPath: string
+  ): Promise<void> {
+    const ffmpegCommand = [
+      'ffmpeg',
+      '-i',
+      `"${inputPath}"`,
+      '-vn',
+      '-c:a libopus',
+      '-b:a 32k',
+      '-ar 48000',
+      '-ac 1',
+      '-application voip',
+      '-frame_duration 60',
+      '-packet_loss 0',
+      '-compression_level 10',
+      '-f ogg',
+      `"${outputPath}"`,
+      '-y',
+    ].join(' ');
+
+    await execAsync(ffmpegCommand);
+  }
+
+  private async probeAudioDuration(
+    filePath: string
+  ): Promise<number | undefined> {
+    try {
+      const probeCommand = [
+        'ffprobe',
+        '-v',
+        'error',
+        '-show_entries',
+        'format=duration',
+        '-of',
+        'default=noprint_wrappers=1:nokey=1',
+        `"${filePath}"`,
+      ].join(' ');
+
+      const { stdout } = await execAsync(probeCommand);
+      const durationStr = stdout.trim();
+      if (durationStr) {
+        const parsedDuration = Number.parseFloat(durationStr);
+        if (Number.isFinite(parsedDuration) && parsedDuration > 0) {
+          return Math.round(parsedDuration);
+        }
+      }
+    } catch {
+      // Ignore errors during duration probe
+    }
+
+    return undefined;
+  }
+
+  private async safeUnlink(filePath: string): Promise<void> {
+    try {
+      await unlink(filePath);
+    } catch {
+      // Ignore unlink errors
     }
   }
 

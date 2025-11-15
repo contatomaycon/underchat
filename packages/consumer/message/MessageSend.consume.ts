@@ -214,16 +214,13 @@ export class MessageSendConsume {
     chatId: string,
     data: IChatMessage,
     hasQuoted: boolean
-  ): Promise<boolean> {
+  ): Promise<void> {
     if (hasQuoted && data.content?.quoted) {
       await this.processTextQuoted(jid, data);
-      this.lastMessageTypeByChatId.set(chatId, EMessageType.text);
-      return true;
+    } else {
+      await this.processText(jid, data);
     }
-
-    await this.processText(jid, data);
     this.lastMessageTypeByChatId.set(chatId, EMessageType.text);
-    return true;
   }
 
   private async processActionMessage(
@@ -236,6 +233,98 @@ export class MessageSendConsume {
     await processor(jid, data);
     this.lastMessageTypeByChatId.set(chatId, type);
     return true;
+  }
+
+  private selectMessageHandler(
+    currentType: EMessageType | undefined,
+    jid: string,
+    chatId: string,
+    data: IChatMessage,
+    lastType: EMessageType | undefined,
+    hasQuoted: boolean
+  ): (() => Promise<void>) | null {
+    if (!currentType) {
+      return null;
+    }
+
+    if (currentType === EMessageType.image && data.content?.image?.url) {
+      return () =>
+        this.processMediaMessage(
+          jid,
+          chatId,
+          data,
+          EMessageType.image,
+          lastType,
+          (j, d) => this.processImage(j, d)
+        );
+    }
+
+    if (currentType === EMessageType.document && data.content?.document?.url) {
+      return () =>
+        this.processMediaMessage(
+          jid,
+          chatId,
+          data,
+          EMessageType.document,
+          lastType,
+          (j, d) => this.processDocument(j, d)
+        );
+    }
+
+    if (currentType === EMessageType.audio && data.content?.audio?.url) {
+      return () =>
+        this.processMediaMessage(
+          jid,
+          chatId,
+          data,
+          EMessageType.audio,
+          lastType,
+          (j, d) => this.processAudio(j, d)
+        );
+    }
+
+    if (currentType === EMessageType.video && data.content?.video?.url) {
+      return () =>
+        this.processMediaMessage(
+          jid,
+          chatId,
+          data,
+          EMessageType.video,
+          lastType,
+          (j, d) => this.processVideo(j, d)
+        );
+    }
+
+    if (currentType === EMessageType.text && data.content?.message) {
+      return () => this.processTextMessage(jid, chatId, data, hasQuoted);
+    }
+
+    if (
+      currentType === EMessageType.delete_message &&
+      data.message_key?.id
+    ) {
+      return () =>
+        this.processActionMessage(
+          jid,
+          chatId,
+          data,
+          EMessageType.delete_message,
+          (j, d) => this.processDelete(j, d)
+        );
+    }
+
+    if (currentType === EMessageType.react && data.message_key?.id) {
+      return () =>
+        this.processActionMessage(
+          jid,
+          chatId,
+          data,
+          EMessageType.react,
+          (j, d) => this.processReact(j, d)
+        );
+    }
+
+    return null;
   }
 
   private async processMessage(data: IChatMessage): Promise<void> {
@@ -254,78 +343,17 @@ export class MessageSendConsume {
     const lastType = this.lastMessageTypeByChatId.get(chatId);
     const hasQuoted = data.has_quoted ?? !!data.content?.quoted;
 
-    if (currentType === EMessageType.image && data.content?.image?.url) {
-      await this.processMediaMessage(
-        jid,
-        chatId,
-        data,
-        EMessageType.image,
-        lastType,
-        (j, d) => this.processImage(j, d)
-      );
-      return;
-    }
+    const handler = this.selectMessageHandler(
+      currentType,
+      jid,
+      chatId,
+      data,
+      lastType,
+      hasQuoted
+    );
 
-    if (currentType === EMessageType.document && data.content?.document?.url) {
-      await this.processMediaMessage(
-        jid,
-        chatId,
-        data,
-        EMessageType.document,
-        lastType,
-        (j, d) => this.processDocument(j, d)
-      );
-      return;
-    }
-
-    if (currentType === EMessageType.audio && data.content?.audio?.url) {
-      await this.processMediaMessage(
-        jid,
-        chatId,
-        data,
-        EMessageType.audio,
-        lastType,
-        (j, d) => this.processAudio(j, d)
-      );
-      return;
-    }
-
-    if (currentType === EMessageType.video && data.content?.video?.url) {
-      await this.processMediaMessage(
-        jid,
-        chatId,
-        data,
-        EMessageType.video,
-        lastType,
-        (j, d) => this.processVideo(j, d)
-      );
-      return;
-    }
-
-    if (currentType === EMessageType.text && data.content?.message) {
-      await this.processTextMessage(jid, chatId, data, hasQuoted);
-      return;
-    }
-
-    if (currentType === EMessageType.delete_message && data.message_key?.id) {
-      await this.processActionMessage(
-        jid,
-        chatId,
-        data,
-        EMessageType.delete_message,
-        (j, d) => this.processDelete(j, d)
-      );
-      return;
-    }
-
-    if (currentType === EMessageType.react && data.message_key?.id) {
-      await this.processActionMessage(
-        jid,
-        chatId,
-        data,
-        EMessageType.react,
-        (j, d) => this.processReact(j, d)
-      );
+    if (handler) {
+      await handler();
     }
   }
 

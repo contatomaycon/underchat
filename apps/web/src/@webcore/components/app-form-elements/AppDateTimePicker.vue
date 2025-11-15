@@ -110,13 +110,13 @@ const defaultConfig: FlatpickrOptions = {
     }
     const parts = datestr.trim().split('/');
     if (parts.length === 3) {
-      const day = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10);
-      const year = parseInt(parts[2], 10);
+      const day = Number.parseInt(parts[0], 10);
+      const month = Number.parseInt(parts[1], 10);
+      const year = Number.parseInt(parts[2], 10);
       if (
-        !isNaN(day) &&
-        !isNaN(month) &&
-        !isNaN(year) &&
+        !Number.isNaN(day) &&
+        !Number.isNaN(month) &&
+        !Number.isNaN(year) &&
         isValidDateValue(day, month, year)
       ) {
         return new Date(year, month - 1, day);
@@ -125,7 +125,7 @@ const defaultConfig: FlatpickrOptions = {
     return new Date();
   },
   formatDate: (date, format) => {
-    if (!date || !(date instanceof Date) || isNaN(date.getTime())) return '';
+    if (!date || !(date instanceof Date) || Number.isNaN(date.getTime())) return '';
     const day = String(date.getDate()).padStart(2, '0');
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const year = date.getFullYear();
@@ -160,13 +160,13 @@ const applyDateMask = (value: string): string => {
   let year = digits.slice(4, 8);
 
   if (digits.length === 1) {
-    const d = parseInt(digits[0], 10);
+    const d = Number.parseInt(digits[0], 10);
     if (d > 3) return '';
     return digits;
   }
 
   if (digits.length === 2) {
-    const dayNum = parseInt(day, 10);
+    const dayNum = Number.parseInt(day, 10);
     if (dayNum > 31) {
       day = '31';
     }
@@ -174,7 +174,7 @@ const applyDateMask = (value: string): string => {
   }
 
   if (digits.length === 3) {
-    const dayNum = parseInt(day, 10);
+    const dayNum = Number.parseInt(day, 10);
     if (dayNum > 31) {
       day = '31';
     }
@@ -182,8 +182,8 @@ const applyDateMask = (value: string): string => {
   }
 
   if (digits.length === 4) {
-    const dayNum = parseInt(day, 10);
-    const monthNum = parseInt(month, 10);
+    const dayNum = Number.parseInt(day, 10);
+    const monthNum = Number.parseInt(month, 10);
     if (dayNum > 31) {
       day = '31';
     }
@@ -193,8 +193,8 @@ const applyDateMask = (value: string): string => {
     return `${day}/${month}`;
   }
 
-  const dayNum = parseInt(day, 10);
-  const monthNum = parseInt(month, 10);
+  const dayNum = Number.parseInt(day, 10);
+  const monthNum = Number.parseInt(month, 10);
   if (dayNum > 31) {
     day = '31';
   }
@@ -205,35 +205,22 @@ const applyDateMask = (value: string): string => {
   return `${day}/${month}/${year}`;
 };
 
-const isValidDate = (day: number, month: number, year: number): boolean => {
-  if (day < 1 || day > 31) return false;
-  if (month < 1 || month > 12) return false;
-  if (year < 1900 || year > 2100) return false;
-
-  const date = new Date(year, month - 1, day);
-  return (
-    date.getDate() === day &&
-    date.getMonth() === month - 1 &&
-    date.getFullYear() === year
-  );
-};
-
 const validateDateInput = (value: string): boolean => {
   const parts = value.split('/');
   if (parts.length !== 3) return true;
 
-  const day = parseInt(parts[0], 10);
-  const month = parseInt(parts[1], 10);
-  const year = parseInt(parts[2], 10);
+  const day = Number.parseInt(parts[0], 10);
+  const month = Number.parseInt(parts[1], 10);
+  const year = Number.parseInt(parts[2], 10);
 
-  if (isNaN(day) || isNaN(month) || isNaN(year)) return true;
+  if (Number.isNaN(day) || Number.isNaN(month) || Number.isNaN(year)) return true;
 
   if (parts[0].length === 2 && parts[1].length === 2 && parts[2].length === 4) {
-    return isValidDate(day, month, year);
+    return isValidDateValue(day, month, year);
   }
 
-  if (parts[0].length === 2 && parseInt(parts[0], 10) > 31) return false;
-  if (parts[1].length === 2 && parseInt(parts[1], 10) > 12) return false;
+  if (parts[0].length === 2 && Number.parseInt(parts[0], 10) > 31) return false;
+  if (parts[1].length === 2 && Number.parseInt(parts[1], 10) > 12) return false;
 
   return true;
 };
@@ -456,7 +443,6 @@ const setupInputMask = () => {
 
     if (digits.length >= 8 && /\d/.test(key)) {
       e.preventDefault();
-      return;
     }
   };
 

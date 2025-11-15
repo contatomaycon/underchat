@@ -28,6 +28,9 @@ import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { ICreateVideoMessageParams } from '@core/common/interfaces/ICreateVideoMessageParams';
 import { ICreateAudioMessageParams } from '@core/common/interfaces/ICreateAudioMessageParams';
+import { ICreateImageMessageParams } from '@core/common/interfaces/ICreateImageMessageParams';
+import { ICreateTextMessageParams } from '@core/common/interfaces/ICreateTextMessageParams';
+import { ICreateDocumentMessageParams } from '@core/common/interfaces/ICreateDocumentMessageParams';
 import { IProcessMediaMessagesParams } from '@core/common/interfaces/IProcessMediaMessagesParams';
 import { IProcessTextMessageParams } from '@core/common/interfaces/IProcessTextMessageParams';
 import { IUploadFileInput } from '@core/common/interfaces/IUploadFileInput';
@@ -433,15 +436,18 @@ export class ChatMessageCreatorUseCase {
   }
 
   private createImageMessage(
-    chat: IChat,
-    chatId: string,
-    type: EMessageType,
-    message: string | null,
-    imageData: UploadFileResponse,
-    messageQuotedId: string | null,
-    quotedMessage: IQuotedMessage | null,
-    hash: string | null
+    params: ICreateImageMessageParams
   ): IChatMessage {
+    const {
+      chat,
+      chatId,
+      type,
+      message,
+      imageData,
+      messageQuotedId,
+      quotedMessage,
+      hash,
+    } = params;
     return {
       message_id: uuidv4(),
       chat_id: chatId,
@@ -606,15 +612,18 @@ export class ChatMessageCreatorUseCase {
   }
 
   private createTextMessage(
-    chat: IChat,
-    chatId: string,
-    type: EMessageType,
-    message: string | null,
-    linkPreview: CreateMessageChatsBody['link_preview'],
-    messageQuotedId: string | null,
-    quotedMessage: IQuotedMessage | null,
-    hash: string | null
+    params: ICreateTextMessageParams
   ): IChatMessage {
+    const {
+      chat,
+      chatId,
+      type,
+      message,
+      linkPreview,
+      messageQuotedId,
+      quotedMessage,
+      hash,
+    } = params;
     return {
       message_id: uuidv4(),
       chat_id: chatId,
@@ -751,16 +760,16 @@ export class ChatMessageCreatorUseCase {
     const quotedId = messageQuotedId ?? null;
 
     if (validImages.length === 1) {
-      const imageMessage = this.createImageMessage(
+      const imageMessage = this.createImageMessage({
         chat,
         chatId,
         type,
         message,
-        validImages[0],
-        quotedId,
+        imageData: validImages[0],
+        messageQuotedId: quotedId,
         quotedMessage,
-        hash
-      );
+        hash,
+      });
 
       await this.publishMessage(imageMessage);
 
@@ -768,16 +777,16 @@ export class ChatMessageCreatorUseCase {
     }
 
     const publishTasks = validImages.map((imageData) => {
-      const imageMessage = this.createImageMessage(
+      const imageMessage = this.createImageMessage({
         chat,
         chatId,
         type,
         message,
         imageData,
-        quotedId,
+        messageQuotedId: quotedId,
         quotedMessage,
-        hash
-      );
+        hash,
+      });
 
       return this.publishMessage(imageMessage);
     });
@@ -1015,16 +1024,16 @@ export class ChatMessageCreatorUseCase {
     const quotedId = messageQuotedId ?? null;
 
     if (validDocuments.length === 1) {
-      const documentMessage = this.createDocumentMessage(
+      const documentMessage = this.createDocumentMessage({
         chat,
         chatId,
         type,
         message,
-        validDocuments[0],
-        quotedId,
+        documentData: validDocuments[0],
+        messageQuotedId: quotedId,
         quotedMessage,
-        hash
-      );
+        hash,
+      });
 
       await this.publishMessage(documentMessage);
 
@@ -1032,16 +1041,16 @@ export class ChatMessageCreatorUseCase {
     }
 
     const publishTasks = validDocuments.map((documentData) => {
-      const documentMessage = this.createDocumentMessage(
+      const documentMessage = this.createDocumentMessage({
         chat,
         chatId,
         type,
         message,
         documentData,
-        quotedId,
+        messageQuotedId: quotedId,
         quotedMessage,
-        hash
-      );
+        hash,
+      });
 
       return this.publishMessage(documentMessage);
     });
@@ -1079,16 +1088,16 @@ export class ChatMessageCreatorUseCase {
       }
     }
 
-    const textMessage = this.createTextMessage(
+    const textMessage = this.createTextMessage({
       chat,
       chatId,
       type,
       message,
       linkPreview,
-      messageQuotedId ?? null,
+      messageQuotedId: messageQuotedId ?? null,
       quotedMessage,
-      hash
-    );
+      hash,
+    });
 
     return this.publishMessage(textMessage);
   }
@@ -1503,15 +1512,18 @@ export class ChatMessageCreatorUseCase {
   }
 
   private createDocumentMessage(
-    chat: IChat,
-    chatId: string,
-    type: EMessageType,
-    message: string | null,
-    documentData: UploadFileResponse,
-    messageQuotedId: string | null,
-    quotedMessage: IQuotedMessage | null,
-    hash: string | null
+    params: ICreateDocumentMessageParams
   ): IChatMessage {
+    const {
+      chat,
+      chatId,
+      type,
+      message,
+      documentData,
+      messageQuotedId,
+      quotedMessage,
+      hash,
+    } = params;
     return {
       message_id: uuidv4(),
       chat_id: chatId,

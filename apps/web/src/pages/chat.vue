@@ -132,11 +132,7 @@ const cloneLinkPreview = (): ViewLinkPreviewResponse | undefined => {
   const preview = linkPreview.value;
   if (!preview) return undefined;
 
-  if (typeof structuredClone === 'function') {
-    return structuredClone(preview);
-  }
-
-  return JSON.parse(JSON.stringify(preview)) as ViewLinkPreviewResponse;
+  return structuredClone(preview);
 };
 
 const buildQuotedPayload = (): IQuotedMessage | null => {
@@ -584,7 +580,6 @@ const sendImageMessage = async (): Promise<void> => {
 
       if (!success) {
         markUploadError(hash);
-        return;
       }
       // markUploadProgress removido: mensagem temporária será substituída via socket
     })
@@ -638,7 +633,6 @@ const sendVideoMessage = async (): Promise<void> => {
 
       if (!success) {
         markUploadError(hash);
-        return;
       }
       // markUploadProgress removido: mensagem temporária será substituída via socket
     })
@@ -766,7 +760,6 @@ const sendAudioFilesMessage = async (): Promise<void> => {
 
       if (!success) {
         markUploadError(hash);
-        return;
       }
     })
   );
@@ -817,7 +810,6 @@ const sendDocumentMessage = async (): Promise<void> => {
 
       if (!success) {
         markUploadError(hash);
-        return;
       }
       // markUploadProgress removido: mensagem temporária será substituída via socket
     })
@@ -848,7 +840,6 @@ const sendTextMessage = async (): Promise<void> => {
 
   if (!success) {
     markUploadError(hash);
-    return;
   }
 };
 
@@ -2126,6 +2117,7 @@ const onRetryMessage = async (e: Event) => {
         markUploadError(hash);
       }
     } catch (error) {
+      console.error('Erro ao reenviar mensagem:', error);
       markUploadError(hash);
     }
     return;
@@ -2172,6 +2164,7 @@ const onRetryMessage = async (e: Event) => {
         markUploadError(hash);
       }
     } catch (error) {
+      console.error('Erro ao reenviar mensagem:', error);
       markUploadError(hash);
     }
     return;
@@ -2211,6 +2204,7 @@ const onRetryMessage = async (e: Event) => {
         markUploadError(hash);
       }
     } catch (error) {
+      console.error('Erro ao reenviar mensagem:', error);
       markUploadError(hash);
     }
     return;
@@ -2257,9 +2251,9 @@ const onRetryMessage = async (e: Event) => {
         markUploadError(hash);
       }
     } catch (error) {
+      console.error('Erro ao reenviar mensagem:', error);
       markUploadError(hash);
     }
-    return;
   }
 };
 

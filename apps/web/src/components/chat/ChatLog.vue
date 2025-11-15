@@ -6,7 +6,6 @@ import {
   onMounted,
   onUnmounted,
   nextTick,
-  computed,
 } from 'vue';
 import { useChatStore } from '@/@webcore/stores/chat';
 import {
@@ -608,7 +607,8 @@ const loadAudioWaveform = (
         const binaryString = atob(waveform);
         const bytes = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
+          const codePoint = binaryString.codePointAt(i);
+          bytes[i] = codePoint !== undefined ? codePoint : 0;
         }
         waveformArray = Array.from(bytes);
       } catch {
