@@ -435,9 +435,7 @@ export class ChatMessageCreatorUseCase {
     >;
   }
 
-  private createImageMessage(
-    params: ICreateImageMessageParams
-  ): IChatMessage {
+  private createImageMessage(params: ICreateImageMessageParams): IChatMessage {
     const {
       chat,
       chatId,
@@ -611,9 +609,7 @@ export class ChatMessageCreatorUseCase {
     };
   }
 
-  private createTextMessage(
-    params: ICreateTextMessageParams
-  ): IChatMessage {
+  private createTextMessage(params: ICreateTextMessageParams): IChatMessage {
     const {
       chat,
       chatId,

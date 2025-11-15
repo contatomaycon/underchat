@@ -115,8 +115,7 @@ export class AudioConverterService {
     const isOpus = codecName === 'opus';
     const isMono = channels === 1;
     const is48kHz = sampleRate === 48000;
-    const isCorrectBitrate =
-      !bitRate || (bitRate >= 16000 && bitRate <= 64000);
+    const isCorrectBitrate = !bitRate || (bitRate >= 16000 && bitRate <= 64000);
 
     return isOpus && isMono && is48kHz && isCorrectBitrate;
   }

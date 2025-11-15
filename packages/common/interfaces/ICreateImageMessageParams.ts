@@ -5,4 +5,3 @@ export interface ICreateImageMessageParams extends ICreateMessageParams {
   imageData: UploadFileResponse;
   hash: string | null;
 }
-

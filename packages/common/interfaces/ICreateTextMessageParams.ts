@@ -5,4 +5,3 @@ export interface ICreateTextMessageParams extends ICreateMessageParams {
   linkPreview: CreateMessageChatsBody['link_preview'];
   hash: string | null;
 }
-

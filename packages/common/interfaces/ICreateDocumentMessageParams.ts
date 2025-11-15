@@ -5,4 +5,3 @@ export interface ICreateDocumentMessageParams extends ICreateMessageParams {
   documentData: UploadFileResponse;
   hash: string | null;
 }
-
