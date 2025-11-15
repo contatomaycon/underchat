@@ -150,7 +150,43 @@ const scrollToBottomInChatLog = () => {
   scrollEl.scrollTop = scrollEl.scrollHeight;
 };
 
-const scrollToMessageById = async (id?: string) => {
+const highlightedMessageTimers = new Map<string, number>();
+
+const applyPersistentHighlight = (target: HTMLElement, id: string) => {
+  target.classList.add('message-target-persistent');
+
+  const existingTimer = highlightedMessageTimers.get(id);
+  if (existingTimer) clearTimeout(existingTimer);
+
+  const timeoutId = window.setTimeout(() => {
+    target.classList.remove('message-target-persistent');
+    highlightedMessageTimers.delete(id);
+  }, 30_000);
+
+  highlightedMessageTimers.set(id, timeoutId);
+};
+
+const isMessageLoaded = (id: string): boolean =>
+  chatStore.listMessages.some((message) => message.message_id === id);
+
+const ensureMessageLoaded = async (id: string): Promise<boolean> => {
+  if (!id) return false;
+  if (isMessageLoaded(id)) return true;
+
+  while (chatStore.currentPage < chatStore.totalPages) {
+    const loaded = await chatStore.loadMoreMessages();
+    if (!loaded) break;
+    await nextTick();
+    if (isMessageLoaded(id)) return true;
+  }
+
+  return isMessageLoaded(id);
+};
+
+const scrollToMessageById = async (
+  id?: string,
+  options: { highlight?: boolean } = {}
+) => {
   await nextTick();
 
   const container: HTMLElement = chatLogPS.value?.$el || chatLogPS.value;
@@ -162,6 +198,16 @@ const scrollToMessageById = async (id?: string) => {
 
     return;
   }
+
+  const messageReady = await ensureMessageLoaded(id);
+  if (!messageReady) {
+    container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+    chatLogPS.value?.update?.();
+
+    return;
+  }
+
+  await nextTick();
 
   const target =
     (container.querySelector(`[data-message-id="${id}"]`) as HTMLElement) ||
@@ -177,6 +223,13 @@ const scrollToMessageById = async (id?: string) => {
       chatLogPS.value?.update?.();
     });
 
+    if (options.highlight) {
+      target.classList.remove('message-target-flash');
+      forceReflow(target);
+      target.classList.add('message-target-flash');
+      applyPersistentHighlight(target, id);
+    }
+
     return;
   }
 
@@ -184,28 +237,9 @@ const scrollToMessageById = async (id?: string) => {
   chatLogPS.value?.update?.();
 };
 
-const highlightAndScrollToMessage = (id: string) => {
-  if (!id || !chatLogPS.value) return;
-
-  const container: HTMLElement = chatLogPS.value.$el || chatLogPS.value;
-  const target =
-    (container.querySelector(`[data-message-id="${id}"]`) as HTMLElement) ||
-    (document.getElementById(`msg-${id}`) as HTMLElement);
-
-  if (!target) return;
-
-  const top = getOffsetTop(container, target) - 60;
-  container.scrollTo({ top, behavior: 'auto' });
-
-  requestAnimationFrame(() => container.scrollTo({ top, behavior: 'smooth' }));
-
-  nextTick(() => (chatLogPS.value?.update ? chatLogPS.value.update() : null));
-
-  target.classList.remove('message-target-flash');
-
-  forceReflow(target);
-
-  target.classList.add('message-target-flash');
+const highlightAndScrollToMessage = async (id: string) => {
+  if (!id) return;
+  await scrollToMessageById(id, { highlight: true });
 };
 
 const startConversation = () => {
@@ -1506,7 +1540,7 @@ const focusComposer = () => {
 
 const onScrollToMessageEvt = (e: Event) => {
   const id = (e as CustomEvent<string>).detail;
-  if (id) highlightAndScrollToMessage(id);
+  if (id) void highlightAndScrollToMessage(id);
 };
 
 onMounted(async () => {
@@ -1555,6 +1589,11 @@ onUnmounted(async () => {
       onScrollToMessageEvt as EventListener
     );
   }
+
+  highlightedMessageTimers.forEach((timeoutId) => {
+    clearTimeout(timeoutId);
+  });
+  highlightedMessageTimers.clear();
 });
 
 onBeforeUnmount(() => {
@@ -2637,6 +2676,11 @@ $chat-app-header-height: 76px;
 
 .message-target-flash {
   animation: messageTargetFlash 1.1s ease;
+}
+
+.message-target-persistent {
+  background-color: rgba(var(--v-theme-primary), 0.12);
+  transition: background-color 0.3s ease;
 }
 @keyframes messageTargetFlash {
   0% {
