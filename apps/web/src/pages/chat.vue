@@ -506,9 +506,6 @@ const removeVideo = (index: number) => {
 };
 
 const clearSelectedVideos = () => {
-  for (const video of selectedVideos.value) {
-    revokeVideoPreview(video.preview);
-  }
   selectedVideos.value = [];
 };
 
@@ -597,7 +594,6 @@ const sendVideoMessage = async (): Promise<void> => {
   const quotedPayload = getQuotedContent();
   const messageValue = getComposerMessage();
 
-  // Criar todas as mensagens temporárias ANTES de começar os uploads
   const messagesWithHashes = await Promise.all(
     videos.map(async (video) => {
       const hash = createMessageHash();
@@ -623,7 +619,6 @@ const sendVideoMessage = async (): Promise<void> => {
     })
   );
 
-  // Agora fazer os uploads
   await Promise.all(
     messagesWithHashes.map(async ({ video, hash }) => {
       const formData = createVideoFormData(video, messageValue, replyId, hash);
@@ -681,10 +676,8 @@ const sendAudioMessage = async (
     },
   };
 
-  // Criar mensagem temporária ANTES do upload
   await registerLocalMessage(content, hash);
 
-  // Agora fazer o upload
   const formData = createAudioFormData(
     { blob, fileName, mimeType },
     messageValue,
@@ -705,7 +698,6 @@ const sendAudioMessage = async (
     markUploadError(hash);
     return;
   }
-  // markUploadProgress removido: mensagem temporária será substituída via socket
   chatStore.clearMessageReply();
 };
 
@@ -718,7 +710,6 @@ const sendDocumentMessage = async (): Promise<void> => {
   const quotedPayload = getQuotedContent();
   const messageValue = getComposerMessage();
 
-  // Criar todas as mensagens temporárias ANTES de começar os uploads
   const messagesWithHashes = await Promise.all(
     docs.map(async (doc) => {
       const hash = createMessageHash();
@@ -742,7 +733,6 @@ const sendDocumentMessage = async (): Promise<void> => {
     })
   );
 
-  // Agora fazer os uploads
   await Promise.all(
     messagesWithHashes.map(async ({ doc, hash }) => {
       const formData = createDocumentFormData(doc, messageValue, replyId, hash);
@@ -789,7 +779,6 @@ const sendTextMessage = async (): Promise<void> => {
     markUploadError(hash);
     return;
   }
-  // markUploadProgress removido: mensagem temporária será substituída via socket
 };
 
 const finalizeSend = () => {
@@ -1736,10 +1725,8 @@ const onRetryMessage = async (e: Event) => {
 
   const hash = message.hash;
 
-  // Limpar o estado de erro
   chatStore.clearLocalMessageState(hash);
 
-  // Reenviar baseado no tipo
   if (content.type === EMessageType.text) {
     const messageBody: CreateMessageChatsBody = {
       type: EMessageType.text,
@@ -1763,7 +1750,6 @@ const onRetryMessage = async (e: Event) => {
   }
 
   if (content.type === EMessageType.image && content.image?.url) {
-    // Recriar o arquivo a partir da URL blob
     try {
       const response = await fetch(content.image.url);
       const blob = await response.blob();
@@ -1936,7 +1922,6 @@ onMounted(async () => {
 
         const changeType = chatStore.addMessageActiveChat(data);
 
-        // Sempre fazer scroll, seja criação ou atualização (substituição da temporária)
         scrollToMessageById(data.message_id);
         
         if (changeType === 'created') {

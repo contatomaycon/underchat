@@ -47,10 +47,8 @@ const audioWaveforms = reactive<Record<string, number[]>>({});
 const resolveFeedbackIcon = (
   message: ListMessageResult
 ): { icon: string; color: string | undefined } => {
-  // Se houver erro no upload, mostra triângulo vermelho
   if (isMessageUploadError(message))
     return { icon: 'tabler-alert-triangle', color: 'error' };
-  // Se ainda não foi enviado para o internal, mostra relógio de aguardando
   if (message.summary?.is_sent_to_internal === false)
     return { icon: 'tabler-clock', color: undefined };
   if (message.summary?.is_seen)
@@ -107,9 +105,7 @@ const resolvePreviewUrl = (lp?: LinkPreview): string =>
 const isDeleted = (m: ListMessageResult): boolean => m.deleted === true;
 
 const canInteractWithMessage = (m: ListMessageResult): boolean => {
-  // Não pode interagir se a mensagem foi deletada
   if (m.deleted) return false;
-  // Não pode interagir se ainda não foi enviada para o internal
   if (m.summary?.is_sent_to_internal === false) return false;
   return true;
 };
@@ -323,9 +319,12 @@ const dismissLocalMessage = (message: ListMessageResult) => {
   chatStore.removeMessageByHash(message.hash);
 };
 
+const canRetryMessage = (message: ListMessageResult): boolean => {
+  return true;
+};
+
 const retryMessage = (message: ListMessageResult) => {
   if (!message.hash) return;
-  // Emitir evento personalizado para o componente pai reenviar a mensagem
   const event = new CustomEvent('retry-message', {
     detail: { message },
   });
