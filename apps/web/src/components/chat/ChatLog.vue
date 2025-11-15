@@ -47,6 +47,12 @@ const audioWaveforms = reactive<Record<string, number[]>>({});
 const resolveFeedbackIcon = (
   message: ListMessageResult
 ): { icon: string; color: string | undefined } => {
+  // Se houver erro no upload, mostra triângulo vermelho
+  if (isMessageUploadError(message))
+    return { icon: 'tabler-alert-triangle', color: 'error' };
+  // Se ainda não foi enviado para o internal, mostra relógio de aguardando
+  if (message.summary?.is_sent_to_internal === false)
+    return { icon: 'tabler-clock', color: undefined };
   if (message.summary?.is_seen)
     return { icon: 'tabler-checks', color: 'success' };
   if (message.summary?.is_delivered)
@@ -99,6 +105,14 @@ const resolvePreviewUrl = (lp?: LinkPreview): string =>
   lp?.['matched-text'] ?? lp?.['canonical-url'] ?? '';
 
 const isDeleted = (m: ListMessageResult): boolean => m.deleted === true;
+
+const canInteractWithMessage = (m: ListMessageResult): boolean => {
+  // Não pode interagir se a mensagem foi deletada
+  if (m.deleted) return false;
+  // Não pode interagir se ainda não foi enviada para o internal
+  if (m.summary?.is_sent_to_internal === false) return false;
+  return true;
+};
 
 const onReply = (m: ListMessageResult) => {
   if (isDeleted(m)) return;
@@ -307,6 +321,15 @@ const getMessageUploadStatusText = (message: ListMessageResult): string => {
 const dismissLocalMessage = (message: ListMessageResult) => {
   if (!message.hash) return;
   chatStore.removeMessageByHash(message.hash);
+};
+
+const retryMessage = (message: ListMessageResult) => {
+  if (!message.hash) return;
+  // Emitir evento personalizado para o componente pai reenviar a mensagem
+  const event = new CustomEvent('retry-message', {
+    detail: { message },
+  });
+  globalThis.dispatchEvent(event);
 };
 
 const isTextMessage = (message: ListMessageResult): boolean => {
@@ -1135,7 +1158,7 @@ onUnmounted(() => {
           <div
             v-if="
               hoveredMessageId === msgGrp.message_id &&
-              !msgGrp.deleted &&
+              canInteractWithMessage(msgGrp) &&
               showReactionPicker !== msgGrp.message_id
             "
             :class="[
@@ -1157,6 +1180,26 @@ onUnmounted(() => {
           </div>
 
           <div
+            v-if="isMessageUploadError(msgGrp)"
+            :class="[
+              'retry-trigger-container',
+              !isTypeUser(msgGrp) ? 'wrapper-operator' : 'wrapper-client',
+            ]"
+            @click.stop="retryMessage(msgGrp)"
+          >
+            <VBtn
+              icon
+              size="32"
+              variant="flat"
+              class="retry-trigger-btn"
+              color="error"
+              tabindex="-1"
+            >
+              <VIcon size="22">tabler-refresh</VIcon>
+            </VBtn>
+          </div>
+
+          <div
             class="chat-content py-2 px-2 elevation-2"
             :class="[
               isTypeUser(msgGrp) ? 'chat-left' : 'chat-right',
@@ -1171,7 +1214,7 @@ onUnmounted(() => {
                 : 'rgb(217, 253, 211)',
             }"
           >
-            <div v-if="!msgGrp.deleted" class="message-actions">
+            <div v-if="canInteractWithMessage(msgGrp)" class="message-actions">
               <VMenu
                 :close-on-content-click="true"
                 location="bottom end"
@@ -1675,53 +1718,6 @@ onUnmounted(() => {
                     <span>{{ msgGrp.content.document.name }}</span>
                   </VTooltip>
 
-                  <div
-                    v-if="hasLocalUploadState(msgGrp)"
-                    class="message-upload-state mt-2"
-                    :class="{
-                      'message-upload-state--error':
-                        isMessageUploadError(msgGrp),
-                    }"
-                  >
-                    <VProgressLinear
-                      v-if="isMessageUploading(msgGrp)"
-                      class="message-upload-progress mb-1"
-                      :model-value="getMessageUploadProgressLabel(msgGrp)"
-                      :indeterminate="
-                        getMessageUploadProgressLabel(msgGrp) <= 0
-                      "
-                      color="primary"
-                      height="4"
-                    />
-                    <div class="message-upload-info">
-                      <VIcon
-                        :color="
-                          isMessageUploadError(msgGrp) ? 'error' : 'primary'
-                        "
-                        size="18"
-                        class="me-2"
-                      >
-                        {{
-                          isMessageUploadError(msgGrp)
-                            ? 'tabler-alert-triangle'
-                            : 'tabler-loader-2'
-                        }}
-                      </VIcon>
-                      <span class="message-upload-text">
-                        {{ getMessageUploadStatusText(msgGrp) }}
-                      </span>
-                      <VBtn
-                        v-if="isMessageUploadError(msgGrp)"
-                        icon
-                        size="20"
-                        variant="text"
-                        class="message-upload-dismiss ms-2"
-                        @click.stop="dismissLocalMessage(msgGrp)"
-                      >
-                        <VIcon size="16">tabler-x</VIcon>
-                      </VBtn>
-                    </div>
-                  </div>
                   <span class="document-meta text-caption text-disabled">
                     {{
                       (msgGrp.content.document.extension || '').toUpperCase() ||
@@ -1787,7 +1783,8 @@ onUnmounted(() => {
 
               <div
                 v-if="
-                  showReactionPicker === msgGrp.message_id && !msgGrp.deleted
+                  showReactionPicker === msgGrp.message_id &&
+                  canInteractWithMessage(msgGrp)
                 "
                 class="reaction-picker"
                 :class="
@@ -2917,8 +2914,57 @@ onUnmounted(() => {
     }
   }
 
+  .retry-trigger-container {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 12;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+
+    &:hover .retry-trigger-btn {
+      transform: scale(1.08);
+    }
+
+    * {
+      pointer-events: none;
+    }
+  }
+
+  .retry-trigger-btn {
+    min-width: 28px !important;
+    height: 28px !important;
+    border-radius: 999px;
+    background: #fff !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    box-shadow:
+      0 4px 10px rgba(15, 15, 15, 0.12),
+      0 2px 4px rgba(15, 15, 15, 0.08);
+    color: rgb(var(--v-theme-error)) !important;
+    pointer-events: none;
+    transition: transform 0.2s ease;
+
+    .v-btn__content {
+      width: 100%;
+      height: 100%;
+    }
+
+    .v-icon {
+      font-size: 20px !important;
+    }
+  }
+
   .wrapper-operator {
     .reaction-trigger-container {
+      right: calc(100% + 4px);
+    }
+
+    .retry-trigger-container {
       right: calc(100% + 4px);
     }
 
@@ -2929,6 +2975,10 @@ onUnmounted(() => {
 
   .wrapper-client {
     .reaction-trigger-container {
+      left: calc(100% + 4px);
+    }
+
+    .retry-trigger-container {
       left: calc(100% + 4px);
     }
 
@@ -2950,6 +3000,19 @@ onUnmounted(() => {
         0 6px 16px rgba(0, 0, 0, 0.5),
         0 2px 6px rgba(0, 0, 0, 0.35);
       color: rgba(var(--v-theme-on-surface), 0.92) !important;
+    }
+
+    .retry-trigger-container {
+      width: 34px;
+      height: 34px;
+    }
+
+    .retry-trigger-btn {
+      background: rgba(255, 255, 255, 0.14) !important;
+      border: 1px solid rgba(255, 255, 255, 0.22) !important;
+      box-shadow:
+        0 6px 16px rgba(0, 0, 0, 0.5),
+        0 2px 6px rgba(0, 0, 0, 0.35);
     }
   }
 

@@ -543,7 +543,8 @@ const sendImageMessage = async (): Promise<void> => {
   const quotedPayload = getQuotedContent();
   const messageValue = getComposerMessage();
 
-  await Promise.all(
+  // Criar todas as mensagens temporárias ANTES de começar os uploads
+  const messagesWithHashes = await Promise.all(
     photos.map(async (photo) => {
       const hash = createMessageHash();
       const extension = (photo.file.name.split('.').pop() || '').toLowerCase();
@@ -562,7 +563,13 @@ const sendImageMessage = async (): Promise<void> => {
       };
 
       await registerLocalMessage(content, hash);
+      return { photo, hash };
+    })
+  );
 
+  // Agora fazer os uploads
+  await Promise.all(
+    messagesWithHashes.map(async ({ photo, hash }) => {
       const formData = createImageFormData(photo, messageValue, replyId, hash);
 
       const success = await chatStore.createMessageWithImages(formData, {
@@ -576,8 +583,7 @@ const sendImageMessage = async (): Promise<void> => {
         markUploadError(hash);
         return;
       }
-
-      markUploadProgress(hash, 100);
+      // markUploadProgress removido: mensagem temporária será substituída via socket
     })
   );
 };
@@ -591,7 +597,8 @@ const sendVideoMessage = async (): Promise<void> => {
   const quotedPayload = getQuotedContent();
   const messageValue = getComposerMessage();
 
-  await Promise.all(
+  // Criar todas as mensagens temporárias ANTES de começar os uploads
+  const messagesWithHashes = await Promise.all(
     videos.map(async (video) => {
       const hash = createMessageHash();
       const extension = (video.name.split('.').pop() || '').toLowerCase();
@@ -612,7 +619,13 @@ const sendVideoMessage = async (): Promise<void> => {
       };
 
       await registerLocalMessage(content, hash);
+      return { video, hash };
+    })
+  );
 
+  // Agora fazer os uploads
+  await Promise.all(
+    messagesWithHashes.map(async ({ video, hash }) => {
       const formData = createVideoFormData(video, messageValue, replyId, hash);
 
       const success = await chatStore.createMessageWithVideos(formData, {
@@ -626,8 +639,7 @@ const sendVideoMessage = async (): Promise<void> => {
         markUploadError(hash);
         return;
       }
-
-      markUploadProgress(hash, 100);
+      // markUploadProgress removido: mensagem temporária será substituída via socket
     })
   );
 };
@@ -669,8 +681,10 @@ const sendAudioMessage = async (
     },
   };
 
+  // Criar mensagem temporária ANTES do upload
   await registerLocalMessage(content, hash);
 
+  // Agora fazer o upload
   const formData = createAudioFormData(
     { blob, fileName, mimeType },
     messageValue,
@@ -691,8 +705,7 @@ const sendAudioMessage = async (
     markUploadError(hash);
     return;
   }
-
-  markUploadProgress(hash, 100);
+  // markUploadProgress removido: mensagem temporária será substituída via socket
   chatStore.clearMessageReply();
 };
 
@@ -705,7 +718,8 @@ const sendDocumentMessage = async (): Promise<void> => {
   const quotedPayload = getQuotedContent();
   const messageValue = getComposerMessage();
 
-  await Promise.all(
+  // Criar todas as mensagens temporárias ANTES de começar os uploads
+  const messagesWithHashes = await Promise.all(
     docs.map(async (doc) => {
       const hash = createMessageHash();
       const localUrl = URL.createObjectURL(doc.file);
@@ -724,7 +738,13 @@ const sendDocumentMessage = async (): Promise<void> => {
       };
 
       await registerLocalMessage(content, hash);
+      return { doc, hash };
+    })
+  );
 
+  // Agora fazer os uploads
+  await Promise.all(
+    messagesWithHashes.map(async ({ doc, hash }) => {
       const formData = createDocumentFormData(doc, messageValue, replyId, hash);
 
       const success = await chatStore.createMessageWithDocuments(formData, {
@@ -738,8 +758,7 @@ const sendDocumentMessage = async (): Promise<void> => {
         markUploadError(hash);
         return;
       }
-
-      markUploadProgress(hash, 100);
+      // markUploadProgress removido: mensagem temporária será substituída via socket
     })
   );
 };
@@ -759,8 +778,10 @@ const sendTextMessage = async (): Promise<void> => {
     link_preview: preview,
   };
 
+  // Criar mensagem temporária ANTES do upload
   await registerLocalMessage(content, hash);
 
+  // Agora enviar a mensagem
   const messageBody = createTextMessageBody(hash);
   const success = await chatStore.createMessage(messageBody);
 
@@ -768,8 +789,7 @@ const sendTextMessage = async (): Promise<void> => {
     markUploadError(hash);
     return;
   }
-
-  markUploadProgress(hash, 100);
+  // markUploadProgress removido: mensagem temporária será substituída via socket
 };
 
 const finalizeSend = () => {
@@ -1707,6 +1727,202 @@ const onScrollToMessageEvt = (e: Event) => {
   if (id) void highlightAndScrollToMessage(id);
 };
 
+const onRetryMessage = async (e: Event) => {
+  const { message } = (e as CustomEvent<{ message: ListMessageResult }>).detail;
+  if (!message?.hash) return;
+
+  const content = message.content;
+  if (!content) return;
+
+  const hash = message.hash;
+
+  // Limpar o estado de erro
+  chatStore.clearLocalMessageState(hash);
+
+  // Reenviar baseado no tipo
+  if (content.type === EMessageType.text) {
+    const messageBody: CreateMessageChatsBody = {
+      type: EMessageType.text,
+      message: content.message ?? '',
+      hash,
+    };
+
+    if (content.link_preview) {
+      messageBody.link_preview = content.link_preview as ViewLinkPreviewResponse;
+    }
+
+    if (content.message_quoted_id) {
+      messageBody.message_quoted_id = content.message_quoted_id;
+    }
+    
+    const success = await chatStore.createMessage(messageBody);
+    if (!success) {
+      markUploadError(hash);
+    }
+    return;
+  }
+
+  if (content.type === EMessageType.image && content.image?.url) {
+    // Recriar o arquivo a partir da URL blob
+    try {
+      const response = await fetch(content.image.url);
+      const blob = await response.blob();
+      const file = new File([blob], `image.${content.image.extension || 'jpg'}`, {
+        type: content.image.mimetype || 'image/jpeg',
+      });
+
+      const photo = {
+        file,
+        preview: content.image.url,
+      };
+
+      const replyId = content.message_quoted_id ?? null;
+      const formData = createImageFormData(
+        photo,
+        content.message ?? null,
+        replyId,
+        hash
+      );
+
+      chatStore.updateLocalMessageProgress(hash, 0);
+      const success = await chatStore.createMessageWithImages(formData, {
+        skipLoading: true,
+        onUploadProgress: (progress) => {
+          markUploadProgress(hash, progress);
+        },
+      });
+
+      if (!success) {
+        markUploadError(hash);
+      }
+    } catch (error) {
+      markUploadError(hash);
+    }
+    return;
+  }
+
+  if (content.type === EMessageType.video && content.video?.url) {
+    try {
+      const response = await fetch(content.video.url);
+      const blob = await response.blob();
+      const file = new File([blob], content.video.name || `video.${content.video.extension || 'mp4'}`, {
+        type: content.video.mimetype || 'video/mp4',
+      });
+
+      const video = {
+        file,
+        preview: content.video.url,
+        name: content.video.name || file.name,
+        type: content.video.mimetype || 'video/mp4',
+        size: content.video.size || file.size,
+        duration: content.video.duration ?? null,
+      };
+
+      const replyId = content.message_quoted_id ?? null;
+      const formData = createVideoFormData(
+        video,
+        content.message ?? null,
+        replyId,
+        hash
+      );
+
+      chatStore.updateLocalMessageProgress(hash, 0);
+      const success = await chatStore.createMessageWithVideos(formData, {
+        skipLoading: true,
+        onUploadProgress: (progress) => {
+          markUploadProgress(hash, progress);
+        },
+      });
+
+      if (!success) {
+        markUploadError(hash);
+      }
+    } catch (error) {
+      markUploadError(hash);
+    }
+    return;
+  }
+
+  if (content.type === EMessageType.audio && content.audio?.url) {
+    try {
+      const response = await fetch(content.audio.url);
+      const blob = await response.blob();
+
+      const audioData = {
+        blob,
+        fileName: content.audio.name || `audio.${content.audio.extension || 'ogg'}`,
+        mimeType: content.audio.mimetype || 'audio/ogg',
+      };
+
+      const replyId = content.message_quoted_id ?? null;
+      const formData = createAudioFormData(
+        audioData,
+        content.message ?? null,
+        replyId,
+        content.audio.view_once ?? false,
+        content.audio.duration ?? null,
+        hash
+      );
+
+      chatStore.updateLocalMessageProgress(hash, 0);
+      const success = await chatStore.createMessageWithAudios(formData, {
+        skipLoading: true,
+        onUploadProgress: (progress) => {
+          markUploadProgress(hash, progress);
+        },
+      });
+
+      if (!success) {
+        markUploadError(hash);
+      }
+    } catch (error) {
+      markUploadError(hash);
+    }
+    return;
+  }
+
+  if (content.type === EMessageType.document && content.document?.url) {
+    try {
+      const response = await fetch(content.document.url);
+      const blob = await response.blob();
+      const file = new File([blob], content.document.name || `document.${content.document.extension || 'pdf'}`, {
+        type: content.document.mimetype || 'application/pdf',
+      });
+
+      const doc = {
+        file,
+        name: content.document.name || file.name,
+        type: content.document.mimetype || 'application/pdf',
+        size: content.document.size || file.size,
+        extension: content.document.extension || 'pdf',
+      };
+
+      const replyId = content.message_quoted_id ?? null;
+      const formData = createDocumentFormData(
+        doc,
+        content.message ?? null,
+        replyId,
+        hash
+      );
+
+      chatStore.updateLocalMessageProgress(hash, 0);
+      const success = await chatStore.createMessageWithDocuments(formData, {
+        skipLoading: true,
+        onUploadProgress: (progress) => {
+          markUploadProgress(hash, progress);
+        },
+      });
+
+      if (!success) {
+        markUploadError(hash);
+      }
+    } catch (error) {
+      markUploadError(hash);
+    }
+    return;
+  }
+};
+
 onMounted(async () => {
   if (chatStore.user?.account_id) {
     await onMessage(
@@ -1720,8 +1936,10 @@ onMounted(async () => {
 
         const changeType = chatStore.addMessageActiveChat(data);
 
+        // Sempre fazer scroll, seja criação ou atualização (substituição da temporária)
+        scrollToMessageById(data.message_id);
+        
         if (changeType === 'created') {
-          scrollToMessageById(data.message_id);
           globalThis.dispatchEvent(new CustomEvent('focus-composer'));
         }
       }
@@ -1739,6 +1957,7 @@ onMounted(async () => {
       'scroll-to-message',
       onScrollToMessageEvt as EventListener
     );
+    globalThis.addEventListener('retry-message', onRetryMessage as EventListener);
   }
 });
 
@@ -1752,6 +1971,7 @@ onUnmounted(async () => {
       'scroll-to-message',
       onScrollToMessageEvt as EventListener
     );
+    globalThis.removeEventListener('retry-message', onRetryMessage as EventListener);
   }
 
   for (const timeoutId of highlightedMessageTimers.values()) {
