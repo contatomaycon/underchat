@@ -1520,10 +1520,12 @@ onMounted(async () => {
           return;
         }
 
-        chatStore.addMessageActiveChat(data);
+        const changeType = chatStore.addMessageActiveChat(data);
 
-        scrollToMessageById(data.message_id);
-        globalThis.dispatchEvent(new CustomEvent('focus-composer'));
+        if (changeType === 'created') {
+          scrollToMessageById(data.message_id);
+          globalThis.dispatchEvent(new CustomEvent('focus-composer'));
+        }
       }
     );
 

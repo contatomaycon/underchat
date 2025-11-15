@@ -275,7 +275,7 @@ export const useChatStore = defineStore('chat', {
         URL.revokeObjectURL(audioPreview);
       }
     },
-    addMessageActiveChat(message: IChatMessage) {
+    addMessageActiveChat(message: IChatMessage): 'created' | 'updated' {
       const input: ListMessageResult = {
         message_id: message.message_id,
         chat_id: message.chat_id,
@@ -295,11 +295,11 @@ export const useChatStore = defineStore('chat', {
 
       if (existingIndex !== -1) {
         this.listMessages.splice(existingIndex, 1, input);
-
-        return;
+        return 'updated';
       }
 
       this.listMessages.push(input);
+      return 'created';
     },
     addChat(chat: IChat) {
       const input: ListChatsResult = {
