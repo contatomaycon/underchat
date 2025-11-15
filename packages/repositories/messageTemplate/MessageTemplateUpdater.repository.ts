@@ -3,7 +3,7 @@ import { messageTemplate } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { eq } from 'drizzle-orm';
-import { UpdateMessageTemplateRequest } from '@core/schema/messageTemplate/editMessageTemplate/request.schema';
+import { IUpdateMessageTemplate } from '@core/interfaces/repositories/messageTemplate/IUpdateMessageTemplate';
 
 @injectable()
 export class MessageTemplateUpdaterRepository {
@@ -12,7 +12,7 @@ export class MessageTemplateUpdaterRepository {
   ) {}
 
   private updateInput(
-    input: UpdateMessageTemplateRequest
+    input: IUpdateMessageTemplate
   ): Partial<typeof messageTemplate.$inferInsert> {
     const inputUpdate: Partial<typeof messageTemplate.$inferInsert> = {};
 
@@ -24,23 +24,26 @@ export class MessageTemplateUpdaterRepository {
       inputUpdate.message = input.message;
     }
 
-    if (input.message_status?.message_status_id) {
-      inputUpdate.message_status_id = input.message_status.message_status_id;
+    if (input?.message_status_id) {
+      inputUpdate.message_status_id = input.message_status_id;
+    }
+
+    if (input?.attachment_url) {
+      inputUpdate.attachment_url = input.attachment_url;
     }
 
     return inputUpdate;
   }
 
   updateMessageTemplateById = async (
-    messageTemplateId: string,
-    input: UpdateMessageTemplateRequest
+    input: IUpdateMessageTemplate
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input);
 
     const result = await this.db
       .update(messageTemplate)
       .set(updateInput)
-      .where(eq(messageTemplate.message_template_id, messageTemplateId))
+      .where(eq(messageTemplate.message_template_id, input.message_template_id))
       .execute();
 
     return result.rowCount === 1;

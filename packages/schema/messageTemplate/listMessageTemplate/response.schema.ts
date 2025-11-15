@@ -17,6 +17,7 @@ export const listMessageTemplateResponseSchema = Type.Object({
   message_status: Type.Union([messageStatusSchema, Type.Null()]),
   command: Type.String(),
   message: Type.String(),
+  attachment_url: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   created_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 

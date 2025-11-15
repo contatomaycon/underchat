@@ -25,6 +25,7 @@ export class MessageTemplateViewerRepository {
           message_status_id: messageStatus.message_status_id,
           name: messageStatus.name,
         },
+        attachment_url: messageTemplate.attachment_url,
         command: messageTemplate.command,
         message: messageTemplate.message,
         created_at: messageTemplate.created_at,

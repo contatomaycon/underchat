@@ -13,6 +13,8 @@ import { EAccountPermissions } from './account';
 import { EPlanPermissions } from './plan';
 import { EMessageTemplatePermissions } from './messageTemplate';
 import { ELabelTemplatePermissions } from './labelTemplate';
+import { EContactPermissions } from './contact';
+import { EContactGroupPermissions } from './contactGroup';
 
 export type EPermissionsRoles =
   | EUserPermissions
@@ -29,4 +31,6 @@ export type EPermissionsRoles =
   | EAccountPermissions
   | EPlanPermissions
   | EMessageTemplatePermissions
-  | ELabelTemplatePermissions;
+  | ELabelTemplatePermissions
+  | EContactPermissions
+  | EContactGroupPermissions;

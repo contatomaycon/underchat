@@ -9,6 +9,7 @@ import { EUserPermissions } from '@core/common/enums/EPermissions/user';
 import { EAccountPermissions } from '@core/common/enums/EPermissions/account';
 import { EMessageTemplatePermissions } from '@core/common/enums/EPermissions/messageTemplate';
 import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
+import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 
 export default [
   {
@@ -36,29 +37,48 @@ export default [
     ],
   },
   {
-    title: 'label_templates',
-    to: { name: 'label' as keyof RouteNamedMap },
-    icon: { icon: 'tabler-label' },
-    permissions: [
-      EGeneralPermissions.full_access,
-      ELabelTemplatePermissions.label_list,
-      ELabelTemplatePermissions.label_view,
-      ELabelTemplatePermissions.label_create,
-      ELabelTemplatePermissions.label_update,
-      ELabelTemplatePermissions.label_delete,
+    title: 'utilities',
+    icon: { icon: 'tabler-tool' },
+    children: [
+      {
+        title: 'labels',
+        to: { name: 'label' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-label' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          ELabelTemplatePermissions.label_list,
+          ELabelTemplatePermissions.label_view,
+          ELabelTemplatePermissions.label_create,
+          ELabelTemplatePermissions.label_update,
+          ELabelTemplatePermissions.label_delete,
+        ],
+      },
+      {
+        title: 'quick_messages',
+        to: { name: 'message' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-message' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EMessageTemplatePermissions.message_list,
+          EMessageTemplatePermissions.message_view,
+          EMessageTemplatePermissions.message_create,
+          EMessageTemplatePermissions.message_update,
+          EMessageTemplatePermissions.message_delete,
+        ],
+      },
     ],
   },
   {
-    title: 'messages_template',
-    to: { name: 'message' as keyof RouteNamedMap },
-    icon: { icon: 'tabler-message' },
+    title: 'contacts',
+    to: { name: 'contact-and-groups' as keyof RouteNamedMap },
+    icon: { icon: 'tabler-address-book' },
     permissions: [
       EGeneralPermissions.full_access,
-      EMessageTemplatePermissions.message_list,
-      EMessageTemplatePermissions.message_view,
-      EMessageTemplatePermissions.message_create,
-      EMessageTemplatePermissions.message_update,
-      EMessageTemplatePermissions.message_delete,
+      EContactPermissions.contact_list,
+      EContactPermissions.contact_view,
+      EContactPermissions.contact_create,
+      EContactPermissions.contact_update,
+      EContactPermissions.contact_delete,
     ],
   },
   {

@@ -1,6 +1,6 @@
+import { ICreateMessageTemplate } from '@core/interfaces/repositories/messageTemplate/ICreateMessageTemplate';
 import * as schema from '@core/models';
 import { messageTemplate } from '@core/models';
-import { CreateMessageTemplateRequest } from '@core/schema/messageTemplate/createMessageTemplate/request.schema';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { v4 as uuidv4 } from 'uuid';
@@ -12,8 +12,7 @@ export class MessageTemplateCreatorRepository {
   ) {}
 
   createMessageTemplate = async (
-    input: CreateMessageTemplateRequest,
-    accountId: string
+    input: ICreateMessageTemplate
   ): Promise<string | null> => {
     const messageTemplateId = uuidv4();
 
@@ -21,10 +20,11 @@ export class MessageTemplateCreatorRepository {
       .insert(messageTemplate)
       .values({
         message_template_id: messageTemplateId,
-        account_id: accountId,
-        message_status_id: input.message_status.message_status_id,
+        account_id: input.account_id,
+        message_status_id: input.message_status_id,
         command: input.command,
         message: input.message,
+        attachment_url: input.attachment_url,
       })
       .execute();
 

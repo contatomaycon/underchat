@@ -18,13 +18,14 @@ export const editMessageTemplate = async (
   const messageTemplateUpdaterUseCase = container.resolve(
     MessageTemplateUpdaterUseCase
   );
-  const { t } = request;
+  const { t, tokenJwtData } = request;
 
   try {
     const response = await messageTemplateUpdaterUseCase.execute(
       t,
       request.params.message_template_id,
-      request.body
+      request.body,
+      tokenJwtData.account_id
     );
 
     if (response) {

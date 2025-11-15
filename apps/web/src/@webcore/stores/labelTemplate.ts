@@ -18,6 +18,7 @@ import {
   UpdateLabelTemplateRequest,
   EditLabelTemplateParamsRequest,
 } from '@core/schema/labelTemplate/editLabelTemplate/request.schema';
+import { ListLabelTemplateAllResponse } from '@core/schema/labelTemplate/listLabelTemplateAll/response.schema';
 
 export const useLabelTemplateStore = defineStore('label-template', {
   state: () => ({
@@ -29,6 +30,7 @@ export const useLabelTemplateStore = defineStore('label-template', {
     i18n: getI18n(),
     loading: false,
     list: [] as ListLabelTemplateResponse[],
+    listAll: [] as ListLabelTemplateAllResponse[],
     pagings: {
       current_page: 1 as number,
       total_pages: 1 as number,
@@ -94,6 +96,47 @@ export const useLabelTemplateStore = defineStore('label-template', {
 
         this.showSnackbar(errorMessage, EColor.error);
 
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listLabelTemplateAll(): Promise<
+      ListLabelTemplateAllResponse[] | null
+    > {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListLabelTemplateAllResponse[]>
+        >('/label-template/all');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('label_template_all_list_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.listAll = data.data;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('label_template_all_list_error');
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
         this.loading = false;
 
         return null;
