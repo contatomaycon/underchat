@@ -96,12 +96,40 @@ const isValidDateValue = (
 
 const defaultConfig: FlatpickrOptions = {
   locale: Portuguese,
-  dateFormat: 'd/m/Y',
+  dateFormat: 'Y-m-d',
+  altInput: true,
+  altFormat: 'd/m/Y',
   allowInput: true,
   clickOpens: true,
   onReady: (selectedDates, dateStr, instance) => {
     nextTick(() => {
       enableYearEditing();
+      setupInputMask();
+    });
+  },
+  onChange: (selectedDates, dateStr, instance) => {
+    nextTick(() => {
+      setupInputMask();
+      const altInput = instance.altInput as HTMLInputElement;
+      if (altInput && selectedDates.length > 0) {
+        const date = selectedDates[0];
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        altInput.value = `${day}/${month}/${year}`;
+      }
+    });
+  },
+  onClose: (selectedDates, dateStr, instance) => {
+    nextTick(() => {
+      const altInput = instance.altInput as HTMLInputElement;
+      if (altInput && selectedDates.length > 0) {
+        const date = selectedDates[0];
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        altInput.value = `${day}/${month}/${year}`;
+      }
     });
   },
   parseDate: (datestr, format): Date => {
@@ -130,7 +158,7 @@ const defaultConfig: FlatpickrOptions = {
     const day = String(date.getDate()).padStart(2, '0');
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const year = date.getFullYear();
-    return `${day}/${month}/${year}`;
+    return `${year}-${month}-${day}`;
   },
   prevArrow:
     '<i class="tabler-chevron-left v-icon" style="font-size: 20px; height: 20px; width: 20px;"></i>',
@@ -331,7 +359,8 @@ let inputMaskHandlers: {
 const setupInputMask = () => {
   if (!refFlatPicker.value?.fp) return;
 
-  const input = refFlatPicker.value.fp.input as HTMLInputElement;
+  // Usa o altInput (campo visível) ao invés do input principal
+  const input = (refFlatPicker.value.fp.altInput || refFlatPicker.value.fp.input) as HTMLInputElement;
   if (!input) return;
 
   if (inputMaskHandlers.handleInput) {
