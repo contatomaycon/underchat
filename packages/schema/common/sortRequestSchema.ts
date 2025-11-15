@@ -1,5 +1,5 @@
 import { ESortOrder } from '@core/common/enums/ESortOrder';
-import { Static, Type } from '@fastify/type-provider-typebox';
+import { Static, Type } from '@sinclair/typebox';
 
 export const sortRequestSchema = Type.Object({
   key: Type.String(),
