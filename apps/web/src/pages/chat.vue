@@ -542,7 +542,6 @@ const sendImageMessage = async (): Promise<void> => {
   const quotedPayload = getQuotedContent();
   const messageValue = getComposerMessage();
 
-  // Criar todas as mensagens temporárias ANTES de começar os uploads
   const messagesWithHashes = await Promise.all(
     photos.map(async (photo) => {
       const hash = createMessageHash();
@@ -566,7 +565,6 @@ const sendImageMessage = async (): Promise<void> => {
     })
   );
 
-  // Agora fazer os uploads
   await Promise.all(
     messagesWithHashes.map(async ({ photo, hash }) => {
       const formData = createImageFormData(photo, messageValue, replyId, hash);
@@ -581,7 +579,6 @@ const sendImageMessage = async (): Promise<void> => {
       if (!success) {
         markUploadError(hash);
       }
-      // markUploadProgress removido: mensagem temporária será substituída via socket
     })
   );
 };
@@ -634,7 +631,6 @@ const sendVideoMessage = async (): Promise<void> => {
       if (!success) {
         markUploadError(hash);
       }
-      // markUploadProgress removido: mensagem temporária será substituída via socket
     })
   );
 };
@@ -656,7 +652,23 @@ const sendAudioMessage = async (
   const quotedPayload = getQuotedContent();
   const messageValue = getComposerMessage();
   const hash = createMessageHash();
-  const extensionFromMime = mimeType.split('/')[1] || 'ogg';
+
+  let extensionFromMime =
+    mimeType.split('/')[1]?.split(';')[0]?.trim() || 'ogg';
+
+  const mimeToExtension: Record<string, string> = {
+    mpeg: 'mp3',
+    mp3: 'mp3',
+    aac: 'aac',
+    m4a: 'm4a',
+    'x-m4a': 'm4a',
+    amr: 'amr',
+    'amr-wb': 'amr',
+    ogg: 'ogg',
+    opus: 'opus',
+  };
+
+  extensionFromMime = mimeToExtension[extensionFromMime] || extensionFromMime;
   const fileName = `audio-${Date.now()}.${extensionFromMime}`;
   const localUrl = URL.createObjectURL(blob);
 
@@ -685,7 +697,7 @@ const sendAudioMessage = async (
     viewOnce,
     duration,
     hash,
-    true // ptt: true para gravações
+    true
   );
 
   const success = await chatStore.createMessageWithAudios(formData, {
@@ -745,10 +757,10 @@ const sendAudioFilesMessage = async (): Promise<void> => {
         },
         messageValue,
         replyId,
-        false, // viewOnce
+        false,
         audio.duration,
         hash,
-        false // ptt: false para arquivos anexados
+        false
       );
 
       const success = await chatStore.createMessageWithAudios(formData, {
@@ -811,7 +823,6 @@ const sendDocumentMessage = async (): Promise<void> => {
       if (!success) {
         markUploadError(hash);
       }
-      // markUploadProgress removido: mensagem temporária será substituída via socket
     })
   );
 };
@@ -831,10 +842,8 @@ const sendTextMessage = async (): Promise<void> => {
     link_preview: preview,
   };
 
-  // Criar mensagem temporária ANTES do upload
   await registerLocalMessage(content, hash);
 
-  // Agora enviar a mensagem
   const messageBody = createTextMessageBody(hash);
   const success = await chatStore.createMessage(messageBody);
 
@@ -1316,7 +1325,29 @@ const handleRecorderStop = async () => {
   }
 
   if (saveRecording && recorder && audioChunksRef.value.length > 0) {
-    const mimeType = recorder.mimeType || 'audio/webm;codecs=opus';
+    let mimeType = recorder.mimeType || 'audio/ogg;codecs=opus';
+
+    const allowedMimeTypes = [
+      'audio/mpeg',
+      'audio/mp3',
+      'audio/aac',
+      'audio/m4a',
+      'audio/x-m4a',
+      'audio/amr',
+      'audio/amr-wb',
+      'audio/ogg',
+      'audio/opus',
+    ];
+
+    const baseMimeType = mimeType.split(';')[0].trim();
+    const isAllowed = allowedMimeTypes.some((allowed) => {
+      return mimeType === allowed || baseMimeType === allowed;
+    });
+
+    if (!isAllowed) {
+      mimeType = 'audio/ogg;codecs=opus';
+    }
+
     const blob = new Blob(audioChunksRef.value, { type: mimeType });
     recordedAudioBlob.value = blob;
     if (recordedAudioUrl.value) URL.revokeObjectURL(recordedAudioUrl.value);
@@ -1439,7 +1470,27 @@ const startAudioRecording = async () => {
     }
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     audioStreamRef.value = stream;
-    const mediaRecorder = new MediaRecorder(stream);
+
+    const preferredMimeTypes = [
+      'audio/ogg;codecs=opus',
+      'audio/opus',
+      'audio/ogg',
+    ];
+
+    let mediaRecorder: MediaRecorder | null = null;
+    for (const mimeType of preferredMimeTypes) {
+      if (MediaRecorder.isTypeSupported(mimeType)) {
+        try {
+          mediaRecorder = new MediaRecorder(stream, { mimeType });
+          break;
+        } catch {}
+      }
+    }
+
+    if (!mediaRecorder) {
+      mediaRecorder = new MediaRecorder(stream);
+    }
+
     mediaRecorderRef.value = mediaRecorder;
     audioChunksRef.value = [];
     mediaRecorder.ondataavailable = (event) => {
@@ -1625,20 +1676,20 @@ const onPickAudio = async (e: Event) => {
   const allowedAudioTypes = new Set([
     'audio/mpeg',
     'audio/mp3',
-    'audio/wav',
-    'audio/ogg',
-    'audio/webm',
     'audio/aac',
     'audio/m4a',
+    'audio/x-m4a',
+    'audio/amr',
+    'audio/amr-wb',
+    'audio/ogg',
     'audio/opus',
   ]);
   const allowedExtensions = new Set([
     'mp3',
-    'wav',
-    'ogg',
-    'webm',
     'aac',
     'm4a',
+    'amr',
+    'ogg',
     'opus',
   ]);
 
@@ -3024,7 +3075,7 @@ onBeforeUnmount(() => {
             ref="fileAudioRef"
             type="file"
             hidden
-            accept="audio/*"
+            accept="audio/mpeg,audio/mp3,audio/aac,audio/m4a,audio/x-m4a,audio/amr,audio/amr-wb,audio/ogg,audio/opus,.mp3,.aac,.m4a,.amr,.ogg,.opus"
             multiple
             @change="onPickAudio"
           />
