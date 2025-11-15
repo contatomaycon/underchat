@@ -188,7 +188,9 @@ const formatPartialDate = (
 };
 
 const extractDigits = (value: string): string => {
-  return value.replace(/\D/g, '');
+  return Array.from(value)
+    .filter((char) => /\d/.test(char))
+    .join('');
 };
 
 const applyDateMask = (value: string): string => {
