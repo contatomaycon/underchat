@@ -108,7 +108,7 @@ const exportContactsToCsv = () => {
   const rows = contactStore.list.map((item) => [
     item.name ?? '',
     item.last_name ?? '',
-    item.email_partial ?? item.email ?? '',
+    item.email_partial ?? '',
     item.phone_partial ?? '',
     item.nickname ?? '',
     item.label_template?.label ?? '',

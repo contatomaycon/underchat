@@ -450,5 +450,16 @@
     "command_no_slash": "It is not allowed to use / or \\ in the command.",
     "command_only_dot_not_allowed": "The command cannot be just a dot.",
     "invalid_contacts_file": "Invalid file. Please upload .csv, .vcf, or .vcard.",
-    "required": "Required"
+    "required": "Required",
+    "select_contacts": "Select Contacts",
+    "max_contacts_selected": "You can select a maximum of {count} contact(s).",
+    "select_at_least_one_contact": "Select at least one contact.",
+    "contacts_selected": "Selected contacts",
+    "audios_selected": "Selected audios",
+    "max_audios_selected": "You have reached the maximum limit of audios.",
+    "can_select_more_audios": "You can select up to {count} audio(s).",
+    "clear_documents_before_audios": "Clear documents before selecting audios.",
+    "clear_images_before_audios": "Clear images before selecting audios.",
+    "clear_videos_before_audios": "Clear videos before selecting audios.",
+    "invalid_audio_format": "Invalid audio format."
 }

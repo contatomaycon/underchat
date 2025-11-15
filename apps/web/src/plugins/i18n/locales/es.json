@@ -450,5 +450,16 @@
     "invalid_contacts_file": "Archivo inválido. Envía .csv, .vcf o .vcard.",
     "command_no_slash": "No se permite usar / o \\ en el comando.",
     "command_only_dot_not_allowed": "El comando no puede ser solo un punto.",
-    "required": "Obligatorio"
+    "required": "Obligatorio",
+    "select_contacts": "Seleccionar Contactos",
+    "max_contacts_selected": "Puedes seleccionar un máximo de {count} contacto(s).",
+    "select_at_least_one_contact": "Selecciona al menos un contacto.",
+    "contacts_selected": "Contactos seleccionados",
+    "audios_selected": "Áudios seleccionados",
+    "max_audios_selected": "Has alcanzado el límite máximo de áudios.",
+    "can_select_more_audios": "Puedes seleccionar hasta {count} áudio(s).",
+    "clear_documents_before_audios": "Elimina los documentos antes de seleccionar áudios.",
+    "clear_images_before_audios": "Elimina las imágenes antes de seleccionar áudios.",
+    "clear_videos_before_audios": "Elimina los videos antes de seleccionar áudios.",
+    "invalid_audio_format": "Formato de áudio inválido."
 }

@@ -6,6 +6,7 @@ import ChatActiveChatUserProfileSidebarContent from '@/components/chat/ChatActiv
 import ChatLeftSidebarContent from '@/components/chat/ChatLeftSidebarContent.vue';
 import ChatLog from '@/components/chat/ChatLog.vue';
 import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSidebarContent.vue';
+import AppContactPicker from '@/components/chat/AppContactPicker.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
@@ -34,6 +35,7 @@ import {
   ISelectedDocumentPreview,
   ISelectedVideoPreview,
   ISelectedAudioPreview,
+  ISelectedContactPreview,
 } from '@core/common/interfaces/IChatFilePreview';
 import { extractFirstUrl } from '@core/common/functions/extractFirstUrl';
 import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
@@ -83,10 +85,12 @@ const filePhotoRef = ref<HTMLInputElement | null>(null);
 const fileVideoRef = ref<HTMLInputElement | null>(null);
 const fileAudioRef = ref<HTMLInputElement | null>(null);
 const isEmojiOpen = ref(false);
+const isContactPickerOpen = ref(false);
 const selectedPhotos = ref<ISelectedPhotoPreview[]>([]);
 const selectedDocuments = ref<ISelectedDocumentPreview[]>([]);
 const selectedVideos = ref<ISelectedVideoPreview[]>([]);
 const selectedAudios = ref<ISelectedAudioPreview[]>([]);
+const selectedContacts = ref<ISelectedContactPreview[]>([]);
 
 const isRecordingAudio = ref(false);
 const isRecordingPaused = ref(false);
@@ -123,6 +127,7 @@ const hasAttachmentsOrContent = computed(
     selectedDocuments.value.length > 0 ||
     selectedVideos.value.length > 0 ||
     selectedAudios.value.length > 0 ||
+    selectedContacts.value.length > 0 ||
     isRecordingAudio.value
 );
 
@@ -509,11 +514,16 @@ const clearSelectedAudios = () => {
   selectedAudios.value = [];
 };
 
+const clearSelectedContacts = () => {
+  selectedContacts.value = [];
+};
+
 const clearMessageFields = () => {
   msg.value = '';
   linkPreview.value = null;
   clearSelectedVideos();
   clearSelectedAudios();
+  clearSelectedContacts();
   selectedPhotos.value = [];
   selectedDocuments.value = [];
   chatStore.clearMessageReply();
@@ -525,7 +535,8 @@ const canSendMessage = (): boolean => {
     selectedPhotos.value.length > 0 ||
     selectedDocuments.value.length > 0 ||
     selectedVideos.value.length > 0 ||
-    selectedAudios.value.length > 0
+    selectedAudios.value.length > 0 ||
+    selectedContacts.value.length > 0
   );
 };
 
@@ -827,6 +838,91 @@ const sendDocumentMessage = async (): Promise<void> => {
   );
 };
 
+const generateVCard = (contact: ISelectedContactPreview): string => {
+  const lines: string[] = ['BEGIN:VCARD', 'VERSION:3.0'];
+
+  const fullName = [contact.name, contact.last_name]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+
+  if (fullName) {
+    const nameParts = fullName.split(' ');
+    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+    const firstName = nameParts[0] || '';
+    lines.push(`N:${lastName};${firstName};;;`);
+    lines.push(`FN:${fullName}`);
+  }
+
+  if (contact.phone_partial) {
+    const phone = contact.phone_partial.replace(/\D/g, '');
+    if (phone) {
+      lines.push(`TEL;TYPE=CELL:${phone}`);
+    }
+  }
+
+  if (contact.email_partial) {
+    lines.push(`EMAIL:${contact.email_partial}`);
+  }
+
+  lines.push('END:VCARD');
+  return lines.join('\n');
+};
+
+const sendContactsMessage = async (): Promise<void> => {
+  if (!chatStore.activeChat?.chat_id) return;
+  const contacts = [...selectedContacts.value];
+  if (contacts.length === 0) return;
+
+  const replyId = chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent();
+  const messageValue = getComposerMessage();
+  const hash = createMessageHash();
+
+  const vcards = contacts.map((contact) => generateVCard(contact));
+  const displayName =
+    contacts.length === 1
+      ? `${contacts[0].name} ${contacts[0].last_name || ''}`.trim()
+      : `${contacts.length} ${t('contacts')}`;
+
+  const content: ContentMessageChat = {
+    type: EMessageType.contacts,
+    message: messageValue,
+    message_quoted_id: replyId ?? undefined,
+    quoted: quotedPayload,
+  };
+
+  await registerLocalMessage(content, hash);
+
+  const formData = new FormData();
+  formData.append('type', EMessageType.contacts);
+  if (messageValue) {
+    formData.append('message', messageValue);
+  }
+  if (replyId) {
+    formData.append('message_quoted_id', replyId);
+  }
+  vcards.forEach((vcard, index) => {
+    formData.append(`contacts[${index}]`, vcard);
+  });
+  formData.append('contacts_display_name', displayName);
+  formData.append('hash', hash);
+
+  const success = await chatStore.createMessageWithContacts(formData, {
+    skipLoading: true,
+  });
+
+  if (!success) {
+    markUploadError(hash);
+    return;
+  }
+  chatStore.clearMessageReply();
+};
+
+const onContactsSelected = (contacts: ISelectedContactPreview[]) => {
+  selectedContacts.value = contacts;
+};
+
 const sendTextMessage = async (): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) return;
   const hash = createMessageHash();
@@ -878,6 +974,12 @@ const sendMessage = async () => {
 
   if (selectedAudios.value.length > 0) {
     await sendAudioFilesMessage();
+    finalizeSend();
+    return;
+  }
+
+  if (selectedContacts.value.length > 0) {
+    await sendContactsMessage();
     finalizeSend();
     return;
   }
@@ -971,7 +1073,7 @@ const openAttach = (
       fileAudioRef.value?.click();
       break;
     case 'contact':
-      globalThis.dispatchEvent(new CustomEvent('open-contact-picker'));
+      isContactPickerOpen.value = true;
       break;
   }
 };
@@ -1794,6 +1896,10 @@ const removeAudio = (index: number) => {
     }
   }
   selectedAudios.value.splice(index, 1);
+};
+
+const removeContact = (index: number) => {
+  selectedContacts.value.splice(index, 1);
 };
 
 const audioModalOpen = ref(false);
@@ -2809,6 +2915,87 @@ onBeforeUnmount(() => {
 
           <Transition name="fade">
             <div
+              v-if="selectedContacts.length > 0"
+              class="composer-attachment mt-3"
+            >
+              <VCard class="composer-attachment-card">
+                <VCardTitle class="d-flex align-center justify-space-between">
+                  <span
+                    >{{ t('contacts_selected') }} ({{
+                      selectedContacts.length
+                    }}/10)</span
+                  >
+                  <VBtn
+                    icon
+                    size="24"
+                    variant="text"
+                    @click="clearSelectedContacts()"
+                  >
+                    <VIcon size="18" icon="tabler-x" />
+                  </VBtn>
+                </VCardTitle>
+                <VCardText>
+                  <div class="attachment-grid">
+                    <div
+                      v-for="(contact, index) in selectedContacts"
+                      :key="`${contact.contact_id}-${index}`"
+                      class="contact-preview-wrapper"
+                    >
+                      <div class="contact-preview-container">
+                        <div class="contact-preview-icon-wrapper">
+                          <VIcon size="32" color="primary">tabler-user</VIcon>
+                        </div>
+                      </div>
+                      <div class="contact-preview-meta">
+                        <VTooltip location="bottom">
+                          <template #activator="{ props }">
+                            <span v-bind="props" class="contact-preview-name">
+                              {{ contact.name }}
+                              {{ contact.last_name || '' }}
+                            </span>
+                          </template>
+                          <span
+                            >{{ contact.name }}
+                            {{ contact.last_name || '' }}</span
+                          >
+                        </VTooltip>
+                        <span
+                          class="contact-preview-info text-caption text-disabled"
+                        >
+                          <span v-if="contact.phone_partial">
+                            {{ contact.phone_partial }}
+                          </span>
+                          <span
+                            v-if="
+                              contact.phone_partial && contact.email_partial
+                            "
+                          >
+                            •
+                          </span>
+                          <span v-if="contact.email_partial">
+                            {{ contact.email_partial }}
+                          </span>
+                        </span>
+                      </div>
+                      <VBtn
+                        icon
+                        size="20"
+                        variant="flat"
+                        color="error"
+                        class="contact-preview-remove"
+                        @click.stop="removeContact(index)"
+                      >
+                        <VIcon size="14" icon="tabler-x" />
+                      </VBtn>
+                    </div>
+                  </div>
+                </VCardText>
+              </VCard>
+            </div>
+          </Transition>
+
+          <Transition name="fade">
+            <div
               v-if="selectedPhotos.length > 0"
               class="composer-attachment mt-3"
             >
@@ -3107,6 +3294,11 @@ onBeforeUnmount(() => {
       </div>
     </VMain>
   </VLayout>
+
+  <AppContactPicker
+    v-model="isContactPickerOpen"
+    @select="onContactsSelected"
+  />
 
   <VSnackbar
     v-model="chatStore.snackbar.status"
@@ -3611,6 +3803,61 @@ $chat-app-header-height: 76px;
 }
 
 .audio-preview-remove {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: 6px;
+}
+
+.contact-preview-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: 10px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+  padding: 8px;
+  overflow: hidden;
+}
+
+.contact-preview-container {
+  position: relative;
+  inline-size: 100%;
+  block-size: 120px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(var(--v-theme-primary), 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.contact-preview-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.contact-preview-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.contact-preview-name {
+  font-weight: 600;
+  color: rgb(var(--v-theme-primary));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.contact-preview-info {
+  white-space: nowrap;
+}
+
+.contact-preview-remove {
   position: absolute;
   inset-block-start: 6px;
   inset-inline-end: 6px;

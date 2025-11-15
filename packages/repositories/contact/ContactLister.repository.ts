@@ -14,6 +14,7 @@ import {
   or,
   ilike,
   inArray,
+  sql,
 } from 'drizzle-orm';
 import { ESortOrder } from '@core/common/enums/ESortOrder';
 import { ListContactRequest } from '@core/schema/contact/listContact/request.schema';
@@ -113,13 +114,13 @@ export class ContactListerRepository {
         },
         name: contact.name,
         last_name: contact.last_name,
-        email: contact.email,
         email_partial: contact.email_partial,
         phone_ddi: contact.phone_ddi,
-        phone: contact.phone,
         phone_partial: contact.phone_partial,
         nickname: contact.nickname,
-        birthday: contact.birthday,
+        birthday: sql<
+          string | null
+        >`CASE WHEN ${contact.birthday} IS NULL THEN NULL ELSE to_char(${contact.birthday}, 'YYYY-MM-DD') END`,
         notes: contact.notes,
         created_at: contact.created_at,
       })
@@ -159,14 +160,12 @@ export class ContactListerRepository {
         : null,
       name: contact.name,
       last_name: contact.last_name ?? null,
-      email: contact.email ?? null,
       email_partial: contact.email_partial ?? null,
       phone_ddi: contact.phone_ddi ?? null,
-      phone: contact.phone ?? null,
       phone_partial: contact.phone_partial ?? null,
       created_at: contact.created_at ?? null,
       nickname: contact.nickname ?? null,
-      birthday: contact.birthday ?? null,
+      birthday: contact.birthday,
       notes: contact.notes ?? null,
     })) as ListContactResponse[];
   };
