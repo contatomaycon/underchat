@@ -29,6 +29,12 @@ import {
   IQuotedMessage,
 } from '@core/common/interfaces/IChatMessage';
 import { IChat } from '@core/common/interfaces/IChat';
+import {
+  ISelectedPhotoPreview,
+  ISelectedDocumentPreview,
+  ISelectedVideoPreview,
+  ISelectedAudioPreview,
+} from '@core/common/interfaces/IChatFilePreview';
 import { extractFirstUrl } from '@core/common/functions/extractFirstUrl';
 import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
 import { refDebounced } from '@vueuse/core';
@@ -77,33 +83,10 @@ const filePhotoRef = ref<HTMLInputElement | null>(null);
 const fileVideoRef = ref<HTMLInputElement | null>(null);
 const fileAudioRef = ref<HTMLInputElement | null>(null);
 const isEmojiOpen = ref(false);
-const selectedPhotos = ref<{ file: File; preview: string }[]>([]);
-type SelectedDocumentPreview = {
-  file: File;
-  name: string;
-  size: number;
-  extension: string;
-  type: string;
-};
-const selectedDocuments = ref<SelectedDocumentPreview[]>([]);
-type SelectedVideoPreview = {
-  file: File;
-  preview: string;
-  name: string;
-  size: number;
-  type: string;
-  duration: number | null;
-};
-const selectedVideos = ref<SelectedVideoPreview[]>([]);
-type SelectedAudioPreview = {
-  file: File;
-  preview: string;
-  name: string;
-  size: number;
-  type: string;
-  duration: number | null;
-};
-const selectedAudios = ref<SelectedAudioPreview[]>([]);
+const selectedPhotos = ref<ISelectedPhotoPreview[]>([]);
+const selectedDocuments = ref<ISelectedDocumentPreview[]>([]);
+const selectedVideos = ref<ISelectedVideoPreview[]>([]);
+const selectedAudios = ref<ISelectedAudioPreview[]>([]);
 
 const isRecordingAudio = ref(false);
 const isRecordingPaused = ref(false);
@@ -380,7 +363,7 @@ const startConversation = () => {
 };
 
 const createImageFormData = (
-  photo: { file: File; preview: string },
+  photo: ISelectedPhotoPreview,
   messageValue: string | null,
   quotedId: string | null,
   hash: string
@@ -402,7 +385,7 @@ const createImageFormData = (
 };
 
 const createDocumentFormData = (
-  doc: SelectedDocumentPreview,
+  doc: ISelectedDocumentPreview,
   messageValue: string | null,
   quotedId: string | null,
   hash: string
@@ -424,7 +407,7 @@ const createDocumentFormData = (
 };
 
 const createVideoFormData = (
-  video: SelectedVideoPreview,
+  video: ISelectedVideoPreview,
   messageValue: string | null,
   quotedId: string | null,
   hash: string
@@ -1745,7 +1728,7 @@ const onPickAudio = async (e: Event) => {
   target.value = '';
 };
 
-const openPreviewImage = (photo: { file: File; preview: string }) => {
+const openPreviewImage = (photo: ISelectedPhotoPreview) => {
   viewerKind.value = 'image';
   viewerSrc.value = photo.preview;
   viewerCaption.value = '';
@@ -1753,7 +1736,7 @@ const openPreviewImage = (photo: { file: File; preview: string }) => {
   viewerOpen.value = true;
 };
 
-const openPreviewVideo = (video: SelectedVideoPreview) => {
+const openPreviewVideo = (video: ISelectedVideoPreview) => {
   viewerKind.value = 'video';
   viewerSrc.value = video.preview;
   viewerCaption.value = '';
@@ -1831,7 +1814,7 @@ const setupAudioModalListeners = (): (() => void) | null => {
 
 let audioModalCleanup: (() => void) | null = null;
 
-const openPreviewAudio = (audio: SelectedAudioPreview) => {
+const openPreviewAudio = (audio: ISelectedAudioPreview) => {
   if (audioModalCleanup) {
     audioModalCleanup();
     audioModalCleanup = null;
