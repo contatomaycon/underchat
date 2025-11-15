@@ -197,7 +197,7 @@ export class MessageSendConsume {
     type: EMessageType,
     lastType: EMessageType | undefined,
     processor: (jid: string, data: IChatMessage) => Promise<void>
-  ): Promise<boolean> {
+  ): Promise<void> {
     await this.processMessageWithDelay(
       jid,
       chatId,
@@ -206,7 +206,6 @@ export class MessageSendConsume {
       lastType,
       processor
     );
-    return true;
   }
 
   private async processTextMessage(
@@ -229,10 +228,9 @@ export class MessageSendConsume {
     data: IChatMessage,
     type: EMessageType,
     processor: (jid: string, data: IChatMessage) => Promise<void>
-  ): Promise<boolean> {
+  ): Promise<void> {
     await processor(jid, data);
     this.lastMessageTypeByChatId.set(chatId, type);
-    return true;
   }
 
   private selectMessageHandler(
@@ -299,10 +297,7 @@ export class MessageSendConsume {
       return () => this.processTextMessage(jid, chatId, data, hasQuoted);
     }
 
-    if (
-      currentType === EMessageType.delete_message &&
-      data.message_key?.id
-    ) {
+    if (currentType === EMessageType.delete_message && data.message_key?.id) {
       return () =>
         this.processActionMessage(
           jid,
