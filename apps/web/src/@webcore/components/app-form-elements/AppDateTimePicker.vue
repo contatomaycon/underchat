@@ -359,8 +359,8 @@ let inputMaskHandlers: {
 const setupInputMask = () => {
   if (!refFlatPicker.value?.fp) return;
 
-  // Usa o altInput (campo visível) ao invés do input principal
-  const input = (refFlatPicker.value.fp.altInput || refFlatPicker.value.fp.input) as HTMLInputElement;
+  const input = (refFlatPicker.value.fp.altInput ||
+    refFlatPicker.value.fp.input) as HTMLInputElement;
   if (!input) return;
 
   if (inputMaskHandlers.handleInput) {

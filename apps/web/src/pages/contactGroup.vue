@@ -182,11 +182,11 @@ watch(
         :loading-text="$t('loading_text')"
       >
         <template #item.name="{ item }">
-          {{ $t(`${item?.name}`) }}
+          {{ item?.name }}
         </template>
 
         <template #item.description="{ item }">
-          {{ $t(`${item?.description}`) }}
+          {{ item?.description }}
         </template>
 
         <template #item.created_at="{ item }">

@@ -247,11 +247,11 @@ watch(
         </template>
 
         <template #item.command="{ item }">
-          {{ $t(`${item.command}`) }}
+          {{ item.command }}
         </template>
 
         <template #item.message_status="{ item }">
-          {{ $t(`${item.message_status?.name}`) }}
+          {{ item.message_status?.name }}
         </template>
 
         <template #item.attachment_url="{ item }">

@@ -204,15 +204,15 @@ watch(
         </template>
 
         <template #item.status="{ item }">
-          {{ $t(`${item.user_status?.name}`) }}
+          {{ item.user_status?.name }}
         </template>
 
         <template #item.phone_partial="{ item }">
-          {{ $t(`${item.user_info?.phone_partial}`) }}
+          {{ item.user_info?.phone_partial }}
         </template>
 
         <template #item.document_partial="{ item }">
-          {{ $t(`${item.user_document?.document_partial}`) }}
+          {{ item.user_document?.document_partial }}
         </template>
 
         <template #item.created_at="{ item }">
