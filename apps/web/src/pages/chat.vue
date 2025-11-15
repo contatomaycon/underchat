@@ -95,6 +95,15 @@ type SelectedVideoPreview = {
   duration: number | null;
 };
 const selectedVideos = ref<SelectedVideoPreview[]>([]);
+type SelectedAudioPreview = {
+  file: File;
+  preview: string;
+  name: string;
+  size: number;
+  type: string;
+  duration: number | null;
+};
+const selectedAudios = ref<SelectedAudioPreview[]>([]);
 
 const isRecordingAudio = ref(false);
 const isRecordingPaused = ref(false);
@@ -130,6 +139,7 @@ const hasAttachmentsOrContent = computed(
     selectedPhotos.value.length > 0 ||
     selectedDocuments.value.length > 0 ||
     selectedVideos.value.length > 0 ||
+    selectedAudios.value.length > 0 ||
     isRecordingAudio.value
 );
 
@@ -449,7 +459,8 @@ const createAudioFormData = (
   quotedId: string | null,
   viewOnce: boolean,
   duration: number | null,
-  hash: string
+  hash: string,
+  ptt: boolean = false
 ): FormData => {
   const formData = new FormData();
   formData.append('type', EMessageType.audio);
@@ -468,6 +479,7 @@ const createAudioFormData = (
   if (viewOnce) {
     formData.append('audio_view_once', 'true');
   }
+  formData.append('audio_ptt', ptt ? 'true' : 'false');
 
   formData.append('hash', hash);
 
@@ -509,10 +521,20 @@ const clearSelectedVideos = () => {
   selectedVideos.value = [];
 };
 
+const clearSelectedAudios = () => {
+  for (const audio of selectedAudios.value) {
+    if (audio.preview && audio.preview.startsWith('blob:')) {
+      URL.revokeObjectURL(audio.preview);
+    }
+  }
+  selectedAudios.value = [];
+};
+
 const clearMessageFields = () => {
   msg.value = '';
   linkPreview.value = null;
   clearSelectedVideos();
+  clearSelectedAudios();
   selectedPhotos.value = [];
   selectedDocuments.value = [];
   chatStore.clearMessageReply();
@@ -523,7 +545,8 @@ const canSendMessage = (): boolean => {
     msg.value ||
     selectedPhotos.value.length > 0 ||
     selectedDocuments.value.length > 0 ||
-    selectedVideos.value.length > 0
+    selectedVideos.value.length > 0 ||
+    selectedAudios.value.length > 0
   );
 };
 
@@ -684,7 +707,8 @@ const sendAudioMessage = async (
     replyId,
     viewOnce,
     duration,
-    hash
+    hash,
+    true // ptt: true para gravações
   );
 
   const success = await chatStore.createMessageWithAudios(formData, {
@@ -699,6 +723,70 @@ const sendAudioMessage = async (
     return;
   }
   chatStore.clearMessageReply();
+};
+
+const sendAudioFilesMessage = async (): Promise<void> => {
+  if (!chatStore.activeChat?.chat_id) return;
+  const audios = [...selectedAudios.value];
+  if (audios.length === 0) return;
+
+  const replyId = chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent();
+  const messageValue = getComposerMessage();
+
+  const messagesWithHashes = await Promise.all(
+    audios.map(async (audio) => {
+      const hash = createMessageHash();
+      const extension = (audio.name.split('.').pop() || '').toLowerCase();
+      const content: ContentMessageChat = {
+        type: EMessageType.audio,
+        message: messageValue,
+        message_quoted_id: replyId ?? undefined,
+        quoted: quotedPayload,
+        audio: {
+          url: audio.preview,
+          mimetype: audio.type,
+          size: audio.size,
+          duration: audio.duration ?? null,
+          name: audio.name,
+          extension: extension || null,
+        },
+      };
+
+      await registerLocalMessage(content, hash);
+      return { audio, hash };
+    })
+  );
+
+  await Promise.all(
+    messagesWithHashes.map(async ({ audio, hash }) => {
+      const formData = createAudioFormData(
+        {
+          blob: audio.file,
+          fileName: audio.name,
+          mimeType: audio.type,
+        },
+        messageValue,
+        replyId,
+        false, // viewOnce
+        audio.duration,
+        hash,
+        false // ptt: false para arquivos anexados
+      );
+
+      const success = await chatStore.createMessageWithAudios(formData, {
+        skipLoading: true,
+        onUploadProgress: (progress) => {
+          markUploadProgress(hash, progress);
+        },
+      });
+
+      if (!success) {
+        markUploadError(hash);
+        return;
+      }
+    })
+  );
 };
 
 const sendDocumentMessage = async (): Promise<void> => {
@@ -801,6 +889,12 @@ const sendMessage = async () => {
 
   if (selectedVideos.value.length > 0) {
     await sendVideoMessage();
+    finalizeSend();
+    return;
+  }
+
+  if (selectedAudios.value.length > 0) {
+    await sendAudioFilesMessage();
     finalizeSend();
     return;
   }
@@ -1088,6 +1182,28 @@ const getVideoDuration = (src: string): Promise<number | null> =>
       resolve(null);
     };
     videoEl.src = src;
+  });
+
+const getAudioDuration = (src: string): Promise<number | null> =>
+  new Promise((resolve) => {
+    const audioEl = document.createElement('audio');
+    const clean = () => {
+      audioEl.removeAttribute('src');
+      audioEl.load();
+      audioEl.remove();
+    };
+
+    audioEl.preload = 'metadata';
+    audioEl.onloadedmetadata = () => {
+      const dur = Number.isFinite(audioEl.duration) ? audioEl.duration : null;
+      clean();
+      resolve(dur);
+    };
+    audioEl.onerror = () => {
+      clean();
+      resolve(null);
+    };
+    audioEl.src = src;
   });
 
 const updateRecordingElapsed = () => {
@@ -1505,11 +1621,128 @@ const onPickVideo = async (e: Event) => {
 
   target.value = '';
 };
-const onPickAudio = (e: Event) => {
-  const target = e.target as HTMLInputElement | null;
-  if (target) {
+const onPickAudio = async (e: Event) => {
+  const target = e.target as HTMLInputElement;
+  const files = target.files;
+
+  if (!files || files.length === 0) {
     target.value = '';
+    return;
   }
+
+  if (selectedDocuments.value.length > 0) {
+    chatStore.showSnackbar(t('clear_documents_before_audios'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
+  if (selectedPhotos.value.length > 0) {
+    chatStore.showSnackbar(t('clear_images_before_audios'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
+  if (selectedVideos.value.length > 0) {
+    chatStore.showSnackbar(t('clear_videos_before_audios'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
+  const allowedAudioTypes = new Set([
+    'audio/mpeg',
+    'audio/mp3',
+    'audio/wav',
+    'audio/ogg',
+    'audio/webm',
+    'audio/aac',
+    'audio/m4a',
+    'audio/opus',
+  ]);
+  const allowedExtensions = new Set([
+    'mp3',
+    'wav',
+    'ogg',
+    'webm',
+    'aac',
+    'm4a',
+    'opus',
+  ]);
+
+  const audioFiles = Array.from(files).filter((file) => {
+    const fileExtension = file.name.split('.').pop()?.toLowerCase();
+    return (
+      allowedAudioTypes.has(file.type) ||
+      (fileExtension && allowedExtensions.has(fileExtension))
+    );
+  });
+
+  if (audioFiles.length === 0) {
+    chatStore.showSnackbar(t('invalid_audio_format'), EColor.error);
+    target.value = '';
+    return;
+  }
+
+  const invalidAudios = Array.from(files).filter((file) => {
+    const fileExtension = file.name.split('.').pop()?.toLowerCase();
+    return (
+      !allowedAudioTypes.has(file.type) &&
+      (!fileExtension || !allowedExtensions.has(fileExtension))
+    );
+  });
+
+  if (invalidAudios.length > 0) {
+    chatStore.showSnackbar(t('invalid_audio_format'), EColor.error);
+  }
+
+  const limit = 10;
+  const currentCount = selectedAudios.value.length;
+  if (currentCount >= limit) {
+    chatStore.showSnackbar(t('max_audios_selected'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
+  const spaceLeft = limit - currentCount;
+  const filesToAdd = audioFiles.slice(0, spaceLeft);
+  if (audioFiles.length > spaceLeft) {
+    chatStore.showSnackbar(
+      t('can_select_more_audios', { count: spaceLeft }),
+      EColor.warning
+    );
+  }
+
+  const oversizedAudios = filesToAdd.filter(
+    (file) => file.size > MAX_AUDIO_SIZE_BYTES
+  );
+  const validAudios = filesToAdd.filter(
+    (file) => file.size <= MAX_AUDIO_SIZE_BYTES
+  );
+
+  if (oversizedAudios.length > 0) {
+    chatStore.showSnackbar(t('audio_size_exceeded'), EColor.error);
+  }
+
+  const loadedAudios = await Promise.all(
+    validAudios.map(async (file) => {
+      const preview = URL.createObjectURL(file);
+      const duration = await getAudioDuration(preview);
+
+      return {
+        file,
+        preview,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        duration: duration ?? null,
+      };
+    })
+  );
+
+  for (const audio of loadedAudios) {
+    selectedAudios.value.push(audio);
+  }
+
+  target.value = '';
 };
 
 const openPreviewImage = (photo: { file: File; preview: string }) => {
@@ -1526,6 +1759,129 @@ const openPreviewVideo = (video: SelectedVideoPreview) => {
   viewerCaption.value = '';
   viewerDownloadName.value = video.name;
   viewerOpen.value = true;
+};
+
+const removeAudio = (index: number) => {
+  const audio = selectedAudios.value[index];
+  if (audio) {
+    if (audio.preview && audio.preview.startsWith('blob:')) {
+      URL.revokeObjectURL(audio.preview);
+    }
+  }
+  selectedAudios.value.splice(index, 1);
+};
+
+const audioModalOpen = ref(false);
+const audioModalSrc = ref<string>('');
+const audioModalName = ref<string>('');
+const audioModalDuration = ref<number | null>(null);
+const audioModalPlayer = ref<HTMLAudioElement | null>(null);
+const audioModalIsPlaying = ref(false);
+const audioModalCurrentTime = ref(0);
+const audioModalProgress = ref(0);
+
+const setupAudioModalListeners = (): (() => void) | null => {
+  if (!audioModalPlayer.value) return null;
+
+  const player = audioModalPlayer.value;
+
+  const onLoadedMetadata = () => {
+    if (player) {
+      audioModalDuration.value = player.duration;
+    }
+  };
+
+  const onTimeUpdate = () => {
+    if (player) {
+      audioModalCurrentTime.value = player.currentTime;
+      if (player.duration) {
+        audioModalProgress.value = (player.currentTime / player.duration) * 100;
+      }
+    }
+  };
+
+  const onPlay = () => {
+    audioModalIsPlaying.value = true;
+  };
+
+  const onPause = () => {
+    audioModalIsPlaying.value = false;
+  };
+
+  const onEnded = () => {
+    audioModalIsPlaying.value = false;
+    audioModalCurrentTime.value = 0;
+    audioModalProgress.value = 0;
+  };
+
+  player.addEventListener('loadedmetadata', onLoadedMetadata);
+  player.addEventListener('timeupdate', onTimeUpdate);
+  player.addEventListener('play', onPlay);
+  player.addEventListener('pause', onPause);
+  player.addEventListener('ended', onEnded);
+
+  return () => {
+    player.removeEventListener('loadedmetadata', onLoadedMetadata);
+    player.removeEventListener('timeupdate', onTimeUpdate);
+    player.removeEventListener('play', onPlay);
+    player.removeEventListener('pause', onPause);
+    player.removeEventListener('ended', onEnded);
+  };
+};
+
+let audioModalCleanup: (() => void) | null = null;
+
+const openPreviewAudio = (audio: SelectedAudioPreview) => {
+  if (audioModalCleanup) {
+    audioModalCleanup();
+    audioModalCleanup = null;
+  }
+
+  audioModalSrc.value = audio.preview;
+  audioModalName.value = audio.name;
+  audioModalDuration.value = audio.duration;
+  audioModalCurrentTime.value = 0;
+  audioModalProgress.value = 0;
+  audioModalOpen.value = true;
+
+  nextTick(() => {
+    audioModalCleanup = setupAudioModalListeners();
+  });
+};
+
+const toggleAudioModalPlay = () => {
+  if (!audioModalPlayer.value) return;
+
+  if (audioModalIsPlaying.value) {
+    audioModalPlayer.value.pause();
+  } else {
+    audioModalPlayer.value.play().catch(() => {
+      audioModalIsPlaying.value = false;
+    });
+  }
+};
+
+const formatAudioModalTime = (seconds: number | null): string => {
+  if (seconds === null || !Number.isFinite(seconds)) return '0:00';
+  const totalSeconds = Math.floor(seconds);
+  const minutes = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  return `${minutes}:${secs.toString().padStart(2, '0')}`;
+};
+
+const closeAudioModal = () => {
+  if (audioModalPlayer.value) {
+    audioModalPlayer.value.pause();
+    audioModalPlayer.value.currentTime = 0;
+  }
+  if (audioModalCleanup) {
+    audioModalCleanup();
+    audioModalCleanup = null;
+  }
+  audioModalIsPlaying.value = false;
+  audioModalCurrentTime.value = 0;
+  audioModalProgress.value = 0;
+  audioModalOpen.value = false;
 };
 
 const downloadPreviewImage = async (url: string, filename?: string | null) => {
@@ -1735,13 +2091,14 @@ const onRetryMessage = async (e: Event) => {
     };
 
     if (content.link_preview) {
-      messageBody.link_preview = content.link_preview as ViewLinkPreviewResponse;
+      messageBody.link_preview =
+        content.link_preview as ViewLinkPreviewResponse;
     }
 
     if (content.message_quoted_id) {
       messageBody.message_quoted_id = content.message_quoted_id;
     }
-    
+
     const success = await chatStore.createMessage(messageBody);
     if (!success) {
       markUploadError(hash);
@@ -1753,9 +2110,13 @@ const onRetryMessage = async (e: Event) => {
     try {
       const response = await fetch(content.image.url);
       const blob = await response.blob();
-      const file = new File([blob], `image.${content.image.extension || 'jpg'}`, {
-        type: content.image.mimetype || 'image/jpeg',
-      });
+      const file = new File(
+        [blob],
+        `image.${content.image.extension || 'jpg'}`,
+        {
+          type: content.image.mimetype || 'image/jpeg',
+        }
+      );
 
       const photo = {
         file,
@@ -1791,9 +2152,13 @@ const onRetryMessage = async (e: Event) => {
     try {
       const response = await fetch(content.video.url);
       const blob = await response.blob();
-      const file = new File([blob], content.video.name || `video.${content.video.extension || 'mp4'}`, {
-        type: content.video.mimetype || 'video/mp4',
-      });
+      const file = new File(
+        [blob],
+        content.video.name || `video.${content.video.extension || 'mp4'}`,
+        {
+          type: content.video.mimetype || 'video/mp4',
+        }
+      );
 
       const video = {
         file,
@@ -1836,7 +2201,8 @@ const onRetryMessage = async (e: Event) => {
 
       const audioData = {
         blob,
-        fileName: content.audio.name || `audio.${content.audio.extension || 'ogg'}`,
+        fileName:
+          content.audio.name || `audio.${content.audio.extension || 'ogg'}`,
         mimeType: content.audio.mimetype || 'audio/ogg',
       };
 
@@ -1871,9 +2237,14 @@ const onRetryMessage = async (e: Event) => {
     try {
       const response = await fetch(content.document.url);
       const blob = await response.blob();
-      const file = new File([blob], content.document.name || `document.${content.document.extension || 'pdf'}`, {
-        type: content.document.mimetype || 'application/pdf',
-      });
+      const file = new File(
+        [blob],
+        content.document.name ||
+          `document.${content.document.extension || 'pdf'}`,
+        {
+          type: content.document.mimetype || 'application/pdf',
+        }
+      );
 
       const doc = {
         file,
@@ -1941,7 +2312,10 @@ onMounted(async () => {
       'scroll-to-message',
       onScrollToMessageEvt as EventListener
     );
-    globalThis.addEventListener('retry-message', onRetryMessage as EventListener);
+    globalThis.addEventListener(
+      'retry-message',
+      onRetryMessage as EventListener
+    );
   }
 });
 
@@ -1955,7 +2329,10 @@ onUnmounted(async () => {
       'scroll-to-message',
       onScrollToMessageEvt as EventListener
     );
-    globalThis.removeEventListener('retry-message', onRetryMessage as EventListener);
+    globalThis.removeEventListener(
+      'retry-message',
+      onRetryMessage as EventListener
+    );
   }
 
   for (const timeoutId of highlightedMessageTimers.values()) {
@@ -2288,6 +2665,89 @@ onBeforeUnmount(() => {
 
           <Transition name="fade">
             <div
+              v-if="selectedAudios.length > 0"
+              class="composer-attachment mt-3"
+            >
+              <VCard class="composer-attachment-card">
+                <VCardTitle class="d-flex align-center justify-space-between">
+                  <span
+                    >{{ t('audios_selected') }} ({{
+                      selectedAudios.length
+                    }}/10)</span
+                  >
+                  <VBtn
+                    icon
+                    size="24"
+                    variant="text"
+                    @click="clearSelectedAudios()"
+                  >
+                    <VIcon size="18" icon="tabler-x" />
+                  </VBtn>
+                </VCardTitle>
+                <VCardText>
+                  <div class="attachment-grid attachment-grid--audios">
+                    <div
+                      v-for="(audio, index) in selectedAudios"
+                      :key="`${audio.name}-${index}`"
+                      class="audio-preview-wrapper"
+                    >
+                      <div class="audio-preview-container">
+                        <div
+                          class="audio-preview-icon-wrapper"
+                          @click="openPreviewAudio(audio)"
+                        >
+                          <VIcon size="32" color="primary"
+                            >tabler-headphones</VIcon
+                          >
+                        </div>
+                        <div
+                          class="audio-preview-play-overlay"
+                          @click="openPreviewAudio(audio)"
+                        >
+                          <VIcon size="24">tabler-player-play</VIcon>
+                        </div>
+                      </div>
+                      <div class="audio-preview-meta">
+                        <VTooltip location="bottom">
+                          <template #activator="{ props }">
+                            <span v-bind="props" class="audio-preview-name">
+                              {{ truncateFileName(audio.name) }}
+                            </span>
+                          </template>
+                          <span>{{ audio.name }}</span>
+                        </VTooltip>
+                        <span
+                          class="audio-preview-info text-caption text-disabled"
+                        >
+                          {{
+                            (audio.name.split('.').pop() || '').toUpperCase()
+                          }}
+                          •
+                          {{ formatFileSize(audio.size) }}
+                          <span v-if="audio.duration">
+                            • {{ formatAudioModalTime(audio.duration) }}
+                          </span>
+                        </span>
+                      </div>
+                      <VBtn
+                        icon
+                        size="20"
+                        variant="flat"
+                        color="error"
+                        class="audio-preview-remove"
+                        @click.stop="removeAudio(index)"
+                      >
+                        <VIcon size="14" icon="tabler-x" />
+                      </VBtn>
+                    </div>
+                  </div>
+                </VCardText>
+              </VCard>
+            </div>
+          </Transition>
+
+          <Transition name="fade">
+            <div
               v-if="selectedPhotos.length > 0"
               class="composer-attachment mt-3"
             >
@@ -2555,6 +3015,7 @@ onBeforeUnmount(() => {
             type="file"
             hidden
             accept="audio/*"
+            multiple
             @change="onPickAudio"
           />
         </VForm>
@@ -2650,6 +3111,63 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
+  </VDialog>
+
+  <VDialog
+    v-model="audioModalOpen"
+    max-width="500"
+    scrim="rgba(0,0,0,.7)"
+    :scrollable="false"
+  >
+    <VCard class="audio-modal-card">
+      <VCardTitle class="d-flex align-center justify-space-between">
+        <span class="text-truncate">{{ audioModalName }}</span>
+        <VBtn icon size="24" variant="text" @click="closeAudioModal">
+          <VIcon size="18" icon="tabler-x" />
+        </VBtn>
+      </VCardTitle>
+      <VCardText>
+        <div class="audio-modal-player">
+          <audio
+            ref="audioModalPlayer"
+            :src="audioModalSrc"
+            preload="metadata"
+            style="display: none"
+          />
+          <div class="audio-modal-controls">
+            <VBtn
+              icon
+              size="48"
+              variant="flat"
+              color="primary"
+              class="audio-modal-play-btn"
+              @click="toggleAudioModalPlay"
+            >
+              <VIcon size="24">
+                {{
+                  audioModalIsPlaying
+                    ? 'tabler-player-pause'
+                    : 'tabler-player-play'
+                }}
+              </VIcon>
+            </VBtn>
+            <div class="audio-modal-info">
+              <div class="audio-modal-time">
+                <span>{{ formatAudioModalTime(audioModalCurrentTime) }}</span>
+                <span>/</span>
+                <span>{{ formatAudioModalTime(audioModalDuration) }}</span>
+              </div>
+              <div class="audio-modal-progress-container">
+                <div
+                  class="audio-modal-progress-bar"
+                  :style="{ width: `${audioModalProgress}%` }"
+                ></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </VCardText>
+    </VCard>
   </VDialog>
 </template>
 
@@ -2943,6 +3461,151 @@ $chat-app-header-height: 76px;
   position: absolute;
   inset-block-start: 6px;
   inset-inline-end: 6px;
+}
+
+.attachment-grid--audios {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.audio-preview-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: 10px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+  padding: 8px;
+  overflow: hidden;
+}
+
+.audio-preview-container {
+  position: relative;
+  inline-size: 100%;
+  block-size: 120px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(var(--v-theme-primary), 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.audio-preview-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.audio-preview-play-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.95);
+  background: rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
+  z-index: 1;
+  border-radius: 8px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.audio-preview-wrapper:hover .audio-preview-play-overlay {
+  opacity: 1;
+}
+
+.audio-preview-play-overlay .v-icon {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform: scale(1);
+}
+
+.audio-preview-wrapper:hover .audio-preview-play-overlay .v-icon {
+  transform: scale(1.2);
+}
+
+.audio-preview-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.audio-preview-name {
+  font-weight: 600;
+  color: rgb(var(--v-theme-primary));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.audio-preview-info {
+  white-space: nowrap;
+}
+
+.audio-preview-remove {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: 6px;
+}
+
+.audio-modal-card {
+  border-radius: 12px;
+}
+
+.audio-modal-player {
+  padding: 16px 0;
+}
+
+.audio-modal-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.audio-modal-play-btn {
+  min-width: 48px !important;
+  width: 48px !important;
+  height: 48px !important;
+  flex-shrink: 0;
+}
+
+.audio-modal-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.audio-modal-time {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.875rem;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  font-variant-numeric: tabular-nums;
+}
+
+.audio-modal-progress-container {
+  width: 100%;
+  height: 4px;
+  background: rgba(var(--v-theme-on-surface), 0.12);
+  border-radius: 2px;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.audio-modal-progress-bar {
+  height: 100%;
+  background: rgb(var(--v-theme-primary));
+  border-radius: 2px;
+  transition: width 0.1s linear;
 }
 
 .photo-preview-wrapper {

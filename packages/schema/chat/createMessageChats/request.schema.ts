@@ -88,6 +88,16 @@ export const createMessageChatsBodySchema = Type.Object({
       Type.Null(),
     ])
   ),
+  audio_ptt: Type.Optional(
+    Type.Union([
+      Type.Boolean(),
+      Type.String(),
+      Type.Object({
+        value: Type.String(),
+      }),
+      Type.Null(),
+    ])
+  ),
   reaction_message_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   reaction_emoji: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   delete_message_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),

@@ -876,6 +876,7 @@ export class ChatMessageCreatorUseCase {
     audios: UploadFileRequest[],
     audioDuration: number | null,
     isViewOnce: boolean,
+    isPtt: boolean,
     params: IProcessMediaMessagesParams
   ): Promise<boolean> {
     const { chat, chatId, accountId, type, message, messageQuotedId, t, hash } =
@@ -914,7 +915,6 @@ export class ChatMessageCreatorUseCase {
     }
 
     const quotedId = messageQuotedId ?? null;
-    const isPtt = true;
 
     if (validAudios.length === 1) {
       const finalDuration = audioDuration ?? validAudios[0].duration ?? null;
@@ -1115,6 +1115,7 @@ export class ChatMessageCreatorUseCase {
     const audios = this.normalizeAudiosArray(body.audios);
     const audioDuration = this.normalizeDurationField(body.audio_duration);
     const audioViewOnce = this.normalizeBooleanField(body.audio_view_once);
+    const audioPtt = this.normalizeBooleanField(body.audio_ptt);
     const messageQuotedId = this.normalizeMessageQuotedId(
       body.message_quoted_id
     );
@@ -1186,16 +1187,22 @@ export class ChatMessageCreatorUseCase {
         throw new Error(t('audio_required'));
       }
 
-      return this.processAudioMessages(audios, audioDuration, audioViewOnce, {
-        chat,
-        chatId: params.chat_id,
-        accountId,
-        type,
-        message,
-        messageQuotedId,
-        t,
-        hash,
-      });
+      return this.processAudioMessages(
+        audios,
+        audioDuration,
+        audioViewOnce,
+        audioPtt,
+        {
+          chat,
+          chatId: params.chat_id,
+          accountId,
+          type,
+          message,
+          messageQuotedId,
+          t,
+          hash,
+        }
+      );
     }
 
     if (images.length > 0) {
