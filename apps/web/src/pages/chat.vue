@@ -1922,9 +1922,8 @@ onMounted(async () => {
 
         const changeType = chatStore.addMessageActiveChat(data);
 
-        scrollToMessageById(data.message_id);
-        
         if (changeType === 'created') {
+          scrollToMessageById(data.message_id);
           globalThis.dispatchEvent(new CustomEvent('focus-composer'));
         }
       }
