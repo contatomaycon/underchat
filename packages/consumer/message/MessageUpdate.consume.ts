@@ -11,6 +11,7 @@ import { remoteJid } from '@core/common/functions/remoteJid';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { WAMessageKey } from '@whiskeysockets/baileys';
 
 @singleton()
 export class MessageUpdateConsume {
@@ -89,16 +90,18 @@ export class MessageUpdateConsume {
     if (hasId && hasRemote) return;
 
     const jid = remoteJid(data.message?.key);
-    const messageKey: IChatMessage['message_key'] = {
+    const key = data.message?.key as WAMessageKey | undefined;
+    const messageKeyUpdate: IChatMessage['message_key'] = {
       remote_jid: jid,
       from_me: data.message?.key?.fromMe ?? false,
       id: data.message?.key?.id ?? null,
       participant: data.message?.key?.participant ?? null,
+      is_view_once: key?.isViewOnce ?? false,
     };
 
     await this.elasticDatabaseService.update(
       EElasticIndex.message,
-      { message_key: messageKey },
+      { message_key: messageKeyUpdate },
       data.data?.message_id ?? ''
     );
   }

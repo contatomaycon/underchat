@@ -21,6 +21,10 @@ export class BaileysService {
     this.connection.disconnect(input);
   }
 
+  isConnected(): boolean {
+    return this.connection.connected;
+  }
+
   getStatus(): EBaileysConnectionStatus {
     return this.connection.getStatus();
   }

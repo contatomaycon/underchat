@@ -5,7 +5,7 @@ import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import { IChat } from '@core/common/interfaces/IChat';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
-import { onlyDigits } from '@core/common/functions/onlyDigits';
+import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import { v4 as uuidv4 } from 'uuid';
 import { AccountService } from '@core/services/account.service';
 import { WorkerService } from '@core/services/worker.service';
@@ -28,9 +28,11 @@ import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
+import { convertWaveformToBase64 } from '@core/common/functions/convertWaveform';
 import Redis from 'ioredis';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { downloadMediaMessage } from '@whiskeysockets/baileys';
+import { Buffer } from 'node:buffer';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -83,7 +85,8 @@ export class MessageUpsertConsume {
     accountId: string,
     workerId: string,
     phone: string,
-    jid?: string | null
+    jid?: string | null,
+    jidAlt?: string | null
   ): Promise<IChat | null> {
     const cached = await this.getChatFromCache(accountId, workerId, phone);
     if (cached) {
@@ -97,13 +100,34 @@ export class MessageUpsertConsume {
       shouldClauses.push({ terms: { phone: candidates } });
     }
 
-    if (jid) {
-      shouldClauses.push({
-        nested: {
-          path: 'message_key',
-          query: { term: { 'message_key.remote_jid': jid } },
-        },
-      });
+    if (jid || jidAlt) {
+      const messageKeyQueries: any[] = [];
+
+      if (jid) {
+        messageKeyQueries.push({
+          term: { 'message_key.remote_jid': jid },
+        });
+      }
+
+      if (jidAlt) {
+        messageKeyQueries.push({
+          term: { 'message_key.remote_jid_alt': jidAlt },
+        });
+      }
+
+      if (messageKeyQueries.length > 0) {
+        shouldClauses.push({
+          nested: {
+            path: 'message_key',
+            query: {
+              bool: {
+                should: messageKeyQueries,
+                minimum_should_match: 1,
+              },
+            },
+          },
+        });
+      }
     }
 
     const queryElastic = {
@@ -156,11 +180,427 @@ export class MessageUpsertConsume {
     return data;
   }
 
+  private async messageIdExists(
+    accountId: string,
+    workerId: string,
+    messageId: string
+  ): Promise<boolean> {
+    if (!messageId) return false;
+
+    const queryElastic = {
+      query: {
+        bool: {
+          must: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: { 'account.id': accountId },
+                },
+              },
+            },
+            {
+              nested: {
+                path: 'worker',
+                query: {
+                  term: { 'worker.id': workerId },
+                },
+              },
+            },
+            {
+              nested: {
+                path: 'message_key',
+                query: {
+                  term: { 'message_key.id': messageId },
+                },
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select(
+      EElasticIndex.message,
+      queryElastic
+    );
+
+    return (result?.hits.total as { value: number })?.value > 0;
+  }
+
+  private async findMessageByKeyId(
+    accountId: string,
+    chatId: string,
+    messageId: string
+  ): Promise<IChatMessage | null> {
+    if (!messageId) return null;
+
+    const must: Array<Record<string, unknown>> = [
+      {
+        term: { chat_id: chatId },
+      },
+      {
+        nested: {
+          path: 'message_key',
+          query: {
+            term: { 'message_key.id': messageId },
+          },
+        },
+      },
+    ];
+
+    if (accountId) {
+      must.push({
+        nested: {
+          path: 'account',
+          query: {
+            term: { 'account.id': accountId },
+          },
+        },
+      });
+    }
+
+    const queryElastic = {
+      query: {
+        bool: {
+          must,
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select(
+      EElasticIndex.message,
+      queryElastic
+    );
+
+    if (!result || result.hits.hits.length === 0) {
+      return null;
+    }
+
+    return result.hits.hits[0]._source as IChatMessage;
+  }
+
+  private async handleReactionMessage(
+    getChat: IChat,
+    data: IUpsertMessage
+  ): Promise<boolean | null> {
+    if (
+      data.type !== EMessageType.react ||
+      !data.message?.message?.reactionMessage?.key?.id
+    ) {
+      return null;
+    }
+
+    const reactionMsg = data.message.message.reactionMessage;
+    const targetMessageId = reactionMsg.key?.id;
+    if (!targetMessageId) {
+      return true;
+    }
+
+    const targetMessage = await this.findMessageByKeyId(
+      data.account_id,
+      getChat.chat_id,
+      targetMessageId
+    );
+
+    if (!targetMessage) {
+      return true;
+    }
+
+    const userId = data.message?.key?.fromMe
+      ? getChat.worker.id
+      : (getChat.user?.id ?? '');
+    const userName = data.message?.key?.fromMe
+      ? getChat.worker.name
+      : (getChat.user?.name ?? '');
+    const emoji = reactionMsg.text ?? '';
+
+    const existingReactions = targetMessage.content?.reactions || [];
+    const reactionsWithoutUser = existingReactions.filter(
+      (reaction) => reaction.user_id !== userId
+    );
+
+    let updatedReactions = reactionsWithoutUser;
+    if (emoji) {
+      updatedReactions = [
+        ...reactionsWithoutUser,
+        {
+          emoji,
+          user_id: userId,
+          user_name: userName,
+        },
+      ];
+    }
+
+    let reactionsValue: IContent['reactions'] = null;
+    if (updatedReactions.length > 0) {
+      reactionsValue = updatedReactions;
+    }
+
+    const updatedContent: IContent = {
+      ...targetMessage.content,
+      type: targetMessage.content?.type ?? EMessageType.text,
+      reactions: reactionsValue,
+    };
+
+    const updatedMessage: IChatMessage = {
+      ...targetMessage,
+      content: updatedContent,
+      has_quoted: targetMessage.has_quoted,
+    };
+
+    await Promise.all([
+      this.chatService.saveMessageChat(updatedMessage),
+      this.centrifugoChatPublish(updatedMessage),
+    ]);
+
+    return true;
+  }
+
+  private async handleDeleteMessage(
+    getChat: IChat,
+    data: IUpsertMessage
+  ): Promise<boolean | null> {
+    if (
+      data.type !== EMessageType.delete_message ||
+      !data.message?.message?.protocolMessage?.key?.id
+    ) {
+      return null;
+    }
+
+    const protocolMessage = data.message.message.protocolMessage;
+    const targetMessageId = protocolMessage?.key?.id;
+    if (!targetMessageId) {
+      return true;
+    }
+
+    const targetMessage = await this.findMessageByKeyId(
+      data.account_id,
+      getChat.chat_id,
+      targetMessageId
+    );
+
+    if (!targetMessage) {
+      return true;
+    }
+
+    const updatedMessage: IChatMessage = {
+      ...targetMessage,
+      deleted: true,
+      has_quoted: targetMessage.has_quoted,
+    };
+
+    await Promise.all([
+      this.chatService.saveMessageChat(updatedMessage),
+      this.centrifugoChatPublish(updatedMessage),
+    ]);
+
+    return true;
+  }
+
+  private async updateChatNameIfNeeded(
+    getChat: IChat,
+    data: IUpsertMessage
+  ): Promise<void> {
+    if (getChat?.name || data.message?.key?.fromMe) {
+      return;
+    }
+
+    const name = this.nameChat(data);
+
+    await this.elasticDatabaseService.update(
+      EElasticIndex.chat,
+      { name },
+      getChat.chat_id
+    );
+    getChat.name = name;
+
+    await this.centrifugoChatQueuePublish(getChat);
+  }
+
+  private async handleImageMessage(
+    content: IContent,
+    data: IUpsertMessage
+  ): Promise<void> {
+    if (
+      content.type !== EMessageType.image ||
+      !data.message?.message?.imageMessage?.url
+    ) {
+      return;
+    }
+
+    const buffer = await downloadMediaMessage(data.message, 'buffer', {
+      startByte: 0,
+    });
+
+    const photoResult = await this.storageService.uploadFromBuffer(
+      buffer,
+      data.account_id
+    );
+
+    content.image = photoResult
+      ? {
+          url: photoResult.url,
+          caption: data.message.message.imageMessage.caption ?? null,
+          mimetype: data.message.message.imageMessage.mimetype,
+          extension: photoResult.extension,
+          size: photoResult.size,
+          height: data.message.message.imageMessage.height,
+          width: data.message.message.imageMessage.width,
+        }
+      : undefined;
+  }
+
+  private async handleVideoMessage(
+    content: IContent,
+    data: IUpsertMessage
+  ): Promise<void> {
+    if (
+      content.type !== EMessageType.video ||
+      !data.message?.message?.videoMessage?.url
+    ) {
+      return;
+    }
+
+    const videoMsg = data.message.message.videoMessage;
+    const buffer = await downloadMediaMessage(data.message, 'buffer', {
+      startByte: 0,
+    });
+
+    const inferredVideoName =
+      (videoMsg as { fileName?: string | null })?.fileName ?? undefined;
+
+    const videoResult = await this.storageService.uploadFromBuffer(
+      buffer,
+      data.account_id,
+      {
+        fileName: inferredVideoName,
+        mimetype: videoMsg.mimetype ?? undefined,
+      }
+    );
+
+    const thumb =
+      videoMsg.jpegThumbnail && videoMsg.jpegThumbnail.length > 0
+        ? `data:image/jpeg;base64,${Buffer.from(
+            videoMsg.jpegThumbnail
+          ).toString('base64')}`
+        : null;
+
+    content.video = videoResult
+      ? {
+          url: videoResult.url,
+          caption: videoMsg.caption ?? null,
+          name: inferredVideoName ?? videoResult.name,
+          mimetype: videoMsg.mimetype ?? videoResult.mimetype ?? 'video/mp4',
+          extension: videoResult.extension,
+          size: videoResult.size,
+          duration: videoMsg.seconds ?? null,
+          height: videoMsg.height ?? null,
+          width: videoMsg.width ?? null,
+          thumbnail: thumb,
+        }
+      : undefined;
+  }
+
+  private async handleAudioMessage(
+    content: IContent,
+    data: IUpsertMessage
+  ): Promise<void> {
+    if (
+      content.type !== EMessageType.audio ||
+      !data.message?.message?.audioMessage?.url
+    ) {
+      return;
+    }
+
+    const audioMsg = data.message.message.audioMessage;
+    const buffer = await downloadMediaMessage(data.message, 'buffer', {
+      startByte: 0,
+    });
+
+    const inferredAudioName =
+      (audioMsg as { fileName?: string | null })?.fileName ?? undefined;
+
+    const audioResult = await this.storageService.uploadFromBuffer(
+      buffer,
+      data.account_id,
+      {
+        fileName: inferredAudioName,
+        mimetype: audioMsg.mimetype ?? undefined,
+      }
+    );
+
+    const waveform = convertWaveformToBase64(audioMsg.waveform);
+
+    content.audio = audioResult
+      ? {
+          url: audioResult.url,
+          name: inferredAudioName ?? audioResult.name,
+          mimetype: audioMsg.mimetype ?? audioResult.mimetype ?? null,
+          extension: audioResult.extension,
+          size: audioResult.size,
+          duration: audioMsg.seconds ?? null,
+          ptt: audioMsg.ptt ?? false,
+          view_once: data.message?.key?.isViewOnce ?? false,
+          waveform: waveform ?? null,
+        }
+      : undefined;
+  }
+
+  private async handleDocumentMessage(
+    content: IContent,
+    data: IUpsertMessage
+  ): Promise<void> {
+    if (
+      content.type !== EMessageType.document ||
+      !data.message?.message?.documentMessage?.url
+    ) {
+      return;
+    }
+
+    const documentMsg = data.message.message.documentMessage;
+    const buffer = await downloadMediaMessage(data.message, 'buffer', {
+      startByte: 0,
+    });
+
+    const documentResult = await this.storageService.uploadFromBuffer(
+      buffer,
+      data.account_id,
+      {
+        fileName: documentMsg.fileName ?? undefined,
+        mimetype: documentMsg.mimetype ?? undefined,
+      }
+    );
+
+    content.document = documentResult
+      ? {
+          url: documentResult.url,
+          name: documentMsg.fileName ?? documentResult.name,
+          mimetype: documentMsg.mimetype ?? documentResult.mimetype ?? null,
+          extension: documentResult.extension,
+          size: documentResult.size,
+        }
+      : undefined;
+  }
+
   private async createChatMessage(
     getChat: IChat,
     data: IUpsertMessage
   ): Promise<boolean> {
     try {
+      const reactionResult = await this.handleReactionMessage(getChat, data);
+      if (reactionResult !== null) {
+        return reactionResult;
+      }
+
+      const deleteResult = await this.handleDeleteMessage(getChat, data);
+      if (deleteResult !== null) {
+        return deleteResult;
+      }
+
+      const jid = remoteJid(data.message?.key);
+      const jidAlt = remoteJidAlt(data.message?.key);
+
       const extended = data?.message?.message?.extendedTextMessage;
 
       const linkPreview = extended
@@ -182,47 +622,19 @@ export class MessageUpsertConsume {
         quoted: buildQuotedTextFromExtended(data.message),
       };
 
-      const jid = remoteJid(data.message?.key);
-      const jidAlt = remoteJidAlt(data.message?.key);
-
-      if (!getChat?.name && !data.message?.key?.fromMe) {
-        const name = this.nameChat(data);
-
-        await this.elasticDatabaseService.update(
-          EElasticIndex.chat,
-          { name },
-          getChat.chat_id
-        );
-        getChat.name = name;
-
-        await this.centrifugoChatQueuePublish(getChat);
+      const messageQuotedId = content.quoted?.key.id ?? null;
+      if (messageQuotedId) {
+        content.message_quoted_id = messageQuotedId;
       }
 
-      if (
-        content.type === EMessageType.image &&
-        data.message?.message?.imageMessage?.url
-      ) {
-        const buffer = await downloadMediaMessage(data.message, 'buffer', {
-          startByte: 0,
-        });
+      const hasQuotedFlag = data.has_quoted || !!content.quoted;
 
-        const photoResult = await this.storageService.uploadFromBuffer(
-          buffer,
-          data.account_id
-        );
+      await this.updateChatNameIfNeeded(getChat, data);
 
-        content.image = photoResult
-          ? {
-              url: photoResult.url,
-              caption: data.message.message.imageMessage.caption ?? null,
-              mimetype: data.message.message.imageMessage.mimetype,
-              extension: photoResult.extension,
-              size: photoResult.size,
-              height: data.message.message.imageMessage.height,
-              width: data.message.message.imageMessage.width,
-            }
-          : undefined;
-      }
+      await this.handleImageMessage(content, data);
+      await this.handleVideoMessage(content, data);
+      await this.handleAudioMessage(content, data);
+      await this.handleDocumentMessage(content, data);
 
       const inputChatMessage: IChatMessage = {
         message_id: uuidv4(),
@@ -235,6 +647,7 @@ export class MessageUpsertConsume {
           participant: data.message?.key?.participant,
           participant_alt: data.message?.key?.participantAlt,
           addressing_mode: data.message?.key?.addressingMode,
+          is_view_once: data.message?.key?.isViewOnce ?? false,
         },
         type_user: data.message?.key?.fromMe
           ? ETypeUserChat.operator
@@ -243,9 +656,17 @@ export class MessageUpsertConsume {
         worker: getChat.worker,
         user: getChat.user,
         phone: getChat.phone,
-        summary: { is_sent: false, is_delivered: false, is_seen: false },
+        summary: {
+          is_sent: false,
+          is_delivered: false,
+          is_seen: false,
+          is_sent_to_internal: true,
+        },
         content,
         date: new Date().toISOString(),
+        deleted: false,
+        has_quoted: hasQuotedFlag,
+        hash: uuidv4(),
       };
 
       const [, result] = await Promise.all([
@@ -280,12 +701,17 @@ export class MessageUpsertConsume {
     }
 
     const jid = remoteJid(data.message?.key);
-    if (!jid) {
+    const jidAlt = remoteJidAlt(data.message?.key);
+
+    if (!jid && !jidAlt) {
       throw new Error('Received message without remoteJid');
     }
 
-    const jidAlt = remoteJidAlt(data.message?.key);
-    const phone = onlyDigits(jid);
+    const phone = getPhoneFromJid(jid, jidAlt);
+    if (!phone) {
+      throw new Error('Received message without valid phone');
+    }
+
     const chatId = uuidv4();
     const name = this.nameChat(data);
 
@@ -333,9 +759,13 @@ export class MessageUpsertConsume {
     }
 
     try {
-      const parsed = JSON.parse(raw) as IUpsertMessage;
+      const parsed = JSON.parse(raw) as IUpsertMessage | null;
 
-      return parsed ?? null;
+      if (!parsed) return null;
+
+      parsed.has_quoted = !!parsed.has_quoted;
+
+      return parsed;
     } catch {
       return null;
     }
@@ -344,13 +774,15 @@ export class MessageUpsertConsume {
   private async createOrUpdateChat(
     data: IUpsertMessage,
     phone: string,
-    jid: string
+    jid?: string | null,
+    jidAlt?: string | null
   ): Promise<void> {
     const getChat = await this.getChat(
       data.account_id,
       data.worker_id,
       phone,
-      jid
+      jid,
+      jidAlt
     );
 
     if (!getChat) {
@@ -398,13 +830,32 @@ export class MessageUpsertConsume {
         this.processingChain = this.processingChain.then(async () => {
           const stop = startHeartbeat(heartbeat);
           try {
+            const messageId = data.message?.key?.id;
+            if (messageId) {
+              const exists = await this.messageIdExists(
+                data.account_id,
+                data.worker_id,
+                messageId
+              );
+
+              if (exists) {
+                await this.commitNext(topic, partition, offset);
+                return;
+              }
+            }
+
             const jid = remoteJid(data.message?.key);
-            if (!jid) {
+            const jidAlt = remoteJidAlt(data.message?.key);
+
+            if (!jid && !jidAlt) {
               throw new Error('Received message without remoteJid');
             }
 
-            const phone = onlyDigits(jid);
-            await this.createOrUpdateChat(data, phone, jid);
+            const phone = getPhoneFromJid(jid, jidAlt);
+            if (!phone) {
+              throw new Error('Received message without valid phone');
+            }
+            await this.createOrUpdateChat(data, phone, jid, jidAlt);
           } catch {
             await this.commitNext(topic, partition, message.offset);
           } finally {

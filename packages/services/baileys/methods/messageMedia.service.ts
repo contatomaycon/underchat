@@ -52,6 +52,7 @@ export class BaileysMessageMediaService {
       width?: number;
       height?: number;
       viewOnce?: boolean;
+      seconds?: number;
     },
     options?: MiscMessageGenerationOptions
   ) {
@@ -64,6 +65,7 @@ export class BaileysMessageMediaService {
       width: args?.width,
       height: args?.height,
       viewOnce: args?.viewOnce,
+      seconds: args?.seconds,
     };
 
     return this.baileysHelpersService.send(jid, content, options);
@@ -79,6 +81,8 @@ export class BaileysMessageMediaService {
       ptt?: boolean;
       seconds?: number;
       mimetype?: string;
+      viewOnce?: boolean;
+      waveform?: Uint8Array;
     },
     options?: MiscMessageGenerationOptions
   ) {
@@ -87,7 +91,9 @@ export class BaileysMessageMediaService {
       ptt: !!args?.ptt,
       seconds: args?.seconds,
       mimetype: args?.mimetype,
-    };
+      viewOnce: args?.viewOnce,
+      waveform: args?.waveform,
+    } as AnyMessageContent;
 
     return this.baileysHelpersService.send(jid, content, options);
   }

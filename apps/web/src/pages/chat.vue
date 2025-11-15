@@ -11,6 +11,10 @@ import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
+import {
+  ContentMessageChat,
+  ListMessageResult,
+} from '@core/schema/chat/listMessageChats/response.schema';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import {
   chatAccountCentrifugo,
@@ -18,8 +22,19 @@ import {
 } from '@core/common/functions/centrifugoQueue';
 import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
 import { EMessageType } from '@core/common/enums/EMessageType';
-import { IChatMessage } from '@core/common/interfaces/IChatMessage';
+import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
+import { EColor } from '@core/common/enums/EColor';
+import {
+  IChatMessage,
+  IQuotedMessage,
+} from '@core/common/interfaces/IChatMessage';
 import { IChat } from '@core/common/interfaces/IChat';
+import {
+  ISelectedPhotoPreview,
+  ISelectedDocumentPreview,
+  ISelectedVideoPreview,
+  ISelectedAudioPreview,
+} from '@core/common/interfaces/IChatFilePreview';
 import { extractFirstUrl } from '@core/common/functions/extractFirstUrl';
 import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
 import { refDebounced } from '@vueuse/core';
@@ -27,8 +42,15 @@ import { getOffsetTop } from '@core/common/functions/getOffsetTop';
 import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
 import data from 'emoji-mart-vue-fast/data/all.json';
 import 'emoji-mart-vue-fast/css/emoji-mart.css';
+import { useI18n } from 'vue-i18n';
 
 const emojiIndex = new EmojiIndex(data);
+const { t } = useI18n();
+
+const MAX_DOCUMENT_SIZE_BYTES = 100 * 1024 * 1024;
+const MAX_IMAGE_SIZE_BYTES = 16 * 1024 * 1024;
+const MAX_VIDEO_SIZE_BYTES = 100 * 1024 * 1024;
+const MAX_AUDIO_SIZE_BYTES = 16 * 1024 * 1024;
 
 definePage({
   meta: {
@@ -61,8 +83,173 @@ const filePhotoRef = ref<HTMLInputElement | null>(null);
 const fileVideoRef = ref<HTMLInputElement | null>(null);
 const fileAudioRef = ref<HTMLInputElement | null>(null);
 const isEmojiOpen = ref(false);
+const selectedPhotos = ref<ISelectedPhotoPreview[]>([]);
+const selectedDocuments = ref<ISelectedDocumentPreview[]>([]);
+const selectedVideos = ref<ISelectedVideoPreview[]>([]);
+const selectedAudios = ref<ISelectedAudioPreview[]>([]);
+
+const isRecordingAudio = ref(false);
+const isRecordingPaused = ref(false);
+const audioViewOnce = ref(false);
+const audioPendingViewOnce = ref(false);
+const audioRecordingStartAt = ref<number | null>(null);
+const audioRecordingAccumulated = ref(0);
+const audioRecordingElapsedMs = ref(0);
+const audioRecordingTimerId = ref<number | null>(null);
+const audioRecordingRAFId = ref<number | null>(null);
+const mediaRecorderRef = ref<MediaRecorder | null>(null);
+const audioStreamRef = ref<MediaStream | null>(null);
+const audioContextRef = ref<AudioContext | null>(null);
+const audioAnalyserRef = ref<AnalyserNode | null>(null);
+const audioDataArrayRef = ref<Uint8Array | null>(null);
+const audioCanvasRef = ref<HTMLCanvasElement | null>(null);
+const audioChunksRef = ref<Blob[]>([]);
+const shouldPersistRecording = ref(false);
+const recordedAudioBlob = ref<Blob | null>(null);
+const recordedAudioUrl = ref<string | null>(null);
+const audioRecordingDurationSeconds = ref<number | null>(null);
+
+const viewerOpen = ref(false);
+const viewerSrc = ref<string>('');
+const viewerCaption = ref<string>('');
+const viewerDownloadName = ref<string>('');
+const viewerKind = ref<'image' | 'video'>('image');
 
 const hasContent = computed(() => !!msg.value && msg.value.trim().length > 0);
+const hasAttachmentsOrContent = computed(
+  () =>
+    hasContent.value ||
+    selectedPhotos.value.length > 0 ||
+    selectedDocuments.value.length > 0 ||
+    selectedVideos.value.length > 0 ||
+    selectedAudios.value.length > 0 ||
+    isRecordingAudio.value
+);
+
+const createMessageHash = () => crypto.randomUUID();
+
+const cloneLinkPreview = (): ViewLinkPreviewResponse | undefined => {
+  const preview = linkPreview.value;
+  if (!preview) return undefined;
+
+  return structuredClone(preview);
+};
+
+const buildQuotedPayload = (): IQuotedMessage | null => {
+  const reply = chatStore.messageReply;
+  if (!reply) return null;
+
+  const key = {
+    remote_jid: reply.message_key?.remote_jid ?? null,
+    remote_jid_alt: reply.message_key?.remote_jid_alt ?? null,
+    from_me: reply.message_key?.from_me ?? null,
+    id: reply.message_key?.id ?? reply.message_id,
+    participant: reply.message_key?.participant ?? null,
+    participant_alt: reply.message_key?.participant_alt ?? null,
+    addressing_mode: reply.message_key?.addressing_mode ?? null,
+    is_view_once: reply.message_key?.is_view_once ?? false,
+  } satisfies IQuotedMessage['key'];
+
+  const quotedType = reply.content?.type as EMessageType | undefined;
+
+  return {
+    key,
+    message: reply.content?.message ?? null,
+    type: quotedType ?? undefined,
+    image: reply.content?.image ?? null,
+    video: reply.content?.video ?? null,
+    document: reply.content?.document ?? null,
+    audio: reply.content?.audio ?? null,
+  } satisfies IQuotedMessage;
+};
+
+const getQuotedContent = (): ContentMessageChat['quoted'] | undefined => {
+  const payload = buildQuotedPayload();
+  if (!payload) return undefined;
+
+  const { type, ...rest } = payload;
+
+  return {
+    ...rest,
+    type: type ?? undefined,
+  } as ContentMessageChat['quoted'];
+};
+
+const createLocalMessageSummary = () => ({
+  is_sent: false,
+  is_delivered: false,
+  is_seen: false,
+  is_sent_to_internal: false,
+});
+
+const createLocalMessageEntry = (
+  content: ContentMessageChat,
+  hash: string
+): ListMessageResult => {
+  if (!chatStore.activeChat?.chat_id) {
+    throw new Error('Cannot create local message without an active chat.');
+  }
+
+  const userInfo = chatStore.user?.info;
+
+  return {
+    message_id: hash,
+    chat_id: chatStore.activeChat.chat_id,
+    type_user: ETypeUserChat.operator,
+    user: userInfo
+      ? {
+          id: userInfo.user_info_id,
+          name: userInfo.name,
+          photo: userInfo.photo ?? null,
+        }
+      : null,
+    content,
+    summary: createLocalMessageSummary(),
+    date: new Date().toISOString(),
+    deleted: false,
+    has_quoted: Boolean(content.message_quoted_id),
+    hash,
+  };
+};
+
+const registerLocalMessage = async (
+  content: ContentMessageChat,
+  hash: string
+) => {
+  const entry = createLocalMessageEntry(content, hash);
+  chatStore.initializeLocalMessageState(hash);
+  chatStore.upsertLocalMessage(entry);
+  await nextTick();
+  scrollToBottomInChatLog();
+};
+
+const markUploadProgress = (hash: string, progress: number) => {
+  chatStore.updateLocalMessageProgress(hash, progress);
+};
+
+const markUploadError = (hash: string, message?: string) => {
+  chatStore.markLocalMessageError(hash, message);
+};
+
+const getComposerMessage = (): string | null => {
+  if (!msg.value) return null;
+  return msg.value.trim().length > 0 ? msg.value : null;
+};
+function formatRecordingLabel(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60)
+    .toString()
+    .padStart(2, '0');
+  const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+  return `${minutes}:${seconds}`;
+}
+
+const formattedRecordingTime = computed(() => {
+  if (!isRecordingAudio.value && !audioRecordingElapsedMs.value) {
+    return '00:00';
+  }
+  return formatRecordingLabel(audioRecordingElapsedMs.value) ?? '00:00';
+});
 const forceReflow = (el: HTMLElement): number => el.offsetWidth;
 
 const scrollToBottomInChatLog = () => {
@@ -74,7 +261,43 @@ const scrollToBottomInChatLog = () => {
   scrollEl.scrollTop = scrollEl.scrollHeight;
 };
 
-const scrollToMessageById = async (id?: string) => {
+const highlightedMessageTimers = new Map<string, number>();
+
+const applyPersistentHighlight = (target: HTMLElement, id: string) => {
+  target.classList.add('message-target-persistent');
+
+  const existingTimer = highlightedMessageTimers.get(id);
+  if (existingTimer) clearTimeout(existingTimer);
+
+  const timeoutId = globalThis.setTimeout(() => {
+    target.classList.remove('message-target-persistent');
+    highlightedMessageTimers.delete(id);
+  }, 30_000) as unknown as number;
+
+  highlightedMessageTimers.set(id, timeoutId);
+};
+
+const isMessageLoaded = (id: string): boolean =>
+  chatStore.listMessages.some((message) => message.message_id === id);
+
+const ensureMessageLoaded = async (id: string): Promise<boolean> => {
+  if (!id) return false;
+  if (isMessageLoaded(id)) return true;
+
+  while (chatStore.currentPage < chatStore.totalPages) {
+    const loaded = await chatStore.loadMoreMessages();
+    if (!loaded) break;
+    await nextTick();
+    if (isMessageLoaded(id)) return true;
+  }
+
+  return isMessageLoaded(id);
+};
+
+const scrollToMessageById = async (
+  id?: string,
+  options: { highlight?: boolean } = {}
+) => {
   await nextTick();
 
   const container: HTMLElement = chatLogPS.value?.$el || chatLogPS.value;
@@ -86,6 +309,16 @@ const scrollToMessageById = async (id?: string) => {
 
     return;
   }
+
+  const messageReady = await ensureMessageLoaded(id);
+  if (!messageReady) {
+    container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+    chatLogPS.value?.update?.();
+
+    return;
+  }
+
+  await nextTick();
 
   const target =
     (container.querySelector(`[data-message-id="${id}"]`) as HTMLElement) ||
@@ -101,6 +334,13 @@ const scrollToMessageById = async (id?: string) => {
       chatLogPS.value?.update?.();
     });
 
+    if (options.highlight) {
+      target.classList.remove('message-target-flash');
+      forceReflow(target);
+      target.classList.add('message-target-flash');
+      applyPersistentHighlight(target, id);
+    }
+
     return;
   }
 
@@ -108,28 +348,9 @@ const scrollToMessageById = async (id?: string) => {
   chatLogPS.value?.update?.();
 };
 
-const highlightAndScrollToMessage = (id: string) => {
-  if (!id || !chatLogPS.value) return;
-
-  const container: HTMLElement = chatLogPS.value.$el || chatLogPS.value;
-  const target =
-    (container.querySelector(`[data-message-id="${id}"]`) as HTMLElement) ||
-    (document.getElementById(`msg-${id}`) as HTMLElement);
-
-  if (!target) return;
-
-  const top = getOffsetTop(container, target) - 60;
-  container.scrollTo({ top, behavior: 'auto' });
-
-  requestAnimationFrame(() => container.scrollTo({ top, behavior: 'smooth' }));
-
-  nextTick(() => (chatLogPS.value?.update ? chatLogPS.value.update() : null));
-
-  target.classList.remove('message-target-flash');
-
-  forceReflow(target);
-
-  target.classList.add('message-target-flash');
+const highlightAndScrollToMessage = async (id: string) => {
+  if (!id) return;
+  await scrollToMessageById(id, { highlight: true });
 };
 
 const startConversation = () => {
@@ -137,33 +358,529 @@ const startConversation = () => {
   isLeftSidebarOpen.value = true;
 };
 
-const sendMessage = async () => {
-  if (!msg.value) return;
-  if (chatStore.activeChat?.worker?.id) {
-    const inputCreateMessage: CreateMessageChatsBody = {
-      type: EMessageType.text,
-      message: msg.value,
-      link_preview: linkPreview.value?.title
-        ? (linkPreview.value as ViewLinkPreviewResponse)
-        : undefined,
-    };
-
-    if (chatStore.messageReply?.message_id) {
-      inputCreateMessage.message_quoted_id = chatStore.messageReply.message_id;
-      inputCreateMessage.type = EMessageType.text_quoted;
-    }
-
-    await chatStore.createMessage(inputCreateMessage);
+const createImageFormData = (
+  photo: ISelectedPhotoPreview,
+  messageValue: string | null,
+  quotedId: string | null,
+  hash: string
+): FormData => {
+  const formData = new FormData();
+  formData.append('type', EMessageType.image);
+  if (messageValue) {
+    formData.append('message', messageValue);
   }
 
+  if (quotedId) {
+    formData.append('message_quoted_id', quotedId);
+  }
+
+  formData.append('images', photo.file);
+  formData.append('hash', hash);
+
+  return formData;
+};
+
+const createDocumentFormData = (
+  doc: ISelectedDocumentPreview,
+  messageValue: string | null,
+  quotedId: string | null,
+  hash: string
+): FormData => {
+  const formData = new FormData();
+  formData.append('type', EMessageType.document);
+  if (messageValue) {
+    formData.append('message', messageValue);
+  }
+
+  if (quotedId) {
+    formData.append('message_quoted_id', quotedId);
+  }
+
+  formData.append('documents', doc.file);
+  formData.append('hash', hash);
+
+  return formData;
+};
+
+const createVideoFormData = (
+  video: ISelectedVideoPreview,
+  messageValue: string | null,
+  quotedId: string | null,
+  hash: string
+): FormData => {
+  const formData = new FormData();
+  formData.append('type', EMessageType.video);
+  if (messageValue) {
+    formData.append('message', messageValue);
+  }
+
+  if (quotedId) {
+    formData.append('message_quoted_id', quotedId);
+  }
+
+  formData.append('videos', video.file);
+  if (typeof video.duration === 'number' && !Number.isNaN(video.duration)) {
+    formData.append('video_duration', Math.round(video.duration).toString());
+  }
+
+  formData.append('hash', hash);
+
+  return formData;
+};
+
+const createAudioFormData = (
+  audio: {
+    blob: Blob;
+    fileName: string;
+    mimeType: string;
+  },
+  messageValue: string | null,
+  quotedId: string | null,
+  viewOnce: boolean,
+  duration: number | null,
+  hash: string,
+  ptt: boolean = false
+): FormData => {
+  const formData = new FormData();
+  formData.append('type', EMessageType.audio);
+  if (messageValue) {
+    formData.append('message', messageValue);
+  }
+
+  if (quotedId) {
+    formData.append('message_quoted_id', quotedId);
+  }
+
+  formData.append('audios', audio.blob, audio.fileName);
+  if (typeof duration === 'number' && !Number.isNaN(duration)) {
+    formData.append('audio_duration', Math.round(duration).toString());
+  }
+  if (viewOnce) {
+    formData.append('audio_view_once', 'true');
+  }
+  formData.append('audio_ptt', ptt ? 'true' : 'false');
+
+  formData.append('hash', hash);
+
+  return formData;
+};
+
+const createTextMessageBody = (hash: string): CreateMessageChatsBody => {
+  const inputCreateMessage: CreateMessageChatsBody = {
+    type: EMessageType.text,
+    message: msg.value,
+    link_preview: linkPreview.value?.title
+      ? (linkPreview.value as ViewLinkPreviewResponse)
+      : undefined,
+    hash,
+  };
+
+  if (chatStore.messageReply?.message_id) {
+    inputCreateMessage.message_quoted_id = chatStore.messageReply.message_id;
+  }
+
+  return inputCreateMessage;
+};
+
+const revokeVideoPreview = (preview: string) => {
+  if (preview && preview.startsWith('blob:')) {
+    URL.revokeObjectURL(preview);
+  }
+};
+
+const removeVideo = (index: number) => {
+  const video = selectedVideos.value[index];
+  if (video) {
+    revokeVideoPreview(video.preview);
+  }
+  selectedVideos.value.splice(index, 1);
+};
+
+const clearSelectedVideos = () => {
+  selectedVideos.value = [];
+};
+
+const clearSelectedAudios = () => {
+  for (const audio of selectedAudios.value) {
+    if (audio.preview && audio.preview.startsWith('blob:')) {
+      URL.revokeObjectURL(audio.preview);
+    }
+  }
+  selectedAudios.value = [];
+};
+
+const clearMessageFields = () => {
   msg.value = '';
   linkPreview.value = null;
-
+  clearSelectedVideos();
+  clearSelectedAudios();
+  selectedPhotos.value = [];
+  selectedDocuments.value = [];
   chatStore.clearMessageReply();
+};
+
+const canSendMessage = (): boolean => {
+  return !!(
+    msg.value ||
+    selectedPhotos.value.length > 0 ||
+    selectedDocuments.value.length > 0 ||
+    selectedVideos.value.length > 0 ||
+    selectedAudios.value.length > 0
+  );
+};
+
+const hasActiveChat = (): boolean => {
+  return !!chatStore.activeChat?.worker?.id;
+};
+
+const sendImageMessage = async (): Promise<void> => {
+  if (!chatStore.activeChat?.chat_id) return;
+  const photos = [...selectedPhotos.value];
+  if (photos.length === 0) return;
+
+  const replyId = chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent();
+  const messageValue = getComposerMessage();
+
+  // Criar todas as mensagens temporárias ANTES de começar os uploads
+  const messagesWithHashes = await Promise.all(
+    photos.map(async (photo) => {
+      const hash = createMessageHash();
+      const extension = (photo.file.name.split('.').pop() || '').toLowerCase();
+      const content: ContentMessageChat = {
+        type: EMessageType.image,
+        message: messageValue,
+        message_quoted_id: replyId ?? undefined,
+        quoted: quotedPayload,
+        image: {
+          url: photo.preview,
+          caption: messageValue,
+          mimetype: photo.file.type,
+          size: photo.file.size,
+          extension: extension || null,
+        },
+      };
+
+      await registerLocalMessage(content, hash);
+      return { photo, hash };
+    })
+  );
+
+  // Agora fazer os uploads
+  await Promise.all(
+    messagesWithHashes.map(async ({ photo, hash }) => {
+      const formData = createImageFormData(photo, messageValue, replyId, hash);
+
+      const success = await chatStore.createMessageWithImages(formData, {
+        skipLoading: true,
+        onUploadProgress: (progress) => {
+          markUploadProgress(hash, progress);
+        },
+      });
+
+      if (!success) {
+        markUploadError(hash);
+      }
+      // markUploadProgress removido: mensagem temporária será substituída via socket
+    })
+  );
+};
+
+const sendVideoMessage = async (): Promise<void> => {
+  if (!chatStore.activeChat?.chat_id) return;
+  const videos = [...selectedVideos.value];
+  if (videos.length === 0) return;
+
+  const replyId = chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent();
+  const messageValue = getComposerMessage();
+
+  const messagesWithHashes = await Promise.all(
+    videos.map(async (video) => {
+      const hash = createMessageHash();
+      const extension = (video.name.split('.').pop() || '').toLowerCase();
+      const content: ContentMessageChat = {
+        type: EMessageType.video,
+        message: messageValue,
+        message_quoted_id: replyId ?? undefined,
+        quoted: quotedPayload,
+        video: {
+          url: video.preview,
+          caption: messageValue,
+          mimetype: video.type,
+          size: video.size,
+          duration: video.duration ?? null,
+          name: video.name,
+          extension: extension || null,
+        },
+      };
+
+      await registerLocalMessage(content, hash);
+      return { video, hash };
+    })
+  );
+
+  await Promise.all(
+    messagesWithHashes.map(async ({ video, hash }) => {
+      const formData = createVideoFormData(video, messageValue, replyId, hash);
+
+      const success = await chatStore.createMessageWithVideos(formData, {
+        skipLoading: true,
+        onUploadProgress: (progress) => {
+          markUploadProgress(hash, progress);
+        },
+      });
+
+      if (!success) {
+        markUploadError(hash);
+      }
+      // markUploadProgress removido: mensagem temporária será substituída via socket
+    })
+  );
+};
+
+const sendAudioMessage = async (
+  blob: Blob,
+  mimeType: string,
+  duration: number | null,
+  viewOnce: boolean
+): Promise<void> => {
+  if (!chatStore.activeChat?.chat_id) return;
+
+  if (blob.size > MAX_AUDIO_SIZE_BYTES) {
+    chatStore.showSnackbar(t('audio_size_exceeded'), EColor.error);
+    return;
+  }
+
+  const replyId = chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent();
+  const messageValue = getComposerMessage();
+  const hash = createMessageHash();
+  const extensionFromMime = mimeType.split('/')[1] || 'ogg';
+  const fileName = `audio-${Date.now()}.${extensionFromMime}`;
+  const localUrl = URL.createObjectURL(blob);
+
+  const content: ContentMessageChat = {
+    type: EMessageType.audio,
+    message: messageValue,
+    message_quoted_id: replyId ?? undefined,
+    quoted: quotedPayload,
+    audio: {
+      url: localUrl,
+      name: fileName,
+      mimetype: mimeType,
+      size: blob.size,
+      duration: duration ?? null,
+      extension: extensionFromMime,
+      view_once: viewOnce ? true : undefined,
+    },
+  };
+
+  await registerLocalMessage(content, hash);
+
+  const formData = createAudioFormData(
+    { blob, fileName, mimeType },
+    messageValue,
+    replyId,
+    viewOnce,
+    duration,
+    hash,
+    true // ptt: true para gravações
+  );
+
+  const success = await chatStore.createMessageWithAudios(formData, {
+    skipLoading: true,
+    onUploadProgress: (progress) => {
+      markUploadProgress(hash, progress);
+    },
+  });
+
+  if (!success) {
+    markUploadError(hash);
+    return;
+  }
+  chatStore.clearMessageReply();
+};
+
+const sendAudioFilesMessage = async (): Promise<void> => {
+  if (!chatStore.activeChat?.chat_id) return;
+  const audios = [...selectedAudios.value];
+  if (audios.length === 0) return;
+
+  const replyId = chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent();
+  const messageValue = getComposerMessage();
+
+  const messagesWithHashes = await Promise.all(
+    audios.map(async (audio) => {
+      const hash = createMessageHash();
+      const extension = (audio.name.split('.').pop() || '').toLowerCase();
+      const content: ContentMessageChat = {
+        type: EMessageType.audio,
+        message: messageValue,
+        message_quoted_id: replyId ?? undefined,
+        quoted: quotedPayload,
+        audio: {
+          url: audio.preview,
+          mimetype: audio.type,
+          size: audio.size,
+          duration: audio.duration ?? null,
+          name: audio.name,
+          extension: extension || null,
+        },
+      };
+
+      await registerLocalMessage(content, hash);
+      return { audio, hash };
+    })
+  );
+
+  await Promise.all(
+    messagesWithHashes.map(async ({ audio, hash }) => {
+      const formData = createAudioFormData(
+        {
+          blob: audio.file,
+          fileName: audio.name,
+          mimeType: audio.type,
+        },
+        messageValue,
+        replyId,
+        false, // viewOnce
+        audio.duration,
+        hash,
+        false // ptt: false para arquivos anexados
+      );
+
+      const success = await chatStore.createMessageWithAudios(formData, {
+        skipLoading: true,
+        onUploadProgress: (progress) => {
+          markUploadProgress(hash, progress);
+        },
+      });
+
+      if (!success) {
+        markUploadError(hash);
+      }
+    })
+  );
+};
+
+const sendDocumentMessage = async (): Promise<void> => {
+  if (!chatStore.activeChat?.chat_id) return;
+  const docs = [...selectedDocuments.value];
+  if (docs.length === 0) return;
+
+  const replyId = chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent();
+  const messageValue = getComposerMessage();
+
+  const messagesWithHashes = await Promise.all(
+    docs.map(async (doc) => {
+      const hash = createMessageHash();
+      const localUrl = URL.createObjectURL(doc.file);
+      const content: ContentMessageChat = {
+        type: EMessageType.document,
+        message: messageValue,
+        message_quoted_id: replyId ?? undefined,
+        quoted: quotedPayload,
+        document: {
+          url: localUrl,
+          name: doc.name,
+          mimetype: doc.type,
+          extension: doc.extension,
+          size: doc.size,
+        },
+      };
+
+      await registerLocalMessage(content, hash);
+      return { doc, hash };
+    })
+  );
+
+  await Promise.all(
+    messagesWithHashes.map(async ({ doc, hash }) => {
+      const formData = createDocumentFormData(doc, messageValue, replyId, hash);
+
+      const success = await chatStore.createMessageWithDocuments(formData, {
+        skipLoading: true,
+        onUploadProgress: (progress) => {
+          markUploadProgress(hash, progress);
+        },
+      });
+
+      if (!success) {
+        markUploadError(hash);
+      }
+      // markUploadProgress removido: mensagem temporária será substituída via socket
+    })
+  );
+};
+
+const sendTextMessage = async (): Promise<void> => {
+  if (!chatStore.activeChat?.chat_id) return;
+  const hash = createMessageHash();
+  const replyId = chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent();
+  const preview = cloneLinkPreview();
+
+  const content: ContentMessageChat = {
+    type: EMessageType.text,
+    message: msg.value,
+    message_quoted_id: replyId ?? undefined,
+    quoted: quotedPayload,
+    link_preview: preview,
+  };
+
+  // Criar mensagem temporária ANTES do upload
+  await registerLocalMessage(content, hash);
+
+  // Agora enviar a mensagem
+  const messageBody = createTextMessageBody(hash);
+  const success = await chatStore.createMessage(messageBody);
+
+  if (!success) {
+    markUploadError(hash);
+  }
+};
+
+const finalizeSend = () => {
+  clearMessageFields();
 
   nextTick(() => {
     scrollToBottomInChatLog();
   });
+};
+
+const sendMessage = async () => {
+  if (!canSendMessage()) return;
+  if (!hasActiveChat()) return;
+
+  if (selectedDocuments.value.length > 0) {
+    await sendDocumentMessage();
+    finalizeSend();
+    return;
+  }
+
+  if (selectedVideos.value.length > 0) {
+    await sendVideoMessage();
+    finalizeSend();
+    return;
+  }
+
+  if (selectedAudios.value.length > 0) {
+    await sendAudioFilesMessage();
+    finalizeSend();
+    return;
+  }
+
+  if (selectedPhotos.value.length > 0) {
+    await sendImageMessage();
+    finalizeSend();
+    return;
+  }
+
+  await sendTextMessage();
+  finalizeSend();
 };
 
 const openChat = async (chatId: ListChatsResult['chat_id']) => {
@@ -251,16 +968,963 @@ const openAttach = (
 };
 
 const onPickDoc = (e: Event) => {
-  console.log(e);
+  const target = e.target as HTMLInputElement;
+  const files = target.files;
+
+  if (!files || files.length === 0) {
+    target.value = '';
+    return;
+  }
+
+  if (selectedVideos.value.length > 0) {
+    chatStore.showSnackbar(t('clear_videos_before_documents'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
+  if (selectedPhotos.value.length > 0) {
+    chatStore.showSnackbar(t('clear_images_before_documents'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
+  const limit = 10;
+  const currentCount = selectedDocuments.value.length;
+  if (currentCount >= limit) {
+    chatStore.showSnackbar(t('max_documents_selected'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
+  const spaceLeft = limit - currentCount;
+  const filesArray = Array.from(files);
+  const filesToAdd = filesArray.slice(0, spaceLeft);
+  if (filesArray.length > spaceLeft) {
+    chatStore.showSnackbar(
+      t('can_select_more_documents', { count: spaceLeft }),
+      EColor.warning
+    );
+  }
+
+  const oversizedDocs = filesToAdd.filter(
+    (file) => file.size > MAX_DOCUMENT_SIZE_BYTES
+  );
+  const validDocs = filesToAdd.filter(
+    (file) => file.size <= MAX_DOCUMENT_SIZE_BYTES
+  );
+
+  if (oversizedDocs.length > 0) {
+    chatStore.showSnackbar(t('document_size_exceeded'), EColor.error);
+  }
+
+  for (const file of validDocs) {
+    selectedDocuments.value.push({
+      file,
+      name: file.name,
+      size: file.size,
+      extension: (file.name.split('.').pop() || '').toLowerCase(),
+      type: file.type,
+    });
+  }
+
+  target.value = '';
 };
 const onPickPhoto = (e: Event) => {
-  console.log(e);
+  const target = e.target as HTMLInputElement;
+  const files = target.files;
+
+  if (!files || files.length === 0) {
+    target.value = '';
+    return;
+  }
+
+  if (selectedVideos.value.length > 0) {
+    chatStore.showSnackbar(t('clear_videos_before_images'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
+  if (selectedDocuments.value.length > 0) {
+    chatStore.showSnackbar(t('clear_documents_before_images'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
+  const allowedImageTypes = new Set([
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/gif',
+  ]);
+  const allowedExtensions = new Set(['jpg', 'jpeg', 'png', 'gif']);
+
+  const imageFiles = Array.from(files).filter((file) => {
+    const fileExtension = file.name.split('.').pop()?.toLowerCase();
+    return (
+      allowedImageTypes.has(file.type) ||
+      (fileExtension && allowedExtensions.has(fileExtension))
+    );
+  });
+
+  if (imageFiles.length === 0) {
+    chatStore.showSnackbar(t('invalid_image_format'), EColor.error);
+    target.value = '';
+    return;
+  }
+
+  const invalidImages = Array.from(files).filter((file) => {
+    const fileExtension = file.name.split('.').pop()?.toLowerCase();
+    return (
+      !allowedImageTypes.has(file.type) &&
+      (!fileExtension || !allowedExtensions.has(fileExtension))
+    );
+  });
+
+  if (invalidImages.length > 0) {
+    chatStore.showSnackbar(t('invalid_image_format'), EColor.error);
+  }
+
+  const oversizedImages = imageFiles.filter(
+    (file) => file.size > MAX_IMAGE_SIZE_BYTES
+  );
+  const validImages = imageFiles.filter(
+    (file) => file.size <= MAX_IMAGE_SIZE_BYTES
+  );
+
+  if (oversizedImages.length > 0) {
+    chatStore.showSnackbar(t('image_size_exceeded'), EColor.error);
+  }
+
+  if (validImages.length === 0) {
+    target.value = '';
+    return;
+  }
+
+  const currentCount = selectedPhotos.value.length;
+  const totalAfterSelection = currentCount + validImages.length;
+
+  if (totalAfterSelection > 10) {
+    chatStore.showSnackbar(t('max_images_selected'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
+  const remainingSlots = 10 - currentCount;
+
+  if (validImages.length > remainingSlots) {
+    chatStore.showSnackbar(
+      t('can_select_more_images', { count: remainingSlots }),
+      EColor.warning
+    );
+    target.value = '';
+    return;
+  }
+
+  for (const file of validImages) {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (event.target?.result) {
+        selectedPhotos.value.push({
+          file,
+          preview: event.target.result as string,
+        });
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  target.value = '';
 };
-const onPickVideo = (e: Event) => {
-  console.log(e);
+const getVideoDuration = (src: string): Promise<number | null> =>
+  new Promise((resolve) => {
+    const videoEl = document.createElement('video');
+    const clean = () => {
+      videoEl.removeAttribute('src');
+      videoEl.load();
+      videoEl.remove();
+    };
+
+    videoEl.preload = 'metadata';
+    videoEl.muted = true;
+    videoEl.onloadedmetadata = () => {
+      const dur = Number.isFinite(videoEl.duration) ? videoEl.duration : null;
+      clean();
+      resolve(dur);
+    };
+    videoEl.onerror = () => {
+      clean();
+      resolve(null);
+    };
+    videoEl.src = src;
+  });
+
+const getAudioDuration = (src: string): Promise<number | null> =>
+  new Promise((resolve) => {
+    const audioEl = document.createElement('audio');
+    const clean = () => {
+      audioEl.removeAttribute('src');
+      audioEl.load();
+      audioEl.remove();
+    };
+
+    audioEl.preload = 'metadata';
+    audioEl.onloadedmetadata = () => {
+      const dur = Number.isFinite(audioEl.duration) ? audioEl.duration : null;
+      clean();
+      resolve(dur);
+    };
+    audioEl.onerror = () => {
+      clean();
+      resolve(null);
+    };
+    audioEl.src = src;
+  });
+
+const updateRecordingElapsed = () => {
+  if (audioRecordingStartAt.value === null) {
+    audioRecordingElapsedMs.value = audioRecordingAccumulated.value;
+    return;
+  }
+  audioRecordingElapsedMs.value =
+    audioRecordingAccumulated.value +
+    (performance.now() - audioRecordingStartAt.value);
 };
-const onPickAudio = (e: Event) => {
-  console.log(e);
+
+const setupAudioCanvas = () => {
+  const canvas = audioCanvasRef.value;
+  if (!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const width = canvas.offsetWidth * dpr;
+  const height = canvas.offsetHeight * dpr;
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+};
+
+const drawAudioWaveform = () => {
+  if (!isRecordingAudio.value || !audioAnalyserRef.value) {
+    return;
+  }
+  const analyser = audioAnalyserRef.value;
+  const canvas = audioCanvasRef.value;
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const bufferLength = analyser.fftSize;
+  if (
+    !audioDataArrayRef.value ||
+    audioDataArrayRef.value.length !== bufferLength
+  ) {
+    audioDataArrayRef.value = new Uint8Array(bufferLength);
+  }
+
+  const byteArray = audioDataArrayRef.value!;
+  analyser.getByteTimeDomainData(
+    byteArray as unknown as Uint8Array<ArrayBuffer>
+  );
+  setupAudioCanvas();
+
+  const dpr = window.devicePixelRatio || 1;
+  const width = canvas.width / dpr;
+  const height = canvas.height / dpr;
+
+  ctx.save();
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, width, height);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(34, 197, 94, 0.95)';
+  ctx.fillStyle = 'rgba(34, 197, 94, 0.15)';
+  ctx.beginPath();
+
+  const data = byteArray;
+  const sliceWidth = width / bufferLength;
+  let x = 0;
+  const centerY = height / 2;
+  ctx.beginPath();
+  ctx.moveTo(0, centerY);
+  ctx.lineTo(width, centerY);
+  ctx.strokeStyle = 'rgba(34, 197, 94, 0.35)';
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgba(34, 197, 94, 0.9)';
+
+  for (let i = 0; i < bufferLength; i += 4) {
+    const v = data[i] / 128;
+    const y = (v * height) / 2;
+    if (i === 0) {
+      ctx.moveTo(x, y);
+    }
+    if (i !== 0) {
+      ctx.lineTo(x, y);
+    }
+    x += sliceWidth * 4;
+  }
+
+  ctx.stroke();
+  ctx.restore();
+
+  audioRecordingRAFId.value = requestAnimationFrame(drawAudioWaveform);
+};
+
+const releaseAudioResources = () => {
+  if (audioRecordingTimerId.value) {
+    clearInterval(audioRecordingTimerId.value);
+    audioRecordingTimerId.value = null;
+  }
+  if (audioRecordingRAFId.value) {
+    cancelAnimationFrame(audioRecordingRAFId.value);
+    audioRecordingRAFId.value = null;
+  }
+  if (audioStreamRef.value) {
+    for (const track of audioStreamRef.value.getTracks()) {
+      track.stop();
+    }
+    audioStreamRef.value = null;
+  }
+  if (audioContextRef.value) {
+    audioContextRef.value.close().catch(() => null);
+    audioContextRef.value = null;
+  }
+  audioAnalyserRef.value = null;
+  audioDataArrayRef.value = null;
+  mediaRecorderRef.value = null;
+};
+
+const resetRecordingState = () => {
+  isRecordingAudio.value = false;
+  isRecordingPaused.value = false;
+  audioViewOnce.value = false;
+  audioPendingViewOnce.value = false;
+  audioRecordingStartAt.value = null;
+  audioRecordingAccumulated.value = 0;
+  audioRecordingElapsedMs.value = 0;
+  audioRecordingDurationSeconds.value = null;
+  audioChunksRef.value = [];
+};
+
+const handleRecorderStop = async () => {
+  const recorder = mediaRecorderRef.value;
+  const saveRecording = shouldPersistRecording.value;
+  shouldPersistRecording.value = false;
+
+  if (!saveRecording && recordedAudioUrl.value) {
+    URL.revokeObjectURL(recordedAudioUrl.value);
+    recordedAudioUrl.value = null;
+  }
+
+  if (saveRecording && recorder && audioChunksRef.value.length > 0) {
+    const mimeType = recorder.mimeType || 'audio/webm;codecs=opus';
+    const blob = new Blob(audioChunksRef.value, { type: mimeType });
+    recordedAudioBlob.value = blob;
+    if (recordedAudioUrl.value) URL.revokeObjectURL(recordedAudioUrl.value);
+    recordedAudioUrl.value = URL.createObjectURL(blob);
+    audioRecordingDurationSeconds.value = Math.round(
+      audioRecordingElapsedMs.value / 1000
+    );
+
+    const audioWithinLimit = blob.size <= MAX_AUDIO_SIZE_BYTES;
+    if (!audioWithinLimit) {
+      chatStore.showSnackbar(t('audio_size_exceeded'), EColor.error);
+      if (recordedAudioUrl.value) {
+        URL.revokeObjectURL(recordedAudioUrl.value);
+      }
+      recordedAudioUrl.value = null;
+    }
+    if (audioWithinLimit) {
+      await sendAudioMessage(
+        blob,
+        mimeType,
+        audioRecordingDurationSeconds.value,
+        audioPendingViewOnce.value
+      );
+      recordedAudioUrl.value = null;
+    }
+    recordedAudioBlob.value = null;
+  }
+
+  releaseAudioResources();
+  resetRecordingState();
+};
+
+const stopAudioRecordingInternal = () => {
+  if (audioRecordingStartAt.value !== null) {
+    audioRecordingAccumulated.value +=
+      performance.now() - audioRecordingStartAt.value;
+    audioRecordingStartAt.value = null;
+  }
+  updateRecordingElapsed();
+
+  if (mediaRecorderRef.value) {
+    mediaRecorderRef.value.onstop = handleRecorderStop;
+    if (mediaRecorderRef.value.state !== 'inactive') {
+      mediaRecorderRef.value.stop();
+      return;
+    }
+  }
+
+  void handleRecorderStop();
+};
+
+const cancelAudioRecording = () => {
+  if (!isRecordingAudio.value && !mediaRecorderRef.value) {
+    return;
+  }
+  shouldPersistRecording.value = false;
+  stopAudioRecordingInternal();
+};
+
+const finalizeAudioRecording = () => {
+  if (!isRecordingAudio.value) return;
+  shouldPersistRecording.value = true;
+  audioPendingViewOnce.value = audioViewOnce.value;
+  void stopAudioRecordingInternal();
+};
+
+const togglePauseAudioRecording = async () => {
+  if (!isRecordingAudio.value || !mediaRecorderRef.value) return;
+
+  if (!isRecordingPaused.value) {
+    if (mediaRecorderRef.value.state === 'recording') {
+      mediaRecorderRef.value.pause();
+    }
+    if (audioRecordingStartAt.value !== null) {
+      audioRecordingAccumulated.value +=
+        performance.now() - audioRecordingStartAt.value;
+      audioRecordingStartAt.value = null;
+      updateRecordingElapsed();
+    }
+    if (audioContextRef.value?.state === 'running') {
+      await audioContextRef.value.suspend().catch(() => null);
+    }
+    if (audioRecordingRAFId.value) {
+      cancelAnimationFrame(audioRecordingRAFId.value);
+      audioRecordingRAFId.value = null;
+    }
+    isRecordingPaused.value = true;
+    return;
+  }
+  if (mediaRecorderRef.value.state === 'paused') {
+    mediaRecorderRef.value.resume();
+  }
+  if (audioContextRef.value?.state === 'suspended') {
+    await audioContextRef.value.resume().catch(() => null);
+  }
+  audioRecordingStartAt.value = performance.now();
+  updateRecordingElapsed();
+  isRecordingPaused.value = false;
+  drawAudioWaveform();
+};
+
+const toggleViewOnceAudio = () => {
+  audioViewOnce.value = !audioViewOnce.value;
+};
+
+const startAudioRecording = async () => {
+  if (isRecordingAudio.value) return;
+  if (recordedAudioUrl.value) {
+    URL.revokeObjectURL(recordedAudioUrl.value);
+    recordedAudioUrl.value = null;
+  }
+  recordedAudioBlob.value = null;
+  audioRecordingDurationSeconds.value = null;
+  audioPendingViewOnce.value = false;
+
+  try {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      chatStore.showSnackbar(t('audio_recording_error'), EColor.error);
+      return;
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioStreamRef.value = stream;
+    const mediaRecorder = new MediaRecorder(stream);
+    mediaRecorderRef.value = mediaRecorder;
+    audioChunksRef.value = [];
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data?.size > 0) {
+        audioChunksRef.value.push(event.data);
+      }
+    };
+    mediaRecorder.onstop = handleRecorderStop;
+
+    const audioCtx = new AudioContext();
+    audioContextRef.value = audioCtx;
+    const source = audioCtx.createMediaStreamSource(stream);
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    audioAnalyserRef.value = analyser;
+    source.connect(analyser);
+
+    mediaRecorder.start(250);
+    isRecordingAudio.value = true;
+    isRecordingPaused.value = false;
+    audioViewOnce.value = false;
+    audioRecordingAccumulated.value = 0;
+    audioRecordingElapsedMs.value = 0;
+    audioRecordingStartAt.value = performance.now();
+    updateRecordingElapsed();
+    if (audioRecordingTimerId.value) {
+      clearInterval(audioRecordingTimerId.value);
+    }
+    audioRecordingTimerId.value = globalThis.setInterval(
+      updateRecordingElapsed,
+      200
+    ) as unknown as number;
+
+    await nextTick(() => {
+      setupAudioCanvas();
+    });
+    drawAudioWaveform();
+  } catch (error: any) {
+    releaseAudioResources();
+    resetRecordingState();
+    const message =
+      error?.name === 'NotAllowedError'
+        ? t('audio_recording_permission_denied')
+        : t('audio_recording_error');
+    chatStore.showSnackbar(message, EColor.error);
+  }
+};
+
+const onPickVideo = async (e: Event) => {
+  const target = e.target as HTMLInputElement;
+  const files = target.files;
+
+  if (!files || files.length === 0) {
+    target.value = '';
+    return;
+  }
+
+  if (selectedDocuments.value.length > 0) {
+    chatStore.showSnackbar(t('clear_documents_before_videos'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
+  if (selectedPhotos.value.length > 0) {
+    chatStore.showSnackbar(t('clear_images_before_videos'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
+  const allowedVideoTypes = new Set([
+    'video/mp4',
+    'video/avi',
+    'video/x-flv',
+    'video/x-matroska',
+    'video/quicktime',
+    'video/3gpp',
+  ]);
+  const allowedExtensions = new Set(['mp4', 'avi', 'flv', 'mkv', 'mov', '3gp']);
+
+  const videoFiles = Array.from(files).filter((file) => {
+    const fileExtension = file.name.split('.').pop()?.toLowerCase();
+    return (
+      allowedVideoTypes.has(file.type) ||
+      (fileExtension && allowedExtensions.has(fileExtension))
+    );
+  });
+
+  if (videoFiles.length === 0) {
+    chatStore.showSnackbar(t('invalid_video_format'), EColor.error);
+    target.value = '';
+    return;
+  }
+
+  const invalidVideos = Array.from(files).filter((file) => {
+    const fileExtension = file.name.split('.').pop()?.toLowerCase();
+    return (
+      !allowedVideoTypes.has(file.type) &&
+      (!fileExtension || !allowedExtensions.has(fileExtension))
+    );
+  });
+
+  if (invalidVideos.length > 0) {
+    chatStore.showSnackbar(t('invalid_video_format'), EColor.error);
+  }
+
+  const limit = 10;
+  const currentCount = selectedVideos.value.length;
+  if (currentCount >= limit) {
+    chatStore.showSnackbar(t('max_videos_selected'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
+  const spaceLeft = limit - currentCount;
+  const filesToAdd = videoFiles.slice(0, spaceLeft);
+  if (videoFiles.length > spaceLeft) {
+    chatStore.showSnackbar(
+      t('can_select_more_videos', { count: spaceLeft }),
+      EColor.warning
+    );
+  }
+
+  const oversizedVideos = filesToAdd.filter(
+    (file) => file.size > MAX_VIDEO_SIZE_BYTES
+  );
+  const validVideos = filesToAdd.filter(
+    (file) => file.size <= MAX_VIDEO_SIZE_BYTES
+  );
+
+  if (oversizedVideos.length > 0) {
+    chatStore.showSnackbar(t('video_size_exceeded'), EColor.error);
+  }
+
+  const loadedVideos = await Promise.all(
+    validVideos.map(async (file) => {
+      const preview = URL.createObjectURL(file);
+      const duration = await getVideoDuration(preview);
+
+      return {
+        file,
+        preview,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        duration: duration ?? null,
+      };
+    })
+  );
+
+  for (const video of loadedVideos) {
+    selectedVideos.value.push(video);
+  }
+
+  target.value = '';
+};
+const onPickAudio = async (e: Event) => {
+  const target = e.target as HTMLInputElement;
+  const files = target.files;
+
+  if (!files || files.length === 0) {
+    target.value = '';
+    return;
+  }
+
+  if (selectedDocuments.value.length > 0) {
+    chatStore.showSnackbar(t('clear_documents_before_audios'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
+  if (selectedPhotos.value.length > 0) {
+    chatStore.showSnackbar(t('clear_images_before_audios'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
+  if (selectedVideos.value.length > 0) {
+    chatStore.showSnackbar(t('clear_videos_before_audios'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
+  const allowedAudioTypes = new Set([
+    'audio/mpeg',
+    'audio/mp3',
+    'audio/wav',
+    'audio/ogg',
+    'audio/webm',
+    'audio/aac',
+    'audio/m4a',
+    'audio/opus',
+  ]);
+  const allowedExtensions = new Set([
+    'mp3',
+    'wav',
+    'ogg',
+    'webm',
+    'aac',
+    'm4a',
+    'opus',
+  ]);
+
+  const audioFiles = Array.from(files).filter((file) => {
+    const fileExtension = file.name.split('.').pop()?.toLowerCase();
+    return (
+      allowedAudioTypes.has(file.type) ||
+      (fileExtension && allowedExtensions.has(fileExtension))
+    );
+  });
+
+  if (audioFiles.length === 0) {
+    chatStore.showSnackbar(t('invalid_audio_format'), EColor.error);
+    target.value = '';
+    return;
+  }
+
+  const invalidAudios = Array.from(files).filter((file) => {
+    const fileExtension = file.name.split('.').pop()?.toLowerCase();
+    return (
+      !allowedAudioTypes.has(file.type) &&
+      (!fileExtension || !allowedExtensions.has(fileExtension))
+    );
+  });
+
+  if (invalidAudios.length > 0) {
+    chatStore.showSnackbar(t('invalid_audio_format'), EColor.error);
+  }
+
+  const limit = 10;
+  const currentCount = selectedAudios.value.length;
+  if (currentCount >= limit) {
+    chatStore.showSnackbar(t('max_audios_selected'), EColor.warning);
+    target.value = '';
+    return;
+  }
+
+  const spaceLeft = limit - currentCount;
+  const filesToAdd = audioFiles.slice(0, spaceLeft);
+  if (audioFiles.length > spaceLeft) {
+    chatStore.showSnackbar(
+      t('can_select_more_audios', { count: spaceLeft }),
+      EColor.warning
+    );
+  }
+
+  const oversizedAudios = filesToAdd.filter(
+    (file) => file.size > MAX_AUDIO_SIZE_BYTES
+  );
+  const validAudios = filesToAdd.filter(
+    (file) => file.size <= MAX_AUDIO_SIZE_BYTES
+  );
+
+  if (oversizedAudios.length > 0) {
+    chatStore.showSnackbar(t('audio_size_exceeded'), EColor.error);
+  }
+
+  const loadedAudios = await Promise.all(
+    validAudios.map(async (file) => {
+      const preview = URL.createObjectURL(file);
+      const duration = await getAudioDuration(preview);
+
+      return {
+        file,
+        preview,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        duration: duration ?? null,
+      };
+    })
+  );
+
+  for (const audio of loadedAudios) {
+    selectedAudios.value.push(audio);
+  }
+
+  target.value = '';
+};
+
+const openPreviewImage = (photo: ISelectedPhotoPreview) => {
+  viewerKind.value = 'image';
+  viewerSrc.value = photo.preview;
+  viewerCaption.value = '';
+  viewerDownloadName.value = photo.file.name;
+  viewerOpen.value = true;
+};
+
+const openPreviewVideo = (video: ISelectedVideoPreview) => {
+  viewerKind.value = 'video';
+  viewerSrc.value = video.preview;
+  viewerCaption.value = '';
+  viewerDownloadName.value = video.name;
+  viewerOpen.value = true;
+};
+
+const removeAudio = (index: number) => {
+  const audio = selectedAudios.value[index];
+  if (audio) {
+    if (audio.preview && audio.preview.startsWith('blob:')) {
+      URL.revokeObjectURL(audio.preview);
+    }
+  }
+  selectedAudios.value.splice(index, 1);
+};
+
+const audioModalOpen = ref(false);
+const audioModalSrc = ref<string>('');
+const audioModalName = ref<string>('');
+const audioModalDuration = ref<number | null>(null);
+const audioModalPlayer = ref<HTMLAudioElement | null>(null);
+const audioModalIsPlaying = ref(false);
+const audioModalCurrentTime = ref(0);
+const audioModalProgress = ref(0);
+
+const setupAudioModalListeners = (): (() => void) | null => {
+  if (!audioModalPlayer.value) return null;
+
+  const player = audioModalPlayer.value;
+
+  const onLoadedMetadata = () => {
+    if (player) {
+      audioModalDuration.value = player.duration;
+    }
+  };
+
+  const onTimeUpdate = () => {
+    if (player) {
+      audioModalCurrentTime.value = player.currentTime;
+      if (player.duration) {
+        audioModalProgress.value = (player.currentTime / player.duration) * 100;
+      }
+    }
+  };
+
+  const onPlay = () => {
+    audioModalIsPlaying.value = true;
+  };
+
+  const onPause = () => {
+    audioModalIsPlaying.value = false;
+  };
+
+  const onEnded = () => {
+    audioModalIsPlaying.value = false;
+    audioModalCurrentTime.value = 0;
+    audioModalProgress.value = 0;
+  };
+
+  player.addEventListener('loadedmetadata', onLoadedMetadata);
+  player.addEventListener('timeupdate', onTimeUpdate);
+  player.addEventListener('play', onPlay);
+  player.addEventListener('pause', onPause);
+  player.addEventListener('ended', onEnded);
+
+  return () => {
+    player.removeEventListener('loadedmetadata', onLoadedMetadata);
+    player.removeEventListener('timeupdate', onTimeUpdate);
+    player.removeEventListener('play', onPlay);
+    player.removeEventListener('pause', onPause);
+    player.removeEventListener('ended', onEnded);
+  };
+};
+
+let audioModalCleanup: (() => void) | null = null;
+
+const openPreviewAudio = (audio: ISelectedAudioPreview) => {
+  if (audioModalCleanup) {
+    audioModalCleanup();
+    audioModalCleanup = null;
+  }
+
+  audioModalSrc.value = audio.preview;
+  audioModalName.value = audio.name;
+  audioModalDuration.value = audio.duration;
+  audioModalCurrentTime.value = 0;
+  audioModalProgress.value = 0;
+  audioModalOpen.value = true;
+
+  nextTick(() => {
+    audioModalCleanup = setupAudioModalListeners();
+  });
+};
+
+const toggleAudioModalPlay = () => {
+  if (!audioModalPlayer.value) return;
+
+  if (audioModalIsPlaying.value) {
+    audioModalPlayer.value.pause();
+  } else {
+    audioModalPlayer.value.play().catch(() => {
+      audioModalIsPlaying.value = false;
+    });
+  }
+};
+
+const formatAudioModalTime = (seconds: number | null): string => {
+  if (seconds === null || !Number.isFinite(seconds)) return '0:00';
+  const totalSeconds = Math.floor(seconds);
+  const minutes = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  return `${minutes}:${secs.toString().padStart(2, '0')}`;
+};
+
+const closeAudioModal = () => {
+  if (audioModalPlayer.value) {
+    audioModalPlayer.value.pause();
+    audioModalPlayer.value.currentTime = 0;
+  }
+  if (audioModalCleanup) {
+    audioModalCleanup();
+    audioModalCleanup = null;
+  }
+  audioModalIsPlaying.value = false;
+  audioModalCurrentTime.value = 0;
+  audioModalProgress.value = 0;
+  audioModalOpen.value = false;
+};
+
+const downloadPreviewImage = async (url: string, filename?: string | null) => {
+  if (!url) return;
+
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const blobUrl = globalThis.URL.createObjectURL(blob);
+
+    const anchor = document.createElement('a');
+    anchor.href = blobUrl;
+    anchor.download = filename || 'image.jpg';
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+
+    setTimeout(() => {
+      globalThis.URL.revokeObjectURL(blobUrl);
+    }, 100);
+  } catch (error) {
+    console.error('Erro ao baixar imagem:', error);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.target = '_blank';
+    anchor.download = filename || 'image.jpg';
+    anchor.rel = 'noopener';
+    anchor.click();
+  }
+};
+
+const downloadPreviewVideo = async (url: string, filename?: string | null) => {
+  if (!url) return;
+
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const blobUrl = globalThis.URL.createObjectURL(blob);
+
+    const anchor = document.createElement('a');
+    anchor.href = blobUrl;
+    anchor.download = filename || 'video.mp4';
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+
+    setTimeout(() => {
+      globalThis.URL.revokeObjectURL(blobUrl);
+    }, 100);
+  } catch (error) {
+    console.error('Erro ao baixar vídeo:', error);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.target = '_blank';
+    anchor.download = filename || 'video.mp4';
+    anchor.rel = 'noopener';
+    anchor.click();
+  }
+};
+
+const downloadViewerMedia = () => {
+  if (!viewerSrc.value) return;
+  if (viewerKind.value === 'video') {
+    downloadPreviewVideo(viewerSrc.value, viewerDownloadName.value);
+    return;
+  }
+  downloadPreviewImage(viewerSrc.value, viewerDownloadName.value);
 };
 
 const onEmojiSelect = (e: any) => {
@@ -273,10 +1937,81 @@ const onEmojiSelect = (e: any) => {
 };
 
 const onRecordAudio = () => {
-  globalThis.dispatchEvent(new CustomEvent('start-recording-audio'));
+  startAudioRecording();
 };
 
 const onSendText = () => sendMessage();
+
+const removeDocument = (index: number) => {
+  selectedDocuments.value.splice(index, 1);
+};
+
+const documentIconMap: Record<string, string> = {
+  pdf: 'tabler-file-type-pdf',
+  doc: 'tabler-file-type-doc',
+  docx: 'tabler-file-type-doc',
+  xls: 'tabler-file-type-xls',
+  xlsx: 'tabler-file-type-xls',
+  csv: 'tabler-file-type-xls',
+  ppt: 'tabler-file-type-ppt',
+  pptx: 'tabler-file-type-ppt',
+  txt: 'tabler-file-type-txt',
+  zip: 'tabler-file-type-zip',
+  rar: 'tabler-file-type-zip',
+  '7z': 'tabler-file-type-zip',
+  json: 'tabler-file-code',
+  xml: 'tabler-file-code',
+};
+
+const resolveDocumentIcon = (extension?: string, mimetype?: string): string => {
+  const ext = extension?.toLowerCase();
+  if (ext && documentIconMap[ext]) {
+    return documentIconMap[ext];
+  }
+
+  if (mimetype?.includes('pdf')) return 'tabler-file-type-pdf';
+  if (mimetype?.includes('word')) return 'tabler-file-type-doc';
+  if (mimetype?.includes('sheet') || mimetype?.includes('excel'))
+    return 'tabler-file-type-xls';
+  if (mimetype?.includes('presentation')) return 'tabler-file-type-ppt';
+  if (mimetype?.includes('zip') || mimetype?.includes('compressed'))
+    return 'tabler-file-type-zip';
+
+  return 'tabler-file-description';
+};
+
+const truncateFileName = (name: string, max = 32): string => {
+  if (name.length <= max) return name;
+  const extIndex = name.lastIndexOf('.');
+  if (extIndex === -1 || extIndex < name.length - 6) {
+    return `${name.slice(0, max - 3)}...`;
+  }
+
+  const ext = name.slice(extIndex);
+  const base = name.slice(0, max - ext.length - 3);
+  return `${base}...${ext}`;
+};
+
+const formatFileSize = (bytes: number): string => {
+  if (!bytes) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const exponent = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(1024)),
+    units.length - 1
+  );
+  const value = bytes / Math.pow(1024, exponent);
+  let formatted: string;
+  if (value >= 100) {
+    formatted = value.toFixed(0);
+    return `${formatted} ${units[exponent]}`;
+  }
+  if (value >= 10) {
+    formatted = value.toFixed(1);
+    return `${formatted} ${units[exponent]}`;
+  }
+  formatted = value.toFixed(2);
+  return `${formatted} ${units[exponent]}`;
+};
 
 const debouncedMsg = refDebounced(msg, 500);
 watch(
@@ -308,7 +2043,251 @@ const focusComposer = () => {
 
 const onScrollToMessageEvt = (e: Event) => {
   const id = (e as CustomEvent<string>).detail;
-  if (id) highlightAndScrollToMessage(id);
+  if (id) void highlightAndScrollToMessage(id);
+};
+
+const retryTextMessage = async (
+  content: NonNullable<ListMessageResult['content']>,
+  hash: string
+): Promise<void> => {
+  const messageBody: CreateMessageChatsBody = {
+    type: EMessageType.text,
+    message: content.message ?? '',
+    hash,
+  };
+
+  if (content.link_preview) {
+    messageBody.link_preview = content.link_preview as ViewLinkPreviewResponse;
+  }
+
+  if (content.message_quoted_id) {
+    messageBody.message_quoted_id = content.message_quoted_id;
+  }
+
+  const success = await chatStore.createMessage(messageBody);
+  if (!success) {
+    markUploadError(hash);
+  }
+};
+
+const retryImageMessage = async (
+  content: NonNullable<ListMessageResult['content']>,
+  hash: string
+): Promise<void> => {
+  try {
+    const response = await fetch(content.image!.url!);
+    const blob = await response.blob();
+    const file = new File(
+      [blob],
+      `image.${content.image!.extension || 'jpg'}`,
+      {
+        type: content.image!.mimetype || 'image/jpeg',
+      }
+    );
+
+    const photo = {
+      file,
+      preview: content.image!.url!,
+    };
+
+    const replyId = content.message_quoted_id ?? null;
+    const formData = createImageFormData(
+      photo,
+      content.message ?? null,
+      replyId,
+      hash
+    );
+
+    chatStore.updateLocalMessageProgress(hash, 0);
+    const success = await chatStore.createMessageWithImages(formData, {
+      skipLoading: true,
+      onUploadProgress: (progress) => {
+        markUploadProgress(hash, progress);
+      },
+    });
+
+    if (!success) {
+      markUploadError(hash);
+    }
+  } catch (error) {
+    console.error('Erro ao reenviar mensagem:', error);
+    markUploadError(hash);
+  }
+};
+
+const retryVideoMessage = async (
+  content: NonNullable<ListMessageResult['content']>,
+  hash: string
+): Promise<void> => {
+  try {
+    const response = await fetch(content.video!.url!);
+    const blob = await response.blob();
+    const file = new File(
+      [blob],
+      content.video!.name || `video.${content.video!.extension || 'mp4'}`,
+      {
+        type: content.video!.mimetype || 'video/mp4',
+      }
+    );
+
+    const video = {
+      file,
+      preview: content.video!.url!,
+      name: content.video!.name || file.name,
+      type: content.video!.mimetype || 'video/mp4',
+      size: content.video!.size || file.size,
+      duration: content.video!.duration ?? null,
+    };
+
+    const replyId = content.message_quoted_id ?? null;
+    const formData = createVideoFormData(
+      video,
+      content.message ?? null,
+      replyId,
+      hash
+    );
+
+    chatStore.updateLocalMessageProgress(hash, 0);
+    const success = await chatStore.createMessageWithVideos(formData, {
+      skipLoading: true,
+      onUploadProgress: (progress) => {
+        markUploadProgress(hash, progress);
+      },
+    });
+
+    if (!success) {
+      markUploadError(hash);
+    }
+  } catch (error) {
+    console.error('Erro ao reenviar mensagem:', error);
+    markUploadError(hash);
+  }
+};
+
+const retryAudioMessage = async (
+  content: NonNullable<ListMessageResult['content']>,
+  hash: string
+): Promise<void> => {
+  try {
+    const response = await fetch(content.audio!.url!);
+    const blob = await response.blob();
+
+    const audioData = {
+      blob,
+      fileName:
+        content.audio!.name || `audio.${content.audio!.extension || 'ogg'}`,
+      mimeType: content.audio!.mimetype || 'audio/ogg',
+    };
+
+    const replyId = content.message_quoted_id ?? null;
+    const formData = createAudioFormData(
+      audioData,
+      content.message ?? null,
+      replyId,
+      content.audio!.view_once ?? false,
+      content.audio!.duration ?? null,
+      hash
+    );
+
+    chatStore.updateLocalMessageProgress(hash, 0);
+    const success = await chatStore.createMessageWithAudios(formData, {
+      skipLoading: true,
+      onUploadProgress: (progress) => {
+        markUploadProgress(hash, progress);
+      },
+    });
+
+    if (!success) {
+      markUploadError(hash);
+    }
+  } catch (error) {
+    console.error('Erro ao reenviar mensagem:', error);
+    markUploadError(hash);
+  }
+};
+
+const retryDocumentMessage = async (
+  content: NonNullable<ListMessageResult['content']>,
+  hash: string
+): Promise<void> => {
+  try {
+    const response = await fetch(content.document!.url!);
+    const blob = await response.blob();
+    const file = new File(
+      [blob],
+      content.document!.name ||
+        `document.${content.document!.extension || 'pdf'}`,
+      {
+        type: content.document!.mimetype || 'application/pdf',
+      }
+    );
+
+    const doc = {
+      file,
+      name: content.document!.name || file.name,
+      type: content.document!.mimetype || 'application/pdf',
+      size: content.document!.size || file.size,
+      extension: content.document!.extension || 'pdf',
+    };
+
+    const replyId = content.message_quoted_id ?? null;
+    const formData = createDocumentFormData(
+      doc,
+      content.message ?? null,
+      replyId,
+      hash
+    );
+
+    chatStore.updateLocalMessageProgress(hash, 0);
+    const success = await chatStore.createMessageWithDocuments(formData, {
+      skipLoading: true,
+      onUploadProgress: (progress) => {
+        markUploadProgress(hash, progress);
+      },
+    });
+
+    if (!success) {
+      markUploadError(hash);
+    }
+  } catch (error) {
+    console.error('Erro ao reenviar mensagem:', error);
+    markUploadError(hash);
+  }
+};
+
+const onRetryMessage = async (e: Event) => {
+  const { message } = (e as CustomEvent<{ message: ListMessageResult }>).detail;
+  if (!message?.hash) return;
+
+  const content = message.content;
+  if (!content) return;
+
+  const hash = message.hash;
+  chatStore.clearLocalMessageState(hash);
+
+  if (content.type === EMessageType.text) {
+    await retryTextMessage(content, hash);
+    return;
+  }
+
+  if (content.type === EMessageType.image && content.image?.url) {
+    await retryImageMessage(content, hash);
+    return;
+  }
+
+  if (content.type === EMessageType.video && content.video?.url) {
+    await retryVideoMessage(content, hash);
+    return;
+  }
+
+  if (content.type === EMessageType.audio && content.audio?.url) {
+    await retryAudioMessage(content, hash);
+    return;
+  }
+
+  if (content.type === EMessageType.document && content.document?.url) {
+    await retryDocumentMessage(content, hash);
+  }
 };
 
 onMounted(async () => {
@@ -316,14 +2295,18 @@ onMounted(async () => {
     await onMessage(
       chatAccountCentrifugo(chatStore.user.account_id),
       (data: IChatMessage) => {
+        console.log('data:', data);
+
         if (chatStore.activeChat?.chat_id !== data.chat_id) {
           return;
         }
 
-        chatStore.addMessageActiveChat(data);
+        const changeType = chatStore.addMessageActiveChat(data);
 
-        scrollToMessageById(data.message_id);
-        globalThis.dispatchEvent(new CustomEvent('focus-composer'));
+        if (changeType === 'created') {
+          scrollToMessageById(data.message_id);
+          globalThis.dispatchEvent(new CustomEvent('focus-composer'));
+        }
       }
     );
 
@@ -339,6 +2322,10 @@ onMounted(async () => {
       'scroll-to-message',
       onScrollToMessageEvt as EventListener
     );
+    globalThis.addEventListener(
+      'retry-message',
+      onRetryMessage as EventListener
+    );
   }
 });
 
@@ -352,6 +2339,24 @@ onUnmounted(async () => {
       'scroll-to-message',
       onScrollToMessageEvt as EventListener
     );
+    globalThis.removeEventListener(
+      'retry-message',
+      onRetryMessage as EventListener
+    );
+  }
+
+  for (const timeoutId of highlightedMessageTimers.values()) {
+    clearTimeout(timeoutId);
+  }
+  highlightedMessageTimers.clear();
+});
+
+onBeforeUnmount(() => {
+  shouldPersistRecording.value = false;
+  cancelAudioRecording();
+  if (recordedAudioUrl.value) {
+    URL.revokeObjectURL(recordedAudioUrl.value);
+    recordedAudioUrl.value = null;
   }
 });
 </script>
@@ -431,7 +2436,9 @@ onUnmounted(async () => {
                 :src="chatStore.activeChat.photo"
                 :alt="chatStore.activeChat.name ?? ''"
               />
-              <span v-else>{{ avatarText(chatStore.activeChat.name) }}</span>
+              <span v-if="!chatStore.activeChat.photo">{{
+                avatarText(chatStore.activeChat.name)
+              }}</span>
             </VAvatar>
 
             <div class="flex-grow-1 ms-4 overflow-hidden">
@@ -518,7 +2525,357 @@ onUnmounted(async () => {
         >
           <ReplyPreview v-if="chatStore.messageReply" />
 
+          <Transition name="fade">
+            <div
+              v-if="selectedDocuments.length > 0"
+              class="composer-attachment mt-3"
+            >
+              <VCard class="composer-attachment-card">
+                <VCardTitle class="d-flex align-center justify-space-between">
+                  <span
+                    >{{ t('documents_selected') }} (
+                    {{ selectedDocuments.length }}/10 )</span
+                  >
+                  <VBtn
+                    icon
+                    size="24"
+                    variant="text"
+                    @click="selectedDocuments = []"
+                  >
+                    <VIcon size="18" icon="tabler-x" />
+                  </VBtn>
+                </VCardTitle>
+                <VCardText>
+                  <div class="document-preview-list">
+                    <div
+                      v-for="(doc, index) in selectedDocuments"
+                      :key="`${doc.name}-${index}`"
+                      class="document-preview-item d-flex align-center justify-space-between px-3 py-2"
+                    >
+                      <div class="d-flex align-center gap-3 overflow-hidden">
+                        <VIcon
+                          :icon="resolveDocumentIcon(doc.extension, doc.type)"
+                          size="28"
+                          color="primary"
+                        />
+                        <div class="d-flex flex-column overflow-hidden">
+                          <VTooltip location="bottom">
+                            <template #activator="{ props }">
+                              <span
+                                v-bind="props"
+                                class="text-body-2 fw-medium document-preview-name"
+                              >
+                                {{ truncateFileName(doc.name) }}
+                              </span>
+                            </template>
+                            <span>{{ doc.name }}</span>
+                          </VTooltip>
+                          <span class="text-caption text-disabled">
+                            {{ formatFileSize(doc.size) }}
+                          </span>
+                        </div>
+                      </div>
+                      <VBtn
+                        icon
+                        size="20"
+                        variant="flat"
+                        color="error"
+                        @click="removeDocument(index)"
+                      >
+                        <VIcon size="14" icon="tabler-x" />
+                      </VBtn>
+                    </div>
+                  </div>
+                </VCardText>
+              </VCard>
+            </div>
+          </Transition>
+
+          <Transition name="fade">
+            <div
+              v-if="selectedVideos.length > 0"
+              class="composer-attachment mt-3"
+            >
+              <VCard class="composer-attachment-card">
+                <VCardTitle class="d-flex align-center justify-space-between">
+                  <span
+                    >{{ t('videos_selected') }} ({{
+                      selectedVideos.length
+                    }}/10)</span
+                  >
+                  <VBtn
+                    icon
+                    size="24"
+                    variant="text"
+                    @click="clearSelectedVideos()"
+                  >
+                    <VIcon size="18" icon="tabler-x" />
+                  </VBtn>
+                </VCardTitle>
+                <VCardText>
+                  <div class="attachment-grid attachment-grid--videos">
+                    <div
+                      v-for="(video, index) in selectedVideos"
+                      :key="`${video.name}-${index}`"
+                      class="video-preview-wrapper"
+                    >
+                      <div class="video-preview-container">
+                        <video
+                          :src="video.preview"
+                          class="video-preview"
+                          preload="metadata"
+                          muted
+                          playsinline
+                          @click="openPreviewVideo(video)"
+                        >
+                          <track kind="captions" />
+                        </video>
+                        <div
+                          class="video-preview-play-overlay"
+                          @click="openPreviewVideo(video)"
+                        >
+                          <VIcon size="24">tabler-player-play</VIcon>
+                        </div>
+                      </div>
+                      <div class="video-preview-meta">
+                        <VTooltip location="bottom">
+                          <template #activator="{ props }">
+                            <span v-bind="props" class="video-preview-name">
+                              {{ truncateFileName(video.name) }}
+                            </span>
+                          </template>
+                          <span>{{ video.name }}</span>
+                        </VTooltip>
+                        <span
+                          class="video-preview-info text-caption text-disabled"
+                        >
+                          {{
+                            (video.name.split('.').pop() || '').toUpperCase()
+                          }}
+                          •
+                          {{ formatFileSize(video.size) }}
+                        </span>
+                      </div>
+                      <VBtn
+                        icon
+                        size="20"
+                        variant="flat"
+                        color="error"
+                        class="video-preview-remove"
+                        @click.stop="removeVideo(index)"
+                      >
+                        <VIcon size="14" icon="tabler-x" />
+                      </VBtn>
+                    </div>
+                  </div>
+                </VCardText>
+              </VCard>
+            </div>
+          </Transition>
+
+          <Transition name="fade">
+            <div
+              v-if="selectedAudios.length > 0"
+              class="composer-attachment mt-3"
+            >
+              <VCard class="composer-attachment-card">
+                <VCardTitle class="d-flex align-center justify-space-between">
+                  <span
+                    >{{ t('audios_selected') }} ({{
+                      selectedAudios.length
+                    }}/10)</span
+                  >
+                  <VBtn
+                    icon
+                    size="24"
+                    variant="text"
+                    @click="clearSelectedAudios()"
+                  >
+                    <VIcon size="18" icon="tabler-x" />
+                  </VBtn>
+                </VCardTitle>
+                <VCardText>
+                  <div class="attachment-grid attachment-grid--audios">
+                    <div
+                      v-for="(audio, index) in selectedAudios"
+                      :key="`${audio.name}-${index}`"
+                      class="audio-preview-wrapper"
+                    >
+                      <div class="audio-preview-container">
+                        <div
+                          class="audio-preview-icon-wrapper"
+                          @click="openPreviewAudio(audio)"
+                        >
+                          <VIcon size="32" color="primary"
+                            >tabler-headphones</VIcon
+                          >
+                        </div>
+                        <div
+                          class="audio-preview-play-overlay"
+                          @click="openPreviewAudio(audio)"
+                        >
+                          <VIcon size="24">tabler-player-play</VIcon>
+                        </div>
+                      </div>
+                      <div class="audio-preview-meta">
+                        <VTooltip location="bottom">
+                          <template #activator="{ props }">
+                            <span v-bind="props" class="audio-preview-name">
+                              {{ truncateFileName(audio.name) }}
+                            </span>
+                          </template>
+                          <span>{{ audio.name }}</span>
+                        </VTooltip>
+                        <span
+                          class="audio-preview-info text-caption text-disabled"
+                        >
+                          {{
+                            (audio.name.split('.').pop() || '').toUpperCase()
+                          }}
+                          •
+                          {{ formatFileSize(audio.size) }}
+                          <span v-if="audio.duration">
+                            • {{ formatAudioModalTime(audio.duration) }}
+                          </span>
+                        </span>
+                      </div>
+                      <VBtn
+                        icon
+                        size="20"
+                        variant="flat"
+                        color="error"
+                        class="audio-preview-remove"
+                        @click.stop="removeAudio(index)"
+                      >
+                        <VIcon size="14" icon="tabler-x" />
+                      </VBtn>
+                    </div>
+                  </div>
+                </VCardText>
+              </VCard>
+            </div>
+          </Transition>
+
+          <Transition name="fade">
+            <div
+              v-if="selectedPhotos.length > 0"
+              class="composer-attachment mt-3"
+            >
+              <VCard class="composer-attachment-card">
+                <VCardTitle class="d-flex align-center justify-space-between">
+                  <span
+                    >{{ t('images_selected') }} ({{
+                      selectedPhotos.length
+                    }}/10)</span
+                  >
+                  <VBtn
+                    icon
+                    size="24"
+                    variant="text"
+                    @click="selectedPhotos = []"
+                  >
+                    <VIcon size="18" icon="tabler-x" />
+                  </VBtn>
+                </VCardTitle>
+                <VCardText>
+                  <div class="attachment-grid">
+                    <div
+                      v-for="(photo, index) in selectedPhotos"
+                      :key="index"
+                      class="photo-preview-wrapper"
+                    >
+                      <VImg
+                        :src="photo.preview"
+                        cover
+                        class="photo-preview-image"
+                        @click="openPreviewImage(photo)"
+                      />
+                      <VBtn
+                        icon
+                        size="20"
+                        variant="flat"
+                        color="error"
+                        class="photo-preview-remove"
+                        @click.stop="selectedPhotos.splice(index, 1)"
+                      >
+                        <VIcon size="14" icon="tabler-x" />
+                      </VBtn>
+                    </div>
+                  </div>
+                </VCardText>
+              </VCard>
+            </div>
+          </Transition>
+
+          <div
+            v-if="isRecordingAudio"
+            class="audio-recording-inline whats-composer d-flex align-center gap-3 px-4"
+          >
+            <IconBtn
+              class="record-action"
+              aria-label="Cancelar gravação"
+              @click="cancelAudioRecording"
+            >
+              <VIcon size="20">tabler-trash</VIcon>
+            </IconBtn>
+
+            <span
+              class="recording-dot"
+              :class="{ 'is-paused': isRecordingPaused }"
+            ></span>
+
+            <span class="audio-recording-clock">{{
+              formattedRecordingTime
+            }}</span>
+
+            <div class="audio-recording-info flex-grow-1">
+              <canvas
+                ref="audioCanvasRef"
+                class="audio-wave-canvas"
+                height="32"
+              ></canvas>
+            </div>
+
+            <IconBtn
+              class="record-action"
+              aria-label="Pausar ou retomar gravação"
+              @click="togglePauseAudioRecording"
+            >
+              <VIcon size="20">
+                {{
+                  isRecordingPaused
+                    ? 'tabler-player-play'
+                    : 'tabler-player-pause'
+                }}
+              </VIcon>
+            </IconBtn>
+
+            <IconBtn
+              class="record-action view-once-toggle"
+              :class="{ 'is-active': audioViewOnce }"
+              aria-label="Visualização única"
+              @click="toggleViewOnceAudio"
+            >
+              <VIcon size="20">
+                {{ audioViewOnce ? 'tabler-eye-off' : 'tabler-eye' }}
+              </VIcon>
+            </IconBtn>
+
+            <VBtn
+              class="record-send-btn"
+              color="success"
+              variant="flat"
+              icon
+              rounded="pill"
+              aria-label="Enviar áudio gravado"
+              @click="finalizeAudioRecording"
+            >
+              <VIcon size="20">tabler-send</VIcon>
+            </VBtn>
+          </div>
+
           <VTextarea
+            v-if="!isRecordingAudio"
             ref="composerRef"
             :key="contact_id"
             v-model="msg"
@@ -617,7 +2974,7 @@ onUnmounted(async () => {
             <template #append-inner>
               <div class="d-flex align-center gap-1">
                 <IconBtn
-                  v-if="!hasContent"
+                  v-if="!hasAttachmentsOrContent"
                   class="composer-btn mic-btn"
                   aria-label="Gravar áudio"
                   @click="onRecordAudio"
@@ -626,7 +2983,7 @@ onUnmounted(async () => {
                 </IconBtn>
 
                 <VBtn
-                  v-else
+                  v-if="hasAttachmentsOrContent"
                   class="send-btn"
                   icon
                   color="success"
@@ -645,21 +3002,22 @@ onUnmounted(async () => {
             ref="fileDocRef"
             type="file"
             hidden
-            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            multiple
             @change="onPickDoc"
           />
           <input
             ref="filePhotoRef"
             type="file"
             hidden
-            accept="image/*"
+            accept="image/jpeg,image/jpg,image/png,image/gif,.jpg,.jpeg,.png,.gif"
+            multiple
             @change="onPickPhoto"
           />
           <input
             ref="fileVideoRef"
             type="file"
             hidden
-            accept="video/*"
+            accept="video/mp4,video/avi,video/x-flv,video/x-matroska,video/quicktime,video/3gpp,.mp4,.avi,.flv,.mkv,.mov,.3gp"
             @change="onPickVideo"
           />
           <input
@@ -667,12 +3025,16 @@ onUnmounted(async () => {
             type="file"
             hidden
             accept="audio/*"
+            multiple
             @change="onPickAudio"
           />
         </VForm>
       </div>
 
-      <div v-else class="d-flex h-100 align-center justify-center flex-column">
+      <div
+        v-if="!chatStore.activeChat"
+        class="d-flex h-100 align-center justify-center flex-column"
+      >
         <VAvatar size="98" variant="tonal" color="primary" class="mb-4">
           <VIcon size="50" class="rounded-0" icon="tabler-message-2" />
         </VAvatar>
@@ -685,7 +3047,7 @@ onUnmounted(async () => {
         </VBtn>
 
         <p
-          v-else
+          v-if="!$vuetify.display.smAndDown"
           style="max-inline-size: 40ch; text-wrap: balance"
           class="text-center text-disabled"
         >
@@ -694,6 +3056,129 @@ onUnmounted(async () => {
       </div>
     </VMain>
   </VLayout>
+
+  <VSnackbar
+    v-model="chatStore.snackbar.status"
+    transition="scroll-y-reverse-transition"
+    location="top end"
+    :color="chatStore.snackbar.color"
+  >
+    {{ chatStore.snackbar.message }}
+  </VSnackbar>
+
+  <VDialog
+    v-model="viewerOpen"
+    fullscreen
+    scrim="rgba(0,0,0,.9)"
+    :scrollable="false"
+  >
+    <div class="viewer-wrap" @click="viewerOpen = false">
+      <div class="viewer-box" @click.stop>
+        <div class="viewer-media-container">
+          <img
+            v-if="viewerKind === 'image'"
+            :src="viewerSrc"
+            alt=""
+            class="viewer-img"
+            loading="eager"
+            decoding="async"
+          />
+          <video
+            v-if="viewerKind === 'video'"
+            :src="viewerSrc"
+            class="viewer-video"
+            controls
+            playsinline
+          >
+            <track kind="captions" />
+          </video>
+
+          <div class="viewer-actions">
+            <VBtn
+              v-if="viewerSrc"
+              class="viewer-download"
+              icon
+              size="36"
+              variant="text"
+              @click.stop="downloadViewerMedia"
+            >
+              <VIcon size="20">tabler-download</VIcon>
+            </VBtn>
+            <VBtn
+              class="viewer-close"
+              icon
+              size="36"
+              variant="text"
+              @click="viewerOpen = false"
+            >
+              <VIcon size="20">tabler-x</VIcon>
+            </VBtn>
+          </div>
+        </div>
+
+        <div v-if="viewerCaption" class="viewer-caption">
+          {{ viewerCaption }}
+        </div>
+      </div>
+    </div>
+  </VDialog>
+
+  <VDialog
+    v-model="audioModalOpen"
+    max-width="500"
+    scrim="rgba(0,0,0,.7)"
+    :scrollable="false"
+  >
+    <VCard class="audio-modal-card">
+      <VCardTitle class="d-flex align-center justify-space-between">
+        <span class="text-truncate">{{ audioModalName }}</span>
+        <VBtn icon size="24" variant="text" @click="closeAudioModal">
+          <VIcon size="18" icon="tabler-x" />
+        </VBtn>
+      </VCardTitle>
+      <VCardText>
+        <div class="audio-modal-player">
+          <audio
+            ref="audioModalPlayer"
+            :src="audioModalSrc"
+            preload="metadata"
+            style="display: none"
+          />
+          <div class="audio-modal-controls">
+            <VBtn
+              icon
+              size="48"
+              variant="flat"
+              color="primary"
+              class="audio-modal-play-btn"
+              @click="toggleAudioModalPlay"
+            >
+              <VIcon size="24">
+                {{
+                  audioModalIsPlaying
+                    ? 'tabler-player-pause'
+                    : 'tabler-player-play'
+                }}
+              </VIcon>
+            </VBtn>
+            <div class="audio-modal-info">
+              <div class="audio-modal-time">
+                <span>{{ formatAudioModalTime(audioModalCurrentTime) }}</span>
+                <span>/</span>
+                <span>{{ formatAudioModalTime(audioModalDuration) }}</span>
+              </div>
+              <div class="audio-modal-progress-container">
+                <div
+                  class="audio-modal-progress-bar"
+                  :style="{ width: `${audioModalProgress}%` }"
+                ></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </VCardText>
+    </VCard>
+  </VDialog>
 </template>
 
 <style lang="scss">
@@ -813,8 +3298,434 @@ $chat-app-header-height: 76px;
   opacity: 0;
 }
 
+.composer-attachment {
+  display: flex;
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.composer-attachment-card {
+  inline-size: 100%;
+  max-inline-size: 100%;
+}
+
+.audio-recording-inline {
+  background: rgb(var(--v-theme-surface));
+  border-radius: 12px;
+  min-height: 56px;
+}
+
+.audio-recording-inline .record-action {
+  color: rgba(var(--v-theme-on-surface), 0.7) !important;
+}
+
+.audio-recording-inline .record-send-btn {
+  min-width: 42px !important;
+  height: 42px !important;
+}
+
+.audio-recording-info {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.audio-wave-canvas {
+  width: min(220px, 35vw);
+  height: 28px;
+  background: transparent;
+}
+
+.audio-recording-clock {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  min-width: 52px;
+  text-align: center;
+}
+
+.recording-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgb(var(--v-theme-error));
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.recording-dot.is-paused {
+  background: rgba(var(--v-theme-on-surface), 0.4);
+  animation: none;
+}
+
+.record-action {
+  color: rgba(var(--v-theme-on-surface), 0.6) !important;
+}
+
+.view-once-toggle.is-active {
+  color: rgb(var(--v-theme-primary)) !important;
+}
+
+.audio-recording-controls {
+  gap: 8px !important;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 0.65;
+  }
+}
+
+.attachment-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.attachment-grid--videos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.video-preview-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: 10px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+  padding: 8px;
+  overflow: hidden;
+}
+
+.video-preview-container {
+  position: relative;
+  inline-size: 100%;
+  block-size: 120px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.video-preview {
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: 8px;
+  background: #000;
+  object-fit: cover;
+  cursor: pointer;
+  display: block;
+}
+
+.video-preview-play-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.95);
+  background: rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
+  z-index: 1;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.video-preview-play-overlay .v-icon {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform: scale(1);
+}
+
+.video-preview-wrapper:hover .video-preview-play-overlay {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.video-preview-wrapper:hover .video-preview-play-overlay .v-icon {
+  transform: scale(1.2);
+}
+
+.video-preview-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.video-preview-name {
+  font-weight: 600;
+  color: rgb(var(--v-theme-primary));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.video-preview-info {
+  white-space: nowrap;
+}
+
+.video-preview-remove {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: 6px;
+}
+
+.attachment-grid--audios {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.audio-preview-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: 10px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+  padding: 8px;
+  overflow: hidden;
+}
+
+.audio-preview-container {
+  position: relative;
+  inline-size: 100%;
+  block-size: 120px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(var(--v-theme-primary), 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.audio-preview-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.audio-preview-play-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.95);
+  background: rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
+  z-index: 1;
+  border-radius: 8px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.audio-preview-wrapper:hover .audio-preview-play-overlay {
+  opacity: 1;
+}
+
+.audio-preview-play-overlay .v-icon {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform: scale(1);
+}
+
+.audio-preview-wrapper:hover .audio-preview-play-overlay .v-icon {
+  transform: scale(1.2);
+}
+
+.audio-preview-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.audio-preview-name {
+  font-weight: 600;
+  color: rgb(var(--v-theme-primary));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.audio-preview-info {
+  white-space: nowrap;
+}
+
+.audio-preview-remove {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: 6px;
+}
+
+.audio-modal-card {
+  border-radius: 12px;
+}
+
+.audio-modal-player {
+  padding: 16px 0;
+}
+
+.audio-modal-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.audio-modal-play-btn {
+  min-width: 48px !important;
+  width: 48px !important;
+  height: 48px !important;
+  flex-shrink: 0;
+}
+
+.audio-modal-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.audio-modal-time {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.875rem;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  font-variant-numeric: tabular-nums;
+}
+
+.audio-modal-progress-container {
+  width: 100%;
+  height: 4px;
+  background: rgba(var(--v-theme-on-surface), 0.12);
+  border-radius: 2px;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.audio-modal-progress-bar {
+  height: 100%;
+  background: rgb(var(--v-theme-primary));
+  border-radius: 2px;
+  transition: width 0.1s linear;
+}
+
+.photo-preview-wrapper {
+  position: relative;
+  inline-size: 132px;
+  block-size: 132px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.photo-preview-image {
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.photo-preview-wrapper:hover .photo-preview-image {
+  opacity: 0.9;
+}
+
+.photo-preview-remove {
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 4px;
+}
+
+.viewer-wrap {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  padding: 16px;
+  overflow: hidden;
+}
+
+.viewer-box {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  max-width: 90vw;
+  max-height: 90vh;
+}
+
+.viewer-media-container {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.viewer-img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 90vw;
+  max-height: 85vh;
+  object-fit: contain;
+  border-radius: 12px;
+}
+
+.viewer-video {
+  display: block;
+  max-width: 90vw;
+  max-height: 85vh;
+  border-radius: 12px;
+  background: #000;
+}
+
+.viewer-actions {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 10;
+}
+
+.viewer-close,
+.viewer-download {
+  color: white !important;
+  background: rgba(0, 0, 0, 0.5) !important;
+  border-radius: 50%;
+  min-width: 36px;
+  height: 36px;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.7) !important;
+  }
+}
+
+.viewer-caption {
+  color: white;
+  text-align: center;
+  margin: 12px;
+}
+
 .message-target-flash {
   animation: messageTargetFlash 1.1s ease;
+}
+
+.message-target-persistent {
+  background-color: rgba(var(--v-theme-primary), 0.12);
+  transition: background-color 0.3s ease;
 }
 @keyframes messageTargetFlash {
   0% {
@@ -823,5 +3734,27 @@ $chat-app-header-height: 76px;
   100% {
     background-color: transparent;
   }
+}
+
+.document-preview-item {
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+}
+
+.document-preview-name {
+  display: inline-block;
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.document-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-inline-end: 4px;
 }
 </style>

@@ -1,4 +1,4 @@
-import { Type } from '@fastify/type-provider-typebox';
+import { Type } from '@sinclair/typebox';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 
 export const healthCheckSchema = {

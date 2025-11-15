@@ -247,7 +247,7 @@ watch(
         </template>
 
         <template #item.account_status="{ item }">
-          {{ $t(`${item.account_status?.name}`) }}
+          {{ item.account_status?.name }}
         </template>
 
         <template #item.plan="{ item }">

@@ -244,7 +244,7 @@ watch(
         </template>
 
         <template #item.label_status="{ item }">
-          {{ $t(`${item.label_status?.name}`) }}
+          {{ item.label_status?.name }}
         </template>
 
         <template #item.created_at="{ item }">

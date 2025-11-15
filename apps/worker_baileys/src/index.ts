@@ -13,6 +13,7 @@ import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 import { safePlugin } from '@core/common/functions/safePlugin';
+import baileysReadyHook from './hooks/baileysReady.hook';
 
 const server = fastify({
   pluginTimeout: 120000,
@@ -41,6 +42,7 @@ server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
   module: ERouteModule.worker_baileys,
 });
 server.register(safePlugin(consumerPlugin, 'consumer'));
+server.register(safePlugin(baileysReadyHook, 'baileysReady'));
 
 const start = async () => {
   try {

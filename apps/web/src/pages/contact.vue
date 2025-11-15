@@ -289,23 +289,23 @@ watch(
         :loading-text="$t('loading_text')"
       >
         <template #item.name="{ item }">
-          {{ $t(`${item?.name}`) }}
+          {{ item?.name }}
         </template>
 
         <template #item.last_name="{ item }">
-          {{ $t(`${item?.last_name}`) }}
+          {{ item?.last_name }}
         </template>
 
         <template #item.nickname="{ item }">
-          {{ $t(`${item?.nickname}`) }}
+          {{ item?.nickname }}
         </template>
 
         <template #item.email="{ item }">
-          {{ $t(`${item?.email_partial}`) }}
+          {{ item?.email_partial }}
         </template>
 
         <template #item.phone="{ item }">
-          {{ $t(`${item?.phone_partial}`) }}
+          {{ item?.phone_partial }}
         </template>
 
         <template #item.label_template="{ item }">

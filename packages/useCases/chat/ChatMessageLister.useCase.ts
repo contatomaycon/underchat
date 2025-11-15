@@ -42,7 +42,7 @@ export class ChatMessageListerUseCase {
     const queryElastic = {
       from: (currentPage - 1) * perPage,
       size: perPage,
-      sort: [{ date: { order: 'asc' } }],
+      sort: [{ date: { order: 'desc' } }],
       query: {
         bool: {
           must: [

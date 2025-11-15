@@ -32,6 +32,9 @@ export const mensageMappings = () => {
             addressing_mode: {
               type: 'text',
             },
+            is_view_once: {
+              type: 'boolean',
+            },
           },
         },
         type_user: {
@@ -61,6 +64,12 @@ export const mensageMappings = () => {
               type: 'text',
             },
           },
+        },
+        deleted: {
+          type: 'boolean',
+        },
+        has_quoted: {
+          type: 'boolean',
         },
         content: {
           type: 'nested',
@@ -133,10 +142,153 @@ export const mensageMappings = () => {
                     addressing_mode: {
                       type: 'text',
                     },
+                    is_view_once: {
+                      type: 'boolean',
+                    },
                   },
                 },
                 message: {
                   type: 'text',
+                },
+                type: {
+                  type: 'keyword',
+                },
+                image: {
+                  type: 'nested',
+                  properties: {
+                    url: {
+                      type: 'keyword',
+                    },
+                    caption: {
+                      type: 'text',
+                      fields: {
+                        keyword: {
+                          type: 'keyword',
+                          ignore_above: 256,
+                        },
+                      },
+                    },
+                    mimetype: {
+                      type: 'keyword',
+                    },
+                    extension: {
+                      type: 'keyword',
+                    },
+                    size: {
+                      type: 'long',
+                    },
+                    height: {
+                      type: 'integer',
+                    },
+                    width: {
+                      type: 'integer',
+                    },
+                    thumbnail: {
+                      type: 'text',
+                    },
+                  },
+                },
+                video: {
+                  type: 'nested',
+                  properties: {
+                    url: {
+                      type: 'keyword',
+                    },
+                    caption: {
+                      type: 'text',
+                      fields: {
+                        keyword: {
+                          type: 'keyword',
+                          ignore_above: 256,
+                        },
+                      },
+                    },
+                    mimetype: {
+                      type: 'keyword',
+                    },
+                    extension: {
+                      type: 'keyword',
+                    },
+                    size: {
+                      type: 'long',
+                    },
+                    duration: {
+                      type: 'integer',
+                    },
+                    height: {
+                      type: 'integer',
+                    },
+                    width: {
+                      type: 'integer',
+                    },
+                    thumbnail: {
+                      type: 'text',
+                    },
+                  },
+                },
+                document: {
+                  type: 'nested',
+                  properties: {
+                    url: {
+                      type: 'keyword',
+                    },
+                    name: {
+                      type: 'text',
+                      fields: {
+                        keyword: {
+                          type: 'keyword',
+                          ignore_above: 256,
+                        },
+                      },
+                    },
+                    mimetype: {
+                      type: 'keyword',
+                    },
+                    extension: {
+                      type: 'keyword',
+                    },
+                    size: {
+                      type: 'long',
+                    },
+                  },
+                },
+                audio: {
+                  type: 'nested',
+                  properties: {
+                    url: {
+                      type: 'keyword',
+                    },
+                    name: {
+                      type: 'text',
+                      fields: {
+                        keyword: {
+                          type: 'keyword',
+                          ignore_above: 256,
+                        },
+                      },
+                    },
+                    mimetype: {
+                      type: 'keyword',
+                    },
+                    extension: {
+                      type: 'keyword',
+                    },
+                    size: {
+                      type: 'long',
+                    },
+                    duration: {
+                      type: 'integer',
+                    },
+                    ptt: {
+                      type: 'boolean',
+                    },
+                    view_once: {
+                      type: 'boolean',
+                    },
+                    waveform: {
+                      type: 'keyword',
+                    },
+                  },
                 },
               },
             },
@@ -170,6 +322,125 @@ export const mensageMappings = () => {
                 width: {
                   type: 'integer',
                 },
+                thumbnail: {
+                  type: 'text',
+                },
+              },
+            },
+            video: {
+              type: 'nested',
+              properties: {
+                url: {
+                  type: 'keyword',
+                },
+                caption: {
+                  type: 'text',
+                  fields: {
+                    keyword: {
+                      type: 'keyword',
+                      ignore_above: 256,
+                    },
+                  },
+                },
+                mimetype: {
+                  type: 'keyword',
+                },
+                extension: {
+                  type: 'keyword',
+                },
+                size: {
+                  type: 'long',
+                },
+                duration: {
+                  type: 'integer',
+                },
+                height: {
+                  type: 'integer',
+                },
+                width: {
+                  type: 'integer',
+                },
+                thumbnail: {
+                  type: 'text',
+                },
+              },
+            },
+            document: {
+              type: 'nested',
+              properties: {
+                url: {
+                  type: 'keyword',
+                },
+                name: {
+                  type: 'text',
+                  fields: {
+                    keyword: {
+                      type: 'keyword',
+                      ignore_above: 256,
+                    },
+                  },
+                },
+                mimetype: {
+                  type: 'keyword',
+                },
+                extension: {
+                  type: 'keyword',
+                },
+                size: {
+                  type: 'long',
+                },
+              },
+            },
+            audio: {
+              type: 'nested',
+              properties: {
+                url: {
+                  type: 'keyword',
+                },
+                name: {
+                  type: 'text',
+                  fields: {
+                    keyword: {
+                      type: 'keyword',
+                      ignore_above: 256,
+                    },
+                  },
+                },
+                mimetype: {
+                  type: 'keyword',
+                },
+                extension: {
+                  type: 'keyword',
+                },
+                size: {
+                  type: 'long',
+                },
+                duration: {
+                  type: 'integer',
+                },
+                ptt: {
+                  type: 'boolean',
+                },
+                view_once: {
+                  type: 'boolean',
+                },
+                waveform: {
+                  type: 'keyword',
+                },
+              },
+            },
+            reactions: {
+              type: 'nested',
+              properties: {
+                emoji: {
+                  type: 'keyword',
+                },
+                user_id: {
+                  type: 'keyword',
+                },
+                user_name: {
+                  type: 'text',
+                },
               },
             },
           },
@@ -186,7 +457,13 @@ export const mensageMappings = () => {
             is_seen: {
               type: 'boolean',
             },
+            is_sent_to_internal: {
+              type: 'boolean',
+            },
           },
+        },
+        hash: {
+          type: 'keyword',
         },
         date: {
           type: 'date',

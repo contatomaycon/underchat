@@ -1,6 +1,5 @@
 export enum EMessageType {
   text = 'text',
-  text_quoted = 'text_quoted',
   mention = 'mention',
   forward = 'forward',
   location = 'location',
@@ -14,6 +13,7 @@ export enum EMessageType {
   audio = 'audio',
   sticker = 'sticker',
   document = 'document',
+  view_once = 'view_once',
   view_once_image = 'view_once_image',
   view_once_video = 'view_once_video',
   delete_message = 'delete_message',

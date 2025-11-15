@@ -4,6 +4,9 @@ import { ETypeUserChat } from '../enums/ETypeUserChat';
 import {
   ImageMessageChat,
   LinkPreview,
+  DocumentMessageChat,
+  VideoMessageChat,
+  AudioMessageChat,
 } from '@core/schema/chat/listMessageChats/response.schema';
 
 interface IAccount {
@@ -21,6 +24,7 @@ interface ISummary {
   is_sent: boolean;
   is_delivered: boolean;
   is_seen: boolean;
+  is_sent_to_internal: boolean;
 }
 
 interface IWorker {
@@ -31,6 +35,17 @@ interface IWorker {
 export interface IQuotedMessage {
   key: IMessageKey;
   message?: string | null;
+  type?: EMessageType | null;
+  image?: ImageMessageChat | null;
+  video?: VideoMessageChat | null;
+  document?: DocumentMessageChat | null;
+  audio?: AudioMessageChat | null;
+}
+
+export interface IReaction {
+  emoji: string;
+  user_id?: string | null;
+  user_name?: string | null;
 }
 
 export interface IContent {
@@ -40,6 +55,10 @@ export interface IContent {
   link_preview?: LinkPreview | WAUrlInfo | null;
   quoted?: IQuotedMessage | null;
   image?: ImageMessageChat | null;
+  video?: VideoMessageChat | null;
+  document?: DocumentMessageChat | null;
+  audio?: AudioMessageChat | null;
+  reactions?: IReaction[] | null;
 }
 
 export interface IMessageKey {
@@ -50,6 +69,7 @@ export interface IMessageKey {
   participant?: string | null;
   participant_alt?: string | null;
   addressing_mode?: string | null;
+  is_view_once: boolean;
 }
 
 export interface IChatMessage {
@@ -64,4 +84,7 @@ export interface IChatMessage {
   content?: IContent | null;
   summary: ISummary;
   date: string;
+  deleted?: boolean;
+  has_quoted?: boolean;
+  hash?: string | null;
 }

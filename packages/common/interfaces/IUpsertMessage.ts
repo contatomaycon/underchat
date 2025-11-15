@@ -7,4 +7,5 @@ export interface IUpsertMessage {
   type: EMessageType;
   message: WAMessage;
   photo?: string | null;
+  has_quoted: boolean;
 }
