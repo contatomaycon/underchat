@@ -125,7 +125,8 @@ const defaultConfig: FlatpickrOptions = {
     return new Date();
   },
   formatDate: (date, format) => {
-    if (!date || !(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+    if (!date || !(date instanceof Date) || Number.isNaN(date.getTime()))
+      return '';
     const day = String(date.getDate()).padStart(2, '0');
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const year = date.getFullYear();
@@ -186,8 +187,12 @@ const formatPartialDate = (
   return '';
 };
 
+const extractDigits = (value: string): string => {
+  return value.replace(/\D/g, '');
+};
+
 const applyDateMask = (value: string): string => {
-  const digits = value.replace(/\D/g, '').slice(0, 8);
+  const digits = extractDigits(value).slice(0, 8);
   if (digits.length === 0) return '';
 
   const day = digits.slice(0, 2);
@@ -209,7 +214,8 @@ const validateDateInput = (value: string): boolean => {
   const month = Number.parseInt(parts[1], 10);
   const year = Number.parseInt(parts[2], 10);
 
-  if (Number.isNaN(day) || Number.isNaN(month) || Number.isNaN(year)) return true;
+  if (Number.isNaN(day) || Number.isNaN(month) || Number.isNaN(year))
+    return true;
 
   if (parts[0].length === 2 && parts[1].length === 2 && parts[2].length === 4) {
     return isValidDateValue(day, month, year);
@@ -336,10 +342,7 @@ const setupInputMask = () => {
     input.removeEventListener('paste', inputMaskHandlers.handlePaste);
   }
 
-  const findDigitPosition = (
-    value: string,
-    targetDigit: number
-  ): number => {
+  const findDigitPosition = (value: string, targetDigit: number): number => {
     let digitCount = 0;
     for (let i = 0; i < value.length; i++) {
       if (/\d/.test(value[i])) {
@@ -419,14 +422,14 @@ const setupInputMask = () => {
     const originalValue = target.value;
     const cursorPosBefore = target.selectionStart || 0;
 
-    const digitsBeforeCursor = originalValue
-      .slice(0, cursorPosBefore)
-      .replace(/\D/g, '').length;
-    const allDigits = originalValue.replace(/\D/g, '');
+    const digitsBeforeCursor = extractDigits(
+      originalValue.slice(0, cursorPosBefore)
+    ).length;
+    const allDigits = extractDigits(originalValue);
     const digitsAfter = allDigits.length;
 
     const maskedValue = applyDateMask(originalValue);
-    const maskedDigits = maskedValue.replace(/\D/g, '');
+    const maskedDigits = extractDigits(maskedValue);
 
     if (maskedValue !== originalValue) {
       target.value = maskedValue;
@@ -463,7 +466,7 @@ const setupInputMask = () => {
     }
 
     const currentValue = target.value;
-    const digits = currentValue.replace(/\D/g, '');
+    const digits = extractDigits(currentValue);
 
     if (digits.length >= 8 && /\d/.test(key)) {
       e.preventDefault();
