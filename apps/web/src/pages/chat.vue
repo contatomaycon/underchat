@@ -10,7 +10,9 @@ import AppContactPicker from '@/components/chat/AppContactPicker.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
+import { useContactStore } from '@/@webcore/stores/contact';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
+import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
 import {
   ContentMessageChat,
@@ -62,6 +64,7 @@ definePage({
 });
 
 const chatStore = useChatStore();
+const contactStore = useContactStore();
 const { name } = useTheme();
 const vuetifyDisplays = useDisplay();
 
@@ -86,6 +89,8 @@ const fileVideoRef = ref<HTMLInputElement | null>(null);
 const fileAudioRef = ref<HTMLInputElement | null>(null);
 const isEmojiOpen = ref(false);
 const isContactPickerOpen = ref(false);
+const isContactViewModalOpen = ref(false);
+const selectedContactDetails = ref<ViewContactResponse | null>(null);
 const selectedPhotos = ref<ISelectedPhotoPreview[]>([]);
 const selectedDocuments = ref<ISelectedDocumentPreview[]>([]);
 const selectedVideos = ref<ISelectedVideoPreview[]>([]);
@@ -1902,6 +1907,14 @@ const removeContact = (index: number) => {
   selectedContacts.value.splice(index, 1);
 };
 
+const viewContact = async (contactId: string) => {
+  const contact = await contactStore.getContactById(contactId);
+  if (contact) {
+    selectedContactDetails.value = contact;
+    isContactViewModalOpen.value = true;
+  }
+};
+
 const audioModalOpen = ref(false);
 const audioModalSrc = ref<string>('');
 const audioModalName = ref<string>('');
@@ -2940,6 +2953,8 @@ onBeforeUnmount(() => {
                       v-for="(contact, index) in selectedContacts"
                       :key="`${contact.contact_id}-${index}`"
                       class="contact-preview-wrapper"
+                      @click="viewContact(contact.contact_id)"
+                      style="cursor: pointer"
                     >
                       <div class="contact-preview-container">
                         <div class="contact-preview-icon-wrapper">
@@ -3289,6 +3304,119 @@ onBeforeUnmount(() => {
     v-model="isContactPickerOpen"
     @select="onContactsSelected"
   />
+
+  <VDialog v-model="isContactViewModalOpen" max-width="600">
+    <DialogCloseBtn @click="isContactViewModalOpen = false" />
+
+    <template v-if="contactStore.loading">
+      <VOverlay
+        :model-value="contactStore.loading"
+        class="align-center justify-center"
+      >
+        <VProgressCircular color="primary" indeterminate size="32" />
+      </VOverlay>
+    </template>
+
+    <VCard :title="$t('view_contact')" v-if="selectedContactDetails">
+      <VCardText>
+        <VRow>
+          <VCol cols="12" md="6">
+            <AppTextField
+              :model-value="selectedContactDetails.name"
+              :label="$t('name') + ':'"
+              readonly
+            />
+          </VCol>
+
+          <VCol cols="12" md="6">
+            <AppTextField
+              :model-value="selectedContactDetails.last_name || ''"
+              :label="$t('last_name') + ':'"
+              readonly
+            />
+          </VCol>
+        </VRow>
+        <VRow>
+          <VCol cols="12" md="6">
+            <AppTextField
+              :model-value="selectedContactDetails.nickname || ''"
+              :label="$t('nickname') + ':'"
+              readonly
+            />
+          </VCol>
+
+          <VCol cols="12" md="6">
+            <AppTextField
+              :model-value="selectedContactDetails.email_partial || ''"
+              :label="$t('email') + ':'"
+              readonly
+            />
+          </VCol>
+        </VRow>
+        <VRow>
+          <VCol cols="12" md="6">
+            <AppTextField
+              :model-value="selectedContactDetails.phone_ddi || ''"
+              :label="$t('phone_ddi') + ':'"
+              readonly
+            />
+          </VCol>
+
+          <VCol cols="12" md="6">
+            <AppTextField
+              :model-value="selectedContactDetails.phone_partial || ''"
+              :label="$t('phone') + ':'"
+              readonly
+            />
+          </VCol>
+        </VRow>
+        <VRow>
+          <VCol cols="12" md="6">
+            <AppTextField
+              :model-value="
+                selectedContactDetails.birthday
+                  ? new Date(
+                      selectedContactDetails.birthday + 'T00:00:00'
+                    ).toLocaleDateString('pt-BR')
+                  : ''
+              "
+              :label="$t('birthday') + ':'"
+              readonly
+            />
+          </VCol>
+
+          <VCol cols="12" md="6">
+            <AppTextField
+              :model-value="selectedContactDetails.label_template?.label || ''"
+              :label="$t('label') + ':'"
+              readonly
+            />
+          </VCol>
+        </VRow>
+        <VRow>
+          <VCol cols="12">
+            <label class="text-body-2 mb-1" for="notes-textarea">
+              {{ $t('notes') }}:
+            </label>
+            <VTextarea
+              :model-value="selectedContactDetails.notes || ''"
+              readonly
+            />
+          </VCol>
+        </VRow>
+      </VCardText>
+
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          @click="isContactViewModalOpen = false"
+        >
+          {{ $t('close') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
 
   <VSnackbar
     v-model="chatStore.snackbar.status"

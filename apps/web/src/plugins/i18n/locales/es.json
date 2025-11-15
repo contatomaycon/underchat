@@ -403,6 +403,7 @@
     "nickname": "Apodo",
     "contacts": "Contactos",
     "edit_contact": "Editar Contacto",
+    "view_contact": "Ver Contacto",
     "delete_contact": "Eliminar Contacto",
     "delete_contact_confirmation": "¿Estás seguro de que deseas eliminar este contacto?",
     "export_csv": "Exportar a CSV",

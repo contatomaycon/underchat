@@ -403,6 +403,7 @@
     "nickname": "Nickname",
     "contacts": "Contacts",
     "edit_contact": "Edit Contact",
+    "view_contact": "View Contact",
     "delete_contact": "Delete Contact",
     "delete_contact_confirmation": "Are you sure you want to delete this contact?",
     "export_csv": "Export to CSV",

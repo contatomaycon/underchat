@@ -414,6 +414,7 @@
     "nickname": "Apelido",
     "contacts": "Contatos",
     "edit_contact": "Editar Contato",
+    "view_contact": "Visualizar Contato",
     "delete_contact": "Excluir Contato",
     "delete_contact_confirmation": "Você tem certeza que deseja excluir este contato?",
     "export_csv": "Exportar para CSV",
