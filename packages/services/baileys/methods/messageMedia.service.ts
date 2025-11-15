@@ -82,6 +82,7 @@ export class BaileysMessageMediaService {
       seconds?: number;
       mimetype?: string;
       viewOnce?: boolean;
+      waveform?: Uint8Array;
     },
     options?: MiscMessageGenerationOptions
   ) {
@@ -91,7 +92,8 @@ export class BaileysMessageMediaService {
       seconds: args?.seconds,
       mimetype: args?.mimetype,
       viewOnce: args?.viewOnce,
-    };
+      waveform: args?.waveform,
+    } as AnyMessageContent;
 
     return this.baileysHelpersService.send(jid, content, options);
   }

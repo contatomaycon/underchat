@@ -285,6 +285,9 @@ export const mensageMappings = () => {
                     view_once: {
                       type: 'boolean',
                     },
+                    waveform: {
+                      type: 'integer',
+                    },
                   },
                 },
               },
@@ -420,6 +423,9 @@ export const mensageMappings = () => {
                 },
                 view_once: {
                   type: 'boolean',
+                },
+                waveform: {
+                  type: 'integer',
                 },
               },
             },

@@ -13,6 +13,7 @@ interface ConvertAudioResult {
   buffer: Buffer;
   mimetype: string;
   extension: string;
+  duration?: number;
 }
 
 @injectable()
@@ -25,24 +26,71 @@ export class AudioConverterService {
     inputMimetype?: string | null
   ): Promise<ConvertAudioResult> {
     const extensionFromMimetype = this.getExtensionFromMimetype(inputMimetype);
-
-    if (extensionFromMimetype === 'ogg' || extensionFromMimetype === 'opus') {
-      return {
-        buffer: inputBuffer,
-        mimetype: inputMimetype || this.targetMimetype,
-        extension: this.targetFormat,
-      };
-    }
-
     const headerFormat = this.detectFormatFromBuffer(inputBuffer);
     const currentFormat = headerFormat || extensionFromMimetype || 'webm';
 
     if (currentFormat === this.targetFormat) {
-      return {
-        buffer: inputBuffer,
-        mimetype: inputMimetype || this.targetMimetype,
-        extension: this.targetFormat,
-      };
+      const tempPath = join(
+        tmpdir(),
+        `audio-probe-${Date.now()}-${randomBytes(8).toString('hex')}.ogg`
+      );
+
+      let duration: number | undefined;
+      try {
+        await writeFile(tempPath, inputBuffer);
+
+        const probeCommand = [
+          'ffprobe',
+          '-v',
+          'error',
+          '-show_entries',
+          'format=duration,stream=codec_name,stream=channels,stream=sample_rate,stream=bit_rate',
+          '-of',
+          'json',
+          `"${tempPath}"`,
+        ].join(' ');
+
+        const { stdout } = await execAsync(probeCommand);
+        const probeData = JSON.parse(stdout);
+        const format = probeData.format;
+        const stream = probeData.streams?.[0];
+
+        if (format?.duration) {
+          const parsedDuration = parseFloat(format.duration);
+          if (Number.isFinite(parsedDuration) && parsedDuration > 0) {
+            duration = Math.round(parsedDuration);
+          }
+        }
+
+        const codecName = stream?.codec_name;
+        const channels = stream?.channels;
+        const sampleRate = stream?.sample_rate;
+        const bitRate = stream?.bit_rate ? parseInt(stream.bit_rate, 10) : null;
+
+        const isOpus = codecName === 'opus';
+        const isMono = channels === 1;
+        const is48kHz = sampleRate === 48000;
+        const isCorrectBitrate =
+          !bitRate || (bitRate >= 16000 && bitRate <= 64000);
+
+        if (isOpus && isMono && is48kHz && isCorrectBitrate) {
+          try {
+            await unlink(tempPath);
+          } catch {}
+          return {
+            buffer: inputBuffer,
+            mimetype: this.targetMimetype,
+            extension: this.targetFormat,
+            duration,
+          };
+        }
+      } catch {
+        duration = undefined;
+      } finally {
+        try {
+          await unlink(tempPath);
+        } catch {}
+      }
     }
 
     const inputRandomId = randomBytes(8).toString('hex');
@@ -61,16 +109,58 @@ export class AudioConverterService {
     try {
       await writeFile(inputPath, inputBuffer);
 
-      const ffmpegCommand = `ffmpeg -i "${inputPath}" -vn -c:a libopus -b:a 32k -ar 48000 -ac 1 -f ${this.targetFormat} "${outputPath}" -y`;
+      const ffmpegCommand = [
+        'ffmpeg',
+        '-i',
+        `"${inputPath}"`,
+        '-vn',
+        '-c:a libopus',
+        '-b:a 32k',
+        '-ar 48000',
+        '-ac 1',
+        '-application voip',
+        '-frame_duration 60',
+        '-packet_loss 0',
+        '-compression_level 10',
+        '-f ogg',
+        `"${outputPath}"`,
+        '-y',
+      ].join(' ');
 
       await execAsync(ffmpegCommand);
 
       const outputBuffer = await readFile(outputPath);
 
+      let duration: number | undefined;
+      try {
+        const probeCommand = [
+          'ffprobe',
+          '-v',
+          'error',
+          '-show_entries',
+          'format=duration',
+          '-of',
+          'default=noprint_wrappers=1:nokey=1',
+          `"${outputPath}"`,
+        ].join(' ');
+
+        const { stdout } = await execAsync(probeCommand);
+        const durationStr = stdout.trim();
+        if (durationStr) {
+          const parsedDuration = parseFloat(durationStr);
+          if (Number.isFinite(parsedDuration) && parsedDuration > 0) {
+            duration = Math.round(parsedDuration);
+          }
+        }
+      } catch {
+        duration = undefined;
+      }
+
       return {
         buffer: outputBuffer,
         mimetype: this.targetMimetype,
         extension: this.targetFormat,
+        duration,
       };
     } finally {
       try {
@@ -252,5 +342,94 @@ export class AudioConverterService {
     }
 
     return '';
+  }
+
+  async generateWaveformWithFfmpeg(
+    audioBuffer: Buffer
+  ): Promise<Uint8Array | undefined> {
+    const tempInputPath = join(
+      tmpdir(),
+      `audio-waveform-input-${Date.now()}-${randomBytes(8).toString('hex')}.ogg`
+    );
+    const tempOutputPath = join(
+      tmpdir(),
+      `audio-waveform-output-${Date.now()}-${randomBytes(8).toString('hex')}.raw`
+    );
+
+    try {
+      await writeFile(tempInputPath, audioBuffer);
+
+      const ffmpegCommand = [
+        'ffmpeg',
+        '-i',
+        `"${tempInputPath}"`,
+        '-vn',
+        '-acodec pcm_s16le',
+        '-ac 1',
+        '-ar 8000',
+        '-f s16le',
+        `"${tempOutputPath}"`,
+        '-y',
+      ].join(' ');
+
+      await execAsync(ffmpegCommand);
+
+      const pcmData = await readFile(tempOutputPath);
+      const samples = 64;
+      const blockSize = Math.floor(pcmData.length / 2 / samples);
+
+      if (blockSize < 1) {
+        return undefined;
+      }
+
+      const filteredData: number[] = [];
+      for (let i = 0; i < samples; i++) {
+        const blockStart = blockSize * i * 2;
+        let sumSquares = 0;
+        let sampleCount = 0;
+        for (let j = 0; j < blockSize; j++) {
+          const offset = blockStart + j * 2;
+          if (offset + 1 < pcmData.length) {
+            const sample = pcmData.readInt16LE(offset);
+            sumSquares += sample * sample;
+            sampleCount++;
+          }
+        }
+        const rms = sampleCount > 0 ? Math.sqrt(sumSquares / sampleCount) : 0;
+        filteredData.push(rms);
+      }
+
+      const max = Math.max(...filteredData);
+      if (max === 0) {
+        return undefined;
+      }
+
+      const normalizedData = filteredData.map((n) => {
+        const normalized = n / max;
+        const amplified = Math.pow(normalized, 0.5);
+        const minThreshold = 0.15;
+        return Math.max(minThreshold, amplified);
+      });
+
+      const maxAmplified = Math.max(...normalizedData);
+      const finalMultiplier = 100 / maxAmplified;
+      const waveform = new Uint8Array(
+        normalizedData.map((n) =>
+          Math.min(100, Math.floor(n * finalMultiplier))
+        )
+      );
+
+      return waveform;
+    } catch (error) {
+      console.error('Failed to generate waveform with ffmpeg:', error);
+      return undefined;
+    } finally {
+      try {
+        await unlink(tempInputPath);
+      } catch {}
+      try {
+        await unlink(tempOutputPath);
+      } catch {}
+    }
   }
 }

@@ -366,7 +366,9 @@ export class ChatMessageCreatorUseCase {
   private async uploadAudios(
     audios: UploadFileRequest[],
     accountId: string
-  ): Promise<UploadFileResponse[]> {
+  ): Promise<
+    Array<UploadFileResponse & { duration?: number; waveform?: number[] }>
+  > {
     const uploadPromises = audios.map(async (audio) => {
       const originalBuffer = await audio.toBuffer();
       const originalMimetype = audio.mimetype || null;
@@ -379,19 +381,43 @@ export class ChatMessageCreatorUseCase {
       const filename = audio.filename.replace(/\.[^.]+$/, '') || 'audio';
       const newFilename = `${filename}.${converted.extension}`;
 
-      return this.storageService.uploadAudioFromBuffer(
-        converted.buffer,
-        newFilename,
-        converted.mimetype,
-        accountId
-      );
+      const [uploadResult, waveformUint8] = await Promise.all([
+        this.storageService.uploadAudioFromBuffer(
+          converted.buffer,
+          newFilename,
+          converted.mimetype,
+          accountId
+        ),
+        this.audioConverterService
+          .generateWaveformWithFfmpeg(converted.buffer)
+          .catch((error) => {
+            console.error('Failed to generate waveform:', error);
+            return undefined;
+          }),
+      ]);
+
+      if (!uploadResult) {
+        return null;
+      }
+
+      const waveform = waveformUint8 ? Array.from(waveformUint8) : undefined;
+
+      return {
+        ...uploadResult,
+        mimetype: converted.mimetype,
+        duration: converted.duration,
+        waveform,
+      };
     });
 
     const uploadedAudios = await Promise.all(uploadPromises);
 
-    return uploadedAudios.filter(
-      (audio): audio is UploadFileResponse => audio !== null
+    const filtered = uploadedAudios.filter(
+      (audio): audio is NonNullable<typeof audio> => audio !== null
     );
+    return filtered as Array<
+      UploadFileResponse & { duration?: number; waveform?: number[] }
+    >;
   }
 
   private createImageMessage(
@@ -539,12 +565,15 @@ export class ChatMessageCreatorUseCase {
         audio: {
           url: audioData.url,
           name: audioData.name,
-          mimetype: audioData.mimetype ?? null,
+          mimetype: isPtt
+            ? 'audio/ogg; codecs=opus'
+            : (audioData.mimetype ?? 'audio/mpeg'),
           extension: audioData.extension,
           size: audioData.size,
           duration: duration && Number.isFinite(duration) ? duration : null,
           ptt: isPtt,
           view_once: isViewOnce,
+          waveform: (audioData as { waveform?: number[] }).waveform ?? null,
         },
       },
       date: new Date().toISOString(),
@@ -815,7 +844,9 @@ export class ChatMessageCreatorUseCase {
   ): Promise<boolean> {
     const { chat, chatId, accountId, type, message, messageQuotedId, t } =
       params;
-    let validAudios: UploadFileResponse[];
+    let validAudios: Array<
+      UploadFileResponse & { duration?: number; waveform?: number[] }
+    >;
 
     try {
       validAudios = await this.uploadAudios(audios, accountId);
@@ -850,6 +881,7 @@ export class ChatMessageCreatorUseCase {
     const isPtt = true;
 
     if (validAudios.length === 1) {
+      const finalDuration = audioDuration ?? validAudios[0].duration ?? null;
       const audioMessage = this.createAudioMessage({
         chat,
         chatId,
@@ -858,7 +890,7 @@ export class ChatMessageCreatorUseCase {
         audioData: validAudios[0],
         messageQuotedId: quotedId,
         quotedMessage,
-        duration: audioDuration,
+        duration: finalDuration,
         isViewOnce,
         isPtt,
       });
@@ -869,6 +901,7 @@ export class ChatMessageCreatorUseCase {
     }
 
     const publishTasks = validAudios.map((audioData) => {
+      const finalDuration = audioDuration ?? audioData.duration ?? null;
       const audioMessage = this.createAudioMessage({
         chat,
         chatId,
@@ -877,7 +910,7 @@ export class ChatMessageCreatorUseCase {
         audioData,
         messageQuotedId: quotedId,
         quotedMessage,
-        duration: audioDuration,
+        duration: finalDuration,
         isViewOnce,
         isPtt,
       });

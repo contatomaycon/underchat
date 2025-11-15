@@ -153,7 +153,8 @@
     "tsyringe": "^4.10.0",
     "typescript-eslint": "^8.36.0",
     "uuid": "^11.1.0",
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "audio-decode": "^2.2.3"
   },
   "pnpm": {
     "overrides": {

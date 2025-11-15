@@ -44,7 +44,6 @@ const audioPlayStates = reactive<Record<string, boolean>>({});
 const audioCurrentTimes = reactive<Record<string, number>>({});
 const audioDurations = reactive<Record<string, number>>({});
 const audioWaveforms = reactive<Record<string, number[]>>({});
-const audioLoadingWaveforms = reactive<Record<string, boolean>>({});
 
 const resolveFeedbackIcon = (
   message: ListMessageResult
@@ -516,14 +515,6 @@ const resolveVideoMeta = (video?: VideoMessageChat | null): string => {
   return [ext, size, duration].filter(Boolean).join(' • ');
 };
 
-const resolveAudioMeta = (audio?: AudioMessageChat | null): string => {
-  if (!audio) return '';
-  const ext = audio.extension ? audio.extension.toUpperCase() : 'AUDIO';
-  const size = audio.size ? formatDocumentSize(audio.size) : null;
-  const duration = formatVideoDuration(audio.duration);
-  return [ext, size, duration].filter(Boolean).join(' • ');
-};
-
 const normalizeTimeValue = (value?: number | null): number | null => {
   if (typeof value !== 'number') return null;
   if (!Number.isFinite(value)) return null;
@@ -593,59 +584,23 @@ const toggleAudioPlay = (messageId: string, url: string) => {
   });
 };
 
-const generateAudioWaveform = async (
+const loadAudioWaveform = (
   messageId: string,
-  url: string
-): Promise<void> => {
+  waveform: number[] | null | undefined
+): void => {
   if (audioWaveforms[messageId]) return;
-  if (audioLoadingWaveforms[messageId]) return;
 
-  audioLoadingWaveforms[messageId] = true;
-
-  try {
-    const response = await fetch(url);
-    const arrayBuffer = await response.arrayBuffer();
-    const audioContext = new AudioContext();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-    const rawData = audioBuffer.getChannelData(0);
-    const samples = 80;
-    const blockSize = Math.floor(rawData.length / samples);
-    const waveform: number[] = [];
-
-    for (let i = 0; i < samples; i++) {
-      const blockStart = blockSize * i;
-      let sum = 0;
-      let maxInBlock = 0;
-      for (let j = 0; j < blockSize; j++) {
-        const value = Math.abs(rawData[blockStart + j]);
-        sum += value;
-        if (value > maxInBlock) {
-          maxInBlock = value;
-        }
-      }
-      const avg = sum / blockSize;
-      waveform.push(Math.max(avg, maxInBlock * 0.3));
-    }
-
-    const max = Math.max(...waveform);
-    if (max > 0) {
-      const normalizedWaveform = waveform.map((value) => {
-        const normalized = value / max;
-        return Math.max(0.15, Math.min(1, normalized));
-      });
-      audioWaveforms[messageId] = normalizedWaveform;
-      return;
-    }
-    const defaultWaveform = new Array(80).fill(0.3);
-    audioWaveforms[messageId] = defaultWaveform;
-  } catch (error) {
-    console.error('Failed to generate audio waveform:', error);
-    const defaultWaveform = new Array(80).fill(0.3);
-    audioWaveforms[messageId] = defaultWaveform;
-  } finally {
-    audioLoadingWaveforms[messageId] = false;
+  if (waveform && Array.isArray(waveform) && waveform.length > 0) {
+    const normalizedWaveform = waveform.map((value) => {
+      const normalized = value / 100;
+      return Math.max(0.15, Math.min(1, normalized));
+    });
+    audioWaveforms[messageId] = normalizedWaveform;
+    return;
   }
+
+  const defaultWaveform = new Array(64).fill(0.3);
+  audioWaveforms[messageId] = defaultWaveform;
 };
 
 const getAudioProgress = (messageId: string): number => {
@@ -655,36 +610,8 @@ const getAudioProgress = (messageId: string): number => {
   return (currentTime / duration) * 100;
 };
 
-const getAudioCurrentTime = (messageId: string): string => {
-  const currentTime = normalizeTimeValue(audioCurrentTimes[messageId]);
-  return formatAudioTime(currentTime);
-};
-
-const getAudioDuration = (
-  messageId: string,
-  fallbackDuration?: number | null
-): string => {
-  const duration =
-    normalizeTimeValue(audioDurations[messageId]) ??
-    normalizeTimeValue(fallbackDuration);
-  return formatAudioTime(duration);
-};
-
 const isAudioPlaying = (messageId: string): boolean => {
   return !!audioPlayStates[messageId];
-};
-
-const getAudioWaveform = (messageId: string): number[] => {
-  const waveform = audioWaveforms[messageId];
-  if (!waveform || !Array.isArray(waveform) || waveform.length === 0) {
-    return [];
-  }
-  return Array.from(waveform);
-};
-
-const hasAudioWaveform = (messageId: string): boolean => {
-  const waveform = audioWaveforms[messageId];
-  return !!(waveform && Array.isArray(waveform) && waveform.length > 0);
 };
 
 const getDisplayTime = (
@@ -727,9 +654,6 @@ onUnmounted(() => {
   }
   for (const key of Object.keys(audioWaveforms)) {
     delete audioWaveforms[key];
-  }
-  for (const key of Object.keys(audioLoadingWaveforms)) {
-    delete audioLoadingWaveforms[key];
   }
 });
 const formatVideoDuration = (duration?: number | null): string => {
@@ -1107,7 +1031,7 @@ watch(
           msg.content?.audio?.url &&
           !audioWaveforms[msg.message_id]
         ) {
-          generateAudioWaveform(msg.message_id, msg.content.audio.url);
+          loadAudioWaveform(msg.message_id, msg.content.audio.waveform);
         }
       }
     });
@@ -1129,8 +1053,12 @@ onMounted(() => {
     document.addEventListener('click', onClickOutside);
 
     for (const msg of chatStore.listMessages) {
-      if (msg.content?.type === EMessageType.audio && msg.content?.audio?.url) {
-        generateAudioWaveform(msg.message_id, msg.content.audio.url);
+      if (
+        msg.content?.type === EMessageType.audio &&
+        msg.content?.audio?.url &&
+        !audioWaveforms[msg.message_id]
+      ) {
+        loadAudioWaveform(msg.message_id, msg.content.audio.waveform);
       }
     }
   });

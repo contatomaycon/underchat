@@ -416,14 +416,25 @@ export class MessageSendConsume {
       ? this.composeQuotedMessage(data)
       : undefined;
 
+    const isPtt = audio.ptt ?? true;
+    const mimetype = isPtt
+      ? 'audio/ogg; codecs=opus'
+      : (audio.mimetype ?? 'audio/mpeg');
+
+    let waveform: Uint8Array | undefined;
+    if (isPtt && audio.waveform && Array.isArray(audio.waveform)) {
+      waveform = new Uint8Array(audio.waveform);
+    }
+
     const result = await this.baileysMessageMediaService.sendAudio(
       jid,
       { url: audio.url },
       {
-        ptt: audio.ptt ?? true,
+        ptt: isPtt,
         seconds: audio.duration ?? undefined,
-        mimetype: audio.mimetype ?? undefined,
+        mimetype,
         viewOnce: data.message_key?.is_view_once ?? audio.view_once ?? false,
+        waveform,
       },
       quotedMessage ? { quoted: quotedMessage } : undefined
     );
