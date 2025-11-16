@@ -1,12 +1,5 @@
 import { IViewPermissionByUserId } from '@core/common/interfaces/IViewPermissionByUserId';
 import * as schema from '@core/models';
-import {
-  permissionAssignment,
-  permissionRole,
-  permissionRoleAction,
-  permissionAction,
-} from '@core/models';
-import { and, eq } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 
@@ -19,43 +12,35 @@ export class PermissionAssignmentUserViewerRepository {
   viewPermissionByUserId = async (
     userId: string
   ): Promise<IViewPermissionByUserId[]> => {
-    const result = await this.db
-      .select({
-        action: permissionAction.action,
-      })
-      .from(permissionAssignment)
-      .innerJoin(
-        permissionRole,
-        eq(
-          permissionRole.permission_role_id,
-          permissionAssignment.permission_role_id
-        )
+    const query = `
+      WITH UserPermissions AS (
+        SELECT DISTINCT
+            paa.action AS action
+        FROM "permission_assignment" pa
+        JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id
+        JOIN "permission_role_action" pra ON pra.permission_role_id = pr.permission_role_id
+        JOIN "permission_action" paa ON paa.permission_action_id = pra.permission_action_id
+        WHERE pa.user_id = '${userId}' AND pra.permission_action_id IS NOT NULL
+        UNION
+        SELECT DISTINCT
+            paa.action AS action
+        FROM "permission_assignment" pa
+        JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id
+        JOIN "permission_role_action" pra ON pra.permission_role_id = pr.permission_role_id
+        JOIN "permission_action_groups" pag ON pag.permission_action_group_id = pra.permission_action_group_id
+        JOIN "permission_action" paa ON paa.permission_action_group_id = pag.permission_action_group_id
+        WHERE pa.user_id = '${userId}' AND pra.permission_action_group_id IS NOT NULL
       )
-      .innerJoin(
-        permissionRoleAction,
-        and(
-          eq(
-            permissionRoleAction.permission_role_id,
-            permissionRole.permission_role_id
-          )
-        )
-      )
-      .innerJoin(
-        permissionAction,
-        and(
-          eq(
-            permissionAction.permission_action_id,
-            permissionRoleAction.permission_action_id
-          )
-        )
-      )
-      .where(and(eq(permissionAssignment.user_id, userId)))
-      .execute();
+      SELECT action
+      FROM UserPermissions;
+    `;
 
-    if (!result.length) {
+    const result = await this.db.execute(query);
+
+    if (result?.rowCount === 0) {
       return [] as IViewPermissionByUserId[];
     }
 
-    return result as IViewPermissionByUserId[];
+    return result.rows as unknown as IViewPermissionByUserId[];
   };
 }
