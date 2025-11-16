@@ -2254,7 +2254,7 @@ onUnmounted(() => {
             height="500px"
             @map:load="onMapLoad"
           >
-            <MglMarker :coordinates="markerPosition" color="#1976d2">
+            <MglMarker :coordinates="markerPosition" color="#ef4444">
               <template v-if="locationData?.name || locationData?.address">
                 <div class="maplibregl-popup-content text-body-2 pa-2">
                   {{ locationData.name || locationData.address }}
