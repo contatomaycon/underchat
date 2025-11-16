@@ -333,6 +333,28 @@ export const mensageMappings = () => {
                     },
                   },
                 },
+                poll: {
+                  type: 'nested',
+                  properties: {
+                    question: {
+                      type: 'text',
+                    },
+                    allow_multiple: {
+                      type: 'boolean',
+                    },
+                    options: {
+                      type: 'nested',
+                      properties: {
+                        name: {
+                          type: 'text',
+                        },
+                        vote_count: {
+                          type: 'integer',
+                        },
+                      },
+                    },
+                  },
+                },
                 contact: {
                   type: 'nested',
                   properties: {
@@ -541,6 +563,28 @@ export const mensageMappings = () => {
                 },
                 address: {
                   type: 'text',
+                },
+              },
+            },
+            poll: {
+              type: 'nested',
+              properties: {
+                question: {
+                  type: 'text',
+                },
+                allow_multiple: {
+                  type: 'boolean',
+                },
+                options: {
+                  type: 'nested',
+                  properties: {
+                    name: {
+                      type: 'text',
+                    },
+                    vote_count: {
+                      type: 'integer',
+                    },
+                  },
                 },
               },
             },

@@ -89,6 +89,19 @@ export const locationSchema = Type.Object({
   address: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
+export const pollOptionSchema = Type.Object({
+  name: Type.String(),
+  vote_count: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+});
+
+export const pollSchema = Type.Object({
+  question: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  allow_multiple: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
+  options: Type.Optional(
+    Type.Union([Type.Array(pollOptionSchema), Type.Null()])
+  ),
+});
+
 export const contactSchema = Type.Object({
   contact_id: Type.String(),
   name: Type.String(),
@@ -110,6 +123,7 @@ export const quotedMessageSchema = Type.Object({
   document: Type.Optional(Type.Union([documentSchema, Type.Null()])),
   sticker: Type.Optional(Type.Union([stickerSchema, Type.Null()])),
   location: Type.Optional(Type.Union([locationSchema, Type.Null()])),
+  poll: Type.Optional(Type.Union([pollSchema, Type.Null()])),
   contact: Type.Optional(Type.Union([contactSchema, Type.Null()])),
 });
 
@@ -131,6 +145,7 @@ export const contentSchema = Type.Object({
   video: Type.Optional(Type.Union([videoSchema, Type.Null()])),
   sticker: Type.Optional(Type.Union([stickerSchema, Type.Null()])),
   location: Type.Optional(Type.Union([locationSchema, Type.Null()])),
+  poll: Type.Optional(Type.Union([pollSchema, Type.Null()])),
   contact: Type.Optional(Type.Union([contactSchema, Type.Null()])),
   audio: Type.Optional(Type.Union([audioSchema, Type.Null()])),
   document: Type.Optional(Type.Union([documentSchema, Type.Null()])),
@@ -167,4 +182,6 @@ export type AudioMessageChat = Static<typeof audioSchema>;
 export type DocumentMessageChat = Static<typeof documentSchema>;
 export type StickerMessageChat = Static<typeof stickerSchema>;
 export type LocationMessageChat = Static<typeof locationSchema>;
+export type PollOptionMessageChat = Static<typeof pollOptionSchema>;
+export type PollMessageChat = Static<typeof pollSchema>;
 export type ListMessageResponse = Static<typeof listMessageResponseSchema>;

@@ -1335,6 +1335,106 @@ export class ChatMessageCreatorUseCase {
     return true;
   }
 
+  private normalizePollOptions(
+    options?: string[] | { value?: string[] } | null
+  ): string[] {
+    if (!options) return [];
+
+    if (typeof options === 'object' && 'value' in options) {
+      return this.normalizePollOptions(options.value);
+    }
+
+    if (Array.isArray(options)) {
+      return options.filter(
+        (o): o is string => typeof o === 'string' && o.trim().length > 0
+      );
+    }
+
+    return [];
+  }
+
+  private async processPollMessage(params: {
+    chat: IChat;
+    chatId: string;
+    type: EMessageType;
+    message: string | null;
+    messageQuotedId: string | null;
+    quotedMessage: IQuotedMessage | null;
+    hash: string | null;
+    question: string;
+    options: string[];
+    allowMultiple: boolean;
+  }): Promise<boolean> {
+    const {
+      chat,
+      chatId,
+      type,
+      message,
+      messageQuotedId,
+      quotedMessage,
+      hash,
+      question,
+      options,
+      allowMultiple,
+    } = params;
+
+    if (!question || question.trim().length === 0) {
+      throw new Error('Poll question is required');
+    }
+
+    if (options.length < 2) {
+      throw new Error('Poll must have at least 2 options');
+    }
+
+    if (options.length > 12) {
+      throw new Error('Poll can have at most 12 options');
+    }
+
+    const messageHash = hash || uuidv4();
+    const pollMessage: IChatMessage = {
+      message_id: uuidv4(),
+      chat_id: chatId,
+      message_key: {
+        remote_jid: chat.message_key?.remote_jid ?? null,
+        remote_jid_alt: chat.message_key?.remote_jid_alt ?? null,
+        is_view_once: false,
+      },
+      type_user: ETypeUserChat.operator,
+      account: chat.account,
+      worker: chat.worker,
+      user: chat.user,
+      phone: chat.phone,
+      summary: {
+        is_sent: false,
+        is_delivered: false,
+        is_seen: false,
+        is_sent_to_internal: true,
+      },
+      deleted: false,
+      has_quoted: !!quotedMessage,
+      content: {
+        type,
+        message,
+        message_quoted_id: messageQuotedId,
+        quoted: quotedMessage,
+        poll: {
+          question: question.trim(),
+          allow_multiple: allowMultiple,
+          options: options.map((opt) => ({
+            name: opt.trim(),
+            vote_count: 0,
+          })),
+        },
+      },
+      date: new Date().toISOString(),
+      hash: messageHash,
+    };
+
+    await this.publishMessage(pollMessage);
+
+    return true;
+  }
+
   private async processActionMessages(
     type: EMessageType,
     body: CreateMessageChatsBody,
@@ -1455,6 +1555,11 @@ export class ChatMessageCreatorUseCase {
     );
     const locationName = this.normalizeLocationField(body.location_name);
     const locationAddress = this.normalizeLocationField(body.location_address);
+    const pollQuestion = this.normalizeLocationField(body.poll_question);
+    const pollOptions = this.normalizePollOptions(body.poll_options);
+    const pollAllowMultiple = this.normalizeBooleanField(
+      body.poll_allow_multiple
+    );
 
     const actionResult = await this.processActionMessages(
       type,
@@ -1535,6 +1640,33 @@ export class ChatMessageCreatorUseCase {
         longitude: locationLongitude,
         name: locationName,
         address: locationAddress,
+      });
+    }
+
+    if (
+      type === EMessageType.poll &&
+      pollQuestion !== null &&
+      pollOptions.length >= 2
+    ) {
+      const quotedMessage = messageQuotedId
+        ? await this.getQuotedMessage(
+            accountId,
+            params.chat_id,
+            messageQuotedId
+          )
+        : null;
+
+      return this.processPollMessage({
+        chat,
+        chatId: params.chat_id,
+        type: EMessageType.poll,
+        message,
+        messageQuotedId,
+        quotedMessage,
+        hash,
+        question: pollQuestion,
+        options: pollOptions,
+        allowMultiple: pollAllowMultiple,
       });
     }
 
