@@ -78,6 +78,8 @@ CREATE TABLE "permission_action" (
   "permission_action_id" uuid NOT NULL,
   "permission_module_id" uuid NOT NULL,
   "action" character varying(100) NOT NULL,
+  "name" character varying(200) NOT NULL,
+  "description" character varying(500),
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
   PRIMARY KEY ("permission_action_id"),
