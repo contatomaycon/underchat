@@ -3256,10 +3256,10 @@ onBeforeUnmount(() => {
               v-if="isTyping && chatStore.activeChat"
               class="typing-indicator d-flex align-center gap-2 mb-2"
             >
-              <VIcon size="22" color="primary" icon="tabler-pencil" />
+              <VIcon size="20" color="primary" icon="tabler-pencil" />
               <span
                 class="text-primary"
-                style="font-style: italic; font-size: 1.2rem; font-weight: 400"
+                style="font-style: italic; font-size: 0.8rem; font-weight: 400"
               >
                 {{ chatStore.activeChat.name || chatStore.activeChat.phone }}
                 {{ $t('is_typing') }}
