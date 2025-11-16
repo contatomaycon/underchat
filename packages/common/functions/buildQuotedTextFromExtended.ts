@@ -17,6 +17,8 @@ function determineMessageType(quotedMessage: any): EMessageType {
   if (quotedMessage.videoMessage) return EMessageType.video;
   if (quotedMessage.imageMessage) return EMessageType.image;
   if (quotedMessage.audioMessage) return EMessageType.audio;
+  if (quotedMessage.stickerMessage) return EMessageType.sticker;
+  if (quotedMessage.locationMessage) return EMessageType.location;
   return EMessageType.text;
 }
 
@@ -122,6 +124,47 @@ function processAudioMessage(quotedMessage: any, quoted: IQuotedMessage): void {
   };
 }
 
+function processStickerMessage(
+  quotedMessage: any,
+  quoted: IQuotedMessage
+): void {
+  const stickerMessage = quotedMessage.stickerMessage;
+  if (!stickerMessage) return;
+
+  quoted.sticker = {
+    url: null,
+    mimetype: stickerMessage.mimetype ?? null,
+    extension: null,
+    size: stickerMessage.fileLength
+      ? Number(stickerMessage.fileLength.toString())
+      : null,
+    height: stickerMessage.height ?? null,
+    width: stickerMessage.width ?? null,
+    is_animated: stickerMessage.isAnimated ?? false,
+  };
+}
+
+function processLocationMessage(
+  quotedMessage: any,
+  quoted: IQuotedMessage
+): void {
+  const locationMessage = quotedMessage.locationMessage;
+  if (!locationMessage) return;
+
+  quoted.location = {
+    latitude: locationMessage.degreesLatitude ?? null,
+    longitude: locationMessage.degreesLongitude ?? null,
+    name: locationMessage.name ?? null,
+    address: locationMessage.address ?? null,
+  };
+
+  if (!quoted.message && locationMessage.name) {
+    quoted.message = locationMessage.name;
+  } else if (!quoted.message && locationMessage.address) {
+    quoted.message = locationMessage.address;
+  }
+}
+
 export function buildQuotedTextFromExtended(
   m: WAMessage
 ): IQuotedMessage | null {
@@ -135,6 +178,7 @@ export function buildQuotedTextFromExtended(
     message.documentMessage?.contextInfo,
     message.audioMessage?.contextInfo,
     message.stickerMessage?.contextInfo,
+    message.locationMessage?.contextInfo,
     (message as any).buttonsMessage?.contextInfo,
     (message as any).templateButtonReplyMessage?.contextInfo,
     (message as any).interactiveResponseMessage?.contextInfo,
@@ -173,6 +217,8 @@ export function buildQuotedTextFromExtended(
   processVideoMessage(quotedMessage, quoted);
   processDocumentMessage(quotedMessage, quoted);
   processAudioMessage(quotedMessage, quoted);
+  processStickerMessage(quotedMessage, quoted);
+  processLocationMessage(quotedMessage, quoted);
 
   return quoted;
 }

@@ -111,6 +111,42 @@ export const createMessageChatsBodySchema = Type.Object({
       }),
     ])
   ),
+  location_latitude: Type.Optional(
+    Type.Union([
+      Type.Number(),
+      Type.String(),
+      Type.Object({
+        value: Type.Union([Type.Number(), Type.String()]),
+      }),
+    ])
+  ),
+  location_longitude: Type.Optional(
+    Type.Union([
+      Type.Number(),
+      Type.String(),
+      Type.Object({
+        value: Type.Union([Type.Number(), Type.String()]),
+      }),
+    ])
+  ),
+  location_name: Type.Optional(
+    Type.Union([
+      Type.String(),
+      Type.Null(),
+      Type.Object({
+        value: Type.String(),
+      }),
+    ])
+  ),
+  location_address: Type.Optional(
+    Type.Union([
+      Type.String(),
+      Type.Null(),
+      Type.Object({
+        value: Type.String(),
+      }),
+    ])
+  ),
   hash: Type.Optional(
     Type.Union([
       Type.String(),

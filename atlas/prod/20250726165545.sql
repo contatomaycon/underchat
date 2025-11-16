@@ -1,3 +1,3 @@
-INSERT INTO "permission_role" ("permission_role_id", "account_id", "name") VALUES ('6afec839-0772-4996-90ea-495ac84347e9', '46d209e9-2df0-4033-a176-3d592e000c5c', 'Administrador');
-INSERT INTO "permission_role" ("permission_role_id", "account_id", "name") VALUES ('cdf12523-07ab-4794-9e01-cb3ca006fa4c', '46d209e9-2df0-4033-a176-3d592e000c5c', 'Master');
-INSERT INTO "permission_role" ("permission_role_id", "account_id", "name") VALUES ('506c972a-7612-4687-8094-9eef7da30d59', '46d209e9-2df0-4033-a176-3d592e000c5c', 'Load Balancer');
+INSERT INTO "permission_role" ("permission_role_id", "account_id", "name", "description") VALUES ('6afec839-0772-4996-90ea-495ac84347e9', '46d209e9-2df0-4033-a176-3d592e000c5c', 'Administrador', 'Cargo com permissões administrativas para gerenciar o sistema');
+INSERT INTO "permission_role" ("permission_role_id", "account_id", "name", "description") VALUES ('cdf12523-07ab-4794-9e01-cb3ca006fa4c', '46d209e9-2df0-4033-a176-3d592e000c5c', 'Master', 'Cargo com acesso total a todas as funcionalidades do sistema');
+INSERT INTO "permission_role" ("permission_role_id", "account_id", "name", "description") VALUES ('506c972a-7612-4687-8094-9eef7da30d59', '46d209e9-2df0-4033-a176-3d592e000c5c', 'Load Balancer', 'Cargo para gerenciar balanceamento de carga e métricas do sistema');

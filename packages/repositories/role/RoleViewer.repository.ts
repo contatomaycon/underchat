@@ -24,6 +24,7 @@ export class RoleViewerRepository {
       .select({
         permission_role_id: permissionRole.permission_role_id,
         name: permissionRole.name,
+        description: permissionRole.description,
         account: {
           id: account.account_id,
           name: account.name,
@@ -50,6 +51,7 @@ export class RoleViewerRepository {
     return {
       permission_role_id: item.permission_role_id,
       name: item.name,
+      description: item.description,
       account: isAdministrator ? item.account : undefined,
       created_at: item.created_at,
     };

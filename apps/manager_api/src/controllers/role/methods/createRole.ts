@@ -18,7 +18,8 @@ export const createRole = async (
     const response = await roleCreatorUseCase.execute(
       t,
       request.body.name,
-      tokenJwtData.account_id
+      tokenJwtData.account_id,
+      request.body.description
     );
 
     if (response) {

@@ -8,6 +8,8 @@ export const permissionAction = pgTable('permission_action', {
     .references(() => permissionModule.module_id)
     .notNull(),
   action: varchar({ length: 100 }).notNull(),
+  name: varchar({ length: 200 }).notNull(),
+  description: varchar({ length: 500 }),
   created_at: timestamp('created_at', {
     mode: 'string',
     withTimezone: true,

@@ -99,20 +99,27 @@ export class RoleService {
   updateRoleById = async (
     roleId: string,
     roleName: string,
-    accountId: string
+    accountId: string,
+    description: string | null | undefined
   ): Promise<string | null> => {
     return this.roleUpdaterRepository.updateRoleById(
       roleId,
       roleName,
-      accountId
+      accountId,
+      description
     );
   };
 
   createRole = async (
     roleName: string,
-    accountId: string
+    accountId: string,
+    description: string | null | undefined
   ): Promise<CreateRoleResponse | null> => {
-    return this.roleCreatorRepository.createRole(roleName, accountId);
+    return this.roleCreatorRepository.createRole(
+      roleName,
+      accountId,
+      description
+    );
   };
 
   totalRoleByAccount = async (accountId: string): Promise<number> => {

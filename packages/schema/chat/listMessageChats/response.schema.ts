@@ -72,6 +72,23 @@ export const documentSchema = Type.Object({
   size: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
 });
 
+export const stickerSchema = Type.Object({
+  url: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  mimetype: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  extension: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  size: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  height: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  width: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  is_animated: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
+});
+
+export const locationSchema = Type.Object({
+  latitude: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  longitude: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  address: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+
 export const contactSchema = Type.Object({
   contact_id: Type.String(),
   name: Type.String(),
@@ -91,6 +108,8 @@ export const quotedMessageSchema = Type.Object({
   video: Type.Optional(Type.Union([videoSchema, Type.Null()])),
   audio: Type.Optional(Type.Union([audioSchema, Type.Null()])),
   document: Type.Optional(Type.Union([documentSchema, Type.Null()])),
+  sticker: Type.Optional(Type.Union([stickerSchema, Type.Null()])),
+  location: Type.Optional(Type.Union([locationSchema, Type.Null()])),
   contact: Type.Optional(Type.Union([contactSchema, Type.Null()])),
 });
 
@@ -110,6 +129,8 @@ export const contentSchema = Type.Object({
   quoted: Type.Optional(Type.Union([quotedMessageSchema, Type.Null()])),
   image: Type.Optional(Type.Union([imageSchema, Type.Null()])),
   video: Type.Optional(Type.Union([videoSchema, Type.Null()])),
+  sticker: Type.Optional(Type.Union([stickerSchema, Type.Null()])),
+  location: Type.Optional(Type.Union([locationSchema, Type.Null()])),
   contact: Type.Optional(Type.Union([contactSchema, Type.Null()])),
   audio: Type.Optional(Type.Union([audioSchema, Type.Null()])),
   document: Type.Optional(Type.Union([documentSchema, Type.Null()])),
@@ -144,4 +165,6 @@ export type ImageMessageChat = Static<typeof imageSchema>;
 export type VideoMessageChat = Static<typeof videoSchema>;
 export type AudioMessageChat = Static<typeof audioSchema>;
 export type DocumentMessageChat = Static<typeof documentSchema>;
+export type StickerMessageChat = Static<typeof stickerSchema>;
+export type LocationMessageChat = Static<typeof locationSchema>;
 export type ListMessageResponse = Static<typeof listMessageResponseSchema>;

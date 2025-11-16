@@ -1,6 +1,9 @@
 <script lang="ts" setup>
 import { useRolesStore } from '@/@webcore/stores/role';
-import { EditRoleParamsRequest } from '@core/schema/role/editRole/request.schema';
+import {
+  EditRoleParamsRequest,
+  UpdateRoleRequest,
+} from '@core/schema/role/editRole/request.schema';
 import { VForm } from 'vuetify/components/VForm';
 
 const roleStore = useRolesStore();
@@ -20,6 +23,7 @@ const isVisible = computed({
 
 const roleId = toRef(props, 'roleId');
 const name = ref<string | null>(null);
+const description = ref<string | null>(null);
 
 const refFormEditRole = ref<VForm>();
 
@@ -32,11 +36,15 @@ const updateServer = async () => {
   }
 
   const payload: EditRoleParamsRequest = {
-    name: name.value,
     permission_role_id: roleId.value,
   };
 
-  const result = await roleStore.updateRole(payload);
+  const body: UpdateRoleRequest = {
+    name: name.value,
+    description: description.value,
+  };
+
+  const result = await roleStore.updateRole(payload, body);
 
   if (result) {
     isVisible.value = false;
@@ -51,6 +59,7 @@ onMounted(async () => {
   const nameRole = await roleStore.getRoleById(roleId.value);
   if (nameRole) {
     name.value = nameRole.name;
+    description.value = nameRole.description ?? null;
   }
 });
 </script>
@@ -78,6 +87,14 @@ onMounted(async () => {
                 :label="$t('name') + ':'"
                 :placeholder="$t('name')"
                 :rules="[requiredValidator(name, $t('name_required'))]"
+              />
+            </VCol>
+            <VCol cols="12">
+              <AppTextarea
+                v-model="description"
+                :label="$t('description') + ':'"
+                :placeholder="$t('description')"
+                rows="3"
               />
             </VCol>
           </VRow>

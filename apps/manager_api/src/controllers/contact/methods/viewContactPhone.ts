@@ -3,7 +3,7 @@ import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { ViewContactPhoneRequest } from '@core/schema/contact/viewContactPhone/request.schema';
-import { ContactService } from '@core/services/contact.service';
+import { ContactPhoneViewerUseCase } from '@core/useCases/contact/ContactPhoneViewer.useCase';
 
 export const viewContactPhone = async (
   request: FastifyRequest<{
@@ -11,27 +11,30 @@ export const viewContactPhone = async (
   }>,
   reply: FastifyReply
 ) => {
-  const contactService = container.resolve(ContactService);
+  const contactPhoneViewerUseCase = container.resolve(
+    ContactPhoneViewerUseCase
+  );
   const { t } = request;
 
   try {
-    const sensitiveData = await contactService.getContactSensitiveDataDecrypted(
+    const response = await contactPhoneViewerUseCase.execute(
+      t,
       request.params.contact_id
     );
 
-    if (!sensitiveData) {
+    if (response) {
       return sendResponse(reply, {
-        message: t('contact_not_found'),
-        httpStatusCode: EHTTPStatusCode.bad_request,
+        message: t('contact_phone_view_successfully'),
+        httpStatusCode: EHTTPStatusCode.ok,
+        data: response,
       });
     }
 
+    request.server.logger.info(response, request.id);
+
     return sendResponse(reply, {
-      message: t('contact_phone_view_successfully'),
-      httpStatusCode: EHTTPStatusCode.ok,
-      data: {
-        phone: sensitiveData.phone,
-      },
+      message: t('contact_not_found'),
+      httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
     request.server.logger.error(error, request.id);

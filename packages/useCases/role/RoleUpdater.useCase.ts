@@ -11,7 +11,8 @@ export class RoleUpdaterUseCase {
     roleId: string,
     name: string,
     accountId: string,
-    isAdministrator: boolean
+    isAdministrator: boolean,
+    description: string | null | undefined
   ): Promise<boolean> {
     const exists = await this.roleService.existsRoleById(
       roleId,
@@ -26,7 +27,8 @@ export class RoleUpdaterUseCase {
     const roleUpdate = await this.roleService.updateRoleById(
       roleId,
       name,
-      accountId
+      accountId,
+      description
     );
 
     if (!roleUpdate) {

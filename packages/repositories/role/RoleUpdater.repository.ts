@@ -13,12 +13,14 @@ export class RoleUpdaterRepository {
   updateRoleById = async (
     roleId: string,
     roleName: string,
-    accountId: string
+    accountId: string,
+    description: string | null | undefined
   ): Promise<string | null> => {
     const result = await this.db
       .update(permissionRole)
       .set({
         name: roleName,
+        description: description ?? null,
       })
       .where(
         and(

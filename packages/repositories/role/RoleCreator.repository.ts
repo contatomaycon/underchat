@@ -13,7 +13,8 @@ export class RoleCreatorRepository {
 
   createRole = async (
     input: string,
-    accountId: string
+    accountId: string,
+    description: string | null | undefined
   ): Promise<CreateRoleResponse | null> => {
     const permissionRoleId = uuidv4();
 
@@ -23,6 +24,7 @@ export class RoleCreatorRepository {
         permission_role_id: permissionRoleId,
         account_id: accountId,
         name: input,
+        description: description ?? null,
       })
       .returning();
 

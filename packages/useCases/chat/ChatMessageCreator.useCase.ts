@@ -378,6 +378,41 @@ export class ChatMessageCreatorUseCase {
     return trimmed;
   }
 
+  private normalizeLocationCoordinate(
+    coordinate?: number | string | { value?: number | string } | null
+  ): number | null {
+    const rawValue = this.extractFieldValue(coordinate);
+    if (!rawValue) {
+      return null;
+    }
+
+    const numValue =
+      typeof rawValue === 'number'
+        ? rawValue
+        : Number.parseFloat(String(rawValue));
+    if (Number.isNaN(numValue)) {
+      return null;
+    }
+
+    return numValue;
+  }
+
+  private normalizeLocationField(
+    field?: string | { value?: string } | null
+  ): string | null {
+    const rawValue = this.extractFieldValue(field);
+    if (!rawValue) {
+      return null;
+    }
+
+    const trimmed = String(rawValue).trim();
+    if (!trimmed || trimmed === 'null' || trimmed === 'undefined') {
+      return null;
+    }
+
+    return trimmed;
+  }
+
   private async uploadImages(
     images: UploadFileRequest[],
     accountId: string
@@ -1232,6 +1267,76 @@ export class ChatMessageCreatorUseCase {
     return true;
   }
 
+  private async processLocationMessage(params: {
+    chat: IChat;
+    chatId: string;
+    type: EMessageType;
+    message: string | null;
+    messageQuotedId: string | null;
+    quotedMessage: IQuotedMessage | null;
+    hash: string | null;
+    latitude: number;
+    longitude: number;
+    name?: string | null;
+    address?: string | null;
+  }): Promise<boolean> {
+    const {
+      chat,
+      chatId,
+      type,
+      message,
+      messageQuotedId,
+      quotedMessage,
+      hash,
+      latitude,
+      longitude,
+      name,
+      address,
+    } = params;
+
+    const messageHash = hash || uuidv4();
+    const locationMessage: IChatMessage = {
+      message_id: uuidv4(),
+      chat_id: chatId,
+      message_key: {
+        remote_jid: chat.message_key?.remote_jid ?? null,
+        remote_jid_alt: chat.message_key?.remote_jid_alt ?? null,
+        is_view_once: false,
+      },
+      type_user: ETypeUserChat.operator,
+      account: chat.account,
+      worker: chat.worker,
+      user: chat.user,
+      phone: chat.phone,
+      summary: {
+        is_sent: false,
+        is_delivered: false,
+        is_seen: false,
+        is_sent_to_internal: true,
+      },
+      deleted: false,
+      has_quoted: !!quotedMessage,
+      content: {
+        type,
+        message,
+        message_quoted_id: messageQuotedId,
+        quoted: quotedMessage,
+        location: {
+          latitude,
+          longitude,
+          name: name ?? null,
+          address: address ?? null,
+        },
+      },
+      date: new Date().toISOString(),
+      hash: messageHash,
+    };
+
+    await this.publishMessage(locationMessage);
+
+    return true;
+  }
+
   private async processActionMessages(
     type: EMessageType,
     body: CreateMessageChatsBody,
@@ -1344,6 +1449,14 @@ export class ChatMessageCreatorUseCase {
     );
     const contacts = this.normalizeContactsArray(body.contacts);
     const hash = this.normalizeHash(body.hash);
+    const locationLatitude = this.normalizeLocationCoordinate(
+      body.location_latitude
+    );
+    const locationLongitude = this.normalizeLocationCoordinate(
+      body.location_longitude
+    );
+    const locationName = this.normalizeLocationField(body.location_name);
+    const locationAddress = this.normalizeLocationField(body.location_address);
 
     const actionResult = await this.processActionMessages(
       type,
@@ -1396,6 +1509,34 @@ export class ChatMessageCreatorUseCase {
         messageQuotedId,
         quotedMessage,
         hash,
+      });
+    }
+
+    if (
+      type === EMessageType.location &&
+      locationLatitude !== null &&
+      locationLongitude !== null
+    ) {
+      const quotedMessage = messageQuotedId
+        ? await this.getQuotedMessage(
+            accountId,
+            params.chat_id,
+            messageQuotedId
+          )
+        : null;
+
+      return this.processLocationMessage({
+        chat,
+        chatId: params.chat_id,
+        type: EMessageType.location,
+        message,
+        messageQuotedId,
+        quotedMessage,
+        hash,
+        latitude: locationLatitude,
+        longitude: locationLongitude,
+        name: locationName,
+        address: locationAddress,
       });
     }
 

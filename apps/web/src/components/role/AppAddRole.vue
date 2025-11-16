@@ -18,6 +18,7 @@ const isVisible = computed({
 });
 
 const name = ref<string | null>(null);
+const description = ref<string | null>(null);
 
 const refFormAddRole = ref<VForm>();
 
@@ -31,6 +32,7 @@ const addRole = async () => {
 
   const payload: CreateRoleRequest = {
     name: name.value,
+    description: description.value,
   };
 
   const result = await roleStore.addRoles(payload);
@@ -44,6 +46,7 @@ const addRole = async () => {
 
 const resetForm = () => {
   name.value = null;
+  description.value = null;
   refFormAddRole.value?.resetValidation();
 };
 
@@ -77,6 +80,14 @@ onMounted(resetForm);
                 :label="$t('name') + ':'"
                 :placeholder="$t('name')"
                 :rules="[requiredValidator(name, $t('name_required'))]"
+              />
+            </VCol>
+            <VCol cols="12" sm="12" md="12">
+              <AppTextarea
+                v-model="description"
+                :label="$t('description') + ':'"
+                :placeholder="$t('description')"
+                rows="3"
               />
             </VCol>
           </VRow>
