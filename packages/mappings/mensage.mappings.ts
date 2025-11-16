@@ -290,6 +290,32 @@ export const mensageMappings = () => {
                     },
                   },
                 },
+                sticker: {
+                  type: 'nested',
+                  properties: {
+                    url: {
+                      type: 'keyword',
+                    },
+                    mimetype: {
+                      type: 'keyword',
+                    },
+                    extension: {
+                      type: 'keyword',
+                    },
+                    size: {
+                      type: 'long',
+                    },
+                    height: {
+                      type: 'integer',
+                    },
+                    width: {
+                      type: 'integer',
+                    },
+                    is_animated: {
+                      type: 'boolean',
+                    },
+                  },
+                },
                 contact: {
                   type: 'nested',
                   properties: {
@@ -455,6 +481,32 @@ export const mensageMappings = () => {
                 },
                 waveform: {
                   type: 'keyword',
+                },
+              },
+            },
+            sticker: {
+              type: 'nested',
+              properties: {
+                url: {
+                  type: 'keyword',
+                },
+                mimetype: {
+                  type: 'keyword',
+                },
+                extension: {
+                  type: 'keyword',
+                },
+                size: {
+                  type: 'long',
+                },
+                height: {
+                  type: 'integer',
+                },
+                width: {
+                  type: 'integer',
+                },
+                is_animated: {
+                  type: 'boolean',
                 },
               },
             },

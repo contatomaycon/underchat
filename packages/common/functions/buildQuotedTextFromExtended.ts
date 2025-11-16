@@ -17,6 +17,7 @@ function determineMessageType(quotedMessage: any): EMessageType {
   if (quotedMessage.videoMessage) return EMessageType.video;
   if (quotedMessage.imageMessage) return EMessageType.image;
   if (quotedMessage.audioMessage) return EMessageType.audio;
+  if (quotedMessage.stickerMessage) return EMessageType.sticker;
   return EMessageType.text;
 }
 
@@ -122,6 +123,26 @@ function processAudioMessage(quotedMessage: any, quoted: IQuotedMessage): void {
   };
 }
 
+function processStickerMessage(
+  quotedMessage: any,
+  quoted: IQuotedMessage
+): void {
+  const stickerMessage = quotedMessage.stickerMessage;
+  if (!stickerMessage) return;
+
+  quoted.sticker = {
+    url: null,
+    mimetype: stickerMessage.mimetype ?? null,
+    extension: null,
+    size: stickerMessage.fileLength
+      ? Number(stickerMessage.fileLength.toString())
+      : null,
+    height: stickerMessage.height ?? null,
+    width: stickerMessage.width ?? null,
+    is_animated: stickerMessage.isAnimated ?? false,
+  };
+}
+
 export function buildQuotedTextFromExtended(
   m: WAMessage
 ): IQuotedMessage | null {
@@ -173,6 +194,7 @@ export function buildQuotedTextFromExtended(
   processVideoMessage(quotedMessage, quoted);
   processDocumentMessage(quotedMessage, quoted);
   processAudioMessage(quotedMessage, quoted);
+  processStickerMessage(quotedMessage, quoted);
 
   return quoted;
 }

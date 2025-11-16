@@ -312,6 +312,16 @@ export class MessageSendConsume {
             (j, d) => this.processVideo(j, d)
           )
         : null,
+      [EMessageType.sticker]: data.content?.sticker?.url
+        ? this.createMediaHandler(
+            jid,
+            chatId,
+            data,
+            EMessageType.sticker,
+            lastType,
+            (j, d) => this.processSticker(j, d)
+          )
+        : null,
       [EMessageType.text]: data.content?.message
         ? () => this.processTextMessage(jid, chatId, data, hasQuoted)
         : null,
@@ -641,6 +651,36 @@ export class MessageSendConsume {
 
     if (!result) {
       throw new Error('Failed to send image');
+    }
+
+    const update: IUpdateMessage = { message: result, data };
+    await this.pushUpdate(update);
+  }
+
+  private async processSticker(jid: string, data: IChatMessage): Promise<void> {
+    const sticker = data.content?.sticker;
+
+    if (!sticker?.url) {
+      throw new Error('Sticker URL is required');
+    }
+
+    const quotedMessage = data.content?.quoted
+      ? this.composeQuotedMessage(data)
+      : undefined;
+
+    const result = await this.baileysMessageMediaService.sendSticker(
+      jid,
+      { url: sticker.url },
+      {
+        isAnimated: sticker.is_animated ?? false,
+        width: sticker.width ?? undefined,
+        height: sticker.height ?? undefined,
+      },
+      quotedMessage ? { quoted: quotedMessage } : undefined
+    );
+
+    if (!result) {
+      throw new Error('Failed to send sticker');
     }
 
     const update: IUpdateMessage = { message: result, data };

@@ -44,6 +44,10 @@ const replyIsAudio = computed(
   () => replying.value?.content?.type === EMessageType.audio
 );
 
+const replyIsSticker = computed(
+  () => replying.value?.content?.type === EMessageType.sticker
+);
+
 const replyImageSrc = computed(() => {
   const img = replying.value?.content?.image;
   if (!img) {
@@ -51,6 +55,15 @@ const replyImageSrc = computed(() => {
   }
 
   return img.url || img.thumbnail || null;
+});
+
+const replyStickerSrc = computed(() => {
+  const sticker = replying.value?.content?.sticker;
+  if (!sticker) {
+    return null;
+  }
+
+  return sticker.url || null;
 });
 
 const replyText = computed(() => {
@@ -73,6 +86,10 @@ const replyText = computed(() => {
 
   if (m.content?.type === EMessageType.audio) {
     return t('audio_label');
+  }
+
+  if (m.content?.type === EMessageType.sticker) {
+    return t('sticker_label', 'Sticker');
   }
 
   if (m.content?.message) {
@@ -195,17 +212,31 @@ onMounted(() => {
     <div v-if="replyIsImage && replyImageSrc" class="rp-media">
       <img :src="replyImageSrc" alt="preview" />
     </div>
-    <div v-if="!replyIsImage && replyIsDocument" class="rp-doc-icon">
+    <div v-if="replyIsSticker && replyStickerSrc" class="rp-media">
+      <img :src="replyStickerSrc" alt="sticker preview" />
+    </div>
+    <div
+      v-if="!replyIsImage && !replyIsSticker && replyIsDocument"
+      class="rp-doc-icon"
+    >
       <VIcon :icon="replyDocumentIcon" size="26" color="primary" />
     </div>
     <div
-      v-if="!replyIsImage && !replyIsDocument && replyIsVideo"
+      v-if="
+        !replyIsImage && !replyIsSticker && !replyIsDocument && replyIsVideo
+      "
       class="rp-doc-icon rp-video-icon"
     >
       <VIcon size="26" color="primary">tabler-player-play</VIcon>
     </div>
     <div
-      v-if="!replyIsImage && !replyIsDocument && !replyIsVideo && replyIsAudio"
+      v-if="
+        !replyIsImage &&
+        !replyIsSticker &&
+        !replyIsDocument &&
+        !replyIsVideo &&
+        replyIsAudio
+      "
       class="rp-doc-icon rp-audio-icon"
     >
       <VIcon size="26" color="primary">tabler-microphone</VIcon>

@@ -583,6 +583,40 @@ export class MessageUpsertConsume {
       : undefined;
   }
 
+  private async handleStickerMessage(
+    content: IContent,
+    data: IUpsertMessage
+  ): Promise<void> {
+    if (
+      content.type !== EMessageType.sticker ||
+      !data.message?.message?.stickerMessage?.url
+    ) {
+      return;
+    }
+
+    const stickerMsg = data.message.message.stickerMessage;
+    const buffer = await downloadMediaMessage(data.message, 'buffer', {
+      startByte: 0,
+    });
+
+    const stickerResult = await this.storageService.uploadFromBuffer(
+      buffer,
+      data.account_id
+    );
+
+    content.sticker = stickerResult
+      ? {
+          url: stickerResult.url,
+          mimetype: stickerMsg.mimetype ?? stickerResult.mimetype ?? null,
+          extension: stickerResult.extension,
+          size: stickerResult.size,
+          height: stickerMsg.height ?? stickerResult.height ?? null,
+          width: stickerMsg.width ?? stickerResult.width ?? null,
+          is_animated: stickerMsg.isAnimated ?? false,
+        }
+      : undefined;
+  }
+
   private async createChatMessage(
     getChat: IChat,
     data: IUpsertMessage
@@ -635,6 +669,7 @@ export class MessageUpsertConsume {
       await this.handleVideoMessage(content, data);
       await this.handleAudioMessage(content, data);
       await this.handleDocumentMessage(content, data);
+      await this.handleStickerMessage(content, data);
 
       const inputChatMessage: IChatMessage = {
         message_id: uuidv4(),

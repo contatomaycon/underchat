@@ -295,12 +295,20 @@ const isDownloadableAudio = (message: ListMessageResult): boolean => {
   return message.content?.type === EMessageType.audio;
 };
 
+const isDownloadableSticker = (message: ListMessageResult): boolean => {
+  const sticker = message.content?.sticker;
+  if (!sticker) return false;
+  if (!sticker.url) return false;
+  return message.content?.type === EMessageType.sticker;
+};
+
 const shouldShowCopy = (message: ListMessageResult): boolean => {
   if (message.content?.type === EMessageType.contact_card) return false;
   if (isDownloadableDocument(message)) return false;
   if (isDownloadableImage(message)) return false;
   if (isDownloadableVideo(message)) return false;
   if (isDownloadableAudio(message)) return false;
+  if (isDownloadableSticker(message)) return false;
   return isTextMessage(message);
 };
 
@@ -309,7 +317,16 @@ const shouldShowDownload = (message: ListMessageResult): boolean => {
   if (isDownloadableImage(message)) return true;
   if (isDownloadableVideo(message)) return true;
   if (isDownloadableAudio(message)) return true;
+  if (isDownloadableSticker(message)) return true;
   return false;
+};
+
+const stickerDownloadName = (sticker?: {
+  extension?: string | null;
+  mimetype?: string | null;
+}): string => {
+  const ext = sticker?.extension || 'webp';
+  return `sticker.${ext}`;
 };
 
 const downloadMessage = (message: ListMessageResult) => {
@@ -326,6 +343,11 @@ const downloadMessage = (message: ListMessageResult) => {
   const video = message.content?.video;
   if (video?.url) {
     downloadVideo(video.url, videoDownloadName(video));
+    return;
+  }
+  const sticker = message.content?.sticker;
+  if (sticker?.url && isDownloadableSticker(message)) {
+    downloadImage(sticker.url, stickerDownloadName(sticker));
     return;
   }
   const imageUrl = message.content?.image?.url;
@@ -683,6 +705,10 @@ const resolveQuotedText = (m: ListMessageResult): string => {
     return m.content.quoted.message ?? t('audio_label');
   }
 
+  if (m.content.quoted.type === EMessageType.sticker) {
+    return t('sticker_label', 'Sticker');
+  }
+
   return m.content.quoted.message ?? '';
 };
 
@@ -690,6 +716,10 @@ const resolveQuotedImageSrc = (m: ListMessageResult): string => {
   const image = m.content?.quoted?.image;
   if (!image) return '';
   return image.url || image.thumbnail || '';
+};
+
+const resolveQuotedStickerSrc = (m: ListMessageResult): string => {
+  return m.content?.quoted?.sticker?.url || '';
 };
 
 const resolveQuotedVideoUrl = (m: ListMessageResult): string => {
@@ -721,6 +751,9 @@ const hasQuotedVideo = (m: ListMessageResult): boolean =>
 
 const hasQuotedAudio = (m: ListMessageResult): boolean =>
   !!m.content?.quoted?.audio;
+
+const hasQuotedSticker = (m: ListMessageResult): boolean =>
+  !!m.content?.quoted?.sticker;
 
 const hasQuotedContact = (m: ListMessageResult): boolean =>
   !!(
@@ -830,14 +863,20 @@ const goToQuoted = (m: ListMessageResult) => {
 
 const openImage = (m: ListMessageResult) => {
   viewerKind.value = 'image';
-  viewerSrc.value = m.content?.image?.url || '';
-  viewerCaption.value = m.content?.image?.caption || '';
-  viewerDownloadName.value = documentDownloadName({
-    url: viewerSrc.value,
-    name: m.content?.image?.caption ?? undefined,
-    mimetype: m.content?.image?.mimetype ?? undefined,
-    extension: m.content?.image?.extension ?? undefined,
-  } as DocumentMessageChat);
+  if (m.content?.sticker?.url) {
+    viewerSrc.value = m.content.sticker.url;
+    viewerCaption.value = '';
+    viewerDownloadName.value = stickerDownloadName(m.content.sticker);
+  } else {
+    viewerSrc.value = m.content?.image?.url || '';
+    viewerCaption.value = m.content?.image?.caption || '';
+    viewerDownloadName.value = documentDownloadName({
+      url: viewerSrc.value,
+      name: m.content?.image?.caption ?? undefined,
+      mimetype: m.content?.image?.mimetype ?? undefined,
+      extension: m.content?.image?.extension ?? undefined,
+    } as DocumentMessageChat);
+  }
   viewerOpen.value = true;
 };
 
@@ -1246,6 +1285,18 @@ onUnmounted(() => {
                     />
                   </div>
 
+                  <div
+                    v-if="hasQuotedSticker(msgGrp)"
+                    class="quoted-media quoted-media--image"
+                  >
+                    <VImg
+                      :src="resolveQuotedStickerSrc(msgGrp)"
+                      width="44"
+                      height="44"
+                      contain
+                    />
+                  </div>
+
                   <div v-if="hasQuotedDocument(msgGrp)" class="quoted-document">
                     <VIcon
                       :icon="resolveQuotedDocumentIcon(msgGrp)"
@@ -1347,6 +1398,7 @@ onUnmounted(() => {
                       msgGrp.content?.quoted?.type !== EMessageType.video &&
                       msgGrp.content?.quoted?.type !== EMessageType.image &&
                       msgGrp.content?.quoted?.type !== EMessageType.audio &&
+                      msgGrp.content?.quoted?.type !== EMessageType.sticker &&
                       msgGrp.content?.quoted?.type !== EMessageType.contact_card
                     "
                     class="quoted-text"
@@ -1504,6 +1556,40 @@ onUnmounted(() => {
                 >
                   {{ msgGrp.content.video.caption }}
                 </p>
+              </div>
+
+              <div
+                v-if="
+                  msgGrp.content?.type === EMessageType.sticker &&
+                  msgGrp.content?.sticker?.url
+                "
+                :class="[
+                  'sticker-bubble',
+                  !isTypeUser(msgGrp)
+                    ? 'sticker-bubble--right'
+                    : 'sticker-bubble--left',
+                  { 'is-deleted': msgGrp.deleted },
+                ]"
+                @click="openImage(msgGrp)"
+              >
+                <VImg
+                  v-if="!msgGrp.content.sticker.is_animated"
+                  :src="msgGrp.content.sticker.url"
+                  class="sticker-thumb"
+                  max-width="100"
+                  max-height="100"
+                  contain
+                />
+                <img
+                  v-else
+                  :src="msgGrp.content.sticker.url"
+                  class="sticker-thumb sticker-thumb--animated"
+                  style="
+                    max-width: 100px;
+                    max-height: 100px;
+                    object-fit: contain;
+                  "
+                />
               </div>
 
               <div
