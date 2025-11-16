@@ -258,7 +258,7 @@ const useManualCoordinates = () => {
   });
 };
 
-const confirmLocation = () => {
+const confirmLocation = async () => {
   if (!locationPickerLatitude.value || !locationPickerLongitude.value) {
     return;
   }
@@ -278,6 +278,10 @@ const confirmLocation = () => {
   locationInputLatitude.value = '';
   locationInputLongitude.value = '';
   locationPickerMode.value = 'current';
+
+  await nextTick();
+  await sendLocationMessage();
+  finalizeSend();
 };
 
 const onLocationMapLoad = () => {
