@@ -1,7 +1,6 @@
 <script lang="ts" setup>
 import { ref, computed, watch, onMounted } from 'vue';
 import { useContactStore } from '@/@webcore/stores/contact';
-import { ListContactResponse } from '@core/schema/contact/listContact/response.schema';
 import { refDebounced } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 import { EColor } from '@core/common/enums/EColor';

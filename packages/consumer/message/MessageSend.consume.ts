@@ -235,6 +235,28 @@ export class MessageSendConsume {
     this.lastMessageTypeByChatId.set(chatId, type);
   }
 
+  private createMediaHandler(
+    jid: string,
+    chatId: string,
+    data: IChatMessage,
+    type: EMessageType,
+    lastType: EMessageType | undefined,
+    processor: (j: string, d: IChatMessage) => Promise<void>
+  ): () => Promise<void> {
+    return () =>
+      this.processMediaMessage(jid, chatId, data, type, lastType, processor);
+  }
+
+  private createActionHandler(
+    jid: string,
+    chatId: string,
+    data: IChatMessage,
+    type: EMessageType,
+    processor: (j: string, d: IChatMessage) => Promise<void>
+  ): () => Promise<void> {
+    return () => this.processActionMessage(jid, chatId, data, type, processor);
+  }
+
   private selectMessageHandler(
     currentType: EMessageType | undefined,
     jid: string,
@@ -247,92 +269,82 @@ export class MessageSendConsume {
       return null;
     }
 
-    if (currentType === EMessageType.image && data.content?.image?.url) {
-      return () =>
-        this.processMediaMessage(
-          jid,
-          chatId,
-          data,
-          EMessageType.image,
-          lastType,
-          (j, d) => this.processImage(j, d)
-        );
-    }
+    const handlers: Partial<
+      Record<EMessageType, (() => Promise<void>) | null>
+    > = {
+      [EMessageType.image]: data.content?.image?.url
+        ? this.createMediaHandler(
+            jid,
+            chatId,
+            data,
+            EMessageType.image,
+            lastType,
+            (j, d) => this.processImage(j, d)
+          )
+        : null,
+      [EMessageType.document]: data.content?.document?.url
+        ? this.createMediaHandler(
+            jid,
+            chatId,
+            data,
+            EMessageType.document,
+            lastType,
+            (j, d) => this.processDocument(j, d)
+          )
+        : null,
+      [EMessageType.audio]: data.content?.audio?.url
+        ? this.createMediaHandler(
+            jid,
+            chatId,
+            data,
+            EMessageType.audio,
+            lastType,
+            (j, d) => this.processAudio(j, d)
+          )
+        : null,
+      [EMessageType.video]: data.content?.video?.url
+        ? this.createMediaHandler(
+            jid,
+            chatId,
+            data,
+            EMessageType.video,
+            lastType,
+            (j, d) => this.processVideo(j, d)
+          )
+        : null,
+      [EMessageType.text]: data.content?.message
+        ? () => this.processTextMessage(jid, chatId, data, hasQuoted)
+        : null,
+      [EMessageType.contact_card]: data.content?.contact
+        ? this.createActionHandler(
+            jid,
+            chatId,
+            data,
+            EMessageType.contact_card,
+            (j, d) => this.processContact(j, d)
+          )
+        : null,
+      [EMessageType.delete_message]: data.message_key?.id
+        ? this.createActionHandler(
+            jid,
+            chatId,
+            data,
+            EMessageType.delete_message,
+            (j, d) => this.processDelete(j, d)
+          )
+        : null,
+      [EMessageType.react]: data.message_key?.id
+        ? this.createActionHandler(
+            jid,
+            chatId,
+            data,
+            EMessageType.react,
+            (j, d) => this.processReact(j, d)
+          )
+        : null,
+    };
 
-    if (currentType === EMessageType.document && data.content?.document?.url) {
-      return () =>
-        this.processMediaMessage(
-          jid,
-          chatId,
-          data,
-          EMessageType.document,
-          lastType,
-          (j, d) => this.processDocument(j, d)
-        );
-    }
-
-    if (currentType === EMessageType.audio && data.content?.audio?.url) {
-      return () =>
-        this.processMediaMessage(
-          jid,
-          chatId,
-          data,
-          EMessageType.audio,
-          lastType,
-          (j, d) => this.processAudio(j, d)
-        );
-    }
-
-    if (currentType === EMessageType.video && data.content?.video?.url) {
-      return () =>
-        this.processMediaMessage(
-          jid,
-          chatId,
-          data,
-          EMessageType.video,
-          lastType,
-          (j, d) => this.processVideo(j, d)
-        );
-    }
-
-    if (currentType === EMessageType.text && data.content?.message) {
-      return () => this.processTextMessage(jid, chatId, data, hasQuoted);
-    }
-
-    if (currentType === EMessageType.contact_card && data.content?.contact) {
-      return () =>
-        this.processActionMessage(
-          jid,
-          chatId,
-          data,
-          EMessageType.contact_card,
-          (j, d) => this.processContact(j, d)
-        );
-    }
-
-    if (currentType === EMessageType.delete_message && data.message_key?.id) {
-      return () =>
-        this.processActionMessage(
-          jid,
-          chatId,
-          data,
-          EMessageType.delete_message,
-          (j, d) => this.processDelete(j, d)
-        );
-    }
-
-    if (currentType === EMessageType.react && data.message_key?.id) {
-      return () =>
-        this.processActionMessage(
-          jid,
-          chatId,
-          data,
-          EMessageType.react,
-          (j, d) => this.processReact(j, d)
-        );
-    }
-
-    return null;
+    return handlers[currentType] ?? null;
   }
 
   private async processMessage(data: IChatMessage): Promise<void> {
@@ -481,7 +493,7 @@ export class MessageSendConsume {
     await this.pushUpdate(update);
   }
 
-  private generateVCard = (contact: {
+  private readonly generateVCard = (contact: {
     name: string;
     last_name?: string | null;
     phone?: string | null;
@@ -500,13 +512,14 @@ export class MessageSendConsume {
       const nameParts = fullName.split(' ');
       const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
       const firstName = nameParts[0] || '';
-      lines.push(`N:${lastName};${firstName};;;`);
-      lines.push(`FN:${fullName}`);
+      lines.push(`N:${lastName};${firstName};;;`, `FN:${fullName}`);
     }
 
     if (contact.phone) {
-      let phone = contact.phone.replace(/\D/g, '');
-      const ddi = contact.phone_ddi ? contact.phone_ddi.replace(/\D/g, '') : '';
+      let phone = contact.phone.replaceAll(/\D/g, '');
+      const ddi = contact.phone_ddi
+        ? contact.phone_ddi.replaceAll(/\D/g, '')
+        : '';
 
       if (ddi && phone) {
         phone = `+${ddi}${phone}`;

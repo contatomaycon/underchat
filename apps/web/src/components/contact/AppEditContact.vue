@@ -183,6 +183,48 @@ const notes = ref<string | null>(null);
 
 const refFormEditContact = ref<VForm>();
 
+const determineEmailToSave = (): string | null | undefined => {
+  const emailValue = email.value?.trim() || '';
+  const emailPartialOriginalTrimmed = emailPartialOriginal.value?.trim() || '';
+
+  if (isEmailDecrypted.value && emailValue) {
+    return emailValue;
+  }
+
+  if (
+    !isEmailDecrypted.value &&
+    emailValue &&
+    !emailPartialOriginalTrimmed.includes('*') &&
+    emailValue !== emailPartialOriginalTrimmed
+  ) {
+    return emailValue;
+  }
+
+  return undefined;
+};
+
+const determinePhoneToSave = (): string | null | undefined => {
+  const phoneValue = phone.value ? phone.value.replaceAll(/\D/g, '') : '';
+  const phonePartialOriginalNumbers = phonePartialOriginal.value
+    ? phonePartialOriginal.value.replaceAll(/\D/g, '')
+    : '';
+
+  if (isPhoneDecrypted.value && phoneValue) {
+    return phoneValue;
+  }
+
+  if (
+    !isPhoneDecrypted.value &&
+    phoneValue &&
+    !phonePartialOriginal.value?.includes('*') &&
+    phoneValue !== phonePartialOriginalNumbers
+  ) {
+    return phoneValue;
+  }
+
+  return undefined;
+};
+
 const updateContact = async () => {
   const validateForm = await refFormEditContact?.value?.validate();
   if (!validateForm?.valid) return;
@@ -195,41 +237,8 @@ const updateContact = async () => {
     contact_id: contactId.value,
   };
 
-  let emailToSave: string | null | undefined = undefined;
-  const emailValue = email.value?.trim() || '';
-  const emailPartialOriginalTrimmed = emailPartialOriginal.value?.trim() || '';
-
-  if (isEmailDecrypted.value && emailValue) {
-    emailToSave = emailValue;
-  }
-  if (
-    !isEmailDecrypted.value &&
-    emailValue &&
-    !emailPartialOriginalTrimmed.includes('*')
-  ) {
-    if (emailValue !== emailPartialOriginalTrimmed) {
-      emailToSave = emailValue;
-    }
-  }
-
-  let phoneToSave: string | null | undefined = undefined;
-  const phoneValue = phone.value ? phone.value.replaceAll(/\D/g, '') : '';
-  const phonePartialOriginalNumbers = phonePartialOriginal.value
-    ? phonePartialOriginal.value.replaceAll(/\D/g, '')
-    : '';
-
-  if (isPhoneDecrypted.value && phoneValue) {
-    phoneToSave = phoneValue;
-  }
-  if (
-    !isPhoneDecrypted.value &&
-    phoneValue &&
-    !phonePartialOriginal.value?.includes('*')
-  ) {
-    if (phoneValue !== phonePartialOriginalNumbers) {
-      phoneToSave = phoneValue;
-    }
-  }
+  const emailToSave = determineEmailToSave();
+  const phoneToSave = determinePhoneToSave();
 
   const body: UpdateContactRequest = {
     label_template_id: label_template_id.value,

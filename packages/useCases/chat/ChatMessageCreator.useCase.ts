@@ -1231,6 +1231,120 @@ export class ChatMessageCreatorUseCase {
     return true;
   }
 
+  private async processActionMessages(
+    type: EMessageType,
+    body: CreateMessageChatsBody,
+    chat: IChat,
+    chatId: string,
+    accountId: string,
+    t: TFunction<'translation', undefined>,
+    hash: string
+  ): Promise<boolean | null> {
+    if (type === EMessageType.delete_message && body.delete_message_id) {
+      return this.processDelete(
+        chat,
+        chatId,
+        accountId,
+        body.delete_message_id,
+        t,
+        hash
+      );
+    }
+
+    if (
+      type === EMessageType.react &&
+      body.reaction_message_id &&
+      body.reaction_emoji
+    ) {
+      return this.processReaction(
+        chat,
+        chatId,
+        accountId,
+        body.reaction_message_id,
+        body.reaction_emoji,
+        t,
+        hash
+      );
+    }
+
+    return null;
+  }
+
+  private async processMediaMessages(
+    type: EMessageType,
+    body: CreateMessageChatsBody,
+    chat: IChat,
+    chatId: string,
+    accountId: string,
+    message: string | null,
+    messageQuotedId: string | null,
+    t: TFunction<'translation', undefined>,
+    hash: string,
+    documents: string[],
+    videos: string[],
+    videoDuration: number | null,
+    audios: string[],
+    audioDuration: number | null,
+    audioViewOnce: boolean,
+    audioPtt: boolean
+  ): Promise<boolean | null> {
+    if (type === EMessageType.document) {
+      if (documents.length === 0) {
+        throw new Error(t('documents_required'));
+      }
+      return this.processDocumentMessages(documents, {
+        chat,
+        chatId,
+        accountId,
+        type,
+        message,
+        messageQuotedId,
+        t,
+        hash,
+      });
+    }
+
+    if (type === EMessageType.video) {
+      if (videos.length === 0) {
+        throw new Error(t('videos_required'));
+      }
+      return this.processVideoMessages(videos, videoDuration, {
+        chat,
+        chatId,
+        accountId,
+        type,
+        message,
+        messageQuotedId,
+        t,
+        hash,
+      });
+    }
+
+    if (type === EMessageType.audio) {
+      if (audios.length === 0) {
+        throw new Error(t('audio_required'));
+      }
+      return this.processAudioMessages(
+        audios,
+        audioDuration,
+        audioViewOnce,
+        audioPtt,
+        {
+          chat,
+          chatId,
+          accountId,
+          type,
+          message,
+          messageQuotedId,
+          t,
+          hash,
+        }
+      );
+    }
+
+    return null;
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -1260,99 +1374,45 @@ export class ChatMessageCreatorUseCase {
     const contacts = this.normalizeContactsArray(body.contacts);
     const hash = this.normalizeHash(body.hash);
 
-    if (type === EMessageType.delete_message && body.delete_message_id) {
-      return this.processDelete(
-        chat,
-        params.chat_id,
-        accountId,
-        body.delete_message_id,
-        t,
-        hash
-      );
+    const actionResult = await this.processActionMessages(
+      type,
+      body,
+      chat,
+      params.chat_id,
+      accountId,
+      t,
+      hash
+    );
+    if (actionResult !== null) {
+      return actionResult;
     }
 
-    if (
-      type === EMessageType.react &&
-      body.reaction_message_id &&
-      body.reaction_emoji
-    ) {
-      return this.processReaction(
-        chat,
-        params.chat_id,
-        accountId,
-        body.reaction_message_id,
-        body.reaction_emoji,
-        t,
-        hash
-      );
-    }
-
-    if (type === EMessageType.document) {
-      if (documents.length === 0) {
-        throw new Error(t('documents_required'));
-      }
-
-      return this.processDocumentMessages(documents, {
-        chat,
-        chatId: params.chat_id,
-        accountId,
-        type,
-        message,
-        messageQuotedId,
-        t,
-        hash,
-      });
-    }
-
-    if (type === EMessageType.video) {
-      if (videos.length === 0) {
-        throw new Error(t('videos_required'));
-      }
-
-      return this.processVideoMessages(videos, videoDuration, {
-        chat,
-        chatId: params.chat_id,
-        accountId,
-        type,
-        message,
-        messageQuotedId,
-        t,
-        hash,
-      });
-    }
-
-    if (type === EMessageType.audio) {
-      if (audios.length === 0) {
-        throw new Error(t('audio_required'));
-      }
-
-      return this.processAudioMessages(
-        audios,
-        audioDuration,
-        audioViewOnce,
-        audioPtt,
-        {
-          chat,
-          chatId: params.chat_id,
-          accountId,
-          type,
-          message,
-          messageQuotedId,
-          t,
-          hash,
-        }
-      );
+    const mediaResult = await this.processMediaMessages(
+      type,
+      body,
+      chat,
+      params.chat_id,
+      accountId,
+      message,
+      messageQuotedId,
+      t,
+      hash,
+      documents,
+      videos,
+      videoDuration,
+      audios,
+      audioDuration,
+      audioViewOnce,
+      audioPtt
+    );
+    if (mediaResult !== null) {
+      return mediaResult;
     }
 
     if (contacts.length > 0) {
-      let quotedMessage: IQuotedMessage | null = null;
-      if (messageQuotedId) {
-        quotedMessage = await this.getQuotedMessage(
-          accountId,
-          params.chat_id,
-          messageQuotedId
-        );
-      }
+      const quotedMessage = messageQuotedId
+        ? await this.getQuotedMessage(accountId, params.chat_id, messageQuotedId)
+        : null;
 
       return this.processContactMessages(contacts, {
         chat,
