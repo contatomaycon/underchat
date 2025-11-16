@@ -177,24 +177,46 @@ const useCurrentLocation = async () => {
     locationPickerLatitude.value = position.coords.latitude;
     locationPickerLongitude.value = position.coords.longitude;
     locationPickerMode.value = 'map';
+    
     await nextTick();
-    if (locationMapRef.value?.map) {
-      locationMapRef.value.map.setCenter([
-        position.coords.longitude,
-        position.coords.latitude,
-      ]);
-      locationMapRef.value.map.setZoom(15);
+    
+    const updateMapCenter = () => {
+      if (locationMapRef.value?.map) {
+        const map = locationMapRef.value.map;
+        map.setCenter([
+          position.coords.longitude,
+          position.coords.latitude,
+        ]);
+        map.setZoom(15);
+        return true;
+      }
+      return false;
+    };
+    
+    if (updateMapCenter()) {
+      return;
     }
+    
+    await nextTick();
+    setTimeout(() => {
+      if (updateMapCenter()) {
+        return;
+      }
+      setTimeout(() => {
+        updateMapCenter();
+      }, 200);
+    }, 100);
   } catch (error) {
     console.error('Error getting current location:', error);
   }
 };
 
 const onLocationMapClick = (event: any) => {
+  if (!event?.lngLat) return;
+  
   const lngLat = event.lngLat;
   locationPickerLatitude.value = lngLat.lat;
   locationPickerLongitude.value = lngLat.lng;
-  locationPickerMode.value = 'map';
 };
 
 const useManualCoordinates = () => {
@@ -243,6 +265,54 @@ const confirmLocation = () => {
   locationPickerMode.value = 'current';
 };
 
+const onLocationMapLoad = () => {
+  if (!locationMapRef.value?.map) return;
+  
+  const map = locationMapRef.value.map;
+  map.resize();
+  
+  map.on('click', (e: any) => {
+    if (!e?.lngLat) return;
+    
+    const lngLat = e.lngLat;
+    locationPickerLatitude.value = lngLat.lat;
+    locationPickerLongitude.value = lngLat.lng;
+  });
+  
+  if (locationPickerLatitude.value && locationPickerLongitude.value) {
+    map.setCenter([
+      locationPickerLongitude.value,
+      locationPickerLatitude.value,
+    ]);
+    map.setZoom(15);
+    return;
+  }
+  
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        locationPickerLatitude.value = position.coords.latitude;
+        locationPickerLongitude.value = position.coords.longitude;
+        if (locationMapRef.value?.map) {
+          locationMapRef.value.map.setCenter([
+            position.coords.longitude,
+            position.coords.latitude,
+          ]);
+          locationMapRef.value.map.setZoom(15);
+        }
+      },
+      () => {
+        locationPickerLatitude.value = -15.459175;
+        locationPickerLongitude.value = -47.602219;
+        if (locationMapRef.value?.map) {
+          locationMapRef.value.map.setCenter([-47.602219, -15.459175]);
+          locationMapRef.value.map.setZoom(15);
+        }
+      }
+    );
+  }
+};
+
 watch(isLocationPickerOpen, async (isOpen) => {
   if (isOpen) {
     await nextTick();
@@ -251,6 +321,22 @@ watch(isLocationPickerOpen, async (isOpen) => {
     }
   }
 });
+
+watch(
+  () => [locationPickerMode.value, locationPickerLatitude.value, locationPickerLongitude.value],
+  async ([mode, lat, lng]) => {
+    if (mode === 'map' && lat && lng) {
+      await nextTick();
+      setTimeout(() => {
+        if (locationMapRef.value?.map) {
+          const map = locationMapRef.value.map;
+          map.setCenter([lng, lat]);
+          map.setZoom(15);
+        }
+      }, 100);
+    }
+  }
+);
 
 const isRecordingAudio = ref(false);
 const isRecordingPaused = ref(false);
@@ -3698,11 +3784,7 @@ onBeforeUnmount(() => {
                 width="100%"
                 height="400px"
                 @map:click="onLocationMapClick"
-                @map:load="() => {
-                  if (locationMapRef?.map) {
-                    locationMapRef.map.resize();
-                  }
-                }"
+                @map:load="onLocationMapLoad"
               >
                 <MglMarker
                   v-if="locationPickerLatitude && locationPickerLongitude"
