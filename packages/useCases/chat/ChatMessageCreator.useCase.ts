@@ -32,6 +32,7 @@ import { ICreateImageMessageParams } from '@core/common/interfaces/ICreateImageM
 import { ICreateTextMessageParams } from '@core/common/interfaces/ICreateTextMessageParams';
 import { ICreateDocumentMessageParams } from '@core/common/interfaces/ICreateDocumentMessageParams';
 import { IProcessMediaMessagesParams } from '@core/common/interfaces/IProcessMediaMessagesParams';
+import { IProcessMediaMessagesOptions } from '@core/common/interfaces/IProcessMediaMessagesOptions';
 import { IProcessTextMessageParams } from '@core/common/interfaces/IProcessTextMessageParams';
 import { IUploadFileInput } from '@core/common/interfaces/IUploadFileInput';
 import { ICreateContactMessageParams } from '@core/common/interfaces/ICreateContactMessageParams';
@@ -1271,52 +1272,32 @@ export class ChatMessageCreatorUseCase {
   }
 
   private async processMediaMessages(
-    type: EMessageType,
-    chat: IChat,
-    chatId: string,
-    accountId: string,
-    message: string | null,
-    messageQuotedId: string | null,
-    t: TFunction<'translation', undefined>,
-    hash: string | null,
-    documents: UploadFileRequest[],
-    videos: UploadFileRequest[],
-    videoDuration: number | null,
-    audios: UploadFileRequest[],
-    audioDuration: number | null,
-    audioViewOnce: boolean,
-    audioPtt: boolean
+    options: IProcessMediaMessagesOptions
   ): Promise<boolean | null> {
+    const {
+      type,
+      documents,
+      videos,
+      videoDuration,
+      audios,
+      audioDuration,
+      audioViewOnce,
+      audioPtt,
+      t,
+    } = options;
+
     if (type === EMessageType.document) {
       if (documents.length === 0) {
         throw new Error(t('documents_required'));
       }
-      return this.processDocumentMessages(documents, {
-        chat,
-        chatId,
-        accountId,
-        type,
-        message,
-        messageQuotedId,
-        t,
-        hash,
-      });
+      return this.processDocumentMessages(documents, options);
     }
 
     if (type === EMessageType.video) {
       if (videos.length === 0) {
         throw new Error(t('videos_required'));
       }
-      return this.processVideoMessages(videos, videoDuration, {
-        chat,
-        chatId,
-        accountId,
-        type,
-        message,
-        messageQuotedId,
-        t,
-        hash,
-      });
+      return this.processVideoMessages(videos, videoDuration, options);
     }
 
     if (type === EMessageType.audio) {
@@ -1328,16 +1309,7 @@ export class ChatMessageCreatorUseCase {
         audioDuration,
         audioViewOnce,
         audioPtt,
-        {
-          chat,
-          chatId,
-          accountId,
-          type,
-          message,
-          messageQuotedId,
-          t,
-          hash,
-        }
+        options
       );
     }
 
@@ -1386,10 +1358,10 @@ export class ChatMessageCreatorUseCase {
       return actionResult;
     }
 
-    const mediaResult = await this.processMediaMessages(
+    const mediaResult = await this.processMediaMessages({
       type,
       chat,
-      params.chat_id,
+      chatId: params.chat_id,
       accountId,
       message,
       messageQuotedId,
@@ -1401,8 +1373,8 @@ export class ChatMessageCreatorUseCase {
       audios,
       audioDuration,
       audioViewOnce,
-      audioPtt
-    );
+      audioPtt,
+    });
     if (mediaResult !== null) {
       return mediaResult;
     }
