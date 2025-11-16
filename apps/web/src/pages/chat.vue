@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { computed } from 'vue';
+import { computed, watch, nextTick } from 'vue';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { useDisplay, useTheme } from 'vuetify';
 import { themes } from '@/plugins/vuetify/theme';
@@ -48,6 +48,7 @@ import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
 import data from 'emoji-mart-vue-fast/data/all.json';
 import 'emoji-mart-vue-fast/css/emoji-mart.css';
 import { useI18n } from 'vue-i18n';
+import { MglMap, MglMarker } from 'vue-maplibre-gl';
 
 const emojiIndex = new EmojiIndex(data);
 const { t } = useI18n();
@@ -90,6 +91,7 @@ const fileVideoRef = ref<HTMLInputElement | null>(null);
 const fileAudioRef = ref<HTMLInputElement | null>(null);
 const isEmojiOpen = ref(false);
 const isContactPickerOpen = ref(false);
+const isLocationPickerOpen = ref(false);
 const isContactViewModalOpen = ref(false);
 const selectedContactDetails = ref<ViewContactResponse | null>(null);
 const viewContactEmail = ref<string | null>(null);
@@ -105,6 +107,150 @@ const selectedDocuments = ref<ISelectedDocumentPreview[]>([]);
 const selectedVideos = ref<ISelectedVideoPreview[]>([]);
 const selectedAudios = ref<ISelectedAudioPreview[]>([]);
 const selectedContacts = ref<ISelectedContactPreview[]>([]);
+const selectedLocation = ref<{
+  latitude: number;
+  longitude: number;
+  name?: string | null;
+  address?: string | null;
+} | null>(null);
+
+const locationPickerLatitude = ref<number | null>(null);
+const locationPickerLongitude = ref<number | null>(null);
+const locationPickerName = ref<string>('');
+const locationPickerAddress = ref<string>('');
+const locationPickerMode = ref<'current' | 'map' | 'manual'>('current');
+const locationMapRef = ref<any>(null);
+const locationInputLatitude = ref<string>('');
+const locationInputLongitude = ref<string>('');
+
+const mapStyle = computed(() => {
+  return {
+    version: 8,
+    sources: {
+      'osm-tiles': {
+        type: 'raster',
+        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      },
+    },
+    layers: [
+      {
+        id: 'osm-tiles-layer',
+        type: 'raster',
+        source: 'osm-tiles',
+        minzoom: 0,
+        maxzoom: 22,
+      },
+    ],
+  };
+});
+
+const locationMapCenter = computed<[number, number]>(() => {
+  if (locationPickerLatitude.value && locationPickerLongitude.value) {
+    return [locationPickerLongitude.value, locationPickerLatitude.value];
+  }
+  return [0, 0];
+});
+
+const locationMarkerPosition = computed<[number, number]>(() => {
+  if (locationPickerLatitude.value && locationPickerLongitude.value) {
+    return [locationPickerLongitude.value, locationPickerLatitude.value];
+  }
+  return [0, 0];
+});
+
+const getCurrentLocation = (): Promise<GeolocationPosition> => {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('Geolocation is not supported'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(resolve, reject);
+  });
+};
+
+const useCurrentLocation = async () => {
+  try {
+    const position = await getCurrentLocation();
+    locationPickerLatitude.value = position.coords.latitude;
+    locationPickerLongitude.value = position.coords.longitude;
+    locationPickerMode.value = 'map';
+    await nextTick();
+    if (locationMapRef.value?.map) {
+      locationMapRef.value.map.setCenter([
+        position.coords.longitude,
+        position.coords.latitude,
+      ]);
+      locationMapRef.value.map.setZoom(15);
+    }
+  } catch (error) {
+    console.error('Error getting current location:', error);
+  }
+};
+
+const onLocationMapClick = (event: any) => {
+  const lngLat = event.lngLat;
+  locationPickerLatitude.value = lngLat.lat;
+  locationPickerLongitude.value = lngLat.lng;
+  locationPickerMode.value = 'map';
+};
+
+const useManualCoordinates = () => {
+  const lat = parseFloat(locationInputLatitude.value);
+  const lng = parseFloat(locationInputLongitude.value);
+  
+  if (isNaN(lat) || isNaN(lng)) {
+    return;
+  }
+  
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return;
+  }
+  
+  locationPickerLatitude.value = lat;
+  locationPickerLongitude.value = lng;
+  locationPickerMode.value = 'map';
+  
+  nextTick(() => {
+    if (locationMapRef.value?.map) {
+      locationMapRef.value.map.setCenter([lng, lat]);
+      locationMapRef.value.map.setZoom(15);
+    }
+  });
+};
+
+const confirmLocation = () => {
+  if (!locationPickerLatitude.value || !locationPickerLongitude.value) {
+    return;
+  }
+  
+  selectedLocation.value = {
+    latitude: locationPickerLatitude.value,
+    longitude: locationPickerLongitude.value,
+    name: locationPickerName.value || null,
+    address: locationPickerAddress.value || null,
+  };
+  
+  isLocationPickerOpen.value = false;
+  locationPickerLatitude.value = null;
+  locationPickerLongitude.value = null;
+  locationPickerName.value = '';
+  locationPickerAddress.value = '';
+  locationInputLatitude.value = '';
+  locationInputLongitude.value = '';
+  locationPickerMode.value = 'current';
+};
+
+watch(isLocationPickerOpen, async (isOpen) => {
+  if (isOpen) {
+    await nextTick();
+    if (locationPickerMode.value === 'current') {
+      await useCurrentLocation();
+    }
+  }
+});
 
 const isRecordingAudio = ref(false);
 const isRecordingPaused = ref(false);
@@ -540,6 +686,7 @@ const clearMessageFields = () => {
   clearSelectedContacts();
   selectedPhotos.value = [];
   selectedDocuments.value = [];
+  selectedLocation.value = null;
   chatStore.clearMessageReply();
 };
 
@@ -550,7 +697,8 @@ const canSendMessage = (): boolean => {
     selectedDocuments.value.length > 0 ||
     selectedVideos.value.length > 0 ||
     selectedAudios.value.length > 0 ||
-    selectedContacts.value.length > 0
+    selectedContacts.value.length > 0 ||
+    selectedLocation.value !== null
   );
 };
 
@@ -910,6 +1058,60 @@ const sendContactsMessage = async (): Promise<void> => {
   clearSelectedContacts();
 };
 
+const sendLocationMessage = async (): Promise<void> => {
+  if (!chatStore.activeChat?.chat_id) return;
+  if (!selectedLocation.value) return;
+
+  const hash = createMessageHash();
+  const replyId = chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent();
+  const messageValue = getComposerMessage();
+
+  const content: ContentMessageChat = {
+    type: EMessageType.location,
+    message: messageValue,
+    message_quoted_id: replyId ?? undefined,
+    quoted: quotedPayload,
+    location: {
+      latitude: selectedLocation.value.latitude,
+      longitude: selectedLocation.value.longitude,
+      name: selectedLocation.value.name ?? null,
+      address: selectedLocation.value.address ?? null,
+    },
+  };
+
+  await registerLocalMessage(content, hash);
+
+  const formData = new FormData();
+  formData.append('type', EMessageType.location);
+  if (messageValue) {
+    formData.append('message', messageValue);
+  }
+  if (replyId) {
+    formData.append('message_quoted_id', replyId);
+  }
+  formData.append('location_latitude', selectedLocation.value.latitude.toString());
+  formData.append('location_longitude', selectedLocation.value.longitude.toString());
+  if (selectedLocation.value.name) {
+    formData.append('location_name', selectedLocation.value.name);
+  }
+  if (selectedLocation.value.address) {
+    formData.append('location_address', selectedLocation.value.address);
+  }
+  formData.append('hash', hash);
+
+  const success = await chatStore.createMessage(formData, {
+    skipLoading: true,
+  });
+
+  if (!success) {
+    markUploadError(hash);
+  }
+
+  chatStore.clearMessageReply();
+  selectedLocation.value = null;
+};
+
 const onContactsSelected = (contacts: ISelectedContactPreview[]) => {
   const existingIds = new Set(selectedContacts.value.map((c) => c.contact_id));
   const newContacts = contacts.filter((c) => !existingIds.has(c.contact_id));
@@ -973,6 +1175,12 @@ const sendMessage = async () => {
 
   if (selectedContacts.value.length > 0) {
     await sendContactsMessage();
+    finalizeSend();
+    return;
+  }
+
+  if (selectedLocation.value) {
+    await sendLocationMessage();
     finalizeSend();
     return;
   }
@@ -1050,7 +1258,7 @@ const previewImage = computed(() => {
 });
 
 const openAttach = (
-  type: 'document' | 'photo' | 'video' | 'audio' | 'contact'
+  type: 'document' | 'photo' | 'video' | 'audio' | 'contact' | 'location'
 ) => {
   switch (type) {
     case 'document':
@@ -1067,6 +1275,9 @@ const openAttach = (
       break;
     case 'contact':
       isContactPickerOpen.value = true;
+      break;
+    case 'location':
+      isLocationPickerOpen.value = true;
       break;
   }
 };
@@ -2071,11 +2282,12 @@ const toggleAudioModalPlay = () => {
 
   if (audioModalIsPlaying.value) {
     audioModalPlayer.value.pause();
-  } else {
-    audioModalPlayer.value.play().catch(() => {
-      audioModalIsPlaying.value = false;
-    });
+    return;
   }
+
+  audioModalPlayer.value.play().catch(() => {
+    audioModalIsPlaying.value = false;
+  });
 };
 
 const formatAudioModalTime = (seconds: number | null): string => {
@@ -3298,6 +3510,12 @@ onBeforeUnmount(() => {
                     >
                     <VListItemTitle>Contato</VListItemTitle>
                   </VListItem>
+                  <VListItem @click="openAttach('location')">
+                    <template #prepend
+                      ><VIcon size="20">tabler-map-pin</VIcon></template
+                    >
+                    <VListItemTitle>Localização</VListItemTitle>
+                  </VListItem>
                 </VList>
               </VMenu>
 
@@ -3421,6 +3639,164 @@ onBeforeUnmount(() => {
     :existing-contacts="selectedContacts"
     @select="onContactsSelected"
   />
+
+  <VDialog v-model="isLocationPickerOpen" max-width="800" :scrollable="false">
+    <VCard>
+      <VCardTitle class="d-flex align-center justify-space-between">
+        <span>{{ t('location_label', 'Localização') }}</span>
+        <VBtn
+          icon
+          variant="text"
+          size="small"
+          @click="isLocationPickerOpen = false"
+        >
+          <VIcon>tabler-x</VIcon>
+        </VBtn>
+      </VCardTitle>
+      <VCardText>
+        <VTabs v-model="locationPickerMode" class="mb-4">
+          <VTab value="current">
+            <VIcon start>tabler-current-location</VIcon>
+            Localização Atual
+          </VTab>
+          <VTab value="map">
+            <VIcon start>tabler-map</VIcon>
+            Escolher no Mapa
+          </VTab>
+          <VTab value="manual">
+            <VIcon start>tabler-keyboard</VIcon>
+            Digitar Coordenadas
+          </VTab>
+        </VTabs>
+
+        <VWindow v-model="locationPickerMode">
+          <VWindowItem value="current">
+            <div class="d-flex flex-column align-center pa-4">
+              <VIcon size="48" color="primary" class="mb-4">
+                tabler-current-location
+              </VIcon>
+              <VBtn
+                color="primary"
+                @click="useCurrentLocation"
+                :loading="locationPickerMode === 'current' && !locationPickerLatitude"
+              >
+                Usar Localização Atual
+              </VBtn>
+              <p class="text-caption text-center mt-4">
+                Clique no botão para obter sua localização atual
+              </p>
+            </div>
+          </VWindowItem>
+
+          <VWindowItem value="map">
+            <div class="location-picker-map-container">
+              <MglMap
+                ref="locationMapRef"
+                :map-style="mapStyle"
+                :center="locationMapCenter"
+                :zoom="15"
+                width="100%"
+                height="400px"
+                @map:click="onLocationMapClick"
+                @map:load="() => {
+                  if (locationMapRef?.map) {
+                    locationMapRef.map.resize();
+                  }
+                }"
+              >
+                <MglMarker
+                  v-if="locationPickerLatitude && locationPickerLongitude"
+                  :coordinates="locationMarkerPosition"
+                  color="#ef4444"
+                />
+              </MglMap>
+            </div>
+            <VRow class="mt-4">
+              <VCol cols="12">
+                <AppTextField
+                  v-model="locationPickerName"
+                  label="Nome (opcional)"
+                  placeholder="Ex: Minha Casa"
+                />
+              </VCol>
+              <VCol cols="12">
+                <AppTextField
+                  v-model="locationPickerAddress"
+                  label="Endereço (opcional)"
+                  placeholder="Ex: Rua Exemplo, 123"
+                />
+              </VCol>
+            </VRow>
+          </VWindowItem>
+
+          <VWindowItem value="manual">
+            <VRow>
+              <VCol cols="12" md="6">
+                <AppTextField
+                  v-model="locationInputLatitude"
+                  label="Latitude"
+                  placeholder="Ex: -15.459175"
+                  type="number"
+                  step="any"
+                />
+              </VCol>
+              <VCol cols="12" md="6">
+                <AppTextField
+                  v-model="locationInputLongitude"
+                  label="Longitude"
+                  placeholder="Ex: -47.602219"
+                  type="number"
+                  step="any"
+                />
+              </VCol>
+              <VCol cols="12">
+                <VBtn
+                  color="primary"
+                  block
+                  @click="useManualCoordinates"
+                  :disabled="!locationInputLatitude || !locationInputLongitude"
+                >
+                  Aplicar Coordenadas
+                </VBtn>
+              </VCol>
+            </VRow>
+            <VRow v-if="locationPickerLatitude && locationPickerLongitude" class="mt-4">
+              <VCol cols="12">
+                <AppTextField
+                  v-model="locationPickerName"
+                  label="Nome (opcional)"
+                  placeholder="Ex: Minha Casa"
+                />
+              </VCol>
+              <VCol cols="12">
+                <AppTextField
+                  v-model="locationPickerAddress"
+                  label="Endereço (opcional)"
+                  placeholder="Ex: Rua Exemplo, 123"
+                />
+              </VCol>
+            </VRow>
+          </VWindowItem>
+        </VWindow>
+      </VCardText>
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          @click="isLocationPickerOpen = false"
+        >
+          {{ t('cancel', 'Cancelar') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          @click="confirmLocation"
+          :disabled="!locationPickerLatitude || !locationPickerLongitude"
+        >
+          {{ t('send', 'Enviar Localização') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
 
   <VDialog v-model="isContactViewModalOpen" max-width="600">
     <DialogCloseBtn @click="isContactViewModalOpen = false" />
@@ -4270,6 +4646,14 @@ $chat-app-header-height: 76px;
   color: white;
   text-align: center;
   margin: 12px;
+}
+
+.location-picker-map-container {
+  width: 100%;
+  height: 400px;
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
 }
 
 .message-target-flash {

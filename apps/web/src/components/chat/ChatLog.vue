@@ -928,16 +928,17 @@ const openImage = (m: ListMessageResult) => {
     viewerSrc.value = m.content.sticker.url;
     viewerCaption.value = '';
     viewerDownloadName.value = stickerDownloadName(m.content.sticker);
-  } else {
-    viewerSrc.value = m.content?.image?.url || '';
-    viewerCaption.value = m.content?.image?.caption || '';
-    viewerDownloadName.value = documentDownloadName({
-      url: viewerSrc.value,
-      name: m.content?.image?.caption ?? undefined,
-      mimetype: m.content?.image?.mimetype ?? undefined,
-      extension: m.content?.image?.extension ?? undefined,
-    } as DocumentMessageChat);
+    return;
   }
+
+  viewerSrc.value = m.content?.image?.url || '';
+  viewerCaption.value = m.content?.image?.caption || '';
+  viewerDownloadName.value = documentDownloadName({
+    url: viewerSrc.value,
+    name: m.content?.image?.caption ?? undefined,
+    mimetype: m.content?.image?.mimetype ?? undefined,
+    extension: m.content?.image?.extension ?? undefined,
+  } as DocumentMessageChat);
   viewerOpen.value = true;
 };
 
