@@ -509,7 +509,7 @@ export class MessageSendConsume {
       const ddi = contact.phone_ddi ? contact.phone_ddi.replace(/\D/g, '') : '';
 
       if (ddi && phone) {
-        phone = ddi + phone;
+        phone = `+${ddi}${phone}`;
       }
 
       if (phone) {
