@@ -1238,7 +1238,7 @@ export class ChatMessageCreatorUseCase {
     chatId: string,
     accountId: string,
     t: TFunction<'translation', undefined>,
-    hash: string
+    hash: string | null
   ): Promise<boolean | null> {
     if (type === EMessageType.delete_message && body.delete_message_id) {
       return this.processDelete(
@@ -1272,18 +1272,17 @@ export class ChatMessageCreatorUseCase {
 
   private async processMediaMessages(
     type: EMessageType,
-    body: CreateMessageChatsBody,
     chat: IChat,
     chatId: string,
     accountId: string,
     message: string | null,
     messageQuotedId: string | null,
     t: TFunction<'translation', undefined>,
-    hash: string,
-    documents: string[],
-    videos: string[],
+    hash: string | null,
+    documents: UploadFileRequest[],
+    videos: UploadFileRequest[],
     videoDuration: number | null,
-    audios: string[],
+    audios: UploadFileRequest[],
     audioDuration: number | null,
     audioViewOnce: boolean,
     audioPtt: boolean
@@ -1389,7 +1388,6 @@ export class ChatMessageCreatorUseCase {
 
     const mediaResult = await this.processMediaMessages(
       type,
-      body,
       chat,
       params.chat_id,
       accountId,
@@ -1411,7 +1409,11 @@ export class ChatMessageCreatorUseCase {
 
     if (contacts.length > 0) {
       const quotedMessage = messageQuotedId
-        ? await this.getQuotedMessage(accountId, params.chat_id, messageQuotedId)
+        ? await this.getQuotedMessage(
+            accountId,
+            params.chat_id,
+            messageQuotedId
+          )
         : null;
 
       return this.processContactMessages(contacts, {
