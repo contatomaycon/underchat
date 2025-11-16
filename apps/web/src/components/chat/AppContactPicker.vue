@@ -6,12 +6,14 @@ import { refDebounced } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 import { EColor } from '@core/common/enums/EColor';
 import { ISelectedContactPreview } from '@core/common/interfaces/IChatFilePreview';
+import { SortRequest } from '@core/schema/common/sortRequestSchema';
 
 const { t } = useI18n();
 const contactStore = useContactStore();
 
 const props = defineProps<{
   modelValue: boolean;
+  existingContacts?: ISelectedContactPreview[];
 }>();
 
 const emit = defineEmits<{
@@ -28,15 +30,25 @@ const selectedContacts = ref<Set<string>>(new Set());
 const searchQuery = ref('');
 const debouncedSearch = refDebounced(searchQuery, 500);
 
+const existingContactIds = computed(() => {
+  return new Set(props.existingContacts?.map((c) => c.contact_id) || []);
+});
+
+const totalSelectedCount = computed(() => {
+  return existingContactIds.value.size + selectedContacts.value.size;
+});
+
 const options = ref({
   page: 1,
   itemsPerPage: 10,
+  sortBy: [] as SortRequest[],
   search: null as string | null,
 });
 
 const query = computed(() => ({
   page: options.value.page,
   per_page: options.value.itemsPerPage,
+  sort_by: options.value.sortBy,
   search: debouncedSearch.value || null,
 }));
 
@@ -61,6 +73,7 @@ const loadContacts = async () => {
   await contactStore.listContact({
     page: options.value.page,
     per_page: options.value.itemsPerPage,
+    sort_by: options.value.sortBy,
     search: debouncedSearch.value || undefined,
   });
 };
@@ -68,29 +81,41 @@ const loadContacts = async () => {
 const handleTableChange = (o: {
   page: number;
   itemsPerPage: number;
+  sortBy: SortRequest[];
 }) => {
   options.value.page = o.page;
   options.value.itemsPerPage = o.itemsPerPage;
+  options.value.sortBy = o.sortBy;
   loadContacts();
 };
 
 const toggleContact = (contactId: string) => {
+  if (existingContactIds.value.has(contactId)) {
+    return;
+  }
+
   if (selectedContacts.value.has(contactId)) {
     selectedContacts.value.delete(contactId);
-  } else {
-    if (selectedContacts.value.size >= 10) {
-      contactStore.showSnackbar(
-        t('max_contacts_selected', { count: 10 }),
-        EColor.warning
-      );
-      return;
-    }
-    selectedContacts.value.add(contactId);
+    return;
   }
+
+  if (totalSelectedCount.value >= 10) {
+    contactStore.showSnackbar(
+      t('max_contacts_selected', { count: 10 }),
+      EColor.warning
+    );
+    return;
+  }
+
+  selectedContacts.value.add(contactId);
 };
 
 const isContactSelected = (contactId: string): boolean => {
   return selectedContacts.value.has(contactId);
+};
+
+const isContactExisting = (contactId: string): boolean => {
+  return existingContactIds.value.has(contactId);
 };
 
 const getSelectedContactsData = (): ISelectedContactPreview[] => {
@@ -118,9 +143,9 @@ const handleSend = () => {
 };
 
 const headers = computed(() => [
-  { title: t('name'), key: 'name', sortable: false },
-  { title: t('phone'), key: 'phone_partial', sortable: false },
-  { title: t('email'), key: 'email_partial', sortable: false },
+  { title: t('name'), key: 'name', sortable: true },
+  { title: t('phone'), key: 'phone_partial', sortable: true },
+  { title: t('email'), key: 'email_partial', sortable: true },
 ]);
 
 onMounted(() => {
@@ -132,7 +157,6 @@ onMounted(() => {
   <VDialog v-model="isVisible" max-width="800" persistent>
     <DialogCloseBtn @click="isVisible = false" />
     <VCard :title="$t('select_contacts')">
-
       <VCardText>
         <div class="d-flex align-center gap-4 mb-4">
           <AppTextField
@@ -154,13 +178,18 @@ onMounted(() => {
           :items="contactStore.list"
           :items-length="contactStore.pagings.total"
           :loading="contactStore.loading"
+          :sort-by="options.sortBy"
           @update:options="handleTableChange"
           :loading-text="$t('loading_text')"
         >
           <template #item.name="{ item }">
             <div class="d-flex align-center gap-2">
               <VCheckbox
-                :model-value="isContactSelected(item.contact_id)"
+                :model-value="
+                  isContactSelected(item.contact_id) ||
+                  isContactExisting(item.contact_id)
+                "
+                :disabled="isContactExisting(item.contact_id)"
                 @update:model-value="toggleContact(item.contact_id)"
                 hide-details
                 density="compact"
@@ -191,7 +220,7 @@ onMounted(() => {
         </VDataTableServer>
 
         <div class="mt-4 text-caption text-disabled">
-          {{ $t('selected_contacts') }}: {{ selectedContacts.size }}/10
+          {{ $t('selected_contacts') }}: {{ totalSelectedCount }}/10
         </div>
       </VCardText>
 
@@ -206,4 +235,3 @@ onMounted(() => {
     </VCard>
   </VDialog>
 </template>
-

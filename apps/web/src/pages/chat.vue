@@ -911,7 +911,9 @@ const sendContactsMessage = async (): Promise<void> => {
 };
 
 const onContactsSelected = (contacts: ISelectedContactPreview[]) => {
-  selectedContacts.value = contacts;
+  const existingIds = new Set(selectedContacts.value.map((c) => c.contact_id));
+  const newContacts = contacts.filter((c) => !existingIds.has(c.contact_id));
+  selectedContacts.value = [...selectedContacts.value, ...newContacts];
 };
 
 const sendTextMessage = async (): Promise<void> => {
@@ -3416,6 +3418,7 @@ onBeforeUnmount(() => {
 
   <AppContactPicker
     v-model="isContactPickerOpen"
+    :existing-contacts="selectedContacts"
     @select="onContactsSelected"
   />
 
