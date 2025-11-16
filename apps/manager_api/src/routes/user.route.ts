@@ -4,7 +4,6 @@ import UserController from '@/controllers/user';
 import {
   userCreatePermissions,
   userDeletePermissions,
-  userListPermissions,
   userUpdatePermissions,
   userViewPermissions,
 } from '@/permissions';
@@ -22,7 +21,7 @@ export default function userRoutes(server: FastifyInstance) {
     handler: userController.listUser,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, userListPermissions),
+        server.authenticateJwt(request, reply, userViewPermissions),
     ],
   });
 

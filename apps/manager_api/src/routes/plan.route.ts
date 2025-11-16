@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
-import { planListPermissions } from '@/permissions';
+import { planViewPermissions } from '@/permissions';
 import PlanController from '@/controllers/plan';
 import { listPlanSchema } from '@core/schema/plan/listPlan';
 import { listPlanAllSchema } from '@core/schema/plan/listPlanAll';
@@ -13,7 +13,7 @@ export default function planRoutes(server: FastifyInstance) {
     handler: planController.listPlan,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, planListPermissions),
+        server.authenticateJwt(request, reply, planViewPermissions),
     ],
   });
 
@@ -22,7 +22,7 @@ export default function planRoutes(server: FastifyInstance) {
     handler: planController.listPlanAll,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, planListPermissions),
+        server.authenticateJwt(request, reply, planViewPermissions),
     ],
   });
 }

@@ -1,5 +1,4 @@
 export enum EMessageTemplatePermissions {
-  message_list = 'message_list',
   message_view = 'message_view',
   message_create = 'message_create',
   message_update = 'message_update',

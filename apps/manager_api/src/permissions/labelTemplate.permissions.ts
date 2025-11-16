@@ -1,10 +1,6 @@
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
 
-export const labelTemplateListPermissions = [
-  EGeneralPermissions.full_access,
-  ELabelTemplatePermissions.label_list,
-];
 export const labelTemplateViewPermissions = [
   EGeneralPermissions.full_access,
   ELabelTemplatePermissions.label_view,

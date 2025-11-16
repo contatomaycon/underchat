@@ -3,7 +3,6 @@ import { container } from 'tsyringe';
 import {
   contactGroupCreatePermissions,
   contactGroupDeletePermissions,
-  contactGroupListPermissions,
   contactGroupUpdatePermissions,
   contactGroupViewPermissions,
 } from '@/permissions';
@@ -24,7 +23,7 @@ export default async function contactGroupRoutes(server: FastifyInstance) {
     handler: contactGroupController.listContactGroup,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, contactGroupListPermissions),
+        server.authenticateJwt(request, reply, contactGroupViewPermissions),
     ],
   });
 
@@ -33,7 +32,7 @@ export default async function contactGroupRoutes(server: FastifyInstance) {
     handler: contactGroupController.listContactGroupAll,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, contactGroupListPermissions),
+        server.authenticateJwt(request, reply, contactGroupViewPermissions),
     ],
   });
 

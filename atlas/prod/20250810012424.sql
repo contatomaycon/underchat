@@ -1,1 +1,0 @@
-INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action", "name", "description") VALUES ('a5557382-337f-4e4a-b54f-1c3ba78a43db', 'c0bc3998-e292-42de-9efd-ef8e8479a1be', 'user_list', 'Listar Usuários', 'Permite listar e buscar usuários do sistema');

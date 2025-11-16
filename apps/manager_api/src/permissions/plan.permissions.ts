@@ -1,10 +1,6 @@
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 
-export const planListPermissions = [
-  EGeneralPermissions.full_access,
-  EPlanPermissions.plan_list,
-];
 export const planViewPermissions = [
   EGeneralPermissions.full_access,
   EPlanPermissions.plan_view,

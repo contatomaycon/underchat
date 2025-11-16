@@ -3,7 +3,6 @@ import { container } from 'tsyringe';
 import {
   messageTemplateCreatePermissions,
   messageTemplateDeletePermissions,
-  messageTemplateListPermissions,
   messageTemplateUpdatePermissions,
   messageTemplateViewPermissions,
 } from '@/permissions';
@@ -24,7 +23,7 @@ export default async function messageTemplateRoutes(server: FastifyInstance) {
     handler: messageTemplateController.listMessageTemplate,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, messageTemplateListPermissions),
+        server.authenticateJwt(request, reply, messageTemplateViewPermissions),
     ],
   });
 

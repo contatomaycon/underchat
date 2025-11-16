@@ -16,7 +16,6 @@ definePage({
   meta: {
     permissions: [
       EGeneralPermissions.full_access,
-      EContactGroupPermissions.contact_group_list,
       EContactGroupPermissions.contact_group_view,
       EContactGroupPermissions.contact_group_create,
       EContactGroupPermissions.contact_group_update,

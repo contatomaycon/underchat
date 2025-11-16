@@ -1,7 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import {
-  contactListPermissions,
   contactCreatePermissions,
   contactDeletePermissions,
   contactUpdatePermissions,
@@ -24,7 +23,7 @@ export default async function contactRoutes(server: FastifyInstance) {
     handler: contactController.listContact,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, contactListPermissions),
+        server.authenticateJwt(request, reply, contactViewPermissions),
     ],
   });
 

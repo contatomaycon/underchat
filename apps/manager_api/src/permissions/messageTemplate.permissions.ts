@@ -1,10 +1,6 @@
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EMessageTemplatePermissions } from '@core/common/enums/EPermissions/messageTemplate';
 
-export const messageTemplateListPermissions = [
-  EGeneralPermissions.full_access,
-  EMessageTemplatePermissions.message_list,
-];
 export const messageTemplateViewPermissions = [
   EGeneralPermissions.full_access,
   EMessageTemplatePermissions.message_view,

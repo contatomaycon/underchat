@@ -15,7 +15,6 @@ definePage({
   meta: {
     permissions: [
       EGeneralPermissions.full_access,
-      ERolePermissions.role_list,
       ERolePermissions.role_view,
       ERolePermissions.role_create,
       ERolePermissions.role_edit,

@@ -17,7 +17,6 @@ definePage({
   meta: {
     permissions: [
       EGeneralPermissions.full_access,
-      EAccountPermissions.account_list,
       EAccountPermissions.account_view,
       EAccountPermissions.account_create,
       EAccountPermissions.account_update,

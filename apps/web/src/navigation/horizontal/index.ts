@@ -46,7 +46,6 @@ export default [
         icon: { icon: 'tabler-label' },
         permissions: [
           EGeneralPermissions.full_access,
-          ELabelTemplatePermissions.label_list,
           ELabelTemplatePermissions.label_view,
           ELabelTemplatePermissions.label_create,
           ELabelTemplatePermissions.label_update,
@@ -59,7 +58,6 @@ export default [
         icon: { icon: 'tabler-message' },
         permissions: [
           EGeneralPermissions.full_access,
-          EMessageTemplatePermissions.message_list,
           EMessageTemplatePermissions.message_view,
           EMessageTemplatePermissions.message_create,
           EMessageTemplatePermissions.message_update,
@@ -74,7 +72,6 @@ export default [
     icon: { icon: 'tabler-address-book' },
     permissions: [
       EGeneralPermissions.full_access,
-      EContactPermissions.contact_list,
       EContactPermissions.contact_view,
       EContactPermissions.contact_create,
       EContactPermissions.contact_update,
@@ -87,7 +84,6 @@ export default [
     icon: { icon: 'tabler-crosshair' },
     permissions: [
       EGeneralPermissions.full_access,
-      ERolePermissions.role_list,
       ERolePermissions.role_view,
       ERolePermissions.role_create,
       ERolePermissions.role_edit,
@@ -100,7 +96,6 @@ export default [
     icon: { icon: 'tabler-sitemap' },
     permissions: [
       EGeneralPermissions.full_access,
-      ESectorPermissions.sector_list,
       ESectorPermissions.sector_view,
       ESectorPermissions.sector_create,
       ESectorPermissions.sector_edit,
@@ -113,7 +108,6 @@ export default [
     icon: { icon: 'tabler-users' },
     permissions: [
       EGeneralPermissions.full_access,
-      EUserPermissions.user_list,
       EUserPermissions.user_view,
       EUserPermissions.user_create,
       EUserPermissions.user_update,
@@ -126,7 +120,6 @@ export default [
     icon: { icon: 'tabler-user' },
     permissions: [
       EGeneralPermissions.full_access,
-      EAccountPermissions.account_list,
       EAccountPermissions.account_view,
       EAccountPermissions.account_create,
       EAccountPermissions.account_update,

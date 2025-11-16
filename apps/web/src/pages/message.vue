@@ -16,7 +16,6 @@ definePage({
   meta: {
     permissions: [
       EGeneralPermissions.full_access,
-      EMessageTemplatePermissions.message_list,
       EMessageTemplatePermissions.message_view,
       EMessageTemplatePermissions.message_create,
       EMessageTemplatePermissions.message_update,

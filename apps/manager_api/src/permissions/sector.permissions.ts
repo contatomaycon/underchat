@@ -1,10 +1,6 @@
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { ESectorPermissions } from '@core/common/enums/EPermissions/sector';
 
-export const sectorListPermissions = [
-  EGeneralPermissions.full_access,
-  ESectorPermissions.sector_list,
-];
 export const sectorViewPermissions = [
   EGeneralPermissions.full_access,
   ESectorPermissions.sector_view,

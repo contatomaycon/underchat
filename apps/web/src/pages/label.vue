@@ -17,7 +17,6 @@ definePage({
   meta: {
     permissions: [
       EGeneralPermissions.full_access,
-      ELabelTemplatePermissions.label_list,
       ELabelTemplatePermissions.label_view,
       ELabelTemplatePermissions.label_create,
       ELabelTemplatePermissions.label_update,

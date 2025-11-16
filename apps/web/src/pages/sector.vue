@@ -17,7 +17,6 @@ definePage({
   meta: {
     permissions: [
       EGeneralPermissions.full_access,
-      ESectorPermissions.sector_list,
       ESectorPermissions.sector_view,
       ESectorPermissions.sector_create,
       ESectorPermissions.sector_edit,
