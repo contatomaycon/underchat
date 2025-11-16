@@ -1472,10 +1472,26 @@ onUnmounted(() => {
               </div>
 
               <div
+                v-if="msgGrp.content?.type === EMessageType.view_once"
+                class="view-once-message"
+              >
+                <VIcon size="20" class="mr-2">tabler-eye-off</VIcon>
+                <p
+                  class="mb-0 text-sm"
+                  :style="{
+                    color: isTypeUser(msgGrp)
+                      ? 'rgb(var(--v-theme-on-surface))'
+                      : 'rgb(var(--v-theme-title))',
+                  }"
+                >
+                  {{ t('view_once_message') }}
+                </p>
+              </div>
+
+              <div
                 v-if="
                   msgGrp.content?.type === EMessageType.image &&
-                  msgGrp.content?.image?.url &&
-                  !msgGrp.message_key?.is_view_once
+                  msgGrp.content?.image?.url
                 "
                 :class="[
                   'image-bubble',
@@ -1514,8 +1530,7 @@ onUnmounted(() => {
               <div
                 v-if="
                   msgGrp.content?.type === EMessageType.video &&
-                  msgGrp.content?.video?.url &&
-                  !msgGrp.message_key?.is_view_once
+                  msgGrp.content?.video?.url
                 "
                 :class="[
                   'video-bubble',
@@ -3192,6 +3207,16 @@ onUnmounted(() => {
 
   .message-meta--audio {
     padding-inline-start: 70px;
+  }
+
+  .view-once-message {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    border-radius: 8px;
+    background: rgba(var(--v-theme-surface), 0.05);
+    min-width: 200px;
+    max-width: 400px;
   }
 }
 
