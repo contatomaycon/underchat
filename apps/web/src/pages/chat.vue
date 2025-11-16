@@ -148,14 +148,20 @@ const mapStyle = computed(() => {
 });
 
 const locationMapCenter = computed<[number, number]>(() => {
-  if (locationPickerLatitude.value && locationPickerLongitude.value) {
+  if (
+    locationPickerLatitude.value !== null &&
+    locationPickerLongitude.value !== null
+  ) {
     return [locationPickerLongitude.value, locationPickerLatitude.value];
   }
   return [0, 0];
 });
 
 const locationMarkerPosition = computed<[number, number]>(() => {
-  if (locationPickerLatitude.value && locationPickerLongitude.value) {
+  if (
+    locationPickerLatitude.value !== null &&
+    locationPickerLongitude.value !== null
+  ) {
     return [locationPickerLongitude.value, locationPickerLatitude.value];
   }
   return [0, 0];
@@ -167,15 +173,26 @@ const getCurrentLocation = (): Promise<GeolocationPosition> => {
       reject(new Error('Geolocation is not supported'));
       return;
     }
-    navigator.geolocation.getCurrentPosition(resolve, reject);
+    const options: PositionOptions = {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0,
+    };
+    navigator.geolocation.getCurrentPosition(resolve, reject, options);
   });
 };
 
 const useCurrentLocation = async () => {
   try {
     const position = await getCurrentLocation();
-    locationPickerLatitude.value = position.coords.latitude;
-    locationPickerLongitude.value = position.coords.longitude;
+    const lat = position.coords.latitude;
+    const lng = position.coords.longitude;
+
+    locationPickerLatitude.value = lat;
+    locationPickerLongitude.value = lng;
+
+    await nextTick();
+
     locationPickerMode.value = 'map';
 
     await nextTick();
@@ -183,8 +200,7 @@ const useCurrentLocation = async () => {
     const updateMapCenter = () => {
       if (locationMapRef.value?.map) {
         const map = locationMapRef.value.map;
-        map.setCenter([position.coords.longitude, position.coords.latitude]);
-        map.setZoom(15);
+        map.setCenter([lng, lat]);
         return true;
       }
       return false;
@@ -234,8 +250,10 @@ const useManualCoordinates = () => {
 
   nextTick(() => {
     if (locationMapRef.value?.map) {
-      locationMapRef.value.map.setCenter([lng, lat]);
-      locationMapRef.value.map.setZoom(15);
+      const map = locationMapRef.value.map;
+      const currentZoom = map.getZoom();
+      map.setCenter([lng, lat]);
+      map.setZoom(currentZoom);
     }
   });
 };
@@ -267,6 +285,11 @@ const onLocationMapLoad = () => {
 
   const map = locationMapRef.value.map;
   map.resize();
+
+  map.doubleClickZoom.disable();
+  if (map.boxZoom) {
+    map.boxZoom.disable();
+  }
 
   map.on('click', (e: any) => {
     if (!e?.lngLat) return;
@@ -326,13 +349,29 @@ watch(
     locationPickerLongitude.value,
   ],
   async ([mode, lat, lng]) => {
-    if (mode === 'map' && lat && lng) {
+    if (
+      mode === 'map' &&
+      lat !== null &&
+      lng !== null &&
+      typeof lat === 'number' &&
+      typeof lng === 'number'
+    ) {
       await nextTick();
       setTimeout(() => {
         if (locationMapRef.value?.map) {
           const map = locationMapRef.value.map;
-          map.setCenter([lng, lat]);
-          map.setZoom(15);
+          const currentCenter = map.getCenter();
+          const currentZoom = map.getZoom();
+          const centerLng = Number(currentCenter.lng);
+          const centerLat = Number(currentCenter.lat);
+          const distance = Math.sqrt(
+            Math.pow(centerLng - Number(lng), 2) +
+              Math.pow(centerLat - Number(lat), 2)
+          );
+          if (distance > 0.001) {
+            map.setCenter([Number(lng), Number(lat)]);
+            map.setZoom(currentZoom);
+          }
         }
       }, 100);
     }
