@@ -8,6 +8,7 @@ const roleAccountSchema = Type.Object({
 export const viewRoleResponseSchema = Type.Object({
   permission_role_id: Type.String({ format: 'uuid' }),
   name: Type.String(),
+  description: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   account: Type.Optional(Type.Union([roleAccountSchema, Type.Null()])),
   created_at: Type.String({ format: 'date-time' }),
 });

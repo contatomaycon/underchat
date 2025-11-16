@@ -14,7 +14,10 @@ import { IListRoles } from '../interfaces/IListRoles';
 import { ListRoleRequest } from '@core/schema/role/listRole/request.schema';
 import { CreateRoleRequest } from '@core/schema/role/createRole/request.schema';
 import { CreateRoleResponse } from '@core/schema/role/createRole/response.schema';
-import { EditRoleParamsRequest } from '@core/schema/role/editRole/request.schema';
+import {
+  EditRoleParamsRequest,
+  UpdateRoleRequest,
+} from '@core/schema/role/editRole/request.schema';
 import { ViewRoleResponse } from '@core/schema/role/viewRole/response.schema';
 
 export const useRolesStore = defineStore('roles', {
@@ -137,13 +140,16 @@ export const useRolesStore = defineStore('roles', {
       }
     },
 
-    async updateRole(payload: EditRoleParamsRequest): Promise<boolean> {
+    async updateRole(
+      payload: EditRoleParamsRequest,
+      body: UpdateRoleRequest
+    ): Promise<boolean> {
       try {
         this.loading = true;
 
-        const response = await axios.patch<IApiResponse<boolean>>(
-          `/role/${payload.permission_role_id}/${payload.name}`,
-          payload
+        const response = await axios.put<IApiResponse<boolean>>(
+          `/role/${payload.permission_role_id}`,
+          body
         );
 
         this.loading = false;

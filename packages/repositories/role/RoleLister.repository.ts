@@ -86,6 +86,7 @@ export class RoleListerRepository {
       .select({
         permission_role_id: permissionRole.permission_role_id,
         name: permissionRole.name,
+        description: permissionRole.description,
         account: {
           id: account.account_id,
           name: account.name,
@@ -114,6 +115,7 @@ export class RoleListerRepository {
     return result.map((role) => ({
       permission_role_id: role.permission_role_id,
       name: role.name,
+      description: role.description,
       account: isAdministrator ? role.account : undefined,
       created_at: role.created_at,
     })) as ListRoleResponse[];

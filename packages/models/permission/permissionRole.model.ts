@@ -13,6 +13,7 @@ export const permissionRole = pgTable('permission_role', {
     .references(() => account.account_id)
     .notNull(),
   name: varchar({ length: 200 }).notNull(),
+  description: varchar({ length: 500 }),
   created_at: timestamp('created_at', {
     mode: 'string',
     withTimezone: true,

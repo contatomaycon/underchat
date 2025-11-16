@@ -47,11 +47,16 @@ export class RoleCreatorUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     input: string,
-    accountId: string
+    accountId: string,
+    description: string | null | undefined
   ): Promise<CreateRoleResponse | null> {
     await this.validate(t, input, accountId);
 
-    const roleCreator = await this.roleService.createRole(input, accountId);
+    const roleCreator = await this.roleService.createRole(
+      input,
+      accountId,
+      description
+    );
 
     if (!roleCreator) {
       throw new Error(t('role_creator_error'));

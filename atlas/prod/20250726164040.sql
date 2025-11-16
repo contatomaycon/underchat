@@ -90,6 +90,7 @@ CREATE TABLE "permission_role" (
   "permission_role_id" uuid NOT NULL,
   "account_id" uuid NULL,
   "name" character varying(200) NOT NULL,
+  "description" character varying(500),
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
   "deleted_at" timestamptz NULL,
