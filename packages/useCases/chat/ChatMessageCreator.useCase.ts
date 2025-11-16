@@ -32,8 +32,12 @@ import { ICreateImageMessageParams } from '@core/common/interfaces/ICreateImageM
 import { ICreateTextMessageParams } from '@core/common/interfaces/ICreateTextMessageParams';
 import { ICreateDocumentMessageParams } from '@core/common/interfaces/ICreateDocumentMessageParams';
 import { IProcessMediaMessagesParams } from '@core/common/interfaces/IProcessMediaMessagesParams';
+import { IProcessMediaMessagesOptions } from '@core/common/interfaces/IProcessMediaMessagesOptions';
 import { IProcessTextMessageParams } from '@core/common/interfaces/IProcessTextMessageParams';
 import { IUploadFileInput } from '@core/common/interfaces/IUploadFileInput';
+import { ICreateContactMessageParams } from '@core/common/interfaces/ICreateContactMessageParams';
+import { ContactService } from '@core/services/contact.service';
+import { ContactViewerRepository } from '@core/repositories/contact/ContactViewer.repository';
 
 @injectable()
 export class ChatMessageCreatorUseCase {
@@ -45,7 +49,9 @@ export class ChatMessageCreatorUseCase {
     private readonly streamProducerService: StreamProducerService,
     private readonly centrifugoService: CentrifugoService,
     private readonly storageService: StorageService,
-    private readonly audioConverterService: AudioConverterService
+    private readonly audioConverterService: AudioConverterService,
+    private readonly contactService: ContactService,
+    private readonly contactViewerRepository: ContactViewerRepository
   ) {}
 
   private async getChat(
@@ -197,6 +203,28 @@ export class ChatMessageCreatorUseCase {
     }
 
     return [audios];
+  }
+
+  private normalizeContactsArray(
+    contacts?: string | string[] | { value?: string | string[] } | null
+  ): string[] {
+    if (!contacts) return [];
+
+    if (typeof contacts === 'object' && 'value' in contacts) {
+      return this.normalizeContactsArray(contacts.value);
+    }
+
+    if (Array.isArray(contacts)) {
+      return contacts.filter(
+        (c): c is string => typeof c === 'string' && c.trim().length > 0
+      );
+    }
+
+    if (typeof contacts === 'string' && contacts.trim().length > 0) {
+      return [contacts];
+    }
+
+    return [];
   }
 
   private normalizeType(type: string | { value?: string }): EMessageType {
@@ -407,8 +435,7 @@ export class ChatMessageCreatorUseCase {
         ),
         this.audioConverterService
           .generateWaveformWithFfmpeg(converted.buffer)
-          .catch((error) => {
-            console.error('Failed to generate waveform:', error);
+          .catch(() => {
             return undefined;
           }),
       ]);
@@ -680,6 +707,15 @@ export class ChatMessageCreatorUseCase {
       inferredType = EMessageType.document;
     if (!quotedVideo && !quotedImage && !quotedDocument && quotedAudio)
       inferredType = EMessageType.audio;
+    const quotedContact = chatMessage.content?.contact ?? null;
+    if (
+      !quotedVideo &&
+      !quotedImage &&
+      !quotedDocument &&
+      !quotedAudio &&
+      quotedContact
+    )
+      inferredType = EMessageType.contact_card;
 
     return {
       type: inferredType,
@@ -687,6 +723,7 @@ export class ChatMessageCreatorUseCase {
       video: quotedVideo,
       audio: quotedAudio,
       document: quotedDocument,
+      contact: quotedContact,
       key: {
         remote_jid: chatMessage.message_key?.remote_jid ?? null,
         remote_jid_alt: chatMessage.message_key?.remote_jid_alt ?? null,
@@ -1098,6 +1135,187 @@ export class ChatMessageCreatorUseCase {
     return this.publishMessage(textMessage);
   }
 
+  private async processContactMessages(
+    contactIds: string[],
+    params: ICreateContactMessageParams
+  ): Promise<boolean> {
+    const {
+      chat,
+      chatId,
+      type,
+      message,
+      messageQuotedId,
+      quotedMessage,
+      hash,
+    } = params;
+
+    if (contactIds.length === 0) return false;
+
+    const contactsData = await Promise.all(
+      contactIds.map(async (contactId) => {
+        const contact =
+          await this.contactViewerRepository.viewContactById(contactId);
+        if (!contact) return null;
+
+        const sensitiveData =
+          await this.contactService.getContactSensitiveDataDecrypted(contactId);
+
+        return {
+          contact_id: contact.contact_id,
+          name: contact.name,
+          last_name: contact.last_name,
+          phone: sensitiveData?.phone || null,
+          phone_partial: contact.phone_partial || null,
+          phone_ddi: contact.phone_ddi || null,
+          email: sensitiveData?.email || null,
+          email_partial: contact.email_partial,
+        };
+      })
+    );
+
+    const validContacts = contactsData.filter(
+      (c): c is NonNullable<typeof c> => c !== null
+    );
+
+    if (validContacts.length === 0) {
+      return false;
+    }
+
+    const publishTasks = validContacts.map((contactData) => {
+      const messageHash = hash || uuidv4();
+      const contactMessage: IChatMessage = {
+        message_id: uuidv4(),
+        chat_id: chatId,
+        message_key: {
+          remote_jid: chat.message_key?.remote_jid ?? null,
+          remote_jid_alt: chat.message_key?.remote_jid_alt ?? null,
+          is_view_once: false,
+        },
+        type_user: ETypeUserChat.operator,
+        account: chat.account,
+        worker: chat.worker,
+        user: chat.user,
+        phone: chat.phone,
+        summary: {
+          is_sent: false,
+          is_delivered: false,
+          is_seen: false,
+          is_sent_to_internal: true,
+        },
+        deleted: false,
+        has_quoted: !!quotedMessage,
+        content: {
+          type,
+          message,
+          message_quoted_id: messageQuotedId,
+          quoted: quotedMessage,
+          contact: {
+            contact_id: contactData.contact_id,
+            name: contactData.name,
+            last_name: contactData.last_name,
+            phone: contactData.phone,
+            phone_partial: contactData.phone_partial,
+            phone_ddi: contactData.phone_ddi,
+            email: contactData.email,
+            email_partial: contactData.email_partial,
+          },
+        },
+        date: new Date().toISOString(),
+        hash: messageHash,
+      };
+
+      return this.publishMessage(contactMessage);
+    });
+
+    await Promise.all(publishTasks);
+
+    return true;
+  }
+
+  private async processActionMessages(
+    type: EMessageType,
+    body: CreateMessageChatsBody,
+    chat: IChat,
+    chatId: string,
+    accountId: string,
+    t: TFunction<'translation', undefined>,
+    hash: string | null
+  ): Promise<boolean | null> {
+    if (type === EMessageType.delete_message && body.delete_message_id) {
+      return this.processDelete(
+        chat,
+        chatId,
+        accountId,
+        body.delete_message_id,
+        t,
+        hash
+      );
+    }
+
+    if (
+      type === EMessageType.react &&
+      body.reaction_message_id &&
+      body.reaction_emoji
+    ) {
+      return this.processReaction(
+        chat,
+        chatId,
+        accountId,
+        body.reaction_message_id,
+        body.reaction_emoji,
+        t,
+        hash
+      );
+    }
+
+    return null;
+  }
+
+  private async processMediaMessages(
+    options: IProcessMediaMessagesOptions
+  ): Promise<boolean | null> {
+    const {
+      type,
+      documents,
+      videos,
+      videoDuration,
+      audios,
+      audioDuration,
+      audioViewOnce,
+      audioPtt,
+      t,
+    } = options;
+
+    if (type === EMessageType.document) {
+      if (documents.length === 0) {
+        throw new Error(t('documents_required'));
+      }
+      return this.processDocumentMessages(documents, options);
+    }
+
+    if (type === EMessageType.video) {
+      if (videos.length === 0) {
+        throw new Error(t('videos_required'));
+      }
+      return this.processVideoMessages(videos, videoDuration, options);
+    }
+
+    if (type === EMessageType.audio) {
+      if (audios.length === 0) {
+        throw new Error(t('audio_required'));
+      }
+      return this.processAudioMessages(
+        audios,
+        audioDuration,
+        audioViewOnce,
+        audioPtt,
+        options
+      );
+    }
+
+    return null;
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -1124,90 +1342,61 @@ export class ChatMessageCreatorUseCase {
     const messageQuotedId = this.normalizeMessageQuotedId(
       body.message_quoted_id
     );
+    const contacts = this.normalizeContactsArray(body.contacts);
     const hash = this.normalizeHash(body.hash);
 
-    if (type === EMessageType.delete_message && body.delete_message_id) {
-      return this.processDelete(
-        chat,
-        params.chat_id,
-        accountId,
-        body.delete_message_id,
-        t,
-        hash
-      );
+    const actionResult = await this.processActionMessages(
+      type,
+      body,
+      chat,
+      params.chat_id,
+      accountId,
+      t,
+      hash
+    );
+    if (actionResult !== null) {
+      return actionResult;
     }
 
-    if (
-      type === EMessageType.react &&
-      body.reaction_message_id &&
-      body.reaction_emoji
-    ) {
-      return this.processReaction(
-        chat,
-        params.chat_id,
-        accountId,
-        body.reaction_message_id,
-        body.reaction_emoji,
-        t,
-        hash
-      );
+    const mediaResult = await this.processMediaMessages({
+      type,
+      chat,
+      chatId: params.chat_id,
+      accountId,
+      message,
+      messageQuotedId,
+      t,
+      hash,
+      documents,
+      videos,
+      videoDuration,
+      audios,
+      audioDuration,
+      audioViewOnce,
+      audioPtt,
+    });
+    if (mediaResult !== null) {
+      return mediaResult;
     }
 
-    if (type === EMessageType.document) {
-      if (documents.length === 0) {
-        throw new Error(t('documents_required'));
-      }
+    if (contacts.length > 0) {
+      const quotedMessage = messageQuotedId
+        ? await this.getQuotedMessage(
+            accountId,
+            params.chat_id,
+            messageQuotedId
+          )
+        : null;
 
-      return this.processDocumentMessages(documents, {
-        chat,
-        chatId: params.chat_id,
-        accountId,
-        type,
-        message,
-        messageQuotedId,
-        t,
-        hash,
-      });
-    }
-
-    if (type === EMessageType.video) {
-      if (videos.length === 0) {
-        throw new Error(t('videos_required'));
-      }
-
-      return this.processVideoMessages(videos, videoDuration, {
+      return this.processContactMessages(contacts, {
         chat,
         chatId: params.chat_id,
-        accountId,
-        type,
+        type: EMessageType.contact_card,
         message,
         messageQuotedId,
-        t,
+        quotedMessage,
         hash,
       });
-    }
-
-    if (type === EMessageType.audio) {
-      if (audios.length === 0) {
-        throw new Error(t('audio_required'));
-      }
-
-      return this.processAudioMessages(
-        audios,
-        audioDuration,
-        audioViewOnce,
-        audioPtt,
-        {
-          chat,
-          chatId: params.chat_id,
-          accountId,
-          type,
-          message,
-          messageQuotedId,
-          t,
-          hash,
-        }
-      );
     }
 
     if (images.length > 0) {

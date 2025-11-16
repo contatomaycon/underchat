@@ -32,7 +32,23 @@ export class PasswordEncryptorService {
   };
 
   decrypt = (encryptedText: string): string => {
-    const [ivHex, authTagHex, encryptedHex] = encryptedText.split(':');
+    if (!encryptedText || typeof encryptedText !== 'string') {
+      throw new Error('Encrypted text must be a non-empty string');
+    }
+
+    const parts = encryptedText.split(':');
+    if (parts.length !== 3) {
+      throw new Error(
+        'Invalid encrypted text format. Expected format: iv:authTag:encrypted'
+      );
+    }
+
+    const [ivHex, authTagHex, encryptedHex] = parts;
+
+    if (!ivHex || !authTagHex || !encryptedHex) {
+      throw new Error('Missing required parts in encrypted text');
+    }
+
     const iv = Buffer.from(ivHex, 'hex');
     const authTag = Buffer.from(authTagHex, 'hex');
     const encrypted = Buffer.from(encryptedHex, 'hex');

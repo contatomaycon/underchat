@@ -2,27 +2,36 @@ import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { LabelTemplateAllListerUseCase } from '@core/useCases/labelTemplate/LabelTemplateAllLister.useCase';
+import { ViewContactEmailRequest } from '@core/schema/contact/viewContactEmail/request.schema';
+import { ContactService } from '@core/services/contact.service';
 
-export const listLabelTemplateAll = async (
-  request: FastifyRequest<{}>,
+export const viewContactEmail = async (
+  request: FastifyRequest<{
+    Params: ViewContactEmailRequest;
+  }>,
   reply: FastifyReply
 ) => {
-  const labelTemplateAllListUseCase = container.resolve(
-    LabelTemplateAllListerUseCase
-  );
-  const { t, tokenJwtData } = request;
+  const contactService = container.resolve(ContactService);
+  const { t } = request;
 
   try {
-    const response = await labelTemplateAllListUseCase.execute(
-      t,
-      tokenJwtData.account_id
+    const sensitiveData = await contactService.getContactSensitiveDataDecrypted(
+      request.params.contact_id
     );
 
+    if (!sensitiveData) {
+      return sendResponse(reply, {
+        message: t('contact_not_found'),
+        httpStatusCode: EHTTPStatusCode.bad_request,
+      });
+    }
+
     return sendResponse(reply, {
-      message: t('label_template_all_successfully'),
+      message: t('contact_email_view_successfully'),
       httpStatusCode: EHTTPStatusCode.ok,
-      data: response,
+      data: {
+        email: sensitiveData.email,
+      },
     });
   } catch (error) {
     request.server.logger.error(error, request.id);

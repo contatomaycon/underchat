@@ -1,7 +1,7 @@
 import * as schema from '@core/models';
 import { contact, labelTemplate, account } from '@core/models';
 import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 
@@ -28,13 +28,13 @@ export class ContactViewerRepository {
         },
         name: contact.name,
         last_name: contact.last_name,
-        email: contact.email,
         email_partial: contact.email_partial,
         phone_ddi: contact.phone_ddi,
-        phone: contact.phone,
         phone_partial: contact.phone_partial,
         nickname: contact.nickname,
-        birthday: contact.birthday,
+        birthday: sql<
+          string | null
+        >`CASE WHEN ${contact.birthday} IS NULL THEN NULL ELSE to_char(${contact.birthday}, 'YYYY-MM-DD') END`,
         notes: contact.notes,
         created_at: contact.created_at,
       })

@@ -199,6 +199,8 @@
   "contact_creator_error": "Error creating contact!",
   "contact_creation_failed": "Contact creation failed!",
   "contact_view_successfully": "Contact viewed successfully!",
+  "contact_phone_view_successfully": "Decrypted phone retrieved successfully!",
+  "contact_email_view_successfully": "Decrypted email retrieved successfully!",
   "contact_not_found": "Contact not found!",
   "contact_deleted_successfully": "Contact deleted successfully!",
   "contact_deleter_error": "Error deleting contact!",
@@ -231,5 +233,12 @@
   "plan_list_all_not_found": "No plans found!",
   "plan_list_all_unauthorized": "You are not authorized to view the plans!",
   "invalid_attachment_type": "Invalid attachment type!",
-  "attachment_size_exceeded": "Attachment size exceeded!"
+  "attachment_size_exceeded": "Attachment size exceeded!",
+  "chat_delete_success": "Message deleted successfully!",
+  "chat_delete_error": "Error deleting message!",
+  "chat_reaction_success": "Reaction sent successfully!",
+  "chat_reaction_error": "Error sending reaction!",
+  "invalid_token": "Invalid token!",
+  "token_generated_successfully": "Token generated successfully!",
+  "worker_recreate_error": "Error recreating channel!"
 }

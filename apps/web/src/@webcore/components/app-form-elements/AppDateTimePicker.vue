@@ -136,11 +136,13 @@ const defaultConfig: FlatpickrOptions = {
     if (!datestr || typeof datestr !== 'string') {
       return new Date();
     }
-    const parts = datestr.trim().split('/');
-    if (parts.length === 3) {
-      const day = Number.parseInt(parts[0], 10);
-      const month = Number.parseInt(parts[1], 10);
-      const year = Number.parseInt(parts[2], 10);
+
+    // Tenta fazer parse do formato dd/mm/yyyy (input do usuário)
+    const partsSlash = datestr.trim().split('/');
+    if (partsSlash.length === 3) {
+      const day = Number.parseInt(partsSlash[0], 10);
+      const month = Number.parseInt(partsSlash[1], 10);
+      const year = Number.parseInt(partsSlash[2], 10);
       if (
         !Number.isNaN(day) &&
         !Number.isNaN(month) &&
@@ -150,6 +152,23 @@ const defaultConfig: FlatpickrOptions = {
         return new Date(year, month - 1, day);
       }
     }
+
+    // Tenta fazer parse do formato yyyy-mm-dd (vindo do backend)
+    const partsDash = datestr.trim().split('-');
+    if (partsDash.length === 3) {
+      const year = Number.parseInt(partsDash[0], 10);
+      const month = Number.parseInt(partsDash[1], 10);
+      const day = Number.parseInt(partsDash[2], 10);
+      if (
+        !Number.isNaN(day) &&
+        !Number.isNaN(month) &&
+        !Number.isNaN(year) &&
+        isValidDateValue(day, month, year)
+      ) {
+        return new Date(year, month - 1, day);
+      }
+    }
+
     return new Date();
   },
   formatDate: (date, format) => {
@@ -497,9 +516,29 @@ const setupInputMask = () => {
     }
 
     const currentValue = target.value;
+    const selectionStart = target.selectionStart || 0;
+    const selectionEnd = target.selectionEnd || 0;
+    const hasSelection = selectionStart !== selectionEnd;
+
+    if (hasSelection && /\d/.test(key)) {
+      e.preventDefault();
+      const beforeSelection = currentValue.slice(0, selectionStart);
+      const afterSelection = currentValue.slice(selectionEnd);
+      const newValue = beforeSelection + key + afterSelection;
+      target.value = applyDateMask(newValue);
+
+      const digitsBeforeCursor = extractDigits(beforeSelection).length + 1;
+      const newCursorPos = findDigitPosition(target.value, digitsBeforeCursor);
+      target.setSelectionRange(newCursorPos, newCursorPos);
+
+      const event = new Event('input', { bubbles: true });
+      target.dispatchEvent(event);
+      return;
+    }
+
     const digits = extractDigits(currentValue);
 
-    if (digits.length >= 8 && /\d/.test(key)) {
+    if (digits.length >= 8 && /\d/.test(key) && !hasSelection) {
       e.preventDefault();
     }
   };

@@ -28,3 +28,13 @@ export interface ISelectedAudioPreview {
   type: string;
   duration: number | null;
 }
+
+export interface ISelectedContactPreview {
+  contact_id: string;
+  name: string;
+  last_name?: string | null;
+  phone?: string | null;
+  phone_partial?: string | null;
+  email?: string | null;
+  email_partial?: string | null;
+}

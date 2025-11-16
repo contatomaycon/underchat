@@ -209,6 +209,7 @@ declare global {
   const useCookie: typeof import('./src/@webcore/composable/useCookie').useCookie
   const useCountdown: typeof import('@vueuse/core').useCountdown
   const useCounter: typeof import('@vueuse/core').useCounter
+  const useCountryCodes: typeof import('./src/composables/useCountryCodes').useCountryCodes
   const useCssModule: typeof import('vue').useCssModule
   const useCssVar: typeof import('@vueuse/core').useCssVar
   const useCssVars: typeof import('vue').useCssVars
@@ -589,6 +590,7 @@ declare module 'vue' {
     readonly useCookie: UnwrapRef<typeof import('./src/@webcore/composable/useCookie')['useCookie']>
     readonly useCountdown: UnwrapRef<typeof import('@vueuse/core')['useCountdown']>
     readonly useCounter: UnwrapRef<typeof import('@vueuse/core')['useCounter']>
+    readonly useCountryCodes: UnwrapRef<typeof import('./src/composables/useCountryCodes')['useCountryCodes']>
     readonly useCssModule: UnwrapRef<typeof import('vue')['useCssModule']>
     readonly useCssVar: UnwrapRef<typeof import('@vueuse/core')['useCssVar']>
     readonly useCssVars: UnwrapRef<typeof import('vue')['useCssVars']>

@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import { computed } from 'vue';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { useDisplay, useTheme } from 'vuetify';
 import { themes } from '@/plugins/vuetify/theme';
@@ -6,10 +7,13 @@ import ChatActiveChatUserProfileSidebarContent from '@/components/chat/ChatActiv
 import ChatLeftSidebarContent from '@/components/chat/ChatLeftSidebarContent.vue';
 import ChatLog from '@/components/chat/ChatLog.vue';
 import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSidebarContent.vue';
+import AppContactPicker from '@/components/chat/AppContactPicker.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
+import { useContactStore } from '@/@webcore/stores/contact';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
+import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
 import {
   ContentMessageChat,
@@ -34,6 +38,7 @@ import {
   ISelectedDocumentPreview,
   ISelectedVideoPreview,
   ISelectedAudioPreview,
+  ISelectedContactPreview,
 } from '@core/common/interfaces/IChatFilePreview';
 import { extractFirstUrl } from '@core/common/functions/extractFirstUrl';
 import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
@@ -60,6 +65,7 @@ definePage({
 });
 
 const chatStore = useChatStore();
+const contactStore = useContactStore();
 const { name } = useTheme();
 const vuetifyDisplays = useDisplay();
 
@@ -83,10 +89,22 @@ const filePhotoRef = ref<HTMLInputElement | null>(null);
 const fileVideoRef = ref<HTMLInputElement | null>(null);
 const fileAudioRef = ref<HTMLInputElement | null>(null);
 const isEmojiOpen = ref(false);
+const isContactPickerOpen = ref(false);
+const isContactViewModalOpen = ref(false);
+const selectedContactDetails = ref<ViewContactResponse | null>(null);
+const viewContactEmail = ref<string | null>(null);
+const viewContactEmailPartial = ref<string | null>(null);
+const viewContactPhone = ref<string | null>(null);
+const viewContactPhonePartial = ref<string | null>(null);
+const isViewEmailDecrypted = ref(false);
+const isViewPhoneDecrypted = ref(false);
+const isLoadingViewEmail = ref(false);
+const isLoadingViewPhone = ref(false);
 const selectedPhotos = ref<ISelectedPhotoPreview[]>([]);
 const selectedDocuments = ref<ISelectedDocumentPreview[]>([]);
 const selectedVideos = ref<ISelectedVideoPreview[]>([]);
 const selectedAudios = ref<ISelectedAudioPreview[]>([]);
+const selectedContacts = ref<ISelectedContactPreview[]>([]);
 
 const isRecordingAudio = ref(false);
 const isRecordingPaused = ref(false);
@@ -123,6 +141,7 @@ const hasAttachmentsOrContent = computed(
     selectedDocuments.value.length > 0 ||
     selectedVideos.value.length > 0 ||
     selectedAudios.value.length > 0 ||
+    selectedContacts.value.length > 0 ||
     isRecordingAudio.value
 );
 
@@ -509,11 +528,16 @@ const clearSelectedAudios = () => {
   selectedAudios.value = [];
 };
 
+const clearSelectedContacts = () => {
+  selectedContacts.value = [];
+};
+
 const clearMessageFields = () => {
   msg.value = '';
   linkPreview.value = null;
   clearSelectedVideos();
   clearSelectedAudios();
+  clearSelectedContacts();
   selectedPhotos.value = [];
   selectedDocuments.value = [];
   chatStore.clearMessageReply();
@@ -525,7 +549,8 @@ const canSendMessage = (): boolean => {
     selectedPhotos.value.length > 0 ||
     selectedDocuments.value.length > 0 ||
     selectedVideos.value.length > 0 ||
-    selectedAudios.value.length > 0
+    selectedAudios.value.length > 0 ||
+    selectedContacts.value.length > 0
   );
 };
 
@@ -542,7 +567,6 @@ const sendImageMessage = async (): Promise<void> => {
   const quotedPayload = getQuotedContent();
   const messageValue = getComposerMessage();
 
-  // Criar todas as mensagens temporárias ANTES de começar os uploads
   const messagesWithHashes = await Promise.all(
     photos.map(async (photo) => {
       const hash = createMessageHash();
@@ -566,7 +590,6 @@ const sendImageMessage = async (): Promise<void> => {
     })
   );
 
-  // Agora fazer os uploads
   await Promise.all(
     messagesWithHashes.map(async ({ photo, hash }) => {
       const formData = createImageFormData(photo, messageValue, replyId, hash);
@@ -581,7 +604,6 @@ const sendImageMessage = async (): Promise<void> => {
       if (!success) {
         markUploadError(hash);
       }
-      // markUploadProgress removido: mensagem temporária será substituída via socket
     })
   );
 };
@@ -634,7 +656,6 @@ const sendVideoMessage = async (): Promise<void> => {
       if (!success) {
         markUploadError(hash);
       }
-      // markUploadProgress removido: mensagem temporária será substituída via socket
     })
   );
 };
@@ -656,7 +677,23 @@ const sendAudioMessage = async (
   const quotedPayload = getQuotedContent();
   const messageValue = getComposerMessage();
   const hash = createMessageHash();
-  const extensionFromMime = mimeType.split('/')[1] || 'ogg';
+
+  let extensionFromMime =
+    mimeType.split('/')[1]?.split(';')[0]?.trim() || 'ogg';
+
+  const mimeToExtension: Record<string, string> = {
+    mpeg: 'mp3',
+    mp3: 'mp3',
+    aac: 'aac',
+    m4a: 'm4a',
+    'x-m4a': 'm4a',
+    amr: 'amr',
+    'amr-wb': 'amr',
+    ogg: 'ogg',
+    opus: 'opus',
+  };
+
+  extensionFromMime = mimeToExtension[extensionFromMime] || extensionFromMime;
   const fileName = `audio-${Date.now()}.${extensionFromMime}`;
   const localUrl = URL.createObjectURL(blob);
 
@@ -685,7 +722,7 @@ const sendAudioMessage = async (
     viewOnce,
     duration,
     hash,
-    true // ptt: true para gravações
+    true
   );
 
   const success = await chatStore.createMessageWithAudios(formData, {
@@ -745,10 +782,10 @@ const sendAudioFilesMessage = async (): Promise<void> => {
         },
         messageValue,
         replyId,
-        false, // viewOnce
+        false,
         audio.duration,
         hash,
-        false // ptt: false para arquivos anexados
+        false
       );
 
       const success = await chatStore.createMessageWithAudios(formData, {
@@ -811,9 +848,72 @@ const sendDocumentMessage = async (): Promise<void> => {
       if (!success) {
         markUploadError(hash);
       }
-      // markUploadProgress removido: mensagem temporária será substituída via socket
     })
   );
+};
+
+const sendContactsMessage = async (): Promise<void> => {
+  if (!chatStore.activeChat?.chat_id) return;
+  const contacts = [...selectedContacts.value];
+  if (contacts.length === 0) return;
+
+  const replyId = chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent();
+  const messageValue = getComposerMessage();
+
+  const messagesWithHashes = await Promise.all(
+    contacts.map(async (contact) => {
+      const hash = createMessageHash();
+      const content: ContentMessageChat = {
+        type: EMessageType.contact_card,
+        message: messageValue,
+        message_quoted_id: replyId ?? undefined,
+        quoted: quotedPayload,
+        contact: {
+          contact_id: contact.contact_id,
+          name: contact.name,
+          last_name: contact.last_name ?? null,
+          phone: contact.phone_partial ?? null,
+          email_partial: contact.email_partial ?? null,
+        },
+      };
+
+      await registerLocalMessage(content, hash);
+      return { contact, hash };
+    })
+  );
+
+  await Promise.all(
+    messagesWithHashes.map(async ({ contact, hash }) => {
+      const formData = new FormData();
+      formData.append('type', EMessageType.contact_card);
+      if (messageValue) {
+        formData.append('message', messageValue);
+      }
+      if (replyId) {
+        formData.append('message_quoted_id', replyId);
+      }
+      formData.append('contacts', contact.contact_id);
+      formData.append('hash', hash);
+
+      const success = await chatStore.createMessageWithContacts(formData, {
+        skipLoading: true,
+      });
+
+      if (!success) {
+        markUploadError(hash);
+      }
+    })
+  );
+
+  chatStore.clearMessageReply();
+  clearSelectedContacts();
+};
+
+const onContactsSelected = (contacts: ISelectedContactPreview[]) => {
+  const existingIds = new Set(selectedContacts.value.map((c) => c.contact_id));
+  const newContacts = contacts.filter((c) => !existingIds.has(c.contact_id));
+  selectedContacts.value = [...selectedContacts.value, ...newContacts];
 };
 
 const sendTextMessage = async (): Promise<void> => {
@@ -831,10 +931,8 @@ const sendTextMessage = async (): Promise<void> => {
     link_preview: preview,
   };
 
-  // Criar mensagem temporária ANTES do upload
   await registerLocalMessage(content, hash);
 
-  // Agora enviar a mensagem
   const messageBody = createTextMessageBody(hash);
   const success = await chatStore.createMessage(messageBody);
 
@@ -869,6 +967,12 @@ const sendMessage = async () => {
 
   if (selectedAudios.value.length > 0) {
     await sendAudioFilesMessage();
+    finalizeSend();
+    return;
+  }
+
+  if (selectedContacts.value.length > 0) {
+    await sendContactsMessage();
     finalizeSend();
     return;
   }
@@ -962,7 +1066,7 @@ const openAttach = (
       fileAudioRef.value?.click();
       break;
     case 'contact':
-      globalThis.dispatchEvent(new CustomEvent('open-contact-picker'));
+      isContactPickerOpen.value = true;
       break;
   }
 };
@@ -1316,7 +1420,29 @@ const handleRecorderStop = async () => {
   }
 
   if (saveRecording && recorder && audioChunksRef.value.length > 0) {
-    const mimeType = recorder.mimeType || 'audio/webm;codecs=opus';
+    let mimeType = recorder.mimeType || 'audio/ogg;codecs=opus';
+
+    const allowedMimeTypes = [
+      'audio/mpeg',
+      'audio/mp3',
+      'audio/aac',
+      'audio/m4a',
+      'audio/x-m4a',
+      'audio/amr',
+      'audio/amr-wb',
+      'audio/ogg',
+      'audio/opus',
+    ];
+
+    const baseMimeType = mimeType.split(';')[0].trim();
+    const isAllowed = allowedMimeTypes.some((allowed) => {
+      return mimeType === allowed || baseMimeType === allowed;
+    });
+
+    if (!isAllowed) {
+      mimeType = 'audio/ogg;codecs=opus';
+    }
+
     const blob = new Blob(audioChunksRef.value, { type: mimeType });
     recordedAudioBlob.value = blob;
     if (recordedAudioUrl.value) URL.revokeObjectURL(recordedAudioUrl.value);
@@ -1439,7 +1565,27 @@ const startAudioRecording = async () => {
     }
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     audioStreamRef.value = stream;
-    const mediaRecorder = new MediaRecorder(stream);
+
+    const preferredMimeTypes = [
+      'audio/ogg;codecs=opus',
+      'audio/opus',
+      'audio/ogg',
+    ];
+
+    let mediaRecorder: MediaRecorder | null = null;
+    for (const mimeType of preferredMimeTypes) {
+      if (MediaRecorder.isTypeSupported(mimeType)) {
+        try {
+          mediaRecorder = new MediaRecorder(stream, { mimeType });
+          break;
+        } catch {}
+      }
+    }
+
+    if (!mediaRecorder) {
+      mediaRecorder = new MediaRecorder(stream);
+    }
+
     mediaRecorderRef.value = mediaRecorder;
     audioChunksRef.value = [];
     mediaRecorder.ondataavailable = (event) => {
@@ -1625,20 +1771,20 @@ const onPickAudio = async (e: Event) => {
   const allowedAudioTypes = new Set([
     'audio/mpeg',
     'audio/mp3',
-    'audio/wav',
-    'audio/ogg',
-    'audio/webm',
     'audio/aac',
     'audio/m4a',
+    'audio/x-m4a',
+    'audio/amr',
+    'audio/amr-wb',
+    'audio/ogg',
     'audio/opus',
   ]);
   const allowedExtensions = new Set([
     'mp3',
-    'wav',
-    'ogg',
-    'webm',
     'aac',
     'm4a',
+    'amr',
+    'ogg',
     'opus',
   ]);
 
@@ -1743,6 +1889,103 @@ const removeAudio = (index: number) => {
     }
   }
   selectedAudios.value.splice(index, 1);
+};
+
+const removeContact = (index: number) => {
+  selectedContacts.value.splice(index, 1);
+};
+
+function formatPhone(value: string | null | undefined): string {
+  if (!value) return '';
+
+  const numbers = value.replaceAll(/\D/g, '').slice(0, 11);
+
+  if (numbers.length <= 2) {
+    return numbers;
+  }
+  if (numbers.length <= 6) {
+    return `(${numbers.slice(0, 2)}) ${numbers.slice(2)}`;
+  }
+  if (numbers.length <= 10) {
+    return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 6)}-${numbers.slice(6)}`;
+  }
+  return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`;
+}
+
+const viewContactEmailFormatted = computed(() => {
+  if (isViewEmailDecrypted.value) {
+    return viewContactEmail.value ?? '';
+  }
+  return viewContactEmailPartial.value ?? '';
+});
+
+const viewContactPhoneFormatted = computed(() => {
+  if (isViewPhoneDecrypted.value && viewContactPhone.value) {
+    return formatPhone(viewContactPhone.value);
+  }
+  return viewContactPhonePartial.value ?? '';
+});
+
+const toggleViewEmailVisibility = async () => {
+  if (!selectedContactDetails.value?.contact_id) return;
+
+  if (isViewEmailDecrypted.value) {
+    viewContactEmail.value = null;
+    isViewEmailDecrypted.value = false;
+    return;
+  }
+
+  isLoadingViewEmail.value = true;
+  const decryptedEmail = await contactStore.getContactEmailDecrypted(
+    selectedContactDetails.value.contact_id
+  );
+  isLoadingViewEmail.value = false;
+
+  if (decryptedEmail) {
+    viewContactEmail.value = decryptedEmail;
+    isViewEmailDecrypted.value = true;
+  }
+};
+
+const toggleViewPhoneVisibility = async () => {
+  if (!selectedContactDetails.value?.contact_id) return;
+
+  if (isViewPhoneDecrypted.value) {
+    if (viewContactPhonePartial.value?.includes('*')) {
+      viewContactPhone.value = null;
+    }
+    if (!viewContactPhonePartial.value?.includes('*')) {
+      viewContactPhone.value =
+        viewContactPhonePartial.value?.replaceAll(/\D/g, '') ?? null;
+    }
+    isViewPhoneDecrypted.value = false;
+    return;
+  }
+
+  isLoadingViewPhone.value = true;
+  const decryptedPhone = await contactStore.getContactPhoneDecrypted(
+    selectedContactDetails.value.contact_id
+  );
+  isLoadingViewPhone.value = false;
+
+  if (decryptedPhone) {
+    viewContactPhone.value = decryptedPhone.replaceAll(/\D/g, '');
+    isViewPhoneDecrypted.value = true;
+  }
+};
+
+const viewContact = async (contactId: string) => {
+  const contact = await contactStore.getContactById(contactId);
+  if (contact) {
+    selectedContactDetails.value = contact;
+    viewContactEmailPartial.value = contact.email_partial ?? null;
+    viewContactEmail.value = null;
+    isViewEmailDecrypted.value = false;
+    viewContactPhonePartial.value = contact.phone_partial ?? null;
+    viewContactPhone.value = null;
+    isViewPhoneDecrypted.value = false;
+    isContactViewModalOpen.value = true;
+  }
 };
 
 const audioModalOpen = ref(false);
@@ -2255,6 +2498,43 @@ const retryDocumentMessage = async (
   }
 };
 
+const retryContactMessage = async (
+  content: NonNullable<ListMessageResult['content']>,
+  hash: string
+): Promise<void> => {
+  if (!chatStore.activeChat?.chat_id) {
+    markUploadError(hash);
+    return;
+  }
+
+  if (!content.contact?.contact_id) {
+    markUploadError(hash);
+    return;
+  }
+
+  const replyId = content.message_quoted_id ?? null;
+  const messageValue = content.message ?? null;
+
+  const formData = new FormData();
+  formData.append('type', EMessageType.contact_card);
+  if (messageValue) {
+    formData.append('message', messageValue);
+  }
+  if (replyId) {
+    formData.append('message_quoted_id', replyId);
+  }
+  formData.append('contacts', content.contact.contact_id);
+  formData.append('hash', hash);
+
+  const success = await chatStore.createMessageWithContacts(formData, {
+    skipLoading: true,
+  });
+
+  if (!success) {
+    markUploadError(hash);
+  }
+};
+
 const onRetryMessage = async (e: Event) => {
   const { message } = (e as CustomEvent<{ message: ListMessageResult }>).detail;
   if (!message?.hash) return;
@@ -2287,6 +2567,14 @@ const onRetryMessage = async (e: Event) => {
 
   if (content.type === EMessageType.document && content.document?.url) {
     await retryDocumentMessage(content, hash);
+    return;
+  }
+
+  if (
+    content.type === EMessageType.contact_card &&
+    content.contact?.contact_id
+  ) {
+    await retryContactMessage(content, hash);
   }
 };
 
@@ -2295,8 +2583,6 @@ onMounted(async () => {
     await onMessage(
       chatAccountCentrifugo(chatStore.user.account_id),
       (data: IChatMessage) => {
-        console.log('data:', data);
-
         if (chatStore.activeChat?.chat_id !== data.chat_id) {
           return;
         }
@@ -2758,6 +3044,79 @@ onBeforeUnmount(() => {
 
           <Transition name="fade">
             <div
+              v-if="selectedContacts.length > 0"
+              class="composer-attachment mt-3"
+            >
+              <VCard class="composer-attachment-card">
+                <VCardTitle class="d-flex align-center justify-space-between">
+                  <span
+                    >{{ t('contacts_selected') }} ({{
+                      selectedContacts.length
+                    }}/10)</span
+                  >
+                  <VBtn
+                    icon
+                    size="24"
+                    variant="text"
+                    @click="clearSelectedContacts()"
+                  >
+                    <VIcon size="18" icon="tabler-x" />
+                  </VBtn>
+                </VCardTitle>
+                <VCardText>
+                  <div class="attachment-grid">
+                    <div
+                      v-for="(contact, index) in selectedContacts"
+                      :key="`${contact.contact_id}-${index}`"
+                      class="contact-preview-wrapper"
+                      @click="viewContact(contact.contact_id)"
+                      style="cursor: pointer"
+                    >
+                      <div class="contact-preview-container">
+                        <div class="contact-preview-icon-wrapper">
+                          <VIcon size="32" color="primary">tabler-user</VIcon>
+                        </div>
+                      </div>
+                      <div class="contact-preview-meta">
+                        <VTooltip location="bottom">
+                          <template #activator="{ props }">
+                            <span v-bind="props" class="contact-preview-name">
+                              {{ contact.name }}
+                              {{ contact.last_name || '' }}
+                            </span>
+                          </template>
+                          <span
+                            >{{ contact.name }}
+                            {{ contact.last_name || '' }}</span
+                          >
+                        </VTooltip>
+                        <span
+                          class="contact-preview-info text-caption text-disabled"
+                        >
+                          <span v-if="contact.phone_partial">
+                            {{ contact.phone_partial }}
+                          </span>
+                        </span>
+                      </div>
+                      <VBtn
+                        icon
+                        size="20"
+                        variant="flat"
+                        color="error"
+                        class="contact-preview-remove"
+                        @click.stop="removeContact(index)"
+                      >
+                        <VIcon size="14" icon="tabler-x" />
+                      </VBtn>
+                    </div>
+                  </div>
+                </VCardText>
+              </VCard>
+            </div>
+          </Transition>
+
+          <Transition name="fade">
+            <div
               v-if="selectedPhotos.length > 0"
               class="composer-attachment mt-3"
             >
@@ -3024,7 +3383,7 @@ onBeforeUnmount(() => {
             ref="fileAudioRef"
             type="file"
             hidden
-            accept="audio/*"
+            accept="audio/mpeg,audio/mp3,audio/aac,audio/m4a,audio/x-m4a,audio/amr,audio/amr-wb,audio/ogg,audio/opus,.mp3,.aac,.m4a,.amr,.ogg,.opus"
             multiple
             @change="onPickAudio"
           />
@@ -3056,6 +3415,145 @@ onBeforeUnmount(() => {
       </div>
     </VMain>
   </VLayout>
+
+  <AppContactPicker
+    v-model="isContactPickerOpen"
+    :existing-contacts="selectedContacts"
+    @select="onContactsSelected"
+  />
+
+  <VDialog v-model="isContactViewModalOpen" max-width="600">
+    <DialogCloseBtn @click="isContactViewModalOpen = false" />
+
+    <template v-if="contactStore.loading">
+      <VOverlay
+        :model-value="contactStore.loading"
+        class="align-center justify-center"
+      >
+        <VProgressCircular color="primary" indeterminate size="32" />
+      </VOverlay>
+    </template>
+
+    <VCard :title="$t('view_contact')" v-if="selectedContactDetails">
+      <VCardText>
+        <VRow>
+          <VCol cols="12" md="6">
+            <AppTextField
+              :model-value="selectedContactDetails.name"
+              :label="$t('name') + ':'"
+              readonly
+            />
+          </VCol>
+
+          <VCol cols="12" md="6">
+            <AppTextField
+              :model-value="selectedContactDetails.last_name || ''"
+              :label="$t('last_name') + ':'"
+              readonly
+            />
+          </VCol>
+        </VRow>
+        <VRow>
+          <VCol cols="12" md="6">
+            <AppTextField
+              :model-value="selectedContactDetails.nickname || ''"
+              :label="$t('nickname') + ':'"
+              readonly
+            />
+          </VCol>
+
+          <VCol cols="12" md="6">
+            <AppTextField
+              :model-value="viewContactEmailFormatted"
+              type="email"
+              :label="$t('email') + ':'"
+              readonly
+            >
+              <template #append-inner>
+                <VIcon
+                  :icon="isViewEmailDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
+                  class="cursor-pointer"
+                  :class="{ 'opacity-50': isLoadingViewEmail }"
+                  @click="toggleViewEmailVisibility"
+                />
+              </template>
+            </AppTextField>
+          </VCol>
+        </VRow>
+        <VRow>
+          <VCol cols="12" md="6">
+            <AppTextField
+              :model-value="selectedContactDetails.phone_ddi || ''"
+              :label="$t('phone_ddi') + ':'"
+              readonly
+            />
+          </VCol>
+
+          <VCol cols="12" md="6">
+            <AppTextField
+              :model-value="viewContactPhoneFormatted"
+              type="tel"
+              :label="$t('phone') + ':'"
+              readonly
+            >
+              <template #append-inner>
+                <VIcon
+                  :icon="isViewPhoneDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
+                  class="cursor-pointer"
+                  :class="{ 'opacity-50': isLoadingViewPhone }"
+                  @click="toggleViewPhoneVisibility"
+                />
+              </template>
+            </AppTextField>
+          </VCol>
+        </VRow>
+        <VRow>
+          <VCol cols="12" md="6">
+            <AppTextField
+              :model-value="
+                selectedContactDetails.birthday
+                  ? new Date(
+                      selectedContactDetails.birthday + 'T00:00:00'
+                    ).toLocaleDateString('pt-BR')
+                  : ''
+              "
+              :label="$t('birthday') + ':'"
+              readonly
+            />
+          </VCol>
+
+          <VCol cols="12" md="6">
+            <AppTextField
+              :model-value="selectedContactDetails.label_template?.label || ''"
+              :label="$t('label') + ':'"
+              readonly
+            />
+          </VCol>
+        </VRow>
+        <VRow>
+          <VCol cols="12">
+            <label class="text-body-2 mb-1" for="notes-textarea">
+              {{ $t('notes') }}:
+            </label>
+            <VTextarea
+              :model-value="selectedContactDetails.notes || ''"
+              readonly
+            />
+          </VCol>
+        </VRow>
+      </VCardText>
+
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          @click="isContactViewModalOpen = false"
+        >
+          {{ $t('close') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
 
   <VSnackbar
     v-model="chatStore.snackbar.status"
@@ -3560,6 +4058,61 @@ $chat-app-header-height: 76px;
 }
 
 .audio-preview-remove {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: 6px;
+}
+
+.contact-preview-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: 10px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+  padding: 8px;
+  overflow: hidden;
+}
+
+.contact-preview-container {
+  position: relative;
+  inline-size: 100%;
+  block-size: 120px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(var(--v-theme-primary), 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.contact-preview-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.contact-preview-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.contact-preview-name {
+  font-weight: 600;
+  color: rgb(var(--v-theme-primary));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.contact-preview-info {
+  white-space: nowrap;
+}
+
+.contact-preview-remove {
   position: absolute;
   inset-block-start: 6px;
   inset-inline-end: 6px;

@@ -18,6 +18,8 @@ import {
   EditContactParamsRequest,
   UpdateContactRequest,
 } from '@core/schema/contact/editContact/request.schema';
+import { ViewContactPhoneResponse } from '@core/schema/contact/viewContactPhone/response.schema';
+import { ViewContactEmailResponse } from '@core/schema/contact/viewContactEmail/response.schema';
 
 export const useContactStore = defineStore('contact', {
   state: () => ({
@@ -266,6 +268,66 @@ export const useContactStore = defineStore('contact', {
         this.loading = false;
 
         return false;
+      }
+    },
+
+    async getContactPhoneDecrypted(contactId: string): Promise<string | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ViewContactPhoneResponse>
+        >(`/contact/${contactId}/phone`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('contact_view_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        return data.data.phone;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('contact_view_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+
+    async getContactEmailDecrypted(contactId: string): Promise<string | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ViewContactEmailResponse>
+        >(`/contact/${contactId}/email`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('contact_view_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        return data.data.email;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('contact_view_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
       }
     },
   },

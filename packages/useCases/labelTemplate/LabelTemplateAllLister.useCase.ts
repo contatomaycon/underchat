@@ -14,7 +14,7 @@ export class LabelTemplateAllListerUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string
-  ): Promise<ListLabelTemplateAllResponse[] | null> {
+  ): Promise<ListLabelTemplateAllResponse[]> {
     const accountExists =
       await this.accountService.existsAccountById(accountId);
     if (!accountExists) {

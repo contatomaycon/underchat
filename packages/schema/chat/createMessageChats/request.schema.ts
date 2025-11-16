@@ -101,6 +101,16 @@ export const createMessageChatsBodySchema = Type.Object({
   reaction_message_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   reaction_emoji: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   delete_message_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  contacts: Type.Optional(
+    Type.Union([
+      Type.String(),
+      Type.Array(Type.String()),
+      Type.Null(),
+      Type.Object({
+        value: Type.Union([Type.String(), Type.Array(Type.String())]),
+      }),
+    ])
+  ),
   hash: Type.Optional(
     Type.Union([
       Type.String(),

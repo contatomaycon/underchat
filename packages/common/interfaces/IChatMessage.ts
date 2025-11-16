@@ -40,12 +40,24 @@ export interface IQuotedMessage {
   video?: VideoMessageChat | null;
   document?: DocumentMessageChat | null;
   audio?: AudioMessageChat | null;
+  contact?: IContactMessage | null;
 }
 
 export interface IReaction {
   emoji: string;
   user_id?: string | null;
   user_name?: string | null;
+}
+
+export interface IContactMessage {
+  contact_id: string;
+  name: string;
+  last_name?: string | null;
+  phone?: string | null;
+  phone_partial?: string | null;
+  phone_ddi?: string | null;
+  email?: string | null;
+  email_partial?: string | null;
 }
 
 export interface IContent {
@@ -58,6 +70,7 @@ export interface IContent {
   video?: VideoMessageChat | null;
   document?: DocumentMessageChat | null;
   audio?: AudioMessageChat | null;
+  contact?: IContactMessage | null;
   reactions?: IReaction[] | null;
 }
 

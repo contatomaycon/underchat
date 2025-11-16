@@ -16,6 +16,8 @@ import { IUpdateContact } from '@core/common/interfaces/IUpdateContact';
 import { UpdateContactRequest } from '@core/schema/contact/editContact/request.schema';
 import { ContactCreatorTransactionRepository } from '@core/repositories/contact/ContactCreatorTransaction.repository';
 import { TFunction } from 'i18next';
+import { PasswordEncryptorService } from './passwordEncryptor.service';
+import { ContactSensitiveDataRepository } from '@core/repositories/contact/ContactSensitiveData.repository';
 
 @injectable()
 export class ContactService {
@@ -27,7 +29,9 @@ export class ContactService {
     private readonly contactViewerRepository: ContactViewerRepository,
     private readonly contactDeleterRepository: ContactDeleterRepository,
     private readonly contactUpdaterRepository: ContactUpdaterRepository,
-    private readonly contactCreatorTransactionRepository: ContactCreatorTransactionRepository
+    private readonly contactCreatorTransactionRepository: ContactCreatorTransactionRepository,
+    private readonly passwordEncryptorService: PasswordEncryptorService,
+    private readonly contactSensitiveDataRepository: ContactSensitiveDataRepository
   ) {}
 
   listContacts = async (
@@ -64,7 +68,7 @@ export class ContactService {
     accountId: string
   ): Promise<string | null> => {
     const emailCEncrypted = input.email
-      ? this.encryptService.encrypt(input.email)
+      ? this.passwordEncryptorService.encrypt(input.email)
       : null;
 
     const emailPartialEncrypted = input.email
@@ -72,7 +76,7 @@ export class ContactService {
       : null;
 
     const phoneCEncrypted = input.phone
-      ? this.encryptService.encrypt(input.phone)
+      ? this.passwordEncryptorService.encrypt(input.phone)
       : null;
 
     const phonePartialEncrypted = input.phone
@@ -112,7 +116,7 @@ export class ContactService {
     contactId: string
   ): Promise<boolean | null> => {
     const emailCEncrypted = input.email
-      ? this.encryptService.encrypt(input.email)
+      ? this.passwordEncryptorService.encrypt(input.email)
       : null;
 
     const emailPartialEncrypted = input.email
@@ -120,7 +124,7 @@ export class ContactService {
       : null;
 
     const phoneCEncrypted = input.phone
-      ? this.encryptService.encrypt(input.phone)
+      ? this.passwordEncryptorService.encrypt(input.phone)
       : null;
 
     const phonePartialEncrypted = input.phone
@@ -151,7 +155,7 @@ export class ContactService {
     accountId: string
   ): Promise<boolean | null> => {
     const emailCEncrypted = input?.email
-      ? this.encryptService.encrypt(input.email)
+      ? this.passwordEncryptorService.encrypt(input.email)
       : null;
 
     const emailPartialEncrypted = input.email
@@ -159,7 +163,7 @@ export class ContactService {
       : null;
 
     const phoneCEncrypted = input.phone
-      ? this.encryptService.encrypt(input.phone)
+      ? this.passwordEncryptorService.encrypt(input.phone)
       : null;
 
     const phonePartialEncrypted = input.phone
@@ -186,5 +190,76 @@ export class ContactService {
       contactGroupId,
       payload
     );
+  };
+
+  getContactPhoneDecrypted = (
+    encryptedPhone: string | null | undefined
+  ): string | null => {
+    if (!encryptedPhone) return null;
+
+    if (typeof encryptedPhone !== 'string') {
+      return null;
+    }
+
+    const isAESFormat =
+      encryptedPhone.includes(':') && encryptedPhone.split(':').length === 3;
+
+    if (!isAESFormat) {
+      return null;
+    }
+
+    try {
+      const decryptedPhone =
+        this.passwordEncryptorService.decrypt(encryptedPhone);
+
+      return decryptedPhone;
+    } catch {
+      return null;
+    }
+  };
+
+  getContactEmailDecrypted = (
+    encryptedEmail: string | null | undefined
+  ): string | null => {
+    if (!encryptedEmail) return null;
+
+    if (typeof encryptedEmail !== 'string') {
+      return null;
+    }
+
+    if (encryptedEmail.includes('*')) {
+      return null;
+    }
+
+    const isAESFormat =
+      encryptedEmail.includes(':') && encryptedEmail.split(':').length === 3;
+
+    if (!isAESFormat) {
+      return null;
+    }
+
+    try {
+      const decryptedEmail =
+        this.passwordEncryptorService.decrypt(encryptedEmail);
+
+      return decryptedEmail;
+    } catch {
+      return null;
+    }
+  };
+
+  getContactSensitiveDataDecrypted = async (
+    contactId: string
+  ): Promise<{ phone: string | null; email: string | null } | null> => {
+    const sensitiveData =
+      await this.contactSensitiveDataRepository.getContactSensitiveDataById(
+        contactId
+      );
+    if (!sensitiveData) return null;
+
+    return {
+      phone: this.getContactPhoneDecrypted(sensitiveData.phone),
+      email: this.getContactEmailDecrypted(sensitiveData.email),
+    };
   };
 }
