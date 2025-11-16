@@ -387,7 +387,9 @@ export class ChatMessageCreatorUseCase {
     }
 
     const numValue =
-      typeof rawValue === 'number' ? rawValue : Number.parseFloat(String(rawValue));
+      typeof rawValue === 'number'
+        ? rawValue
+        : Number.parseFloat(String(rawValue));
     if (Number.isNaN(numValue)) {
       return null;
     }
