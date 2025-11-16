@@ -11,4 +11,3 @@ export interface IProcessMediaMessagesOptions
   audioViewOnce: boolean;
   audioPtt: boolean;
 }
-
