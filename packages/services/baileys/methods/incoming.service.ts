@@ -19,6 +19,9 @@ import { EMessageUpsertType } from '@core/common/enums/EMessageUpsertType';
 import { getSenderPhotoUrl } from '@core/common/functions/getSenderPhotoUrl';
 import { remoteJid } from '@core/common/functions/remoteJid';
 import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
+import { CentrifugoService } from '@core/services/centrifugo.service';
+import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
+import { IChatTyping } from '@core/common/interfaces/IChatTyping';
 
 @singleton()
 export class BaileysIncomingMessageService {
@@ -28,7 +31,8 @@ export class BaileysIncomingMessageService {
 
   constructor(
     private readonly streamProducerService: StreamProducerService,
-    private readonly kafkaServiceQueueService: KafkaServiceQueueService
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    private readonly centrifugoService: CentrifugoService
   ) {
     this.startCleanupInterval();
   }
@@ -122,30 +126,55 @@ export class BaileysIncomingMessageService {
       }
     });
 
-    /**
-     * Alterações em mensagens existentes (reação, edição, status, etc.).
-     */
     socket.ev.on('messages.update', (events) => {
       console.log('events:', events);
     });
 
-    /**
-     * Mudança no status de entrega/leitura.
-     */
     socket.ev.on('message-receipt.update', (events) => {
       console.log('events:', events);
     });
 
-    /**
-     * Alguém no chat mudou de status (online, digitando, etc.).
-     */
-    socket.ev.on('presence.update', (data) => {
-      console.log('data:', data);
+    socket.ev.on('presence.update', async (data) => {
+      if (!data?.id || !data?.presences) {
+        return;
+      }
+
+      const chatJid = data.id;
+      const presences = data.presences;
+
+      for (const [participantJid, presence] of Object.entries(presences)) {
+        if (!presence) {
+          continue;
+        }
+
+        const lastKnownPresence = presence?.lastKnownPresence;
+
+        if (
+          lastKnownPresence !== 'composing' &&
+          lastKnownPresence !== 'available'
+        ) {
+          continue;
+        }
+
+        const typingEvent: IChatTyping = {
+          type: 'typing',
+          jid: chatJid,
+          is_typing: lastKnownPresence === 'composing',
+          account_id: baileysEnvironment.baileysAccountId,
+          worker_id: baileysEnvironment.baileysWorkerId,
+        };
+
+        try {
+          await this.centrifugoService.publishSub(
+            chatAccountCentrifugo(baileysEnvironment.baileysAccountId),
+            typingEvent
+          );
+        } catch (error) {
+          console.error('Error publishing typing event:', error);
+        }
+      }
     });
 
-    /**
-     * Histórico carregado pelo WhatsApp (ao conectar ou sincronizar).
-     */
     socket.ev.on('messaging-history.set', (data) => {
       console.log('data:', data);
     });

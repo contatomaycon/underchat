@@ -259,6 +259,7 @@
     "chat_config_update_error": "Error updating chat settings",
     "chat": "Chat",
     "write_your_message": "Write your message",
+    "is_typing": "is typing...",
     "start_conversation": "Start conversation",
     "send": "Send",
     "chat_message_create_error": "Error creating chat message. Please try again.",

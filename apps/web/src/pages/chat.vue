@@ -33,6 +33,7 @@ import {
   IQuotedMessage,
 } from '@core/common/interfaces/IChatMessage';
 import { IChat } from '@core/common/interfaces/IChat';
+import { IChatTyping } from '@core/common/interfaces/IChatTyping';
 import {
   ISelectedPhotoPreview,
   ISelectedDocumentPreview,
@@ -43,6 +44,7 @@ import {
 import { extractFirstUrl } from '@core/common/functions/extractFirstUrl';
 import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
 import { refDebounced } from '@vueuse/core';
+import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 import { getOffsetTop } from '@core/common/functions/getOffsetTop';
 import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
 import data from 'emoji-mart-vue-fast/data/all.json';
@@ -102,6 +104,8 @@ const isViewEmailDecrypted = ref(false);
 const isViewPhoneDecrypted = ref(false);
 const isLoadingViewEmail = ref(false);
 const isLoadingViewPhone = ref(false);
+const isTyping = ref(false);
+const typingTimeout = ref<NodeJS.Timeout | null>(null);
 const selectedPhotos = ref<ISelectedPhotoPreview[]>([]);
 const selectedDocuments = ref<ISelectedDocumentPreview[]>([]);
 const selectedVideos = ref<ISelectedVideoPreview[]>([]);
@@ -2926,19 +2930,106 @@ const onRetryMessage = async (e: Event) => {
   }
 };
 
+const clearTypingTimeout = () => {
+  if (typingTimeout.value) {
+    clearTimeout(typingTimeout.value);
+    typingTimeout.value = null;
+  }
+};
+
+const handleTypingEvent = (data: IChatTyping | IChatMessage) => {
+  if ('message_id' in data) {
+    if (isTyping.value) {
+      clearTypingTimeout();
+      isTyping.value = false;
+    }
+    return;
+  }
+
+  if (data.type !== 'typing') {
+    return;
+  }
+
+  const typingData = data as IChatTyping;
+  const activeChat = chatStore.activeChat;
+
+  if (!activeChat) {
+    return;
+  }
+
+  const eventJid = typingData.jid;
+  const messages = chatStore.listMessages;
+
+  let jidMatches = false;
+
+  for (const message of messages) {
+    const messageJid = message.message_key?.remote_jid;
+    const messageJidAlt = message.message_key?.remote_jid_alt;
+
+    if (messageJid === eventJid || messageJidAlt === eventJid) {
+      jidMatches = true;
+      break;
+    }
+  }
+
+  if (!jidMatches) {
+    const normalizedEventJid = eventJid.replace('@lid', '@s.whatsapp.net');
+
+    for (const message of messages) {
+      const messageJid = message.message_key?.remote_jid;
+      const messageJidAlt = message.message_key?.remote_jid_alt;
+
+      if (
+        messageJid === normalizedEventJid ||
+        messageJidAlt === normalizedEventJid
+      ) {
+        jidMatches = true;
+        break;
+      }
+    }
+  }
+
+  if (!jidMatches) {
+    return;
+  }
+
+  clearTypingTimeout();
+
+  if (!typingData.is_typing) {
+    isTyping.value = false;
+    return;
+  }
+
+  isTyping.value = true;
+
+  typingTimeout.value = setTimeout(() => {
+    isTyping.value = false;
+    typingTimeout.value = null;
+  }, 5000);
+};
+
 onMounted(async () => {
   if (chatStore.user?.account_id) {
     await onMessage(
       chatAccountCentrifugo(chatStore.user.account_id),
-      (data: IChatMessage) => {
-        if (chatStore.activeChat?.chat_id !== data.chat_id) {
+      (data: IChatMessage | IChatTyping) => {
+        if ('type' in data && data.type === 'typing') {
+          handleTypingEvent(data as IChatTyping);
           return;
         }
 
-        const changeType = chatStore.addMessageActiveChat(data);
+        const messageData = data as IChatMessage;
+
+        if (chatStore.activeChat?.chat_id !== messageData.chat_id) {
+          return;
+        }
+
+        handleTypingEvent(messageData);
+
+        const changeType = chatStore.addMessageActiveChat(messageData);
 
         if (changeType === 'created') {
-          scrollToMessageById(data.message_id);
+          scrollToMessageById(messageData.message_id);
           globalThis.dispatchEvent(new CustomEvent('focus-composer'));
         }
       }
@@ -2964,6 +3055,9 @@ onMounted(async () => {
 });
 
 onUnmounted(async () => {
+  clearTypingTimeout();
+  isTyping.value = false;
+
   if (chatStore.user?.account_id) {
     await unsubscribe(chatAccountCentrifugo(chatStore.user.account_id));
     await unsubscribe(chatQueueAccountCentrifugo(chatStore.user.account_id));
@@ -3157,6 +3251,22 @@ onBeforeUnmount(() => {
           class="chat-log-message-form mb-5 mx-5"
           @submit.prevent="sendMessage"
         >
+          <Transition name="fade">
+            <div
+              v-if="isTyping && chatStore.activeChat"
+              class="typing-indicator d-flex align-center gap-2 mb-2"
+            >
+              <VIcon size="22" color="primary" icon="tabler-pencil" />
+              <span
+                class="text-primary"
+                style="font-style: italic; font-size: 1.2rem; font-weight: 400"
+              >
+                {{ chatStore.activeChat.name || chatStore.activeChat.phone }}
+                {{ $t('is_typing') }}
+              </span>
+            </div>
+          </Transition>
+
           <ReplyPreview v-if="chatStore.messageReply" />
 
           <Transition name="fade">
