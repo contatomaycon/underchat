@@ -3,7 +3,7 @@ import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { ViewContactEmailRequest } from '@core/schema/contact/viewContactEmail/request.schema';
-import { ContactService } from '@core/services/contact.service';
+import { ContactEmailViewerUseCase } from '@core/useCases/contact/ContactEmailViewer.useCase';
 
 export const viewContactEmail = async (
   request: FastifyRequest<{
@@ -11,27 +11,28 @@ export const viewContactEmail = async (
   }>,
   reply: FastifyReply
 ) => {
-  const contactService = container.resolve(ContactService);
+  const contactEmailViewerUseCase = container.resolve(ContactEmailViewerUseCase);
   const { t } = request;
 
   try {
-    const sensitiveData = await contactService.getContactSensitiveDataDecrypted(
+    const response = await contactEmailViewerUseCase.execute(
+      t,
       request.params.contact_id
     );
 
-    if (!sensitiveData) {
+    if (response) {
       return sendResponse(reply, {
-        message: t('contact_not_found'),
-        httpStatusCode: EHTTPStatusCode.bad_request,
+        message: t('contact_email_view_successfully'),
+        httpStatusCode: EHTTPStatusCode.ok,
+        data: response,
       });
     }
 
+    request.server.logger.info(response, request.id);
+
     return sendResponse(reply, {
-      message: t('contact_email_view_successfully'),
-      httpStatusCode: EHTTPStatusCode.ok,
-      data: {
-        email: sensitiveData.email,
-      },
+      message: t('contact_not_found'),
+      httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
     request.server.logger.error(error, request.id);
