@@ -1,8 +1,11 @@
 <script lang="ts" setup>
 import { ref, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Picker } from 'emoji-mart-vue-fast/src';
+import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
+import data from 'emoji-mart-vue-fast/data/all.json';
+import 'emoji-mart-vue-fast/css/emoji-mart.css';
 
+const emojiIndex = new EmojiIndex(data);
 const { t } = useI18n();
 
 const props = defineProps<{
@@ -35,12 +38,8 @@ const options = ref<PollOption[]>([
 ]);
 const allowMultiple = ref(true);
 const draggedIndex = ref<number | null>(null);
-const showEmojiPicker = ref<boolean>(false);
-const showEmojiPickerFor = ref<string | null>(null);
-
-const emojiIndex = computed(() => {
-  return (window as any).emojiMartData;
-});
+const showEmojiPickerQuestion = ref<boolean>(false);
+const showEmojiPickerOptions = ref<Record<string, boolean>>({});
 
 watch(
   () => props.modelValue,
@@ -52,6 +51,8 @@ watch(
         { id: '2', text: '', emoji: '' },
       ];
       allowMultiple.value = true;
+      showEmojiPickerQuestion.value = false;
+      showEmojiPickerOptions.value = { '1': false, '2': false };
     }
   }
 );
@@ -60,11 +61,13 @@ const addOption = () => {
   if (options.value.length >= 12) {
     return;
   }
+  const newId = Date.now().toString();
   options.value.push({
-    id: Date.now().toString(),
+    id: newId,
     text: '',
     emoji: '',
   });
+  showEmojiPickerOptions.value[newId] = false;
 };
 
 const removeOption = (index: number) => {
@@ -99,8 +102,7 @@ const onEmojiSelect = (optionId: string, emoji: any) => {
   if (option) {
     option.emoji = emoji.native || emoji.colons || '';
   }
-  showEmojiPicker.value = false;
-  showEmojiPickerFor.value = null;
+  showEmojiPickerOptions.value[optionId] = false;
 };
 
 const canSend = computed(() => {
@@ -156,21 +158,12 @@ const handleSend = () => {
               class="flex-grow-1"
             />
             <VMenu
-              v-model="showEmojiPicker"
+              v-model="showEmojiPickerQuestion"
               location="top"
               :close-on-content-click="false"
             >
               <template #activator="{ props: menuProps }">
-                <VBtn
-                  v-bind="menuProps"
-                  icon
-                  variant="text"
-                  size="small"
-                  @click="
-                    showEmojiPickerFor = 'question';
-                    showEmojiPicker = true;
-                  "
-                >
+                <VBtn v-bind="menuProps" icon variant="text" size="small">
                   <VIcon>tabler-mood-smile</VIcon>
                 </VBtn>
               </template>
@@ -184,8 +177,7 @@ const handleSend = () => {
                   @select="
                     (e: any) => {
                       question += e.native || e.colons || '';
-                      showEmojiPicker = false;
-                      showEmojiPickerFor = null;
+                      showEmojiPickerQuestion = false;
                     }
                   "
                 />
@@ -220,21 +212,12 @@ const handleSend = () => {
                 class="flex-grow-1"
               />
               <VMenu
-                v-model="showEmojiPicker"
+                v-model="showEmojiPickerOptions[option.id]"
                 location="top"
                 :close-on-content-click="false"
               >
                 <template #activator="{ props: menuProps }">
-                  <VBtn
-                    v-bind="menuProps"
-                    icon
-                    variant="text"
-                    size="small"
-                    @click="
-                      showEmojiPickerFor = option.id;
-                      showEmojiPicker = true;
-                    "
-                  >
+                  <VBtn v-bind="menuProps" icon variant="text" size="small">
                     <VIcon>tabler-mood-smile</VIcon>
                   </VBtn>
                 </template>
