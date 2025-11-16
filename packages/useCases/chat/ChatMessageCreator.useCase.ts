@@ -1138,8 +1138,15 @@ export class ChatMessageCreatorUseCase {
     contactIds: string[],
     params: ICreateContactMessageParams
   ): Promise<boolean> {
-    const { chat, chatId, type, message, messageQuotedId, quotedMessage } =
-      params;
+    const {
+      chat,
+      chatId,
+      type,
+      message,
+      messageQuotedId,
+      quotedMessage,
+      hash,
+    } = params;
 
     if (contactIds.length === 0) return false;
 
@@ -1157,6 +1164,7 @@ export class ChatMessageCreatorUseCase {
           name: contact.name,
           last_name: contact.last_name,
           phone: sensitiveData?.phone || null,
+          phone_partial: contact.phone_partial || null,
           phone_ddi: contact.phone_ddi || null,
           email: sensitiveData?.email || null,
           email_partial: contact.email_partial,
@@ -1173,6 +1181,7 @@ export class ChatMessageCreatorUseCase {
     }
 
     const publishTasks = validContacts.map((contactData) => {
+      const messageHash = hash || uuidv4();
       const contactMessage: IChatMessage = {
         message_id: uuidv4(),
         chat_id: chatId,
@@ -1204,13 +1213,14 @@ export class ChatMessageCreatorUseCase {
             name: contactData.name,
             last_name: contactData.last_name,
             phone: contactData.phone,
+            phone_partial: contactData.phone_partial,
             phone_ddi: contactData.phone_ddi,
             email: contactData.email,
             email_partial: contactData.email_partial,
           },
         },
         date: new Date().toISOString(),
-        hash: uuidv4(),
+        hash: messageHash,
       };
 
       return this.publishMessage(contactMessage);

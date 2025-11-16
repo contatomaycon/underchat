@@ -1642,10 +1642,10 @@ onUnmounted(() => {
                       {{ msgGrp.content.contact.last_name || '' }}
                     </div>
                     <div
-                      v-if="msgGrp.content.contact.phone"
+                      v-if="msgGrp.content.contact.phone_partial"
                       class="text-caption text-disabled"
                     >
-                      {{ msgGrp.content.contact.phone }}
+                      {{ msgGrp.content.contact.phone_partial }}
                     </div>
                   </div>
                 </div>

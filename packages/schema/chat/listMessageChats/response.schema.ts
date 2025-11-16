@@ -77,6 +77,7 @@ export const contactSchema = Type.Object({
   name: Type.String(),
   last_name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   phone: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  phone_partial: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   phone_ddi: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   email: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   email_partial: Type.Optional(Type.Union([Type.String(), Type.Null()])),

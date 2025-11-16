@@ -305,6 +305,9 @@ export const mensageMappings = () => {
                     phone: {
                       type: 'keyword',
                     },
+                    phone_partial: {
+                      type: 'keyword',
+                    },
                     phone_ddi: {
                       type: 'keyword',
                     },
@@ -468,6 +471,9 @@ export const mensageMappings = () => {
                   type: 'text',
                 },
                 phone: {
+                  type: 'keyword',
+                },
+                phone_partial: {
                   type: 'keyword',
                 },
                 phone_ddi: {

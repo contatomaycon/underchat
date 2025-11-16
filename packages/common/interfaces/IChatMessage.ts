@@ -54,6 +54,7 @@ export interface IContactMessage {
   name: string;
   last_name?: string | null;
   phone?: string | null;
+  phone_partial?: string | null;
   phone_ddi?: string | null;
   email?: string | null;
   email_partial?: string | null;

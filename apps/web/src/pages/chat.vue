@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import { computed } from 'vue';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { useDisplay, useTheme } from 'vuetify';
 import { themes } from '@/plugins/vuetify/theme';
@@ -91,6 +92,14 @@ const isEmojiOpen = ref(false);
 const isContactPickerOpen = ref(false);
 const isContactViewModalOpen = ref(false);
 const selectedContactDetails = ref<ViewContactResponse | null>(null);
+const viewContactEmail = ref<string | null>(null);
+const viewContactEmailPartial = ref<string | null>(null);
+const viewContactPhone = ref<string | null>(null);
+const viewContactPhonePartial = ref<string | null>(null);
+const isViewEmailDecrypted = ref(false);
+const isViewPhoneDecrypted = ref(false);
+const isLoadingViewEmail = ref(false);
+const isLoadingViewPhone = ref(false);
 const selectedPhotos = ref<ISelectedPhotoPreview[]>([]);
 const selectedDocuments = ref<ISelectedDocumentPreview[]>([]);
 const selectedVideos = ref<ISelectedVideoPreview[]>([]);
@@ -852,25 +861,27 @@ const sendContactsMessage = async (): Promise<void> => {
   const quotedPayload = getQuotedContent();
   const messageValue = getComposerMessage();
 
-  const messagesWithHashes = contacts.map((contact) => {
-    const hash = createMessageHash();
-    const content: ContentMessageChat = {
-      type: EMessageType.contact_card,
-      message: messageValue,
-      message_quoted_id: replyId ?? undefined,
-      quoted: quotedPayload,
-      contact: {
-        contact_id: contact.contact_id,
-        name: contact.name,
-        last_name: contact.last_name ?? null,
-        phone: contact.phone_partial ?? null,
-        email_partial: contact.email_partial ?? null,
-      },
-    };
+  const messagesWithHashes = await Promise.all(
+    contacts.map(async (contact) => {
+      const hash = createMessageHash();
+      const content: ContentMessageChat = {
+        type: EMessageType.contact_card,
+        message: messageValue,
+        message_quoted_id: replyId ?? undefined,
+        quoted: quotedPayload,
+        contact: {
+          contact_id: contact.contact_id,
+          name: contact.name,
+          last_name: contact.last_name ?? null,
+          phone: contact.phone_partial ?? null,
+          email_partial: contact.email_partial ?? null,
+        },
+      };
 
-    registerLocalMessage(content, hash);
-    return { contact, hash };
-  });
+      await registerLocalMessage(content, hash);
+      return { contact, hash };
+    })
+  );
 
   await Promise.all(
     messagesWithHashes.map(async ({ contact, hash }) => {
@@ -1882,10 +1893,95 @@ const removeContact = (index: number) => {
   selectedContacts.value.splice(index, 1);
 };
 
+function formatPhone(value: string | null | undefined): string {
+  if (!value) return '';
+
+  const numbers = value.replaceAll(/\D/g, '').slice(0, 11);
+
+  if (numbers.length <= 2) {
+    return numbers;
+  }
+  if (numbers.length <= 6) {
+    return `(${numbers.slice(0, 2)}) ${numbers.slice(2)}`;
+  }
+  if (numbers.length <= 10) {
+    return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 6)}-${numbers.slice(6)}`;
+  }
+  return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`;
+}
+
+const viewContactEmailFormatted = computed(() => {
+  if (isViewEmailDecrypted.value) {
+    return viewContactEmail.value ?? '';
+  }
+  return viewContactEmailPartial.value ?? '';
+});
+
+const viewContactPhoneFormatted = computed(() => {
+  if (isViewPhoneDecrypted.value && viewContactPhone.value) {
+    return formatPhone(viewContactPhone.value);
+  }
+  return viewContactPhonePartial.value ?? '';
+});
+
+const toggleViewEmailVisibility = async () => {
+  if (!selectedContactDetails.value?.contact_id) return;
+
+  if (isViewEmailDecrypted.value) {
+    viewContactEmail.value = null;
+    isViewEmailDecrypted.value = false;
+    return;
+  }
+
+  isLoadingViewEmail.value = true;
+  const decryptedEmail = await contactStore.getContactEmailDecrypted(
+    selectedContactDetails.value.contact_id
+  );
+  isLoadingViewEmail.value = false;
+
+  if (decryptedEmail) {
+    viewContactEmail.value = decryptedEmail;
+    isViewEmailDecrypted.value = true;
+  }
+};
+
+const toggleViewPhoneVisibility = async () => {
+  if (!selectedContactDetails.value?.contact_id) return;
+
+  if (isViewPhoneDecrypted.value) {
+    if (viewContactPhonePartial.value?.includes('*')) {
+      viewContactPhone.value = null;
+    }
+    if (!viewContactPhonePartial.value?.includes('*')) {
+      viewContactPhone.value =
+        viewContactPhonePartial.value?.replaceAll(/\D/g, '') ?? null;
+    }
+    isViewPhoneDecrypted.value = false;
+    return;
+  }
+
+  isLoadingViewPhone.value = true;
+  const decryptedPhone = await contactStore.getContactPhoneDecrypted(
+    selectedContactDetails.value.contact_id
+  );
+  isLoadingViewPhone.value = false;
+
+  if (decryptedPhone) {
+    viewContactPhone.value = decryptedPhone.replaceAll(/\D/g, '');
+    isViewPhoneDecrypted.value = true;
+  }
+};
+
 const viewContact = async (contactId: string) => {
   const contact = await contactStore.getContactById(contactId);
   if (contact) {
     selectedContactDetails.value = contact;
+    viewContactEmailPartial.value = contact.email_partial ?? null;
+    viewContactEmail.value = null;
+    isViewEmailDecrypted.value = false;
+    viewContactPhonePartial.value = contact.phone_partial ?? null;
+    viewContactPhone.value = null;
+    isViewPhoneDecrypted.value = false;
     isContactViewModalOpen.value = true;
   }
 };
@@ -2400,6 +2496,43 @@ const retryDocumentMessage = async (
   }
 };
 
+const retryContactMessage = async (
+  content: NonNullable<ListMessageResult['content']>,
+  hash: string
+): Promise<void> => {
+  if (!chatStore.activeChat?.chat_id) {
+    markUploadError(hash);
+    return;
+  }
+
+  if (!content.contact?.contact_id) {
+    markUploadError(hash);
+    return;
+  }
+
+  const replyId = content.message_quoted_id ?? null;
+  const messageValue = content.message ?? null;
+
+  const formData = new FormData();
+  formData.append('type', EMessageType.contact_card);
+  if (messageValue) {
+    formData.append('message', messageValue);
+  }
+  if (replyId) {
+    formData.append('message_quoted_id', replyId);
+  }
+  formData.append('contacts', content.contact.contact_id);
+  formData.append('hash', hash);
+
+  const success = await chatStore.createMessageWithContacts(formData, {
+    skipLoading: true,
+  });
+
+  if (!success) {
+    markUploadError(hash);
+  }
+};
+
 const onRetryMessage = async (e: Event) => {
   const { message } = (e as CustomEvent<{ message: ListMessageResult }>).detail;
   if (!message?.hash) return;
@@ -2432,6 +2565,14 @@ const onRetryMessage = async (e: Event) => {
 
   if (content.type === EMessageType.document && content.document?.url) {
     await retryDocumentMessage(content, hash);
+    return;
+  }
+
+  if (
+    content.type === EMessageType.contact_card &&
+    content.contact?.contact_id
+  ) {
+    await retryContactMessage(content, hash);
   }
 };
 
@@ -2440,8 +2581,6 @@ onMounted(async () => {
     await onMessage(
       chatAccountCentrifugo(chatStore.user.account_id),
       (data: IChatMessage) => {
-        console.log('data:', data);
-
         if (chatStore.activeChat?.chat_id !== data.chat_id) {
           return;
         }
@@ -3322,10 +3461,20 @@ onBeforeUnmount(() => {
 
           <VCol cols="12" md="6">
             <AppTextField
-              :model-value="selectedContactDetails.email_partial || ''"
+              :model-value="viewContactEmailFormatted"
+              type="email"
               :label="$t('email') + ':'"
               readonly
-            />
+            >
+              <template #append-inner>
+                <VIcon
+                  :icon="isViewEmailDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
+                  class="cursor-pointer"
+                  :class="{ 'opacity-50': isLoadingViewEmail }"
+                  @click="toggleViewEmailVisibility"
+                />
+              </template>
+            </AppTextField>
           </VCol>
         </VRow>
         <VRow>
@@ -3339,10 +3488,20 @@ onBeforeUnmount(() => {
 
           <VCol cols="12" md="6">
             <AppTextField
-              :model-value="selectedContactDetails.phone_partial || ''"
+              :model-value="viewContactPhoneFormatted"
+              type="tel"
               :label="$t('phone') + ':'"
               readonly
-            />
+            >
+              <template #append-inner>
+                <VIcon
+                  :icon="isViewPhoneDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
+                  class="cursor-pointer"
+                  :class="{ 'opacity-50': isLoadingViewPhone }"
+                  @click="toggleViewPhoneVisibility"
+                />
+              </template>
+            </AppTextField>
           </VCol>
         </VRow>
         <VRow>
