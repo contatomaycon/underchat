@@ -271,9 +271,7 @@ export const useContactStore = defineStore('contact', {
       }
     },
 
-    async getContactPhoneDecrypted(
-      contactId: string
-    ): Promise<string | null> {
+    async getContactPhoneDecrypted(contactId: string): Promise<string | null> {
       try {
         const response = await axios.get<
           IApiResponse<ViewContactPhoneResponse>
@@ -303,9 +301,7 @@ export const useContactStore = defineStore('contact', {
       }
     },
 
-    async getContactEmailDecrypted(
-      contactId: string
-    ): Promise<string | null> {
+    async getContactEmailDecrypted(contactId: string): Promise<string | null> {
       try {
         const response = await axios.get<
           IApiResponse<ViewContactEmailResponse>
