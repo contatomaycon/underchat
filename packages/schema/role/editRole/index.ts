@@ -1,7 +1,11 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { editRoleParamsRequestSchema } from './request.schema';
+import {
+  editRoleParamsRequestSchema,
+  updateRoleRequestSchema,
+} from './request.schema';
+import { editRoleResponseSchema } from './response.schema';
 
 export const editRoleSchema = {
   description: 'Edita um papel existente',
@@ -22,13 +26,14 @@ export const editRoleSchema = {
     ),
   }),
   params: editRoleParamsRequestSchema,
+  body: updateRoleRequestSchema,
   response: {
     200: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: Type.Null(),
+        data: editRoleResponseSchema,
       },
       { description: 'Successful' }
     ),
