@@ -99,6 +99,7 @@ const isDeleted = (m: ListMessageResult): boolean => m.deleted === true;
 const canInteractWithMessage = (m: ListMessageResult): boolean => {
   if (m.deleted) return false;
   if (m.summary?.is_sent_to_internal === false) return false;
+  if (m.content?.type === EMessageType.view_once) return false;
   return true;
 };
 
