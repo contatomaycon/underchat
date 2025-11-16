@@ -72,6 +72,16 @@ export const documentSchema = Type.Object({
   size: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
 });
 
+export const contactSchema = Type.Object({
+  contact_id: Type.String(),
+  name: Type.String(),
+  last_name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  phone: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  phone_ddi: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  email: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  email_partial: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+
 export const quotedMessageSchema = Type.Object({
   key: messageKeySchema,
   message: Type.Optional(Type.Union([Type.String(), Type.Null()])),
@@ -80,6 +90,7 @@ export const quotedMessageSchema = Type.Object({
   video: Type.Optional(Type.Union([videoSchema, Type.Null()])),
   audio: Type.Optional(Type.Union([audioSchema, Type.Null()])),
   document: Type.Optional(Type.Union([documentSchema, Type.Null()])),
+  contact: Type.Optional(Type.Union([contactSchema, Type.Null()])),
 });
 
 export const reactionSchema = Type.Object({
@@ -98,6 +109,7 @@ export const contentSchema = Type.Object({
   quoted: Type.Optional(Type.Union([quotedMessageSchema, Type.Null()])),
   image: Type.Optional(Type.Union([imageSchema, Type.Null()])),
   video: Type.Optional(Type.Union([videoSchema, Type.Null()])),
+  contact: Type.Optional(Type.Union([contactSchema, Type.Null()])),
   audio: Type.Optional(Type.Union([audioSchema, Type.Null()])),
   document: Type.Optional(Type.Union([documentSchema, Type.Null()])),
   reactions: Type.Optional(

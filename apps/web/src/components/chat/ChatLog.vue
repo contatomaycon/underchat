@@ -1,12 +1,5 @@
 <script lang="ts" setup>
-import {
-  ref,
-  reactive,
-  watch,
-  onMounted,
-  onUnmounted,
-  nextTick,
-} from 'vue';
+import { ref, reactive, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { useChatStore } from '@/@webcore/stores/chat';
 import {
   LinkPreview,
@@ -246,11 +239,6 @@ type LocalUploadState = {
   errorMessage?: string;
 };
 
-const clampProgress = (value?: number | null): number => {
-  if (typeof value !== 'number' || Number.isNaN(value)) return 0;
-  return Math.max(0, Math.min(100, Math.round(value)));
-};
-
 const getLocalMessageState = (
   message: ListMessageResult
 ): LocalUploadState | null => {
@@ -258,68 +246,8 @@ const getLocalMessageState = (
   return chatStore.localMessageState[message.hash] ?? null;
 };
 
-const hasLocalUploadState = (message: ListMessageResult): boolean => {
-  return !!getLocalMessageState(message);
-};
-
-const isMessageUploading = (message: ListMessageResult): boolean => {
-  return getLocalMessageState(message)?.status === 'uploading';
-};
-
 const isMessageUploadError = (message: ListMessageResult): boolean => {
   return getLocalMessageState(message)?.status === 'error';
-};
-
-const getMessageUploadProgress = (message: ListMessageResult): number => {
-  return getLocalMessageState(message)?.progress ?? 0;
-};
-
-const getMessageUploadProgressLabel = (message: ListMessageResult): number => {
-  return clampProgress(getMessageUploadProgress(message));
-};
-
-const resolveUploadingText = (message: ListMessageResult): string => {
-  const percent = getMessageUploadProgressLabel(message);
-  if (message.content?.type === EMessageType.document)
-    return `${t('document_uploading')} • ${percent}%`;
-  if (message.content?.type === EMessageType.video)
-    return `${t('video_uploading')} • ${percent}%`;
-  if (message.content?.type === EMessageType.audio)
-    return `${t('audio_uploading')} • ${percent}%`;
-  if (message.content?.type === EMessageType.image)
-    return `${t('image_uploading')} • ${percent}%`;
-  return `${t('message_sending')} • ${percent}%`;
-};
-
-const resolveUploadErrorText = (message: ListMessageResult): string => {
-  const state = getLocalMessageState(message);
-  if (state?.errorMessage) return state.errorMessage;
-  if (message.content?.type === EMessageType.document)
-    return t('document_upload_failed');
-  if (message.content?.type === EMessageType.video)
-    return t('video_upload_failed');
-  if (message.content?.type === EMessageType.audio)
-    return t('audio_upload_failed');
-  if (message.content?.type === EMessageType.image)
-    return t('image_upload_failed');
-  return t('message_send_failed');
-};
-
-const getMessageUploadStatusText = (message: ListMessageResult): string => {
-  if (!hasLocalUploadState(message)) return '';
-  if (isMessageUploadError(message)) {
-    return resolveUploadErrorText(message);
-  }
-  return resolveUploadingText(message);
-};
-
-const dismissLocalMessage = (message: ListMessageResult) => {
-  if (!message.hash) return;
-  chatStore.removeMessageByHash(message.hash);
-};
-
-const canRetryMessage = (message: ListMessageResult): boolean => {
-  return true;
 };
 
 const retryMessage = (message: ListMessageResult) => {
@@ -367,13 +295,8 @@ const isDownloadableAudio = (message: ListMessageResult): boolean => {
   return message.content?.type === EMessageType.audio;
 };
 
-const isAudioViewOnce = (message: ListMessageResult): boolean => {
-  if (message.message_key?.is_view_once) return true;
-  if (message.content?.audio?.view_once) return true;
-  return false;
-};
-
 const shouldShowCopy = (message: ListMessageResult): boolean => {
+  if (message.content?.type === EMessageType.contact_card) return false;
   if (isDownloadableDocument(message)) return false;
   if (isDownloadableImage(message)) return false;
   if (isDownloadableVideo(message)) return false;
@@ -473,19 +396,6 @@ const formatDocumentSize = (size?: number | null): string => {
 
 const truncateDocumentName = (name?: string | null, max = 36): string => {
   if (!name) return t('document_label');
-  if (name.length <= max) return name;
-  const extIndex = name.lastIndexOf('.');
-  if (extIndex <= 0) {
-    return `${name.slice(0, max - 3)}...`;
-  }
-
-  const ext = name.slice(extIndex);
-  const base = name.slice(0, max - ext.length - 3);
-  return `${base}...${ext}`;
-};
-
-const truncateVideoName = (name?: string | null, max = 36): string => {
-  if (!name) return t('video_label');
   if (name.length <= max) return name;
   const extIndex = name.lastIndexOf('.');
   if (extIndex <= 0) {
@@ -812,6 +722,12 @@ const hasQuotedVideo = (m: ListMessageResult): boolean =>
 const hasQuotedAudio = (m: ListMessageResult): boolean =>
   !!m.content?.quoted?.audio;
 
+const hasQuotedContact = (m: ListMessageResult): boolean =>
+  !!(
+    m.content?.quoted?.type === EMessageType.contact_card &&
+    m.content.quoted.contact
+  );
+
 const resolveQuotedDocumentIcon = (m: ListMessageResult): string => {
   const ext = m.content?.quoted?.document?.extension?.toLowerCase();
   if (ext && documentIconMap[ext]) {
@@ -958,8 +874,7 @@ const downloadImage = async (
     setTimeout(() => {
       globalThis.URL.revokeObjectURL(blobUrl);
     }, 100);
-  } catch (error) {
-    console.error('Erro ao baixar imagem:', error);
+  } catch {
     const anchor = document.createElement('a');
     anchor.href = url;
     anchor.target = '_blank';
@@ -991,8 +906,7 @@ const downloadVideo = async (
     setTimeout(() => {
       globalThis.URL.revokeObjectURL(blobUrl);
     }, 100);
-  } catch (error) {
-    console.error('Erro ao baixar vídeo:', error);
+  } catch {
     const anchor = document.createElement('a');
     anchor.href = url;
     anchor.target = '_blank';
@@ -1024,8 +938,7 @@ const downloadAudio = async (
     setTimeout(() => {
       globalThis.URL.revokeObjectURL(blobUrl);
     }, 100);
-  } catch (error) {
-    console.error('Erro ao baixar áudio:', error);
+  } catch {
     const anchor = document.createElement('a');
     anchor.href = url;
     anchor.target = '_blank';
@@ -1403,6 +1316,19 @@ onUnmounted(() => {
                     </div>
                   </div>
 
+                  <div v-if="hasQuotedContact(msgGrp)" class="quoted-contact">
+                    <VIcon size="22" color="primary">tabler-user</VIcon>
+                    <div class="quoted-contact-info">
+                      <span class="quoted-contact-name">
+                        {{
+                          msgGrp.content?.quoted?.contact?.name
+                            ? `${msgGrp.content.quoted.contact.name} ${msgGrp.content.quoted.contact.last_name || ''}`.trim()
+                            : 'Contato'
+                        }}
+                      </span>
+                    </div>
+                  </div>
+
                   <div v-if="hasQuotedImage(msgGrp)" class="quoted-image-info">
                     <span class="quoted-image-name">
                       {{ resolveQuotedImageName(msgGrp) }}
@@ -1420,7 +1346,8 @@ onUnmounted(() => {
                       resolveQuotedText(msgGrp) &&
                       msgGrp.content?.quoted?.type !== EMessageType.video &&
                       msgGrp.content?.quoted?.type !== EMessageType.image &&
-                      msgGrp.content?.quoted?.type !== EMessageType.audio
+                      msgGrp.content?.quoted?.type !== EMessageType.audio &&
+                      msgGrp.content?.quoted?.type !== EMessageType.contact_card
                     "
                     class="quoted-text"
                     :style="{
@@ -1679,10 +1606,69 @@ onUnmounted(() => {
 
               <div
                 v-if="
+                  msgGrp.content?.type === EMessageType.contact_card &&
+                  msgGrp.content?.contact
+                "
+                :class="[
+                  'contact-bubble',
+                  !isTypeUser(msgGrp)
+                    ? 'contact-bubble--right'
+                    : 'contact-bubble--left',
+                  { 'is-deleted': msgGrp.deleted },
+                ]"
+              >
+                <div
+                  class="contact-item d-flex align-center gap-3 pa-3"
+                  :style="{
+                    backgroundColor: isTypeUser(msgGrp)
+                      ? 'rgba(var(--v-theme-surface), 0.5)'
+                      : 'rgba(255, 255, 255, 0.3)',
+                    borderRadius: '8px',
+                  }"
+                >
+                  <VAvatar size="40" color="primary" variant="tonal">
+                    <VIcon size="20">tabler-user</VIcon>
+                  </VAvatar>
+                  <div class="flex-grow-1">
+                    <div
+                      class="text-body-1 font-weight-medium"
+                      :style="{
+                        color: isTypeUser(msgGrp)
+                          ? 'rgb(var(--v-theme-on-surface))'
+                          : 'rgb(var(--v-theme-title))',
+                      }"
+                    >
+                      {{ msgGrp.content.contact.name }}
+                      {{ msgGrp.content.contact.last_name || '' }}
+                    </div>
+                    <div
+                      v-if="msgGrp.content.contact.phone"
+                      class="text-caption text-disabled"
+                    >
+                      {{ msgGrp.content.contact.phone }}
+                    </div>
+                  </div>
+                </div>
+                <p
+                  v-if="msgGrp.content?.message"
+                  class="contact-caption mt-2"
+                  :style="{
+                    color: isTypeUser(msgGrp)
+                      ? 'rgb(var(--v-theme-on-surface))'
+                      : 'rgb(var(--v-theme-title))',
+                  }"
+                >
+                  {{ msgGrp.content.message }}
+                </p>
+              </div>
+
+              <div
+                v-if="
                   msgGrp.content?.message &&
                   msgGrp.content?.type !== EMessageType.image &&
                   msgGrp.content?.type !== EMessageType.video &&
                   msgGrp.content?.type !== EMessageType.document &&
+                  msgGrp.content?.type !== EMessageType.contact_card &&
                   !msgGrp.message_key?.is_view_once
                 "
               >

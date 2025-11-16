@@ -5,6 +5,7 @@ import { BaileysMessageTextService } from '@core/services/baileys/methods/messag
 import { BaileysMessageMediaService } from '@core/services/baileys/methods/messageMedia.service';
 import { BaileysMessageReactionsInteractionsService } from '@core/services/baileys/methods/messageReactionsInteractions.service';
 import { BaileysMessageEditDeleteService } from '@core/services/baileys/methods/messageEditDelete.service';
+import { BaileysMessageLocationContactService } from '@core/services/baileys/methods/messageLocationContact.service';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { StreamProducerService } from '@core/services/streamProducer.service';
@@ -34,6 +35,7 @@ export class MessageSendConsume {
     private readonly baileysMessageMediaService: BaileysMessageMediaService,
     private readonly baileysMessageReactionsInteractionsService: BaileysMessageReactionsInteractionsService,
     private readonly baileysMessageEditDeleteService: BaileysMessageEditDeleteService,
+    private readonly baileysMessageLocationContactService: BaileysMessageLocationContactService,
     private readonly streamProducerService: StreamProducerService,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly keyedSequencerService: KeyedSequencerService
@@ -297,6 +299,17 @@ export class MessageSendConsume {
       return () => this.processTextMessage(jid, chatId, data, hasQuoted);
     }
 
+    if (currentType === EMessageType.contact_card && data.content?.contact) {
+      return () =>
+        this.processActionMessage(
+          jid,
+          chatId,
+          data,
+          EMessageType.contact_card,
+          (j, d) => this.processContact(j, d)
+        );
+    }
+
     if (currentType === EMessageType.delete_message && data.message_key?.id) {
       return () =>
         this.processActionMessage(
@@ -462,6 +475,85 @@ export class MessageSendConsume {
 
     if (!result) {
       throw new Error('Failed to send audio');
+    }
+
+    const update: IUpdateMessage = { message: result, data };
+    await this.pushUpdate(update);
+  }
+
+  private generateVCard = (contact: {
+    name: string;
+    last_name?: string | null;
+    phone?: string | null;
+    phone_ddi?: string | null;
+    email?: string | null;
+    email_partial?: string | null;
+  }): string => {
+    const lines: string[] = ['BEGIN:VCARD', 'VERSION:3.0'];
+
+    const fullName = [contact.name, contact.last_name]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+
+    if (fullName) {
+      const nameParts = fullName.split(' ');
+      const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+      const firstName = nameParts[0] || '';
+      lines.push(`N:${lastName};${firstName};;;`);
+      lines.push(`FN:${fullName}`);
+    }
+
+    if (contact.phone) {
+      let phone = contact.phone.replace(/\D/g, '');
+      const ddi = contact.phone_ddi ? contact.phone_ddi.replace(/\D/g, '') : '';
+
+      if (ddi && phone) {
+        phone = ddi + phone;
+      }
+
+      if (phone) {
+        lines.push(`TEL;TYPE=CELL:${phone}`);
+      }
+    }
+
+    if (contact.email) {
+      lines.push(`EMAIL:${contact.email}`);
+    }
+    if (!contact.email && contact.email_partial) {
+      lines.push(`EMAIL:${contact.email_partial}`);
+    }
+
+    lines.push('END:VCARD');
+    return lines.join('\n');
+  };
+
+  private async processContact(jid: string, data: IChatMessage): Promise<void> {
+    const contactData = data.content?.contact;
+
+    if (!contactData) {
+      throw new Error('Contact data is required');
+    }
+
+    const quotedMessage = data.content?.quoted
+      ? this.composeQuotedMessage(data)
+      : undefined;
+
+    const vcard = this.generateVCard(contactData);
+
+    const displayName =
+      `${contactData.name} ${contactData.last_name || ''}`.trim() || 'Contato';
+
+    const result =
+      await this.baileysMessageLocationContactService.sendContactCard(
+        jid,
+        vcard,
+        displayName,
+        quotedMessage ? { quoted: quotedMessage } : undefined
+      );
+
+    if (!result) {
+      throw new Error('Failed to send contact');
     }
 
     const update: IUpdateMessage = { message: result, data };

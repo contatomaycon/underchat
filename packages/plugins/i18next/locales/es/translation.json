@@ -199,6 +199,8 @@
   "contact_creator_error": "Error al crear el contacto!",
   "contact_creation_failed": "¡Error al crear el contacto!",
   "contact_view_successfully": "¡Contacto visualizado con éxito!",
+  "contact_phone_view_successfully": "¡Teléfono descriptado recuperado con éxito!",
+  "contact_email_view_successfully": "¡Email descriptado recuperado con éxito!",
   "contact_not_found": "¡Contacto no encontrado!",
   "contact_deleted_successfully": "¡Contacto eliminado con éxito!",
   "contact_deleter_error": "Error al eliminar el contacto!",
@@ -231,5 +233,12 @@
   "plan_list_all_not_found": "¡No se encontraron planes!",
   "plan_list_all_unauthorized": "¡No está autorizado para ver los planes!",
   "invalid_attachment_type": "¡Tipo de archivo adjunto inválido!",
-  "attachment_size_exceeded": "¡Tamaño del archivo adjunto excedido!"
+  "attachment_size_exceeded": "¡Tamaño del archivo adjunto excedido!",
+  "chat_delete_success": "¡Mensaje eliminado con éxito!",
+  "chat_delete_error": "¡Error al eliminar el mensaje!",
+  "chat_reaction_success": "¡Reacción enviada con éxito!",
+  "chat_reaction_error": "¡Error al enviar la reacción!",
+  "invalid_token": "¡Token inválido!",
+  "token_generated_successfully": "¡Token generado con éxito!",
+  "worker_recreate_error": "¡Error al recrear el canal!"
 }

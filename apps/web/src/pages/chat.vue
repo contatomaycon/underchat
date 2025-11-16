@@ -843,37 +843,6 @@ const sendDocumentMessage = async (): Promise<void> => {
   );
 };
 
-const generateVCard = (contact: ISelectedContactPreview): string => {
-  const lines: string[] = ['BEGIN:VCARD', 'VERSION:3.0'];
-
-  const fullName = [contact.name, contact.last_name]
-    .filter(Boolean)
-    .join(' ')
-    .trim();
-
-  if (fullName) {
-    const nameParts = fullName.split(' ');
-    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
-    const firstName = nameParts[0] || '';
-    lines.push(`N:${lastName};${firstName};;;`);
-    lines.push(`FN:${fullName}`);
-  }
-
-  if (contact.phone_partial) {
-    const phone = contact.phone_partial.replace(/\D/g, '');
-    if (phone) {
-      lines.push(`TEL;TYPE=CELL:${phone}`);
-    }
-  }
-
-  if (contact.email_partial) {
-    lines.push(`EMAIL:${contact.email_partial}`);
-  }
-
-  lines.push('END:VCARD');
-  return lines.join('\n');
-};
-
 const sendContactsMessage = async (): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) return;
   const contacts = [...selectedContacts.value];
@@ -882,46 +851,52 @@ const sendContactsMessage = async (): Promise<void> => {
   const replyId = chatStore.messageReply?.message_id ?? null;
   const quotedPayload = getQuotedContent();
   const messageValue = getComposerMessage();
-  const hash = createMessageHash();
 
-  const vcards = contacts.map((contact) => generateVCard(contact));
-  const displayName =
-    contacts.length === 1
-      ? `${contacts[0].name} ${contacts[0].last_name || ''}`.trim()
-      : `${contacts.length} ${t('contacts')}`;
+  const messagesWithHashes = contacts.map((contact) => {
+    const hash = createMessageHash();
+    const content: ContentMessageChat = {
+      type: EMessageType.contact_card,
+      message: messageValue,
+      message_quoted_id: replyId ?? undefined,
+      quoted: quotedPayload,
+      contact: {
+        contact_id: contact.contact_id,
+        name: contact.name,
+        last_name: contact.last_name ?? null,
+        phone: contact.phone_partial ?? null,
+        email_partial: contact.email_partial ?? null,
+      },
+    };
 
-  const content: ContentMessageChat = {
-    type: EMessageType.contacts,
-    message: messageValue,
-    message_quoted_id: replyId ?? undefined,
-    quoted: quotedPayload,
-  };
-
-  await registerLocalMessage(content, hash);
-
-  const formData = new FormData();
-  formData.append('type', EMessageType.contacts);
-  if (messageValue) {
-    formData.append('message', messageValue);
-  }
-  if (replyId) {
-    formData.append('message_quoted_id', replyId);
-  }
-  vcards.forEach((vcard, index) => {
-    formData.append(`contacts[${index}]`, vcard);
-  });
-  formData.append('contacts_display_name', displayName);
-  formData.append('hash', hash);
-
-  const success = await chatStore.createMessageWithContacts(formData, {
-    skipLoading: true,
+    registerLocalMessage(content, hash);
+    return { contact, hash };
   });
 
-  if (!success) {
-    markUploadError(hash);
-    return;
-  }
+  await Promise.all(
+    messagesWithHashes.map(async ({ contact, hash }) => {
+      const formData = new FormData();
+      formData.append('type', EMessageType.contact_card);
+      if (messageValue) {
+        formData.append('message', messageValue);
+      }
+      if (replyId) {
+        formData.append('message_quoted_id', replyId);
+      }
+      formData.append('contacts', contact.contact_id);
+      formData.append('hash', hash);
+
+      const success = await chatStore.createMessageWithContacts(formData, {
+        skipLoading: true,
+      });
+
+      if (!success) {
+        markUploadError(hash);
+      }
+    })
+  );
+
   chatStore.clearMessageReply();
+  clearSelectedContacts();
 };
 
 const onContactsSelected = (contacts: ISelectedContactPreview[]) => {

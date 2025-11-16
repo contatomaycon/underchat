@@ -290,6 +290,32 @@ export const mensageMappings = () => {
                     },
                   },
                 },
+                contact: {
+                  type: 'nested',
+                  properties: {
+                    contact_id: {
+                      type: 'keyword',
+                    },
+                    name: {
+                      type: 'text',
+                    },
+                    last_name: {
+                      type: 'text',
+                    },
+                    phone: {
+                      type: 'keyword',
+                    },
+                    phone_ddi: {
+                      type: 'keyword',
+                    },
+                    email: {
+                      type: 'keyword',
+                    },
+                    email_partial: {
+                      type: 'keyword',
+                    },
+                  },
+                },
               },
             },
             image: {
@@ -425,6 +451,32 @@ export const mensageMappings = () => {
                   type: 'boolean',
                 },
                 waveform: {
+                  type: 'keyword',
+                },
+              },
+            },
+            contact: {
+              type: 'nested',
+              properties: {
+                contact_id: {
+                  type: 'keyword',
+                },
+                name: {
+                  type: 'text',
+                },
+                last_name: {
+                  type: 'text',
+                },
+                phone: {
+                  type: 'keyword',
+                },
+                phone_ddi: {
+                  type: 'keyword',
+                },
+                email: {
+                  type: 'keyword',
+                },
+                email_partial: {
                   type: 'keyword',
                 },
               },

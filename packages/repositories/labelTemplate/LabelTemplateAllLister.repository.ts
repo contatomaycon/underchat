@@ -13,7 +13,7 @@ export class LabelTemplateAllListerRepository {
 
   listLabelTemplateAll = async (
     accountId: string
-  ): Promise<ListLabelTemplateAllResponse[] | null> => {
+  ): Promise<ListLabelTemplateAllResponse[]> => {
     const result = await this.db
       .select({
         label_template_id: labelTemplate.label_template_id,
@@ -27,10 +27,6 @@ export class LabelTemplateAllListerRepository {
         )
       )
       .execute();
-
-    if (!result.length) {
-      return null;
-    }
 
     return result as ListLabelTemplateAllResponse[];
   };

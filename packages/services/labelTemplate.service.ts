@@ -104,7 +104,7 @@ export class LabelTemplateService {
 
   listLabelTemplateAll = async (
     accountId: string
-  ): Promise<ListLabelTemplateAllResponse[] | null> => {
+  ): Promise<ListLabelTemplateAllResponse[]> => {
     return this.labelTemplateAllListerRepository.listLabelTemplateAll(
       accountId
     );
