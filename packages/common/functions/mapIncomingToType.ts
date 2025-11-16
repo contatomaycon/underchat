@@ -104,6 +104,10 @@ function detectInteractive({ msg }: IMapCtx): EMessageType | undefined {
   if (msg.listResponseMessage) return EMessageType.list_reply;
 }
 
+function detectPollResponse({ msg }: IMapCtx): EMessageType | undefined {
+  if ((msg as any).pollUpdateMessage) return EMessageType.poll_response;
+}
+
 function detectSpecial({ msg }: IMapCtx): EMessageType | undefined {
   if ((msg as any).pollCreationMessage) return EMessageType.poll;
   if ((msg as any).groupInviteMessage) return EMessageType.group_invite;
@@ -147,6 +151,7 @@ export function mapIncomingToType(m: WAMessage): EMessageType | undefined {
     detectViewOnce,
     detectMedia,
     detectInteractive,
+    detectPollResponse,
     detectSpecial,
     detectProtocol,
     detectText,

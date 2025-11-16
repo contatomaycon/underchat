@@ -8,6 +8,7 @@ export enum EMessageType {
   react = 'react',
   pin_message = 'pin_message',
   poll = 'poll',
+  poll_response = 'poll_response',
   image = 'image',
   video = 'video',
   audio = 'audio',
