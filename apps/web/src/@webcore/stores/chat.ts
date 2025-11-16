@@ -735,6 +735,56 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
+    async createMessageWithLocation(
+      formData: FormData,
+      options?: UploadOptions
+    ): Promise<boolean> {
+      const shouldHandleLoading = !options?.skipLoading;
+
+      try {
+        if (shouldHandleLoading) {
+          this.loading = true;
+        }
+
+        const config: AxiosRequestConfig<FormData> = {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        };
+
+        const response = await axios.post<IApiResponse<boolean>>(
+          `/chat/${this.activeChat?.chat_id}`,
+          formData,
+          config
+        );
+
+        if (shouldHandleLoading) {
+          this.loading = false;
+        }
+
+        const data = response?.data as IApiResponse<boolean>;
+
+        if (!data?.status) {
+          this.showSnackbar(data.message, EColor.error);
+
+          return false;
+        }
+
+        return true;
+      } catch {
+        if (shouldHandleLoading) {
+          this.loading = false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('chat_message_create_error'),
+          EColor.error
+        );
+
+        return false;
+      }
+    },
+
     async createMessageWithContacts(
       formData: FormData,
       options?: UploadOptions

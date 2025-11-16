@@ -177,26 +177,23 @@ const useCurrentLocation = async () => {
     locationPickerLatitude.value = position.coords.latitude;
     locationPickerLongitude.value = position.coords.longitude;
     locationPickerMode.value = 'map';
-    
+
     await nextTick();
-    
+
     const updateMapCenter = () => {
       if (locationMapRef.value?.map) {
         const map = locationMapRef.value.map;
-        map.setCenter([
-          position.coords.longitude,
-          position.coords.latitude,
-        ]);
+        map.setCenter([position.coords.longitude, position.coords.latitude]);
         map.setZoom(15);
         return true;
       }
       return false;
     };
-    
+
     if (updateMapCenter()) {
       return;
     }
-    
+
     await nextTick();
     setTimeout(() => {
       if (updateMapCenter()) {
@@ -213,7 +210,7 @@ const useCurrentLocation = async () => {
 
 const onLocationMapClick = (event: any) => {
   if (!event?.lngLat) return;
-  
+
   const lngLat = event.lngLat;
   locationPickerLatitude.value = lngLat.lat;
   locationPickerLongitude.value = lngLat.lng;
@@ -222,19 +219,19 @@ const onLocationMapClick = (event: any) => {
 const useManualCoordinates = () => {
   const lat = parseFloat(locationInputLatitude.value);
   const lng = parseFloat(locationInputLongitude.value);
-  
+
   if (isNaN(lat) || isNaN(lng)) {
     return;
   }
-  
+
   if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
     return;
   }
-  
+
   locationPickerLatitude.value = lat;
   locationPickerLongitude.value = lng;
   locationPickerMode.value = 'map';
-  
+
   nextTick(() => {
     if (locationMapRef.value?.map) {
       locationMapRef.value.map.setCenter([lng, lat]);
@@ -247,14 +244,14 @@ const confirmLocation = () => {
   if (!locationPickerLatitude.value || !locationPickerLongitude.value) {
     return;
   }
-  
+
   selectedLocation.value = {
     latitude: locationPickerLatitude.value,
     longitude: locationPickerLongitude.value,
     name: locationPickerName.value || null,
     address: locationPickerAddress.value || null,
   };
-  
+
   isLocationPickerOpen.value = false;
   locationPickerLatitude.value = null;
   locationPickerLongitude.value = null;
@@ -267,18 +264,18 @@ const confirmLocation = () => {
 
 const onLocationMapLoad = () => {
   if (!locationMapRef.value?.map) return;
-  
+
   const map = locationMapRef.value.map;
   map.resize();
-  
+
   map.on('click', (e: any) => {
     if (!e?.lngLat) return;
-    
+
     const lngLat = e.lngLat;
     locationPickerLatitude.value = lngLat.lat;
     locationPickerLongitude.value = lngLat.lng;
   });
-  
+
   if (locationPickerLatitude.value && locationPickerLongitude.value) {
     map.setCenter([
       locationPickerLongitude.value,
@@ -287,7 +284,7 @@ const onLocationMapLoad = () => {
     map.setZoom(15);
     return;
   }
-  
+
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
       (position) => {
@@ -323,7 +320,11 @@ watch(isLocationPickerOpen, async (isOpen) => {
 });
 
 watch(
-  () => [locationPickerMode.value, locationPickerLatitude.value, locationPickerLongitude.value],
+  () => [
+    locationPickerMode.value,
+    locationPickerLatitude.value,
+    locationPickerLongitude.value,
+  ],
   async ([mode, lat, lng]) => {
     if (mode === 'map' && lat && lng) {
       await nextTick();
@@ -1176,8 +1177,14 @@ const sendLocationMessage = async (): Promise<void> => {
   if (replyId) {
     formData.append('message_quoted_id', replyId);
   }
-  formData.append('location_latitude', selectedLocation.value.latitude.toString());
-  formData.append('location_longitude', selectedLocation.value.longitude.toString());
+  formData.append(
+    'location_latitude',
+    selectedLocation.value.latitude.toString()
+  );
+  formData.append(
+    'location_longitude',
+    selectedLocation.value.longitude.toString()
+  );
   if (selectedLocation.value.name) {
     formData.append('location_name', selectedLocation.value.name);
   }
@@ -1186,7 +1193,7 @@ const sendLocationMessage = async (): Promise<void> => {
   }
   formData.append('hash', hash);
 
-  const success = await chatStore.createMessage(formData, {
+  const success = await chatStore.createMessageWithLocation(formData, {
     skipLoading: true,
   });
 
@@ -3764,7 +3771,9 @@ onBeforeUnmount(() => {
               <VBtn
                 color="primary"
                 @click="useCurrentLocation"
-                :loading="locationPickerMode === 'current' && !locationPickerLatitude"
+                :loading="
+                  locationPickerMode === 'current' && !locationPickerLatitude
+                "
               >
                 Usar Localização Atual
               </VBtn>
@@ -3842,7 +3851,10 @@ onBeforeUnmount(() => {
                 </VBtn>
               </VCol>
             </VRow>
-            <VRow v-if="locationPickerLatitude && locationPickerLongitude" class="mt-4">
+            <VRow
+              v-if="locationPickerLatitude && locationPickerLongitude"
+              class="mt-4"
+            >
               <VCol cols="12">
                 <AppTextField
                   v-model="locationPickerName"
