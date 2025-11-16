@@ -1735,12 +1735,11 @@ onUnmounted(() => {
                       msgGrp.content.location.latitude,
                     ]"
                     :zoom="15"
-                    width="100%"
-                    height="200px"
                     :interactive="false"
                     :attribution-control="false"
                     :navigation-control="false"
                     class="location-map-preview-map"
+                    :style="{ width: '100%', height: '112px' }"
                   >
                     <MglMarker
                       :coordinates="[
@@ -1774,18 +1773,7 @@ onUnmounted(() => {
                   >
                     {{ msgGrp.content.location.address }}
                   </div>
-                  <div
-                    v-else
-                    class="location-coords text-caption"
-                    :style="{
-                      color: isTypeUser(msgGrp)
-                        ? 'rgba(var(--v-theme-on-surface), 0.7)'
-                        : 'rgba(var(--v-theme-title), 0.7)',
-                    }"
-                  >
-                    {{ msgGrp.content.location.latitude.toFixed(6) }},
-                    {{ msgGrp.content.location.longitude.toFixed(6) }}
-                  </div>
+                  <!-- Hide fallback coordinates when no address is provided to show only the map -->
                 </div>
               </div>
 
@@ -3577,7 +3565,9 @@ onUnmounted(() => {
 }
 
 .location-bubble {
-  max-width: 300px;
+  width: 200px;
+  max-width: 100%;
+  min-width: 175px;
   border-radius: 8px;
   cursor: pointer;
   transition: opacity 0.2s;
@@ -3594,14 +3584,14 @@ onUnmounted(() => {
 
   .location-map-preview {
     width: 100%;
-    height: 200px;
+    height: 112px;
     position: relative;
     overflow: hidden;
     border-radius: 8px 8px 0 0;
 
     .location-map-preview-map {
-      width: 100%;
-      height: 100%;
+      width: 100% !important;
+      height: 112px !important;
       pointer-events: none;
     }
   }
