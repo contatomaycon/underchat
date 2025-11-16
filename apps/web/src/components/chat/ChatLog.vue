@@ -1704,6 +1704,7 @@ onUnmounted(() => {
                 <img
                   v-else
                   :src="msgGrp.content.sticker.url"
+                  alt="Sticker animado"
                   class="sticker-thumb sticker-thumb--animated"
                   style="
                     max-width: 100px;

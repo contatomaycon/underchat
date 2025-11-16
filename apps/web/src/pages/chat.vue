@@ -44,7 +44,6 @@ import {
 import { extractFirstUrl } from '@core/common/functions/extractFirstUrl';
 import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
 import { refDebounced } from '@vueuse/core';
-import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 import { getOffsetTop } from '@core/common/functions/getOffsetTop';
 import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
 import data from 'emoji-mart-vue-fast/data/all.json';
@@ -171,6 +170,12 @@ const locationMarkerPosition = computed<[number, number]>(() => {
   return [0, 0];
 });
 
+/**
+ * Obtém a localização atual do usuário.
+ * Uso necessário: Permite que o usuário envie sua localização atual em mensagens de chat.
+ * A permissão é solicitada apenas quando o usuário explicitamente escolhe usar sua localização.
+ * @security S5604 - Geolocalização é necessária para funcionalidade de envio de localização
+ */
 const getCurrentLocation = (): Promise<GeolocationPosition> => {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
@@ -237,10 +242,10 @@ const onLocationMapClick = (event: any) => {
 };
 
 const useManualCoordinates = () => {
-  const lat = parseFloat(locationInputLatitude.value);
-  const lng = parseFloat(locationInputLongitude.value);
+  const lat = Number.parseFloat(locationInputLatitude.value);
+  const lng = Number.parseFloat(locationInputLongitude.value);
 
-  if (isNaN(lat) || isNaN(lng)) {
+  if (Number.isNaN(lat) || Number.isNaN(lng)) {
     return;
   }
 
@@ -316,6 +321,10 @@ const onLocationMapLoad = () => {
     return;
   }
 
+  // Tenta centralizar o mapa na localização do usuário para melhorar a UX.
+  // Uso opcional: Se o usuário negar a permissão ou não estiver disponível,
+  // usa uma localização padrão (Brasília) como fallback.
+  // @security S5604 - Geolocalização é opcional aqui, apenas para UX, com fallback seguro
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
       (position) => {
@@ -330,6 +339,7 @@ const onLocationMapLoad = () => {
         }
       },
       () => {
+        // Fallback para localização padrão se o usuário negar ou houver erro
         locationPickerLatitude.value = -15.459175;
         locationPickerLongitude.value = -47.602219;
         if (locationMapRef.value?.map) {
@@ -2937,6 +2947,36 @@ const clearTypingTimeout = () => {
   }
 };
 
+const checkJidMatches = (
+  eventJid: string,
+  messages: ListMessageResult[]
+): boolean => {
+  for (const message of messages) {
+    const messageJid = message.message_key?.remote_jid;
+    const messageJidAlt = message.message_key?.remote_jid_alt;
+
+    if (messageJid === eventJid || messageJidAlt === eventJid) {
+      return true;
+    }
+  }
+
+  const normalizedEventJid = eventJid.replace('@lid', '@s.whatsapp.net');
+
+  for (const message of messages) {
+    const messageJid = message.message_key?.remote_jid;
+    const messageJidAlt = message.message_key?.remote_jid_alt;
+
+    if (
+      messageJid === normalizedEventJid ||
+      messageJidAlt === normalizedEventJid
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 const handleTypingEvent = (data: IChatTyping | IChatMessage) => {
   if ('message_id' in data) {
     if (isTyping.value) {
@@ -2960,36 +3000,7 @@ const handleTypingEvent = (data: IChatTyping | IChatMessage) => {
   const eventJid = typingData.jid;
   const messages = chatStore.listMessages;
 
-  let jidMatches = false;
-
-  for (const message of messages) {
-    const messageJid = message.message_key?.remote_jid;
-    const messageJidAlt = message.message_key?.remote_jid_alt;
-
-    if (messageJid === eventJid || messageJidAlt === eventJid) {
-      jidMatches = true;
-      break;
-    }
-  }
-
-  if (!jidMatches) {
-    const normalizedEventJid = eventJid.replace('@lid', '@s.whatsapp.net');
-
-    for (const message of messages) {
-      const messageJid = message.message_key?.remote_jid;
-      const messageJidAlt = message.message_key?.remote_jid_alt;
-
-      if (
-        messageJid === normalizedEventJid ||
-        messageJidAlt === normalizedEventJid
-      ) {
-        jidMatches = true;
-        break;
-      }
-    }
-  }
-
-  if (!jidMatches) {
+  if (!checkJidMatches(eventJid, messages)) {
     return;
   }
 
