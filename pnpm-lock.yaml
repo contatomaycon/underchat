@@ -399,6 +399,9 @@ importers:
       mapbox-gl:
         specifier: 3.16.0
         version: 3.16.0
+      maplibre-gl:
+        specifier: ^5.13.0
+        version: 5.13.0
       maska:
         specifier: 3.2.0
         version: 3.2.0
