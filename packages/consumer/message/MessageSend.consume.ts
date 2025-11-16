@@ -331,15 +331,6 @@ export class MessageSendConsume {
             (j, d) => this.processLocation(j, d)
           )
         : null,
-      [EMessageType.poll]: data.content?.poll
-        ? this.createActionHandler(
-            jid,
-            chatId,
-            data,
-            EMessageType.poll,
-            (j, d) => this.processPoll(j, d)
-          )
-        : null,
       [EMessageType.text]: data.content?.message
         ? () => this.processTextMessage(jid, chatId, data, hasQuoted)
         : null,
@@ -732,36 +723,6 @@ export class MessageSendConsume {
 
     if (!result) {
       throw new Error('Failed to send location');
-    }
-
-    const update: IUpdateMessage = { message: result, data };
-    await this.pushUpdate(update);
-  }
-
-  private async processPoll(jid: string, data: IChatMessage): Promise<void> {
-    const poll = data.content?.poll;
-
-    if (!poll?.question || !poll?.options || poll.options.length < 2) {
-      throw new Error('Poll question and at least 2 options are required');
-    }
-
-    const quotedMessage = data.content?.quoted
-      ? this.composeQuotedMessage(data)
-      : undefined;
-
-    const result =
-      await this.baileysMessageReactionsInteractionsService.sendPoll(
-        jid,
-        {
-          name: poll.question,
-          selectableCount: poll.allow_multiple ? poll.options.length : 1,
-          values: poll.options.map((opt) => opt.name),
-        },
-        quotedMessage ? { quoted: quotedMessage } : undefined
-      );
-
-    if (!result) {
-      throw new Error('Failed to send poll');
     }
 
     const update: IUpdateMessage = { message: result, data };

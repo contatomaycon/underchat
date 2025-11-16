@@ -147,34 +147,6 @@ export const createMessageChatsBodySchema = Type.Object({
       }),
     ])
   ),
-  poll_question: Type.Optional(
-    Type.Union([
-      Type.String(),
-      Type.Null(),
-      Type.Object({
-        value: Type.String(),
-      }),
-    ])
-  ),
-  poll_options: Type.Optional(
-    Type.Union([
-      Type.Array(Type.String()),
-      Type.Null(),
-      Type.Object({
-        value: Type.Array(Type.String()),
-      }),
-    ])
-  ),
-  poll_allow_multiple: Type.Optional(
-    Type.Union([
-      Type.Boolean(),
-      Type.String(),
-      Type.Object({
-        value: Type.String(),
-      }),
-      Type.Null(),
-    ])
-  ),
   hash: Type.Optional(
     Type.Union([
       Type.String(),

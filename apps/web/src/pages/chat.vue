@@ -8,7 +8,6 @@ import ChatLeftSidebarContent from '@/components/chat/ChatLeftSidebarContent.vue
 import ChatLog from '@/components/chat/ChatLog.vue';
 import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSidebarContent.vue';
 import AppContactPicker from '@/components/chat/AppContactPicker.vue';
-import AppPollPicker from '@/components/chat/AppPollPicker.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
@@ -93,7 +92,6 @@ const fileAudioRef = ref<HTMLInputElement | null>(null);
 const isEmojiOpen = ref(false);
 const isContactPickerOpen = ref(false);
 const isLocationPickerOpen = ref(false);
-const isPollPickerOpen = ref(false);
 const isContactViewModalOpen = ref(false);
 const selectedContactDetails = ref<ViewContactResponse | null>(null);
 const viewContactEmail = ref<string | null>(null);
@@ -109,12 +107,6 @@ const selectedDocuments = ref<ISelectedDocumentPreview[]>([]);
 const selectedVideos = ref<ISelectedVideoPreview[]>([]);
 const selectedAudios = ref<ISelectedAudioPreview[]>([]);
 const selectedContacts = ref<ISelectedContactPreview[]>([]);
-const selectedPoll = ref<{
-  question: string;
-  options: string[];
-  allowMultiple: boolean;
-} | null>(null);
-
 const selectedLocation = ref<{
   latitude: number;
   longitude: number;
@@ -825,7 +817,6 @@ const clearMessageFields = () => {
   selectedPhotos.value = [];
   selectedDocuments.value = [];
   selectedLocation.value = null;
-  selectedPoll.value = null;
   chatStore.clearMessageReply();
 };
 
@@ -837,8 +828,7 @@ const canSendMessage = (): boolean => {
     selectedVideos.value.length > 0 ||
     selectedAudios.value.length > 0 ||
     selectedContacts.value.length > 0 ||
-    selectedLocation.value !== null ||
-    selectedPoll.value !== null
+    selectedLocation.value !== null
   );
 };
 
@@ -1264,62 +1254,6 @@ const onContactsSelected = (contacts: ISelectedContactPreview[]) => {
   selectedContacts.value = [...selectedContacts.value, ...newContacts];
 };
 
-const onPollSelected = async (poll: {
-  question: string;
-  options: string[];
-  allowMultiple: boolean;
-}) => {
-  selectedPoll.value = poll;
-  await sendPollMessage();
-  finalizeSend();
-};
-
-const sendPollMessage = async (): Promise<void> => {
-  if (!chatStore.activeChat?.chat_id) return;
-  if (!selectedPoll.value) return;
-
-  const hash = createMessageHash();
-  const replyId = chatStore.messageReply?.message_id ?? null;
-  const quotedPayload = getQuotedContent();
-  const messageValue = getComposerMessage();
-
-  const content: ContentMessageChat = {
-    type: EMessageType.poll,
-    message: messageValue,
-    message_quoted_id: replyId ?? undefined,
-    quoted: quotedPayload,
-    poll: {
-      question: selectedPoll.value.question,
-      allow_multiple: selectedPoll.value.allowMultiple,
-      options: selectedPoll.value.options.map((opt) => ({
-        name: opt,
-        vote_count: 0,
-      })),
-    },
-  };
-
-  await registerLocalMessage(content, hash);
-
-  const body: CreateMessageChatsBody = {
-    type: EMessageType.poll,
-    ...(messageValue ? { message: messageValue } : {}),
-    ...(replyId ? { message_quoted_id: replyId } : {}),
-    poll_question: selectedPoll.value.question,
-    poll_options: selectedPoll.value.options,
-    poll_allow_multiple: selectedPoll.value.allowMultiple,
-    hash,
-  };
-
-  const success = await chatStore.createMessage(body);
-
-  if (!success) {
-    markUploadError(hash);
-  }
-
-  chatStore.clearMessageReply();
-  selectedPoll.value = null;
-};
-
 const sendTextMessage = async (): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) return;
   const hash = createMessageHash();
@@ -1383,12 +1317,6 @@ const sendMessage = async () => {
 
   if (selectedLocation.value) {
     await sendLocationMessage();
-    finalizeSend();
-    return;
-  }
-
-  if (selectedPoll.value) {
-    await sendPollMessage();
     finalizeSend();
     return;
   }
@@ -1466,14 +1394,7 @@ const previewImage = computed(() => {
 });
 
 const openAttach = (
-  type:
-    | 'document'
-    | 'photo'
-    | 'video'
-    | 'audio'
-    | 'contact'
-    | 'location'
-    | 'poll'
+  type: 'document' | 'photo' | 'video' | 'audio' | 'contact' | 'location'
 ) => {
   switch (type) {
     case 'document':
@@ -1493,9 +1414,6 @@ const openAttach = (
       break;
     case 'location':
       isLocationPickerOpen.value = true;
-      break;
-    case 'poll':
-      isPollPickerOpen.value = true;
       break;
   }
 };
@@ -3734,12 +3652,6 @@ onBeforeUnmount(() => {
                     >
                     <VListItemTitle>Localização</VListItemTitle>
                   </VListItem>
-                  <VListItem @click="openAttach('poll')">
-                    <template #prepend
-                      ><VIcon size="20">tabler-chart-bar</VIcon></template
-                    >
-                    <VListItemTitle>Enquete</VListItemTitle>
-                  </VListItem>
                 </VList>
               </VMenu>
 
@@ -3863,8 +3775,6 @@ onBeforeUnmount(() => {
     :existing-contacts="selectedContacts"
     @select="onContactsSelected"
   />
-
-  <AppPollPicker v-model="isPollPickerOpen" @select="onPollSelected" />
 
   <VDialog v-model="isLocationPickerOpen" max-width="800" :scrollable="false">
     <VCard>

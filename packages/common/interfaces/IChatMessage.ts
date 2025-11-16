@@ -9,7 +9,6 @@ import {
   AudioMessageChat,
   StickerMessageChat,
   LocationMessageChat,
-  PollMessageChat,
 } from '@core/schema/chat/listMessageChats/response.schema';
 
 interface IAccount {
@@ -45,7 +44,6 @@ export interface IQuotedMessage {
   audio?: AudioMessageChat | null;
   sticker?: StickerMessageChat | null;
   location?: LocationMessageChat | null;
-  poll?: PollMessageChat | null;
   contact?: IContactMessage | null;
 }
 
@@ -78,7 +76,6 @@ export interface IContent {
   audio?: AudioMessageChat | null;
   sticker?: StickerMessageChat | null;
   location?: LocationMessageChat | null;
-  poll?: PollMessageChat | null;
   contact?: IContactMessage | null;
   reactions?: IReaction[] | null;
 }

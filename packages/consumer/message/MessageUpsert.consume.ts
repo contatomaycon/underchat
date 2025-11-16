@@ -638,34 +638,6 @@ export class MessageUpsertConsume {
     };
   }
 
-  private async handlePollMessage(
-    content: IContent,
-    data: IUpsertMessage
-  ): Promise<void> {
-    if (
-      content.type !== EMessageType.poll ||
-      !(data.message?.message as any)?.pollCreationMessage
-    ) {
-      return;
-    }
-
-    const pollMsg = (data.message.message as any).pollCreationMessage;
-
-    content.poll = {
-      question: pollMsg.name ?? null,
-      allow_multiple:
-        pollMsg.selectableOptionsCount !== undefined &&
-        pollMsg.selectableOptionsCount > 1
-          ? true
-          : false,
-      options:
-        pollMsg.options?.map((opt: any) => ({
-          name: opt.optionName ?? '',
-          vote_count: 0,
-        })) ?? null,
-    };
-  }
-
   private async createChatMessage(
     getChat: IChat,
     data: IUpsertMessage
@@ -720,7 +692,6 @@ export class MessageUpsertConsume {
       await this.handleDocumentMessage(content, data);
       await this.handleStickerMessage(content, data);
       await this.handleLocationMessage(content, data);
-      await this.handlePollMessage(content, data);
 
       const inputChatMessage: IChatMessage = {
         message_id: uuidv4(),
