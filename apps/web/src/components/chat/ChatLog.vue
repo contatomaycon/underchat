@@ -17,6 +17,7 @@ import data from 'emoji-mart-vue-fast/data/all.json';
 import 'emoji-mart-vue-fast/css/emoji-mart.css';
 import { formatDate } from '@/@webcore/utils/formatters';
 import { useI18n } from 'vue-i18n';
+import { MglMap, MglMarker } from 'vue-maplibre-gl';
 
 const { t } = useI18n();
 const chatStore = useChatStore();
@@ -29,6 +30,51 @@ const viewerSrc = ref<string>('');
 const viewerCaption = ref<string>('');
 const viewerDownloadName = ref<string>('');
 const viewerKind = ref<'image' | 'video'>('image');
+
+const locationModalOpen = ref(false);
+const locationData = ref<{
+  latitude: number;
+  longitude: number;
+  name?: string | null;
+  address?: string | null;
+} | null>(null);
+const locationMapRef = ref<any>(null);
+
+const mapStyle = computed(() => {
+  return {
+    version: 8,
+    sources: {
+      'osm-tiles': {
+        type: 'raster',
+        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      },
+    },
+    layers: [
+      {
+        id: 'osm-tiles-layer',
+        type: 'raster',
+        source: 'osm-tiles',
+        minzoom: 0,
+        maxzoom: 22,
+      },
+    ],
+  };
+});
+
+const mapCenter = computed<[number, number]>(() => {
+  if (!locationData.value) return [0, 0];
+  return [locationData.value.longitude, locationData.value.latitude];
+});
+
+const mapZoom = computed(() => 15);
+
+const markerPosition = computed<[number, number]>(() => {
+  if (!locationData.value) return [0, 0];
+  return [locationData.value.longitude, locationData.value.latitude];
+});
 
 const audioPlayers = ref<Map<string, HTMLAudioElement>>(new Map());
 const audioPlayStates = reactive<Record<string, boolean>>({});
@@ -710,6 +756,14 @@ const resolveQuotedText = (m: ListMessageResult): string => {
     return t('sticker_label', 'Sticker');
   }
 
+  if (m.content.quoted.type === EMessageType.location) {
+    return (
+      m.content.quoted.location?.name ||
+      m.content.quoted.location?.address ||
+      t('location_label', 'Localização')
+    );
+  }
+
   return m.content.quoted.message ?? '';
 };
 
@@ -755,6 +809,12 @@ const hasQuotedAudio = (m: ListMessageResult): boolean =>
 
 const hasQuotedSticker = (m: ListMessageResult): boolean =>
   !!m.content?.quoted?.sticker;
+
+const hasQuotedLocation = (m: ListMessageResult): boolean =>
+  !!(
+    m.content?.quoted?.type === EMessageType.location &&
+    m.content.quoted.location
+  );
 
 const hasQuotedContact = (m: ListMessageResult): boolean =>
   !!(
@@ -890,6 +950,19 @@ const openVideo = (m: ListMessageResult) => {
   viewerCaption.value = video.caption || m.content?.message || '';
   viewerDownloadName.value = videoDownloadName(video);
   viewerOpen.value = true;
+};
+
+const openLocation = (m: ListMessageResult) => {
+  const location = m.content?.location;
+  if (!location?.latitude || !location?.longitude) return;
+
+  locationData.value = {
+    latitude: location.latitude,
+    longitude: location.longitude,
+    name: location.name ?? null,
+    address: location.address ?? null,
+  };
+  locationModalOpen.value = true;
 };
 
 const downloadImage = async (
@@ -1040,6 +1113,23 @@ watch(
   },
   { deep: true, immediate: true }
 );
+
+watch(locationModalOpen, async (isOpen) => {
+  if (isOpen && locationData.value) {
+    await nextTick();
+    setTimeout(() => {
+      if (locationMapRef.value?.map) {
+        locationMapRef.value.map.resize();
+      }
+    }, 100);
+  }
+});
+
+const onMapLoad = () => {
+  if (locationMapRef.value?.map) {
+    locationMapRef.value.map.resize();
+  }
+};
 
 onMounted(() => {
   nextTick(() => {
@@ -1298,6 +1388,19 @@ onUnmounted(() => {
                     />
                   </div>
 
+                  <div v-if="hasQuotedLocation(msgGrp)" class="quoted-location">
+                    <VIcon size="22" color="primary">tabler-map-pin</VIcon>
+                    <div class="quoted-location-info">
+                      <span class="quoted-location-name">
+                        {{
+                          msgGrp.content?.quoted?.location?.name ||
+                          msgGrp.content?.quoted?.location?.address ||
+                          t('location_label', 'Localização')
+                        }}
+                      </span>
+                    </div>
+                  </div>
+
                   <div v-if="hasQuotedDocument(msgGrp)" class="quoted-document">
                     <VIcon
                       :icon="resolveQuotedDocumentIcon(msgGrp)"
@@ -1400,6 +1503,7 @@ onUnmounted(() => {
                       msgGrp.content?.quoted?.type !== EMessageType.image &&
                       msgGrp.content?.quoted?.type !== EMessageType.audio &&
                       msgGrp.content?.quoted?.type !== EMessageType.sticker &&
+                      msgGrp.content?.quoted?.type !== EMessageType.location &&
                       msgGrp.content?.quoted?.type !== EMessageType.contact_card
                     "
                     class="quoted-text"
@@ -1606,6 +1710,83 @@ onUnmounted(() => {
                     object-fit: contain;
                   "
                 />
+              </div>
+
+              <div
+                v-if="
+                  msgGrp.content?.type === EMessageType.location &&
+                  msgGrp.content?.location?.latitude &&
+                  msgGrp.content?.location?.longitude
+                "
+                :class="[
+                  'location-bubble',
+                  !isTypeUser(msgGrp)
+                    ? 'location-bubble--right'
+                    : 'location-bubble--left',
+                  { 'is-deleted': msgGrp.deleted },
+                ]"
+                @click="openLocation(msgGrp)"
+              >
+                <div class="location-map-preview">
+                  <MglMap
+                    :map-style="mapStyle"
+                    :center="[
+                      msgGrp.content.location.longitude,
+                      msgGrp.content.location.latitude,
+                    ]"
+                    :zoom="15"
+                    width="100%"
+                    height="200px"
+                    :interactive="false"
+                    :attribution-control="false"
+                    :navigation-control="false"
+                    class="location-map-preview-map"
+                  >
+                    <MglMarker
+                      :coordinates="[
+                        msgGrp.content.location.longitude,
+                        msgGrp.content.location.latitude,
+                      ]"
+                      color="#ef4444"
+                    />
+                  </MglMap>
+                </div>
+                <div class="location-info">
+                  <div
+                    v-if="msgGrp.content.location.name"
+                    class="location-name"
+                    :style="{
+                      color: isTypeUser(msgGrp)
+                        ? 'rgb(var(--v-theme-on-surface))'
+                        : 'rgb(var(--v-theme-title))',
+                    }"
+                  >
+                    {{ msgGrp.content.location.name }}
+                  </div>
+                  <div
+                    v-if="msgGrp.content.location.address"
+                    class="location-address text-caption"
+                    :style="{
+                      color: isTypeUser(msgGrp)
+                        ? 'rgba(var(--v-theme-on-surface), 0.7)'
+                        : 'rgba(var(--v-theme-title), 0.7)',
+                    }"
+                  >
+                    {{ msgGrp.content.location.address }}
+                  </div>
+                  <div
+                    v-else
+                    class="location-coords text-caption"
+                    :style="{
+                      color: isTypeUser(msgGrp)
+                        ? 'rgba(var(--v-theme-on-surface), 0.7)'
+                        : 'rgba(var(--v-theme-title), 0.7)',
+                    }"
+                  >
+                    {{ msgGrp.content.location.latitude.toFixed(6) }},
+                    {{ msgGrp.content.location.longitude.toFixed(6) }}
+                  </div>
+                </div>
               </div>
 
               <div
@@ -2044,6 +2225,71 @@ onUnmounted(() => {
       </div>
     </div>
   </VDialog>
+
+  <VDialog v-model="locationModalOpen" max-width="800" :scrollable="false">
+    <VCard v-if="locationData">
+      <VCardTitle class="d-flex align-center justify-space-between">
+        <div>
+          <div v-if="locationData.name" class="text-h6">
+            {{ locationData.name }}
+          </div>
+          <div v-else class="text-h6">
+            {{ t('location_label', 'Localização') }}
+          </div>
+          <div
+            v-if="locationData.address"
+            class="text-caption text-disabled mt-1"
+          >
+            {{ locationData.address }}
+          </div>
+        </div>
+        <VBtn
+          icon
+          variant="text"
+          size="small"
+          @click="locationModalOpen = false"
+        >
+          <VIcon>tabler-x</VIcon>
+        </VBtn>
+      </VCardTitle>
+      <VCardText class="pa-0">
+        <div
+          v-if="locationModalOpen && locationData"
+          class="location-map-wrapper"
+        >
+          <MglMap
+            ref="locationMapRef"
+            :map-style="mapStyle"
+            :center="mapCenter"
+            :zoom="mapZoom"
+            width="100%"
+            height="500px"
+            @map:load="onMapLoad"
+          >
+            <MglMarker :coordinates="markerPosition" color="#1976d2">
+              <template v-if="locationData?.name || locationData?.address">
+                <div class="maplibregl-popup-content text-body-2 pa-2">
+                  {{ locationData.name || locationData.address }}
+                </div>
+              </template>
+            </MglMarker>
+          </MglMap>
+        </div>
+      </VCardText>
+      <VCardActions>
+        <VSpacer />
+        <VBtn
+          variant="text"
+          :href="`https://www.google.com/maps?q=${locationData.latitude},${locationData.longitude}`"
+          target="_blank"
+          rel="noopener"
+        >
+          <VIcon start>tabler-external-link</VIcon>
+          {{ t('open_in_google_maps', 'Abrir no Google Maps') }}
+        </VBtn>
+      </VCardActions>
+    </VCard>
+  </VDialog>
 </template>
 
 <style lang="scss">
@@ -2272,6 +2518,28 @@ onUnmounted(() => {
       .quoted-audio-meta {
         font-size: 0.7rem;
         color: rgba(var(--v-theme-on-surface), 0.6);
+      }
+
+      .quoted-location {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .quoted-location-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .quoted-location-name {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: rgb(var(--v-theme-primary));
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .quoted-document {
@@ -3306,5 +3574,59 @@ onUnmounted(() => {
   to {
     transform: rotate(360deg);
   }
+}
+
+.location-bubble {
+  max-width: 300px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  overflow: hidden;
+
+  &:hover {
+    opacity: 0.9;
+  }
+
+  &.is-deleted {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .location-map-preview {
+    width: 100%;
+    height: 200px;
+    position: relative;
+    overflow: hidden;
+    border-radius: 8px 8px 0 0;
+
+    .location-map-preview-map {
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+  }
+
+  .location-info {
+    padding: 12px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .location-name {
+    font-weight: 500;
+    margin-bottom: 4px;
+  }
+
+  .location-address,
+  .location-coords {
+    word-break: break-word;
+  }
+}
+
+.location-map-wrapper {
+  width: 100%;
+  height: 500px;
+  position: relative;
+  overflow: hidden;
 }
 </style>

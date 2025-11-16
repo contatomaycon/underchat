@@ -617,6 +617,27 @@ export class MessageUpsertConsume {
       : undefined;
   }
 
+  private async handleLocationMessage(
+    content: IContent,
+    data: IUpsertMessage
+  ): Promise<void> {
+    if (
+      content.type !== EMessageType.location ||
+      !data.message?.message?.locationMessage
+    ) {
+      return;
+    }
+
+    const locationMsg = data.message.message.locationMessage;
+
+    content.location = {
+      latitude: locationMsg.degreesLatitude ?? null,
+      longitude: locationMsg.degreesLongitude ?? null,
+      name: locationMsg.name ?? null,
+      address: locationMsg.address ?? null,
+    };
+  }
+
   private async createChatMessage(
     getChat: IChat,
     data: IUpsertMessage
@@ -670,6 +691,7 @@ export class MessageUpsertConsume {
       await this.handleAudioMessage(content, data);
       await this.handleDocumentMessage(content, data);
       await this.handleStickerMessage(content, data);
+      await this.handleLocationMessage(content, data);
 
       const inputChatMessage: IChatMessage = {
         message_id: uuidv4(),

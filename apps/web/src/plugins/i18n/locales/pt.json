@@ -279,6 +279,8 @@
     "photo_label": "Foto",
     "audio_label": "Áudio",
     "video_label": "Vídeo",
+    "location_label": "Localização",
+    "open_in_google_maps": "Abrir no Google Maps",
     "loading_more_messages": "Carregando mais mensagens...",
     "zipcode_view_error": "Ocorreu um erro ao ver o código postal. Por favor, tente novamente.",
     "email_invalid": "Formato de e-mail inválido.",

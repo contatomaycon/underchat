@@ -48,6 +48,10 @@ const replyIsSticker = computed(
   () => replying.value?.content?.type === EMessageType.sticker
 );
 
+const replyIsLocation = computed(
+  () => replying.value?.content?.type === EMessageType.location
+);
+
 const replyImageSrc = computed(() => {
   const img = replying.value?.content?.image;
   if (!img) {
@@ -90,6 +94,14 @@ const replyText = computed(() => {
 
   if (m.content?.type === EMessageType.sticker) {
     return t('sticker_label', 'Sticker');
+  }
+
+  if (m.content?.type === EMessageType.location) {
+    return (
+      m.content.location?.name ||
+      m.content.location?.address ||
+      t('location_label', 'Localização')
+    );
   }
 
   if (m.content?.message) {
@@ -215,15 +227,24 @@ onMounted(() => {
     <div v-if="replyIsSticker && replyStickerSrc" class="rp-media">
       <img :src="replyStickerSrc" alt="sticker preview" />
     </div>
+    <div v-if="replyIsLocation" class="rp-doc-icon rp-location-icon">
+      <VIcon size="26" color="primary">tabler-map-pin</VIcon>
+    </div>
     <div
-      v-if="!replyIsImage && !replyIsSticker && replyIsDocument"
+      v-if="
+        !replyIsImage && !replyIsSticker && !replyIsLocation && replyIsDocument
+      "
       class="rp-doc-icon"
     >
       <VIcon :icon="replyDocumentIcon" size="26" color="primary" />
     </div>
     <div
       v-if="
-        !replyIsImage && !replyIsSticker && !replyIsDocument && replyIsVideo
+        !replyIsImage &&
+        !replyIsSticker &&
+        !replyIsLocation &&
+        !replyIsDocument &&
+        replyIsVideo
       "
       class="rp-doc-icon rp-video-icon"
     >
@@ -233,6 +254,7 @@ onMounted(() => {
       v-if="
         !replyIsImage &&
         !replyIsSticker &&
+        !replyIsLocation &&
         !replyIsDocument &&
         !replyIsVideo &&
         replyIsAudio

@@ -357,6 +357,8 @@
     "view_once_message": "This is a view-once message. Please check the message on your device",
     "photo_label": "Photo",
     "audio_label": "Audio",
+    "location_label": "Location",
+    "open_in_google_maps": "Open in Google Maps",
     "max_images_selected": "You have already selected the maximum of 10 images",
     "can_select_more_images": "You can select only {count} more image(s)",
     "images_selected": "Selected images",

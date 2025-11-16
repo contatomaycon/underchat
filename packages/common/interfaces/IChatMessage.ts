@@ -8,6 +8,7 @@ import {
   VideoMessageChat,
   AudioMessageChat,
   StickerMessageChat,
+  LocationMessageChat,
 } from '@core/schema/chat/listMessageChats/response.schema';
 
 interface IAccount {
@@ -42,6 +43,7 @@ export interface IQuotedMessage {
   document?: DocumentMessageChat | null;
   audio?: AudioMessageChat | null;
   sticker?: StickerMessageChat | null;
+  location?: LocationMessageChat | null;
   contact?: IContactMessage | null;
 }
 
@@ -73,6 +75,7 @@ export interface IContent {
   document?: DocumentMessageChat | null;
   audio?: AudioMessageChat | null;
   sticker?: StickerMessageChat | null;
+  location?: LocationMessageChat | null;
   contact?: IContactMessage | null;
   reactions?: IReaction[] | null;
 }

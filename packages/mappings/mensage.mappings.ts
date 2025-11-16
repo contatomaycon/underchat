@@ -316,6 +316,23 @@ export const mensageMappings = () => {
                     },
                   },
                 },
+                location: {
+                  type: 'nested',
+                  properties: {
+                    latitude: {
+                      type: 'float',
+                    },
+                    longitude: {
+                      type: 'float',
+                    },
+                    name: {
+                      type: 'text',
+                    },
+                    address: {
+                      type: 'text',
+                    },
+                  },
+                },
                 contact: {
                   type: 'nested',
                   properties: {
@@ -507,6 +524,23 @@ export const mensageMappings = () => {
                 },
                 is_animated: {
                   type: 'boolean',
+                },
+              },
+            },
+            location: {
+              type: 'nested',
+              properties: {
+                latitude: {
+                  type: 'float',
+                },
+                longitude: {
+                  type: 'float',
+                },
+                name: {
+                  type: 'text',
+                },
+                address: {
+                  type: 'text',
                 },
               },
             },
