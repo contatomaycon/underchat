@@ -6,4 +6,3 @@ export interface IChatTyping {
   account_id: string;
   worker_id: string;
 }
-

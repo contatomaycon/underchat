@@ -11,7 +11,9 @@ export const viewContactPhone = async (
   }>,
   reply: FastifyReply
 ) => {
-  const contactPhoneViewerUseCase = container.resolve(ContactPhoneViewerUseCase);
+  const contactPhoneViewerUseCase = container.resolve(
+    ContactPhoneViewerUseCase
+  );
   const { t } = request;
 
   try {

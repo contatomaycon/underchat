@@ -115,7 +115,11 @@ export class RoleService {
     accountId: string,
     description: string | null | undefined
   ): Promise<CreateRoleResponse | null> => {
-    return this.roleCreatorRepository.createRole(roleName, accountId, description);
+    return this.roleCreatorRepository.createRole(
+      roleName,
+      accountId,
+      description
+    );
   };
 
   totalRoleByAccount = async (accountId: string): Promise<number> => {

@@ -142,10 +142,8 @@ export class BaileysIncomingMessageService {
       const chatJid = data.id;
       const presences = data.presences;
 
-      for (const [participantJid, presence] of Object.entries(presences)) {
-        if (!presence) {
-          continue;
-        }
+      for (const [, presence] of Object.entries(presences)) {
+        if (!presence) continue;
 
         const lastKnownPresence = presence?.lastKnownPresence;
 
