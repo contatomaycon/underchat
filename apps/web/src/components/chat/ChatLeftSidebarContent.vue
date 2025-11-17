@@ -82,9 +82,11 @@ onMounted(async () => {
           v-if="chatStore.user?.info.photo"
           :src="chatStore.user?.info.photo"
         />
-        <span v-else class="text-3xl">{{
-          avatarText(chatStore.user?.info.name)
-        }}</span>
+        <VImg
+          v-else
+          :src="'/images/svg/avatar-default.svg'"
+          alt="Avatar"
+        />
       </VAvatar>
     </VBadge>
 

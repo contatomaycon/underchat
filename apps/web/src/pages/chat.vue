@@ -3198,9 +3198,11 @@ onBeforeUnmount(() => {
                 :src="chatStore.activeChat.photo"
                 :alt="chatStore.activeChat.name ?? ''"
               />
-              <span v-if="!chatStore.activeChat.photo">{{
-                avatarText(chatStore.activeChat.name)
-              }}</span>
+              <VImg
+                v-else
+                :src="'/images/svg/avatar-default.svg'"
+                :alt="chatStore.activeChat.name ?? ''"
+              />
             </VAvatar>
 
             <div class="flex-grow-1 ms-4 overflow-hidden">

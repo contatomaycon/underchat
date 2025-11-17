@@ -78,34 +78,45 @@ const mapGroupsToState = (
     })),
   }));
 
+const updatePermissionsState = (
+  permissions: PermissionActionWithState[],
+  value: boolean
+) => {
+  for (const permission of permissions) {
+    permission.selected = value;
+    permission.disabled = value;
+  }
+};
+
+const updateOtherGroupsForFullAccess = (
+  currentGroup: PermissionGroupWithState,
+  value: boolean
+) => {
+  for (const otherGroup of groups.value) {
+    if (
+      otherGroup.permission_action_group_id ===
+      currentGroup.permission_action_group_id
+    ) {
+      continue;
+    }
+
+    otherGroup.selected = value;
+    otherGroup.disabled = value;
+
+    if (otherGroup.permissions.length) {
+      updatePermissionsState(otherGroup.permissions, value);
+    }
+  }
+};
+
 const toggleGroup = (group: PermissionGroupWithState, value: boolean) => {
   group.selected = value;
 
   if (group.action === EGeneralPermissions.full_access_group) {
-    for (const otherGroup of groups.value) {
-      if (
-        otherGroup.permission_action_group_id !==
-        group.permission_action_group_id
-      ) {
-        otherGroup.selected = value;
-        otherGroup.disabled = value;
-
-        if (!otherGroup.permissions.length) {
-          continue;
-        }
-
-        for (const permission of otherGroup.permissions) {
-          permission.selected = value;
-          permission.disabled = value;
-        }
-      }
-    }
+    updateOtherGroupsForFullAccess(group, value);
 
     if (group.permissions.length) {
-      for (const permission of group.permissions) {
-        permission.selected = value;
-        permission.disabled = value;
-      }
+      updatePermissionsState(group.permissions, value);
     }
 
     return;
@@ -115,10 +126,7 @@ const toggleGroup = (group: PermissionGroupWithState, value: boolean) => {
     return;
   }
 
-  for (const permission of group.permissions) {
-    permission.selected = value;
-    permission.disabled = value;
-  }
+  updatePermissionsState(group.permissions, value);
 };
 
 const togglePermission = (
