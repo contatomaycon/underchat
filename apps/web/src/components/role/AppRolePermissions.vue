@@ -31,7 +31,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'update:modelValue', value: boolean): void;
+  'update:modelValue': [value: boolean];
 }>();
 
 const { t } = useI18n();
@@ -82,7 +82,7 @@ const toggleGroup = (group: PermissionGroupWithState, value: boolean) => {
   group.selected = value;
 
   if (group.action === EGeneralPermissions.full_access_group) {
-    groups.value.forEach((otherGroup) => {
+    for (const otherGroup of groups.value) {
       if (
         otherGroup.permission_action_group_id !==
         group.permission_action_group_id
@@ -91,21 +91,21 @@ const toggleGroup = (group: PermissionGroupWithState, value: boolean) => {
         otherGroup.disabled = value;
 
         if (!otherGroup.permissions.length) {
-          return;
+          continue;
         }
 
-        otherGroup.permissions.forEach((permission) => {
+        for (const permission of otherGroup.permissions) {
           permission.selected = value;
           permission.disabled = value;
-        });
+        }
       }
-    });
+    }
 
     if (group.permissions.length) {
-      group.permissions.forEach((permission) => {
+      for (const permission of group.permissions) {
         permission.selected = value;
         permission.disabled = value;
-      });
+      }
     }
 
     return;
@@ -115,10 +115,10 @@ const toggleGroup = (group: PermissionGroupWithState, value: boolean) => {
     return;
   }
 
-  group.permissions.forEach((permission) => {
+  for (const permission of group.permissions) {
     permission.selected = value;
     permission.disabled = value;
-  });
+  }
 };
 
 const togglePermission = (
@@ -146,9 +146,9 @@ const togglePermission = (
   }
 
   group.selected = false;
-  group.permissions.forEach((item) => {
+  for (const item of group.permissions) {
     item.disabled = false;
-  });
+  }
 };
 
 const applyRoleSelections = (rolePermissions: ListPermissionGroupsResponse) => {
@@ -171,37 +171,37 @@ const applyRoleSelections = (rolePermissions: ListPermissionGroupsResponse) => {
     }
   }
 
-  groups.value.forEach((group) => {
+  for (const group of groups.value) {
     const roleGroup = rolePermissions.find(
       (item) =>
         item.permission_action_group_id === group.permission_action_group_id
     );
 
     if (!roleGroup) {
-      return;
+      continue;
     }
 
     if (!group.permissions.length) {
       group.selected = true;
       group.disabled = false;
-      return;
+      continue;
     }
 
     if (!roleGroup.permissions.length) {
       toggleGroup(group, true);
-      return;
+      continue;
     }
 
     const selectedPermissions = new Set(
       roleGroup.permissions.map((permission) => permission.permission_action_id)
     );
 
-    group.permissions.forEach((permission) => {
+    for (const permission of group.permissions) {
       permission.selected = selectedPermissions.has(
         permission.permission_action_id
       );
       permission.disabled = false;
-    });
+    }
 
     const allSelected = group.permissions.every(
       (permission) => permission.selected

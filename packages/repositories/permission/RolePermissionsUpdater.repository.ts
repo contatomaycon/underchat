@@ -22,7 +22,7 @@ export class RolePermissionsUpdaterRepository {
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  private deleteAllRolePermissions = async (
+  private readonly deleteAllRolePermissions = async (
     tx: PgTransaction<
       NodePgQueryResultHKT,
       typeof schema,
@@ -36,7 +36,7 @@ export class RolePermissionsUpdaterRepository {
       .execute();
   };
 
-  private findPermissionActionIdByAction = async (
+  private readonly findPermissionActionIdByAction = async (
     tx: PgTransaction<
       NodePgQueryResultHKT,
       typeof schema,
@@ -56,7 +56,7 @@ export class RolePermissionsUpdaterRepository {
     return result[0]?.permission_action_id ?? null;
   };
 
-  private findPermissionActionGroupIdByAction = async (
+  private readonly findPermissionActionGroupIdByAction = async (
     tx: PgTransaction<
       NodePgQueryResultHKT,
       typeof schema,
@@ -77,7 +77,7 @@ export class RolePermissionsUpdaterRepository {
     return result[0]?.permission_action_group_id ?? null;
   };
 
-  private insertRolePermissions = async (
+  private readonly insertRolePermissions = async (
     tx: PgTransaction<
       NodePgQueryResultHKT,
       typeof schema,
