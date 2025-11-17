@@ -16,7 +16,8 @@ definePage({
   meta: {
     permissions: [
       EGeneralPermissions.full_access,
-      EContactPermissions.contact_list,
+      EGeneralPermissions.full_access_group,
+      EContactPermissions.contact_group,
       EContactPermissions.contact_view,
       EContactPermissions.contact_create,
       EContactPermissions.contact_update,
@@ -27,14 +28,20 @@ definePage({
 
 const permissionsEdit = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EContactPermissions.contact_group,
   EContactPermissions.contact_update,
 ];
 const permissionsDelete = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EContactPermissions.contact_group,
   EContactPermissions.contact_delete,
 ];
 const permissionsCreate = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EContactPermissions.contact_group,
   EContactPermissions.contact_create,
 ];
 

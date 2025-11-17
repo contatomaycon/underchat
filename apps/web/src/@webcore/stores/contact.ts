@@ -60,11 +60,7 @@ export const useContactStore = defineStore('contact', {
               current_page: input.page,
               per_page: input.per_page,
               sort_by: input.sort_by,
-              phone: input.search,
-              email: input.search,
-              name: input.search,
-              nickname: input.search,
-              label_template: input.search,
+              search: input.search,
             }
           : undefined;
 

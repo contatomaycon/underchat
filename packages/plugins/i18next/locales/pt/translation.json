@@ -240,5 +240,13 @@
   "chat_reaction_error": "Erro ao enviar a reação!",
   "invalid_token": "Token inválido!",
   "token_generated_successfully": "Token gerado com sucesso!",
-  "worker_recreate_error": "Erro ao recriar o canal!"
+  "worker_recreate_error": "Erro ao recriar o canal!",
+  "permission_groups_list_successfully": "Lista de grupos de permissão obtida com sucesso!",
+  "cannot_edit_own_role": "Não é possível editar o próprio cargo!",
+  "cannot_delete_own_role": "Não é possível excluir o próprio cargo!",
+  "cannot_edit_system_role": "Não é possível editar cargos do sistema!",
+  "cannot_delete_system_role": "Não é possível excluir cargos do sistema!",
+  "role_permissions_updated_successfully": "Permissões do cargo atualizadas com sucesso!",
+  "permission_groups_load_error": "Erro ao carregar grupos de permissão!",
+  "permission_groups_update_error": "Erro ao atualizar permissões do cargo!"
 }

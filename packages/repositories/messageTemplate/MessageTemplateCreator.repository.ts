@@ -3,7 +3,7 @@ import * as schema from '@core/models';
 import { messageTemplate } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { v4 as uuidv4 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 
 @injectable()
 export class MessageTemplateCreatorRepository {
@@ -14,7 +14,7 @@ export class MessageTemplateCreatorRepository {
   createMessageTemplate = async (
     input: ICreateMessageTemplate
   ): Promise<string | null> => {
-    const messageTemplateId = uuidv4();
+    const messageTemplateId = uuidv7();
 
     const result = await this.db
       .insert(messageTemplate)

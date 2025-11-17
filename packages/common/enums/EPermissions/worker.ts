@@ -1,4 +1,5 @@
 export enum EWorkerPermissions {
+  worker_group = 'worker_group',
   create_worker = 'create_worker',
   view_worker = 'view_worker',
   update_worker = 'update_worker',

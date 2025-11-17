@@ -73,17 +73,29 @@ CREATE TABLE "permission_module" (
   "updated_at" timestamptz NULL DEFAULT now(),
   PRIMARY KEY ("module_id")
 );
+-- Create "permission_action_groups" table
+CREATE TABLE "permission_action_groups" (
+  "permission_action_group_id" uuid NOT NULL,
+  "name" character varying(200) NOT NULL,
+  "description" character varying(500),
+  "action" character varying(100) NOT NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  PRIMARY KEY ("permission_action_group_id")
+);
 -- Create "permission_action" table
 CREATE TABLE "permission_action" (
   "permission_action_id" uuid NOT NULL,
   "permission_module_id" uuid NOT NULL,
+  "permission_action_group_id" uuid NOT NULL,
   "action" character varying(100) NOT NULL,
   "name" character varying(200) NOT NULL,
   "description" character varying(500),
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
   PRIMARY KEY ("permission_action_id"),
-  CONSTRAINT "permission_action_permission_module_id_permission_module_module" FOREIGN KEY ("permission_module_id") REFERENCES "permission_module" ("module_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+  CONSTRAINT "permission_action_permission_module_id_permission_module_module" FOREIGN KEY ("permission_module_id") REFERENCES "permission_module" ("module_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "permission_action_permission_action_group_id_permission_action_groups_permission_action_group_id_fk" FOREIGN KEY ("permission_action_group_id") REFERENCES "permission_action_groups" ("permission_action_group_id") ON UPDATE NO ACTION ON DELETE NO ACTION
 );
 -- Create "permission_role" table
 CREATE TABLE "permission_role" (
@@ -136,13 +148,16 @@ CREATE TABLE "permission_assignment" (
 -- Create "permission_role_action" table
 CREATE TABLE "permission_role_action" (
   "permission_role_action_id" uuid NOT NULL,
-  "permission_action_id" uuid NOT NULL,
+  "permission_action_id" uuid NULL,
+  "permission_action_group_id" uuid NULL,
   "permission_role_id" uuid NOT NULL,
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
   PRIMARY KEY ("permission_role_action_id"),
   CONSTRAINT "permission_role_action_permission_action_id_permission_action_p" FOREIGN KEY ("permission_action_id") REFERENCES "permission_action" ("permission_action_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
-  CONSTRAINT "permission_role_action_permission_role_id_permission_role_permi" FOREIGN KEY ("permission_role_id") REFERENCES "permission_role" ("permission_role_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+  CONSTRAINT "permission_role_action_permission_action_group_id_permission_action_groups_permission_action_group_id_fk" FOREIGN KEY ("permission_action_group_id") REFERENCES "permission_action_groups" ("permission_action_group_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "permission_role_action_permission_role_id_permission_role_permi" FOREIGN KEY ("permission_role_id") REFERENCES "permission_role" ("permission_role_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "permission_role_action_check" CHECK (("permission_action_id" IS NOT NULL AND "permission_action_group_id" IS NULL) OR ("permission_action_id" IS NULL AND "permission_action_group_id" IS NOT NULL))
 );
 -- Create "plan_product" table
 CREATE TABLE "plan_product" (

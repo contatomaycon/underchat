@@ -3,7 +3,6 @@ import { container } from 'tsyringe';
 import {
   accountCreatePermissions,
   accountDeletePermissions,
-  accountListPermissions,
   accountUpdatePermissions,
   accountViewPermissions,
 } from '@/permissions';
@@ -26,7 +25,7 @@ export default async function accountRoutes(server: FastifyInstance) {
     handler: accountController.listAccount,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, accountListPermissions),
+        server.authenticateJwt(request, reply, accountViewPermissions),
     ],
   });
 

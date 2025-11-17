@@ -9,6 +9,9 @@ import ChatLog from '@/components/chat/ChatLog.vue';
 import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSidebarContent.vue';
 import AppContactPicker from '@/components/chat/AppContactPicker.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
+import { can } from '@layouts/plugins/casl';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useContactStore } from '@/@webcore/stores/contact';
@@ -62,7 +65,14 @@ const MAX_AUDIO_SIZE_BYTES = 16 * 1024 * 1024;
 definePage({
   meta: {
     layoutWrapperClasses: 'layout-content-height-fixed',
-    permissions: [EGeneralPermissions.full_access],
+    permissions: [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.chat_group,
+      EChatPermissions.view_chat,
+      EChatPermissions.create_chat,
+      EChatPermissions.update_chat_user,
+    ],
   },
 });
 
@@ -170,12 +180,6 @@ const locationMarkerPosition = computed<[number, number]>(() => {
   return [0, 0];
 });
 
-/**
- * Obtém a localização atual do usuário.
- * Uso necessário: Permite que o usuário envie sua localização atual em mensagens de chat.
- * A permissão é solicitada apenas quando o usuário explicitamente escolhe usar sua localização.
- * @security S5604 - Geolocalização é necessária para funcionalidade de envio de localização
- */
 const getCurrentLocation = (): Promise<GeolocationPosition> => {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
@@ -187,7 +191,7 @@ const getCurrentLocation = (): Promise<GeolocationPosition> => {
       timeout: 10000,
       maximumAge: 0,
     };
-    navigator.geolocation.getCurrentPosition(resolve, reject, options);
+    navigator.geolocation.getCurrentPosition(resolve, reject, options); // NOSONAR: S5604 - Geolocalização é necessária para funcionalidade de envio de localização
   });
 };
 
@@ -293,6 +297,31 @@ const confirmLocation = async () => {
   finalizeSend();
 };
 
+const getGeolocationCallbacks = () => {
+  const onSuccess = (position: GeolocationPosition) => {
+    locationPickerLatitude.value = position.coords.latitude;
+    locationPickerLongitude.value = position.coords.longitude;
+    if (locationMapRef.value?.map) {
+      locationMapRef.value.map.setCenter([
+        position.coords.longitude,
+        position.coords.latitude,
+      ]);
+      locationMapRef.value.map.setZoom(15);
+    }
+  };
+
+  const onError = () => {
+    locationPickerLatitude.value = -15.459175;
+    locationPickerLongitude.value = -47.602219;
+    if (locationMapRef.value?.map) {
+      locationMapRef.value.map.setCenter([-47.602219, -15.459175]);
+      locationMapRef.value.map.setZoom(15);
+    }
+  };
+
+  return { onSuccess, onError };
+};
+
 const onLocationMapLoad = () => {
   if (!locationMapRef.value?.map) return;
 
@@ -321,33 +350,10 @@ const onLocationMapLoad = () => {
     return;
   }
 
-  // Tenta centralizar o mapa na localização do usuário para melhorar a UX.
-  // Uso opcional: Se o usuário negar a permissão ou não estiver disponível,
-  // usa uma localização padrão (Brasília) como fallback.
-  // @security S5604 - Geolocalização é opcional aqui, apenas para UX, com fallback seguro
   if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        locationPickerLatitude.value = position.coords.latitude;
-        locationPickerLongitude.value = position.coords.longitude;
-        if (locationMapRef.value?.map) {
-          locationMapRef.value.map.setCenter([
-            position.coords.longitude,
-            position.coords.latitude,
-          ]);
-          locationMapRef.value.map.setZoom(15);
-        }
-      },
-      () => {
-        // Fallback para localização padrão se o usuário negar ou houver erro
-        locationPickerLatitude.value = -15.459175;
-        locationPickerLongitude.value = -47.602219;
-        if (locationMapRef.value?.map) {
-          locationMapRef.value.map.setCenter([-47.602219, -15.459175]);
-          locationMapRef.value.map.setZoom(15);
-        }
-      }
-    );
+    const { onSuccess, onError } = getGeolocationCallbacks();
+
+    navigator.geolocation.getCurrentPosition(onSuccess, onError); // NOSONAR: S5604 - Geolocalização é necessária para funcionalidade de envio de localização
   }
 };
 
@@ -424,6 +430,17 @@ const viewerDownloadName = ref<string>('');
 const viewerKind = ref<'image' | 'video'>('image');
 
 const hasContent = computed(() => !!msg.value && msg.value.trim().length > 0);
+
+const canAccessContacts = computed(() => {
+  const permissions = [
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EContactPermissions.contact_group,
+    EContactPermissions.contact_view,
+  ];
+  return can(permissions);
+});
+
 const hasAttachmentsOrContent = computed(
   () =>
     hasContent.value ||
@@ -431,7 +448,7 @@ const hasAttachmentsOrContent = computed(
     selectedDocuments.value.length > 0 ||
     selectedVideos.value.length > 0 ||
     selectedAudios.value.length > 0 ||
-    selectedContacts.value.length > 0 ||
+    (canAccessContacts.value && selectedContacts.value.length > 0) ||
     isRecordingAudio.value
 );
 
@@ -1424,7 +1441,9 @@ const openAttach = (
       fileAudioRef.value?.click();
       break;
     case 'contact':
-      isContactPickerOpen.value = true;
+      if (canAccessContacts.value) {
+        isContactPickerOpen.value = true;
+      }
       break;
     case 'location':
       isLocationPickerOpen.value = true;
@@ -3021,8 +3040,10 @@ const handleTypingEvent = (data: IChatTyping | IChatMessage) => {
 
 onMounted(async () => {
   if (chatStore.user?.account_id) {
+    const accountId = chatStore.user.account_id;
+
     await onMessage(
-      chatAccountCentrifugo(chatStore.user.account_id),
+      chatAccountCentrifugo(accountId),
       (data: IChatMessage | IChatTyping) => {
         if ('type' in data && data.type === 'typing') {
           handleTypingEvent(data as IChatTyping);
@@ -3046,12 +3067,9 @@ onMounted(async () => {
       }
     );
 
-    await onMessage(
-      chatQueueAccountCentrifugo(chatStore.user.account_id),
-      (data: IChat) => {
-        chatStore.addChat(data);
-      }
-    );
+    await onMessage(chatQueueAccountCentrifugo(accountId), (data: IChat) => {
+      chatStore.addChat(data);
+    });
 
     globalThis.addEventListener('focus-composer', focusComposer);
     globalThis.addEventListener(
@@ -3070,8 +3088,9 @@ onUnmounted(async () => {
   isTyping.value = false;
 
   if (chatStore.user?.account_id) {
-    await unsubscribe(chatAccountCentrifugo(chatStore.user.account_id));
-    await unsubscribe(chatQueueAccountCentrifugo(chatStore.user.account_id));
+    const accountId = chatStore.user.account_id;
+    await unsubscribe(chatAccountCentrifugo(accountId));
+    await unsubscribe(chatQueueAccountCentrifugo(accountId));
 
     globalThis.removeEventListener('focus-composer', focusComposer);
     globalThis.removeEventListener(
@@ -3175,9 +3194,11 @@ onBeforeUnmount(() => {
                 :src="chatStore.activeChat.photo"
                 :alt="chatStore.activeChat.name ?? ''"
               />
-              <span v-if="!chatStore.activeChat.photo">{{
-                avatarText(chatStore.activeChat.name)
-              }}</span>
+              <VImg
+                v-else
+                :src="'/images/svg/avatar-default.svg'"
+                :alt="chatStore.activeChat.name ?? ''"
+              />
             </VAvatar>
 
             <div class="flex-grow-1 ms-4 overflow-hidden">
@@ -3513,7 +3534,7 @@ onBeforeUnmount(() => {
 
           <Transition name="fade">
             <div
-              v-if="selectedContacts.length > 0"
+              v-if="canAccessContacts && selectedContacts.length > 0"
               class="composer-attachment mt-3"
             >
               <VCard class="composer-attachment-card">
@@ -3761,7 +3782,10 @@ onBeforeUnmount(() => {
                     >
                     <VListItemTitle>Áudio</VListItemTitle>
                   </VListItem>
-                  <VListItem @click="openAttach('contact')">
+                  <VListItem
+                    v-if="canAccessContacts"
+                    @click="openAttach('contact')"
+                  >
                     <template #prepend
                       ><VIcon size="20">tabler-user</VIcon></template
                     >
@@ -3892,6 +3916,7 @@ onBeforeUnmount(() => {
   </VLayout>
 
   <AppContactPicker
+    v-if="canAccessContacts"
     v-model="isContactPickerOpen"
     :existing-contacts="selectedContacts"
     @select="onContactsSelected"
@@ -4056,7 +4081,11 @@ onBeforeUnmount(() => {
     </VCard>
   </VDialog>
 
-  <VDialog v-model="isContactViewModalOpen" max-width="600">
+  <VDialog
+    v-if="canAccessContacts"
+    v-model="isContactViewModalOpen"
+    max-width="600"
+  >
     <DialogCloseBtn @click="isContactViewModalOpen = false" />
 
     <template v-if="contactStore.loading">

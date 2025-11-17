@@ -19,4 +19,5 @@ export enum ETagSwagger {
   contact = 'Contatos',
   contactGroup = 'Grupos de Contatos',
   contactGroupAssignment = 'Atribuições de Grupos de Contatos',
+  permission = 'Permissões',
 }

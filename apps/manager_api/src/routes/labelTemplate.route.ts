@@ -3,7 +3,6 @@ import { container } from 'tsyringe';
 import {
   labelTemplateCreatePermissions,
   labelTemplateDeletePermissions,
-  labelTemplateListPermissions,
   labelTemplateUpdatePermissions,
   labelTemplateViewPermissions,
 } from '@/permissions';
@@ -23,7 +22,7 @@ export default async function labelTemplateRoutes(server: FastifyInstance) {
     handler: labelTemplateController.listLabelTemplate,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, labelTemplateListPermissions),
+        server.authenticateJwt(request, reply, labelTemplateViewPermissions),
     ],
   });
 
@@ -32,7 +31,7 @@ export default async function labelTemplateRoutes(server: FastifyInstance) {
     handler: labelTemplateController.listLabelTemplateAll,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, labelTemplateListPermissions),
+        server.authenticateJwt(request, reply, labelTemplateViewPermissions),
     ],
   });
 

@@ -5,7 +5,6 @@ import {
   sectorCreatePermissions,
   sectorDeletePermissions,
   sectorEditPermissions,
-  sectorListPermissions,
   sectorViewPermissions,
 } from '@/permissions';
 import { createSectorSchema } from '@core/schema/sector/createSector';
@@ -25,7 +24,7 @@ export default function sectorRoutes(server: FastifyInstance) {
     handler: sectorController.listSector,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, sectorListPermissions),
+        server.authenticateJwt(request, reply, sectorViewPermissions),
     ],
   });
 
@@ -70,7 +69,7 @@ export default function sectorRoutes(server: FastifyInstance) {
     handler: sectorController.listSectorRoleAccount,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, sectorListPermissions),
+        server.authenticateJwt(request, reply, sectorViewPermissions),
     ],
   });
 

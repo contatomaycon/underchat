@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { apiKey } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { v4 as uuidv4 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 import { randomBytes } from 'node:crypto';
 
 @injectable()
@@ -15,7 +15,7 @@ export class ApiKeyCreatorRepository {
     accountId: string,
     name: string
   ): Promise<string | null> => {
-    const apiKeyId = uuidv4();
+    const apiKeyId = uuidv7();
     const key = randomBytes(16).toString('hex');
 
     const result = await this.db

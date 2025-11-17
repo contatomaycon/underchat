@@ -17,7 +17,8 @@ definePage({
   meta: {
     permissions: [
       EGeneralPermissions.full_access,
-      ESectorPermissions.sector_list,
+      EGeneralPermissions.full_access_group,
+      ESectorPermissions.sector_group,
       ESectorPermissions.sector_view,
       ESectorPermissions.sector_create,
       ESectorPermissions.sector_edit,
@@ -28,14 +29,20 @@ definePage({
 
 const permissionsEdit = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  ESectorPermissions.sector_group,
   ESectorPermissions.sector_edit,
 ];
 const permissionsDelete = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  ESectorPermissions.sector_group,
   ESectorPermissions.sector_delete,
 ];
 const permissionsCreate = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  ESectorPermissions.sector_group,
   ESectorPermissions.sector_create,
 ];
 

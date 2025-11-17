@@ -3,7 +3,7 @@ import { labelTemplate } from '@core/models';
 import { CreateLabelTemplateRequest } from '@core/schema/labelTemplate/createLabelTemplate/request.schema';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { v4 as uuidv4 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 
 @injectable()
 export class LabelTemplateCreatorRepository {
@@ -15,7 +15,7 @@ export class LabelTemplateCreatorRepository {
     input: CreateLabelTemplateRequest,
     accountId: string
   ): Promise<string | null> => {
-    const labelTemplateId = uuidv4();
+    const labelTemplateId = uuidv7();
 
     const result = await this.db
       .insert(labelTemplate)

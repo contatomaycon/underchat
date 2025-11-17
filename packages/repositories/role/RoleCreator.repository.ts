@@ -3,7 +3,7 @@ import { permissionRole } from '@core/models';
 import { CreateRoleResponse } from '@core/schema/role/createRole/response.schema';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { v4 as uuidv4 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 
 @injectable()
 export class RoleCreatorRepository {
@@ -16,7 +16,7 @@ export class RoleCreatorRepository {
     accountId: string,
     description: string | null | undefined
   ): Promise<CreateRoleResponse | null> => {
-    const permissionRoleId = uuidv4();
+    const permissionRoleId = uuidv7();
 
     const result = await this.db
       .insert(permissionRole)

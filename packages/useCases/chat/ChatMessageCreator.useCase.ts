@@ -8,7 +8,7 @@ import {
   IQuotedMessage,
   IReaction,
 } from '@core/common/interfaces/IChatMessage';
-import { v4 as uuidv4 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { TFunction } from 'i18next';
 import { ChatService } from '@core/services/chat.service';
@@ -509,7 +509,7 @@ export class ChatMessageCreatorUseCase {
       hash,
     } = params;
     return {
-      message_id: uuidv4(),
+      message_id: uuidv7(),
       chat_id: chatId,
       message_key: {
         remote_jid: chat.message_key?.remote_jid ?? null,
@@ -564,7 +564,7 @@ export class ChatMessageCreatorUseCase {
       videoDuration,
     } = params;
     return {
-      message_id: uuidv4(),
+      message_id: uuidv7(),
       chat_id: chatId,
       message_key: {
         remote_jid: chat.message_key?.remote_jid ?? null,
@@ -627,7 +627,7 @@ export class ChatMessageCreatorUseCase {
       isPtt,
     } = params;
     return {
-      message_id: uuidv4(),
+      message_id: uuidv7(),
       chat_id: chatId,
       message_key: {
         remote_jid: chat.message_key?.remote_jid ?? null,
@@ -683,7 +683,7 @@ export class ChatMessageCreatorUseCase {
       hash,
     } = params;
     return {
-      message_id: uuidv4(),
+      message_id: uuidv7(),
       chat_id: chatId,
       message_key: {
         remote_jid: chat.message_key?.remote_jid ?? null,
@@ -1217,9 +1217,9 @@ export class ChatMessageCreatorUseCase {
     }
 
     const publishTasks = validContacts.map((contactData) => {
-      const messageHash = hash || uuidv4();
+      const messageHash = hash || uuidv7();
       const contactMessage: IChatMessage = {
-        message_id: uuidv4(),
+        message_id: uuidv7(),
         chat_id: chatId,
         message_key: {
           remote_jid: chat.message_key?.remote_jid ?? null,
@@ -1294,9 +1294,9 @@ export class ChatMessageCreatorUseCase {
       address,
     } = params;
 
-    const messageHash = hash || uuidv4();
+    const messageHash = hash || uuidv7();
     const locationMessage: IChatMessage = {
-      message_id: uuidv4(),
+      message_id: uuidv7(),
       chat_id: chatId,
       message_key: {
         remote_jid: chat.message_key?.remote_jid ?? null,
@@ -1708,7 +1708,7 @@ export class ChatMessageCreatorUseCase {
     hash: string | null
   ): IChatMessage {
     return {
-      message_id: uuidv4(),
+      message_id: uuidv7(),
       chat_id: chatId,
       message_key: {
         remote_jid: targetMessage.message_key?.remote_jid ?? null,
@@ -1806,7 +1806,7 @@ export class ChatMessageCreatorUseCase {
     hash: string | null
   ): IChatMessage {
     return {
-      message_id: uuidv4(),
+      message_id: uuidv7(),
       chat_id: chatId,
       message_key: {
         remote_jid: targetMessage.message_key?.remote_jid ?? null,
@@ -1851,7 +1851,7 @@ export class ChatMessageCreatorUseCase {
       hash,
     } = params;
     return {
-      message_id: uuidv4(),
+      message_id: uuidv7(),
       chat_id: chatId,
       message_key: {
         remote_jid: chat.message_key?.remote_jid ?? null,

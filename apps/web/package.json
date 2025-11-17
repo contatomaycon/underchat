@@ -38,7 +38,6 @@
     "flag-icons": "^7.5.0",
     "flatpickr": "4.6.13",
     "geojson": "^0.5.0",
-    "jwt-decode": "4.0.0",
     "maplibre-gl": "^5.13.0",
     "mapbox-gl": "3.16.0",
     "maska": "3.2.0",

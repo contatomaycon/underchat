@@ -1,5 +1,5 @@
 export enum EAccountPermissions {
-  account_list = 'account_list',
+  account_group = 'account_group',
   account_view = 'account_view',
   account_create = 'account_create',
   account_update = 'account_update',

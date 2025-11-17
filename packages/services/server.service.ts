@@ -26,7 +26,7 @@ import { IStatusServerCentrifugo } from '@core/common/interfaces/IStatusServerCe
 import { serverInstallMappings } from '@core/mappings/serverInstall.mappings';
 import { ElasticDatabaseService } from './elasticDatabase.service';
 import { IServerSshCentrifugo } from '@core/common/interfaces/IServerSshCentrifugo';
-import { v4 as uuidv4 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { ICreateServerWeb } from '@core/common/interfaces/ICreateServerWeb';
 import { ServerCreatorRepository } from '@core/repositories/server/ServerCreator.repository';
@@ -236,7 +236,7 @@ export class ServerService {
     return this.elasticDatabaseService.bulkUpdate(
       EElasticIndex.install_server,
       documents,
-      () => uuidv4()
+      () => uuidv7()
     );
   };
 

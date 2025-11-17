@@ -9,9 +9,11 @@ import authV2MaskLight from '@images/pages/misc-mask-light.png';
 import { VNodeRenderer } from '@layouts/components/VNodeRenderer';
 import { themeConfig } from '@themeConfig';
 import { useAuthStore } from '@webcore/stores/auth';
+import { useChatStore } from '@webcore/stores/chat';
 import { VForm } from 'vuetify/components/VForm';
 
 const authStore = useAuthStore();
+const chatStore = useChatStore();
 const route = useRoute();
 const router = useRouter();
 const ability = useAbility();
@@ -50,6 +52,7 @@ const handleLogin = async () => {
   const result = await authStore.login(form.value.login, form.value.password);
 
   if (result) {
+    chatStore.updateUser();
     const permissions = authStore.permissions;
 
     const userAbilityRules = permissions.map((permission) => ({

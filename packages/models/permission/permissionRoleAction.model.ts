@@ -1,12 +1,19 @@
 import { pgTable, timestamp, uuid } from 'drizzle-orm/pg-core';
-import { permissionAction, permissionRole } from '@core/models';
+import {
+  permissionAction,
+  permissionRole,
+  permissionActionGroup,
+} from '@core/models';
 import { relations } from 'drizzle-orm';
 
 export const permissionRoleAction = pgTable('permission_role_action', {
   permission_role_action_id: uuid().primaryKey().notNull(),
-  permission_action_id: uuid()
-    .references(() => permissionAction.permission_action_id)
-    .notNull(),
+  permission_action_id: uuid().references(
+    () => permissionAction.permission_action_id
+  ),
+  permission_action_group_id: uuid().references(
+    () => permissionActionGroup.permission_action_group_id
+  ),
   permission_role_id: uuid()
     .references(() => permissionRole.permission_role_id)
     .notNull(),
@@ -26,6 +33,10 @@ export const permissionRoleActionRelations = relations(
     ppa: one(permissionAction, {
       fields: [permissionRoleAction.permission_action_id],
       references: [permissionAction.permission_action_id],
+    }),
+    pag: one(permissionActionGroup, {
+      fields: [permissionRoleAction.permission_action_group_id],
+      references: [permissionActionGroup.permission_action_group_id],
     }),
     ppr: one(permissionRole, {
       fields: [permissionRoleAction.permission_role_id],

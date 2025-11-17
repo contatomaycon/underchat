@@ -18,6 +18,25 @@ export const editRole = async (
   const roleUpdaterUseCase = container.resolve(RoleUpdaterUseCase);
   const { t, tokenJwtData } = request;
 
+  const systemRoleIds = [
+    '019a930d-c6f5-75af-82a5-899cb84b6089',
+    '019a930d-c6f5-75af-82a5-8c20f9d0e6e2',
+  ];
+
+  if (request.params.permission_role_id === tokenJwtData.permission_role_id) {
+    return sendResponse(reply, {
+      message: t('cannot_edit_own_role'),
+      httpStatusCode: EHTTPStatusCode.bad_request,
+    });
+  }
+
+  if (systemRoleIds.includes(request.params.permission_role_id)) {
+    return sendResponse(reply, {
+      message: t('cannot_edit_system_role'),
+      httpStatusCode: EHTTPStatusCode.bad_request,
+    });
+  }
+
   try {
     const response = await roleUpdaterUseCase.execute(
       t,

@@ -34,7 +34,26 @@ export class MiddlewareApiKeyRepository {
         JOIN "permission_role_action" pra ON pra.permission_role_id = pr.permission_role_id
         JOIN "permission_action" paa ON paa.permission_action_id = pra.permission_action_id
         JOIN "permission_module" pm ON paa.permission_module_id = pm.module_id
-        WHERE ak.key = '${keyApi}'
+        WHERE ak.key = '${keyApi}' AND pra.permission_action_id IS NOT NULL
+        UNION
+        SELECT DISTINCT
+            ac.account_id,
+            pa.permission_role_id,
+            ak.api_key_id,
+            ak.key AS api_key,
+            ak.name,
+            pr.name AS role_name,
+            pm.module AS module_name,
+            paa.action AS action_name
+        FROM "permission_assignment" pa
+        JOIN "api_key" ak ON ak.account_id =  pa.account_id AND ak.deleted_at IS NULL
+        JOIN "account" ac ON ac.account_id =  ak.account_id AND ac.deleted_at IS NULL AND ac.account_status_id = '${EAccountStatus.active}'
+        JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id
+        JOIN "permission_role_action" pra ON pra.permission_role_id = pr.permission_role_id
+        JOIN "permission_action_groups" pag ON pag.permission_action_group_id = pra.permission_action_group_id
+        JOIN "permission_action" paa ON paa.permission_action_group_id = pag.permission_action_group_id
+        JOIN "permission_module" pm ON paa.permission_module_id = pm.module_id
+        WHERE ak.key = '${keyApi}' AND pra.permission_action_group_id IS NOT NULL
       )
       SELECT *
       FROM UserPermissions

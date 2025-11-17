@@ -4,7 +4,12 @@ import { EHomePermissions } from '@core/common/enums/EPermissions/home';
 
 definePage({
   meta: {
-    permissions: [EGeneralPermissions.full_access, EHomePermissions.home_view],
+    permissions: [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EHomePermissions.home_group,
+      EHomePermissions.home_view,
+    ],
   },
 });
 </script>

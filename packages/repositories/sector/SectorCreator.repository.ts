@@ -5,7 +5,7 @@ import { CreateSectorRequest } from '@core/schema/sector/createSector/request.sc
 import { CreateSectorResponse } from '@core/schema/sector/createSector/response.schema';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { v4 as uuidv4 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 
 @injectable()
 export class SectorCreatorRepository {
@@ -17,7 +17,7 @@ export class SectorCreatorRepository {
     input: CreateSectorRequest,
     accountId: string
   ): Promise<CreateSectorResponse | null> => {
-    const sectorId = uuidv4();
+    const sectorId = uuidv7();
 
     const result = await this.db
       .insert(sector)

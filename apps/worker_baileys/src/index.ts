@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import 'module-alias/register';
 import fastify from 'fastify';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
-import { v4 } from 'uuid';
+import { v7 } from 'uuid';
 import swaggerPlugin from '@/plugins/swagger';
 import corsPlugin from '@core/plugins/cors';
 import consumerPlugin from './consumer';
@@ -17,7 +17,7 @@ import baileysReadyHook from './hooks/baileysReady.hook';
 
 const server = fastify({
   pluginTimeout: 120000,
-  genReqId: () => v4(),
+  genReqId: () => v7(),
   logger: true,
 });
 

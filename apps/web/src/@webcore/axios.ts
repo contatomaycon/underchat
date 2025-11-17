@@ -42,8 +42,30 @@ axiosAuth.interceptors.response.use(
       !originalRequest._retry
     ) {
       originalRequest._retry = true;
-      removeUserData();
-      router.push({ name: 'login' });
+
+      const token = getToken();
+      const responseData = error.response.data as {
+        status?: boolean;
+        message?: string;
+        data?: unknown;
+        id?: string;
+      };
+
+      const isPermissionError =
+        token &&
+        responseData &&
+        typeof responseData.status === 'boolean' &&
+        responseData.status === false &&
+        responseData.message &&
+        responseData.id;
+
+      if (!isPermissionError) {
+        const { useChatStore } = await import('@webcore/stores/chat');
+        const chatStore = useChatStore();
+        chatStore.clearUser();
+        removeUserData();
+        router.push({ name: 'login' });
+      }
     }
 
     const err = error instanceof Error ? error : new Error(String(error));

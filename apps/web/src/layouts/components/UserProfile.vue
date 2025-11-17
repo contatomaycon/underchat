@@ -7,6 +7,7 @@ const router = useRouter();
 const chatStore = useChatStore();
 
 const logout = async () => {
+  chatStore.clearUser();
   const result = removeUserData();
 
   if (result) {
@@ -37,9 +38,11 @@ const logout = async () => {
         v-if="chatStore.user?.info.photo"
         :src="chatStore.user?.info.photo"
       />
-      <span v-else class="text-3xl">{{
-        avatarText(chatStore.user?.info.name)
-      }}</span>
+      <VImg
+        v-else
+        :src="'/images/svg/avatar-default.svg'"
+        alt="Avatar"
+      />
 
       <!-- SECTION Menu -->
       <VMenu activator="parent" width="230" location="bottom end" offset="14px">
@@ -64,9 +67,11 @@ const logout = async () => {
                       v-if="chatStore.user?.info.photo"
                       :src="chatStore.user?.info.photo"
                     />
-                    <span v-else class="text-3xl">{{
-                      avatarText(chatStore.user?.info.name)
-                    }}</span>
+                    <VImg
+                      v-else
+                      :src="'/images/svg/avatar-default.svg'"
+                      alt="Avatar"
+                    />
                   </VAvatar>
                 </VBadge>
               </VListItemAction>

@@ -3,7 +3,7 @@ import { account } from '@core/models';
 import { CreateAccountRequest } from '@core/schema/account/createAccount/request.schema';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { v4 as uuidv4 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 
 @injectable()
 export class AccountCreatorRepository {
@@ -14,7 +14,7 @@ export class AccountCreatorRepository {
   createAccount = async (
     input: CreateAccountRequest
   ): Promise<string | null> => {
-    const accountId = uuidv4();
+    const accountId = uuidv7();
 
     const result = await this.db
       .insert(account)

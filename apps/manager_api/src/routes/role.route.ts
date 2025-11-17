@@ -5,7 +5,6 @@ import {
   roleCreatePermissions,
   roleDeletePermissions,
   roleEditPermissions,
-  roleListPermissions,
   roleViewPermissions,
 } from '@/permissions/role.permissions';
 import { listRoleSchema } from '@core/schema/role/listRole';
@@ -22,7 +21,7 @@ export default function roleRoutes(server: FastifyInstance) {
     handler: roleController.listRole,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, roleListPermissions),
+        server.authenticateJwt(request, reply, roleViewPermissions),
     ],
   });
 

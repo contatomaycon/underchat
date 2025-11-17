@@ -5,17 +5,21 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
-import { getAdministrator } from '@/@webcore/localStorage/user';
+import { getAdministrator, getUser } from '@/@webcore/localStorage/user';
 import { DataTableHeader } from 'vuetify';
 import { ListRoleResponse } from '@core/schema/role/listRole/response.schema';
 import { ERolePermissions } from '@core/common/enums/EPermissions/role';
+import { EPermissionPermissions } from '@core/common/enums/EPermissions/permission';
 import { useRolesStore } from '@/@webcore/stores/role';
+import { usePermissionStore } from '@/@webcore/stores/permission';
+import { can } from '@/@layouts/plugins/casl';
 
 definePage({
   meta: {
     permissions: [
       EGeneralPermissions.full_access,
-      ERolePermissions.role_list,
+      EGeneralPermissions.full_access_group,
+      ERolePermissions.role_group,
       ERolePermissions.role_view,
       ERolePermissions.role_create,
       ERolePermissions.role_edit,
@@ -26,20 +30,40 @@ definePage({
 
 const permissionsEdit = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  ERolePermissions.role_group,
   ERolePermissions.role_edit,
 ];
 const permissionsDelete = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  ERolePermissions.role_group,
   ERolePermissions.role_delete,
 ];
 const permissionsCreate = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  ERolePermissions.role_group,
   ERolePermissions.role_create,
+];
+const permissionsEditPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EPermissionPermissions.permission_group,
+  EPermissionPermissions.permission_edit,
+];
+const permissionsViewPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EPermissionPermissions.permission_group,
+  EPermissionPermissions.permission_view,
 ];
 
 const { t } = useI18n();
 const roleStore = useRolesStore();
+const permissionStore = usePermissionStore();
 const isAdministrator = getAdministrator();
+const currentPermissionRoleId = getUser()?.type.user_type_id ?? null;
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -56,6 +80,8 @@ const roleToDelete = ref<string | null>(null);
 const isDialogEditRoleShow = ref(false);
 const isAddRoleVisible = ref(false);
 const roleToEdit = ref<string | null>(null);
+const isRolePermissionsDialogVisible = ref(false);
+const rolePermissionsId = ref<string | null>(null);
 
 const headers: DataTableHeader<ListRoleResponse>[] = [
   { title: t('name'), key: 'name' },
@@ -118,6 +144,17 @@ const openEditDialog = (id: string) => {
   isDialogEditRoleShow.value = true;
 };
 
+const openPermissionDialog = (id: string) => {
+  rolePermissionsId.value = id;
+  isRolePermissionsDialogVisible.value = true;
+};
+
+watch(isRolePermissionsDialogVisible, (visible) => {
+  if (!visible) {
+    rolePermissionsId.value = null;
+  }
+});
+
 watch(
   query,
   async (q) => {
@@ -125,6 +162,10 @@ watch(
   },
   { immediate: true, deep: true }
 );
+
+onMounted(() => {
+  console.log('permissionsEdit', can(permissionsEdit));
+});
 </script>
 
 <template>
@@ -202,9 +243,21 @@ watch(
           <div class="d-flex gap-1">
             <IconBtn
               v-if="
-                $canPermission(permissionsEdit) &&
-                (item.account?.id || isAdministrator)
+                $canPermission(permissionsViewPermissions) &&
+                item.permission_role_id !== currentPermissionRoleId
               "
+              ><VTooltip
+                location="top"
+                transition="scale-transition"
+                activator="parent"
+              >
+                <span>{{ $t('permissions') }}</span> </VTooltip
+              ><VIcon
+                icon="tabler-key"
+                @click="openPermissionDialog(item.permission_role_id)"
+            /></IconBtn>
+
+            <IconBtn v-if="$canPermission(permissionsEdit)"
               ><VTooltip
                 location="top"
                 transition="scale-transition"
@@ -216,11 +269,7 @@ watch(
                 @click="openEditDialog(item.permission_role_id)"
             /></IconBtn>
 
-            <IconBtn
-              v-if="
-                $canPermission(permissionsDelete) &&
-                (item.account?.id || isAdministrator)
-              "
+            <IconBtn v-if="$canPermission(permissionsDelete)"
               ><VTooltip
                 location="top"
                 transition="scale-transition"
@@ -262,6 +311,13 @@ watch(
       />
 
       <AppAddRole v-if="isAddRoleVisible" v-model="isAddRoleVisible" />
+
+      <AppRolePermissions
+        v-if="isRolePermissionsDialogVisible"
+        v-model="isRolePermissionsDialogVisible"
+        :permission-role-id="rolePermissionsId"
+        :can-edit="$canPermission(permissionsEditPermissions)"
+      />
     </VCard>
 
     <VSnackbar
@@ -271,6 +327,15 @@ watch(
       :color="roleStore.snackbar.color"
     >
       {{ roleStore.snackbar.message }}
+    </VSnackbar>
+
+    <VSnackbar
+      v-model="permissionStore.snackbar.status"
+      transition="scroll-y-reverse-transition"
+      location="top end"
+      :color="permissionStore.snackbar.color"
+    >
+      {{ permissionStore.snackbar.message }}
     </VSnackbar>
   </div>
 </template>

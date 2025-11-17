@@ -1,8 +1,8 @@
-INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('64424e59-fc1a-42ca-b253-49f951ebf4e4', 'online');
-INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('9d469b0c-db97-4abe-adec-8745edf785e8', 'offline');
-INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('6b9fba64-2894-4404-86d8-8e28d4c12273', 'disponible');
-INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('1585dbf9-eff8-41c8-bccb-b4c15b444b0a', 'new');
-INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('214ed038-6f66-4fa3-be83-2ee07b093d15', 'deleting');
-INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('997d6778-365c-43ad-9c94-8dba0a7974b8', 'recreating');
-INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('2c954c06-c950-4818-a7aa-3a78c10cb506', 'error');
-INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('458a9372-3e5e-4a24-93ec-7fd15a4cc6c2', 'delete');
+INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('019a930d-c6f6-766d-9c84-30af6ecc33b2', 'online');
+INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('019a930d-c6f6-766d-9c84-3696c2cd5ed8', 'offline');
+INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('019a930d-c6f6-766d-9c84-3904383fe742', 'disponible');
+INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('019a930d-c6f6-766d-9c84-3f0abf55560d', 'new');
+INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('019a930d-c6f6-766d-9c84-437433031776', 'deleting');
+INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('019a930d-c6f6-766d-9c84-46093814d8e0', 'recreating');
+INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('019a930d-c6f6-766d-9c84-48cb970a9f21', 'error');
+INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('019a930d-c6f6-766d-9c84-4dc1777f8f69', 'delete');

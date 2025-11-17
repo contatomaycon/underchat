@@ -25,6 +25,10 @@ import { ListContactGroupRequest } from '@core/schema/contactGroup/listContactGr
 import { ESortByContactGroup } from '@core/common/enums/ESortByContactGroup';
 import { ListContactGroupResponse } from '@core/schema/contactGroup/listContactGroup/response.schema';
 
+function isDefined(condition: SQLWrapper | undefined): condition is SQLWrapper {
+  return condition !== undefined;
+}
+
 @injectable()
 export class ContactGroupListerRepository {
   constructor(
@@ -61,16 +65,24 @@ export class ContactGroupListerRepository {
   ): SQLWrapper[] => {
     const filters: SQLWrapper[] = [];
 
-    if (query.name || query.description) {
-      const conditions: (SQLWrapper | undefined)[] = [
-        query.name ? ilike(contactGroup.name, `%${query.name}%`) : undefined,
-        query.description
-          ? ilike(contactGroup.description, `%${query.description}%`)
-          : undefined,
-      ];
+    if (!query.search) {
+      return filters;
+    }
 
-      const combined = or(...conditions);
+    const searchTerm = query.search.trim();
+    if (searchTerm.length === 0) {
+      return filters;
+    }
 
+    const conditions: (SQLWrapper | undefined)[] = [
+      ilike(contactGroup.name, `%${searchTerm}%`),
+      ilike(contactGroup.description, `%${searchTerm}%`),
+    ];
+
+    const validConditions = conditions.filter(isDefined);
+
+    if (validConditions.length) {
+      const combined = or(...validConditions);
       if (combined) filters.push(combined);
     }
 

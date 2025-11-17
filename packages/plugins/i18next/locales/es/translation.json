@@ -240,5 +240,13 @@
   "chat_reaction_error": "¡Error al enviar la reacción!",
   "invalid_token": "¡Token inválido!",
   "token_generated_successfully": "¡Token generado con éxito!",
-  "worker_recreate_error": "¡Error al recrear el canal!"
+  "worker_recreate_error": "¡Error al recrear el canal!",
+  "permission_groups_list_successfully": "¡Lista de grupos de permisos obtenida con éxito!",
+  "cannot_edit_own_role": "¡No se puede editar su propio rol!",
+  "cannot_delete_own_role": "¡No se puede eliminar su propio rol!",
+  "cannot_edit_system_role": "¡No se puede editar roles del sistema!",
+  "cannot_delete_system_role": "¡No se puede eliminar roles del sistema!",
+  "role_permissions_updated_successfully": "¡Permisos del rol actualizados con éxito!",
+  "permission_groups_load_error": "¡Error al cargar grupos de permisos!",
+  "permission_groups_update_error": "¡Error al actualizar permisos del rol!"
 }

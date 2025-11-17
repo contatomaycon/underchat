@@ -1,6 +1,6 @@
 import { Client } from '@elastic/elasticsearch';
 import { inject, injectable } from 'tsyringe';
-import { v4 as uuidv4 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 import { ELogLevel } from '@core/common/enums/ELogLevel';
 
 @injectable()
@@ -23,7 +23,7 @@ class ElasticSearchService {
 
     await this.client.index({
       index,
-      id: uuidv4(),
+      id: uuidv7(),
       body: {
         level: message.level,
         time: message.time,

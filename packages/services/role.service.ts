@@ -30,7 +30,8 @@ export class RoleService {
     currentPage: number,
     query: ListRoleRequest,
     accountId: string,
-    isAdministrator: boolean
+    isAdministrator: boolean,
+    currentUserPermissionRoleId: string
   ): Promise<[ListRoleResponse[], number]> => {
     const [result, total] = await Promise.all([
       this.roleListerRepository.listRoles(
@@ -38,12 +39,14 @@ export class RoleService {
         currentPage,
         query,
         accountId,
-        isAdministrator
+        isAdministrator,
+        currentUserPermissionRoleId
       ),
       this.roleListerRepository.listRolesTotal(
         query,
         accountId,
-        isAdministrator
+        isAdministrator,
+        currentUserPermissionRoleId
       ),
     ]);
 

@@ -5,7 +5,7 @@ import dbConnector from '@core/config/database';
 import i18nextPlugin from '@core/plugins/i18next';
 import { requestHook, responseHook, errorHook } from '@core/hooks';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
-import { v4 } from 'uuid';
+import { v7 } from 'uuid';
 import loggerServicePlugin from '@core/plugins/logger';
 import swaggerPlugin from '@/plugins/swagger';
 import corsPlugin from '@core/plugins/cors';
@@ -21,7 +21,7 @@ import { safePlugin } from '@core/common/functions/safePlugin';
 
 const server = fastify({
   pluginTimeout: 120000,
-  genReqId: () => v4(),
+  genReqId: () => v7(),
   logger: true,
 });
 

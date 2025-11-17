@@ -28,7 +28,11 @@ const isChatContactActive = computed(() => {
           :src="props.user.photo"
           :alt="props.user.name ?? ''"
         />
-        <span v-else>{{ avatarText(props.user.name) }}</span>
+        <VImg
+          v-else
+          :src="'/images/svg/avatar-default.svg'"
+          :alt="props.user.name ?? ''"
+        />
       </VAvatar>
       <div class="flex-grow-1 ms-4 overflow-hidden">
         <p class="text-base text-high-emphasis mb-0">

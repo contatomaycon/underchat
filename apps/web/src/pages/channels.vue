@@ -22,6 +22,8 @@ definePage({
   meta: {
     permissions: [
       EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EWorkerPermissions.worker_group,
       EWorkerPermissions.create_worker,
       EWorkerPermissions.update_worker,
       EWorkerPermissions.view_worker,
@@ -32,22 +34,32 @@ definePage({
 
 const permissionsEdit = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EWorkerPermissions.worker_group,
   EWorkerPermissions.update_worker,
 ];
 const permissionsDelete = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EWorkerPermissions.worker_group,
   EWorkerPermissions.delete_worker,
 ];
 const permissionsCreate = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EWorkerPermissions.worker_group,
   EWorkerPermissions.create_worker,
 ];
 const permissionsViewLogs = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EWorkerPermissions.worker_group,
   EWorkerPermissions.view_worker_logs,
 ];
 const permissionsRecreate = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EWorkerPermissions.worker_group,
   EWorkerPermissions.recreate_worker,
 ];
 

@@ -21,7 +21,7 @@ import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EWppConnection } from '@core/common/enums/EWppConnection';
 import { wppConnectionMappings } from '@core/mappings/wppConnection.mappings';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
-import { v4 as uuidv4 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
@@ -829,7 +829,7 @@ export class BaileysConnectionService {
     return this.elasticDatabaseService.update(
       EElasticIndex.wpp_connection,
       wppLog,
-      uuidv4()
+      uuidv7()
     );
   };
 }

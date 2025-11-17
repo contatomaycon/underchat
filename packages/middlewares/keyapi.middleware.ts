@@ -21,11 +21,17 @@ async function handleApiKeyCache(
   cacheKey: string,
   keyapi: string | string[] | undefined,
   routeModule: string,
-  module: ERouteModule
+  module: ERouteModule,
+  permissions?: EPermissionsRoles[] | null
 ): Promise<IApiKeyGroupHierarchy[]> {
   const cacheAuth = await redis.get(cacheKey);
   if (cacheAuth) {
-    return JSON.parse(cacheAuth);
+    const cachedPermissions = JSON.parse(cacheAuth) as IApiKeyGroupHierarchy[];
+    const hasPermission = hasRequiredPermission(cachedPermissions, permissions);
+
+    if (hasPermission) {
+      return cachedPermissions;
+    }
   }
 
   const apiKeyViewerUseCase = container.resolve(ApiKeyViewerUseCase);
@@ -96,7 +102,8 @@ async function authenticateKeyApi(
       cacheKey,
       keyapi,
       routeModule,
-      request.module
+      request.module,
+      permissions
     );
 
     if (!responseAuth) {

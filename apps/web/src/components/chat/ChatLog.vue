@@ -102,7 +102,7 @@ const resolvePhoto = (message: ListMessageResult): string => {
   if (!isTypeUser(message) && message.user?.photo) return message.user.photo;
   if (!isTypeUser(message) && chatStore.user?.info.photo)
     return chatStore.user.info.photo;
-  return '';
+  return '/images/svg/avatar-default.svg';
 };
 
 const isPhotoExist = (message: ListMessageResult): boolean =>
@@ -1203,10 +1203,7 @@ onUnmounted(() => {
           size="32"
           :variant="!isPhotoExist(msgGrp) ? 'tonal' : undefined"
         >
-          <VImg v-if="isPhotoExist(msgGrp)" :src="resolvePhoto(msgGrp)" />
-          <span v-if="!isPhotoExist(msgGrp)" class="text-1xl">
-            {{ avatarChat(msgGrp) }}
-          </span>
+          <VImg :src="resolvePhoto(msgGrp)" />
         </VAvatar>
       </div>
 

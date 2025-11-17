@@ -4,9 +4,8 @@ import { listChatsSchema } from '@core/schema/chat/listChats';
 import ChatController from '@/controllers/chat';
 import {
   createChatPermissions,
-  listChatPermissions,
-  listChatUserPermissions,
   updateChatUserPermissions,
+  viewChatPermissions,
 } from '@/permissions';
 import { listChatsUserSchema } from '@core/schema/chat/listChatsUser';
 import { updateChatsUserSchema } from '@core/schema/chat/updateChatsUser';
@@ -25,7 +24,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.listChats,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, listChatPermissions),
+        server.authenticateJwt(request, reply, viewChatPermissions),
     ],
   });
 
@@ -52,7 +51,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.listMessageChats,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, listChatPermissions),
+        server.authenticateJwt(request, reply, viewChatPermissions),
     ],
   });
 
@@ -70,7 +69,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.listChatsUser,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, listChatUserPermissions),
+        server.authenticateJwt(request, reply, viewChatPermissions),
     ],
   });
 

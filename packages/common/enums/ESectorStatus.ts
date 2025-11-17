@@ -1,4 +1,4 @@
 export enum ESectorStatus {
-  active = '449b51fc-e057-4053-baaf-1de5333980b8',
-  inactive = '6fa61f81-b90b-454f-a4fd-e0b5700d4dfe',
+  active = '019a930d-c6f6-766d-9c84-88392fc06dbd',
+  inactive = '019a930d-c6f6-766d-9c84-8e6105a0397e',
 }

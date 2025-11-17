@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { accountInfo } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { v4 as uuidv4 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 import { currentTime } from '@core/common/functions/currentTime';
 import { CreateAccountInfoRequest } from '@core/schema/account/createAccountInfo/request.schema';
 
@@ -80,7 +80,7 @@ export class AccountInfoCreatorRepository {
     urlLogo: string | null
   ): Promise<string | null> => {
     const createInput = this.createInput(input, urlLogo);
-    const accountInfoId = uuidv4();
+    const accountInfoId = uuidv7();
     const dataNow = currentTime();
 
     const result = await this.db

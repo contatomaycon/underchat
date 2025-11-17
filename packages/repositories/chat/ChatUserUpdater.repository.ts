@@ -8,7 +8,7 @@ import { inject, injectable } from 'tsyringe';
 import { and, eq, count, ExtractTablesWithRelations } from 'drizzle-orm';
 import { UpdateChatsUserRequest } from '@core/schema/chat/updateChatsUser/request.schema';
 import { PgTransaction } from 'drizzle-orm/pg-core';
-import { v4 as uuidv4 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 
 @injectable()
 export class ChatUserUpdaterRepository {
@@ -70,7 +70,7 @@ export class ChatUserUpdaterRepository {
     input: UpdateChatsUserRequest
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input);
-    const chatUserId = uuidv4();
+    const chatUserId = uuidv7();
 
     const result = await tx
       .insert(chatUser)

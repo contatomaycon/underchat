@@ -61,8 +61,7 @@ export const useContactGroupStore = defineStore('contact-group', {
               current_page: input.page,
               per_page: input.per_page,
               sort_by: input.sort_by,
-              name: input.search,
-              description: input.search,
+              search: input.search,
             }
           : undefined;
 

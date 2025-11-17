@@ -11,3 +11,4 @@ export * from './messageTemplate.permissions';
 export * from './labelTemplate.permissions';
 export * from './contact.permissions';
 export * from './contactGroup.permissions';
+export * from './permission.permissions';

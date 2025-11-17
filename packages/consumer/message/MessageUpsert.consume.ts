@@ -6,7 +6,7 @@ import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import { IChat } from '@core/common/interfaces/IChat';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
-import { v4 as uuidv4 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 import { AccountService } from '@core/services/account.service';
 import { WorkerService } from '@core/services/worker.service';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
@@ -694,7 +694,7 @@ export class MessageUpsertConsume {
       await this.handleLocationMessage(content, data);
 
       const inputChatMessage: IChatMessage = {
-        message_id: uuidv4(),
+        message_id: uuidv7(),
         chat_id: getChat.chat_id,
         message_key: {
           remote_jid: jid,
@@ -723,7 +723,7 @@ export class MessageUpsertConsume {
         date: new Date().toISOString(),
         deleted: false,
         has_quoted: hasQuotedFlag,
-        hash: uuidv4(),
+        hash: uuidv7(),
       };
 
       const [, result] = await Promise.all([
@@ -769,7 +769,7 @@ export class MessageUpsertConsume {
       throw new Error('Received message without valid phone');
     }
 
-    const chatId = uuidv4();
+    const chatId = uuidv7();
     const name = this.nameChat(data);
 
     const inputChatMessage: IChat = {

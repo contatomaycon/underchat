@@ -13,8 +13,8 @@
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
   "sonarlint.connectedMode.project": {
-    "connectionId": "https-sonarqube-grupochl-com-br-",
-    "projectKey": "campsoft-backend"
+    "connectionId": "https-sonarqube-devunder-com",
+    "projectKey": "underchat"
   },
   "[json]": {
     "editor.defaultFormatter": "rvest.vs-code-prettier-eslint"

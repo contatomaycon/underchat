@@ -9,7 +9,7 @@ import { ExtractTablesWithRelations } from 'drizzle-orm';
 import { PgTransaction } from 'drizzle-orm/pg-core';
 import { TFunction } from 'i18next';
 import { ICreateServer } from '@core/common/interfaces/ICreateServer';
-import { v4 as uuidv4 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 import { ICreateServerSsh } from '@core/common/interfaces/ICreateServerSsh';
 import { ICreateServerWeb } from '@core/common/interfaces/ICreateServerWeb';
 
@@ -27,7 +27,7 @@ export class ServerCreatorRepository {
     >,
     input: ICreateServer
   ): Promise<string | null> => {
-    const serverId = uuidv4();
+    const serverId = uuidv7();
 
     const result = await tx
       .insert(server)
@@ -55,7 +55,7 @@ export class ServerCreatorRepository {
     input: ICreateServerSsh,
     serverId: string
   ): Promise<string | null> => {
-    const serverSshId = uuidv4();
+    const serverSshId = uuidv7();
 
     const result = await tx
       .insert(serverSsh)
@@ -85,7 +85,7 @@ export class ServerCreatorRepository {
     input: ICreateServerWeb,
     serverId: string
   ): Promise<string | null> => {
-    const serverWebId = uuidv4();
+    const serverWebId = uuidv7();
 
     const result = await tx
       .insert(serverWeb)
