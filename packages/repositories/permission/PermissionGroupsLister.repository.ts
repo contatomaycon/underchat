@@ -229,7 +229,9 @@ export class PermissionGroupsListerRepository {
         row.created_at &&
         row.updated_at
       ) {
-        const group = groupsMap.get(groupId)!;
+        const group = groupsMap.get(groupId);
+        if (!group) continue;
+
         group.permissions.push({
           permission_action_id: row.permission_action_id,
           action: row.action,
