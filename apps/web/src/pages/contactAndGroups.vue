@@ -1,18 +1,23 @@
-<route lang="json">
-{
-  "name": "contact-and-groups",
-  "meta": { "public": true }
-}
-</route>
-
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
+import { EContactGroupPermissions } from '@core/common/enums/EPermissions/contactGroup';
 import Contact from './contact.vue';
 import ContactGroup from './contactGroup.vue';
 
 definePage({
-  meta: { permissions: [] },
+  meta: {
+    permissions: [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EContactPermissions.contact_group,
+      EContactPermissions.contact_view,
+      EContactGroupPermissions.contact_group_assignment_group,
+      EContactGroupPermissions.contact_group_view,
+    ],
+  },
 });
 
 const route = useRoute();
@@ -42,3 +47,10 @@ watch(tab, (v) => router.replace({ query: { ...route.query, tab: v } }));
     </VCardText>
   </VCard>
 </template>
+
+<route lang="json">
+{
+  "name": "contact-and-groups",
+  "meta": { "public": true }
+}
+</route>

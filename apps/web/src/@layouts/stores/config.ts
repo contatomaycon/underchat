@@ -4,6 +4,8 @@ import { AppContentLayoutNav, NavbarType } from '@layouts/enums';
 import { injectionKeyIsVerticalNavHovered } from '@layouts/symbols';
 import { _setDirAttr } from '@layouts/utils';
 import { layoutConfig } from '@themeConfig';
+import { useCookie } from '@/@webcore/composable/useCookie';
+import { router } from '@/plugins/1.router';
 
 export const namespaceConfig = (str: string) =>
   `${layoutConfig.app.title}-${str}`;
@@ -12,7 +14,7 @@ export const cookieRef = <T>(key: string, defaultValue: T) =>
   useCookie<T>(namespaceConfig(key), { default: () => defaultValue });
 
 export const useLayoutConfigStore = defineStore('layoutConfig', () => {
-  const route = useRoute();
+  const currentRoute = computed(() => router.currentRoute.value);
 
   const navbarType = ref(layoutConfig.navbar.type);
   const isNavbarBlurEnabled = cookieRef(
@@ -78,7 +80,7 @@ export const useLayoutConfigStore = defineStore('layoutConfig', () => {
     `layout-content-width-${appContentWidth.value}`,
     { 'layout-overlay-nav': isLessThanOverlayNavBreakpoint.value },
     { 'window-scrolled': windowScrollY.value > 0 },
-    route.meta.layoutWrapperClasses ?? null,
+    currentRoute.value.meta?.layoutWrapperClasses ?? null,
   ]);
 
   const isVerticalNavMini = (hoveredRef: Ref<boolean> | null = null) => {

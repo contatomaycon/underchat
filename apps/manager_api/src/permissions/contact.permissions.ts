@@ -3,17 +3,21 @@ import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 
 export const contactViewPermissions = [
   EGeneralPermissions.full_access,
+  EContactPermissions.contact_group,
   EContactPermissions.contact_view,
 ];
 export const contactDeletePermissions = [
   EGeneralPermissions.full_access,
+  EContactPermissions.contact_group,
   EContactPermissions.contact_delete,
 ];
 export const contactUpdatePermissions = [
   EGeneralPermissions.full_access,
+  EContactPermissions.contact_group,
   EContactPermissions.contact_update,
 ];
 export const contactCreatePermissions = [
   EGeneralPermissions.full_access,
+  EContactPermissions.contact_group,
   EContactPermissions.contact_create,
 ];

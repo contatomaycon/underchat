@@ -17,6 +17,8 @@ definePage({
   meta: {
     permissions: [
       EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EServerPermissions.server_group,
       EServerPermissions.server_create,
       EServerPermissions.server_view,
       EServerPermissions.server_edit,
@@ -27,22 +29,32 @@ definePage({
 
 const permissionsReinstall = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EServerPermissions.server_group,
   EServerPermissions.server_reinstall,
 ];
 const permissionsServerLogsInstall = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EServerPermissions.server_group,
   EServerPermissions.server_logs_install,
 ];
 const permissionsEdit = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EServerPermissions.server_group,
   EServerPermissions.server_edit,
 ];
 const permissionsDelete = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EServerPermissions.server_group,
   EServerPermissions.server_delete,
 ];
 const permissionsCreate = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EServerPermissions.server_group,
   EServerPermissions.server_create,
 ];
 

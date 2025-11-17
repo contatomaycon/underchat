@@ -10,19 +10,32 @@ import { EAccountPermissions } from '@core/common/enums/EPermissions/account';
 import { EMessageTemplatePermissions } from '@core/common/enums/EPermissions/messageTemplate';
 import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
+import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 
 export default [
   {
     title: 'home',
     to: { name: 'root' as keyof RouteNamedMap },
     icon: { icon: 'tabler-smart-home' },
-    permissions: [EGeneralPermissions.full_access, EHomePermissions.home_view],
+    permissions: [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EHomePermissions.home_group,
+      EHomePermissions.home_view,
+    ],
   },
   {
     title: 'chat',
     icon: { icon: 'tabler-message-circle' },
     to: { name: 'chat' as keyof RouteNamedMap },
-    permissions: [EGeneralPermissions.full_access],
+    permissions: [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.chat_group,
+      EChatPermissions.view_chat,
+      EChatPermissions.create_chat,
+      EChatPermissions.update_chat_user,
+    ],
   },
   {
     title: 'channels',
@@ -30,6 +43,8 @@ export default [
     icon: { icon: 'tabler-plug' },
     permissions: [
       EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EWorkerPermissions.worker_group,
       EWorkerPermissions.create_worker,
       EWorkerPermissions.update_worker,
       EWorkerPermissions.view_worker,
@@ -46,6 +61,8 @@ export default [
         icon: { icon: 'tabler-label' },
         permissions: [
           EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          ELabelTemplatePermissions.label_template_group,
           ELabelTemplatePermissions.label_view,
           ELabelTemplatePermissions.label_create,
           ELabelTemplatePermissions.label_update,
@@ -58,6 +75,8 @@ export default [
         icon: { icon: 'tabler-message' },
         permissions: [
           EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EMessageTemplatePermissions.message_template_group,
           EMessageTemplatePermissions.message_view,
           EMessageTemplatePermissions.message_create,
           EMessageTemplatePermissions.message_update,
@@ -72,6 +91,8 @@ export default [
     icon: { icon: 'tabler-address-book' },
     permissions: [
       EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EContactPermissions.contact_group,
       EContactPermissions.contact_view,
       EContactPermissions.contact_create,
       EContactPermissions.contact_update,
@@ -84,6 +105,8 @@ export default [
     icon: { icon: 'tabler-crosshair' },
     permissions: [
       EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      ERolePermissions.role_group,
       ERolePermissions.role_view,
       ERolePermissions.role_create,
       ERolePermissions.role_edit,
@@ -96,6 +119,8 @@ export default [
     icon: { icon: 'tabler-sitemap' },
     permissions: [
       EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      ESectorPermissions.sector_group,
       ESectorPermissions.sector_view,
       ESectorPermissions.sector_create,
       ESectorPermissions.sector_edit,
@@ -108,6 +133,8 @@ export default [
     icon: { icon: 'tabler-users' },
     permissions: [
       EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EUserPermissions.user_group,
       EUserPermissions.user_view,
       EUserPermissions.user_create,
       EUserPermissions.user_update,
@@ -120,6 +147,8 @@ export default [
     icon: { icon: 'tabler-user' },
     permissions: [
       EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EAccountPermissions.account_group,
       EAccountPermissions.account_view,
       EAccountPermissions.account_create,
       EAccountPermissions.account_update,
@@ -132,6 +161,8 @@ export default [
     icon: { icon: 'tabler-server' },
     permissions: [
       EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EServerPermissions.server_group,
       EServerPermissions.server_view,
       EServerPermissions.server_edit,
       EServerPermissions.server_create,

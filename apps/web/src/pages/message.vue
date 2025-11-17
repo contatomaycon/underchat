@@ -16,6 +16,8 @@ definePage({
   meta: {
     permissions: [
       EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EMessageTemplatePermissions.message_template_group,
       EMessageTemplatePermissions.message_view,
       EMessageTemplatePermissions.message_create,
       EMessageTemplatePermissions.message_update,
@@ -26,14 +28,20 @@ definePage({
 
 const permissionsEdit = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EMessageTemplatePermissions.message_template_group,
   EMessageTemplatePermissions.message_update,
 ];
 const permissionsDelete = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EMessageTemplatePermissions.message_template_group,
   EMessageTemplatePermissions.message_delete,
 ];
 const permissionsCreate = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EMessageTemplatePermissions.message_template_group,
   EMessageTemplatePermissions.message_create,
 ];
 

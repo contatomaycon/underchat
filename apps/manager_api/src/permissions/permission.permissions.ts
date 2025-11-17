@@ -3,5 +3,6 @@ import { EPermissionPermissions } from '@core/common/enums/EPermissions/permissi
 
 export const permissionViewPermissions = [
   EGeneralPermissions.full_access,
+  EPermissionPermissions.permission_group,
   EPermissionPermissions.permission_view,
 ];

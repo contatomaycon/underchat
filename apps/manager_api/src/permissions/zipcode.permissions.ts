@@ -3,5 +3,6 @@ import { EZipcodePermissions } from '@core/common/enums/EPermissions/zipcode';
 
 export const zipcodeViewPermissions = [
   EGeneralPermissions.full_access,
+  EZipcodePermissions.zipcode_group,
   EZipcodePermissions.zipcode_view,
 ];

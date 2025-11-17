@@ -17,6 +17,8 @@ definePage({
   meta: {
     permissions: [
       EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      ELabelTemplatePermissions.label_template_group,
       ELabelTemplatePermissions.label_view,
       ELabelTemplatePermissions.label_create,
       ELabelTemplatePermissions.label_update,
@@ -27,14 +29,20 @@ definePage({
 
 const permissionsEdit = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  ELabelTemplatePermissions.label_template_group,
   ELabelTemplatePermissions.label_update,
 ];
 const permissionsDelete = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  ELabelTemplatePermissions.label_template_group,
   ELabelTemplatePermissions.label_delete,
 ];
 const permissionsCreate = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  ELabelTemplatePermissions.label_template_group,
   ELabelTemplatePermissions.label_create,
 ];
 

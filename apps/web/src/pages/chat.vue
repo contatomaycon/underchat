@@ -9,6 +9,7 @@ import ChatLog from '@/components/chat/ChatLog.vue';
 import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSidebarContent.vue';
 import AppContactPicker from '@/components/chat/AppContactPicker.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useContactStore } from '@/@webcore/stores/contact';
@@ -62,7 +63,14 @@ const MAX_AUDIO_SIZE_BYTES = 16 * 1024 * 1024;
 definePage({
   meta: {
     layoutWrapperClasses: 'layout-content-height-fixed',
-    permissions: [EGeneralPermissions.full_access],
+    permissions: [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.chat_group,
+      EChatPermissions.view_chat,
+      EChatPermissions.create_chat,
+      EChatPermissions.update_chat_user,
+    ],
   },
 });
 

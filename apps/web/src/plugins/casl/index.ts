@@ -1,9 +1,9 @@
 import type { App } from 'vue';
 
-import { createMongoAbility } from '@casl/ability';
 import { abilitiesPlugin } from '@casl/vue';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { getPermissions } from '@webcore/localStorage/user';
+import { ability } from './ability';
 
 export default function applyCasl(app: App) {
   const permissions = getPermissions();
@@ -13,10 +13,9 @@ export default function applyCasl(app: App) {
     subject: permission,
   }));
 
-  const initialAbility =
-    createMongoAbility<[EPermissionsRoles, EPermissionsRoles]>(roles);
+  ability.update(roles);
 
-  app.use(abilitiesPlugin, initialAbility, {
+  app.use(abilitiesPlugin, ability, {
     useGlobalProperties: true,
   });
 }
