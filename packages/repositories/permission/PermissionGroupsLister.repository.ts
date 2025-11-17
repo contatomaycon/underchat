@@ -127,18 +127,25 @@ export class PermissionGroupsListerRepository {
           fg.group_action,
           fg.group_created_at,
           fg.group_updated_at,
-          NULL::uuid AS permission_action_id,
-          NULL::varchar AS action,
-          NULL::varchar AS name,
-          NULL::varchar AS description,
-          NULL::timestamptz AS created_at,
-          NULL::timestamptz AS updated_at
+          paa.permission_action_id,
+          paa.action,
+          paa.name,
+          paa.description,
+          paa.created_at,
+          paa.updated_at
         FROM FilteredGroups fg
+        JOIN "permission_action" paa ON paa.permission_action_group_id = fg.permission_action_group_id
+        JOIN "permission_module" pm ON paa.permission_module_id = pm.module_id
         CROSS JOIN HasFullAccess hfa
         CROSS JOIN HasFullAccessGroup hfag
         WHERE fg.permission_action_group_id IN (SELECT permission_action_group_id FROM RoleGroupPermissions)
+          AND pm.module = '${moduleName}'
           AND hfa.has_full_access = false
           AND hfag.has_full_access_group = false
+          AND fg.permission_action_group_id NOT IN (
+            SELECT DISTINCT permission_action_group_id 
+            FROM RoleIndividualPermissions
+          )
         UNION ALL
         SELECT 
           fg.permission_action_group_id,
