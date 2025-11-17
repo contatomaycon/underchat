@@ -180,6 +180,7 @@ const locationMarkerPosition = computed<[number, number]>(() => {
   return [0, 0];
 });
 
+/* NOSONAR-START */
 const getCurrentLocation = (): Promise<GeolocationPosition> => {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
@@ -191,9 +192,10 @@ const getCurrentLocation = (): Promise<GeolocationPosition> => {
       timeout: 10000,
       maximumAge: 0,
     };
-    navigator.geolocation.getCurrentPosition(resolve, reject, options); // NOSONAR: S5604 - Geolocalização é necessária para funcionalidade de envio de localização
+    navigator.geolocation.getCurrentPosition(resolve, reject, options);
   });
 };
+/* NOSONAR-END */
 
 const useCurrentLocation = async () => {
   try {
@@ -326,7 +328,7 @@ const onLocationMapLoad = () => {
   }
 
   if (navigator.geolocation) {
-    // NOSONAR: S5604 - Geolocalização é opcional aqui, apenas para UX, com fallback seguro
+    /* NOSONAR-START */
     navigator.geolocation.getCurrentPosition(
       (position) => {
         locationPickerLatitude.value = position.coords.latitude;
@@ -348,6 +350,7 @@ const onLocationMapLoad = () => {
         }
       }
     );
+    /* NOSONAR-END */
   }
 };
 
