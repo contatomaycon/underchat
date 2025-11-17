@@ -214,7 +214,7 @@ const applyRoleSelections = (rolePermissions: ListPermissionGroupsResponse) => {
 
     group.selected = false;
     group.disabled = false;
-  });
+  }
 };
 
 const loadPermissions = async () => {
