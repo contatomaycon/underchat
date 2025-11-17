@@ -33,40 +33,39 @@ export class UserListerRepository {
   private readonly setFiltersUser = (query: ListUserRequest): SQLWrapper[] => {
     const filters: SQLWrapper[] = [];
 
-    if (query.email_partial || query.phone_partial || query.document_partial) {
-      const conditions: (SQLWrapper | undefined)[] = [
-        query.email_partial
-          ? ilike(user.email_partial, `%${query.email_partial}%`)
-          : undefined,
-        query.phone_partial
-          ? inArray(
-              user.user_id,
-              this.db
-                .select({ user_id: userInfo.user_id })
-                .from(userInfo)
-                .where(
-                  ilike(userInfo.phone_partial, `%${query.phone_partial}%`)
-                )
-            )
-          : undefined,
-        query.document_partial
-          ? inArray(
-              user.user_id,
-              this.db
-                .select({ user_id: userDocument.user_id })
-                .from(userDocument)
-                .where(
-                  ilike(
-                    userDocument.document_partial,
-                    `%${query.document_partial}%`
-                  )
-                )
-            )
-          : undefined,
-      ];
+    if (!query.search) {
+      return filters;
+    }
 
-      const combined = or(...conditions);
+    const searchTerm = query.search.trim();
+    if (searchTerm.length === 0) {
+      return filters;
+    }
 
+    const conditions: (SQLWrapper | undefined)[] = [
+      ilike(user.email_partial, `%${searchTerm}%`),
+      inArray(
+        user.user_id,
+        this.db
+          .select({ user_id: userInfo.user_id })
+          .from(userInfo)
+          .where(ilike(userInfo.phone_partial, `%${searchTerm}%`))
+      ),
+      inArray(
+        user.user_id,
+        this.db
+          .select({ user_id: userDocument.user_id })
+          .from(userDocument)
+          .where(ilike(userDocument.document_partial, `%${searchTerm}%`))
+      ),
+    ];
+
+    const validConditions = conditions.filter(
+      (condition): condition is SQLWrapper => Boolean(condition)
+    );
+
+    if (validConditions.length) {
+      const combined = or(...validConditions);
       if (combined) filters.push(combined);
     }
 

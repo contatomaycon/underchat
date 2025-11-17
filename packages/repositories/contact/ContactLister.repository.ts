@@ -50,38 +50,49 @@ export class ContactListerRepository {
   private readonly setFilters = (query: ListContactRequest): SQLWrapper[] => {
     const filters: SQLWrapper[] = [];
 
-    if (
-      query.name ||
-      query.email ||
-      query.phone ||
-      query.label_template ||
-      query.nickname
-    ) {
-      const conditions: (SQLWrapper | undefined)[] = [
-        query.name ? ilike(contact.name, `%${query.name}%`) : undefined,
-        query.email
-          ? ilike(contact.email_partial, `%${query.email}%`)
-          : undefined,
-        query.phone
-          ? ilike(contact.phone_partial, `%${query.phone}%`)
-          : undefined,
-        query.nickname
-          ? ilike(contact.nickname, `%${query.nickname}%`)
-          : undefined,
-        query.label_template
-          ? inArray(
-              labelTemplate.label_template_id,
-              this.db
-                .select({ label_template_id: labelTemplate.label_template_id })
-                .from(labelTemplate)
-                .where(ilike(labelTemplate.label, `%${query.label_template}%`))
-            )
-          : undefined,
-      ];
+    if (!query.search) {
+      return filters;
+    }
 
-      const combined = or(...conditions);
+    const searchTerm = query.search.trim();
+    if (searchTerm.length === 0) {
+      return filters;
+    }
 
-      if (combined) filters.push(combined);
+    const searchTermLength = searchTerm.length;
+    const minSearchLength = 3;
+
+    const rawConditions: Array<SQLWrapper | undefined> = [
+      searchTermLength >= minSearchLength
+        ? ilike(contact.name, `%${searchTerm}%`)
+        : undefined,
+      searchTermLength >= minSearchLength
+        ? ilike(contact.nickname, `%${searchTerm}%`)
+        : undefined,
+      searchTermLength >= minSearchLength
+        ? ilike(contact.email_partial, `%${searchTerm}%`)
+        : undefined,
+      searchTermLength >= minSearchLength
+        ? ilike(contact.phone_partial, `%${searchTerm}%`)
+        : undefined,
+      searchTermLength >= minSearchLength
+        ? inArray(
+            labelTemplate.label_template_id,
+            this.db
+              .select({ label_template_id: labelTemplate.label_template_id })
+              .from(labelTemplate)
+              .where(ilike(labelTemplate.label, `%${searchTerm}%`))
+          )
+        : undefined,
+    ];
+
+    const conditions = rawConditions.filter(
+      (condition): condition is SQLWrapper => Boolean(condition)
+    );
+
+    if (conditions.length) {
+      const combinedFilter = or(...conditions) as SQLWrapper;
+      filters.push(combinedFilter);
     }
 
     return filters;
@@ -99,6 +110,12 @@ export class ContactListerRepository {
     const accountCondition = isAdministrator
       ? undefined
       : eq(contact.account_id, accountId);
+
+    const whereConditions = [
+      accountCondition,
+      isNull(contact.deleted_at),
+      ...filters,
+    ].filter((condition): condition is SQLWrapper => Boolean(condition));
 
     const queryBuilder = this.db
       .select({
@@ -130,7 +147,7 @@ export class ContactListerRepository {
         labelTemplate,
         eq(contact.label_template_id, labelTemplate.label_template_id)
       )
-      .where(and(accountCondition, isNull(contact.deleted_at), ...filters));
+      .where(and(...whereConditions));
 
     if (orders.length) {
       queryBuilder.orderBy(...orders);
@@ -180,6 +197,12 @@ export class ContactListerRepository {
       ? undefined
       : eq(contact.account_id, accountId);
 
+    const whereConditions = [
+      accountCondition,
+      isNull(contact.deleted_at),
+      ...filters,
+    ].filter((condition): condition is SQLWrapper => Boolean(condition));
+
     const result = await this.db
       .select({
         count: count(),
@@ -190,7 +213,7 @@ export class ContactListerRepository {
         labelTemplate,
         eq(contact.label_template_id, labelTemplate.label_template_id)
       )
-      .where(and(accountCondition, isNull(contact.deleted_at), ...filters))
+      .where(and(...whereConditions))
       .execute();
 
     return result[0]?.count ?? 0;
