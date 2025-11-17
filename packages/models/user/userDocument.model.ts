@@ -12,6 +12,7 @@ export const userDocument = pgTable('user_document', {
     .notNull(),
   document: varchar({ length: 500 }).notNull(),
   document_partial: varchar({ length: 50 }).notNull(),
+  document_c: varchar({ length: 500 }).notNull(),
   created_at: timestamp({
     mode: 'string',
     withTimezone: true,

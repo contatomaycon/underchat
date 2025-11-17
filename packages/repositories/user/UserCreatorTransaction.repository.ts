@@ -13,6 +13,7 @@ import { ICreateUserDocument } from '@core/common/interfaces/ICreateUserDocument
 import { UserDocumentCreatorRepository } from './UserDocumentCreator.repository';
 import { ICreateUserInfo } from '@core/common/interfaces/ICreateUserInfo';
 import { UserInfoCreatorRepository } from './UserInfoCreator.repository';
+import { UserExistsByEmailAndPhoneRepository } from './UserExistsByEmailAndPhone.repository';
 import moment from 'moment';
 
 @injectable()
@@ -23,7 +24,8 @@ export class UserTransactionCreatorRepository {
     private readonly userCreatorRepository: UserCreatorRepository,
     private readonly userAddressCreatorRepository: UserAddressCreatorRepository,
     private readonly userDocumentCreatorRepository: UserDocumentCreatorRepository,
-    private readonly userInfoCreatorRepository: UserInfoCreatorRepository
+    private readonly userInfoCreatorRepository: UserInfoCreatorRepository,
+    private readonly userExistsByEmailAndPhoneRepository: UserExistsByEmailAndPhoneRepository
   ) {}
 
   private validateBirthDate(
@@ -60,12 +62,29 @@ export class UserTransactionCreatorRepository {
         input.email,
         ETypeSanetize.email
       );
+      const emailC = this.encryptService.encrypt(input.email);
       const passwordEncrypted = this.encryptService.encrypt(input.password);
+
+      const phoneC = input.user_info?.phone
+        ? this.encryptService.encrypt(input.user_info.phone)
+        : null;
+
+      const [emailExists, phoneExists] = await Promise.all([
+        this.userExistsByEmailAndPhoneRepository.existsUserByEmail(emailC),
+        phoneC
+          ? this.userExistsByEmailAndPhoneRepository.existsUserByPhone(phoneC)
+          : Promise.resolve(false),
+      ]);
+
+      if (emailExists || phoneExists) {
+        throw new Error(t('user_already_exists'));
+      }
 
       const createUserInput: ICreateUser = {
         account_id: accountId,
         email: emailCEncrypted,
         email_partial: emailPartialEncrypted,
+        email_c: emailC,
         password: passwordEncrypted,
       };
 
@@ -85,6 +104,9 @@ export class UserTransactionCreatorRepository {
         input.user_address?.address1,
         ETypeSanetize.other
       );
+      const address1C = this.encryptService.encrypt(
+        input.user_address?.address1
+      );
 
       const address2Encrypted = input.user_address?.address2
         ? this.encryptService.encrypt(input.user_address?.address2)
@@ -95,14 +117,19 @@ export class UserTransactionCreatorRepository {
             ETypeSanetize.other
           )
         : null;
+      const address2C = input.user_address?.address2
+        ? this.encryptService.encrypt(input.user_address?.address2)
+        : null;
 
       const createUserAddress: ICreateUserAddress = {
         country_id: input.user_address?.country_id,
         zip_code: input.user_address?.zip_code,
         address1: addressEncrypted,
         address1_partial: addressPartialEncrypted,
+        address1_c: address1C,
         address2: address2Encrypted,
         address2_partial: address2PartialEncrypted,
+        address2_c: address2C,
         city: input.user_address?.city,
         state: input.user_address?.state,
         district: input.user_address?.district,
@@ -115,11 +142,15 @@ export class UserTransactionCreatorRepository {
         input.user_document?.document,
         ETypeSanetize.document
       );
+      const documentC = this.encryptService.encrypt(
+        input.user_document?.document
+      );
 
       const createUserDocument: ICreateUserDocument = {
         user_document_type_id: input.user_document?.user_document_type_id,
         document: documentEncrypted,
         document_partial: documentPartialEncrypted,
+        document_c: documentC,
       };
 
       const phoneEncrypted = this.encryptService.encrypt(
@@ -139,6 +170,7 @@ export class UserTransactionCreatorRepository {
         phone_ddi: input.user_info?.phone_ddi,
         phone: phoneEncrypted,
         phone_partial: phonePartialEncrypted,
+        phone_c: phoneC!,
         name: input.user_info?.name,
         last_name: input.user_info?.last_name,
         birth_date: birthDate ?? null,

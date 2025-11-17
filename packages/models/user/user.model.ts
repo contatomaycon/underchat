@@ -20,6 +20,7 @@ export const user = pgTable('user', {
     .notNull(),
   email: varchar({ length: 500 }).notNull(),
   email_partial: varchar({ length: 25 }).notNull(),
+  email_c: varchar({ length: 500 }).notNull(),
   password: varchar({ length: 255 }).notNull(),
   created_at: timestamp({
     mode: 'string',

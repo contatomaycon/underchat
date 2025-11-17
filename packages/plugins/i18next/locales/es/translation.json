@@ -106,6 +106,7 @@
   "user_creator_error": "Error al crear el usuario",
   "user_status_not_found": "!Status de usuario no encontrado!",
   "user_creation_failed": "¡Error al crear el usuario!",
+  "user_already_exists": "¡El usuario ya existe!",
   "document_type_not_found": "¡Tipo de documento no encontrado!",
   "user_update_successfully": "¡Usuario actualizado con éxito!",
   "user_update_error": "Error al actualizar el usuario",

@@ -10,6 +10,7 @@ export const userInfo = pgTable('user_info', {
   phone_ddi: varchar({ length: 5 }).notNull(),
   phone: varchar({ length: 500 }).notNull(),
   phone_partial: varchar({ length: 15 }).notNull(),
+  phone_c: varchar({ length: 500 }).notNull(),
   photo: varchar({ length: 255 }),
   name: varchar({ length: 100 }).notNull(),
   last_name: varchar({ length: 100 }).notNull(),
