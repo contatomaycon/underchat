@@ -27,6 +27,7 @@ type PermissionGroupWithState = Omit<
 const props = defineProps<{
   modelValue: boolean;
   permissionRoleId: string | null;
+  canEdit?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -36,6 +37,8 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const permissionRoleId = toRef(props, 'permissionRoleId');
 const permissionStore = usePermissionStore();
+
+const canEdit = computed(() => props.canEdit ?? true);
 
 const isVisible = computed({
   get: () => props.modelValue,
@@ -51,12 +54,8 @@ const fullAccessGroup = computed(() =>
   )
 );
 
-const fullAccessGroupDefined = computed((): PermissionGroupWithState => {
-  const group = fullAccessGroup.value;
-  if (!group) {
-    throw new Error('fullAccessGroup is not defined');
-  }
-  return group;
+const fullAccessGroupDefined = computed((): PermissionGroupWithState | null => {
+  return fullAccessGroup.value ?? null;
 });
 
 const otherGroups = computed(() =>
@@ -334,50 +333,50 @@ watch(
             <div class="d-flex flex-column gap-4">
               <template v-if="fullAccessGroupDefined">
                 <div
-                  :key="fullAccessGroupDefined.permission_action_group_id"
+                  :key="fullAccessGroupDefined!.permission_action_group_id"
                   class="permission-group-full-access pa-4 rounded border"
                 >
                   <VCheckbox
-                    :model-value="fullAccessGroupDefined.selected"
-                    :label="fullAccessGroupDefined.name"
-                    :disabled="fullAccessGroupDefined.disabled"
+                    :model-value="fullAccessGroupDefined!.selected"
+                    :label="fullAccessGroupDefined!.name"
+                    :disabled="!canEdit || fullAccessGroupDefined!.disabled"
                     hide-details
                     density="compact"
                     class="font-weight-medium"
                     @update:model-value="
                       (value) =>
-                        toggleGroup(fullAccessGroupDefined, Boolean(value))
+                        toggleGroup(fullAccessGroupDefined!, Boolean(value))
                     "
                   />
 
                   <p
-                    v-if="fullAccessGroupDefined.description"
+                    v-if="fullAccessGroupDefined!.description"
                     class="text-body-2 text-medium-emphasis ms-8 mb-2"
                   >
-                    {{ fullAccessGroupDefined.description }}
+                    {{ fullAccessGroupDefined!.description }}
                   </p>
 
                   <VDivider
-                    v-if="fullAccessGroupDefined.permissions.length"
+                    v-if="fullAccessGroupDefined!.permissions.length"
                     class="my-3"
                   />
 
                   <div
-                    v-if="fullAccessGroupDefined.permissions.length"
+                    v-if="fullAccessGroupDefined!.permissions.length"
                     class="d-flex flex-column gap-2 ms-4"
                   >
                     <VCheckbox
-                      v-for="permission in fullAccessGroupDefined.permissions"
+                      v-for="permission in fullAccessGroupDefined!.permissions"
                       :key="permission.permission_action_id"
                       :model-value="permission.selected"
                       :label="permission.name"
-                      :disabled="permission.disabled"
+                      :disabled="!canEdit || permission.disabled"
                       hide-details
                       density="compact"
                       @update:model-value="
                         (value) =>
                           togglePermission(
-                            fullAccessGroupDefined,
+                            fullAccessGroupDefined!,
                             permission,
                             Boolean(value)
                           )
@@ -385,7 +384,7 @@ watch(
                     />
                   </div>
 
-                  <template v-if="!fullAccessGroupDefined.permissions.length">
+                  <template v-if="!fullAccessGroupDefined!.permissions.length">
                     <p class="text-body-2 text-medium-emphasis ms-1 mt-2">
                       {{ $t('permission_group_only_parent') }}
                     </p>
@@ -403,7 +402,7 @@ watch(
                 <VCheckbox
                   :model-value="group.selected"
                   :label="group.name"
-                  :disabled="group.disabled"
+                  :disabled="!canEdit || group.disabled"
                   hide-details
                   density="compact"
                   @update:model-value="
@@ -429,7 +428,7 @@ watch(
                     :key="permission.permission_action_id"
                     :model-value="permission.selected"
                     :label="permission.name"
-                    :disabled="permission.disabled"
+                    :disabled="!canEdit || permission.disabled"
                     hide-details
                     density="compact"
                     @update:model-value="
@@ -455,7 +454,7 @@ watch(
           {{ $t('close') }}
         </VBtn>
         <VBtn
-          v-if="permissionRoleId"
+          v-if="permissionRoleId && canEdit"
           color="primary"
           :loading="permissionStore.loading"
           @click="handleSave"

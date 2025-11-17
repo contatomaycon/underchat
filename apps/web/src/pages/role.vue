@@ -12,6 +12,7 @@ import { ERolePermissions } from '@core/common/enums/EPermissions/role';
 import { EPermissionPermissions } from '@core/common/enums/EPermissions/permission';
 import { useRolesStore } from '@/@webcore/stores/role';
 import { usePermissionStore } from '@/@webcore/stores/permission';
+import { can } from '@/@layouts/plugins/casl';
 
 definePage({
   meta: {
@@ -33,7 +34,6 @@ const permissionsEdit = [
   ERolePermissions.role_group,
   ERolePermissions.role_edit,
 ];
-
 const permissionsDelete = [
   EGeneralPermissions.full_access,
   EGeneralPermissions.full_access_group,
@@ -51,6 +51,12 @@ const permissionsEditPermissions = [
   EGeneralPermissions.full_access_group,
   EPermissionPermissions.permission_group,
   EPermissionPermissions.permission_edit,
+];
+const permissionsViewPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  ERolePermissions.role_group,
+  ERolePermissions.role_view,
 ];
 
 const { t } = useI18n();
@@ -156,6 +162,10 @@ watch(
   },
   { immediate: true, deep: true }
 );
+
+onMounted(() => {
+  console.log('permissionsEdit', can(permissionsEdit));
+});
 </script>
 
 <template>
@@ -233,8 +243,8 @@ watch(
           <div class="d-flex gap-1">
             <IconBtn
               v-if="
-                $canPermission(permissionsEditPermissions) &&
-                (item.account?.id || isAdministrator) &&
+                ($canPermission(permissionsViewPermissions) ||
+                  $canPermission(permissionsEditPermissions)) &&
                 item.permission_role_id !== currentPermissionRoleId
               "
               ><VTooltip
@@ -248,11 +258,7 @@ watch(
                 @click="openPermissionDialog(item.permission_role_id)"
             /></IconBtn>
 
-            <IconBtn
-              v-if="
-                $canPermission(permissionsEdit) &&
-                (item.account?.id || isAdministrator)
-              "
+            <IconBtn v-if="$canPermission(permissionsEdit)"
               ><VTooltip
                 location="top"
                 transition="scale-transition"
@@ -264,11 +270,7 @@ watch(
                 @click="openEditDialog(item.permission_role_id)"
             /></IconBtn>
 
-            <IconBtn
-              v-if="
-                $canPermission(permissionsDelete) &&
-                (item.account?.id || isAdministrator)
-              "
+            <IconBtn v-if="$canPermission(permissionsDelete)"
               ><VTooltip
                 location="top"
                 transition="scale-transition"
@@ -315,6 +317,7 @@ watch(
         v-if="isRolePermissionsDialogVisible"
         v-model="isRolePermissionsDialogVisible"
         :permission-role-id="rolePermissionsId"
+        :can-edit="$canPermission(permissionsEditPermissions)"
       />
     </VCard>
 

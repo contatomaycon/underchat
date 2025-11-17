@@ -4,14 +4,13 @@ import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { useAbility } from '@/plugins/casl/composables/useAbility';
 
 export const can = (permissions?: EPermissionsRoles[]): boolean => {
-  if (!permissions?.length) {
-    return false;
-  }
-
+  if (!permissions?.length) return false;
   const ability = useAbility();
 
   for (const perm of permissions) {
-    if (ability.can(perm, perm)) return true;
+    const can = ability.can(perm, perm);
+
+    if (can) return true;
   }
 
   return false;
