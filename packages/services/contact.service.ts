@@ -18,6 +18,7 @@ import { ContactCreatorTransactionRepository } from '@core/repositories/contact/
 import { TFunction } from 'i18next';
 import { PasswordEncryptorService } from './passwordEncryptor.service';
 import { ContactSensitiveDataRepository } from '@core/repositories/contact/ContactSensitiveData.repository';
+import { ContactExistsByEmailAndPhoneRepository } from '@core/repositories/contact/ContactExistsByEmailAndPhone.repository';
 
 @injectable()
 export class ContactService {
@@ -31,7 +32,8 @@ export class ContactService {
     private readonly contactUpdaterRepository: ContactUpdaterRepository,
     private readonly contactCreatorTransactionRepository: ContactCreatorTransactionRepository,
     private readonly passwordEncryptorService: PasswordEncryptorService,
-    private readonly contactSensitiveDataRepository: ContactSensitiveDataRepository
+    private readonly contactSensitiveDataRepository: ContactSensitiveDataRepository,
+    private readonly contactExistsByEmailAndPhoneRepository: ContactExistsByEmailAndPhoneRepository
   ) {}
 
   listContacts = async (
@@ -75,6 +77,10 @@ export class ContactService {
       ? this.encryptService.sanitize(input.email, ETypeSanetize.email)
       : null;
 
+    const emailC = input.email
+      ? this.encryptService.encrypt(input.email)
+      : null;
+
     const phoneCEncrypted = input.phone
       ? this.passwordEncryptorService.encrypt(input.phone)
       : null;
@@ -83,6 +89,20 @@ export class ContactService {
       ? this.encryptService.sanitize(input.phone, ETypeSanetize.phone)
       : null;
 
+    const phoneC = input.phone
+      ? this.encryptService.encrypt(input.phone)
+      : null;
+
+    const exists =
+      await this.contactExistsByEmailAndPhoneRepository.existsContactByEmailAndPhone(
+        emailC,
+        phoneC
+      );
+
+    if (exists) {
+      return null;
+    }
+
     const payload: ICreateContact = {
       account_id: accountId,
       label_template_id: input.label_template_id,
@@ -90,9 +110,11 @@ export class ContactService {
       last_name: input.last_name,
       email: emailCEncrypted,
       email_partial: emailPartialEncrypted,
+      email_c: emailC,
       phone_ddi: input.phone_ddi,
       phone: phoneCEncrypted,
       phone_partial: phonePartialEncrypted,
+      phone_c: phoneC,
       nickname: input.nickname,
       birthday: input.birthday,
       notes: input.notes,
@@ -123,6 +145,10 @@ export class ContactService {
       ? this.encryptService.sanitize(input.email, ETypeSanetize.email)
       : null;
 
+    const emailC = input.email
+      ? this.encryptService.encrypt(input.email)
+      : null;
+
     const phoneCEncrypted = input.phone
       ? this.passwordEncryptorService.encrypt(input.phone)
       : null;
@@ -131,15 +157,34 @@ export class ContactService {
       ? this.encryptService.sanitize(input.phone, ETypeSanetize.phone)
       : null;
 
+    const phoneC = input.phone
+      ? this.encryptService.encrypt(input.phone)
+      : null;
+
+    if (emailC || phoneC) {
+      const exists =
+        await this.contactExistsByEmailAndPhoneRepository.existsContactByEmailAndPhone(
+          emailC,
+          phoneC,
+          contactId
+        );
+
+      if (exists) {
+        return null;
+      }
+    }
+
     const payload: IUpdateContact = {
       label_template_id: input.label_template_id,
       name: input.name,
       last_name: input.last_name,
       email: emailCEncrypted,
       email_partial: emailPartialEncrypted,
+      email_c: emailC,
       phone_ddi: input.phone_ddi,
       phone: phoneCEncrypted,
       phone_partial: phonePartialEncrypted,
+      phone_c: phoneC,
       nickname: input.nickname,
       birthday: input.birthday,
       notes: input.notes,
@@ -162,6 +207,10 @@ export class ContactService {
       ? this.encryptService.sanitize(input.email, ETypeSanetize.email)
       : null;
 
+    const emailC = input.email
+      ? this.encryptService.encrypt(input.email)
+      : null;
+
     const phoneCEncrypted = input.phone
       ? this.passwordEncryptorService.encrypt(input.phone)
       : null;
@@ -170,6 +219,20 @@ export class ContactService {
       ? this.encryptService.sanitize(input.phone, ETypeSanetize.phone)
       : null;
 
+    const phoneC = input.phone
+      ? this.encryptService.encrypt(input.phone)
+      : null;
+
+    const exists =
+      await this.contactExistsByEmailAndPhoneRepository.existsContactByEmailAndPhone(
+        emailC,
+        phoneC
+      );
+
+    if (exists) {
+      return null;
+    }
+
     const payload: ICreateContact = {
       account_id: accountId,
       label_template_id: input.label_template_id,
@@ -177,9 +240,11 @@ export class ContactService {
       last_name: input.last_name,
       email: emailCEncrypted,
       email_partial: emailPartialEncrypted,
+      email_c: emailC,
       phone_ddi: input.phone_ddi ?? '55',
       phone: phoneCEncrypted,
       phone_partial: phonePartialEncrypted,
+      phone_c: phoneC,
       nickname: input.nickname,
       birthday: input.birthday,
       notes: input.notes,
