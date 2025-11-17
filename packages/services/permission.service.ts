@@ -8,6 +8,8 @@ import { CreateSectorRoleRequest } from '@core/schema/sector/createSectorRole/re
 import { PermissionGroupsListerRepository } from '@core/repositories/permission/PermissionGroupsLister.repository';
 import { ListPermissionGroupsResponse } from '@core/schema/permission/listPermissionGroups/response.schema';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
+import { RolePermissionsUpdaterRepository } from '@core/repositories/permission/RolePermissionsUpdater.repository';
+import { PermissionGroupRequest } from '@core/schema/permission/updateRolePermissions/request.schema';
 
 @injectable()
 export class PermissionService {
@@ -16,7 +18,8 @@ export class PermissionService {
     private readonly permissionRoleViewerExistsRepository: PermissionRoleViewerExistsRepository,
     private readonly permissionRoleAccountListerRepository: PermissionRoleAccountListerRepository,
     private readonly permissionRoleCountSectorViewerRepository: PermissionRoleCountSectorViewerRepository,
-    private readonly permissionGroupsListerRepository: PermissionGroupsListerRepository
+    private readonly permissionGroupsListerRepository: PermissionGroupsListerRepository,
+    private readonly rolePermissionsUpdaterRepository: RolePermissionsUpdaterRepository
   ) {}
 
   viewPermissionByUserId = async (userId: string): Promise<string[]> => {
@@ -65,6 +68,16 @@ export class PermissionService {
     return this.permissionGroupsListerRepository.listPermissionGroupsByPermissionRoleId(
       permissionRoleId,
       moduleName
+    );
+  };
+
+  updateRolePermissions = async (
+    permissionRoleId: string,
+    groups: PermissionGroupRequest[]
+  ): Promise<void> => {
+    return this.rolePermissionsUpdaterRepository.updateRolePermissions(
+      permissionRoleId,
+      groups
     );
   };
 }

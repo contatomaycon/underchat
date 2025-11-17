@@ -14,6 +14,8 @@
     "permission_groups_load_error": "An error occurred while loading the permissions. Please try again.",
     "permission_groups_empty": "No permissions available to display.",
     "permission_group_only_parent": "Only the full group permission is available.",
+    "permission_groups_update_error": "An error occurred while updating role permissions. Please try again.",
+    "role_permissions_updated_successfully": "Role permissions updated successfully!",
     "home": "Home",
     "server": "Server",
     "name": "Name",

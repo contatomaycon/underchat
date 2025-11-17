@@ -3,21 +3,25 @@ import { EMessageTemplatePermissions } from '@core/common/enums/EPermissions/mes
 
 export const messageTemplateViewPermissions = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
   EMessageTemplatePermissions.message_template_group,
   EMessageTemplatePermissions.message_view,
 ];
 export const messageTemplateDeletePermissions = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
   EMessageTemplatePermissions.message_template_group,
   EMessageTemplatePermissions.message_delete,
 ];
 export const messageTemplateUpdatePermissions = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
   EMessageTemplatePermissions.message_template_group,
   EMessageTemplatePermissions.message_update,
 ];
 export const messageTemplateCreatePermissions = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
   EMessageTemplatePermissions.message_template_group,
   EMessageTemplatePermissions.message_create,
 ];

@@ -9,7 +9,9 @@ import { getAdministrator, getUser } from '@/@webcore/localStorage/user';
 import { DataTableHeader } from 'vuetify';
 import { ListRoleResponse } from '@core/schema/role/listRole/response.schema';
 import { ERolePermissions } from '@core/common/enums/EPermissions/role';
+import { EPermissionPermissions } from '@core/common/enums/EPermissions/permission';
 import { useRolesStore } from '@/@webcore/stores/role';
+import { usePermissionStore } from '@/@webcore/stores/permission';
 
 definePage({
   meta: {
@@ -43,9 +45,16 @@ const permissionsCreate = [
   ERolePermissions.role_group,
   ERolePermissions.role_create,
 ];
+const permissionsEditPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EPermissionPermissions.permission_group,
+  EPermissionPermissions.permission_edit,
+];
 
 const { t } = useI18n();
 const roleStore = useRolesStore();
+const permissionStore = usePermissionStore();
 const isAdministrator = getAdministrator();
 const currentPermissionRoleId = getUser()?.type.user_type_id ?? null;
 
@@ -223,7 +232,7 @@ watch(
           <div class="d-flex gap-1">
             <IconBtn
               v-if="
-                $canPermission(permissionsEdit) &&
+                $canPermission(permissionsEditPermissions) &&
                 (item.account?.id || isAdministrator) &&
                 item.permission_role_id !== currentPermissionRoleId
               "
@@ -315,6 +324,15 @@ watch(
       :color="roleStore.snackbar.color"
     >
       {{ roleStore.snackbar.message }}
+    </VSnackbar>
+
+    <VSnackbar
+      v-model="permissionStore.snackbar.status"
+      transition="scroll-y-reverse-transition"
+      location="top end"
+      :color="permissionStore.snackbar.color"
+    >
+      {{ permissionStore.snackbar.message }}
     </VSnackbar>
   </div>
 </template>

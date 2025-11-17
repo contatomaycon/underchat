@@ -6,6 +6,8 @@ import { ISnackbar } from '@core/common/interfaces/ISnackbar';
 import { EColor } from '@core/common/enums/EColor';
 import { getI18n } from '@/plugins/i18n';
 import { AxiosError } from 'axios';
+import { PermissionGroupRequest } from '@core/schema/permission/updateRolePermissions/request.schema';
+import { UpdateRolePermissionsResponse } from '@core/schema/permission/updateRolePermissions/response.schema';
 
 export const usePermissionStore = defineStore('permission', {
   state: () => ({
@@ -14,6 +16,7 @@ export const usePermissionStore = defineStore('permission', {
       message: '',
       status: false,
     } as ISnackbar,
+    loading: false,
     i18n: getI18n(),
   }),
   actions: {
@@ -76,6 +79,52 @@ export const usePermissionStore = defineStore('permission', {
         return data.data;
       } catch (error) {
         let errorMessage = this.i18n.global.t('permission_groups_load_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+    async updateRolePermissions(
+      permissionRoleId: string,
+      groups: PermissionGroupRequest[]
+    ): Promise<UpdateRolePermissionsResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.put<
+          IApiResponse<UpdateRolePermissionsResponse>
+        >(`/permission/groups/user/${permissionRoleId}`, {
+          groups,
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('permission_groups_update_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('role_permissions_updated_successfully'),
+          EColor.success
+        );
+
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+
+        let errorMessage = this.i18n.global.t('permission_groups_update_error');
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }

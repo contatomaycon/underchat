@@ -3,36 +3,42 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 
 export const serverCreatePermissions = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
   EServerPermissions.server_group,
   EServerPermissions.server_create,
 ];
 
 export const serverDeletePermissions = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
   EServerPermissions.server_group,
   EServerPermissions.server_delete,
 ];
 
 export const serverEditPermissions = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
   EServerPermissions.server_group,
   EServerPermissions.server_edit,
 ];
 
 export const serverViewPermissions = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
   EServerPermissions.server_group,
   EServerPermissions.server_view,
 ];
 
 export const serverLogsInstallPermissions = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
   EServerPermissions.server_group,
   EServerPermissions.server_logs_install,
 ];
 
 export const serverReinstallPermissions = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
   EServerPermissions.server_group,
   EServerPermissions.server_reinstall,
 ];

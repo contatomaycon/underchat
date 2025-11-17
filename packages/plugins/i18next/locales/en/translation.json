@@ -243,5 +243,8 @@
   "worker_recreate_error": "Error recreating channel!",
   "permission_groups_list_successfully": "Permission groups list retrieved successfully!",
   "cannot_edit_own_role": "Cannot edit your own role!",
-  "cannot_delete_own_role": "Cannot delete your own role!"
+  "cannot_delete_own_role": "Cannot delete your own role!",
+  "role_permissions_updated_successfully": "Role permissions updated successfully!",
+  "permission_groups_load_error": "Error loading permission groups!",
+  "permission_groups_update_error": "Error updating role permissions!"
 }

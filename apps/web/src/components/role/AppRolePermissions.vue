@@ -8,6 +8,7 @@ import {
   PermissionActionResponse,
 } from '@core/schema/permission/listPermissionGroups/response.schema';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { PermissionGroupRequest } from '@core/schema/permission/updateRolePermissions/request.schema';
 
 type PermissionActionWithState = PermissionActionResponse & {
   selected: boolean;
@@ -248,6 +249,36 @@ const resetState = () => {
   groups.value = [];
 };
 
+const prepareGroupsForSave = (): PermissionGroupRequest[] => {
+  return groups.value.map((group) => ({
+    permission_action_group_id: group.permission_action_group_id,
+    action: group.action,
+    selected: group.selected,
+    permissions: group.permissions.map((permission) => ({
+      permission_action_id: permission.permission_action_id,
+      action: permission.action,
+      selected: permission.selected,
+    })),
+  }));
+};
+
+const handleSave = async () => {
+  if (!permissionRoleId.value) {
+    return;
+  }
+
+  const groupsToSave = prepareGroupsForSave();
+
+  const result = await permissionStore.updateRolePermissions(
+    permissionRoleId.value,
+    groupsToSave
+  );
+
+  if (result) {
+    isVisible.value = false;
+  }
+};
+
 watch(
   () => isVisible.value,
   async (visible) => {
@@ -422,6 +453,14 @@ watch(
       <VCardText class="d-flex justify-end gap-3">
         <VBtn variant="tonal" color="secondary" @click="isVisible = false">
           {{ $t('close') }}
+        </VBtn>
+        <VBtn
+          v-if="permissionRoleId"
+          color="primary"
+          :loading="permissionStore.loading"
+          @click="handleSave"
+        >
+          {{ $t('save') }}
         </VBtn>
       </VCardText>
     </VCard>
