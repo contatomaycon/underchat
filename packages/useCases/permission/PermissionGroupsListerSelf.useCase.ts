@@ -7,9 +7,11 @@ import { ERouteModule } from '@core/common/enums/ERouteModule';
 export class PermissionGroupsListerSelfUseCase {
   constructor(private readonly permissionService: PermissionService) {}
 
-  async execute(userId: string): Promise<ListPermissionGroupsResponse> {
-    return this.permissionService.listPermissionGroupsByUserId(
-      userId,
+  async execute(
+    permissionRoleId: string
+  ): Promise<ListPermissionGroupsResponse> {
+    return this.permissionService.listPermissionGroupsByPermissionRoleId(
+      permissionRoleId,
       ERouteModule.manager
     );
   }

@@ -30,11 +30,13 @@ export class PermissionService {
 
   existsPermissionRoleById = async (
     accountId: string,
-    permissionRoleId: string
+    permissionRoleId: string,
+    isAdministrator: boolean
   ): Promise<boolean> => {
     return this.permissionRoleViewerExistsRepository.existsPermissionRoleById(
       accountId,
-      permissionRoleId
+      permissionRoleId,
+      isAdministrator
     );
   };
 
@@ -56,12 +58,12 @@ export class PermissionService {
     );
   };
 
-  listPermissionGroupsByUserId = async (
-    userId: string,
+  listPermissionGroupsByPermissionRoleId = async (
+    permissionRoleId: string,
     moduleName: ERouteModule
   ): Promise<ListPermissionGroupsResponse> => {
-    return this.permissionGroupsListerRepository.listPermissionGroupsByUserId(
-      userId,
+    return this.permissionGroupsListerRepository.listPermissionGroupsByPermissionRoleId(
+      permissionRoleId,
       moduleName
     );
   };

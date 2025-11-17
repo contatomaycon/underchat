@@ -20,7 +20,7 @@ export const listPermissionGroupsUser = async (
     const response = await permissionGroupsListerUseCase.execute(
       t,
       tokenJwtData.account_id,
-      request.params.user_id,
+      request.params.permission_role_id,
       tokenJwtData.is_administrator
     );
 

@@ -3,33 +3,30 @@ import { TFunction } from 'i18next';
 import { PermissionService } from '@core/services/permission.service';
 import { ListPermissionGroupsResponse } from '@core/schema/permission/listPermissionGroups/response.schema';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
-import { UserService } from '@core/services/user.service';
 
 @injectable()
 export class PermissionGroupsListerUserUseCase {
-  constructor(
-    private readonly permissionService: PermissionService,
-    private readonly userService: UserService
-  ) {}
+  constructor(private readonly permissionService: PermissionService) {}
 
   async execute(
     t: TFunction<'translation', undefined>,
     requesterAccountId: string,
-    targetUserId: string,
+    permissionRoleId: string,
     isAdministrator: boolean
   ): Promise<ListPermissionGroupsResponse> {
-    const existsUserById = await this.userService.existsUserById(
-      targetUserId,
-      requesterAccountId,
-      isAdministrator
-    );
+    const existsPermissionRole =
+      await this.permissionService.existsPermissionRoleById(
+        requesterAccountId,
+        permissionRoleId,
+        isAdministrator
+      );
 
-    if (!existsUserById) {
-      throw new Error(t('user_not_found'));
+    if (!existsPermissionRole) {
+      throw new Error(t('permission_role_not_found'));
     }
 
-    return this.permissionService.listPermissionGroupsByUserId(
-      targetUserId,
+    return this.permissionService.listPermissionGroupsByPermissionRoleId(
+      permissionRoleId,
       ERouteModule.manager
     );
   }

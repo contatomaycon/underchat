@@ -2,8 +2,6 @@ import * as schema from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { ListPermissionGroupsResponse } from '@core/schema/permission/listPermissionGroups/response.schema';
-import { EUserStatus } from '@core/common/enums/EUserStatus';
-import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { IPermissionGroupRow } from '@core/common/interfaces/IPermissionGroupRow';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
@@ -14,83 +12,59 @@ export class PermissionGroupsListerRepository {
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  listPermissionGroupsByUserId = async (
-    userId: string,
+  listPermissionGroupsByPermissionRoleId = async (
+    permissionRoleId: string,
     moduleName: ERouteModule
   ): Promise<ListPermissionGroupsResponse> => {
     const query = `
-      WITH UserGroupPermissions AS (
+      WITH RoleGroupPermissions AS (
         SELECT DISTINCT
           pra.permission_action_group_id
-        FROM "permission_assignment" pa
-        JOIN "user" u ON u.user_id = pa.user_id 
-          AND u.user_status_id = '${EUserStatus.active}' 
-          AND u.deleted_at IS NULL
-        JOIN "account" ac ON ac.account_id = u.account_id 
-          AND ac.deleted_at IS NULL 
-          AND ac.account_status_id = '${EAccountStatus.active}'
-        JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id
+        FROM "permission_role" pr
         JOIN "permission_role_action" pra ON pra.permission_role_id = pr.permission_role_id
         JOIN "permission_action_groups" pag ON pag.permission_action_group_id = pra.permission_action_group_id
         JOIN "permission_action" paa ON paa.permission_action_group_id = pag.permission_action_group_id
         JOIN "permission_module" pm ON paa.permission_module_id = pm.module_id
-        WHERE u.user_id = '${userId}' 
+        WHERE pr.permission_role_id = '${permissionRoleId}' 
+          AND pr.deleted_at IS NULL
           AND pra.permission_action_group_id IS NOT NULL
           AND pm.module = '${moduleName}'
       ),
-      UserIndividualPermissions AS (
+      RoleIndividualPermissions AS (
         SELECT DISTINCT
           paa.permission_action_id,
           paa.permission_action_group_id
-        FROM "permission_assignment" pa
-        JOIN "user" u ON u.user_id = pa.user_id 
-          AND u.user_status_id = '${EUserStatus.active}' 
-          AND u.deleted_at IS NULL
-        JOIN "account" ac ON ac.account_id = u.account_id 
-          AND ac.deleted_at IS NULL 
-          AND ac.account_status_id = '${EAccountStatus.active}'
-        JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id
+        FROM "permission_role" pr
         JOIN "permission_role_action" pra ON pra.permission_role_id = pr.permission_role_id
         JOIN "permission_action" paa ON paa.permission_action_id = pra.permission_action_id
         JOIN "permission_module" pm ON paa.permission_module_id = pm.module_id
-        WHERE u.user_id = '${userId}' 
+        WHERE pr.permission_role_id = '${permissionRoleId}' 
+          AND pr.deleted_at IS NULL
           AND pra.permission_action_id IS NOT NULL
           AND pm.module = '${moduleName}'
-          AND paa.permission_action_group_id NOT IN (SELECT permission_action_group_id FROM UserGroupPermissions)
+          AND paa.permission_action_group_id NOT IN (SELECT permission_action_group_id FROM RoleGroupPermissions)
       ),
       HasFullAccess AS (
         SELECT COUNT(*) > 0 AS has_full_access
-        FROM "permission_assignment" pa
-        JOIN "user" u ON u.user_id = pa.user_id 
-          AND u.user_status_id = '${EUserStatus.active}' 
-          AND u.deleted_at IS NULL
-        JOIN "account" ac ON ac.account_id = u.account_id 
-          AND ac.deleted_at IS NULL 
-          AND ac.account_status_id = '${EAccountStatus.active}'
-        JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id
+        FROM "permission_role" pr
         JOIN "permission_role_action" pra ON pra.permission_role_id = pr.permission_role_id
         JOIN "permission_action" paa ON paa.permission_action_id = pra.permission_action_id
         JOIN "permission_module" pm ON paa.permission_module_id = pm.module_id
-        WHERE u.user_id = '${userId}' 
+        WHERE pr.permission_role_id = '${permissionRoleId}' 
+          AND pr.deleted_at IS NULL
           AND pra.permission_action_id IS NOT NULL
           AND pm.module = '${moduleName}'
           AND paa.action = '${EGeneralPermissions.full_access}'
       ),
       HasFullAccessGroup AS (
         SELECT COUNT(*) > 0 AS has_full_access_group
-        FROM "permission_assignment" pa
-        JOIN "user" u ON u.user_id = pa.user_id 
-          AND u.user_status_id = '${EUserStatus.active}' 
-          AND u.deleted_at IS NULL
-        JOIN "account" ac ON ac.account_id = u.account_id 
-          AND ac.deleted_at IS NULL 
-          AND ac.account_status_id = '${EAccountStatus.active}'
-        JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id
+        FROM "permission_role" pr
         JOIN "permission_role_action" pra ON pra.permission_role_id = pr.permission_role_id
         JOIN "permission_action_groups" pag ON pag.permission_action_group_id = pra.permission_action_group_id
         JOIN "permission_action" paa ON paa.permission_action_group_id = pag.permission_action_group_id
         JOIN "permission_module" pm ON paa.permission_module_id = pm.module_id
-        WHERE u.user_id = '${userId}' 
+        WHERE pr.permission_role_id = '${permissionRoleId}' 
+          AND pr.deleted_at IS NULL
           AND pra.permission_action_group_id IS NOT NULL
           AND pm.module = '${moduleName}'
           AND pag.action = 'full_access_group'
@@ -121,8 +95,8 @@ export class PermissionGroupsListerRepository {
         CROSS JOIN HasFullAccessGroup hfag
         WHERE hfa.has_full_access = true
           OR hfag.has_full_access_group = true
-          OR ag.permission_action_group_id IN (SELECT permission_action_group_id FROM UserGroupPermissions)
-          OR ag.permission_action_group_id IN (SELECT permission_action_group_id FROM UserIndividualPermissions)
+          OR ag.permission_action_group_id IN (SELECT permission_action_group_id FROM RoleGroupPermissions)
+          OR ag.permission_action_group_id IN (SELECT permission_action_group_id FROM RoleIndividualPermissions)
       ),
       GroupPermissions AS (
         SELECT 
@@ -162,7 +136,7 @@ export class PermissionGroupsListerRepository {
         FROM FilteredGroups fg
         CROSS JOIN HasFullAccess hfa
         CROSS JOIN HasFullAccessGroup hfag
-        WHERE fg.permission_action_group_id IN (SELECT permission_action_group_id FROM UserGroupPermissions)
+        WHERE fg.permission_action_group_id IN (SELECT permission_action_group_id FROM RoleGroupPermissions)
           AND hfa.has_full_access = false
           AND hfag.has_full_access_group = false
         UNION ALL
@@ -184,11 +158,11 @@ export class PermissionGroupsListerRepository {
         JOIN "permission_module" pm ON paa.permission_module_id = pm.module_id
         CROSS JOIN HasFullAccess hfa
         CROSS JOIN HasFullAccessGroup hfag
-        WHERE fg.permission_action_group_id NOT IN (SELECT permission_action_group_id FROM UserGroupPermissions)
+        WHERE fg.permission_action_group_id NOT IN (SELECT permission_action_group_id FROM RoleGroupPermissions)
           AND pm.module = '${moduleName}'
           AND hfa.has_full_access = false
           AND hfag.has_full_access_group = false
-          AND paa.permission_action_id IN (SELECT permission_action_id FROM UserIndividualPermissions)
+          AND paa.permission_action_id IN (SELECT permission_action_id FROM RoleIndividualPermissions)
       )
       SELECT 
         gp.permission_action_group_id,

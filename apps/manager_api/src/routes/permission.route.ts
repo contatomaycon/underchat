@@ -17,7 +17,7 @@ export default function permissionRoutes(server: FastifyInstance) {
     ],
   });
 
-  server.get('/permission/groups/user/:user_id', {
+  server.get('/permission/groups/user/:permission_role_id', {
     schema: viewPermissionGroupsUserSchema,
     handler: permissionController.listPermissionGroupsUser,
     preHandler: [

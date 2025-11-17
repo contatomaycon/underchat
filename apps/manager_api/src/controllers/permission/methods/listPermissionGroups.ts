@@ -15,7 +15,7 @@ export const listPermissionGroups = async (
 
   try {
     const response = await permissionGroupsListerUseCase.execute(
-      tokenJwtData.user_id
+      tokenJwtData.permission_role_id
     );
 
     return sendResponse(reply, {

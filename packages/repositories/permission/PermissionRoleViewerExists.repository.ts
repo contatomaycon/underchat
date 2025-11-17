@@ -12,8 +12,13 @@ export class PermissionRoleViewerExistsRepository {
 
   existsPermissionRoleById = async (
     accountId: string,
-    permissionRoleId: string
+    permissionRoleId: string,
+    isAdministrator: boolean
   ): Promise<boolean> => {
+    const accountCondition = isAdministrator
+      ? undefined
+      : eq(permissionRole.account_id, accountId);
+
     const result = await this.db
       .select({
         total: count(),
@@ -21,7 +26,7 @@ export class PermissionRoleViewerExistsRepository {
       .from(permissionRole)
       .where(
         and(
-          eq(permissionRole.account_id, accountId),
+          accountCondition,
           eq(permissionRole.permission_role_id, permissionRoleId),
           isNull(permissionRole.deleted_at)
         )
