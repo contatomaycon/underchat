@@ -26,7 +26,7 @@ import { ESortByContactGroup } from '@core/common/enums/ESortByContactGroup';
 import { ListContactGroupResponse } from '@core/schema/contactGroup/listContactGroup/response.schema';
 
 function isDefined(condition: SQLWrapper | undefined): condition is SQLWrapper {
-  return Boolean(condition);
+  return condition !== undefined;
 }
 
 @injectable()

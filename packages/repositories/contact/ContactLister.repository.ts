@@ -22,7 +22,7 @@ import { ListContactResponse } from '@core/schema/contact/listContact/response.s
 import { ESortByContact } from '@core/common/enums/ESortByContact';
 
 function isDefined(condition: SQLWrapper | undefined): condition is SQLWrapper {
-  return Boolean(condition);
+  return condition !== undefined;
 }
 
 @injectable()
