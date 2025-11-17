@@ -327,8 +327,8 @@ const onLocationMapLoad = () => {
 
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
+      // NOSONAR: S5604 - Geolocalização é opcional aqui, apenas para UX, com fallback seguro
       (position) => {
-        // NOSONAR: S5604 - Geolocalização é opcional aqui, apenas para UX, com fallback seguro
         locationPickerLatitude.value = position.coords.latitude;
         locationPickerLongitude.value = position.coords.longitude;
         if (locationMapRef.value?.map) {

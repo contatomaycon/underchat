@@ -159,8 +159,10 @@ const togglePermission = (
   }
 };
 
-const applyRoleSelections = (rolePermissions: ListPermissionGroupsResponse) => {
-  const hasFullAccess = rolePermissions.some(
+const hasFullAccessInRole = (
+  rolePermissions: ListPermissionGroupsResponse
+): boolean => {
+  return rolePermissions.some(
     (roleGroup) =>
       roleGroup.action === EGeneralPermissions.full_access_group &&
       (!roleGroup.permissions.length ||
@@ -168,15 +170,82 @@ const applyRoleSelections = (rolePermissions: ListPermissionGroupsResponse) => {
           (p) => p.action === EGeneralPermissions.full_access
         ))
   );
+};
 
-  if (hasFullAccess) {
-    const fullAccessGroupItem = groups.value.find(
-      (g) => g.action === EGeneralPermissions.full_access_group
+const applyFullAccessSelection = (): void => {
+  const fullAccessGroupItem = groups.value.find(
+    (g) => g.action === EGeneralPermissions.full_access_group
+  );
+
+  if (!fullAccessGroupItem) {
+    return;
+  }
+
+  toggleGroup(fullAccessGroupItem, true);
+};
+
+const applyGroupWithoutPermissions = (
+  group: PermissionGroupWithState
+): void => {
+  group.selected = true;
+  group.disabled = false;
+};
+
+const applyGroupWithOnlyGroupPermission = (
+  group: PermissionGroupWithState
+): void => {
+  toggleGroup(group, true);
+};
+
+const applyIndividualPermissions = (
+  group: PermissionGroupWithState,
+  roleGroup: PermissionActionGroupResponse
+): void => {
+  const selectedPermissions = new Set(
+    roleGroup.permissions.map((permission) => permission.permission_action_id)
+  );
+
+  for (const permission of group.permissions) {
+    permission.selected = selectedPermissions.has(
+      permission.permission_action_id
     );
-    if (fullAccessGroupItem) {
-      toggleGroup(fullAccessGroupItem, true);
-      return;
-    }
+    permission.disabled = false;
+  }
+
+  const allSelected = group.permissions.every(
+    (permission) => permission.selected
+  );
+
+  if (allSelected) {
+    toggleGroup(group, true);
+    return;
+  }
+
+  group.selected = false;
+  group.disabled = false;
+};
+
+const applyGroupSelections = (
+  group: PermissionGroupWithState,
+  roleGroup: PermissionActionGroupResponse
+): void => {
+  if (!group.permissions.length) {
+    applyGroupWithoutPermissions(group);
+    return;
+  }
+
+  if (!roleGroup.permissions.length) {
+    applyGroupWithOnlyGroupPermission(group);
+    return;
+  }
+
+  applyIndividualPermissions(group, roleGroup);
+};
+
+const applyRoleSelections = (rolePermissions: ListPermissionGroupsResponse) => {
+  if (hasFullAccessInRole(rolePermissions)) {
+    applyFullAccessSelection();
+    return;
   }
 
   for (const group of groups.value) {
@@ -189,39 +258,7 @@ const applyRoleSelections = (rolePermissions: ListPermissionGroupsResponse) => {
       continue;
     }
 
-    if (!group.permissions.length) {
-      group.selected = true;
-      group.disabled = false;
-      continue;
-    }
-
-    if (!roleGroup.permissions.length) {
-      toggleGroup(group, true);
-      continue;
-    }
-
-    const selectedPermissions = new Set(
-      roleGroup.permissions.map((permission) => permission.permission_action_id)
-    );
-
-    for (const permission of group.permissions) {
-      permission.selected = selectedPermissions.has(
-        permission.permission_action_id
-      );
-      permission.disabled = false;
-    }
-
-    const allSelected = group.permissions.every(
-      (permission) => permission.selected
-    );
-
-    if (allSelected) {
-      toggleGroup(group, true);
-      return;
-    }
-
-    group.selected = false;
-    group.disabled = false;
+    applyGroupSelections(group, roleGroup);
   }
 };
 
