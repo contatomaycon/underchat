@@ -7,6 +7,7 @@ const router = useRouter();
 const chatStore = useChatStore();
 
 const logout = async () => {
+  chatStore.clearUser();
   const result = removeUserData();
 
   if (result) {

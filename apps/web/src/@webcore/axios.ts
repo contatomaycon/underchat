@@ -42,6 +42,9 @@ axiosAuth.interceptors.response.use(
       !originalRequest._retry
     ) {
       originalRequest._retry = true;
+      const { useChatStore } = await import('@webcore/stores/chat');
+      const chatStore = useChatStore();
+      chatStore.clearUser();
       removeUserData();
       router.push({ name: 'login' });
     }

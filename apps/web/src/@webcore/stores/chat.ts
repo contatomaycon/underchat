@@ -82,6 +82,12 @@ export const useChatStore = defineStore('chat', {
     hideSnackbar() {
       this.snackbar.status = false;
     },
+    updateUser() {
+      this.user = getUser();
+    },
+    clearUser() {
+      this.user = null;
+    },
     initializeLocalMessageState(hash: string) {
       if (!hash) return;
       this.localMessageState[hash] = {
