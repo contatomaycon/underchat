@@ -22,11 +22,17 @@ async function handleApiKeyCache(
   cacheKey: string,
   decoded: { user_id: string },
   routeModule: string,
-  module: ERouteModule
+  module: ERouteModule,
+  permissions?: EPermissionsRoles[] | null
 ): Promise<IJwtGroupHierarchy[]> {
   const cacheAuth = await redis.get(cacheKey);
   if (cacheAuth) {
-    return JSON.parse(cacheAuth);
+    const cachedPermissions = JSON.parse(cacheAuth) as IJwtGroupHierarchy[];
+    const hasPermission = hasRequiredPermission(cachedPermissions, permissions);
+    
+    if (hasPermission) {
+      return cachedPermissions;
+    }
   }
 
   const apiJwtViewerUseCase = container.resolve(ApiJwtViewerUseCase);
@@ -110,7 +116,8 @@ async function authenticateJwt(
       cacheKey,
       decoded,
       routeModule,
-      request.module
+      request.module,
+      permissions
     );
 
     if (!responseAuth) {
@@ -128,8 +135,6 @@ async function authenticateJwt(
         httpStatusCode: EHTTPStatusCode.unauthorized,
       });
     }
-
-    await Redis.set(cacheKey, JSON.stringify(responseAuth), 'EX', 1800);
 
     request.tokenJwtData = generateTokenJwtAccess(
       decoded.user_id,

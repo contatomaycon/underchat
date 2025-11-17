@@ -55,8 +55,8 @@ const permissionsEditPermissions = [
 const permissionsViewPermissions = [
   EGeneralPermissions.full_access,
   EGeneralPermissions.full_access_group,
-  ERolePermissions.role_group,
-  ERolePermissions.role_view,
+  EPermissionPermissions.permission_group,
+  EPermissionPermissions.permission_view,
 ];
 
 const { t } = useI18n();
@@ -243,8 +243,7 @@ onMounted(() => {
           <div class="d-flex gap-1">
             <IconBtn
               v-if="
-                ($canPermission(permissionsViewPermissions) ||
-                  $canPermission(permissionsEditPermissions)) &&
+                $canPermission(permissionsViewPermissions) &&
                 item.permission_role_id !== currentPermissionRoleId
               "
               ><VTooltip
