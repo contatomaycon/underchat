@@ -9,7 +9,7 @@ import { sanitizationMap } from '@core/common/functions/sanitizeValue';
 export class EncryptService {
   constructor() {}
 
-  private uniqueHash = (text: string): string => {
+  private readonly uniqueHash = (text: string): string => {
     const saltStart = generalEnvironment.cryptoKeyStart;
     const saltEnd = generalEnvironment.cryptoKeyEnd;
     const saltedText = saltStart + text + saltEnd;

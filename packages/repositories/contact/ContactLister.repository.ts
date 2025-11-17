@@ -21,6 +21,10 @@ import { ListContactRequest } from '@core/schema/contact/listContact/request.sch
 import { ListContactResponse } from '@core/schema/contact/listContact/response.schema';
 import { ESortByContact } from '@core/common/enums/ESortByContact';
 
+function isDefined(condition: SQLWrapper | undefined): condition is SQLWrapper {
+  return Boolean(condition);
+}
+
 @injectable()
 export class ContactListerRepository {
   constructor(
@@ -86,9 +90,7 @@ export class ContactListerRepository {
         : undefined,
     ];
 
-    const conditions = rawConditions.filter(
-      (condition): condition is SQLWrapper => Boolean(condition)
-    );
+    const conditions = rawConditions.filter(isDefined);
 
     if (conditions.length) {
       const combinedFilter = or(...conditions) as SQLWrapper;
@@ -115,7 +117,7 @@ export class ContactListerRepository {
       accountCondition,
       isNull(contact.deleted_at),
       ...filters,
-    ].filter((condition): condition is SQLWrapper => Boolean(condition));
+    ].filter(isDefined);
 
     const queryBuilder = this.db
       .select({
@@ -201,7 +203,7 @@ export class ContactListerRepository {
       accountCondition,
       isNull(contact.deleted_at),
       ...filters,
-    ].filter((condition): condition is SQLWrapper => Boolean(condition));
+    ].filter(isDefined);
 
     const result = await this.db
       .select({
