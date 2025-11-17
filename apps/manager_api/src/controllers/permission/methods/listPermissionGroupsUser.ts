@@ -2,20 +2,26 @@ import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { PermissionGroupsListerSelfUseCase } from '@core/useCases/permission/PermissionGroupsListerSelf.useCase';
+import { PermissionGroupsListerUserUseCase } from '@core/useCases/permission/PermissionGroupsListerUser.useCase';
+import { ViewPermissionGroupsUserParams } from '@core/schema/permission/viewPermissionGroupsUser/request.schema';
 
-export const listPermissionGroups = async (
-  request: FastifyRequest,
+export const listPermissionGroupsUser = async (
+  request: FastifyRequest<{
+    Params: ViewPermissionGroupsUserParams;
+  }>,
   reply: FastifyReply
 ) => {
   const permissionGroupsListerUseCase = container.resolve(
-    PermissionGroupsListerSelfUseCase
+    PermissionGroupsListerUserUseCase
   );
   const { t, tokenJwtData } = request;
 
   try {
     const response = await permissionGroupsListerUseCase.execute(
-      tokenJwtData.user_id
+      t,
+      tokenJwtData.account_id,
+      request.params.user_id,
+      tokenJwtData.is_administrator
     );
 
     return sendResponse(reply, {

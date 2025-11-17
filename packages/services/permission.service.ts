@@ -7,6 +7,7 @@ import { PermissionRoleCountSectorViewerRepository } from '@core/repositories/pe
 import { CreateSectorRoleRequest } from '@core/schema/sector/createSectorRole/request.schema';
 import { PermissionGroupsListerRepository } from '@core/repositories/permission/PermissionGroupsLister.repository';
 import { ListPermissionGroupsResponse } from '@core/schema/permission/listPermissionGroups/response.schema';
+import { ERouteModule } from '@core/common/enums/ERouteModule';
 
 @injectable()
 export class PermissionService {
@@ -57,7 +58,7 @@ export class PermissionService {
 
   listPermissionGroupsByUserId = async (
     userId: string,
-    moduleName: string = 'manager'
+    moduleName: ERouteModule
   ): Promise<ListPermissionGroupsResponse> => {
     return this.permissionGroupsListerRepository.listPermissionGroupsByUserId(
       userId,

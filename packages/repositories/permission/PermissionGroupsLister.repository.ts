@@ -6,6 +6,7 @@ import { EUserStatus } from '@core/common/enums/EUserStatus';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { IPermissionGroupRow } from '@core/common/interfaces/IPermissionGroupRow';
+import { ERouteModule } from '@core/common/enums/ERouteModule';
 
 @injectable()
 export class PermissionGroupsListerRepository {
@@ -15,7 +16,7 @@ export class PermissionGroupsListerRepository {
 
   listPermissionGroupsByUserId = async (
     userId: string,
-    moduleName: string = 'manager'
+    moduleName: ERouteModule
   ): Promise<ListPermissionGroupsResponse> => {
     const query = `
       WITH UserGroupPermissions AS (

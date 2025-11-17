@@ -1,21 +1,16 @@
 import { injectable } from 'tsyringe';
-import { TFunction } from 'i18next';
 import { PermissionService } from '@core/services/permission.service';
 import { ListPermissionGroupsResponse } from '@core/schema/permission/listPermissionGroups/response.schema';
+import { ERouteModule } from '@core/common/enums/ERouteModule';
 
 @injectable()
-export class PermissionGroupsListerUseCase {
+export class PermissionGroupsListerSelfUseCase {
   constructor(private readonly permissionService: PermissionService) {}
 
-  async execute(
-    t: TFunction<'translation', undefined>,
-    userId: string
-  ): Promise<ListPermissionGroupsResponse> {
-    const result = await this.permissionService.listPermissionGroupsByUserId(
+  async execute(userId: string): Promise<ListPermissionGroupsResponse> {
+    return this.permissionService.listPermissionGroupsByUserId(
       userId,
-      'manager'
+      ERouteModule.manager
     );
-
-    return result;
   }
 }
