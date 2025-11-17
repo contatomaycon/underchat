@@ -15,7 +15,8 @@ export class RoleCreatorUseCase {
   async validate(
     t: TFunction<'translation', undefined>,
     input: string,
-    accountId: string
+    accountId: string,
+    isAdministrator: boolean
   ): Promise<void> {
     const roleExists = await this.roleService.existsRoleByName(
       input,
@@ -24,6 +25,10 @@ export class RoleCreatorUseCase {
 
     if (roleExists) {
       throw new Error(t('role_already_exists'));
+    }
+
+    if (isAdministrator) {
+      return;
     }
 
     const [viewAccountQuantityProduct, totalRoleByAccountId] =
@@ -48,9 +53,10 @@ export class RoleCreatorUseCase {
     t: TFunction<'translation', undefined>,
     input: string,
     accountId: string,
-    description: string | null | undefined
+    description: string | null | undefined,
+    isAdministrator: boolean
   ): Promise<CreateRoleResponse | null> {
-    await this.validate(t, input, accountId);
+    await this.validate(t, input, accountId, isAdministrator);
 
     const roleCreator = await this.roleService.createRole(
       input,

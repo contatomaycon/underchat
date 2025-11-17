@@ -14,9 +14,21 @@ export const deleteRole = async (
   const roleDeleterUseCase = container.resolve(RoleDeleterUseCase);
   const { t, tokenJwtData } = request;
 
+  const systemRoleIds = [
+    '6afec839-0772-4996-90ea-495ac84347e9',
+    'cdf12523-07ab-4794-9e01-cb3ca006fa4c',
+  ];
+
   if (request.params.permission_role_id === tokenJwtData.permission_role_id) {
     return sendResponse(reply, {
       message: t('cannot_delete_own_role'),
+      httpStatusCode: EHTTPStatusCode.bad_request,
+    });
+  }
+
+  if (systemRoleIds.includes(request.params.permission_role_id)) {
+    return sendResponse(reply, {
+      message: t('cannot_delete_system_role'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   }
