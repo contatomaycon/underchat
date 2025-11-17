@@ -29,7 +29,7 @@ async function handleApiKeyCache(
   if (cacheAuth) {
     const cachedPermissions = JSON.parse(cacheAuth) as IJwtGroupHierarchy[];
     const hasPermission = hasRequiredPermission(cachedPermissions, permissions);
-    
+
     if (hasPermission) {
       return cachedPermissions;
     }

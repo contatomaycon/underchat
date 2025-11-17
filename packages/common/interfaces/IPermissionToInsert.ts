@@ -4,4 +4,3 @@ export interface IPermissionToInsert {
   permission_action_id?: string;
   permission_action_group_id?: string;
 }
-

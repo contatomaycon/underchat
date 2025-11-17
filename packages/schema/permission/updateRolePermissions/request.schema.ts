@@ -21,12 +21,15 @@ export const updateRolePermissionsBodySchema = Type.Object({
   groups: Type.Array(permissionGroupRequestSchema),
 });
 
-export type PermissionActionRequest = Static<typeof permissionActionRequestSchema>;
-export type PermissionGroupRequest = Static<typeof permissionGroupRequestSchema>;
+export type PermissionActionRequest = Static<
+  typeof permissionActionRequestSchema
+>;
+export type PermissionGroupRequest = Static<
+  typeof permissionGroupRequestSchema
+>;
 export type UpdateRolePermissionsParams = Static<
   typeof updateRolePermissionsParamsSchema
 >;
 export type UpdateRolePermissionsBody = Static<
   typeof updateRolePermissionsBodySchema
 >;
-

@@ -42,7 +42,7 @@ axiosAuth.interceptors.response.use(
       !originalRequest._retry
     ) {
       originalRequest._retry = true;
-      
+
       const token = getToken();
       const responseData = error.response.data as {
         status?: boolean;

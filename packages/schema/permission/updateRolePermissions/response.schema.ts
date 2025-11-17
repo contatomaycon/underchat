@@ -7,4 +7,3 @@ export const updateRolePermissionsResponseSchema = Type.Object({
 export type UpdateRolePermissionsResponse = Static<
   typeof updateRolePermissionsResponseSchema
 >;
-
