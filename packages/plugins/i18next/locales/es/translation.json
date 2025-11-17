@@ -241,5 +241,7 @@
   "invalid_token": "¡Token inválido!",
   "token_generated_successfully": "¡Token generado con éxito!",
   "worker_recreate_error": "¡Error al recrear el canal!",
-  "permission_groups_list_successfully": "¡Lista de grupos de permisos obtenida con éxito!"
+  "permission_groups_list_successfully": "¡Lista de grupos de permisos obtenida con éxito!",
+  "cannot_edit_own_role": "¡No se puede editar su propio rol!",
+  "cannot_delete_own_role": "¡No se puede eliminar su propio rol!"
 }

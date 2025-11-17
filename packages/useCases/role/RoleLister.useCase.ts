@@ -13,7 +13,8 @@ export class RoleListerUseCase {
     t: TFunction<'translation', undefined>,
     query: ListRoleRequest,
     accountId: string,
-    isAdministrator: boolean
+    isAdministrator: boolean,
+    currentUserPermissionRoleId: string
   ): Promise<ListRoleFinalResponse> {
     const perPage = query.per_page ?? 10;
     const currentPage = query.current_page ?? 1;
@@ -23,7 +24,8 @@ export class RoleListerUseCase {
       currentPage,
       query,
       accountId,
-      isAdministrator
+      isAdministrator,
+      currentUserPermissionRoleId
     );
 
     const pagings = setPaginationData(

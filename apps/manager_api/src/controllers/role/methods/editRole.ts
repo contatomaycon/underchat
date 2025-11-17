@@ -18,6 +18,13 @@ export const editRole = async (
   const roleUpdaterUseCase = container.resolve(RoleUpdaterUseCase);
   const { t, tokenJwtData } = request;
 
+  if (request.params.permission_role_id === tokenJwtData.permission_role_id) {
+    return sendResponse(reply, {
+      message: t('cannot_edit_own_role'),
+      httpStatusCode: EHTTPStatusCode.bad_request,
+    });
+  }
+
   try {
     const response = await roleUpdaterUseCase.execute(
       t,

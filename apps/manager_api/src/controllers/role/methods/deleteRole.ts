@@ -14,6 +14,13 @@ export const deleteRole = async (
   const roleDeleterUseCase = container.resolve(RoleDeleterUseCase);
   const { t, tokenJwtData } = request;
 
+  if (request.params.permission_role_id === tokenJwtData.permission_role_id) {
+    return sendResponse(reply, {
+      message: t('cannot_delete_own_role'),
+      httpStatusCode: EHTTPStatusCode.bad_request,
+    });
+  }
+
   try {
     const response = await roleDeleterUseCase.execute(
       t,
