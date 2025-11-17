@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { user, userInfo } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, count, eq, inArray, isNull, ne, or } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull, ne } from 'drizzle-orm';
 
 @injectable()
 export class UserExistsByEmailAndPhoneRepository {

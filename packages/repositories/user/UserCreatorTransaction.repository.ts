@@ -76,8 +76,12 @@ export class UserTransactionCreatorRepository {
           : Promise.resolve(false),
       ]);
 
-      if (emailExists || phoneExists) {
-        throw new Error(t('user_already_exists'));
+      if (emailExists) {
+        throw new Error(t('user_already_exists_email'));
+      }
+
+      if (phoneExists) {
+        throw new Error(t('user_already_exists_phone'));
       }
 
       const createUserInput: ICreateUser = {
@@ -153,12 +157,14 @@ export class UserTransactionCreatorRepository {
         document_c: documentC,
       };
 
-      const phoneEncrypted = this.encryptService.encrypt(
-        input.user_info?.phone
-      );
+      if (!phoneC) {
+        throw new Error(t('phone_connection_required'));
+      }
+
+      const phoneEncrypted = this.encryptService.encrypt(input.user_info.phone);
 
       const phonePartialEncrypted = this.encryptService.sanitize(
-        input.user_info?.phone,
+        input.user_info.phone,
         ETypeSanetize.phone
       );
 
@@ -167,12 +173,12 @@ export class UserTransactionCreatorRepository {
         : null;
 
       const createUserInfo: ICreateUserInfo = {
-        phone_ddi: input.user_info?.phone_ddi,
+        phone_ddi: input.user_info.phone_ddi,
         phone: phoneEncrypted,
         phone_partial: phonePartialEncrypted,
-        phone_c: phoneC!,
-        name: input.user_info?.name,
-        last_name: input.user_info?.last_name,
+        phone_c: phoneC,
+        name: input.user_info.name,
+        last_name: input.user_info.last_name,
         birth_date: birthDate ?? null,
       };
 

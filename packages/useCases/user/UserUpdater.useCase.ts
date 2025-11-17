@@ -75,7 +75,7 @@ export class UserUpdaterUseCase {
       const exists = await this.userService.existsUserByEmail(emailC, userId);
 
       if (exists) {
-        throw new Error(t('user_already_exists'));
+        throw new Error(t('user_already_exists_email'));
       }
     }
 
@@ -123,7 +123,7 @@ export class UserUpdaterUseCase {
       const exists = await this.userService.existsUserByPhone(phoneC, userId);
 
       if (exists) {
-        throw new Error(t('user_already_exists'));
+        throw new Error(t('user_already_exists_phone'));
       }
     }
 

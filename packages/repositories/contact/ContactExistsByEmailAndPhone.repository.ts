@@ -50,4 +50,60 @@ export class ContactExistsByEmailAndPhoneRepository {
 
     return result[0].total > 0;
   };
+
+  existsContactByEmail = async (
+    emailC: string,
+    excludeContactId?: string | null
+  ): Promise<boolean> => {
+    const conditions = [
+      isNull(contact.deleted_at),
+      eq(contact.email_c, emailC),
+    ];
+
+    if (excludeContactId) {
+      conditions.push(ne(contact.contact_id, excludeContactId));
+    }
+
+    const result = await this.db
+      .select({
+        total: count(),
+      })
+      .from(contact)
+      .where(and(...conditions))
+      .execute();
+
+    if (!result.length) {
+      return false;
+    }
+
+    return result[0].total > 0;
+  };
+
+  existsContactByPhone = async (
+    phoneC: string,
+    excludeContactId?: string | null
+  ): Promise<boolean> => {
+    const conditions = [
+      isNull(contact.deleted_at),
+      eq(contact.phone_c, phoneC),
+    ];
+
+    if (excludeContactId) {
+      conditions.push(ne(contact.contact_id, excludeContactId));
+    }
+
+    const result = await this.db
+      .select({
+        total: count(),
+      })
+      .from(contact)
+      .where(and(...conditions))
+      .execute();
+
+    if (!result.length) {
+      return false;
+    }
+
+    return result[0].total > 0;
+  };
 }

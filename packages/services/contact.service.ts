@@ -93,13 +93,20 @@ export class ContactService {
       ? this.encryptService.encrypt(input.phone)
       : null;
 
-    const exists =
-      await this.contactExistsByEmailAndPhoneRepository.existsContactByEmailAndPhone(
-        emailC,
-        phoneC
-      );
+    const [emailExists, phoneExists] = await Promise.all([
+      emailC
+        ? this.contactExistsByEmailAndPhoneRepository.existsContactByEmail(
+            emailC
+          )
+        : Promise.resolve(false),
+      phoneC
+        ? this.contactExistsByEmailAndPhoneRepository.existsContactByPhone(
+            phoneC
+          )
+        : Promise.resolve(false),
+    ]);
 
-    if (exists) {
+    if (emailExists || phoneExists) {
       return null;
     }
 
@@ -162,14 +169,22 @@ export class ContactService {
       : null;
 
     if (emailC || phoneC) {
-      const exists =
-        await this.contactExistsByEmailAndPhoneRepository.existsContactByEmailAndPhone(
-          emailC,
-          phoneC,
-          contactId
-        );
+      const [emailExists, phoneExists] = await Promise.all([
+        emailC
+          ? this.contactExistsByEmailAndPhoneRepository.existsContactByEmail(
+              emailC,
+              contactId
+            )
+          : Promise.resolve(false),
+        phoneC
+          ? this.contactExistsByEmailAndPhoneRepository.existsContactByPhone(
+              phoneC,
+              contactId
+            )
+          : Promise.resolve(false),
+      ]);
 
-      if (exists) {
+      if (emailExists || phoneExists) {
         return null;
       }
     }
@@ -223,13 +238,20 @@ export class ContactService {
       ? this.encryptService.encrypt(input.phone)
       : null;
 
-    const exists =
-      await this.contactExistsByEmailAndPhoneRepository.existsContactByEmailAndPhone(
-        emailC,
-        phoneC
-      );
+    const [emailExists, phoneExists] = await Promise.all([
+      emailC
+        ? this.contactExistsByEmailAndPhoneRepository.existsContactByEmail(
+            emailC
+          )
+        : Promise.resolve(false),
+      phoneC
+        ? this.contactExistsByEmailAndPhoneRepository.existsContactByPhone(
+            phoneC
+          )
+        : Promise.resolve(false),
+    ]);
 
-    if (exists) {
+    if (emailExists || phoneExists) {
       return null;
     }
 

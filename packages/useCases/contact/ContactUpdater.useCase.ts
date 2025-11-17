@@ -3,12 +3,16 @@ import { TFunction } from 'i18next';
 import { UpdateContactRequest } from '@core/schema/contact/editContact/request.schema';
 import { ContactService } from '@core/services/contact.service';
 import { LabelTemplateService } from '@core/services/labelTemplate.service';
+import { ContactExistsByEmailAndPhoneRepository } from '@core/repositories/contact/ContactExistsByEmailAndPhone.repository';
+import { EncryptService } from '@core/services/encrypt.service';
 
 @injectable()
 export class ContactUpdaterUseCase {
   constructor(
     private readonly contactService: ContactService,
-    private readonly labelTemplateService: LabelTemplateService
+    private readonly labelTemplateService: LabelTemplateService,
+    private readonly contactExistsByEmailAndPhoneRepository: ContactExistsByEmailAndPhoneRepository,
+    private readonly encryptService: EncryptService
   ) {}
   async execute(
     t: TFunction<'translation', undefined>,
@@ -30,6 +34,35 @@ export class ContactUpdaterUseCase {
 
       if (!labelTemplateExists) {
         throw new Error(t('label_template_not_found'));
+      }
+    }
+
+    const emailC = body.email ? this.encryptService.encrypt(body.email) : null;
+
+    const phoneC = body.phone ? this.encryptService.encrypt(body.phone) : null;
+
+    if (emailC || phoneC) {
+      const [emailExists, phoneExists] = await Promise.all([
+        emailC
+          ? this.contactExistsByEmailAndPhoneRepository.existsContactByEmail(
+              emailC,
+              contactId
+            )
+          : Promise.resolve(false),
+        phoneC
+          ? this.contactExistsByEmailAndPhoneRepository.existsContactByPhone(
+              phoneC,
+              contactId
+            )
+          : Promise.resolve(false),
+      ]);
+
+      if (emailExists) {
+        throw new Error(t('contact_already_exists_email'));
+      }
+
+      if (phoneExists) {
+        throw new Error(t('contact_already_exists_phone'));
       }
     }
 
