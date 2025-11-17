@@ -180,7 +180,6 @@ const locationMarkerPosition = computed<[number, number]>(() => {
   return [0, 0];
 });
 
-/* NOSONAR-START */
 const getCurrentLocation = (): Promise<GeolocationPosition> => {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
@@ -192,10 +191,9 @@ const getCurrentLocation = (): Promise<GeolocationPosition> => {
       timeout: 10000,
       maximumAge: 0,
     };
-    navigator.geolocation.getCurrentPosition(resolve, reject, options);
+    navigator.geolocation.getCurrentPosition(resolve, reject, options); // NOSONAR: S5604 - Geolocalização é necessária para funcionalidade de envio de localização
   });
 };
-/* NOSONAR-END */
 
 const useCurrentLocation = async () => {
   try {
@@ -299,6 +297,31 @@ const confirmLocation = async () => {
   finalizeSend();
 };
 
+const getGeolocationCallbacks = () => {
+  const onSuccess = (position: GeolocationPosition) => {
+    locationPickerLatitude.value = position.coords.latitude;
+    locationPickerLongitude.value = position.coords.longitude;
+    if (locationMapRef.value?.map) {
+      locationMapRef.value.map.setCenter([
+        position.coords.longitude,
+        position.coords.latitude,
+      ]);
+      locationMapRef.value.map.setZoom(15);
+    }
+  };
+
+  const onError = () => {
+    locationPickerLatitude.value = -15.459175;
+    locationPickerLongitude.value = -47.602219;
+    if (locationMapRef.value?.map) {
+      locationMapRef.value.map.setCenter([-47.602219, -15.459175]);
+      locationMapRef.value.map.setZoom(15);
+    }
+  };
+
+  return { onSuccess, onError };
+};
+
 const onLocationMapLoad = () => {
   if (!locationMapRef.value?.map) return;
 
@@ -328,29 +351,9 @@ const onLocationMapLoad = () => {
   }
 
   if (navigator.geolocation) {
-    /* NOSONAR-START */
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        locationPickerLatitude.value = position.coords.latitude;
-        locationPickerLongitude.value = position.coords.longitude;
-        if (locationMapRef.value?.map) {
-          locationMapRef.value.map.setCenter([
-            position.coords.longitude,
-            position.coords.latitude,
-          ]);
-          locationMapRef.value.map.setZoom(15);
-        }
-      },
-      () => {
-        locationPickerLatitude.value = -15.459175;
-        locationPickerLongitude.value = -47.602219;
-        if (locationMapRef.value?.map) {
-          locationMapRef.value.map.setCenter([-47.602219, -15.459175]);
-          locationMapRef.value.map.setZoom(15);
-        }
-      }
-    );
-    /* NOSONAR-END */
+    const { onSuccess, onError } = getGeolocationCallbacks();
+
+    navigator.geolocation.getCurrentPosition(onSuccess, onError); // NOSONAR: S5604 - Geolocalização é necessária para funcionalidade de envio de localização
   }
 };
 
