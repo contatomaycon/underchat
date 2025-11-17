@@ -24,9 +24,7 @@ import {
 import { ListUserResponse } from '@core/schema/user/listUser/response.schema';
 import { ListUserRequest } from '@core/schema/user/listUser/request.schema';
 
-function isDefined(
-  condition: SQLWrapper | undefined
-): condition is SQLWrapper {
+function isDefined(condition: SQLWrapper | undefined): condition is SQLWrapper {
   return Boolean(condition);
 }
 
