@@ -33,6 +33,7 @@ const permissionsEdit = [
   ERolePermissions.role_group,
   ERolePermissions.role_edit,
 ];
+
 const permissionsDelete = [
   EGeneralPermissions.full_access,
   EGeneralPermissions.full_access_group,

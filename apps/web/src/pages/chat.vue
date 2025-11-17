@@ -10,6 +10,8 @@ import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSide
 import AppContactPicker from '@/components/chat/AppContactPicker.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
+import { can } from '@layouts/plugins/casl';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useContactStore } from '@/@webcore/stores/contact';
@@ -432,6 +434,17 @@ const viewerDownloadName = ref<string>('');
 const viewerKind = ref<'image' | 'video'>('image');
 
 const hasContent = computed(() => !!msg.value && msg.value.trim().length > 0);
+
+const canAccessContacts = computed(() => {
+  const permissions = [
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EContactPermissions.contact_group,
+    EContactPermissions.contact_view,
+  ];
+  return can(permissions);
+});
+
 const hasAttachmentsOrContent = computed(
   () =>
     hasContent.value ||
@@ -439,7 +452,7 @@ const hasAttachmentsOrContent = computed(
     selectedDocuments.value.length > 0 ||
     selectedVideos.value.length > 0 ||
     selectedAudios.value.length > 0 ||
-    selectedContacts.value.length > 0 ||
+    (canAccessContacts.value && selectedContacts.value.length > 0) ||
     isRecordingAudio.value
 );
 
@@ -1432,7 +1445,9 @@ const openAttach = (
       fileAudioRef.value?.click();
       break;
     case 'contact':
-      isContactPickerOpen.value = true;
+      if (canAccessContacts.value) {
+        isContactPickerOpen.value = true;
+      }
       break;
     case 'location':
       isLocationPickerOpen.value = true;
@@ -3029,8 +3044,10 @@ const handleTypingEvent = (data: IChatTyping | IChatMessage) => {
 
 onMounted(async () => {
   if (chatStore.user?.account_id) {
+    const accountId = chatStore.user.account_id;
+
     await onMessage(
-      chatAccountCentrifugo(chatStore.user.account_id),
+      chatAccountCentrifugo(accountId),
       (data: IChatMessage | IChatTyping) => {
         if ('type' in data && data.type === 'typing') {
           handleTypingEvent(data as IChatTyping);
@@ -3054,12 +3071,9 @@ onMounted(async () => {
       }
     );
 
-    await onMessage(
-      chatQueueAccountCentrifugo(chatStore.user.account_id),
-      (data: IChat) => {
-        chatStore.addChat(data);
-      }
-    );
+    await onMessage(chatQueueAccountCentrifugo(accountId), (data: IChat) => {
+      chatStore.addChat(data);
+    });
 
     globalThis.addEventListener('focus-composer', focusComposer);
     globalThis.addEventListener(
@@ -3078,8 +3092,9 @@ onUnmounted(async () => {
   isTyping.value = false;
 
   if (chatStore.user?.account_id) {
-    await unsubscribe(chatAccountCentrifugo(chatStore.user.account_id));
-    await unsubscribe(chatQueueAccountCentrifugo(chatStore.user.account_id));
+    const accountId = chatStore.user.account_id;
+    await unsubscribe(chatAccountCentrifugo(accountId));
+    await unsubscribe(chatQueueAccountCentrifugo(accountId));
 
     globalThis.removeEventListener('focus-composer', focusComposer);
     globalThis.removeEventListener(
@@ -3521,7 +3536,7 @@ onBeforeUnmount(() => {
 
           <Transition name="fade">
             <div
-              v-if="selectedContacts.length > 0"
+              v-if="canAccessContacts && selectedContacts.length > 0"
               class="composer-attachment mt-3"
             >
               <VCard class="composer-attachment-card">
@@ -3769,7 +3784,10 @@ onBeforeUnmount(() => {
                     >
                     <VListItemTitle>Áudio</VListItemTitle>
                   </VListItem>
-                  <VListItem @click="openAttach('contact')">
+                  <VListItem
+                    v-if="canAccessContacts"
+                    @click="openAttach('contact')"
+                  >
                     <template #prepend
                       ><VIcon size="20">tabler-user</VIcon></template
                     >
@@ -3900,6 +3918,7 @@ onBeforeUnmount(() => {
   </VLayout>
 
   <AppContactPicker
+    v-if="canAccessContacts"
     v-model="isContactPickerOpen"
     :existing-contacts="selectedContacts"
     @select="onContactsSelected"
@@ -4064,7 +4083,11 @@ onBeforeUnmount(() => {
     </VCard>
   </VDialog>
 
-  <VDialog v-model="isContactViewModalOpen" max-width="600">
+  <VDialog
+    v-if="canAccessContacts"
+    v-model="isContactViewModalOpen"
+    max-width="600"
+  >
     <DialogCloseBtn @click="isContactViewModalOpen = false" />
 
     <template v-if="contactStore.loading">
