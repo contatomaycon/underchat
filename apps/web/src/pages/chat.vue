@@ -186,7 +186,6 @@ const locationMarkerPosition = computed<[number, number]>(() => {
  * A permissão é solicitada apenas quando o usuário explicitamente escolhe usar sua localização.
  * @security S5604 - Geolocalização é necessária para funcionalidade de envio de localização
  */
-// NOSONAR: S5604 - Geolocalização é necessária para funcionalidade de envio de localização
 const getCurrentLocation = (): Promise<GeolocationPosition> => {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
@@ -198,7 +197,7 @@ const getCurrentLocation = (): Promise<GeolocationPosition> => {
       timeout: 10000,
       maximumAge: 0,
     };
-    navigator.geolocation.getCurrentPosition(resolve, reject, options);
+    navigator.geolocation.getCurrentPosition(resolve, reject, options); // NOSONAR: S5604 - Geolocalização é necessária para funcionalidade de envio de localização
   });
 };
 
@@ -336,9 +335,9 @@ const onLocationMapLoad = () => {
   // Uso opcional: Se o usuário negar a permissão ou não estiver disponível,
   // usa uma localização padrão (Brasília) como fallback.
   // @security S5604 - Geolocalização é opcional aqui, apenas para UX, com fallback seguro
-  // NOSONAR: S5604 - Geolocalização é opcional aqui, apenas para UX, com fallback seguro
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
+      // NOSONAR: S5604 - Geolocalização é opcional aqui, apenas para UX, com fallback seguro
       (position) => {
         locationPickerLatitude.value = position.coords.latitude;
         locationPickerLongitude.value = position.coords.longitude;
