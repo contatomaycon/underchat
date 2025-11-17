@@ -83,7 +83,20 @@ export class RoleListerRepository {
     const accountCondition = isAdministrator
       ? undefined
       : eq(permissionRole.account_id, accountId);
-    const excludeOwnRole = ne(permissionRole.permission_role_id, currentUserPermissionRoleId);
+    const excludeOwnRole = ne(
+      permissionRole.permission_role_id,
+      currentUserPermissionRoleId
+    );
+    const excludeAdministratorRole = ne(
+      permissionRole.permission_role_id,
+      '6afec839-0772-4996-90ea-495ac84347e9'
+    );
+    const excludeMasterRole = isAdministrator
+      ? undefined
+      : ne(
+          permissionRole.permission_role_id,
+          'cdf12523-07ab-4794-9e01-cb3ca006fa4c'
+        );
 
     const queryBuilder = this.db
       .select({
@@ -99,7 +112,14 @@ export class RoleListerRepository {
       .from(permissionRole)
       .leftJoin(account, eq(permissionRole.account_id, account.account_id))
       .where(
-        and(accountCondition, isNull(permissionRole.deleted_at), excludeOwnRole, ...filters)
+        and(
+          accountCondition,
+          isNull(permissionRole.deleted_at),
+          excludeOwnRole,
+          excludeAdministratorRole,
+          excludeMasterRole,
+          ...filters
+        )
       );
 
     if (orders.length) {
@@ -134,7 +154,20 @@ export class RoleListerRepository {
     const accountCondition = isAdministrator
       ? undefined
       : eq(permissionRole.account_id, accountId);
-    const excludeOwnRole = ne(permissionRole.permission_role_id, currentUserPermissionRoleId);
+    const excludeOwnRole = ne(
+      permissionRole.permission_role_id,
+      currentUserPermissionRoleId
+    );
+    const excludeAdministratorRole = ne(
+      permissionRole.permission_role_id,
+      '6afec839-0772-4996-90ea-495ac84347e9'
+    );
+    const excludeMasterRole = isAdministrator
+      ? undefined
+      : ne(
+          permissionRole.permission_role_id,
+          'cdf12523-07ab-4794-9e01-cb3ca006fa4c'
+        );
 
     const result = await this.db
       .select({
@@ -143,7 +176,14 @@ export class RoleListerRepository {
       .from(permissionRole)
       .leftJoin(account, eq(permissionRole.account_id, account.account_id))
       .where(
-        and(accountCondition, isNull(permissionRole.deleted_at), excludeOwnRole, ...filters)
+        and(
+          accountCondition,
+          isNull(permissionRole.deleted_at),
+          excludeOwnRole,
+          excludeAdministratorRole,
+          excludeMasterRole,
+          ...filters
+        )
       )
       .execute();
 
