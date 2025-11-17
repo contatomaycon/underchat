@@ -1,3 +1,3 @@
-INSERT INTO "plan" ("plan_id", "name", "price", "price_old") VALUES ('26493655-0281-4858-8837-c5a261a063b9', 'Diamante', 200.00, 300.00);
+INSERT INTO "plan" ("plan_id", "name", "price", "price_old") VALUES ('019a930d-c6f4-75ad-88ff-847edc5f724c', 'Diamante', 200.00, 300.00);
 
-INSERT INTO "plan_items" ("plan_item_id", "plan_product_id", "plan_id", "quantity") VALUES ('837bbebe-ef7d-4851-8a90-fb80648e9eb2', '71d94f31-3368-4d6b-aebb-3cc8b5d83582', '26493655-0281-4858-8837-c5a261a063b9', 5);
+INSERT INTO "plan_items" ("plan_item_id", "plan_product_id", "plan_id", "quantity") VALUES ('019a930d-c6f4-75ad-88ff-8918f7b17ddc', '019a930d-c6f4-75ad-88ff-789aa55255f8', '019a930d-c6f4-75ad-88ff-847edc5f724c', 5);

@@ -8,7 +8,7 @@ import {
 } from 'drizzle-orm/node-postgres';
 import { PgTransaction } from 'drizzle-orm/pg-core';
 import { inject, injectable } from 'tsyringe';
-import { v4 as uuidv4 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 
 @injectable()
 export class UserDocumentCreatorRepository {
@@ -25,7 +25,7 @@ export class UserDocumentCreatorRepository {
     input: ICreateUserDocument,
     userId: string
   ): Promise<boolean> => {
-    const userDocumentId = uuidv4();
+    const userDocumentId = uuidv7();
 
     const result = await tx
       .insert(userDocument)

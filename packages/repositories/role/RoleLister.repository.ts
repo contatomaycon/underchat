@@ -89,13 +89,13 @@ export class RoleListerRepository {
     );
     const excludeAdministratorRole = ne(
       permissionRole.permission_role_id,
-      '6afec839-0772-4996-90ea-495ac84347e9'
+      '019a930d-c6f5-75af-82a5-899cb84b6089'
     );
     const excludeMasterRole = isAdministrator
       ? undefined
       : ne(
           permissionRole.permission_role_id,
-          'cdf12523-07ab-4794-9e01-cb3ca006fa4c'
+          '019a930d-c6f5-75af-82a5-8c20f9d0e6e2'
         );
 
     const queryBuilder = this.db
@@ -160,13 +160,13 @@ export class RoleListerRepository {
     );
     const excludeAdministratorRole = ne(
       permissionRole.permission_role_id,
-      '6afec839-0772-4996-90ea-495ac84347e9'
+      '019a930d-c6f5-75af-82a5-899cb84b6089'
     );
     const excludeMasterRole = isAdministrator
       ? undefined
       : ne(
           permissionRole.permission_role_id,
-          'cdf12523-07ab-4794-9e01-cb3ca006fa4c'
+          '019a930d-c6f5-75af-82a5-8c20f9d0e6e2'
         );
 
     const result = await this.db

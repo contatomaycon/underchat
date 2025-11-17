@@ -1,2 +1,2 @@
-INSERT INTO "label_status" ("label_status_id", "name") VALUES ('5e6d03ac-bc09-477f-b9e8-77a8fe19cbcf', 'active');
-INSERT INTO "label_status" ("label_status_id", "name") VALUES ('ff08b0a4-c4d6-4003-90f2-69535b94822d', 'inactive');
+INSERT INTO "label_status" ("label_status_id", "name") VALUES ('019a930d-c6f7-7374-86ab-42a487a6be68', 'active');
+INSERT INTO "label_status" ("label_status_id", "name") VALUES ('019a930d-c6f7-7374-86ab-44288db9be4b', 'inactive');

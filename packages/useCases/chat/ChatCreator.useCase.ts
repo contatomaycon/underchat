@@ -1,5 +1,5 @@
 import { injectable } from 'tsyringe';
-import { v4 as uuidv4 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 import { TFunction } from 'i18next';
 import { ChatService } from '@core/services/chat.service';
 import { IChat } from '@core/common/interfaces/IChat';
@@ -49,7 +49,7 @@ export class ChatCreatorUseCase {
     }
 
     const inputChatMessage: IChat = {
-      chat_id: uuidv4(),
+      chat_id: uuidv7(),
       account: viewAccountName,
       worker: viewWorkerNameAndId,
       user: viewUserNamePhoto,

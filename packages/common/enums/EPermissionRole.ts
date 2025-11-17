@@ -1,3 +1,3 @@
 export enum EPermissionRole {
-  administrator = '6afec839-0772-4996-90ea-495ac84347e9',
+  administrator = '019a930d-c6f5-75af-82a5-899cb84b6089',
 }

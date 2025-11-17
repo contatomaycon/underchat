@@ -1,5 +1,5 @@
 import Redis from 'ioredis';
-import { v4 as uuidv4 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 import { extendLock } from './extendLock';
 import { releaseLock } from './releaseLock';
 import { delay } from './delay';
@@ -10,7 +10,7 @@ export async function withLock<T>(
   fn: () => Promise<T>
 ): Promise<T> {
   const key = `underchat:lock:jid:${lockId}`;
-  const token = uuidv4();
+  const token = uuidv7();
   const ttlMs = 20000;
   const retryMs = 150;
 

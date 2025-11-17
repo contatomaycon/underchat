@@ -19,8 +19,8 @@ export const editRole = async (
   const { t, tokenJwtData } = request;
 
   const systemRoleIds = [
-    '6afec839-0772-4996-90ea-495ac84347e9',
-    'cdf12523-07ab-4794-9e01-cb3ca006fa4c',
+    '019a930d-c6f5-75af-82a5-899cb84b6089',
+    '019a930d-c6f5-75af-82a5-8c20f9d0e6e2',
   ];
 
   if (request.params.permission_role_id === tokenJwtData.permission_role_id) {

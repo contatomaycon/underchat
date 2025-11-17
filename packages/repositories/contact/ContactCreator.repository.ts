@@ -3,7 +3,7 @@ import * as schema from '@core/models';
 import { contact } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { v4 as uuidv4 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 
 @injectable()
 export class ContactCreatorRepository {
@@ -12,7 +12,7 @@ export class ContactCreatorRepository {
   ) {}
 
   createContact = async (input: ICreateContact): Promise<string | null> => {
-    const contactId = uuidv4();
+    const contactId = uuidv7();
 
     const result = await this.db
       .insert(contact)

@@ -5,7 +5,7 @@ import { ExtractTablesWithRelations } from 'drizzle-orm';
 import { NodePgQueryResultHKT } from 'drizzle-orm/node-postgres';
 import { PgTransaction } from 'drizzle-orm/pg-core';
 import { injectable } from 'tsyringe';
-import { v4 as uuidv4 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 
 @injectable()
 export class ContactTxCreatorRepository {
@@ -17,7 +17,7 @@ export class ContactTxCreatorRepository {
     >,
     input: ICreateContact
   ): Promise<string | null> => {
-    const contactId = uuidv4();
+    const contactId = uuidv7();
 
     const result = await tx
       .insert(contact)

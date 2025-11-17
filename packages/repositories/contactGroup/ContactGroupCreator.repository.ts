@@ -5,7 +5,7 @@ import {
   NodePgQueryResultHKT,
 } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { v4 as uuidv4 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 import { CreateContactGroupRequest } from '@core/schema/contactGroup/createContactGroup/request.schema';
 import { PgTransaction } from 'drizzle-orm/pg-core';
 import { ExtractTablesWithRelations } from 'drizzle-orm';
@@ -25,7 +25,7 @@ export class ContactGroupCreatorRepository {
     input: CreateContactGroupRequest,
     accountId: string
   ): Promise<string | null> => {
-    const contactGroupId = uuidv4();
+    const contactGroupId = uuidv7();
 
     const result = await tx
       .insert(contactGroup)

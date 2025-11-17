@@ -180,12 +180,6 @@ const locationMarkerPosition = computed<[number, number]>(() => {
   return [0, 0];
 });
 
-/**
- * Obtém a localização atual do usuário.
- * Uso necessário: Permite que o usuário envie sua localização atual em mensagens de chat.
- * A permissão é solicitada apenas quando o usuário explicitamente escolhe usar sua localização.
- * @security S5604 - Geolocalização é necessária para funcionalidade de envio de localização
- */
 const getCurrentLocation = (): Promise<GeolocationPosition> => {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
@@ -331,14 +325,10 @@ const onLocationMapLoad = () => {
     return;
   }
 
-  // Tenta centralizar o mapa na localização do usuário para melhorar a UX.
-  // Uso opcional: Se o usuário negar a permissão ou não estiver disponível,
-  // usa uma localização padrão (Brasília) como fallback.
-  // @security S5604 - Geolocalização é opcional aqui, apenas para UX, com fallback seguro
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
-      // NOSONAR: S5604 - Geolocalização é opcional aqui, apenas para UX, com fallback seguro
       (position) => {
+        // NOSONAR: S5604 - Geolocalização é opcional aqui, apenas para UX, com fallback seguro
         locationPickerLatitude.value = position.coords.latitude;
         locationPickerLongitude.value = position.coords.longitude;
         if (locationMapRef.value?.map) {
@@ -350,7 +340,6 @@ const onLocationMapLoad = () => {
         }
       },
       () => {
-        // Fallback para localização padrão se o usuário negar ou houver erro
         locationPickerLatitude.value = -15.459175;
         locationPickerLongitude.value = -47.602219;
         if (locationMapRef.value?.map) {

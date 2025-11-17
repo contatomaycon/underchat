@@ -1,3 +1,3 @@
-INSERT INTO "plan_product" ("plan_product_id", "name") VALUES ('71d94f31-3368-4d6b-aebb-3cc8b5d83582', 'worker');
-INSERT INTO "plan_product" ("plan_product_id", "name") VALUES ('305c2f09-a8c2-4f94-b4ab-55ade0485916', 'role');
-INSERT INTO "plan_product" ("plan_product_id", "name") VALUES ('eddd6297-910b-4d23-af92-f45790a08486', 'user');
+INSERT INTO "plan_product" ("plan_product_id", "name") VALUES ('019a930d-c6f4-75ad-88ff-789aa55255f8', 'worker');
+INSERT INTO "plan_product" ("plan_product_id", "name") VALUES ('019a930d-c6f4-75ad-88ff-7f14ca11114c', 'role');
+INSERT INTO "plan_product" ("plan_product_id", "name") VALUES ('019a930d-c6f4-75ad-88ff-809fbe7cf6d8', 'user');

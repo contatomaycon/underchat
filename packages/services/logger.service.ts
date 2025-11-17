@@ -2,7 +2,7 @@ import fastify, { FastifyInstance } from 'fastify';
 import { injectable } from 'tsyringe';
 import ElasticSearchService from '@core/services/elasticSearch.service';
 import { ELogLevel } from '@core/common/enums/ELogLevel';
-import { v4 as uuidv4 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 
 @injectable()
 export class LoggerService {
@@ -41,7 +41,7 @@ export class LoggerService {
   private readonly parseMessage = (message: any, requestId?: string) => {
     return requestId
       ? { requestId, message }
-      : { requestId: uuidv4(), message };
+      : { requestId: uuidv7(), message };
   };
 
   private readonly ensureLoggerInitialized = async () => {

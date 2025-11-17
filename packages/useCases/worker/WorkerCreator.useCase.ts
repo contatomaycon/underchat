@@ -6,7 +6,7 @@ import { AccountService } from '@core/services/account.service';
 import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 import { CreateWorkerRequest } from '@core/schema/worker/createWorker/request.schema';
 import { StreamProducerService } from '@core/services/streamProducer.service';
-import { v4 as uuidv4 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
@@ -83,7 +83,7 @@ export class WorkerCreatorUseCase {
       throw new Error(t('worker_server_not_disponible'));
     }
 
-    const workerId = uuidv4();
+    const workerId = uuidv7();
     const workerType = input.worker_type as EWorkerType;
 
     const createWorkerPayload: ICreateWorker = {

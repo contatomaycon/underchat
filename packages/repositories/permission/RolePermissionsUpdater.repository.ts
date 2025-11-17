@@ -11,7 +11,7 @@ import {
 import { inject, injectable } from 'tsyringe';
 import { eq, ExtractTablesWithRelations } from 'drizzle-orm';
 import { PgTransaction } from 'drizzle-orm/pg-core';
-import { v4 as uuidv4 } from 'uuid';
+import { v7 as uuidv7 } from 'uuid';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { PermissionGroupRequest } from '@core/schema/permission/updateRolePermissions/request.schema';
 import { IPermissionToInsert } from '@core/common/interfaces/IPermissionToInsert';
@@ -115,7 +115,7 @@ export class RolePermissionsUpdaterRepository {
 
         if (fullAccessGroupId) {
           permissionsToInsert.push({
-            permission_role_action_id: uuidv4(),
+            permission_role_action_id: uuidv7(),
             permission_role_id: permissionRoleId,
             permission_action_group_id: fullAccessGroupId,
           });
@@ -142,7 +142,7 @@ export class RolePermissionsUpdaterRepository {
 
         if (fullAccessActionId) {
           permissionsToInsert.push({
-            permission_role_action_id: uuidv4(),
+            permission_role_action_id: uuidv7(),
             permission_role_id: permissionRoleId,
             permission_action_id: fullAccessActionId,
           });
@@ -192,7 +192,7 @@ export class RolePermissionsUpdaterRepository {
 
         if (groupId) {
           permissionsToInsert.push({
-            permission_role_action_id: uuidv4(),
+            permission_role_action_id: uuidv7(),
             permission_role_id: permissionRoleId,
             permission_action_group_id: groupId,
           });
@@ -208,7 +208,7 @@ export class RolePermissionsUpdaterRepository {
 
         for (const permission of selectedPermissions) {
           permissionsToInsert.push({
-            permission_role_action_id: uuidv4(),
+            permission_role_action_id: uuidv7(),
             permission_role_id: permissionRoleId,
             permission_action_id: permission.permission_action_id,
           });
