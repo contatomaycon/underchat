@@ -15,6 +15,7 @@ import messageTemplateRoutes from './messageTemplate.route';
 import labelTemplateRoutes from './labelTemplate.route';
 import contactRoutes from './contact.route';
 import contactGroupRoutes from './contactGroup.route';
+import permissionRoutes from './permission.route';
 
 export default function registerRoutes(server: FastifyInstance) {
   server.register(authRoutes);
@@ -33,4 +34,5 @@ export default function registerRoutes(server: FastifyInstance) {
   server.register(labelTemplateRoutes);
   server.register(contactRoutes);
   server.register(contactGroupRoutes);
+  server.register(permissionRoutes);
 }

@@ -15,6 +15,7 @@ import { EMessageTemplatePermissions } from './messageTemplate';
 import { ELabelTemplatePermissions } from './labelTemplate';
 import { EContactPermissions } from './contact';
 import { EContactGroupPermissions } from './contactGroup';
+import { EPermissionPermissions } from './permission';
 
 export type EPermissionsRoles =
   | EUserPermissions
@@ -33,4 +34,5 @@ export type EPermissionsRoles =
   | EMessageTemplatePermissions
   | ELabelTemplatePermissions
   | EContactPermissions
-  | EContactGroupPermissions;
+  | EContactGroupPermissions
+  | EPermissionPermissions;

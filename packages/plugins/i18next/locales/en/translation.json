@@ -240,5 +240,6 @@
   "chat_reaction_error": "Error sending reaction!",
   "invalid_token": "Invalid token!",
   "token_generated_successfully": "Token generated successfully!",
-  "worker_recreate_error": "Error recreating channel!"
+  "worker_recreate_error": "Error recreating channel!",
+  "permission_groups_list_successfully": "Permission groups list retrieved successfully!"
 }

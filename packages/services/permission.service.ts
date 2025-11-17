@@ -5,6 +5,8 @@ import { PermissionRoleAccountListerRepository } from '@core/repositories/permis
 import { ListRoleAccountResponse } from '@core/schema/sector/listSectorRoleAccount/response.schema';
 import { PermissionRoleCountSectorViewerRepository } from '@core/repositories/permission/PermissionRoleCountSectorViewer.repository';
 import { CreateSectorRoleRequest } from '@core/schema/sector/createSectorRole/request.schema';
+import { PermissionGroupsListerRepository } from '@core/repositories/permission/PermissionGroupsLister.repository';
+import { ListPermissionGroupsResponse } from '@core/schema/permission/listPermissionGroups/response.schema';
 
 @injectable()
 export class PermissionService {
@@ -12,7 +14,8 @@ export class PermissionService {
     private readonly permissionAssignmentUserViewerRepository: PermissionAssignmentUserViewerRepository,
     private readonly permissionRoleViewerExistsRepository: PermissionRoleViewerExistsRepository,
     private readonly permissionRoleAccountListerRepository: PermissionRoleAccountListerRepository,
-    private readonly permissionRoleCountSectorViewerRepository: PermissionRoleCountSectorViewerRepository
+    private readonly permissionRoleCountSectorViewerRepository: PermissionRoleCountSectorViewerRepository,
+    private readonly permissionGroupsListerRepository: PermissionGroupsListerRepository
   ) {}
 
   viewPermissionByUserId = async (userId: string): Promise<string[]> => {
@@ -49,6 +52,16 @@ export class PermissionService {
     return this.permissionRoleCountSectorViewerRepository.countRolesSector(
       accountId,
       rolesId
+    );
+  };
+
+  listPermissionGroupsByUserId = async (
+    userId: string,
+    moduleName: string = 'manager'
+  ): Promise<ListPermissionGroupsResponse> => {
+    return this.permissionGroupsListerRepository.listPermissionGroupsByUserId(
+      userId,
+      moduleName
     );
   };
 }
