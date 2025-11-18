@@ -125,25 +125,37 @@ export class ChatService {
     chatId: string,
     summary: IChat['summary']
   ): Promise<boolean> => {
-    return this.elasticDatabaseService.update(
-      EElasticIndex.chat,
-      { summary },
-      chatId
-    );
+    try {
+      return await this.elasticDatabaseService.update(
+        EElasticIndex.chat,
+        { summary: [summary] },
+        chatId
+      );
+    } catch (error) {
+      console.error('Error updating chat summary:', error);
+      return false;
+    }
   };
 
   clearChatSummary = async (
     chatId: string,
     accountId: string
   ): Promise<boolean> => {
-    const chat = await this.findChatByChatId(accountId, chatId);
+    try {
+      const chat = await this.findChatByChatId(accountId, chatId);
 
-    const summary: IChat['summary'] = {
-      last_message: null,
-      last_date: chat?.summary?.last_date ?? null,
-      unread_count: 0,
-    };
+      if (!chat) return false;
 
-    return this.updateChatSummary(chatId, summary);
+      const summary: IChat['summary'] = {
+        last_message: null,
+        last_date: chat.summary?.last_date ?? new Date().toISOString(),
+        unread_count: 0,
+      };
+
+      return await this.updateChatSummary(chatId, summary);
+    } catch (error) {
+      console.error('Error clearing chat summary:', error);
+      return false;
+    }
   };
 }

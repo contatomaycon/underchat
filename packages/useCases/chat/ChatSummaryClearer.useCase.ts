@@ -29,13 +29,19 @@ export class ChatSummaryClearerUseCase {
       throw new Error(t('chat_not_found'));
     }
 
-    const clearResults = await Promise.all(
+    const clearResults = await Promise.allSettled(
       validChats.map((chat) =>
         this.chatService.clearChatSummary(chat.chat_id, accountId)
       )
     );
 
-    if (clearResults.some((result) => !result)) {
+    const failedResults = clearResults.filter(
+      (result) =>
+        result.status === 'rejected' ||
+        (result.status === 'fulfilled' && result.value === false)
+    );
+
+    if (failedResults.length > 0) {
       throw new Error(t('chat_summary_clear_failed'));
     }
 
