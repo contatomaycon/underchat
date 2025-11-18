@@ -46,8 +46,12 @@ const isChatContactActive = computed(() => {
           {{ formatPhoneBR(props.user?.phone) }}
         </p>
         <p
-          v-if="props.user?.summary?.last_message"
-          class="mb-0 text-body-2 text-medium-emphasis chat-message-preview"
+          v-if="
+            props.user?.summary?.last_message &&
+            props.user?.summary?.unread_count &&
+            props.user.summary.unread_count > 0
+          "
+          class="mb-0 text-body-2 text-medium-emphasis chat-message-preview chat-message-preview--italic"
         >
           {{ limitCharacters(35, props.user.summary.last_message, '...') }}
         </p>
@@ -109,10 +113,15 @@ const isChatContactActive = computed(() => {
 .chat-message-preview {
   display: -webkit-box;
   -webkit-line-clamp: 1;
+  line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 100%;
+
+  &--italic {
+    font-style: italic;
+  }
 }
 </style>

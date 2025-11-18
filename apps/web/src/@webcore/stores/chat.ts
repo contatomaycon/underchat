@@ -1032,9 +1032,28 @@ export const useChatStore = defineStore('chat', {
         return;
       }
 
+      let summaryToUse = chat.summary;
+      if (chat.status === EChatStatus.in_chat && chat.summary) {
+        summaryToUse = {
+          last_message: null,
+          last_date: chat.summary.last_date,
+          unread_count: 0,
+        };
+
+        const chatInList = this.listInChat.find((c) => c.chat_id === chatId);
+
+        if (chatInList && chatInList.summary) {
+          chatInList.summary = {
+            last_message: null,
+            last_date: chatInList.summary.last_date,
+            unread_count: 0,
+          };
+        }
+      }
+
       this.activeChat = {
         chat_id: chat.chat_id,
-        summary: chat.summary,
+        summary: summaryToUse,
         account: chat.account,
         worker: chat.worker,
         sector: chat.sector,
