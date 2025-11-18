@@ -8,6 +8,7 @@ import {
   nextTick,
   computed,
 } from 'vue';
+import { storeToRefs } from 'pinia';
 import { useChatStore } from '@/@webcore/stores/chat';
 import {
   LinkPreview,
@@ -33,6 +34,7 @@ import { EChatStatus } from '@core/common/enums/EChatStatus';
 
 const { t } = useI18n();
 const chatStore = useChatStore();
+const { activeChat } = storeToRefs(chatStore);
 const chatLogContainer = ref<HTMLElement | null>(null);
 
 const reactionEmojiIndex = new EmojiIndex(data);
@@ -107,7 +109,11 @@ const canViewChatContent = computed(() => {
 });
 
 const shouldBlurMessageContent = computed(() => {
-  const chatStatus = chatStore.activeChat?.status;
+  if (!activeChat.value) {
+    return false;
+  }
+
+  const chatStatus = activeChat.value.status;
   const isQueueOrUra =
     chatStatus === EChatStatus.queue || chatStatus === EChatStatus.ura;
   return isQueueOrUra && !canViewChatContent.value;

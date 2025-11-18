@@ -3253,7 +3253,7 @@ onBeforeUnmount(() => {
           :options="{ wheelPropagation: false }"
           class="flex-grow-1"
         >
-          <ChatLog />
+          <ChatLog :key="chatStore.activeChat?.chat_id || 'no-chat'" />
         </PerfectScrollbar>
 
         <Transition name="fade">

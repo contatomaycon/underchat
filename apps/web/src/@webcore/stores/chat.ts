@@ -230,12 +230,20 @@ export const useChatStore = defineStore('chat', {
         removeFromList(this.listInChat);
         replaceOrPush(this.listQueue);
 
+        if (this.activeChat?.chat_id === chat.chat_id) {
+          this.activeChat = { ...input };
+        }
+
         return;
       }
 
       if (chat.status === EChatStatus.in_chat) {
         removeFromList(this.listQueue);
         replaceOrPush(this.listInChat);
+
+        if (this.activeChat?.chat_id === chat.chat_id) {
+          this.activeChat = { ...input };
+        }
       }
     },
     updateChatUserImmediate() {
@@ -935,16 +943,28 @@ export const useChatStore = defineStore('chat', {
     },
 
     setActiveChat(chatId: string): void {
-      this.activeChat = {} as ListChatsResult;
-
       const chat = (this.listQueue.find((c) => c.chat_id === chatId) ??
         this.listInChat.find((c) => c.chat_id === chatId)) as ListChatsResult;
 
-      if (!chat.chat_id) {
+      if (!chat?.chat_id) {
+        this.activeChat = null;
         return;
       }
 
-      this.activeChat = chat;
+      this.activeChat = {
+        chat_id: chat.chat_id,
+        summary: chat.summary,
+        account: chat.account,
+        worker: chat.worker,
+        sector: chat.sector,
+        user: chat.user,
+        contact: chat.contact,
+        photo: chat.photo,
+        name: chat.name,
+        phone: chat.phone,
+        status: chat.status,
+        date: chat.date,
+      };
     },
 
     setMessageReply(m: ListMessageResult) {
