@@ -132,10 +132,15 @@ export class ChatService {
     );
   };
 
-  clearChatSummary = async (chatId: string): Promise<boolean> => {
+  clearChatSummary = async (
+    chatId: string,
+    accountId: string
+  ): Promise<boolean> => {
+    const chat = await this.findChatByChatId(accountId, chatId);
+
     const summary: IChat['summary'] = {
       last_message: null,
-      last_date: new Date().toISOString(),
+      last_date: chat?.summary?.last_date ?? null,
       unread_count: 0,
     };
 

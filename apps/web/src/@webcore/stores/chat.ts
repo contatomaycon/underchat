@@ -1032,7 +1032,7 @@ export const useChatStore = defineStore('chat', {
               ...arr[idx],
               summary: {
                 last_message: null,
-                last_date: new Date().toISOString(),
+                last_date: arr[idx].summary?.last_date ?? null,
                 unread_count: 0,
               },
             };

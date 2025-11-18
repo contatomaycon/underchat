@@ -37,10 +37,12 @@ export class ChatMessageListerUseCase {
     return hasRequiredPermission(actions, permissions);
   }
 
-  private async updateChat(chatId: string) {
+  private async updateChat(chatId: string, accountId: string) {
+    const chat = await this.chatService.findChatByChatId(accountId, chatId);
+
     const input: IChat['summary'] = {
       last_message: null,
-      last_date: new Date().toISOString(),
+      last_date: chat?.summary?.last_date ?? null,
       unread_count: 0,
     };
     return this.elasticDatabaseService.update(
@@ -154,7 +156,7 @@ export class ChatMessageListerUseCase {
       currentPage
     );
 
-    await this.updateChat(params.chat_id);
+    await this.updateChat(params.chat_id, accountId);
 
     return {
       pagings,

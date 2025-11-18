@@ -30,7 +30,9 @@ export class ChatSummaryClearerUseCase {
     }
 
     const clearResults = await Promise.all(
-      validChats.map((chat) => this.chatService.clearChatSummary(chat.chat_id))
+      validChats.map((chat) =>
+        this.chatService.clearChatSummary(chat.chat_id, accountId)
+      )
     );
 
     if (clearResults.some((result) => !result)) {
