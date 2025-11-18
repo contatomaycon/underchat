@@ -11,12 +11,30 @@ import {
 } from '@core/schema/chat/listMessageChats/response.schema';
 import { IChat } from '@core/common/interfaces/IChat';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
+import { ChatService } from '@core/services/chat.service';
+import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
+import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
+import { TFunction } from 'i18next';
 
 @injectable()
 export class ChatMessageListerUseCase {
   constructor(
-    private readonly elasticDatabaseService: ElasticDatabaseService
+    private readonly elasticDatabaseService: ElasticDatabaseService,
+    private readonly chatService: ChatService
   ) {}
+
+  private canViewOthersChats(actions: IJwtGroupHierarchy[]): boolean {
+    const permissions = [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.chat_group,
+      EChatPermissions.view_others_chats,
+    ];
+
+    return hasRequiredPermission(actions, permissions);
+  }
 
   private async updateChat(chatId: string) {
     const input: IChat['summary'] = {
@@ -86,12 +104,30 @@ export class ChatMessageListerUseCase {
   }
 
   async execute(
+    t: TFunction<'translation', undefined>,
     accountId: string,
     query: ListMessageChatsQuery,
-    params: ListMessageChatsParams
+    params: ListMessageChatsParams,
+    userId: string,
+    actions: IJwtGroupHierarchy[]
   ): Promise<ListMessageResponse> {
     const currentPage = query.current_page ?? 1;
     const perPage = query.per_page ?? 10;
+
+    const chat = await this.chatService.findChatByChatId(
+      accountId,
+      params.chat_id
+    );
+
+    if (!chat) {
+      throw new Error(t('chat_not_found'));
+    }
+
+    if (!this.canViewOthersChats(actions)) {
+      if (chat.user?.id !== userId) {
+        throw new Error(t('chat_access_denied'));
+      }
+    }
 
     const [chatMessages, total] = await this.getChatMessage(
       accountId,

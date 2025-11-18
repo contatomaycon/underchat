@@ -400,6 +400,10 @@ export const useChatStore = defineStore('chat', {
           this.listMessages = [];
           this.loading = false;
 
+          const errorMessage =
+            data?.message || this.i18n.global.t('chat_list_not_found');
+          this.showSnackbar(errorMessage, EColor.error);
+
           return;
         }
 
@@ -408,9 +412,20 @@ export const useChatStore = defineStore('chat', {
         this.listMessages = [...data.data.results].reverse();
         this.currentPage = data.data.pagings.current_page;
         this.totalPages = data.data.pagings.total_pages;
-      } catch {
+      } catch (error) {
         this.loading = false;
         this.listMessages = [];
+
+        let errorMessage = this.i18n.global.t('chat_list_not_found');
+
+        if (isAxiosError(error)) {
+          const backendMessage = error?.response?.data?.message;
+          if (backendMessage) {
+            errorMessage = backendMessage;
+          }
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
 
         return;
       }
