@@ -1032,20 +1032,21 @@ export const useChatStore = defineStore('chat', {
         return;
       }
 
-      let summaryToUse = chat.summary;
-      if (chat.status === EChatStatus.in_chat && chat.summary) {
-        summaryToUse = {
-          last_message: null,
-          last_date: chat.summary.last_date,
-          unread_count: 0,
-        };
-
+      // Zerar unread_count localmente quando abrir o chat (feedback imediato)
+      if (chat.summary && chat.summary.unread_count > 0) {
+        const chatInQueue = this.listQueue.find((c) => c.chat_id === chatId);
         const chatInList = this.listInChat.find((c) => c.chat_id === chatId);
+
+        if (chatInQueue && chatInQueue.summary) {
+          chatInQueue.summary = {
+            ...chatInQueue.summary,
+            unread_count: 0,
+          };
+        }
 
         if (chatInList && chatInList.summary) {
           chatInList.summary = {
-            last_message: null,
-            last_date: chatInList.summary.last_date,
+            ...chatInList.summary,
             unread_count: 0,
           };
         }
@@ -1053,7 +1054,12 @@ export const useChatStore = defineStore('chat', {
 
       this.activeChat = {
         chat_id: chat.chat_id,
-        summary: summaryToUse,
+        summary: chat.summary
+          ? {
+              ...chat.summary,
+              unread_count: 0,
+            }
+          : chat.summary,
         account: chat.account,
         worker: chat.worker,
         sector: chat.sector,
