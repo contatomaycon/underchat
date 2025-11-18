@@ -1,5 +1,13 @@
 <script lang="ts" setup>
-import { ref, reactive, watch, onMounted, onUnmounted, nextTick } from 'vue';
+import {
+  ref,
+  reactive,
+  watch,
+  onMounted,
+  onUnmounted,
+  nextTick,
+  computed,
+} from 'vue';
 import { useChatStore } from '@/@webcore/stores/chat';
 import {
   LinkPreview,
@@ -18,6 +26,10 @@ import 'emoji-mart-vue-fast/css/emoji-mart.css';
 import { formatDate } from '@/@webcore/utils/formatters';
 import { useI18n } from 'vue-i18n';
 import { MglMap, MglMarker } from 'vue-maplibre-gl';
+import { can } from '@layouts/plugins/casl';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
 
 const { t } = useI18n();
 const chatStore = useChatStore();
@@ -83,6 +95,23 @@ const audioDurations = reactive<Record<string, number>>({});
 const audioWaveforms = reactive<Record<string, number[]>>({});
 
 type FeedbackIcon = { icon: string; color?: string };
+
+const canViewChatContent = computed(() => {
+  const permissions = [
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EChatPermissions.chat_group,
+    EChatPermissions.preview_chat,
+  ];
+  return can(permissions);
+});
+
+const shouldBlurMessageContent = computed(() => {
+  const chatStatus = chatStore.activeChat?.status;
+  const isQueueOrUra =
+    chatStatus === EChatStatus.queue || chatStatus === EChatStatus.ura;
+  return isQueueOrUra && !canViewChatContent.value;
+});
 
 const resolveFeedbackIcon = (message: ListMessageResult): FeedbackIcon => {
   if (isMessageUploadError(message))
@@ -1183,7 +1212,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="chatLogContainer" class="chat-log pa-6">
+  <div
+    ref="chatLogContainer"
+    class="chat-log pa-6"
+    :class="{ 'chat-log-blurred': shouldBlurMessageContent }"
+  >
     <div
       v-if="chatStore.loadingMoreMessages"
       class="d-flex justify-center align-center py-4"
@@ -2292,6 +2325,12 @@ onUnmounted(() => {
 
 <style lang="scss">
 .chat-log {
+  &.chat-log-blurred {
+    filter: blur(8px);
+    user-select: none;
+    pointer-events: none;
+  }
+
   .chat-body {
     max-inline-size: calc(100% - 6.75rem);
     .chat-content-wrapper {
