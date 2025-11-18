@@ -43,18 +43,24 @@ export class ContactService {
     isAdministrator: boolean,
     accountId: string
   ): Promise<[ListContactResponse[], number]> => {
+    const searchHashes = query.search
+      ? this.encryptService.encrypt(query.search)
+      : null;
+
     const [result, total] = await Promise.all([
       this.contactListerRepository.listContacts(
         perPage,
         currentPage,
         query,
         isAdministrator,
-        accountId
+        accountId,
+        searchHashes
       ),
       this.contactListerRepository.listContactTotal(
         query,
         isAdministrator,
-        accountId
+        accountId,
+        searchHashes
       ),
     ]);
 

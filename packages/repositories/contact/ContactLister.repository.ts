@@ -20,10 +20,7 @@ import { ESortOrder } from '@core/common/enums/ESortOrder';
 import { ListContactRequest } from '@core/schema/contact/listContact/request.schema';
 import { ListContactResponse } from '@core/schema/contact/listContact/response.schema';
 import { ESortByContact } from '@core/common/enums/ESortByContact';
-
-function isDefined(condition: SQLWrapper | undefined): condition is SQLWrapper {
-  return condition !== undefined;
-}
+import { isDefinedFilter } from '@core/common/functions/isDefinedFilter';
 
 @injectable()
 export class ContactListerRepository {
@@ -51,35 +48,24 @@ export class ContactListerRepository {
     return orders;
   };
 
-  private readonly setFilters = (query: ListContactRequest): SQLWrapper[] => {
+  private readonly setFilters = (
+    query: ListContactRequest,
+    searchHashes: string | null
+  ): SQLWrapper[] => {
     const filters: SQLWrapper[] = [];
 
-    if (!query.search) {
-      return filters;
-    }
-
-    const searchTerm = query.search.trim();
-    if (searchTerm.length === 0) {
-      return filters;
-    }
-
-    const searchTermLength = searchTerm.length;
-    const minSearchLength = 3;
+    const searchTerm = query.search;
+    if (!searchTerm) return filters;
 
     const rawConditions: Array<SQLWrapper | undefined> = [
-      searchTermLength >= minSearchLength
-        ? ilike(contact.name, `%${searchTerm}%`)
-        : undefined,
-      searchTermLength >= minSearchLength
-        ? ilike(contact.nickname, `%${searchTerm}%`)
-        : undefined,
-      searchTermLength >= minSearchLength
-        ? ilike(contact.email_partial, `%${searchTerm}%`)
-        : undefined,
-      searchTermLength >= minSearchLength
-        ? ilike(contact.phone_partial, `%${searchTerm}%`)
-        : undefined,
-      searchTermLength >= minSearchLength
+      searchTerm ? ilike(contact.name, `%${searchTerm}%`) : undefined,
+      searchTerm ? ilike(contact.nickname, `%${searchTerm}%`) : undefined,
+      searchTerm ? ilike(contact.email_partial, `%${searchTerm}%`) : undefined,
+      searchTerm ? ilike(contact.phone_partial, `%${searchTerm}%`) : undefined,
+      searchTerm ? ilike(contact.phone_partial, `%${searchTerm}%`) : undefined,
+      searchHashes ? eq(contact.email_c, searchHashes) : undefined,
+      searchHashes ? eq(contact.phone_c, searchHashes) : undefined,
+      searchTerm
         ? inArray(
             labelTemplate.label_template_id,
             this.db
@@ -90,7 +76,7 @@ export class ContactListerRepository {
         : undefined,
     ];
 
-    const conditions = rawConditions.filter(isDefined);
+    const conditions = rawConditions.filter(isDefinedFilter);
 
     if (conditions.length) {
       const combinedFilter = or(...conditions) as SQLWrapper;
@@ -105,9 +91,10 @@ export class ContactListerRepository {
     currentPage: number,
     query: ListContactRequest,
     isAdministrator: boolean,
-    accountId: string
+    accountId: string,
+    searchHashes: string | null
   ): Promise<ListContactResponse[]> => {
-    const filters = this.setFilters(query);
+    const filters = this.setFilters(query, searchHashes);
     const orders = this.setOrders(query);
     const accountCondition = isAdministrator
       ? undefined
@@ -117,7 +104,7 @@ export class ContactListerRepository {
       accountCondition,
       isNull(contact.deleted_at),
       ...filters,
-    ].filter(isDefined);
+    ].filter(isDefinedFilter);
 
     const queryBuilder = this.db
       .select({
@@ -192,9 +179,10 @@ export class ContactListerRepository {
   listContactTotal = async (
     query: ListContactRequest,
     isAdministrator: boolean,
-    accountId: string
+    accountId: string,
+    searchHashes: string | null
   ): Promise<number> => {
-    const filters = this.setFilters(query);
+    const filters = this.setFilters(query, searchHashes);
     const accountCondition = isAdministrator
       ? undefined
       : eq(contact.account_id, accountId);
@@ -203,7 +191,7 @@ export class ContactListerRepository {
       accountCondition,
       isNull(contact.deleted_at),
       ...filters,
-    ].filter(isDefined);
+    ].filter(isDefinedFilter);
 
     const result = await this.db
       .select({
