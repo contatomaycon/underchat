@@ -686,31 +686,7 @@ export class MessageUpsertConsume {
       const jid = remoteJid(data.message?.key);
       const jidAlt = remoteJidAlt(data.message?.key);
 
-      const extended = data?.message?.message?.extendedTextMessage;
-
-      const linkPreview = extended
-        ? ({
-            'canonical-url': extended?.matchedText ?? '',
-            'matched-text': extended?.matchedText ?? '',
-            title: extended?.title ?? '',
-            description: extended?.description ?? '',
-            jpegThumbnail: extended?.jpegThumbnail,
-          } as LinkPreview)
-        : undefined;
-
-      const content: IContent = {
-        type: data.type,
-        message:
-          data.message?.message?.extendedTextMessage?.text ??
-          data.message?.message?.conversation,
-        link_preview: linkPreview,
-        quoted: buildQuotedTextFromExtended(data.message),
-      };
-
-      const messageQuotedId = content.quoted?.key.id ?? null;
-      if (messageQuotedId) {
-        content.message_quoted_id = messageQuotedId;
-      }
+      const content = this.buildMessageContent(data);
 
       const hasQuotedFlag = data.has_quoted || !!content.quoted;
 
@@ -832,6 +808,36 @@ export class MessageUpsertConsume {
     return name;
   }
 
+  private buildMessageContent(data: IUpsertMessage): IContent {
+    const extended = data?.message?.message?.extendedTextMessage;
+
+    const linkPreview = extended
+      ? ({
+          'canonical-url': extended?.matchedText ?? '',
+          'matched-text': extended?.matchedText ?? '',
+          title: extended?.title ?? '',
+          description: extended?.description ?? '',
+          jpegThumbnail: extended?.jpegThumbnail,
+        } as LinkPreview)
+      : undefined;
+
+    const content: IContent = {
+      type: data.type,
+      message:
+        data.message?.message?.extendedTextMessage?.text ??
+        data.message?.message?.conversation,
+      link_preview: linkPreview,
+      quoted: buildQuotedTextFromExtended(data.message),
+    };
+
+    const messageQuotedId = content.quoted?.key.id ?? null;
+    if (messageQuotedId) {
+      content.message_quoted_id = messageQuotedId;
+    }
+
+    return content;
+  }
+
   private async createChat(data: IUpsertMessage): Promise<IChat> {
     const [viewAccountName, viewWorkerNameAndId] = await Promise.all([
       this.accountService.viewAccountName(data.account_id),
@@ -856,6 +862,11 @@ export class MessageUpsertConsume {
 
     const chatId = uuidv7();
     const name = this.nameChat(data);
+    const messageDate = new Date().toISOString();
+    const isFromMe = data.message?.key?.fromMe ?? false;
+
+    const content = this.buildMessageContent(data);
+    const messageText = extractMessageTextFromContent(content);
 
     const inputChatMessage: IChat = {
       chat_id: chatId,
@@ -868,7 +879,12 @@ export class MessageUpsertConsume {
       name,
       phone,
       status: EChatStatus.queue,
-      date: new Date().toISOString(),
+      date: messageDate,
+      summary: {
+        last_message: messageText,
+        last_date: messageDate,
+        unread_count: isFromMe ? 0 : 1,
+      },
     };
 
     if (data.photo) {
