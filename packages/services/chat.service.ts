@@ -126,9 +126,11 @@ export class ChatService {
     summary: IChat['summary']
   ): Promise<boolean> => {
     try {
+      const summaryToUpdate = Array.isArray(summary) ? summary[0] : summary;
+
       return await this.elasticDatabaseService.update(
         EElasticIndex.chat,
-        { summary: [summary] },
+        { summary: summaryToUpdate },
         chatId
       );
     } catch (error) {
