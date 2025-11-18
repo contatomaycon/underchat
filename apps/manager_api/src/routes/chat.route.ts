@@ -2,11 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import { listChatsSchema } from '@core/schema/chat/listChats';
 import ChatController from '@/controllers/chat';
-import {
-  createChatPermissions,
-  updateChatUserPermissions,
-  viewChatPermissions,
-} from '@/permissions';
+import { chatPermissions } from '@/permissions';
 import { listChatsUserSchema } from '@core/schema/chat/listChatsUser';
 import { updateChatsUserSchema } from '@core/schema/chat/updateChatsUser';
 import { listMessageChatsSchema } from '@core/schema/chat/listMessageChats';
@@ -25,7 +21,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.listChats,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, viewChatPermissions),
+        server.authenticateJwt(request, reply, chatPermissions),
     ],
   });
 
@@ -34,7 +30,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.createChats,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, createChatPermissions),
+        server.authenticateJwt(request, reply, chatPermissions),
     ],
   });
 
@@ -43,7 +39,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.viewChatLinkPreview,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, createChatPermissions),
+        server.authenticateJwt(request, reply, chatPermissions),
     ],
   });
 
@@ -52,7 +48,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.listMessageChats,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, viewChatPermissions),
+        server.authenticateJwt(request, reply, chatPermissions),
     ],
   });
 
@@ -61,7 +57,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.createMessageChats,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, createChatPermissions),
+        server.authenticateJwt(request, reply, chatPermissions),
     ],
   });
 
@@ -70,7 +66,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.listChatsUser,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, viewChatPermissions),
+        server.authenticateJwt(request, reply, chatPermissions),
     ],
   });
 
@@ -79,7 +75,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.updateChatsUser,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, updateChatUserPermissions),
+        server.authenticateJwt(request, reply, chatPermissions),
     ],
   });
 
@@ -88,7 +84,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.reactMessage,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, createChatPermissions),
+        server.authenticateJwt(request, reply, chatPermissions),
     ],
   });
 
@@ -97,7 +93,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.deleteMessage,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, createChatPermissions),
+        server.authenticateJwt(request, reply, chatPermissions),
     ],
   });
 
@@ -106,7 +102,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.updateChatStatus,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, createChatPermissions),
+        server.authenticateJwt(request, reply, chatPermissions),
     ],
   });
 }

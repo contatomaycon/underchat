@@ -70,9 +70,7 @@ definePage({
       EGeneralPermissions.full_access,
       EGeneralPermissions.full_access_group,
       EChatPermissions.chat_group,
-      EChatPermissions.view_chat,
-      EChatPermissions.create_chat,
-      EChatPermissions.update_chat_user,
+      EChatPermissions.chat_access,
     ],
   },
 });
