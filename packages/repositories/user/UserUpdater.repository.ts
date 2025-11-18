@@ -26,6 +26,10 @@ export class UserUpdaterRepository {
       inputUpdate.email_partial = input.email_partial;
     }
 
+    if (input.email_c) {
+      inputUpdate.email_c = input.email_c;
+    }
+
     if (input.password) {
       inputUpdate.password = input.password;
     }

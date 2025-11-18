@@ -65,14 +65,25 @@ export class UserUpdaterUseCase {
       ? this.encryptService.sanitize(body.email, ETypeSanetize.email)
       : null;
 
+    const emailC = body.email ? this.encryptService.encrypt(body.email) : null;
+
     const passwordEncrypted = body.password
       ? this.encryptService.encrypt(body.password)
       : null;
+
+    if (emailC) {
+      const exists = await this.userService.existsUserByEmail(emailC, userId);
+
+      if (exists) {
+        throw new Error(t('user_already_exists_email'));
+      }
+    }
 
     const createUserInput: IUpdateUser = {
       user_status_id: body.user_status_id ?? null,
       email: emailCEncrypted,
       email_partial: emailPartialEncrypted,
+      email_c: emailC,
       password: passwordEncrypted,
     };
 
@@ -100,14 +111,27 @@ export class UserUpdaterUseCase {
       ? this.encryptService.sanitize(body.user_info.phone, ETypeSanetize.phone)
       : null;
 
+    const phoneC = body.user_info?.phone
+      ? this.encryptService.encrypt(body.user_info.phone)
+      : null;
+
     const birthDate = body.user_info?.birth_date
       ? this.validateBirthDate(t, body.user_info.birth_date)
       : null;
+
+    if (phoneC) {
+      const exists = await this.userService.existsUserByPhone(phoneC, userId);
+
+      if (exists) {
+        throw new Error(t('user_already_exists_phone'));
+      }
+    }
 
     const userInfo: IUpdateUserInfo = {
       phone_ddi: body.user_info?.phone_ddi ?? null,
       phone: phoneCEncrypted,
       phone_partial: phonePartialEncrypted,
+      phone_c: phoneC,
       name: body.user_info?.name ?? null,
       last_name: body.user_info?.last_name ?? null,
       birth_date: birthDate ?? null,
@@ -149,10 +173,15 @@ export class UserUpdaterUseCase {
         )
       : null;
 
+    const documentC = body.user_document?.document
+      ? this.encryptService.encrypt(body.user_document.document)
+      : null;
+
     const userDocument: IUpdateUserDocument = {
       user_document_type_id: body.user_document?.user_document_type_id ?? null,
       document: documentCEncrypted,
       document_partial: documentPartialEncrypted,
+      document_c: documentC,
     };
 
     const updateUserDocument = await this.userService.updateUserDocumentById(
@@ -190,6 +219,10 @@ export class UserUpdaterUseCase {
         )
       : null;
 
+    const address1C = body.user_address?.address1
+      ? this.encryptService.encrypt(body.user_address.address1)
+      : null;
+
     const address2CEncrypted = body.user_address?.address2
       ? this.encryptService.encrypt(body.user_address.address2)
       : null;
@@ -201,13 +234,19 @@ export class UserUpdaterUseCase {
         )
       : null;
 
+    const address2C = body.user_address?.address2
+      ? this.encryptService.encrypt(body.user_address.address2)
+      : null;
+
     const userAddress: IUpdateUserAddress = {
       country_id: body.user_address?.country_id ?? null,
       zip_code: body.user_address?.zip_code ?? null,
       address1: address1CEncrypted,
       address1_partial: address1PartialEncrypted,
+      address1_c: address1C,
       address2: address2CEncrypted,
       address2_partial: address2PartialEncrypted,
+      address2_c: address2C,
       city: body.user_address?.city ?? null,
       state: body.user_address?.state ?? null,
       district: body.user_address?.district ?? null,

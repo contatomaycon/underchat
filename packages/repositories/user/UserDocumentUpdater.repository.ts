@@ -28,6 +28,10 @@ export class UserDocumentUpdaterRepository {
       inputUpdate.document_partial = input.document_partial;
     }
 
+    if (input.document_c) {
+      inputUpdate.document_c = input.document_c;
+    }
+
     return inputUpdate;
   }
 

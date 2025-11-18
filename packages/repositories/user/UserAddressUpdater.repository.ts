@@ -32,12 +32,20 @@ export class UserAddressUpdaterRepository {
       inputUpdate.address1_partial = input.address1_partial;
     }
 
+    if (input.address1_c) {
+      inputUpdate.address1_c = input.address1_c;
+    }
+
     if (input.address2) {
       inputUpdate.address2 = input.address2;
     }
 
     if (input.address2_partial) {
       inputUpdate.address2_partial = input.address2_partial;
+    }
+
+    if (input.address2_c) {
+      inputUpdate.address2_c = input.address2_c;
     }
 
     if (input.city) {

@@ -24,10 +24,6 @@ import {
 import { ListUserResponse } from '@core/schema/user/listUser/response.schema';
 import { ListUserRequest } from '@core/schema/user/listUser/request.schema';
 
-function isDefined(condition: SQLWrapper | undefined): condition is SQLWrapper {
-  return condition !== undefined;
-}
-
 @injectable()
 export class UserListerRepository {
   constructor(
@@ -64,10 +60,8 @@ export class UserListerRepository {
       ),
     ];
 
-    const validConditions = conditions.filter(isDefined);
-
-    if (validConditions.length) {
-      const combined = or(...validConditions);
+    if (conditions.length) {
+      const combined = or(...conditions);
       if (combined) filters.push(combined);
     }
 

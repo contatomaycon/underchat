@@ -28,6 +28,10 @@ export class UserInfoUpdaterRepository {
       inputUpdate.phone_partial = input.phone_partial;
     }
 
+    if (input.phone_c) {
+      inputUpdate.phone_c = input.phone_c;
+    }
+
     if (input.name) {
       inputUpdate.name = input.name;
     }

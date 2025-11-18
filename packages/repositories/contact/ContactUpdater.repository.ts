@@ -31,6 +31,7 @@ export class ContactUpdaterRepository {
     if (input.email && input.email_partial) {
       inputUpdate.email = input.email;
       inputUpdate.email_partial = input.email_partial;
+      inputUpdate.email_c = input.email_c ?? null;
     }
 
     if (input.phone_ddi) {
@@ -40,6 +41,7 @@ export class ContactUpdaterRepository {
     if (input.phone && input.phone_partial) {
       inputUpdate.phone = input.phone;
       inputUpdate.phone_partial = input.phone_partial;
+      inputUpdate.phone_c = input.phone_c ?? null;
     }
 
     if (input.nickname) {

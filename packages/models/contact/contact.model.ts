@@ -12,9 +12,11 @@ export const contact = pgTable('contact', {
   last_name: varchar({ length: 100 }),
   email: varchar({ length: 500 }),
   email_partial: varchar({ length: 25 }),
+  email_c: varchar({ length: 500 }),
   phone_ddi: varchar({ length: 5 }),
   phone: varchar({ length: 500 }),
   phone_partial: varchar({ length: 15 }),
+  phone_c: varchar({ length: 500 }),
   nickname: varchar({ length: 100 }),
   birthday: timestamp({
     mode: 'string',

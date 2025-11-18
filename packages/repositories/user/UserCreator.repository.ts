@@ -35,6 +35,7 @@ export class UserCreatorRepository {
         user_status_id: EUserStatus.active,
         email: input.email,
         email_partial: input.email_partial,
+        email_c: input.email_c,
         password: input.password,
       })
       .returning();
