@@ -17,6 +17,7 @@ import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
 import { TFunction } from 'i18next';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
 
 @injectable()
 export class ChatMessageListerUseCase {
@@ -124,8 +125,10 @@ export class ChatMessageListerUseCase {
     }
 
     if (!this.canViewOthersChats(actions)) {
-      if (chat.user?.id !== userId) {
-        throw new Error(t('chat_access_denied'));
+      if (chat.status === EChatStatus.in_chat) {
+        if (chat.user?.id !== userId) {
+          throw new Error(t('chat_access_denied'));
+        }
       }
     }
 
