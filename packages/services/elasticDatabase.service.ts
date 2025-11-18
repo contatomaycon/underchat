@@ -72,6 +72,7 @@ export class ElasticDatabaseService {
         id,
         doc: document,
         doc_as_upsert: true,
+        refresh: 'wait_for',
       });
 
       return result.result === 'updated' || result.result === 'created';

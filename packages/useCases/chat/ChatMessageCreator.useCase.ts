@@ -21,7 +21,6 @@ import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { PublishResult } from 'centrifuge';
-import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { StorageService } from '@core/services/storage.service';
 import { AudioConverterService } from '@core/services/audioConverter.service';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
@@ -38,6 +37,11 @@ import { IUploadFileInput } from '@core/common/interfaces/IUploadFileInput';
 import { ICreateContactMessageParams } from '@core/common/interfaces/ICreateContactMessageParams';
 import { ContactService } from '@core/services/contact.service';
 import { ContactViewerRepository } from '@core/repositories/contact/ContactViewer.repository';
+import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
+import {
+  chatAccountCentrifugo,
+  chatQueueAccountCentrifugo,
+} from '@core/common/functions/centrifugoQueue';
 
 @injectable()
 export class ChatMessageCreatorUseCase {
@@ -782,6 +786,40 @@ export class ChatMessageCreatorUseCase {
         message
       ),
     ]);
+
+    if (result && message.content) {
+      const messageText = extractMessageTextFromContent(message.content);
+
+      const summaryUpdate: IChat['summary'] = {
+        last_message: messageText,
+        last_date: message.date,
+        unread_count: 0,
+      };
+
+      await this.chatService.updateChatSummary(message.chat_id, summaryUpdate);
+
+      const updatedChat = await this.chatService.findChatByChatId(
+        message.account.id,
+        message.chat_id
+      );
+
+      if (!updatedChat) {
+        return result;
+      }
+
+      const channelAccountId = updatedChat.account.id;
+
+      await Promise.all([
+        this.centrifugoService.publishSub(
+          chatAccountCentrifugo(channelAccountId),
+          updatedChat
+        ),
+        this.centrifugoService.publishSub(
+          chatQueueAccountCentrifugo(channelAccountId),
+          updatedChat
+        ),
+      ]);
+    }
 
     return result;
   }

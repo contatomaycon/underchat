@@ -35,6 +35,7 @@ import { downloadMediaMessage, WAMessageKey } from '@whiskeysockets/baileys';
 import { Buffer } from 'node:buffer';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IMessageMarkRead } from '@core/common/interfaces/IMessageMarkRead';
+import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -780,6 +781,40 @@ export class MessageUpsertConsume {
           data.message.key
         );
       }
+
+      const messageText = extractMessageTextFromContent(content);
+      const currentUnreadCount = getChat.summary?.unread_count ?? 0;
+      const newUnreadCount = isFromMe ? 0 : currentUnreadCount + 1;
+
+      const summaryUpdate: IChat['summary'] = {
+        last_message: messageText,
+        last_date: inputChatMessage.date,
+        unread_count: newUnreadCount,
+      };
+
+      await this.chatService.updateChatSummary(getChat.chat_id, summaryUpdate);
+
+      const updatedChat = await this.chatService.findChatByChatId(
+        data.account_id,
+        getChat.chat_id
+      );
+
+      if (!updatedChat) {
+        return result;
+      }
+
+      const channelAccountId = updatedChat.account.id;
+
+      await Promise.all([
+        this.centrifugoService.publishSub(
+          chatAccountCentrifugo(channelAccountId),
+          updatedChat
+        ),
+        this.centrifugoService.publishSub(
+          chatQueueAccountCentrifugo(channelAccountId),
+          updatedChat
+        ),
+      ]);
 
       return result;
     } catch {

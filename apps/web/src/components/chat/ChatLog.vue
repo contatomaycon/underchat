@@ -1223,987 +1223,1077 @@ onUnmounted(() => {
     class="chat-log pa-6"
     :class="{ 'chat-log-blurred': shouldBlurMessageContent }"
   >
-    <div
-      v-if="chatStore.loadingMoreMessages"
-      class="d-flex justify-center align-center py-4"
-    >
-      <VChip color="primary" variant="flat" size="small">
-        <VIcon start icon="tabler-loader-2" class="spin" />
-        {{ t('loading_more_messages') }}
-      </VChip>
-    </div>
-
-    <div
-      v-for="(msgGrp, index) in chatStore.listMessages"
-      :key="msgGrp.message_id"
-      :id="`msg-${msgGrp.message_id}`"
-      :data-message-id="msgGrp.message_id"
-      class="chat-group d-flex align-start position-relative"
-      :class="[
-        {
-          'flex-row-reverse': !isTypeUser(msgGrp),
-          'mb-6': chatStore.listMessages.length - 1 !== index,
-        },
-      ]"
-      @mouseenter="onMouseEnter(msgGrp)"
-      @mouseleave="onMouseLeave"
-    >
-      <div class="chat-avatar" :class="!isTypeUser(msgGrp) ? 'ms-4' : 'me-4'">
-        <VAvatar
-          size="32"
-          :variant="!isPhotoExist(msgGrp) ? 'tonal' : undefined"
+    <template v-if="chatStore.loading && chatStore.listMessages.length === 0">
+      <div
+        v-for="i in 6"
+        :key="`skeleton-${i}`"
+        class="chat-group d-flex align-start position-relative mb-6"
+        :class="{ 'flex-row-reverse': i % 2 === 0 }"
+        style="width: 100%; min-width: 0"
+      >
+        <div
+          class="chat-avatar"
+          :class="i % 2 === 0 ? 'ms-4' : 'me-4'"
+          style="flex-shrink: 0"
         >
-          <VImg :src="resolvePhoto(msgGrp)" />
-        </VAvatar>
+          <VSkeletonLoader type="avatar" width="32" height="32" />
+        </div>
+        <div
+          class="chat-body d-inline-flex flex-column position-relative"
+          :class="i % 2 === 0 ? 'align-end' : 'align-start'"
+          style="min-width: 0; max-width: calc(100% - 6.75rem)"
+        >
+          <div
+            class="chat-content-wrapper"
+            :class="i % 2 === 0 ? 'wrapper-operator' : 'wrapper-client'"
+            style="max-width: 100%; min-width: 0"
+          >
+            <div
+              class="chat-content py-2 px-2 elevation-2"
+              :class="i % 2 === 0 ? 'chat-right' : 'chat-left'"
+              :style="{
+                backgroundColor:
+                  i % 2 === 0
+                    ? 'rgb(217, 253, 211)'
+                    : 'rgb(var(--v-theme-surface))',
+                maxWidth: '100%',
+                wordWrap: 'break-word',
+                overflowWrap: 'break-word',
+                boxSizing: 'border-box',
+              }"
+            >
+              <div style="max-width: 100%; overflow: hidden">
+                <VSkeletonLoader
+                  :type="i % 3 === 0 ? 'text' : 'sentences'"
+                  :width="i % 3 === 0 ? '120' : '200'"
+                  class="mb-1"
+                  style="
+                    max-width: 100%;
+                    word-wrap: break-word;
+                    overflow-wrap: break-word;
+                    box-sizing: border-box;
+                  "
+                />
+              </div>
+              <div class="d-flex align-center justify-end mt-1">
+                <VSkeletonLoader type="text" width="40" height="12" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <template v-else>
+      <div
+        v-if="chatStore.loadingMoreMessages"
+        class="d-flex justify-center align-center py-4"
+      >
+        <VChip color="primary" variant="flat" size="small">
+          <VIcon start icon="tabler-loader-2" class="spin" />
+          {{ t('loading_more_messages') }}
+        </VChip>
       </div>
 
       <div
-        class="chat-body d-inline-flex flex-column position-relative"
-        :class="!isTypeUser(msgGrp) ? 'align-end' : 'align-start'"
+        v-for="(msgGrp, index) in chatStore.listMessages"
+        :key="msgGrp.message_id"
+        :id="`msg-${msgGrp.message_id}`"
+        :data-message-id="msgGrp.message_id"
+        class="chat-group d-flex align-start position-relative"
+        :class="[
+          {
+            'flex-row-reverse': !isTypeUser(msgGrp),
+            'mb-6': chatStore.listMessages.length - 1 !== index,
+          },
+        ]"
+        @mouseenter="onMouseEnter(msgGrp)"
+        @mouseleave="onMouseLeave"
       >
+        <div class="chat-avatar" :class="!isTypeUser(msgGrp) ? 'ms-4' : 'me-4'">
+          <VAvatar
+            size="32"
+            :variant="!isPhotoExist(msgGrp) ? 'tonal' : undefined"
+          >
+            <VImg :src="resolvePhoto(msgGrp)" />
+          </VAvatar>
+        </div>
+
         <div
-          class="chat-content-wrapper"
-          :class="!isTypeUser(msgGrp) ? 'wrapper-operator' : 'wrapper-client'"
+          class="chat-body d-inline-flex flex-column position-relative"
+          :class="!isTypeUser(msgGrp) ? 'align-end' : 'align-start'"
         >
           <div
-            v-if="
-              hoveredMessageId === msgGrp.message_id &&
-              canInteractWithMessage(msgGrp) &&
-              showReactionPicker !== msgGrp.message_id
-            "
-            :class="[
-              'reaction-trigger-container',
-              !isTypeUser(msgGrp) ? 'wrapper-operator' : 'wrapper-client',
-            ]"
-            @click.stop="toggleReactionPicker(msgGrp)"
+            class="chat-content-wrapper"
+            :class="!isTypeUser(msgGrp) ? 'wrapper-operator' : 'wrapper-client'"
           >
-            <VBtn
-              icon
-              size="32"
-              variant="flat"
-              class="reaction-trigger-btn"
-              color="grey-600"
-              tabindex="-1"
+            <div
+              v-if="
+                hoveredMessageId === msgGrp.message_id &&
+                canInteractWithMessage(msgGrp) &&
+                showReactionPicker !== msgGrp.message_id
+              "
+              :class="[
+                'reaction-trigger-container',
+                !isTypeUser(msgGrp) ? 'wrapper-operator' : 'wrapper-client',
+              ]"
+              @click.stop="toggleReactionPicker(msgGrp)"
             >
-              <VIcon size="22">tabler-mood-smile</VIcon>
-            </VBtn>
-          </div>
-
-          <div
-            v-if="isMessageUploadError(msgGrp)"
-            :class="[
-              'retry-trigger-container',
-              !isTypeUser(msgGrp) ? 'wrapper-operator' : 'wrapper-client',
-            ]"
-            @click.stop="retryMessage(msgGrp)"
-          >
-            <VBtn
-              icon
-              size="32"
-              variant="flat"
-              class="retry-trigger-btn"
-              color="error"
-              tabindex="-1"
-            >
-              <VIcon size="22">tabler-refresh</VIcon>
-            </VBtn>
-          </div>
-
-          <div
-            class="chat-content py-2 px-2 elevation-2"
-            :class="[
-              isTypeUser(msgGrp) ? 'chat-left' : 'chat-right',
-              {
-                'is-deleted': msgGrp.deleted,
-                'has-actions': !msgGrp.deleted,
-              },
-            ]"
-            :style="{
-              backgroundColor: isTypeUser(msgGrp)
-                ? 'rgb(var(--v-theme-surface))'
-                : 'rgb(217, 253, 211)',
-            }"
-          >
-            <div v-if="canInteractWithMessage(msgGrp)" class="message-actions">
-              <VMenu
-                :close-on-content-click="true"
-                location="bottom end"
-                offset="6"
+              <VBtn
+                icon
+                size="32"
+                variant="flat"
+                class="reaction-trigger-btn"
+                color="grey-600"
+                tabindex="-1"
               >
-                <template #activator="{ props }">
-                  <VBtn
-                    v-bind="props"
-                    icon
-                    size="24"
-                    density="comfortable"
-                    variant="text"
-                    :color="
-                      isTypeUser(msgGrp)
-                        ? 'rgb(var(--v-theme-on-surface))'
-                        : 'rgb(var(--v-theme-title))'
-                    "
-                  >
-                    <VIcon size="18">tabler-chevron-down</VIcon>
-                  </VBtn>
-                </template>
-
-                <VList density="compact" min-width="180">
-                  <VListItem @click="onReply(msgGrp)">
-                    <template #prepend>
-                      <VIcon size="18">tabler-corner-up-left</VIcon>
-                    </template>
-                    <VListItemTitle>Responder</VListItemTitle>
-                  </VListItem>
-
-                  <VListItem
-                    v-if="shouldShowCopy(msgGrp)"
-                    @click="onCopy(msgGrp)"
-                  >
-                    <template #prepend>
-                      <VIcon size="18">tabler-copy</VIcon>
-                    </template>
-                    <VListItemTitle>Copiar</VListItemTitle>
-                  </VListItem>
-
-                  <VListItem
-                    v-if="shouldShowDownload(msgGrp)"
-                    @click="downloadMessage(msgGrp)"
-                  >
-                    <template #prepend>
-                      <VIcon size="18">tabler-download</VIcon>
-                    </template>
-                    <VListItemTitle>{{
-                      t('chat_action_download')
-                    }}</VListItemTitle>
-                  </VListItem>
-
-                  <VListItem @click="toggleReactionPicker(msgGrp)">
-                    <template #prepend>
-                      <VIcon size="18">tabler-mood-smile</VIcon>
-                    </template>
-                    <VListItemTitle>Reagir</VListItemTitle>
-                  </VListItem>
-
-                  <VListItem
-                    v-if="!isTypeUser(msgGrp)"
-                    @click="onDelete(msgGrp)"
-                  >
-                    <template #prepend>
-                      <VIcon size="18">tabler-trash</VIcon>
-                    </template>
-                    <VListItemTitle>Apagar</VListItemTitle>
-                  </VListItem>
-                </VList>
-              </VMenu>
+                <VIcon size="22">tabler-mood-smile</VIcon>
+              </VBtn>
             </div>
 
-            <div class="message-block">
-              <div
-                v-if="showQuoted(msgGrp)"
-                class="quoted-block"
-                :class="{
-                  'is-right': !isTypeUser(msgGrp),
-                  'is-clickable': !msgGrp.deleted,
-                }"
-                @click="goToQuoted(msgGrp)"
+            <div
+              v-if="isMessageUploadError(msgGrp)"
+              :class="[
+                'retry-trigger-container',
+                !isTypeUser(msgGrp) ? 'wrapper-operator' : 'wrapper-client',
+              ]"
+              @click.stop="retryMessage(msgGrp)"
+            >
+              <VBtn
+                icon
+                size="32"
+                variant="flat"
+                class="retry-trigger-btn"
+                color="error"
+                tabindex="-1"
               >
-                <div class="quoted-name">
-                  {{ resolveQuotedName(msgGrp) }}
-                </div>
+                <VIcon size="22">tabler-refresh</VIcon>
+              </VBtn>
+            </div>
 
-                <div class="quoted-content">
-                  <div
-                    v-if="hasQuotedImage(msgGrp)"
-                    class="quoted-media quoted-media--image"
-                  >
-                    <VImg
-                      :src="resolveQuotedImageSrc(msgGrp)"
-                      width="44"
-                      height="44"
-                      cover
-                    />
-                  </div>
-
-                  <div
-                    v-if="hasQuotedSticker(msgGrp)"
-                    class="quoted-media quoted-media--image"
-                  >
-                    <VImg
-                      :src="resolveQuotedStickerSrc(msgGrp)"
-                      width="44"
-                      height="44"
-                      contain
-                    />
-                  </div>
-
-                  <div v-if="hasQuotedLocation(msgGrp)" class="quoted-location">
-                    <VIcon size="22" color="primary">tabler-map-pin</VIcon>
-                    <div class="quoted-location-info">
-                      <span class="quoted-location-name">
-                        {{
-                          msgGrp.content?.quoted?.location?.name ||
-                          msgGrp.content?.quoted?.location?.address ||
-                          t('location_label', 'Localização')
-                        }}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div v-if="hasQuotedDocument(msgGrp)" class="quoted-document">
-                    <VIcon
-                      :icon="resolveQuotedDocumentIcon(msgGrp)"
-                      size="26"
-                      color="primary"
-                    />
-                    <div class="quoted-document-info">
-                      <span class="quoted-document-name">
-                        {{ resolveQuotedDocumentName(msgGrp) }}
-                      </span>
-                      <span class="quoted-document-meta">
-                        {{ resolveQuotedDocumentMeta(msgGrp) }}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div
-                    v-if="hasQuotedVideo(msgGrp)"
-                    class="quoted-media quoted-media--video"
-                  >
-                    <template v-if="resolveQuotedVideoUrl(msgGrp)">
-                      <video
-                        :src="resolveQuotedVideoUrl(msgGrp)"
-                        :poster="resolveQuotedVideoPoster(msgGrp) || undefined"
-                        class="quoted-video-thumb"
-                        preload="metadata"
-                        muted
-                        playsinline
-                      >
-                        <track kind="captions" />
-                      </video>
-                      <div class="quoted-video-overlay">
-                        <VIcon size="16">tabler-player-play</VIcon>
-                      </div>
-                    </template>
-                    <div
-                      v-if="!resolveQuotedVideoUrl(msgGrp)"
-                      class="quoted-video-placeholder"
-                    >
-                      <VIcon size="20">tabler-player-play</VIcon>
-                    </div>
-                  </div>
-
-                  <div v-if="hasQuotedVideo(msgGrp)" class="quoted-video-info">
-                    <span class="quoted-video-name">
-                      {{ resolveQuotedVideoName(msgGrp) }}
-                    </span>
-                    <span
-                      v-if="resolveQuotedVideoMeta(msgGrp)"
-                      class="quoted-video-meta"
-                    >
-                      {{ resolveQuotedVideoMeta(msgGrp) }}
-                    </span>
-                  </div>
-
-                  <div v-if="hasQuotedAudio(msgGrp)" class="quoted-audio">
-                    <VIcon size="22" color="primary">tabler-microphone</VIcon>
-                    <div class="quoted-audio-info">
-                      <span class="quoted-audio-name">
-                        {{ resolveQuotedAudioName(msgGrp) }}
-                      </span>
-                      <span
-                        v-if="resolveQuotedAudioMeta(msgGrp)"
-                        class="quoted-audio-meta"
-                      >
-                        {{ resolveQuotedAudioMeta(msgGrp) }}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div v-if="hasQuotedContact(msgGrp)" class="quoted-contact">
-                    <VIcon size="22" color="primary">tabler-user</VIcon>
-                    <div class="quoted-contact-info">
-                      <span class="quoted-contact-name">
-                        {{
-                          msgGrp.content?.quoted?.contact?.name
-                            ? `${msgGrp.content.quoted.contact.name} ${msgGrp.content.quoted.contact.last_name || ''}`.trim()
-                            : 'Contato'
-                        }}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div v-if="hasQuotedImage(msgGrp)" class="quoted-image-info">
-                    <span class="quoted-image-name">
-                      {{ resolveQuotedImageName(msgGrp) }}
-                    </span>
-                    <span
-                      v-if="resolveQuotedImageMeta(msgGrp)"
-                      class="quoted-image-meta"
-                    >
-                      {{ resolveQuotedImageMeta(msgGrp) }}
-                    </span>
-                  </div>
-
-                  <div
-                    v-if="
-                      resolveQuotedText(msgGrp) &&
-                      msgGrp.content?.quoted?.type !== EMessageType.video &&
-                      msgGrp.content?.quoted?.type !== EMessageType.image &&
-                      msgGrp.content?.quoted?.type !== EMessageType.audio &&
-                      msgGrp.content?.quoted?.type !== EMessageType.sticker &&
-                      msgGrp.content?.quoted?.type !== EMessageType.location &&
-                      msgGrp.content?.quoted?.type !== EMessageType.contact_card
-                    "
-                    class="quoted-text"
-                    :style="{
-                      color: isTypeUser(msgGrp)
-                        ? 'rgb(var(--v-theme-on-surface))'
-                        : 'rgb(var(--v-theme-title))',
-                    }"
-                  >
-                    {{ resolveQuotedText(msgGrp) }}
-                  </div>
-                </div>
-              </div>
-
+            <div
+              class="chat-content py-2 px-2 elevation-2"
+              :class="[
+                isTypeUser(msgGrp) ? 'chat-left' : 'chat-right',
+                {
+                  'is-deleted': msgGrp.deleted,
+                  'has-actions': !msgGrp.deleted,
+                },
+              ]"
+              :style="{
+                backgroundColor: isTypeUser(msgGrp)
+                  ? 'rgb(var(--v-theme-surface))'
+                  : 'rgb(217, 253, 211)',
+              }"
+            >
               <div
-                v-if="msgGrp.content?.link_preview?.title"
-                class="link-preview rounded"
-                :class="
-                  !isTypeUser(msgGrp)
-                    ? 'link-preview--right'
-                    : 'link-preview--left'
-                "
-                :style="{
-                  backgroundColor: isTypeUser(msgGrp)
-                    ? 'rgb(var(--v-theme-grey-200))'
-                    : 'rgb(214, 243, 207)',
-                  color: isTypeUser(msgGrp)
-                    ? 'rgb(var(--v-theme-on-grey))'
-                    : 'rgb(var(--v-theme-title))',
-                }"
+                v-if="canInteractWithMessage(msgGrp)"
+                class="message-actions"
               >
-                <div class="lp-main d-flex">
-                  <div v-if="resolvePreviewImage(msgGrp.content.link_preview)">
-                    <div class="lp-thumb me-3">
-                      <img
-                        :src="resolvePreviewImage(msgGrp.content.link_preview)"
-                        alt=""
-                      />
-                    </div>
-                  </div>
-
-                  <div class="lp-text">
-                    <div class="lp-domain text-xs mb-1">
-                      {{
-                        domainFromUrl(
-                          msgGrp.content.link_preview['canonical-url'] ||
-                            msgGrp.content.link_preview['matched-text']
-                        )
-                      }}
-                    </div>
-
-                    <div class="lp-title text-sm mb-1">
-                      {{ msgGrp.content.link_preview.title }}
-                    </div>
-
-                    <div class="lp-desc text-xs">
-                      {{ msgGrp.content.link_preview.description }}
-                    </div>
-                  </div>
-                </div>
-
-                <a
-                  v-if="resolvePreviewUrl(msgGrp.content.link_preview)"
-                  class="lp-url d-block mt-2 text-sm"
-                  :href="resolvePreviewUrl(msgGrp.content.link_preview)"
-                  target="_blank"
-                  rel="noopener"
+                <VMenu
+                  :close-on-content-click="true"
+                  location="bottom end"
+                  offset="6"
                 >
-                  {{ resolvePreviewUrl(msgGrp.content.link_preview) }}
-                </a>
-              </div>
-
-              <div
-                v-if="msgGrp.content?.type === EMessageType.view_once"
-                class="view-once-message"
-              >
-                <VIcon size="20" class="mr-2">tabler-eye-off</VIcon>
-                <p
-                  class="mb-0 text-sm"
-                  :style="{
-                    color: isTypeUser(msgGrp)
-                      ? 'rgb(var(--v-theme-on-surface))'
-                      : 'rgb(var(--v-theme-title))',
-                  }"
-                >
-                  {{ t('view_once_message') }}
-                </p>
-              </div>
-
-              <div
-                v-if="
-                  msgGrp.content?.type === EMessageType.image &&
-                  msgGrp.content?.image?.url
-                "
-                :class="[
-                  'image-bubble',
-                  !isTypeUser(msgGrp)
-                    ? 'image-bubble--right'
-                    : 'image-bubble--left',
-                  { 'is-deleted': msgGrp.deleted },
-                ]"
-                @click="openImage(msgGrp)"
-              >
-                <VImg
-                  :src="msgGrp.content.image.url"
-                  :aspect-ratio="
-                    msgGrp.content.image.width && msgGrp.content.image.height
-                      ? msgGrp.content.image.width / msgGrp.content.image.height
-                      : undefined
-                  "
-                  class="image-thumb"
-                  width="120"
-                  cover
-                />
-
-                <p
-                  v-if="msgGrp.content.image.caption"
-                  class="image-caption mt-2"
-                  :style="{
-                    color: isTypeUser(msgGrp)
-                      ? 'rgb(var(--v-theme-on-surface))'
-                      : 'rgb(var(--v-theme-title))',
-                  }"
-                >
-                  {{ msgGrp.content.image.caption }}
-                </p>
-              </div>
-
-              <div
-                v-if="
-                  msgGrp.content?.type === EMessageType.video &&
-                  msgGrp.content?.video?.url
-                "
-                :class="[
-                  'video-bubble',
-                  !isTypeUser(msgGrp)
-                    ? 'video-bubble--right'
-                    : 'video-bubble--left',
-                  { 'is-deleted': msgGrp.deleted },
-                ]"
-                @click="openVideo(msgGrp)"
-              >
-                <div class="video-thumb-wrapper">
-                  <video
-                    :src="msgGrp.content.video.url"
-                    class="video-thumb"
-                    preload="metadata"
-                    muted
-                    playsinline
-                  >
-                    <track kind="captions" />
-                  </video>
-                  <div class="video-play-overlay">
-                    <VIcon size="28">tabler-player-play</VIcon>
-                  </div>
-                </div>
-                <div class="video-details">
-                  <span class="video-meta text-caption text-disabled">
-                    {{ resolveVideoMeta(msgGrp.content.video) }}
-                  </span>
-                </div>
-                <p
-                  v-if="msgGrp.content.video.caption"
-                  class="video-caption mt-2"
-                  :style="{
-                    color: isTypeUser(msgGrp)
-                      ? 'rgb(var(--v-theme-on-surface))'
-                      : 'rgb(var(--v-theme-title))',
-                  }"
-                >
-                  {{ msgGrp.content.video.caption }}
-                </p>
-              </div>
-
-              <div
-                v-if="
-                  msgGrp.content?.type === EMessageType.sticker &&
-                  msgGrp.content?.sticker?.url
-                "
-                :class="[
-                  'sticker-bubble',
-                  !isTypeUser(msgGrp)
-                    ? 'sticker-bubble--right'
-                    : 'sticker-bubble--left',
-                  { 'is-deleted': msgGrp.deleted },
-                ]"
-                @click="openImage(msgGrp)"
-              >
-                <VImg
-                  v-if="!msgGrp.content.sticker.is_animated"
-                  :src="msgGrp.content.sticker.url"
-                  class="sticker-thumb"
-                  max-width="100"
-                  max-height="100"
-                  contain
-                />
-                <img
-                  v-else
-                  :src="msgGrp.content.sticker.url"
-                  alt="Sticker animado"
-                  class="sticker-thumb sticker-thumb--animated"
-                  style="
-                    max-width: 100px;
-                    max-height: 100px;
-                    object-fit: contain;
-                  "
-                />
-              </div>
-
-              <div
-                v-if="
-                  msgGrp.content?.type === EMessageType.location &&
-                  msgGrp.content?.location?.latitude &&
-                  msgGrp.content?.location?.longitude
-                "
-                :class="[
-                  'location-bubble',
-                  !isTypeUser(msgGrp)
-                    ? 'location-bubble--right'
-                    : 'location-bubble--left',
-                  { 'is-deleted': msgGrp.deleted },
-                ]"
-                @click="openLocation(msgGrp)"
-              >
-                <div class="location-map-preview">
-                  <MglMap
-                    :map-style="mapStyle"
-                    :center="[
-                      msgGrp.content.location.longitude,
-                      msgGrp.content.location.latitude,
-                    ]"
-                    :zoom="15"
-                    :interactive="false"
-                    :attribution-control="false"
-                    :navigation-control="false"
-                    class="location-map-preview-map"
-                    :style="{ width: '100%', height: '112px' }"
-                  >
-                    <MglMarker
-                      :coordinates="[
-                        msgGrp.content.location.longitude,
-                        msgGrp.content.location.latitude,
-                      ]"
-                      color="#ef4444"
-                    />
-                  </MglMap>
-                </div>
-                <div class="location-info">
-                  <div
-                    v-if="msgGrp.content.location.name"
-                    class="location-name"
-                    :style="{
-                      color: isTypeUser(msgGrp)
-                        ? 'rgb(var(--v-theme-on-surface))'
-                        : 'rgb(var(--v-theme-title))',
-                    }"
-                  >
-                    {{ msgGrp.content.location.name }}
-                  </div>
-                  <div
-                    v-if="msgGrp.content.location.address"
-                    class="location-address text-caption"
-                    :style="{
-                      color: isTypeUser(msgGrp)
-                        ? 'rgba(var(--v-theme-on-surface), 0.7)'
-                        : 'rgba(var(--v-theme-title), 0.7)',
-                    }"
-                  >
-                    {{ msgGrp.content.location.address }}
-                  </div>
-                  <!-- Hide fallback coordinates when no address is provided to show only the map -->
-                </div>
-              </div>
-
-              <div
-                v-if="
-                  msgGrp.content?.type === EMessageType.audio &&
-                  msgGrp.content?.audio?.url
-                "
-                :class="[
-                  'audio-bubble',
-                  !isTypeUser(msgGrp)
-                    ? 'audio-bubble--right'
-                    : 'audio-bubble--left',
-                  { 'is-deleted': msgGrp.deleted },
-                ]"
-              >
-                <div class="audio-player-container">
-                  <VBtn
-                    icon
-                    size="36"
-                    variant="text"
-                    class="audio-play-btn"
-                    @click="
-                      toggleAudioPlay(
-                        msgGrp.message_id,
-                        msgGrp.content.audio.url
-                      )
-                    "
-                  >
-                    <VIcon size="18">
-                      {{
-                        isAudioPlaying(msgGrp.message_id)
-                          ? 'tabler-player-pause'
-                          : 'tabler-player-play'
-                      }}
-                    </VIcon>
-                  </VBtn>
-
-                  <div class="audio-waveform-container">
-                    <template
-                      v-if="
-                        (() => {
-                          const waveform = audioWaveforms[msgGrp.message_id];
-                          return (
-                            waveform &&
-                            Array.isArray(waveform) &&
-                            waveform.length > 0
-                          );
-                        })()
+                  <template #activator="{ props }">
+                    <VBtn
+                      v-bind="props"
+                      icon
+                      size="24"
+                      density="comfortable"
+                      variant="text"
+                      :color="
+                        isTypeUser(msgGrp)
+                          ? 'rgb(var(--v-theme-on-surface))'
+                          : 'rgb(var(--v-theme-title))'
                       "
                     >
-                      <div class="audio-waveform">
-                        <div
-                          v-for="(barValue, index) in audioWaveforms[
-                            msgGrp.message_id
-                          ]"
-                          :key="`${msgGrp.message_id}-${index}`"
-                          class="audio-waveform-bar"
-                          :class="{
-                            'audio-waveform-bar--active':
-                              getAudioProgress(msgGrp.message_id) >
-                              (index /
-                                (audioWaveforms[msgGrp.message_id]?.length ||
-                                  80)) *
-                                100,
-                          }"
-                          :style="{
-                            height: `${Math.max(2, barValue * 100)}%`,
-                          }"
-                        ></div>
-                      </div>
-                      <div
-                        class="audio-progress-indicator"
-                        :style="{
-                          left: `${getAudioProgress(msgGrp.message_id)}%`,
-                        }"
-                      ></div>
-                    </template>
-                    <div v-else class="audio-waveform-placeholder">
-                      <div
-                        v-for="i in 80"
-                        :key="`placeholder-${msgGrp.message_id}-${i}`"
-                        class="audio-waveform-bar-placeholder"
-                      ></div>
-                    </div>
-                  </div>
-                </div>
+                      <VIcon size="18">tabler-chevron-down</VIcon>
+                    </VBtn>
+                  </template>
 
-                <p
-                  v-if="msgGrp.content?.message"
-                  class="audio-caption mt-2"
-                  :style="{
-                    color: isTypeUser(msgGrp)
-                      ? 'rgb(var(--v-theme-on-surface))'
-                      : 'rgb(var(--v-theme-title))',
-                  }"
-                >
-                  {{ msgGrp.content.message }}
-                </p>
+                  <VList density="compact" min-width="180">
+                    <VListItem @click="onReply(msgGrp)">
+                      <template #prepend>
+                        <VIcon size="18">tabler-corner-up-left</VIcon>
+                      </template>
+                      <VListItemTitle>Responder</VListItemTitle>
+                    </VListItem>
+
+                    <VListItem
+                      v-if="shouldShowCopy(msgGrp)"
+                      @click="onCopy(msgGrp)"
+                    >
+                      <template #prepend>
+                        <VIcon size="18">tabler-copy</VIcon>
+                      </template>
+                      <VListItemTitle>Copiar</VListItemTitle>
+                    </VListItem>
+
+                    <VListItem
+                      v-if="shouldShowDownload(msgGrp)"
+                      @click="downloadMessage(msgGrp)"
+                    >
+                      <template #prepend>
+                        <VIcon size="18">tabler-download</VIcon>
+                      </template>
+                      <VListItemTitle>{{
+                        t('chat_action_download')
+                      }}</VListItemTitle>
+                    </VListItem>
+
+                    <VListItem @click="toggleReactionPicker(msgGrp)">
+                      <template #prepend>
+                        <VIcon size="18">tabler-mood-smile</VIcon>
+                      </template>
+                      <VListItemTitle>Reagir</VListItemTitle>
+                    </VListItem>
+
+                    <VListItem
+                      v-if="!isTypeUser(msgGrp)"
+                      @click="onDelete(msgGrp)"
+                    >
+                      <template #prepend>
+                        <VIcon size="18">tabler-trash</VIcon>
+                      </template>
+                      <VListItemTitle>Apagar</VListItemTitle>
+                    </VListItem>
+                  </VList>
+                </VMenu>
               </div>
 
-              <div
-                v-if="
-                  msgGrp.content?.type === EMessageType.contact_card &&
-                  msgGrp.content?.contact
-                "
-                :class="[
-                  'contact-bubble',
-                  !isTypeUser(msgGrp)
-                    ? 'contact-bubble--right'
-                    : 'contact-bubble--left',
-                  { 'is-deleted': msgGrp.deleted },
-                ]"
-              >
+              <div class="message-block">
                 <div
-                  class="contact-item d-flex align-center gap-3 pa-3"
-                  :style="{
-                    backgroundColor: isTypeUser(msgGrp)
-                      ? 'rgba(var(--v-theme-surface), 0.5)'
-                      : 'rgba(255, 255, 255, 0.3)',
-                    borderRadius: '8px',
+                  v-if="showQuoted(msgGrp)"
+                  class="quoted-block"
+                  :class="{
+                    'is-right': !isTypeUser(msgGrp),
+                    'is-clickable': !msgGrp.deleted,
                   }"
+                  @click="goToQuoted(msgGrp)"
                 >
-                  <VAvatar size="40" color="primary" variant="tonal">
-                    <VIcon size="20">tabler-user</VIcon>
-                  </VAvatar>
-                  <div class="flex-grow-1">
+                  <div class="quoted-name">
+                    {{ resolveQuotedName(msgGrp) }}
+                  </div>
+
+                  <div class="quoted-content">
                     <div
-                      class="text-body-1 font-weight-medium"
+                      v-if="hasQuotedImage(msgGrp)"
+                      class="quoted-media quoted-media--image"
+                    >
+                      <VImg
+                        :src="resolveQuotedImageSrc(msgGrp)"
+                        width="44"
+                        height="44"
+                        cover
+                      />
+                    </div>
+
+                    <div
+                      v-if="hasQuotedSticker(msgGrp)"
+                      class="quoted-media quoted-media--image"
+                    >
+                      <VImg
+                        :src="resolveQuotedStickerSrc(msgGrp)"
+                        width="44"
+                        height="44"
+                        contain
+                      />
+                    </div>
+
+                    <div
+                      v-if="hasQuotedLocation(msgGrp)"
+                      class="quoted-location"
+                    >
+                      <VIcon size="22" color="primary">tabler-map-pin</VIcon>
+                      <div class="quoted-location-info">
+                        <span class="quoted-location-name">
+                          {{
+                            msgGrp.content?.quoted?.location?.name ||
+                            msgGrp.content?.quoted?.location?.address ||
+                            t('location_label', 'Localização')
+                          }}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div
+                      v-if="hasQuotedDocument(msgGrp)"
+                      class="quoted-document"
+                    >
+                      <VIcon
+                        :icon="resolveQuotedDocumentIcon(msgGrp)"
+                        size="26"
+                        color="primary"
+                      />
+                      <div class="quoted-document-info">
+                        <span class="quoted-document-name">
+                          {{ resolveQuotedDocumentName(msgGrp) }}
+                        </span>
+                        <span class="quoted-document-meta">
+                          {{ resolveQuotedDocumentMeta(msgGrp) }}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div
+                      v-if="hasQuotedVideo(msgGrp)"
+                      class="quoted-media quoted-media--video"
+                    >
+                      <template v-if="resolveQuotedVideoUrl(msgGrp)">
+                        <video
+                          :src="resolveQuotedVideoUrl(msgGrp)"
+                          :poster="
+                            resolveQuotedVideoPoster(msgGrp) || undefined
+                          "
+                          class="quoted-video-thumb"
+                          preload="metadata"
+                          muted
+                          playsinline
+                        >
+                          <track kind="captions" />
+                        </video>
+                        <div class="quoted-video-overlay">
+                          <VIcon size="16">tabler-player-play</VIcon>
+                        </div>
+                      </template>
+                      <div
+                        v-if="!resolveQuotedVideoUrl(msgGrp)"
+                        class="quoted-video-placeholder"
+                      >
+                        <VIcon size="20">tabler-player-play</VIcon>
+                      </div>
+                    </div>
+
+                    <div
+                      v-if="hasQuotedVideo(msgGrp)"
+                      class="quoted-video-info"
+                    >
+                      <span class="quoted-video-name">
+                        {{ resolveQuotedVideoName(msgGrp) }}
+                      </span>
+                      <span
+                        v-if="resolveQuotedVideoMeta(msgGrp)"
+                        class="quoted-video-meta"
+                      >
+                        {{ resolveQuotedVideoMeta(msgGrp) }}
+                      </span>
+                    </div>
+
+                    <div v-if="hasQuotedAudio(msgGrp)" class="quoted-audio">
+                      <VIcon size="22" color="primary">tabler-microphone</VIcon>
+                      <div class="quoted-audio-info">
+                        <span class="quoted-audio-name">
+                          {{ resolveQuotedAudioName(msgGrp) }}
+                        </span>
+                        <span
+                          v-if="resolveQuotedAudioMeta(msgGrp)"
+                          class="quoted-audio-meta"
+                        >
+                          {{ resolveQuotedAudioMeta(msgGrp) }}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div v-if="hasQuotedContact(msgGrp)" class="quoted-contact">
+                      <VIcon size="22" color="primary">tabler-user</VIcon>
+                      <div class="quoted-contact-info">
+                        <span class="quoted-contact-name">
+                          {{
+                            msgGrp.content?.quoted?.contact?.name
+                              ? `${msgGrp.content.quoted.contact.name} ${msgGrp.content.quoted.contact.last_name || ''}`.trim()
+                              : 'Contato'
+                          }}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div
+                      v-if="hasQuotedImage(msgGrp)"
+                      class="quoted-image-info"
+                    >
+                      <span class="quoted-image-name">
+                        {{ resolveQuotedImageName(msgGrp) }}
+                      </span>
+                      <span
+                        v-if="resolveQuotedImageMeta(msgGrp)"
+                        class="quoted-image-meta"
+                      >
+                        {{ resolveQuotedImageMeta(msgGrp) }}
+                      </span>
+                    </div>
+
+                    <div
+                      v-if="
+                        resolveQuotedText(msgGrp) &&
+                        msgGrp.content?.quoted?.type !== EMessageType.video &&
+                        msgGrp.content?.quoted?.type !== EMessageType.image &&
+                        msgGrp.content?.quoted?.type !== EMessageType.audio &&
+                        msgGrp.content?.quoted?.type !== EMessageType.sticker &&
+                        msgGrp.content?.quoted?.type !==
+                          EMessageType.location &&
+                        msgGrp.content?.quoted?.type !==
+                          EMessageType.contact_card
+                      "
+                      class="quoted-text"
                       :style="{
                         color: isTypeUser(msgGrp)
                           ? 'rgb(var(--v-theme-on-surface))'
                           : 'rgb(var(--v-theme-title))',
                       }"
                     >
-                      {{ msgGrp.content.contact.name }}
-                      {{ msgGrp.content.contact.last_name || '' }}
+                      {{ resolveQuotedText(msgGrp) }}
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  v-if="msgGrp.content?.link_preview?.title"
+                  class="link-preview rounded"
+                  :class="
+                    !isTypeUser(msgGrp)
+                      ? 'link-preview--right'
+                      : 'link-preview--left'
+                  "
+                  :style="{
+                    backgroundColor: isTypeUser(msgGrp)
+                      ? 'rgb(var(--v-theme-grey-200))'
+                      : 'rgb(214, 243, 207)',
+                    color: isTypeUser(msgGrp)
+                      ? 'rgb(var(--v-theme-on-grey))'
+                      : 'rgb(var(--v-theme-title))',
+                  }"
+                >
+                  <div class="lp-main d-flex">
+                    <div
+                      v-if="resolvePreviewImage(msgGrp.content.link_preview)"
+                    >
+                      <div class="lp-thumb me-3">
+                        <img
+                          :src="
+                            resolvePreviewImage(msgGrp.content.link_preview)
+                          "
+                          alt=""
+                        />
+                      </div>
+                    </div>
+
+                    <div class="lp-text">
+                      <div class="lp-domain text-xs mb-1">
+                        {{
+                          domainFromUrl(
+                            msgGrp.content.link_preview['canonical-url'] ||
+                              msgGrp.content.link_preview['matched-text']
+                          )
+                        }}
+                      </div>
+
+                      <div class="lp-title text-sm mb-1">
+                        {{ msgGrp.content.link_preview.title }}
+                      </div>
+
+                      <div class="lp-desc text-xs">
+                        {{ msgGrp.content.link_preview.description }}
+                      </div>
+                    </div>
+                  </div>
+
+                  <a
+                    v-if="resolvePreviewUrl(msgGrp.content.link_preview)"
+                    class="lp-url d-block mt-2 text-sm"
+                    :href="resolvePreviewUrl(msgGrp.content.link_preview)"
+                    target="_blank"
+                    rel="noopener"
+                  >
+                    {{ resolvePreviewUrl(msgGrp.content.link_preview) }}
+                  </a>
+                </div>
+
+                <div
+                  v-if="msgGrp.content?.type === EMessageType.view_once"
+                  class="view-once-message"
+                >
+                  <VIcon size="20" class="mr-2">tabler-eye-off</VIcon>
+                  <p
+                    class="mb-0 text-sm"
+                    :style="{
+                      color: isTypeUser(msgGrp)
+                        ? 'rgb(var(--v-theme-on-surface))'
+                        : 'rgb(var(--v-theme-title))',
+                    }"
+                  >
+                    {{ t('view_once_message') }}
+                  </p>
+                </div>
+
+                <div
+                  v-if="
+                    msgGrp.content?.type === EMessageType.image &&
+                    msgGrp.content?.image?.url
+                  "
+                  :class="[
+                    'image-bubble',
+                    !isTypeUser(msgGrp)
+                      ? 'image-bubble--right'
+                      : 'image-bubble--left',
+                    { 'is-deleted': msgGrp.deleted },
+                  ]"
+                  @click="openImage(msgGrp)"
+                >
+                  <VImg
+                    :src="msgGrp.content.image.url"
+                    :aspect-ratio="
+                      msgGrp.content.image.width && msgGrp.content.image.height
+                        ? msgGrp.content.image.width /
+                          msgGrp.content.image.height
+                        : undefined
+                    "
+                    class="image-thumb"
+                    width="120"
+                    cover
+                  />
+
+                  <p
+                    v-if="msgGrp.content.image.caption"
+                    class="image-caption mt-2"
+                    :style="{
+                      color: isTypeUser(msgGrp)
+                        ? 'rgb(var(--v-theme-on-surface))'
+                        : 'rgb(var(--v-theme-title))',
+                    }"
+                  >
+                    {{ msgGrp.content.image.caption }}
+                  </p>
+                </div>
+
+                <div
+                  v-if="
+                    msgGrp.content?.type === EMessageType.video &&
+                    msgGrp.content?.video?.url
+                  "
+                  :class="[
+                    'video-bubble',
+                    !isTypeUser(msgGrp)
+                      ? 'video-bubble--right'
+                      : 'video-bubble--left',
+                    { 'is-deleted': msgGrp.deleted },
+                  ]"
+                  @click="openVideo(msgGrp)"
+                >
+                  <div class="video-thumb-wrapper">
+                    <video
+                      :src="msgGrp.content.video.url"
+                      class="video-thumb"
+                      preload="metadata"
+                      muted
+                      playsinline
+                    >
+                      <track kind="captions" />
+                    </video>
+                    <div class="video-play-overlay">
+                      <VIcon size="28">tabler-player-play</VIcon>
+                    </div>
+                  </div>
+                  <div class="video-details">
+                    <span class="video-meta text-caption text-disabled">
+                      {{ resolveVideoMeta(msgGrp.content.video) }}
+                    </span>
+                  </div>
+                  <p
+                    v-if="msgGrp.content.video.caption"
+                    class="video-caption mt-2"
+                    :style="{
+                      color: isTypeUser(msgGrp)
+                        ? 'rgb(var(--v-theme-on-surface))'
+                        : 'rgb(var(--v-theme-title))',
+                    }"
+                  >
+                    {{ msgGrp.content.video.caption }}
+                  </p>
+                </div>
+
+                <div
+                  v-if="
+                    msgGrp.content?.type === EMessageType.sticker &&
+                    msgGrp.content?.sticker?.url
+                  "
+                  :class="[
+                    'sticker-bubble',
+                    !isTypeUser(msgGrp)
+                      ? 'sticker-bubble--right'
+                      : 'sticker-bubble--left',
+                    { 'is-deleted': msgGrp.deleted },
+                  ]"
+                  @click="openImage(msgGrp)"
+                >
+                  <VImg
+                    v-if="!msgGrp.content.sticker.is_animated"
+                    :src="msgGrp.content.sticker.url"
+                    class="sticker-thumb"
+                    max-width="100"
+                    max-height="100"
+                    contain
+                  />
+                  <img
+                    v-else
+                    :src="msgGrp.content.sticker.url"
+                    alt="Sticker animado"
+                    class="sticker-thumb sticker-thumb--animated"
+                    style="
+                      max-width: 100px;
+                      max-height: 100px;
+                      object-fit: contain;
+                    "
+                  />
+                </div>
+
+                <div
+                  v-if="
+                    msgGrp.content?.type === EMessageType.location &&
+                    msgGrp.content?.location?.latitude &&
+                    msgGrp.content?.location?.longitude
+                  "
+                  :class="[
+                    'location-bubble',
+                    !isTypeUser(msgGrp)
+                      ? 'location-bubble--right'
+                      : 'location-bubble--left',
+                    { 'is-deleted': msgGrp.deleted },
+                  ]"
+                  @click="openLocation(msgGrp)"
+                >
+                  <div class="location-map-preview">
+                    <MglMap
+                      :map-style="mapStyle"
+                      :center="[
+                        msgGrp.content.location.longitude,
+                        msgGrp.content.location.latitude,
+                      ]"
+                      :zoom="15"
+                      :interactive="false"
+                      :attribution-control="false"
+                      :navigation-control="false"
+                      class="location-map-preview-map"
+                      :style="{ width: '100%', height: '112px' }"
+                    >
+                      <MglMarker
+                        :coordinates="[
+                          msgGrp.content.location.longitude,
+                          msgGrp.content.location.latitude,
+                        ]"
+                        color="#ef4444"
+                      />
+                    </MglMap>
+                  </div>
+                  <div class="location-info">
+                    <div
+                      v-if="msgGrp.content.location.name"
+                      class="location-name"
+                      :style="{
+                        color: isTypeUser(msgGrp)
+                          ? 'rgb(var(--v-theme-on-surface))'
+                          : 'rgb(var(--v-theme-title))',
+                      }"
+                    >
+                      {{ msgGrp.content.location.name }}
                     </div>
                     <div
-                      v-if="msgGrp.content.contact.phone_partial"
-                      class="text-caption text-disabled"
+                      v-if="msgGrp.content.location.address"
+                      class="location-address text-caption"
+                      :style="{
+                        color: isTypeUser(msgGrp)
+                          ? 'rgba(var(--v-theme-on-surface), 0.7)'
+                          : 'rgba(var(--v-theme-title), 0.7)',
+                      }"
                     >
-                      {{ msgGrp.content.contact.phone_partial }}
+                      {{ msgGrp.content.location.address }}
                     </div>
+                    <!-- Hide fallback coordinates when no address is provided to show only the map -->
                   </div>
                 </div>
-                <p
-                  v-if="msgGrp.content?.message"
-                  class="contact-caption mt-2"
-                  :style="{
-                    color: isTypeUser(msgGrp)
-                      ? 'rgb(var(--v-theme-on-surface))'
-                      : 'rgb(var(--v-theme-title))',
-                  }"
-                >
-                  {{ msgGrp.content.message }}
-                </p>
-              </div>
 
-              <div
-                v-if="
-                  msgGrp.content?.message &&
-                  msgGrp.content?.type !== EMessageType.image &&
-                  msgGrp.content?.type !== EMessageType.video &&
-                  msgGrp.content?.type !== EMessageType.document &&
-                  msgGrp.content?.type !== EMessageType.contact_card &&
-                  !msgGrp.message_key?.is_view_once
-                "
-              >
-                <p
-                  class="mb-2 mr-6 text-base message-text"
-                  :style="{
-                    color: isTypeUser(msgGrp)
-                      ? 'rgb(var(--v-theme-on-surface))'
-                      : 'rgb(var(--v-theme-title))',
-                  }"
-                >
-                  {{ msgGrp.content?.message }}
-                </p>
-              </div>
-
-              <div
-                v-if="
-                  msgGrp.content?.type === EMessageType.document &&
-                  msgGrp.content?.document?.url
-                "
-                :class="[
-                  'document-bubble',
-                  !isTypeUser(msgGrp)
-                    ? 'document-bubble--right'
-                    : 'document-bubble--left',
-                  { 'is-deleted': msgGrp.deleted },
-                ]"
-              >
-                <div class="document-icon">
-                  <VIcon
-                    :icon="resolveDocumentIcon(msgGrp.content?.document)"
-                    size="30"
-                    color="primary"
-                  />
-                </div>
-                <div class="document-details">
-                  <VTooltip location="bottom">
-                    <template #activator="{ props }">
-                      <a
-                        v-bind="props"
-                        class="document-name"
-                        :href="msgGrp.content.document.url"
-                        :download="
-                          documentDownloadName(msgGrp.content.document)
-                        "
-                        target="_blank"
-                        rel="noopener"
-                      >
-                        {{ truncateDocumentName(msgGrp.content.document.name) }}
-                      </a>
-                    </template>
-                    <span>{{ msgGrp.content.document.name }}</span>
-                  </VTooltip>
-
-                  <span class="document-meta text-caption text-disabled">
-                    {{
-                      (msgGrp.content.document.extension || '').toUpperCase() ||
-                      'FILE'
-                    }}
-                    •
-                    {{ formatDocumentSize(msgGrp.content.document.size) }}
-                  </span>
-                </div>
-                <a
-                  class="document-download"
-                  :href="msgGrp.content.document.url"
-                  :download="documentDownloadName(msgGrp.content.document)"
-                  target="_blank"
-                  rel="noopener"
-                >
-                  <VIcon size="22">tabler-download</VIcon>
-                </a>
-              </div>
-
-              <div
-                v-if="
-                  msgGrp.content?.reactions &&
-                  msgGrp.content.reactions.length > 0
-                "
-                :class="[
-                  'reactions-summary',
-                  !isTypeUser(msgGrp)
-                    ? 'reactions-summary--right'
-                    : 'reactions-summary--left',
-                ]"
-              >
-                <div class="reaction-summary-bubble">
-                  <div
-                    v-for="(reaction, idx) in getReactionsSummary(
-                      msgGrp.content.reactions
-                    )"
-                    :key="idx"
-                    class="reaction-summary-item"
-                  >
-                    <span class="reaction-summary-emoji">
-                      {{ reaction.emoji }}
-                    </span>
-                    <span class="reaction-summary-count">
-                      {{ reaction.count }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div v-if="msgGrp.deleted" class="deleted-label-wrapper">
-                <span
-                  class="deleted-label"
-                  :style="{
-                    color: isTypeUser(msgGrp)
-                      ? 'rgba(var(--v-theme-on-surface), 0.65)'
-                      : 'rgba(var(--v-theme-title), 0.65)',
-                  }"
-                >
-                  {{ t('chat_deleted_message_label') }}
-                </span>
-              </div>
-
-              <div
-                v-if="
-                  showReactionPicker === msgGrp.message_id &&
-                  canInteractWithMessage(msgGrp)
-                "
-                class="reaction-picker"
-                :class="
-                  !isTypeUser(msgGrp)
-                    ? 'reaction-picker-operator'
-                    : 'reaction-picker-client'
-                "
-                @click.stop
-              >
-                <div class="reaction-picker-content d-flex align-center ga-1">
-                  <VBtn
-                    v-for="emoji in quickReactions"
-                    :key="emoji"
-                    icon
-                    size="32"
-                    variant="text"
-                    class="reaction-btn"
-                    @click="onReact(msgGrp, emoji)"
-                  >
-                    <span class="text-h6">{{ emoji }}</span>
-                  </VBtn>
-                  <VDivider vertical class="mx-1" />
-                  <div
-                    class="reaction-btn-container"
-                    @click.stop="toggleEmojiPicker(msgGrp.message_id)"
-                  >
-                    <VBtn
-                      icon
-                      size="32"
-                      variant="text"
-                      class="reaction-btn reaction-btn-emoji"
-                      tabindex="-1"
-                    >
-                      <VIcon size="20">tabler-plus</VIcon>
-                    </VBtn>
-                  </div>
-                </div>
                 <div
-                  v-if="showEmojiPicker === msgGrp.message_id"
-                  class="reaction-picker-full"
-                >
-                  <Picker
-                    :data="reactionEmojiIndex"
-                    :per-line="8"
-                    :show-preview="false"
-                    :show-skin-tones="false"
-                    :show-search="true"
-                    @select="onSelectReactionEmoji(msgGrp, $event)"
-                  />
-                </div>
-              </div>
-
-              <div
-                :class="[
-                  'message-meta',
-                  {
-                    'message-meta--audio':
-                      msgGrp.content?.type === EMessageType.audio &&
-                      msgGrp.content?.audio?.url,
-                  },
-                ]"
-              >
-                <span
                   v-if="
                     msgGrp.content?.type === EMessageType.audio &&
                     msgGrp.content?.audio?.url
                   "
-                  class="message-audio-duration"
+                  :class="[
+                    'audio-bubble',
+                    !isTypeUser(msgGrp)
+                      ? 'audio-bubble--right'
+                      : 'audio-bubble--left',
+                    { 'is-deleted': msgGrp.deleted },
+                  ]"
                 >
-                  {{
-                    getDisplayTime(
-                      msgGrp.message_id,
-                      msgGrp.content.audio.duration
-                    )
-                  }}
-                </span>
-                <span class="message-time">
-                  {{
-                    formatDate(msgGrp.date, {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      hour12: false,
-                    })
-                  }}
-                </span>
-                <VIcon size="16" :color="resolveFeedbackIcon(msgGrp).color">
-                  {{ resolveFeedbackIcon(msgGrp).icon }}
-                </VIcon>
+                  <div class="audio-player-container">
+                    <VBtn
+                      icon
+                      size="36"
+                      variant="text"
+                      class="audio-play-btn"
+                      @click="
+                        toggleAudioPlay(
+                          msgGrp.message_id,
+                          msgGrp.content.audio.url
+                        )
+                      "
+                    >
+                      <VIcon size="18">
+                        {{
+                          isAudioPlaying(msgGrp.message_id)
+                            ? 'tabler-player-pause'
+                            : 'tabler-player-play'
+                        }}
+                      </VIcon>
+                    </VBtn>
+
+                    <div class="audio-waveform-container">
+                      <template
+                        v-if="
+                          (() => {
+                            const waveform = audioWaveforms[msgGrp.message_id];
+                            return (
+                              waveform &&
+                              Array.isArray(waveform) &&
+                              waveform.length > 0
+                            );
+                          })()
+                        "
+                      >
+                        <div class="audio-waveform">
+                          <div
+                            v-for="(barValue, index) in audioWaveforms[
+                              msgGrp.message_id
+                            ]"
+                            :key="`${msgGrp.message_id}-${index}`"
+                            class="audio-waveform-bar"
+                            :class="{
+                              'audio-waveform-bar--active':
+                                getAudioProgress(msgGrp.message_id) >
+                                (index /
+                                  (audioWaveforms[msgGrp.message_id]?.length ||
+                                    80)) *
+                                  100,
+                            }"
+                            :style="{
+                              height: `${Math.max(2, barValue * 100)}%`,
+                            }"
+                          ></div>
+                        </div>
+                        <div
+                          class="audio-progress-indicator"
+                          :style="{
+                            left: `${getAudioProgress(msgGrp.message_id)}%`,
+                          }"
+                        ></div>
+                      </template>
+                      <div v-else class="audio-waveform-placeholder">
+                        <div
+                          v-for="i in 80"
+                          :key="`placeholder-${msgGrp.message_id}-${i}`"
+                          class="audio-waveform-bar-placeholder"
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <p
+                    v-if="msgGrp.content?.message"
+                    class="audio-caption mt-2"
+                    :style="{
+                      color: isTypeUser(msgGrp)
+                        ? 'rgb(var(--v-theme-on-surface))'
+                        : 'rgb(var(--v-theme-title))',
+                    }"
+                  >
+                    {{ msgGrp.content.message }}
+                  </p>
+                </div>
+
+                <div
+                  v-if="
+                    msgGrp.content?.type === EMessageType.contact_card &&
+                    msgGrp.content?.contact
+                  "
+                  :class="[
+                    'contact-bubble',
+                    !isTypeUser(msgGrp)
+                      ? 'contact-bubble--right'
+                      : 'contact-bubble--left',
+                    { 'is-deleted': msgGrp.deleted },
+                  ]"
+                >
+                  <div
+                    class="contact-item d-flex align-center gap-3 pa-3"
+                    :style="{
+                      backgroundColor: isTypeUser(msgGrp)
+                        ? 'rgba(var(--v-theme-surface), 0.5)'
+                        : 'rgba(255, 255, 255, 0.3)',
+                      borderRadius: '8px',
+                    }"
+                  >
+                    <VAvatar size="40" color="primary" variant="tonal">
+                      <VIcon size="20">tabler-user</VIcon>
+                    </VAvatar>
+                    <div class="flex-grow-1">
+                      <div
+                        class="text-body-1 font-weight-medium"
+                        :style="{
+                          color: isTypeUser(msgGrp)
+                            ? 'rgb(var(--v-theme-on-surface))'
+                            : 'rgb(var(--v-theme-title))',
+                        }"
+                      >
+                        {{ msgGrp.content.contact.name }}
+                        {{ msgGrp.content.contact.last_name || '' }}
+                      </div>
+                      <div
+                        v-if="msgGrp.content.contact.phone_partial"
+                        class="text-caption text-disabled"
+                      >
+                        {{ msgGrp.content.contact.phone_partial }}
+                      </div>
+                    </div>
+                  </div>
+                  <p
+                    v-if="msgGrp.content?.message"
+                    class="contact-caption mt-2"
+                    :style="{
+                      color: isTypeUser(msgGrp)
+                        ? 'rgb(var(--v-theme-on-surface))'
+                        : 'rgb(var(--v-theme-title))',
+                    }"
+                  >
+                    {{ msgGrp.content.message }}
+                  </p>
+                </div>
+
+                <div
+                  v-if="
+                    msgGrp.content?.message &&
+                    msgGrp.content?.type !== EMessageType.image &&
+                    msgGrp.content?.type !== EMessageType.video &&
+                    msgGrp.content?.type !== EMessageType.document &&
+                    msgGrp.content?.type !== EMessageType.contact_card &&
+                    !msgGrp.message_key?.is_view_once
+                  "
+                >
+                  <p
+                    class="mb-2 mr-6 text-base message-text"
+                    :style="{
+                      color: isTypeUser(msgGrp)
+                        ? 'rgb(var(--v-theme-on-surface))'
+                        : 'rgb(var(--v-theme-title))',
+                    }"
+                  >
+                    {{ msgGrp.content?.message }}
+                  </p>
+                </div>
+
+                <div
+                  v-if="
+                    msgGrp.content?.type === EMessageType.document &&
+                    msgGrp.content?.document?.url
+                  "
+                  :class="[
+                    'document-bubble',
+                    !isTypeUser(msgGrp)
+                      ? 'document-bubble--right'
+                      : 'document-bubble--left',
+                    { 'is-deleted': msgGrp.deleted },
+                  ]"
+                >
+                  <div class="document-icon">
+                    <VIcon
+                      :icon="resolveDocumentIcon(msgGrp.content?.document)"
+                      size="30"
+                      color="primary"
+                    />
+                  </div>
+                  <div class="document-details">
+                    <VTooltip location="bottom">
+                      <template #activator="{ props }">
+                        <a
+                          v-bind="props"
+                          class="document-name"
+                          :href="msgGrp.content.document.url"
+                          :download="
+                            documentDownloadName(msgGrp.content.document)
+                          "
+                          target="_blank"
+                          rel="noopener"
+                        >
+                          {{
+                            truncateDocumentName(msgGrp.content.document.name)
+                          }}
+                        </a>
+                      </template>
+                      <span>{{ msgGrp.content.document.name }}</span>
+                    </VTooltip>
+
+                    <span class="document-meta text-caption text-disabled">
+                      {{
+                        (
+                          msgGrp.content.document.extension || ''
+                        ).toUpperCase() || 'FILE'
+                      }}
+                      •
+                      {{ formatDocumentSize(msgGrp.content.document.size) }}
+                    </span>
+                  </div>
+                  <a
+                    class="document-download"
+                    :href="msgGrp.content.document.url"
+                    :download="documentDownloadName(msgGrp.content.document)"
+                    target="_blank"
+                    rel="noopener"
+                  >
+                    <VIcon size="22">tabler-download</VIcon>
+                  </a>
+                </div>
+
+                <div
+                  v-if="
+                    msgGrp.content?.reactions &&
+                    msgGrp.content.reactions.length > 0
+                  "
+                  :class="[
+                    'reactions-summary',
+                    !isTypeUser(msgGrp)
+                      ? 'reactions-summary--right'
+                      : 'reactions-summary--left',
+                  ]"
+                >
+                  <div class="reaction-summary-bubble">
+                    <div
+                      v-for="(reaction, idx) in getReactionsSummary(
+                        msgGrp.content.reactions
+                      )"
+                      :key="idx"
+                      class="reaction-summary-item"
+                    >
+                      <span class="reaction-summary-emoji">
+                        {{ reaction.emoji }}
+                      </span>
+                      <span class="reaction-summary-count">
+                        {{ reaction.count }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-if="msgGrp.deleted" class="deleted-label-wrapper">
+                  <span
+                    class="deleted-label"
+                    :style="{
+                      color: isTypeUser(msgGrp)
+                        ? 'rgba(var(--v-theme-on-surface), 0.65)'
+                        : 'rgba(var(--v-theme-title), 0.65)',
+                    }"
+                  >
+                    {{ t('chat_deleted_message_label') }}
+                  </span>
+                </div>
+
+                <div
+                  v-if="
+                    showReactionPicker === msgGrp.message_id &&
+                    canInteractWithMessage(msgGrp)
+                  "
+                  class="reaction-picker"
+                  :class="
+                    !isTypeUser(msgGrp)
+                      ? 'reaction-picker-operator'
+                      : 'reaction-picker-client'
+                  "
+                  @click.stop
+                >
+                  <div class="reaction-picker-content d-flex align-center ga-1">
+                    <VBtn
+                      v-for="emoji in quickReactions"
+                      :key="emoji"
+                      icon
+                      size="32"
+                      variant="text"
+                      class="reaction-btn"
+                      @click="onReact(msgGrp, emoji)"
+                    >
+                      <span class="text-h6">{{ emoji }}</span>
+                    </VBtn>
+                    <VDivider vertical class="mx-1" />
+                    <div
+                      class="reaction-btn-container"
+                      @click.stop="toggleEmojiPicker(msgGrp.message_id)"
+                    >
+                      <VBtn
+                        icon
+                        size="32"
+                        variant="text"
+                        class="reaction-btn reaction-btn-emoji"
+                        tabindex="-1"
+                      >
+                        <VIcon size="20">tabler-plus</VIcon>
+                      </VBtn>
+                    </div>
+                  </div>
+                  <div
+                    v-if="showEmojiPicker === msgGrp.message_id"
+                    class="reaction-picker-full"
+                  >
+                    <Picker
+                      :data="reactionEmojiIndex"
+                      :per-line="8"
+                      :show-preview="false"
+                      :show-skin-tones="false"
+                      :show-search="true"
+                      @select="onSelectReactionEmoji(msgGrp, $event)"
+                    />
+                  </div>
+                </div>
+
+                <div
+                  :class="[
+                    'message-meta',
+                    {
+                      'message-meta--audio':
+                        msgGrp.content?.type === EMessageType.audio &&
+                        msgGrp.content?.audio?.url,
+                    },
+                  ]"
+                >
+                  <span
+                    v-if="
+                      msgGrp.content?.type === EMessageType.audio &&
+                      msgGrp.content?.audio?.url
+                    "
+                    class="message-audio-duration"
+                  >
+                    {{
+                      getDisplayTime(
+                        msgGrp.message_id,
+                        msgGrp.content.audio.duration
+                      )
+                    }}
+                  </span>
+                  <span class="message-time">
+                    {{
+                      formatDate(msgGrp.date, {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: false,
+                      })
+                    }}
+                  </span>
+                  <VIcon size="16" :color="resolveFeedbackIcon(msgGrp).color">
+                    {{ resolveFeedbackIcon(msgGrp).icon }}
+                  </VIcon>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </template>
   </div>
 
   <VDialog

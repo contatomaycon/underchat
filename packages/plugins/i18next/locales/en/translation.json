@@ -257,5 +257,7 @@
   "permission_groups_update_error": "Error updating role permissions!",
   "chat_status_update_success": "Chat status updated successfully!",
   "chat_status_update_not_found": "Chat not found for status update!",
-  "chat_status_update_failed": "Error updating chat status!"
+  "chat_status_update_failed": "Error updating chat status!",
+  "chat_summary_clear_success": "Chat summary cleared successfully!",
+  "chat_summary_clear_failed": "Error clearing chat summary!"
 }

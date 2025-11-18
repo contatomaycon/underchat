@@ -60,6 +60,7 @@ export class ChatService {
   ): Promise<IChat | null> => {
     const queryElastic = {
       size: 1,
+      _source: true,
       query: {
         bool: {
           must: [
@@ -91,7 +92,13 @@ export class ChatService {
     );
 
     const hit = result?.hits?.hits?.[0] as ElasticHit<IChat> | undefined;
-    return hit?._source ?? null;
+    const chat = hit?._source ?? null;
+
+    if (chat && Array.isArray(chat.summary)) {
+      chat.summary = chat.summary[0] as IChat['summary'];
+    }
+
+    return chat;
   };
 
   updateChatStatus = async (
@@ -112,5 +119,26 @@ export class ChatService {
       updateData,
       chatId
     );
+  };
+
+  updateChatSummary = async (
+    chatId: string,
+    summary: IChat['summary']
+  ): Promise<boolean> => {
+    return this.elasticDatabaseService.update(
+      EElasticIndex.chat,
+      { summary },
+      chatId
+    );
+  };
+
+  clearChatSummary = async (chatId: string): Promise<boolean> => {
+    const summary: IChat['summary'] = {
+      last_message: null,
+      last_date: new Date().toISOString(),
+      unread_count: 0,
+    };
+
+    return this.updateChatSummary(chatId, summary);
   };
 }

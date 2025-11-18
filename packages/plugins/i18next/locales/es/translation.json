@@ -257,5 +257,7 @@
   "permission_groups_update_error": "¡Error al actualizar permisos del rol!",
   "chat_status_update_success": "¡Estado del chat actualizado con éxito!",
   "chat_status_update_not_found": "¡Chat no encontrado para actualizar el estado!",
-  "chat_status_update_failed": "¡Error al actualizar el estado del chat!"
+  "chat_status_update_failed": "¡Error al actualizar el estado del chat!",
+  "chat_summary_clear_success": "¡Summary del chat limpiado con éxito!",
+  "chat_summary_clear_failed": "¡Error al limpiar el summary del chat!"
 }

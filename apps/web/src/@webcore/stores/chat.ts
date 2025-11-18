@@ -71,6 +71,8 @@ export const useChatStore = defineStore('chat', {
     listQueue: [] as ListChatsResult[],
     listInChat: [] as ListChatsResult[],
     messageReply: null as ListMessageResult | null,
+    pendingClearChatIds: [] as string[],
+    clearChatSummaryTimeout: null as ReturnType<typeof setTimeout> | null,
     user: getUser(),
     currentPage: 1,
     totalPages: 1,
@@ -221,7 +223,20 @@ export const useChatStore = defineStore('chat', {
         const idx = arr.findIndex((c) => c.chat_id === input.chat_id);
 
         if (idx !== -1) {
-          arr.splice(idx, 1, input);
+          arr[idx] = {
+            chat_id: input.chat_id,
+            summary: input.summary,
+            account: input.account,
+            worker: input.worker,
+            sector: input.sector,
+            user: input.user,
+            contact: input.contact,
+            photo: input.photo,
+            name: input.name,
+            phone: input.phone,
+            status: input.status,
+            date: input.date,
+          };
 
           return;
         }
@@ -234,7 +249,20 @@ export const useChatStore = defineStore('chat', {
         replaceOrPush(this.listQueue);
 
         if (this.activeChat?.chat_id === chat.chat_id) {
-          this.activeChat = { ...input };
+          this.activeChat = {
+            chat_id: input.chat_id,
+            summary: input.summary,
+            account: input.account,
+            worker: input.worker,
+            sector: input.sector,
+            user: input.user,
+            contact: input.contact,
+            photo: input.photo,
+            name: input.name,
+            phone: input.phone,
+            status: input.status,
+            date: input.date,
+          };
         }
 
         return;
@@ -267,7 +295,20 @@ export const useChatStore = defineStore('chat', {
         replaceOrPush(this.listInChat);
 
         if (this.activeChat?.chat_id === chat.chat_id) {
-          this.activeChat = { ...input };
+          this.activeChat = {
+            chat_id: input.chat_id,
+            summary: input.summary,
+            account: input.account,
+            worker: input.worker,
+            sector: input.sector,
+            user: input.user,
+            contact: input.contact,
+            photo: input.photo,
+            name: input.name,
+            phone: input.phone,
+            status: input.status,
+            date: input.date,
+          };
         }
       }
     },
@@ -982,13 +1023,65 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
+    clearChatSummaryInList(chatIds: string[]): void {
+      const clearSummary = (arr: ListChatsResult[]) => {
+        chatIds.forEach((chatId) => {
+          const idx = arr.findIndex((c) => c.chat_id === chatId);
+          if (idx !== -1 && arr[idx].summary) {
+            arr[idx] = {
+              ...arr[idx],
+              summary: {
+                last_message: null,
+                last_date: new Date().toISOString(),
+                unread_count: 0,
+              },
+            };
+          }
+        });
+      };
+
+      clearSummary(this.listQueue);
+      clearSummary(this.listInChat);
+    },
+
+    clearChatSummary(chatId: string): void {
+      this.pendingClearChatIds.push(chatId);
+
+      if (this.clearChatSummaryTimeout) {
+        clearTimeout(this.clearChatSummaryTimeout);
+      }
+
+      this.clearChatSummaryTimeout = setTimeout(() => {
+        const chatIdsToClear = [...this.pendingClearChatIds];
+        this.pendingClearChatIds = [];
+
+        this.clearChatSummaryInList(chatIdsToClear);
+
+        if (chatIdsToClear.length > 0) {
+          axios
+            .put('/chat/summary/clear', { chat_ids: chatIdsToClear })
+            .catch(() => {});
+        }
+      }, 100);
+    },
+
     setActiveChat(chatId: string): void {
+      const previousChatId = this.activeChat?.chat_id;
+
       const chat = (this.listQueue.find((c) => c.chat_id === chatId) ??
         this.listInChat.find((c) => c.chat_id === chatId)) as ListChatsResult;
 
       if (!chat?.chat_id) {
+        if (previousChatId) {
+          this.clearChatSummary(previousChatId);
+        }
+
         this.activeChat = null;
         return;
+      }
+
+      if (previousChatId && previousChatId !== chatId) {
+        this.clearChatSummary(previousChatId);
       }
 
       this.activeChat = {
@@ -1005,6 +1098,8 @@ export const useChatStore = defineStore('chat', {
         status: chat.status,
         date: chat.date,
       };
+
+      this.clearChatSummary(chatId);
     },
 
     setMessageReply(m: ListMessageResult) {
