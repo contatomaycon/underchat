@@ -1376,6 +1376,8 @@ const sendMessage = async () => {
 };
 
 const openChat = async (chatId: ListChatsResult['chat_id']) => {
+  if (chatStore.activeChat?.chat_id === chatId) return;
+
   chatStore.setActiveChat(chatId);
 
   const requestQueue: ListMessageChatsQuery = {

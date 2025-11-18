@@ -1066,6 +1066,8 @@ export const useChatStore = defineStore('chat', {
     },
 
     setActiveChat(chatId: string): void {
+      if (this.activeChat?.chat_id === chatId) return;
+
       const previousChatId = this.activeChat?.chat_id;
 
       const chat = (this.listQueue.find((c) => c.chat_id === chatId) ??
