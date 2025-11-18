@@ -11,7 +11,7 @@ import {
 } from '@core/schema/chat/listChats/response.schema';
 import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
 import { UpdateChatsUserRequest } from '@core/schema/chat/updateChatsUser/request.schema';
-import { getUser, setUser } from '../localStorage/user';
+import { getUser, setUser, getPermissions } from '../localStorage/user';
 import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
@@ -27,6 +27,9 @@ import { IChat } from '@core/common/interfaces/IChat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ViewLinkPreviewBody } from '@core/schema/chat/viewLinkPreview/request.schema';
 import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
+import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 
 type LocalMessageState = {
   status: 'uploading' | 'error';
@@ -238,6 +241,28 @@ export const useChatStore = defineStore('chat', {
       }
 
       if (chat.status === EChatStatus.in_chat) {
+        const permissions = getPermissions();
+        const canViewOthersChats = permissions.some(
+          (perm: EPermissionsRoles) =>
+            perm === EGeneralPermissions.full_access ||
+            perm === EGeneralPermissions.full_access_group ||
+            perm === EChatPermissions.chat_group ||
+            perm === EChatPermissions.view_others_chats
+        );
+
+        const isOwnChat = chat.user?.id === this.user?.user_id;
+
+        if (!canViewOthersChats && !isOwnChat) {
+          removeFromList(this.listInChat);
+          removeFromList(this.listQueue);
+
+          if (this.activeChat?.chat_id === chat.chat_id) {
+            this.activeChat = null;
+          }
+
+          return;
+        }
+
         removeFromList(this.listQueue);
         replaceOrPush(this.listInChat);
 
