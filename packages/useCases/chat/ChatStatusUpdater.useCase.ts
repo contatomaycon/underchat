@@ -68,6 +68,11 @@ export class ChatStatusUpdaterUseCase {
       ...chat,
       status,
       user: user ?? chat.user,
+      summary: {
+        last_message: chat.summary?.last_message ?? null,
+        last_date: chat.summary?.last_date ?? null,
+        unread_count: 0,
+      },
     };
 
     await this.chatService.saveChat(updatedChat);

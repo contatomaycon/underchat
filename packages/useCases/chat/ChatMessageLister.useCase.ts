@@ -37,19 +37,25 @@ export class ChatMessageListerUseCase {
     return hasRequiredPermission(actions, permissions);
   }
 
-  private async updateChat(chatId: string, accountId: string) {
-    const chat = await this.chatService.findChatByChatId(accountId, chatId);
+  private updateChatSummaryIfParked(chat: IChat): void {
+    if (
+      chat.status === EChatStatus.in_chat &&
+      chat.user &&
+      chat.summary?.unread_count &&
+      chat.summary.unread_count > 0
+    ) {
+      const summaryUpdate: IChat['summary'] = {
+        last_message: chat.summary.last_message,
+        last_date: chat.summary.last_date,
+        unread_count: 0,
+      };
 
-    const input: IChat['summary'] = {
-      last_message: null,
-      last_date: chat?.summary?.last_date ?? null,
-      unread_count: 0,
-    };
-    return this.elasticDatabaseService.update(
-      EElasticIndex.chat,
-      { summary: input },
-      chatId
-    );
+      this.chatService
+        .updateChatSummary(chat.chat_id, summaryUpdate)
+        .catch((error) => {
+          console.error('Error updating chat summary:', error);
+        });
+    }
   }
 
   private async getChatMessage(
@@ -156,7 +162,7 @@ export class ChatMessageListerUseCase {
       currentPage
     );
 
-    await this.updateChat(params.chat_id, accountId);
+    this.updateChatSummaryIfParked(chat);
 
     return {
       pagings,

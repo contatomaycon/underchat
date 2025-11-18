@@ -760,6 +760,7 @@ export class MessageUpsertConsume {
 
       const messageText = extractMessageTextFromContent(content);
       const currentUnreadCount = getChat.summary?.unread_count ?? 0;
+
       const newUnreadCount = isFromMe ? 0 : currentUnreadCount + 1;
 
       const summaryUpdate: IChat['summary'] = {
