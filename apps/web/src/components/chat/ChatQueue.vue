@@ -46,7 +46,7 @@ const isChatContactActive = computed(() => {
           {{ formatPhoneBR(props.user?.phone) }}
         </p>
         <p
-          v-if="!isChatContactActive && props.user?.summary?.last_message"
+          v-if="props.user?.summary?.last_message"
           class="mb-0 text-body-2 text-medium-emphasis chat-message-preview"
         >
           {{ limitCharacters(35, props.user.summary.last_message, '...') }}
@@ -61,7 +61,6 @@ const isChatContactActive = computed(() => {
         </div>
         <VBadge
           v-if="
-            !isChatContactActive &&
             props.user?.summary?.unread_count &&
             props.user.summary.unread_count > 0
           "

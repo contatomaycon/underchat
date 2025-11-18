@@ -82,12 +82,7 @@ export class MessageStatusUpdateConsume {
               data.message_id,
               data.patch
             );
-          } catch (error) {
-            console.error('Error processing message status update', {
-              accountId: data.account_id,
-              messageId: data.message_id,
-              error,
-            });
+          } catch {
             await this.commitNext(topic, partition, message.offset);
           } finally {
             stop();
