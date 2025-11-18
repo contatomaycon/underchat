@@ -31,6 +31,7 @@ import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/req
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { EColor } from '@core/common/enums/EColor';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
 import {
   IChatMessage,
   IQuotedMessage,
@@ -430,6 +431,19 @@ const viewerDownloadName = ref<string>('');
 const viewerKind = ref<'image' | 'video'>('image');
 
 const hasContent = computed(() => !!msg.value && msg.value.trim().length > 0);
+
+const isQueueStatus = computed(
+  () => chatStore.activeChat?.status === EChatStatus.queue
+);
+
+const handleAttendChat = async () => {
+  if (!chatStore.activeChat?.chat_id) return;
+
+  await chatStore.updateChatStatus(
+    chatStore.activeChat.chat_id,
+    EChatStatus.in_chat
+  );
+};
 
 const canAccessContacts = computed(() => {
   const permissions = [
@@ -1321,6 +1335,7 @@ const finalizeSend = () => {
 const sendMessage = async () => {
   if (!canSendMessage()) return;
   if (!hasActiveChat()) return;
+  if (isQueueStatus.value) return;
 
   if (selectedDocuments.value.length > 0) {
     await sendDocumentMessage();
@@ -3044,25 +3059,34 @@ onMounted(async () => {
 
     await onMessage(
       chatAccountCentrifugo(accountId),
-      (data: IChatMessage | IChatTyping) => {
+      (data: IChatMessage | IChatTyping | IChat) => {
         if ('type' in data && data.type === 'typing') {
           handleTypingEvent(data as IChatTyping);
           return;
         }
 
-        const messageData = data as IChatMessage;
+        if ('message_id' in data) {
+          const messageData = data as IChatMessage;
 
-        if (chatStore.activeChat?.chat_id !== messageData.chat_id) {
+          if (chatStore.activeChat?.chat_id !== messageData.chat_id) {
+            return;
+          }
+
+          handleTypingEvent(messageData);
+
+          const changeType = chatStore.addMessageActiveChat(messageData);
+
+          if (changeType === 'created') {
+            scrollToMessageById(messageData.message_id);
+            globalThis.dispatchEvent(new CustomEvent('focus-composer'));
+          }
+
           return;
         }
 
-        handleTypingEvent(messageData);
-
-        const changeType = chatStore.addMessageActiveChat(messageData);
-
-        if (changeType === 'created') {
-          scrollToMessageById(messageData.message_id);
-          globalThis.dispatchEvent(new CustomEvent('focus-composer'));
+        if ('chat_id' in data && !('message_id' in data)) {
+          const chatData = data as IChat;
+          chatStore.addChat(chatData);
         }
       }
     );
@@ -3723,6 +3747,28 @@ onBeforeUnmount(() => {
             </VBtn>
           </div>
 
+          <div
+            v-if="isQueueStatus"
+            class="d-flex align-center justify-space-between pa-4 bg-surface rounded mb-2"
+          >
+            <span class="text-body-2 text-medium-emphasis">
+              {{
+                t(
+                  'chat_queue_message',
+                  'Para iniciar o atendimento clique em atender'
+                )
+              }}
+            </span>
+            <VBtn
+              color="primary"
+              size="small"
+              @click="handleAttendChat"
+              :loading="chatStore.loading"
+            >
+              {{ t('attend', 'Atender') }}
+            </VBtn>
+          </div>
+
           <VTextarea
             v-if="!isRecordingAudio"
             ref="composerRef"
@@ -3735,6 +3781,7 @@ onBeforeUnmount(() => {
             :auto-grow="true"
             rows="1"
             :max-rows="8"
+            :disabled="isQueueStatus"
             @keydown.enter.exact.prevent="onSendText"
           >
             <template #prepend-inner>

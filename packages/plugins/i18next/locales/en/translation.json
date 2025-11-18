@@ -253,5 +253,8 @@
   "cannot_delete_system_role": "Cannot delete system roles!",
   "role_permissions_updated_successfully": "Role permissions updated successfully!",
   "permission_groups_load_error": "Error loading permission groups!",
-  "permission_groups_update_error": "Error updating role permissions!"
+  "permission_groups_update_error": "Error updating role permissions!",
+  "chat_status_update_success": "Chat status updated successfully!",
+  "chat_status_update_not_found": "Chat not found for status update!",
+  "chat_status_update_failed": "Error updating chat status!"
 }

@@ -75,6 +75,10 @@ export const useChatStore = defineStore('chat', {
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
+      if (!message || message.trim() === '') {
+        return;
+      }
+
       this.snackbar.message = message;
       this.snackbar.color = color;
       this.snackbar.status = true;
@@ -203,6 +207,13 @@ export const useChatStore = defineStore('chat', {
         date: chat.date,
       };
 
+      const removeFromList = (arr: ListChatsResult[]) => {
+        const idx = arr.findIndex((c) => c.chat_id === input.chat_id);
+        if (idx !== -1) {
+          arr.splice(idx, 1);
+        }
+      };
+
       const replaceOrPush = (arr: ListChatsResult[]) => {
         const idx = arr.findIndex((c) => c.chat_id === input.chat_id);
 
@@ -216,12 +227,14 @@ export const useChatStore = defineStore('chat', {
       };
 
       if (chat.status === EChatStatus.queue) {
+        removeFromList(this.listInChat);
         replaceOrPush(this.listQueue);
 
         return;
       }
 
       if (chat.status === EChatStatus.in_chat) {
+        removeFromList(this.listQueue);
         replaceOrPush(this.listInChat);
       }
     },
@@ -344,7 +357,9 @@ export const useChatStore = defineStore('chat', {
         const data = response?.data as IApiResponse<null>;
 
         if (!data?.status) {
-          this.showSnackbar(data.message, EColor.error);
+          const errorMessage =
+            data?.message || this.i18n.global.t('chat_config_update_error');
+          this.showSnackbar(errorMessage, EColor.error);
 
           return;
         }
@@ -448,7 +463,9 @@ export const useChatStore = defineStore('chat', {
         const data = response?.data as IApiResponse<boolean>;
 
         if (!data?.status) {
-          this.showSnackbar(data.message, EColor.error);
+          const errorMessage =
+            data?.message || this.i18n.global.t('chat_message_create_error');
+          this.showSnackbar(errorMessage, EColor.error);
 
           return false;
         }
@@ -461,6 +478,46 @@ export const useChatStore = defineStore('chat', {
           this.i18n.global.t('chat_message_create_error'),
           EColor.error
         );
+
+        return false;
+      }
+    },
+
+    async updateChatStatus(chatId: string, status: string): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<IApiResponse<IChat>>(
+          `/chat/${chatId}/status`,
+          { status }
+        );
+
+        this.loading = false;
+
+        const data = response?.data as IApiResponse<IChat>;
+
+        if (!data?.status) {
+          const errorMessage =
+            data?.message || this.i18n.global.t('chat_status_update_error');
+          this.showSnackbar(errorMessage, EColor.error);
+
+          return false;
+        }
+
+        if (data.data && this.activeChat?.chat_id === chatId) {
+          this.activeChat = {
+            ...this.activeChat,
+            status: data.data.status,
+            user: data.data.user,
+          };
+        }
+
+        return true;
+      } catch {
+        this.loading = false;
+
+        const errorMessage = this.i18n.global.t('chat_status_update_error');
+        this.showSnackbar(errorMessage, EColor.error);
 
         return false;
       }

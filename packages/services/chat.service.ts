@@ -6,6 +6,10 @@ import { mensageMappings } from '@core/mappings/mensage.mappings';
 import { IChat } from '@core/common/interfaces/IChat';
 import { chatMappings } from '@core/mappings/chat.mappings';
 
+type ElasticHit<T> = {
+  _source?: T;
+};
+
 @injectable()
 export class ChatService {
   constructor(
@@ -47,6 +51,66 @@ export class ChatService {
       EElasticIndex.chat,
       chat,
       chat.chat_id
+    );
+  };
+
+  findChatByChatId = async (
+    accountId: string,
+    chatId: string
+  ): Promise<IChat | null> => {
+    const queryElastic = {
+      size: 1,
+      query: {
+        bool: {
+          must: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: {
+                    'account.id': accountId,
+                  },
+                },
+              },
+            },
+          ],
+          filter: [
+            {
+              term: {
+                chat_id: chatId,
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select<IChat>(
+      EElasticIndex.chat,
+      queryElastic
+    );
+
+    const hit = result?.hits?.hits?.[0] as ElasticHit<IChat> | undefined;
+    return hit?._source ?? null;
+  };
+
+  updateChatStatus = async (
+    chatId: string,
+    status: IChat['status'],
+    user?: IChat['user']
+  ): Promise<boolean> => {
+    const updateData: { status: IChat['status']; user?: IChat['user'] } = {
+      status,
+    };
+
+    if (user) {
+      updateData.user = user;
+    }
+
+    return this.elasticDatabaseService.update(
+      EElasticIndex.chat,
+      updateData,
+      chatId
     );
   };
 }
