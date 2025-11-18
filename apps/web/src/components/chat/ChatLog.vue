@@ -82,15 +82,26 @@ const audioCurrentTimes = reactive<Record<string, number>>({});
 const audioDurations = reactive<Record<string, number>>({});
 const audioWaveforms = reactive<Record<string, number[]>>({});
 
-const resolveFeedbackIcon = (
-  message: ListMessageResult
-): { icon: string; color: string | undefined } => {
+type FeedbackIcon = { icon: string; color?: string };
+
+const resolveFeedbackIcon = (message: ListMessageResult): FeedbackIcon => {
   if (isMessageUploadError(message))
     return { icon: 'tabler-alert-triangle', color: 'error' };
   if (message.summary?.is_sent_to_internal === false)
     return { icon: 'tabler-clock', color: undefined };
+
+  if (isTypeUser(message)) {
+    if (message.summary?.is_seen)
+      return { icon: 'tabler-checks', color: 'primary' };
+    if (message.summary?.is_delivered)
+      return { icon: 'tabler-checks', color: undefined };
+    if (message.summary?.is_sent)
+      return { icon: 'tabler-check', color: undefined };
+    return { icon: 'tabler-check', color: undefined };
+  }
+
   if (message.summary?.is_seen)
-    return { icon: 'tabler-checks', color: 'success' };
+    return { icon: 'tabler-checks', color: 'primary' };
   if (message.summary?.is_delivered)
     return { icon: 'tabler-checks', color: undefined };
   return { icon: 'tabler-check', color: undefined };

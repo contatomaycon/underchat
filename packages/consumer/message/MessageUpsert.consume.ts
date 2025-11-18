@@ -31,8 +31,10 @@ import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
 import { convertWaveformToBase64 } from '@core/common/functions/convertWaveform';
 import Redis from 'ioredis';
 import { EMessageType } from '@core/common/enums/EMessageType';
-import { downloadMediaMessage } from '@whiskeysockets/baileys';
+import { downloadMediaMessage, WAMessageKey } from '@whiskeysockets/baileys';
 import { Buffer } from 'node:buffer';
+import { StreamProducerService } from '@core/services/streamProducer.service';
+import { IMessageMarkRead } from '@core/common/interfaces/IMessageMarkRead';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -48,7 +50,8 @@ export class MessageUpsertConsume {
     private readonly workerService: WorkerService,
     private readonly chatService: ChatService,
     private readonly centrifugoService: CentrifugoService,
-    private readonly storageService: StorageService
+    private readonly storageService: StorageService,
+    private readonly streamProducerService: StreamProducerService
   ) {}
 
   private get consumerOrThrow(): Consumer {
@@ -79,6 +82,32 @@ export class MessageUpsertConsume {
     );
 
     return promise;
+  }
+
+  private async markIncomingMessageAsRead(
+    accountId: string,
+    workerId: string,
+    key: WAMessageKey
+  ): Promise<void> {
+    try {
+      const markReadData: IMessageMarkRead = {
+        account_id: accountId,
+        worker_id: workerId,
+        keys: [key],
+      };
+
+      await this.streamProducerService.send(
+        this.kafkaServiceQueueService.markMessageRead(),
+        markReadData
+      );
+    } catch (error) {
+      console.error('Error sending mark read to queue', {
+        accountId,
+        workerId,
+        messageId: key.id,
+        error,
+      });
+    }
   }
 
   private async getChat(
@@ -693,6 +722,26 @@ export class MessageUpsertConsume {
       await this.handleStickerMessage(content, data);
       await this.handleLocationMessage(content, data);
 
+      const isFromMe = data.message?.key?.fromMe ?? false;
+
+      let typeUser: ETypeUserChat = ETypeUserChat.client;
+      let summary: IChatMessage['summary'] = {
+        is_sent: true,
+        is_delivered: true,
+        is_seen: true,
+        is_sent_to_internal: true,
+      };
+
+      if (isFromMe) {
+        typeUser = ETypeUserChat.operator;
+        summary = {
+          is_sent: false,
+          is_delivered: false,
+          is_seen: false,
+          is_sent_to_internal: true,
+        };
+      }
+
       const inputChatMessage: IChatMessage = {
         message_id: uuidv7(),
         chat_id: getChat.chat_id,
@@ -706,19 +755,12 @@ export class MessageUpsertConsume {
           addressing_mode: data.message?.key?.addressingMode,
           is_view_once: data.message?.key?.isViewOnce ?? false,
         },
-        type_user: data.message?.key?.fromMe
-          ? ETypeUserChat.operator
-          : ETypeUserChat.client,
+        type_user: typeUser,
         account: getChat.account,
         worker: getChat.worker,
         user: getChat.user,
         phone: getChat.phone,
-        summary: {
-          is_sent: false,
-          is_delivered: false,
-          is_seen: false,
-          is_sent_to_internal: true,
-        },
+        summary,
         content,
         date: new Date().toISOString(),
         deleted: false,
@@ -730,6 +772,14 @@ export class MessageUpsertConsume {
         this.centrifugoChatPublish(inputChatMessage),
         this.chatService.saveMessageChat(inputChatMessage),
       ]);
+
+      if (!data.message?.key?.fromMe && data.message?.key) {
+        await this.markIncomingMessageAsRead(
+          data.account_id,
+          data.worker_id,
+          data.message.key
+        );
+      }
 
       return result;
     } catch {
