@@ -18,11 +18,14 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
 import { TFunction } from 'i18next';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { CentrifugoService } from '@core/services/centrifugo.service';
+import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 
 @injectable()
 export class ChatMessageListerUseCase {
   constructor(
     private readonly elasticDatabaseService: ElasticDatabaseService,
+    private readonly centrifugoService: CentrifugoService,
     private readonly chatService: ChatService
   ) {}
 
@@ -54,6 +57,15 @@ export class ChatMessageListerUseCase {
         .updateChatSummary(chat.chat_id, summaryUpdate)
         .catch((error) => {
           console.error('Error updating chat summary:', error);
+        });
+
+      this.centrifugoService
+        .publishSub(chatAccountCentrifugo(chat.account.id), {
+          ...chat,
+          summary: summaryUpdate,
+        } as IChat)
+        .catch((error) => {
+          console.error('Error publishing chat summary:', error);
         });
     }
   }
