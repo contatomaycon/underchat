@@ -12,6 +12,7 @@ const chatStore = useChatStore();
 
 const props = defineProps<{
   user: ListChatsResult;
+  disabled?: boolean;
 }>();
 
 const isChatContactActive = computed(() => {
@@ -24,7 +25,11 @@ const isChatContactActive = computed(() => {
     <li
       :key="chatStore.listQueue.length"
       class="chat cursor-pointer d-flex align-center"
-      :class="{ 'chat-active': isChatContactActive }"
+      :class="{
+        'chat-active': isChatContactActive,
+        'chat-disabled': props.disabled,
+      }"
+      :aria-disabled="props.disabled ? 'true' : undefined"
     >
       <VAvatar size="40" :variant="!props.user.photo ? 'tonal' : undefined">
         <VImg
@@ -107,6 +112,12 @@ const isChatContactActive = computed(() => {
 
   .v-badge--bordered .v-badge__badge::after {
     color: #fff;
+  }
+
+  &.chat-disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+    pointer-events: none;
   }
 }
 
