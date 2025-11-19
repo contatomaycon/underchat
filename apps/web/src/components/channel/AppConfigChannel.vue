@@ -86,9 +86,14 @@ const existingStatus = ref<ProfileStatus[]>([]);
 const isSavingProfileStatus = ref(false);
 const isLoadingProfileStatus = ref(false);
 const fileInputKey = ref(0);
-const previewDialog = ref<{ open: boolean; src: string | null }>({
+const previewDialog = ref<{
+  open: boolean;
+  src: string | null;
+  caption: string | null;
+}>({
   open: false,
   src: null,
+  caption: null,
 });
 const selectedType = ref<EWorkerProfileStatusType>(
   EWorkerProfileStatusType.text
@@ -388,10 +393,11 @@ const saveProfileStatus = async () => {
   }
 };
 
-const openPreview = (src: string) => {
+const openPreview = (src: string, caption?: string) => {
   previewDialog.value = {
     open: true,
     src,
+    caption: caption && caption.trim() ? caption.trim() : null,
   };
 };
 
@@ -399,6 +405,7 @@ const closePreview = () => {
   previewDialog.value = {
     open: false,
     src: null,
+    caption: null,
   };
 };
 
@@ -610,16 +617,28 @@ onBeforeUnmount(() => {
                         :src="preview.src"
                         aspect-ratio="1"
                         cover
-                        class="rounded mb-2"
+                        class="rounded mb-2 cursor-pointer"
+                        @click="
+                          openPreview(
+                            preview.src,
+                            caption && caption.trim() ? caption : undefined
+                          )
+                        "
                       />
                       <video
                         v-else-if="
                           selectedType === EWorkerProfileStatusType.video
                         "
                         :src="preview.src"
-                        class="rounded mb-2"
+                        class="rounded mb-2 cursor-pointer"
                         style="width: 100%; aspect-ratio: 1; object-fit: cover"
                         controls
+                        @click.stop="
+                          openPreview(
+                            preview.src,
+                            caption && caption.trim() ? caption : undefined
+                          )
+                        "
                       />
                       <div
                         v-else-if="
@@ -693,7 +712,9 @@ onBeforeUnmount(() => {
                           EWorkerProfileStatusType.text
                             ? null
                             : openPreview(
-                                extractUrlAndCaption(status.value).url
+                                extractUrlAndCaption(status.value).url,
+                                extractUrlAndCaption(status.value).caption ||
+                                  undefined
                               )
                         "
                       >
@@ -791,20 +812,6 @@ onBeforeUnmount(() => {
                           </div>
                         </div>
                       </VCard>
-                      <div
-                        v-if="
-                          (status.worker_profile_status_type_id ===
-                            EWorkerProfileStatusType.image ||
-                            status.worker_profile_status_type_id ===
-                              EWorkerProfileStatusType.video) &&
-                          extractUrlAndCaption(status.value).caption
-                        "
-                        class="photo-caption-wrapper mt-2"
-                      >
-                        <span class="text-caption text-medium-emphasis">
-                          {{ extractUrlAndCaption(status.value).caption }}
-                        </span>
-                      </div>
                       <div class="photo-date-wrapper">
                         <span class="photo-date">{{
                           formatDate(status.created_at)
@@ -844,6 +851,11 @@ onBeforeUnmount(() => {
           class="rounded"
           contain
         />
+        <div v-if="previewDialog.caption" class="mt-4 text-center">
+          <p class="text-body-2 text-medium-emphasis font-italic">
+            {{ previewDialog.caption }}
+          </p>
+        </div>
       </VCardText>
     </VCard>
   </VDialog>
@@ -998,5 +1010,9 @@ onBeforeUnmount(() => {
   word-wrap: break-word;
   overflow: visible;
   max-width: 100%;
+}
+
+.cursor-pointer {
+  cursor: pointer;
 }
 </style>
