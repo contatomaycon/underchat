@@ -129,7 +129,7 @@ export class ContactService {
       phone_partial: phonePartialEncrypted,
       phone_c: phoneC,
       nickname: input.nickname,
-      birthday: input.birthday,
+      birthday: input.birthday && typeof input.birthday === 'string' && input.birthday.trim() !== '' ? input.birthday : null,
       notes: input.notes,
     };
 
@@ -207,7 +207,7 @@ export class ContactService {
       phone_partial: phonePartialEncrypted,
       phone_c: phoneC,
       nickname: input.nickname,
-      birthday: input.birthday,
+      birthday: input.birthday && typeof input.birthday === 'string' && input.birthday.trim() !== '' ? input.birthday : null,
       notes: input.notes,
     };
 
@@ -274,7 +274,7 @@ export class ContactService {
       phone_partial: phonePartialEncrypted,
       phone_c: phoneC,
       nickname: input.nickname,
-      birthday: input.birthday,
+      birthday: input.birthday && typeof input.birthday === 'string' && input.birthday.trim() !== '' ? input.birthday : null,
       notes: input.notes,
     };
 
