@@ -72,9 +72,14 @@ export class ElasticDatabaseService {
         id,
         doc: document,
         doc_as_upsert: true,
+        refresh: 'wait_for',
       });
 
-      return result.result === 'updated' || result.result === 'created';
+      return (
+        result.result === 'updated' ||
+        result.result === 'created' ||
+        result.result === 'noop'
+      );
     } catch (error) {
       throw new Error(`Failed to update document with ID: ${error}`);
     }

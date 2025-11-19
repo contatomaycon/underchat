@@ -11,7 +11,7 @@ import {
 } from '@core/schema/chat/listChats/response.schema';
 import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
 import { UpdateChatsUserRequest } from '@core/schema/chat/updateChatsUser/request.schema';
-import { getUser, setUser } from '../localStorage/user';
+import { getUser, setUser, getPermissions } from '../localStorage/user';
 import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
@@ -27,6 +27,9 @@ import { IChat } from '@core/common/interfaces/IChat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ViewLinkPreviewBody } from '@core/schema/chat/viewLinkPreview/request.schema';
 import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
+import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 
 type LocalMessageState = {
   status: 'uploading' | 'error';
@@ -75,6 +78,10 @@ export const useChatStore = defineStore('chat', {
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
+      if (!message || message.trim() === '') {
+        return;
+      }
+
       this.snackbar.message = message;
       this.snackbar.color = color;
       this.snackbar.status = true;
@@ -203,26 +210,145 @@ export const useChatStore = defineStore('chat', {
         date: chat.date,
       };
 
-      const replaceOrPush = (arr: ListChatsResult[]) => {
-        const idx = arr.findIndex((c) => c.chat_id === input.chat_id);
-
-        if (idx !== -1) {
-          arr.splice(idx, 1, input);
-
-          return;
-        }
-
-        arr.push(input);
-      };
+      const isActiveChat = this.activeChat?.chat_id === chat.chat_id;
+      this.updateActiveChatSummaryIfNeeded(chat, isActiveChat);
 
       if (chat.status === EChatStatus.queue) {
-        replaceOrPush(this.listQueue);
-
+        this.handleQueueStatusChat(input, chat, isActiveChat);
         return;
       }
 
       if (chat.status === EChatStatus.in_chat) {
-        replaceOrPush(this.listInChat);
+        this.handleInChatStatusChat(input, chat, isActiveChat);
+      }
+    },
+
+    updateActiveChatSummaryIfNeeded(chat: IChat, isActiveChat: boolean): void {
+      if (!isActiveChat || !chat.summary || !this.activeChat?.summary) {
+        return;
+      }
+
+      this.activeChat.summary = {
+        ...this.activeChat.summary,
+        last_date: chat.summary.last_date,
+      };
+    },
+
+    getSummaryForActiveChat(
+      input: ListChatsResult,
+      existingSummary: ListChatsResult['summary']
+    ): ListChatsResult['summary'] {
+      if (!existingSummary) {
+        return input.summary;
+      }
+
+      return {
+        ...existingSummary,
+        last_date: input.summary?.last_date ?? existingSummary.last_date,
+      };
+    },
+
+    createUpdatedActiveChat(
+      input: ListChatsResult,
+      isActiveChat: boolean
+    ): ListChatsResult {
+      return {
+        chat_id: input.chat_id,
+        summary:
+          isActiveChat && this.activeChat?.summary
+            ? this.getSummaryForActiveChat(input, this.activeChat.summary)
+            : input.summary,
+        account: input.account,
+        worker: input.worker,
+        sector: input.sector,
+        user: input.user,
+        contact: input.contact,
+        photo: input.photo,
+        name: input.name,
+        phone: input.phone,
+        status: input.status,
+        date: input.date,
+      };
+    },
+
+    removeFromList(arr: ListChatsResult[], chatId: string): void {
+      const idx = arr.findIndex((c) => c.chat_id === chatId);
+      if (idx !== -1) {
+        arr.splice(idx, 1);
+      }
+    },
+
+    replaceOrPushInList(
+      arr: ListChatsResult[],
+      input: ListChatsResult,
+      isActiveChat: boolean
+    ): void {
+      const idx = arr.findIndex((c) => c.chat_id === input.chat_id);
+
+      if (idx !== -1) {
+        const existingChat = arr[idx];
+        const summaryToUse =
+          isActiveChat && existingChat.summary
+            ? this.getSummaryForActiveChat(input, existingChat.summary)
+            : input.summary;
+
+        arr[idx] = {
+          ...input,
+          summary: summaryToUse,
+        };
+        return;
+      }
+
+      arr.push(input);
+    },
+
+    canViewChat(chat: IChat): boolean {
+      const permissions = getPermissions();
+      const canViewOthersChats = permissions.some(
+        (perm: EPermissionsRoles) =>
+          perm === EGeneralPermissions.full_access ||
+          perm === EGeneralPermissions.full_access_group ||
+          perm === EChatPermissions.chat_group ||
+          perm === EChatPermissions.view_others_chats
+      );
+
+      const isOwnChat = chat.user?.id === this.user?.user_id;
+      return canViewOthersChats || isOwnChat;
+    },
+
+    handleQueueStatusChat(
+      input: ListChatsResult,
+      chat: IChat,
+      isActiveChat: boolean
+    ): void {
+      this.removeFromList(this.listInChat, chat.chat_id);
+      this.replaceOrPushInList(this.listQueue, input, isActiveChat);
+
+      if (this.activeChat?.chat_id === chat.chat_id) {
+        this.activeChat = this.createUpdatedActiveChat(input, isActiveChat);
+      }
+    },
+
+    handleInChatStatusChat(
+      input: ListChatsResult,
+      chat: IChat,
+      isActiveChat: boolean
+    ): void {
+      if (!this.canViewChat(chat)) {
+        this.removeFromList(this.listInChat, chat.chat_id);
+        this.removeFromList(this.listQueue, chat.chat_id);
+
+        if (this.activeChat?.chat_id === chat.chat_id) {
+          this.activeChat = null;
+        }
+        return;
+      }
+
+      this.removeFromList(this.listQueue, chat.chat_id);
+      this.replaceOrPushInList(this.listInChat, input, isActiveChat);
+
+      if (this.activeChat?.chat_id === chat.chat_id) {
+        this.activeChat = this.createUpdatedActiveChat(input, isActiveChat);
       }
     },
     updateChatUserImmediate() {
@@ -344,7 +470,9 @@ export const useChatStore = defineStore('chat', {
         const data = response?.data as IApiResponse<null>;
 
         if (!data?.status) {
-          this.showSnackbar(data.message, EColor.error);
+          const errorMessage =
+            data?.message || this.i18n.global.t('chat_config_update_error');
+          this.showSnackbar(errorMessage, EColor.error);
 
           return;
         }
@@ -377,6 +505,10 @@ export const useChatStore = defineStore('chat', {
           this.listMessages = [];
           this.loading = false;
 
+          const errorMessage =
+            data?.message || this.i18n.global.t('chat_list_not_found');
+          this.showSnackbar(errorMessage, EColor.error);
+
           return;
         }
 
@@ -385,9 +517,20 @@ export const useChatStore = defineStore('chat', {
         this.listMessages = [...data.data.results].reverse();
         this.currentPage = data.data.pagings.current_page;
         this.totalPages = data.data.pagings.total_pages;
-      } catch {
+      } catch (error) {
         this.loading = false;
         this.listMessages = [];
+
+        let errorMessage = this.i18n.global.t('chat_list_not_found');
+
+        if (isAxiosError(error)) {
+          const backendMessage = error?.response?.data?.message;
+          if (backendMessage) {
+            errorMessage = backendMessage;
+          }
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
 
         return;
       }
@@ -448,7 +591,9 @@ export const useChatStore = defineStore('chat', {
         const data = response?.data as IApiResponse<boolean>;
 
         if (!data?.status) {
-          this.showSnackbar(data.message, EColor.error);
+          const errorMessage =
+            data?.message || this.i18n.global.t('chat_message_create_error');
+          this.showSnackbar(errorMessage, EColor.error);
 
           return false;
         }
@@ -461,6 +606,46 @@ export const useChatStore = defineStore('chat', {
           this.i18n.global.t('chat_message_create_error'),
           EColor.error
         );
+
+        return false;
+      }
+    },
+
+    async updateChatStatus(chatId: string, status: string): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<IApiResponse<IChat>>(
+          `/chat/${chatId}/status`,
+          { status }
+        );
+
+        this.loading = false;
+
+        const data = response?.data as IApiResponse<IChat>;
+
+        if (!data?.status) {
+          const errorMessage =
+            data?.message || this.i18n.global.t('chat_status_update_error');
+          this.showSnackbar(errorMessage, EColor.error);
+
+          return false;
+        }
+
+        if (data.data && this.activeChat?.chat_id === chatId) {
+          this.activeChat = {
+            ...this.activeChat,
+            status: data.data.status,
+            user: data.data.user,
+          };
+        }
+
+        return true;
+      } catch {
+        this.loading = false;
+
+        const errorMessage = this.i18n.global.t('chat_status_update_error');
+        this.showSnackbar(errorMessage, EColor.error);
 
         return false;
       }
@@ -878,16 +1063,54 @@ export const useChatStore = defineStore('chat', {
     },
 
     setActiveChat(chatId: string): void {
-      this.activeChat = {} as ListChatsResult;
+      if (this.activeChat?.chat_id === chatId) return;
 
       const chat = (this.listQueue.find((c) => c.chat_id === chatId) ??
         this.listInChat.find((c) => c.chat_id === chatId)) as ListChatsResult;
 
-      if (!chat.chat_id) {
+      if (!chat?.chat_id) {
+        this.activeChat = null;
         return;
       }
 
-      this.activeChat = chat;
+      if ((chat.summary?.unread_count ?? 0) > 0) {
+        const chatInQueue = this.listQueue.find((c) => c.chat_id === chatId);
+        const chatInList = this.listInChat.find((c) => c.chat_id === chatId);
+
+        if (chatInQueue?.summary) {
+          chatInQueue.summary = {
+            ...chatInQueue.summary,
+            unread_count: 0,
+          };
+        }
+
+        if (chatInList?.summary) {
+          chatInList.summary = {
+            ...chatInList.summary,
+            unread_count: 0,
+          };
+        }
+      }
+
+      this.activeChat = {
+        chat_id: chat.chat_id,
+        summary: chat.summary
+          ? {
+              ...chat.summary,
+              unread_count: 0,
+            }
+          : chat.summary,
+        account: chat.account,
+        worker: chat.worker,
+        sector: chat.sector,
+        user: chat.user,
+        contact: chat.contact,
+        photo: chat.photo,
+        name: chat.name,
+        phone: chat.phone,
+        status: chat.status,
+        date: chat.date,
+      };
     },
 
     setMessageReply(m: ListMessageResult) {

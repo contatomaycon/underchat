@@ -17,7 +17,9 @@ export const listChats = async (
   try {
     const response = await chatListerUseCase.execute(
       tokenJwtData.account_id,
-      request.query
+      request.query,
+      tokenJwtData.user_id,
+      tokenJwtData.actions
     );
 
     if (response) {

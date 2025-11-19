@@ -10,8 +10,19 @@ export class KafkaServiceQueueService {
     const workerStatus = this.workerStatus();
     const updateMessage = this.updateMessage();
     const upsertMessage = this.upsertMessage();
+    const updateMessageStatus = this.updateMessageStatus();
+    const markMessageRead = this.markMessageRead();
+    const clearChatSummary = this.clearChatSummary();
 
-    return [createServer, workerStatus, updateMessage, upsertMessage];
+    return [
+      createServer,
+      workerStatus,
+      updateMessage,
+      upsertMessage,
+      updateMessageStatus,
+      markMessageRead,
+      clearChatSummary,
+    ];
   };
 
   delete = (): Promise<void> => {
@@ -38,5 +49,17 @@ export class KafkaServiceQueueService {
 
   upsertMessage = () => {
     return `upsert.message`;
+  };
+
+  updateMessageStatus = () => {
+    return `update.message.status`;
+  };
+
+  markMessageRead = () => {
+    return `mark.message.read`;
+  };
+
+  clearChatSummary = () => {
+    return `clear.chat.summary`;
   };
 }

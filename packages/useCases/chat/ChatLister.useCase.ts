@@ -7,6 +7,12 @@ import {
   ListChatsResult,
 } from '@core/schema/chat/listChats/response.schema';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
+import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
+import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { IElasticsearchBoolClause } from '@core/common/interfaces/IElasticsearchQuery';
 
 @injectable()
 export class ChatListerUseCase {
@@ -14,12 +20,61 @@ export class ChatListerUseCase {
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 
+  private canViewOthersChats(actions: IJwtGroupHierarchy[]): boolean {
+    const permissions = [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.chat_group,
+      EChatPermissions.view_others_chats,
+    ];
+
+    return hasRequiredPermission(actions, permissions);
+  }
+
   async execute(
     accountId: string,
-    query: ListChatsQuery
+    query: ListChatsQuery,
+    userId: string,
+    actions: IJwtGroupHierarchy[]
   ): Promise<ListChatsResponse> {
     const currentPage = query.current_page ?? 1;
     const perPage = query.per_page ?? 10;
+
+    const mustClauses: IElasticsearchBoolClause[] = [
+      {
+        nested: {
+          path: 'account',
+          query: {
+            term: {
+              'account.id': accountId,
+            },
+          },
+        },
+      },
+    ];
+
+    const filterClauses: IElasticsearchBoolClause[] = [
+      {
+        term: {
+          status: query.status,
+        },
+      },
+    ];
+
+    if (!this.canViewOthersChats(actions)) {
+      if (query.status === EChatStatus.in_chat) {
+        filterClauses.push({
+          nested: {
+            path: 'user',
+            query: {
+              term: {
+                'user.id': userId,
+              },
+            },
+          },
+        });
+      }
+    }
 
     const queryElastic = {
       from: (currentPage - 1) * perPage,
@@ -27,25 +82,8 @@ export class ChatListerUseCase {
       sort: [{ date: { order: 'desc' } }],
       query: {
         bool: {
-          must: [
-            {
-              nested: {
-                path: 'account',
-                query: {
-                  term: {
-                    'account.id': accountId,
-                  },
-                },
-              },
-            },
-          ],
-          filter: [
-            {
-              term: {
-                status: query.status,
-              },
-            },
-          ],
+          must: mustClauses,
+          filter: filterClauses,
         },
       },
     };

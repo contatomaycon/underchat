@@ -132,6 +132,7 @@
   "chat_create_success": "¡Chat creado con éxito!",
   "chat_create_not_found": "¡Chat no encontrado para crear!",
   "chat_not_found": "¡Chat no encontrado!",
+  "chat_access_denied": "¡Acceso denegado al chat!",
   "chat_create_error": "¡Error al crear el chat!",
   "documents_required": "¡Seleccione al menos un documento!",
   "audio_required": "¡Seleccione al menos un audio!",
@@ -253,5 +254,10 @@
   "cannot_delete_system_role": "¡No se puede eliminar roles del sistema!",
   "role_permissions_updated_successfully": "¡Permisos del rol actualizados con éxito!",
   "permission_groups_load_error": "¡Error al cargar grupos de permisos!",
-  "permission_groups_update_error": "¡Error al actualizar permisos del rol!"
+  "permission_groups_update_error": "¡Error al actualizar permisos del rol!",
+  "chat_status_update_success": "¡Estado del chat actualizado con éxito!",
+  "chat_status_update_not_found": "¡Chat no encontrado para actualizar el estado!",
+  "chat_status_update_failed": "¡Error al actualizar el estado del chat!",
+  "chat_summary_clear_success": "¡Summary del chat limpiado con éxito!",
+  "chat_summary_clear_failed": "¡Error al limpiar el summary del chat!"
 }

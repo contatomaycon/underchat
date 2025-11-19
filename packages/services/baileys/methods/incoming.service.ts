@@ -1,8 +1,11 @@
 import { singleton } from 'tsyringe';
 import {
   AnyMessageContent,
+  MessageUserReceiptUpdate,
+  proto,
   WAMessage,
   WAMessageKey,
+  WAMessageUpdate,
   WASocket,
 } from '@whiskeysockets/baileys';
 import {
@@ -22,6 +25,8 @@ import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { IChatTyping } from '@core/common/interfaces/IChatTyping';
+import { MessageSummaryPatch } from '@core/services/messageStatus.service';
+import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
 
 @singleton()
 export class BaileysIncomingMessageService {
@@ -127,11 +132,11 @@ export class BaileysIncomingMessageService {
     });
 
     socket.ev.on('messages.update', (events) => {
-      console.log('events:', events);
+      void this.handleMessagesUpdate(events);
     });
 
     socket.ev.on('message-receipt.update', (events) => {
-      console.log('events:', events);
+      void this.handleMessageReceiptUpdate(events);
     });
 
     socket.ev.on('presence.update', async (data) => {
@@ -176,6 +181,100 @@ export class BaileysIncomingMessageService {
     socket.ev.on('messaging-history.set', (data) => {
       console.log('data:', data);
     });
+  }
+
+  private async handleMessagesUpdate(events: WAMessageUpdate[]) {
+    if (!events?.length) return;
+
+    await Promise.all(
+      events.map(async (event) => {
+        const patch = this.mapStatusToPatch(event.update?.status);
+        await this.applyStatusPatch(event.key, patch);
+      })
+    );
+  }
+
+  private async handleMessageReceiptUpdate(events: MessageUserReceiptUpdate[]) {
+    if (!events?.length) return;
+
+    await Promise.all(
+      events.map(async (event) => {
+        const patch = this.mapReceiptToPatch(event.receipt);
+        await this.applyStatusPatch(event.key, patch);
+      })
+    );
+  }
+
+  private mapStatusToPatch(
+    status?: proto.WebMessageInfo.Status | null
+  ): MessageSummaryPatch | null {
+    if (status === null || status === undefined) {
+      return null;
+    }
+
+    switch (status) {
+      case proto.WebMessageInfo.Status.SERVER_ACK:
+        return { is_sent: true };
+      case proto.WebMessageInfo.Status.DELIVERY_ACK:
+        return { is_sent: true, is_delivered: true };
+      case proto.WebMessageInfo.Status.READ:
+      case proto.WebMessageInfo.Status.PLAYED:
+        return { is_sent: true, is_delivered: true, is_seen: true };
+      default:
+        return null;
+    }
+  }
+
+  private mapReceiptToPatch(
+    receipt?: MessageUserReceiptUpdate['receipt']
+  ): MessageSummaryPatch | null {
+    if (!receipt) return null;
+
+    const patch: MessageSummaryPatch = {};
+
+    if (receipt.readTimestamp || receipt.playedTimestamp) {
+      patch.is_seen = true;
+      patch.is_delivered = true;
+    }
+
+    if (receipt.receiptTimestamp) {
+      patch.is_delivered = true;
+    }
+
+    if (!patch.is_seen && !patch.is_delivered) {
+      return null;
+    }
+
+    patch.is_sent = true;
+    return patch;
+  }
+
+  private async applyStatusPatch(
+    key: WAMessageKey | undefined,
+    patch: MessageSummaryPatch | null
+  ) {
+    if (!patch || !key?.id || !key.fromMe) {
+      return;
+    }
+
+    try {
+      const statusUpdate: IMessageStatusUpdate = {
+        account_id: baileysEnvironment.baileysAccountId,
+        message_id: key.id,
+        patch,
+        key,
+      };
+
+      await this.streamProducerService.send(
+        this.kafkaServiceQueueService.updateMessageStatus(),
+        statusUpdate
+      );
+    } catch (error) {
+      console.error('Error sending message status update to queue', {
+        messageId: key.id,
+        error,
+      });
+    }
   }
 
   unbind() {

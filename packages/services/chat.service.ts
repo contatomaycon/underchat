@@ -6,6 +6,10 @@ import { mensageMappings } from '@core/mappings/mensage.mappings';
 import { IChat } from '@core/common/interfaces/IChat';
 import { chatMappings } from '@core/mappings/chat.mappings';
 
+type ElasticHit<T> = {
+  _source?: T;
+};
+
 @injectable()
 export class ChatService {
   constructor(
@@ -48,5 +52,112 @@ export class ChatService {
       chat,
       chat.chat_id
     );
+  };
+
+  findChatByChatId = async (
+    accountId: string,
+    chatId: string
+  ): Promise<IChat | null> => {
+    const queryElastic = {
+      size: 1,
+      _source: true,
+      query: {
+        bool: {
+          must: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: {
+                    'account.id': accountId,
+                  },
+                },
+              },
+            },
+          ],
+          filter: [
+            {
+              term: {
+                chat_id: chatId,
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select<IChat>(
+      EElasticIndex.chat,
+      queryElastic
+    );
+
+    const hit = result?.hits?.hits?.[0] as ElasticHit<IChat> | undefined;
+    const chat = hit?._source ?? null;
+
+    if (chat && Array.isArray(chat.summary)) {
+      chat.summary = chat.summary[0] as IChat['summary'];
+    }
+
+    return chat;
+  };
+
+  updateChatStatus = async (
+    chatId: string,
+    status: IChat['status'],
+    user?: IChat['user']
+  ): Promise<boolean> => {
+    const updateData: { status: IChat['status']; user?: IChat['user'] } = {
+      status,
+    };
+
+    if (user) {
+      updateData.user = user;
+    }
+
+    return this.elasticDatabaseService.update(
+      EElasticIndex.chat,
+      updateData,
+      chatId
+    );
+  };
+
+  updateChatSummary = async (
+    chatId: string,
+    summary: IChat['summary']
+  ): Promise<boolean> => {
+    try {
+      const summaryToUpdate = Array.isArray(summary) ? summary[0] : summary;
+
+      return await this.elasticDatabaseService.update(
+        EElasticIndex.chat,
+        { summary: summaryToUpdate },
+        chatId
+      );
+    } catch (error) {
+      console.error('Error updating chat summary:', error);
+      return false;
+    }
+  };
+
+  clearChatSummary = async (
+    chatId: string,
+    accountId: string
+  ): Promise<boolean> => {
+    try {
+      const chat = await this.findChatByChatId(accountId, chatId);
+
+      if (!chat) return false;
+
+      const summary: IChat['summary'] = {
+        last_message: null,
+        last_date: chat.summary?.last_date ?? new Date().toISOString(),
+        unread_count: 0,
+      };
+
+      return await this.updateChatSummary(chatId, summary);
+    } catch (error) {
+      console.error('Error clearing chat summary:', error);
+      return false;
+    }
   };
 }

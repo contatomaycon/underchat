@@ -2,11 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import { listChatsSchema } from '@core/schema/chat/listChats';
 import ChatController from '@/controllers/chat';
-import {
-  createChatPermissions,
-  updateChatUserPermissions,
-  viewChatPermissions,
-} from '@/permissions';
+import { chatPermissions } from '@/permissions';
 import { listChatsUserSchema } from '@core/schema/chat/listChatsUser';
 import { updateChatsUserSchema } from '@core/schema/chat/updateChatsUser';
 import { listMessageChatsSchema } from '@core/schema/chat/listMessageChats';
@@ -15,6 +11,7 @@ import { createChatSchema } from '@core/schema/chat/createChat';
 import { viewLinkPreviewSchema } from '@core/schema/chat/viewLinkPreview';
 import { reactMessageSchema } from '@core/schema/chat/reactMessage';
 import { deleteMessageSchema } from '@core/schema/chat/deleteMessage';
+import { updateChatStatusSchema } from '@core/schema/chat/updateChatStatus';
 
 export default function chatRoutes(server: FastifyInstance) {
   const chatController = container.resolve(ChatController);
@@ -24,7 +21,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.listChats,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, viewChatPermissions),
+        server.authenticateJwt(request, reply, chatPermissions),
     ],
   });
 
@@ -33,7 +30,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.createChats,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, createChatPermissions),
+        server.authenticateJwt(request, reply, chatPermissions),
     ],
   });
 
@@ -42,7 +39,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.viewChatLinkPreview,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, createChatPermissions),
+        server.authenticateJwt(request, reply, chatPermissions),
     ],
   });
 
@@ -51,7 +48,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.listMessageChats,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, viewChatPermissions),
+        server.authenticateJwt(request, reply, chatPermissions),
     ],
   });
 
@@ -60,7 +57,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.createMessageChats,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, createChatPermissions),
+        server.authenticateJwt(request, reply, chatPermissions),
     ],
   });
 
@@ -69,7 +66,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.listChatsUser,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, viewChatPermissions),
+        server.authenticateJwt(request, reply, chatPermissions),
     ],
   });
 
@@ -78,7 +75,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.updateChatsUser,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, updateChatUserPermissions),
+        server.authenticateJwt(request, reply, chatPermissions),
     ],
   });
 
@@ -87,7 +84,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.reactMessage,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, createChatPermissions),
+        server.authenticateJwt(request, reply, chatPermissions),
     ],
   });
 
@@ -96,7 +93,16 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.deleteMessage,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, createChatPermissions),
+        server.authenticateJwt(request, reply, chatPermissions),
+    ],
+  });
+
+  server.patch('/chat/:chat_id/status', {
+    schema: updateChatStatusSchema,
+    handler: chatController.updateChatStatus,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
     ],
   });
 }

@@ -22,15 +22,17 @@ import {
   ContentMessageChat,
   ListMessageResult,
 } from '@core/schema/chat/listMessageChats/response.schema';
-import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
+import { onMessage, unsubscribe, publish } from '@/@webcore/centrifugo';
 import {
   chatAccountCentrifugo,
   chatQueueAccountCentrifugo,
+  chatClearSummaryCentrifugo,
 } from '@core/common/functions/centrifugoQueue';
 import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { EColor } from '@core/common/enums/EColor';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
 import {
   IChatMessage,
   IQuotedMessage,
@@ -46,7 +48,7 @@ import {
 } from '@core/common/interfaces/IChatFilePreview';
 import { extractFirstUrl } from '@core/common/functions/extractFirstUrl';
 import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
-import { refDebounced } from '@vueuse/core';
+import { refDebounced, useDebounceFn } from '@vueuse/core';
 import { getOffsetTop } from '@core/common/functions/getOffsetTop';
 import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
 import data from 'emoji-mart-vue-fast/data/all.json';
@@ -69,9 +71,7 @@ definePage({
       EGeneralPermissions.full_access,
       EGeneralPermissions.full_access_group,
       EChatPermissions.chat_group,
-      EChatPermissions.view_chat,
-      EChatPermissions.create_chat,
-      EChatPermissions.update_chat_user,
+      EChatPermissions.chat_access,
     ],
   },
 });
@@ -430,6 +430,19 @@ const viewerDownloadName = ref<string>('');
 const viewerKind = ref<'image' | 'video'>('image');
 
 const hasContent = computed(() => !!msg.value && msg.value.trim().length > 0);
+
+const isQueueStatus = computed(
+  () => chatStore.activeChat?.status === EChatStatus.queue
+);
+
+const handleAttendChat = async () => {
+  if (!chatStore.activeChat?.chat_id) return;
+
+  await chatStore.updateChatStatus(
+    chatStore.activeChat.chat_id,
+    EChatStatus.in_chat
+  );
+};
 
 const canAccessContacts = computed(() => {
   const permissions = [
@@ -1321,6 +1334,7 @@ const finalizeSend = () => {
 const sendMessage = async () => {
   if (!canSendMessage()) return;
   if (!hasActiveChat()) return;
+  if (isQueueStatus.value) return;
 
   if (selectedDocuments.value.length > 0) {
     await sendDocumentMessage();
@@ -1363,6 +1377,8 @@ const sendMessage = async () => {
 };
 
 const openChat = async (chatId: ListChatsResult['chat_id']) => {
+  if (chatStore.activeChat?.chat_id === chatId) return;
+
   chatStore.setActiveChat(chatId);
 
   const requestQueue: ListMessageChatsQuery = {
@@ -3038,37 +3054,65 @@ const handleTypingEvent = (data: IChatTyping | IChatMessage) => {
   }, 5000);
 };
 
+const debouncedPublishClearSummary = useDebounceFn(
+  (chatId: string, accountId: string) => {
+    publish(chatClearSummaryCentrifugo(), {
+      chat_id: chatId,
+      account_id: accountId,
+    }).catch((error) => {
+      console.error('Error publishing clear summary request:', error);
+    });
+  },
+  10000
+);
+
 onMounted(async () => {
   if (chatStore.user?.account_id) {
     const accountId = chatStore.user.account_id;
 
     await onMessage(
       chatAccountCentrifugo(accountId),
-      (data: IChatMessage | IChatTyping) => {
+      (data: IChatMessage | IChatTyping | IChat) => {
         if ('type' in data && data.type === 'typing') {
           handleTypingEvent(data as IChatTyping);
           return;
         }
 
-        const messageData = data as IChatMessage;
+        if ('message_id' in data) {
+          const messageData = data as IChatMessage;
 
-        if (chatStore.activeChat?.chat_id !== messageData.chat_id) {
+          if (chatStore.activeChat?.chat_id !== messageData.chat_id) {
+            return;
+          }
+
+          handleTypingEvent(messageData);
+
+          const changeType = chatStore.addMessageActiveChat(messageData);
+
+          if (changeType === 'created') {
+            scrollToMessageById(messageData.message_id);
+            globalThis.dispatchEvent(new CustomEvent('focus-composer'));
+          }
+
           return;
         }
 
-        handleTypingEvent(messageData);
-
-        const changeType = chatStore.addMessageActiveChat(messageData);
-
-        if (changeType === 'created') {
-          scrollToMessageById(messageData.message_id);
-          globalThis.dispatchEvent(new CustomEvent('focus-composer'));
+        if ('chat_id' in data && !('message_id' in data)) {
+          const chatData = data as IChat;
+          chatStore.addChat(chatData);
         }
       }
     );
 
     await onMessage(chatQueueAccountCentrifugo(accountId), (data: IChat) => {
       chatStore.addChat(data);
+
+      if (
+        chatStore.user?.account_id &&
+        chatStore.activeChat?.chat_id === data.chat_id
+      ) {
+        debouncedPublishClearSummary(data.chat_id, chatStore.user.account_id);
+      }
     });
 
     globalThis.addEventListener('focus-composer', focusComposer);
@@ -3231,7 +3275,7 @@ onBeforeUnmount(() => {
           :options="{ wheelPropagation: false }"
           class="flex-grow-1"
         >
-          <ChatLog />
+          <ChatLog :key="chatStore.activeChat?.chat_id || 'no-chat'" />
         </PerfectScrollbar>
 
         <Transition name="fade">
@@ -3723,6 +3767,28 @@ onBeforeUnmount(() => {
             </VBtn>
           </div>
 
+          <div
+            v-if="isQueueStatus"
+            class="d-flex align-center justify-space-between pa-4 bg-surface rounded mb-2"
+          >
+            <span class="text-body-2 text-medium-emphasis">
+              {{
+                t(
+                  'chat_queue_message',
+                  'Para iniciar o atendimento clique em atender'
+                )
+              }}
+            </span>
+            <VBtn
+              color="primary"
+              size="small"
+              @click="handleAttendChat"
+              :loading="chatStore.loading"
+            >
+              {{ t('attend', 'Atender') }}
+            </VBtn>
+          </div>
+
           <VTextarea
             v-if="!isRecordingAudio"
             ref="composerRef"
@@ -3735,6 +3801,7 @@ onBeforeUnmount(() => {
             :auto-grow="true"
             rows="1"
             :max-rows="8"
+            :disabled="isQueueStatus"
             @keydown.enter.exact.prevent="onSendText"
           >
             <template #prepend-inner>

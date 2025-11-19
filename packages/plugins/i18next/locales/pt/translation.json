@@ -132,6 +132,7 @@
   "chat_create_success": "Chat criado com sucesso!",
   "chat_create_not_found": "Chat não encontrado para criação!",
   "chat_not_found": "Chat não encontrado!",
+  "chat_access_denied": "Acesso negado ao chat!",
   "chat_create_error": "Erro ao criar o chat!",
   "documents_required": "Selecione ao menos um documento!",
   "audio_required": "Selecione ao menos um áudio!",
@@ -253,5 +254,10 @@
   "cannot_delete_system_role": "Não é possível excluir cargos do sistema!",
   "role_permissions_updated_successfully": "Permissões do cargo atualizadas com sucesso!",
   "permission_groups_load_error": "Erro ao carregar grupos de permissão!",
-  "permission_groups_update_error": "Erro ao atualizar permissões do cargo!"
+  "permission_groups_update_error": "Erro ao atualizar permissões do cargo!",
+  "chat_status_update_success": "Status do chat atualizado com sucesso!",
+  "chat_status_update_not_found": "Chat não encontrado para atualização de status!",
+  "chat_status_update_failed": "Erro ao atualizar o status do chat!",
+  "chat_summary_clear_success": "Summary do chat limpo com sucesso!",
+  "chat_summary_clear_failed": "Erro ao limpar o summary do chat!"
 }

@@ -11,24 +11,63 @@ import {
 } from '@core/schema/chat/listMessageChats/response.schema';
 import { IChat } from '@core/common/interfaces/IChat';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
+import { ChatService } from '@core/services/chat.service';
+import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
+import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
+import { TFunction } from 'i18next';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { CentrifugoService } from '@core/services/centrifugo.service';
+import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 
 @injectable()
 export class ChatMessageListerUseCase {
   constructor(
-    private readonly elasticDatabaseService: ElasticDatabaseService
+    private readonly elasticDatabaseService: ElasticDatabaseService,
+    private readonly centrifugoService: CentrifugoService,
+    private readonly chatService: ChatService
   ) {}
 
-  private async updateChat(chatId: string) {
-    const input: IChat['summary'] = {
-      last_message: null,
-      last_date: new Date().toISOString(),
-      unread_count: 0,
-    };
-    return this.elasticDatabaseService.update(
-      EElasticIndex.chat,
-      { summary: input },
-      chatId
-    );
+  private canViewOthersChats(actions: IJwtGroupHierarchy[]): boolean {
+    const permissions = [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.chat_group,
+      EChatPermissions.view_others_chats,
+    ];
+
+    return hasRequiredPermission(actions, permissions);
+  }
+
+  private updateChatSummaryIfParked(chat: IChat): void {
+    if (
+      chat.status === EChatStatus.in_chat &&
+      chat.user &&
+      chat.summary?.unread_count &&
+      chat.summary.unread_count > 0
+    ) {
+      const summaryUpdate: IChat['summary'] = {
+        last_message: chat.summary.last_message,
+        last_date: chat.summary.last_date,
+        unread_count: 0,
+      };
+
+      this.chatService
+        .updateChatSummary(chat.chat_id, summaryUpdate)
+        .catch((error) => {
+          console.error('Error updating chat summary:', error);
+        });
+
+      this.centrifugoService
+        .publishSub(chatAccountCentrifugo(chat.account.id), {
+          ...chat,
+          summary: summaryUpdate,
+        } as IChat)
+        .catch((error) => {
+          console.error('Error publishing chat summary:', error);
+        });
+    }
   }
 
   private async getChatMessage(
@@ -86,12 +125,32 @@ export class ChatMessageListerUseCase {
   }
 
   async execute(
+    t: TFunction<'translation', undefined>,
     accountId: string,
     query: ListMessageChatsQuery,
-    params: ListMessageChatsParams
+    params: ListMessageChatsParams,
+    userId: string,
+    actions: IJwtGroupHierarchy[]
   ): Promise<ListMessageResponse> {
     const currentPage = query.current_page ?? 1;
     const perPage = query.per_page ?? 10;
+
+    const chat = await this.chatService.findChatByChatId(
+      accountId,
+      params.chat_id
+    );
+
+    if (!chat) {
+      throw new Error(t('chat_not_found'));
+    }
+
+    if (!this.canViewOthersChats(actions)) {
+      if (chat.status === EChatStatus.in_chat) {
+        if (chat.user?.id !== userId) {
+          throw new Error(t('chat_access_denied'));
+        }
+      }
+    }
 
     const [chatMessages, total] = await this.getChatMessage(
       accountId,
@@ -115,7 +174,7 @@ export class ChatMessageListerUseCase {
       currentPage
     );
 
-    await this.updateChat(params.chat_id);
+    this.updateChatSummaryIfParked(chat);
 
     return {
       pagings,

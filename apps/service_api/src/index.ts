@@ -22,6 +22,7 @@ import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 import { safePlugin } from '@core/common/functions/safePlugin';
+import centrifugoServicePlugin from './centrifugo';
 
 const server = fastify({
   pluginTimeout: 120000,
@@ -57,6 +58,7 @@ server.register(safePlugin(elasticLogsPlugin, 'elasticLogs'), {
 
 server.register(safePlugin(loggerServicePlugin, 'loggerService'));
 server.register(safePlugin(consumerPlugin, 'consumer'));
+server.register(safePlugin(centrifugoServicePlugin, 'centrifugoService'));
 
 server.register(safePlugin(swaggerPlugin, 'swagger'));
 server.register(safePlugin(routes, 'routes', true), {
