@@ -205,6 +205,8 @@
   "contact_creator_error": "Error al crear el contacto!",
   "contact_creation_failed": "¡Error al crear el contacto!",
   "contact_view_successfully": "¡Contacto visualizado con éxito!",
+  "contact_export_successfully": "¡Contactos exportados con éxito!",
+  "contact_export_error": "¡Error al exportar contactos!",
   "contact_phone_view_successfully": "¡Teléfono descriptado recuperado con éxito!",
   "contact_email_view_successfully": "¡Email descriptado recuperado con éxito!",
   "contact_not_found": "¡Contacto no encontrado!",
@@ -273,5 +275,6 @@
   "profile_status_delete_error": "¡Error al eliminar el estado!",
   "phone_number_not_valid_on_whatsapp": "¡El número de teléfono no es válido en WhatsApp!",
   "phone_validation_timeout": "¡Tiempo de espera para la validación del teléfono excedido!",
-  "no_active_worker_for_validation": "¡No se encontró ningún canal activo para la validación!"
+  "no_active_worker_for_validation": "¡No se encontró ningún canal activo para la validación!",
+  "phone_required_for_validation": "¡El teléfono es obligatorio para la validación!"
 }

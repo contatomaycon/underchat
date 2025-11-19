@@ -2,29 +2,24 @@ import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { CreateContactGroupAssignmentRequest } from '@core/schema/contactGroup/createContactGroupAssignment/request.schema';
-import { ContactGroupAssignmentCreatorUseCase } from '@core/useCases/contactGroup/ContactGroupAssignmentCreator.useCase';
+import { ContactExporterUseCase } from '@core/useCases/contact/ContactExporter.useCase';
 
-export const createContactGroupAssignment = async (
-  request: FastifyRequest<{
-    Body: CreateContactGroupAssignmentRequest;
-  }>,
+export const exportContact = async (
+  request: FastifyRequest,
   reply: FastifyReply
 ) => {
-  const contactGroupAssignmentCreatorUseCase = container.resolve(
-    ContactGroupAssignmentCreatorUseCase
-  );
+  const contactExporterUseCase = container.resolve(ContactExporterUseCase);
   const { t, tokenJwtData } = request;
 
   try {
-    const response = await contactGroupAssignmentCreatorUseCase.execute(
+    const response = await contactExporterUseCase.execute(
       t,
-      request.body,
-      tokenJwtData.account_id
+      tokenJwtData.account_id,
+      tokenJwtData.is_administrator
     );
 
     return sendResponse(reply, {
-      message: t('contact_group_assignment_create_success'),
+      message: t('contact_export_successfully'),
       httpStatusCode: EHTTPStatusCode.ok,
       data: response,
     });

@@ -1,13 +1,11 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { createContactGroupAssignmentRequestSchema } from './request.schema';
-import { contactImportStatusSchema } from './response.schema';
+import { exportContactResponseSchema } from './response.schema';
 
-export const createContactGroupAssignmentSchema = {
-  description: 'Adiciona uma atribuição de grupo de contato a uma conta',
-  tags: [ETagSwagger.contactGroupAssignment],
-  consumes: ['multipart/form-data'],
+export const exportContactSchema = {
+  description: 'Exporta contatos com dados criptografados',
+  tags: [ETagSwagger.contact],
   produces: ['application/json'],
   security: [
     {
@@ -23,14 +21,13 @@ export const createContactGroupAssignmentSchema = {
       })
     ),
   }),
-  body: createContactGroupAssignmentRequestSchema,
   response: {
     200: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: Type.Array(contactImportStatusSchema),
+        data: Type.Array(exportContactResponseSchema),
       },
       { description: 'Successful' }
     ),

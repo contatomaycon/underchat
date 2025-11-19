@@ -100,25 +100,31 @@ const escapeCsv = (value: unknown): string => {
   return s;
 };
 
-const exportContactsToCsv = () => {
+const exportContactsToCsv = async () => {
+  const contacts = await contactStore.exportContacts();
+
+  if (!contacts.length) {
+    return;
+  }
+
   const header = [
     t('name'),
     t('lastname'),
     t('email'),
+    t('phone_ddi'),
     t('phone'),
     t('nickname'),
-    t('label'),
     t('birthday'),
     t('notes'),
   ];
 
-  const rows = contactStore.list.map((item) => [
+  const rows = contacts.map((item) => [
     item.name ?? '',
     item.last_name ?? '',
-    item.email_partial ?? '',
-    item.phone_partial ?? '',
+    item.email ?? '',
+    item.phone_ddi ?? '',
+    item.phone ?? '',
     item.nickname ?? '',
-    item.label_template?.label ?? '',
     item.birthday ?? '',
     item.notes ?? '',
   ]);

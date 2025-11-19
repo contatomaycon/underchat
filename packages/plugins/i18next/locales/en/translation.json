@@ -206,6 +206,8 @@
   "contact_creation_failed": "Contact creation failed!",
   "contact_view_successfully": "Contact viewed successfully!",
   "contact_phone_view_successfully": "Decrypted phone retrieved successfully!",
+  "contact_export_successfully": "Contacts exported successfully!",
+  "contact_export_error": "Error exporting contacts!",
   "contact_email_view_successfully": "Decrypted email retrieved successfully!",
   "contact_not_found": "Contact not found!",
   "contact_deleted_successfully": "Contact deleted successfully!",
@@ -273,5 +275,6 @@
   "profile_status_delete_error": "Error deleting status!",
   "phone_number_not_valid_on_whatsapp": "Phone number is not valid on WhatsApp!",
   "phone_validation_timeout": "Phone validation timeout!",
-  "no_active_worker_for_validation": "No active worker found for validation!"
+  "no_active_worker_for_validation": "No active worker found for validation!",
+  "phone_required_for_validation": "Phone is required for validation!"
 }
