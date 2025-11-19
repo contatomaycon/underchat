@@ -9,6 +9,7 @@ import {
   workerLogsConnectionPermissions,
   workerRecreatePermissions,
   workerViewPermissions,
+  workerProfileStatusPermissions,
 } from '@/permissions';
 import { createWorkerSchema } from '@core/schema/worker/createWorker';
 import { editWorkerSchema } from '@core/schema/worker/editWorker';
@@ -19,6 +20,8 @@ import { workerConnectionLogsSchema } from '@core/schema/worker/workerConnection
 import { recreateWorkerSchema } from '@core/schema/worker/recreateWorker';
 import { uploadProfileStatusPhotosSchema } from '@core/schema/worker/uploadProfileStatusPhotos';
 import { listProfileStatusPhotosSchema } from '@core/schema/worker/listProfileStatusPhotos';
+import { updateProfileStatusPhotoSchema } from '@core/schema/worker/updateProfileStatusPhoto';
+import { deleteProfileStatusPhotoSchema } from '@core/schema/worker/deleteProfileStatusPhoto';
 
 export default function workerRoutes(server: FastifyInstance) {
   const workerController = container.resolve(WorkerController);
@@ -91,7 +94,7 @@ export default function workerRoutes(server: FastifyInstance) {
     handler: workerController.uploadProfileStatusPhotos,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, workerEditPermissions),
+        server.authenticateJwt(request, reply, workerProfileStatusPermissions),
     ],
   });
 
@@ -100,7 +103,25 @@ export default function workerRoutes(server: FastifyInstance) {
     handler: workerController.listProfileStatusPhotos,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, workerViewPermissions),
+        server.authenticateJwt(request, reply, workerProfileStatusPermissions),
+    ],
+  });
+
+  server.patch('/worker/profile/status/photo/:worker_profile_status_id', {
+    schema: updateProfileStatusPhotoSchema,
+    handler: workerController.updateProfileStatusPhoto,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerProfileStatusPermissions),
+    ],
+  });
+
+  server.delete('/worker/profile/status/photo/:worker_profile_status_id', {
+    schema: deleteProfileStatusPhotoSchema,
+    handler: workerController.deleteProfileStatusPhoto,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerProfileStatusPermissions),
     ],
   });
 
