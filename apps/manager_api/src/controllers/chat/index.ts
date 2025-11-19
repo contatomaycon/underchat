@@ -9,6 +9,7 @@ import { viewChatLinkPreview } from './methods/viewChatLinkPreview';
 import { reactMessage } from './methods/reactMessage';
 import { deleteMessage } from './methods/deleteMessage';
 import { updateChatStatus } from './methods/updateChatStatus';
+import { clearChatSummary } from './methods/clearChatSummary';
 
 @injectable()
 class ChatController {
@@ -22,6 +23,7 @@ class ChatController {
   public reactMessage = reactMessage;
   public deleteMessage = deleteMessage;
   public updateChatStatus = updateChatStatus;
+  public clearChatSummary = clearChatSummary;
 }
 
 export default ChatController;
