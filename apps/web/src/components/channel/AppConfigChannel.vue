@@ -90,10 +90,12 @@ const previewDialog = ref<{
   open: boolean;
   src: string | null;
   caption: string | null;
+  text: string | null;
 }>({
   open: false,
   src: null,
   caption: null,
+  text: null,
 });
 const selectedType = ref<EWorkerProfileStatusType>(
   EWorkerProfileStatusType.text
@@ -393,11 +395,12 @@ const saveProfileStatus = async () => {
   }
 };
 
-const openPreview = (src: string, caption?: string) => {
+const openPreview = (src: string, caption?: string, text?: string) => {
   previewDialog.value = {
     open: true,
-    src,
+    src: text ? null : src,
     caption: caption && caption.trim() ? caption.trim() : null,
+    text: text && text.trim() ? text.trim() : null,
   };
 };
 
@@ -406,6 +409,7 @@ const closePreview = () => {
     open: false,
     src: null,
     caption: null,
+    text: null,
   };
 };
 
@@ -584,10 +588,6 @@ onBeforeUnmount(() => {
                   :label="$t('is_permanent')"
                   class="mb-4"
                 />
-
-                <span class="text-caption text-medium-emphasis">
-                  {{ $t('profile_status_tab_description') }}
-                </span>
               </div>
 
               <div v-if="showTextInput && textContent">
@@ -710,7 +710,7 @@ onBeforeUnmount(() => {
                         @click="
                           status.worker_profile_status_type_id ===
                           EWorkerProfileStatusType.text
-                            ? null
+                            ? openPreview('', undefined, status.value)
                             : openPreview(
                                 extractUrlAndCaption(status.value).url,
                                 extractUrlAndCaption(status.value).caption ||
@@ -851,6 +851,15 @@ onBeforeUnmount(() => {
           class="rounded"
           contain
         />
+        <div
+          v-if="previewDialog.text"
+          class="d-flex align-center justify-center pa-8"
+          style="min-height: 200px"
+        >
+          <p class="text-body-1 text-center">
+            {{ previewDialog.text }}
+          </p>
+        </div>
         <div v-if="previewDialog.caption" class="mt-4 text-center">
           <p class="text-body-2 text-medium-emphasis font-italic">
             {{ previewDialog.caption }}
