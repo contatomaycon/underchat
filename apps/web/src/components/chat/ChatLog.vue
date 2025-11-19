@@ -37,6 +37,7 @@ const chatStore = useChatStore();
 const { activeChat } = storeToRefs(chatStore);
 const chatLogContainer = ref<HTMLElement | null>(null);
 
+const showSkeleton = computed(() => chatStore.listMessages.length === 0);
 const reactionEmojiIndex = new EmojiIndex(data);
 
 const viewerOpen = ref(false);
@@ -153,19 +154,6 @@ const resolvePhoto = (message: ListMessageResult): string => {
 
 const isPhotoExist = (message: ListMessageResult): boolean =>
   !!resolvePhoto(message);
-
-const avatarText = (name?: string) => {
-  if (!name) return '';
-  const parts = name.trim().split(/\s+/);
-  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase();
-};
-
-const avatarChat = (message: ListMessageResult) => {
-  if (isTypeUser(message) && chatStore.activeChat?.name)
-    return avatarText(chatStore.activeChat.name);
-  const name = message.user?.name ?? chatStore.user?.info.name;
-  return avatarText(name);
-};
 
 const resolvePreviewImage = (lp?: LinkPreview): string => {
   if (!lp) return '';
@@ -1223,13 +1211,13 @@ onUnmounted(() => {
     class="chat-log pa-6"
     :class="{ 'chat-log-blurred': shouldBlurMessageContent }"
   >
-    <template v-if="chatStore.loading && chatStore.listMessages.length === 0">
+    <template v-if="showSkeleton">
       <div
         v-for="i in 6"
         :key="`skeleton-${i}`"
-        class="chat-group d-flex align-start position-relative mb-6"
+        class="chat-group skeleton-group skeleton-group-responsive d-flex align-start position-relative mb-6"
         :class="{ 'flex-row-reverse': i % 2 === 0 }"
-        style="width: 100%; min-width: 0"
+        style="width: 100%; min-width: 0; padding-left: 0"
       >
         <div
           class="chat-avatar"
@@ -1239,17 +1227,17 @@ onUnmounted(() => {
           <VSkeletonLoader type="avatar" width="32" height="32" />
         </div>
         <div
-          class="chat-body d-inline-flex flex-column position-relative"
+          class="chat-body skeleton-body-responsive d-inline-flex flex-column position-relative"
           :class="i % 2 === 0 ? 'align-end' : 'align-start'"
-          style="min-width: 0; max-width: calc(100% - 6.75rem)"
+          style="min-width: 0; width: auto"
         >
           <div
             class="chat-content-wrapper"
             :class="i % 2 === 0 ? 'wrapper-operator' : 'wrapper-client'"
-            style="max-width: 100%; min-width: 0"
+            style="max-width: 100%; min-width: 0; width: fit-content"
           >
             <div
-              class="chat-content py-2 px-2 elevation-2"
+              class="chat-content skeleton-content py-2 px-2 elevation-2"
               :class="i % 2 === 0 ? 'chat-right' : 'chat-left'"
               :style="{
                 backgroundColor:
@@ -1257,22 +1245,18 @@ onUnmounted(() => {
                     ? 'rgb(217, 253, 211)'
                     : 'rgb(var(--v-theme-surface))',
                 maxWidth: '100%',
+                width: 'auto',
                 wordWrap: 'break-word',
                 overflowWrap: 'break-word',
                 boxSizing: 'border-box',
+                overflow: 'visible',
+                borderRadius: '4px',
               }"
             >
-              <div style="max-width: 100%; overflow: hidden">
+              <div class="skeleton-loader-wrapper">
                 <VSkeletonLoader
                   :type="i % 3 === 0 ? 'text' : 'sentences'"
-                  :width="i % 3 === 0 ? '120' : '200'"
-                  class="mb-1"
-                  style="
-                    max-width: 100%;
-                    word-wrap: break-word;
-                    overflow-wrap: break-word;
-                    box-sizing: border-box;
-                  "
+                  class="mb-1 skeleton-loader-responsive"
                 />
               </div>
               <div class="d-flex align-center justify-end mt-1">
@@ -2421,17 +2405,87 @@ onUnmounted(() => {
 
 <style lang="scss">
 .chat-log {
+  overflow-x: visible !important;
+
   &.chat-log-blurred {
     filter: blur(8px);
     user-select: none;
     pointer-events: none;
   }
 
+  .chat-group {
+    overflow: visible !important;
+
+    &.skeleton-group-responsive {
+      padding-right: clamp(16px, 4vw, 32px);
+
+      @media (max-width: 768px) {
+        padding-right: 16px;
+      }
+
+      @media (max-width: 480px) {
+        padding-right: 12px;
+      }
+    }
+  }
+
+  .skeleton-body-responsive {
+    max-width: calc(100% - 6.75rem - clamp(16px, 4vw, 32px)) !important;
+
+    @media (max-width: 768px) {
+      max-width: calc(100% - 6.75rem - 16px) !important;
+    }
+
+    @media (max-width: 480px) {
+      max-width: calc(100% - 5rem - 12px) !important;
+    }
+  }
+
+  .skeleton-loader-wrapper {
+    max-width: 100%;
+    overflow: visible;
+    width: auto;
+    min-width: clamp(200px, 50vw, 300px);
+
+    @media (max-width: 768px) {
+      min-width: clamp(150px, 60vw, 250px);
+    }
+
+    @media (max-width: 480px) {
+      min-width: clamp(120px, 70vw, 200px);
+    }
+  }
+
+  .skeleton-loader-responsive {
+    max-width: 100% !important;
+    width: 100% !important;
+    min-width: clamp(200px, 50vw, 300px) !important;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    box-sizing: border-box;
+    overflow: visible;
+
+    @media (max-width: 768px) {
+      min-width: clamp(150px, 60vw, 250px) !important;
+    }
+
+    @media (max-width: 480px) {
+      min-width: clamp(120px, 70vw, 200px) !important;
+    }
+  }
+
   .chat-body {
     max-inline-size: calc(100% - 6.75rem);
+    overflow: visible !important;
+
     .chat-content-wrapper {
       position: relative;
       display: inline-flex;
+      overflow: visible !important;
+    }
+
+    .skeleton-content {
+      border-radius: 4px !important;
     }
 
     .message-text {
