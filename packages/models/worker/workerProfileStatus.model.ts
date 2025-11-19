@@ -16,7 +16,7 @@ export const workerProfileStatus = pgTable('worker_profile_status', {
   worker_profile_status_type_id: uuid()
     .references(() => workerProfileStatusType.worker_profile_status_type_id)
     .notNull(),
-  url: varchar({ length: 500 }).notNull(),
+  value: varchar({ length: 500 }).notNull(),
   is_permanent: boolean().default(false),
   created_at: timestamp('created_at', {
     mode: 'string',

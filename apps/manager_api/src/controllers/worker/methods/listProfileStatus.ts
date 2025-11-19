@@ -2,36 +2,33 @@ import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { WorkerProfileStatusDeleterUseCase } from '@core/useCases/worker/WorkerProfileStatusDeleter.useCase';
-import { DeleteProfileStatusPhotoRequest } from '@core/schema/worker/deleteProfileStatusPhoto/request.schema';
+import { WorkerProfileStatusListerUseCase } from '@core/useCases/worker/WorkerProfileStatusLister.useCase';
 
-export const deleteProfileStatusPhoto = async (
+export const listProfileStatus = async (
   request: FastifyRequest<{
-    Params: DeleteProfileStatusPhotoRequest;
+    Params: { worker_id: string };
   }>,
   reply: FastifyReply
 ) => {
-  const workerProfileStatusDeleterUseCase = container.resolve(
-    WorkerProfileStatusDeleterUseCase
+  const workerProfileStatusListerUseCase = container.resolve(
+    WorkerProfileStatusListerUseCase
   );
   const { t } = request;
-  const { worker_profile_status_id } = request.params;
+  const { worker_id } = request.params;
 
   try {
-    const response = await workerProfileStatusDeleterUseCase.execute(
-      t,
-      worker_profile_status_id
-    );
+    const response = await workerProfileStatusListerUseCase.execute(worker_id);
 
     if (response) {
       return sendResponse(reply, {
-        message: t('profile_status_delete_success'),
+        message: t('profile_status_load_success'),
         httpStatusCode: EHTTPStatusCode.ok,
+        data: response,
       });
     }
 
     return sendResponse(reply, {
-      message: t('profile_status_delete_error'),
+      message: t('profile_status_load_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {

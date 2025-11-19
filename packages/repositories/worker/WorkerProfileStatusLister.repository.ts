@@ -3,7 +3,7 @@ import { workerProfileStatus } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { eq } from 'drizzle-orm';
-import { ProfileStatusPhoto } from '@core/schema/worker/listProfileStatusPhotos/response.schema';
+import { ProfileStatus } from '@core/schema/worker/listProfileStatus/response.schema';
 
 @injectable()
 export class WorkerProfileStatusListerRepository {
@@ -13,12 +13,14 @@ export class WorkerProfileStatusListerRepository {
 
   listWorkerProfileStatus = async (
     workerId: string
-  ): Promise<ProfileStatusPhoto[]> => {
+  ): Promise<ProfileStatus[]> => {
     const results = await this.db
       .select({
         worker_profile_status_id: workerProfileStatus.worker_profile_status_id,
         worker_id: workerProfileStatus.worker_id,
-        url: workerProfileStatus.url,
+        worker_profile_status_type_id:
+          workerProfileStatus.worker_profile_status_type_id,
+        value: workerProfileStatus.value,
         is_permanent: workerProfileStatus.is_permanent,
         created_at: workerProfileStatus.created_at,
       })
@@ -27,9 +29,9 @@ export class WorkerProfileStatusListerRepository {
       .execute();
 
     if (!results?.length) {
-      return [] as ProfileStatusPhoto[];
+      return [] as ProfileStatus[];
     }
 
-    return results as ProfileStatusPhoto[];
+    return results as ProfileStatus[];
   };
 }

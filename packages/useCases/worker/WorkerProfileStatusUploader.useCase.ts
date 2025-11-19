@@ -1,7 +1,8 @@
 import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerProfileStatusService } from '@core/services/workerProfileStatus.service';
-import { UploadProfileStatusPhotosResponse } from '@core/schema/worker/uploadProfileStatusPhotos/response.schema';
+import { UploadProfileStatusResponse } from '@core/schema/worker/uploadProfileStatus/response.schema';
+import { UploadProfileStatusRequest } from '@core/schema/worker/uploadProfileStatus/request.schema';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 
 @injectable()
@@ -9,6 +10,15 @@ export class WorkerProfileStatusUploaderUseCase {
   constructor(
     private readonly workerProfileStatusService: WorkerProfileStatusService
   ) {}
+
+  private normalizeField(field: unknown): string | undefined {
+    if (field === undefined || field === null) return undefined;
+    if (typeof field === 'string') return field;
+    if (typeof field === 'object' && field !== null && 'value' in field) {
+      return String((field as { value: unknown }).value);
+    }
+    return String(field);
+  }
 
   private validatePhotos(
     t: TFunction<'translation', undefined>,
@@ -30,18 +40,26 @@ export class WorkerProfileStatusUploaderUseCase {
       return false;
     }
 
-    if (typeof isPermanent !== 'object' || !('value' in isPermanent)) {
-      return false;
+    if (typeof isPermanent === 'boolean') {
+      return isPermanent;
     }
 
-    const value = (isPermanent as { value: boolean | string }).value;
-
-    if (typeof value === 'boolean') {
-      return value;
+    if (typeof isPermanent === 'string') {
+      return isPermanent.toLowerCase() === 'true' || isPermanent === '1';
     }
 
-    if (typeof value === 'string') {
-      return value.toLowerCase() === 'true';
+    if (
+      typeof isPermanent === 'object' &&
+      isPermanent !== null &&
+      'value' in isPermanent
+    ) {
+      const value = (isPermanent as { value: unknown }).value;
+      if (typeof value === 'boolean') {
+        return value;
+      }
+      if (typeof value === 'string') {
+        return value.toLowerCase() === 'true' || value === '1';
+      }
     }
 
     return false;
@@ -51,19 +69,32 @@ export class WorkerProfileStatusUploaderUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     workerId: string,
-    photos: unknown,
-    isPermanent?: unknown
-  ): Promise<UploadProfileStatusPhotosResponse> {
-    const validatedPhotos = this.validatePhotos(t, photos);
-    const normalizedIsPermanent = this.normalizeIsPermanent(isPermanent);
+    body: UploadProfileStatusRequest
+  ): Promise<UploadProfileStatusResponse> {
+    const workerProfileStatusTypeId = this.normalizeField(
+      body.worker_profile_status_type_id
+    );
 
-    const result =
-      await this.workerProfileStatusService.uploadProfileStatusPhotos(
-        workerId,
-        accountId,
-        validatedPhotos,
-        normalizedIsPermanent
-      );
+    if (!workerProfileStatusTypeId) {
+      throw new Error(t('profile_status_type_required'));
+    }
+
+    const photos = body.photos;
+    const text = this.normalizeField(body.text);
+    const caption = this.normalizeField(body.caption);
+    const isPermanent = this.normalizeIsPermanent(body.is_permanent);
+
+    const validatedPhotos = photos ? this.validatePhotos(t, photos) : undefined;
+
+    const result = await this.workerProfileStatusService.uploadProfileStatus(
+      workerId,
+      accountId,
+      workerProfileStatusTypeId,
+      validatedPhotos,
+      text,
+      caption,
+      isPermanent
+    );
 
     if (!result || result.length === 0) {
       throw new Error(t('profile_status_upload_error'));

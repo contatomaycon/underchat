@@ -12,10 +12,9 @@ export class WorkerProfileStatusDeleterUseCase {
     t: TFunction<'translation', undefined>,
     workerProfileStatusId: string
   ): Promise<boolean> {
-    const result =
-      await this.workerProfileStatusService.deleteProfileStatusPhoto(
-        workerProfileStatusId
-      );
+    const result = await this.workerProfileStatusService.deleteProfileStatus(
+      workerProfileStatusId
+    );
 
     if (!result) {
       throw new Error(t('profile_status_delete_error'));

@@ -21,7 +21,8 @@ export class WorkerProfileStatusCreatorRepository {
       .values({
         worker_profile_status_id,
         worker_id: input.worker_id,
-        url: input.url,
+        worker_profile_status_type_id: input.worker_profile_status_type_id,
+        value: input.value,
         is_permanent: input.is_permanent,
       })
       .execute();

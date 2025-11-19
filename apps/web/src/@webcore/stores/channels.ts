@@ -20,8 +20,8 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { WorkerConnectionLogsQuery } from '@core/schema/worker/workerConnectionLogs/request.schema';
 import { WorkerConnectionLogsResponse } from '@core/schema/worker/workerConnectionLogs/response.schema';
-import { ProfileStatusPhoto } from '@core/schema/worker/listProfileStatusPhotos/response.schema';
-import { WorkerProfileStatusPhoto } from '@core/schema/worker/uploadProfileStatusPhotos/response.schema';
+import { ProfileStatus } from '@core/schema/worker/listProfileStatus/response.schema';
+import { WorkerProfileStatus } from '@core/schema/worker/uploadProfileStatus/response.schema';
 
 export const useChannelsStore = defineStore('channels', {
   state: () => ({
@@ -390,16 +390,16 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
-    async fetchWorkerProfilePhotos(
+    async fetchWorkerProfileStatus(
       workerId: string
-    ): Promise<ProfileStatusPhoto[] | null> {
+    ): Promise<ProfileStatus[] | null> {
       if (!workerId) return [];
 
       try {
         this.loading = true;
 
-        const response = await axios.get<IApiResponse<ProfileStatusPhoto[]>>(
-          `/worker/${workerId}/profile/status/photos`
+        const response = await axios.get<IApiResponse<ProfileStatus[]>>(
+          `/worker/${workerId}/profile/status`
         );
 
         this.loading = false;
@@ -429,21 +429,40 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
-    async uploadWorkerProfilePhotos(
+    async uploadWorkerProfileStatus(
       workerId: string,
-      files: File[],
-      isPermanent: boolean = false
-    ): Promise<WorkerProfileStatusPhoto[] | null> {
-      if (!workerId || !files.length) return null;
+      workerProfileStatusTypeId: string,
+      files?: File[],
+      text?: string,
+      caption?: string,
+      isPermanent: string = 'false'
+    ): Promise<WorkerProfileStatus[] | null> {
+      if (!workerId || !workerProfileStatusTypeId) return null;
 
       try {
         this.loading = true;
 
         const formData = new FormData();
-        files.forEach((file) => {
-          formData.append('photos', file);
-        });
-        formData.append('is_permanent', isPermanent.toString());
+        formData.append(
+          'worker_profile_status_type_id',
+          workerProfileStatusTypeId
+        );
+
+        if (files && files.length > 0) {
+          files.forEach((file) => {
+            formData.append('photos', file);
+          });
+        }
+
+        if (text) {
+          formData.append('text', text);
+        }
+
+        if (caption) {
+          formData.append('caption', caption);
+        }
+
+        formData.append('is_permanent', isPermanent);
 
         const config: AxiosRequestConfig<FormData> = {
           headers: {
@@ -451,9 +470,11 @@ export const useChannelsStore = defineStore('channels', {
           },
         };
 
-        const response = await axios.post<
-          IApiResponse<WorkerProfileStatusPhoto[]>
-        >(`/worker/${workerId}/profile/status/photos`, formData, config);
+        const response = await axios.post<IApiResponse<WorkerProfileStatus[]>>(
+          `/worker/${workerId}/profile/status`,
+          formData,
+          config
+        );
 
         this.loading = false;
 
@@ -487,7 +508,28 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
-    async updateProfileStatusPhotoIsPermanent(
+    async fetchWorkerProfilePhotos(
+      workerId: string
+    ): Promise<ProfileStatus[] | null> {
+      return this.fetchWorkerProfileStatus(workerId);
+    },
+
+    async uploadWorkerProfilePhotos(
+      workerId: string,
+      files: File[],
+      isPermanent: boolean = false
+    ): Promise<WorkerProfileStatus[] | null> {
+      return this.uploadWorkerProfileStatus(
+        workerId,
+        '019a9d00-0002-7000-8000-000000000002',
+        files,
+        undefined,
+        undefined,
+        isPermanent.toString()
+      );
+    },
+
+    async updateProfileStatusIsPermanent(
       workerProfileStatusId: string,
       isPermanent: boolean
     ): Promise<boolean> {
@@ -495,7 +537,7 @@ export const useChannelsStore = defineStore('channels', {
         this.loading = true;
 
         const response = await axios.patch<IApiResponse<null>>(
-          `/worker/profile/status/photo/${workerProfileStatusId}`,
+          `/worker/profile/status/${workerProfileStatusId}`,
           {
             is_permanent: isPermanent,
           }
@@ -533,14 +575,22 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
-    async deleteProfileStatusPhoto(
-      workerProfileStatusId: string
+    async updateProfileStatusPhotoIsPermanent(
+      workerProfileStatusId: string,
+      isPermanent: boolean
     ): Promise<boolean> {
+      return this.updateProfileStatusIsPermanent(
+        workerProfileStatusId,
+        isPermanent
+      );
+    },
+
+    async deleteProfileStatus(workerProfileStatusId: string): Promise<boolean> {
       try {
         this.loading = true;
 
         const response = await axios.delete<IApiResponse<null>>(
-          `/worker/profile/status/photo/${workerProfileStatusId}`
+          `/worker/profile/status/${workerProfileStatusId}`
         );
 
         this.loading = false;

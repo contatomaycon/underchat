@@ -2,42 +2,36 @@ import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { WorkerProfileStatusUpdaterUseCase } from '@core/useCases/worker/WorkerProfileStatusUpdater.useCase';
-import {
-  UpdateProfileStatusPhotoParams,
-  UpdateProfileStatusPhotoRequest,
-} from '@core/schema/worker/updateProfileStatusPhoto/request.schema';
+import { WorkerProfileStatusDeleterUseCase } from '@core/useCases/worker/WorkerProfileStatusDeleter.useCase';
+import { DeleteProfileStatusRequest } from '@core/schema/worker/deleteProfileStatus/request.schema';
 
-export const updateProfileStatusPhoto = async (
+export const deleteProfileStatus = async (
   request: FastifyRequest<{
-    Params: UpdateProfileStatusPhotoParams;
-    Body: UpdateProfileStatusPhotoRequest;
+    Params: DeleteProfileStatusRequest;
   }>,
   reply: FastifyReply
 ) => {
-  const workerProfileStatusUpdaterUseCase = container.resolve(
-    WorkerProfileStatusUpdaterUseCase
+  const workerProfileStatusDeleterUseCase = container.resolve(
+    WorkerProfileStatusDeleterUseCase
   );
   const { t } = request;
   const { worker_profile_status_id } = request.params;
-  const { is_permanent } = request.body;
 
   try {
-    const response = await workerProfileStatusUpdaterUseCase.execute(
+    const response = await workerProfileStatusDeleterUseCase.execute(
       t,
-      worker_profile_status_id,
-      is_permanent
+      worker_profile_status_id
     );
 
     if (response) {
       return sendResponse(reply, {
-        message: t('profile_status_update_success'),
+        message: t('profile_status_delete_success'),
         httpStatusCode: EHTTPStatusCode.ok,
       });
     }
 
     return sendResponse(reply, {
-      message: t('profile_status_update_error'),
+      message: t('profile_status_delete_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {

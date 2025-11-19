@@ -1,17 +1,13 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import {
-  uploadProfileStatusPhotosParamsSchema,
-  uploadProfileStatusPhotosRequestSchema,
-} from './request.schema';
-import { uploadProfileStatusPhotosResponseSchema } from './response.schema';
+import { listProfileStatusRequestSchema } from './request.schema';
+import { listProfileStatusResponseSchema } from './response.schema';
 
-export const uploadProfileStatusPhotosSchema = {
-  description: 'Upload fotos do status do perfil do worker',
+export const listProfileStatusSchema = {
+  description: 'Lista status do perfil',
   tags: [ETagSwagger.worker],
   produces: ['application/json'],
-  consumes: ['multipart/form-data'],
   security: [
     {
       authenticateJwt: [],
@@ -26,15 +22,14 @@ export const uploadProfileStatusPhotosSchema = {
       })
     ),
   }),
-  params: uploadProfileStatusPhotosParamsSchema,
-  body: uploadProfileStatusPhotosRequestSchema,
+  params: listProfileStatusRequestSchema,
   response: {
     200: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: uploadProfileStatusPhotosResponseSchema,
+        data: listProfileStatusResponseSchema,
       },
       { description: 'Successful' }
     ),

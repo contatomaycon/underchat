@@ -12,10 +12,15 @@ export class WorkerProfileStatusViewerRepository {
 
   viewWorkerProfileStatusById = async (
     workerProfileStatusId: string
-  ): Promise<{ url: string } | null> => {
+  ): Promise<{
+    value: string;
+    worker_profile_status_type_id: string;
+  } | null> => {
     const result = await this.db
       .select({
-        url: workerProfileStatus.url,
+        value: workerProfileStatus.value,
+        worker_profile_status_type_id:
+          workerProfileStatus.worker_profile_status_type_id,
       })
       .from(workerProfileStatus)
       .where(

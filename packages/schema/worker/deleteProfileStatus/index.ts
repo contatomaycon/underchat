@@ -1,13 +1,10 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import {
-  updateProfileStatusPhotoParamsSchema,
-  updateProfileStatusPhotoRequestSchema,
-} from './request.schema';
+import { deleteProfileStatusRequestSchema } from './request.schema';
 
-export const updateProfileStatusPhotoSchema = {
-  description: 'Atualiza o status permanente de uma foto do perfil',
+export const deleteProfileStatusSchema = {
+  description: 'Remove um status do perfil',
   tags: [ETagSwagger.worker],
   produces: ['application/json'],
   security: [
@@ -24,8 +21,7 @@ export const updateProfileStatusPhotoSchema = {
       })
     ),
   }),
-  params: updateProfileStatusPhotoParamsSchema,
-  body: updateProfileStatusPhotoRequestSchema,
+  params: deleteProfileStatusRequestSchema,
   response: {
     200: Type.Object(
       {

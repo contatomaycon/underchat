@@ -18,10 +18,10 @@ import { deleteWorkerSchema } from '@core/schema/worker/deleteWorker';
 import { statusConnectionWorkerSchema } from '@core/schema/worker/statusConnection';
 import { workerConnectionLogsSchema } from '@core/schema/worker/workerConnectionLogs';
 import { recreateWorkerSchema } from '@core/schema/worker/recreateWorker';
-import { uploadProfileStatusPhotosSchema } from '@core/schema/worker/uploadProfileStatusPhotos';
-import { listProfileStatusPhotosSchema } from '@core/schema/worker/listProfileStatusPhotos';
-import { updateProfileStatusPhotoSchema } from '@core/schema/worker/updateProfileStatusPhoto';
-import { deleteProfileStatusPhotoSchema } from '@core/schema/worker/deleteProfileStatusPhoto';
+import { uploadProfileStatusSchema } from '@core/schema/worker/uploadProfileStatus';
+import { listProfileStatusSchema } from '@core/schema/worker/listProfileStatus';
+import { updateProfileStatusSchema } from '@core/schema/worker/updateProfileStatus';
+import { deleteProfileStatusSchema } from '@core/schema/worker/deleteProfileStatus';
 
 export default function workerRoutes(server: FastifyInstance) {
   const workerController = container.resolve(WorkerController);
@@ -89,36 +89,36 @@ export default function workerRoutes(server: FastifyInstance) {
     ],
   });
 
-  server.post('/worker/:worker_id/profile/status/photos', {
-    schema: uploadProfileStatusPhotosSchema,
-    handler: workerController.uploadProfileStatusPhotos,
+  server.post('/worker/:worker_id/profile/status', {
+    schema: uploadProfileStatusSchema,
+    handler: workerController.uploadProfileStatus,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerProfileStatusPermissions),
     ],
   });
 
-  server.get('/worker/:worker_id/profile/status/photos', {
-    schema: listProfileStatusPhotosSchema,
-    handler: workerController.listProfileStatusPhotos,
+  server.get('/worker/:worker_id/profile/status', {
+    schema: listProfileStatusSchema,
+    handler: workerController.listProfileStatus,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerProfileStatusPermissions),
     ],
   });
 
-  server.patch('/worker/profile/status/photo/:worker_profile_status_id', {
-    schema: updateProfileStatusPhotoSchema,
-    handler: workerController.updateProfileStatusPhoto,
+  server.patch('/worker/profile/status/:worker_profile_status_id', {
+    schema: updateProfileStatusSchema,
+    handler: workerController.updateProfileStatus,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerProfileStatusPermissions),
     ],
   });
 
-  server.delete('/worker/profile/status/photo/:worker_profile_status_id', {
-    schema: deleteProfileStatusPhotoSchema,
-    handler: workerController.deleteProfileStatusPhoto,
+  server.delete('/worker/profile/status/:worker_profile_status_id', {
+    schema: deleteProfileStatusSchema,
+    handler: workerController.deleteProfileStatus,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerProfileStatusPermissions),

@@ -2,45 +2,42 @@ import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { WorkerProfileStatusUploaderUseCase } from '@core/useCases/worker/WorkerProfileStatusUploader.useCase';
+import { WorkerProfileStatusUpdaterUseCase } from '@core/useCases/worker/WorkerProfileStatusUpdater.useCase';
 import {
-  UploadProfileStatusPhotosParams,
-  UploadProfileStatusPhotosRequest,
-} from '@core/schema/worker/uploadProfileStatusPhotos/request.schema';
+  UpdateProfileStatusParams,
+  UpdateProfileStatusRequest,
+} from '@core/schema/worker/updateProfileStatus/request.schema';
 
-export const uploadProfileStatusPhotos = async (
+export const updateProfileStatus = async (
   request: FastifyRequest<{
-    Params: UploadProfileStatusPhotosParams;
-    Body: UploadProfileStatusPhotosRequest;
+    Params: UpdateProfileStatusParams;
+    Body: UpdateProfileStatusRequest;
   }>,
   reply: FastifyReply
 ) => {
-  const workerProfileStatusUploaderUseCase = container.resolve(
-    WorkerProfileStatusUploaderUseCase
+  const workerProfileStatusUpdaterUseCase = container.resolve(
+    WorkerProfileStatusUpdaterUseCase
   );
-  const { t, tokenJwtData } = request;
-  const { worker_id } = request.params;
-  const { photos, is_permanent } = request.body;
+  const { t } = request;
+  const { worker_profile_status_id } = request.params;
+  const body = request.body;
 
   try {
-    const response = await workerProfileStatusUploaderUseCase.execute(
+    const response = await workerProfileStatusUpdaterUseCase.execute(
       t,
-      tokenJwtData.account_id,
-      worker_id,
-      photos,
-      is_permanent
+      worker_profile_status_id,
+      body
     );
 
     if (response) {
       return sendResponse(reply, {
-        message: t('profile_status_upload_success'),
+        message: t('profile_status_update_success'),
         httpStatusCode: EHTTPStatusCode.ok,
-        data: response,
       });
     }
 
     return sendResponse(reply, {
-      message: t('profile_status_upload_error'),
+      message: t('profile_status_update_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {

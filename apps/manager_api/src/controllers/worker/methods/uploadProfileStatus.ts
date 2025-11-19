@@ -2,33 +2,44 @@ import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { WorkerProfileStatusListerUseCase } from '@core/useCases/worker/WorkerProfileStatusLister.useCase';
+import { WorkerProfileStatusUploaderUseCase } from '@core/useCases/worker/WorkerProfileStatusUploader.useCase';
+import {
+  UploadProfileStatusParams,
+  UploadProfileStatusRequest,
+} from '@core/schema/worker/uploadProfileStatus/request.schema';
 
-export const listProfileStatusPhotos = async (
+export const uploadProfileStatus = async (
   request: FastifyRequest<{
-    Params: { worker_id: string };
+    Params: UploadProfileStatusParams;
+    Body: UploadProfileStatusRequest;
   }>,
   reply: FastifyReply
 ) => {
-  const workerProfileStatusListerUseCase = container.resolve(
-    WorkerProfileStatusListerUseCase
+  const workerProfileStatusUploaderUseCase = container.resolve(
+    WorkerProfileStatusUploaderUseCase
   );
-  const { t } = request;
+  const { t, tokenJwtData } = request;
   const { worker_id } = request.params;
+  const body = request.body;
 
   try {
-    const response = await workerProfileStatusListerUseCase.execute(worker_id);
+    const response = await workerProfileStatusUploaderUseCase.execute(
+      t,
+      tokenJwtData.account_id,
+      worker_id,
+      body
+    );
 
     if (response) {
       return sendResponse(reply, {
-        message: t('profile_status_load_success'),
+        message: t('profile_status_upload_success'),
         httpStatusCode: EHTTPStatusCode.ok,
         data: response,
       });
     }
 
     return sendResponse(reply, {
-      message: t('profile_status_load_error'),
+      message: t('profile_status_upload_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {

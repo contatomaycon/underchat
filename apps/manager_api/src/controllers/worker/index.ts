@@ -7,10 +7,10 @@ import { deleteWorker } from './methods/deleteWorker';
 import { changeStatusConnection } from './methods/changeStatusConnection';
 import { workerConnectionLogs } from './methods/workerConnectionLogs';
 import { recreateWorker } from './methods/recreateWorker';
-import { uploadProfileStatusPhotos } from './methods/uploadProfileStatusPhotos';
-import { listProfileStatusPhotos } from './methods/listProfileStatusPhotos';
-import { updateProfileStatusPhoto } from './methods/updateProfileStatusPhoto';
-import { deleteProfileStatusPhoto } from './methods/deleteProfileStatusPhoto';
+import { uploadProfileStatus } from './methods/uploadProfileStatus';
+import { listProfileStatus } from './methods/listProfileStatus';
+import { updateProfileStatus } from './methods/updateProfileStatus';
+import { deleteProfileStatus } from './methods/deleteProfileStatus';
 
 @injectable()
 class WorkerController {
@@ -22,10 +22,10 @@ class WorkerController {
   public changeStatusConnection = changeStatusConnection;
   public workerConnectionLogs = workerConnectionLogs;
   public recreateWorker = recreateWorker;
-  public uploadProfileStatusPhotos = uploadProfileStatusPhotos;
-  public listProfileStatusPhotos = listProfileStatusPhotos;
-  public updateProfileStatusPhoto = updateProfileStatusPhoto;
-  public deleteProfileStatusPhoto = deleteProfileStatusPhoto;
+  public uploadProfileStatus = uploadProfileStatus;
+  public listProfileStatus = listProfileStatus;
+  public updateProfileStatus = updateProfileStatus;
+  public deleteProfileStatus = deleteProfileStatus;
 }
 
 export default WorkerController;
