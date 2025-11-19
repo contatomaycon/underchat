@@ -17,6 +17,8 @@ import { deleteWorkerSchema } from '@core/schema/worker/deleteWorker';
 import { statusConnectionWorkerSchema } from '@core/schema/worker/statusConnection';
 import { workerConnectionLogsSchema } from '@core/schema/worker/workerConnectionLogs';
 import { recreateWorkerSchema } from '@core/schema/worker/recreateWorker';
+import { uploadProfileStatusPhotosSchema } from '@core/schema/worker/uploadProfileStatusPhotos';
+import { listProfileStatusPhotosSchema } from '@core/schema/worker/listProfileStatusPhotos';
 
 export default function workerRoutes(server: FastifyInstance) {
   const workerController = container.resolve(WorkerController);
@@ -81,6 +83,24 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerCreatePermissions),
+    ],
+  });
+
+  server.post('/worker/:worker_id/profile/status/photos', {
+    schema: uploadProfileStatusPhotosSchema,
+    handler: workerController.uploadProfileStatusPhotos,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerEditPermissions),
+    ],
+  });
+
+  server.get('/worker/:worker_id/profile/status/photos', {
+    schema: listProfileStatusPhotosSchema,
+    handler: workerController.listProfileStatusPhotos,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerViewPermissions),
     ],
   });
 

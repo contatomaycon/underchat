@@ -59,12 +59,13 @@ export class StorageService {
       return null;
     }
 
-    const allowedExtensions = ['jpg', 'jpeg', 'png', 'gif'];
+    const allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
     const allowedMimetypes = [
       'image/jpeg',
       'image/jpg',
       'image/png',
       'image/gif',
+      'image/webp',
     ];
 
     if (!allowedExtensions.includes(extension.toLowerCase())) {

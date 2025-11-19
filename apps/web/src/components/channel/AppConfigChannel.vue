@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { EColor } from '@core/common/enums/EColor';
-import { IWorkerProfilePhoto } from '@/@webcore/interfaces/IWorkerProfilePhoto';
+import { ProfileStatusPhoto } from '@core/schema/worker/listProfileStatusPhotos/response.schema';
 
 const channelStore = useChannelsStore();
 const { t } = useI18n();
@@ -40,8 +40,9 @@ const currentTab = ref<'general' | 'profile-status' | 'profile-info'>(
   'general'
 );
 const selectedPhotoPreviews = ref<PhotoPreview[]>([]);
-const existingPhotos = ref<IWorkerProfilePhoto[]>([]);
+const existingPhotos = ref<ProfileStatusPhoto[]>([]);
 const isSavingProfileStatus = ref(false);
+const isLoadingProfileStatus = ref(false);
 const fileInputKey = ref(0);
 const previewDialog = ref<{ open: boolean; src: string | null }>({
   open: false,
@@ -66,10 +67,17 @@ const resetPendingSelections = () => {
 const fetchProfileStatusPhotos = async () => {
   if (!channelId.value) return;
 
-  const response = await channelStore.fetchWorkerProfilePhotos(channelId.value);
+  try {
+    isLoadingProfileStatus.value = true;
+    const response = await channelStore.fetchWorkerProfilePhotos(
+      channelId.value
+    );
 
-  if (response) {
-    existingPhotos.value = response;
+    if (response) {
+      existingPhotos.value = response;
+    }
+  } finally {
+    isLoadingProfileStatus.value = false;
   }
 };
 
@@ -148,11 +156,15 @@ const saveProfileStatusPhotos = async () => {
 
     const response = await channelStore.uploadWorkerProfilePhotos(
       channelId.value,
-      selectedPhotoPreviews.value.map((preview) => preview.file)
+      selectedPhotoPreviews.value.map((preview) => preview.file),
+      isPermanent.value
     );
 
     if (response) {
-      existingPhotos.value = response;
+      existingPhotos.value = response.map((photo) => ({
+        ...photo,
+        created_at: '',
+      }));
       resetPendingSelections();
     }
   } finally {
@@ -185,12 +197,13 @@ watch(isVisible, async (visible) => {
 });
 
 watch(channelId, async (newValue, oldValue) => {
-  if (
-    isVisible.value &&
-    newValue &&
-    newValue !== oldValue &&
-    typeof newValue === 'string'
-  ) {
+  if (isVisible.value && newValue && newValue !== oldValue) {
+    await fetchProfileStatusPhotos();
+  }
+});
+
+watch(currentTab, async (newTab) => {
+  if (newTab === 'profile-status' && isVisible.value && channelId.value) {
     await fetchProfileStatusPhotos();
   }
 });
@@ -233,7 +246,15 @@ onBeforeUnmount(() => {
         </VWindowItem>
 
         <VWindowItem value="profile-status">
-          <VCardText class="d-flex flex-column gap-4">
+          <VCardText class="d-flex flex-column gap-4 position-relative">
+            <VOverlay
+              v-model="isLoadingProfileStatus"
+              class="align-center justify-center"
+              contained
+            >
+              <VProgressCircular color="primary" indeterminate size="32" />
+            </VOverlay>
+
             <VAlert
               color="warning"
               variant="tonal"
@@ -385,12 +406,6 @@ onBeforeUnmount(() => {
           contain
         />
       </VCardText>
-
-      <VCardActions class="justify-end">
-        <VBtn variant="tonal" color="secondary" @click="closePreview">
-          {{ $t('profile_status_close_preview') }}
-        </VBtn>
-      </VCardActions>
     </VCard>
   </VDialog>
 </template>

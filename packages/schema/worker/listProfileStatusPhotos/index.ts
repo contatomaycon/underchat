@@ -1,11 +1,12 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { deleteMessageParamsSchema } from './request.schema';
+import { listProfileStatusPhotosRequestSchema } from './request.schema';
+import { listProfileStatusPhotosResponseSchema } from './response.schema';
 
-export const deleteMessageSchema = {
-  description: 'Remove uma mensagem do chat',
-  tags: [ETagSwagger.chat],
+export const listProfileStatusPhotosSchema = {
+  description: 'Lista fotos do status do perfil',
+  tags: [ETagSwagger.worker],
   produces: ['application/json'],
   security: [
     {
@@ -21,14 +22,14 @@ export const deleteMessageSchema = {
       })
     ),
   }),
-  params: deleteMessageParamsSchema,
+  params: listProfileStatusPhotosRequestSchema,
   response: {
     200: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: Type.Null(),
+        data: listProfileStatusPhotosResponseSchema,
       },
       { description: 'Successful' }
     ),

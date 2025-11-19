@@ -1,12 +1,17 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { deleteMessageParamsSchema } from './request.schema';
+import {
+  uploadProfileStatusPhotosParamsSchema,
+  uploadProfileStatusPhotosRequestSchema,
+} from './request.schema';
+import { uploadProfileStatusPhotosResponseSchema } from './response.schema';
 
-export const deleteMessageSchema = {
-  description: 'Remove uma mensagem do chat',
-  tags: [ETagSwagger.chat],
+export const uploadProfileStatusPhotosSchema = {
+  description: 'Upload fotos do status do perfil do worker',
+  tags: [ETagSwagger.worker],
   produces: ['application/json'],
+  consumes: ['multipart/form-data'],
   security: [
     {
       authenticateJwt: [],
@@ -21,14 +26,15 @@ export const deleteMessageSchema = {
       })
     ),
   }),
-  params: deleteMessageParamsSchema,
+  params: uploadProfileStatusPhotosParamsSchema,
+  body: uploadProfileStatusPhotosRequestSchema,
   response: {
     200: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: Type.Null(),
+        data: uploadProfileStatusPhotosResponseSchema,
       },
       { description: 'Successful' }
     ),

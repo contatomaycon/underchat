@@ -21,7 +21,8 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { WorkerConnectionLogsQuery } from '@core/schema/worker/workerConnectionLogs/request.schema';
 import { WorkerConnectionLogsResponse } from '@core/schema/worker/workerConnectionLogs/response.schema';
-import { IWorkerProfilePhoto } from '@webcore/interfaces/IWorkerProfilePhoto';
+import { ProfileStatusPhoto } from '@core/schema/worker/listProfileStatusPhotos/response.schema';
+import { WorkerProfileStatusPhoto } from '@core/schema/worker/uploadProfileStatusPhotos/response.schema';
 
 export const useChannelsStore = defineStore('channels', {
   state: () => ({
@@ -392,13 +393,13 @@ export const useChannelsStore = defineStore('channels', {
 
     async fetchWorkerProfilePhotos(
       workerId: string
-    ): Promise<IWorkerProfilePhoto[] | null> {
+    ): Promise<ProfileStatusPhoto[] | null> {
       if (!workerId) return [];
 
       try {
         this.loading = true;
 
-        const response = await axios.get<IApiResponse<IWorkerProfilePhoto[]>>(
+        const response = await axios.get<IApiResponse<ProfileStatusPhoto[]>>(
           `/worker/${workerId}/profile/status/photos`
         );
 
@@ -431,8 +432,9 @@ export const useChannelsStore = defineStore('channels', {
 
     async uploadWorkerProfilePhotos(
       workerId: string,
-      files: File[]
-    ): Promise<IWorkerProfilePhoto[] | null> {
+      files: File[],
+      isPermanent: boolean = false
+    ): Promise<WorkerProfileStatusPhoto[] | null> {
       if (!workerId || !files.length) return null;
 
       try {
@@ -442,6 +444,7 @@ export const useChannelsStore = defineStore('channels', {
         files.forEach((file) => {
           formData.append('photos', file);
         });
+        formData.append('is_permanent', isPermanent.toString());
 
         const config: AxiosRequestConfig<FormData> = {
           headers: {
@@ -449,11 +452,9 @@ export const useChannelsStore = defineStore('channels', {
           },
         };
 
-        const response = await axios.post<IApiResponse<IWorkerProfilePhoto[]>>(
-          `/worker/${workerId}/profile/status/photos`,
-          formData,
-          config
-        );
+        const response = await axios.post<
+          IApiResponse<WorkerProfileStatusPhoto[]>
+        >(`/worker/${workerId}/profile/status/photos`, formData, config);
 
         this.loading = false;
 

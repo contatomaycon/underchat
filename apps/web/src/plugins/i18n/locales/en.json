@@ -88,7 +88,7 @@
     "profile_information_tab": "Profile Information",
     "profile_status_upload_helper": "Allowed formats: JPG, JPEG, PNG, GIF and WEBP. You can upload up to 30 photos of 16 MB each.",
     "profile_status_pending_title": "Selected photos:",
-    "profile_status_current_gallery": "Current photos",
+    "profile_status_current_gallery": "Current photos:",
     "profile_status_no_photos": "No photos available.",
     "profile_status_save": "Save photos",
     "profile_status_limit_reached": "You have already reached the limit of 30 photos.",
