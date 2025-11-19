@@ -27,14 +27,26 @@ CREATE TABLE "worker_profile_info" (
   PRIMARY KEY ("worker_profile_info_id"),
   CONSTRAINT "worker_profile_info_worker_id_worker_worker_id_fk" FOREIGN KEY ("worker_id") REFERENCES "worker" ("worker_id") ON UPDATE NO ACTION ON DELETE NO ACTION
 );
+
+-- Create "worker_profile_status_type" table
+CREATE TABLE "worker_profile_status_type" (
+  "worker_profile_status_type_id" uuid NOT NULL,
+  "type" character varying(500) NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  PRIMARY KEY ("worker_profile_status_type_id")
+);
+
 -- Create "worker_profile_status" table
 CREATE TABLE "worker_profile_status" (
   "worker_profile_status_id" uuid NOT NULL,
   "worker_id" uuid NOT NULL,
+  "worker_profile_status_type_id" uuid NOT NULL,
   "url" character varying(500) NOT NULL,
   "is_permanent" boolean NULL DEFAULT false,
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
   PRIMARY KEY ("worker_profile_status_id"),
-  CONSTRAINT "worker_profile_status_worker_id_worker_worker_id_fk" FOREIGN KEY ("worker_id") REFERENCES "worker" ("worker_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+  CONSTRAINT "worker_profile_status_worker_id_worker_worker_id_fk" FOREIGN KEY ("worker_id") REFERENCES "worker" ("worker_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "worker_profile_status_worker_profile_status_type_id_worker_profile_status_type_worker_profile_status_type_id_fk" FOREIGN KEY ("worker_profile_status_type_id") REFERENCES "worker_profile_status_type" ("worker_profile_status_type_id") ON UPDATE NO ACTION ON DELETE NO ACTION
 );
