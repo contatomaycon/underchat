@@ -787,41 +787,54 @@ export class ChatMessageCreatorUseCase {
       ),
     ]);
 
-    if (result && message.content) {
-      const messageText = extractMessageTextFromContent(message.content);
-
-      const summaryUpdate: IChat['summary'] = {
-        last_message: messageText,
-        last_date: message.date,
-        unread_count: 0,
-      };
-
-      await this.chatService.updateChatSummary(message.chat_id, summaryUpdate);
-
-      const updatedChat = await this.chatService.findChatByChatId(
-        message.account.id,
-        message.chat_id
-      );
-
-      if (!updatedChat) {
-        return result;
-      }
-
-      const channelAccountId = updatedChat.account.id;
-
-      await Promise.all([
-        this.centrifugoService.publishSub(
-          chatAccountCentrifugo(channelAccountId),
-          updatedChat
-        ),
-        this.centrifugoService.publishSub(
-          chatQueueAccountCentrifugo(channelAccountId),
-          updatedChat
-        ),
-      ]);
+    if (!result) {
+      return false;
     }
 
-    return result;
+    if (!message.content) {
+      return true;
+    }
+
+    const messageText = extractMessageTextFromContent(message.content);
+
+    const summaryUpdate: IChat['summary'] = {
+      last_message: messageText,
+      last_date: message.date,
+      unread_count: 0,
+    };
+
+    const summaryUpdated = await this.chatService.updateChatSummary(
+      message.chat_id,
+      summaryUpdate
+    );
+
+    if (!summaryUpdated) {
+      return false;
+    }
+
+    const updatedChat = await this.chatService.findChatByChatId(
+      message.account.id,
+      message.chat_id
+    );
+
+    if (!updatedChat) {
+      return false;
+    }
+
+    const channelAccountId = updatedChat.account.id;
+
+    await Promise.all([
+      this.centrifugoService.publishSub(
+        chatAccountCentrifugo(channelAccountId),
+        updatedChat
+      ),
+      this.centrifugoService.publishSub(
+        chatQueueAccountCentrifugo(channelAccountId),
+        updatedChat
+      ),
+    ]);
+
+    return true;
   }
 
   private async processImageMessages(

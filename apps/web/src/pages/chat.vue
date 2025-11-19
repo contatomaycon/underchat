@@ -48,7 +48,7 @@ import {
 } from '@core/common/interfaces/IChatFilePreview';
 import { extractFirstUrl } from '@core/common/functions/extractFirstUrl';
 import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
-import { refDebounced } from '@vueuse/core';
+import { refDebounced, useDebounceFn } from '@vueuse/core';
 import { getOffsetTop } from '@core/common/functions/getOffsetTop';
 import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
 import data from 'emoji-mart-vue-fast/data/all.json';
@@ -3054,6 +3054,18 @@ const handleTypingEvent = (data: IChatTyping | IChatMessage) => {
   }, 5000);
 };
 
+const debouncedPublishClearSummary = useDebounceFn(
+  (chatId: string, accountId: string) => {
+    publish(chatClearSummaryCentrifugo(), {
+      chat_id: chatId,
+      account_id: accountId,
+    }).catch((error) => {
+      console.error('Error publishing clear summary request:', error);
+    });
+  },
+  10000
+);
+
 onMounted(async () => {
   if (chatStore.user?.account_id) {
     const accountId = chatStore.user.account_id;
@@ -3099,12 +3111,7 @@ onMounted(async () => {
         chatStore.user?.account_id &&
         chatStore.activeChat?.chat_id === data.chat_id
       ) {
-        publish(chatClearSummaryCentrifugo(), {
-          chat_id: data.chat_id,
-          account_id: chatStore.user.account_id,
-        }).catch((error) => {
-          console.error('Error publishing clear summary request:', error);
-        });
+        debouncedPublishClearSummary(data.chat_id, chatStore.user.account_id);
       }
     });
 
