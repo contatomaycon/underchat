@@ -22,10 +22,11 @@ import {
   ContentMessageChat,
   ListMessageResult,
 } from '@core/schema/chat/listMessageChats/response.schema';
-import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
+import { onMessage, unsubscribe, publish } from '@/@webcore/centrifugo';
 import {
   chatAccountCentrifugo,
   chatQueueAccountCentrifugo,
+  chatClearSummaryCentrifugo,
 } from '@core/common/functions/centrifugoQueue';
 import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
 import { EMessageType } from '@core/common/enums/EMessageType';
@@ -3093,6 +3094,18 @@ onMounted(async () => {
 
     await onMessage(chatQueueAccountCentrifugo(accountId), (data: IChat) => {
       chatStore.addChat(data);
+
+      if (
+        chatStore.user?.account_id &&
+        chatStore.activeChat?.chat_id === data.chat_id
+      ) {
+        publish(chatClearSummaryCentrifugo(), {
+          chat_id: data.chat_id,
+          account_id: chatStore.user.account_id,
+        }).catch((error) => {
+          console.error('Error publishing clear summary request:', error);
+        });
+      }
     });
 
     globalThis.addEventListener('focus-composer', focusComposer);

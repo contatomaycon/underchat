@@ -12,6 +12,7 @@ export class KafkaServiceQueueService {
     const upsertMessage = this.upsertMessage();
     const updateMessageStatus = this.updateMessageStatus();
     const markMessageRead = this.markMessageRead();
+    const clearChatSummary = this.clearChatSummary();
 
     return [
       createServer,
@@ -20,6 +21,7 @@ export class KafkaServiceQueueService {
       upsertMessage,
       updateMessageStatus,
       markMessageRead,
+      clearChatSummary,
     ];
   };
 
@@ -55,5 +57,9 @@ export class KafkaServiceQueueService {
 
   markMessageRead = () => {
     return `mark.message.read`;
+  };
+
+  clearChatSummary = () => {
+    return `clear.chat.summary`;
   };
 }

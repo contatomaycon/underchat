@@ -217,13 +217,25 @@ export const useChatStore = defineStore('chat', {
         }
       };
 
+      const isActiveChat = this.activeChat?.chat_id === chat.chat_id;
+
       const replaceOrPush = (arr: ListChatsResult[]) => {
         const idx = arr.findIndex((c) => c.chat_id === input.chat_id);
 
         if (idx !== -1) {
+          const existingChat = arr[idx];
+          const summaryToUse =
+            isActiveChat && existingChat.summary
+              ? {
+                  ...existingChat.summary,
+                  last_date:
+                    input.summary?.last_date ?? existingChat.summary.last_date,
+                }
+              : input.summary;
+
           arr[idx] = {
             chat_id: input.chat_id,
-            summary: input.summary,
+            summary: summaryToUse,
             account: input.account,
             worker: input.worker,
             sector: input.sector,
@@ -242,6 +254,13 @@ export const useChatStore = defineStore('chat', {
         arr.push(input);
       };
 
+      if (isActiveChat && chat.summary && this.activeChat?.summary) {
+        this.activeChat.summary = {
+          ...this.activeChat.summary,
+          last_date: chat.summary.last_date,
+        };
+      }
+
       if (chat.status === EChatStatus.queue) {
         removeFromList(this.listInChat);
         replaceOrPush(this.listQueue);
@@ -249,7 +268,15 @@ export const useChatStore = defineStore('chat', {
         if (this.activeChat?.chat_id === chat.chat_id) {
           this.activeChat = {
             chat_id: input.chat_id,
-            summary: input.summary,
+            summary:
+              isActiveChat && this.activeChat.summary
+                ? {
+                    ...this.activeChat.summary,
+                    last_date:
+                      input.summary?.last_date ??
+                      this.activeChat.summary.last_date,
+                  }
+                : input.summary,
             account: input.account,
             worker: input.worker,
             sector: input.sector,
@@ -295,7 +322,15 @@ export const useChatStore = defineStore('chat', {
         if (this.activeChat?.chat_id === chat.chat_id) {
           this.activeChat = {
             chat_id: input.chat_id,
-            summary: input.summary,
+            summary:
+              isActiveChat && this.activeChat.summary
+                ? {
+                    ...this.activeChat.summary,
+                    last_date:
+                      input.summary?.last_date ??
+                      this.activeChat.summary.last_date,
+                  }
+                : input.summary,
             account: input.account,
             worker: input.worker,
             sector: input.sector,
