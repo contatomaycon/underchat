@@ -259,5 +259,16 @@
   "chat_status_update_not_found": "¡Chat no encontrado para actualizar el estado!",
   "chat_status_update_failed": "¡Error al actualizar el estado del chat!",
   "chat_summary_clear_success": "¡Summary del chat limpiado con éxito!",
-  "chat_summary_clear_failed": "¡Error al limpiar el summary del chat!"
+  "chat_summary_clear_failed": "¡Error al limpiar el summary del chat!",
+  "profile_status_file_size_exceeded": "El archivo supera el tamaño máximo permitido de {{max}}.",
+  "profile_status_no_photos_selected": "¡No se seleccionaron archivos!",
+  "profile_status_type_required": "¡El tipo de estado es obligatorio!",
+  "profile_status_upload_error": "¡Error al subir el estado!",
+  "profile_status_upload_success": "¡Estado subido con éxito!",
+  "profile_status_load_success": "¡Estado cargado con éxito!",
+  "profile_status_load_error": "¡Error al cargar el estado!",
+  "profile_status_update_success": "¡Estado actualizado con éxito!",
+  "profile_status_update_error": "¡Error al actualizar el estado!",
+  "profile_status_delete_success": "¡Estado eliminado con éxito!",
+  "profile_status_delete_error": "¡Error al eliminar el estado!"
 }

@@ -7,6 +7,8 @@ import { UploadFileRequest } from '@core/schema/upload/request.schema';
 
 @injectable()
 export class WorkerProfileStatusUploaderUseCase {
+  MAX_FILE_SIZE_BYTES = 16 * 1024 * 1024;
+
   constructor(
     private readonly workerProfileStatusService: WorkerProfileStatusService
   ) {}
@@ -20,16 +22,33 @@ export class WorkerProfileStatusUploaderUseCase {
     return String(field);
   }
 
-  private validatePhotos(
+  private async validateFileSize(
+    file: UploadFileRequest,
+    t: TFunction<'translation', undefined>
+  ): Promise<void> {
+    const buffer = await file.toBuffer();
+
+    if (buffer.byteLength > this.MAX_FILE_SIZE_BYTES) {
+      throw new Error(t('profile_status_file_size_exceeded', { max: '16 MB' }));
+    }
+  }
+
+  private async validatePhotos(
     t: TFunction<'translation', undefined>,
     photos: unknown
-  ): UploadFileRequest | UploadFileRequest[] {
+  ): Promise<UploadFileRequest | UploadFileRequest[]> {
     if (!photos) {
       throw new Error(t('profile_status_no_photos_selected'));
     }
 
     if (Array.isArray(photos) && photos.length === 0) {
       throw new Error(t('profile_status_no_photos_selected'));
+    }
+
+    const photosArray = Array.isArray(photos) ? photos : [photos];
+
+    for (const photo of photosArray) {
+      await this.validateFileSize(photo as UploadFileRequest, t);
     }
 
     return photos as UploadFileRequest | UploadFileRequest[];
@@ -84,7 +103,9 @@ export class WorkerProfileStatusUploaderUseCase {
     const caption = this.normalizeField(body.caption);
     const isPermanent = this.normalizeIsPermanent(body.is_permanent);
 
-    const validatedPhotos = photos ? this.validatePhotos(t, photos) : undefined;
+    const validatedPhotos = photos
+      ? await this.validatePhotos(t, photos)
+      : undefined;
 
     const result = await this.workerProfileStatusService.uploadProfileStatus(
       workerId,

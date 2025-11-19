@@ -19,6 +19,7 @@ const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
 
 const MAX_PROFILE_STATUS = 30;
 const MAX_TEXT_LENGTH = 130;
+const MAX_FILE_SIZE_BYTES = 16 * 1024 * 1024;
 const ACCEPTED_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
 const ACCEPTED_IMAGE_MIME_TYPES = [
   'image/jpeg',
@@ -91,11 +92,13 @@ const previewDialog = ref<{
   src: string | null;
   caption: string | null;
   text: string | null;
+  type: EWorkerProfileStatusType | null;
 }>({
   open: false,
   src: null,
   caption: null,
   text: null,
+  type: null,
 });
 const selectedType = ref<EWorkerProfileStatusType>(
   EWorkerProfileStatusType.text
@@ -103,6 +106,12 @@ const selectedType = ref<EWorkerProfileStatusType>(
 const isPermanent = ref<string>('false');
 const textContent = ref('');
 const caption = ref('');
+const audioPreviewRef = ref<HTMLAudioElement | null>(null);
+const isAudioPlaying = ref(false);
+const audioProgress = ref(0);
+const audioDuration = ref(0);
+const audioCurrentTime = ref(0);
+const audioWaveformBars = ref<number[]>([]);
 
 const statusTypeOptions = computed(() => [
   {
@@ -160,6 +169,7 @@ const showCaptionInput = computed(() => {
   return [
     EWorkerProfileStatusType.image,
     EWorkerProfileStatusType.video,
+    EWorkerProfileStatusType.audio,
   ].includes(selectedType.value);
 });
 
@@ -276,7 +286,13 @@ const handleFilesSelected = (files: File[] | File | null) => {
     allowedExtensions = ACCEPTED_AUDIO_EXTENSIONS;
   }
 
+  const invalidFiles: File[] = [];
   const sanitizedFiles = normalizedFiles.filter((file) => {
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      invalidFiles.push(file);
+      return false;
+    }
+
     if (allowedMimeTypes.includes(file.type)) {
       return true;
     }
@@ -285,6 +301,14 @@ const handleFilesSelected = (files: File[] | File | null) => {
 
     return allowedExtensions.some((ext) => filename.endsWith(ext));
   });
+
+  if (invalidFiles.length > 0) {
+    channelStore.showSnackbar(
+      t('profile_status_file_size_exceeded', { max: '16 MB' }),
+      EColor.error
+    );
+    fileInputKey.value += 1;
+  }
 
   if (!sanitizedFiles.length) {
     return;
@@ -315,7 +339,9 @@ const handleFilesSelected = (files: File[] | File | null) => {
     selectedStatusPreviews.value.push({ id, file, src });
   });
 
-  fileInputKey.value += 1;
+  if (sanitizedFiles.length > 0) {
+    fileInputKey.value += 1;
+  }
 };
 
 const removePreview = (previewId: string) => {
@@ -395,23 +421,87 @@ const saveProfileStatus = async () => {
   }
 };
 
-const openPreview = (src: string, caption?: string, text?: string) => {
+const openPreview = (
+  src: string,
+  caption?: string,
+  text?: string,
+  type?: EWorkerProfileStatusType
+) => {
   previewDialog.value = {
     open: true,
     src: text ? null : src,
     caption: caption && caption.trim() ? caption.trim() : null,
     text: text && text.trim() ? text.trim() : null,
+    type: type || null,
   };
 };
 
 const closePreview = () => {
+  if (audioPreviewRef.value) {
+    audioPreviewRef.value.pause();
+    audioPreviewRef.value.currentTime = 0;
+  }
+  isAudioPlaying.value = false;
+  audioProgress.value = 0;
+  audioDuration.value = 0;
+  audioCurrentTime.value = 0;
   previewDialog.value = {
     open: false,
     src: null,
     caption: null,
     text: null,
+    type: null,
   };
 };
+
+const createDefaultWaveform = (): number[] => {
+  return new Array(64).fill(0.3);
+};
+
+const toggleAudioPreview = () => {
+  if (!audioPreviewRef.value) return;
+
+  if (isAudioPlaying.value) {
+    audioPreviewRef.value.pause();
+  } else {
+    audioPreviewRef.value.play().catch(() => {
+      isAudioPlaying.value = false;
+    });
+  }
+};
+
+const updateAudioProgress = () => {
+  if (!audioPreviewRef.value) return;
+  audioCurrentTime.value = audioPreviewRef.value.currentTime;
+  if (audioDuration.value > 0) {
+    audioProgress.value =
+      (audioPreviewRef.value.currentTime / audioDuration.value) * 100;
+  }
+};
+
+const updateAudioDuration = () => {
+  if (!audioPreviewRef.value) return;
+  audioDuration.value = audioPreviewRef.value.duration;
+  if (!audioWaveformBars.value.length) {
+    audioWaveformBars.value = createDefaultWaveform();
+  }
+};
+
+const formatAudioTime = (seconds: number): string => {
+  if (!seconds || isNaN(seconds)) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
+const audioTimeDisplay = computed(() => {
+  if (isAudioPlaying.value) {
+    return `${formatAudioTime(audioCurrentTime.value)} / ${formatAudioTime(
+      audioDuration.value
+    )}`;
+  }
+  return formatAudioTime(audioDuration.value);
+});
 
 const togglePermanent = async (status: ProfileStatus) => {
   if (!channelId.value) return;
@@ -472,6 +562,10 @@ watch(currentTab, async (newTab) => {
   if (newTab === 'profile-status' && isVisible.value && channelId.value) {
     await fetchProfileStatus();
   }
+});
+
+watch(selectedType, () => {
+  resetPendingSelections();
 });
 
 onBeforeUnmount(() => {
@@ -607,9 +701,10 @@ onBeforeUnmount(() => {
                   <VCol
                     v-for="preview in selectedStatusPreviews"
                     :key="preview.id"
-                    cols="12"
-                    sm="6"
-                    md="4"
+                    cols="6"
+                    sm="4"
+                    md="3"
+                    lg="2"
                   >
                     <VCard class="pa-2 photo-pending-card">
                       <VImg
@@ -621,34 +716,80 @@ onBeforeUnmount(() => {
                         @click="
                           openPreview(
                             preview.src,
-                            caption && caption.trim() ? caption : undefined
-                          )
-                        "
-                      />
-                      <video
-                        v-else-if="
-                          selectedType === EWorkerProfileStatusType.video
-                        "
-                        :src="preview.src"
-                        class="rounded mb-2 cursor-pointer"
-                        style="width: 100%; aspect-ratio: 1; object-fit: cover"
-                        controls
-                        @click.stop="
-                          openPreview(
-                            preview.src,
-                            caption && caption.trim() ? caption : undefined
+                            caption && caption.trim() ? caption : undefined,
+                            undefined,
+                            EWorkerProfileStatusType.image
                           )
                         "
                       />
                       <div
                         v-else-if="
-                          selectedType === EWorkerProfileStatusType.audio
+                          selectedType === EWorkerProfileStatusType.video
                         "
-                        class="d-flex align-center justify-center rounded mb-2"
+                        class="position-relative rounded mb-2 cursor-pointer"
                         style="
                           width: 100%;
                           aspect-ratio: 1;
                           background: rgba(var(--v-theme-surface-variant), 0.1);
+                        "
+                        @click="
+                          openPreview(
+                            preview.src,
+                            caption && caption.trim() ? caption : undefined,
+                            undefined,
+                            EWorkerProfileStatusType.video
+                          )
+                        "
+                      >
+                        <video
+                          :src="preview.src"
+                          class="rounded"
+                          preload="metadata"
+                          muted
+                          playsinline
+                          style="
+                            width: 100%;
+                            height: 100%;
+                            object-fit: cover;
+                            pointer-events: none;
+                          "
+                        />
+                        <div
+                          class="position-absolute d-flex align-center justify-center"
+                          style="
+                            top: 50%;
+                            left: 50%;
+                            transform: translate(-50%, -50%);
+                            z-index: 1;
+                          "
+                        >
+                          <VIcon
+                            icon="tabler-player-play-filled"
+                            size="48"
+                            color="white"
+                            style="
+                              filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
+                            "
+                          />
+                        </div>
+                      </div>
+                      <div
+                        v-else-if="
+                          selectedType === EWorkerProfileStatusType.audio
+                        "
+                        class="d-flex align-center justify-center rounded mb-2 cursor-pointer position-relative"
+                        style="
+                          width: 100%;
+                          aspect-ratio: 1;
+                          background: rgba(var(--v-theme-surface-variant), 0.1);
+                        "
+                        @click="
+                          openPreview(
+                            preview.src,
+                            caption && caption.trim() ? caption : undefined,
+                            undefined,
+                            EWorkerProfileStatusType.audio
+                          )
                         "
                       >
                         <VIcon icon="tabler-music" size="48" />
@@ -711,11 +852,22 @@ onBeforeUnmount(() => {
                           status.worker_profile_status_type_id ===
                           EWorkerProfileStatusType.text
                             ? openPreview('', undefined, status.value)
-                            : openPreview(
-                                extractUrlAndCaption(status.value).url,
-                                extractUrlAndCaption(status.value).caption ||
-                                  undefined
-                              )
+                            : status.worker_profile_status_type_id ===
+                                EWorkerProfileStatusType.image
+                              ? openPreview(
+                                  extractUrlAndCaption(status.value).url,
+                                  extractUrlAndCaption(status.value).caption ||
+                                    undefined,
+                                  undefined,
+                                  EWorkerProfileStatusType.image
+                                )
+                              : openPreview(
+                                  extractUrlAndCaption(status.value).url,
+                                  extractUrlAndCaption(status.value).caption ||
+                                    undefined,
+                                  undefined,
+                                  status.worker_profile_status_type_id as EWorkerProfileStatusType
+                                )
                         "
                       >
                         <div class="photo-wrapper position-relative">
@@ -729,26 +881,12 @@ onBeforeUnmount(() => {
                             cover
                             class="rounded"
                           />
-                          <video
+                          <div
                             v-else-if="
                               status.worker_profile_status_type_id ===
                               EWorkerProfileStatusType.video
                             "
-                            :src="extractUrlAndCaption(status.value).url"
-                            class="rounded"
-                            style="
-                              width: 100%;
-                              aspect-ratio: 1;
-                              object-fit: cover;
-                            "
-                            controls
-                          />
-                          <div
-                            v-else-if="
-                              status.worker_profile_status_type_id ===
-                              EWorkerProfileStatusType.audio
-                            "
-                            class="d-flex align-center justify-center rounded"
+                            class="position-relative rounded cursor-pointer"
                             style="
                               width: 100%;
                               aspect-ratio: 1;
@@ -756,6 +894,73 @@ onBeforeUnmount(() => {
                                 var(--v-theme-surface-variant),
                                 0.1
                               );
+                            "
+                            @click="
+                              openPreview(
+                                extractUrlAndCaption(status.value).url,
+                                extractUrlAndCaption(status.value).caption ||
+                                  undefined,
+                                undefined,
+                                EWorkerProfileStatusType.video
+                              )
+                            "
+                          >
+                            <video
+                              :src="extractUrlAndCaption(status.value).url"
+                              class="rounded"
+                              preload="metadata"
+                              muted
+                              playsinline
+                              style="
+                                width: 100%;
+                                height: 100%;
+                                object-fit: cover;
+                                pointer-events: none;
+                              "
+                            />
+                            <div
+                              class="position-absolute d-flex align-center justify-center"
+                              style="
+                                top: 50%;
+                                left: 50%;
+                                transform: translate(-50%, -50%);
+                                z-index: 1;
+                              "
+                            >
+                              <VIcon
+                                icon="tabler-player-play-filled"
+                                size="48"
+                                color="white"
+                                style="
+                                  filter: drop-shadow(
+                                    0 2px 8px rgba(0, 0, 0, 0.5)
+                                  );
+                                "
+                              />
+                            </div>
+                          </div>
+                          <div
+                            v-else-if="
+                              status.worker_profile_status_type_id ===
+                              EWorkerProfileStatusType.audio
+                            "
+                            class="d-flex align-center justify-center rounded cursor-pointer"
+                            style="
+                              width: 100%;
+                              aspect-ratio: 1;
+                              background: rgba(
+                                var(--v-theme-surface-variant),
+                                0.1
+                              );
+                            "
+                            @click="
+                              openPreview(
+                                extractUrlAndCaption(status.value).url,
+                                extractUrlAndCaption(status.value).caption ||
+                                  undefined,
+                                undefined,
+                                EWorkerProfileStatusType.audio
+                              )
                             "
                           >
                             <VIcon icon="tabler-music" size="48" />
@@ -840,17 +1045,88 @@ onBeforeUnmount(() => {
     </VCard>
   </VDialog>
 
-  <VDialog v-model="previewDialog.open" max-width="520">
+  <VDialog v-model="previewDialog.open" max-width="800">
     <DialogCloseBtn @click="closePreview" />
     <VCard :title="$t('profile_status_modal_title')">
       <VCardText>
         <VImg
-          v-if="previewDialog.src"
+          v-if="
+            previewDialog.src &&
+            previewDialog.type === EWorkerProfileStatusType.image
+          "
           :src="previewDialog.src"
           max-height="420"
           class="rounded"
           contain
         />
+        <video
+          v-if="
+            previewDialog.src &&
+            previewDialog.type === EWorkerProfileStatusType.video
+          "
+          :src="previewDialog.src"
+          max-height="600"
+          class="rounded"
+          style="width: 100%"
+          controls
+        />
+        <div
+          v-if="
+            previewDialog.src &&
+            previewDialog.type === EWorkerProfileStatusType.audio
+          "
+          class="d-flex flex-column align-center pa-6"
+        >
+          <div class="audio-preview-container w-100">
+            <div class="audio-waveform-container mb-4">
+              <div class="audio-waveform">
+                <div
+                  v-for="(bar, index) in audioWaveformBars"
+                  :key="index"
+                  class="audio-waveform-bar"
+                  :class="{
+                    'audio-waveform-bar--active':
+                      audioProgress > (index / audioWaveformBars.length) * 100,
+                  }"
+                  :style="{
+                    height: `${Math.max(10, bar * 100)}%`,
+                  }"
+                ></div>
+              </div>
+              <div
+                class="audio-progress-indicator"
+                :style="{
+                  left: `${audioProgress}%`,
+                }"
+              ></div>
+            </div>
+            <div class="d-flex align-center justify-center gap-4 w-100">
+              <VBtn
+                :icon="
+                  isAudioPlaying ? 'tabler-player-pause' : 'tabler-player-play'
+                "
+                variant="flat"
+                color="primary"
+                size="large"
+                @click="toggleAudioPreview"
+              />
+              <div class="flex-grow-1">
+                <audio
+                  ref="audioPreviewRef"
+                  :src="previewDialog.src"
+                  @timeupdate="updateAudioProgress"
+                  @loadedmetadata="updateAudioDuration"
+                  @play="isAudioPlaying = true"
+                  @pause="isAudioPlaying = false"
+                  @ended="isAudioPlaying = false"
+                />
+                <div class="text-caption text-center">
+                  {{ audioTimeDisplay }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
         <div
           v-if="previewDialog.text"
           class="d-flex align-center justify-center pa-8"
@@ -881,7 +1157,7 @@ onBeforeUnmount(() => {
 }
 
 .photo-pending-card {
-  min-height: 220px;
+  min-height: 150px;
 }
 
 .alert-helper {
@@ -1023,5 +1299,59 @@ onBeforeUnmount(() => {
 
 .cursor-pointer {
   cursor: pointer;
+}
+
+.audio-preview-container {
+  width: 100%;
+  max-width: 500px;
+}
+
+.audio-waveform-container {
+  position: relative;
+  width: 100%;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  background: rgba(var(--v-theme-surface-variant), 0.1);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.audio-waveform {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 12px;
+  z-index: 1;
+  height: 100%;
+  width: 100%;
+}
+
+.audio-waveform-bar {
+  flex: 1;
+  min-width: 3px;
+  max-width: 4px;
+  background: rgba(var(--v-theme-primary), 0.4);
+  border-radius: 2px;
+  transition: background 0.2s ease;
+}
+
+.audio-waveform-bar--active {
+  background: rgba(var(--v-theme-primary), 0.8);
+}
+
+.audio-progress-indicator {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgb(var(--v-theme-primary));
+  z-index: 2;
+  pointer-events: none;
+  transition: left 0.1s linear;
 }
 </style>

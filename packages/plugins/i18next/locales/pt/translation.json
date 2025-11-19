@@ -259,5 +259,16 @@
   "chat_status_update_not_found": "Chat não encontrado para atualização de status!",
   "chat_status_update_failed": "Erro ao atualizar o status do chat!",
   "chat_summary_clear_success": "Summary do chat limpo com sucesso!",
-  "chat_summary_clear_failed": "Erro ao limpar o summary do chat!"
+  "chat_summary_clear_failed": "Erro ao limpar o summary do chat!",
+  "profile_status_file_size_exceeded": "Arquivo excede o tamanho máximo permitido de {{max}}.",
+  "profile_status_no_photos_selected": "Nenhum arquivo selecionado!",
+  "profile_status_type_required": "Tipo de status é obrigatório!",
+  "profile_status_upload_error": "Erro ao fazer upload do status!",
+  "profile_status_upload_success": "Status enviado com sucesso!",
+  "profile_status_load_success": "Status carregado com sucesso!",
+  "profile_status_load_error": "Erro ao carregar os status!",
+  "profile_status_update_success": "Status atualizado com sucesso!",
+  "profile_status_update_error": "Erro ao atualizar o status!",
+  "profile_status_delete_success": "Status excluído com sucesso!",
+  "profile_status_delete_error": "Erro ao excluir o status!"
 }
