@@ -13,6 +13,7 @@ export class KafkaServiceQueueService {
     const updateMessageStatus = this.updateMessageStatus();
     const markMessageRead = this.markMessageRead();
     const clearChatSummary = this.clearChatSummary();
+    const phoneValidationResponse = this.phoneValidationResponse();
 
     return [
       createServer,
@@ -22,6 +23,7 @@ export class KafkaServiceQueueService {
       updateMessageStatus,
       markMessageRead,
       clearChatSummary,
+      phoneValidationResponse,
     ];
   };
 
@@ -61,5 +63,9 @@ export class KafkaServiceQueueService {
 
   clearChatSummary = () => {
     return `clear.chat.summary`;
+  };
+
+  phoneValidationResponse = () => {
+    return `phone.validation.response`;
   };
 }

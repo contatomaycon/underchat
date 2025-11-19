@@ -6,6 +6,7 @@ import { CreateContactRequest } from '@core/schema/contact/createContact/request
 import { ContactService } from '@core/services/contact.service';
 import { ContactExistsByEmailAndPhoneRepository } from '@core/repositories/contact/ContactExistsByEmailAndPhone.repository';
 import { EncryptService } from '@core/services/encrypt.service';
+import { PhoneValidationService } from '@core/services/phoneValidation.service';
 import moment from 'moment';
 
 @injectable()
@@ -15,7 +16,8 @@ export class ContactCreatorUseCase {
     private readonly accountService: AccountService,
     private readonly contactService: ContactService,
     private readonly contactExistsByEmailAndPhoneRepository: ContactExistsByEmailAndPhoneRepository,
-    private readonly encryptService: EncryptService
+    private readonly encryptService: EncryptService,
+    private readonly phoneValidationService: PhoneValidationService
   ) {}
 
   private validateBirthDate(
@@ -62,7 +64,11 @@ export class ContactCreatorUseCase {
       }
     }
 
-    if (input?.birthday) {
+    if (
+      input?.birthday &&
+      typeof input.birthday === 'string' &&
+      input.birthday.trim() !== ''
+    ) {
       this.validateBirthDate(t, input.birthday);
     }
 
@@ -93,6 +99,32 @@ export class ContactCreatorUseCase {
 
     if (phoneExists) {
       throw new Error(t('contact_already_exists_phone'));
+    }
+
+    if (input.phone) {
+      try {
+        const validationResult =
+          await this.phoneValidationService.validatePhone(
+            accountId,
+            input.phone,
+            input.phone_ddi
+          );
+
+        if (!validationResult.valid) {
+          throw new Error(t('phone_number_not_valid_on_whatsapp'));
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('timeout')) {
+          throw new Error(t('phone_validation_timeout'));
+        }
+        if (
+          error instanceof Error &&
+          error.message.includes('No active worker')
+        ) {
+          throw new Error(t('no_active_worker_for_validation'));
+        }
+        throw error;
+      }
     }
 
     const contactId = await this.contactService.createContact(input, accountId);

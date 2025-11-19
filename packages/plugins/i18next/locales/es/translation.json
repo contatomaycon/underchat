@@ -270,5 +270,8 @@
   "profile_status_update_success": "¡Estado actualizado con éxito!",
   "profile_status_update_error": "¡Error al actualizar el estado!",
   "profile_status_delete_success": "¡Estado eliminado con éxito!",
-  "profile_status_delete_error": "¡Error al eliminar el estado!"
+  "profile_status_delete_error": "¡Error al eliminar el estado!",
+  "phone_number_not_valid_on_whatsapp": "¡El número de teléfono no es válido en WhatsApp!",
+  "phone_validation_timeout": "¡Tiempo de espera para la validación del teléfono excedido!",
+  "no_active_worker_for_validation": "¡No se encontró ningún canal activo para la validación!"
 }
