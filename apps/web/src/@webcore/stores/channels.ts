@@ -5,9 +5,8 @@ import { EColor } from '@core/common/enums/EColor';
 import { ISnackbar } from '@core/common/interfaces/ISnackbar';
 import { PagingResponseSchema } from '@core/schema/common/pagingResponseSchema';
 import axios from '@webcore/axios';
+import { AxiosError, type AxiosRequestConfig } from 'axios';
 import { IListChannels } from '@webcore/interfaces/IListChannels';
-import { AxiosError } from 'axios';
-import type { AxiosRequestConfig } from 'axios';
 import {
   ListWorkerFinalResponse,
   ListWorkerResponse,

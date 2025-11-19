@@ -438,32 +438,43 @@ onBeforeUnmount(() => {
                           class="rounded"
                         />
                         <div class="photo-actions">
-                          <VIcon
-                            :icon="
-                              photo.is_permanent
-                                ? 'tabler-lock'
-                                : 'tabler-lock-open'
-                            "
-                            size="20"
+                          <div
                             class="action-icon permanent-icon"
-                            :color="
-                              photo.is_permanent ? 'primary' : 'secondary'
-                            "
+                            :class="{
+                              'permanent-active': photo.is_permanent,
+                            }"
                             @click.stop="togglePermanent(photo)"
-                          />
-                          <VIcon
-                            icon="tabler-trash"
-                            size="20"
+                          >
+                            <VIcon
+                              :icon="
+                                photo.is_permanent
+                                  ? 'tabler-lock'
+                                  : 'tabler-lock-open'
+                              "
+                              size="16"
+                              :color="
+                                photo.is_permanent ? 'primary' : 'secondary'
+                              "
+                            />
+                          </div>
+                          <div
                             class="action-icon delete-icon"
-                            color="error"
                             @click.stop="deletePhoto(photo)"
-                          />
+                          >
+                            <VIcon
+                              icon="tabler-trash"
+                              size="16"
+                              color="error"
+                            />
+                          </div>
                         </div>
                       </div>
                     </VCard>
-                    <span class="photo-date">{{
-                      formatDate(photo.created_at)
-                    }}</span>
+                    <div class="photo-date-wrapper">
+                      <span class="photo-date">{{
+                        formatDate(photo.created_at)
+                      }}</span>
+                    </div>
                   </div>
                 </VCol>
               </VRow>
@@ -571,9 +582,13 @@ onBeforeUnmount(() => {
 }
 
 .action-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background-color: rgba(255, 255, 255, 0.95);
-  border-radius: 8px;
-  padding: 6px;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
   cursor: pointer;
   transition: all 0.2s ease;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
@@ -586,10 +601,16 @@ onBeforeUnmount(() => {
   transform: scale(1.1);
 }
 
+.photo-date-wrapper {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+}
+
 .photo-date {
   font-size: 0.75rem;
   font-style: italic;
   color: rgba(var(--v-theme-on-surface), 0.6);
-  text-align: center;
+  text-align: right;
 }
 </style>
