@@ -20,6 +20,7 @@ import {
 } from '@core/schema/contact/editContact/request.schema';
 import { ViewContactPhoneResponse } from '@core/schema/contact/viewContactPhone/response.schema';
 import { ViewContactEmailResponse } from '@core/schema/contact/viewContactEmail/response.schema';
+import { ExportContactResponse } from '@core/schema/contact/exportContact/response.schema';
 
 export const useContactStore = defineStore('contact', {
   state: () => ({
@@ -324,6 +325,43 @@ export const useContactStore = defineStore('contact', {
         this.showSnackbar(errorMessage, EColor.error);
 
         return null;
+      }
+    },
+
+    async exportContacts(): Promise<ExportContactResponse[]> {
+      try {
+        this.loading = true;
+
+        const response =
+          await axios.get<IApiResponse<ExportContactResponse[]>>(
+            `/contact/export`
+          );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('contact_export_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return [];
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('contact_export_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return [];
       }
     },
   },
