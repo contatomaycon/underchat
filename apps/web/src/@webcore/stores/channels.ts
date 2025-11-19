@@ -7,6 +7,7 @@ import { PagingResponseSchema } from '@core/schema/common/pagingResponseSchema';
 import axios from '@webcore/axios';
 import { IListChannels } from '@webcore/interfaces/IListChannels';
 import { AxiosError } from 'axios';
+import type { AxiosRequestConfig } from 'axios';
 import {
   ListWorkerFinalResponse,
   ListWorkerResponse,
@@ -20,6 +21,7 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { WorkerConnectionLogsQuery } from '@core/schema/worker/workerConnectionLogs/request.schema';
 import { WorkerConnectionLogsResponse } from '@core/schema/worker/workerConnectionLogs/response.schema';
+import { IWorkerProfilePhoto } from '@webcore/interfaces/IWorkerProfilePhoto';
 
 export const useChannelsStore = defineStore('channels', {
   state: () => ({
@@ -385,6 +387,103 @@ export const useChannelsStore = defineStore('channels', {
         this.loading = false;
 
         return false;
+      }
+    },
+
+    async fetchWorkerProfilePhotos(
+      workerId: string
+    ): Promise<IWorkerProfilePhoto[] | null> {
+      if (!workerId) return [];
+
+      try {
+        this.loading = true;
+
+        const response = await axios.get<IApiResponse<IWorkerProfilePhoto[]>>(
+          `/worker/${workerId}/profile/status/photos`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('profile_status_load_error');
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+
+        let message = this.i18n.global.t('profile_status_load_error');
+        if (error instanceof AxiosError) {
+          message = error?.response?.data?.message ?? message;
+        }
+
+        this.showSnackbar(message, EColor.error);
+
+        return null;
+      }
+    },
+
+    async uploadWorkerProfilePhotos(
+      workerId: string,
+      files: File[]
+    ): Promise<IWorkerProfilePhoto[] | null> {
+      if (!workerId || !files.length) return null;
+
+      try {
+        this.loading = true;
+
+        const formData = new FormData();
+        files.forEach((file) => {
+          formData.append('photos', file);
+        });
+
+        const config: AxiosRequestConfig<FormData> = {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        };
+
+        const response = await axios.post<IApiResponse<IWorkerProfilePhoto[]>>(
+          `/worker/${workerId}/profile/status/photos`,
+          formData,
+          config
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('profile_status_upload_error');
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('profile_status_upload_success'),
+          EColor.success
+        );
+
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+
+        let message = this.i18n.global.t('profile_status_upload_error');
+        if (error instanceof AxiosError) {
+          message = error?.response?.data?.message ?? message;
+        }
+
+        this.showSnackbar(message, EColor.error);
+
+        return null;
       }
     },
 

@@ -107,6 +107,9 @@ const isDialogConnectionChannelShow = ref(false);
 const channelConnectionLogs = ref<string | null>(null);
 const isDialogConnectionLogsShow = ref(false);
 
+const channelConfig = ref<string | null>(null);
+const isDialogConfigChannelShow = ref(false);
+
 const resolveStatusVariant = (s: string | undefined | null) => {
   if (s === EWorkerStatus.disponible)
     return { color: EColor.warning, text: t('disponible') };
@@ -204,6 +207,11 @@ const openConnectionDialog = (id: string) => {
 const openConnectionLogDialog = (id: string) => {
   channelConnectionLogs.value = id;
   isDialogConnectionLogsShow.value = true;
+};
+
+const openConfigDialog = (id: string) => {
+  channelConfig.value = id;
+  isDialogConfigChannelShow.value = true;
 };
 
 const handleDelete = async () => {
@@ -402,6 +410,16 @@ onUnmounted(async () => {
               ><VIcon icon="tabler-edit" @click="openEditDialog(item.id)"
             /></IconBtn>
 
+            <IconBtn v-if="$canPermission(permissionsEdit)"
+              ><VTooltip
+                location="top"
+                transition="scale-transition"
+                activator="parent"
+              >
+                <span>{{ $t('configurations') }}</span> </VTooltip
+              ><VIcon icon="tabler-settings" @click="openConfigDialog(item.id)"
+            /></IconBtn>
+
             <IconBtn v-if="$canPermission(permissionsViewLogs)"
               ><VTooltip
                 location="top"
@@ -484,6 +502,12 @@ onUnmounted(async () => {
         v-if="isDialogConnectionLogsShow"
         v-model="isDialogConnectionLogsShow"
         :channel-id="channelConnectionLogs"
+      />
+
+      <AppConfigChannel
+        v-if="isDialogConfigChannelShow"
+        v-model="isDialogConfigChannelShow"
+        :channel-id="channelConfig"
       />
     </VCard>
 
