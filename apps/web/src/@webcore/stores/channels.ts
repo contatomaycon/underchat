@@ -488,6 +488,94 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
+    async updateProfileStatusPhotoIsPermanent(
+      workerProfileStatusId: string,
+      isPermanent: boolean
+    ): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<IApiResponse<null>>(
+          `/worker/profile/status/photo/${workerProfileStatusId}`,
+          {
+            is_permanent: isPermanent,
+          }
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const message =
+            data?.message ?? this.i18n.global.t('profile_status_update_error');
+          this.showSnackbar(message, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('profile_status_update_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        this.loading = false;
+
+        let message = this.i18n.global.t('profile_status_update_error');
+        if (error instanceof AxiosError) {
+          message = error?.response?.data?.message ?? message;
+        }
+
+        this.showSnackbar(message, EColor.error);
+
+        return false;
+      }
+    },
+
+    async deleteProfileStatusPhoto(
+      workerProfileStatusId: string
+    ): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.delete<IApiResponse<null>>(
+          `/worker/profile/status/photo/${workerProfileStatusId}`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const message =
+            data?.message ?? this.i18n.global.t('profile_status_delete_error');
+          this.showSnackbar(message, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('profile_status_delete_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        this.loading = false;
+
+        let message = this.i18n.global.t('profile_status_delete_error');
+        if (error instanceof AxiosError) {
+          message = error?.response?.data?.message ?? message;
+        }
+
+        this.showSnackbar(message, EColor.error);
+
+        return false;
+      }
+    },
+
     updateStatusChannel(input: IBaileysConnectionState): void {
       const index = this.list.findIndex(
         (c) => c.account?.id === input.account_id && c.id === input.worker_id

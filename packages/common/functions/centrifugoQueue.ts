@@ -17,4 +17,3 @@ export function statusServerCentrifugoQueue(): string {
 export function serverSshCentrifugoQueue(): string {
   return 'server_ssh';
 }
-

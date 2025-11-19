@@ -6,4 +6,5 @@ export enum EWorkerPermissions {
   delete_worker = 'delete_worker',
   view_worker_logs = 'view_worker_logs',
   recreate_worker = 'recreate_worker',
+  profile_status_worker = 'profile_status_worker',
 }

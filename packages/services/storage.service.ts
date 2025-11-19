@@ -1,6 +1,10 @@
 import { injectable } from 'tsyringe';
 import { s3Environment } from '@core/config/environments';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  PutObjectCommand,
+  DeleteObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { extension as mimeToExt } from 'mime-types';
@@ -469,4 +473,31 @@ export class StorageService {
 
   public createUrl = (path: string) =>
     `${s3Environment.s3Endpoint}/${s3Environment.s3BucketName}/${path}`;
+
+  public deleteImage = async (url: string): Promise<boolean> => {
+    try {
+      const urlObj = new URL(url);
+      const pathParts = urlObj.pathname.split('/');
+      const bucketIndex = pathParts.findIndex(
+        (part) => part === s3Environment.s3BucketName
+      );
+
+      if (bucketIndex === -1 || bucketIndex === pathParts.length - 1) {
+        return false;
+      }
+
+      const key = pathParts.slice(bucketIndex + 1).join('/');
+
+      const command = new DeleteObjectCommand({
+        Bucket: s3Environment.s3BucketName,
+        Key: key,
+      });
+
+      await this.client.send(command);
+
+      return true;
+    } catch {
+      return false;
+    }
+  };
 }

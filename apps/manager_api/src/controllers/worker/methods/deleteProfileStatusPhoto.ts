@@ -1,0 +1,52 @@
+import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
+import { sendResponse } from '@core/common/functions/sendResponse';
+import { FastifyReply, FastifyRequest } from 'fastify';
+import { container } from 'tsyringe';
+import { WorkerProfileStatusDeleterUseCase } from '@core/useCases/worker/WorkerProfileStatusDeleter.useCase';
+import { DeleteProfileStatusPhotoRequest } from '@core/schema/worker/deleteProfileStatusPhoto/request.schema';
+
+export const deleteProfileStatusPhoto = async (
+  request: FastifyRequest<{
+    Params: DeleteProfileStatusPhotoRequest;
+  }>,
+  reply: FastifyReply
+) => {
+  const workerProfileStatusDeleterUseCase = container.resolve(
+    WorkerProfileStatusDeleterUseCase
+  );
+  const { t } = request;
+  const { worker_profile_status_id } = request.params;
+
+  try {
+    const response = await workerProfileStatusDeleterUseCase.execute(
+      t,
+      worker_profile_status_id
+    );
+
+    if (response) {
+      return sendResponse(reply, {
+        message: t('profile_status_delete_success'),
+        httpStatusCode: EHTTPStatusCode.ok,
+      });
+    }
+
+    return sendResponse(reply, {
+      message: t('profile_status_delete_error'),
+      httpStatusCode: EHTTPStatusCode.bad_request,
+    });
+  } catch (error) {
+    request.server.logger.error(error, request.id);
+
+    if (error instanceof Error) {
+      return sendResponse(reply, {
+        message: error.message,
+        httpStatusCode: EHTTPStatusCode.internal_server_error,
+      });
+    }
+
+    return sendResponse(reply, {
+      message: t('internal_server_error'),
+      httpStatusCode: EHTTPStatusCode.internal_server_error,
+    });
+  }
+};

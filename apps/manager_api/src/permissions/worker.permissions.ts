@@ -42,3 +42,10 @@ export const workerRecreatePermissions = [
   EWorkerPermissions.worker_group,
   EWorkerPermissions.recreate_worker,
 ];
+
+export const workerProfileStatusPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EWorkerPermissions.worker_group,
+  EWorkerPermissions.profile_status_worker,
+];

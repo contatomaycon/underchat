@@ -62,6 +62,12 @@ const permissionsRecreate = [
   EWorkerPermissions.worker_group,
   EWorkerPermissions.recreate_worker,
 ];
+const permissionsProfileStatus = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EWorkerPermissions.worker_group,
+  EWorkerPermissions.profile_status_worker,
+];
 
 const { t } = useI18n();
 const channelsStore = useChannelsStore();
@@ -410,7 +416,7 @@ onUnmounted(async () => {
               ><VIcon icon="tabler-edit" @click="openEditDialog(item.id)"
             /></IconBtn>
 
-            <IconBtn v-if="$canPermission(permissionsEdit)"
+            <IconBtn v-if="$canPermission(permissionsProfileStatus)"
               ><VTooltip
                 location="top"
                 transition="scale-transition"

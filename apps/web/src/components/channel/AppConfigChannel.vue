@@ -2,6 +2,9 @@
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { EColor } from '@core/common/enums/EColor';
 import { ProfileStatusPhoto } from '@core/schema/worker/listProfileStatusPhotos/response.schema';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EWorkerPermissions } from '@core/common/enums/EPermissions/worker';
+import { can } from '@layouts/plugins/casl';
 
 const channelStore = useChannelsStore();
 const { t } = useI18n();
@@ -49,6 +52,26 @@ const previewDialog = ref<{ open: boolean; src: string | null }>({
   src: null,
 });
 const isPermanent = ref(false);
+
+const permissionsProfileStatus = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EWorkerPermissions.worker_group,
+  EWorkerPermissions.profile_status_worker,
+];
+
+const canAccessProfileStatus = computed(() => can(permissionsProfileStatus));
+
+const formatDate = (dateString: string): string => {
+  if (!dateString) return '';
+
+  const date = new Date(dateString);
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+
+  return `${day}/${month}/${year}`;
+};
 
 const remainingSlots = computed(
   () =>
@@ -186,6 +209,44 @@ const closePreview = () => {
   };
 };
 
+const togglePermanent = async (photo: ProfileStatusPhoto) => {
+  if (!channelId.value) return;
+
+  const newIsPermanent = !photo.is_permanent;
+
+  const success = await channelStore.updateProfileStatusPhotoIsPermanent(
+    photo.worker_profile_status_id,
+    newIsPermanent
+  );
+
+  if (success) {
+    const index = existingPhotos.value.findIndex(
+      (p) => p.worker_profile_status_id === photo.worker_profile_status_id
+    );
+
+    if (index !== -1) {
+      existingPhotos.value[index] = {
+        ...existingPhotos.value[index],
+        is_permanent: newIsPermanent,
+      };
+    }
+  }
+};
+
+const deletePhoto = async (photo: ProfileStatusPhoto) => {
+  if (!channelId.value) return;
+
+  const success = await channelStore.deleteProfileStatusPhoto(
+    photo.worker_profile_status_id
+  );
+
+  if (success) {
+    existingPhotos.value = existingPhotos.value.filter(
+      (p) => p.worker_profile_status_id !== photo.worker_profile_status_id
+    );
+  }
+};
+
 watch(isVisible, async (visible) => {
   if (visible) {
     currentTab.value = 'general';
@@ -234,7 +295,9 @@ onBeforeUnmount(() => {
 
       <VTabs v-model="currentTab" grow>
         <VTab value="general">{{ $t('general_settings') }}</VTab>
-        <VTab value="profile-status">{{ $t('profile_status_tab') }}</VTab>
+        <VTab v-if="canAccessProfileStatus" value="profile-status">{{
+          $t('profile_status_tab')
+        }}</VTab>
         <VTab value="profile-info">{{ $t('profile_information_tab') }}</VTab>
       </VTabs>
 
@@ -358,21 +421,50 @@ onBeforeUnmount(() => {
                 <VCol
                   v-for="photo in existingPhotos"
                   :key="photo.worker_profile_status_id"
-                  cols="12"
-                  sm="6"
-                  md="4"
+                  cols="6"
+                  sm="4"
+                  md="3"
                 >
-                  <VCard
-                    class="pa-2 photo-existing-card"
-                    @click="openPreview(photo.url)"
-                  >
-                    <VImg
-                      :src="photo.url"
-                      aspect-ratio="1"
-                      cover
-                      class="rounded"
-                    />
-                  </VCard>
+                  <div class="photo-container">
+                    <VCard
+                      class="pa-2 photo-existing-card"
+                      @click="openPreview(photo.url)"
+                    >
+                      <div class="photo-wrapper position-relative">
+                        <VImg
+                          :src="photo.url"
+                          aspect-ratio="1"
+                          cover
+                          class="rounded"
+                        />
+                        <div class="photo-actions">
+                          <VIcon
+                            :icon="
+                              photo.is_permanent
+                                ? 'tabler-lock'
+                                : 'tabler-lock-open'
+                            "
+                            size="20"
+                            class="action-icon permanent-icon"
+                            :color="
+                              photo.is_permanent ? 'primary' : 'secondary'
+                            "
+                            @click.stop="togglePermanent(photo)"
+                          />
+                          <VIcon
+                            icon="tabler-trash"
+                            size="20"
+                            class="action-icon delete-icon"
+                            color="error"
+                            @click.stop="deletePhoto(photo)"
+                          />
+                        </div>
+                      </div>
+                    </VCard>
+                    <span class="photo-date">{{
+                      formatDate(photo.created_at)
+                    }}</span>
+                  </div>
                 </VCol>
               </VRow>
 
@@ -457,5 +549,47 @@ onBeforeUnmount(() => {
 .empty-gallery-alert {
   color: inherit;
   background-color: rgba(var(--v-theme-primary), 0.12);
+}
+
+.photo-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.photo-wrapper {
+  position: relative;
+}
+
+.photo-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+  z-index: 2;
+}
+
+.action-icon {
+  background-color: rgba(255, 255, 255, 0.95);
+  border-radius: 8px;
+  padding: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(4px);
+}
+
+.action-icon:hover {
+  background-color: rgba(255, 255, 255, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  transform: scale(1.1);
+}
+
+.photo-date {
+  font-size: 0.75rem;
+  font-style: italic;
+  color: rgba(var(--v-theme-on-surface), 0.6);
+  text-align: center;
 }
 </style>
