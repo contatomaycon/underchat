@@ -9,6 +9,9 @@ import { WorkerProfileStatus } from '@core/schema/worker/uploadProfileStatus/res
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { StorageService } from '@core/services/storage.service';
 import { EWorkerProfileStatusType } from '@core/common/enums/EWorkerProfileStatusType';
+import { StreamProducerService } from '@core/services/streamProducer.service';
+import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
+import { IProfileStatusMessage } from '@core/common/interfaces/IProfileStatusMessage';
 
 @injectable()
 export class WorkerProfileStatusService {
@@ -18,7 +21,9 @@ export class WorkerProfileStatusService {
     private readonly workerProfileStatusUpdaterRepository: WorkerProfileStatusUpdaterRepository,
     private readonly workerProfileStatusDeleterRepository: WorkerProfileStatusDeleterRepository,
     private readonly workerProfileStatusViewerRepository: WorkerProfileStatusViewerRepository,
-    private readonly storageService: StorageService
+    private readonly storageService: StorageService,
+    private readonly streamProducerService: StreamProducerService,
+    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService
   ) {}
 
   async uploadProfileStatus(
@@ -47,15 +52,17 @@ export class WorkerProfileStatusService {
           }
         );
 
-      return [
-        {
-          worker_profile_status_id: workerProfileStatusId,
-          worker_id: workerId,
-          worker_profile_status_type_id: typeId,
-          value: text,
-          is_permanent: isPermanent,
-        } as WorkerProfileStatus,
-      ];
+      const statusResult = {
+        worker_profile_status_id: workerProfileStatusId,
+        worker_id: workerId,
+        worker_profile_status_type_id: typeId,
+        value: text,
+        is_permanent: isPermanent,
+      } as WorkerProfileStatus;
+
+      await this.sendStatusToKafka(statusResult, accountId);
+
+      return [statusResult];
     }
 
     if (!photos) {
@@ -100,13 +107,17 @@ export class WorkerProfileStatusService {
           }
         );
 
-      return {
+      const statusResult = {
         worker_profile_status_id: workerProfileStatusId,
         worker_id: workerId,
         worker_profile_status_type_id: typeId,
         value,
         is_permanent: isPermanent,
       } as WorkerProfileStatus;
+
+      await this.sendStatusToKafka(statusResult, accountId);
+
+      return statusResult;
     });
 
     const results = await Promise.all(uploadPromises);
@@ -157,5 +168,30 @@ export class WorkerProfileStatusService {
     return this.workerProfileStatusDeleterRepository.deleteWorkerProfileStatus(
       workerProfileStatusId
     );
+  }
+
+  private async sendStatusToKafka(
+    status: WorkerProfileStatus,
+    accountId: string
+  ): Promise<void> {
+    try {
+      const statusMessage: IProfileStatusMessage = {
+        worker_id: status.worker_id,
+        account_id: accountId,
+        worker_profile_status_id: status.worker_profile_status_id,
+        worker_profile_status_type_id:
+          status.worker_profile_status_type_id as EWorkerProfileStatusType,
+        value: status.value,
+        is_permanent: status.is_permanent,
+      };
+
+      const topic = this.kafkaBaileysQueueService.workerSendMessage(
+        status.worker_id
+      );
+
+      await this.streamProducerService.send(topic, statusMessage);
+    } catch (error) {
+      console.error('Error sending profile status to Kafka:', error);
+    }
   }
 }

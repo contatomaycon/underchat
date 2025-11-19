@@ -6,8 +6,10 @@ import { BaileysMessageMediaService } from '@core/services/baileys/methods/messa
 import { BaileysMessageReactionsInteractionsService } from '@core/services/baileys/methods/messageReactionsInteractions.service';
 import { BaileysMessageEditDeleteService } from '@core/services/baileys/methods/messageEditDelete.service';
 import { BaileysMessageLocationContactService } from '@core/services/baileys/methods/messageLocationContact.service';
+import { BaileysMessageStatusStoriesService } from '@core/services/baileys/methods/messageStatusStories.service';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
+import { IProfileStatusMessage } from '@core/common/interfaces/IProfileStatusMessage';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
@@ -21,6 +23,7 @@ import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { selectJidChat } from '@core/common/functions/selectJidChat';
 import { convertWaveformBase64ToUint8Array } from '@core/common/functions/convertWaveform';
 import { webcrypto } from 'node:crypto';
+import { EWorkerProfileStatusType } from '@core/common/enums/EWorkerProfileStatusType';
 
 @singleton()
 export class MessageSendConsume {
@@ -36,6 +39,7 @@ export class MessageSendConsume {
     private readonly baileysMessageReactionsInteractionsService: BaileysMessageReactionsInteractionsService,
     private readonly baileysMessageEditDeleteService: BaileysMessageEditDeleteService,
     private readonly baileysMessageLocationContactService: BaileysMessageLocationContactService,
+    private readonly baileysMessageStatusStoriesService: BaileysMessageStatusStoriesService,
     private readonly streamProducerService: StreamProducerService,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly keyedSequencerService: KeyedSequencerService
@@ -70,14 +74,9 @@ export class MessageSendConsume {
       partitionsConsumedConcurrently: 1,
       eachMessage: async ({ topic, partition, message, heartbeat }) => {
         const data = this.parseMessage(message.value);
-        if (!data) {
-          await this.commitNext(topic, partition, message.offset);
+        const statusData = this.parseStatusMessage(message.value);
 
-          return;
-        }
-
-        const chatId = this.resolveChatId(data);
-        if (!chatId) {
+        if (!data && !statusData) {
           await this.commitNext(topic, partition, message.offset);
 
           return;
@@ -85,15 +84,38 @@ export class MessageSendConsume {
 
         const stop = startHeartbeat(heartbeat);
         try {
+          if (statusData) {
+            await this.processProfileStatus(statusData);
+            stop();
+            await this.commitNext(topic, partition, message.offset);
+            return;
+          }
+
+          if (!data) {
+            stop();
+            await this.commitNext(topic, partition, message.offset);
+            return;
+          }
+
+          const chatId = this.resolveChatId(data);
+          if (!chatId) {
+            stop();
+            await this.commitNext(topic, partition, message.offset);
+            return;
+          }
+
           await this.enqueueByChatId(chatId, async () => {
             await this.processMessage(data);
           });
         } catch {
+          stop();
           await this.commitNext(topic, partition, message.offset);
+          return;
         } finally {
           stop();
         }
 
+        stop();
         await this.commitNext(topic, partition, message.offset);
       },
     });
@@ -139,7 +161,37 @@ export class MessageSendConsume {
 
     try {
       const parsed = JSON.parse(raw) as IChatMessage;
-      return parsed ?? null;
+      if (parsed && 'message_id' in parsed && 'chat_id' in parsed) {
+        return parsed;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private parseStatusMessage(
+    value: Buffer | null
+  ): IProfileStatusMessage | null {
+    if (!value) {
+      return null;
+    }
+
+    const raw = value.toString('utf8').trim();
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as IProfileStatusMessage;
+      if (
+        parsed &&
+        'worker_profile_status_id' in parsed &&
+        'worker_id' in parsed
+      ) {
+        return parsed;
+      }
+      return null;
     } catch {
       return null;
     }
@@ -218,9 +270,11 @@ export class MessageSendConsume {
   ): Promise<void> {
     if (hasQuoted && data.content?.quoted) {
       await this.processTextQuoted(jid, data);
-    } else {
-      await this.processText(jid, data);
+      this.lastMessageTypeByChatId.set(chatId, EMessageType.text);
+      return;
     }
+
+    await this.processText(jid, data);
     this.lastMessageTypeByChatId.set(chatId, EMessageType.text);
   }
 
@@ -636,6 +690,87 @@ export class MessageSendConsume {
 
     const update: IUpdateMessage = { message: result, data };
     await this.pushUpdate(update);
+  }
+
+  private async processProfileStatus(
+    data: IProfileStatusMessage
+  ): Promise<void> {
+    const jid = 'status@broadcast';
+    const valueParts = data.value.split('|');
+    const url = valueParts[0];
+    const caption =
+      valueParts.length > 1 ? valueParts.slice(1).join('|') : undefined;
+
+    if (data.worker_profile_status_type_id === EWorkerProfileStatusType.text) {
+      const result =
+        await this.baileysMessageStatusStoriesService.sendStatusText(
+          jid,
+          data.value,
+          {
+            statusJidList: [],
+          }
+        );
+
+      if (!result) {
+        throw new Error('Failed to send status text');
+      }
+
+      return;
+    }
+
+    if (data.worker_profile_status_type_id === EWorkerProfileStatusType.image) {
+      const result =
+        await this.baileysMessageStatusStoriesService.sendStatusImage(
+          jid,
+          { url },
+          {
+            caption,
+            statusJidList: [],
+          }
+        );
+
+      if (!result) {
+        throw new Error('Failed to send status image');
+      }
+
+      return;
+    }
+
+    if (data.worker_profile_status_type_id === EWorkerProfileStatusType.video) {
+      const result =
+        await this.baileysMessageStatusStoriesService.sendStatusVideo(
+          jid,
+          { url },
+          {
+            caption,
+            statusJidList: [],
+          }
+        );
+
+      if (!result) {
+        throw new Error('Failed to send status video');
+      }
+
+      return;
+    }
+
+    if (data.worker_profile_status_type_id === EWorkerProfileStatusType.audio) {
+      const result =
+        await this.baileysMessageStatusStoriesService.sendStatusAudio(
+          jid,
+          { url },
+          {
+            caption,
+            statusJidList: [],
+          }
+        );
+
+      if (!result) {
+        throw new Error('Failed to send status audio');
+      }
+
+      return;
+    }
   }
 
   private async processImage(jid: string, data: IChatMessage): Promise<void> {

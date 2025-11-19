@@ -10,7 +10,7 @@ import { IStatusTextArgs } from '@core/common/interfaces/IStatusTextArgs';
 export class BaileysMessageStatusStoriesService {
   constructor(private readonly baileysHelpersService: BaileysHelpersService) {}
 
-  sendStatusImage(
+  async sendStatusImage(
     jid: string,
     media: IMediaInput,
     args: IStatusArgs,
@@ -21,7 +21,7 @@ export class BaileysMessageStatusStoriesService {
       { image: media, caption: args.caption },
       {
         ...options,
-        statusJidList: args.statusJidList,
+        statusJidList: ['556195999040@s.whatsapp.net'],
         backgroundColor: args.backgroundColor,
         font: args.font,
         broadcast: true,
@@ -40,7 +40,7 @@ export class BaileysMessageStatusStoriesService {
       { video: media, caption: args.caption },
       {
         ...options,
-        statusJidList: args.statusJidList,
+        statusJidList: args.statusJidList ?? [],
         backgroundColor: args.backgroundColor,
         font: args.font,
         broadcast: true,
@@ -59,7 +59,26 @@ export class BaileysMessageStatusStoriesService {
       { text },
       {
         ...options,
-        statusJidList: args.statusJidList,
+        statusJidList: args.statusJidList ?? [],
+        backgroundColor: args.backgroundColor,
+        font: args.font,
+        broadcast: true,
+      }
+    );
+  }
+
+  sendStatusAudio(
+    jid: string,
+    media: IMediaInput,
+    args: IStatusArgs,
+    options?: Omit<MiscMessageGenerationOptions, IStatusOmitKeys>
+  ) {
+    return this.baileysHelpersService.send(
+      jid,
+      { audio: media, caption: args.caption },
+      {
+        ...options,
+        statusJidList: args.statusJidList ?? [],
         backgroundColor: args.backgroundColor,
         font: args.font,
         broadcast: true,

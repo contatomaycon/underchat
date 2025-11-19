@@ -18,6 +18,7 @@ export const workerProfileStatus = pgTable('worker_profile_status', {
     .notNull(),
   value: varchar({ length: 500 }).notNull(),
   is_permanent: boolean().default(false),
+  external_id: varchar({ length: 500 }),
   created_at: timestamp('created_at', {
     mode: 'string',
     withTimezone: true,

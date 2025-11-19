@@ -43,6 +43,7 @@ CREATE TABLE "worker_profile_status" (
   "worker_id" uuid NOT NULL,
   "worker_profile_status_type_id" uuid NOT NULL,
   "value" character varying(500) NOT NULL,
+  "external_id" character varying(500) NULL,
   "is_permanent" boolean NULL DEFAULT false,
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
