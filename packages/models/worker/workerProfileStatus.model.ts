@@ -7,6 +7,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { worker, workerConfig, workerProfileStatusType } from '@core/models';
+import { workerProfileStatusContact } from './workerProfileStatusContact.model';
 
 export const workerProfileStatus = pgTable('worker_profile_status', {
   worker_profile_status_id: uuid().primaryKey().notNull(),
@@ -41,5 +42,6 @@ export const workerProfileStatusRelations = relations(
       references: [workerProfileStatusType.worker_profile_status_type_id],
     }),
     wps: many(workerConfig),
+    wpc: many(workerProfileStatusContact),
   })
 );

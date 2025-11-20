@@ -3,6 +3,7 @@ import { relations } from 'drizzle-orm';
 import { account } from '../account';
 import { labelTemplate } from '../label';
 import { contactGroupAssignment } from './contactGroupAssignment.model';
+import { workerProfileStatusContact } from '../worker/workerProfileStatusContact.model';
 
 export const contact = pgTable('contact', {
   contact_id: uuid().primaryKey().notNull(),
@@ -44,4 +45,5 @@ export const contactRelations = relations(contact, ({ one, many }) => ({
     references: [labelTemplate.label_template_id],
   }),
   cga: many(contactGroupAssignment),
+  cpc: many(workerProfileStatusContact),
 }));
