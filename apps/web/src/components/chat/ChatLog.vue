@@ -1774,7 +1774,12 @@ onUnmounted(() => {
                 }"
               >
                 <div
-                  v-if="canInteractWithMessage(item.message) && !isQueueStatus"
+                  v-if="
+                    (canInteractWithMessage(item.message) ||
+                      (item.message.deleted &&
+                        hasMessageVersions(item.message))) &&
+                    !isQueueStatus
+                  "
                   class="message-actions"
                 >
                   <VMenu
@@ -1800,71 +1805,87 @@ onUnmounted(() => {
                     </template>
 
                     <VList density="compact" min-width="180">
-                      <VListItem @click="onReply(item.message)">
-                        <template #prepend>
-                          <VIcon size="18">tabler-corner-up-left</VIcon>
-                        </template>
-                        <VListItemTitle>Responder</VListItemTitle>
-                      </VListItem>
-
-                      <VListItem
-                        v-if="shouldShowCopy(item.message)"
-                        @click="onCopy(item.message)"
+                      <template
+                        v-if="
+                          item.message.deleted &&
+                          hasMessageVersions(item.message)
+                        "
                       >
-                        <template #prepend>
-                          <VIcon size="18">tabler-copy</VIcon>
-                        </template>
-                        <VListItemTitle>Copiar</VListItemTitle>
-                      </VListItem>
+                        <VListItem @click="onViewEditHistory(item.message)">
+                          <template #prepend>
+                            <VIcon size="18">tabler-history</VIcon>
+                          </template>
+                          <VListItemTitle>Visualizar edições</VListItemTitle>
+                        </VListItem>
+                      </template>
 
-                      <VListItem
-                        v-if="shouldShowDownload(item.message)"
-                        @click="downloadMessage(item.message)"
-                      >
-                        <template #prepend>
-                          <VIcon size="18">tabler-download</VIcon>
-                        </template>
-                        <VListItemTitle>{{
-                          t('chat_action_download')
-                        }}</VListItemTitle>
-                      </VListItem>
+                      <template v-else>
+                        <VListItem @click="onReply(item.message)">
+                          <template #prepend>
+                            <VIcon size="18">tabler-corner-up-left</VIcon>
+                          </template>
+                          <VListItemTitle>Responder</VListItemTitle>
+                        </VListItem>
 
-                      <VListItem @click="toggleReactionPicker(item.message)">
-                        <template #prepend>
-                          <VIcon size="18">tabler-mood-smile</VIcon>
-                        </template>
-                        <VListItemTitle>Reagir</VListItemTitle>
-                      </VListItem>
+                        <VListItem
+                          v-if="shouldShowCopy(item.message)"
+                          @click="onCopy(item.message)"
+                        >
+                          <template #prepend>
+                            <VIcon size="18">tabler-copy</VIcon>
+                          </template>
+                          <VListItemTitle>Copiar</VListItemTitle>
+                        </VListItem>
 
-                      <VListItem
-                        v-if="canEditMessage(item.message)"
-                        @click="onEdit(item.message)"
-                      >
-                        <template #prepend>
-                          <VIcon size="18">tabler-edit</VIcon>
-                        </template>
-                        <VListItemTitle>Editar</VListItemTitle>
-                      </VListItem>
+                        <VListItem
+                          v-if="shouldShowDownload(item.message)"
+                          @click="downloadMessage(item.message)"
+                        >
+                          <template #prepend>
+                            <VIcon size="18">tabler-download</VIcon>
+                          </template>
+                          <VListItemTitle>{{
+                            t('chat_action_download')
+                          }}</VListItemTitle>
+                        </VListItem>
 
-                      <VListItem
-                        v-if="hasMessageVersions(item.message)"
-                        @click="onViewEditHistory(item.message)"
-                      >
-                        <template #prepend>
-                          <VIcon size="18">tabler-history</VIcon>
-                        </template>
-                        <VListItemTitle>Visualizar edições</VListItemTitle>
-                      </VListItem>
+                        <VListItem @click="toggleReactionPicker(item.message)">
+                          <template #prepend>
+                            <VIcon size="18">tabler-mood-smile</VIcon>
+                          </template>
+                          <VListItemTitle>Reagir</VListItemTitle>
+                        </VListItem>
 
-                      <VListItem
-                        v-if="!isTypeUser(item.message)"
-                        @click="onDelete(item.message)"
-                      >
-                        <template #prepend>
-                          <VIcon size="18">tabler-trash</VIcon>
-                        </template>
-                        <VListItemTitle>Apagar</VListItemTitle>
-                      </VListItem>
+                        <VListItem
+                          v-if="canEditMessage(item.message)"
+                          @click="onEdit(item.message)"
+                        >
+                          <template #prepend>
+                            <VIcon size="18">tabler-edit</VIcon>
+                          </template>
+                          <VListItemTitle>Editar</VListItemTitle>
+                        </VListItem>
+
+                        <VListItem
+                          v-if="hasMessageVersions(item.message)"
+                          @click="onViewEditHistory(item.message)"
+                        >
+                          <template #prepend>
+                            <VIcon size="18">tabler-history</VIcon>
+                          </template>
+                          <VListItemTitle>Visualizar edições</VListItemTitle>
+                        </VListItem>
+
+                        <VListItem
+                          v-if="!isTypeUser(item.message)"
+                          @click="onDelete(item.message)"
+                        >
+                          <template #prepend>
+                            <VIcon size="18">tabler-trash</VIcon>
+                          </template>
+                          <VListItemTitle>Apagar</VListItemTitle>
+                        </VListItem>
+                      </template>
                     </VList>
                   </VMenu>
                 </div>
