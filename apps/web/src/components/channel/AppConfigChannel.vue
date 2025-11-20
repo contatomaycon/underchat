@@ -130,6 +130,33 @@ const isLoadingContacts = ref(false);
 const contactGroupSearch = ref('');
 const contactSearch = ref('');
 
+const profilePhoto = ref<string | null>(null);
+const profilePhotoFile = ref<File | null>(null);
+const isUploadingProfilePhoto = ref(false);
+const cropDialog = ref({
+  open: false,
+  imageSrc: '',
+  croppedImage: '',
+});
+const cropImageRef = ref<HTMLImageElement | null>(null);
+const cropCanvasRef = ref<HTMLCanvasElement | null>(null);
+const cropArea = ref({
+  x: 0,
+  y: 0,
+  width: 0,
+  height: 0,
+  startX: 0,
+  startY: 0,
+  isDragging: false,
+  isResizing: false,
+  resizeHandle: null as 'nw' | 'ne' | 'sw' | 'se' | null,
+  initialWidth: 0,
+  initialHeight: 0,
+  initialX: 0,
+  initialY: 0,
+});
+const cropPreviewSize = 160;
+
 const statusTypeOptions = computed(() => [
   {
     value: EWorkerProfileStatusType.text,
@@ -709,6 +736,418 @@ const deleteStatus = async (status: ProfileStatus) => {
   }
 };
 
+const loadProfilePhoto = async () => {
+  if (!channelId.value) return;
+
+  const worker = await channelStore.getWorkerById(channelId.value);
+  profilePhoto.value = null;
+};
+
+const openFileSelector = () => {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = (e: Event) => {
+    const target = e.target as HTMLInputElement;
+    const file = target.files?.[0];
+    if (file) {
+      handleImageSelect(file);
+    }
+  };
+  input.click();
+};
+
+const handleImageSelect = (file: File) => {
+  if (file.size > MAX_FILE_SIZE_BYTES) {
+    channelStore.showSnackbar(
+      t('profile_status_file_size_exceeded', { max: '16 MB' }),
+      EColor.error
+    );
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (e: ProgressEvent<FileReader>) => {
+    const result = e.target?.result as string;
+    if (result) {
+      cropDialog.value.imageSrc = result;
+      cropDialog.value.open = true;
+      profilePhotoFile.value = file;
+      nextTick(() => {
+        initializeCrop();
+      });
+    }
+  };
+  reader.readAsDataURL(file);
+};
+
+const initializeCrop = () => {
+  if (!cropImageRef.value) return;
+
+  const img = cropImageRef.value;
+  const containerWidth = 400;
+  const containerHeight = 400;
+
+  if (img.complete) {
+    setupCropArea(img, containerWidth, containerHeight);
+    return;
+  }
+
+  img.onload = () => {
+    setupCropArea(img, containerWidth, containerHeight);
+  };
+};
+
+const setupCropArea = (
+  img: HTMLImageElement,
+  containerWidth: number,
+  containerHeight: number
+) => {
+  const imgAspect = img.naturalWidth / img.naturalHeight;
+  const containerAspect = containerWidth / containerHeight;
+
+  let displayWidth = containerWidth;
+  let displayHeight = containerHeight;
+
+  if (imgAspect > containerAspect) {
+    displayHeight = containerWidth / imgAspect;
+  }
+
+  if (imgAspect <= containerAspect) {
+    displayWidth = containerHeight * imgAspect;
+  }
+
+  img.style.width = `${displayWidth}px`;
+  img.style.height = `${displayHeight}px`;
+
+  const cropSize = Math.min(displayWidth, displayHeight, cropPreviewSize);
+  cropArea.value.width = cropSize;
+  cropArea.value.height = cropSize;
+  cropArea.value.x = (displayWidth - cropSize) / 2;
+  cropArea.value.y = (displayHeight - cropSize) / 2;
+};
+
+const startCropDrag = (e: MouseEvent | TouchEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+  cropArea.value.isDragging = true;
+  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+  const container = cropImageRef.value?.parentElement;
+  if (!container) return;
+
+  const rect = container.getBoundingClientRect();
+  cropArea.value.startX = clientX - rect.left - cropArea.value.x;
+  cropArea.value.startY = clientY - rect.top - cropArea.value.y;
+
+  document.addEventListener('mousemove', onCropDrag);
+  document.addEventListener('touchmove', onCropDrag);
+  document.addEventListener('mouseup', endCropDrag);
+  document.addEventListener('touchend', endCropDrag);
+};
+
+const startCropResize = (
+  handle: 'nw' | 'ne' | 'sw' | 'se',
+  e: MouseEvent | TouchEvent
+) => {
+  e.preventDefault();
+  e.stopPropagation();
+  cropArea.value.isResizing = true;
+  cropArea.value.resizeHandle = handle;
+
+  cropArea.value.initialWidth = cropArea.value.width;
+  cropArea.value.initialHeight = cropArea.value.height;
+  cropArea.value.initialX = cropArea.value.x;
+  cropArea.value.initialY = cropArea.value.y;
+
+  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+  const container = cropImageRef.value?.parentElement;
+  if (!container) return;
+
+  const rect = container.getBoundingClientRect();
+  cropArea.value.startX = clientX - rect.left;
+  cropArea.value.startY = clientY - rect.top;
+
+  document.addEventListener('mousemove', onCropResize);
+  document.addEventListener('touchmove', onCropResize);
+  document.addEventListener('mouseup', endCropResize);
+  document.addEventListener('touchend', endCropResize);
+};
+
+const onCropDrag = (e: MouseEvent | TouchEvent) => {
+  if (!cropArea.value.isDragging || !cropImageRef.value) return;
+
+  e.preventDefault();
+  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+  const container = cropImageRef.value.parentElement;
+  if (!container) return;
+
+  const rect = container.getBoundingClientRect();
+  const x = clientX - rect.left - cropArea.value.startX;
+  const y = clientY - rect.top - cropArea.value.startY;
+
+  const maxX = cropImageRef.value.offsetWidth - cropArea.value.width;
+  const maxY = cropImageRef.value.offsetHeight - cropArea.value.height;
+
+  cropArea.value.x = Math.max(0, Math.min(x, maxX));
+  cropArea.value.y = Math.max(0, Math.min(y, maxY));
+};
+
+const onCropResize = (e: MouseEvent | TouchEvent) => {
+  if (
+    !cropArea.value.isResizing ||
+    !cropImageRef.value ||
+    !cropArea.value.resizeHandle
+  )
+    return;
+
+  e.preventDefault();
+  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+  const container = cropImageRef.value.parentElement;
+  if (!container) return;
+
+  const rect = container.getBoundingClientRect();
+  const mouseX = clientX - rect.left;
+  const mouseY = clientY - rect.top;
+
+  const handle = cropArea.value.resizeHandle;
+
+  let fixedX = cropArea.value.initialX;
+  let fixedY = cropArea.value.initialY;
+
+  if (handle === 'nw') {
+    fixedX = cropArea.value.initialX + cropArea.value.initialWidth;
+    fixedY = cropArea.value.initialY + cropArea.value.initialHeight;
+  }
+
+  if (handle === 'ne') {
+    fixedX = cropArea.value.initialX;
+    fixedY = cropArea.value.initialY + cropArea.value.initialHeight;
+  }
+
+  if (handle === 'sw') {
+    fixedX = cropArea.value.initialX + cropArea.value.initialWidth;
+    fixedY = cropArea.value.initialY;
+  }
+
+  if (handle === 'se') {
+    fixedX = cropArea.value.initialX;
+    fixedY = cropArea.value.initialY;
+  }
+
+  const deltaX = mouseX - fixedX;
+  const deltaY = mouseY - fixedY;
+  const size = Math.max(Math.abs(deltaX), Math.abs(deltaY));
+
+  let newWidth = size;
+  let newHeight = size;
+  let newX = fixedX;
+  let newY = fixedY;
+
+  if (handle === 'nw') {
+    newX = fixedX - newWidth;
+    newY = fixedY - newHeight;
+  }
+
+  if (handle === 'ne') {
+    newX = fixedX;
+    newY = fixedY - newHeight;
+  }
+
+  if (handle === 'sw') {
+    newX = fixedX - newWidth;
+    newY = fixedY;
+  }
+
+  if (handle === 'se') {
+    newX = fixedX;
+    newY = fixedY;
+  }
+
+  const maxWidth = cropImageRef.value.offsetWidth;
+  const maxHeight = cropImageRef.value.offsetHeight;
+  const minSize = 50;
+
+  if (newWidth < minSize) {
+    newWidth = minSize;
+    newHeight = minSize;
+
+    if (handle === 'nw') {
+      newX = fixedX - minSize;
+      newY = fixedY - minSize;
+    }
+
+    if (handle === 'ne') {
+      newX = fixedX;
+      newY = fixedY - minSize;
+    }
+
+    if (handle === 'sw') {
+      newX = fixedX - minSize;
+      newY = fixedY;
+    }
+  }
+
+  if (newWidth > maxWidth) {
+    newWidth = maxWidth;
+    newHeight = maxWidth;
+
+    if (handle === 'nw' || handle === 'sw') {
+      newX = fixedX - maxWidth;
+    }
+
+    if (handle === 'ne' || handle === 'se') {
+      newX = fixedX;
+    }
+  }
+
+  if (newHeight > maxHeight) {
+    newHeight = maxHeight;
+    newWidth = maxHeight;
+
+    if (handle === 'nw' || handle === 'ne') {
+      newY = fixedY - maxHeight;
+    }
+
+    if (handle === 'sw' || handle === 'se') {
+      newY = fixedY;
+    }
+  }
+
+  if (newX < 0) {
+    newX = 0;
+  }
+
+  if (newY < 0) {
+    newY = 0;
+  }
+
+  if (newX + newWidth > maxWidth) {
+    newX = maxWidth - newWidth;
+  }
+
+  if (newY + newHeight > maxHeight) {
+    newY = maxHeight - newHeight;
+  }
+
+  cropArea.value.width = newWidth;
+  cropArea.value.height = newHeight;
+  cropArea.value.x = newX;
+  cropArea.value.y = newY;
+};
+
+const endCropDrag = () => {
+  cropArea.value.isDragging = false;
+  document.removeEventListener('mousemove', onCropDrag);
+  document.removeEventListener('touchmove', onCropDrag);
+  document.removeEventListener('mouseup', endCropDrag);
+  document.removeEventListener('touchend', endCropDrag);
+};
+
+const endCropResize = () => {
+  cropArea.value.isResizing = false;
+  cropArea.value.resizeHandle = null;
+  document.removeEventListener('mousemove', onCropResize);
+  document.removeEventListener('touchmove', onCropResize);
+  document.removeEventListener('mouseup', endCropResize);
+  document.removeEventListener('touchend', endCropResize);
+};
+
+const cropImage = () => {
+  if (!cropImageRef.value || !cropCanvasRef.value) return;
+
+  const img = cropImageRef.value;
+  const canvas = cropCanvasRef.value;
+  const ctx = canvas.getContext('2d');
+
+  if (!ctx || !img.complete) {
+    channelStore.showSnackbar(
+      'Aguarde a imagem carregar completamente',
+      EColor.warning
+    );
+    return;
+  }
+
+  const scaleX = img.naturalWidth / img.offsetWidth;
+  const scaleY = img.naturalHeight / img.offsetHeight;
+
+  const sourceX = cropArea.value.x * scaleX;
+  const sourceY = cropArea.value.y * scaleY;
+  const sourceWidth = cropArea.value.width * scaleX;
+  const sourceHeight = cropArea.value.height * scaleY;
+
+  canvas.width = cropPreviewSize;
+  canvas.height = cropPreviewSize;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  ctx.drawImage(
+    img,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    0,
+    0,
+    cropPreviewSize,
+    cropPreviewSize
+  );
+
+  canvas.toBlob(
+    (blob) => {
+      if (!blob) return;
+
+      const croppedFile = new File([blob], 'profile-photo.jpg', {
+        type: 'image/jpeg',
+      });
+      profilePhotoFile.value = croppedFile;
+      cropDialog.value.croppedImage = canvas.toDataURL('image/jpeg');
+      cropDialog.value.open = false;
+
+      saveProfilePhoto();
+    },
+    'image/jpeg',
+    0.9
+  );
+};
+
+const saveProfilePhoto = async () => {
+  if (!channelId.value || !profilePhotoFile.value) return;
+
+  try {
+    isUploadingProfilePhoto.value = true;
+
+    const formData = new FormData();
+    formData.append('photo', profilePhotoFile.value);
+
+    channelStore.showSnackbar(
+      'Funcionalidade de upload será implementada quando a API estiver disponível',
+      EColor.info
+    );
+  } catch (error) {
+    channelStore.showSnackbar(
+      t('profile_photo_upload_error') || 'Erro ao fazer upload da foto',
+      EColor.error
+    );
+  } finally {
+    isUploadingProfilePhoto.value = false;
+  }
+};
+
+const cancelCrop = () => {
+  cropDialog.value.open = false;
+  cropDialog.value.imageSrc = '';
+  cropDialog.value.croppedImage = '';
+  profilePhotoFile.value = null;
+};
+
 watch(isVisible, async (visible) => {
   if (visible) {
     currentTab.value = 'general';
@@ -718,16 +1157,20 @@ watch(isVisible, async (visible) => {
 
   resetPendingSelections();
   closePreview();
-});
-
-watch(channelId, async (newValue, oldValue) => {
-  if (isVisible.value && newValue && newValue !== oldValue) {
-    await fetchProfileStatus();
-  }
+  cancelCrop();
 });
 
 watch(currentTab, async (newTab) => {
   if (newTab === 'profile-status' && isVisible.value && channelId.value) {
+    await fetchProfileStatus();
+  }
+  if (newTab === 'profile-info' && isVisible.value && channelId.value) {
+    await loadProfilePhoto();
+  }
+});
+
+watch(channelId, async (newValue, oldValue) => {
+  if (isVisible.value && newValue && newValue !== oldValue) {
     await fetchProfileStatus();
   }
 });
@@ -1254,9 +1697,120 @@ onBeforeUnmount(() => {
           </VWindowItem>
 
           <VWindowItem value="profile-info">
-            <div class="py-10" />
+            <div class="d-flex flex-column align-center gap-6 pa-4">
+              <div class="d-flex flex-column align-center gap-4">
+                <div
+                  class="profile-photo-container position-relative cursor-pointer"
+                  @click="openFileSelector"
+                >
+                  <VAvatar
+                    :size="cropPreviewSize"
+                    :variant="
+                      !profilePhoto && !cropDialog.croppedImage
+                        ? 'tonal'
+                        : undefined
+                    "
+                    color="primary"
+                    class="profile-photo-avatar"
+                  >
+                    <VImg
+                      v-if="profilePhoto || cropDialog.croppedImage"
+                      :src="
+                        (cropDialog.croppedImage || profilePhoto) ?? undefined
+                      "
+                      cover
+                    />
+                    <VImg
+                      v-else
+                      :src="'/images/svg/avatar-default.svg'"
+                      alt="Avatar padrão"
+                    />
+                  </VAvatar>
+
+                  <div
+                    class="profile-photo-overlay d-flex align-center justify-center"
+                  >
+                    <VIcon icon="tabler-camera" size="32" color="white" />
+                  </div>
+                </div>
+
+                <p class="text-body-2 text-medium-emphasis text-center">
+                  Clique na imagem para fazer upload de uma nova foto de perfil
+                </p>
+              </div>
+            </div>
           </VWindowItem>
         </VWindow>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <!-- Crop Image Dialog -->
+  <VDialog v-model="cropDialog.open" max-width="500" persistent>
+    <VCard>
+      <VCardTitle class="d-flex justify-space-between align-center">
+        <span>Cortar Imagem</span>
+        <IconBtn @click="cancelCrop">
+          <VIcon icon="tabler-x" />
+        </IconBtn>
+      </VCardTitle>
+
+      <VCardText>
+        <div class="crop-container position-relative">
+          <img
+            ref="cropImageRef"
+            :src="cropDialog.imageSrc"
+            alt="Imagem para cortar"
+            class="crop-image"
+            @load="initializeCrop"
+          />
+
+          <!-- Crop Area -->
+          <div
+            class="crop-area"
+            :style="{
+              left: `${cropArea.x}px`,
+              top: `${cropArea.y}px`,
+              width: `${cropArea.width}px`,
+              height: `${cropArea.height}px`,
+            }"
+            @mousedown="startCropDrag"
+            @touchstart="startCropDrag"
+          >
+            <div class="crop-area-border"></div>
+            <div class="crop-area-handles">
+              <div
+                class="crop-handle crop-handle-nw"
+                @mousedown="startCropResize('nw', $event)"
+                @touchstart="startCropResize('nw', $event)"
+              ></div>
+              <div
+                class="crop-handle crop-handle-ne"
+                @mousedown="startCropResize('ne', $event)"
+                @touchstart="startCropResize('ne', $event)"
+              ></div>
+              <div
+                class="crop-handle crop-handle-sw"
+                @mousedown="startCropResize('sw', $event)"
+                @touchstart="startCropResize('sw', $event)"
+              ></div>
+              <div
+                class="crop-handle crop-handle-se"
+                @mousedown="startCropResize('se', $event)"
+                @touchstart="startCropResize('se', $event)"
+              ></div>
+            </div>
+          </div>
+        </div>
+
+        <canvas ref="cropCanvasRef" style="display: none"></canvas>
+      </VCardText>
+
+      <VCardText class="d-flex justify-end gap-3 flex-wrap">
+        <VBtn variant="tonal" color="secondary" @click="cancelCrop">
+          Cancelar
+        </VBtn>
+        <VBtn color="primary" @click="cropImage"> Aplicar Corte </VBtn>
       </VCardText>
     </VCard>
   </VDialog>
@@ -1569,5 +2123,116 @@ onBeforeUnmount(() => {
   z-index: 2;
   pointer-events: none;
   transition: left 0.1s linear;
+}
+
+.profile-photo-container {
+  position: relative;
+  display: inline-block;
+}
+
+.profile-photo-avatar {
+  border: 3px solid rgba(var(--v-theme-primary), 0.2);
+  transition: all 0.3s ease;
+}
+
+.profile-photo-container:hover .profile-photo-avatar {
+  border-color: rgba(var(--v-theme-primary), 0.5);
+  transform: scale(1.02);
+}
+
+.profile-photo-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.profile-photo-container:hover .profile-photo-overlay {
+  opacity: 1;
+}
+
+.crop-container {
+  width: 100%;
+  max-width: 400px;
+  height: 400px;
+  margin: 0 auto;
+  overflow: hidden;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-surface-variant), 0.1);
+  position: relative;
+  user-select: none;
+  touch-action: none;
+}
+
+.crop-image {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.crop-area {
+  position: absolute;
+  border: 2px solid rgb(var(--v-theme-primary));
+  background: rgba(var(--v-theme-primary), 0.05);
+  cursor: move;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+  z-index: 10;
+  touch-action: none;
+}
+
+.crop-area-border {
+  position: absolute;
+  inset: 0;
+  border: 2px dashed rgba(255, 255, 255, 0.8);
+  pointer-events: none;
+}
+
+.crop-area-handles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.crop-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: rgb(var(--v-theme-primary));
+  border: 2px solid white;
+  border-radius: 50%;
+  pointer-events: all;
+  cursor: nwse-resize;
+}
+
+.crop-handle-nw {
+  top: -6px;
+  left: -6px;
+  cursor: nwse-resize;
+}
+
+.crop-handle-ne {
+  top: -6px;
+  right: -6px;
+  cursor: nesw-resize;
+}
+
+.crop-handle-sw {
+  bottom: -6px;
+  left: -6px;
+  cursor: nesw-resize;
+}
+
+.crop-handle-se {
+  bottom: -6px;
+  right: -6px;
+  cursor: nwse-resize;
 }
 </style>
