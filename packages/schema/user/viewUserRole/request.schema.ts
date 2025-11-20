@@ -7,4 +7,3 @@ export const viewUserRoleParamsRequestSchema = Type.Object({
 export type ViewUserRoleParamsRequest = Static<
   typeof viewUserRoleParamsRequestSchema
 >;
-

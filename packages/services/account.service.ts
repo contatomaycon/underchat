@@ -23,6 +23,7 @@ import { AccountInfoByIdViewerExistsRepository } from '@core/repositories/accoun
 import { CreateAccountInfoRequest } from '@core/schema/account/createAccountInfo/request.schema';
 import { EditAccountInfoResponse } from '@core/schema/account/editAccountInfo/request.schema';
 import { AccountAllListerRepository } from '@core/repositories/account/AccountAllLister.repository';
+import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 
 @injectable()
 export class AccountService {
@@ -91,7 +92,7 @@ export class AccountService {
     return [result, total];
   };
 
-  listAllAccounts = async (): Promise<{ account_id: string; name: string }[]> => {
+  listAllAccounts = async (): Promise<IAccountBasic[]> => {
     return this.accountAllListerRepository.listAllAccounts();
   };
 

@@ -20,6 +20,7 @@ import { ViewAccountResponse } from '@core/schema/account/viewAccount/response.s
 import { CreateAccountRequest } from '@core/schema/account/createAccount/request.schema';
 import { ViewAccountInfoResponse } from '@core/schema/account/viewAccountInfo/response.schema';
 import { EditAccountInfoParamsRequest } from '@core/schema/account/editAccountInfo/request.schema';
+import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 
 export const useAccountStore = defineStore('account', {
   state: () => ({
@@ -103,10 +104,10 @@ export const useAccountStore = defineStore('account', {
       }
     },
 
-    async listAllAccounts(): Promise<{ account_id: string; name: string }[]> {
+    async listAllAccounts(): Promise<IAccountBasic[]> {
       try {
         const response = await axios.get<
-          IApiResponse<{ account_id: string; name: string }[]>
+          IApiResponse<IAccountBasic[]>
         >(`/account/all`);
 
         const data = response?.data;

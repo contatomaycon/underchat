@@ -34,7 +34,9 @@ const userAddressSchema = Type.Object({
 export const updateUserRequestSchema = Type.Object({
   email: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   password: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-  account_id: Type.Optional(Type.Union([Type.String({ format: 'uuid' }), Type.Null()])),
+  account_id: Type.Optional(
+    Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
+  ),
   user_status_id: Type.Optional(
     Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
   ),

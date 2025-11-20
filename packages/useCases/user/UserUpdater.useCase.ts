@@ -54,7 +54,10 @@ export class UserUpdaterUseCase {
     isAdministrator: boolean
   ): Promise<void> {
     if (body.account_id && isAdministrator) {
-      const accountExists = await this.accountService.existsAccountById(body.account_id);
+      const accountExists = await this.accountService.existsAccountById(
+        body.account_id
+      );
+
       if (!accountExists) {
         throw new Error(t('account_not_found'));
       }
@@ -100,12 +103,13 @@ export class UserUpdaterUseCase {
     };
 
     if (body.account_id && isAdministrator) {
-      const currentUserAccountId = await this.userService.getUserAccountId(userId);
-      
+      const currentUserAccountId =
+        await this.userService.getUserAccountId(userId);
+
       if (currentUserAccountId && currentUserAccountId !== body.account_id) {
         await this.userService.deleteUserRole(userId);
       }
-      
+
       createUserInput.account_id = body.account_id;
     }
 

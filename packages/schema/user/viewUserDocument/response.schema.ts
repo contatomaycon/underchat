@@ -7,4 +7,3 @@ export const viewUserDocumentResponseSchema = Type.Object({
 export type ViewUserDocumentResponse = Static<
   typeof viewUserDocumentResponseSchema
 >;
-

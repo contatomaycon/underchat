@@ -10,4 +10,3 @@ export const listPermissionRoleAccountResponseSchema = Type.Array(
 export type ListPermissionRoleAccountResponse = Static<
   typeof listPermissionRoleAccountResponseSchema
 >;
-

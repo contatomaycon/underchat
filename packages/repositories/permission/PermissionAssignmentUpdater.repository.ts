@@ -27,4 +27,3 @@ export class PermissionAssignmentUpdaterRepository {
     return result.rowCount === 1;
   };
 }
-

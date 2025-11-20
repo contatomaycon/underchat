@@ -7,4 +7,3 @@ export const viewUserAddress2ResponseSchema = Type.Object({
 export type ViewUserAddress2Response = Static<
   typeof viewUserAddress2ResponseSchema
 >;
-

@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { permissionAssignment } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 
 @injectable()
 export class PermissionAssignmentViewerRepository {
@@ -27,4 +27,3 @@ export class PermissionAssignmentViewerRepository {
     return result[0].permission_role_id;
   };
 }
-

@@ -13,7 +13,4 @@ export const assignUserRoleRequestSchema = Type.Object({
   account_id: Type.String({ format: 'uuid' }),
 });
 
-export type AssignUserRoleRequest = Static<
-  typeof assignUserRoleRequestSchema
->;
-
+export type AssignUserRoleRequest = Static<typeof assignUserRoleRequestSchema>;

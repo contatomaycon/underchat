@@ -21,4 +21,3 @@ export class PermissionAssignmentDeleterRepository {
     return (result.rowCount ?? 0) > 0;
   };
 }
-

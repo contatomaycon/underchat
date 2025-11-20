@@ -7,4 +7,3 @@ export const viewUserDocumentRequestSchema = Type.Object({
 export type ViewUserDocumentRequest = Static<
   typeof viewUserDocumentRequestSchema
 >;
-

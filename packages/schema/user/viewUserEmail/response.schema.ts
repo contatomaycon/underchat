@@ -4,7 +4,4 @@ export const viewUserEmailResponseSchema = Type.Object({
   email: Type.Union([Type.String(), Type.Null()]),
 });
 
-export type ViewUserEmailResponse = Static<
-  typeof viewUserEmailResponseSchema
->;
-
+export type ViewUserEmailResponse = Static<typeof viewUserEmailResponseSchema>;

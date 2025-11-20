@@ -59,7 +59,10 @@ export class UserTransactionCreatorRepository {
     input: CreateUserRequest
   ): Promise<boolean> => {
     await this.db.transaction(async (tx) => {
-      const emailCEncrypted = this.passwordEncryptorService.encrypt(input.email);
+      const emailCEncrypted = this.passwordEncryptorService.encrypt(
+        input.email
+      );
+
       const emailPartialEncrypted = this.encryptService.sanitize(
         input.email,
         ETypeSanetize.email
@@ -163,7 +166,9 @@ export class UserTransactionCreatorRepository {
         throw new Error(t('phone_connection_required'));
       }
 
-      const phoneEncrypted = this.passwordEncryptorService.encrypt(input.user_info.phone);
+      const phoneEncrypted = this.passwordEncryptorService.encrypt(
+        input.user_info.phone
+      );
 
       const phonePartialEncrypted = this.encryptService.sanitize(
         input.user_info.phone,

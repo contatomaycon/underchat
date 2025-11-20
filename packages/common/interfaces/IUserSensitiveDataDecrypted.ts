@@ -5,4 +5,3 @@ export interface IUserSensitiveDataDecrypted {
   address1: string | null;
   address2: string | null;
 }
-

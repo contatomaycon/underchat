@@ -15,7 +15,9 @@ export class PermissionRoleAccountListerUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string
   ): Promise<ListRoleAccountResponse[]> {
-    const accountExists = await this.accountService.existsAccountById(accountId);
+    const accountExists =
+      await this.accountService.existsAccountById(accountId);
+
     if (!accountExists) {
       throw new Error(t('account_not_found'));
     }
@@ -23,4 +25,3 @@ export class PermissionRoleAccountListerUseCase {
     return this.permissionService.listPermissionRoleAccountById(accountId);
   }
 }
-

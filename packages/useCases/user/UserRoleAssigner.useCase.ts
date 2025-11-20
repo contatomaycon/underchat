@@ -38,9 +38,10 @@ export class UserRoleAssignerUseCase {
       throw new Error(t('permission_role_not_found'));
     }
 
-    const roleAccountId = await this.permissionService.getPermissionRoleAccountId(
-      input.permission_role_id
-    );
+    const roleAccountId =
+      await this.permissionService.getPermissionRoleAccountId(
+        input.permission_role_id
+      );
 
     if (!roleAccountId) {
       throw new Error(t('permission_role_not_found'));
@@ -63,4 +64,3 @@ export class UserRoleAssignerUseCase {
     return true;
   }
 }
-

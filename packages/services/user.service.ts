@@ -161,7 +161,12 @@ export class UserService {
     accountId: string,
     isAdministrator: boolean
   ): Promise<boolean> => {
-    return this.userUpdaterRepository.updateUserById(userId, input, accountId, isAdministrator);
+    return this.userUpdaterRepository.updateUserById(
+      userId,
+      input,
+      accountId,
+      isAdministrator
+    );
   };
 
   updateUserInfoById = async (
@@ -236,7 +241,7 @@ export class UserService {
     try {
       const decryptedPhone =
         this.passwordEncryptorService.decrypt(encryptedPhone);
-      
+
       return decryptedPhone;
     } catch {
       return null;
@@ -266,7 +271,7 @@ export class UserService {
     try {
       const decryptedEmail =
         this.passwordEncryptorService.decrypt(encryptedEmail);
-      
+
       return decryptedEmail;
     } catch {
       return null;
@@ -309,7 +314,7 @@ export class UserService {
   ): Promise<IUserSensitiveDataDecrypted | null> => {
     const sensitiveData =
       await this.userSensitiveDataRepository.getUserSensitiveDataById(userId);
-    
+
     if (!sensitiveData) return null;
 
     return {
@@ -403,13 +408,13 @@ export class UserService {
     }
 
     const assignmentId =
-        await this.permissionAssignmentCreatorRepository.createPermissionAssignment(
-          userId,
-          permissionRoleId,
-          accountId
-        );
+      await this.permissionAssignmentCreatorRepository.createPermissionAssignment(
+        userId,
+        permissionRoleId,
+        accountId
+      );
 
-      return assignmentId !== null;
+    return assignmentId !== null;
   };
 
   existsPermissionAssignment = async (

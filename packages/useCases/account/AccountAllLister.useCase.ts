@@ -1,6 +1,7 @@
 import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AccountService } from '@core/services/account.service';
+import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 
 @injectable()
 export class AccountAllListerUseCase {
@@ -9,7 +10,7 @@ export class AccountAllListerUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     isAdministrator: boolean
-  ): Promise<{ account_id: string; name: string }[]> {
+  ): Promise<IAccountBasic[]> {
     if (!isAdministrator) {
       throw new Error(t('is_not_administrator'));
     }
@@ -17,4 +18,3 @@ export class AccountAllListerUseCase {
     return this.accountService.listAllAccounts();
   }
 }
-

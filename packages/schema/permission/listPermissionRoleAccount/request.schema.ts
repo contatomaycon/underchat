@@ -7,4 +7,3 @@ export const listPermissionRoleAccountParamsRequestSchema = Type.Object({
 export type ListPermissionRoleAccountParamsRequest = Static<
   typeof listPermissionRoleAccountParamsRequestSchema
 >;
-

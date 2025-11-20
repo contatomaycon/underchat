@@ -26,30 +26,35 @@ export class UserSensitiveDataRepository {
       return null;
     }
 
-    const [userInfoResult, userDocumentResult, userAddressResult] = await Promise.all([
-      this.db
-        .select({
-          phone: userInfo.phone,
-        })
-        .from(userInfo)
-        .where(eq(userInfo.user_id, userId))
-        .execute(),
-      this.db
-        .select({
-          document: userDocument.document,
-        })
-        .from(userDocument)
-        .where(eq(userDocument.user_id, userId))
-        .execute(),
-      this.db
-        .select({
-          address1: userAddress.address1,
-          address2: userAddress.address2,
-        })
-        .from(userAddress)
-        .where(and(eq(userAddress.user_id, userId), isNull(userAddress.deleted_at)))
-        .execute(),
-    ]);
+    const [userInfoResult, userDocumentResult, userAddressResult] =
+      await Promise.all([
+        this.db
+          .select({
+            phone: userInfo.phone,
+          })
+          .from(userInfo)
+          .where(eq(userInfo.user_id, userId))
+          .execute(),
+
+        this.db
+          .select({
+            document: userDocument.document,
+          })
+          .from(userDocument)
+          .where(eq(userDocument.user_id, userId))
+          .execute(),
+
+        this.db
+          .select({
+            address1: userAddress.address1,
+            address2: userAddress.address2,
+          })
+          .from(userAddress)
+          .where(
+            and(eq(userAddress.user_id, userId), isNull(userAddress.deleted_at))
+          )
+          .execute(),
+      ]);
 
     return {
       phone: userInfoResult[0]?.phone ?? null,
@@ -60,4 +65,3 @@ export class UserSensitiveDataRepository {
     };
   };
 }
-

@@ -26,4 +26,3 @@ export class UserAccountViewerRepository {
     return result[0].account_id;
   };
 }
-

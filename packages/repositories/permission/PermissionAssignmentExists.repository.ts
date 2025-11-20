@@ -34,4 +34,3 @@ export class PermissionAssignmentExistsRepository {
     return result[0].total > 0;
   };
 }
-

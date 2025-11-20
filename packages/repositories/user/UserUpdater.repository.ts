@@ -49,9 +49,10 @@ export class UserUpdaterRepository {
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input);
 
-    const whereCondition = isAdministrator && input.account_id
-      ? eq(user.user_id, userId)
-      : and(eq(user.user_id, userId), eq(user.account_id, accountId));
+    const whereCondition =
+      isAdministrator && input.account_id
+        ? eq(user.user_id, userId)
+        : and(eq(user.user_id, userId), eq(user.account_id, accountId));
 
     const result = await this.db
       .update(user)

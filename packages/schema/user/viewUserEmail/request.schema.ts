@@ -4,7 +4,4 @@ export const viewUserEmailRequestSchema = Type.Object({
   user_id: Type.String({ format: 'uuid' }),
 });
 
-export type ViewUserEmailRequest = Static<
-  typeof viewUserEmailRequestSchema
->;
-
+export type ViewUserEmailRequest = Static<typeof viewUserEmailRequestSchema>;

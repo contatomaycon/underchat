@@ -34,4 +34,3 @@ export class PermissionAssignmentCreatorRepository {
     return permissionAssignmentId;
   };
 }
-

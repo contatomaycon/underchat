@@ -1,7 +1,7 @@
 import { injectable } from 'tsyringe';
 import { PermissionAssignmentUserViewerRepository } from '@core/repositories/permission/PermissionAssignmentUserViewer.repository';
 import { PermissionRoleViewerExistsRepository } from '@core/repositories/permission/PermissionRoleViewerExists.repository';
-import { PermissionRoleAccountListerRepository } from '@core/repositories/permission/PermissionRoleAccountViewer.repository';
+import { PermissionRoleAccountListerRepository } from '@core/repositories/permission/PermissionRoleAccountLister.repository';
 import { PermissionRoleAccountViewerRepository } from '@core/repositories/permission/PermissionRoleAccountViewer.repository';
 import { ListRoleAccountResponse } from '@core/schema/sector/listSectorRoleAccount/response.schema';
 import { PermissionRoleCountSectorViewerRepository } from '@core/repositories/permission/PermissionRoleCountSectorViewer.repository';
