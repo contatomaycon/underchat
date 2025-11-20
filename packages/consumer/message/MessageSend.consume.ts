@@ -666,9 +666,12 @@ export class MessageSendConsume {
 
       const phoneWithDdi =
         ddi && phone ? `+${ddi}${phone}` : phone ? `+${phone}` : '';
+      const phoneWithDdiWithoutPlus = phoneWithDdi.replace('+', '');
 
       if (phone) {
-        lines.push(`TEL;type=CELL;type=VOICE;waid=${phone}:${phoneWithDdi}`);
+        lines.push(
+          `TEL;type=CELL;type=VOICE;waid=${phoneWithDdiWithoutPlus}:${phoneWithDdi}`
+        );
       }
     }
 
