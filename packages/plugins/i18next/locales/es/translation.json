@@ -125,6 +125,7 @@
   "user_update_failed": "¡Error al actualizar el usuario!",
   "user_role_assigned_successfully": "¡Usuario vinculado al cargo con éxito!",
   "user_role_assignment_failed": "¡Error al vincular usuario al cargo!",
+  "user_role_deletion_failed": "¡Error al remover vinculación de cargo del usuario!",
   "user_already_has_role": "¡El usuario ya tiene este cargo!",
   "user_role_viewed_successfully": "¡Cargo del usuario visualizado con éxito!",
   "user_role_view_error": "¡Error al visualizar cargo del usuario!",

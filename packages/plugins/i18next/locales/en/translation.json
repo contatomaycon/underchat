@@ -125,6 +125,7 @@
   "user_update_failed": "User update failed!",
   "user_role_assigned_successfully": "User assigned to role successfully!",
   "user_role_assignment_failed": "Error assigning user to role!",
+  "user_role_deletion_failed": "Error removing user role assignment!",
   "user_already_has_role": "User already has this role!",
   "user_role_viewed_successfully": "User role viewed successfully!",
   "user_role_view_error": "Error viewing user role!",

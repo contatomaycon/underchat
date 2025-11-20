@@ -12,6 +12,7 @@ import { TFunction } from 'i18next';
 import { CreateUserRequest } from '@core/schema/user/createUser/request.schema';
 import { UserDocumentTypeViewerExistsRepository } from '@core/repositories/user/UserDocumentTypeViewerExists.repository';
 import { UserUpdaterRepository } from '@core/repositories/user/UserUpdater.repository';
+import { UserUpdaterTransactionRepository } from '@core/repositories/user/UserUpdaterTransaction.repository';
 import { IUpdateUser } from '@core/common/interfaces/IUpdateUser';
 import { UserInfoUpdaterRepository } from '@core/repositories/user/UserInfoUpdater.repository';
 import { IUpdateUserInfo } from '@core/common/interfaces/IUpdateUserInfo';
@@ -46,6 +47,7 @@ export class UserService {
     private readonly userTransactionCreatorRepository: UserTransactionCreatorRepository,
     private readonly userDocumentTypeViewerExistsRepository: UserDocumentTypeViewerExistsRepository,
     private readonly userUpdaterRepository: UserUpdaterRepository,
+    private readonly userUpdaterTransactionRepository: UserUpdaterTransactionRepository,
     private readonly userInfoUpdaterRepository: UserInfoUpdaterRepository,
     private readonly userDocumentUpdaterRepository: UserDocumentUpdaterRepository,
     private readonly userAddressUpdaterRepository: UserAddressUpdaterRepository,
@@ -166,6 +168,25 @@ export class UserService {
       input,
       accountId,
       isAdministrator
+    );
+  };
+
+  updateUserByIdWithAccountChange = async (
+    t: TFunction<'translation', undefined>,
+    userId: string,
+    input: IUpdateUser,
+    accountId: string,
+    isAdministrator: boolean
+  ): Promise<boolean> => {
+    const currentAccountId = await this.getUserAccountId(userId);
+
+    return this.userUpdaterTransactionRepository.updateUserWithAccountChange(
+      t,
+      userId,
+      input,
+      accountId,
+      isAdministrator,
+      currentAccountId
     );
   };
 

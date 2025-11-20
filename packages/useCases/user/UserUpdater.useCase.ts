@@ -46,6 +46,75 @@ export class UserUpdaterUseCase {
     return birthDate;
   }
 
+  private async validateAccount(
+    t: TFunction<'translation', undefined>,
+    accountId: string | null | undefined,
+    isAdministrator: boolean
+  ): Promise<void> {
+    if (!accountId || !isAdministrator) {
+      return;
+    }
+
+    const accountExists =
+      await this.accountService.existsAccountById(accountId);
+
+    if (!accountExists) {
+      throw new Error(t('account_not_found'));
+    }
+  }
+
+  private async validateUserStatus(
+    t: TFunction<'translation', undefined>,
+    userStatusId: string | null | undefined
+  ): Promise<void> {
+    if (!userStatusId) {
+      return;
+    }
+
+    const userStatusExists =
+      await this.userService.existsUserStatusById(userStatusId);
+
+    if (!userStatusExists) {
+      throw new Error(t('user_status_not_found'));
+    }
+  }
+
+  private async validateEmail(
+    t: TFunction<'translation', undefined>,
+    email: string | null | undefined,
+    userId: string
+  ): Promise<void> {
+    if (!email) {
+      return;
+    }
+
+    const emailC = this.encryptService.encrypt(email);
+    const exists = await this.userService.existsUserByEmail(emailC, userId);
+
+    if (exists) {
+      throw new Error(t('user_already_exists_email'));
+    }
+  }
+
+  private encryptEmailData(email: string | null | undefined) {
+    if (!email) {
+      return {
+        emailCEncrypted: null,
+        emailPartialEncrypted: null,
+        emailC: null,
+      };
+    }
+
+    return {
+      emailCEncrypted: this.passwordEncryptorService.encrypt(email),
+      emailPartialEncrypted: this.encryptService.sanitize(
+        email,
+        ETypeSanetize.email
+      ),
+      emailC: this.encryptService.encrypt(email),
+    };
+  }
+
   async insertUser(
     t: TFunction<'translation', undefined>,
     userId: string,
@@ -53,64 +122,41 @@ export class UserUpdaterUseCase {
     accountId: string,
     isAdministrator: boolean
   ): Promise<void> {
-    if (body.account_id && isAdministrator) {
-      const accountExists = await this.accountService.existsAccountById(
-        body.account_id
-      );
+    await this.validateAccount(t, body.account_id, isAdministrator);
+    await this.validateUserStatus(t, body.user_status_id);
+    await this.validateEmail(t, body.email, userId);
 
-      if (!accountExists) {
-        throw new Error(t('account_not_found'));
-      }
-    }
-
-    if (body.user_status_id) {
-      const userStatusExists = await this.userService.existsUserStatusById(
-        body.user_status_id
-      );
-      if (!userStatusExists) {
-        throw new Error(t('user_status_not_found'));
-      }
-    }
-
-    const emailCEncrypted = body.email
-      ? this.passwordEncryptorService.encrypt(body.email)
-      : null;
-
-    const emailPartialEncrypted = body.email
-      ? this.encryptService.sanitize(body.email, ETypeSanetize.email)
-      : null;
-
-    const emailC = body.email ? this.encryptService.encrypt(body.email) : null;
-
+    const emailData = this.encryptEmailData(body.email);
     const passwordEncrypted = body.password
       ? this.encryptService.encrypt(body.password)
       : null;
 
-    if (emailC) {
-      const exists = await this.userService.existsUserByEmail(emailC, userId);
-
-      if (exists) {
-        throw new Error(t('user_already_exists_email'));
-      }
-    }
+    const accountIdToUpdate =
+      body.account_id && isAdministrator ? body.account_id : undefined;
 
     const createUserInput: IUpdateUser = {
       user_status_id: body.user_status_id ?? null,
-      email: emailCEncrypted,
-      email_partial: emailPartialEncrypted,
-      email_c: emailC,
+      email: emailData.emailCEncrypted,
+      email_partial: emailData.emailPartialEncrypted,
+      email_c: emailData.emailC,
       password: passwordEncrypted,
+      account_id: accountIdToUpdate,
     };
 
-    if (body.account_id && isAdministrator) {
-      const currentUserAccountId =
-        await this.userService.getUserAccountId(userId);
+    const hasAccountChange =
+      isAdministrator &&
+      body.account_id &&
+      (await this.userService.getUserAccountId(userId)) !== body.account_id;
 
-      if (currentUserAccountId && currentUserAccountId !== body.account_id) {
-        await this.userService.deleteUserRole(userId);
-      }
-
-      createUserInput.account_id = body.account_id;
+    if (hasAccountChange) {
+      await this.userService.updateUserByIdWithAccountChange(
+        t,
+        userId,
+        createUserInput,
+        accountId,
+        isAdministrator
+      );
+      return;
     }
 
     const updateUser = await this.userService.updateUserById(

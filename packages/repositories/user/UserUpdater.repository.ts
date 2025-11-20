@@ -1,9 +1,13 @@
 import * as schema from '@core/models';
 import { user } from '@core/models';
-import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, ExtractTablesWithRelations } from 'drizzle-orm';
 import { IUpdateUser } from '@core/common/interfaces/IUpdateUser';
+import {
+  NodePgDatabase,
+  NodePgQueryResultHKT,
+} from 'drizzle-orm/node-postgres';
+import { PgTransaction } from 'drizzle-orm/pg-core';
 
 @injectable()
 export class UserUpdaterRepository {
@@ -55,6 +59,33 @@ export class UserUpdaterRepository {
         : and(eq(user.user_id, userId), eq(user.account_id, accountId));
 
     const result = await this.db
+      .update(user)
+      .set(updateInput)
+      .where(whereCondition)
+      .execute();
+
+    return result.rowCount === 1;
+  };
+
+  updateUserByIdTx = async (
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
+    userId: string,
+    input: IUpdateUser,
+    accountId: string,
+    isAdministrator: boolean
+  ): Promise<boolean> => {
+    const updateInput = this.updateInput(input);
+
+    const whereCondition =
+      isAdministrator && input.account_id
+        ? eq(user.user_id, userId)
+        : and(eq(user.user_id, userId), eq(user.account_id, accountId));
+
+    const result = await tx
       .update(user)
       .set(updateInput)
       .where(whereCondition)
