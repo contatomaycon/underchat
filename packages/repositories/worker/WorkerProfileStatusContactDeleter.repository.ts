@@ -1,12 +1,11 @@
 import * as schema from '@core/models';
 import { workerProfileStatusContact } from '@core/models';
-import { ExtractTablesWithRelations } from 'drizzle-orm';
+import { ExtractTablesWithRelations, eq } from 'drizzle-orm';
 import {
   NodePgDatabase,
   NodePgQueryResultHKT,
 } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { eq } from 'drizzle-orm';
 import { PgTransaction } from 'drizzle-orm/pg-core';
 
 @injectable()

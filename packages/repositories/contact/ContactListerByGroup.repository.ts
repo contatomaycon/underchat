@@ -31,10 +31,7 @@ export class ContactListerByGroupRepository {
         and(
           eq(contact.account_id, accountId),
           isNull(contact.deleted_at),
-          inArray(
-            contactGroupAssignment.contact_group_id,
-            contactGroupIds
-          )
+          inArray(contactGroupAssignment.contact_group_id, contactGroupIds)
         )
       )
       .execute();

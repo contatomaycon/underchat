@@ -708,7 +708,7 @@ export const useChannelsStore = defineStore('channels', {
         }
 
         return data.data;
-      } catch (error) {
+      } catch {
         this.loading = false;
 
         return null;
