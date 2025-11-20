@@ -284,6 +284,15 @@ const permissionsProfileStatus = [
 
 const canAccessProfileStatus = computed(() => can(permissionsProfileStatus));
 
+const permissionsProfileInfo = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EWorkerPermissions.worker_group,
+  EWorkerPermissions.profile_info_worker,
+];
+
+const canAccessProfileInfo = computed(() => can(permissionsProfileInfo));
+
 const formatDate = (dateString: string): string => {
   if (!dateString) return '';
 
@@ -1259,7 +1268,9 @@ onBeforeUnmount(() => {
         <VTab v-if="canAccessProfileStatus" value="profile-status">{{
           $t('profile_status_tab')
         }}</VTab>
-        <VTab value="profile-info">{{ $t('profile_information_tab') }}</VTab>
+        <VTab v-if="canAccessProfileInfo" value="profile-info">{{
+          $t('profile_information_tab')
+        }}</VTab>
       </VTabs>
 
       <VDivider />
