@@ -356,24 +356,25 @@ onMounted(resetForm);
       </VOverlay>
     </template>
 
-    <VCard>
-      <VCardTitle class="d-flex justify-space-between align-center">
-        <span>{{ $t('add_user') }}</span>
-        <DialogCloseBtn @click="isVisible = false" />
+    <VCard class="mx-2 my-2">
+      <VCardTitle class="pa-6 pb-4 text-h5">
+        {{ $t('add_user') }}
       </VCardTitle>
+      <VDivider />
 
-      <VTabs v-model="tab">
+      <VTabs v-model="tab" class="px-6">
         <VTab value="user_data">{{ t('user_data') }}</VTab>
         <VTab value="additional_info">{{ t('additional_info') }}</VTab>
         <VTab value="address">{{ t('address') }}</VTab>
       </VTabs>
+      <VDivider />
 
       <VCard flat>
-        <VCardText>
+        <VCardText class="pa-6">
           <VWindow v-model="tab" class="disable-tab-transition">
             <VWindowItem value="user_data">
-              <VForm class="mt-2" ref="refFormStep1" @submit.prevent>
-                <VRow class="mb-4">
+              <VForm class="mt-4" ref="refFormStep1" @submit.prevent>
+                <VRow class="mb-2">
                   <VCol v-if="isAdministrator" cols="12" md="6">
                     <AppTextField
                       v-model="email"
@@ -412,7 +413,7 @@ onMounted(resetForm);
                     />
                   </VCol>
                 </VRow>
-                <VRow class="mb-4">
+                <VRow class="mb-2">
                   <VCol cols="12" md="6">
                     <AppTextField
                       id="new-password"
@@ -461,7 +462,7 @@ onMounted(resetForm);
                     />
                   </VCol>
                 </VRow>
-                <VCardText class="d-flex justify-end flex-wrap gap-3">
+                <VCardText class="d-flex justify-end flex-wrap gap-3 mt-4 pt-4">
                   <VBtn
                     variant="tonal"
                     color="secondary"
@@ -475,8 +476,8 @@ onMounted(resetForm);
             </VWindowItem>
 
             <VWindowItem value="additional_info">
-              <VForm class="mt-2" ref="refFormStep2" @submit.prevent>
-                <VRow>
+              <VForm class="mt-4" ref="refFormStep2" @submit.prevent>
+                <VRow class="mb-2">
                   <VCol cols="12" md="6">
                     <div>
                       <VLabel class="mb-1 text-body-2">{{ $t('phone_ddi') }}:</VLabel>
@@ -597,7 +598,7 @@ onMounted(resetForm);
                     />
                   </VCol>
                 </VRow>
-                <VCardText class="d-flex justify-end flex-wrap gap-3">
+                <VCardText class="d-flex justify-end flex-wrap gap-3 mt-4 pt-4">
                   <VBtn variant="tonal" color="secondary" @click="goPrev">
                     {{ $t('previous') }}
                   </VBtn>
@@ -607,8 +608,8 @@ onMounted(resetForm);
             </VWindowItem>
 
             <VWindowItem value="address">
-              <VForm class="mt-2" ref="refFormAddUser" @submit.prevent>
-                <VRow>
+              <VForm class="mt-4" ref="refFormAddUser" @submit.prevent>
+                <VRow class="mb-2">
                   <VCol cols="12" md="6">
                     <AppSelect
                       :label="$t('country') + ':'"
@@ -682,7 +683,7 @@ onMounted(resetForm);
                     />
                   </VCol>
                 </VRow>
-                <VCardText class="d-flex justify-end flex-wrap gap-3">
+                <VCardText class="d-flex justify-end flex-wrap gap-3 mt-4 pt-4">
                   <VBtn variant="tonal" color="secondary" @click="goPrev">
                     {{ $t('previous') }}
                   </VBtn>

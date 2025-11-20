@@ -63,11 +63,11 @@ const canAssignRole = (userId: string) => {
   if (!can(permissionsAssignRole)) {
     return false;
   }
-  
+
   if (!isAdministrator.value) {
     return true;
   }
-  
+
   return currentUser.value?.user_id !== userId;
 };
 
@@ -260,9 +260,7 @@ watch(
 
         <template #item.actions="{ item }">
           <div class="d-flex gap-1">
-            <IconBtn
-              :style="{ visibility: canAssignRole(item.user_id) ? 'visible' : 'hidden' }"
-            >
+            <IconBtn v-if="canAssignRole(item.user_id)">
               <VTooltip
                 location="top"
                 transition="scale-transition"
@@ -270,9 +268,12 @@ watch(
               >
                 <span>{{ $t('assign_role') }}</span>
               </VTooltip>
-              <VIcon icon="tabler-user-plus" @click="openAssignRoleDialog(item.user_id)" />
+              <VIcon
+                icon="tabler-user-plus"
+                @click="openAssignRoleDialog(item.user_id)"
+              />
             </IconBtn>
-            
+
             <IconBtn v-if="$canPermission(permissionsEdit)">
               <VTooltip
                 location="top"

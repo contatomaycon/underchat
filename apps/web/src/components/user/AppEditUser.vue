@@ -238,12 +238,8 @@ const zipInputRef = ref<HTMLInputElement | null>(null);
 
 async function goNext() {
   if (tab.value === 'user_data') {
-    const v = await refFormStep1.value?.validate();
-    if (!v?.valid) return;
     tab.value = 'additional_info';
   } else if (tab.value === 'additional_info') {
-    const v = await refFormStep2.value?.validate();
-    if (!v?.valid) return;
     tab.value = 'address';
   }
 }
@@ -341,7 +337,7 @@ const address2Formatted = computed({
 
 const startEditPhone = async () => {
   if (!userId.value) return;
-  
+
   if (!isPhoneDecrypted.value && phonePartialOriginal.value) {
     isLoadingPhone.value = true;
     const decryptedPhone = await userStore.getUserPhoneDecrypted(userId.value);
@@ -383,7 +379,7 @@ const togglePhoneVisibility = async () => {
 
 const startEditEmail = async () => {
   if (!userId.value) return;
-  
+
   if (!isEmailDecrypted.value && emailPartialOriginal.value) {
     isLoadingEmail.value = true;
     const decryptedEmail = await userStore.getUserEmailDecrypted(userId.value);
@@ -419,7 +415,7 @@ const toggleEmailVisibility = async () => {
 
 const startEditDocument = async () => {
   if (!userId.value) return;
-  
+
   if (!isDocumentDecrypted.value && documentPartialOriginal.value) {
     isLoadingDocument.value = true;
     const decryptedDocument = await userStore.getUserDocumentDecrypted(
@@ -439,15 +435,16 @@ const startEditDocument = async () => {
 
 const handleDocumentBlur = () => {
   if (!isDocumentDecrypted.value) return;
-  
+
   if (document.value) {
     const digits = String(document.value).replaceAll(/\D/g, '');
     document.value = digits;
   }
-  
+
   const currentDigits = document.value?.replaceAll(/\D/g, '') ?? '';
-  const originalDigits = documentDecryptedOriginal.value?.replaceAll(/\D/g, '') ?? '';
-  
+  const originalDigits =
+    documentDecryptedOriginal.value?.replaceAll(/\D/g, '') ?? '';
+
   if (currentDigits === originalDigits) {
     isDocumentDecrypted.value = false;
     document.value = null;
@@ -481,10 +478,12 @@ const toggleDocumentVisibility = async () => {
 
 const startEditAddress1 = async () => {
   if (!userId.value) return;
-  
+
   if (!isAddress1Decrypted.value && address1PartialOriginal.value) {
     isLoadingAddress1.value = true;
-    const decryptedAddress1 = await userStore.getUserAddress1Decrypted(userId.value);
+    const decryptedAddress1 = await userStore.getUserAddress1Decrypted(
+      userId.value
+    );
     isLoadingAddress1.value = false;
 
     if (decryptedAddress1) {
@@ -511,7 +510,9 @@ const toggleAddress1Visibility = async () => {
   }
 
   isLoadingAddress1.value = true;
-  const decryptedAddress1 = await userStore.getUserAddress1Decrypted(userId.value);
+  const decryptedAddress1 = await userStore.getUserAddress1Decrypted(
+    userId.value
+  );
   isLoadingAddress1.value = false;
 
   if (decryptedAddress1) {
@@ -523,10 +524,12 @@ const toggleAddress1Visibility = async () => {
 
 const startEditAddress2 = async () => {
   if (!userId.value) return;
-  
+
   if (!isAddress2Decrypted.value && address2PartialOriginal.value) {
     isLoadingAddress2.value = true;
-    const decryptedAddress2 = await userStore.getUserAddress2Decrypted(userId.value);
+    const decryptedAddress2 = await userStore.getUserAddress2Decrypted(
+      userId.value
+    );
     isLoadingAddress2.value = false;
 
     if (decryptedAddress2) {
@@ -553,7 +556,9 @@ const toggleAddress2Visibility = async () => {
   }
 
   isLoadingAddress2.value = true;
-  const decryptedAddress2 = await userStore.getUserAddress2Decrypted(userId.value);
+  const decryptedAddress2 = await userStore.getUserAddress2Decrypted(
+    userId.value
+  );
   isLoadingAddress2.value = false;
 
   if (decryptedAddress2) {
@@ -578,10 +583,7 @@ const determineEmailToSave = (): string | null | undefined => {
     return undefined;
   }
 
-  if (
-    !emailValue.includes('*') &&
-    emailValue !== emailOriginalTrimmed
-  ) {
+  if (!emailValue.includes('*') && emailValue !== emailOriginalTrimmed) {
     return emailValue;
   }
 
@@ -621,7 +623,8 @@ const determineDocumentToSave = (): string | null | undefined => {
   if (!isDocumentDecrypted.value) return undefined;
 
   const digits = document.value?.replaceAll(/\D/g, '') ?? '';
-  const originalDigits = initialValues.value.document?.replaceAll(/\D/g, '') ?? '';
+  const originalDigits =
+    initialValues.value.document?.replaceAll(/\D/g, '') ?? '';
 
   if (digits === originalDigits) return undefined;
 
@@ -732,7 +735,9 @@ const buildUserDocument = (): {
     document?: string;
   } = {};
 
-  if (user_document_type_id.value !== initialValues.value.user_document_type_id) {
+  if (
+    user_document_type_id.value !== initialValues.value.user_document_type_id
+  ) {
     userDocument.user_document_type_id = user_document_type_id.value;
   }
 
@@ -829,7 +834,10 @@ const updateUser = async () => {
     body.user_status_id = user_status_id.value;
   }
 
-  if (isAdministrator.value && accountId.value !== initialValues.value.account_id) {
+  if (
+    isAdministrator.value &&
+    accountId.value !== initialValues.value.account_id
+  ) {
     body.account_id = accountId.value;
   }
 
@@ -848,8 +856,7 @@ const updateUser = async () => {
     body.user_address = userAddress;
   }
 
-  const hasPayload =
-    Object.keys(body).length > 0;
+  const hasPayload = Object.keys(body).length > 0;
 
   if (!hasPayload) {
     return;
@@ -883,7 +890,7 @@ const onCountryChange = async (val: number | null) => {
 
 const viewZipcode = async () => {
   if (isInitializing.value) return;
-  
+
   if (!country_id.value || !zip_code.value) {
     return;
   }
@@ -1008,7 +1015,7 @@ const loadUserData = async () => {
     user_status_id.value = responseUser.user_status?.user_status_id ?? null;
     initialValues.value.user_status_id = user_status_id.value;
   }
-  
+
   await nextTick();
   isInitializing.value = false;
 };
@@ -1032,21 +1039,26 @@ watch(password, () => {
 });
 
 let timer: number | null = null;
-watch(zip_code, (newValue, oldValue) => {
-  if (isInitializing.value) return;
-  
-  if (newValue === oldValue || oldValue === undefined) return;
-  
-  if (newValue === initialZipCode.value) return;
-  
-  if (!country_id.value || !zip_code.value || zip_code.value.length < 8) return;
+watch(
+  zip_code,
+  (newValue, oldValue) => {
+    if (isInitializing.value) return;
 
-  if (timer) (globalThis as Window & typeof globalThis).clearTimeout(timer);
+    if (newValue === oldValue || oldValue === undefined) return;
 
-  timer = (globalThis as Window & typeof globalThis).setTimeout(() => {
-    viewZipcode();
-  }, 400);
-}, { immediate: false });
+    if (newValue === initialZipCode.value) return;
+
+    if (!country_id.value || !zip_code.value || zip_code.value.length < 8)
+      return;
+
+    if (timer) (globalThis as Window & typeof globalThis).clearTimeout(timer);
+
+    timer = (globalThis as Window & typeof globalThis).setTimeout(() => {
+      viewZipcode();
+    }, 400);
+  },
+  { immediate: false }
+);
 </script>
 
 <template>
@@ -1062,24 +1074,25 @@ watch(zip_code, (newValue, oldValue) => {
       </VOverlay>
     </template>
 
-    <VCard>
-      <VCardTitle class="d-flex justify-space-between align-center">
-        <span>{{ $t('edit_user') }}</span>
-        <DialogCloseBtn @click="isVisible = false" />
+    <VCard class="mx-2 my-2">
+      <VCardTitle class="pa-6 pb-4 text-h5">
+        {{ $t('edit_user') }}
       </VCardTitle>
+      <VDivider />
 
-      <VTabs v-model="tab">
+      <VTabs v-model="tab" class="px-6">
         <VTab value="user_data">{{ t('user_data') }}</VTab>
         <VTab value="additional_info">{{ t('additional_info') }}</VTab>
         <VTab value="address">{{ t('address') }}</VTab>
       </VTabs>
+      <VDivider />
 
       <VCard flat>
-        <VCardText>
+        <VCardText class="pa-6">
           <VWindow v-model="tab" class="disable-tab-transition">
             <VWindowItem value="user_data">
-              <VForm class="mt-2" ref="refFormStep1" @submit.prevent>
-                <VRow class="mb-4">
+              <VForm class="mt-4" ref="refFormStep1" @submit.prevent>
+                <VRow class="mb-2">
                   <VCol v-if="isAdministrator" md="6" cols="12">
                     <AppTextField
                       v-model="emailFormatted"
@@ -1095,7 +1108,9 @@ watch(zip_code, (newValue, oldValue) => {
                     >
                       <template #append-inner>
                         <VIcon
-                          :icon="isEmailDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
+                          :icon="
+                            isEmailDecrypted ? 'tabler-eye-off' : 'tabler-eye'
+                          "
                           class="cursor-pointer"
                           :class="{ 'opacity-50': isLoadingEmail }"
                           @click.stop="toggleEmailVisibility"
@@ -1130,7 +1145,9 @@ watch(zip_code, (newValue, oldValue) => {
                     >
                       <template #append-inner>
                         <VIcon
-                          :icon="isEmailDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
+                          :icon="
+                            isEmailDecrypted ? 'tabler-eye-off' : 'tabler-eye'
+                          "
                           class="cursor-pointer"
                           :class="{ 'opacity-50': isLoadingEmail }"
                           @click.stop="toggleEmailVisibility"
@@ -1150,7 +1167,7 @@ watch(zip_code, (newValue, oldValue) => {
                     />
                   </VCol>
                 </VRow>
-                <VRow class="mb-4">
+                <VRow class="mb-2">
                   <VCol cols="12" md="6">
                     <AppTextField
                       id="new-password"
@@ -1199,7 +1216,7 @@ watch(zip_code, (newValue, oldValue) => {
                     />
                   </VCol>
                 </VRow>
-                <VRow v-if="isAdministrator" class="mb-4">
+                <VRow v-if="isAdministrator" class="mb-2">
                   <VCol md="6" cols="12">
                     <VLabel>{{ $t('status') }}:</VLabel>
                     <AppAutocomplete
@@ -1211,7 +1228,7 @@ watch(zip_code, (newValue, oldValue) => {
                     />
                   </VCol>
                 </VRow>
-                <VCardText class="d-flex justify-end flex-wrap gap-3">
+                <VCardText class="d-flex justify-end flex-wrap gap-3 mt-4 pt-4">
                   <VBtn
                     variant="tonal"
                     color="secondary"
@@ -1225,11 +1242,13 @@ watch(zip_code, (newValue, oldValue) => {
             </VWindowItem>
 
             <VWindowItem value="additional_info">
-              <VForm class="mt-2" ref="refFormStep2" @submit.prevent>
-                <VRow>
+              <VForm class="mt-4" ref="refFormStep2" @submit.prevent>
+                <VRow class="mb-2">
                   <VCol cols="12" md="6">
                     <div>
-                      <VLabel class="mb-1 text-body-2">{{ $t('phone_ddi') }}:</VLabel>
+                      <VLabel class="mb-1 text-body-2"
+                        >{{ $t('phone_ddi') }}:</VLabel
+                      >
                       <VMenu v-model="isCountryMenuOpen">
                         <template #activator="{ props: menuProps }">
                           <VTextField
@@ -1290,7 +1309,9 @@ watch(zip_code, (newValue, oldValue) => {
                     >
                       <template #append-inner>
                         <VIcon
-                          :icon="isPhoneDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
+                          :icon="
+                            isPhoneDecrypted ? 'tabler-eye-off' : 'tabler-eye'
+                          "
                           class="cursor-pointer"
                           :class="{ 'opacity-50': isLoadingPhone }"
                           @click.stop="togglePhoneVisibility"
@@ -1377,7 +1398,7 @@ watch(zip_code, (newValue, oldValue) => {
                     />
                   </VCol>
                 </VRow>
-                <VCardText class="d-flex justify-end flex-wrap gap-3">
+                <VCardText class="d-flex justify-end flex-wrap gap-3 mt-4 pt-4">
                   <VBtn variant="tonal" color="secondary" @click="goPrev">
                     {{ $t('previous') }}
                   </VBtn>
@@ -1387,8 +1408,8 @@ watch(zip_code, (newValue, oldValue) => {
             </VWindowItem>
 
             <VWindowItem value="address">
-              <VForm class="mt-2" ref="refFormEditUser" @submit.prevent>
-                <VRow>
+              <VForm class="mt-4" ref="refFormEditUser" @submit.prevent>
+                <VRow class="mb-2">
                   <VCol cols="12" md="6">
                     <AppSelect
                       :label="$t('country') + ':'"
@@ -1424,7 +1445,11 @@ watch(zip_code, (newValue, oldValue) => {
                     >
                       <template #append-inner>
                         <VIcon
-                          :icon="isAddress1Decrypted ? 'tabler-eye-off' : 'tabler-eye'"
+                          :icon="
+                            isAddress1Decrypted
+                              ? 'tabler-eye-off'
+                              : 'tabler-eye'
+                          "
                           class="cursor-pointer"
                           :class="{ 'opacity-50': isLoadingAddress1 }"
                           @click.stop="toggleAddress1Visibility"
@@ -1443,7 +1468,11 @@ watch(zip_code, (newValue, oldValue) => {
                     >
                       <template #append-inner>
                         <VIcon
-                          :icon="isAddress2Decrypted ? 'tabler-eye-off' : 'tabler-eye'"
+                          :icon="
+                            isAddress2Decrypted
+                              ? 'tabler-eye-off'
+                              : 'tabler-eye'
+                          "
                           class="cursor-pointer"
                           :class="{ 'opacity-50': isLoadingAddress2 }"
                           @click.stop="toggleAddress2Visibility"
@@ -1476,7 +1505,7 @@ watch(zip_code, (newValue, oldValue) => {
                     />
                   </VCol>
                 </VRow>
-                <VCardText class="d-flex justify-end flex-wrap gap-3">
+                <VCardText class="d-flex justify-end flex-wrap gap-3 mt-4 pt-4">
                   <VBtn variant="tonal" color="secondary" @click="goPrev">
                     {{ $t('previous') }}
                   </VBtn>
