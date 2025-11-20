@@ -1,13 +1,19 @@
 <script lang="ts" setup>
 import { useChannelsStore } from '@/@webcore/stores/channels';
+import { useContactGroupStore } from '@/@webcore/stores/contactGroup';
+import { useContactStore } from '@/@webcore/stores/contact';
 import { EColor } from '@core/common/enums/EColor';
 import { ProfileStatus } from '@core/schema/worker/listProfileStatus/response.schema';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EWorkerPermissions } from '@core/common/enums/EPermissions/worker';
 import { EWorkerProfileStatusType } from '@core/common/enums/EWorkerProfileStatusType';
 import { can } from '@layouts/plugins/casl';
+import { ListContactGroupAllResponse } from '@core/schema/contactGroup/listContactGroupAll/response.schema';
+import { ListContactResponse } from '@core/schema/contact/listContact/response.schema';
 
 const channelStore = useChannelsStore();
+const contactGroupStore = useContactGroupStore();
+const contactStore = useContactStore();
 const { t } = useI18n();
 
 const props = defineProps<{
@@ -113,6 +119,17 @@ const audioDuration = ref(0);
 const audioCurrentTime = ref(0);
 const audioWaveformBars = ref<number[]>([]);
 
+type StatusVisibilityType = 'all' | 'contact_groups' | 'contacts';
+const statusVisibilityType = ref<StatusVisibilityType>('all');
+const selectedContactGroups = ref<string[]>([]);
+const selectedContacts = ref<string[]>([]);
+const contactGroupsList = ref<ListContactGroupAllResponse[]>([]);
+const contactsList = ref<ListContactResponse[]>([]);
+const isLoadingContactGroups = ref(false);
+const isLoadingContacts = ref(false);
+const contactGroupSearch = ref('');
+const contactSearch = ref('');
+
 const statusTypeOptions = computed(() => [
   {
     value: EWorkerProfileStatusType.text,
@@ -136,6 +153,39 @@ const isPermanentOptions = [
   { value: 'false', title: 'Temporário' },
   { value: 'true', title: 'Permanente' },
 ];
+
+const statusVisibilityOptions = computed(() => [
+  { value: 'all', title: t('status_visibility_all') },
+  { value: 'contact_groups', title: t('status_visibility_contact_groups') },
+  { value: 'contacts', title: t('status_visibility_contacts') },
+]);
+
+const filteredContactGroups = computed(() => {
+  if (!contactGroupSearch.value) {
+    return contactGroupsList.value;
+  }
+  const search = contactGroupSearch.value.toLowerCase();
+  return contactGroupsList.value.filter((group) =>
+    group.name.toLowerCase().includes(search)
+  );
+});
+
+const filteredContacts = computed(() => {
+  if (!contactSearch.value) {
+    return contactsList.value;
+  }
+  const search = contactSearch.value.toLowerCase();
+  return contactsList.value.filter((contact) => {
+    const name = contact.name.toLowerCase();
+    const lastName = contact.last_name?.toLowerCase() || '';
+    const phone = contact.phone_partial?.toLowerCase() || '';
+    return (
+      name.includes(search) ||
+      lastName.includes(search) ||
+      phone.includes(search)
+    );
+  });
+});
 
 const acceptedFileTypes = computed(() => {
   if (selectedType.value === EWorkerProfileStatusType.image) {
@@ -166,6 +216,7 @@ const showCaptionInput = computed(() => {
   if (selectedType.value === EWorkerProfileStatusType.text) {
     return false;
   }
+
   return [
     EWorkerProfileStatusType.image,
     EWorkerProfileStatusType.video,
@@ -246,7 +297,77 @@ const resetPendingSelections = () => {
   caption.value = '';
   isPermanent.value = 'false';
   fileInputKey.value += 1;
+  statusVisibilityType.value = 'all';
+  selectedContactGroups.value = [];
+  selectedContacts.value = [];
+  contactGroupSearch.value = '';
+  contactSearch.value = '';
 };
+
+const loadContactGroups = async () => {
+  if (contactGroupsList.value.length > 0) return;
+  
+  try {
+    isLoadingContactGroups.value = true;
+    const response = await contactGroupStore.listContactGroupAll();
+    if (response) {
+      contactGroupsList.value = response;
+    }
+  } finally {
+    isLoadingContactGroups.value = false;
+  }
+};
+
+const loadContacts = async () => {
+  if (contactsList.value.length > 0) return;
+  
+  try {
+    isLoadingContacts.value = true;
+    const allContacts: ListContactResponse[] = [];
+    let currentPage = 1;
+    let hasMore = true;
+    const perPage = 200;
+
+    while (hasMore) {
+      const response = await contactStore.listContact({
+        page: currentPage,
+        per_page: perPage,
+      });
+
+      if (!response?.results?.length) {
+        hasMore = false;
+        continue;
+      }
+
+      allContacts.push(...response.results);
+
+      if (response.pagings && currentPage < response.pagings.total_pages) {
+        currentPage++;
+        continue;
+      }
+
+      hasMore = false;
+    }
+
+    contactsList.value = allContacts;
+  } finally {
+    isLoadingContacts.value = false;
+  }
+};
+
+watch(statusVisibilityType, (newValue) => {
+  selectedContactGroups.value = [];
+  selectedContacts.value = [];
+  
+  if (newValue === 'contact_groups') {
+    loadContactGroups();
+    return;
+  }
+
+  if (newValue === 'contacts') {
+    loadContacts();
+  }
+});
 
 const fetchProfileStatus = async () => {
   if (!channelId.value) return;
@@ -339,9 +460,7 @@ const handleFilesSelected = (files: File[] | File | null) => {
     selectedStatusPreviews.value.push({ id, file, src });
   });
 
-  if (sanitizedFiles.length > 0) {
-    fileInputKey.value += 1;
-  }
+  fileInputKey.value += 1;
 };
 
 const removePreview = (previewId: string) => {
@@ -397,6 +516,24 @@ const saveProfileStatus = async () => {
     isSavingProfileStatus.value = true;
 
     const files = selectedStatusPreviews.value.map((preview) => preview.file);
+    const visibilityData: {
+      visibility_type?: StatusVisibilityType;
+      contact_group_ids?: string[];
+      contact_ids?: string[];
+    } = {};
+
+    if (statusVisibilityType.value !== 'all') {
+      visibilityData.visibility_type = statusVisibilityType.value;
+      
+      if (statusVisibilityType.value === 'contact_groups' && selectedContactGroups.value.length > 0) {
+        visibilityData.contact_group_ids = selectedContactGroups.value;
+      }
+
+      if (statusVisibilityType.value === 'contacts' && selectedContacts.value.length > 0) {
+        visibilityData.contact_ids = selectedContacts.value;
+      }
+    }
+
     const response = await channelStore.uploadWorkerProfileStatus(
       channelId.value,
       selectedType.value,
@@ -405,7 +542,8 @@ const saveProfileStatus = async () => {
         ? textContent.value
         : undefined,
       showCaptionInput.value ? caption.value : undefined,
-      isPermanent.value
+      isPermanent.value,
+      visibilityData
     );
 
     if (response) {
@@ -463,11 +601,12 @@ const toggleAudioPreview = () => {
 
   if (isAudioPlaying.value) {
     audioPreviewRef.value.pause();
-  } else {
-    audioPreviewRef.value.play().catch(() => {
-      isAudioPlaying.value = false;
-    });
+    return;
   }
+
+  audioPreviewRef.value.play().catch(() => {
+    isAudioPlaying.value = false;
+  });
 };
 
 const updateAudioProgress = () => {
@@ -680,6 +819,50 @@ onBeforeUnmount(() => {
                   item-title="title"
                   item-value="value"
                   :label="$t('is_permanent')"
+                  class="mb-4"
+                />
+
+                <VSelect
+                  v-model="statusVisibilityType"
+                  :items="statusVisibilityOptions"
+                  item-title="title"
+                  item-value="value"
+                  :label="$t('status_visibility_label')"
+                  class="mb-4"
+                />
+
+                <VAutocomplete
+                  v-if="statusVisibilityType === 'contact_groups'"
+                  v-model="selectedContactGroups"
+                  :items="filteredContactGroups"
+                  item-title="name"
+                  item-value="contact_group_id"
+                  :label="$t('status_visibility_select_contact_groups')"
+                  multiple
+                  chips
+                  closable-chips
+                  :loading="isLoadingContactGroups"
+                  :search="contactGroupSearch"
+                  @update:search="contactGroupSearch = $event"
+                  class="mb-4"
+                />
+
+                <VAutocomplete
+                  v-if="statusVisibilityType === 'contacts'"
+                  v-model="selectedContacts"
+                  :items="filteredContacts"
+                  :item-title="(item) => {
+                    const fullName = `${item.name}${item.last_name ? ' ' + item.last_name : ''}`;
+                    return item.phone_partial ? `${fullName} (${item.phone_partial})` : fullName;
+                  }"
+                  item-value="contact_id"
+                  :label="$t('status_visibility_select_contacts')"
+                  multiple
+                  chips
+                  closable-chips
+                  :loading="isLoadingContacts"
+                  :search="contactSearch"
+                  @update:search="contactSearch = $event"
                   class="mb-4"
                 />
               </div>

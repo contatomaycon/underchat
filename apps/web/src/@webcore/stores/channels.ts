@@ -435,7 +435,12 @@ export const useChannelsStore = defineStore('channels', {
       files?: File[],
       text?: string,
       caption?: string,
-      isPermanent: string = 'false'
+      isPermanent: string = 'false',
+      visibilityData?: {
+        visibility_type?: string;
+        contact_group_ids?: string[];
+        contact_ids?: string[];
+      }
     ): Promise<WorkerProfileStatus[] | null> {
       if (!workerId || !workerProfileStatusTypeId) return null;
 
@@ -463,6 +468,28 @@ export const useChannelsStore = defineStore('channels', {
         }
 
         formData.append('is_permanent', isPermanent);
+
+        if (visibilityData) {
+          if (visibilityData.visibility_type) {
+            formData.append('visibility_type', visibilityData.visibility_type);
+          }
+          if (
+            visibilityData.contact_group_ids &&
+            visibilityData.contact_group_ids.length > 0
+          ) {
+            visibilityData.contact_group_ids.forEach((id) => {
+              formData.append('contact_group_ids', id);
+            });
+          }
+          if (
+            visibilityData.contact_ids &&
+            visibilityData.contact_ids.length > 0
+          ) {
+            visibilityData.contact_ids.forEach((id) => {
+              formData.append('contact_ids', id);
+            });
+          }
+        }
 
         const config: AxiosRequestConfig<FormData> = {
           headers: {

@@ -51,7 +51,7 @@ export const sanitizationMap: Record<ETypeSanetize, (value: string) => string> =
         const last4 = cleaned.slice(-4);
         const maskLength = cleaned.length - (ddd ? 2 : 0) - 4;
         const mask = '*'.repeat(Math.max(0, maskLength));
-        
+
         if (ddd) {
           return `(${ddd}) ${mask}-${last4}`;
         }
