@@ -74,11 +74,11 @@ export class ContactGroupAssignmentCreatorUseCase {
 
   private normalizePhoneFromValidation(
     validationPhone: string | null | undefined,
-    defaultPhone: string | null | undefined,
-    defaultDdi: string | null | undefined
+    defaultPhone: string | null | undefined = '',
+    defaultDdi: string | null | undefined = '55'
   ): { phone: string; phoneDdi: string } {
-    const phone = defaultPhone || '';
-    const ddi = defaultDdi || '55';
+    const phone = defaultPhone ?? '';
+    const ddi = defaultDdi ?? '55';
 
     if (!validationPhone) {
       return { phone, phoneDdi: ddi };
@@ -127,13 +127,11 @@ export class ContactGroupAssignmentCreatorUseCase {
         );
       }
 
-      const defaultPhone = (contact.phone ?? '') as string;
-      const defaultDdi = (contact.phone_ddi ?? '55') as string;
       const { phone: phoneToSave, phoneDdi: phoneDdiToSave } =
         this.normalizePhoneFromValidation(
           validationResult.phone,
-          defaultPhone,
-          defaultDdi
+          contact.phone ?? '',
+          contact.phone_ddi ?? '55'
         );
 
       const contactCreated = await this.contactService.createContactTx(

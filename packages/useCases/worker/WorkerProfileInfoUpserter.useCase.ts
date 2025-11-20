@@ -25,9 +25,14 @@ export class WorkerProfileInfoUpserterUseCase {
     if (typeof field === 'string') return field;
     if (typeof field === 'object' && field !== null && 'value' in field) {
       const value = (field as { value: unknown }).value;
+
       if (typeof value === 'string') return value;
       if (value === null || value === undefined) return undefined;
-      return String(value);
+      if (typeof value === 'number' || typeof value === 'boolean') {
+        return String(value);
+      }
+
+      return undefined;
     }
 
     if (typeof field === 'number' || typeof field === 'boolean') {

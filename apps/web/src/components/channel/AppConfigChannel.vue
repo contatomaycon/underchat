@@ -745,8 +745,8 @@ const saveProfileStatus = async () => {
 
   if (selectedType.value === EWorkerProfileStatusType.text) {
     if (!validateTextContent()) return;
-  } else {
-    if (!validateStatusPreviews()) return;
+  } else if (!validateStatusPreviews()) {
+    return;
   }
 
   if (!validateCaption()) return;
@@ -1085,6 +1085,127 @@ const onCropDrag = (e: MouseEvent | TouchEvent) => {
   cropArea.value.y = Math.max(0, Math.min(y, maxY));
 };
 
+const getEventCoordinates = (
+  e: MouseEvent | TouchEvent
+): { x: number; y: number } => {
+  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+  return { x: clientX, y: clientY };
+};
+
+const getFixedPoint = (
+  handle: 'nw' | 'ne' | 'sw' | 'se',
+  initialX: number,
+  initialY: number,
+  initialWidth: number,
+  initialHeight: number
+): { x: number; y: number } => {
+  const fixedPoints: Record<
+    'nw' | 'ne' | 'sw' | 'se',
+    { x: number; y: number }
+  > = {
+    nw: { x: initialX + initialWidth, y: initialY + initialHeight },
+    ne: { x: initialX, y: initialY + initialHeight },
+    sw: { x: initialX + initialWidth, y: initialY },
+    se: { x: initialX, y: initialY },
+  };
+
+  return fixedPoints[handle];
+};
+
+const calculateInitialPosition = (
+  handle: 'nw' | 'ne' | 'sw' | 'se',
+  fixedX: number,
+  fixedY: number,
+  size: number
+): { x: number; y: number } => {
+  const positions: Record<'nw' | 'ne' | 'sw' | 'se', { x: number; y: number }> =
+    {
+      nw: { x: fixedX - size, y: fixedY - size },
+      ne: { x: fixedX, y: fixedY - size },
+      sw: { x: fixedX - size, y: fixedY },
+      se: { x: fixedX, y: fixedY },
+    };
+
+  return positions[handle];
+};
+
+const applyMinSizeConstraint = (
+  handle: 'nw' | 'ne' | 'sw' | 'se',
+  fixedX: number,
+  fixedY: number,
+  minSize: number,
+  currentWidth: number,
+  currentHeight: number,
+  currentX: number,
+  currentY: number
+): { width: number; height: number; x: number; y: number } => {
+  if (currentWidth >= minSize && currentHeight >= minSize) {
+    return {
+      width: currentWidth,
+      height: currentHeight,
+      x: currentX,
+      y: currentY,
+    };
+  }
+
+  const position = calculateInitialPosition(handle, fixedX, fixedY, minSize);
+  return { width: minSize, height: minSize, x: position.x, y: position.y };
+};
+
+const applyMaxSizeConstraint = (
+  handle: 'nw' | 'ne' | 'sw' | 'se',
+  fixedX: number,
+  fixedY: number,
+  maxWidth: number,
+  maxHeight: number,
+  currentWidth: number,
+  currentHeight: number,
+  currentX: number,
+  currentY: number
+): { width: number; height: number; x: number; y: number } => {
+  let width = currentWidth;
+  let height = currentHeight;
+  let x = currentX;
+  let y = currentY;
+
+  if (width > maxWidth) {
+    width = maxWidth;
+    height = maxWidth;
+    x = handle === 'nw' || handle === 'sw' ? fixedX - maxWidth : fixedX;
+  }
+
+  if (height > maxHeight) {
+    height = maxHeight;
+    width = maxHeight;
+    y = handle === 'nw' || handle === 'ne' ? fixedY - maxHeight : fixedY;
+  }
+
+  return { width, height, x, y };
+};
+
+const applyBoundaryConstraints = (
+  maxWidth: number,
+  maxHeight: number,
+  width: number,
+  height: number,
+  x: number,
+  y: number
+): { x: number; y: number } => {
+  let newX = Math.max(0, x);
+  let newY = Math.max(0, y);
+
+  if (newX + width > maxWidth) {
+    newX = maxWidth - width;
+  }
+
+  if (newY + height > maxHeight) {
+    newY = maxHeight - height;
+  }
+
+  return { x: newX, y: newY };
+};
+
 const onCropResize = (e: MouseEvent | TouchEvent) => {
   if (
     !cropArea.value.isResizing ||
@@ -1094,140 +1215,75 @@ const onCropResize = (e: MouseEvent | TouchEvent) => {
     return;
 
   e.preventDefault();
-  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
 
   const container = cropImageRef.value.parentElement;
   if (!container) return;
 
+  const { x: clientX, y: clientY } = getEventCoordinates(e);
   const rect = container.getBoundingClientRect();
   const mouseX = clientX - rect.left;
   const mouseY = clientY - rect.top;
 
   const handle = cropArea.value.resizeHandle;
-
-  let fixedX = cropArea.value.initialX;
-  let fixedY = cropArea.value.initialY;
-
-  if (handle === 'nw') {
-    fixedX = cropArea.value.initialX + cropArea.value.initialWidth;
-    fixedY = cropArea.value.initialY + cropArea.value.initialHeight;
-  }
-
-  if (handle === 'ne') {
-    fixedX = cropArea.value.initialX;
-    fixedY = cropArea.value.initialY + cropArea.value.initialHeight;
-  }
-
-  if (handle === 'sw') {
-    fixedX = cropArea.value.initialX + cropArea.value.initialWidth;
-    fixedY = cropArea.value.initialY;
-  }
-
-  if (handle === 'se') {
-    fixedX = cropArea.value.initialX;
-    fixedY = cropArea.value.initialY;
-  }
+  const { x: fixedX, y: fixedY } = getFixedPoint(
+    handle,
+    cropArea.value.initialX,
+    cropArea.value.initialY,
+    cropArea.value.initialWidth,
+    cropArea.value.initialHeight
+  );
 
   const deltaX = mouseX - fixedX;
   const deltaY = mouseY - fixedY;
   const size = Math.max(Math.abs(deltaX), Math.abs(deltaY));
 
-  let newWidth = size;
-  let newHeight = size;
-  let newX = fixedX;
-  let newY = fixedY;
-
-  if (handle === 'nw') {
-    newX = fixedX - newWidth;
-    newY = fixedY - newHeight;
-  }
-
-  if (handle === 'ne') {
-    newX = fixedX;
-    newY = fixedY - newHeight;
-  }
-
-  if (handle === 'sw') {
-    newX = fixedX - newWidth;
-    newY = fixedY;
-  }
-
-  if (handle === 'se') {
-    newX = fixedX;
-    newY = fixedY;
-  }
+  const { x: initialX, y: initialY } = calculateInitialPosition(
+    handle,
+    fixedX,
+    fixedY,
+    size
+  );
 
   const maxWidth = cropImageRef.value.offsetWidth;
   const maxHeight = cropImageRef.value.offsetHeight;
   const minSize = 50;
 
-  if (newWidth < minSize) {
-    newWidth = minSize;
-    newHeight = minSize;
+  let { width, height, x, y } = applyMinSizeConstraint(
+    handle,
+    fixedX,
+    fixedY,
+    minSize,
+    size,
+    size,
+    initialX,
+    initialY
+  );
 
-    if (handle === 'nw') {
-      newX = fixedX - minSize;
-      newY = fixedY - minSize;
-    }
+  ({ width, height, x, y } = applyMaxSizeConstraint(
+    handle,
+    fixedX,
+    fixedY,
+    maxWidth,
+    maxHeight,
+    width,
+    height,
+    x,
+    y
+  ));
 
-    if (handle === 'ne') {
-      newX = fixedX;
-      newY = fixedY - minSize;
-    }
+  ({ x, y } = applyBoundaryConstraints(
+    maxWidth,
+    maxHeight,
+    width,
+    height,
+    x,
+    y
+  ));
 
-    if (handle === 'sw') {
-      newX = fixedX - minSize;
-      newY = fixedY;
-    }
-  }
-
-  if (newWidth > maxWidth) {
-    newWidth = maxWidth;
-    newHeight = maxWidth;
-
-    if (handle === 'nw' || handle === 'sw') {
-      newX = fixedX - maxWidth;
-    }
-
-    if (handle === 'ne' || handle === 'se') {
-      newX = fixedX;
-    }
-  }
-
-  if (newHeight > maxHeight) {
-    newHeight = maxHeight;
-    newWidth = maxHeight;
-
-    if (handle === 'nw' || handle === 'ne') {
-      newY = fixedY - maxHeight;
-    }
-
-    if (handle === 'sw' || handle === 'se') {
-      newY = fixedY;
-    }
-  }
-
-  if (newX < 0) {
-    newX = 0;
-  }
-
-  if (newY < 0) {
-    newY = 0;
-  }
-
-  if (newX + newWidth > maxWidth) {
-    newX = maxWidth - newWidth;
-  }
-
-  if (newY + newHeight > maxHeight) {
-    newY = maxHeight - newHeight;
-  }
-
-  cropArea.value.width = newWidth;
-  cropArea.value.height = newHeight;
-  cropArea.value.x = newX;
-  cropArea.value.y = newY;
+  cropArea.value.width = width;
+  cropArea.value.height = height;
+  cropArea.value.x = x;
+  cropArea.value.y = y;
 };
 
 const endCropDrag = () => {
