@@ -10,6 +10,7 @@ import { BaileysMessageStatusStoriesService } from '@core/services/baileys/metho
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { IProfileStatusMessage } from '@core/common/interfaces/IProfileStatusMessage';
+import { IUpdateProfileStatusExternalId } from '@core/common/interfaces/IUpdateProfileStatusExternalId';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
@@ -717,6 +718,13 @@ export class MessageSendConsume {
         throw new Error('Failed to send status text');
       }
 
+      if (result?.key?.id) {
+        await this.sendExternalIdUpdate(
+          data.worker_profile_status_id,
+          result.key.id
+        );
+      }
+
       return;
     }
 
@@ -733,6 +741,13 @@ export class MessageSendConsume {
 
       if (!result) {
         throw new Error('Failed to send status image');
+      }
+
+      if (result?.key?.id) {
+        await this.sendExternalIdUpdate(
+          data.worker_profile_status_id,
+          result.key.id
+        );
       }
 
       return;
@@ -753,6 +768,13 @@ export class MessageSendConsume {
         throw new Error('Failed to send status video');
       }
 
+      if (result?.key?.id) {
+        await this.sendExternalIdUpdate(
+          data.worker_profile_status_id,
+          result.key.id
+        );
+      }
+
       return;
     }
 
@@ -769,6 +791,13 @@ export class MessageSendConsume {
 
       if (!result) {
         throw new Error('Failed to send status audio');
+      }
+
+      if (result?.key?.id) {
+        await this.sendExternalIdUpdate(
+          data.worker_profile_status_id,
+          result.key.id
+        );
       }
 
       return;
@@ -1009,5 +1038,23 @@ export class MessageSendConsume {
     const topic = this.kafkaServiceQueueService.updateMessage();
 
     await this.streamProducerService.send(topic, input);
+  }
+
+  private async sendExternalIdUpdate(
+    workerProfileStatusId: string,
+    externalId: string
+  ): Promise<void> {
+    try {
+      const updateMessage: IUpdateProfileStatusExternalId = {
+        worker_profile_status_id: workerProfileStatusId,
+        external_id: externalId,
+      };
+
+      const topic =
+        this.kafkaServiceQueueService.updateProfileStatusExternalId();
+      await this.streamProducerService.send(topic, updateMessage);
+    } catch (error) {
+      console.error('Error sending external ID update to Kafka:', error);
+    }
   }
 }
