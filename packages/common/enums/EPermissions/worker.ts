@@ -7,4 +7,5 @@ export enum EWorkerPermissions {
   view_worker_logs = 'view_worker_logs',
   recreate_worker = 'recreate_worker',
   profile_status_worker = 'profile_status_worker',
+  profile_info_worker = 'profile_info_worker',
 }

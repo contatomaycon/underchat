@@ -743,7 +743,18 @@ const deleteStatus = async (status: ProfileStatus) => {
 const loadProfileInfo = async () => {
   if (!channelId.value) return;
 
-  const worker = await channelStore.getWorkerById(channelId.value);
+  const profileInfo = await channelStore.fetchWorkerProfileInfo(
+    channelId.value
+  );
+
+  if (profileInfo) {
+    profilePhoto.value = profileInfo.photo;
+    profileName.value = profileInfo.name;
+    profileDescription.value = profileInfo.message;
+
+    return;
+  }
+
   profilePhoto.value = null;
   profileName.value = null;
   profileDescription.value = null;
@@ -1130,13 +1141,20 @@ const saveProfilePhoto = async () => {
   try {
     isUploadingProfilePhoto.value = true;
 
-    const formData = new FormData();
-    formData.append('photo', profilePhotoFile.value);
-
-    channelStore.showSnackbar(
-      'Funcionalidade de upload será implementada quando a API estiver disponível',
-      EColor.info
+    const result = await channelStore.uploadWorkerProfileInfo(
+      channelId.value,
+      profileName.value,
+      profileDescription.value,
+      profilePhotoFile.value
     );
+
+    if (result) {
+      profilePhoto.value = result.photo;
+      profileName.value = result.name;
+      profileDescription.value = result.message;
+      cropDialog.value.croppedImage = '';
+      profilePhotoFile.value = null;
+    }
   } catch (error) {
     channelStore.showSnackbar(
       t('profile_photo_upload_error') || 'Erro ao fazer upload da foto',
@@ -1153,18 +1171,20 @@ const saveProfileInfo = async () => {
   try {
     isSavingProfileInfo.value = true;
 
-    const formData = new FormData();
-    if (profileName.value) {
-      formData.append('name', profileName.value);
-    }
-    if (profileDescription.value) {
-      formData.append('message', profileDescription.value);
-    }
-
-    channelStore.showSnackbar(
-      'Funcionalidade de salvamento será implementada quando a API estiver disponível',
-      EColor.info
+    const result = await channelStore.uploadWorkerProfileInfo(
+      channelId.value,
+      profileName.value,
+      profileDescription.value,
+      profilePhotoFile.value || null
     );
+
+    if (result) {
+      profilePhoto.value = result.photo;
+      profileName.value = result.name;
+      profileDescription.value = result.message;
+      profilePhotoFile.value = null;
+      cropDialog.value.croppedImage = '';
+    }
   } catch (error) {
     channelStore.showSnackbar(
       'Erro ao salvar informações do perfil',

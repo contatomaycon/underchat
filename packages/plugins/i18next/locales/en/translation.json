@@ -283,5 +283,11 @@
   "phone_number_not_valid_on_whatsapp": "Phone number is not valid on WhatsApp!",
   "phone_validation_timeout": "Phone validation timeout!",
   "no_active_worker_for_validation": "No active worker found for validation!",
-  "phone_required_for_validation": "Phone is required for validation!"
+  "phone_required_for_validation": "Phone is required for validation!",
+  "profile_info_photo_upload_error": "Error uploading profile photo!",
+  "profile_info_not_found": "Profile information not found!",
+  "profile_info_view_success": "Profile information viewed successfully!",
+  "profile_info_upload_success": "Profile information saved successfully!",
+  "profile_info_upload_error": "Error saving profile information!",
+  "profile_info_file_size_exceeded": "File exceeds the maximum allowed size of {{max}}."
 }

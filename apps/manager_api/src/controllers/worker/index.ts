@@ -11,6 +11,8 @@ import { uploadProfileStatus } from './methods/uploadProfileStatus';
 import { listProfileStatus } from './methods/listProfileStatus';
 import { updateProfileStatus } from './methods/updateProfileStatus';
 import { deleteProfileStatus } from './methods/deleteProfileStatus';
+import { uploadProfileInfo } from './methods/uploadProfileInfo';
+import { viewProfileInfo } from './methods/viewProfileInfo';
 
 @injectable()
 class WorkerController {
@@ -26,6 +28,8 @@ class WorkerController {
   public listProfileStatus = listProfileStatus;
   public updateProfileStatus = updateProfileStatus;
   public deleteProfileStatus = deleteProfileStatus;
+  public uploadProfileInfo = uploadProfileInfo;
+  public viewProfileInfo = viewProfileInfo;
 }
 
 export default WorkerController;

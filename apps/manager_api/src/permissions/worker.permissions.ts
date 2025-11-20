@@ -49,3 +49,10 @@ export const workerProfileStatusPermissions = [
   EWorkerPermissions.worker_group,
   EWorkerPermissions.profile_status_worker,
 ];
+
+export const workerProfileInfoPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EWorkerPermissions.worker_group,
+  EWorkerPermissions.profile_info_worker,
+];

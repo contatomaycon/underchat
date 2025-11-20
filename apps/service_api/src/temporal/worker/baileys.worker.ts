@@ -7,7 +7,7 @@ export const baileysWorker = async (fastify: FastifyInstance) => {
   const worker = await Worker.create({
     connection: fastify.temporal.nativeConnection,
     workflowsPath: require.resolve('@core/temporal/workflows/baileys.workflow'),
-    activities: activities,
+    activities,
     taskQueue: 'baileys-queue',
   });
 

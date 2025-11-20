@@ -283,5 +283,11 @@
   "phone_number_not_valid_on_whatsapp": "Número de telefone não é válido no WhatsApp!",
   "phone_validation_timeout": "Tempo de espera para validação do telefone excedido!",
   "no_active_worker_for_validation": "Nenhum canal ativo encontrado para validação!",
-  "phone_required_for_validation": "Telefone é obrigatório para validação!"
+  "phone_required_for_validation": "Telefone é obrigatório para validação!",
+  "profile_info_photo_upload_error": "Erro ao fazer upload da foto do perfil!",
+  "profile_info_not_found": "Informações do perfil não encontradas!",
+  "profile_info_view_success": "Informações do perfil visualizadas com sucesso!",
+  "profile_info_upload_success": "Informações do perfil salvas com sucesso!",
+  "profile_info_upload_error": "Erro ao salvar as informações do perfil!",
+  "profile_info_file_size_exceeded": "Arquivo excede o tamanho máximo permitido de {{max}}."
 }
