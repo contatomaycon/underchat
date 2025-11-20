@@ -80,7 +80,9 @@ export class ContactService {
       : null;
 
     const emailPartialEncrypted = input.email
-      ? this.encryptService.sanitize(input.email, ETypeSanetize.email)
+      ? (
+          this.encryptService.sanitize(input.email, ETypeSanetize.email) ?? ''
+        ).slice(0, 50)
       : null;
 
     const emailC = input.email
@@ -160,7 +162,9 @@ export class ContactService {
       : null;
 
     const emailPartialEncrypted = input.email
-      ? this.encryptService.sanitize(input.email, ETypeSanetize.email)
+      ? (
+          this.encryptService.sanitize(input.email, ETypeSanetize.email) ?? ''
+        ).slice(0, 50)
       : null;
 
     const emailC = input.email
@@ -235,7 +239,9 @@ export class ContactService {
       : null;
 
     const emailPartialEncrypted = input.email
-      ? this.encryptService.sanitize(input.email, ETypeSanetize.email)
+      ? (
+          this.encryptService.sanitize(input.email, ETypeSanetize.email) ?? ''
+        ).slice(0, 50)
       : null;
 
     const emailC = input.email

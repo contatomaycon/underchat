@@ -4,6 +4,7 @@ import { WorkerProfileStatusListerRepository } from '@core/repositories/worker/W
 import { WorkerProfileStatusUpdaterRepository } from '@core/repositories/worker/WorkerProfileStatusUpdater.repository';
 import { WorkerProfileStatusDeleterRepository } from '@core/repositories/worker/WorkerProfileStatusDeleter.repository';
 import { WorkerProfileStatusViewerRepository } from '@core/repositories/worker/WorkerProfileStatusViewer.repository';
+import { WorkerProfileStatusContactListerRepository } from '@core/repositories/worker/WorkerProfileStatusContactLister.repository';
 import { ProfileStatus } from '@core/schema/worker/listProfileStatus/response.schema';
 import { WorkerProfileStatus } from '@core/schema/worker/uploadProfileStatus/response.schema';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
@@ -13,6 +14,8 @@ import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { IProfileStatusMessage } from '@core/common/interfaces/IProfileStatusMessage';
 import { IVisibilityData } from '@core/common/interfaces/IVisibilityData';
+import { ContactService } from '@core/services/contact.service';
+import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid';
 import { TFunction } from 'i18next';
 
 @injectable()
@@ -23,9 +26,11 @@ export class WorkerProfileStatusService {
     private readonly workerProfileStatusUpdaterRepository: WorkerProfileStatusUpdaterRepository,
     private readonly workerProfileStatusDeleterRepository: WorkerProfileStatusDeleterRepository,
     private readonly workerProfileStatusViewerRepository: WorkerProfileStatusViewerRepository,
+    private readonly workerProfileStatusContactListerRepository: WorkerProfileStatusContactListerRepository,
     private readonly storageService: StorageService,
     private readonly streamProducerService: StreamProducerService,
-    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService
+    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    private readonly contactService: ContactService
   ) {}
 
   async uploadProfileStatus(
@@ -197,6 +202,29 @@ export class WorkerProfileStatusService {
     accountId: string
   ): Promise<void> {
     try {
+      const contacts =
+        await this.workerProfileStatusContactListerRepository.listContactsByStatusId(
+          status.worker_profile_status_id
+        );
+
+      const statusJidList: string[] = [];
+
+      for (const contactData of contacts) {
+        const decryptedPhone = this.contactService.getContactPhoneDecrypted(
+          contactData.phone
+        );
+
+        if (!decryptedPhone) {
+          continue;
+        }
+
+        const jid = normalizePhoneToJid(decryptedPhone, contactData.phone_ddi);
+
+        if (jid) {
+          statusJidList.push(jid);
+        }
+      }
+
       const statusMessage: IProfileStatusMessage = {
         worker_id: status.worker_id,
         account_id: accountId,
@@ -205,6 +233,7 @@ export class WorkerProfileStatusService {
           status.worker_profile_status_type_id as EWorkerProfileStatusType,
         value: status.value,
         is_permanent: status.is_permanent,
+        statusJidList,
       };
 
       const topic = this.kafkaBaileysQueueService.workerSendMessage(

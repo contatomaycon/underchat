@@ -7,4 +7,5 @@ export interface IProfileStatusMessage {
   worker_profile_status_type_id: EWorkerProfileStatusType;
   value: string;
   is_permanent: boolean;
+  statusJidList?: string[];
 }

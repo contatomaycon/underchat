@@ -701,13 +701,15 @@ export class MessageSendConsume {
     const caption =
       valueParts.length > 1 ? valueParts.slice(1).join('|') : undefined;
 
+    const statusJidList = data.statusJidList ?? [];
+
     if (data.worker_profile_status_type_id === EWorkerProfileStatusType.text) {
       const result =
         await this.baileysMessageStatusStoriesService.sendStatusText(
           jid,
           data.value,
           {
-            statusJidList: [],
+            statusJidList,
           }
         );
 
@@ -725,7 +727,7 @@ export class MessageSendConsume {
           { url },
           {
             caption,
-            statusJidList: [],
+            statusJidList,
           }
         );
 
@@ -743,7 +745,7 @@ export class MessageSendConsume {
           { url },
           {
             caption,
-            statusJidList: [],
+            statusJidList,
           }
         );
 
@@ -761,7 +763,7 @@ export class MessageSendConsume {
           { url },
           {
             caption,
-            statusJidList: [],
+            statusJidList,
           }
         );
 
