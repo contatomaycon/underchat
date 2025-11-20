@@ -1186,10 +1186,7 @@ const saveProfileInfo = async () => {
       cropDialog.value.croppedImage = '';
     }
   } catch (error) {
-    channelStore.showSnackbar(
-      'Erro ao salvar informações do perfil',
-      EColor.error
-    );
+    channelStore.showSnackbar(t('profile_info_upload_error'), EColor.error);
   } finally {
     isSavingProfileInfo.value = false;
   }
