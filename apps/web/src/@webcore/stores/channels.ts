@@ -22,6 +22,7 @@ import { WorkerConnectionLogsQuery } from '@core/schema/worker/workerConnectionL
 import { WorkerConnectionLogsResponse } from '@core/schema/worker/workerConnectionLogs/response.schema';
 import { ProfileStatus } from '@core/schema/worker/listProfileStatus/response.schema';
 import { WorkerProfileStatus } from '@core/schema/worker/uploadProfileStatus/response.schema';
+import { WorkerProfileInfo } from '@core/schema/worker/uploadProfileInfo/response.schema';
 
 export const useChannelsStore = defineStore('channels', {
   state: () => ({
@@ -610,6 +611,108 @@ export const useChannelsStore = defineStore('channels', {
         workerProfileStatusId,
         isPermanent
       );
+    },
+
+    async uploadWorkerProfileInfo(
+      workerId: string,
+      name?: string | null,
+      message?: string | null,
+      photo?: File | null
+    ): Promise<WorkerProfileInfo | null> {
+      if (!workerId) return null;
+
+      try {
+        this.loading = true;
+
+        const formData = new FormData();
+
+        if (name !== undefined && name !== null) {
+          formData.append('name', name);
+        }
+
+        if (message !== undefined && message !== null) {
+          formData.append('message', message);
+        }
+
+        if (photo instanceof File) {
+          formData.append('photo', photo);
+        }
+
+        const config: AxiosRequestConfig<FormData> = {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        };
+
+        const response = await axios.post<IApiResponse<WorkerProfileInfo>>(
+          `/worker/${workerId}/profile/info`,
+          formData,
+          config
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const message =
+            data?.message ?? this.i18n.global.t('profile_info_upload_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('profile_info_upload_success') ||
+            'Informações do perfil salvas com sucesso',
+          EColor.success
+        );
+
+        return data.data;
+      } catch (error) {
+        let errorMessage =
+          this.i18n.global.t('profile_info_upload_error') ||
+          'Erro ao salvar informações do perfil';
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async fetchWorkerProfileInfo(
+      workerId: string
+    ): Promise<WorkerProfileInfo | null> {
+      if (!workerId) return null;
+
+      try {
+        this.loading = true;
+
+        const response = await axios.get<IApiResponse<WorkerProfileInfo>>(
+          `/worker/${workerId}/profile/info`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+
+        return null;
+      }
     },
 
     async deleteProfileStatus(workerProfileStatusId: string): Promise<boolean> {
