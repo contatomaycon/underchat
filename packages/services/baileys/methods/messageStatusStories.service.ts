@@ -16,8 +16,6 @@ export class BaileysMessageStatusStoriesService {
     args: IStatusArgs,
     options?: Omit<MiscMessageGenerationOptions, IStatusOmitKeys>
   ) {
-    console.dir(args.statusJidList, { depth: null, colors: true });
-
     return this.baileysHelpersService.send(
       jid,
       { image: media, caption: args.caption },
