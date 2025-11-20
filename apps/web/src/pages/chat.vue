@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { computed, watch, nextTick } from 'vue';
+import { computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { useDisplay, useTheme } from 'vuetify';
 import { themes } from '@/plugins/vuetify/theme';
@@ -88,6 +88,7 @@ const { isLeftSidebarOpen } = useResponsiveLeftSidebar(
 const currentPage = ref(1);
 const perPage = ref(10);
 const chatLogPS = ref();
+const resizeHandler = ref<(() => void) | null>(null);
 const q = ref('');
 const msg = ref('');
 const isUserProfileSidebarOpen = ref(false);
@@ -596,7 +597,12 @@ const scrollToBottomInChatLog = () => {
   const scrollEl = chatLogPS.value.$el || chatLogPS.value;
   if (!scrollEl) return;
 
-  scrollEl.scrollTop = scrollEl.scrollHeight;
+  scrollEl.scrollTop = 0;
+
+  requestAnimationFrame(() => {
+    scrollEl.scrollTop = scrollEl.scrollHeight;
+    chatLogPS.value?.update?.();
+  });
 };
 
 const highlightedMessageTimers = new Map<string, number>();
@@ -1378,6 +1384,13 @@ const sendMessage = async () => {
 const openChat = async (chatId: ListChatsResult['chat_id']) => {
   if (chatStore.activeChat?.chat_id === chatId) return;
 
+  if (chatLogPS.value) {
+    const scrollEl = chatLogPS.value.$el || chatLogPS.value;
+    if (scrollEl) {
+      scrollEl.scrollTop = 0;
+    }
+  }
+
   chatStore.setActiveChat(chatId);
 
   const requestQueue: ListMessageChatsQuery = {
@@ -1387,11 +1400,22 @@ const openChat = async (chatId: ListChatsResult['chat_id']) => {
 
   await chatStore.getChatById(requestQueue);
 
+  while (
+    chatStore.currentPage < chatStore.totalPages &&
+    !chatStore.loadingMoreMessages
+  ) {
+    const success = await chatStore.loadMoreMessages();
+    if (!success) break;
+    await nextTick();
+  }
+
   if (vuetifyDisplays.smAndDown.value) {
     isLeftSidebarOpen.value = false;
   }
 
-  nextTick(() => {
+  await nextTick();
+
+  requestAnimationFrame(() => {
     scrollToBottomInChatLog();
   });
 };
@@ -2671,6 +2695,72 @@ watch(
   { immediate: true }
 );
 
+let previousLoadingState = false;
+let previousActiveChatId: string | undefined = undefined;
+watch(
+  () =>
+    [
+      chatStore.loading,
+      chatStore.listMessages.length,
+      chatStore.activeChat?.chat_id,
+    ] as const,
+  async ([loading, messageCount, activeChatId]) => {
+    const currentLoading = Boolean(loading);
+    const currentMessageCount =
+      typeof messageCount === 'number' ? messageCount : 0;
+    const chatChanged = previousActiveChatId !== activeChatId;
+
+    const loadingFinished =
+      previousLoadingState && !currentLoading && currentMessageCount > 0;
+
+    const chatChangedWithMessages =
+      chatChanged && !currentLoading && currentMessageCount > 0;
+
+    previousLoadingState = currentLoading;
+    previousActiveChatId = activeChatId;
+
+    if ((loadingFinished || chatChangedWithMessages) && activeChatId) {
+      await nextTick();
+
+      requestAnimationFrame(() => {
+        scrollToBottomInChatLog();
+        hideScrollbarIfNotNeeded();
+      });
+    }
+  }
+);
+
+const hideScrollbarIfNotNeeded = () => {
+  if (!chatLogPS.value) return;
+
+  const scrollEl = chatLogPS.value.$el || chatLogPS.value;
+  if (!scrollEl) return;
+
+  const psContainer =
+    (scrollEl.querySelector('.ps') as HTMLElement) ||
+    (scrollEl.closest('.ps') as HTMLElement) ||
+    (scrollEl as HTMLElement);
+
+  if (!psContainer) return;
+
+  const needsScroll = psContainer.scrollHeight > psContainer.clientHeight;
+
+  const railY = psContainer.querySelector('.ps__rail-y') as HTMLElement;
+  if (railY) {
+    railY.style.display = needsScroll ? '' : 'none';
+  }
+};
+
+watch(
+  () => [chatStore.listMessages.length, chatStore.loading],
+  async () => {
+    await nextTick();
+    requestAnimationFrame(() => {
+      hideScrollbarIfNotNeeded();
+    });
+  }
+);
+
 const focusComposer = () => {
   setTimeout(() => {
     const el = composerRef.value?.$el?.querySelector(
@@ -3116,6 +3206,14 @@ onMounted(async () => {
       onRetryMessage as EventListener
     );
   }
+
+  const handleResize = () => {
+    requestAnimationFrame(() => {
+      hideScrollbarIfNotNeeded();
+    });
+  };
+  window.addEventListener('resize', handleResize);
+  resizeHandler.value = handleResize;
 });
 
 onUnmounted(async () => {
@@ -3136,6 +3234,11 @@ onUnmounted(async () => {
       'retry-message',
       onRetryMessage as EventListener
     );
+  }
+
+  if (resizeHandler.value) {
+    window.removeEventListener('resize', resizeHandler.value);
+    resizeHandler.value = null;
   }
 
   for (const timeoutId of highlightedMessageTimers.values()) {
