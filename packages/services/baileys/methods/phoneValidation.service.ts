@@ -29,7 +29,8 @@ export class BaileysPhoneValidationService {
       const without9 = `55${ddd}${without9Local}`;
       const with9 = `55${ddd}${with9Local}`;
 
-      return Array.from(new Set([without9, with9]));
+      const candidates = [without9, with9];
+      return Array.from(new Set(candidates));
     }
 
     return [`${normalizedDdi}${normalizedNumber}`];
@@ -46,28 +47,40 @@ export class BaileysPhoneValidationService {
 
     const candidates = this.buildCandidates(ddi, number);
 
-    const results = await Promise.all(
-      candidates.map(async (candidate) => {
-        const resp = await socket.onWhatsApp(onlyDigits(candidate));
+    const validationPromises = candidates.map((candidate) => {
+      return socket.onWhatsApp(onlyDigits(candidate)).then((resp) => {
         const item = resp?.[0];
         return {
           candidate,
           exists: !!item?.exists,
           jid: item?.jid ? normalizeJid(item.jid) : undefined,
         };
-      })
+      });
+    });
+
+    const result = await validationPromises.reduce(
+      async (previousPromise, currentPromise) => {
+        const previousResult = await previousPromise;
+
+        if (previousResult.valid) {
+          return previousResult;
+        }
+
+        const currentResult = await currentPromise;
+
+        if (currentResult.exists && currentResult.jid) {
+          return {
+            valid: true,
+            jid: currentResult.jid,
+            phone: currentResult.candidate,
+          };
+        }
+
+        return { valid: false };
+      },
+      Promise.resolve({ valid: false } as IPhoneValidationResult)
     );
 
-    const validResult = results.find((r) => r.exists && r.jid);
-
-    if (validResult) {
-      return {
-        valid: true,
-        jid: validResult.jid,
-        phone: validResult.candidate,
-      };
-    }
-
-    return { valid: false };
+    return result;
   }
 }
