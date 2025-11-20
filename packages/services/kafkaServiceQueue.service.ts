@@ -14,6 +14,7 @@ export class KafkaServiceQueueService {
     const markMessageRead = this.markMessageRead();
     const clearChatSummary = this.clearChatSummary();
     const phoneValidationResponse = this.phoneValidationResponse();
+    const updateProfileStatusExternalId = this.updateProfileStatusExternalId();
 
     return [
       createServer,
@@ -24,6 +25,7 @@ export class KafkaServiceQueueService {
       markMessageRead,
       clearChatSummary,
       phoneValidationResponse,
+      updateProfileStatusExternalId,
     ];
   };
 
@@ -67,5 +69,9 @@ export class KafkaServiceQueueService {
 
   phoneValidationResponse = () => {
     return `phone.validation.response`;
+  };
+
+  updateProfileStatusExternalId = () => {
+    return `update.profile.status.external.id`;
   };
 }

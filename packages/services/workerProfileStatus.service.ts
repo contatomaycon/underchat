@@ -5,6 +5,7 @@ import { WorkerProfileStatusUpdaterRepository } from '@core/repositories/worker/
 import { WorkerProfileStatusDeleterRepository } from '@core/repositories/worker/WorkerProfileStatusDeleter.repository';
 import { WorkerProfileStatusViewerRepository } from '@core/repositories/worker/WorkerProfileStatusViewer.repository';
 import { WorkerProfileStatusContactListerRepository } from '@core/repositories/worker/WorkerProfileStatusContactLister.repository';
+import { WorkerProfileStatusExternalIdUpdaterRepository } from '@core/repositories/worker/WorkerProfileStatusExternalIdUpdater.repository';
 import { ProfileStatus } from '@core/schema/worker/listProfileStatus/response.schema';
 import { WorkerProfileStatus } from '@core/schema/worker/uploadProfileStatus/response.schema';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
@@ -12,8 +13,10 @@ import { StorageService } from '@core/services/storage.service';
 import { EWorkerProfileStatusType } from '@core/common/enums/EWorkerProfileStatusType';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
+import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IProfileStatusMessage } from '@core/common/interfaces/IProfileStatusMessage';
 import { IVisibilityData } from '@core/common/interfaces/IVisibilityData';
+import { IUpdateProfileStatusExternalId } from '@core/common/interfaces/IUpdateProfileStatusExternalId';
 import { ContactService } from '@core/services/contact.service';
 import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid';
 import { TFunction } from 'i18next';
@@ -27,9 +30,11 @@ export class WorkerProfileStatusService {
     private readonly workerProfileStatusDeleterRepository: WorkerProfileStatusDeleterRepository,
     private readonly workerProfileStatusViewerRepository: WorkerProfileStatusViewerRepository,
     private readonly workerProfileStatusContactListerRepository: WorkerProfileStatusContactListerRepository,
+    private readonly workerProfileStatusExternalIdUpdaterRepository: WorkerProfileStatusExternalIdUpdaterRepository,
     private readonly storageService: StorageService,
     private readonly streamProducerService: StreamProducerService,
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly contactService: ContactService
   ) {}
 
@@ -194,6 +199,16 @@ export class WorkerProfileStatusService {
 
     return this.workerProfileStatusDeleterRepository.deleteWorkerProfileStatus(
       workerProfileStatusId
+    );
+  }
+
+  async updateExternalId(
+    workerProfileStatusId: string,
+    externalId: string
+  ): Promise<boolean> {
+    return this.workerProfileStatusExternalIdUpdaterRepository.updateExternalId(
+      workerProfileStatusId,
+      externalId
     );
   }
 
