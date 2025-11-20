@@ -1,6 +1,11 @@
 import * as schema from '@core/models';
 import { workerProfileStatus } from '@core/models';
-import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { ExtractTablesWithRelations } from 'drizzle-orm';
+import {
+  NodePgDatabase,
+  NodePgQueryResultHKT,
+} from 'drizzle-orm/node-postgres';
+import { PgTransaction } from 'drizzle-orm/pg-core';
 import { inject, injectable } from 'tsyringe';
 import { v7 as uuidv7 } from 'uuid';
 import { ICreateWorkerProfileStatus } from '@core/common/interfaces/ICreateWorkerProfileStatus';
@@ -12,11 +17,16 @@ export class WorkerProfileStatusCreatorRepository {
   ) {}
 
   createWorkerProfileStatus = async (
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
     input: ICreateWorkerProfileStatus
   ): Promise<string> => {
     const worker_profile_status_id = uuidv7();
 
-    await this.db
+    await tx
       .insert(workerProfileStatus)
       .values({
         worker_profile_status_id,

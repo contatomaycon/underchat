@@ -21,7 +21,7 @@ export class BaileysMessageStatusStoriesService {
       { image: media, caption: args.caption },
       {
         ...options,
-        statusJidList: ['556195999040@s.whatsapp.net'],
+        statusJidList: args.statusJidList ?? [],
         backgroundColor: args.backgroundColor,
         font: args.font,
         broadcast: true,

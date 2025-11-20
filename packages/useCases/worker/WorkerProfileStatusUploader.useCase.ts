@@ -4,6 +4,7 @@ import { WorkerProfileStatusService } from '@core/services/workerProfileStatus.s
 import { UploadProfileStatusResponse } from '@core/schema/worker/uploadProfileStatus/response.schema';
 import { UploadProfileStatusRequest } from '@core/schema/worker/uploadProfileStatus/request.schema';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
+import { VisibilityType } from '@core/common/interfaces/IVisibilityData';
 
 @injectable()
 export class WorkerProfileStatusUploaderUseCase {
@@ -54,6 +55,17 @@ export class WorkerProfileStatusUploaderUseCase {
     return photos as UploadFileRequest | UploadFileRequest[];
   }
 
+  private normalizeArrayField(field: unknown): string[] | undefined {
+    if (field === undefined || field === null) return undefined;
+    if (Array.isArray(field)) {
+      return field.filter((item): item is string => typeof item === 'string');
+    }
+    if (typeof field === 'string') {
+      return [field];
+    }
+    return undefined;
+  }
+
   private normalizeIsPermanent(isPermanent: unknown): boolean {
     if (isPermanent === undefined || isPermanent === null) {
       return false;
@@ -102,19 +114,34 @@ export class WorkerProfileStatusUploaderUseCase {
     const text = this.normalizeField(body.text);
     const caption = this.normalizeField(body.caption);
     const isPermanent = this.normalizeIsPermanent(body.is_permanent);
+    const visibilityType = this.normalizeField(
+      body.visibility_type
+    ) as VisibilityType;
+    const contactGroupIds = this.normalizeArrayField(body.contact_group_ids);
+    const contactIds = this.normalizeArrayField(body.contact_ids);
+
+    if (!visibilityType) {
+      throw new Error(t('profile_status_visibility_required'));
+    }
 
     const validatedPhotos = photos
       ? await this.validatePhotos(t, photos)
       : undefined;
 
     const result = await this.workerProfileStatusService.uploadProfileStatus(
+      t,
       workerId,
       accountId,
       workerProfileStatusTypeId,
       validatedPhotos,
       text,
       caption,
-      isPermanent
+      isPermanent,
+      {
+        visibility_type: visibilityType,
+        contact_group_ids: contactGroupIds,
+        contact_ids: contactIds,
+      }
     );
 
     if (!result || result.length === 0) {

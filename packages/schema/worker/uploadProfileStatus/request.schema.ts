@@ -43,14 +43,12 @@ export const uploadProfileStatusRequestSchema = Type.Object({
       }),
     ])
   ),
-  visibility_type: Type.Optional(
-    Type.Union([
-      Type.String(),
-      Type.Object({
-        value: Type.String(),
-      }),
-    ])
-  ),
+  visibility_type: Type.Union([
+    Type.String(),
+    Type.Object({
+      value: Type.String(),
+    }),
+  ]),
   contact_group_ids: Type.Optional(
     Type.Union([Type.Array(Type.String()), Type.String()])
   ),
