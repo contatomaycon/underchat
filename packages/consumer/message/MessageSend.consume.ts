@@ -655,10 +655,7 @@ export class MessageSendConsume {
       .trim();
 
     if (fullName) {
-      const nameParts = fullName.split(' ');
-      const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
-      const firstName = nameParts[0] || '';
-      lines.push(`N:${lastName};${firstName};;;`, `FN:${fullName}`);
+      lines.push(`N:;${fullName};;;`, `FN:${fullName}`);
     }
 
     if (contact.phone) {
@@ -667,12 +664,11 @@ export class MessageSendConsume {
         ? contact.phone_ddi.replaceAll(/\D/g, '')
         : '';
 
-      if (ddi && phone) {
-        phone = `+${ddi}${phone}`;
-      }
+      const phoneWithDdi =
+        ddi && phone ? `+${ddi}${phone}` : phone ? `+${phone}` : '';
 
       if (phone) {
-        lines.push(`TEL;TYPE=CELL:${phone}`);
+        lines.push(`TEL;type=CELL;type=VOICE;waid=${phone}:${phoneWithDdi}`);
       }
     }
 

@@ -753,6 +753,171 @@ export class MessageUpsertConsume {
     };
   }
 
+  private parseVCard(vcard: string): {
+    name?: string;
+    last_name?: string;
+    phone?: string;
+    phone_ddi?: string;
+    email?: string;
+  } {
+    const result: {
+      name?: string;
+      last_name?: string;
+      phone?: string;
+      phone_ddi?: string;
+      email?: string;
+    } = {};
+
+    const lines = vcard.split('\n');
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      if (trimmed.startsWith('FN:')) {
+        this.parseFullName(trimmed.substring(3).trim(), result);
+        continue;
+      }
+
+      if (trimmed.startsWith('N:')) {
+        const nValue = trimmed.substring(2).trim();
+        const parts = nValue.split(';');
+        if (parts.length >= 2 && parts[1] && !result.name) {
+          this.parseFullName(parts[1].trim(), result);
+        }
+        continue;
+      }
+
+      if (trimmed.startsWith('TEL')) {
+        this.parseTelephone(trimmed, result);
+        continue;
+      }
+
+      if (trimmed.startsWith('EMAIL:')) {
+        result.email = trimmed.substring(6).trim();
+      }
+    }
+
+    return result;
+  }
+
+  private parseFullName(
+    fullName: string,
+    result: {
+      name?: string;
+      last_name?: string;
+    }
+  ): void {
+    if (!fullName) return;
+
+    const nameParts = fullName.split(' ');
+    if (nameParts.length === 0) return;
+
+    result.name = nameParts[0];
+    if (nameParts.length > 1) {
+      result.last_name = nameParts.slice(1).join(' ');
+    }
+  }
+
+  private parseTelephone(
+    telLine: string,
+    result: {
+      phone?: string;
+      phone_ddi?: string;
+    }
+  ): void {
+    const waidMatch = telLine.match(/waid=([^:]+):(.+)/);
+    if (waidMatch) {
+      this.parseTelephoneWithWaid(
+        waidMatch[1].trim(),
+        waidMatch[2].trim(),
+        result
+      );
+      return;
+    }
+
+    const telMatch = telLine.match(/TEL[^:]*:(.+)/);
+    if (!telMatch) return;
+
+    const phone = telMatch[1].trim();
+    this.parseTelephoneValue(phone, result);
+  }
+
+  private parseTelephoneWithWaid(
+    waid: string,
+    fullPhone: string,
+    result: {
+      phone?: string;
+      phone_ddi?: string;
+    }
+  ): void {
+    const waidDigits = waid.replaceAll(/\D/g, '');
+    result.phone = waidDigits;
+
+    if (!fullPhone.startsWith('+')) return;
+
+    const phoneDigits = fullPhone.substring(1).replaceAll(/\D/g, '');
+    if (phoneDigits.length > waidDigits.length) {
+      result.phone_ddi = phoneDigits.substring(
+        0,
+        phoneDigits.length - waidDigits.length
+      );
+    }
+  }
+
+  private parseTelephoneValue(
+    phone: string,
+    result: {
+      phone?: string;
+      phone_ddi?: string;
+    }
+  ): void {
+    if (phone.startsWith('+')) {
+      const phoneDigits = phone.substring(1).replaceAll(/\D/g, '');
+      if (phoneDigits.length > 10) {
+        result.phone_ddi = phoneDigits.substring(0, phoneDigits.length - 10);
+        result.phone = phoneDigits.substring(phoneDigits.length - 10);
+        return;
+      }
+      result.phone = phoneDigits;
+      return;
+    }
+
+    result.phone = phone.replaceAll(/\D/g, '');
+  }
+
+  private async handleContactMessage(
+    content: IContent,
+    data: IUpsertMessage
+  ): Promise<void> {
+    if (
+      content.type !== EMessageType.contact_card ||
+      !data.message?.message?.contactMessage?.vcard
+    ) {
+      return;
+    }
+
+    const contactMsg = data.message.message.contactMessage;
+    const vcard = contactMsg.vcard || '';
+    const parsed = this.parseVCard(vcard);
+
+    const phonePartial = parsed.phone
+      ? parsed.phone.replaceAll(/\D/g, '').slice(-10)
+      : null;
+
+    const emailPartial = parsed.email ? parsed.email.slice(0, 50) : null;
+
+    content.contact = {
+      contact_id: uuidv7(),
+      name: parsed.name || contactMsg.displayName || 'Contato',
+      last_name: parsed.last_name || null,
+      phone: parsed.phone || null,
+      phone_partial: phonePartial,
+      phone_ddi: parsed.phone_ddi || null,
+      email: parsed.email || null,
+      email_partial: emailPartial,
+    };
+  }
+
   private async createChatMessage(
     getChat: IChat,
     data: IUpsertMessage
@@ -788,6 +953,7 @@ export class MessageUpsertConsume {
       await this.handleDocumentMessage(content, data);
       await this.handleStickerMessage(content, data);
       await this.handleLocationMessage(content, data);
+      await this.handleContactMessage(content, data);
 
       const isFromMe = data.message?.key?.fromMe ?? false;
 
