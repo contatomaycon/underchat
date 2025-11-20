@@ -751,6 +751,41 @@ export class MessageSendConsume {
   }
 
   private async processText(jid: string, data: IChatMessage): Promise<void> {
+    const hasVersions =
+      data.content?.version && data.content.version.length > 0;
+    const hasMessageKey = data.message_key?.id && data.message_key?.remote_jid;
+
+    if (hasVersions && hasMessageKey && data.message_key && data.content) {
+      const messageKey = {
+        remoteJid: data.message_key.remote_jid ?? '',
+        fromMe: data.message_key.from_me ?? false,
+        id: data.message_key.id,
+        participant: data.message_key.participant ?? undefined,
+      };
+
+      const latestVersion = data.content.version
+        ? [...data.content.version].sort(
+            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+          )[0]
+        : null;
+
+      const newText = latestVersion?.message ?? data.content?.message ?? '';
+
+      const result = await this.baileysMessageEditDeleteService.editText(
+        jid,
+        newText,
+        messageKey
+      );
+
+      if (!result) {
+        throw new Error('Failed to edit message');
+      }
+
+      const update: IUpdateMessage = { message: result, data };
+      await this.pushUpdate(update);
+      return;
+    }
+
     const result = await this.baileysMessageTextService.sendText(
       jid,
       data.content?.message ?? '',
