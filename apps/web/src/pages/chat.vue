@@ -595,16 +595,22 @@ const formattedRecordingTime = computed(() => {
 });
 const forceReflow = (el: HTMLElement): number => el.offsetWidth;
 
-const scrollToBottomInChatLog = () => {
+const scrollToBottomInChatLog = (smooth: boolean = false) => {
   if (!chatLogPS.value) return;
 
   const scrollEl = chatLogPS.value.$el || chatLogPS.value;
   if (!scrollEl) return;
 
-  scrollEl.scrollTop = 0;
+  if (smooth) {
+    scrollEl.scrollTo({
+      top: scrollEl.scrollHeight,
+      behavior: 'smooth',
+    });
+  } else {
+    scrollEl.scrollTop = scrollEl.scrollHeight;
+  }
 
   requestAnimationFrame(() => {
-    scrollEl.scrollTop = scrollEl.scrollHeight;
     chatLogPS.value?.update?.();
   });
 };
@@ -1388,7 +1394,26 @@ const sendTextMessage = async (
 
 const finalizeSend = () => {
   nextTick(() => {
-    scrollToBottomInChatLog();
+    const scrollEl = chatLogPS.value?.$el || chatLogPS.value;
+    if (scrollEl) {
+      const scrollTop = scrollEl.scrollTop;
+      const scrollHeight = scrollEl.scrollHeight;
+      const clientHeight = scrollEl.clientHeight;
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+      const isNearBottom = distanceFromBottom < 200;
+
+      scrollToBottomInChatLog(!isNearBottom);
+    } else {
+      scrollToBottomInChatLog(true);
+    }
+
+    setTimeout(() => {
+      const scrollEl = chatLogPS.value?.$el || chatLogPS.value;
+      if (scrollEl) {
+        scrollEl.scrollTop = scrollEl.scrollHeight;
+        chatLogPS.value?.update?.();
+      }
+    }, 300);
   });
 };
 
@@ -1407,6 +1432,8 @@ const sendMessage = async () => {
   const savedLocation = selectedLocation.value;
   const savedReply = chatStore.messageReply;
 
+  chatStore.clearMessageReply();
+
   msg.value = '';
   linkPreview.value = null;
   clearSelectedVideos();
@@ -1422,49 +1449,42 @@ const sendMessage = async () => {
       savedMsg,
       savedReply || undefined
     );
-    chatStore.clearMessageReply();
     finalizeSend();
     return;
   }
 
   if (savedVideos.length > 0) {
     await sendVideoMessage(savedVideos, savedMsg, savedReply || undefined);
-    chatStore.clearMessageReply();
     finalizeSend();
     return;
   }
 
   if (savedAudios.length > 0) {
     await sendAudioFilesMessage(savedAudios, savedMsg, savedReply || undefined);
-    chatStore.clearMessageReply();
     finalizeSend();
     return;
   }
 
   if (savedContacts.length > 0) {
     await sendContactsMessage(savedContacts, savedMsg, savedReply || undefined);
-    chatStore.clearMessageReply();
     finalizeSend();
     return;
   }
 
   if (savedLocation) {
     await sendLocationMessage(savedLocation, savedMsg, savedReply || undefined);
-    chatStore.clearMessageReply();
     finalizeSend();
     return;
   }
 
   if (savedPhotos.length > 0) {
     await sendImageMessage(savedPhotos, savedMsg, savedReply || undefined);
-    chatStore.clearMessageReply();
     finalizeSend();
     return;
   }
 
   await sendTextMessage(savedMsg, savedLinkPreview, savedReply || undefined);
 
-  chatStore.clearMessageReply();
   finalizeSend();
 };
 
