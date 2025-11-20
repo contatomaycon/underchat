@@ -24,10 +24,17 @@ export class WorkerProfileInfoUpserterUseCase {
     if (field === undefined || field === null) return undefined;
     if (typeof field === 'string') return field;
     if (typeof field === 'object' && field !== null && 'value' in field) {
-      return String((field as { value: unknown }).value);
+      const value = (field as { value: unknown }).value;
+      if (typeof value === 'string') return value;
+      if (value === null || value === undefined) return undefined;
+      return String(value);
     }
 
-    return String(field);
+    if (typeof field === 'number' || typeof field === 'boolean') {
+      return String(field);
+    }
+
+    return undefined;
   }
 
   private normalizeBooleanField(field: unknown): boolean {
@@ -83,7 +90,7 @@ export class WorkerProfileInfoUpserterUseCase {
     let photo: UploadFileRequest | null = null;
 
     if (body.photo && body.photo !== null && !removePhoto) {
-      photo = body.photo as UploadFileRequest;
+      photo = body.photo;
       await this.validateFileSize(photo, t);
     }
 

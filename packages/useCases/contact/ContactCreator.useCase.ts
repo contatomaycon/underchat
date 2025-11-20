@@ -42,11 +42,11 @@ export class ContactCreatorUseCase {
     }
   }
 
-  async execute(
+  private async validateAccountAndLabelTemplate(
     t: TFunction<'translation', undefined>,
-    input: CreateContactRequest,
-    accountId: string
-  ): Promise<boolean> {
+    accountId: string,
+    labelTemplateId?: string | null
+  ): Promise<void> {
     const accountExists =
       await this.accountService.existsAccountById(accountId);
 
@@ -54,33 +54,41 @@ export class ContactCreatorUseCase {
       throw new Error(t('account_not_found'));
     }
 
-    if (input?.label_template_id) {
+    if (labelTemplateId) {
       const labelTemplateExists =
-        await this.labelTemplateService.existsLabelTemplateById(
-          input.label_template_id
-        );
+        await this.labelTemplateService.existsLabelTemplateById(labelTemplateId);
 
       if (!labelTemplateExists) {
         throw new Error(t('label_template_not_found'));
       }
     }
+  }
 
-    if (
-      input?.birthday &&
-      typeof input.birthday === 'string' &&
-      input.birthday.trim() !== ''
-    ) {
-      this.validateBirthDate(t, input.birthday);
+  private validateBirthdayIfPresent(
+    t: TFunction<'translation', undefined>,
+    birthday?: string | null
+  ): void {
+    if (!birthday || typeof birthday !== 'string' || birthday.trim() === '') {
+      return;
     }
 
-    const emailC = input.email
-      ? this.encryptService.encrypt(input.email)
-      : null;
+    this.validateBirthDate(t, birthday);
+  }
 
-    const phoneC = input.phone
-      ? this.encryptService.encrypt(input.phone)
-      : null;
+  private encryptContactData(input: CreateContactRequest): {
+    emailC: string | null;
+    phoneC: string | null;
+  } {
+    return {
+      emailC: input.email ? this.encryptService.encrypt(input.email) : null,
+      phoneC: input.phone ? this.encryptService.encrypt(input.phone) : null,
+    };
+  }
 
+  private async checkContactExistence(
+    emailC: string | null,
+    phoneC: string | null
+  ): Promise<{ emailExists: boolean; phoneExists: boolean }> {
     const [emailExists, phoneExists] = await Promise.all([
       emailC
         ? this.contactExistsByEmailAndPhoneRepository.existsContactByEmail(
@@ -94,6 +102,14 @@ export class ContactCreatorUseCase {
         : Promise.resolve(false),
     ]);
 
+    return { emailExists, phoneExists };
+  }
+
+  private validateContactNotExists(
+    t: TFunction<'translation', undefined>,
+    emailExists: boolean,
+    phoneExists: boolean
+  ): void {
     if (emailExists) {
       throw new Error(t('contact_already_exists_email'));
     }
@@ -101,42 +117,93 @@ export class ContactCreatorUseCase {
     if (phoneExists) {
       throw new Error(t('contact_already_exists_phone'));
     }
+  }
+
+  private handlePhoneValidationError(
+    t: TFunction<'translation', undefined>,
+    error: unknown
+  ): never {
+    if (error instanceof Error) {
+      if (error.message.includes('timeout')) {
+        throw new Error(t('phone_validation_timeout'));
+      }
+      if (error.message.includes('No active worker')) {
+        throw new Error(t('no_active_worker_for_validation'));
+      }
+    }
+    throw error;
+  }
+
+  private async validateAndNormalizePhone(
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    phone: string,
+    phoneDdi?: string | null
+  ): Promise<{ phone: string; phoneDdi: string | null }> {
+    try {
+      const validationResult =
+        await this.phoneValidationService.validatePhone(
+          accountId,
+          phone,
+          phoneDdi
+        );
+
+      if (!validationResult.valid) {
+        throw new Error(t('phone_number_not_valid_on_whatsapp'));
+      }
+
+      if (!validationResult.phone) {
+        return { phone, phoneDdi: phoneDdi ?? null };
+      }
+
+      const normalizedPhone = normalizePhoneNumber(validationResult.phone);
+      if (normalizedPhone) {
+        return {
+          phone: normalizedPhone.phone,
+          phoneDdi: normalizedPhone.phone_ddi,
+        };
+      }
+
+      return { phone, phoneDdi: phoneDdi ?? null };
+    } catch (error) {
+      this.handlePhoneValidationError(t, error);
+    }
+  }
+
+  async execute(
+    t: TFunction<'translation', undefined>,
+    input: CreateContactRequest,
+    accountId: string
+  ): Promise<boolean> {
+    await this.validateAccountAndLabelTemplate(
+      t,
+      accountId,
+      input.label_template_id
+    );
+
+    this.validateBirthdayIfPresent(t, input.birthday);
+
+    const { emailC, phoneC } = this.encryptContactData(input);
+
+    const { emailExists, phoneExists } = await this.checkContactExistence(
+      emailC,
+      phoneC
+    );
+
+    this.validateContactNotExists(t, emailExists, phoneExists);
 
     let phoneToSave = input.phone;
     let phoneDdiToSave = input.phone_ddi;
 
     if (input.phone) {
-      try {
-        const validationResult =
-          await this.phoneValidationService.validatePhone(
-            accountId,
-            input.phone,
-            input.phone_ddi
-          );
-
-        if (!validationResult.valid) {
-          throw new Error(t('phone_number_not_valid_on_whatsapp'));
-        }
-
-        if (validationResult.phone) {
-          const normalizedPhone = normalizePhoneNumber(validationResult.phone);
-          if (normalizedPhone) {
-            phoneToSave = normalizedPhone.phone;
-            phoneDdiToSave = normalizedPhone.phone_ddi;
-          }
-        }
-      } catch (error) {
-        if (error instanceof Error && error.message.includes('timeout')) {
-          throw new Error(t('phone_validation_timeout'));
-        }
-        if (
-          error instanceof Error &&
-          error.message.includes('No active worker')
-        ) {
-          throw new Error(t('no_active_worker_for_validation'));
-        }
-        throw error;
-      }
+      const normalized = await this.validateAndNormalizePhone(
+        t,
+        accountId,
+        input.phone,
+        input.phone_ddi
+      );
+      phoneToSave = normalized.phone;
+      phoneDdiToSave = normalized.phoneDdi;
     }
 
     const contactToCreate: CreateContactRequest = {

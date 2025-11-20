@@ -183,6 +183,10 @@ const canInteractWithMessage = (m: ListMessageResult): boolean => {
   return true;
 };
 
+const isQueueStatus = computed(
+  () => activeChat.value?.status === EChatStatus.queue
+);
+
 const onReply = (m: ListMessageResult) => {
   if (isDeleted(m)) return;
 
@@ -228,6 +232,7 @@ const onReact = async (m: ListMessageResult, emoji: string) => {
 
 const onMouseEnter = (message: ListMessageResult) => {
   if (isDeleted(message)) return;
+  if (isQueueStatus.value) return;
 
   hoveredMessageId.value = message.message_id;
 };
@@ -238,6 +243,7 @@ const onMouseLeave = () => {
 
 const toggleReactionPicker = (message: ListMessageResult) => {
   if (isDeleted(message)) return;
+  if (isQueueStatus.value) return;
 
   const wasOpen = showReactionPicker.value === message.message_id;
 
@@ -1462,7 +1468,8 @@ onUnmounted(() => {
                 v-if="
                   hoveredMessageId === item.message.message_id &&
                   canInteractWithMessage(item.message) &&
-                  showReactionPicker !== item.message.message_id
+                  showReactionPicker !== item.message.message_id &&
+                  !isQueueStatus
                 "
                 :class="[
                   'reaction-trigger-container',
@@ -1522,7 +1529,7 @@ onUnmounted(() => {
                 }"
               >
                 <div
-                  v-if="canInteractWithMessage(item.message)"
+                  v-if="canInteractWithMessage(item.message) && !isQueueStatus"
                   class="message-actions"
                 >
                   <VMenu
@@ -2375,7 +2382,8 @@ onUnmounted(() => {
                   <div
                     v-if="
                       showReactionPicker === item.message.message_id &&
-                      canInteractWithMessage(item.message)
+                      canInteractWithMessage(item.message) &&
+                      !isQueueStatus
                     "
                     class="reaction-picker"
                     :class="

@@ -67,19 +67,14 @@ export class CsvFileReaderService {
     return this._parseCsv(text);
   }
 
-  private _parseCsv(content: string): ICreateContact[] {
-    const lines = content.split(/\r?\n/).filter((l) => l.trim().length > 0);
-    if (!lines.length) return [];
+  private _detectSeparator(firstLine: string): ',' | ';' {
+    const semicolonCount = firstLine.match(/;/g)?.length || 0;
+    const commaCount = firstLine.match(/,/g)?.length || 0;
+    return semicolonCount > commaCount ? ';' : ',';
+  }
 
-    const sep =
-      (lines[0].match(/;/g)?.length || 0) > (lines[0].match(/,/g)?.length || 0)
-        ? ';'
-        : ',';
-
-    const header = this._splitCsvLine(lines[0], sep).map((h) =>
-      h.trim().toLowerCase()
-    );
-    const idx = {
+  private _buildColumnIndexes(header: string[]) {
+    return {
       nome: header.findIndex((h) =>
         ['nome', 'first name', 'given name'].includes(h)
       ),
@@ -104,21 +99,49 @@ export class CsvFileReaderService {
       ),
       notas: header.findIndex((h) => ['notas', 'notes'].includes(h)),
     };
+  }
+
+  private _shouldSkipRow(
+    cols: string[],
+    idx: ReturnType<typeof this._buildColumnIndexes>
+  ): boolean {
+    const first = this._val(cols, idx.nome);
+    const last = this._val(cols, idx.sobrenome);
+    const email = this._val(cols, idx.email);
+    const phone = this._val(cols, idx.telefone);
+
+    return !first && !last && !email && !phone;
+  }
+
+  private _determinePhoneDdi(
+    ddiRaw: string,
+    normalizedPhone: ReturnType<typeof normalizePhoneNumber> | null
+  ): string {
+    const trimmedDdi = ddiRaw?.trim();
+    if (trimmedDdi) {
+      return trimmedDdi;
+    }
+    if (normalizedPhone) {
+      return normalizedPhone.phone_ddi;
+    }
+    return '55';
+  }
+
+  private _parseCsv(content: string): ICreateContact[] {
+    const lines = content.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    if (!lines.length) return [];
+
+    const sep = this._detectSeparator(lines[0]);
+    const header = this._splitCsvLine(lines[0], sep).map((h) =>
+      h.trim().toLowerCase()
+    );
+    const idx = this._buildColumnIndexes(header);
 
     const out: ICreateContact[] = [];
     for (let i = 1; i < lines.length; i++) {
       const cols = this._splitCsvLine(lines[i], sep);
 
-      const first = this._val(cols, idx.nome);
-      const last = this._val(cols, idx.sobrenome);
-
-      if (
-        !first &&
-        !last &&
-        !this._val(cols, idx.email) &&
-        !this._val(cols, idx.telefone)
-      )
-        continue;
+      if (this._shouldSkipRow(cols, idx)) continue;
 
       const emailRaw = this._val(cols, idx.email);
       const ddiRaw = this._val(cols, idx.ddi);
@@ -131,16 +154,11 @@ export class CsvFileReaderService {
         ? normalizePhoneNumber(processedPhone)
         : null;
 
-      const phoneDdi =
-        ddiRaw && ddiRaw.trim()
-          ? ddiRaw.trim()
-          : normalizedPhone
-            ? normalizedPhone.phone_ddi
-            : '55';
+      const phoneDdi = this._determinePhoneDdi(ddiRaw, normalizedPhone);
 
       out.push({
-        name: first,
-        last_name: last,
+        name: this._val(cols, idx.nome),
+        last_name: this._val(cols, idx.sobrenome),
         email: processedEmail,
         phone: normalizedPhone ? normalizedPhone.phone : processedPhone,
         phone_ddi: phoneDdi,
@@ -189,8 +207,7 @@ export class CsvFileReaderService {
     return res.map((s) => s?.trim() ?? '');
   }
 
-  private _parseVcard(content: string): ICreateContact[] {
-    const lines = this._unfold(content.split(/\r?\n/));
+  private _parseVcardCards(lines: string[]): string[][] {
     const cards: string[][] = [];
     let cur: string[] = [];
 
@@ -211,39 +228,77 @@ export class CsvFileReaderService {
       }
     }
 
+    return cards;
+  }
+
+  private _extractNamesFromVcard(map: Map<string, string[]>): {
+    first: string;
+    last: string;
+  } {
+    const n = map.get('N')?.[0] ?? '';
+    const parts = n.split(';');
+    const last = (parts[0] ?? '').trim();
+    const first = (parts[1] ?? '').trim();
+
+    return { first, last };
+  }
+
+  private _buildNameFallbacks(
+    first: string,
+    last: string,
+    fn: string | undefined
+  ): { firstFallback: string; lastFallback: string } {
+    const firstFallback = first || fn?.split(' ')?.[0] || '';
+    
+    let lastFallback = last;
+    if (!lastFallback && fn) {
+      const fnParts = fn.split(' ');
+      lastFallback = fnParts.slice(1).join(' ');
+    }
+
+    return { firstFallback, lastFallback };
+  }
+
+  private _processVcardContact(map: Map<string, string[]>): ICreateContact {
+    const { first, last } = this._extractNamesFromVcard(map);
+    const fn = map.get('FN')?.[0]?.trim();
+    const { firstFallback, lastFallback } = this._buildNameFallbacks(
+      first,
+      last,
+      fn
+    );
+
+    const email = this._firstOf(map, 'EMAIL');
+    const tel = this._firstOf(map, 'TEL');
+
+    const processedEmail = this.processEmail(email);
+    const processedPhone = this.processPhone(tel);
+
+    const normalizedPhone = processedPhone
+      ? normalizePhoneNumber(processedPhone)
+      : null;
+
+    return {
+      name: firstFallback,
+      last_name: lastFallback,
+      email: processedEmail,
+      phone: normalizedPhone ? normalizedPhone.phone : processedPhone,
+      phone_ddi: normalizedPhone ? normalizedPhone.phone_ddi : null,
+      nickname: this._toNull(map.get('NICKNAME')?.[0]),
+      birthday: this._normDate(map.get('BDAY')?.[0]),
+      notes: this._toNull(map.get('NOTE')?.[0]),
+    };
+  }
+
+  private _parseVcard(content: string): ICreateContact[] {
+    const lines = this._unfold(content.split(/\r?\n/));
+    const cards = this._parseVcardCards(lines);
+
     const out: ICreateContact[] = [];
     for (const raw of cards) {
       const map = this._vmap(raw);
-
-      const n = map.get('N')?.[0] ?? '';
-      const parts = n.split(';');
-      const last = (parts[0] ?? '').trim();
-      const first = (parts[1] ?? '').trim();
-
-      const fn = map.get('FN')?.[0]?.trim();
-      const firstFallback = first || fn?.split(' ')?.[0] || '';
-      const lastFallback = last || (fn ? fn.split(' ').slice(1).join(' ') : '');
-
-      const email = this._firstOf(map, 'EMAIL');
-      const tel = this._firstOf(map, 'TEL');
-
-      const processedEmail = this.processEmail(email);
-      const processedPhone = this.processPhone(tel);
-
-      const normalizedPhone = processedPhone
-        ? normalizePhoneNumber(processedPhone)
-        : null;
-
-      out.push({
-        name: firstFallback,
-        last_name: lastFallback,
-        email: processedEmail,
-        phone: normalizedPhone ? normalizedPhone.phone : processedPhone,
-        phone_ddi: normalizedPhone ? normalizedPhone.phone_ddi : null,
-        nickname: this._toNull(map.get('NICKNAME')?.[0]),
-        birthday: this._normDate(map.get('BDAY')?.[0]),
-        notes: this._toNull(map.get('NOTE')?.[0]),
-      });
+      const contact = this._processVcardContact(map);
+      out.push(contact);
     }
     return out;
   }

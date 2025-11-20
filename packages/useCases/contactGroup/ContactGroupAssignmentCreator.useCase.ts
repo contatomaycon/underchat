@@ -5,6 +5,7 @@ import { CsvFileReaderService } from '@core/services/csv.service';
 import { ContactService } from '@core/services/contact.service';
 import { PhoneValidationService } from '@core/services/phoneValidation.service';
 import { IContactImportStatus } from '@core/common/interfaces/IContactImportStatus';
+import { ICreateContact } from '@core/common/interfaces/ICreateContact';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
 import { normalizePhoneNumber } from '@core/common/functions/normalizePhoneNumber';
 
@@ -55,6 +56,120 @@ export class ContactGroupAssignmentCreatorUseCase {
     return { status: defaultStatus, message: error.message };
   }
 
+  private createStatusResult(
+    contact: Pick<ICreateContact, 'phone' | 'phone_ddi'>,
+    phoneComplete: string,
+    status: IContactImportStatus['status'],
+    message: string,
+    phoneCompleteOverride?: string
+  ): IContactImportStatus {
+    return {
+      phone: contact.phone ?? '',
+      phone_ddi: contact.phone_ddi || null,
+      phone_complete: phoneCompleteOverride || phoneComplete,
+      status,
+      message,
+    };
+  }
+
+  private normalizePhoneFromValidation(
+    validationPhone: string | undefined,
+    defaultPhone: string,
+    defaultDdi: string
+  ): { phone: string; phoneDdi: string } {
+    if (!validationPhone) {
+      return { phone: defaultPhone, phoneDdi: defaultDdi };
+    }
+
+    const normalizedPhone = normalizePhoneNumber(validationPhone);
+    if (normalizedPhone) {
+      return {
+        phone: normalizedPhone.phone,
+        phoneDdi: normalizedPhone.phone_ddi,
+      };
+    }
+
+    return { phone: defaultPhone, phoneDdi: defaultDdi };
+  }
+
+  private async processContact(
+    t: TFunction<'translation', undefined>,
+    contact: ICreateContact,
+    phoneComplete: string,
+    accountId: string,
+    contactGroupId: string
+  ): Promise<IContactImportStatus> {
+    if (!contact.phone) {
+      return this.createStatusResult(
+        contact,
+        phoneComplete,
+        'no_phone',
+        t('phone_required_for_validation')
+      );
+    }
+
+    try {
+      const validationResult =
+        await this.phoneValidationService.validatePhone(
+          accountId,
+          contact.phone,
+          contact.phone_ddi || '55'
+        );
+
+      if (!validationResult.valid) {
+        return this.createStatusResult(
+          contact,
+          phoneComplete,
+          'invalid',
+          t('phone_number_not_valid_on_whatsapp')
+        );
+      }
+
+      const { phone: phoneToSave, phoneDdi: phoneDdiToSave } =
+        this.normalizePhoneFromValidation(
+          validationResult.phone,
+          contact.phone,
+          contact.phone_ddi || '55'
+        );
+
+      const contactCreated = await this.contactService.createContactTx(
+        t,
+        {
+          ...contact,
+          phone: phoneToSave,
+          phone_ddi: phoneDdiToSave,
+        },
+        contactGroupId,
+        accountId
+      );
+
+      if (!contactCreated) {
+        return this.createStatusResult(
+          contact,
+          phoneComplete,
+          'duplicate',
+          t('contact_already_exists_phone')
+        );
+      }
+
+      return this.createStatusResult(
+        contact,
+        phoneComplete,
+        'valid',
+        t('contact_creator_success'),
+        validationResult.phone || phoneComplete
+      );
+    } catch (error) {
+      const errorStatus = this.getErrorStatus(t, error);
+      return this.createStatusResult(
+        contact,
+        phoneComplete,
+        errorStatus.status,
+        errorStatus.message
+      );
+    }
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     input: CreateContactGroupAssignmentRequest,
@@ -68,6 +183,7 @@ export class ContactGroupAssignmentCreatorUseCase {
       throw new Error(t('no_contacts_found_in_file'));
     }
 
+    const contactGroupId = input?.contact_group_id?.value ?? '';
     const results: IContactImportStatus[] = [];
 
     for (const contact of contacts) {
@@ -76,87 +192,15 @@ export class ContactGroupAssignmentCreatorUseCase {
         contact.phone
       );
 
-      if (!contact.phone) {
-        results.push({
-          phone: contact.phone ?? '',
-          phone_ddi: contact.phone_ddi ?? null,
-          phone_complete: phoneComplete,
-          status: 'no_phone',
-          message: t('phone_required_for_validation'),
-        });
-        continue;
-      }
+      const result = await this.processContact(
+        t,
+        contact,
+        phoneComplete,
+        accountId,
+        contactGroupId
+      );
 
-      try {
-        const validationResult =
-          await this.phoneValidationService.validatePhone(
-            accountId,
-            contact.phone,
-            contact.phone_ddi || '55'
-          );
-
-        if (!validationResult.valid) {
-          results.push({
-            phone: contact.phone,
-            phone_ddi: contact.phone_ddi || null,
-            phone_complete: phoneComplete,
-            status: 'invalid',
-            message: t('phone_number_not_valid_on_whatsapp'),
-          });
-          continue;
-        }
-
-        let phoneToSave = contact.phone;
-        let phoneDdiToSave = contact.phone_ddi || '55';
-
-        if (validationResult.phone) {
-          const normalizedPhone = normalizePhoneNumber(validationResult.phone);
-          if (normalizedPhone) {
-            phoneToSave = normalizedPhone.phone;
-            phoneDdiToSave = normalizedPhone.phone_ddi;
-          }
-        }
-
-        const contactCreated = await this.contactService.createContactTx(
-          t,
-          {
-            ...contact,
-            phone: phoneToSave,
-            phone_ddi: phoneDdiToSave,
-          },
-          input?.contact_group_id?.value ?? '',
-          accountId
-        );
-
-        if (!contactCreated) {
-          results.push({
-            phone: contact.phone,
-            phone_ddi: contact.phone_ddi || null,
-            phone_complete: phoneComplete,
-            status: 'duplicate',
-            message: t('contact_already_exists_phone'),
-          });
-          continue;
-        }
-
-        results.push({
-          phone: contact.phone,
-          phone_ddi: contact.phone_ddi || null,
-          phone_complete: validationResult.phone || phoneComplete,
-          status: 'valid',
-          message: t('contact_creator_success'),
-          contact_id: contactCreated ? 'created' : null,
-        });
-      } catch (error) {
-        const errorStatus = this.getErrorStatus(t, error);
-        results.push({
-          phone: contact.phone,
-          phone_ddi: contact.phone_ddi || null,
-          phone_complete: phoneComplete,
-          status: errorStatus.status,
-          message: errorStatus.message,
-        });
-      }
+      results.push(result);
     }
 
     return results;

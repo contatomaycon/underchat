@@ -433,6 +433,63 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
+    buildProfileStatusFormData(
+      workerProfileStatusTypeId: string,
+      files?: File[],
+      text?: string,
+      caption?: string,
+      isPermanent: string = 'false',
+      visibilityData?: {
+        visibility_type?: string;
+        contact_group_ids?: string[];
+        contact_ids?: string[];
+      }
+    ): FormData {
+      const formData = new FormData();
+      formData.append(
+        'worker_profile_status_type_id',
+        workerProfileStatusTypeId
+      );
+
+      if (files?.length) {
+        for (const file of files) {
+          formData.append('photos', file);
+        }
+      }
+
+      if (text) {
+        formData.append('text', text);
+      }
+
+      if (caption) {
+        formData.append('caption', caption);
+      }
+
+      formData.append('is_permanent', isPermanent);
+
+      if (!visibilityData) {
+        return formData;
+      }
+
+      if (visibilityData.visibility_type) {
+        formData.append('visibility_type', visibilityData.visibility_type);
+      }
+
+      if (visibilityData.contact_group_ids?.length) {
+        for (const id of visibilityData.contact_group_ids) {
+          formData.append('contact_group_ids', id);
+        }
+      }
+
+      if (visibilityData.contact_ids?.length) {
+        for (const id of visibilityData.contact_ids) {
+          formData.append('contact_ids', id);
+        }
+      }
+
+      return formData;
+    },
+
     async uploadWorkerProfileStatus(
       workerId: string,
       workerProfileStatusTypeId: string,
@@ -451,49 +508,14 @@ export const useChannelsStore = defineStore('channels', {
       try {
         this.loading = true;
 
-        const formData = new FormData();
-        formData.append(
-          'worker_profile_status_type_id',
-          workerProfileStatusTypeId
+        const formData = this.buildProfileStatusFormData(
+          workerProfileStatusTypeId,
+          files,
+          text,
+          caption,
+          isPermanent,
+          visibilityData
         );
-
-        if (files && files.length > 0) {
-          files.forEach((file) => {
-            formData.append('photos', file);
-          });
-        }
-
-        if (text) {
-          formData.append('text', text);
-        }
-
-        if (caption) {
-          formData.append('caption', caption);
-        }
-
-        formData.append('is_permanent', isPermanent);
-
-        if (visibilityData) {
-          if (visibilityData.visibility_type) {
-            formData.append('visibility_type', visibilityData.visibility_type);
-          }
-          if (
-            visibilityData.contact_group_ids &&
-            visibilityData.contact_group_ids.length > 0
-          ) {
-            visibilityData.contact_group_ids.forEach((id) => {
-              formData.append('contact_group_ids', id);
-            });
-          }
-          if (
-            visibilityData.contact_ids &&
-            visibilityData.contact_ids.length > 0
-          ) {
-            visibilityData.contact_ids.forEach((id) => {
-              formData.append('contact_ids', id);
-            });
-          }
-        }
 
         const config: AxiosRequestConfig<FormData> = {
           headers: {

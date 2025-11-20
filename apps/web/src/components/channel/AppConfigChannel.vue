@@ -444,19 +444,21 @@ const workerConfigOptions = computed(() => [
 
 const remainingSlots = computed(() => {
   const existingCount = existingStatus.value.length;
-  const pendingCount =
-    selectedType.value === EWorkerProfileStatusType.text
-      ? textContent.value.trim()
-        ? 1
-        : 0
-      : selectedStatusPreviews.value.length;
+
+  let pendingCount = 0;
+  if (selectedType.value === EWorkerProfileStatusType.text) {
+    pendingCount = textContent.value.trim() ? 1 : 0;
+  } else {
+    pendingCount = selectedStatusPreviews.value.length;
+  }
+
   return MAX_PROFILE_STATUS - (existingCount + pendingCount);
 });
 
 const resetPendingSelections = () => {
-  selectedStatusPreviews.value.forEach((preview) => {
+  for (const preview of selectedStatusPreviews.value) {
     URL.revokeObjectURL(preview.src);
-  });
+  }
   selectedStatusPreviews.value = [];
   textContent.value = '';
   caption.value = '';
@@ -619,12 +621,12 @@ const handleFilesSelected = (files: File[] | File | null) => {
     );
   }
 
-  sanitizedFiles.slice(0, remainingSlots.value).forEach((file) => {
+  for (const file of sanitizedFiles.slice(0, remainingSlots.value)) {
     const id = crypto.randomUUID();
     const src = URL.createObjectURL(file);
 
     selectedStatusPreviews.value.push({ id, file, src });
-  });
+  }
 
   fileInputKey.value += 1;
 };
@@ -640,50 +642,53 @@ const removePreview = (previewId: string) => {
   selectedStatusPreviews.value.splice(index, 1);
 };
 
-const saveProfileStatus = async () => {
-  if (!channelId.value) return;
-
-  if (selectedType.value === EWorkerProfileStatusType.text) {
-    if (!textContent.value.trim()) {
-      channelStore.showSnackbar(
-        t('profile_status_text_required'),
-        EColor.warning
-      );
-      return;
-    }
-    if (textContent.value.length > MAX_TEXT_LENGTH) {
-      channelStore.showSnackbar(
-        t('profile_status_text_too_long', { max: MAX_TEXT_LENGTH }),
-        EColor.warning
-      );
-      return;
-    }
+const validateTextContent = (): boolean => {
+  if (!textContent.value.trim()) {
+    channelStore.showSnackbar(
+      t('profile_status_text_required'),
+      EColor.warning
+    );
+    return false;
   }
-
-  if (selectedType.value !== EWorkerProfileStatusType.text) {
-    if (!selectedStatusPreviews.value.length) {
-      channelStore.showSnackbar(
-        t('profile_status_no_photos_selected'),
-        EColor.warning
-      );
-      return;
-    }
+  if (textContent.value.length > MAX_TEXT_LENGTH) {
+    channelStore.showSnackbar(
+      t('profile_status_text_too_long', { max: MAX_TEXT_LENGTH }),
+      EColor.warning
+    );
+    return false;
   }
+  return true;
+};
 
+const validateStatusPreviews = (): boolean => {
+  if (!selectedStatusPreviews.value.length) {
+    channelStore.showSnackbar(
+      t('profile_status_no_photos_selected'),
+      EColor.warning
+    );
+    return false;
+  }
+  return true;
+};
+
+const validateCaption = (): boolean => {
   if (caption.value.length > MAX_TEXT_LENGTH) {
     channelStore.showSnackbar(
       t('profile_status_caption_too_long', { max: MAX_TEXT_LENGTH }),
       EColor.warning
     );
-    return;
+    return false;
   }
+  return true;
+};
 
+const validateVisibility = (): boolean => {
   if (!statusVisibilityType.value) {
     channelStore.showSnackbar(
       t('profile_status_visibility_required'),
       EColor.warning
     );
-    return;
+    return false;
   }
 
   if (
@@ -691,7 +696,7 @@ const saveProfileStatus = async () => {
     selectedContactGroups.value.length === 0
   ) {
     channelStore.showSnackbar(t('contact_groups_required'), EColor.warning);
-    return;
+    return false;
   }
 
   if (
@@ -699,34 +704,59 @@ const saveProfileStatus = async () => {
     selectedContacts.value.length === 0
   ) {
     channelStore.showSnackbar(t('contacts_required'), EColor.warning);
-    return;
+    return false;
   }
+
+  return true;
+};
+
+const buildVisibilityData = (): {
+  visibility_type: StatusVisibilityType;
+  contact_group_ids?: string[];
+  contact_ids?: string[];
+} => {
+  const visibilityData: {
+    visibility_type: StatusVisibilityType;
+    contact_group_ids?: string[];
+    contact_ids?: string[];
+  } = {
+    visibility_type: statusVisibilityType.value,
+  };
+
+  if (
+    statusVisibilityType.value === 'contact_groups' &&
+    selectedContactGroups.value.length > 0
+  ) {
+    visibilityData.contact_group_ids = selectedContactGroups.value;
+  }
+
+  if (
+    statusVisibilityType.value === 'contacts' &&
+    selectedContacts.value.length > 0
+  ) {
+    visibilityData.contact_ids = selectedContacts.value;
+  }
+
+  return visibilityData;
+};
+
+const saveProfileStatus = async () => {
+  if (!channelId.value) return;
+
+  if (selectedType.value === EWorkerProfileStatusType.text) {
+    if (!validateTextContent()) return;
+  } else {
+    if (!validateStatusPreviews()) return;
+  }
+
+  if (!validateCaption()) return;
+  if (!validateVisibility()) return;
 
   try {
     isSavingProfileStatus.value = true;
 
     const files = selectedStatusPreviews.value.map((preview) => preview.file);
-    const visibilityData: {
-      visibility_type: StatusVisibilityType;
-      contact_group_ids?: string[];
-      contact_ids?: string[];
-    } = {
-      visibility_type: statusVisibilityType.value,
-    };
-
-    if (
-      statusVisibilityType.value === 'contact_groups' &&
-      selectedContactGroups.value.length > 0
-    ) {
-      visibilityData.contact_group_ids = selectedContactGroups.value;
-    }
-
-    if (
-      statusVisibilityType.value === 'contacts' &&
-      selectedContacts.value.length > 0
-    ) {
-      visibilityData.contact_ids = selectedContacts.value;
-    }
+    const visibilityData = buildVisibilityData();
 
     const response = await channelStore.uploadWorkerProfileStatus(
       channelId.value,
@@ -821,7 +851,7 @@ const updateAudioDuration = () => {
 };
 
 const formatAudioTime = (seconds: number): string => {
-  if (!seconds || isNaN(seconds)) return '0:00';
+  if (!seconds || Number.isNaN(seconds)) return '0:00';
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -1296,6 +1326,7 @@ const saveProfilePhoto = async () => {
       profilePhotoFile.value = null;
     }
   } catch (error) {
+    console.error('Erro ao fazer upload da foto do perfil:', error);
     channelStore.showSnackbar(
       t('profile_photo_upload_error') || 'Erro ao fazer upload da foto',
       EColor.error
@@ -1326,6 +1357,7 @@ const saveProfileInfo = async () => {
       cropDialog.value.croppedImage = '';
     }
   } catch (error) {
+    console.error('Erro ao salvar informações do perfil:', error);
     channelStore.showSnackbar(t('profile_info_upload_error'), EColor.error);
   } finally {
     isSavingProfileInfo.value = false;
@@ -1354,6 +1386,7 @@ const removeProfilePhoto = async () => {
       cropDialog.value.croppedImage = '';
     }
   } catch (error) {
+    console.error('Erro ao remover foto do perfil:', error);
     channelStore.showSnackbar(
       t('profile_photo_remove_error') || 'Erro ao remover a foto do perfil',
       EColor.error
@@ -1697,7 +1730,9 @@ onBeforeUnmount(() => {
                             object-fit: cover;
                             pointer-events: none;
                           "
-                        />
+                        >
+                          <track kind="captions" />
+                        </video>
                         <div
                           class="position-absolute d-flex align-center justify-center"
                           style="
@@ -1861,7 +1896,9 @@ onBeforeUnmount(() => {
                                 object-fit: cover;
                                 pointer-events: none;
                               "
-                            />
+                            >
+                              <track kind="captions" />
+                            </video>
                             <div
                               class="position-absolute d-flex align-center justify-center"
                               style="
@@ -2102,7 +2139,7 @@ onBeforeUnmount(() => {
           <img
             ref="cropImageRef"
             :src="cropDialog.imageSrc"
-            alt="Imagem para cortar"
+            alt="Para cortar"
             class="crop-image"
             @load="initializeCrop"
           />
@@ -2180,7 +2217,9 @@ onBeforeUnmount(() => {
           class="rounded"
           style="width: 100%"
           controls
-        />
+        >
+          <track kind="captions" />
+        </video>
         <div
           v-if="
             previewDialog.src &&
@@ -2361,6 +2400,25 @@ onBeforeUnmount(() => {
 .scrollable-content {
   max-height: 70vh;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(var(--v-theme-on-surface), 0.2) transparent;
+}
+
+.scrollable-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scrollable-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollable-content::-webkit-scrollbar-thumb {
+  background: rgba(var(--v-theme-on-surface), 0.2);
+  border-radius: 3px;
+}
+
+.scrollable-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--v-theme-on-surface), 0.3);
 }
 
 .general-config-wrapper {
@@ -2383,28 +2441,6 @@ onBeforeUnmount(() => {
 
 .general-config-grid {
   row-gap: 16px;
-}
-
-.scrollable-content::-webkit-scrollbar {
-  width: 6px;
-}
-
-.scrollable-content::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.scrollable-content::-webkit-scrollbar-thumb {
-  background: rgba(var(--v-theme-on-surface), 0.2);
-  border-radius: 3px;
-}
-
-.scrollable-content::-webkit-scrollbar-thumb:hover {
-  background: rgba(var(--v-theme-on-surface), 0.3);
-}
-
-.scrollable-content {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(var(--v-theme-on-surface), 0.2) transparent;
 }
 
 .status-type-wrapper {

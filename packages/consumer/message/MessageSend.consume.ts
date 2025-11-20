@@ -765,6 +765,113 @@ export class MessageSendConsume {
     await this.pushUpdate(update);
   }
 
+  private async handleStatusResult(
+    result: WAMessage | null | undefined,
+    workerProfileStatusId: string,
+    errorMessage: string
+  ): Promise<void> {
+    if (!result) {
+      throw new Error(errorMessage);
+    }
+
+    if (result?.key?.id) {
+      await this.sendExternalIdUpdate(workerProfileStatusId, result.key.id);
+    }
+  }
+
+  private async processStatusText(
+    jid: string,
+    data: IProfileStatusMessage,
+    statusJidList: string[]
+  ): Promise<void> {
+    const result =
+      await this.baileysMessageStatusStoriesService.sendStatusText(
+        jid,
+        data.value,
+        {
+          statusJidList,
+        }
+      );
+
+    await this.handleStatusResult(
+      result,
+      data.worker_profile_status_id,
+      'Failed to send status text'
+    );
+  }
+
+  private async processStatusImage(
+    jid: string,
+    url: string,
+    caption: string | undefined,
+    data: IProfileStatusMessage,
+    statusJidList: string[]
+  ): Promise<void> {
+    const result =
+      await this.baileysMessageStatusStoriesService.sendStatusImage(
+        jid,
+        { url },
+        {
+          caption,
+          statusJidList,
+        }
+      );
+
+    await this.handleStatusResult(
+      result,
+      data.worker_profile_status_id,
+      'Failed to send status image'
+    );
+  }
+
+  private async processStatusVideo(
+    jid: string,
+    url: string,
+    caption: string | undefined,
+    data: IProfileStatusMessage,
+    statusJidList: string[]
+  ): Promise<void> {
+    const result =
+      await this.baileysMessageStatusStoriesService.sendStatusVideo(
+        jid,
+        { url },
+        {
+          caption,
+          statusJidList,
+        }
+      );
+
+    await this.handleStatusResult(
+      result,
+      data.worker_profile_status_id,
+      'Failed to send status video'
+    );
+  }
+
+  private async processStatusAudio(
+    jid: string,
+    url: string,
+    caption: string | undefined,
+    data: IProfileStatusMessage,
+    statusJidList: string[]
+  ): Promise<void> {
+    const result =
+      await this.baileysMessageStatusStoriesService.sendStatusAudio(
+        jid,
+        { url },
+        {
+          caption,
+          statusJidList,
+        }
+      );
+
+    await this.handleStatusResult(
+      result,
+      data.worker_profile_status_id,
+      'Failed to send status audio'
+    );
+  }
+
   private async processProfileStatus(
     data: IProfileStatusMessage
   ): Promise<void> {
@@ -777,102 +884,22 @@ export class MessageSendConsume {
     const statusJidList = data.statusJidList ?? [];
 
     if (data.worker_profile_status_type_id === EWorkerProfileStatusType.text) {
-      const result =
-        await this.baileysMessageStatusStoriesService.sendStatusText(
-          jid,
-          data.value,
-          {
-            statusJidList,
-          }
-        );
-
-      if (!result) {
-        throw new Error('Failed to send status text');
-      }
-
-      if (result?.key?.id) {
-        await this.sendExternalIdUpdate(
-          data.worker_profile_status_id,
-          result.key.id
-        );
-      }
-
+      await this.processStatusText(jid, data, statusJidList);
       return;
     }
 
     if (data.worker_profile_status_type_id === EWorkerProfileStatusType.image) {
-      const result =
-        await this.baileysMessageStatusStoriesService.sendStatusImage(
-          jid,
-          { url },
-          {
-            caption,
-            statusJidList,
-          }
-        );
-
-      if (!result) {
-        throw new Error('Failed to send status image');
-      }
-
-      if (result?.key?.id) {
-        await this.sendExternalIdUpdate(
-          data.worker_profile_status_id,
-          result.key.id
-        );
-      }
-
+      await this.processStatusImage(jid, url, caption, data, statusJidList);
       return;
     }
 
     if (data.worker_profile_status_type_id === EWorkerProfileStatusType.video) {
-      const result =
-        await this.baileysMessageStatusStoriesService.sendStatusVideo(
-          jid,
-          { url },
-          {
-            caption,
-            statusJidList,
-          }
-        );
-
-      if (!result) {
-        throw new Error('Failed to send status video');
-      }
-
-      if (result?.key?.id) {
-        await this.sendExternalIdUpdate(
-          data.worker_profile_status_id,
-          result.key.id
-        );
-      }
-
+      await this.processStatusVideo(jid, url, caption, data, statusJidList);
       return;
     }
 
     if (data.worker_profile_status_type_id === EWorkerProfileStatusType.audio) {
-      const result =
-        await this.baileysMessageStatusStoriesService.sendStatusAudio(
-          jid,
-          { url },
-          {
-            caption,
-            statusJidList,
-          }
-        );
-
-      if (!result) {
-        throw new Error('Failed to send status audio');
-      }
-
-      if (result?.key?.id) {
-        await this.sendExternalIdUpdate(
-          data.worker_profile_status_id,
-          result.key.id
-        );
-      }
-
-      return;
+      await this.processStatusAudio(jid, url, caption, data, statusJidList);
     }
   }
 

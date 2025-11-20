@@ -127,6 +127,122 @@ export class PhoneValidationService {
     );
   }
 
+  private async processValidationResponse(
+    response: IPhoneValidationResponse,
+    accountId: string,
+    phone: string,
+    phoneDdi?: string | null
+  ): Promise<IPhoneValidationResponse | null> {
+    if (response.valid !== undefined) {
+      await this.setCachedResult(accountId, phone, phoneDdi, response);
+      return response;
+    }
+
+    if (response.error) {
+      const error = new Error(response.error);
+      if (this.isValidationError(error)) {
+        await this.setCachedResult(accountId, phone, phoneDdi, response);
+        return response;
+      }
+      return null;
+    }
+
+    await this.setCachedResult(accountId, phone, phoneDdi, response);
+    return response;
+  }
+
+  private isRetryableError(error: Error): boolean {
+    const retryableMessages = [
+      'timeout',
+      'No active worker',
+      'disconnected',
+      'connection',
+    ];
+
+    return retryableMessages.some((msg) =>
+      error.message.toLowerCase().includes(msg.toLowerCase())
+    );
+  }
+
+  private async handleValidationError(
+    error: unknown,
+    accountId: string,
+    phone: string,
+    phoneDdi?: string | null
+  ): Promise<{ shouldRetry: boolean; error: Error }> {
+    if (!(error instanceof Error)) {
+      return {
+        shouldRetry: false,
+        error: new Error(String(error)),
+      };
+    }
+
+    await this.removeCachedResult(accountId, phone, phoneDdi);
+
+    if (this.isRetryableError(error)) {
+      return { shouldRetry: true, error };
+    }
+
+    if (this.isValidationError(error)) {
+      throw error;
+    }
+
+    return { shouldRetry: true, error };
+  }
+
+  private async tryValidateWithWorkers(
+    workers: IWorkerActiveByAccount[],
+    accountId: string,
+    phone: string,
+    phoneDdi: string | null | undefined,
+    timeout: number
+  ): Promise<IPhoneValidationResponse> {
+    const workersToTry = workers.slice(0, 3);
+    let lastError: Error | null = null;
+
+    for (const worker of workersToTry) {
+      try {
+        const response = await this.validateWithWorker(
+          worker,
+          accountId,
+          phone,
+          phoneDdi,
+          timeout
+        );
+
+        const processedResponse = await this.processValidationResponse(
+          response,
+          accountId,
+          phone,
+          phoneDdi
+        );
+
+        if (processedResponse) {
+          return processedResponse;
+        }
+
+        lastError = new Error(response.error || 'Unknown validation error');
+      } catch (error) {
+        const { shouldRetry, error: handledError } =
+          await this.handleValidationError(error, accountId, phone, phoneDdi);
+
+        if (!shouldRetry) {
+          throw handledError;
+        }
+
+        lastError = handledError;
+      }
+    }
+
+    await this.removeCachedResult(accountId, phone, phoneDdi);
+
+    if (lastError) {
+      throw lastError;
+    }
+
+    throw new Error('Failed to validate phone with all available workers');
+  }
+
   validatePhone = async (
     accountId: string,
     phone: string,
@@ -147,72 +263,6 @@ export class PhoneValidationService {
       throw new Error('No active worker found for this account');
     }
 
-    const workersToTry = workers.slice(0, 3);
-    let lastError: Error | null = null;
-
-    for (const worker of workersToTry) {
-      try {
-        const response = await this.validateWithWorker(
-          worker,
-          accountId,
-          phone,
-          phoneDdi,
-          timeout
-        );
-
-        if (response.valid !== undefined) {
-          await this.setCachedResult(accountId, phone, phoneDdi, response);
-
-          return response;
-        }
-
-        if (response.error) {
-          const error = new Error(response.error);
-          if (this.isValidationError(error)) {
-            await this.setCachedResult(accountId, phone, phoneDdi, response);
-            return response;
-          }
-
-          await this.removeCachedResult(accountId, phone, phoneDdi);
-          lastError = error;
-          continue;
-        }
-
-        await this.setCachedResult(accountId, phone, phoneDdi, response);
-        return response;
-      } catch (error) {
-        if (error instanceof Error) {
-          if (
-            error.message.includes('timeout') ||
-            error.message.includes('No active worker') ||
-            error.message.includes('disconnected') ||
-            error.message.includes('connection')
-          ) {
-            await this.removeCachedResult(accountId, phone, phoneDdi);
-
-            lastError = error;
-            continue;
-          }
-
-          if (this.isValidationError(error)) {
-            await this.removeCachedResult(accountId, phone, phoneDdi);
-
-            throw error;
-          }
-
-          await this.removeCachedResult(accountId, phone, phoneDdi);
-          lastError = error;
-          continue;
-        }
-
-        lastError = error instanceof Error ? error : new Error(String(error));
-      }
-    }
-
-    await this.removeCachedResult(accountId, phone, phoneDdi);
-
-    if (lastError) throw lastError;
-
-    throw new Error('Failed to validate phone with all available workers');
+    return this.tryValidateWithWorkers(workers, accountId, phone, phoneDdi, timeout);
   };
 }

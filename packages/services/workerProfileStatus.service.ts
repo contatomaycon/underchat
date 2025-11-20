@@ -22,6 +22,17 @@ import { ContactService } from '@core/services/contact.service';
 import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid';
 import { TFunction } from 'i18next';
 
+interface IUploadProfileStatusContent {
+  photos?: UploadFileRequest | UploadFileRequest[];
+  text?: string;
+  caption?: string;
+}
+
+interface IUploadProfileStatusContext {
+  workerId: string;
+  accountId: string;
+}
+
 @injectable()
 export class WorkerProfileStatusService {
   constructor(
@@ -42,15 +53,14 @@ export class WorkerProfileStatusService {
 
   async uploadProfileStatus(
     t: TFunction<'translation', undefined>,
-    workerId: string,
-    accountId: string,
+    context: IUploadProfileStatusContext,
     workerProfileStatusTypeId: string,
-    photos?: UploadFileRequest | UploadFileRequest[],
-    text?: string,
-    caption?: string,
+    content: IUploadProfileStatusContent,
     isPermanent: boolean = false,
     visibilityData?: IVisibilityData
   ): Promise<WorkerProfileStatus[]> {
+    const { workerId, accountId } = context;
+    const { photos, text, caption } = content;
     const typeId = workerProfileStatusTypeId as EWorkerProfileStatusType;
 
     if (typeId === EWorkerProfileStatusType.text) {

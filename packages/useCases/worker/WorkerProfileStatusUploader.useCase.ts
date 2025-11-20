@@ -20,9 +20,17 @@ export class WorkerProfileStatusUploaderUseCase {
     if (field === undefined || field === null) return undefined;
     if (typeof field === 'string') return field;
     if (typeof field === 'object' && field !== null && 'value' in field) {
-      return String((field as { value: unknown }).value);
+      const value = (field as { value: unknown }).value;
+      if (typeof value === 'string') return value;
+      if (value === null || value === undefined) return undefined;
+      return String(value);
     }
-    return String(field);
+
+    if (typeof field === 'number' || typeof field === 'boolean') {
+      return String(field);
+    }
+
+    return undefined;
   }
 
   private async validateFileSize(
@@ -157,12 +165,16 @@ export class WorkerProfileStatusUploaderUseCase {
 
     const result = await this.workerProfileStatusService.uploadProfileStatus(
       t,
-      workerId,
-      accountId,
+      {
+        workerId,
+        accountId,
+      },
       workerProfileStatusTypeId,
-      validatedPhotos,
-      text,
-      caption,
+      {
+        photos: validatedPhotos,
+        text,
+        caption,
+      },
       isPermanent,
       {
         visibility_type: visibilityType,

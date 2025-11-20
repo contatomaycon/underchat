@@ -478,9 +478,7 @@ export class StorageService {
     try {
       const urlObj = new URL(url);
       const pathParts = urlObj.pathname.split('/');
-      const bucketIndex = pathParts.findIndex(
-        (part) => part === s3Environment.s3BucketName
-      );
+      const bucketIndex = pathParts.indexOf(s3Environment.s3BucketName);
 
       if (bucketIndex === -1 || bucketIndex === pathParts.length - 1) {
         return false;

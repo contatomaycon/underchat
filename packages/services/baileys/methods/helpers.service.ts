@@ -195,9 +195,7 @@ export class BaileysHelpersService {
       const normalizedStatusJidList = statusJidList.map(
         (jid) => normalizeJid(jid) ?? jid
       );
-      const ownJidExists = normalizedStatusJidList.some(
-        (jid) => jid === ownJid
-      );
+      const ownJidExists = normalizedStatusJidList.includes(ownJid);
 
       if (!ownJidExists) {
         return [...statusJidList, ownJid];
