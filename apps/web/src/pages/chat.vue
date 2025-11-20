@@ -1487,15 +1487,6 @@ const openChat = async (chatId: ListChatsResult['chat_id']) => {
 
   await chatStore.getChatById(requestQueue);
 
-  while (
-    chatStore.currentPage < chatStore.totalPages &&
-    !chatStore.loadingMoreMessages
-  ) {
-    const success = await chatStore.loadMoreMessages();
-    if (!success) break;
-    await nextTick();
-  }
-
   if (vuetifyDisplays.smAndDown.value) {
     isLeftSidebarOpen.value = false;
   }

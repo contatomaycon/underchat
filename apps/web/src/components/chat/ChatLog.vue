@@ -39,6 +39,8 @@ const chatLogContainer = ref<HTMLElement | null>(null);
 
 const showSkeleton = computed(() => chatStore.listMessages.length === 0);
 const reactionEmojiIndex = new EmojiIndex(data);
+const showScrollToBottom = ref(false);
+const scrollElementRef = ref<HTMLElement | null>(null);
 
 const viewerOpen = ref(false);
 const viewerSrc = ref<string>('');
@@ -1111,9 +1113,28 @@ const downloadViewerMedia = () => {
   downloadImage(viewerSrc.value, viewerDownloadName.value);
 };
 
+const checkIfShouldShowScrollButton = (target: HTMLElement) => {
+  if (!target) {
+    showScrollToBottom.value = false;
+    return;
+  }
+
+  const scrollTop = target.scrollTop;
+  const scrollHeight = target.scrollHeight;
+  const clientHeight = target.clientHeight;
+  const threshold = 50;
+
+  const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+  const isAtBottom = distanceFromBottom <= threshold;
+
+  showScrollToBottom.value = !isAtBottom;
+};
+
 const handleScroll = async (e: Event) => {
   const target = e.target as HTMLElement;
   if (!target) return;
+
+  checkIfShouldShowScrollButton(target);
 
   const scrollTop = target.scrollTop;
   const threshold = 200;
@@ -1133,8 +1154,51 @@ const handleScroll = async (e: Event) => {
       const newScrollHeight = target.scrollHeight;
       const scrollDifference = newScrollHeight - previousScrollHeight;
       target.scrollTop = previousScrollTop + scrollDifference;
+      checkIfShouldShowScrollButton(target);
     }
   }
+};
+
+const scrollToBottom = async () => {
+  const scrollElement = scrollElementRef.value;
+  if (!scrollElement) {
+    const psContainer = chatLogContainer.value?.closest('.ps') as HTMLElement;
+    if (!psContainer) return;
+
+    const foundElement =
+      (psContainer.querySelector('.ps__rail-y')
+        ?.parentElement as HTMLElement) ||
+      (psContainer.querySelector('.ps__container') as HTMLElement) ||
+      psContainer;
+
+    if (!foundElement) return;
+
+    foundElement.scrollTop = foundElement.scrollHeight;
+
+    await nextTick();
+
+    requestAnimationFrame(() => {
+      foundElement.scrollTop = foundElement.scrollHeight;
+
+      setTimeout(() => {
+        checkIfShouldShowScrollButton(foundElement);
+      }, 100);
+    });
+
+    return;
+  }
+
+  scrollElement.scrollTop = scrollElement.scrollHeight;
+
+  await nextTick();
+
+  requestAnimationFrame(() => {
+    scrollElement.scrollTop = scrollElement.scrollHeight;
+
+    setTimeout(() => {
+      checkIfShouldShowScrollButton(scrollElement);
+    }, 100);
+  });
 };
 
 watch(
@@ -1150,9 +1214,24 @@ watch(
           loadAudioWaveform(msg.message_id, msg.content.audio.waveform);
         }
       }
+
+      if (scrollElementRef.value) {
+        checkIfShouldShowScrollButton(scrollElementRef.value);
+      }
     });
   },
   { deep: true, immediate: true }
+);
+
+watch(
+  () => [chatStore.currentPage, chatStore.totalPages],
+  () => {
+    nextTick(() => {
+      if (scrollElementRef.value) {
+        checkIfShouldShowScrollButton(scrollElementRef.value);
+      }
+    });
+  }
 );
 
 watch(locationModalOpen, async (isOpen) => {
@@ -1273,7 +1352,12 @@ onMounted(() => {
         ?.parentElement as HTMLElement) || psContainer;
 
     if (scrollElement) {
+      scrollElementRef.value = scrollElement;
       scrollElement.addEventListener('scroll', handleScroll, { passive: true });
+
+      setTimeout(() => {
+        checkIfShouldShowScrollButton(scrollElement);
+      }, 100);
     }
 
     document.addEventListener('click', onClickOutside);
@@ -2486,6 +2570,21 @@ onUnmounted(() => {
       </template>
     </template>
   </div>
+
+  <Transition name="fade">
+    <VBtn
+      v-if="showScrollToBottom"
+      class="scroll-to-bottom-btn"
+      icon
+      size="small"
+      variant="flat"
+      color="white"
+      elevation="2"
+      @click="scrollToBottom"
+    >
+      <VIcon size="18" color="primary">tabler-arrow-down</VIcon>
+    </VBtn>
+  </Transition>
 
   <VDialog
     v-model="viewerOpen"
@@ -4024,5 +4123,39 @@ onUnmounted(() => {
   height: 500px;
   position: relative;
   overflow: hidden;
+}
+
+.scroll-to-bottom-btn {
+  position: fixed;
+  bottom: 160px;
+  right: 45px;
+  z-index: 10;
+  border-radius: 50% !important;
+  min-width: 36px !important;
+  width: 36px !important;
+  height: 36px !important;
+  background-color: rgb(var(--v-theme-surface)) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+
+  @media (max-width: 960px) {
+    bottom: 160px;
+    right: 45px;
+    min-width: 32px !important;
+    width: 32px !important;
+    height: 32px !important;
+  }
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+  transform: translateY(10px) scale(0.9);
 }
 </style>
