@@ -6,6 +6,8 @@ import { WorkerProfileStatusDeleterTransactionRepository } from '@core/repositor
 import { WorkerProfileStatusViewerRepository } from '@core/repositories/worker/WorkerProfileStatusViewer.repository';
 import { WorkerProfileStatusContactListerRepository } from '@core/repositories/worker/WorkerProfileStatusContactLister.repository';
 import { WorkerProfileStatusExternalIdUpdaterRepository } from '@core/repositories/worker/WorkerProfileStatusExternalIdUpdater.repository';
+import { WorkerProfileStatusPermanentRenewalListerRepository } from '@core/repositories/worker/WorkerProfileStatusPermanentRenewalLister.repository';
+import { WorkerProfileStatusUpdatedAtUpdaterRepository } from '@core/repositories/worker/WorkerProfileStatusUpdatedAtUpdater.repository';
 import { ProfileStatus } from '@core/schema/worker/listProfileStatus/response.schema';
 import { WorkerProfileStatus } from '@core/schema/worker/uploadProfileStatus/response.schema';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
@@ -30,6 +32,8 @@ export class WorkerProfileStatusService {
     private readonly workerProfileStatusViewerRepository: WorkerProfileStatusViewerRepository,
     private readonly workerProfileStatusContactListerRepository: WorkerProfileStatusContactListerRepository,
     private readonly workerProfileStatusExternalIdUpdaterRepository: WorkerProfileStatusExternalIdUpdaterRepository,
+    private readonly workerProfileStatusPermanentRenewalListerRepository: WorkerProfileStatusPermanentRenewalListerRepository,
+    private readonly workerProfileStatusUpdatedAtUpdaterRepository: WorkerProfileStatusUpdatedAtUpdaterRepository,
     private readonly storageService: StorageService,
     private readonly streamProducerService: StreamProducerService,
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
@@ -317,5 +321,32 @@ export class WorkerProfileStatusService {
     } catch (error) {
       console.error('Error sending profile status to Kafka:', error);
     }
+  }
+
+  async renewPermanentStatuses(): Promise<void> {
+    const statusesToRenew =
+      await this.workerProfileStatusPermanentRenewalListerRepository.listPermanentStatusToRenew();
+
+    if (statusesToRenew.length === 0) {
+      return;
+    }
+
+    await Promise.all(
+      statusesToRenew.map(async (status) => {
+        await this.workerProfileStatusUpdatedAtUpdaterRepository.updateUpdatedAt(
+          status.worker_profile_status_id
+        );
+
+        const statusToSend: WorkerProfileStatus = {
+          worker_profile_status_id: status.worker_profile_status_id,
+          worker_id: status.worker_id,
+          worker_profile_status_type_id: status.worker_profile_status_type_id,
+          value: status.value,
+          is_permanent: status.is_permanent,
+        };
+
+        await this.sendStatusToKafka(statusToSend, status.account_id);
+      })
+    );
   }
 }
