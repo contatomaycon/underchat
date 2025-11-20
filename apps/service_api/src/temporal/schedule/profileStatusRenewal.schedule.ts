@@ -22,7 +22,7 @@ export const profileStatusRenewalSchedule = async (
         action: {
           type: 'startWorkflow',
           workflowType: 'profileStatusRenewalWorkflow',
-          taskQueue: 'server-queue',
+          taskQueue: 'profile-status-renewal-queue',
           args: [],
         },
       });

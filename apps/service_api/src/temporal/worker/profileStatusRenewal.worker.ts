@@ -10,7 +10,7 @@ export const profileStatusRenewalWorker = async (fastify: FastifyInstance) => {
       '@core/temporal/workflows/profileStatusRenewal.workflow'
     ),
     activities,
-    taskQueue: 'server-queue',
+    taskQueue: 'profile-status-renewal-queue',
   });
 
   worker.run();
