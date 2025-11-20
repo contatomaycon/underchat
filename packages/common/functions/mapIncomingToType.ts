@@ -63,25 +63,6 @@ function getViewOnceInner(msg: proto.IMessage): proto.IMessage | undefined {
 
 function detectReactionOrPin({ msg }: IMapCtx): EMessageType | undefined {
   if (msg.reactionMessage) return EMessageType.react;
-  if ((msg as any).pinInChatMessage || (msg as any).pinInChat)
-    return EMessageType.pin_message;
-}
-
-function detectStatusTypes({
-  isStatus,
-  msg,
-  vOnce,
-  text,
-}: IMapCtx): EMessageType | undefined {
-  if (!isStatus) return;
-  if (msg.imageMessage || vOnce?.imageMessage) return EMessageType.status_image;
-  if (msg.videoMessage || vOnce?.videoMessage) return EMessageType.status_video;
-  if (text) return EMessageType.status_text;
-}
-
-function detectViewOnce({ vOnce }: IMapCtx): EMessageType | undefined {
-  if (vOnce?.imageMessage) return EMessageType.view_once_image;
-  if (vOnce?.videoMessage) return EMessageType.view_once_video;
 }
 
 function detectMedia({ msg }: IMapCtx): EMessageType | undefined {
@@ -93,21 +74,6 @@ function detectMedia({ msg }: IMapCtx): EMessageType | undefined {
   if (msg.locationMessage) return EMessageType.location;
   if (msg.contactMessage) return EMessageType.contact_card;
   if (msg.contactsArrayMessage) return EMessageType.contacts;
-}
-
-function detectInteractive({ msg }: IMapCtx): EMessageType | undefined {
-  if (
-    (msg as any).buttonsResponseMessage ||
-    (msg as any).templateButtonReplyMessage
-  )
-    return EMessageType.button_reply;
-  if (msg.listResponseMessage) return EMessageType.list_reply;
-}
-
-function detectSpecial({ msg }: IMapCtx): EMessageType | undefined {
-  if ((msg as any).pollCreationMessage) return EMessageType.poll;
-  if ((msg as any).groupInviteMessage) return EMessageType.group_invite;
-  if ((msg as any).productMessage) return EMessageType.product;
 }
 
 function detectProtocol({ pType, msg }: IMapCtx): EMessageType | undefined {
@@ -123,7 +89,7 @@ function detectProtocol({ pType, msg }: IMapCtx): EMessageType | undefined {
 
 function detectText({ text, msg }: IMapCtx): EMessageType | undefined {
   if (!text) return;
-  if (hasMentions(msg)) return EMessageType.mention;
+
   return EMessageType.text;
 }
 
@@ -150,11 +116,7 @@ export function mapIncomingToType(m: WAMessage): EMessageType | undefined {
 
   const detectors = [
     detectReactionOrPin,
-    detectStatusTypes,
-    detectViewOnce,
     detectMedia,
-    detectInteractive,
-    detectSpecial,
     detectProtocol,
     detectText,
   ];
