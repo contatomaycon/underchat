@@ -6,6 +6,9 @@ import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { can } from '@layouts/plugins/casl';
 
 const emit = defineEmits<{
   (e: 'openChat', id: ListChatsResult['chat_id']): void;
@@ -26,10 +29,38 @@ const perPageQueue = ref(10);
 const currentPageInChat = ref(1);
 const perPageInChat = ref(10);
 
+const queueSelectionPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EChatPermissions.chat_group,
+  EChatPermissions.pick_queue_chat,
+];
+
+const canSelectAnyQueueChat = computed(() => can(queueSelectionPermissions));
+
 const modelSearch = computed({
   get: () => props.search,
   set: (value: string) => emit('update:search', value),
 });
+
+const isQueueChatSelectable = (index: number): boolean => {
+  if (canSelectAnyQueueChat.value) {
+    return true;
+  }
+
+  return index === 0;
+};
+
+const handleQueueClick = (
+  chatId: ListChatsResult['chat_id'],
+  index: number
+): void => {
+  if (!isQueueChatSelectable(index)) {
+    return;
+  }
+
+  emit('openChat', chatId);
+};
 
 onMounted(async () => {
   const requestQueue: ListChatsQuery = {
@@ -82,11 +113,7 @@ onMounted(async () => {
           v-if="chatStore.user?.info.photo"
           :src="chatStore.user?.info.photo"
         />
-        <VImg
-          v-else
-          :src="'/images/svg/avatar-default.svg'"
-          alt="Avatar"
-        />
+        <VImg v-else :src="'/images/svg/avatar-default.svg'" alt="Avatar" />
       </VAvatar>
     </VBadge>
 
@@ -133,10 +160,11 @@ onMounted(async () => {
       </li>
 
       <ChatQueue
-        v-for="queue in chatStore.listQueue"
+        v-for="(queue, index) in chatStore.listQueue"
         :key="`chat-${queue.chat_id}`"
         :user="queue"
-        @click="$emit('openChat', queue.chat_id)"
+        :disabled="!isQueueChatSelectable(index)"
+        @click="handleQueueClick(queue.chat_id, index)"
       />
 
       <li

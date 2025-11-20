@@ -5,6 +5,7 @@ import { ContactService } from '@core/services/contact.service';
 import { LabelTemplateService } from '@core/services/labelTemplate.service';
 import { ContactExistsByEmailAndPhoneRepository } from '@core/repositories/contact/ContactExistsByEmailAndPhone.repository';
 import { EncryptService } from '@core/services/encrypt.service';
+import moment from 'moment';
 
 @injectable()
 export class ContactUpdaterUseCase {
@@ -14,6 +15,27 @@ export class ContactUpdaterUseCase {
     private readonly contactExistsByEmailAndPhoneRepository: ContactExistsByEmailAndPhoneRepository,
     private readonly encryptService: EncryptService
   ) {}
+
+  private validateBirthDate(
+    t: TFunction<'translation', undefined>,
+    birthDate: string
+  ) {
+    if (!moment(birthDate, 'YYYY-MM-DD', true).isValid()) {
+      throw new Error(t('date_must_be_in_the_format_yyyy_mm_dd'));
+    }
+
+    const birth = moment(birthDate, 'YYYY-MM-DD');
+    const minDate = moment('1900-01-01', 'YYYY-MM-DD');
+    const today = moment().startOf('day');
+
+    if (birth.isBefore(minDate)) {
+      throw new Error(t('date_must_be_greater_than_1900_01_01'));
+    }
+
+    if (!birth.isBefore(today)) {
+      throw new Error(t('date_must_be_less_than_today'));
+    }
+  }
 
   private async validateDuplicateContact(
     t: TFunction<'translation', undefined>,
@@ -70,6 +92,14 @@ export class ContactUpdaterUseCase {
       if (!labelTemplateExists) {
         throw new Error(t('label_template_not_found'));
       }
+    }
+
+    if (
+      body?.birthday &&
+      typeof body.birthday === 'string' &&
+      body.birthday.trim() !== ''
+    ) {
+      this.validateBirthDate(t, body.birthday);
     }
 
     const emailC = body.email ? this.encryptService.encrypt(body.email) : null;

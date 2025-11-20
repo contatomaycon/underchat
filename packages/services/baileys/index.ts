@@ -4,10 +4,15 @@ import { BaileysConnectionService } from './methods/connection.service';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
+import { BaileysPhoneValidationService } from './methods/phoneValidation.service';
+import { IPhoneValidationResult } from '@core/common/interfaces/IPhoneValidationResult';
 
 @singleton()
 export class BaileysService {
-  constructor(private readonly connection: BaileysConnectionService) {}
+  constructor(
+    private readonly connection: BaileysConnectionService,
+    private readonly phoneValidationService: BaileysPhoneValidationService
+  ) {}
 
   connect(input: IBaileysConnection): Promise<IBaileysConnectionState> {
     return this.connection.connect(input);
@@ -31,5 +36,9 @@ export class BaileysService {
 
   get socket(): ReturnType<typeof makeWASocket> | undefined {
     return this.connection.getSocket();
+  }
+
+  validatePhone(ddi: string, number: string): Promise<IPhoneValidationResult> {
+    return this.phoneValidationService.validatePhone(ddi, number);
   }
 }

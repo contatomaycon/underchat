@@ -48,8 +48,13 @@ export class ContactUpdaterRepository {
       inputUpdate.nickname = input.nickname;
     }
 
-    if (input.birthday) {
-      inputUpdate.birthday = input.birthday;
+    if (input.birthday !== undefined) {
+      inputUpdate.birthday =
+        input.birthday &&
+        typeof input.birthday === 'string' &&
+        input.birthday.trim() !== ''
+          ? input.birthday
+          : null;
     }
 
     if (input.notes) {

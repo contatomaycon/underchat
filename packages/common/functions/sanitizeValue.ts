@@ -30,8 +30,32 @@ export const sanitizationMap: Record<ETypeSanetize, (value: string) => string> =
     [ETypeSanetize.phone]: (value) => {
       const cleaned = value.replaceAll(/\D/g, '');
 
+      if (!cleaned || cleaned.length === 0) {
+        return value;
+      }
+
       if (cleaned.length === 11) {
-        return `(${cleaned.slice(0, 2)}) *****-${cleaned.slice(-4)}`;
+        const ddd = cleaned.slice(0, 2);
+        const last4 = cleaned.slice(-4);
+        return `(${ddd}) *****-${last4}`;
+      }
+
+      if (cleaned.length === 10) {
+        const ddd = cleaned.slice(0, 2);
+        const last4 = cleaned.slice(-4);
+        return `(${ddd}) ****-${last4}`;
+      }
+
+      if (cleaned.length >= 8) {
+        const ddd = cleaned.length >= 10 ? cleaned.slice(0, 2) : '';
+        const last4 = cleaned.slice(-4);
+        const maskLength = cleaned.length - (ddd ? 2 : 0) - 4;
+        const mask = '*'.repeat(Math.max(0, maskLength));
+
+        if (ddd) {
+          return `(${ddd}) ${mask}-${last4}`;
+        }
+        return `${mask}-${last4}`;
       }
 
       return (

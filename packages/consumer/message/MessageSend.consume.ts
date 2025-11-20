@@ -6,8 +6,14 @@ import { BaileysMessageMediaService } from '@core/services/baileys/methods/messa
 import { BaileysMessageReactionsInteractionsService } from '@core/services/baileys/methods/messageReactionsInteractions.service';
 import { BaileysMessageEditDeleteService } from '@core/services/baileys/methods/messageEditDelete.service';
 import { BaileysMessageLocationContactService } from '@core/services/baileys/methods/messageLocationContact.service';
+import { BaileysMessageStatusStoriesService } from '@core/services/baileys/methods/messageStatusStories.service';
+import { BaileysProfileService } from '@core/services/baileys/methods/profile.service';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
+import { IProfileStatusMessage } from '@core/common/interfaces/IProfileStatusMessage';
+import { IProfileStatusDeleteMessage } from '@core/common/interfaces/IProfileStatusDeleteMessage';
+import { IProfileInfoMessage } from '@core/common/interfaces/IProfileInfoMessage';
+import { IUpdateProfileStatusExternalId } from '@core/common/interfaces/IUpdateProfileStatusExternalId';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
@@ -21,6 +27,7 @@ import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { selectJidChat } from '@core/common/functions/selectJidChat';
 import { convertWaveformBase64ToUint8Array } from '@core/common/functions/convertWaveform';
 import { webcrypto } from 'node:crypto';
+import { EWorkerProfileStatusType } from '@core/common/enums/EWorkerProfileStatusType';
 
 @singleton()
 export class MessageSendConsume {
@@ -36,6 +43,8 @@ export class MessageSendConsume {
     private readonly baileysMessageReactionsInteractionsService: BaileysMessageReactionsInteractionsService,
     private readonly baileysMessageEditDeleteService: BaileysMessageEditDeleteService,
     private readonly baileysMessageLocationContactService: BaileysMessageLocationContactService,
+    private readonly baileysMessageStatusStoriesService: BaileysMessageStatusStoriesService,
+    private readonly baileysProfileService: BaileysProfileService,
     private readonly streamProducerService: StreamProducerService,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly keyedSequencerService: KeyedSequencerService
@@ -70,14 +79,11 @@ export class MessageSendConsume {
       partitionsConsumedConcurrently: 1,
       eachMessage: async ({ topic, partition, message, heartbeat }) => {
         const data = this.parseMessage(message.value);
-        if (!data) {
-          await this.commitNext(topic, partition, message.offset);
+        const statusData = this.parseStatusMessage(message.value);
+        const deleteStatusData = this.parseDeleteStatusMessage(message.value);
+        const profileInfoData = this.parseProfileInfoMessage(message.value);
 
-          return;
-        }
-
-        const chatId = this.resolveChatId(data);
-        if (!chatId) {
+        if (!data && !statusData && !deleteStatusData && !profileInfoData) {
           await this.commitNext(topic, partition, message.offset);
 
           return;
@@ -85,15 +91,52 @@ export class MessageSendConsume {
 
         const stop = startHeartbeat(heartbeat);
         try {
+          if (deleteStatusData) {
+            await this.processDeleteStatus(deleteStatusData);
+            stop();
+            await this.commitNext(topic, partition, message.offset);
+            return;
+          }
+
+          if (statusData) {
+            await this.processProfileStatus(statusData);
+            stop();
+            await this.commitNext(topic, partition, message.offset);
+            return;
+          }
+
+          if (profileInfoData) {
+            await this.processProfileInfo(profileInfoData);
+            stop();
+            await this.commitNext(topic, partition, message.offset);
+            return;
+          }
+
+          if (!data) {
+            stop();
+            await this.commitNext(topic, partition, message.offset);
+            return;
+          }
+
+          const chatId = this.resolveChatId(data);
+          if (!chatId) {
+            stop();
+            await this.commitNext(topic, partition, message.offset);
+            return;
+          }
+
           await this.enqueueByChatId(chatId, async () => {
             await this.processMessage(data);
           });
         } catch {
+          stop();
           await this.commitNext(topic, partition, message.offset);
+          return;
         } finally {
           stop();
         }
 
+        stop();
         await this.commitNext(topic, partition, message.offset);
       },
     });
@@ -139,7 +182,89 @@ export class MessageSendConsume {
 
     try {
       const parsed = JSON.parse(raw) as IChatMessage;
-      return parsed ?? null;
+      if (parsed && 'message_id' in parsed && 'chat_id' in parsed) {
+        return parsed;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private parseStatusMessage(
+    value: Buffer | null
+  ): IProfileStatusMessage | null {
+    if (!value) {
+      return null;
+    }
+
+    const raw = value.toString('utf8').trim();
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as IProfileStatusMessage;
+      if (
+        parsed &&
+        'worker_profile_status_id' in parsed &&
+        'worker_id' in parsed &&
+        !('external_id' in parsed)
+      ) {
+        return parsed;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private parseDeleteStatusMessage(
+    value: Buffer | null
+  ): IProfileStatusDeleteMessage | null {
+    if (!value) {
+      return null;
+    }
+
+    const raw = value.toString('utf8').trim();
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as IProfileStatusDeleteMessage;
+      if (
+        parsed &&
+        'worker_profile_status_id' in parsed &&
+        'worker_id' in parsed &&
+        'external_id' in parsed
+      ) {
+        return parsed;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private parseProfileInfoMessage(
+    value: Buffer | null
+  ): IProfileInfoMessage | null {
+    if (!value) {
+      return null;
+    }
+
+    const raw = value.toString('utf8').trim();
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as IProfileInfoMessage;
+      if (parsed && 'worker_id' in parsed && 'account_id' in parsed) {
+        return parsed;
+      }
+      return null;
     } catch {
       return null;
     }
@@ -218,9 +343,11 @@ export class MessageSendConsume {
   ): Promise<void> {
     if (hasQuoted && data.content?.quoted) {
       await this.processTextQuoted(jid, data);
-    } else {
-      await this.processText(jid, data);
+      this.lastMessageTypeByChatId.set(chatId, EMessageType.text);
+      return;
     }
+
+    await this.processText(jid, data);
     this.lastMessageTypeByChatId.set(chatId, EMessageType.text);
   }
 
@@ -638,6 +765,171 @@ export class MessageSendConsume {
     await this.pushUpdate(update);
   }
 
+  private async handleStatusResult(
+    result: WAMessage | null | undefined,
+    workerProfileStatusId: string,
+    errorMessage: string
+  ): Promise<void> {
+    if (!result) {
+      throw new Error(errorMessage);
+    }
+
+    if (result?.key?.id) {
+      await this.sendExternalIdUpdate(workerProfileStatusId, result.key.id);
+    }
+  }
+
+  private async processStatusText(
+    jid: string,
+    data: IProfileStatusMessage,
+    statusJidList: string[]
+  ): Promise<void> {
+    const result = await this.baileysMessageStatusStoriesService.sendStatusText(
+      jid,
+      data.value,
+      {
+        statusJidList,
+      }
+    );
+
+    await this.handleStatusResult(
+      result,
+      data.worker_profile_status_id,
+      'Failed to send status text'
+    );
+  }
+
+  private async processStatusImage(
+    jid: string,
+    url: string,
+    caption: string | undefined,
+    data: IProfileStatusMessage,
+    statusJidList: string[]
+  ): Promise<void> {
+    const result =
+      await this.baileysMessageStatusStoriesService.sendStatusImage(
+        jid,
+        { url },
+        {
+          caption,
+          statusJidList,
+        }
+      );
+
+    await this.handleStatusResult(
+      result,
+      data.worker_profile_status_id,
+      'Failed to send status image'
+    );
+  }
+
+  private async processStatusVideo(
+    jid: string,
+    url: string,
+    caption: string | undefined,
+    data: IProfileStatusMessage,
+    statusJidList: string[]
+  ): Promise<void> {
+    const result =
+      await this.baileysMessageStatusStoriesService.sendStatusVideo(
+        jid,
+        { url },
+        {
+          caption,
+          statusJidList,
+        }
+      );
+
+    await this.handleStatusResult(
+      result,
+      data.worker_profile_status_id,
+      'Failed to send status video'
+    );
+  }
+
+  private async processStatusAudio(
+    jid: string,
+    url: string,
+    caption: string | undefined,
+    data: IProfileStatusMessage,
+    statusJidList: string[]
+  ): Promise<void> {
+    const result =
+      await this.baileysMessageStatusStoriesService.sendStatusAudio(
+        jid,
+        { url },
+        {
+          caption,
+          statusJidList,
+        }
+      );
+
+    await this.handleStatusResult(
+      result,
+      data.worker_profile_status_id,
+      'Failed to send status audio'
+    );
+  }
+
+  private async processProfileStatus(
+    data: IProfileStatusMessage
+  ): Promise<void> {
+    const jid = 'status@broadcast';
+    const valueParts = data.value.split('|');
+    const url = valueParts[0];
+    const caption =
+      valueParts.length > 1 ? valueParts.slice(1).join('|') : undefined;
+
+    const statusJidList = data.statusJidList ?? [];
+
+    if (data.worker_profile_status_type_id === EWorkerProfileStatusType.text) {
+      await this.processStatusText(jid, data, statusJidList);
+      return;
+    }
+
+    if (data.worker_profile_status_type_id === EWorkerProfileStatusType.image) {
+      await this.processStatusImage(jid, url, caption, data, statusJidList);
+      return;
+    }
+
+    if (data.worker_profile_status_type_id === EWorkerProfileStatusType.video) {
+      await this.processStatusVideo(jid, url, caption, data, statusJidList);
+      return;
+    }
+
+    if (data.worker_profile_status_type_id === EWorkerProfileStatusType.audio) {
+      await this.processStatusAudio(jid, url, caption, data, statusJidList);
+    }
+  }
+
+  private async processDeleteStatus(
+    data: IProfileStatusDeleteMessage
+  ): Promise<void> {
+    await this.baileysMessageStatusStoriesService.deleteStatus(
+      data.external_id,
+      data.statusJidList
+    );
+  }
+
+  private async processProfileInfo(data: IProfileInfoMessage): Promise<void> {
+    if (data.name) {
+      await this.baileysProfileService.updateProfileName(data.name);
+    }
+
+    if (data.message) {
+      await this.baileysProfileService.updateProfileStatus(data.message);
+    }
+
+    if (data.photo === null) {
+      await this.baileysProfileService.removeProfilePicture();
+      return;
+    }
+
+    if (data.photo) {
+      await this.baileysProfileService.updateProfilePicture(data.photo);
+    }
+  }
+
   private async processImage(jid: string, data: IChatMessage): Promise<void> {
     const imageUrl = data.content?.image?.url;
 
@@ -872,5 +1164,23 @@ export class MessageSendConsume {
     const topic = this.kafkaServiceQueueService.updateMessage();
 
     await this.streamProducerService.send(topic, input);
+  }
+
+  private async sendExternalIdUpdate(
+    workerProfileStatusId: string,
+    externalId: string
+  ): Promise<void> {
+    try {
+      const updateMessage: IUpdateProfileStatusExternalId = {
+        worker_profile_status_id: workerProfileStatusId,
+        external_id: externalId,
+      };
+
+      const topic =
+        this.kafkaServiceQueueService.updateProfileStatusExternalId();
+      await this.streamProducerService.send(topic, updateMessage);
+    } catch (error) {
+      console.error('Error sending external ID update to Kafka:', error);
+    }
   }
 }

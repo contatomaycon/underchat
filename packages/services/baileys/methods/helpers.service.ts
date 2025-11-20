@@ -45,15 +45,16 @@ export class BaileysHelpersService {
     const text = this.extractText(content);
     const durationMs = this.estimateTypingMs(text);
 
-    const preThink = this.rand(300, 1200);
+    const preThink = this.rand(150, 600);
     await this.sleep(preThink);
 
     const start = Date.now();
     await sock.sendPresenceUpdate('composing', jid);
 
     while (Date.now() - start < durationMs) {
-      const remaining = durationMs - (Date.now() - start);
-      const tick = Math.min(5000, remaining);
+      const elapsed = Date.now() - start;
+      const remaining = durationMs - elapsed;
+      const tick = Math.min(1800, remaining);
       await this.sleep(tick);
       if (Date.now() - start < durationMs) {
         await sock.sendPresenceUpdate('composing', jid);
@@ -123,23 +124,86 @@ export class BaileysHelpersService {
 
   private estimateTypingMs(text: string) {
     const len = this.countGraphemes(text);
-    const baseCps = this.rand(3, 6);
+
+    if (!len) {
+      return this.rand(300, 700);
+    }
+
+    const baseCps = this.rand(7, 12);
     const base = (len / baseCps) * 1000;
 
     const punctCount = (text.match(/[.,!?;:]/g) || []).length;
     const newlineCount = (text.match(/\n/g) || []).length;
     const emojiCount = (text.match(/\p{Extended_Pictographic}/gu) || []).length;
 
-    const punctPause = punctCount * this.rand(200, 500);
-    const newlinePause = newlineCount * this.rand(400, 900);
-    const emojiPause = emojiCount * this.rand(150, 350);
+    const punctPause = punctCount * this.rand(80, 220);
+    const newlinePause = newlineCount * this.rand(120, 320);
+    const emojiPause = emojiCount * this.rand(70, 180);
 
-    const jitter = base * (this.rand(-10, 15) / 100);
+    const jitter = base * (this.rand(-5, 12) / 100);
     const total = base + punctPause + newlinePause + emojiPause + jitter;
 
-    const minMs = 800;
-    const maxMs = 25000;
+    const minMs = 400;
+    const maxMs = 8000;
     const clamped = Math.max(minMs, Math.min(total, maxMs));
+
     return Math.round(clamped);
+  }
+
+  getOwnJid(): string {
+    const sock = this.socket();
+    const ownJidRaw = sock.user?.id;
+
+    if (!ownJidRaw) {
+      throw new Error('Own JID not available');
+    }
+
+    const ownJid = normalizeJid(ownJidRaw);
+
+    if (!ownJid) {
+      throw new Error('Failed to normalize own JID');
+    }
+
+    return ownJid;
+  }
+
+  async updateProfileName(name: string): Promise<void> {
+    const sock = this.socket();
+    await sock.updateProfileName(name);
+  }
+
+  async updateProfileStatus(status: string): Promise<void> {
+    const sock = this.socket();
+    await sock.updateProfileStatus(status);
+  }
+
+  async removeProfilePicture(jid: string): Promise<void> {
+    const sock = this.socket();
+    await sock.removeProfilePicture(jid);
+  }
+
+  async updateProfilePicture(photoUrl: string): Promise<void> {
+    const sock = this.socket();
+    const ownJid = this.getOwnJid();
+    await sock.updateProfilePicture(ownJid, { url: photoUrl });
+  }
+
+  addOwnJidToStatusList(statusJidList: string[]): string[] {
+    try {
+      const ownJid = this.getOwnJid();
+
+      const normalizedStatusJidList = statusJidList.map(
+        (jid) => normalizeJid(jid) ?? jid
+      );
+      const ownJidExists = normalizedStatusJidList.includes(ownJid);
+
+      if (!ownJidExists) {
+        return [...statusJidList, ownJid];
+      }
+
+      return statusJidList;
+    } catch {
+      return statusJidList;
+    }
   }
 }

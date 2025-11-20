@@ -1,5 +1,5 @@
 export interface IStatusTextArgs {
-  statusJidList: string[];
+  statusJidList?: string[];
   backgroundColor?: string;
   font?: number;
 }

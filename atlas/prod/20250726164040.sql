@@ -123,7 +123,7 @@ CREATE TABLE "user" (
   "account_id" uuid NOT NULL,
   "user_status_id" uuid NOT NULL,
   "email" character varying(500) NOT NULL,
-  "email_partial" character varying(25) NOT NULL,
+  "email_partial" character varying(50) NOT NULL,
   "email_c" character varying(500) NOT NULL,
   "password" character varying(255) NOT NULL,
   "created_at" timestamptz NULL DEFAULT now(),

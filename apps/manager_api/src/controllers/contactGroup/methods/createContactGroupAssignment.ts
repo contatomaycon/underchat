@@ -23,19 +23,10 @@ export const createContactGroupAssignment = async (
       tokenJwtData.account_id
     );
 
-    if (response) {
-      return sendResponse(reply, {
-        message: t('contact_group_assignment_create_success'),
-        httpStatusCode: EHTTPStatusCode.ok,
-        data: response,
-      });
-    }
-
-    request.server.logger.info(response, request.id);
-
     return sendResponse(reply, {
-      message: t('contact_group_assignment_create_error'),
-      httpStatusCode: EHTTPStatusCode.bad_request,
+      message: t('contact_group_assignment_create_success'),
+      httpStatusCode: EHTTPStatusCode.ok,
+      data: response,
     });
   } catch (error) {
     request.server.logger.error(error, request.id);

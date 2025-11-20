@@ -6,7 +6,7 @@ CREATE TABLE "contact" (
   "name" character varying(100) NOT NULL,
   "last_name" character varying(100) NULL,
   "email" character varying(500) NULL,
-  "email_partial" character varying(25) NULL,
+  "email_partial" character varying(50) NULL,
   "email_c" character varying(500) NULL,
   "phone_ddi" character varying(5) NULL,
   "phone" character varying(500) NULL,

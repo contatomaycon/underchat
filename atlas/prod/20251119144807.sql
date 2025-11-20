@@ -1,0 +1,3 @@
+-- Insert permission action for profile status worker
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "permission_action_group_id", "action", "name", "description") VALUES 
+  ('019a9cf0-dbff-73fd-8e1e-e596c462125f', '019a930d-c6f6-766d-9c83-96314dc6574c', '019a930d-c6f6-766d-9c83-c68d845f1195', 'profile_status_worker', 'Status do Perfil', 'Permite gerenciar o status do perfil');

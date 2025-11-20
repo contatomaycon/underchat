@@ -12,6 +12,7 @@ import { viewLinkPreviewSchema } from '@core/schema/chat/viewLinkPreview';
 import { reactMessageSchema } from '@core/schema/chat/reactMessage';
 import { deleteMessageSchema } from '@core/schema/chat/deleteMessage';
 import { updateChatStatusSchema } from '@core/schema/chat/updateChatStatus';
+import { clearChatSummarySchema } from '@core/schema/chat/clearChatSummary';
 
 export default function chatRoutes(server: FastifyInstance) {
   const chatController = container.resolve(ChatController);
@@ -100,6 +101,15 @@ export default function chatRoutes(server: FastifyInstance) {
   server.patch('/chat/:chat_id/status', {
     schema: updateChatStatusSchema,
     handler: chatController.updateChatStatus,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+    ],
+  });
+
+  server.post('/chat/:chat_id/clear-summary', {
+    schema: clearChatSummarySchema,
+    handler: chatController.clearChatSummary,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),

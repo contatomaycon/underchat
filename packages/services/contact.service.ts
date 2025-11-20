@@ -80,7 +80,9 @@ export class ContactService {
       : null;
 
     const emailPartialEncrypted = input.email
-      ? this.encryptService.sanitize(input.email, ETypeSanetize.email)
+      ? (
+          this.encryptService.sanitize(input.email, ETypeSanetize.email) ?? ''
+        ).slice(0, 50)
       : null;
 
     const emailC = input.email
@@ -129,7 +131,12 @@ export class ContactService {
       phone_partial: phonePartialEncrypted,
       phone_c: phoneC,
       nickname: input.nickname,
-      birthday: input.birthday,
+      birthday:
+        input.birthday &&
+        typeof input.birthday === 'string' &&
+        input.birthday.trim() !== ''
+          ? input.birthday
+          : null,
       notes: input.notes,
     };
 
@@ -155,7 +162,9 @@ export class ContactService {
       : null;
 
     const emailPartialEncrypted = input.email
-      ? this.encryptService.sanitize(input.email, ETypeSanetize.email)
+      ? (
+          this.encryptService.sanitize(input.email, ETypeSanetize.email) ?? ''
+        ).slice(0, 50)
       : null;
 
     const emailC = input.email
@@ -207,7 +216,12 @@ export class ContactService {
       phone_partial: phonePartialEncrypted,
       phone_c: phoneC,
       nickname: input.nickname,
-      birthday: input.birthday,
+      birthday:
+        input.birthday &&
+        typeof input.birthday === 'string' &&
+        input.birthday.trim() !== ''
+          ? input.birthday
+          : null,
       notes: input.notes,
     };
 
@@ -225,7 +239,9 @@ export class ContactService {
       : null;
 
     const emailPartialEncrypted = input.email
-      ? this.encryptService.sanitize(input.email, ETypeSanetize.email)
+      ? (
+          this.encryptService.sanitize(input.email, ETypeSanetize.email) ?? ''
+        ).slice(0, 50)
       : null;
 
     const emailC = input.email
@@ -274,7 +290,12 @@ export class ContactService {
       phone_partial: phonePartialEncrypted,
       phone_c: phoneC,
       nickname: input.nickname,
-      birthday: input.birthday,
+      birthday:
+        input.birthday &&
+        typeof input.birthday === 'string' &&
+        input.birthday.trim() !== ''
+          ? input.birthday
+          : null,
       notes: input.notes,
     };
 
