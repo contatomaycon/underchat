@@ -5,7 +5,7 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 import { EContactGroupPermissions } from '@core/common/enums/EPermissions/contactGroup';
 import Contact from './contact.vue';
-import ContactGroup from './contactGroup.vue';
+import ContactGroup from './contact-group.vue';
 
 definePage({
   meta: {
