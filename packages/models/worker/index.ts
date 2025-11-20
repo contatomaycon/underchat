@@ -5,6 +5,5 @@ export * from './workerPhoneConnection.model';
 export * from './workerConfig.model';
 export * from './workerProfileStatus.model';
 export * from './workerProfileStatusType.model';
-export * from './workerConfigStatus.model';
 export * from './workerProfileInfo.model';
 export * from './workerProfileStatusContact.model';
