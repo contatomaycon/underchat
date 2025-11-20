@@ -59,12 +59,26 @@ export class WorkerProfileStatusUploaderUseCase {
 
   private normalizeArrayField(field: unknown): string[] | undefined {
     if (field === undefined || field === null) return undefined;
+
     if (Array.isArray(field)) {
       return field.filter((item): item is string => typeof item === 'string');
     }
+
     if (typeof field === 'string') {
       return [field];
     }
+
+    if (typeof field === 'object' && field !== null && 'value' in field) {
+      const value = (field as { value: unknown }).value;
+      if (Array.isArray(value)) {
+        return value.filter((item): item is string => typeof item === 'string');
+      }
+
+      if (typeof value === 'string') {
+        return [value];
+      }
+    }
+
     return undefined;
   }
 

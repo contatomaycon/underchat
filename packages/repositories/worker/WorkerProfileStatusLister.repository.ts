@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { workerProfileStatus } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { ProfileStatus } from '@core/schema/worker/listProfileStatus/response.schema';
 
 @injectable()
@@ -26,6 +26,7 @@ export class WorkerProfileStatusListerRepository {
       })
       .from(workerProfileStatus)
       .where(eq(workerProfileStatus.worker_id, workerId))
+      .orderBy(desc(workerProfileStatus.created_at))
       .execute();
 
     if (!results?.length) {

@@ -25,6 +25,8 @@ import { updateProfileStatusSchema } from '@core/schema/worker/updateProfileStat
 import { deleteProfileStatusSchema } from '@core/schema/worker/deleteProfileStatus';
 import { uploadProfileInfoSchema } from '@core/schema/worker/uploadProfileInfo';
 import { viewProfileInfoSchema } from '@core/schema/worker/viewProfileInfo';
+import { viewWorkerConfigSchema } from '@core/schema/worker/viewWorkerConfig';
+import { updateWorkerConfigSchema } from '@core/schema/worker/updateWorkerConfig';
 
 export default function workerRoutes(server: FastifyInstance) {
   const workerController = container.resolve(WorkerController);
@@ -152,6 +154,24 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerProfileInfoPermissions),
+    ],
+  });
+
+  server.get('/worker/:worker_id/config', {
+    schema: viewWorkerConfigSchema,
+    handler: workerController.viewWorkerConfig,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerViewPermissions),
+    ],
+  });
+
+  server.post('/worker/:worker_id/config', {
+    schema: updateWorkerConfigSchema,
+    handler: workerController.updateWorkerConfig,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerEditPermissions),
     ],
   });
 }

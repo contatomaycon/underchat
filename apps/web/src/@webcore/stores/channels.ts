@@ -23,6 +23,9 @@ import { WorkerConnectionLogsResponse } from '@core/schema/worker/workerConnecti
 import { ProfileStatus } from '@core/schema/worker/listProfileStatus/response.schema';
 import { WorkerProfileStatus } from '@core/schema/worker/uploadProfileStatus/response.schema';
 import { WorkerProfileInfo } from '@core/schema/worker/uploadProfileInfo/response.schema';
+import { WorkerConfig } from '@core/schema/worker/updateWorkerConfig/response.schema';
+import { ViewWorkerConfigResponse } from '@core/schema/worker/viewWorkerConfig/response.schema';
+import { UpdateWorkerConfigRequest } from '@core/schema/worker/updateWorkerConfig/request.schema';
 
 export const useChannelsStore = defineStore('channels', {
   state: () => ({
@@ -715,6 +718,81 @@ export const useChannelsStore = defineStore('channels', {
         return data.data;
       } catch {
         this.loading = false;
+
+        return null;
+      }
+    },
+
+    async fetchWorkerConfig(
+      workerId: string
+    ): Promise<ViewWorkerConfigResponse> {
+      if (!workerId) return null;
+
+      try {
+        const response = await axios.get<
+          IApiResponse<ViewWorkerConfigResponse>
+        >(`/worker/${workerId}/config`);
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('channel_general_config_load_error');
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        return data.data ?? null;
+      } catch (error) {
+        let message = this.i18n.global.t('channel_general_config_load_error');
+        if (error instanceof AxiosError) {
+          message = error?.response?.data?.message ?? message;
+        }
+
+        this.showSnackbar(message, EColor.error);
+
+        return null;
+      }
+    },
+
+    async updateWorkerConfig(
+      workerId: string,
+      body: UpdateWorkerConfigRequest
+    ): Promise<WorkerConfig | null> {
+      if (!workerId) return null;
+
+      try {
+        const response = await axios.post<IApiResponse<WorkerConfig>>(
+          `/worker/${workerId}/config`,
+          body
+        );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('channel_general_config_save_error');
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('channel_general_config_save_success'),
+          EColor.success
+        );
+
+        return data.data;
+      } catch (error) {
+        let message = this.i18n.global.t('channel_general_config_save_error');
+        if (error instanceof AxiosError) {
+          message = error?.response?.data?.message ?? message;
+        }
+
+        this.showSnackbar(message, EColor.error);
 
         return null;
       }

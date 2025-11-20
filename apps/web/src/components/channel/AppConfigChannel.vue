@@ -10,6 +10,8 @@ import { EWorkerProfileStatusType } from '@core/common/enums/EWorkerProfileStatu
 import { can } from '@layouts/plugins/casl';
 import { ListContactGroupAllResponse } from '@core/schema/contactGroup/listContactGroupAll/response.schema';
 import { ListContactResponse } from '@core/schema/contact/listContact/response.schema';
+import { WorkerConfig } from '@core/schema/worker/updateWorkerConfig/response.schema';
+import { ViewWorkerConfigResponse } from '@core/schema/worker/viewWorkerConfig/response.schema';
 
 const channelStore = useChannelsStore();
 const contactGroupStore = useContactGroupStore();
@@ -161,6 +163,32 @@ const cropArea = ref({
   initialY: 0,
 });
 const cropPreviewSize = 160;
+
+type WorkerConfigForm = Pick<
+  WorkerConfig,
+  | 'is_automatic_attendance'
+  | 'show_attendee_name'
+  | 'show_worker_name'
+  | 'generate_protocol_at_ura'
+  | 'generate_protocol_at_start'
+  | 'generate_protocol_at_transfer'
+>;
+
+const createDefaultWorkerConfig = (): WorkerConfigForm => ({
+  is_automatic_attendance: false,
+  show_attendee_name: false,
+  show_worker_name: false,
+  generate_protocol_at_ura: false,
+  generate_protocol_at_start: false,
+  generate_protocol_at_transfer: false,
+});
+
+const workerConfigForm = reactive<WorkerConfigForm>(
+  createDefaultWorkerConfig()
+);
+const isLoadingWorkerConfig = ref(false);
+const isSavingWorkerConfig = ref(false);
+const workerConfigLoadedFor = ref<string | null>(null);
 
 const statusTypeOptions = computed(() => [
   {
@@ -317,6 +345,102 @@ const extractUrlAndCaption = (
   }
   return { url: value, caption: null };
 };
+
+const applyWorkerConfig = (config?: ViewWorkerConfigResponse | null) => {
+  const nextState = createDefaultWorkerConfig();
+
+  if (config) {
+    nextState.is_automatic_attendance = config.is_automatic_attendance;
+    nextState.show_attendee_name = config.show_attendee_name;
+    nextState.show_worker_name = config.show_worker_name;
+    nextState.generate_protocol_at_ura = config.generate_protocol_at_ura;
+    nextState.generate_protocol_at_start = config.generate_protocol_at_start;
+    nextState.generate_protocol_at_transfer =
+      config.generate_protocol_at_transfer;
+  }
+
+  Object.assign(workerConfigForm, nextState);
+};
+
+const resetWorkerConfigState = () => {
+  applyWorkerConfig();
+  workerConfigLoadedFor.value = null;
+};
+
+const loadWorkerConfig = async (force = false) => {
+  if (!channelId.value) return;
+  if (!force && workerConfigLoadedFor.value === channelId.value) return;
+
+  try {
+    isLoadingWorkerConfig.value = true;
+    const result = await channelStore.fetchWorkerConfig(channelId.value);
+    applyWorkerConfig(result);
+    workerConfigLoadedFor.value = channelId.value;
+  } finally {
+    isLoadingWorkerConfig.value = false;
+  }
+};
+
+const saveWorkerConfig = async () => {
+  if (!channelId.value) return;
+
+  try {
+    isSavingWorkerConfig.value = true;
+    const payload: WorkerConfigForm = {
+      ...workerConfigForm,
+    };
+    const result = await channelStore.updateWorkerConfig(
+      channelId.value,
+      payload
+    );
+
+    if (result) {
+      applyWorkerConfig(result);
+      workerConfigLoadedFor.value = channelId.value;
+    }
+  } finally {
+    isSavingWorkerConfig.value = false;
+  }
+};
+
+type WorkerConfigField = keyof WorkerConfigForm;
+
+const workerConfigOptions = computed(() => [
+  {
+    key: 'is_automatic_attendance' as WorkerConfigField,
+    title: t('channel_general_config_auto_attendance_title'),
+    description: t('channel_general_config_auto_attendance_description'),
+  },
+  {
+    key: 'show_attendee_name' as WorkerConfigField,
+    title: t('channel_general_config_show_attendee_name_title'),
+    description: t('channel_general_config_show_attendee_name_description'),
+  },
+  {
+    key: 'show_worker_name' as WorkerConfigField,
+    title: t('channel_general_config_show_worker_name_title'),
+    description: t('channel_general_config_show_worker_name_description'),
+  },
+  {
+    key: 'generate_protocol_at_ura' as WorkerConfigField,
+    title: t('channel_general_config_generate_protocol_ura_title'),
+    description: t('channel_general_config_generate_protocol_ura_description'),
+  },
+  {
+    key: 'generate_protocol_at_start' as WorkerConfigField,
+    title: t('channel_general_config_generate_protocol_start_title'),
+    description: t(
+      'channel_general_config_generate_protocol_start_description'
+    ),
+  },
+  {
+    key: 'generate_protocol_at_transfer' as WorkerConfigField,
+    title: t('channel_general_config_generate_protocol_transfer_title'),
+    description: t(
+      'channel_general_config_generate_protocol_transfer_description'
+    ),
+  },
+]);
 
 const remainingSlots = computed(() => {
   const existingCount = existingStatus.value.length;
@@ -621,7 +745,7 @@ const saveProfileStatus = async () => {
         ...status,
         created_at: (status as any).created_at || new Date().toISOString(),
       }));
-      existingStatus.value = [...existingStatus.value, ...newStatuses];
+      existingStatus.value = [...newStatuses, ...existingStatus.value];
       resetPendingSelections();
     }
   } finally {
@@ -1249,6 +1373,7 @@ const cancelCrop = () => {
 watch(isVisible, async (visible) => {
   if (visible) {
     currentTab.value = 'general';
+    await loadWorkerConfig(true);
     await fetchProfileStatus();
     return;
   }
@@ -1256,9 +1381,13 @@ watch(isVisible, async (visible) => {
   resetPendingSelections();
   closePreview();
   cancelCrop();
+  resetWorkerConfigState();
 });
 
 watch(currentTab, async (newTab) => {
+  if (newTab === 'general' && isVisible.value && channelId.value) {
+    await loadWorkerConfig();
+  }
   if (newTab === 'profile-status' && isVisible.value && channelId.value) {
     await fetchProfileStatus();
   }
@@ -1269,6 +1398,8 @@ watch(currentTab, async (newTab) => {
 
 watch(channelId, async (newValue, oldValue) => {
   if (isVisible.value && newValue && newValue !== oldValue) {
+    resetWorkerConfigState();
+    await loadWorkerConfig(true);
     await fetchProfileStatus();
   }
 });
@@ -1316,7 +1447,61 @@ onBeforeUnmount(() => {
       <VCardText class="scrollable-content">
         <VWindow v-model="currentTab">
           <VWindowItem value="general">
-            <div class="py-10" />
+            <div
+              class="general-config-wrapper position-relative pa-4 d-flex flex-column gap-4"
+            >
+              <VOverlay
+                :model-value="isLoadingWorkerConfig"
+                contained
+                class="align-center justify-center general-config-overlay"
+              >
+                <VProgressCircular color="primary" indeterminate size="32" />
+              </VOverlay>
+
+              <div>
+                <h5 class="text-h6 mb-1">
+                  {{ $t('channel_general_config_title') }}
+                </h5>
+                <p class="text-body-2 text-medium-emphasis mb-0">
+                  {{ $t('channel_general_config_subtitle') }}
+                </p>
+              </div>
+
+              <VRow class="general-config-grid" dense>
+                <VCol
+                  v-for="option in workerConfigOptions"
+                  :key="option.key"
+                  cols="12"
+                  md="6"
+                >
+                  <VCard class="general-config-card h-100" variant="outlined">
+                    <div class="d-flex flex-column gap-2">
+                      <VCheckbox
+                        v-model="workerConfigForm[option.key]"
+                        :label="option.title"
+                        color="primary"
+                        hide-details
+                        :disabled="isSavingWorkerConfig"
+                      />
+                      <p class="text-body-2 text-medium-emphasis mb-0">
+                        {{ option.description }}
+                      </p>
+                    </div>
+                  </VCard>
+                </VCol>
+              </VRow>
+
+              <div class="d-flex justify-end">
+                <VBtn
+                  color="primary"
+                  :loading="isSavingWorkerConfig"
+                  :disabled="isLoadingWorkerConfig"
+                  @click="saveWorkerConfig"
+                >
+                  {{ $t('channel_general_config_save') }}
+                </VBtn>
+              </div>
+            </div>
           </VWindowItem>
 
           <VWindowItem value="profile-status">
@@ -2176,6 +2361,28 @@ onBeforeUnmount(() => {
 .scrollable-content {
   max-height: 70vh;
   overflow-y: auto;
+}
+
+.general-config-wrapper {
+  min-height: 320px;
+}
+
+.general-config-overlay :deep(.v-overlay__scrim) {
+  border-radius: 12px;
+}
+
+.general-config-card {
+  border-radius: 12px !important;
+  padding: 16px;
+  height: 100%;
+}
+
+.general-config-card :deep(.v-selection-control) {
+  margin-bottom: 0;
+}
+
+.general-config-grid {
+  row-gap: 16px;
 }
 
 .scrollable-content::-webkit-scrollbar {
