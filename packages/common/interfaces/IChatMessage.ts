@@ -9,6 +9,7 @@ import {
   AudioMessageChat,
   StickerMessageChat,
   LocationMessageChat,
+  MessageVersion,
 } from '@core/schema/chat/listMessageChats/response.schema';
 
 interface IAccount {
@@ -78,6 +79,7 @@ export interface IContent {
   location?: LocationMessageChat | null;
   contact?: IContactMessage | null;
   reactions?: IReaction[] | null;
+  version?: MessageVersion[] | null;
 }
 
 export interface IMessageKey {

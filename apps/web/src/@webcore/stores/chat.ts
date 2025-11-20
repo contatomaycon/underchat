@@ -1177,6 +1177,24 @@ export const useChatStore = defineStore('chat', {
         };
       }
     },
+    async editMessage(
+      chatId: string,
+      messageId: string,
+      newMessage: string
+    ): Promise<boolean> {
+      try {
+        const response = await axios.post(
+          `/chat/${chatId}/message/${messageId}/edit`,
+          { message: newMessage }
+        );
+
+        const data = response?.data as IApiResponse<boolean>;
+
+        return data?.status ?? false;
+      } catch {
+        return false;
+      }
+    },
     async deleteMessage(chatId: string, messageId: string): Promise<boolean> {
       try {
         const response = await axios.post(

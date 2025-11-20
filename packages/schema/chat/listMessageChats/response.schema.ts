@@ -119,6 +119,12 @@ export const reactionSchema = Type.Object({
   user_name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
+export const messageVersionSchema = Type.Object({
+  type: Type.String({ enum: Object.values(EMessageType) }),
+  message: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  date: Type.String(),
+});
+
 export const contentSchema = Type.Object({
   type: Type.String({ enum: Object.values(EMessageType) }),
   message: Type.Optional(Type.Union([Type.String(), Type.Null()])),
@@ -136,6 +142,9 @@ export const contentSchema = Type.Object({
   document: Type.Optional(Type.Union([documentSchema, Type.Null()])),
   reactions: Type.Optional(
     Type.Union([Type.Array(reactionSchema), Type.Null()])
+  ),
+  version: Type.Optional(
+    Type.Union([Type.Array(messageVersionSchema), Type.Null()])
   ),
 });
 
@@ -161,6 +170,7 @@ export const listMessageResponseSchema = Type.Object({
 export type ListMessageResult = Static<typeof listMessageResultSchema>;
 export type LinkPreview = Static<typeof viewLinkPreviewResponseSchema>;
 export type ContentMessageChat = Static<typeof contentSchema>;
+export type MessageVersion = Static<typeof messageVersionSchema>;
 export type ImageMessageChat = Static<typeof imageSchema>;
 export type VideoMessageChat = Static<typeof videoSchema>;
 export type AudioMessageChat = Static<typeof audioSchema>;

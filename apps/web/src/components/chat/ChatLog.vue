@@ -13,6 +13,7 @@ import { useChatStore } from '@/@webcore/stores/chat';
 import {
   LinkPreview,
   ListMessageResult,
+  ContentMessageChat,
   DocumentMessageChat,
   VideoMessageChat,
   AudioMessageChat,
@@ -56,6 +57,13 @@ const locationData = ref<{
   address?: string | null;
 } | null>(null);
 const locationMapRef = ref<any>(null);
+
+const editMessageModalOpen = ref(false);
+const editingMessage = ref<ListMessageResult | null>(null);
+const editMessageText = ref<string>('');
+
+const editHistoryModalOpen = ref(false);
+const viewingEditHistory = ref<ListMessageResult | null>(null);
 
 const mapStyle = computed(() => {
   return {
@@ -414,6 +422,152 @@ const shouldShowDownload = (message: ListMessageResult): boolean => {
   if (isDownloadableAudio(message)) return true;
   if (isDownloadableSticker(message)) return true;
   return false;
+};
+
+const canEditMessage = (message: ListMessageResult): boolean => {
+  if (!isTextMessage(message)) return false;
+  if (isTypeUser(message)) return false;
+  if (isDeleted(message)) return false;
+
+  const messageDate = new Date(message.date);
+  const now = new Date();
+  const diffInMinutes = (now.getTime() - messageDate.getTime()) / (1000 * 60);
+
+  return diffInMinutes < 10;
+};
+
+const hasMessageVersions = (message: ListMessageResult): boolean => {
+  return !!(message.content?.version && message.content.version.length > 0);
+};
+
+const getLatestMessageText = (message: ListMessageResult): string => {
+  if (!message.content) return '';
+
+  const versions = message.content.version;
+  if (versions && versions.length > 0) {
+    const sortedVersions = [...versions].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+    return sortedVersions[0].message || '';
+  }
+
+  return message.content.message || '';
+};
+
+const getMessageEditHistory = (
+  message: ListMessageResult
+): Array<{
+  text: string;
+  date: string;
+  isOriginal: boolean;
+}> => {
+  if (!message.content) return [];
+
+  const history: Array<{ text: string; date: string; isOriginal: boolean }> =
+    [];
+
+  const versions = message.content.version ?? [];
+  const sortedVersions = [...versions].sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
+
+  sortedVersions.forEach((version) => {
+    if (version.message) {
+      history.push({
+        text: version.message,
+        date: version.date,
+        isOriginal: false,
+      });
+    }
+  });
+
+  if (message.content.message) {
+    history.push({
+      text: message.content.message,
+      date: message.date,
+      isOriginal: true,
+    });
+  }
+
+  return history;
+};
+
+const onViewEditHistory = (m: ListMessageResult) => {
+  if (!hasMessageVersions(m)) return;
+
+  viewingEditHistory.value = m;
+  editHistoryModalOpen.value = true;
+};
+
+const onEdit = (m: ListMessageResult) => {
+  if (!canEditMessage(m)) return;
+
+  editingMessage.value = m;
+  editMessageText.value = getLatestMessageText(m);
+  editMessageModalOpen.value = true;
+};
+
+const onSaveEdit = async () => {
+  if (!editingMessage.value || !chatStore.activeChat?.chat_id) return;
+  if (!editMessageText.value.trim()) return;
+
+  const messageId = editingMessage.value.message_id;
+  const newMessageText = editMessageText.value.trim();
+  const previousMessage = { ...editingMessage.value };
+
+  const messageIndex = chatStore.listMessages.findIndex(
+    (m) => m.message_id === messageId
+  );
+
+  if (messageIndex !== -1) {
+    const message = chatStore.listMessages[messageIndex];
+    const versions = message.content?.version ?? [];
+    const newVersion = {
+      type: message.content?.type ?? EMessageType.text,
+      message: newMessageText,
+      date: new Date().toISOString(),
+    };
+
+    const baseContent: ContentMessageChat = message.content
+      ? { ...message.content }
+      : {
+          type: EMessageType.text,
+        };
+
+    const updatedMessage: ListMessageResult = {
+      ...message,
+      content: {
+        ...baseContent,
+        version: [...versions, newVersion],
+      },
+    };
+
+    chatStore.listMessages.splice(messageIndex, 1, updatedMessage);
+  }
+
+  editMessageModalOpen.value = false;
+  const tempEditingMessage = editingMessage.value;
+  editingMessage.value = null;
+  editMessageText.value = '';
+
+  const success = await chatStore.editMessage(
+    chatStore.activeChat.chat_id,
+    messageId,
+    newMessageText
+  );
+
+  if (!success) {
+    if (messageIndex !== -1) {
+      chatStore.listMessages.splice(messageIndex, 1, previousMessage);
+    }
+    chatStore.showSnackbar(t('chat_edit_error'), EColor.error);
+  }
+};
+
+const onCancelEdit = () => {
+  editMessageModalOpen.value = false;
+  editingMessage.value = null;
+  editMessageText.value = '';
 };
 
 const stickerDownloadName = (sticker?: {
@@ -1683,6 +1837,26 @@ onUnmounted(() => {
                       </VListItem>
 
                       <VListItem
+                        v-if="canEditMessage(item.message)"
+                        @click="onEdit(item.message)"
+                      >
+                        <template #prepend>
+                          <VIcon size="18">tabler-edit</VIcon>
+                        </template>
+                        <VListItemTitle>Editar</VListItemTitle>
+                      </VListItem>
+
+                      <VListItem
+                        v-if="hasMessageVersions(item.message)"
+                        @click="onViewEditHistory(item.message)"
+                      >
+                        <template #prepend>
+                          <VIcon size="18">tabler-history</VIcon>
+                        </template>
+                        <VListItemTitle>Visualizar edições</VListItemTitle>
+                      </VListItem>
+
+                      <VListItem
                         v-if="!isTypeUser(item.message)"
                         @click="onDelete(item.message)"
                       >
@@ -2265,7 +2439,7 @@ onUnmounted(() => {
                           : 'rgb(var(--v-theme-title))',
                       }"
                     >
-                      {{ item.message.content.message }}
+                      {{ getLatestMessageText(item.message) }}
                     </p>
                   </div>
 
@@ -2324,7 +2498,7 @@ onUnmounted(() => {
                           : 'rgb(var(--v-theme-title))',
                       }"
                     >
-                      {{ item.message.content.message }}
+                      {{ getLatestMessageText(item.message) }}
                     </p>
                   </div>
 
@@ -2340,14 +2514,22 @@ onUnmounted(() => {
                     "
                   >
                     <p
-                      class="mb-2 mr-6 text-base message-text"
+                      class="mr-6 text-base message-text"
+                      :class="{
+                        'mb-2':
+                          !hasMessageVersions(item.message) &&
+                          !item.message.deleted,
+                        'mb-6':
+                          hasMessageVersions(item.message) ||
+                          item.message.deleted,
+                      }"
                       :style="{
                         color: isTypeUser(item.message)
                           ? 'rgb(var(--v-theme-on-surface))'
                           : 'rgb(var(--v-theme-title))',
                       }"
                     >
-                      {{ item.message.content?.message }}
+                      {{ getLatestMessageText(item.message) }}
                     </p>
                   </div>
 
@@ -2454,22 +2636,6 @@ onUnmounted(() => {
                   </div>
 
                   <div
-                    v-if="item.message.deleted"
-                    class="deleted-label-wrapper"
-                  >
-                    <span
-                      class="deleted-label"
-                      :style="{
-                        color: isTypeUser(item.message)
-                          ? 'rgba(var(--v-theme-on-surface), 0.65)'
-                          : 'rgba(var(--v-theme-title), 0.65)',
-                      }"
-                    >
-                      {{ t('chat_deleted_message_label') }}
-                    </span>
-                  </div>
-
-                  <div
                     v-if="
                       showReactionPicker === item.message.message_id &&
                       canInteractWithMessage(item.message) &&
@@ -2552,21 +2718,39 @@ onUnmounted(() => {
                         )
                       }}
                     </span>
-                    <span class="message-time">
-                      {{
-                        formatDate(item.message.date, {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          hour12: false,
-                        })
-                      }}
-                    </span>
-                    <VIcon
-                      size="16"
-                      :color="resolveFeedbackIcon(item.message).color"
-                    >
-                      {{ resolveFeedbackIcon(item.message).icon }}
-                    </VIcon>
+                    <div class="message-meta-content">
+                      <span
+                        v-if="item.message.deleted"
+                        class="message-deleted-badge"
+                        :title="t('chat_deleted_message_label')"
+                      >
+                        {{ t('chat_deleted_message_label') }}
+                      </span>
+                      <span
+                        v-else-if="hasMessageVersions(item.message)"
+                        class="message-edited-badge"
+                        :title="t('chat_edited')"
+                      >
+                        {{ t('chat_edited') }}
+                      </span>
+                      <div class="message-meta-row">
+                        <span class="message-time">
+                          {{
+                            formatDate(item.message.date, {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: false,
+                            })
+                          }}
+                        </span>
+                        <VIcon
+                          size="16"
+                          :color="resolveFeedbackIcon(item.message).color"
+                        >
+                          {{ resolveFeedbackIcon(item.message).icon }}
+                        </VIcon>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2647,6 +2831,95 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+  </VDialog>
+
+  <VDialog v-model="editMessageModalOpen" max-width="600" :scrollable="false">
+    <VCard>
+      <VCardTitle class="d-flex align-center justify-space-between">
+        <span>{{ t('chat_edit_message') }}</span>
+        <VBtn icon variant="text" size="small" @click="onCancelEdit">
+          <VIcon size="20">tabler-x</VIcon>
+        </VBtn>
+      </VCardTitle>
+      <VCardText>
+        <VTextarea
+          v-model="editMessageText"
+          :label="t('chat_message_label', 'Mensagem')"
+          rows="4"
+          auto-grow
+          variant="outlined"
+          counter
+          @keydown.enter.ctrl="onSaveEdit"
+          @keydown.enter.meta="onSaveEdit"
+        />
+      </VCardText>
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn variant="tonal" color="secondary" @click="onCancelEdit">
+          {{ t('cancel', 'Cancelar') }}
+        </VBtn>
+        <VBtn @click="onSaveEdit">
+          {{ t('save', 'Salvar') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog v-model="editHistoryModalOpen" max-width="600" :scrollable="false">
+    <VCard v-if="viewingEditHistory">
+      <VCardTitle class="d-flex align-center justify-space-between">
+        <span>{{ t('chat_edit_history') }}</span>
+        <VBtn
+          icon
+          variant="text"
+          size="small"
+          @click="editHistoryModalOpen = false"
+        >
+          <VIcon size="20">tabler-x</VIcon>
+        </VBtn>
+      </VCardTitle>
+      <VCardText>
+        <div class="edit-history-list">
+          <div
+            v-for="(item, index) in getMessageEditHistory(viewingEditHistory)"
+            :key="index"
+            class="edit-history-item"
+            :class="{
+              'edit-history-item--current': index === 0 && !item.isOriginal,
+              'edit-history-item--original': item.isOriginal,
+            }"
+          >
+            <div class="edit-history-header">
+              <span class="edit-history-label">
+                {{
+                  item.isOriginal
+                    ? t('chat_original_message')
+                    : t('chat_edited_version')
+                }}
+              </span>
+              <span class="edit-history-date">
+                {{
+                  formatDate(item.date, {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false,
+                  })
+                }}
+              </span>
+            </div>
+            <div class="edit-history-text">{{ item.text }}</div>
+          </div>
+        </div>
+      </VCardText>
+      <VCardText class="d-flex justify-end">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          @click="editHistoryModalOpen = false"
+        >
+          {{ t('close', 'Fechar') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
   </VDialog>
 
   <VDialog v-model="locationModalOpen" max-width="800" :scrollable="false">
@@ -3709,20 +3982,6 @@ onUnmounted(() => {
         color: rgb(var(--v-theme-error));
         font-weight: 600;
       }
-
-      .deleted-label-wrapper {
-        display: flex;
-        justify-content: flex-end;
-        padding-inline-end: 32px;
-        margin-top: 6px;
-        margin-bottom: 18px;
-      }
-
-      .deleted-label {
-        font-style: italic;
-        font-size: 0.75rem;
-        margin: 0;
-      }
     }
   }
 
@@ -3980,7 +4239,7 @@ onUnmounted(() => {
     right: 0;
     bottom: 6px;
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     gap: 4px;
     justify-content: flex-end;
     padding-inline: 16px 12px;
@@ -3990,13 +4249,34 @@ onUnmounted(() => {
       font-size: 0.95rem;
     }
 
+    .message-audio-duration {
+      margin-right: auto;
+      font-weight: 500;
+    }
+
+    .message-meta-content {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+    }
+
+    .message-meta-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
     .message-time {
       line-height: 1;
     }
 
-    .message-audio-duration {
-      margin-right: auto;
-      font-weight: 500;
+    .message-edited-badge,
+    .message-deleted-badge {
+      font-size: 0.65rem;
+      color: rgba(var(--v-theme-on-surface), 0.5);
+      font-style: italic;
+      line-height: 1;
     }
   }
 
@@ -4149,6 +4429,54 @@ onUnmounted(() => {
   .location-coords {
     word-break: break-word;
   }
+}
+
+.edit-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.edit-history-item {
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+
+  &.edit-history-item--current {
+    background: rgba(var(--v-theme-primary), 0.1);
+    border-color: rgba(var(--v-theme-primary), 0.3);
+  }
+
+  &.edit-history-item--original {
+    background: rgba(var(--v-theme-on-surface), 0.02);
+  }
+}
+
+.edit-history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.edit-history-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+}
+
+.edit-history-date {
+  font-size: 0.7rem;
+  color: rgba(var(--v-theme-on-surface), 0.5);
+}
+
+.edit-history-text {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: rgb(var(--v-theme-on-surface));
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .location-map-wrapper {

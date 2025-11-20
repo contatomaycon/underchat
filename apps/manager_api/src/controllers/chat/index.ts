@@ -8,6 +8,7 @@ import { createChats } from './methods/createChats';
 import { viewChatLinkPreview } from './methods/viewChatLinkPreview';
 import { reactMessage } from './methods/reactMessage';
 import { deleteMessage } from './methods/deleteMessage';
+import { editMessage } from './methods/editMessage';
 import { updateChatStatus } from './methods/updateChatStatus';
 import { clearChatSummary } from './methods/clearChatSummary';
 
@@ -22,6 +23,7 @@ class ChatController {
   public viewChatLinkPreview = viewChatLinkPreview;
   public reactMessage = reactMessage;
   public deleteMessage = deleteMessage;
+  public editMessage = editMessage;
   public updateChatStatus = updateChatStatus;
   public clearChatSummary = clearChatSummary;
 }

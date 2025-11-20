@@ -11,6 +11,7 @@ import { createChatSchema } from '@core/schema/chat/createChat';
 import { viewLinkPreviewSchema } from '@core/schema/chat/viewLinkPreview';
 import { reactMessageSchema } from '@core/schema/chat/reactMessage';
 import { deleteMessageSchema } from '@core/schema/chat/deleteMessage';
+import { editMessageSchema } from '@core/schema/chat/editMessage';
 import { updateChatStatusSchema } from '@core/schema/chat/updateChatStatus';
 import { clearChatSummarySchema } from '@core/schema/chat/clearChatSummary';
 
@@ -92,6 +93,15 @@ export default function chatRoutes(server: FastifyInstance) {
   server.post('/chat/:chat_id/message/:message_id/delete', {
     schema: deleteMessageSchema,
     handler: chatController.deleteMessage,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+    ],
+  });
+
+  server.post('/chat/:chat_id/message/:message_id/edit', {
+    schema: editMessageSchema,
+    handler: chatController.editMessage,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
