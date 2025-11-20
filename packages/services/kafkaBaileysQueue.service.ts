@@ -8,8 +8,9 @@ export class KafkaBaileysQueueService {
   all = (workerId: string): string[] => {
     const worker = this.workerConnection(workerId);
     const sendMessage = this.workerSendMessage(workerId);
+    const validatePhone = this.workerValidatePhone(workerId);
 
-    return [worker, sendMessage];
+    return [worker, sendMessage, validatePhone];
   };
 
   delete = (workerId: string): Promise<void> => {
@@ -28,5 +29,9 @@ export class KafkaBaileysQueueService {
 
   workerSendMessage = (workerId: string) => {
     return `worker.${workerId}.send.message`;
+  };
+
+  workerValidatePhone = (workerId: string) => {
+    return `worker.${workerId}.validate.phone`;
   };
 }

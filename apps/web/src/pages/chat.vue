@@ -22,11 +22,10 @@ import {
   ContentMessageChat,
   ListMessageResult,
 } from '@core/schema/chat/listMessageChats/response.schema';
-import { onMessage, unsubscribe, publish } from '@/@webcore/centrifugo';
+import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import {
   chatAccountCentrifugo,
   chatQueueAccountCentrifugo,
-  chatClearSummaryCentrifugo,
 } from '@core/common/functions/centrifugoQueue';
 import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
 import { EMessageType } from '@core/common/enums/EMessageType';
@@ -3054,17 +3053,9 @@ const handleTypingEvent = (data: IChatTyping | IChatMessage) => {
   }, 5000);
 };
 
-const debouncedPublishClearSummary = useDebounceFn(
-  (chatId: string, accountId: string) => {
-    publish(chatClearSummaryCentrifugo(), {
-      chat_id: chatId,
-      account_id: accountId,
-    }).catch((error) => {
-      console.error('Error publishing clear summary request:', error);
-    });
-  },
-  10000
-);
+const debouncedClearChatSummary = useDebounceFn(async (chatId: string) => {
+  await chatStore.clearChatSummary(chatId);
+}, 10000);
 
 onMounted(async () => {
   if (chatStore.user?.account_id) {
@@ -3111,7 +3102,7 @@ onMounted(async () => {
         chatStore.user?.account_id &&
         chatStore.activeChat?.chat_id === data.chat_id
       ) {
-        debouncedPublishClearSummary(data.chat_id, chatStore.user.account_id);
+        debouncedClearChatSummary(data.chat_id);
       }
     });
 

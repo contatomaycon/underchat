@@ -20,6 +20,7 @@ import {
 } from '@core/schema/contactGroup/editContactGroup/request.schema';
 import { ListContactGroupAllResponse } from '@core/schema/contactGroup/listContactGroupAll/response.schema';
 import { CreateContactGroupAssignmentRequest } from '@core/schema/contactGroup/createContactGroupAssignment/request.schema';
+import { ContactImportStatus } from '@core/schema/contactGroup/createContactGroupAssignment/response.schema';
 
 export const useContactGroupStore = defineStore('contact-group', {
   state: () => ({
@@ -311,11 +312,11 @@ export const useContactGroupStore = defineStore('contact-group', {
 
     async addContactGroupAssignment(
       payload: CreateContactGroupAssignmentRequest
-    ): Promise<boolean> {
+    ): Promise<ContactImportStatus[] | null> {
       try {
         this.loading = true;
 
-        const response = await axios.post<IApiResponse<boolean>>(
+        const response = await axios.post<IApiResponse<ContactImportStatus[]>>(
           `/contact-group-assignment`,
           payload
         );
@@ -331,15 +332,27 @@ export const useContactGroupStore = defineStore('contact-group', {
 
           this.showSnackbar(mensage, EColor.error);
 
-          return false;
+          return null;
         }
 
-        this.showSnackbar(
-          this.i18n.global.t('contact_group_assignment_add_success'),
-          EColor.success
-        );
+        const results = data?.data || [];
+        const validCount = results.filter((r) => r.status === 'valid').length;
+        const totalCount = results.length;
 
-        return true;
+        if (validCount > 0) {
+          this.showSnackbar(
+            this.i18n.global.t('contact_group_assignment_add_success') +
+              ` (${validCount}/${totalCount} ${this.i18n.global.t('valid')})`,
+            EColor.success
+          );
+        } else {
+          this.showSnackbar(
+            this.i18n.global.t('no_valid_contacts_found'),
+            EColor.warning
+          );
+        }
+
+        return results;
       } catch (error) {
         let errorMessage = this.i18n.global.t(
           'contact_group_assignment_add_error'
@@ -352,7 +365,7 @@ export const useContactGroupStore = defineStore('contact-group', {
 
         this.loading = false;
 
-        return false;
+        return null;
       }
     },
   },

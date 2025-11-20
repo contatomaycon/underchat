@@ -17,7 +17,3 @@ export function statusServerCentrifugoQueue(): string {
 export function serverSshCentrifugoQueue(): string {
   return 'server_ssh';
 }
-
-export function chatClearSummaryCentrifugo(): string {
-  return 'chat:clear.summary';
-}

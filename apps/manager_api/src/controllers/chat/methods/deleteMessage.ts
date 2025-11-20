@@ -3,10 +3,7 @@ import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { ChatMessageCreatorUseCase } from '@core/useCases/chat/ChatMessageCreator.useCase';
-import {
-  DeleteMessageBody,
-  DeleteMessageParams,
-} from '@core/schema/chat/deleteMessage/request.schema';
+import { DeleteMessageParams } from '@core/schema/chat/deleteMessage/request.schema';
 import {
   CreateMessageChatsBody,
   CreateMessageChatsParams,
@@ -15,7 +12,6 @@ import {
 export const deleteMessage = async (
   request: FastifyRequest<{
     Params: DeleteMessageParams;
-    Body: DeleteMessageBody;
   }>,
   reply: FastifyReply
 ) => {

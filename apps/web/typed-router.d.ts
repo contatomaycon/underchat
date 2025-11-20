@@ -67,14 +67,14 @@ declare module 'vue-router/auto-routes' {
     >,
     'contact-and-groups': RouteRecordInfo<
       'contact-and-groups',
-      '/contactAndGroups',
+      '/contact-and-groups',
       Record<never, never>,
       Record<never, never>,
       | never
     >,
     'contact-group': RouteRecordInfo<
       'contact-group',
-      '/contactGroup',
+      '/contact-group',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -184,13 +184,13 @@ declare module 'vue-router/auto-routes' {
       views:
         | never
     }
-    'src/pages/contactAndGroups.vue': {
+    'src/pages/contact-and-groups.vue': {
       routes:
         | 'contact-and-groups'
       views:
         | never
     }
-    'src/pages/contactGroup.vue': {
+    'src/pages/contact-group.vue': {
       routes:
         | 'contact-group'
       views:

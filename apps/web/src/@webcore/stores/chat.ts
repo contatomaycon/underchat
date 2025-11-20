@@ -651,6 +651,18 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
+    async clearChatSummary(chatId: string): Promise<boolean> {
+      if (!chatId) return false;
+
+      try {
+        await axios.post(`/chat/${chatId}/clear-summary`, {});
+
+        return true;
+      } catch {
+        return false;
+      }
+    },
+
     async createMessageWithImages(
       formData: FormData,
       options?: UploadOptions
