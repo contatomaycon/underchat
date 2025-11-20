@@ -591,21 +591,12 @@ export const useChatStore = defineStore('chat', {
         const data = response?.data as IApiResponse<boolean>;
 
         if (!data?.status) {
-          const errorMessage =
-            data?.message || this.i18n.global.t('chat_message_create_error');
-          this.showSnackbar(errorMessage, EColor.error);
-
           return false;
         }
 
         return true;
       } catch {
         this.loading = false;
-
-        this.showSnackbar(
-          this.i18n.global.t('chat_message_create_error'),
-          EColor.error
-        );
 
         return false;
       }
@@ -709,8 +700,6 @@ export const useChatStore = defineStore('chat', {
         const data = response?.data as IApiResponse<boolean>;
 
         if (!data?.status) {
-          this.showSnackbar(data.message, EColor.error);
-
           return false;
         }
 
@@ -719,14 +708,6 @@ export const useChatStore = defineStore('chat', {
         if (shouldHandleLoading) {
           this.loading = false;
         }
-
-        const message =
-          isAxiosError(error) &&
-          typeof error.response?.data?.message === 'string'
-            ? (error.response.data.message as string)
-            : this.i18n.global.t('chat_message_create_error');
-
-        this.showSnackbar(message, EColor.error);
 
         return false;
       }
@@ -778,8 +759,6 @@ export const useChatStore = defineStore('chat', {
         const data = response?.data as IApiResponse<boolean>;
 
         if (!data?.status) {
-          this.showSnackbar(data.message, EColor.error);
-
           return false;
         }
 
@@ -788,14 +767,6 @@ export const useChatStore = defineStore('chat', {
         if (shouldHandleLoading) {
           this.loading = false;
         }
-
-        const message =
-          isAxiosError(error) &&
-          typeof error.response?.data?.message === 'string'
-            ? (error.response.data.message as string)
-            : this.i18n.global.t('chat_message_create_error');
-
-        this.showSnackbar(message, EColor.error);
 
         return false;
       }
@@ -847,8 +818,6 @@ export const useChatStore = defineStore('chat', {
         const data = response?.data as IApiResponse<boolean>;
 
         if (!data?.status) {
-          this.showSnackbar(data.message, EColor.error);
-
           return false;
         }
 
@@ -857,14 +826,6 @@ export const useChatStore = defineStore('chat', {
         if (shouldHandleLoading) {
           this.loading = false;
         }
-
-        const message =
-          isAxiosError(error) &&
-          typeof error.response?.data?.message === 'string'
-            ? (error.response.data.message as string)
-            : this.i18n.global.t('chat_message_create_error');
-
-        this.showSnackbar(message, EColor.error);
 
         return false;
       }
@@ -915,8 +876,6 @@ export const useChatStore = defineStore('chat', {
         const data = response?.data as IApiResponse<boolean>;
 
         if (!data?.status) {
-          this.showSnackbar(data.message, EColor.error);
-
           return false;
         }
 
@@ -925,14 +884,6 @@ export const useChatStore = defineStore('chat', {
         if (shouldHandleLoading) {
           this.loading = false;
         }
-
-        const message =
-          isAxiosError(error) &&
-          typeof error.response?.data?.message === 'string'
-            ? (error.response.data.message as string)
-            : this.i18n.global.t('chat_message_create_error');
-
-        this.showSnackbar(message, EColor.error);
 
         return false;
       }
@@ -968,8 +919,6 @@ export const useChatStore = defineStore('chat', {
         const data = response?.data as IApiResponse<boolean>;
 
         if (!data?.status) {
-          this.showSnackbar(data.message, EColor.error);
-
           return false;
         }
 
@@ -978,11 +927,6 @@ export const useChatStore = defineStore('chat', {
         if (shouldHandleLoading) {
           this.loading = false;
         }
-
-        this.showSnackbar(
-          this.i18n.global.t('chat_message_create_error'),
-          EColor.error
-        );
 
         return false;
       }
@@ -1018,8 +962,6 @@ export const useChatStore = defineStore('chat', {
         const data = response?.data as IApiResponse<boolean>;
 
         if (!data?.status) {
-          this.showSnackbar(data.message, EColor.error);
-
           return false;
         }
 
@@ -1028,14 +970,6 @@ export const useChatStore = defineStore('chat', {
         if (shouldHandleLoading) {
           this.loading = false;
         }
-
-        const message =
-          isAxiosError(error) &&
-          typeof error.response?.data?.message === 'string'
-            ? (error.response.data.message as string)
-            : this.i18n.global.t('chat_message_create_error');
-
-        this.showSnackbar(message, EColor.error);
 
         return false;
       }
@@ -1056,19 +990,12 @@ export const useChatStore = defineStore('chat', {
         const data = response?.data as IApiResponse<ViewLinkPreviewResponse>;
 
         if (!data?.status) {
-          this.showSnackbar(data.message, EColor.error);
-
           return null;
         }
 
         return data.data;
       } catch {
         this.loading = false;
-
-        this.showSnackbar(
-          this.i18n.global.t('chat_message_create_error'),
-          EColor.error
-        );
 
         return null;
       }

@@ -474,8 +474,10 @@ const cloneLinkPreview = (): ViewLinkPreviewResponse | undefined => {
   return structuredClone(preview);
 };
 
-const buildQuotedPayload = (): IQuotedMessage | null => {
-  const reply = chatStore.messageReply;
+const buildQuotedPayload = (
+  replyMessage?: ListMessageResult | null
+): IQuotedMessage | null => {
+  const reply = replyMessage ?? chatStore.messageReply;
   if (!reply) return null;
 
   const key = {
@@ -502,8 +504,10 @@ const buildQuotedPayload = (): IQuotedMessage | null => {
   } satisfies IQuotedMessage;
 };
 
-const getQuotedContent = (): ContentMessageChat['quoted'] | undefined => {
-  const payload = buildQuotedPayload();
+const getQuotedContent = (
+  replyMessage?: ListMessageResult | null
+): ContentMessageChat['quoted'] | undefined => {
+  const payload = buildQuotedPayload(replyMessage);
   if (!payload) return undefined;
 
   const { type, ...rest } = payload;
@@ -809,18 +813,28 @@ const createAudioFormData = (
   return formData;
 };
 
-const createTextMessageBody = (hash: string): CreateMessageChatsBody => {
+const createTextMessageBody = (
+  hash: string,
+  messageText?: string,
+  linkPreviewData?: ViewLinkPreviewResponse | null,
+  replyMessage?: ListMessageResult | null
+): CreateMessageChatsBody => {
+  const messageValue = messageText ?? msg.value;
+  const preview = linkPreviewData ?? linkPreview.value;
+  const replyId =
+    replyMessage?.message_id ?? chatStore.messageReply?.message_id;
+
   const inputCreateMessage: CreateMessageChatsBody = {
     type: EMessageType.text,
-    message: msg.value,
-    link_preview: linkPreview.value?.title
-      ? (linkPreview.value as ViewLinkPreviewResponse)
+    message: messageValue,
+    link_preview: preview?.title
+      ? (preview as ViewLinkPreviewResponse)
       : undefined,
     hash,
   };
 
-  if (chatStore.messageReply?.message_id) {
-    inputCreateMessage.message_quoted_id = chatStore.messageReply.message_id;
+  if (replyId) {
+    inputCreateMessage.message_quoted_id = replyId;
   }
 
   return inputCreateMessage;
@@ -885,14 +899,19 @@ const hasActiveChat = (): boolean => {
   return !!chatStore.activeChat?.worker?.id;
 };
 
-const sendImageMessage = async (): Promise<void> => {
+const sendImageMessage = async (
+  photosToSend?: ISelectedPhotoPreview[],
+  messageText?: string | null,
+  replyMessage?: ListMessageResult | null
+): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) return;
-  const photos = [...selectedPhotos.value];
+  const photos = photosToSend ?? [...selectedPhotos.value];
   if (photos.length === 0) return;
 
-  const replyId = chatStore.messageReply?.message_id ?? null;
-  const quotedPayload = getQuotedContent();
-  const messageValue = getComposerMessage();
+  const replyId =
+    replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent(replyMessage || null);
+  const messageValue = messageText ?? getComposerMessage();
 
   const messagesWithHashes = await Promise.all(
     photos.map(async (photo) => {
@@ -935,14 +954,19 @@ const sendImageMessage = async (): Promise<void> => {
   );
 };
 
-const sendVideoMessage = async (): Promise<void> => {
+const sendVideoMessage = async (
+  videosToSend?: ISelectedVideoPreview[],
+  messageText?: string | null,
+  replyMessage?: ListMessageResult | null
+): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) return;
-  const videos = [...selectedVideos.value];
+  const videos = videosToSend ?? [...selectedVideos.value];
   if (videos.length === 0) return;
 
-  const replyId = chatStore.messageReply?.message_id ?? null;
-  const quotedPayload = getQuotedContent();
-  const messageValue = getComposerMessage();
+  const replyId =
+    replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent(replyMessage || null);
+  const messageValue = messageText ?? getComposerMessage();
 
   const messagesWithHashes = await Promise.all(
     videos.map(async (video) => {
@@ -991,7 +1015,9 @@ const sendAudioMessage = async (
   blob: Blob,
   mimeType: string,
   duration: number | null,
-  viewOnce: boolean
+  viewOnce: boolean,
+  messageText?: string | null,
+  replyMessage?: ListMessageResult | null
 ): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) return;
 
@@ -1000,9 +1026,10 @@ const sendAudioMessage = async (
     return;
   }
 
-  const replyId = chatStore.messageReply?.message_id ?? null;
-  const quotedPayload = getQuotedContent();
-  const messageValue = getComposerMessage();
+  const replyId =
+    replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent(replyMessage || null);
+  const messageValue = messageText ?? getComposerMessage();
   const hash = createMessageHash();
 
   let extensionFromMime =
@@ -1066,14 +1093,19 @@ const sendAudioMessage = async (
   chatStore.clearMessageReply();
 };
 
-const sendAudioFilesMessage = async (): Promise<void> => {
+const sendAudioFilesMessage = async (
+  audiosToSend?: ISelectedAudioPreview[],
+  messageText?: string | null,
+  replyMessage?: ListMessageResult | null
+): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) return;
-  const audios = [...selectedAudios.value];
+  const audios = audiosToSend ?? [...selectedAudios.value];
   if (audios.length === 0) return;
 
-  const replyId = chatStore.messageReply?.message_id ?? null;
-  const quotedPayload = getQuotedContent();
-  const messageValue = getComposerMessage();
+  const replyId =
+    replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent(replyMessage || null);
+  const messageValue = messageText ?? getComposerMessage();
 
   const messagesWithHashes = await Promise.all(
     audios.map(async (audio) => {
@@ -1129,14 +1161,19 @@ const sendAudioFilesMessage = async (): Promise<void> => {
   );
 };
 
-const sendDocumentMessage = async (): Promise<void> => {
+const sendDocumentMessage = async (
+  documentsToSend?: ISelectedDocumentPreview[],
+  messageText?: string | null,
+  replyMessage?: ListMessageResult | null
+): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) return;
-  const docs = [...selectedDocuments.value];
+  const docs = documentsToSend ?? [...selectedDocuments.value];
   if (docs.length === 0) return;
 
-  const replyId = chatStore.messageReply?.message_id ?? null;
-  const quotedPayload = getQuotedContent();
-  const messageValue = getComposerMessage();
+  const replyId =
+    replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent(replyMessage || null);
+  const messageValue = messageText ?? getComposerMessage();
 
   const messagesWithHashes = await Promise.all(
     docs.map(async (doc) => {
@@ -1179,14 +1216,19 @@ const sendDocumentMessage = async (): Promise<void> => {
   );
 };
 
-const sendContactsMessage = async (): Promise<void> => {
+const sendContactsMessage = async (
+  contactsToSend?: ISelectedContactPreview[],
+  messageText?: string | null,
+  replyMessage?: ListMessageResult | null
+): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) return;
-  const contacts = [...selectedContacts.value];
+  const contacts = contactsToSend ?? [...selectedContacts.value];
   if (contacts.length === 0) return;
 
-  const replyId = chatStore.messageReply?.message_id ?? null;
-  const quotedPayload = getQuotedContent();
-  const messageValue = getComposerMessage();
+  const replyId =
+    replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent(replyMessage || null);
+  const messageValue = messageText ?? getComposerMessage();
 
   const messagesWithHashes = await Promise.all(
     contacts.map(async (contact) => {
@@ -1233,18 +1275,26 @@ const sendContactsMessage = async (): Promise<void> => {
     })
   );
 
-  chatStore.clearMessageReply();
-  clearSelectedContacts();
+  if (contactsToSend === undefined) {
+    chatStore.clearMessageReply();
+    clearSelectedContacts();
+  }
 };
 
-const sendLocationMessage = async (): Promise<void> => {
+const sendLocationMessage = async (
+  locationToSend?: typeof selectedLocation.value,
+  messageText?: string | null,
+  replyMessage?: ListMessageResult | null
+): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) return;
-  if (!selectedLocation.value) return;
+  const location = locationToSend ?? selectedLocation.value;
+  if (!location) return;
 
   const hash = createMessageHash();
-  const replyId = chatStore.messageReply?.message_id ?? null;
-  const quotedPayload = getQuotedContent();
-  const messageValue = getComposerMessage();
+  const replyId =
+    replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent(replyMessage || null);
+  const messageValue = messageText ?? getComposerMessage();
 
   const content: ContentMessageChat = {
     type: EMessageType.location,
@@ -1252,10 +1302,10 @@ const sendLocationMessage = async (): Promise<void> => {
     message_quoted_id: replyId ?? undefined,
     quoted: quotedPayload,
     location: {
-      latitude: selectedLocation.value.latitude,
-      longitude: selectedLocation.value.longitude,
-      name: selectedLocation.value.name ?? null,
-      address: selectedLocation.value.address ?? null,
+      latitude: location.latitude,
+      longitude: location.longitude,
+      name: location.name ?? null,
+      address: location.address ?? null,
     },
   };
 
@@ -1269,19 +1319,13 @@ const sendLocationMessage = async (): Promise<void> => {
   if (replyId) {
     formData.append('message_quoted_id', replyId);
   }
-  formData.append(
-    'location_latitude',
-    selectedLocation.value.latitude.toString()
-  );
-  formData.append(
-    'location_longitude',
-    selectedLocation.value.longitude.toString()
-  );
-  if (selectedLocation.value.name) {
-    formData.append('location_name', selectedLocation.value.name);
+  formData.append('location_latitude', location.latitude.toString());
+  formData.append('location_longitude', location.longitude.toString());
+  if (location.name) {
+    formData.append('location_name', location.name);
   }
-  if (selectedLocation.value.address) {
-    formData.append('location_address', selectedLocation.value.address);
+  if (location.address) {
+    formData.append('location_address', location.address);
   }
   formData.append('hash', hash);
 
@@ -1293,8 +1337,10 @@ const sendLocationMessage = async (): Promise<void> => {
     markUploadError(hash);
   }
 
-  chatStore.clearMessageReply();
-  selectedLocation.value = null;
+  if (locationToSend === undefined) {
+    chatStore.clearMessageReply();
+    selectedLocation.value = null;
+  }
 };
 
 const onContactsSelected = (contacts: ISelectedContactPreview[]) => {
@@ -1303,16 +1349,23 @@ const onContactsSelected = (contacts: ISelectedContactPreview[]) => {
   selectedContacts.value = [...selectedContacts.value, ...newContacts];
 };
 
-const sendTextMessage = async (): Promise<void> => {
+const sendTextMessage = async (
+  messageText?: string,
+  linkPreviewData?: ViewLinkPreviewResponse | null,
+  replyMessage?: ListMessageResult | null
+): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) return;
   const hash = createMessageHash();
-  const replyId = chatStore.messageReply?.message_id ?? null;
-  const quotedPayload = getQuotedContent();
-  const preview = cloneLinkPreview();
+  const messageValue = messageText ?? msg.value;
+  const replyId =
+    replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
+
+  const quotedPayload = getQuotedContent(replyMessage || null);
+  const preview = linkPreviewData ?? cloneLinkPreview();
 
   const content: ContentMessageChat = {
     type: EMessageType.text,
-    message: msg.value,
+    message: messageValue,
     message_quoted_id: replyId ?? undefined,
     quoted: quotedPayload,
     link_preview: preview,
@@ -1320,7 +1373,12 @@ const sendTextMessage = async (): Promise<void> => {
 
   await registerLocalMessage(content, hash);
 
-  const messageBody = createTextMessageBody(hash);
+  const messageBody = createTextMessageBody(
+    hash,
+    messageValue,
+    preview,
+    replyMessage || null
+  );
   const success = await chatStore.createMessage(messageBody);
 
   if (!success) {
@@ -1329,8 +1387,6 @@ const sendTextMessage = async (): Promise<void> => {
 };
 
 const finalizeSend = () => {
-  clearMessageFields();
-
   nextTick(() => {
     scrollToBottomInChatLog();
   });
@@ -1341,43 +1397,74 @@ const sendMessage = async () => {
   if (!hasActiveChat()) return;
   if (isQueueStatus.value) return;
 
-  if (selectedDocuments.value.length > 0) {
-    await sendDocumentMessage();
+  const savedMsg = msg.value;
+  const savedLinkPreview = linkPreview.value ? { ...linkPreview.value } : null;
+  const savedPhotos = [...selectedPhotos.value];
+  const savedDocuments = [...selectedDocuments.value];
+  const savedVideos = [...selectedVideos.value];
+  const savedAudios = [...selectedAudios.value];
+  const savedContacts = [...selectedContacts.value];
+  const savedLocation = selectedLocation.value;
+  const savedReply = chatStore.messageReply;
+
+  msg.value = '';
+  linkPreview.value = null;
+  clearSelectedVideos();
+  clearSelectedAudios();
+  clearSelectedContacts();
+  selectedPhotos.value = [];
+  selectedDocuments.value = [];
+  selectedLocation.value = null;
+
+  if (savedDocuments.length > 0) {
+    await sendDocumentMessage(
+      savedDocuments,
+      savedMsg,
+      savedReply || undefined
+    );
+    chatStore.clearMessageReply();
     finalizeSend();
     return;
   }
 
-  if (selectedVideos.value.length > 0) {
-    await sendVideoMessage();
+  if (savedVideos.length > 0) {
+    await sendVideoMessage(savedVideos, savedMsg, savedReply || undefined);
+    chatStore.clearMessageReply();
     finalizeSend();
     return;
   }
 
-  if (selectedAudios.value.length > 0) {
-    await sendAudioFilesMessage();
+  if (savedAudios.length > 0) {
+    await sendAudioFilesMessage(savedAudios, savedMsg, savedReply || undefined);
+    chatStore.clearMessageReply();
     finalizeSend();
     return;
   }
 
-  if (selectedContacts.value.length > 0) {
-    await sendContactsMessage();
+  if (savedContacts.length > 0) {
+    await sendContactsMessage(savedContacts, savedMsg, savedReply || undefined);
+    chatStore.clearMessageReply();
     finalizeSend();
     return;
   }
 
-  if (selectedLocation.value) {
-    await sendLocationMessage();
+  if (savedLocation) {
+    await sendLocationMessage(savedLocation, savedMsg, savedReply || undefined);
+    chatStore.clearMessageReply();
     finalizeSend();
     return;
   }
 
-  if (selectedPhotos.value.length > 0) {
-    await sendImageMessage();
+  if (savedPhotos.length > 0) {
+    await sendImageMessage(savedPhotos, savedMsg, savedReply || undefined);
+    chatStore.clearMessageReply();
     finalizeSend();
     return;
   }
 
-  await sendTextMessage();
+  await sendTextMessage(savedMsg, savedLinkPreview, savedReply || undefined);
+
+  chatStore.clearMessageReply();
   finalizeSend();
 };
 
@@ -1828,7 +1915,10 @@ const resetRecordingState = () => {
   audioChunksRef.value = [];
 };
 
-const handleRecorderStop = async () => {
+const handleRecorderStop = async (
+  savedMessageText?: string | null,
+  savedReply?: ListMessageResult | null
+) => {
   const recorder = mediaRecorderRef.value;
   const saveRecording = shouldPersistRecording.value;
   shouldPersistRecording.value = false;
@@ -1883,7 +1973,9 @@ const handleRecorderStop = async () => {
         blob,
         mimeType,
         audioRecordingDurationSeconds.value,
-        audioPendingViewOnce.value
+        audioPendingViewOnce.value,
+        savedMessageText,
+        savedReply || undefined
       );
       recordedAudioUrl.value = null;
     }
@@ -1891,10 +1983,26 @@ const handleRecorderStop = async () => {
   }
 
   releaseAudioResources();
-  resetRecordingState();
+
+  audioViewOnce.value = false;
+  audioPendingViewOnce.value = false;
+  audioRecordingStartAt.value = null;
+  audioRecordingAccumulated.value = 0;
+  audioRecordingElapsedMs.value = 0;
+  audioRecordingDurationSeconds.value = null;
+  audioChunksRef.value = [];
 };
 
-const stopAudioRecordingInternal = () => {
+let savedMessageTextForRecording: string | null | undefined = undefined;
+let savedReplyForRecording: ListMessageResult | null | undefined = undefined;
+
+const stopAudioRecordingInternal = (
+  savedMessageText?: string | null,
+  savedReply?: ListMessageResult | null
+) => {
+  savedMessageTextForRecording = savedMessageText;
+  savedReplyForRecording = savedReply;
+
   if (audioRecordingStartAt.value !== null) {
     audioRecordingAccumulated.value +=
       performance.now() - audioRecordingStartAt.value;
@@ -1903,14 +2011,19 @@ const stopAudioRecordingInternal = () => {
   updateRecordingElapsed();
 
   if (mediaRecorderRef.value) {
-    mediaRecorderRef.value.onstop = handleRecorderStop;
+    mediaRecorderRef.value.onstop = (_ev: Event) => {
+      void handleRecorderStop(
+        savedMessageTextForRecording,
+        savedReplyForRecording
+      );
+    };
     if (mediaRecorderRef.value.state !== 'inactive') {
       mediaRecorderRef.value.stop();
       return;
     }
   }
 
-  void handleRecorderStop();
+  void handleRecorderStop(savedMessageTextForRecording, savedReplyForRecording);
 };
 
 const cancelAudioRecording = () => {
@@ -1923,9 +2036,31 @@ const cancelAudioRecording = () => {
 
 const finalizeAudioRecording = () => {
   if (!isRecordingAudio.value) return;
+
+  const savedMsg = msg.value;
+  const savedReply = chatStore.messageReply;
+
+  msg.value = '';
+  linkPreview.value = null;
+  chatStore.clearMessageReply();
+
+  isRecordingAudio.value = false;
+  isRecordingPaused.value = false;
+
+  if (audioRecordingTimerId.value) {
+    clearInterval(audioRecordingTimerId.value);
+    audioRecordingTimerId.value = null;
+  }
+  if (audioRecordingRAFId.value) {
+    cancelAnimationFrame(audioRecordingRAFId.value);
+    audioRecordingRAFId.value = null;
+  }
+
+  audioRecordingElapsedMs.value = 0;
+
   shouldPersistRecording.value = true;
   audioPendingViewOnce.value = audioViewOnce.value;
-  void stopAudioRecordingInternal();
+  void stopAudioRecordingInternal(savedMsg, savedReply);
 };
 
 const togglePauseAudioRecording = async () => {
@@ -2012,7 +2147,12 @@ const startAudioRecording = async () => {
         audioChunksRef.value.push(event.data);
       }
     };
-    mediaRecorder.onstop = handleRecorderStop;
+    mediaRecorder.onstop = (_ev: Event) => {
+      void handleRecorderStop(
+        savedMessageTextForRecording,
+        savedReplyForRecording
+      );
+    };
 
     const audioCtx = new AudioContext();
     audioContextRef.value = audioCtx;
