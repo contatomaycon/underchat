@@ -16,4 +16,9 @@ export class BaileysProfileService {
   async updateProfilePicture(photoUrl: string): Promise<void> {
     await this.baileysHelpersService.updateProfilePicture(photoUrl);
   }
+
+  async removeProfilePicture(): Promise<void> {
+    const jid = this.baileysHelpersService.getOwnJid();
+    await this.baileysHelpersService.removeProfilePicture(jid);
+  }
 }

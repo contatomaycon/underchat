@@ -127,6 +127,8 @@
     "profile_info_upload_success": "¡Información del perfil guardada con éxito!",
     "profile_info_upload_error": "Error al guardar la información del perfil.",
     "profile_photo_upload_error": "Error al subir la foto del perfil.",
+    "profile_photo_remove_error": "Error al eliminar la foto del perfil.",
+    "profile_photo_remove_tooltip": "Eliminar foto",
     "is_permanent": "Tiempo de exhibición",
     "is_permanent_tooltip": "Si esta opción está activa, las imágenes del estado del perfil se renovarán automáticamente",
     "status_visibility_label": "Visibilidad del Estado",

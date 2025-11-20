@@ -617,7 +617,8 @@ export const useChannelsStore = defineStore('channels', {
       workerId: string,
       name?: string | null,
       message?: string | null,
-      photo?: File | null
+      photo?: File | null,
+      removePhoto?: boolean
     ): Promise<WorkerProfileInfo | null> {
       if (!workerId) return null;
 
@@ -636,6 +637,10 @@ export const useChannelsStore = defineStore('channels', {
 
         if (photo instanceof File) {
           formData.append('photo', photo);
+        }
+
+        if (removePhoto) {
+          formData.append('remove_photo', 'true');
         }
 
         const config: AxiosRequestConfig<FormData> = {

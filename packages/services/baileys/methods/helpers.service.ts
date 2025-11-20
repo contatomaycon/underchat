@@ -170,6 +170,11 @@ export class BaileysHelpersService {
     await sock.updateProfileStatus(status);
   }
 
+  async removeProfilePicture(jid: string): Promise<void> {
+    const sock = this.socket();
+    await sock.removeProfilePicture(jid);
+  }
+
   async updateProfilePicture(photoUrl: string): Promise<void> {
     const sock = this.socket();
     const ownJid = this.getOwnJid();

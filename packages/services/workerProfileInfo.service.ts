@@ -37,10 +37,16 @@ export class WorkerProfileInfoService {
     accountId: string,
     name?: string | null,
     message?: string | null,
-    photo?: UploadFileRequest | null
+    photo?: UploadFileRequest | null,
+    removePhoto = false
   ): Promise<WorkerProfileInfo> {
     const updateData = this.buildUpdateData(name, message);
-    await this.uploadPhotoIfProvided(photo, accountId, updateData, t);
+    if (removePhoto) {
+      updateData.photo = null;
+    }
+    if (!removePhoto) {
+      await this.uploadPhotoIfProvided(photo, accountId, updateData, t);
+    }
     await this.performUpsert(workerId, updateData);
     return this.getAndValidateProfileInfo(workerId, t);
   }

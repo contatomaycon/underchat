@@ -133,6 +133,7 @@ const contactSearch = ref('');
 const profilePhoto = ref<string | null>(null);
 const profilePhotoFile = ref<File | null>(null);
 const isUploadingProfilePhoto = ref(false);
+const isRemovingProfilePhoto = ref(false);
 const profileName = ref<string | null>(null);
 const profileDescription = ref<string | null>(null);
 const isSavingProfileInfo = ref(false);
@@ -769,7 +770,13 @@ const loadProfileInfo = async () => {
   profileDescription.value = null;
 };
 
+const isProfilePhotoBusy = computed(
+  () => isUploadingProfilePhoto.value || isRemovingProfilePhoto.value
+);
+
 const openFileSelector = () => {
+  if (isProfilePhotoBusy.value) return;
+
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'image/*';
@@ -1198,6 +1205,37 @@ const saveProfileInfo = async () => {
     channelStore.showSnackbar(t('profile_info_upload_error'), EColor.error);
   } finally {
     isSavingProfileInfo.value = false;
+  }
+};
+
+const removeProfilePhoto = async () => {
+  if (!channelId.value || !profilePhoto.value) return;
+
+  try {
+    isRemovingProfilePhoto.value = true;
+
+    const result = await channelStore.uploadWorkerProfileInfo(
+      channelId.value,
+      profileName.value,
+      profileDescription.value,
+      null,
+      true
+    );
+
+    if (result) {
+      profilePhoto.value = result.photo;
+      profileName.value = result.name;
+      profileDescription.value = result.message;
+      profilePhotoFile.value = null;
+      cropDialog.value.croppedImage = '';
+    }
+  } catch (error) {
+    channelStore.showSnackbar(
+      t('profile_photo_remove_error') || 'Erro ao remover a foto do perfil',
+      EColor.error
+    );
+  } finally {
+    isRemovingProfilePhoto.value = false;
   }
 };
 
@@ -1765,6 +1803,27 @@ onBeforeUnmount(() => {
                   class="profile-photo-container position-relative cursor-pointer"
                   @click="openFileSelector"
                 >
+                  <VTooltip
+                    v-if="profilePhoto && !cropDialog.croppedImage"
+                    location="bottom"
+                    :text="$t('profile_photo_remove_tooltip')"
+                  >
+                    <template #activator="{ props }">
+                      <IconBtn
+                        v-bind="props"
+                        class="profile-photo-remove-btn"
+                        size="small"
+                        color="error"
+                        variant="flat"
+                        :disabled="isProfilePhotoBusy"
+                        :loading="isRemovingProfilePhoto"
+                        @click.stop="removeProfilePhoto"
+                      >
+                        <VIcon icon="tabler-trash" />
+                      </IconBtn>
+                    </template>
+                  </VTooltip>
+
                   <VAvatar
                     :size="cropPreviewSize"
                     :variant="
@@ -2225,6 +2284,20 @@ onBeforeUnmount(() => {
 .profile-photo-container {
   position: relative;
   display: inline-block;
+}
+
+.profile-photo-remove-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background-color: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  border-radius: 50%;
+  z-index: 3;
+}
+
+.profile-photo-remove-btn:disabled {
+  opacity: 0.6;
 }
 
 .profile-photo-avatar {

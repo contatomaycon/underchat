@@ -30,6 +30,25 @@ export class WorkerProfileInfoUpserterUseCase {
     return String(field);
   }
 
+  private normalizeBooleanField(field: unknown): boolean {
+    if (field === undefined || field === null) return false;
+    if (typeof field === 'boolean') return field;
+    if (typeof field === 'object' && field !== null && 'value' in field) {
+      return this.normalizeBooleanField((field as { value: unknown }).value);
+    }
+    if (typeof field === 'string') {
+      const normalized = field.trim().toLowerCase();
+      if (['true', '1', 'yes', 'on'].includes(normalized)) {
+        return true;
+      }
+      if (['false', '0', 'no', 'off'].includes(normalized)) {
+        return false;
+      }
+    }
+
+    return false;
+  }
+
   private async validateFileSize(
     file: UploadFileRequest,
     t: TFunction<'translation', undefined>
@@ -60,9 +79,10 @@ export class WorkerProfileInfoUpserterUseCase {
 
     const name = this.normalizeField(body.name);
     const message = this.normalizeField(body.message);
+    const removePhoto = this.normalizeBooleanField(body.remove_photo);
     let photo: UploadFileRequest | null = null;
 
-    if (body.photo && body.photo !== null) {
+    if (body.photo && body.photo !== null && !removePhoto) {
       photo = body.photo as UploadFileRequest;
       await this.validateFileSize(photo, t);
     }
@@ -73,7 +93,8 @@ export class WorkerProfileInfoUpserterUseCase {
       accountId,
       name || null,
       message || null,
-      photo
+      photo,
+      removePhoto
     );
 
     if (!result) {

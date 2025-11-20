@@ -894,6 +894,11 @@ export class MessageSendConsume {
       await this.baileysProfileService.updateProfileStatus(data.message);
     }
 
+    if (data.photo === null) {
+      await this.baileysProfileService.removeProfilePicture();
+      return;
+    }
+
     if (data.photo) {
       await this.baileysProfileService.updateProfilePicture(data.photo);
     }

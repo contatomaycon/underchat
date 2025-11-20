@@ -25,6 +25,18 @@ export const uploadProfileInfoRequestSchema = Type.Object({
     ])
   ),
   photo: Type.Optional(Type.Union([uploadFileRequestSchema, Type.Null()])),
+  remove_photo: Type.Optional(
+    Type.Union([
+      Type.Boolean(),
+      Type.String({ enum: ['true', 'false', '1', '0'] }),
+      Type.Object({
+        value: Type.Union([
+          Type.Boolean(),
+          Type.String({ enum: ['true', 'false', '1', '0'] }),
+        ]),
+      }),
+    ])
+  ),
 });
 
 export type UploadProfileInfoParams = Static<
