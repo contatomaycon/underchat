@@ -7,10 +7,12 @@ import { BaileysMessageReactionsInteractionsService } from '@core/services/baile
 import { BaileysMessageEditDeleteService } from '@core/services/baileys/methods/messageEditDelete.service';
 import { BaileysMessageLocationContactService } from '@core/services/baileys/methods/messageLocationContact.service';
 import { BaileysMessageStatusStoriesService } from '@core/services/baileys/methods/messageStatusStories.service';
+import { BaileysProfileService } from '@core/services/baileys/methods/profile.service';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { IProfileStatusMessage } from '@core/common/interfaces/IProfileStatusMessage';
 import { IProfileStatusDeleteMessage } from '@core/common/interfaces/IProfileStatusDeleteMessage';
+import { IProfileInfoMessage } from '@core/common/interfaces/IProfileInfoMessage';
 import { IUpdateProfileStatusExternalId } from '@core/common/interfaces/IUpdateProfileStatusExternalId';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
@@ -42,6 +44,7 @@ export class MessageSendConsume {
     private readonly baileysMessageEditDeleteService: BaileysMessageEditDeleteService,
     private readonly baileysMessageLocationContactService: BaileysMessageLocationContactService,
     private readonly baileysMessageStatusStoriesService: BaileysMessageStatusStoriesService,
+    private readonly baileysProfileService: BaileysProfileService,
     private readonly streamProducerService: StreamProducerService,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly keyedSequencerService: KeyedSequencerService
@@ -78,8 +81,9 @@ export class MessageSendConsume {
         const data = this.parseMessage(message.value);
         const statusData = this.parseStatusMessage(message.value);
         const deleteStatusData = this.parseDeleteStatusMessage(message.value);
+        const profileInfoData = this.parseProfileInfoMessage(message.value);
 
-        if (!data && !statusData && !deleteStatusData) {
+        if (!data && !statusData && !deleteStatusData && !profileInfoData) {
           await this.commitNext(topic, partition, message.offset);
 
           return;
@@ -96,6 +100,13 @@ export class MessageSendConsume {
 
           if (statusData) {
             await this.processProfileStatus(statusData);
+            stop();
+            await this.commitNext(topic, partition, message.offset);
+            return;
+          }
+
+          if (profileInfoData) {
+            await this.processProfileInfo(profileInfoData);
             stop();
             await this.commitNext(topic, partition, message.offset);
             return;
@@ -228,6 +239,29 @@ export class MessageSendConsume {
         'worker_id' in parsed &&
         'external_id' in parsed
       ) {
+        return parsed;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private parseProfileInfoMessage(
+    value: Buffer | null
+  ): IProfileInfoMessage | null {
+    if (!value) {
+      return null;
+    }
+
+    const raw = value.toString('utf8').trim();
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as IProfileInfoMessage;
+      if (parsed && 'worker_id' in parsed && 'account_id' in parsed) {
         return parsed;
       }
       return null;
@@ -849,6 +883,20 @@ export class MessageSendConsume {
       data.external_id,
       data.statusJidList
     );
+  }
+
+  private async processProfileInfo(data: IProfileInfoMessage): Promise<void> {
+    if (data.name) {
+      await this.baileysProfileService.updateProfileName(data.name);
+    }
+
+    if (data.message) {
+      await this.baileysProfileService.updateProfileStatus(data.message);
+    }
+
+    if (data.photo) {
+      await this.baileysProfileService.updateProfilePicture(data.photo);
+    }
   }
 
   private async processImage(jid: string, data: IChatMessage): Promise<void> {

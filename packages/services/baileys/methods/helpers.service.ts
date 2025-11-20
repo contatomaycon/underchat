@@ -142,4 +142,58 @@ export class BaileysHelpersService {
     const clamped = Math.max(minMs, Math.min(total, maxMs));
     return Math.round(clamped);
   }
+
+  getOwnJid(): string {
+    const sock = this.socket();
+    const ownJidRaw = sock.user?.id;
+
+    if (!ownJidRaw) {
+      throw new Error('Own JID not available');
+    }
+
+    const ownJid = normalizeJid(ownJidRaw);
+
+    if (!ownJid) {
+      throw new Error('Failed to normalize own JID');
+    }
+
+    return ownJid;
+  }
+
+  async updateProfileName(name: string): Promise<void> {
+    const sock = this.socket();
+    await sock.updateProfileName(name);
+  }
+
+  async updateProfileStatus(status: string): Promise<void> {
+    const sock = this.socket();
+    await sock.updateProfileStatus(status);
+  }
+
+  async updateProfilePicture(photoUrl: string): Promise<void> {
+    const sock = this.socket();
+    const ownJid = this.getOwnJid();
+    await sock.updateProfilePicture(ownJid, { url: photoUrl });
+  }
+
+  addOwnJidToStatusList(statusJidList: string[]): string[] {
+    try {
+      const ownJid = this.getOwnJid();
+
+      const normalizedStatusJidList = statusJidList.map(
+        (jid) => normalizeJid(jid) ?? jid
+      );
+      const ownJidExists = normalizedStatusJidList.some(
+        (jid) => jid === ownJid
+      );
+
+      if (!ownJidExists) {
+        return [...statusJidList, ownJid];
+      }
+
+      return statusJidList;
+    } catch {
+      return statusJidList;
+    }
+  }
 }

@@ -2,9 +2,12 @@ import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerProfileInfoService } from '@core/services/workerProfileInfo.service';
 import { WorkerService } from '@core/services/worker.service';
+import { StreamProducerService } from '@core/services/streamProducer.service';
+import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { UploadProfileInfoResponse } from '@core/schema/worker/uploadProfileInfo/response.schema';
 import { UploadProfileInfoRequest } from '@core/schema/worker/uploadProfileInfo/request.schema';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
+import { IProfileInfoMessage } from '@core/common/interfaces/IProfileInfoMessage';
 
 @injectable()
 export class WorkerProfileInfoUpserterUseCase {
@@ -12,7 +15,9 @@ export class WorkerProfileInfoUpserterUseCase {
 
   constructor(
     private readonly workerProfileInfoService: WorkerProfileInfoService,
-    private readonly workerService: WorkerService
+    private readonly workerService: WorkerService,
+    private readonly streamProducerService: StreamProducerService,
+    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService
   ) {}
 
   private normalizeField(field: unknown): string | undefined {
@@ -74,6 +79,18 @@ export class WorkerProfileInfoUpserterUseCase {
     if (!result) {
       throw new Error(t('profile_info_upload_error'));
     }
+
+    const profileInfoMessage: IProfileInfoMessage = {
+      worker_id: workerId,
+      account_id: accountId,
+      name: result.name,
+      message: result.message,
+      photo: result.photo,
+    };
+
+    const topic = this.kafkaBaileysQueueService.workerSendMessage(workerId);
+
+    await this.streamProducerService.send(topic, profileInfoMessage);
 
     return result;
   }
