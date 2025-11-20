@@ -18,13 +18,30 @@ export function normalizePhoneNumber(
 
   if (!digits || digits.length === 0) return null;
 
-  if (digits.startsWith('55') && digits.length >= 12) {
-    const ddi = digits.slice(0, 2);
-    const number = digits.slice(2);
-    return {
-      phone: number,
-      phone_ddi: ddi,
-    };
+  if (digits.length >= 10) {
+    if (digits.startsWith('55') && digits.length >= 12) {
+      const ddi = digits.slice(0, 2);
+      const number = digits.slice(2);
+      return {
+        phone: number,
+        phone_ddi: ddi,
+      };
+    }
+
+    const ddiLengths = [2, 3, 1];
+    for (const ddiLength of ddiLengths) {
+      if (digits.length < ddiLength + 8) continue;
+
+      const potentialDdi = digits.slice(0, ddiLength);
+      const potentialNumber = digits.slice(ddiLength);
+
+      if (potentialNumber.length >= 8 && potentialNumber.length <= 15) {
+        return {
+          phone: potentialNumber,
+          phone_ddi: potentialDdi,
+        };
+      }
+    }
   }
 
   return {
