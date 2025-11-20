@@ -147,7 +147,8 @@ export const usePermissionStore = defineStore('permission', {
 
         if (!data?.status || !data?.data) {
           const message =
-            data?.message ?? this.i18n.global.t('permission_role_account_list_error');
+            data?.message ??
+            this.i18n.global.t('permission_role_account_list_error');
 
           this.showSnackbar(message, EColor.error);
 
@@ -156,7 +157,9 @@ export const usePermissionStore = defineStore('permission', {
 
         return data.data;
       } catch (error) {
-        let errorMessage = this.i18n.global.t('permission_role_account_list_error');
+        let errorMessage = this.i18n.global.t(
+          'permission_role_account_list_error'
+        );
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }

@@ -459,12 +459,24 @@ export const useUsersStore = defineStore('users', {
 
         const data = response?.data;
 
-        if (!data?.status) {
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('user_role_view_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
           return null;
         }
 
-        return data.data?.permission_role_id ?? null;
+        return data.data.permission_role_id ?? null;
       } catch (error) {
+        let errorMessage = this.i18n.global.t('user_role_view_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
         return null;
       }
     },

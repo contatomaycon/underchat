@@ -52,4 +52,3 @@ export const viewUserAddress2 = async (
     });
   }
 };
-

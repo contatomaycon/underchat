@@ -18,6 +18,19 @@
       ]
     }
   },
-  "include": ["packages/**/*"],
+  "include": [
+    "packages/**/*",
+    "apps/balance_api/src/**/*.ts",
+    "apps/manager_api/src/**/*.ts",
+    "apps/public_api/src/**/*.ts",
+    "apps/service_api/src/**/*.ts",
+    "apps/web/src/**/*.ts",
+    "apps/web/src/**/*.tsx",
+    "apps/web/**/*.ts",
+    "apps/web/**/*.tsx",
+    "apps/worker_baileys/src/**/*.ts",
+    "drizzle.config.ts",
+    "jest.config.ts"
+  ],
   "exclude": ["node_modules"]
 }

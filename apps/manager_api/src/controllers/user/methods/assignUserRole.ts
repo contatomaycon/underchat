@@ -56,4 +56,3 @@ export const assignUserRole = async (
     });
   }
 };
-
