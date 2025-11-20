@@ -1,5 +1,5 @@
 import { injectable } from 'tsyringe';
-import { WorkerProfileStatusCreatorRepository } from '@core/repositories/worker/WorkerProfileStatusCreator.repository';
+import { WorkerProfileStatusCreatorTransactionRepository } from '@core/repositories/worker/WorkerProfileStatusCreatorTransaction.repository';
 import { WorkerProfileStatusListerRepository } from '@core/repositories/worker/WorkerProfileStatusLister.repository';
 import { WorkerProfileStatusUpdaterRepository } from '@core/repositories/worker/WorkerProfileStatusUpdater.repository';
 import { WorkerProfileStatusDeleterRepository } from '@core/repositories/worker/WorkerProfileStatusDeleter.repository';
@@ -12,11 +12,13 @@ import { EWorkerProfileStatusType } from '@core/common/enums/EWorkerProfileStatu
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { IProfileStatusMessage } from '@core/common/interfaces/IProfileStatusMessage';
+import { IVisibilityData } from '@core/common/interfaces/IVisibilityData';
+import { TFunction } from 'i18next';
 
 @injectable()
 export class WorkerProfileStatusService {
   constructor(
-    private readonly workerProfileStatusCreatorRepository: WorkerProfileStatusCreatorRepository,
+    private readonly workerProfileStatusCreatorTransactionRepository: WorkerProfileStatusCreatorTransactionRepository,
     private readonly workerProfileStatusListerRepository: WorkerProfileStatusListerRepository,
     private readonly workerProfileStatusUpdaterRepository: WorkerProfileStatusUpdaterRepository,
     private readonly workerProfileStatusDeleterRepository: WorkerProfileStatusDeleterRepository,
@@ -27,13 +29,15 @@ export class WorkerProfileStatusService {
   ) {}
 
   async uploadProfileStatus(
+    t: TFunction<'translation', undefined>,
     workerId: string,
     accountId: string,
     workerProfileStatusTypeId: string,
     photos?: UploadFileRequest | UploadFileRequest[],
     text?: string,
     caption?: string,
-    isPermanent: boolean = false
+    isPermanent: boolean = false,
+    visibilityData?: IVisibilityData
   ): Promise<WorkerProfileStatus[]> {
     const typeId = workerProfileStatusTypeId as EWorkerProfileStatusType;
 
@@ -42,14 +46,21 @@ export class WorkerProfileStatusService {
         throw new Error('TEXT_REQUIRED');
       }
 
+      if (!visibilityData) {
+        throw new Error('VISIBILITY_DATA_REQUIRED');
+      }
+
       const workerProfileStatusId =
-        await this.workerProfileStatusCreatorRepository.createWorkerProfileStatus(
+        await this.workerProfileStatusCreatorTransactionRepository.createWorkerProfileStatus(
+          t,
+          accountId,
           {
             worker_id: workerId,
             worker_profile_status_type_id: typeId,
             value: text,
             is_permanent: isPermanent,
-          }
+          },
+          visibilityData
         );
 
       const statusResult = {
@@ -97,14 +108,21 @@ export class WorkerProfileStatusService {
         value = `${uploadResult.url}|${caption}`;
       }
 
+      if (!visibilityData) {
+        throw new Error('VISIBILITY_DATA_REQUIRED');
+      }
+
       const workerProfileStatusId =
-        await this.workerProfileStatusCreatorRepository.createWorkerProfileStatus(
+        await this.workerProfileStatusCreatorTransactionRepository.createWorkerProfileStatus(
+          t,
+          accountId,
           {
             worker_id: workerId,
             worker_profile_status_type_id: typeId,
             value,
             is_permanent: isPermanent,
-          }
+          },
+          visibilityData
         );
 
       const statusResult = {
@@ -154,15 +172,19 @@ export class WorkerProfileStatusService {
     }
 
     if (
-      profileStatus.worker_profile_status_type_id !==
+      profileStatus.worker_profile_status_type_id ===
       EWorkerProfileStatusType.text
     ) {
-      const url = profileStatus.value.split('|')[0];
-      const deleteFromS3 = await this.storageService.deleteImage(url);
+      return this.workerProfileStatusDeleterRepository.deleteWorkerProfileStatus(
+        workerProfileStatusId
+      );
+    }
 
-      if (!deleteFromS3) {
-        return false;
-      }
+    const url = profileStatus.value.split('|')[0];
+    const deleteFromS3 = await this.storageService.deleteImage(url);
+
+    if (!deleteFromS3) {
+      return false;
     }
 
     return this.workerProfileStatusDeleterRepository.deleteWorkerProfileStatus(

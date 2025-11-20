@@ -306,7 +306,7 @@ const resetPendingSelections = () => {
 
 const loadContactGroups = async () => {
   if (contactGroupsList.value.length > 0) return;
-  
+
   try {
     isLoadingContactGroups.value = true;
     const response = await contactGroupStore.listContactGroupAll();
@@ -320,7 +320,7 @@ const loadContactGroups = async () => {
 
 const loadContacts = async () => {
   if (contactsList.value.length > 0) return;
-  
+
   try {
     isLoadingContacts.value = true;
     const allContacts: ListContactResponse[] = [];
@@ -332,6 +332,7 @@ const loadContacts = async () => {
       const response = await contactStore.listContact({
         page: currentPage,
         per_page: perPage,
+        sort_by: [],
       });
 
       if (!response?.results?.length) {
@@ -358,7 +359,7 @@ const loadContacts = async () => {
 watch(statusVisibilityType, (newValue) => {
   selectedContactGroups.value = [];
   selectedContacts.value = [];
-  
+
   if (newValue === 'contact_groups') {
     loadContactGroups();
     return;
@@ -512,26 +513,54 @@ const saveProfileStatus = async () => {
     return;
   }
 
+  if (!statusVisibilityType.value) {
+    channelStore.showSnackbar(
+      t('profile_status_visibility_required'),
+      EColor.warning
+    );
+    return;
+  }
+
+  if (
+    statusVisibilityType.value === 'contact_groups' &&
+    selectedContactGroups.value.length === 0
+  ) {
+    channelStore.showSnackbar(t('contact_groups_required'), EColor.warning);
+    return;
+  }
+
+  if (
+    statusVisibilityType.value === 'contacts' &&
+    selectedContacts.value.length === 0
+  ) {
+    channelStore.showSnackbar(t('contacts_required'), EColor.warning);
+    return;
+  }
+
   try {
     isSavingProfileStatus.value = true;
 
     const files = selectedStatusPreviews.value.map((preview) => preview.file);
     const visibilityData: {
-      visibility_type?: StatusVisibilityType;
+      visibility_type: StatusVisibilityType;
       contact_group_ids?: string[];
       contact_ids?: string[];
-    } = {};
+    } = {
+      visibility_type: statusVisibilityType.value,
+    };
 
-    if (statusVisibilityType.value !== 'all') {
-      visibilityData.visibility_type = statusVisibilityType.value;
-      
-      if (statusVisibilityType.value === 'contact_groups' && selectedContactGroups.value.length > 0) {
-        visibilityData.contact_group_ids = selectedContactGroups.value;
-      }
+    if (
+      statusVisibilityType.value === 'contact_groups' &&
+      selectedContactGroups.value.length > 0
+    ) {
+      visibilityData.contact_group_ids = selectedContactGroups.value;
+    }
 
-      if (statusVisibilityType.value === 'contacts' && selectedContacts.value.length > 0) {
-        visibilityData.contact_ids = selectedContacts.value;
-      }
+    if (
+      statusVisibilityType.value === 'contacts' &&
+      selectedContacts.value.length > 0
+    ) {
+      visibilityData.contact_ids = selectedContacts.value;
     }
 
     const response = await channelStore.uploadWorkerProfileStatus(
@@ -851,10 +880,14 @@ onBeforeUnmount(() => {
                   v-if="statusVisibilityType === 'contacts'"
                   v-model="selectedContacts"
                   :items="filteredContacts"
-                  :item-title="(item) => {
-                    const fullName = `${item.name}${item.last_name ? ' ' + item.last_name : ''}`;
-                    return item.phone_partial ? `${fullName} (${item.phone_partial})` : fullName;
-                  }"
+                  :item-title="
+                    (item) => {
+                      const fullName = `${item.name}${item.last_name ? ' ' + item.last_name : ''}`;
+                      return item.phone_partial
+                        ? `${fullName} (${item.phone_partial})`
+                        : fullName;
+                    }
+                  "
                   item-value="contact_id"
                   :label="$t('status_visibility_select_contacts')"
                   multiple
