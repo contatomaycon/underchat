@@ -220,15 +220,21 @@ const onReact = async (m: ListMessageResult, emoji: string) => {
   if (isDeleted(m)) return;
   if (!chatStore.activeChat?.chat_id) return;
 
+  const previousReactions = m.content?.reactions ?? null;
+
+  chatStore.updateMessageReaction(m.message_id, emoji);
+
+  showReactionPicker.value = null;
+  showEmojiPicker.value = null;
+
   const success = await chatStore.reactToMessage(
     chatStore.activeChat.chat_id,
     m.message_id,
     emoji
   );
 
-  if (success) {
-    showReactionPicker.value = null;
-    showEmojiPicker.value = null;
+  if (!success) {
+    chatStore.revertMessageReaction(m.message_id, previousReactions);
   }
 };
 
