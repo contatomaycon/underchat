@@ -3,6 +3,7 @@ import { TFunction } from 'i18next';
 import { UpdateUserRequest } from '@core/schema/user/editUser/request.schema';
 import { UserService } from '@core/services/user.service';
 import { EncryptService } from '@core/services/encrypt.service';
+import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
 import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
 import { IUpdateUser } from '@core/common/interfaces/IUpdateUser';
 import { IUpdateUserInfo } from '@core/common/interfaces/IUpdateUserInfo';
@@ -10,13 +11,16 @@ import moment from 'moment';
 import { IUpdateUserDocument } from '@core/common/interfaces/IUpdateUserDocument';
 import { IUpdateUserAddress } from '@core/common/interfaces/IUpdateUserAddress';
 import { CountryService } from '@core/services/country.service';
+import { AccountService } from '@core/services/account.service';
 
 @injectable()
 export class UserUpdaterUseCase {
   constructor(
     private readonly encryptService: EncryptService,
+    private readonly passwordEncryptorService: PasswordEncryptorService,
     private readonly userService: UserService,
-    private readonly CountryService: CountryService
+    private readonly CountryService: CountryService,
+    private readonly accountService: AccountService
   ) {}
 
   private validateBirthDate(
@@ -46,8 +50,16 @@ export class UserUpdaterUseCase {
     t: TFunction<'translation', undefined>,
     userId: string,
     body: UpdateUserRequest,
-    accountId: string
+    accountId: string,
+    isAdministrator: boolean
   ): Promise<void> {
+    if (body.account_id && isAdministrator) {
+      const accountExists = await this.accountService.existsAccountById(body.account_id);
+      if (!accountExists) {
+        throw new Error(t('account_not_found'));
+      }
+    }
+
     if (body.user_status_id) {
       const userStatusExists = await this.userService.existsUserStatusById(
         body.user_status_id
@@ -58,7 +70,7 @@ export class UserUpdaterUseCase {
     }
 
     const emailCEncrypted = body.email
-      ? this.encryptService.encrypt(body.email)
+      ? this.passwordEncryptorService.encrypt(body.email)
       : null;
 
     const emailPartialEncrypted = body.email
@@ -87,10 +99,21 @@ export class UserUpdaterUseCase {
       password: passwordEncrypted,
     };
 
+    if (body.account_id && isAdministrator) {
+      const currentUserAccountId = await this.userService.getUserAccountId(userId);
+      
+      if (currentUserAccountId && currentUserAccountId !== body.account_id) {
+        await this.userService.deleteUserRole(userId);
+      }
+      
+      createUserInput.account_id = body.account_id;
+    }
+
     const updateUser = await this.userService.updateUserById(
       userId,
       createUserInput,
-      accountId
+      accountId,
+      isAdministrator
     );
 
     if (!updateUser) {
@@ -104,7 +127,7 @@ export class UserUpdaterUseCase {
     body: UpdateUserRequest
   ): Promise<void> {
     const phoneCEncrypted = body.user_info?.phone
-      ? this.encryptService.encrypt(body.user_info.phone)
+      ? this.passwordEncryptorService.encrypt(body.user_info.phone)
       : null;
 
     const phonePartialEncrypted = body.user_info?.phone
@@ -163,7 +186,7 @@ export class UserUpdaterUseCase {
     }
 
     const documentCEncrypted = body.user_document?.document
-      ? this.encryptService.encrypt(body.user_document.document)
+      ? this.passwordEncryptorService.encrypt(body.user_document.document)
       : null;
 
     const documentPartialEncrypted = body.user_document?.document
@@ -209,7 +232,7 @@ export class UserUpdaterUseCase {
     }
 
     const address1CEncrypted = body.user_address?.address1
-      ? this.encryptService.encrypt(body.user_address.address1)
+      ? this.passwordEncryptorService.encrypt(body.user_address.address1)
       : null;
 
     const address1PartialEncrypted = body.user_address?.address1
@@ -224,7 +247,7 @@ export class UserUpdaterUseCase {
       : null;
 
     const address2CEncrypted = body.user_address?.address2
-      ? this.encryptService.encrypt(body.user_address.address2)
+      ? this.passwordEncryptorService.encrypt(body.user_address.address2)
       : null;
 
     const address2PartialEncrypted = body.user_address?.address2
@@ -279,8 +302,8 @@ export class UserUpdaterUseCase {
       throw new Error(t('user_not_found'));
     }
 
-    if (body.email || body.password || body.user_status_id) {
-      await this.insertUser(t, userId, body, accountId);
+    if (body.email || body.password || body.user_status_id || body.account_id) {
+      await this.insertUser(t, userId, body, accountId, isAdministrator);
     }
 
     if (body.user_info) {

@@ -103,6 +103,24 @@ export const useAccountStore = defineStore('account', {
       }
     },
 
+    async listAllAccounts(): Promise<{ account_id: string; name: string }[]> {
+      try {
+        const response = await axios.get<
+          IApiResponse<{ account_id: string; name: string }[]>
+        >(`/account/all`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return [];
+        }
+
+        return data.data;
+      } catch (error) {
+        return [];
+      }
+    },
+
     async getAccountById(
       accountId: string
     ): Promise<ViewAccountResponse | null> {

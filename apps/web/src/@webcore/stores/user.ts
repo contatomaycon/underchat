@@ -20,6 +20,13 @@ import {
 } from '@core/schema/user/editUser/request.schema';
 import { ZipcodeResponseSchema } from '@core/schema/zipcode/viewZipcode/response.schema';
 import { ViewZipcodeRequest } from '@core/schema/zipcode/viewZipcode/request.schema';
+import { ViewUserPhoneResponse } from '@core/schema/user/viewUserPhone/response.schema';
+import { ViewUserEmailResponse } from '@core/schema/user/viewUserEmail/response.schema';
+import { ViewUserDocumentResponse } from '@core/schema/user/viewUserDocument/response.schema';
+import { ViewUserAddress1Response } from '@core/schema/user/viewUserAddress1/response.schema';
+import { ViewUserAddress2Response } from '@core/schema/user/viewUserAddress2/response.schema';
+import { AssignUserRoleRequest } from '@core/schema/user/assignUserRole/request.schema';
+import { ViewUserRoleResponse } from '@core/schema/user/viewUserRole/response.schema';
 
 export const useUsersStore = defineStore('users', {
   state: () => ({
@@ -282,6 +289,219 @@ export const useUsersStore = defineStore('users', {
         return true;
       } catch (error) {
         let errorMessage = this.i18n.global.t('user_deleted_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async getUserPhoneDecrypted(userId: string): Promise<string | null> {
+      try {
+        const response = await axios.get<IApiResponse<ViewUserPhoneResponse>>(
+          `/user/${userId}/phone`
+        );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('user_view_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        return data.data.phone;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('user_view_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+
+    async getUserEmailDecrypted(userId: string): Promise<string | null> {
+      try {
+        const response = await axios.get<IApiResponse<ViewUserEmailResponse>>(
+          `/user/${userId}/email`
+        );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('user_view_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        return data.data.email;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('user_view_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+
+    async getUserDocumentDecrypted(userId: string): Promise<string | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ViewUserDocumentResponse>
+        >(`/user/${userId}/document`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('user_view_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        return data.data.document;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('user_view_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+
+    async getUserAddress1Decrypted(userId: string): Promise<string | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ViewUserAddress1Response>
+        >(`/user/${userId}/address1`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('user_view_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        return data.data.address1;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('user_view_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+
+    async getUserAddress2Decrypted(userId: string): Promise<string | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ViewUserAddress2Response>
+        >(`/user/${userId}/address2`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('user_view_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        return data.data.address2;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('user_view_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+
+    async getUserRole(userId: string): Promise<string | null> {
+      try {
+        const response = await axios.get<IApiResponse<ViewUserRoleResponse>>(
+          `/user/${userId}/role`
+        );
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          return null;
+        }
+
+        return data.data?.permission_role_id ?? null;
+      } catch (error) {
+        return null;
+      }
+    },
+
+    async assignUserRole(
+      userId: string,
+      payload: AssignUserRoleRequest
+    ): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<null>>(
+          `/user/${userId}/role`,
+          payload
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('user_role_assignment_failed');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('user_role_assigned_successfully'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('user_role_assignment_failed');
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }

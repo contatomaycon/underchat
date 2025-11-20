@@ -22,10 +22,22 @@ import { IUpdateUserAddress } from '@core/common/interfaces/IUpdateUserAddress';
 import { UserNamePhotoViewerRepository } from '@core/repositories/user/UserNamePhotoViewer.repository';
 import { IViewUserNamePhoto } from '@core/common/interfaces/IViewUserNamePhoto';
 import { UserExistsByEmailAndPhoneRepository } from '@core/repositories/user/UserExistsByEmailAndPhone.repository';
+import { UserSensitiveDataRepository } from '@core/repositories/user/UserSensitiveData.repository';
+import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
+import { PermissionAssignmentCreatorRepository } from '@core/repositories/permission/PermissionAssignmentCreator.repository';
+import { PermissionAssignmentExistsRepository } from '@core/repositories/permission/PermissionAssignmentExists.repository';
+import { PermissionAssignmentViewerRepository } from '@core/repositories/permission/PermissionAssignmentViewer.repository';
+import { PermissionAssignmentUpdaterRepository } from '@core/repositories/permission/PermissionAssignmentUpdater.repository';
+import { PermissionAssignmentDeleterRepository } from '@core/repositories/permission/PermissionAssignmentDeleter.repository';
+import { UserAccountViewerRepository } from '@core/repositories/user/UserAccountViewer.repository';
+import { UserEmailViewerExistsRepository } from '@core/repositories/user/UserEmailViewerExists.repository';
+import { EncryptService } from './encrypt.service';
+import { IUserSensitiveDataDecrypted } from '@core/common/interfaces/IUserSensitiveDataDecrypted';
 
 @injectable()
 export class UserService {
   constructor(
+    private readonly encryptService: EncryptService,
     private readonly userListerRepository: UserListerRepository,
     private readonly userViewerExistsRepository: UserViewerExistsRepository,
     private readonly userDeleterRepository: UserDeleterRepository,
@@ -38,7 +50,16 @@ export class UserService {
     private readonly userDocumentUpdaterRepository: UserDocumentUpdaterRepository,
     private readonly userAddressUpdaterRepository: UserAddressUpdaterRepository,
     private readonly userNamePhotoViewerRepository: UserNamePhotoViewerRepository,
-    private readonly userExistsByEmailAndPhoneRepository: UserExistsByEmailAndPhoneRepository
+    private readonly userExistsByEmailAndPhoneRepository: UserExistsByEmailAndPhoneRepository,
+    private readonly userSensitiveDataRepository: UserSensitiveDataRepository,
+    private readonly passwordEncryptorService: PasswordEncryptorService,
+    private readonly permissionAssignmentCreatorRepository: PermissionAssignmentCreatorRepository,
+    private readonly permissionAssignmentExistsRepository: PermissionAssignmentExistsRepository,
+    private readonly permissionAssignmentViewerRepository: PermissionAssignmentViewerRepository,
+    private readonly permissionAssignmentUpdaterRepository: PermissionAssignmentUpdaterRepository,
+    private readonly permissionAssignmentDeleterRepository: PermissionAssignmentDeleterRepository,
+    private readonly userAccountViewerRepository: UserAccountViewerRepository,
+    private readonly userEmailViewerExistsRepository: UserEmailViewerExistsRepository
   ) {}
 
   listUsers = async (
@@ -48,18 +69,24 @@ export class UserService {
     accountId: string,
     isAdministrator: boolean
   ): Promise<[ListUserResponse[], number]> => {
+    const searchHashes = query.search
+      ? this.encryptService.encrypt(query.search)
+      : null;
+
     const [result, total] = await Promise.all([
       this.userListerRepository.listUsers(
         perPage,
         currentPage,
         query,
         accountId,
-        isAdministrator
+        isAdministrator,
+        searchHashes
       ),
       this.userListerRepository.listUsersTotal(
         query,
         accountId,
-        isAdministrator
+        isAdministrator,
+        searchHashes
       ),
     ]);
 
@@ -131,9 +158,10 @@ export class UserService {
   updateUserById = async (
     userId: string,
     input: IUpdateUser,
-    accountId: string
+    accountId: string,
+    isAdministrator: boolean
   ): Promise<boolean> => {
-    return this.userUpdaterRepository.updateUserById(userId, input, accountId);
+    return this.userUpdaterRepository.updateUserById(userId, input, accountId, isAdministrator);
   };
 
   updateUserInfoById = async (
@@ -187,5 +215,228 @@ export class UserService {
       phoneC,
       excludeUserId
     );
+  };
+
+  getUserPhoneDecrypted = (
+    encryptedPhone: string | null | undefined
+  ): string | null => {
+    if (!encryptedPhone) return null;
+
+    if (typeof encryptedPhone !== 'string') {
+      return null;
+    }
+
+    const isAESFormat =
+      encryptedPhone.includes(':') && encryptedPhone.split(':').length === 3;
+
+    if (!isAESFormat) {
+      return null;
+    }
+
+    try {
+      const decryptedPhone =
+        this.passwordEncryptorService.decrypt(encryptedPhone);
+      
+      return decryptedPhone;
+    } catch {
+      return null;
+    }
+  };
+
+  getUserEmailDecrypted = (
+    encryptedEmail: string | null | undefined
+  ): string | null => {
+    if (!encryptedEmail) return null;
+
+    if (typeof encryptedEmail !== 'string') {
+      return null;
+    }
+
+    if (encryptedEmail.includes('*')) {
+      return null;
+    }
+
+    const isAESFormat =
+      encryptedEmail.includes(':') && encryptedEmail.split(':').length === 3;
+
+    if (!isAESFormat) {
+      return null;
+    }
+
+    try {
+      const decryptedEmail =
+        this.passwordEncryptorService.decrypt(encryptedEmail);
+      
+      return decryptedEmail;
+    } catch {
+      return null;
+    }
+  };
+
+  getUserDocumentDecrypted = (
+    encryptedDocument: string | null | undefined
+  ): string | null => {
+    if (!encryptedDocument) return null;
+
+    if (typeof encryptedDocument !== 'string') {
+      return null;
+    }
+
+    if (encryptedDocument.includes('*')) {
+      return null;
+    }
+
+    const isAESFormat =
+      encryptedDocument.includes(':') &&
+      encryptedDocument.split(':').length === 3;
+
+    if (!isAESFormat) {
+      return null;
+    }
+
+    try {
+      const decryptedDocument =
+        this.passwordEncryptorService.decrypt(encryptedDocument);
+
+      return decryptedDocument;
+    } catch {
+      return null;
+    }
+  };
+
+  getUserSensitiveDataDecrypted = async (
+    userId: string
+  ): Promise<IUserSensitiveDataDecrypted | null> => {
+    const sensitiveData =
+      await this.userSensitiveDataRepository.getUserSensitiveDataById(userId);
+    
+    if (!sensitiveData) return null;
+
+    return {
+      phone: this.getUserPhoneDecrypted(sensitiveData.phone),
+      email: this.getUserEmailDecrypted(sensitiveData.email),
+      document: this.getUserDocumentDecrypted(sensitiveData.document),
+      address1: this.getUserAddress1Decrypted(sensitiveData.address1),
+      address2: this.getUserAddress2Decrypted(sensitiveData.address2),
+    };
+  };
+
+  getUserAddress1Decrypted = (
+    encryptedAddress1: string | null | undefined
+  ): string | null => {
+    if (!encryptedAddress1) return null;
+
+    if (typeof encryptedAddress1 !== 'string') {
+      return null;
+    }
+
+    if (encryptedAddress1.includes('*')) {
+      return null;
+    }
+
+    const isAESFormat =
+      encryptedAddress1.includes(':') &&
+      encryptedAddress1.split(':').length === 3;
+
+    if (!isAESFormat) {
+      return null;
+    }
+
+    try {
+      const decryptedAddress1 =
+        this.passwordEncryptorService.decrypt(encryptedAddress1);
+
+      return decryptedAddress1;
+    } catch {
+      return null;
+    }
+  };
+
+  getUserAddress2Decrypted = (
+    encryptedAddress2: string | null | undefined
+  ): string | null => {
+    if (!encryptedAddress2) return null;
+
+    if (typeof encryptedAddress2 !== 'string') {
+      return null;
+    }
+
+    if (encryptedAddress2.includes('*')) {
+      return null;
+    }
+
+    const isAESFormat =
+      encryptedAddress2.includes(':') &&
+      encryptedAddress2.split(':').length === 3;
+
+    if (!isAESFormat) {
+      return null;
+    }
+
+    try {
+      const decryptedAddress2 =
+        this.passwordEncryptorService.decrypt(encryptedAddress2);
+
+      return decryptedAddress2;
+    } catch {
+      return null;
+    }
+  };
+
+  getUserRole = async (userId: string): Promise<string | null> => {
+    return this.permissionAssignmentViewerRepository.getUserRole(userId);
+  };
+
+  assignUserRole = async (
+    userId: string,
+    permissionRoleId: string,
+    accountId: string
+  ): Promise<boolean> => {
+    const currentRole = await this.getUserRole(userId);
+
+    if (currentRole) {
+      return this.permissionAssignmentUpdaterRepository.updatePermissionAssignment(
+        userId,
+        permissionRoleId,
+        accountId
+      );
+    }
+
+    const assignmentId =
+        await this.permissionAssignmentCreatorRepository.createPermissionAssignment(
+          userId,
+          permissionRoleId,
+          accountId
+        );
+
+      return assignmentId !== null;
+  };
+
+  existsPermissionAssignment = async (
+    userId: string,
+    permissionRoleId: string
+  ): Promise<boolean> => {
+    return this.permissionAssignmentExistsRepository.existsPermissionAssignment(
+      userId,
+      permissionRoleId
+    );
+  };
+
+  deleteUserRole = async (userId: string): Promise<boolean> => {
+    return this.permissionAssignmentDeleterRepository.deletePermissionAssignmentByUserId(
+      userId
+    );
+  };
+
+  getUserAccountId = async (userId: string): Promise<string | null> => {
+    return this.userAccountViewerRepository.getUserAccountId(userId);
+  };
+
+  existsUserEmailById = async (userEmail: string): Promise<boolean> => {
+    const emailC = this.encryptService.encrypt(userEmail);
+
+    if (!emailC) return false;
+
+    return this.userEmailViewerExistsRepository.existsUserEmailById(emailC);
   };
 }

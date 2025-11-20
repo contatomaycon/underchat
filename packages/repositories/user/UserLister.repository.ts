@@ -21,6 +21,7 @@ import {
   inArray,
   SQL,
 } from 'drizzle-orm';
+import { isDefinedFilter } from '@core/common/functions/isDefinedFilter';
 import { ListUserResponse } from '@core/schema/user/listUser/response.schema';
 import { ListUserRequest } from '@core/schema/user/listUser/request.schema';
 
@@ -30,39 +31,61 @@ export class UserListerRepository {
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  private readonly setFiltersUser = (query: ListUserRequest): SQLWrapper[] => {
+  private readonly setFiltersUser = (
+    query: ListUserRequest,
+    searchHashes: string | null
+  ): SQLWrapper[] => {
     const filters: SQLWrapper[] = [];
 
-    if (!query.search) {
-      return filters;
-    }
+    const searchTerm = query.search;
+    if (!searchTerm) return filters;
 
-    const searchTerm = query.search.trim();
-    if (searchTerm.length === 0) {
-      return filters;
-    }
-
-    const conditions: (SQLWrapper | undefined)[] = [
-      ilike(user.email_partial, `%${searchTerm}%`),
-      inArray(
-        user.user_id,
-        this.db
-          .select({ user_id: userInfo.user_id })
-          .from(userInfo)
-          .where(ilike(userInfo.phone_partial, `%${searchTerm}%`))
-      ),
-      inArray(
-        user.user_id,
-        this.db
-          .select({ user_id: userDocument.user_id })
-          .from(userDocument)
-          .where(ilike(userDocument.document_partial, `%${searchTerm}%`))
-      ),
+    const rawConditions: Array<SQLWrapper | undefined> = [
+      searchTerm ? ilike(user.email_partial, `%${searchTerm}%`) : undefined,
+      searchTerm
+        ? inArray(
+            user.user_id,
+            this.db
+              .select({ user_id: userInfo.user_id })
+              .from(userInfo)
+              .where(ilike(userInfo.phone_partial, `%${searchTerm}%`))
+          )
+        : undefined,
+      searchTerm
+        ? inArray(
+            user.user_id,
+            this.db
+              .select({ user_id: userDocument.user_id })
+              .from(userDocument)
+              .where(ilike(userDocument.document_partial, `%${searchTerm}%`))
+          )
+        : undefined,
+      searchHashes ? eq(user.email_c, searchHashes) : undefined,
+      searchHashes
+        ? inArray(
+            user.user_id,
+            this.db
+              .select({ user_id: userInfo.user_id })
+              .from(userInfo)
+              .where(eq(userInfo.phone_c, searchHashes))
+          )
+        : undefined,
+      searchHashes
+        ? inArray(
+            user.user_id,
+            this.db
+              .select({ user_id: userDocument.user_id })
+              .from(userDocument)
+              .where(eq(userDocument.document_c, searchHashes))
+          )
+        : undefined,
     ];
 
+    const conditions = rawConditions.filter(isDefinedFilter);
+
     if (conditions.length) {
-      const combined = or(...conditions);
-      if (combined) filters.push(combined);
+      const combinedFilter = or(...conditions) as SQLWrapper;
+      filters.push(combinedFilter);
     }
 
     return filters;
@@ -102,9 +125,10 @@ export class UserListerRepository {
     currentPage: number,
     query: ListUserRequest,
     accountId: string,
-    isAdministrator: boolean
+    isAdministrator: boolean,
+    searchHashes: string | null
   ): Promise<ListUserResponse[]> => {
-    const filtersUser = this.setFiltersUser(query);
+    const filtersUser = this.setFiltersUser(query, searchHashes);
     const filters = this.setFilters(accountId, query);
     const accountCondition = isAdministrator
       ? undefined
@@ -250,9 +274,10 @@ export class UserListerRepository {
   listUsersTotal = async (
     query: ListUserRequest,
     accountId: string,
-    isAdministrator: boolean
+    isAdministrator: boolean,
+    searchHashes: string | null
   ): Promise<number> => {
-    const filtersUser = this.setFiltersUser(query);
+    const filtersUser = this.setFiltersUser(query, searchHashes);
     const filters = this.setFilters(accountId, query);
     const accountCondition = isAdministrator
       ? undefined

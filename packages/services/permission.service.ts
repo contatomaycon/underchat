@@ -2,6 +2,7 @@ import { injectable } from 'tsyringe';
 import { PermissionAssignmentUserViewerRepository } from '@core/repositories/permission/PermissionAssignmentUserViewer.repository';
 import { PermissionRoleViewerExistsRepository } from '@core/repositories/permission/PermissionRoleViewerExists.repository';
 import { PermissionRoleAccountListerRepository } from '@core/repositories/permission/PermissionRoleAccountViewer.repository';
+import { PermissionRoleAccountViewerRepository } from '@core/repositories/permission/PermissionRoleAccountViewer.repository';
 import { ListRoleAccountResponse } from '@core/schema/sector/listSectorRoleAccount/response.schema';
 import { PermissionRoleCountSectorViewerRepository } from '@core/repositories/permission/PermissionRoleCountSectorViewer.repository';
 import { CreateSectorRoleRequest } from '@core/schema/sector/createSectorRole/request.schema';
@@ -17,6 +18,7 @@ export class PermissionService {
     private readonly permissionAssignmentUserViewerRepository: PermissionAssignmentUserViewerRepository,
     private readonly permissionRoleViewerExistsRepository: PermissionRoleViewerExistsRepository,
     private readonly permissionRoleAccountListerRepository: PermissionRoleAccountListerRepository,
+    private readonly permissionRoleAccountViewerRepository: PermissionRoleAccountViewerRepository,
     private readonly permissionRoleCountSectorViewerRepository: PermissionRoleCountSectorViewerRepository,
     private readonly permissionGroupsListerRepository: PermissionGroupsListerRepository,
     private readonly rolePermissionsUpdaterRepository: RolePermissionsUpdaterRepository
@@ -45,7 +47,7 @@ export class PermissionService {
 
   listPermissionRoleAccountById = async (
     accountId: string
-  ): Promise<ListRoleAccountResponse[] | null> => {
+  ): Promise<ListRoleAccountResponse[]> => {
     return this.permissionRoleAccountListerRepository.listPermissionRoleAccountById(
       accountId
     );
@@ -78,6 +80,14 @@ export class PermissionService {
     return this.rolePermissionsUpdaterRepository.updateRolePermissions(
       permissionRoleId,
       groups
+    );
+  };
+
+  getPermissionRoleAccountId = async (
+    permissionRoleId: string
+  ): Promise<string | null> => {
+    return this.permissionRoleAccountViewerRepository.getPermissionRoleAccountId(
+      permissionRoleId
     );
   };
 }

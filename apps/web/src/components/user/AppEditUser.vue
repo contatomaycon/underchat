@@ -1,5 +1,7 @@
 <script lang="ts" setup>
+import { nextTick, computed, watch, onMounted } from 'vue';
 import { useUsersStore } from '@/@webcore/stores/user';
+import { useAccountStore } from '@/@webcore/stores/account';
 import { ECountry } from '@core/common/enums/ECountry';
 import { EUserDocumentType } from '@core/common/enums/EUserDocumentType';
 import { EUserStatus } from '@core/common/enums/EUserStatus';
@@ -7,11 +9,39 @@ import {
   EditUserParamsRequest,
   UpdateUserRequest,
 } from '@core/schema/user/editUser/request.schema';
-import { ViewZipcodeRequest } from '@core/schema/zipcode/viewZipcode/request.schema';
 import { VForm } from 'vuetify/components/VForm';
+import { useCountryCodes } from '@/composables/useCountryCodes';
+import { ViewZipcodeRequest } from '@core/schema/zipcode/viewZipcode/request.schema';
+import { getAdministrator, getUser } from '@/@webcore/localStorage/user';
 
 const userStore = useUsersStore();
+const accountStore = useAccountStore();
+const { items: countryCodes } = useCountryCodes();
 const { t } = useI18n();
+
+const isAdministrator = computed(() => getAdministrator());
+const currentUser = computed(() => getUser());
+const accountId = ref<string | null>(null);
+const accountsOptions = ref<{ account_id: string; name: string }[]>([]);
+
+const countrySearchQuery = ref('');
+const isCountryMenuOpen = ref(false);
+
+const filteredCountryCodes = computed(() => {
+  if (!countrySearchQuery.value) {
+    return countryCodes.value;
+  }
+  const query = countrySearchQuery.value.toLowerCase();
+  return countryCodes.value.filter((country) =>
+    country.title.toLowerCase().includes(query)
+  );
+});
+
+watch(isCountryMenuOpen, (isOpen) => {
+  if (!isOpen) {
+    countrySearchQuery.value = '';
+  }
+});
 
 const props = defineProps<{
   modelValue: boolean;
@@ -25,17 +55,21 @@ const isVisible = computed({
   set: (v) => emit('update:modelValue', v),
 });
 
-function formatPhone(e: Event) {
-  const input = e.target as HTMLInputElement;
-  let value = input.value.replaceAll(/\D/g, '').slice(0, 9);
+function formatPhone(value: string | null | undefined): string {
+  if (!value) return '';
 
-  if (value.length > 4 && value.length <= 8) {
-    value = `${value.slice(0, -4)}-${value.slice(-4)}`;
-  } else if (value.length > 8) {
-    value = `${value.slice(0, 5)}-${value.slice(5)}`;
+  const numbers = value.replaceAll(/\D/g, '').slice(0, 11);
+
+  if (numbers.length <= 2) {
+    return numbers;
   }
-
-  input.value = value;
+  if (numbers.length <= 6) {
+    return `(${numbers.slice(0, 2)}) ${numbers.slice(2)}`;
+  }
+  if (numbers.length <= 10) {
+    return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 6)}-${numbers.slice(6)}`;
+  }
+  return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`;
 }
 
 const emailValidator = (v: string | null | undefined) => {
@@ -93,65 +127,104 @@ const docPlaceholder = computed(() =>
 );
 
 const onlyDigits = (s: string) => s.replaceAll(/\D+/g, '');
-const isPartialMasked = (v: string | null) => !!v && v.includes('*');
-
-const docEditing = ref(false);
-const showingPartial = computed(() => isPartialMasked(document.value));
-
-function startEditDoc() {
-  docEditing.value = true;
-  document.value = '';
-}
 
 const cpfRegex = /^\d{11}$/;
 const cnpjRegex = /^\d{14}$/;
 
 const docRules = computed(() => [
-  (v: string | null) =>
-    showingPartial.value || (!!v && onlyDigits(v).length > 0) || t('required'),
   (v: string | null) => {
-    if (!v || showingPartial.value) return true;
-    const digits = onlyDigits(v);
+    if (!isDocumentDecrypted.value) return true;
+
+    const digits = onlyDigits(v ?? '');
+    return (!!digits && digits.length > 0) || t('required');
+  },
+  (v: string | null) => {
+    if (!isDocumentDecrypted.value) return true;
+
+    const digits = onlyDigits(v ?? '');
+    if (!digits) return true;
+
     if (isCPF.value) return cpfRegex.test(digits) || t('cpf_invalid');
     if (isCNPJ.value) return cnpjRegex.test(digits) || t('cnpj_invalid');
     return true;
   },
 ]);
 
-function toYmd(v: unknown): string | null {
-  if (v == null) {
-    return null;
-  }
-
-  if (typeof v === 'string') {
-    return v.split('T')[0];
-  }
-
-  return new Date(v as any).toISOString().slice(0, 10);
-}
-
 const tab = ref('user_data');
 
 const userId = toRef(props, 'userId');
 const email = ref<string | null>(null);
+const emailPartialOriginal = ref<string | null>(null);
+const isEmailDecrypted = ref(false);
+const isLoadingEmail = ref(false);
 const password = ref<string | null>(null);
 const confirmPassword = ref<string | null>(null);
 const phone_ddi = ref<string | null>(null);
 const phone = ref<string | null>(null);
+const phonePartialOriginal = ref<string | null>(null);
+const isPhoneDecrypted = ref(false);
+const isLoadingPhone = ref(false);
 const name = ref<string | null>(null);
 const last_name = ref<string | null>(null);
 const birth_date = ref<string | null>(null);
 const user_document_type_id = ref<string | null>(null);
 const document = ref<string | null>(null);
+const documentPartialOriginal = ref<string | null>(null);
+const documentDecryptedOriginal = ref<string | null>(null);
+const isDocumentDecrypted = ref(false);
+const isLoadingDocument = ref(false);
 const country_id = ref<number | null>(null);
 const zip_code = ref<string | null>(null);
 const address1 = ref<string | null>(null);
+const address1PartialOriginal = ref<string | null>(null);
+const isAddress1Decrypted = ref(false);
+const isLoadingAddress1 = ref(false);
 const address2 = ref<string | null>(null);
+const address2PartialOriginal = ref<string | null>(null);
+const isAddress2Decrypted = ref(false);
+const isLoadingAddress2 = ref(false);
 const city = ref<string | null>(null);
 const state = ref<string | null>(null);
 const district = ref<string | null>(null);
 const user_status_id = ref<string | null>(null);
-const account = ref<string | null>(null);
+
+const initialValues = ref<{
+  email: string | null;
+  phone_ddi: string | null;
+  phone: string | null;
+  name: string | null;
+  last_name: string | null;
+  birth_date: string | null;
+  user_document_type_id: string | null;
+  document: string | null;
+  country_id: number | null;
+  zip_code: string | null;
+  address1: string | null;
+  address2: string | null;
+  city: string | null;
+  state: string | null;
+  district: string | null;
+  user_status_id: string | null;
+  account_id: string | null;
+}>({
+  email: null,
+  phone_ddi: null,
+  phone: null,
+  name: null,
+  last_name: null,
+  birth_date: null,
+  user_document_type_id: null,
+  document: null,
+  country_id: null,
+  zip_code: null,
+  address1: null,
+  address2: null,
+  city: null,
+  state: null,
+  district: null,
+  user_status_id: null,
+  account_id: null,
+});
 
 const refFormEditUser = ref<VForm>();
 
@@ -191,30 +264,547 @@ const rules = {
     !password.value || v === password.value || t('the_password_do_not_match'),
 };
 
-const viewZipcode = async () => {
-  if (!country_id.value || !zip_code.value) {
-    return;
-  }
+const phoneFormatted = computed({
+  get: () => {
+    if (isPhoneDecrypted.value && phone.value) {
+      return formatPhone(phone.value);
+    }
+    if (phone.value && !isPhoneDecrypted.value) {
+      return formatPhone(phone.value);
+    }
+    return phonePartialOriginal.value ?? '';
+  },
+  set: (value: string) => {
+    if (isPhoneDecrypted.value) {
+      phone.value = value.replaceAll(/\D/g, '');
+      return;
+    }
+    const numbers = value.replaceAll(/\D/g, '');
+    phone.value = numbers;
+    phonePartialOriginal.value = value;
+  },
+});
 
-  const params: ViewZipcodeRequest = {
-    country_id: country_id.value,
-    zipcode: zip_code.value,
-  };
+const emailFormatted = computed({
+  get: () => {
+    if (isEmailDecrypted.value) {
+      return email.value ?? '';
+    }
+    const partial = emailPartialOriginal.value ?? '';
+    return partial;
+  },
+  set: (value: string) => {
+    if (isEmailDecrypted.value) {
+      email.value = value;
+      return;
+    }
+    emailPartialOriginal.value = value;
+    email.value = value;
+  },
+});
 
-  const response = await userStore.viewZipcode(params);
-  if (response) {
-    address1.value = response.address_1;
-    address2.value = response.address_2;
-    city.value = response.city;
-    state.value = response.state;
-    district.value = response.district;
+const address1Formatted = computed({
+  get: () => {
+    if (isAddress1Decrypted.value) {
+      return address1.value ?? '';
+    }
+    const partial = address1PartialOriginal.value ?? '';
+    return partial;
+  },
+  set: (value: string) => {
+    if (isAddress1Decrypted.value) {
+      address1.value = value;
+      return;
+    }
+    address1PartialOriginal.value = value;
+    address1.value = value;
+  },
+});
+
+const address2Formatted = computed({
+  get: () => {
+    if (isAddress2Decrypted.value) {
+      return address2.value ?? '';
+    }
+    const partial = address2PartialOriginal.value ?? '';
+    return partial;
+  },
+  set: (value: string) => {
+    if (isAddress2Decrypted.value) {
+      address2.value = value;
+      return;
+    }
+    address2PartialOriginal.value = value;
+    address2.value = value;
+  },
+});
+
+const startEditPhone = async () => {
+  if (!userId.value) return;
+  
+  if (!isPhoneDecrypted.value && phonePartialOriginal.value) {
+    isLoadingPhone.value = true;
+    const decryptedPhone = await userStore.getUserPhoneDecrypted(userId.value);
+    isLoadingPhone.value = false;
+
+    if (decryptedPhone) {
+      phone.value = decryptedPhone.replaceAll(/\D/g, '');
+      initialValues.value.phone = decryptedPhone.replaceAll(/\D/g, '');
+      isPhoneDecrypted.value = true;
+    }
   }
 };
 
-const updateUser = async () => {
-  const validateForm = await refFormEditUser?.value?.validate();
-  if (!validateForm?.valid) return;
+const togglePhoneVisibility = async () => {
+  if (!userId.value) return;
 
+  if (isPhoneDecrypted.value) {
+    isPhoneDecrypted.value = false;
+    if (phonePartialOriginal.value?.includes('*')) {
+      phone.value = null;
+    } else if (phonePartialOriginal.value) {
+      phone.value = phonePartialOriginal.value.replaceAll(/\D/g, '');
+    } else {
+      phone.value = null;
+    }
+    return;
+  }
+
+  isLoadingPhone.value = true;
+  const decryptedPhone = await userStore.getUserPhoneDecrypted(userId.value);
+  isLoadingPhone.value = false;
+
+  if (decryptedPhone) {
+    phone.value = decryptedPhone.replaceAll(/\D/g, '');
+    initialValues.value.phone = decryptedPhone.replaceAll(/\D/g, '');
+    isPhoneDecrypted.value = true;
+  }
+};
+
+const startEditEmail = async () => {
+  if (!userId.value) return;
+  
+  if (!isEmailDecrypted.value && emailPartialOriginal.value) {
+    isLoadingEmail.value = true;
+    const decryptedEmail = await userStore.getUserEmailDecrypted(userId.value);
+    isLoadingEmail.value = false;
+
+    if (decryptedEmail) {
+      email.value = decryptedEmail;
+      initialValues.value.email = decryptedEmail;
+      isEmailDecrypted.value = true;
+    }
+  }
+};
+
+const toggleEmailVisibility = async () => {
+  if (!userId.value) return;
+
+  if (isEmailDecrypted.value) {
+    isEmailDecrypted.value = false;
+    email.value = emailPartialOriginal.value;
+    return;
+  }
+
+  isLoadingEmail.value = true;
+  const decryptedEmail = await userStore.getUserEmailDecrypted(userId.value);
+  isLoadingEmail.value = false;
+
+  if (decryptedEmail) {
+    email.value = decryptedEmail;
+    initialValues.value.email = decryptedEmail;
+    isEmailDecrypted.value = true;
+  }
+};
+
+const startEditDocument = async () => {
+  if (!userId.value) return;
+  
+  if (!isDocumentDecrypted.value && documentPartialOriginal.value) {
+    isLoadingDocument.value = true;
+    const decryptedDocument = await userStore.getUserDocumentDecrypted(
+      userId.value
+    );
+    isLoadingDocument.value = false;
+
+    if (decryptedDocument) {
+      const digits = decryptedDocument.replaceAll(/\D/g, '');
+      isDocumentDecrypted.value = true;
+      await nextTick();
+      document.value = digits;
+      documentDecryptedOriginal.value = digits;
+    }
+  }
+};
+
+const handleDocumentBlur = () => {
+  if (!isDocumentDecrypted.value) return;
+  
+  if (document.value) {
+    const digits = String(document.value).replaceAll(/\D/g, '');
+    document.value = digits;
+  }
+  
+  const currentDigits = document.value?.replaceAll(/\D/g, '') ?? '';
+  const originalDigits = documentDecryptedOriginal.value?.replaceAll(/\D/g, '') ?? '';
+  
+  if (currentDigits === originalDigits) {
+    isDocumentDecrypted.value = false;
+    document.value = null;
+  }
+};
+
+const toggleDocumentVisibility = async () => {
+  if (!userId.value) return;
+
+  if (isDocumentDecrypted.value) {
+    isDocumentDecrypted.value = false;
+    document.value = null;
+    documentDecryptedOriginal.value = null;
+    return;
+  }
+
+  isLoadingDocument.value = true;
+  const decryptedDocument = await userStore.getUserDocumentDecrypted(
+    userId.value
+  );
+  isLoadingDocument.value = false;
+
+  if (decryptedDocument) {
+    const digits = decryptedDocument.replaceAll(/\D/g, '');
+    isDocumentDecrypted.value = true;
+    await nextTick();
+    document.value = digits;
+    documentDecryptedOriginal.value = digits;
+  }
+};
+
+const startEditAddress1 = async () => {
+  if (!userId.value) return;
+  
+  if (!isAddress1Decrypted.value && address1PartialOriginal.value) {
+    isLoadingAddress1.value = true;
+    const decryptedAddress1 = await userStore.getUserAddress1Decrypted(userId.value);
+    isLoadingAddress1.value = false;
+
+    if (decryptedAddress1) {
+      address1.value = decryptedAddress1;
+      initialValues.value.address1 = decryptedAddress1;
+      isAddress1Decrypted.value = true;
+    }
+  }
+};
+
+const toggleAddress1Visibility = async () => {
+  if (!userId.value) return;
+
+  if (isAddress1Decrypted.value) {
+    isAddress1Decrypted.value = false;
+    if (address1PartialOriginal.value?.includes('*')) {
+      address1.value = null;
+    } else if (address1PartialOriginal.value) {
+      address1.value = address1PartialOriginal.value;
+    } else {
+      address1.value = null;
+    }
+    return;
+  }
+
+  isLoadingAddress1.value = true;
+  const decryptedAddress1 = await userStore.getUserAddress1Decrypted(userId.value);
+  isLoadingAddress1.value = false;
+
+  if (decryptedAddress1) {
+    address1.value = decryptedAddress1;
+    initialValues.value.address1 = decryptedAddress1;
+    isAddress1Decrypted.value = true;
+  }
+};
+
+const startEditAddress2 = async () => {
+  if (!userId.value) return;
+  
+  if (!isAddress2Decrypted.value && address2PartialOriginal.value) {
+    isLoadingAddress2.value = true;
+    const decryptedAddress2 = await userStore.getUserAddress2Decrypted(userId.value);
+    isLoadingAddress2.value = false;
+
+    if (decryptedAddress2) {
+      address2.value = decryptedAddress2;
+      initialValues.value.address2 = decryptedAddress2;
+      isAddress2Decrypted.value = true;
+    }
+  }
+};
+
+const toggleAddress2Visibility = async () => {
+  if (!userId.value) return;
+
+  if (isAddress2Decrypted.value) {
+    isAddress2Decrypted.value = false;
+    if (address2PartialOriginal.value?.includes('*')) {
+      address2.value = null;
+    } else if (address2PartialOriginal.value) {
+      address2.value = address2PartialOriginal.value;
+    } else {
+      address2.value = null;
+    }
+    return;
+  }
+
+  isLoadingAddress2.value = true;
+  const decryptedAddress2 = await userStore.getUserAddress2Decrypted(userId.value);
+  isLoadingAddress2.value = false;
+
+  if (decryptedAddress2) {
+    address2.value = decryptedAddress2;
+    initialValues.value.address2 = decryptedAddress2;
+    isAddress2Decrypted.value = true;
+  }
+};
+
+const determineEmailToSave = (): string | null | undefined => {
+  const emailValue = email.value?.trim() || '';
+  const emailOriginalTrimmed = initialValues.value.email?.trim() || '';
+
+  if (!emailValue) {
+    return undefined;
+  }
+
+  if (isEmailDecrypted.value) {
+    if (emailValue !== emailOriginalTrimmed) {
+      return emailValue;
+    }
+    return undefined;
+  }
+
+  if (
+    !emailValue.includes('*') &&
+    emailValue !== emailOriginalTrimmed
+  ) {
+    return emailValue;
+  }
+
+  return undefined;
+};
+
+const determinePhoneToSave = (): string | null | undefined => {
+  const phoneValue = phone.value ? phone.value.replaceAll(/\D/g, '') : '';
+  const phoneOriginalNumbers = initialValues.value.phone
+    ? initialValues.value.phone.replaceAll(/\D/g, '')
+    : '';
+
+  if (!phoneValue) {
+    return undefined;
+  }
+
+  if (isPhoneDecrypted.value) {
+    if (phoneValue !== phoneOriginalNumbers) {
+      return phoneValue;
+    }
+    return undefined;
+  }
+
+  if (
+    !phonePartialOriginal.value?.includes('*') &&
+    phoneValue !== phoneOriginalNumbers
+  ) {
+    return phoneValue;
+  }
+
+  return undefined;
+};
+
+const determineDocumentToSave = (): string | null | undefined => {
+  if (!isCPF.value && !isCNPJ.value) return undefined;
+
+  if (!isDocumentDecrypted.value) return undefined;
+
+  const digits = document.value?.replaceAll(/\D/g, '') ?? '';
+  const originalDigits = initialValues.value.document?.replaceAll(/\D/g, '') ?? '';
+
+  if (digits === originalDigits) return undefined;
+
+  if (!digits) return '';
+
+  return digits;
+};
+
+const determineAddress1ToSave = (): string | null | undefined => {
+  const address1Value = address1.value?.trim() || '';
+  const address1OriginalTrimmed = initialValues.value.address1?.trim() || '';
+
+  if (!address1Value) {
+    return undefined;
+  }
+
+  if (isAddress1Decrypted.value) {
+    if (address1Value !== address1OriginalTrimmed) {
+      return address1Value;
+    }
+    return undefined;
+  }
+
+  if (
+    !address1Value.includes('*') &&
+    address1Value !== address1OriginalTrimmed
+  ) {
+    return address1Value;
+  }
+
+  return undefined;
+};
+
+const determineAddress2ToSave = (): string | null | undefined => {
+  const address2Value = address2.value?.trim() || '';
+  const address2OriginalTrimmed = initialValues.value.address2?.trim() || '';
+
+  if (!address2Value) {
+    return undefined;
+  }
+
+  if (isAddress2Decrypted.value) {
+    if (address2Value !== address2OriginalTrimmed) {
+      return address2Value;
+    }
+    return undefined;
+  }
+
+  if (
+    !address2Value.includes('*') &&
+    address2Value !== address2OriginalTrimmed
+  ) {
+    return address2Value;
+  }
+
+  return undefined;
+};
+
+const buildUserInfo = (): {
+  phone_ddi?: string | null;
+  phone?: string | null;
+  name?: string | null;
+  last_name?: string | null;
+  birth_date?: string | null;
+} | null => {
+  const userInfo: {
+    phone_ddi?: string | null;
+    phone?: string | null;
+    name?: string | null;
+    last_name?: string | null;
+    birth_date?: string | null;
+  } = {};
+
+  if (phone_ddi.value !== initialValues.value.phone_ddi) {
+    userInfo.phone_ddi = phone_ddi.value;
+  }
+
+  const phoneToSave = determinePhoneToSave();
+  if (phoneToSave !== undefined) {
+    userInfo.phone = phoneToSave ?? null;
+  }
+
+  if (name.value !== initialValues.value.name) {
+    userInfo.name = name.value;
+  }
+
+  if (last_name.value !== initialValues.value.last_name) {
+    userInfo.last_name = last_name.value;
+  }
+
+  if (birth_date.value !== initialValues.value.birth_date) {
+    userInfo.birth_date = birth_date.value;
+  }
+
+  if (Object.keys(userInfo).length === 0) {
+    return null;
+  }
+
+  return userInfo;
+};
+
+const buildUserDocument = (): {
+  user_document_type_id?: string | null;
+  document?: string;
+} | null => {
+  const userDocument: {
+    user_document_type_id?: string | null;
+    document?: string;
+  } = {};
+
+  if (user_document_type_id.value !== initialValues.value.user_document_type_id) {
+    userDocument.user_document_type_id = user_document_type_id.value;
+  }
+
+  const documentToSave = determineDocumentToSave();
+  if (documentToSave !== undefined) {
+    userDocument.document = documentToSave ?? '';
+  }
+
+  if (Object.keys(userDocument).length === 0) {
+    return null;
+  }
+
+  return userDocument;
+};
+
+const buildUserAddress = (): {
+  country_id?: number | null;
+  zip_code?: string | null;
+  address1?: string | null;
+  address2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  district?: string | null;
+} | null => {
+  const userAddress: {
+    country_id?: number | null;
+    zip_code?: string | null;
+    address1?: string | null;
+    address2?: string | null;
+    city?: string | null;
+    state?: string | null;
+    district?: string | null;
+  } = {};
+
+  if (country_id.value !== initialValues.value.country_id) {
+    userAddress.country_id = country_id.value;
+  }
+
+  if (zip_code.value !== initialValues.value.zip_code) {
+    userAddress.zip_code = zip_code.value;
+  }
+
+  const address1ToSave = determineAddress1ToSave();
+  if (address1ToSave !== undefined) {
+    userAddress.address1 = address1ToSave ?? null;
+  }
+
+  const address2ToSave = determineAddress2ToSave();
+  if (address2ToSave !== undefined) {
+    userAddress.address2 = address2ToSave ?? null;
+  }
+
+  if (city.value !== initialValues.value.city) {
+    userAddress.city = city.value;
+  }
+
+  if (state.value !== initialValues.value.state) {
+    userAddress.state = state.value;
+  }
+
+  if (district.value !== initialValues.value.district) {
+    userAddress.district = district.value;
+  }
+
+  if (Object.keys(userAddress).length === 0) {
+    return null;
+  }
+
+  return userAddress;
+};
+
+const updateUser = async () => {
   if (!userId.value) {
     return;
   }
@@ -223,31 +813,47 @@ const updateUser = async () => {
     user_id: userId.value,
   };
 
-  const body: UpdateUserRequest = {
-    email: email.value,
-    password: password.value,
-    user_status_id: user_status_id.value,
-    user_info: {
-      phone_ddi: phone_ddi.value,
-      phone: phone.value,
-      name: name.value,
-      last_name: last_name.value,
-      birth_date: toYmd(birth_date.value),
-    },
-    user_document: {
-      user_document_type_id: user_document_type_id.value,
-      document: document.value ?? '',
-    },
-    user_address: {
-      country_id: country_id.value,
-      zip_code: zip_code.value,
-      address1: address1.value,
-      address2: address2.value,
-      city: city.value,
-      state: state.value,
-      district: district.value,
-    },
-  };
+  const emailToSave = determineEmailToSave();
+
+  const body: UpdateUserRequest = {};
+
+  if (emailToSave !== undefined) {
+    body.email = emailToSave;
+  }
+
+  if (password.value) {
+    body.password = password.value;
+  }
+
+  if (user_status_id.value !== initialValues.value.user_status_id) {
+    body.user_status_id = user_status_id.value;
+  }
+
+  if (isAdministrator.value && accountId.value !== initialValues.value.account_id) {
+    body.account_id = accountId.value;
+  }
+
+  const userInfo = buildUserInfo();
+  if (userInfo) {
+    body.user_info = userInfo;
+  }
+
+  const userDocument = buildUserDocument();
+  if (userDocument) {
+    body.user_document = userDocument;
+  }
+
+  const userAddress = buildUserAddress();
+  if (userAddress) {
+    body.user_address = userAddress;
+  }
+
+  const hasPayload =
+    Object.keys(body).length > 0;
+
+  if (!hasPayload) {
+    return;
+  }
 
   const result = await userStore.updateUser(payload, body);
 
@@ -262,43 +868,162 @@ const onCountryChange = async (val: number | null) => {
   country_id.value = val;
 
   address1.value = '';
+  address1PartialOriginal.value = '';
+  isAddress1Decrypted.value = false;
   address2.value = '';
+  address2PartialOriginal.value = '';
+  isAddress2Decrypted.value = false;
   city.value = '';
   state.value = '';
   district.value = '';
 
-  if (country_id.value && zip_code.value) {
-    await viewZipcode();
-  } else {
-    await nextTick();
-    zipInputRef.value?.focus?.();
+  await nextTick();
+  zipInputRef.value?.focus?.();
+};
+
+const viewZipcode = async () => {
+  if (isInitializing.value) return;
+  
+  if (!country_id.value || !zip_code.value) {
+    return;
+  }
+
+  const params: ViewZipcodeRequest = {
+    country_id: country_id.value,
+    zipcode: zip_code.value,
+  };
+
+  const response = await userStore.viewZipcode(params);
+  if (response) {
+    address1.value = response.address_1;
+    address1PartialOriginal.value = response.address_1;
+    isAddress1Decrypted.value = true;
+    address2.value = response.address_2;
+    address2PartialOriginal.value = response.address_2 ?? '';
+    isAddress2Decrypted.value = true;
+    city.value = response.city;
+    state.value = response.state;
+    district.value = response.district;
   }
 };
 
-onMounted(async () => {
+const isInitializing = ref(true);
+const initialZipCode = ref<string | null>(null);
+
+const loadAccounts = async () => {
+  if (isAdministrator.value) {
+    const accounts = await accountStore.listAllAccounts();
+    if (accounts) {
+      accountsOptions.value = accounts;
+    }
+  }
+};
+
+const loadUserData = async () => {
   if (!userId.value) return;
+
+  await loadAccounts();
 
   const responseUser = await userStore.viewUserById(userId.value);
   if (responseUser) {
-    email.value = responseUser.email_partial;
+    accountId.value = responseUser.account?.account_id ?? null;
+    initialValues.value.account_id = accountId.value;
+    const emailPartial = responseUser.email_partial ?? '';
+    emailPartialOriginal.value = emailPartial;
+    email.value = emailPartial;
+    initialValues.value.email = emailPartial;
+    isEmailDecrypted.value = false;
+
     phone_ddi.value = responseUser.user_info?.phone_ddi ?? null;
-    phone.value = responseUser.user_info?.phone_partial ?? null;
+    initialValues.value.phone_ddi = phone_ddi.value;
+
+    const phonePartial = responseUser.user_info?.phone_partial ?? '';
+    phonePartialOriginal.value = phonePartial;
+    initialValues.value.phone = phonePartial;
+    if (phonePartial.includes('*')) {
+      phone.value = null;
+    } else {
+      phone.value = phonePartial.replaceAll(/\D/g, '');
+    }
+    isPhoneDecrypted.value = false;
+
     name.value = responseUser.user_info?.name ?? null;
+    initialValues.value.name = name.value;
+
     last_name.value = responseUser.user_info?.last_name ?? null;
+    initialValues.value.last_name = last_name.value;
+
     birth_date.value = responseUser.user_info?.birth_date ?? null;
+    initialValues.value.birth_date = birth_date.value;
+
     user_document_type_id.value =
       responseUser.user_document?.user_document_type?.user_document_type_id ??
       null;
-    document.value = responseUser.user_document?.document_partial ?? null;
+    initialValues.value.user_document_type_id = user_document_type_id.value;
+
+    const documentPartial = responseUser.user_document?.document_partial ?? '';
+    documentPartialOriginal.value = documentPartial;
+    initialValues.value.document = documentPartial;
+    document.value = null;
+    isDocumentDecrypted.value = false;
+
     country_id.value = responseUser.user_address?.country?.country_id ?? null;
+    initialValues.value.country_id = country_id.value;
+
     zip_code.value = responseUser.user_address?.zip_code ?? null;
-    address1.value = responseUser.user_address?.address1_partial ?? null;
-    address2.value = responseUser.user_address?.address2_partial ?? null;
+    initialValues.value.zip_code = zip_code.value;
+    initialZipCode.value = zip_code.value;
+
+    const address1Partial = responseUser.user_address?.address1_partial ?? '';
+    address1PartialOriginal.value = address1Partial;
+    initialValues.value.address1 = address1Partial;
+    if (address1Partial.includes('*')) {
+      address1.value = null;
+    } else {
+      address1.value = address1Partial;
+    }
+    isAddress1Decrypted.value = false;
+
+    const address2Partial = responseUser.user_address?.address2_partial ?? '';
+    address2PartialOriginal.value = address2Partial;
+    initialValues.value.address2 = address2Partial;
+    if (address2Partial && address2Partial.includes('*')) {
+      address2.value = null;
+    } else if (address2Partial) {
+      address2.value = address2Partial;
+    } else {
+      address2.value = null;
+    }
+    isAddress2Decrypted.value = false;
+
     city.value = responseUser.user_address?.city ?? null;
+    initialValues.value.city = city.value;
+
     state.value = responseUser.user_address?.state ?? null;
+    initialValues.value.state = state.value;
+
     district.value = responseUser.user_address?.district ?? null;
+    initialValues.value.district = district.value;
+
     user_status_id.value = responseUser.user_status?.user_status_id ?? null;
-    account.value = responseUser.account?.name ?? null;
+    initialValues.value.user_status_id = user_status_id.value;
+  }
+  
+  await nextTick();
+  isInitializing.value = false;
+};
+
+onMounted(async () => {
+  await loadUserData();
+});
+
+watch(isVisible, async (visible) => {
+  if (visible && userId.value) {
+    isInitializing.value = true;
+    initialZipCode.value = null;
+    await loadUserData();
+    await nextTick();
+    isInitializing.value = false;
   }
 });
 
@@ -307,7 +1032,13 @@ watch(password, () => {
 });
 
 let timer: number | null = null;
-watch(zip_code, () => {
+watch(zip_code, (newValue, oldValue) => {
+  if (isInitializing.value) return;
+  
+  if (newValue === oldValue || oldValue === undefined) return;
+  
+  if (newValue === initialZipCode.value) return;
+  
   if (!country_id.value || !zip_code.value || zip_code.value.length < 8) return;
 
   if (timer) (globalThis as Window & typeof globalThis).clearTimeout(timer);
@@ -315,7 +1046,7 @@ watch(zip_code, () => {
   timer = (globalThis as Window & typeof globalThis).setTimeout(() => {
     viewZipcode();
   }, 400);
-});
+}, { immediate: false });
 </script>
 
 <template>
@@ -348,18 +1079,78 @@ watch(zip_code, () => {
           <VWindow v-model="tab" class="disable-tab-transition">
             <VWindowItem value="user_data">
               <VForm class="mt-2" ref="refFormStep1" @submit.prevent>
-                <VRow>
-                  <VCol md="6" cols="12">
+                <VRow class="mb-4">
+                  <VCol v-if="isAdministrator" md="6" cols="12">
                     <AppTextField
-                      v-model="email"
+                      v-model="emailFormatted"
+                      type="email"
                       :label="$t('email') + ':'"
                       :placeholder="$t('email')"
                       :rules="[
                         emailValidator,
-                        requiredValidator(email, $t('email_required')),
+                        requiredValidator(emailFormatted, $t('email_required')),
                       ]"
+                      @focus="startEditEmail"
+                      @click="startEditEmail"
+                    >
+                      <template #append-inner>
+                        <VIcon
+                          :icon="isEmailDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
+                          class="cursor-pointer"
+                          :class="{ 'opacity-50': isLoadingEmail }"
+                          @click.stop="toggleEmailVisibility"
+                        />
+                      </template>
+                    </AppTextField>
+                  </VCol>
+
+                  <VCol v-if="isAdministrator" cols="12" md="6">
+                    <AppAutocomplete
+                      v-model="accountId"
+                      :items="accountsOptions"
+                      item-title="name"
+                      item-value="account_id"
+                      :label="$t('account') + ':'"
+                      :placeholder="$t('select_account')"
                     />
                   </VCol>
+
+                  <VCol v-if="!isAdministrator" md="6" cols="12">
+                    <AppTextField
+                      v-model="emailFormatted"
+                      type="email"
+                      :label="$t('email') + ':'"
+                      :placeholder="$t('email')"
+                      :rules="[
+                        emailValidator,
+                        requiredValidator(emailFormatted, $t('email_required')),
+                      ]"
+                      @focus="startEditEmail"
+                      @click="startEditEmail"
+                    >
+                      <template #append-inner>
+                        <VIcon
+                          :icon="isEmailDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
+                          class="cursor-pointer"
+                          :class="{ 'opacity-50': isLoadingEmail }"
+                          @click.stop="toggleEmailVisibility"
+                        />
+                      </template>
+                    </AppTextField>
+                  </VCol>
+
+                  <VCol v-if="!isAdministrator" md="6" cols="12">
+                    <VLabel>{{ $t('status') }}:</VLabel>
+                    <AppAutocomplete
+                      item-title="text"
+                      item-value="id"
+                      :items="itemsStatus"
+                      v-model="user_status_id"
+                      :placeholder="$t('select_state')"
+                    />
+                  </VCol>
+                </VRow>
+                <VRow class="mb-4">
                   <VCol cols="12" md="6">
                     <AppTextField
                       id="new-password"
@@ -407,6 +1198,8 @@ watch(zip_code, () => {
                       @click:append-inner="isConfirmVisible = !isConfirmVisible"
                     />
                   </VCol>
+                </VRow>
+                <VRow v-if="isAdministrator" class="mb-4">
                   <VCol md="6" cols="12">
                     <VLabel>{{ $t('status') }}:</VLabel>
                     <AppAutocomplete
@@ -435,28 +1228,75 @@ watch(zip_code, () => {
               <VForm class="mt-2" ref="refFormStep2" @submit.prevent>
                 <VRow>
                   <VCol cols="12" md="6">
-                    <AppTextField
-                      v-model="phone_ddi"
-                      type="tel"
-                      :label="$t('phone_ddi') + ':'"
-                      :placeholder="$t('phone_ddi')"
-                      maxlength="2"
-                      @input="
-                        phone_ddi = phone_ddi
-                          ? phone_ddi.replaceAll(/\D/g, '').slice(0, 2)
-                          : null
-                      "
-                    />
+                    <div>
+                      <VLabel class="mb-1 text-body-2">{{ $t('phone_ddi') }}:</VLabel>
+                      <VMenu v-model="isCountryMenuOpen">
+                        <template #activator="{ props: menuProps }">
+                          <VTextField
+                            v-bind="menuProps"
+                            :model-value="
+                              countryCodes.find((c) => c.value === phone_ddi)
+                                ?.title || ''
+                            "
+                            :placeholder="$t('select_phone_ddi')"
+                            variant="outlined"
+                            readonly
+                            append-inner-icon="tabler-chevron-down"
+                          />
+                        </template>
+                        <VCard>
+                          <VCardText class="pa-2">
+                            <AppTextField
+                              v-model="countrySearchQuery"
+                              :placeholder="$t('search') + '...'"
+                              prepend-inner-icon="tabler-search"
+                              density="compact"
+                              hide-details
+                              autofocus
+                              @click.stop
+                            />
+                          </VCardText>
+                          <VDivider />
+                          <VList max-height="300" style="overflow-y: auto">
+                            <VListItem
+                              v-for="(item, index) in filteredCountryCodes"
+                              :key="index"
+                              :value="item.value"
+                              @click="
+                                () => {
+                                  phone_ddi = item.value;
+                                  isCountryMenuOpen = false;
+                                }
+                              "
+                              :active="phone_ddi === item.value"
+                            >
+                              <VListItemTitle>{{ item.title }}</VListItemTitle>
+                            </VListItem>
+                          </VList>
+                        </VCard>
+                      </VMenu>
+                    </div>
                   </VCol>
 
                   <VCol cols="12" md="6">
                     <AppTextField
-                      v-model="phone"
+                      v-model="phoneFormatted"
                       type="tel"
                       :label="$t('phone') + ':'"
                       :placeholder="$t('phone')"
-                      @input="formatPhone"
-                    />
+                      maxlength="15"
+                      @focus="startEditPhone"
+                      @click="startEditPhone"
+                    >
+                      <template #append-inner>
+                        <VIcon
+                          :icon="isPhoneDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
+                          class="cursor-pointer"
+                          :class="{ 'opacity-50': isLoadingPhone }"
+                          @click.stop="togglePhoneVisibility"
+                        />
+                      </template>
+                    </AppTextField>
                   </VCol>
 
                   <VCol cols="12" md="6">
@@ -489,29 +1329,44 @@ watch(zip_code, () => {
                   </VCol>
 
                   <VCol v-if="isCPF || isCNPJ" cols="12" md="6">
-                    <template v-if="showingPartial && !docEditing">
-                      <AppTextField
-                        :model-value="document"
-                        :label="docLabel + ':'"
-                        readonly
-                        :rules="docRules"
-                        :placeholder="docPlaceholder"
-                        append-inner-icon="tabler-edit"
-                        @click:append-inner="startEditDoc"
-                        @focus="startEditDoc"
-                      />
-                    </template>
-
-                    <template v-else>
-                      <AppTextField
-                        v-model="document"
-                        :label="docLabel + ':'"
-                        :placeholder="docPlaceholder"
-                        v-maska="docMask"
-                        inputmode="numeric"
-                        :rules="docRules"
-                      />
-                    </template>
+                    <AppTextField
+                      v-if="isDocumentDecrypted"
+                      v-model="document"
+                      :label="docLabel + ':'"
+                      :placeholder="docPlaceholder"
+                      :rules="docRules"
+                      v-maska="docMask"
+                      inputmode="numeric"
+                      @blur="handleDocumentBlur"
+                    >
+                      <template #append-inner>
+                        <VIcon
+                          :icon="'tabler-eye-off'"
+                          class="cursor-pointer"
+                          :class="{ 'opacity-50': isLoadingDocument }"
+                          @click.stop="toggleDocumentVisibility"
+                        />
+                      </template>
+                    </AppTextField>
+                    <AppTextField
+                      v-else
+                      :model-value="documentPartialOriginal"
+                      :label="docLabel + ':'"
+                      :placeholder="docPlaceholder"
+                      :rules="docRules"
+                      readonly
+                      @focus="startEditDocument"
+                      @click="startEditDocument"
+                    >
+                      <template #append-inner>
+                        <VIcon
+                          :icon="'tabler-eye'"
+                          class="cursor-pointer"
+                          :class="{ 'opacity-50': isLoadingDocument }"
+                          @click.stop="toggleDocumentVisibility"
+                        />
+                      </template>
+                    </AppTextField>
                   </VCol>
 
                   <VCol cols="12" md="6">
@@ -547,27 +1402,54 @@ watch(zip_code, () => {
                     <AppTextField
                       ref="zipInputRef"
                       v-model="zip_code"
-                      :disabled="!country_id"
                       :label="$t('zip_code') + ':'"
                       :placeholder="$t('zip_code')"
+                      :rules="[
+                        requiredValidator(zip_code, $t('zip_code_required')),
+                      ]"
+                      :disabled="!country_id"
+                      @blur="viewZipcode"
+                      @keydown.enter.prevent="viewZipcode"
                       maxlength="8"
                     />
                   </VCol>
                   <VCol cols="12" md="6">
                     <AppTextField
-                      v-model="address1"
+                      v-model="address1Formatted"
                       :disabled="!country_id"
                       :label="$t('address') + ':'"
                       :placeholder="$t('address')"
-                    />
+                      @focus="startEditAddress1"
+                      @click="startEditAddress1"
+                    >
+                      <template #append-inner>
+                        <VIcon
+                          :icon="isAddress1Decrypted ? 'tabler-eye-off' : 'tabler-eye'"
+                          class="cursor-pointer"
+                          :class="{ 'opacity-50': isLoadingAddress1 }"
+                          @click.stop="toggleAddress1Visibility"
+                        />
+                      </template>
+                    </AppTextField>
                   </VCol>
                   <VCol cols="12" md="6">
                     <AppTextField
-                      v-model="address2"
+                      v-model="address2Formatted"
                       :disabled="!country_id"
                       :label="$t('address_secondary') + ':'"
                       :placeholder="$t('address_secondary')"
-                    />
+                      @focus="startEditAddress2"
+                      @click="startEditAddress2"
+                    >
+                      <template #append-inner>
+                        <VIcon
+                          :icon="isAddress2Decrypted ? 'tabler-eye-off' : 'tabler-eye'"
+                          class="cursor-pointer"
+                          :class="{ 'opacity-50': isLoadingAddress2 }"
+                          @click.stop="toggleAddress2Visibility"
+                        />
+                      </template>
+                    </AppTextField>
                   </VCol>
                   <VCol cols="12" md="6">
                     <AppTextField

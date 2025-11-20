@@ -4,4 +4,5 @@ export interface IUpdateUser {
   email_partial?: string | null;
   email_c?: string | null;
   password?: string | null;
+  account_id?: string | null;
 }
