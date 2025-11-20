@@ -81,6 +81,25 @@ type StatusPreview = {
   src: string;
 };
 
+type CropResizeHandle = 'nw' | 'ne' | 'sw' | 'se';
+
+interface CropDimensions {
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+}
+
+interface CropFixedPoint {
+  x: number;
+  y: number;
+}
+
+interface CropMaxLimits {
+  maxWidth: number;
+  maxHeight: number;
+}
+
 const isVisible = computed({
   get: () => props.modelValue,
   set: (value) => emit('update:modelValue', value),
@@ -156,7 +175,7 @@ const cropArea = ref({
   startY: 0,
   isDragging: false,
   isResizing: false,
-  resizeHandle: null as 'nw' | 'ne' | 'sw' | 'se' | null,
+  resizeHandle: null as CropResizeHandle | null,
   initialWidth: 0,
   initialHeight: 0,
   initialX: 0,
@@ -1035,7 +1054,7 @@ const startCropDrag = (e: MouseEvent | TouchEvent) => {
 };
 
 const startCropResize = (
-  handle: 'nw' | 'ne' | 'sw' | 'se',
+  handle: CropResizeHandle,
   e: MouseEvent | TouchEvent
 ) => {
   e.preventDefault();
@@ -1094,16 +1113,13 @@ const getEventCoordinates = (
 };
 
 const getFixedPoint = (
-  handle: 'nw' | 'ne' | 'sw' | 'se',
+  handle: CropResizeHandle,
   initialX: number,
   initialY: number,
   initialWidth: number,
   initialHeight: number
 ): { x: number; y: number } => {
-  const fixedPoints: Record<
-    'nw' | 'ne' | 'sw' | 'se',
-    { x: number; y: number }
-  > = {
+  const fixedPoints: Record<CropResizeHandle, { x: number; y: number }> = {
     nw: { x: initialX + initialWidth, y: initialY + initialHeight },
     ne: { x: initialX, y: initialY + initialHeight },
     sw: { x: initialX + initialWidth, y: initialY },
@@ -1114,71 +1130,64 @@ const getFixedPoint = (
 };
 
 const calculateInitialPosition = (
-  handle: 'nw' | 'ne' | 'sw' | 'se',
+  handle: CropResizeHandle,
   fixedX: number,
   fixedY: number,
   size: number
 ): { x: number; y: number } => {
-  const positions: Record<'nw' | 'ne' | 'sw' | 'se', { x: number; y: number }> =
-    {
-      nw: { x: fixedX - size, y: fixedY - size },
-      ne: { x: fixedX, y: fixedY - size },
-      sw: { x: fixedX - size, y: fixedY },
-      se: { x: fixedX, y: fixedY },
-    };
+  const positions: Record<CropResizeHandle, { x: number; y: number }> = {
+    nw: { x: fixedX - size, y: fixedY - size },
+    ne: { x: fixedX, y: fixedY - size },
+    sw: { x: fixedX - size, y: fixedY },
+    se: { x: fixedX, y: fixedY },
+  };
 
   return positions[handle];
 };
 
 const applyMinSizeConstraint = (
-  handle: 'nw' | 'ne' | 'sw' | 'se',
-  fixedX: number,
-  fixedY: number,
+  handle: CropResizeHandle,
+  fixedPoint: CropFixedPoint,
   minSize: number,
-  currentWidth: number,
-  currentHeight: number,
-  currentX: number,
-  currentY: number
-): { width: number; height: number; x: number; y: number } => {
-  if (currentWidth >= minSize && currentHeight >= minSize) {
-    return {
-      width: currentWidth,
-      height: currentHeight,
-      x: currentX,
-      y: currentY,
-    };
+  current: CropDimensions
+): CropDimensions => {
+  if (current.width >= minSize && current.height >= minSize) {
+    return current;
   }
 
-  const position = calculateInitialPosition(handle, fixedX, fixedY, minSize);
+  const position = calculateInitialPosition(
+    handle,
+    fixedPoint.x,
+    fixedPoint.y,
+    minSize
+  );
   return { width: minSize, height: minSize, x: position.x, y: position.y };
 };
 
 const applyMaxSizeConstraint = (
-  handle: 'nw' | 'ne' | 'sw' | 'se',
-  fixedX: number,
-  fixedY: number,
-  maxWidth: number,
-  maxHeight: number,
-  currentWidth: number,
-  currentHeight: number,
-  currentX: number,
-  currentY: number
-): { width: number; height: number; x: number; y: number } => {
-  let width = currentWidth;
-  let height = currentHeight;
-  let x = currentX;
-  let y = currentY;
+  handle: CropResizeHandle,
+  fixedPoint: CropFixedPoint,
+  limits: CropMaxLimits,
+  current: CropDimensions
+): CropDimensions => {
+  let { width, height, x, y } = current;
 
-  if (width > maxWidth) {
-    width = maxWidth;
-    height = maxWidth;
-    x = handle === 'nw' || handle === 'sw' ? fixedX - maxWidth : fixedX;
+  if (width > limits.maxWidth) {
+    width = limits.maxWidth;
+    height = limits.maxWidth;
+    x =
+      handle === 'nw' || handle === 'sw'
+        ? fixedPoint.x - limits.maxWidth
+        : fixedPoint.x;
   }
 
-  if (height > maxHeight) {
-    height = maxHeight;
-    width = maxHeight;
-    y = handle === 'nw' || handle === 'ne' ? fixedY - maxHeight : fixedY;
+  if (height > limits.maxHeight) {
+    height = limits.maxHeight;
+    width = limits.maxHeight;
+    y =
+      handle === 'nw' || handle === 'ne'
+        ? fixedPoint.y - limits.maxHeight
+        : fixedPoint.y;
   }
 
   return { width, height, x, y };
@@ -1248,42 +1257,34 @@ const onCropResize = (e: MouseEvent | TouchEvent) => {
   const maxHeight = cropImageRef.value.offsetHeight;
   const minSize = 50;
 
-  let { width, height, x, y } = applyMinSizeConstraint(
+  const fixedPoint = { x: fixedX, y: fixedY };
+  let dimensions = applyMinSizeConstraint(handle, fixedPoint, minSize, {
+    width: size,
+    height: size,
+    x: initialX,
+    y: initialY,
+  });
+
+  dimensions = applyMaxSizeConstraint(
     handle,
-    fixedX,
-    fixedY,
-    minSize,
-    size,
-    size,
-    initialX,
-    initialY
+    fixedPoint,
+    { maxWidth, maxHeight },
+    dimensions
   );
 
-  ({ width, height, x, y } = applyMaxSizeConstraint(
-    handle,
-    fixedX,
-    fixedY,
+  const finalPosition = applyBoundaryConstraints(
     maxWidth,
     maxHeight,
-    width,
-    height,
-    x,
-    y
-  ));
+    dimensions.width,
+    dimensions.height,
+    dimensions.x,
+    dimensions.y
+  );
 
-  ({ x, y } = applyBoundaryConstraints(
-    maxWidth,
-    maxHeight,
-    width,
-    height,
-    x,
-    y
-  ));
-
-  cropArea.value.width = width;
-  cropArea.value.height = height;
-  cropArea.value.x = x;
-  cropArea.value.y = y;
+  cropArea.value.width = dimensions.width;
+  cropArea.value.height = dimensions.height;
+  cropArea.value.x = finalPosition.x;
+  cropArea.value.y = finalPosition.y;
 };
 
 const endCropDrag = () => {
