@@ -970,6 +970,7 @@ const openImage = (m: ListMessageResult) => {
     viewerSrc.value = m.content.sticker.url;
     viewerCaption.value = '';
     viewerDownloadName.value = stickerDownloadName(m.content.sticker);
+    viewerOpen.value = true;
     return;
   }
 
@@ -1719,11 +1720,10 @@ onUnmounted(() => {
                         v-if="hasQuotedSticker(item.message)"
                         class="quoted-media quoted-media--image"
                       >
-                        <VImg
+                        <img
                           :src="resolveQuotedStickerSrc(item.message)"
-                          width="44"
-                          height="44"
-                          contain
+                          alt="Sticker"
+                          style="width: 44px; height: 44px; object-fit: contain"
                         />
                       </div>
 
@@ -2078,19 +2078,19 @@ onUnmounted(() => {
                     ]"
                     @click="openImage(item.message)"
                   >
-                    <VImg
-                      v-if="!item.message.content.sticker.is_animated"
-                      :src="item.message.content.sticker.url"
-                      class="sticker-thumb"
-                      max-width="100"
-                      max-height="100"
-                      contain
-                    />
                     <img
-                      v-else
                       :src="item.message.content.sticker.url"
-                      alt="Sticker animado"
-                      class="sticker-thumb sticker-thumb--animated"
+                      :alt="
+                        item.message.content.sticker.is_animated
+                          ? 'Sticker animado'
+                          : 'Sticker'
+                      "
+                      :class="[
+                        'sticker-thumb',
+                        item.message.content.sticker.is_animated
+                          ? 'sticker-thumb--animated'
+                          : '',
+                      ]"
                       style="
                         max-width: 100px;
                         max-height: 100px;
@@ -3175,6 +3175,33 @@ onUnmounted(() => {
       .video-bubble.is-deleted {
         pointer-events: none;
         opacity: 0.7;
+      }
+
+      .sticker-bubble {
+        display: inline-block;
+        cursor: pointer;
+        max-inline-size: 100px;
+        max-block-size: 100px;
+
+        .sticker-thumb {
+          display: block;
+          border-radius: 8px;
+        }
+
+        &.is-deleted {
+          cursor: default;
+          pointer-events: none;
+          filter: grayscale(0.85);
+          opacity: 0.6;
+        }
+      }
+
+      .sticker-bubble--left .sticker-thumb {
+        border-start-end-radius: 6px;
+      }
+
+      .sticker-bubble--right .sticker-thumb {
+        border-start-start-radius: 6px;
       }
 
       .audio-bubble {
