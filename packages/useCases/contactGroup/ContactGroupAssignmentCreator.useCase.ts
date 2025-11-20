@@ -6,6 +6,7 @@ import { ContactService } from '@core/services/contact.service';
 import { PhoneValidationService } from '@core/services/phoneValidation.service';
 import { IContactImportStatus } from '@core/common/interfaces/IContactImportStatus';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
+import { normalizePhoneNumber } from '@core/common/functions/normalizePhoneNumber';
 
 @injectable()
 export class ContactGroupAssignmentCreatorUseCase {
@@ -105,11 +106,23 @@ export class ContactGroupAssignmentCreatorUseCase {
           continue;
         }
 
+        let phoneToSave = contact.phone;
+        let phoneDdiToSave = contact.phone_ddi || '55';
+
+        if (validationResult.phone) {
+          const normalizedPhone = normalizePhoneNumber(validationResult.phone);
+          if (normalizedPhone) {
+            phoneToSave = normalizedPhone.phone;
+            phoneDdiToSave = normalizedPhone.phone_ddi;
+          }
+        }
+
         const contactCreated = await this.contactService.createContactTx(
           t,
           {
             ...contact,
-            phone_ddi: contact.phone_ddi || '55',
+            phone: phoneToSave,
+            phone_ddi: phoneDdiToSave,
           },
           input?.contact_group_id?.value ?? '',
           accountId

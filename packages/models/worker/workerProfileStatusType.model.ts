@@ -21,4 +21,3 @@ export const workerProfileStatusTypeRelations = relations(
     wpsts: many(workerProfileStatus),
   })
 );
-

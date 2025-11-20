@@ -1,6 +1,5 @@
 import { singleton, inject } from 'tsyringe';
-import { Consumer } from 'kafkajs';
-import { Kafka } from 'kafkajs';
+import { Kafka, Consumer } from 'kafkajs';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';

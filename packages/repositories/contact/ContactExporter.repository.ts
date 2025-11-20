@@ -2,9 +2,8 @@ import * as schema from '@core/models';
 import { contact } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull, SQLWrapper } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { ExportContactResponse } from '@core/schema/contact/exportContact/response.schema';
-import { sql } from 'drizzle-orm';
 import { isDefinedFilter } from '@core/common/functions/isDefinedFilter';
 
 @injectable()

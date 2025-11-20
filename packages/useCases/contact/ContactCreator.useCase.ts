@@ -7,6 +7,7 @@ import { ContactService } from '@core/services/contact.service';
 import { ContactExistsByEmailAndPhoneRepository } from '@core/repositories/contact/ContactExistsByEmailAndPhone.repository';
 import { EncryptService } from '@core/services/encrypt.service';
 import { PhoneValidationService } from '@core/services/phoneValidation.service';
+import { normalizePhoneNumber } from '@core/common/functions/normalizePhoneNumber';
 import moment from 'moment';
 
 @injectable()
@@ -101,6 +102,9 @@ export class ContactCreatorUseCase {
       throw new Error(t('contact_already_exists_phone'));
     }
 
+    let phoneToSave = input.phone;
+    let phoneDdiToSave = input.phone_ddi;
+
     if (input.phone) {
       try {
         const validationResult =
@@ -112,6 +116,14 @@ export class ContactCreatorUseCase {
 
         if (!validationResult.valid) {
           throw new Error(t('phone_number_not_valid_on_whatsapp'));
+        }
+
+        if (validationResult.phone) {
+          const normalizedPhone = normalizePhoneNumber(validationResult.phone);
+          if (normalizedPhone) {
+            phoneToSave = normalizedPhone.phone;
+            phoneDdiToSave = normalizedPhone.phone_ddi;
+          }
         }
       } catch (error) {
         if (error instanceof Error && error.message.includes('timeout')) {
@@ -127,7 +139,16 @@ export class ContactCreatorUseCase {
       }
     }
 
-    const contactId = await this.contactService.createContact(input, accountId);
+    const contactToCreate: CreateContactRequest = {
+      ...input,
+      phone: phoneToSave,
+      phone_ddi: phoneDdiToSave,
+    };
+
+    const contactId = await this.contactService.createContact(
+      contactToCreate,
+      accountId
+    );
 
     if (!contactId) {
       throw new Error(t('contact_creation_failed'));
