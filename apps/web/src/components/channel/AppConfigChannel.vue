@@ -133,6 +133,10 @@ const contactSearch = ref('');
 const profilePhoto = ref<string | null>(null);
 const profilePhotoFile = ref<File | null>(null);
 const isUploadingProfilePhoto = ref(false);
+const profileName = ref<string | null>(null);
+const profileDescription = ref<string | null>(null);
+const isSavingProfileInfo = ref(false);
+const MAX_DESCRIPTION_LENGTH = 120;
 const cropDialog = ref({
   open: false,
   imageSrc: '',
@@ -736,11 +740,13 @@ const deleteStatus = async (status: ProfileStatus) => {
   }
 };
 
-const loadProfilePhoto = async () => {
+const loadProfileInfo = async () => {
   if (!channelId.value) return;
 
   const worker = await channelStore.getWorkerById(channelId.value);
   profilePhoto.value = null;
+  profileName.value = null;
+  profileDescription.value = null;
 };
 
 const openFileSelector = () => {
@@ -1141,6 +1147,34 @@ const saveProfilePhoto = async () => {
   }
 };
 
+const saveProfileInfo = async () => {
+  if (!channelId.value) return;
+
+  try {
+    isSavingProfileInfo.value = true;
+
+    const formData = new FormData();
+    if (profileName.value) {
+      formData.append('name', profileName.value);
+    }
+    if (profileDescription.value) {
+      formData.append('message', profileDescription.value);
+    }
+
+    channelStore.showSnackbar(
+      'Funcionalidade de salvamento será implementada quando a API estiver disponível',
+      EColor.info
+    );
+  } catch (error) {
+    channelStore.showSnackbar(
+      'Erro ao salvar informações do perfil',
+      EColor.error
+    );
+  } finally {
+    isSavingProfileInfo.value = false;
+  }
+};
+
 const cancelCrop = () => {
   cropDialog.value.open = false;
   cropDialog.value.imageSrc = '';
@@ -1165,7 +1199,7 @@ watch(currentTab, async (newTab) => {
     await fetchProfileStatus();
   }
   if (newTab === 'profile-info' && isVisible.value && channelId.value) {
-    await loadProfilePhoto();
+    await loadProfileInfo();
   }
 });
 
@@ -1697,7 +1731,7 @@ onBeforeUnmount(() => {
           </VWindowItem>
 
           <VWindowItem value="profile-info">
-            <div class="d-flex flex-column align-center gap-6 pa-4">
+            <div class="d-flex flex-column gap-6 pa-4">
               <div class="d-flex flex-column align-center gap-4">
                 <div
                   class="profile-photo-container position-relative cursor-pointer"
@@ -1738,6 +1772,42 @@ onBeforeUnmount(() => {
                   Clique na imagem para fazer upload de uma nova foto de perfil
                 </p>
               </div>
+
+              <VDivider />
+
+              <VForm @submit.prevent="saveProfileInfo">
+                <VRow>
+                  <VCol cols="12">
+                    <AppTextField
+                      v-model="profileName"
+                      :label="$t('name') + ':'"
+                      :placeholder="$t('name')"
+                    />
+                  </VCol>
+
+                  <VCol cols="12">
+                    <VTextarea
+                      v-model="profileDescription"
+                      :label="$t('description') + ':'"
+                      :placeholder="$t('description')"
+                      :counter="MAX_DESCRIPTION_LENGTH"
+                      :maxlength="MAX_DESCRIPTION_LENGTH"
+                      rows="4"
+                      auto-grow
+                    />
+                  </VCol>
+
+                  <VCol cols="12" class="d-flex justify-end">
+                    <VBtn
+                      color="primary"
+                      :loading="isSavingProfileInfo"
+                      type="submit"
+                    >
+                      Salvar
+                    </VBtn>
+                  </VCol>
+                </VRow>
+              </VForm>
             </div>
           </VWindowItem>
         </VWindow>
@@ -1765,7 +1835,6 @@ onBeforeUnmount(() => {
             @load="initializeCrop"
           />
 
-          <!-- Crop Area -->
           <div
             class="crop-area"
             :style="{
