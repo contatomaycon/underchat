@@ -10,6 +10,7 @@ import { BaileysMessageStatusStoriesService } from '@core/services/baileys/metho
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { IProfileStatusMessage } from '@core/common/interfaces/IProfileStatusMessage';
+import { IProfileStatusDeleteMessage } from '@core/common/interfaces/IProfileStatusDeleteMessage';
 import { IUpdateProfileStatusExternalId } from '@core/common/interfaces/IUpdateProfileStatusExternalId';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
@@ -76,8 +77,9 @@ export class MessageSendConsume {
       eachMessage: async ({ topic, partition, message, heartbeat }) => {
         const data = this.parseMessage(message.value);
         const statusData = this.parseStatusMessage(message.value);
+        const deleteStatusData = this.parseDeleteStatusMessage(message.value);
 
-        if (!data && !statusData) {
+        if (!data && !statusData && !deleteStatusData) {
           await this.commitNext(topic, partition, message.offset);
 
           return;
@@ -85,6 +87,13 @@ export class MessageSendConsume {
 
         const stop = startHeartbeat(heartbeat);
         try {
+          if (deleteStatusData) {
+            await this.processDeleteStatus(deleteStatusData);
+            stop();
+            await this.commitNext(topic, partition, message.offset);
+            return;
+          }
+
           if (statusData) {
             await this.processProfileStatus(statusData);
             stop();
@@ -188,7 +197,36 @@ export class MessageSendConsume {
       if (
         parsed &&
         'worker_profile_status_id' in parsed &&
-        'worker_id' in parsed
+        'worker_id' in parsed &&
+        !('external_id' in parsed)
+      ) {
+        return parsed;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private parseDeleteStatusMessage(
+    value: Buffer | null
+  ): IProfileStatusDeleteMessage | null {
+    if (!value) {
+      return null;
+    }
+
+    const raw = value.toString('utf8').trim();
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as IProfileStatusDeleteMessage;
+      if (
+        parsed &&
+        'worker_profile_status_id' in parsed &&
+        'worker_id' in parsed &&
+        'external_id' in parsed
       ) {
         return parsed;
       }
@@ -802,6 +840,15 @@ export class MessageSendConsume {
 
       return;
     }
+  }
+
+  private async processDeleteStatus(
+    data: IProfileStatusDeleteMessage
+  ): Promise<void> {
+    await this.baileysMessageStatusStoriesService.deleteStatus(
+      data.external_id,
+      data.statusJidList
+    );
   }
 
   private async processImage(jid: string, data: IChatMessage): Promise<void> {

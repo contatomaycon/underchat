@@ -14,13 +14,14 @@ export const deleteProfileStatus = async (
   const workerProfileStatusDeleterUseCase = container.resolve(
     WorkerProfileStatusDeleterUseCase
   );
-  const { t } = request;
+  const { t, tokenJwtData } = request;
   const { worker_profile_status_id } = request.params;
 
   try {
     const response = await workerProfileStatusDeleterUseCase.execute(
       t,
-      worker_profile_status_id
+      worker_profile_status_id,
+      tokenJwtData.account_id
     );
 
     if (response) {

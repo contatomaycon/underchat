@@ -10,10 +10,12 @@ export class WorkerProfileStatusDeleterUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    workerProfileStatusId: string
+    workerProfileStatusId: string,
+    accountId: string
   ): Promise<boolean> {
     const result = await this.workerProfileStatusService.deleteProfileStatus(
-      workerProfileStatusId
+      workerProfileStatusId,
+      accountId
     );
 
     if (!result) {

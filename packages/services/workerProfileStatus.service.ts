@@ -14,6 +14,7 @@ import { EWorkerProfileStatusType } from '@core/common/enums/EWorkerProfileStatu
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { IProfileStatusMessage } from '@core/common/interfaces/IProfileStatusMessage';
+import { IProfileStatusDeleteMessage } from '@core/common/interfaces/IProfileStatusDeleteMessage';
 import { IVisibilityData } from '@core/common/interfaces/IVisibilityData';
 import { ContactService } from '@core/services/contact.service';
 import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid';
@@ -168,7 +169,10 @@ export class WorkerProfileStatusService {
     );
   }
 
-  async deleteProfileStatus(workerProfileStatusId: string): Promise<boolean> {
+  async deleteProfileStatus(
+    workerProfileStatusId: string,
+    accountId: string
+  ): Promise<boolean> {
     const profileStatus =
       await this.workerProfileStatusViewerRepository.viewWorkerProfileStatusById(
         workerProfileStatusId
@@ -176,6 +180,39 @@ export class WorkerProfileStatusService {
 
     if (!profileStatus) {
       return false;
+    }
+
+    if (profileStatus.external_id) {
+      const contacts =
+        await this.workerProfileStatusContactListerRepository.listContactsByStatusId(
+          workerProfileStatusId
+        );
+
+      const statusJidList: string[] = [];
+
+      for (const contactData of contacts) {
+        const decryptedPhone = this.contactService.getContactPhoneDecrypted(
+          contactData.phone
+        );
+
+        if (!decryptedPhone) {
+          continue;
+        }
+
+        const jid = normalizePhoneToJid(decryptedPhone, contactData.phone_ddi);
+
+        if (jid) {
+          statusJidList.push(jid);
+        }
+      }
+
+      await this.sendDeleteStatusToKafka(
+        profileStatus.worker_id,
+        accountId,
+        workerProfileStatusId,
+        profileStatus.external_id,
+        statusJidList
+      );
     }
 
     if (
@@ -197,6 +234,30 @@ export class WorkerProfileStatusService {
     return this.workerProfileStatusDeleterTransactionRepository.deleteWorkerProfileStatus(
       workerProfileStatusId
     );
+  }
+
+  private async sendDeleteStatusToKafka(
+    workerId: string,
+    accountId: string,
+    workerProfileStatusId: string,
+    externalId: string,
+    statusJidList: string[]
+  ): Promise<void> {
+    try {
+      const deleteMessage: IProfileStatusDeleteMessage = {
+        worker_id: workerId,
+        account_id: accountId,
+        worker_profile_status_id: workerProfileStatusId,
+        external_id: externalId,
+        statusJidList,
+      };
+
+      const topic = this.kafkaBaileysQueueService.workerSendMessage(workerId);
+
+      await this.streamProducerService.send(topic, deleteMessage);
+    } catch (error) {
+      console.error('Error sending delete status to Kafka:', error);
+    }
   }
 
   async updateExternalId(

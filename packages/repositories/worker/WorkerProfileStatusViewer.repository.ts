@@ -15,12 +15,16 @@ export class WorkerProfileStatusViewerRepository {
   ): Promise<{
     value: string;
     worker_profile_status_type_id: string;
+    external_id: string | null;
+    worker_id: string;
   } | null> => {
     const result = await this.db
       .select({
         value: workerProfileStatus.value,
         worker_profile_status_type_id:
           workerProfileStatus.worker_profile_status_type_id,
+        external_id: workerProfileStatus.external_id,
+        worker_id: workerProfileStatus.worker_id,
       })
       .from(workerProfileStatus)
       .where(
