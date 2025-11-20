@@ -41,6 +41,14 @@ export class UserCreatorUseCase {
       throw new Error(t('country_not_found'));
     }
 
+    const userEmailExists = await this.userService.existsUserEmailById(
+      input.email
+    );
+
+    if (userEmailExists) {
+      throw new Error(t('user_already_exists_email'));
+    }
+
     const createUser = await this.userService.createUser(t, accountId, input);
 
     if (!createUser) {

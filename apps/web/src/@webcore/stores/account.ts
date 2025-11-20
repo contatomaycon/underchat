@@ -20,6 +20,7 @@ import { ViewAccountResponse } from '@core/schema/account/viewAccount/response.s
 import { CreateAccountRequest } from '@core/schema/account/createAccount/request.schema';
 import { ViewAccountInfoResponse } from '@core/schema/account/viewAccountInfo/response.schema';
 import { EditAccountInfoParamsRequest } from '@core/schema/account/editAccountInfo/request.schema';
+import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 
 export const useAccountStore = defineStore('account', {
   state: () => ({
@@ -100,6 +101,41 @@ export const useAccountStore = defineStore('account', {
         this.loading = false;
 
         return null;
+      }
+    },
+
+    async listAllAccounts(): Promise<IAccountBasic[]> {
+      try {
+        this.loading = true;
+
+        const response =
+          await axios.get<IApiResponse<IAccountBasic[]>>(`/account/all`);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('account_all_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return [];
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('account_all_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return [];
       }
     },
 

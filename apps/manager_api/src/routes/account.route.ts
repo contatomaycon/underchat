@@ -16,9 +16,19 @@ import { viewAccountInfoSchema } from '@core/schema/account/viewAccountInfo';
 import { createAccountInfoSchema } from '@core/schema/account/createAccountInfo';
 import { editAccountInfoSchema } from '@core/schema/account/editAccountInfo';
 import { deleteAccountInfoSchema } from '@core/schema/account/deleteAccountInfo';
+import { listAllAccountsSchema } from '@core/schema/account/listAllAccounts';
 
 export default async function accountRoutes(server: FastifyInstance) {
   const accountController = container.resolve(AccountController);
+
+  server.get('/account/all', {
+    schema: listAllAccountsSchema,
+    handler: accountController.listAllAccounts,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountViewPermissions),
+    ],
+  });
 
   server.get('/account', {
     schema: listAccountSchema,

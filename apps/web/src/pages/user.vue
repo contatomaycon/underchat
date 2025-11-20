@@ -7,9 +7,12 @@ import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { DataTableHeader } from 'vuetify';
 import { EUserPermissions } from '@core/common/enums/EPermissions/user';
+import { ERolePermissions } from '@core/common/enums/EPermissions/role';
 import { useUsersStore } from '@/@webcore/stores/user';
 import { ListUserResponse } from '@core/schema/user/listUser/response.schema';
 import { EUserStatus } from '@core/common/enums/EUserStatus';
+import { getAdministrator, getUser } from '@/@webcore/localStorage/user';
+import { can } from '@/@layouts/plugins/casl';
 
 definePage({
   meta: {
@@ -43,9 +46,30 @@ const permissionsCreate = [
   EUserPermissions.user_group,
   EUserPermissions.user_create,
 ];
+const permissionsAssignRole = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  ERolePermissions.role_group,
+  ERolePermissions.role_view,
+];
 
 const { t } = useI18n();
 const userStore = useUsersStore();
+
+const isAdministrator = computed(() => getAdministrator());
+const currentUser = computed(() => getUser());
+
+const canAssignRole = (userId: string) => {
+  if (!can(permissionsAssignRole)) {
+    return false;
+  }
+
+  if (!isAdministrator.value) {
+    return true;
+  }
+
+  return currentUser.value?.user_id !== userId;
+};
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -69,6 +93,9 @@ const userToDelete = ref<string | null>(null);
 const isDialogEditUserShow = ref(false);
 const isAddUserVisible = ref(false);
 const userToEdit = ref<string | null>(null);
+
+const isAssignRoleDialogShow = ref(false);
+const userToAssignRole = ref<string | null>(null);
 
 const headers: DataTableHeader<ListUserResponse>[] = [
   { title: t('account'), key: 'account' },
@@ -132,6 +159,11 @@ const openEditDialog = (id: string) => {
   userToEdit.value = id;
 
   isDialogEditUserShow.value = true;
+};
+
+const openAssignRoleDialog = (id: string) => {
+  userToAssignRole.value = id;
+  isAssignRoleDialogShow.value = true;
 };
 
 watch(
@@ -228,25 +260,41 @@ watch(
 
         <template #item.actions="{ item }">
           <div class="d-flex gap-1">
-            <IconBtn v-if="$canPermission(permissionsEdit)"
-              ><VTooltip
+            <IconBtn v-if="canAssignRole(item.user_id)">
+              <VTooltip
                 location="top"
                 transition="scale-transition"
                 activator="parent"
               >
-                <span>{{ $t('edit_user') }}</span> </VTooltip
-              ><VIcon icon="tabler-edit" @click="openEditDialog(item.user_id)"
-            /></IconBtn>
+                <span>{{ $t('assign_role') }}</span>
+              </VTooltip>
+              <VIcon
+                icon="tabler-user-plus"
+                @click="openAssignRoleDialog(item.user_id)"
+              />
+            </IconBtn>
 
-            <IconBtn v-if="$canPermission(permissionsDelete)"
-              ><VTooltip
+            <IconBtn v-if="$canPermission(permissionsEdit)">
+              <VTooltip
                 location="top"
                 transition="scale-transition"
                 activator="parent"
               >
-                <span>{{ $t('delete_user') }}</span> </VTooltip
-              ><VIcon icon="tabler-trash" @click="deleteUser(item.user_id)"
-            /></IconBtn>
+                <span>{{ $t('edit_user') }}</span>
+              </VTooltip>
+              <VIcon icon="tabler-edit" @click="openEditDialog(item.user_id)" />
+            </IconBtn>
+
+            <IconBtn v-if="$canPermission(permissionsDelete)">
+              <VTooltip
+                location="top"
+                transition="scale-transition"
+                activator="parent"
+              >
+                <span>{{ $t('delete_user') }}</span>
+              </VTooltip>
+              <VIcon icon="tabler-trash" @click="deleteUser(item.user_id)" />
+            </IconBtn>
           </div>
         </template>
 
@@ -278,6 +326,12 @@ watch(
       />
 
       <AppAddUser v-if="isAddUserVisible" v-model="isAddUserVisible" />
+
+      <AppAssignUserRole
+        v-if="isAssignRoleDialogShow"
+        v-model="isAssignRoleDialogShow"
+        :user-id="userToAssignRole"
+      />
     </VCard>
 
     <VSnackbar

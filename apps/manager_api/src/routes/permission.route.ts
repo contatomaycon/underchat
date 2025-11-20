@@ -8,6 +8,7 @@ import {
 import { listPermissionGroupsSchema } from '@core/schema/permission/listPermissionGroups';
 import { viewPermissionGroupsUserSchema } from '@core/schema/permission/viewPermissionGroupsUser';
 import { updateRolePermissionsSchema } from '@core/schema/permission/updateRolePermissions';
+import { listPermissionRoleAccountSchema } from '@core/schema/permission/listPermissionRoleAccount';
 
 export default function permissionRoutes(server: FastifyInstance) {
   const permissionController = container.resolve(PermissionController);
@@ -36,6 +37,15 @@ export default function permissionRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, permissionEditPermissions),
+    ],
+  });
+
+  server.get('/permission-role/account/:account_id', {
+    schema: listPermissionRoleAccountSchema,
+    handler: permissionController.listPermissionRoleAccount,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, permissionViewPermissions),
     ],
   });
 }

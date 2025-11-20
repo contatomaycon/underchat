@@ -8,6 +8,7 @@ import { getI18n } from '@/plugins/i18n';
 import { AxiosError } from 'axios';
 import { PermissionGroupRequest } from '@core/schema/permission/updateRolePermissions/request.schema';
 import { UpdateRolePermissionsResponse } from '@core/schema/permission/updateRolePermissions/response.schema';
+import { ListPermissionRoleAccountResponse } from '@core/schema/permission/listPermissionRoleAccount/response.schema';
 
 export const usePermissionStore = defineStore('permission', {
   state: () => ({
@@ -125,6 +126,40 @@ export const usePermissionStore = defineStore('permission', {
         this.loading = false;
 
         let errorMessage = this.i18n.global.t('permission_groups_update_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+    async listPermissionRoleAccount(
+      accountId: string
+    ): Promise<ListPermissionRoleAccountResponse | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ListPermissionRoleAccountResponse>
+        >(`/permission-role/account/${accountId}`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('permission_role_account_list_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          'permission_role_account_list_error'
+        );
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }
