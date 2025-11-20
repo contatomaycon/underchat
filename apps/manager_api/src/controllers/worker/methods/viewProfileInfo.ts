@@ -14,11 +14,16 @@ export const viewProfileInfo = async (
   const workerProfileInfoViewerUseCase = container.resolve(
     WorkerProfileInfoViewerUseCase
   );
-  const { t } = request;
+  const { t, tokenJwtData } = request;
   const { worker_id } = request.params;
 
   try {
-    const response = await workerProfileInfoViewerUseCase.execute(worker_id);
+    const response = await workerProfileInfoViewerUseCase.execute(
+      t,
+      tokenJwtData.account_id,
+      tokenJwtData.is_administrator,
+      worker_id
+    );
 
     return sendResponse(reply, {
       message: t('profile_info_view_success'),

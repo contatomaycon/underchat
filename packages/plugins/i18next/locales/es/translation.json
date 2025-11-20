@@ -276,6 +276,7 @@
   "profile_status_update_error": "¡Error al actualizar el estado!",
   "profile_status_delete_success": "¡Estado eliminado con éxito!",
   "profile_status_delete_error": "¡Error al eliminar el estado!",
+  "profile_status_not_found": "¡Estado no encontrado!",
   "profile_status_visibility_required": "¡La visibilidad del estado es obligatoria!",
   "contact_groups_required": "¡Seleccione al menos un grupo de contactos!",
   "contacts_required": "¡Seleccione al menos un contacto!",

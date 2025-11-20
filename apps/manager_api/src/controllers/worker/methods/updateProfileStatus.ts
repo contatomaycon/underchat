@@ -18,7 +18,7 @@ export const updateProfileStatus = async (
   const workerProfileStatusUpdaterUseCase = container.resolve(
     WorkerProfileStatusUpdaterUseCase
   );
-  const { t } = request;
+  const { t, tokenJwtData } = request;
   const { worker_profile_status_id } = request.params;
   const body = request.body;
 
@@ -26,6 +26,8 @@ export const updateProfileStatus = async (
     const response = await workerProfileStatusUpdaterUseCase.execute(
       t,
       worker_profile_status_id,
+      tokenJwtData.account_id,
+      tokenJwtData.is_administrator,
       body
     );
 

@@ -1,6 +1,7 @@
 import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerProfileInfoService } from '@core/services/workerProfileInfo.service';
+import { WorkerService } from '@core/services/worker.service';
 import { UploadProfileInfoResponse } from '@core/schema/worker/uploadProfileInfo/response.schema';
 import { UploadProfileInfoRequest } from '@core/schema/worker/uploadProfileInfo/request.schema';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
@@ -10,7 +11,8 @@ export class WorkerProfileInfoUpserterUseCase {
   MAX_FILE_SIZE_BYTES = 16 * 1024 * 1024;
 
   constructor(
-    private readonly workerProfileInfoService: WorkerProfileInfoService
+    private readonly workerProfileInfoService: WorkerProfileInfoService,
+    private readonly workerService: WorkerService
   ) {}
 
   private normalizeField(field: unknown): string | undefined {
@@ -37,9 +39,20 @@ export class WorkerProfileInfoUpserterUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
+    isAdministrator: boolean,
     workerId: string,
     body: UploadProfileInfoRequest
   ): Promise<UploadProfileInfoResponse> {
+    const existsWorkerById = await this.workerService.existsWorkerById(
+      isAdministrator,
+      accountId,
+      workerId
+    );
+
+    if (!existsWorkerById) {
+      throw new Error(t('worker_not_found'));
+    }
+
     const name = this.normalizeField(body.name);
     const message = this.normalizeField(body.message);
     let photo: UploadFileRequest | null = null;

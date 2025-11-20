@@ -13,11 +13,16 @@ export const listProfileStatus = async (
   const workerProfileStatusListerUseCase = container.resolve(
     WorkerProfileStatusListerUseCase
   );
-  const { t } = request;
+  const { t, tokenJwtData } = request;
   const { worker_id } = request.params;
 
   try {
-    const response = await workerProfileStatusListerUseCase.execute(worker_id);
+    const response = await workerProfileStatusListerUseCase.execute(
+      t,
+      tokenJwtData.account_id,
+      tokenJwtData.is_administrator,
+      worker_id
+    );
 
     if (response) {
       return sendResponse(reply, {

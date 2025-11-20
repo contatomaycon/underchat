@@ -276,6 +276,7 @@
   "profile_status_update_error": "Error updating status!",
   "profile_status_delete_success": "Status deleted successfully!",
   "profile_status_delete_error": "Error deleting status!",
+  "profile_status_not_found": "Status not found!",
   "profile_status_visibility_required": "Status visibility is required!",
   "contact_groups_required": "Select at least one contact group!",
   "contacts_required": "Select at least one contact!",
