@@ -1,8 +1,12 @@
 import * as schema from '@core/models';
 import { workerProfileStatus } from '@core/models';
-import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import {
+  NodePgDatabase,
+  NodePgQueryResultHKT,
+} from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { eq } from 'drizzle-orm';
+import { eq, ExtractTablesWithRelations } from 'drizzle-orm';
+import { PgTransaction } from 'drizzle-orm/pg-core';
 
 @injectable()
 export class WorkerProfileStatusDeleterRepository {
@@ -11,9 +15,14 @@ export class WorkerProfileStatusDeleterRepository {
   ) {}
 
   deleteWorkerProfileStatus = async (
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
     workerProfileStatusId: string
   ): Promise<boolean> => {
-    const result = await this.db
+    const result = await tx
       .delete(workerProfileStatus)
       .where(
         eq(workerProfileStatus.worker_profile_status_id, workerProfileStatusId)
