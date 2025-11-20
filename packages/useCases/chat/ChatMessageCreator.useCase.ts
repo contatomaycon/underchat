@@ -1839,10 +1839,32 @@ export class ChatMessageCreatorUseCase {
       return message;
     }
 
+    let content = message.content;
+    if (content && content.version && content.version.length > 0) {
+      const sortedVersions = [...content.version].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+      const latestVersion = sortedVersions[0];
+      if (latestVersion && content.message === latestVersion.message) {
+        const oldestVersion = sortedVersions[sortedVersions.length - 1];
+        if (
+          oldestVersion?.message &&
+          oldestVersion.message !== content.message &&
+          content
+        ) {
+          content = {
+            ...content,
+            message: oldestVersion.message,
+          };
+        }
+      }
+    }
+
     const updatedMessage: IChatMessage = {
       ...message,
       deleted: true,
       has_quoted: message.has_quoted,
+      content: content,
     };
 
     await this.chatService.saveMessageChat(updatedMessage);

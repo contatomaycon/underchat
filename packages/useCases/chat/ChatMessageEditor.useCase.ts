@@ -60,7 +60,6 @@ export class ChatMessageEditorUseCase {
     const updatedContent = {
       ...message.content,
       version: [...versions, newVersion],
-      message: body.message,
     };
 
     const contentUpdated = await this.chatService.updateMessageContent(

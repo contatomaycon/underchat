@@ -36,6 +36,7 @@ import { Buffer } from 'node:buffer';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IMessageMarkRead } from '@core/common/interfaces/IMessageMarkRead';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
+import { MessageVersion } from '@core/schema/chat/listMessageChats/response.schema';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -387,6 +388,68 @@ export class MessageUpsertConsume {
     return true;
   }
 
+  private async handleEditMessage(
+    getChat: IChat,
+    data: IUpsertMessage
+  ): Promise<boolean | null> {
+    if (data.type !== EMessageType.edit_text) {
+      return null;
+    }
+
+    const editedMessage = (data.message?.message as any)?.editedMessage;
+    const protocolMessage = editedMessage?.message?.protocolMessage;
+    const targetMessageId = protocolMessage?.key?.id;
+    const editedContent = protocolMessage?.editedMessage;
+
+    if (!targetMessageId || !editedContent) {
+      return true;
+    }
+
+    const targetMessage = await this.findMessageByKeyId(
+      data.account_id,
+      getChat.chat_id,
+      targetMessageId
+    );
+
+    if (!targetMessage || !targetMessage.content) {
+      return true;
+    }
+
+    const newText =
+      editedContent.conversation ||
+      editedContent.extendedTextMessage?.text ||
+      '';
+
+    if (!newText) {
+      return true;
+    }
+
+    const newVersion: MessageVersion = {
+      type: targetMessage.content.type,
+      message: newText,
+      date: new Date().toISOString(),
+    };
+
+    const versions = targetMessage.content.version ?? [];
+    const updatedContent: IContent = {
+      ...targetMessage.content,
+      version: [...versions, newVersion],
+    };
+
+    const updatedMessage: IChatMessage = {
+      ...targetMessage,
+      content: updatedContent,
+      has_quoted: targetMessage.has_quoted,
+    };
+
+    await Promise.all([
+      this.chatService.saveMessageChat(updatedMessage),
+      this.centrifugoChatPublish(updatedMessage),
+    ]);
+
+    return true;
+  }
+
   private async handleDeleteMessage(
     getChat: IChat,
     data: IUpsertMessage
@@ -414,10 +477,32 @@ export class MessageUpsertConsume {
       return true;
     }
 
+    let content = targetMessage.content;
+    if (content && content.version && content.version.length > 0) {
+      const sortedVersions = [...content.version].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+      const latestVersion = sortedVersions[0];
+      if (latestVersion && content.message === latestVersion.message) {
+        const oldestVersion = sortedVersions[sortedVersions.length - 1];
+        if (
+          oldestVersion?.message &&
+          oldestVersion.message !== content.message &&
+          content
+        ) {
+          content = {
+            ...content,
+            message: oldestVersion.message,
+          };
+        }
+      }
+    }
+
     const updatedMessage: IChatMessage = {
       ...targetMessage,
       deleted: true,
       has_quoted: targetMessage.has_quoted,
+      content: content,
     };
 
     await Promise.all([
@@ -676,6 +761,11 @@ export class MessageUpsertConsume {
       const reactionResult = await this.handleReactionMessage(getChat, data);
       if (reactionResult !== null) {
         return reactionResult;
+      }
+
+      const editResult = await this.handleEditMessage(getChat, data);
+      if (editResult !== null) {
+        return editResult;
       }
 
       const deleteResult = await this.handleDeleteMessage(getChat, data);

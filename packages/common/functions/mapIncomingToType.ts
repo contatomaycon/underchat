@@ -133,6 +133,13 @@ export function mapIncomingToType(m: WAMessage): EMessageType | undefined {
   const msg = m.message as proto.IMessage | undefined;
   if (!msg) return;
 
+  if (
+    (m.message as any).editedMessage?.message?.protocolMessage?.type ===
+    proto.Message.ProtocolMessage.Type.MESSAGE_EDIT
+  ) {
+    return EMessageType.edit_text;
+  }
+
   const ctx: IMapCtx = {
     msg,
     text: getText(msg),
