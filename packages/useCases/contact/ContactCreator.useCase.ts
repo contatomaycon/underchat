@@ -56,7 +56,9 @@ export class ContactCreatorUseCase {
 
     if (labelTemplateId) {
       const labelTemplateExists =
-        await this.labelTemplateService.existsLabelTemplateById(labelTemplateId);
+        await this.labelTemplateService.existsLabelTemplateById(
+          labelTemplateId
+        );
 
       if (!labelTemplateExists) {
         throw new Error(t('label_template_not_found'));
@@ -141,12 +143,11 @@ export class ContactCreatorUseCase {
     phoneDdi?: string | null
   ): Promise<{ phone: string; phoneDdi: string | null }> {
     try {
-      const validationResult =
-        await this.phoneValidationService.validatePhone(
-          accountId,
-          phone,
-          phoneDdi
-        );
+      const validationResult = await this.phoneValidationService.validatePhone(
+        accountId,
+        phone,
+        phoneDdi
+      );
 
       if (!validationResult.valid) {
         throw new Error(t('phone_number_not_valid_on_whatsapp'));

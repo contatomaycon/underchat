@@ -263,6 +263,12 @@ export class PhoneValidationService {
       throw new Error('No active worker found for this account');
     }
 
-    return this.tryValidateWithWorkers(workers, accountId, phone, phoneDdi, timeout);
+    return this.tryValidateWithWorkers(
+      workers,
+      accountId,
+      phone,
+      phoneDdi,
+      timeout
+    );
   };
 }

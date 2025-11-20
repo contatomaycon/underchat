@@ -249,7 +249,7 @@ export class CsvFileReaderService {
     fn: string | undefined
   ): { firstFallback: string; lastFallback: string } {
     const firstFallback = first || fn?.split(' ')?.[0] || '';
-    
+
     let lastFallback = last;
     if (!lastFallback && fn) {
       const fnParts = fn.split(' ');

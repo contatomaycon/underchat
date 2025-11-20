@@ -784,14 +784,13 @@ export class MessageSendConsume {
     data: IProfileStatusMessage,
     statusJidList: string[]
   ): Promise<void> {
-    const result =
-      await this.baileysMessageStatusStoriesService.sendStatusText(
-        jid,
-        data.value,
-        {
-          statusJidList,
-        }
-      );
+    const result = await this.baileysMessageStatusStoriesService.sendStatusText(
+      jid,
+      data.value,
+      {
+        statusJidList,
+      }
+    );
 
     await this.handleStatusResult(
       result,

@@ -73,12 +73,15 @@ export class ContactGroupAssignmentCreatorUseCase {
   }
 
   private normalizePhoneFromValidation(
-    validationPhone: string | undefined,
-    defaultPhone: string,
-    defaultDdi: string
+    validationPhone: string | null | undefined,
+    defaultPhone: string | null | undefined,
+    defaultDdi: string | null | undefined
   ): { phone: string; phoneDdi: string } {
+    const phone = defaultPhone || '';
+    const ddi = defaultDdi || '55';
+
     if (!validationPhone) {
-      return { phone: defaultPhone, phoneDdi: defaultDdi };
+      return { phone, phoneDdi: ddi };
     }
 
     const normalizedPhone = normalizePhoneNumber(validationPhone);
@@ -89,7 +92,7 @@ export class ContactGroupAssignmentCreatorUseCase {
       };
     }
 
-    return { phone: defaultPhone, phoneDdi: defaultDdi };
+    return { phone, phoneDdi: ddi };
   }
 
   private async processContact(
@@ -109,12 +112,11 @@ export class ContactGroupAssignmentCreatorUseCase {
     }
 
     try {
-      const validationResult =
-        await this.phoneValidationService.validatePhone(
-          accountId,
-          contact.phone,
-          contact.phone_ddi || '55'
-        );
+      const validationResult = await this.phoneValidationService.validatePhone(
+        accountId,
+        contact.phone,
+        contact.phone_ddi || '55'
+      );
 
       if (!validationResult.valid) {
         return this.createStatusResult(
@@ -125,11 +127,13 @@ export class ContactGroupAssignmentCreatorUseCase {
         );
       }
 
+      const defaultPhone = (contact.phone ?? '') as string;
+      const defaultDdi = (contact.phone_ddi ?? '55') as string;
       const { phone: phoneToSave, phoneDdi: phoneDdiToSave } =
         this.normalizePhoneFromValidation(
           validationResult.phone,
-          contact.phone,
-          contact.phone_ddi || '55'
+          defaultPhone,
+          defaultDdi
         );
 
       const contactCreated = await this.contactService.createContactTx(
