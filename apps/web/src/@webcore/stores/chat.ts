@@ -1127,6 +1127,28 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
+    markMessageAsDeleted(messageId: string) {
+      const idx = this.listMessages.findIndex(
+        (item) => item.message_id === messageId
+      );
+      if (idx !== -1) {
+        this.listMessages[idx] = {
+          ...this.listMessages[idx],
+          deleted: true,
+        };
+      }
+    },
+    unmarkMessageAsDeleted(messageId: string) {
+      const idx = this.listMessages.findIndex(
+        (item) => item.message_id === messageId
+      );
+      if (idx !== -1) {
+        this.listMessages[idx] = {
+          ...this.listMessages[idx],
+          deleted: false,
+        };
+      }
+    },
     async deleteMessage(chatId: string, messageId: string): Promise<boolean> {
       try {
         const response = await axios.post(

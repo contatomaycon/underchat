@@ -748,17 +748,17 @@ const onDelete = async (m: ListMessageResult) => {
     showEmojiPicker.value = null;
   }
 
+  chatStore.markMessageAsDeleted(m.message_id);
+
   const success = await chatStore.deleteMessage(
     chatStore.activeChat.chat_id,
     m.message_id
   );
 
-  if (success) {
-    chatStore.showSnackbar(t('chat_delete_success'), EColor.success);
-    return;
+  if (!success) {
+    chatStore.unmarkMessageAsDeleted(m.message_id);
+    chatStore.showSnackbar(t('chat_delete_error'), EColor.error);
   }
-
-  chatStore.showSnackbar(t('chat_delete_error'), EColor.error);
 };
 
 const showQuoted = (m: ListMessageResult) => !!m.content?.quoted;
