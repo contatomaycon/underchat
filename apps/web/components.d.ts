@@ -13,6 +13,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AppAccountInfo: typeof import('./src/components/account/AppAccountInfo.vue')['default']
+    AppAccountSubscriptions: typeof import('./src/components/account/AppAccountSubscriptions.vue')['default']
     AppAddAccount: typeof import('./src/components/account/AppAddAccount.vue')['default']
     AppAddChannel: typeof import('./src/components/channel/AppAddChannel.vue')['default']
     AppAddContact: typeof import('./src/components/contact/AppAddContact.vue')['default']
@@ -108,6 +109,7 @@ declare module 'vue' {
 // For TSX support
 declare global {
   const AppAccountInfo: typeof import('./src/components/account/AppAccountInfo.vue')['default']
+  const AppAccountSubscriptions: typeof import('./src/components/account/AppAccountSubscriptions.vue')['default']
   const AppAddAccount: typeof import('./src/components/account/AppAddAccount.vue')['default']
   const AppAddChannel: typeof import('./src/components/channel/AppAddChannel.vue')['default']
   const AppAddContact: typeof import('./src/components/contact/AppAddContact.vue')['default']

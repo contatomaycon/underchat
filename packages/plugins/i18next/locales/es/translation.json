@@ -192,6 +192,8 @@
   "account_info_update_error": "Error al actualizar la información de la cuenta!",
   "account_info_deleted_successfully": "¡Información de la cuenta eliminada con éxito!",
   "account_info_deleter_error": "Error al eliminar la información de la cuenta!",
+  "account_subscriptions_list_successfully": "¡Suscripciones listadas con éxito!",
+  "account_subscriptions_not_found": "No se encontraron suscripciones para esta cuenta.",
   "message_template_list_successfully": "¡Lista de plantillas de mensajes obtenida con éxito!",
   "message_template_list_not_found": "¡No se encontraron plantillas de mensajes!",
   "message_template_creator_success": "¡Plantilla de mensaje creada con éxito!",

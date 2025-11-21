@@ -192,6 +192,8 @@
   "account_info_update_error": "Erro ao atualizar as informações da conta!",
   "account_info_deleted_successfully": "Informações da conta eliminadas com sucesso!",
   "account_info_deleter_error": "Erro ao eliminar as informações da conta!",
+  "account_subscriptions_list_successfully": "Assinaturas listadas com sucesso!",
+  "account_subscriptions_not_found": "Nenhuma assinatura encontrada para esta conta.",
   "message_template_list_successfully": "Lista de modelos de mensagem obtida com sucesso!",
   "message_template_list_not_found": "Nenhum modelo de mensagem encontrado!",
   "message_template_creator_success": "Modelo de mensagem criado com sucesso!",

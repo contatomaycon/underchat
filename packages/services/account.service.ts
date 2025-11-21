@@ -24,6 +24,8 @@ import { CreateAccountInfoRequest } from '@core/schema/account/createAccountInfo
 import { EditAccountInfoResponse } from '@core/schema/account/editAccountInfo/request.schema';
 import { AccountAllListerRepository } from '@core/repositories/account/AccountAllLister.repository';
 import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
+import { AccountSubscriptionsListerRepository } from '@core/repositories/account/AccountSubscriptionsLister.repository';
+import { ListAccountSubscriptionsResponse } from '@core/schema/account/listAccountSubscriptions/response.schema';
 
 @injectable()
 export class AccountService {
@@ -42,7 +44,8 @@ export class AccountService {
     private readonly accountInfoUpdaterRepository: AccountInfoUpdaterRepository,
     private readonly accountInfoDeleterRepository: AccountInfoDeleterRepository,
     private readonly accountInfoByIdViewerExistsRepository: AccountInfoByIdViewerExistsRepository,
-    private readonly accountAllListerRepository: AccountAllListerRepository
+    private readonly accountAllListerRepository: AccountAllListerRepository,
+    private readonly accountSubscriptionsListerRepository: AccountSubscriptionsListerRepository
   ) {}
 
   viewAccountInfoByAccountId = async (
@@ -157,6 +160,14 @@ export class AccountService {
   accountInfoByIdExists = async (accountInfoId: string): Promise<boolean> => {
     return this.accountInfoByIdViewerExistsRepository.accountInfoByIdExists(
       accountInfoId
+    );
+  };
+
+  listAccountSubscriptions = async (
+    accountId: string
+  ): Promise<ListAccountSubscriptionsResponse | null> => {
+    return this.accountSubscriptionsListerRepository.listAccountSubscriptions(
+      accountId
     );
   };
 }
