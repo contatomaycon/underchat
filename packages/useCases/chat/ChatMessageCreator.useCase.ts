@@ -22,7 +22,7 @@ import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.servi
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { PublishResult } from 'centrifuge';
 import { StorageService } from '@core/services/storage.service';
-import { AudioConverterService } from '@core/services/audioConverter.service';
+import { AudioConverterService } from '@core/services/audioConverter';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { ICreateVideoMessageParams } from '@core/common/interfaces/ICreateVideoMessageParams';
@@ -478,6 +478,8 @@ export class ChatMessageCreatorUseCase {
             return undefined;
           }),
       ]);
+
+      console.log('uploadResult', uploadResult);
 
       if (!uploadResult) {
         return null;
