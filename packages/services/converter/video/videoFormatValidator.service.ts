@@ -1,3 +1,4 @@
+import { injectable } from 'tsyringe';
 import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,7 +8,10 @@ import { IConvertVideoResult } from '@core/common/interfaces/IConvertVideoResult
 import { VideoProbeService } from './videoProbe.service';
 import { FileUtils } from '../audio/fileUtils.service';
 
+@injectable()
 export class VideoFormatValidator {
+  constructor(private readonly videoProbeService: VideoProbeService) {}
+
   async checkAndReturnIfValid(
     inputBuffer: Buffer
   ): Promise<IConvertVideoResult | null> {
@@ -19,10 +23,9 @@ export class VideoFormatValidator {
     try {
       await writeFile(tempPath, inputBuffer);
 
-      const probeService = new VideoProbeService();
-      const probeData = await probeService.probeMetadata(tempPath);
-      const duration = probeService.extractDuration(probeData);
-      const dimensions = probeService.extractDimensions(probeData);
+      const probeData = await this.videoProbeService.probeMetadata(tempPath);
+      const duration = this.videoProbeService.extractDuration(probeData);
+      const dimensions = this.videoProbeService.extractDimensions(probeData);
       const isValid = this.validateFormat(probeData);
 
       if (isValid) {

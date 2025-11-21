@@ -13,21 +13,29 @@ import { VideoFfmpegConverter } from './video/videoFfmpegConverter.service';
 
 @injectable()
 export class ConverterService {
+  constructor(
+    private readonly audioFormatDetector: AudioFormatDetector,
+    private readonly audioFormatValidator: AudioFormatValidator,
+    private readonly audioFfmpegConverter: AudioFfmpegConverter,
+    private readonly audioWaveformGenerator: AudioWaveformGenerator,
+    private readonly videoFormatDetector: VideoFormatDetector,
+    private readonly videoFormatValidator: VideoFormatValidator,
+    private readonly videoFfmpegConverter: VideoFfmpegConverter
+  ) {}
+
   async convertAudio(
     inputBuffer: Buffer,
     inputMimetype?: string | null,
     ptt: boolean = true
   ): Promise<IConvertAudioResult> {
     const config = this.getFormatConfig(ptt);
-    const formatDetector = new AudioFormatDetector();
     const currentFormat =
-      formatDetector.detectFromBuffer(inputBuffer) ||
-      formatDetector.getExtensionFromMimetype(inputMimetype) ||
+      this.audioFormatDetector.detectFromBuffer(inputBuffer) ||
+      this.audioFormatDetector.getExtensionFromMimetype(inputMimetype) ||
       'webm';
 
-    if (ptt && currentFormat === config.format) {
-      const validator = new AudioFormatValidator();
-      const result = await validator.checkAndReturnIfValid(
+    if (currentFormat === config.format) {
+      const result = await this.audioFormatValidator.checkAndReturnIfValid(
         inputBuffer,
         config.mimetype,
         config.format
@@ -37,37 +45,33 @@ export class ConverterService {
       }
     }
 
-    const converter = new AudioFfmpegConverter();
-    return converter.convert(inputBuffer, currentFormat, ptt);
+    return this.audioFfmpegConverter.convert(inputBuffer, currentFormat, ptt);
   }
 
   async generateWaveformWithFfmpeg(
     audioBuffer: Buffer
   ): Promise<string | undefined> {
-    const generator = new AudioWaveformGenerator();
-    return generator.generate(audioBuffer);
+    return this.audioWaveformGenerator.generate(audioBuffer);
   }
 
   async convertVideo(
     inputBuffer: Buffer,
     inputMimetype?: string | null
   ): Promise<IConvertVideoResult> {
-    const formatDetector = new VideoFormatDetector();
     const currentFormat =
-      formatDetector.detectFromBuffer(inputBuffer) ||
-      formatDetector.getExtensionFromMimetype(inputMimetype) ||
+      this.videoFormatDetector.detectFromBuffer(inputBuffer) ||
+      this.videoFormatDetector.getExtensionFromMimetype(inputMimetype) ||
       'mp4';
 
     if (currentFormat === 'mp4') {
-      const validator = new VideoFormatValidator();
-      const result = await validator.checkAndReturnIfValid(inputBuffer);
+      const result =
+        await this.videoFormatValidator.checkAndReturnIfValid(inputBuffer);
       if (result) {
         return result;
       }
     }
 
-    const converter = new VideoFfmpegConverter();
-    return converter.convert(inputBuffer, currentFormat);
+    return this.videoFfmpegConverter.convert(inputBuffer, currentFormat);
   }
 
   private getFormatConfig(ptt: boolean): IAudioFormatConfig {

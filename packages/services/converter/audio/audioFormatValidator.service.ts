@@ -1,3 +1,4 @@
+import { injectable } from 'tsyringe';
 import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,7 +8,10 @@ import { IConvertAudioResult } from '@core/common/interfaces/IConvertAudioResult
 import { AudioProbeService } from './audioProbe.service';
 import { FileUtils } from './fileUtils.service';
 
+@injectable()
 export class AudioFormatValidator {
+  constructor(private readonly audioProbeService: AudioProbeService) {}
+
   async checkAndReturnIfValid(
     inputBuffer: Buffer,
     targetMimetype: string,
@@ -21,9 +25,8 @@ export class AudioFormatValidator {
     try {
       await writeFile(tempPath, inputBuffer);
 
-      const probeService = new AudioProbeService();
-      const probeData = await probeService.probeMetadata(tempPath);
-      const duration = probeService.extractDuration(probeData);
+      const probeData = await this.audioProbeService.probeMetadata(tempPath);
+      const duration = this.audioProbeService.extractDuration(probeData);
       const isValid = this.validateFormat(probeData);
 
       if (isValid) {
@@ -46,17 +49,9 @@ export class AudioFormatValidator {
   private validateFormat(probeData: any): boolean {
     const stream = probeData.streams?.[0];
     const codecName = stream?.codec_name;
-    const channels = stream?.channels;
-    const sampleRate = stream?.sample_rate;
-    const bitRate = stream?.bit_rate
-      ? Number.parseInt(stream.bit_rate, 10)
-      : null;
 
-    const isOpus = codecName === 'opus';
-    const isMono = channels === 1;
-    const is48kHz = sampleRate === 48000;
-    const isCorrectBitrate = !bitRate || (bitRate >= 16000 && bitRate <= 64000);
+    const isAac = codecName === 'aac';
 
-    return isOpus && isMono && is48kHz && isCorrectBitrate;
+    return isAac;
   }
 }
