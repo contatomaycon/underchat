@@ -604,7 +604,6 @@ const scrollToBottomInChatLog = async (smooth: boolean = false) => {
   const scrollEl = chatLogPS.value.$el || chatLogPS.value;
   if (!scrollEl) return;
 
-  // Busca o container do PerfectScrollbar de forma mais robusta
   const psContainer =
     (scrollEl.querySelector('.ps') as HTMLElement) ||
     (scrollEl.closest('.ps') as HTMLElement) ||
@@ -619,7 +618,6 @@ const scrollToBottomInChatLog = async (smooth: boolean = false) => {
 
   if (!foundElement) return;
 
-  // Define scrollTop diretamente (mesma lógica do botão)
   foundElement.scrollTop = foundElement.scrollHeight;
 
   await nextTick();
@@ -649,18 +647,46 @@ const applyPersistentHighlight = (target: HTMLElement, id: string) => {
 const isMessageLoaded = (id: string): boolean =>
   chatStore.listMessages.some((message) => message.message_id === id);
 
+const isMessageLoadedByKeyId = (keyId: string): boolean =>
+  chatStore.listMessages.some((message) => message.message_key?.id === keyId);
+
+const findMessageIdByKeyId = (keyId: string): string | null => {
+  const message = chatStore.listMessages.find(
+    (m) => m.message_key?.id === keyId
+  );
+  return message?.message_id || null;
+};
+
 const ensureMessageLoaded = async (id: string): Promise<boolean> => {
   if (!id) return false;
-  if (isMessageLoaded(id)) return true;
+
+  const isUuid = id.match(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  );
+
+  if (isUuid) {
+    if (isMessageLoaded(id)) return true;
+  } else {
+    if (isMessageLoadedByKeyId(id)) return true;
+  }
 
   while (chatStore.currentPage < chatStore.totalPages) {
     const loaded = await chatStore.loadMoreMessages();
     if (!loaded) break;
     await nextTick();
-    if (isMessageLoaded(id)) return true;
+
+    if (isUuid) {
+      if (isMessageLoaded(id)) return true;
+    } else {
+      if (isMessageLoadedByKeyId(id)) return true;
+    }
   }
 
-  return isMessageLoaded(id);
+  if (isUuid) {
+    return isMessageLoaded(id);
+  } else {
+    return isMessageLoadedByKeyId(id);
+  }
 };
 
 const scrollToMessageById = async (
@@ -679,19 +705,47 @@ const scrollToMessageById = async (
     return;
   }
 
-  const messageReady = await ensureMessageLoaded(id);
-  if (!messageReady) {
-    container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
-    chatLogPS.value?.update?.();
+  const isUuid = id.match(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  );
 
-    return;
+  let targetMessageId = id;
+  if (!isUuid) {
+    await ensureMessageLoaded(id);
+
+    const foundMessageId = findMessageIdByKeyId(id);
+    if (foundMessageId) {
+      targetMessageId = foundMessageId;
+    }
+  } else {
+    const messageReady = await ensureMessageLoaded(targetMessageId);
+    if (!messageReady) {
+      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+      chatLogPS.value?.update?.();
+      return;
+    }
   }
 
   await nextTick();
 
-  const target =
-    (container.querySelector(`[data-message-id="${id}"]`) as HTMLElement) ||
-    (document.getElementById(`msg-${id}`) as HTMLElement);
+  let target =
+    (container.querySelector(
+      `[data-message-id="${targetMessageId}"]`
+    ) as HTMLElement) ||
+    (document.getElementById(`msg-${targetMessageId}`) as HTMLElement);
+
+  if (!target && !isUuid) {
+    const message = chatStore.listMessages.find(
+      (m) => m.message_key?.id === id
+    );
+    if (message) {
+      target =
+        (container.querySelector(
+          `[data-message-id="${message.message_id}"]`
+        ) as HTMLElement) ||
+        (document.getElementById(`msg-${message.message_id}`) as HTMLElement);
+    }
+  }
 
   if (target) {
     const top = getOffsetTop(container, target) - 60;
@@ -707,7 +761,7 @@ const scrollToMessageById = async (
       target.classList.remove('message-target-flash');
       forceReflow(target);
       target.classList.add('message-target-flash');
-      applyPersistentHighlight(target, id);
+      applyPersistentHighlight(target, targetMessageId);
     }
 
     return;

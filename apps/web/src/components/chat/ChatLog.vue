@@ -1091,9 +1091,6 @@ const resolveQuotedAudioMeta = (m: ListMessageResult): string => {
 };
 
 const getQuotedTargetId = (m: ListMessageResult): string | null => {
-  const byExplicitId = m.content?.message_quoted_id || null;
-  if (byExplicitId) return String(byExplicitId);
-
   const byKeyId = m.content?.quoted?.key?.id || null;
   if (byKeyId) {
     const matchByKey = chatStore.listMessages.find(
@@ -1102,6 +1099,28 @@ const getQuotedTargetId = (m: ListMessageResult): string | null => {
     if (matchByKey) {
       return matchByKey.message_id;
     }
+  }
+
+  const byExplicitId = m.content?.message_quoted_id || null;
+  if (byExplicitId) {
+    const explicitIdStr = String(byExplicitId);
+
+    if (
+      explicitIdStr.match(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      )
+    ) {
+      return explicitIdStr;
+    }
+
+    const matchByExplicitKey = chatStore.listMessages.find(
+      (x) => x.message_key?.id === explicitIdStr
+    );
+    if (matchByExplicitKey) {
+      return matchByExplicitKey.message_id;
+    }
+
+    return explicitIdStr;
   }
 
   const text = m.content?.quoted?.message?.trim();
