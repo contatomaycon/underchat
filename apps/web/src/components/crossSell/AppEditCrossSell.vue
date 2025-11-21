@@ -50,19 +50,36 @@ const formatCurrency = (value: number | null | undefined): string => {
   }).format(value);
 };
 
+const removeInvalidChars = (value: string, allowedChars: string): string => {
+  return value
+    .split('')
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return (code >= 48 && code <= 57) || allowedChars.includes(char);
+    })
+    .join('');
+};
+
 const parseCurrency = (value: string): number | null => {
   if (!value) return null;
   const config = getCurrencyConfig();
-  let cleanValue = value.replace(/[^\d,.-]/g, '');
+  let cleanValue = removeInvalidChars(value, '.,-');
 
   if (config.currency === 'BRL') {
-    cleanValue = cleanValue.replace(/\./g, '').replace(',', '.');
+    cleanValue = cleanValue.replaceAll('.', '');
+    const commaIndex = cleanValue.indexOf(',');
+    if (commaIndex !== -1) {
+      cleanValue =
+        cleanValue.substring(0, commaIndex) +
+        '.' +
+        cleanValue.substring(commaIndex + 1);
+    }
   } else if (config.currency === 'USD' || config.currency === 'EUR') {
-    cleanValue = cleanValue.replace(/,/g, '');
+    cleanValue = cleanValue.replaceAll(',', '');
   }
 
-  const parsed = parseFloat(cleanValue);
-  return isNaN(parsed) ? null : parsed;
+  const parsed = Number.parseFloat(cleanValue);
+  return Number.isNaN(parsed) ? null : parsed;
 };
 
 const priceDisplay = ref<string>('');
@@ -82,7 +99,7 @@ const handlePriceInput = (event: Event) => {
   const config = getCurrencyConfig();
 
   if (config.currency === 'BRL') {
-    value = value.replace(/[^\d,]/g, '');
+    value = removeInvalidChars(value, ',');
     const parts = value.split(',');
     if (parts.length > 2) {
       value = parts[0] + ',' + parts.slice(1).join('');
@@ -91,7 +108,7 @@ const handlePriceInput = (event: Event) => {
       value = parts[0] + ',' + parts[1].substring(0, 2);
     }
   } else {
-    value = value.replace(/[^\d.]/g, '');
+    value = removeInvalidChars(value, '.');
     const parts = value.split('.');
     if (parts.length > 2) {
       value = parts[0] + '.' + parts.slice(1).join('');
@@ -108,15 +125,19 @@ const handlePriceInput = (event: Event) => {
 const handlePriceBlur = () => {
   if (priceRaw.value !== null) {
     priceDisplay.value = formatCurrency(priceRaw.value);
-  } else if (priceDisplay.value) {
+    return;
+  }
+
+  if (priceDisplay.value) {
     const parsed = parseCurrency(priceDisplay.value);
-    if (parsed !== null) {
-      priceRaw.value = parsed;
-      priceDisplay.value = formatCurrency(parsed);
-    } else {
+    if (parsed === null) {
       priceDisplay.value = '';
       priceRaw.value = null;
+      return;
     }
+
+    priceRaw.value = parsed;
+    priceDisplay.value = formatCurrency(parsed);
   } else {
     priceDisplay.value = '';
   }

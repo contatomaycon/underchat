@@ -1,5 +1,4 @@
 <script lang="ts" setup>
-import { nextTick } from 'vue';
 import { usePlanStore } from '@/@webcore/stores/plan';
 import { VForm } from 'vuetify/components/VForm';
 import { UpdatePlanRequest } from '@core/schema/plan/updatePlan/request.schema';
@@ -48,19 +47,36 @@ const formatCurrency = (value: number | null | undefined): string => {
   }).format(value);
 };
 
+const removeInvalidChars = (value: string, allowedChars: string): string => {
+  return value
+    .split('')
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return (code >= 48 && code <= 57) || allowedChars.includes(char);
+    })
+    .join('');
+};
+
 const parseCurrency = (value: string): number | null => {
   if (!value) return null;
   const config = getCurrencyConfig();
-  let cleanValue = value.replace(/[^\d,.-]/g, '');
-  
+  let cleanValue = removeInvalidChars(value, '.,-');
+
   if (config.currency === 'BRL') {
-    cleanValue = cleanValue.replace(/\./g, '').replace(',', '.');
+    cleanValue = cleanValue.replaceAll('.', '');
+    const commaIndex = cleanValue.indexOf(',');
+    if (commaIndex !== -1) {
+      cleanValue =
+        cleanValue.substring(0, commaIndex) +
+        '.' +
+        cleanValue.substring(commaIndex + 1);
+    }
   } else if (config.currency === 'USD' || config.currency === 'EUR') {
-    cleanValue = cleanValue.replace(/,/g, '');
+    cleanValue = cleanValue.replaceAll(',', '');
   }
-  
-  const parsed = parseFloat(cleanValue);
-  return isNaN(parsed) ? null : parsed;
+
+  const parsed = Number.parseFloat(cleanValue);
+  return Number.isNaN(parsed) ? null : parsed;
 };
 
 const priceDisplay = ref<string>('');
@@ -85,11 +101,11 @@ const price_old = computed({
 const handlePriceInput = (event: Event) => {
   const target = event.target as HTMLInputElement;
   let value = target.value;
-  
+
   const config = getCurrencyConfig();
-  
+
   if (config.currency === 'BRL') {
-    value = value.replace(/[^\d,]/g, '');
+    value = removeInvalidChars(value, ',');
     const parts = value.split(',');
     if (parts.length > 2) {
       value = parts[0] + ',' + parts.slice(1).join('');
@@ -98,7 +114,7 @@ const handlePriceInput = (event: Event) => {
       value = parts[0] + ',' + parts[1].substring(0, 2);
     }
   } else {
-    value = value.replace(/[^\d.]/g, '');
+    value = removeInvalidChars(value, '.');
     const parts = value.split('.');
     if (parts.length > 2) {
       value = parts[0] + '.' + parts.slice(1).join('');
@@ -107,7 +123,7 @@ const handlePriceInput = (event: Event) => {
       value = parts[0] + '.' + parts[1].substring(0, 2);
     }
   }
-  
+
   priceDisplay.value = value;
   priceRaw.value = parseCurrency(value);
 };
@@ -115,11 +131,11 @@ const handlePriceInput = (event: Event) => {
 const handlePriceOldInput = (event: Event) => {
   const target = event.target as HTMLInputElement;
   let value = target.value;
-  
+
   const config = getCurrencyConfig();
-  
+
   if (config.currency === 'BRL') {
-    value = value.replace(/[^\d,]/g, '');
+    value = removeInvalidChars(value, ',');
     const parts = value.split(',');
     if (parts.length > 2) {
       value = parts[0] + ',' + parts.slice(1).join('');
@@ -128,7 +144,7 @@ const handlePriceOldInput = (event: Event) => {
       value = parts[0] + ',' + parts[1].substring(0, 2);
     }
   } else {
-    value = value.replace(/[^\d.]/g, '');
+    value = removeInvalidChars(value, '.');
     const parts = value.split('.');
     if (parts.length > 2) {
       value = parts[0] + '.' + parts.slice(1).join('');
@@ -137,7 +153,7 @@ const handlePriceOldInput = (event: Event) => {
       value = parts[0] + '.' + parts[1].substring(0, 2);
     }
   }
-  
+
   price_oldDisplay.value = value;
   price_oldRaw.value = parseCurrency(value);
 };
@@ -145,15 +161,19 @@ const handlePriceOldInput = (event: Event) => {
 const handlePriceBlur = () => {
   if (priceRaw.value !== null) {
     priceDisplay.value = formatCurrency(priceRaw.value);
-  } else if (priceDisplay.value) {
+    return;
+  }
+
+  if (priceDisplay.value) {
     const parsed = parseCurrency(priceDisplay.value);
-    if (parsed !== null) {
-      priceRaw.value = parsed;
-      priceDisplay.value = formatCurrency(parsed);
-    } else {
+    if (parsed === null) {
       priceDisplay.value = '';
       priceRaw.value = null;
+      return;
     }
+
+    priceRaw.value = parsed;
+    priceDisplay.value = formatCurrency(parsed);
   } else {
     priceDisplay.value = '';
   }
@@ -162,15 +182,19 @@ const handlePriceBlur = () => {
 const handlePriceOldBlur = () => {
   if (price_oldRaw.value !== null) {
     price_oldDisplay.value = formatCurrency(price_oldRaw.value);
-  } else if (price_oldDisplay.value) {
+    return;
+  }
+
+  if (price_oldDisplay.value) {
     const parsed = parseCurrency(price_oldDisplay.value);
-    if (parsed !== null) {
-      price_oldRaw.value = parsed;
-      price_oldDisplay.value = formatCurrency(parsed);
-    } else {
+    if (parsed === null) {
       price_oldDisplay.value = '';
       price_oldRaw.value = null;
+      return;
     }
+
+    price_oldRaw.value = parsed;
+    price_oldDisplay.value = formatCurrency(parsed);
   } else {
     price_oldDisplay.value = '';
   }

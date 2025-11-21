@@ -30,7 +30,6 @@ const planItems = ref<ListPlanItemResponse[]>([]);
 const isDialogDeleteItemShow = ref(false);
 const itemToDelete = ref<string | null>(null);
 
-// TODO: Buscar lista de plan products quando a API estiver disponível
 const planProducts = ref<{ value: string; title: string }[]>([]);
 
 const refFormAddPlanItem = ref<VForm>();
@@ -45,6 +44,7 @@ const loadPlanItems = async () => {
     const items = await planStore.listPlanItems(planId.value);
     planItems.value = items && Array.isArray(items) ? items : [];
   } catch (error) {
+    console.error('Error loading plan items:', error);
     planItems.value = [];
   }
 };

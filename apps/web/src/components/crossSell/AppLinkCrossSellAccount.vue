@@ -47,6 +47,7 @@ const loadCrossSellAccounts = async () => {
     crossSellAccounts.value =
       accounts && Array.isArray(accounts) ? accounts : [];
   } catch (error) {
+    console.error('Error loading cross-sell accounts:', error);
     crossSellAccounts.value = [];
   }
 };
