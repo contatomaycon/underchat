@@ -280,14 +280,14 @@ export class StorageService {
     }
 
     const initialExtension = this.getFileExtension(file.filename);
-    const fallbackExtension = this.extFromMime(file.mimetype ?? '') ?? 'aac';
+    const fallbackExtension = this.extFromMime(file.mimetype ?? '') ?? 'opus';
     const extension = initialExtension || fallbackExtension;
 
     const normalizedName = initialExtension
       ? file.filename
       : `${file.filename}.${extension}`;
     const key = `${accountId}/${this.converterFilename(normalizedName)}`;
-    const mimetype = file.mimetype ?? 'audio/aac';
+    const mimetype = file.mimetype ?? 'audio/ogg; codecs=opus';
 
     await this.client.send(
       new PutObjectCommand({
@@ -320,7 +320,7 @@ export class StorageService {
     }
 
     const extension =
-      this.getFileExtension(filename) || this.extFromMime(mimetype) || 'aac';
+      this.getFileExtension(filename) || this.extFromMime(mimetype) || 'opus';
     const normalizedName = filename.endsWith(`.${extension}`)
       ? filename
       : `${filename}.${extension}`;

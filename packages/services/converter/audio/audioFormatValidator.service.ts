@@ -50,8 +50,8 @@ export class AudioFormatValidator {
     const stream = probeData.streams?.[0];
     const codecName = stream?.codec_name;
 
-    const isAac = codecName === 'aac';
+    const isOpus = codecName === 'opus';
 
-    return isAac;
+    return isOpus;
   }
 }

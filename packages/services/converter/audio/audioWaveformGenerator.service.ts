@@ -15,7 +15,7 @@ export class AudioWaveformGenerator {
 
     const inputPath = join(
       tmpdir(),
-      `audio-waveform-input-${Date.now()}-${inputRandomId}.aac`
+      `audio-waveform-input-${Date.now()}-${inputRandomId}.opus`
     );
 
     const pcmPath = join(

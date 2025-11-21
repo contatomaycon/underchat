@@ -56,9 +56,9 @@ export class AudioFfmpegConverter {
   private getFormatConfig(ptt: boolean): IAudioFormatConfig {
     if (ptt) {
       return {
-        format: 'aac',
-        mimetype: 'audio/aac',
-        extension: 'aac',
+        format: 'ogg',
+        mimetype: 'audio/ogg; codecs=opus',
+        extension: 'opus',
       };
     }
 
@@ -95,11 +95,11 @@ export class AudioFfmpegConverter {
 
   private configurePttCommand(command: ReturnType<typeof ffmpeg>): void {
     command
-      .audioCodec('aac')
-      .format('adts')
-      .audioBitrate('48k')
+      .noVideo()
+      .audioCodec('libopus')
+      .format('ogg')
       .audioChannels(1)
-      .audioFrequency(48000);
+      .outputOptions(['-avoid_negative_ts', 'make_zero']);
   }
 
   private configureRegularAudioCommand(
