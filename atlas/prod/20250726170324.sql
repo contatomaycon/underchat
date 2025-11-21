@@ -1,0 +1,2 @@
+INSERT INTO "permission_module" ("module_id", "module") VALUES ('019a930d-c6f6-766d-9c83-914b7faa4337', 'manager');
+INSERT INTO "permission_module" ("module_id", "module") VALUES ('019a930d-c6f6-766d-9c83-96314dc6574c', 'balancer');

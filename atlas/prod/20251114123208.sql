@@ -1,0 +1,2 @@
+INSERT INTO "message_status" ("message_status_id", "name") VALUES ('019a930d-c6f8-7526-872d-2e78122031ae', 'active');
+INSERT INTO "message_status" ("message_status_id", "name") VALUES ('019a930d-c6f8-7526-872d-30384828d201', 'inactive');

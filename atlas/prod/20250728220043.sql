@@ -1,0 +1,2 @@
+INSERT INTO "sector_status" ("sector_status_id", "name") VALUES ('019a930d-c6f6-766d-9c84-88392fc06dbd', 'active');
+INSERT INTO "sector_status" ("sector_status_id", "name") VALUES ('019a930d-c6f6-766d-9c84-8e6105a0397e', 'inactive');

@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "nodenext",
+    "strict": true,
+    "jsx": "preserve",
+    "declaration": true,
+    "outDir": "./dist",
+    "composite": true,
+    "baseUrl": ".",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "esModuleInterop": true,
+    "paths": {
+      "@core/*": ["packages/*"],
+      "@elastic/elasticsearch/lib/api/types": [
+        "node_modules/@elastic/elasticsearch/lib/api/types"
+      ]
+    }
+  },
+  "include": ["packages/**/*"],
+  "exclude": ["node_modules"]
+}

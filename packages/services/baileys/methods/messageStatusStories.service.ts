@@ -1,0 +1,129 @@
+import { injectable } from 'tsyringe';
+import {
+  MiscMessageGenerationOptions,
+  WAMessageKey,
+} from '@whiskeysockets/baileys';
+import { IMediaInput } from '@core/common/interfaces/IMediaInput';
+import { BaileysHelpersService } from './helpers.service';
+import { BaileysMessageEditDeleteService } from './messageEditDelete.service';
+import { IStatusOmitKeys } from '@core/common/interfaces/IStatusOmitKeys';
+import { IStatusArgs } from '@core/common/interfaces/IStatusArgs';
+import { IStatusTextArgs } from '@core/common/interfaces/IStatusTextArgs';
+
+@injectable()
+export class BaileysMessageStatusStoriesService {
+  constructor(
+    private readonly baileysHelpersService: BaileysHelpersService,
+    private readonly baileysMessageEditDeleteService: BaileysMessageEditDeleteService
+  ) {}
+
+  async sendStatusImage(
+    jid: string,
+    media: IMediaInput,
+    args: IStatusArgs,
+    options?: Omit<MiscMessageGenerationOptions, IStatusOmitKeys>
+  ) {
+    const statusJidList = this.baileysHelpersService.addOwnJidToStatusList(
+      args.statusJidList ?? []
+    );
+
+    return this.baileysHelpersService.send(
+      jid,
+      { image: media, caption: args.caption },
+      {
+        ...options,
+        statusJidList,
+        backgroundColor: args.backgroundColor,
+        font: args.font,
+        broadcast: true,
+      }
+    );
+  }
+
+  sendStatusVideo(
+    jid: string,
+    media: IMediaInput,
+    args: IStatusArgs,
+    options?: Omit<MiscMessageGenerationOptions, IStatusOmitKeys>
+  ) {
+    const statusJidList = this.baileysHelpersService.addOwnJidToStatusList(
+      args.statusJidList ?? []
+    );
+
+    return this.baileysHelpersService.send(
+      jid,
+      { video: media, caption: args.caption },
+      {
+        ...options,
+        statusJidList,
+        backgroundColor: args.backgroundColor,
+        font: args.font,
+        broadcast: true,
+      }
+    );
+  }
+
+  sendStatusText(
+    jid: string,
+    text: string,
+    args: IStatusTextArgs,
+    options?: Omit<MiscMessageGenerationOptions, IStatusOmitKeys>
+  ) {
+    const statusJidList = this.baileysHelpersService.addOwnJidToStatusList(
+      args.statusJidList ?? []
+    );
+
+    return this.baileysHelpersService.send(
+      jid,
+      { text },
+      {
+        ...options,
+        statusJidList,
+        backgroundColor: args.backgroundColor,
+        font: args.font,
+        broadcast: true,
+      }
+    );
+  }
+
+  sendStatusAudio(
+    jid: string,
+    media: IMediaInput,
+    args: IStatusArgs,
+    options?: Omit<MiscMessageGenerationOptions, IStatusOmitKeys>
+  ) {
+    const statusJidList = this.baileysHelpersService.addOwnJidToStatusList(
+      args.statusJidList ?? []
+    );
+
+    return this.baileysHelpersService.send(
+      jid,
+      { audio: media, caption: args.caption },
+      {
+        ...options,
+        statusJidList,
+        backgroundColor: args.backgroundColor,
+        font: args.font,
+        broadcast: true,
+      }
+    );
+  }
+
+  deleteStatus(externalId: string, statusJidList?: string[]) {
+    const jid = 'status@broadcast';
+    const key: WAMessageKey = {
+      remoteJid: jid,
+      fromMe: true,
+      id: externalId,
+    };
+
+    const finalStatusJidList = this.baileysHelpersService.addOwnJidToStatusList(
+      statusJidList ?? []
+    );
+
+    return this.baileysMessageEditDeleteService.deleteMessage(jid, key, {
+      broadcast: true,
+      statusJidList: finalStatusJidList,
+    });
+  }
+}

@@ -1,0 +1,7 @@
+INSERT INTO "plan_cross_sell" ("plan_cross_sell_id", "plan_product_id", "quantity", "price") VALUES ('019a930d-c6f6-766d-9c84-60575347632c', '019a930d-c6f4-75ad-88ff-789aa55255f8', 1, 100.00);
+INSERT INTO "plan_cross_sell" ("plan_cross_sell_id", "plan_product_id", "quantity", "price") VALUES ('019a930d-c6f6-766d-9c84-65af12325244', '019a930d-c6f4-75ad-88ff-7f14ca11114c', 2, 25.00);
+INSERT INTO "plan_cross_sell" ("plan_cross_sell_id", "plan_product_id", "quantity", "price") VALUES ('019a930d-c6f6-766d-9c84-6b2adb27de40', '019a930d-c6f4-75ad-88ff-809fbe7cf6d8', 4, 50.00);
+
+INSERT INTO "plan_cross_sell_account" ("plan_cross_sell_account_id", "plan_cross_sell_id", "account_id") VALUES ('019a930d-c6f6-766d-9c84-6cbe44f4f5df', '019a930d-c6f6-766d-9c84-60575347632c', '019a930d-c6f4-75ad-88ff-8d2fcd5839e1');
+INSERT INTO "plan_cross_sell_account" ("plan_cross_sell_account_id", "plan_cross_sell_id", "account_id") VALUES ('019a930d-c6f6-766d-9c84-72bdf9ac733e', '019a930d-c6f6-766d-9c84-65af12325244', '019a930d-c6f4-75ad-88ff-8d2fcd5839e1');
+INSERT INTO "plan_cross_sell_account" ("plan_cross_sell_account_id", "plan_cross_sell_id", "account_id") VALUES ('019a930d-c6f6-766d-9c84-7761d296ce42', '019a930d-c6f6-766d-9c84-6b2adb27de40', '019a930d-c6f4-75ad-88ff-8d2fcd5839e1');

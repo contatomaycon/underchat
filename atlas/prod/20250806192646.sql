@@ -1,0 +1,1 @@
+INSERT INTO "chat_user" ("chat_user_id", "user_id", "about", "status", "notifications") VALUES ('019a930d-c6f7-7374-86ab-0a7000f83288', '019a930d-c6f5-75af-82a5-9c31219f63db', 'A vida é feita de momentos simples: um sorriso inesperado, um gesto de bondade, a coragem de recomeçar e a esperança que nos impulsiona a buscar sempre o melhor em nós e no mundo.', 'online', true);

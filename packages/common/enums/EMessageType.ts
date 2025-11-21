@@ -1,0 +1,16 @@
+export enum EMessageType {
+  text = 'text',
+  location = 'location',
+  contact_card = 'contact_card',
+  contacts = 'contacts',
+  react = 'react',
+  image = 'image',
+  video = 'video',
+  audio = 'audio',
+  sticker = 'sticker',
+  document = 'document',
+  view_once = 'view_once',
+  delete_message = 'delete_message',
+  edit_text = 'edit_text',
+  set_disappearing_messages = 'set_disappearing_messages',
+}

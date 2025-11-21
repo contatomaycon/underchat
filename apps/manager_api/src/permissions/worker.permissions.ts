@@ -1,0 +1,58 @@
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EWorkerPermissions } from '@core/common/enums/EPermissions/worker';
+
+export const workerCreatePermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EWorkerPermissions.worker_group,
+  EWorkerPermissions.create_worker,
+];
+
+export const workerViewPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EWorkerPermissions.worker_group,
+  EWorkerPermissions.view_worker,
+];
+
+export const workerEditPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EWorkerPermissions.worker_group,
+  EWorkerPermissions.update_worker,
+];
+
+export const workerDeletePermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EWorkerPermissions.worker_group,
+  EWorkerPermissions.delete_worker,
+];
+
+export const workerLogsConnectionPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EWorkerPermissions.worker_group,
+  EWorkerPermissions.view_worker_logs,
+];
+
+export const workerRecreatePermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EWorkerPermissions.worker_group,
+  EWorkerPermissions.recreate_worker,
+];
+
+export const workerProfileStatusPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EWorkerPermissions.worker_group,
+  EWorkerPermissions.profile_status_worker,
+];
+
+export const workerProfileInfoPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EWorkerPermissions.worker_group,
+  EWorkerPermissions.profile_info_worker,
+];

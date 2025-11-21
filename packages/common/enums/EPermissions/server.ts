@@ -1,0 +1,9 @@
+export enum EServerPermissions {
+  server_group = 'server_group',
+  server_view = 'server_view',
+  server_create = 'server_create',
+  server_edit = 'server_edit',
+  server_delete = 'server_delete',
+  server_logs_install = 'server_logs_install',
+  server_reinstall = 'server_reinstall',
+}

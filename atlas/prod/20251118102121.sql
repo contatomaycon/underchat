@@ -1,0 +1,1 @@
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "permission_action_group_id", "action", "name", "description") VALUES ('019a9720-b20a-73c5-9f9c-1a2505edfa59', '019a930d-c6f6-766d-9c83-914b7faa4337', '019a930d-c6f6-766d-9c83-b9db2f0d1aae', 'preview_chat', 'Pré-visualizar Chat', 'Permite pré-visualizar informações de chats');

@@ -1,0 +1,1 @@
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "permission_action_group_id", "action", "name", "description") VALUES ('5e76a941-de7a-43b0-b635-9ff271753f2a', '019a930d-c6f6-766d-9c83-914b7faa4337', '019a930d-c6f6-766d-9c83-b9db2f0d1aae', 'pick_queue_chat', 'Escolher Chat da Fila', 'Permite escolher e selecionar chats da fila de atendimento');
