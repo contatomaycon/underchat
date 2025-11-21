@@ -51,8 +51,8 @@ const removeInvalidChars = (value: string, allowedChars: string): string => {
   return value
     .split('')
     .filter((char) => {
-      const code = char.charCodeAt(0);
-      return (code >= 48 && code <= 57) || allowedChars.includes(char);
+      const code = char.codePointAt(0);
+      return (code !== undefined && code >= 48 && code <= 57) || allowedChars.includes(char);
     })
     .join('');
 };
@@ -127,13 +127,14 @@ const handlePriceBlur = () => {
 
   if (priceDisplay.value) {
     const parsed = parseCurrency(priceDisplay.value);
-    if (parsed !== null) {
-      priceRaw.value = parsed;
-      priceDisplay.value = formatCurrency(parsed);
-    } else {
+    if (parsed === null) {
       priceDisplay.value = '';
       priceRaw.value = null;
+      return;
     }
+
+    priceRaw.value = parsed;
+    priceDisplay.value = formatCurrency(parsed);
   } else {
     priceDisplay.value = '';
   }
