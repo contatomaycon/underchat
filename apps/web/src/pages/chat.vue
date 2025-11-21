@@ -8,6 +8,7 @@ import ChatLeftSidebarContent from '@/components/chat/ChatLeftSidebarContent.vue
 import ChatLog from '@/components/chat/ChatLog.vue';
 import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSidebarContent.vue';
 import AppContactPicker from '@/components/chat/AppContactPicker.vue';
+import AppAddContact from '@/components/contact/AppAddContact.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
@@ -17,6 +18,7 @@ import { useChatStore } from '@/@webcore/stores/chat';
 import { useContactStore } from '@/@webcore/stores/contact';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
+import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
 import {
   ContentMessageChat,
@@ -105,6 +107,8 @@ const isContactPickerOpen = ref(false);
 const isLocationPickerOpen = ref(false);
 const isContactViewModalOpen = ref(false);
 const selectedContactDetails = ref<ViewContactResponse | null>(null);
+const isAddContactModalOpen = ref(false);
+const addContactInitialData = ref<Partial<CreateContactRequest> | null>(null);
 const viewContactEmail = ref<string | null>(null);
 const viewContactEmailPartial = ref<string | null>(null);
 const viewContactPhone = ref<string | null>(null);
@@ -2999,6 +3003,18 @@ watch(
   }
 );
 
+const onOpenAddContactModal = (e: Event) => {
+  const customEvent = e as CustomEvent;
+  const contactData =
+    customEvent.detail as Partial<CreateContactRequest> | null;
+  if (contactData) {
+    addContactInitialData.value = contactData;
+  } else {
+    addContactInitialData.value = null;
+  }
+  isAddContactModalOpen.value = true;
+};
+
 const focusComposer = () => {
   setTimeout(() => {
     const el = composerRef.value?.$el?.querySelector(
@@ -3445,6 +3461,10 @@ onMounted(async () => {
       'retry-message',
       onRetryMessage as EventListener
     );
+    globalThis.addEventListener(
+      'open-add-contact-modal',
+      onOpenAddContactModal as EventListener
+    );
   }
 
   const handleResize = () => {
@@ -3473,6 +3493,10 @@ onUnmounted(async () => {
     globalThis.removeEventListener(
       'retry-message',
       onRetryMessage as EventListener
+    );
+    globalThis.removeEventListener(
+      'open-add-contact-modal',
+      onOpenAddContactModal as EventListener
     );
   }
 
@@ -4629,6 +4653,20 @@ onBeforeUnmount(() => {
       </VCardText>
     </VCard>
   </VDialog>
+
+  <AppAddContact
+    v-model="isAddContactModalOpen"
+    :initial-data="addContactInitialData"
+  />
+
+  <VSnackbar
+    v-model="contactStore.snackbar.status"
+    transition="scroll-y-reverse-transition"
+    location="top end"
+    :color="contactStore.snackbar.color"
+  >
+    {{ contactStore.snackbar.message }}
+  </VSnackbar>
 
   <VSnackbar
     v-model="chatStore.snackbar.status"

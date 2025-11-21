@@ -32,6 +32,7 @@ watch(isCountryMenuOpen, (isOpen) => {
 
 const props = defineProps<{
   modelValue: boolean;
+  initialData?: Partial<CreateContactRequest> | null;
 }>();
 
 const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
@@ -122,15 +123,27 @@ const addContact = async () => {
 };
 
 const resetForm = () => {
-  label_template_id.value = null;
-  name.value = null;
-  last_name.value = null;
-  email.value = null;
-  phone_ddi.value = '55';
-  phone.value = null;
-  nickname.value = null;
-  birthday.value = null;
-  notes.value = null;
+  if (props.initialData) {
+    label_template_id.value = props.initialData.label_template_id ?? null;
+    name.value = props.initialData.name ?? null;
+    last_name.value = props.initialData.last_name ?? null;
+    email.value = props.initialData.email ?? null;
+    phone_ddi.value = props.initialData.phone_ddi ?? '55';
+    phone.value = props.initialData.phone ?? null;
+    nickname.value = props.initialData.nickname ?? null;
+    birthday.value = props.initialData.birthday ?? null;
+    notes.value = props.initialData.notes ?? null;
+  } else {
+    label_template_id.value = null;
+    name.value = null;
+    last_name.value = null;
+    email.value = null;
+    phone_ddi.value = '55';
+    phone.value = null;
+    nickname.value = null;
+    birthday.value = null;
+    notes.value = null;
+  }
   refFormAddContact.value?.resetValidation();
 };
 
@@ -140,8 +153,20 @@ onMounted(async () => {
 });
 
 watch(isVisible, (visible) => {
-  if (visible) resetForm();
+  if (visible) {
+    resetForm();
+  }
 });
+
+watch(
+  () => props.initialData,
+  () => {
+    if (isVisible.value && props.initialData) {
+      resetForm();
+    }
+  },
+  { deep: true }
+);
 </script>
 
 <template>
