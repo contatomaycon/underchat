@@ -595,22 +595,34 @@ const formattedRecordingTime = computed(() => {
 });
 const forceReflow = (el: HTMLElement): number => el.offsetWidth;
 
-const scrollToBottomInChatLog = (smooth: boolean = false) => {
+const scrollToBottomInChatLog = async (smooth: boolean = false) => {
   if (!chatLogPS.value) return;
 
   const scrollEl = chatLogPS.value.$el || chatLogPS.value;
   if (!scrollEl) return;
 
-  if (smooth) {
-    scrollEl.scrollTo({
-      top: scrollEl.scrollHeight,
-      behavior: 'smooth',
-    });
-  } else {
-    scrollEl.scrollTop = scrollEl.scrollHeight;
-  }
+  // Busca o container do PerfectScrollbar de forma mais robusta
+  const psContainer =
+    (scrollEl.querySelector('.ps') as HTMLElement) ||
+    (scrollEl.closest('.ps') as HTMLElement) ||
+    scrollEl;
+
+  if (!psContainer) return;
+
+  const foundElement =
+    (psContainer.querySelector('.ps__rail-y')?.parentElement as HTMLElement) ||
+    (psContainer.querySelector('.ps__container') as HTMLElement) ||
+    psContainer;
+
+  if (!foundElement) return;
+
+  // Define scrollTop diretamente (mesma lógica do botão)
+  foundElement.scrollTop = foundElement.scrollHeight;
+
+  await nextTick();
 
   requestAnimationFrame(() => {
+    foundElement.scrollTop = foundElement.scrollHeight;
     chatLogPS.value?.update?.();
   });
 };
@@ -3322,7 +3334,9 @@ onMounted(async () => {
           const changeType = chatStore.addMessageActiveChat(messageData);
 
           if (changeType === 'created') {
-            scrollToMessageById(messageData.message_id);
+            nextTick(async () => {
+              await scrollToBottomInChatLog();
+            });
             globalThis.dispatchEvent(new CustomEvent('focus-composer'));
           }
 
