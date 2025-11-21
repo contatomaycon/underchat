@@ -1144,6 +1144,72 @@ export class MessageSendConsume {
     };
   }
 
+  private createQuotedStickerMessage(
+    q: NonNullable<IChatMessage['content']>['quoted']
+  ): proto.IMessage | null {
+    if (q?.type !== EMessageType.sticker || !q?.sticker) return null;
+
+    return {
+      stickerMessage: {
+        mimetype: q.sticker.mimetype ?? 'image/webp',
+        isAnimated: q.sticker.is_animated ?? false,
+        fileLength: q.sticker.size ?? undefined,
+        width: q.sticker.width ?? undefined,
+        height: q.sticker.height ?? undefined,
+      },
+    };
+  }
+
+  private createQuotedLocationMessage(
+    q: NonNullable<IChatMessage['content']>['quoted']
+  ): proto.IMessage | null {
+    if (q?.type !== EMessageType.location || !q?.location) return null;
+
+    return {
+      locationMessage: {
+        degreesLatitude: q.location.latitude ?? undefined,
+        degreesLongitude: q.location.longitude ?? undefined,
+        name: q.location.name ?? undefined,
+        address: q.location.address ?? undefined,
+      },
+    };
+  }
+
+  private createQuotedContactMessage(
+    q: NonNullable<IChatMessage['content']>['quoted']
+  ): proto.IMessage | null {
+    if (q?.type !== EMessageType.contact_card || !q?.contact) return null;
+
+    const vcardLines: string[] = ['BEGIN:VCARD', 'VERSION:3.0'];
+
+    const fullName = [q.contact.name, q.contact.last_name]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+
+    if (fullName) {
+      vcardLines.push(`N:;${fullName};;;`, `FN:${fullName}`);
+    }
+
+    if (q.contact.phone) {
+      vcardLines.push(`TEL:${q.contact.phone}`);
+    }
+
+    if (q.contact.email) {
+      vcardLines.push(`EMAIL:${q.contact.email}`);
+    }
+
+    vcardLines.push('END:VCARD');
+    const vcard = vcardLines.join('\n');
+
+    return {
+      contactMessage: {
+        displayName: fullName || 'Contato',
+        vcard,
+      },
+    };
+  }
+
   private createQuotedTextMessage(
     q: NonNullable<IChatMessage['content']>['quoted']
   ): proto.IMessage | null {
@@ -1181,6 +1247,9 @@ export class MessageSendConsume {
       () => this.createQuotedVideoMessage(q),
       () => this.createQuotedDocumentMessage(q),
       () => this.createQuotedAudioMessage(q),
+      () => this.createQuotedStickerMessage(q),
+      () => this.createQuotedLocationMessage(q),
+      () => this.createQuotedContactMessage(q),
     ];
 
     for (const creator of messageCreators) {

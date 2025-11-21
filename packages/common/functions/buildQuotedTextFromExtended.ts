@@ -19,6 +19,7 @@ function determineMessageType(quotedMessage: any): EMessageType {
   if (quotedMessage.audioMessage) return EMessageType.audio;
   if (quotedMessage.stickerMessage) return EMessageType.sticker;
   if (quotedMessage.locationMessage) return EMessageType.location;
+  if (quotedMessage.contactMessage) return EMessageType.contact_card;
   return EMessageType.text;
 }
 
@@ -165,6 +166,45 @@ function processLocationMessage(
   }
 }
 
+function processContactMessage(
+  quotedMessage: any,
+  quoted: IQuotedMessage
+): void {
+  const contactMessage = quotedMessage.contactMessage;
+  if (!contactMessage?.vcard) return;
+
+  const vcard = contactMessage.vcard;
+  const nameMatch = vcard.match(/FN:([^\r\n]+)/);
+  const telMatch = vcard.match(/TEL:([^\r\n]+)/);
+  const emailMatch = vcard.match(/EMAIL:([^\r\n]+)/);
+  const nMatch = vcard.match(/N:([^;]+);([^;]*);/);
+
+  const fullName = nameMatch?.[1]?.trim() || '';
+  const nameParts = fullName.split(' ');
+  const firstName = nameParts[0] || '';
+  const lastName = nameParts.slice(1).join(' ') || null;
+  const phone = telMatch?.[1]?.trim() || null;
+
+  const contactId = `quoted_${Buffer.from(vcard).toString('base64').substring(0, 16)}`;
+
+  quoted.contact = {
+    contact_id: contactId,
+    name: firstName || 'Contato',
+    last_name: lastName,
+    phone: phone,
+    phone_partial: phone ? phone.replace(/\D/g, '') : null,
+    phone_ddi: null,
+    email: emailMatch?.[1]?.trim() || null,
+    email_partial: null,
+  };
+
+  if (!quoted.message && fullName) {
+    quoted.message = fullName;
+  } else if (!quoted.message && contactMessage.displayName) {
+    quoted.message = contactMessage.displayName;
+  }
+}
+
 export function buildQuotedTextFromExtended(
   m: WAMessage
 ): IQuotedMessage | null {
@@ -179,6 +219,7 @@ export function buildQuotedTextFromExtended(
     message.audioMessage?.contextInfo,
     message.stickerMessage?.contextInfo,
     message.locationMessage?.contextInfo,
+    message.contactMessage?.contextInfo,
     (message as any).buttonsMessage?.contextInfo,
     (message as any).templateButtonReplyMessage?.contextInfo,
     (message as any).interactiveResponseMessage?.contextInfo,
@@ -219,6 +260,7 @@ export function buildQuotedTextFromExtended(
   processAudioMessage(quotedMessage, quoted);
   processStickerMessage(quotedMessage, quoted);
   processLocationMessage(quotedMessage, quoted);
+  processContactMessage(quotedMessage, quoted);
 
   return quoted;
 }

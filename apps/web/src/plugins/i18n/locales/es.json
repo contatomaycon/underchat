@@ -454,6 +454,7 @@
     "view_once_message": "Esta es una mensaja de visualización única. Por favor, verifique la mensaja en su dispositivo",
     "photo_label": "Foto",
     "audio_label": "Audio",
+    "sticker_label": "Sticker",
     "location_label": "Ubicación",
     "open_in_google_maps": "Abrir en Google Maps",
     "max_images_selected": "Ya has seleccionado el máximo de 10 imágenes",

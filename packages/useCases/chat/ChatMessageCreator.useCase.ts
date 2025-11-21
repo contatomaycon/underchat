@@ -783,6 +783,8 @@ export class ChatMessageCreatorUseCase {
     const quotedVideo = chatMessage.content?.video ?? null;
     const quotedAudio = chatMessage.content?.audio ?? null;
     const quotedDocument = chatMessage.content?.document ?? null;
+    const quotedSticker = chatMessage.content?.sticker ?? null;
+    const quotedLocation = chatMessage.content?.location ?? null;
 
     let inferredType: EMessageType | null = chatMessage.content?.type ?? null;
     if (quotedVideo) inferredType = EMessageType.video;
@@ -791,12 +793,18 @@ export class ChatMessageCreatorUseCase {
       inferredType = EMessageType.document;
     if (!quotedVideo && !quotedImage && !quotedDocument && quotedAudio)
       inferredType = EMessageType.audio;
+    if (!quotedVideo && !quotedImage && !quotedDocument && !quotedAudio && quotedSticker)
+      inferredType = EMessageType.sticker;
+    if (!quotedVideo && !quotedImage && !quotedDocument && !quotedAudio && !quotedSticker && quotedLocation)
+      inferredType = EMessageType.location;
     const quotedContact = chatMessage.content?.contact ?? null;
     if (
       !quotedVideo &&
       !quotedImage &&
       !quotedDocument &&
       !quotedAudio &&
+      !quotedSticker &&
+      !quotedLocation &&
       quotedContact
     )
       inferredType = EMessageType.contact_card;
@@ -807,6 +815,8 @@ export class ChatMessageCreatorUseCase {
       video: quotedVideo,
       audio: quotedAudio,
       document: quotedDocument,
+      sticker: quotedSticker,
+      location: quotedLocation,
       contact: quotedContact,
       key: {
         remote_jid: chatMessage.message_key?.remote_jid ?? null,

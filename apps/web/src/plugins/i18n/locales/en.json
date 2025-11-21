@@ -453,6 +453,7 @@
     "view_once_message": "This is a view-once message. Please check the message on your device",
     "photo_label": "Photo",
     "audio_label": "Audio",
+    "sticker_label": "Sticker",
     "location_label": "Location",
     "open_in_google_maps": "Open in Google Maps",
     "max_images_selected": "You have already selected the maximum of 10 images",

@@ -501,6 +501,9 @@ const buildQuotedPayload = (
     video: reply.content?.video ?? null,
     document: reply.content?.document ?? null,
     audio: reply.content?.audio ?? null,
+    sticker: reply.content?.sticker ?? null,
+    location: reply.content?.location ?? null,
+    contact: reply.content?.contact ?? null,
   } satisfies IQuotedMessage;
 };
 
