@@ -633,11 +633,19 @@ const highlightedMessageTimers = new Map<string, number>();
 const applyPersistentHighlight = (target: HTMLElement, id: string) => {
   target.classList.add('message-target-persistent');
 
+  const chatContent = target.querySelector('.chat-content') as HTMLElement;
+  if (chatContent) {
+    chatContent.classList.add('message-target-persistent-content');
+  }
+
   const existingTimer = highlightedMessageTimers.get(id);
   if (existingTimer) clearTimeout(existingTimer);
 
   const timeoutId = globalThis.setTimeout(() => {
     target.classList.remove('message-target-persistent');
+    if (chatContent) {
+      chatContent.classList.remove('message-target-persistent-content');
+    }
     highlightedMessageTimers.delete(id);
   }, 30_000) as unknown as number;
 
@@ -755,14 +763,24 @@ const scrollToMessageById = async (
     requestAnimationFrame(() => {
       container.scrollTo({ top, behavior: 'smooth' });
       chatLogPS.value?.update?.();
-    });
 
-    if (options.highlight) {
-      target.classList.remove('message-target-flash');
-      forceReflow(target);
-      target.classList.add('message-target-flash');
-      applyPersistentHighlight(target, targetMessageId);
-    }
+      if (options.highlight) {
+        target.classList.remove(
+          'message-target-flash',
+          'message-target-persistent'
+        );
+        const existingChatContent = target.querySelector(
+          '.chat-content'
+        ) as HTMLElement;
+        if (existingChatContent) {
+          existingChatContent.classList.remove(
+            'message-target-persistent-content'
+          );
+        }
+
+        applyPersistentHighlight(target, targetMessageId);
+      }
+    });
 
     return;
   }
@@ -3467,6 +3485,17 @@ onUnmounted(async () => {
     clearTimeout(timeoutId);
   }
   highlightedMessageTimers.clear();
+
+  const highlightedElements = document.querySelectorAll(
+    '.message-target-persistent'
+  );
+  highlightedElements.forEach((el) => {
+    el.classList.remove('message-target-persistent');
+    const chatContent = el.querySelector('.chat-content');
+    if (chatContent) {
+      chatContent.classList.remove('message-target-persistent-content');
+    }
+  });
 });
 
 onBeforeUnmount(() => {
@@ -5330,9 +5359,10 @@ $chat-app-header-height: 76px;
   animation: messageTargetFlash 1.1s ease;
 }
 
-.message-target-persistent {
-  background-color: rgba(var(--v-theme-primary), 0.12);
+.message-target-persistent-content {
+  background-color: rgba(var(--v-theme-primary), 0.12) !important;
   transition: background-color 0.3s ease;
+  border-top-left-radius: 8px !important;
 }
 @keyframes messageTargetFlash {
   0% {
