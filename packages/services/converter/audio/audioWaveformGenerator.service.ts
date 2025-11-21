@@ -1,3 +1,4 @@
+import { injectable } from 'tsyringe';
 import { writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,6 +7,7 @@ import { randomBytes } from 'node:crypto';
 import ffmpeg from 'fluent-ffmpeg';
 import { FileUtils } from './fileUtils.service';
 
+@injectable()
 export class AudioWaveformGenerator {
   async generate(audioBuffer: Buffer): Promise<string | undefined> {
     const inputRandomId = randomBytes(8).toString('hex');
@@ -13,7 +15,7 @@ export class AudioWaveformGenerator {
 
     const inputPath = join(
       tmpdir(),
-      `audio-waveform-input-${Date.now()}-${inputRandomId}.ogg`
+      `audio-waveform-input-${Date.now()}-${inputRandomId}.aac`
     );
 
     const pcmPath = join(

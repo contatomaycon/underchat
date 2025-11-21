@@ -28,22 +28,10 @@ export class ConverterService {
     inputMimetype?: string | null,
     ptt: boolean = true
   ): Promise<IConvertAudioResult> {
-    const config = this.getFormatConfig(ptt);
     const currentFormat =
       this.audioFormatDetector.detectFromBuffer(inputBuffer) ||
       this.audioFormatDetector.getExtensionFromMimetype(inputMimetype) ||
       'webm';
-
-    if (currentFormat === config.format) {
-      const result = await this.audioFormatValidator.checkAndReturnIfValid(
-        inputBuffer,
-        config.mimetype,
-        config.format
-      );
-      if (result) {
-        return result;
-      }
-    }
 
     return this.audioFfmpegConverter.convert(inputBuffer, currentFormat, ptt);
   }
@@ -72,21 +60,5 @@ export class ConverterService {
     }
 
     return this.videoFfmpegConverter.convert(inputBuffer, currentFormat);
-  }
-
-  private getFormatConfig(ptt: boolean): IAudioFormatConfig {
-    if (ptt) {
-      return {
-        format: 'opus',
-        mimetype: 'audio/ogg; codecs=opus',
-        extension: 'opus',
-      };
-    }
-
-    return {
-      format: 'mp3',
-      mimetype: 'audio/mpeg',
-      extension: 'mp3',
-    };
   }
 }

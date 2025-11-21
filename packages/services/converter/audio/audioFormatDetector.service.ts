@@ -1,5 +1,7 @@
+import { injectable } from 'tsyringe';
 import { Buffer } from 'node:buffer';
 
+@injectable()
 export class AudioFormatDetector {
   detectFromBuffer(buffer: Buffer): string {
     if (buffer.length < 4) {

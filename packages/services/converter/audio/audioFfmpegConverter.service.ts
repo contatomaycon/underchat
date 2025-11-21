@@ -1,3 +1,4 @@
+import { injectable } from 'tsyringe';
 import { writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,7 +10,10 @@ import { IAudioFormatConfig } from '@core/common/interfaces/IAudioFormatConfig';
 import { AudioProbeService } from './audioProbe.service';
 import { FileUtils } from './fileUtils.service';
 
+@injectable()
 export class AudioFfmpegConverter {
+  constructor(private readonly audioProbeService: AudioProbeService) {}
+
   async convert(
     inputBuffer: Buffer,
     currentFormat: string,
@@ -35,8 +39,7 @@ export class AudioFfmpegConverter {
       await this.runConversion(inputPath, outputPath, ptt);
       const outputBuffer = await readFile(outputPath);
 
-      const probeService = new AudioProbeService();
-      const duration = await probeService.probeDuration(outputPath);
+      const duration = await this.audioProbeService.probeDuration(outputPath);
 
       return {
         buffer: outputBuffer,
@@ -53,11 +56,12 @@ export class AudioFfmpegConverter {
   private getFormatConfig(ptt: boolean): IAudioFormatConfig {
     if (ptt) {
       return {
-        format: 'opus',
-        mimetype: 'audio/ogg; codecs=opus',
-        extension: 'opus',
+        format: 'aac',
+        mimetype: 'audio/aac',
+        extension: 'aac',
       };
     }
+
     return {
       format: 'mp3',
       mimetype: 'audio/mpeg',
@@ -91,18 +95,11 @@ export class AudioFfmpegConverter {
 
   private configurePttCommand(command: ReturnType<typeof ffmpeg>): void {
     command
-      .audioCodec('libopus')
-      .format('ogg')
+      .audioCodec('aac')
+      .format('adts')
       .audioBitrate('48k')
       .audioChannels(1)
-      .audioFrequency(48000)
-      .outputOptions([
-        '-application voip',
-        '-frame_duration 60',
-        '-packet_loss 0',
-        '-compression_level 10',
-        '-metadata comment=WhatsApp',
-      ]);
+      .audioFrequency(48000);
   }
 
   private configureRegularAudioCommand(

@@ -1,8 +1,10 @@
+import { injectable } from 'tsyringe';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execAsync = promisify(exec);
 
+@injectable()
 export class AudioProbeService {
   async probeMetadata(filePath: string): Promise<any> {
     const probeCommand = [

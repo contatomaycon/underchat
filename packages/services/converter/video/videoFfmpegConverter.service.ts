@@ -1,3 +1,4 @@
+import { injectable } from 'tsyringe';
 import { writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,7 +9,10 @@ import { IConvertVideoResult } from '@core/common/interfaces/IConvertVideoResult
 import { VideoProbeService } from './videoProbe.service';
 import { FileUtils } from '../audio/fileUtils.service';
 
+@injectable()
 export class VideoFfmpegConverter {
+  constructor(private readonly videoProbeService: VideoProbeService) {}
+
   async convert(
     inputBuffer: Buffer,
     currentFormat: string
@@ -31,10 +35,9 @@ export class VideoFfmpegConverter {
       await this.runConversion(inputPath, outputPath);
       const outputBuffer = await readFile(outputPath);
 
-      const probeService = new VideoProbeService();
-      const probeData = await probeService.probeMetadata(outputPath);
-      const duration = probeService.extractDuration(probeData);
-      const dimensions = probeService.extractDimensions(probeData);
+      const probeData = await this.videoProbeService.probeMetadata(outputPath);
+      const duration = this.videoProbeService.extractDuration(probeData);
+      const dimensions = this.videoProbeService.extractDimensions(probeData);
 
       return {
         buffer: outputBuffer,

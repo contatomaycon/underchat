@@ -494,7 +494,8 @@ export class ChatMessageCreatorUseCase {
 
   private async uploadAudios(
     audios: UploadFileRequest[],
-    accountId: string
+    accountId: string,
+    isPtt: boolean
   ): Promise<
     Array<UploadFileResponse & { duration?: number; waveform?: string }>
   > {
@@ -504,7 +505,8 @@ export class ChatMessageCreatorUseCase {
 
       const converted = await this.converterService.convertAudio(
         originalBuffer,
-        originalMimetype
+        originalMimetype,
+        isPtt
       );
 
       const filename = audio.filename.replace(/\.[^.]+$/, '') || 'audio';
@@ -704,9 +706,7 @@ export class ChatMessageCreatorUseCase {
         audio: {
           url: audioData.url,
           name: audioData.name,
-          mimetype: isPtt
-            ? 'audio/ogg; codecs=opus'
-            : (audioData.mimetype ?? 'audio/mpeg'),
+          mimetype: audioData.mimetype,
           extension: audioData.extension,
           size: audioData.size,
           duration: duration && Number.isFinite(duration) ? duration : null,
@@ -1059,7 +1059,7 @@ export class ChatMessageCreatorUseCase {
     >;
 
     try {
-      validAudios = await this.uploadAudios(audios, accountId);
+      validAudios = await this.uploadAudios(audios, accountId, isPtt);
     } catch (error) {
       if (error instanceof Error) {
         if (error.message === 'AUDIO_SIZE_LIMIT_EXCEEDED') {
