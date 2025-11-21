@@ -1944,11 +1944,7 @@ onUnmounted(() => {
                         <VIcon size="22" color="primary">tabler-map-pin</VIcon>
                         <div class="quoted-location-info">
                           <span class="quoted-location-name">
-                            {{
-                              item.message.content?.quoted?.location?.name ||
-                              item.message.content?.quoted?.location?.address ||
-                              t('location_label', 'Localização')
-                            }}
+                            {{ t('location_label') }}
                           </span>
                         </div>
                       </div>

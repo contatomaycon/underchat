@@ -11,7 +11,11 @@ import { AccountService } from '@core/services/account.service';
 import { WorkerService } from '@core/services/worker.service';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ChatService } from '@core/services/chat.service';
-import { IChatMessage, IContent } from '@core/common/interfaces/IChatMessage';
+import {
+  IChatMessage,
+  IContent,
+  IQuotedMessage,
+} from '@core/common/interfaces/IChatMessage';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { PublishResult } from 'centrifuge';
@@ -943,6 +947,16 @@ export class MessageUpsertConsume {
 
       const content = this.buildMessageContent(data);
 
+      const messageQuotedId = content.quoted?.key.id ?? null;
+      if (content.quoted && messageQuotedId) {
+        await this.enrichQuotedMessageContent(
+          content.quoted,
+          data.account_id,
+          getChat.chat_id,
+          messageQuotedId
+        );
+      }
+
       const hasQuotedFlag = data.has_quoted || !!content.quoted;
 
       await this.updateChatNameIfNeeded(getChat, data);
@@ -1052,6 +1066,69 @@ export class MessageUpsertConsume {
       return result;
     } catch {
       return false;
+    }
+  }
+
+  private async enrichQuotedMessageContent(
+    quoted: IQuotedMessage,
+    accountId: string,
+    chatId: string,
+    messageQuotedId: string
+  ): Promise<void> {
+    if (!quoted || !messageQuotedId) return;
+
+    const originalMessage = await this.findMessageByKeyId(
+      accountId,
+      chatId,
+      messageQuotedId
+    );
+
+    if (!originalMessage?.content) return;
+
+    if (
+      quoted.sticker &&
+      !quoted.sticker.url &&
+      originalMessage.content.sticker?.url
+    ) {
+      quoted.sticker.url = originalMessage.content.sticker.url;
+    }
+
+    if (
+      quoted.image &&
+      !quoted.image.url &&
+      originalMessage.content.image?.url
+    ) {
+      quoted.image.url = originalMessage.content.image.url;
+      if (!quoted.image.thumbnail && originalMessage.content.image?.thumbnail) {
+        quoted.image.thumbnail = originalMessage.content.image.thumbnail;
+      }
+    }
+
+    if (
+      quoted.video &&
+      !quoted.video.url &&
+      originalMessage.content.video?.url
+    ) {
+      quoted.video.url = originalMessage.content.video.url;
+      if (!quoted.video.thumbnail && originalMessage.content.video?.thumbnail) {
+        quoted.video.thumbnail = originalMessage.content.video.thumbnail;
+      }
+    }
+
+    if (
+      quoted.document &&
+      !quoted.document.url &&
+      originalMessage.content.document?.url
+    ) {
+      quoted.document.url = originalMessage.content.document.url;
+    }
+
+    if (
+      quoted.audio &&
+      !quoted.audio.url &&
+      originalMessage.content.audio?.url
+    ) {
+      quoted.audio.url = originalMessage.content.audio.url;
     }
   }
 
