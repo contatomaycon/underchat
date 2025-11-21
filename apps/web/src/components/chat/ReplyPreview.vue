@@ -52,6 +52,10 @@ const replyIsLocation = computed(
   () => replying.value?.content?.type === EMessageType.location
 );
 
+const replyIsContact = computed(
+  () => replying.value?.content?.type === EMessageType.contact_card
+);
+
 const replyImageSrc = computed(() => {
   const img = replying.value?.content?.image;
   if (!img) {
@@ -102,6 +106,10 @@ const replyText = computed(() => {
       m.content.location?.address ||
       t('location_label', 'Localização')
     );
+  }
+
+  if (m.content?.type === EMessageType.contact_card) {
+    return t('contact_label', 'Contato');
   }
 
   if (m.content?.message) {
@@ -230,9 +238,16 @@ onMounted(() => {
     <div v-if="replyIsLocation" class="rp-doc-icon rp-location-icon">
       <VIcon size="26" color="primary">tabler-map-pin</VIcon>
     </div>
+    <div v-if="replyIsContact" class="rp-doc-icon rp-contact-icon">
+      <VIcon size="26" color="primary">tabler-user</VIcon>
+    </div>
     <div
       v-if="
-        !replyIsImage && !replyIsSticker && !replyIsLocation && replyIsDocument
+        !replyIsImage &&
+        !replyIsSticker &&
+        !replyIsLocation &&
+        !replyIsContact &&
+        replyIsDocument
       "
       class="rp-doc-icon"
     >
@@ -243,6 +258,7 @@ onMounted(() => {
         !replyIsImage &&
         !replyIsSticker &&
         !replyIsLocation &&
+        !replyIsContact &&
         !replyIsDocument &&
         replyIsVideo
       "
@@ -255,6 +271,7 @@ onMounted(() => {
         !replyIsImage &&
         !replyIsSticker &&
         !replyIsLocation &&
+        !replyIsContact &&
         !replyIsDocument &&
         !replyIsVideo &&
         replyIsAudio
