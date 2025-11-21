@@ -94,7 +94,7 @@ export class AuthRepository {
       .leftJoin(chatUser, eq(chatUser.user_id, user.user_id))
       .where(
         and(
-          eq(user.email, input.email),
+          eq(user.email_c, input.email),
           eq(user.password, input.password),
           eq(user.user_status_id, EUserStatus.active),
           isNull(user.deleted_at)

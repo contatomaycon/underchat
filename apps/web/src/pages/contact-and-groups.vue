@@ -20,10 +20,20 @@ definePage({
   },
 });
 
+const permissionsContactGroup = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EContactGroupPermissions.contact_group_assignment_group,
+  EContactGroupPermissions.contact_group_view,
+];
+
 const route = useRoute();
 const router = useRouter();
 const tab = ref((route.query.tab as string) || 'contacts');
-watch(tab, (v) => router.replace({ query: { ...route.query, tab: v } }));
+
+watch(tab, (v) => {
+  router.replace({ query: { ...route.query, tab: v } });
+});
 </script>
 
 <template>
@@ -33,7 +43,11 @@ watch(tab, (v) => router.replace({ query: { ...route.query, tab: v } }));
         <VTab value="contacts" prepend-icon="tabler-address-book">{{
           $t('contacts')
         }}</VTab>
-        <VTab value="groups" prepend-icon="tabler-users">{{
+        <VTab
+          v-if="$canPermission(permissionsContactGroup)"
+          value="groups"
+          prepend-icon="tabler-users"
+        >{{
           $t('contact_groups')
         }}</VTab>
       </VTabs>
@@ -42,7 +56,10 @@ watch(tab, (v) => router.replace({ query: { ...route.query, tab: v } }));
     <VCardText>
       <VWindow v-model="tab" class="disable-tab-transition">
         <VWindowItem value="contacts"><Contact /></VWindowItem>
-        <VWindowItem value="groups"><ContactGroup /></VWindowItem>
+        <VWindowItem
+          v-if="$canPermission(permissionsContactGroup)"
+          value="groups"
+        ><ContactGroup /></VWindowItem>
       </VWindow>
     </VCardText>
   </VCard>

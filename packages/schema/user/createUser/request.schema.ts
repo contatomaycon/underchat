@@ -26,6 +26,7 @@ const userAddressSchema = Type.Object({
 export const createUserRequestSchema = Type.Object({
   email: Type.String(),
   password: Type.String(),
+  account_id: Type.Optional(Type.String({ format: 'uuid' })),
   user_info: userInfoSchema,
   user_document: userDocumentSchema,
   user_address: userAddressSchema,

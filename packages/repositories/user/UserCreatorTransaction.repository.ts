@@ -15,12 +15,14 @@ import { ICreateUserInfo } from '@core/common/interfaces/ICreateUserInfo';
 import { UserInfoCreatorRepository } from './UserInfoCreator.repository';
 import { UserExistsByEmailAndPhoneRepository } from './UserExistsByEmailAndPhone.repository';
 import moment from 'moment';
+import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
 
 @injectable()
 export class UserTransactionCreatorRepository {
   constructor(
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>,
     private readonly encryptService: EncryptService,
+    private readonly passwordEncryptorService: PasswordEncryptorService,
     private readonly userCreatorRepository: UserCreatorRepository,
     private readonly userAddressCreatorRepository: UserAddressCreatorRepository,
     private readonly userDocumentCreatorRepository: UserDocumentCreatorRepository,
@@ -57,7 +59,10 @@ export class UserTransactionCreatorRepository {
     input: CreateUserRequest
   ): Promise<boolean> => {
     await this.db.transaction(async (tx) => {
-      const emailCEncrypted = this.encryptService.encrypt(input.email);
+      const emailCEncrypted = this.passwordEncryptorService.encrypt(
+        input.email
+      );
+
       const emailPartialEncrypted = this.encryptService.sanitize(
         input.email,
         ETypeSanetize.email
@@ -101,7 +106,7 @@ export class UserTransactionCreatorRepository {
         throw new Error(t('user_creation_failed'));
       }
 
-      const addressEncrypted = this.encryptService.encrypt(
+      const addressEncrypted = this.passwordEncryptorService.encrypt(
         input.user_address?.address1
       );
       const addressPartialEncrypted = this.encryptService.sanitize(
@@ -113,7 +118,7 @@ export class UserTransactionCreatorRepository {
       );
 
       const address2Encrypted = input.user_address?.address2
-        ? this.encryptService.encrypt(input.user_address?.address2)
+        ? this.passwordEncryptorService.encrypt(input.user_address?.address2)
         : null;
       const address2PartialEncrypted = input.user_address?.address2
         ? this.encryptService.sanitize(
@@ -139,7 +144,7 @@ export class UserTransactionCreatorRepository {
         district: input.user_address?.district,
       };
 
-      const documentEncrypted = this.encryptService.encrypt(
+      const documentEncrypted = this.passwordEncryptorService.encrypt(
         input.user_document?.document
       );
       const documentPartialEncrypted = this.encryptService.sanitize(
@@ -161,7 +166,9 @@ export class UserTransactionCreatorRepository {
         throw new Error(t('phone_connection_required'));
       }
 
-      const phoneEncrypted = this.encryptService.encrypt(input.user_info.phone);
+      const phoneEncrypted = this.passwordEncryptorService.encrypt(
+        input.user_info.phone
+      );
 
       const phonePartialEncrypted = this.encryptService.sanitize(
         input.user_info.phone,

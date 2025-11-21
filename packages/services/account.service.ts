@@ -22,6 +22,8 @@ import { AccountInfoDeleterRepository } from '@core/repositories/account/Account
 import { AccountInfoByIdViewerExistsRepository } from '@core/repositories/account/AccountInfoByIdViewerExists.repository';
 import { CreateAccountInfoRequest } from '@core/schema/account/createAccountInfo/request.schema';
 import { EditAccountInfoResponse } from '@core/schema/account/editAccountInfo/request.schema';
+import { AccountAllListerRepository } from '@core/repositories/account/AccountAllLister.repository';
+import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 
 @injectable()
 export class AccountService {
@@ -39,7 +41,8 @@ export class AccountService {
     private readonly accountInfoCreatorRepository: AccountInfoCreatorRepository,
     private readonly accountInfoUpdaterRepository: AccountInfoUpdaterRepository,
     private readonly accountInfoDeleterRepository: AccountInfoDeleterRepository,
-    private readonly accountInfoByIdViewerExistsRepository: AccountInfoByIdViewerExistsRepository
+    private readonly accountInfoByIdViewerExistsRepository: AccountInfoByIdViewerExistsRepository,
+    private readonly accountAllListerRepository: AccountAllListerRepository
   ) {}
 
   viewAccountInfoByAccountId = async (
@@ -87,6 +90,10 @@ export class AccountService {
     ]);
 
     return [result, total];
+  };
+
+  listAllAccounts = async (): Promise<IAccountBasic[]> => {
+    return this.accountAllListerRepository.listAllAccounts();
   };
 
   createAccount = async (
