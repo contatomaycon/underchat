@@ -645,8 +645,6 @@ export class MessageUpsertConsume {
       }
     );
 
-    console.log('audioResult', audioResult);
-
     const waveform = convertWaveformToBase64(audioMsg.waveform);
 
     content.audio = audioResult

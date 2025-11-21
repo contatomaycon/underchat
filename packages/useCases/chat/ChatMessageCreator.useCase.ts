@@ -479,8 +479,6 @@ export class ChatMessageCreatorUseCase {
           }),
       ]);
 
-      console.log('uploadResult', uploadResult);
-
       if (!uploadResult) {
         return null;
       }
