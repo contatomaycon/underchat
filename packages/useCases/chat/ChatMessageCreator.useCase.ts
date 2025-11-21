@@ -22,7 +22,7 @@ import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.servi
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { PublishResult } from 'centrifuge';
 import { StorageService } from '@core/services/storage.service';
-import { AudioConverterService } from '@core/services/audioConverter';
+import { ConverterService } from '@core/services/converter';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { ICreateVideoMessageParams } from '@core/common/interfaces/ICreateVideoMessageParams';
@@ -53,7 +53,7 @@ export class ChatMessageCreatorUseCase {
     private readonly streamProducerService: StreamProducerService,
     private readonly centrifugoService: CentrifugoService,
     private readonly storageService: StorageService,
-    private readonly audioConverterService: AudioConverterService,
+    private readonly converterService: ConverterService,
     private readonly contactService: ContactService,
     private readonly contactViewerRepository: ContactViewerRepository
   ) {}
@@ -457,7 +457,7 @@ export class ChatMessageCreatorUseCase {
       const originalBuffer = await audio.toBuffer();
       const originalMimetype = audio.mimetype || null;
 
-      const converted = await this.audioConverterService.convertAudio(
+      const converted = await this.converterService.convertAudio(
         originalBuffer,
         originalMimetype
       );
@@ -472,7 +472,7 @@ export class ChatMessageCreatorUseCase {
           converted.mimetype,
           accountId
         ),
-        this.audioConverterService
+        this.converterService
           .generateWaveformWithFfmpeg(converted.buffer)
           .catch(() => {
             return undefined;

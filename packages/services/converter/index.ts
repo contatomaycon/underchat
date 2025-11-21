@@ -2,13 +2,13 @@ import { injectable } from 'tsyringe';
 import { Buffer } from 'node:buffer';
 import { IConvertAudioResult } from '@core/common/interfaces/IConvertAudioResult';
 import { IAudioFormatConfig } from '@core/common/interfaces/IAudioFormatConfig';
-import { AudioFormatDetector } from './methods/audioFormatDetector.service';
-import { AudioFormatValidator } from './methods/audioFormatValidator.service';
-import { AudioFfmpegConverter } from './methods/audioFfmpegConverter.service';
-import { AudioWaveformGenerator } from './methods/audioWaveformGenerator.service';
+import { AudioFormatDetector } from './audio/audioFormatDetector.service';
+import { AudioFormatValidator } from './audio/audioFormatValidator.service';
+import { AudioFfmpegConverter } from './audio/audioFfmpegConverter.service';
+import { AudioWaveformGenerator } from './audio/audioWaveformGenerator.service';
 
 @injectable()
-export class AudioConverterService {
+export class ConverterService {
   async convertAudio(
     inputBuffer: Buffer,
     inputMimetype?: string | null,
