@@ -11,27 +11,51 @@ export class SectorUpdaterRepository {
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
+  private updateInput(
+    input: EditSectorParamsBody
+  ): Partial<typeof sector.$inferInsert> {
+    const inputUpdate: Partial<typeof sector.$inferInsert> = {};
+
+    if (input.sector_status_id) {
+      inputUpdate.sector_status_id = input.sector_status_id;
+    }
+
+    if (input.name) {
+      inputUpdate.name = input.name;
+    }
+
+    if (input.color) {
+      inputUpdate.color = input.color;
+    }
+
+    return inputUpdate;
+  }
+
   updateSectorById = async (
     sectorId: string,
-    input: EditSectorParamsBody,
-    accountId: string
+    input: EditSectorParamsBody
   ): Promise<string | null> => {
-    const result = await this.db
-      .update(sector)
-      .set({
-        sector_status_id: input.sector_status_id,
-        name: input.name,
-        color: input.color,
-      })
-      .where(
-        and(eq(sector.sector_id, sectorId), eq(sector.account_id, accountId))
-      )
-      .execute();
+    const updateInput = this.updateInput(input);
 
-    if (result.rowCount === 0) {
+    if (Object.keys(updateInput).length === 0) {
       return null;
     }
 
-    return accountId;
+    const result = await this.db
+      .update(sector)
+      .set(updateInput)
+      .where(
+        and(
+          eq(sector.sector_id, sectorId),
+          eq(sector.account_id, input.account_id)
+        )
+      )
+      .execute();
+
+    if ((result.rowCount ?? 0) === 0) {
+      return null;
+    }
+
+    return input.account_id;
   };
 }

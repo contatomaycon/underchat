@@ -15,7 +15,10 @@ const props = defineProps<{
   sectorId: string | null;
 }>();
 
-const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
+const emit = defineEmits<{
+  (e: 'update:modelValue', visible: boolean): void;
+  (e: 'updated'): void;
+}>();
 
 const isVisible = computed({
   get: () => props.modelValue,
@@ -26,6 +29,7 @@ const sectorId = toRef(props, 'sectorId');
 const name = ref<string | null>(null);
 const color = ref<string | null>(null);
 const sectorStatus = ref<string | null>(null);
+const accountId = ref<string | null>(null);
 const sectorStatusOptions = Object.entries(ESectorStatus).map(
   ([key, value]) => ({
     name: t(`${key}`) || key,
@@ -47,7 +51,12 @@ const updateSector = async () => {
     sector_id: sectorId.value,
   };
 
+  if (!accountId.value) {
+    return;
+  }
+
   const body: EditSectorParamsBody = {
+    account_id: accountId.value,
     name: name.value,
     color: color.value.toUpperCase(),
     sector_status_id: sectorStatus.value,
@@ -57,8 +66,7 @@ const updateSector = async () => {
 
   if (result) {
     isVisible.value = false;
-
-    await sectorStore.listSectors();
+    emit('updated');
   }
 };
 
@@ -70,6 +78,7 @@ onMounted(async () => {
     name.value = sector.name;
     color.value = sector.color;
     sectorStatus.value = sector.sector_status?.id ?? null;
+    accountId.value = sector.account?.id ?? null;
   }
 });
 </script>

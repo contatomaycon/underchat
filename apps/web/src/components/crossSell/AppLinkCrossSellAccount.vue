@@ -8,7 +8,7 @@ import { ListCrossSellAccountResponse } from '@core/schema/planCrossSell/listCro
 
 const crossSellStore = useCrossSellStore();
 const accountStore = useAccountStore();
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 const props = defineProps<{
   modelValue: boolean;
@@ -108,12 +108,36 @@ const getAccountName = (item: ListCrossSellAccountResponse) => {
   return item.account?.name || t('unknown_account');
 };
 
-const getCrossSellProductName = computed(() => {
-  if (!crossSellId.value) return '';
+const getCurrencyConfig = () => {
+  const localeMap: Record<string, { locale: string; currency: string }> = {
+    pt: { locale: 'pt-BR', currency: 'BRL' },
+    en: { locale: 'en-US', currency: 'USD' },
+    es: { locale: 'es-ES', currency: 'EUR' },
+  };
+
+  return localeMap[locale.value] || localeMap.pt;
+};
+
+const formatCurrency = (value: number | null | undefined): string => {
+  if (value === null || value === undefined) return '';
+  const config = getCurrencyConfig();
+  return new Intl.NumberFormat(config.locale, {
+    style: 'currency',
+    currency: config.currency,
+  }).format(value);
+};
+
+const getCrossSellData = computed(() => {
+  if (!crossSellId.value) return null;
   const crossSell = crossSellStore.list.find(
     (cs) => cs.plan_cross_sell_id === crossSellId.value
   );
-  return crossSell?.plan_product?.name || t('unknown_product');
+  if (!crossSell) return null;
+  return {
+    name: crossSell.plan_product?.name || t('unknown_product'),
+    quantity: crossSell.quantity,
+    price: crossSell.price,
+  };
 });
 
 const loadAccounts = async () => {
@@ -165,17 +189,45 @@ onMounted(async () => {
     <VCard :title="$t('link_account')">
       <VCardText>
         <VAlert
-          v-if="getCrossSellProductName"
+          v-if="getCrossSellData"
           type="info"
           variant="tonal"
           class="mb-4"
         >
-          <div class="d-flex align-center">
-            <VIcon icon="tabler-info-circle" class="me-2" />
-            <span>
-              {{ $t('linking_account_to_product') }}:
-              <strong>{{ getCrossSellProductName }}</strong>
-            </span>
+          <div class="d-flex flex-column">
+            <div class="d-flex align-center mb-2">
+              <VIcon icon="tabler-info-circle" class="me-2" />
+              <span class="text-body-1 font-weight-medium">
+                {{ $t('linking_account_to_product') }}
+              </span>
+            </div>
+            <div class="ms-8">
+              <div class="d-flex align-center flex-wrap gap-2 mb-1">
+                <VIcon icon="tabler-package" size="18" class="text-primary" />
+                <span class="text-body-2">
+                  <strong>{{ $t('product') }}:</strong>
+                  {{ getCrossSellData.name }}
+                </span>
+              </div>
+              <div class="d-flex align-center flex-wrap gap-2 mb-1">
+                <VIcon icon="tabler-hash" size="18" class="text-primary" />
+                <span class="text-body-2">
+                  <strong>{{ $t('quantity') }}:</strong>
+                  {{ getCrossSellData.quantity }}
+                </span>
+              </div>
+              <div class="d-flex align-center flex-wrap gap-2">
+                <VIcon
+                  icon="tabler-currency-dollar"
+                  size="18"
+                  class="text-primary"
+                />
+                <span class="text-body-2">
+                  <strong>{{ $t('price') }}:</strong>
+                  {{ formatCurrency(getCrossSellData.price) }}
+                </span>
+              </div>
+            </div>
           </div>
         </VAlert>
 

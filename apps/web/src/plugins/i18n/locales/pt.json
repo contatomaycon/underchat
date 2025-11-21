@@ -563,6 +563,7 @@
     "plan_product_required": "Produto do plano é obrigatório",
     "quantity": "Quantidade",
     "quantity_required": "Quantidade é obrigatória",
+    "product": "Produto",
     "price_required": "Preço é obrigatório",
     "plan_created_successfully": "Plano criado com sucesso!",
     "plan_updated_successfully": "Plano atualizado com sucesso!",

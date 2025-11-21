@@ -6,7 +6,7 @@ import { CreatePlanItemRequest } from '@core/schema/plan/createPlanItem/request.
 import { ListPlanItemResponse } from '@core/schema/plan/listPlanItems/response.schema';
 
 const planStore = usePlanStore();
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 const props = defineProps<{
   modelValue: boolean;
@@ -106,14 +106,42 @@ const getProductName = (item: ListPlanItemResponse) => {
   return item.plan_product?.name || t('unknown_product');
 };
 
-const getPlanName = computed(() => {
-  if (!planId.value) return '';
+const getCurrencyConfig = () => {
+  const localeMap: Record<string, { locale: string; currency: string }> = {
+    pt: { locale: 'pt-BR', currency: 'BRL' },
+    en: { locale: 'en-US', currency: 'USD' },
+    es: { locale: 'es-ES', currency: 'EUR' },
+  };
+
+  return localeMap[locale.value] || localeMap.pt;
+};
+
+const formatCurrency = (value: number | null | undefined): string => {
+  if (value === null || value === undefined) return '';
+  const config = getCurrencyConfig();
+  return new Intl.NumberFormat(config.locale, {
+    style: 'currency',
+    currency: config.currency,
+  }).format(value);
+};
+
+const getPlanData = computed(() => {
+  if (!planId.value) return null;
   const plan = planStore.list.find((p) => p.plan_id === planId.value);
   if (plan) {
-    return plan.name;
+    return {
+      name: plan.name,
+      price: plan.price,
+    };
   }
   const planAll = planStore.listAll.find((p) => p.plan_id === planId.value);
-  return planAll?.name || t('unknown_plan');
+  if (planAll) {
+    return {
+      name: planAll.name,
+      price: null,
+    };
+  }
+  return null;
 });
 
 const loadPlanProducts = async () => {
@@ -167,13 +195,33 @@ onMounted(async () => {
 
     <VCard :title="$t('add_plan_item')">
       <VCardText>
-        <VAlert v-if="getPlanName" type="info" variant="tonal" class="mb-4">
-          <div class="d-flex align-center">
-            <VIcon icon="tabler-info-circle" class="me-2" />
-            <span>
-              {{ $t('adding_items_to_plan') }}:
-              <strong>{{ getPlanName }}</strong>
-            </span>
+        <VAlert v-if="getPlanData" type="info" variant="tonal" class="mb-4">
+          <div class="d-flex flex-column">
+            <div class="d-flex align-center mb-2">
+              <VIcon icon="tabler-info-circle" class="me-2" />
+              <span class="text-body-1 font-weight-medium">
+                {{ $t('adding_items_to_plan') }}
+              </span>
+            </div>
+            <div class="ms-8">
+              <div class="d-flex align-center flex-wrap gap-2 mb-1">
+                <VIcon icon="tabler-package" size="18" class="text-primary" />
+                <span class="text-body-2">
+                  <strong>{{ $t('plan') }}:</strong>
+                  {{ getPlanData.name }}
+                </span>
+              </div>
+              <div
+                v-if="getPlanData.price !== null"
+                class="d-flex align-center flex-wrap gap-2"
+              >
+                <VIcon icon="tabler-currency-dollar" size="18" class="text-primary" />
+                <span class="text-body-2">
+                  <strong>{{ $t('price') }}:</strong>
+                  {{ formatCurrency(getPlanData.price) }}
+                </span>
+              </div>
+            </div>
           </div>
         </VAlert>
 

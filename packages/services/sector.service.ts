@@ -111,14 +111,9 @@ export class SectorService {
 
   updateSectorById = async (
     sectorId: string,
-    input: EditSectorParamsBody,
-    accountId: string
+    input: EditSectorParamsBody
   ): Promise<string | null> => {
-    return this.sectorUpdaterRepository.updateSectorById(
-      sectorId,
-      input,
-      accountId
-    );
+    return this.sectorUpdaterRepository.updateSectorById(sectorId, input);
   };
 
   existsSectorRoleById = async (sectorId: string): Promise<boolean> => {
