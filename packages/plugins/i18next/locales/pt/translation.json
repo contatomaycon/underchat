@@ -117,6 +117,8 @@
   "user_already_exists": "Usuário já existe!",
   "user_already_exists_email": "Já existe um usuário com este email!",
   "user_already_exists_phone": "Já existe um usuário com este telefone!",
+  "user_not_available": "Seu plano não tem suporte a usuários, por favor, entre em contato com o administrador do sistema para mais informações.",
+  "user_not_available_additional": "Seu plano não suporta mais usuários, contrate um adicional ou entre em contato com o administrador do sistema para mais informações.",
   "contact_already_exists_email": "Já existe um contato com este email!",
   "contact_already_exists_phone": "Já existe um contato com este telefone!",
   "document_type_not_found": "Tipo de documento não encontrado!",

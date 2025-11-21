@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { planItems, planProduct } from '@core/models';
+import { planItems, planProduct, planProductDescription } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { eq, isNull, and } from 'drizzle-orm';
@@ -21,13 +21,18 @@ export class PlanItemsListerRepository {
         created_at: planItems.created_at,
         plan_product: {
           plan_product_id: planProduct.plan_product_id,
-          name: planProduct.name,
+          name: planProductDescription.name,
+          description: planProductDescription.description,
         },
       })
       .from(planItems)
-      .leftJoin(
+      .innerJoin(
         planProduct,
         eq(planItems.plan_product_id, planProduct.plan_product_id)
+      )
+      .innerJoin(
+        planProductDescription,
+        eq(planProduct.plan_product_id, planProductDescription.plan_product_id)
       )
       .where(and(eq(planItems.plan_id, planId), isNull(planItems.deleted_at)))
       .execute();
@@ -45,7 +50,8 @@ export class PlanItemsListerRepository {
       plan_product: item.plan_product?.plan_product_id
         ? {
             plan_product_id: item.plan_product.plan_product_id,
-            name: item.plan_product.name,
+            name: item.plan_product.name ?? null,
+            description: item.plan_product.description ?? null,
           }
         : undefined,
     }));

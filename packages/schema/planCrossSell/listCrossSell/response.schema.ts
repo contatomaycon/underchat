@@ -10,7 +10,8 @@ export const listCrossSellResponseSchema = Type.Object({
   plan_product: Type.Optional(
     Type.Object({
       plan_product_id: Type.String({ format: 'uuid' }),
-      name: Type.String(),
+      name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+      description: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     })
   ),
 });

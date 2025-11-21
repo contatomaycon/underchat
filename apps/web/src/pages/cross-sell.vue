@@ -187,7 +187,7 @@ watch(
         :loading-text="$t('loading_text')"
       >
         <template #item.plan_product="{ item }">
-          {{ item.plan_product?.name || '-' }}
+          <span>{{ item.plan_product?.name || '-' }}</span>
         </template>
 
         <template #item.price="{ item }">

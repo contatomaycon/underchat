@@ -151,13 +151,21 @@ onMounted(async () => {
                           :key="item.plan_item_id"
                         >
                           <VListItemTitle>
-                            <div class="d-flex align-center gap-2">
+                            <div class="d-flex align-center gap-2 flex-wrap">
                               <VIcon
                                 icon="tabler-package"
                                 size="18"
                                 class="text-primary"
                               />
-                              <span>{{ item.plan_product.name || '-' }}</span>
+                              <span class="font-weight-medium">{{
+                                item.plan_product.name || '-'
+                              }}</span>
+                              <span
+                                v-if="item.plan_product.description"
+                                class="text-body-2 text-medium-emphasis"
+                              >
+                                ({{ item.plan_product.description }})
+                              </span>
                             </div>
                           </VListItemTitle>
                           <VListItemSubtitle>
@@ -205,13 +213,21 @@ onMounted(async () => {
                       :key="crossSell.plan_cross_sell_id"
                     >
                       <VListItemTitle>
-                        <div class="d-flex align-center gap-2">
+                        <div class="d-flex align-center gap-2 flex-wrap">
                           <VIcon
                             icon="tabler-package"
                             size="18"
                             class="text-primary"
                           />
-                          <span>{{ crossSell.plan_product.name || '-' }}</span>
+                          <span class="font-weight-medium">{{
+                            crossSell.plan_product.name || '-'
+                          }}</span>
+                          <span
+                            v-if="crossSell.plan_product.description"
+                            class="text-body-2 text-medium-emphasis"
+                          >
+                            ({{ crossSell.plan_product.description }})
+                          </span>
                         </div>
                       </VListItemTitle>
                       <VListItemSubtitle>

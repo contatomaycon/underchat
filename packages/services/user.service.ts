@@ -32,6 +32,7 @@ import { PermissionAssignmentUpdaterRepository } from '@core/repositories/permis
 import { PermissionAssignmentDeleterRepository } from '@core/repositories/permission/PermissionAssignmentDeleter.repository';
 import { UserAccountViewerRepository } from '@core/repositories/user/UserAccountViewer.repository';
 import { UserEmailViewerExistsRepository } from '@core/repositories/user/UserEmailViewerExists.repository';
+import { UserTotalViewerRepository } from '@core/repositories/user/UserTotalViewer.repository';
 import { EncryptService } from './encrypt.service';
 import { IUserSensitiveDataDecrypted } from '@core/common/interfaces/IUserSensitiveDataDecrypted';
 
@@ -61,7 +62,8 @@ export class UserService {
     private readonly permissionAssignmentUpdaterRepository: PermissionAssignmentUpdaterRepository,
     private readonly permissionAssignmentDeleterRepository: PermissionAssignmentDeleterRepository,
     private readonly userAccountViewerRepository: UserAccountViewerRepository,
-    private readonly userEmailViewerExistsRepository: UserEmailViewerExistsRepository
+    private readonly userEmailViewerExistsRepository: UserEmailViewerExistsRepository,
+    private readonly userTotalViewerRepository: UserTotalViewerRepository
   ) {}
 
   listUsers = async (
@@ -464,5 +466,9 @@ export class UserService {
     if (!emailC) return false;
 
     return this.userEmailViewerExistsRepository.existsUserEmailById(emailC);
+  };
+
+  totalUserByAccount = async (accountId: string): Promise<number> => {
+    return this.userTotalViewerRepository.totalUserByAccount(accountId);
   };
 }

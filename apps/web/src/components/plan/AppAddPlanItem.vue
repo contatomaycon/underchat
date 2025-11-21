@@ -106,6 +106,10 @@ const getProductName = (item: ListPlanItemResponse) => {
   return item.plan_product?.name || t('unknown_product');
 };
 
+const getProductDescription = (item: ListPlanItemResponse) => {
+  return item.plan_product?.description || null;
+};
+
 const getCurrencyConfig = () => {
   const localeMap: Record<string, { locale: string; currency: string }> = {
     pt: { locale: 'pt-BR', currency: 'BRL' },
@@ -215,7 +219,11 @@ onMounted(async () => {
                 v-if="getPlanData.price !== null"
                 class="d-flex align-center flex-wrap gap-2"
               >
-                <VIcon icon="tabler-currency-dollar" size="18" class="text-primary" />
+                <VIcon
+                  icon="tabler-currency-dollar"
+                  size="18"
+                  class="text-primary"
+                />
                 <span class="text-body-2">
                   <strong>{{ $t('price') }}:</strong>
                   {{ formatCurrency(getPlanData.price) }}
@@ -235,11 +243,19 @@ onMounted(async () => {
             >
               <VListItemTitle>
                 <div class="d-flex justify-space-between align-center">
-                  <div>
-                    <strong>{{ getProductName(item) }}</strong>
-                    <span class="ml-2 text-medium-emphasis">
-                      ({{ $t('quantity') }}: {{ item.quantity }})
-                    </span>
+                  <div class="d-flex flex-column">
+                    <div>
+                      <strong>{{ getProductName(item) }}</strong>
+                      <span class="ml-2 text-medium-emphasis">
+                        ({{ $t('quantity') }}: {{ item.quantity }})
+                      </span>
+                    </div>
+                    <div
+                      v-if="getProductDescription(item)"
+                      class="text-body-2 text-medium-emphasis mt-1"
+                    >
+                      {{ getProductDescription(item) }}
+                    </div>
                   </div>
                   <IconBtn
                     color="error"

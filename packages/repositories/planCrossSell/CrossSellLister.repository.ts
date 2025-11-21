@@ -1,5 +1,9 @@
 import * as schema from '@core/models';
-import { planCrossSell, planProduct } from '@core/models';
+import {
+  planCrossSell,
+  planProduct,
+  planProductDescription,
+} from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import {
@@ -29,7 +33,7 @@ export class CrossSellListerRepository {
     if (query.product_name || query.price) {
       const conditions: (SQLWrapper | undefined)[] = [
         query.product_name
-          ? ilike(planProduct.name, `%${query.product_name}%`)
+          ? ilike(planProductDescription.name, `%${query.product_name}%`)
           : undefined,
         query.price
           ? ilike(sql`CAST(${planCrossSell.price} AS TEXT)`, `%${query.price}%`)
@@ -65,13 +69,18 @@ export class CrossSellListerRepository {
         created_at: planCrossSell.created_at,
         plan_product: {
           plan_product_id: planProduct.plan_product_id,
-          name: planProduct.name,
+          name: planProductDescription.name,
+          description: planProductDescription.description,
         },
       })
       .from(planCrossSell)
-      .leftJoin(
+      .innerJoin(
         planProduct,
         eq(planCrossSell.plan_product_id, planProduct.plan_product_id)
+      )
+      .innerJoin(
+        planProductDescription,
+        eq(planProduct.plan_product_id, planProductDescription.plan_product_id)
       )
       .where(
         and(
@@ -93,13 +102,13 @@ export class CrossSellListerRepository {
       quantity: item.quantity,
       price: Number(item.price),
       created_at: item.created_at,
-      plan_product:
-        item.plan_product?.plan_product_id && item.plan_product.name
-          ? {
-              plan_product_id: item.plan_product.plan_product_id,
-              name: item.plan_product.name,
-            }
-          : undefined,
+      plan_product: item.plan_product?.plan_product_id
+        ? {
+            plan_product_id: item.plan_product.plan_product_id,
+            name: item.plan_product.name ?? null,
+            description: item.plan_product.description ?? null,
+          }
+        : undefined,
     }));
 
     return crossSells;
@@ -115,9 +124,13 @@ export class CrossSellListerRepository {
         count: count(),
       })
       .from(planCrossSell)
-      .leftJoin(
+      .innerJoin(
         planProduct,
         eq(planCrossSell.plan_product_id, planProduct.plan_product_id)
+      )
+      .innerJoin(
+        planProductDescription,
+        eq(planProduct.plan_product_id, planProductDescription.plan_product_id)
       )
       .where(
         and(

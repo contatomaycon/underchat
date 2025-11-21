@@ -35,7 +35,14 @@ export class AccountSubscriptionsListerRepository {
                 ppr: {
                   columns: {
                     plan_product_id: true,
-                    name: true,
+                  },
+                  with: {
+                    ppd: {
+                      columns: {
+                        name: true,
+                        description: true,
+                      },
+                    },
                   },
                 },
               },
@@ -60,7 +67,14 @@ export class AccountSubscriptionsListerRepository {
                 ppt: {
                   columns: {
                     plan_product_id: true,
-                    name: true,
+                  },
+                  with: {
+                    ppd: {
+                      columns: {
+                        name: true,
+                        description: true,
+                      },
+                    },
                   },
                 },
               },
@@ -95,11 +109,15 @@ export class AccountSubscriptionsListerRepository {
             if (!item.ppr?.plan_product_id) {
               return null;
             }
+            if (!item.ppr.ppd) {
+              return null;
+            }
             return {
               plan_item_id: item.plan_item_id,
               plan_product: {
                 plan_product_id: item.ppr.plan_product_id,
-                name: item.ppr.name ?? null,
+                name: item.ppr.ppd.name ?? null,
+                description: item.ppr.ppd.description ?? null,
               },
               quantity: item.quantity,
             };
@@ -120,11 +138,11 @@ export class AccountSubscriptionsListerRepository {
           )
           .map((item) => {
             if (
-              !item.pca ||
-              !item.pca.plan_cross_sell_id ||
+              !item.pca?.plan_cross_sell_id ||
               item.pca.quantity === null ||
               item.pca.price === null ||
-              !item.pca.ppt?.plan_product_id
+              !item.pca.ppt?.plan_product_id ||
+              !item.pca.ppt.ppd
             ) {
               return null;
             }
@@ -132,7 +150,8 @@ export class AccountSubscriptionsListerRepository {
               plan_cross_sell_id: item.pca.plan_cross_sell_id,
               plan_product: {
                 plan_product_id: item.pca.ppt.plan_product_id,
-                name: item.pca.ppt.name ?? null,
+                name: item.pca.ppt.ppd.name ?? null,
+                description: item.pca.ppt.ppd.description ?? null,
               },
               quantity: item.pca.quantity,
               price: item.pca.price,

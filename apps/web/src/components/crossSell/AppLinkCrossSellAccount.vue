@@ -135,6 +135,7 @@ const getCrossSellData = computed(() => {
   if (!crossSell) return null;
   return {
     name: crossSell.plan_product?.name || t('unknown_product'),
+    description: crossSell.plan_product?.description || null,
     quantity: crossSell.quantity,
     price: crossSell.price,
   };
@@ -202,12 +203,20 @@ onMounted(async () => {
               </span>
             </div>
             <div class="ms-8">
-              <div class="d-flex align-center flex-wrap gap-2 mb-1">
-                <VIcon icon="tabler-package" size="18" class="text-primary" />
-                <span class="text-body-2">
-                  <strong>{{ $t('product') }}:</strong>
-                  {{ getCrossSellData.name }}
-                </span>
+              <div class="d-flex flex-column gap-1 mb-1">
+                <div class="d-flex align-center flex-wrap gap-2">
+                  <VIcon icon="tabler-package" size="18" class="text-primary" />
+                  <span class="text-body-2">
+                    <strong>{{ $t('product') }}:</strong>
+                    {{ getCrossSellData.name }}
+                  </span>
+                </div>
+                <div
+                  v-if="getCrossSellData.description"
+                  class="text-body-2 text-medium-emphasis ms-6"
+                >
+                  {{ getCrossSellData.description }}
+                </div>
               </div>
               <div class="d-flex align-center flex-wrap gap-2 mb-1">
                 <VIcon icon="tabler-hash" size="18" class="text-primary" />

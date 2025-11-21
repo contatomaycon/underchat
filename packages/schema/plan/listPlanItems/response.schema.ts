@@ -7,7 +7,8 @@ export const listPlanItemResponseSchema = Type.Object({
   plan_product: Type.Optional(
     Type.Object({
       plan_product_id: Type.String({ format: 'uuid' }),
-      name: Type.Union([Type.String(), Type.Null()]),
+      name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+      description: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     })
   ),
   quantity: Type.Number(),

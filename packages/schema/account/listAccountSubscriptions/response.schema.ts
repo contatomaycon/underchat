@@ -4,7 +4,8 @@ const planItemSchema = Type.Object({
   plan_item_id: Type.String({ format: 'uuid' }),
   plan_product: Type.Object({
     plan_product_id: Type.String({ format: 'uuid' }),
-    name: Type.Union([Type.String(), Type.Null()]),
+    name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    description: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   }),
   quantity: Type.Number(),
 });
@@ -13,7 +14,8 @@ const crossSellSchema = Type.Object({
   plan_cross_sell_id: Type.String({ format: 'uuid' }),
   plan_product: Type.Object({
     plan_product_id: Type.String({ format: 'uuid' }),
-    name: Type.Union([Type.String(), Type.Null()]),
+    name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    description: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   }),
   quantity: Type.Number(),
   price: Type.String(),
