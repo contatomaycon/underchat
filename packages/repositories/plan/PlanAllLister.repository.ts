@@ -11,7 +11,7 @@ export class PlanAllListerRepository {
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  listPlanAll = async (): Promise<ListPlanAllResponse[] | null> => {
+  listPlanAll = async (): Promise<ListPlanAllResponse[]> => {
     const result = await this.db
       .select({
         plan_id: plan.plan_id,
@@ -22,7 +22,7 @@ export class PlanAllListerRepository {
       .execute();
 
     if (!result.length) {
-      return null;
+      return [];
     }
 
     return result as ListPlanAllResponse[];

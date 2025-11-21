@@ -2,7 +2,16 @@ import * as schema from '@core/models';
 import { plan } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, count, eq, isNull, SQLWrapper, or, ilike } from 'drizzle-orm';
+import {
+  and,
+  count,
+  eq,
+  isNull,
+  SQLWrapper,
+  or,
+  ilike,
+  sql,
+} from 'drizzle-orm';
 import { ListPlanRequest } from '@core/schema/plan/listPlan/request.schema';
 import { ListPlanResponse } from '@core/schema/plan/listPlan/response.schema';
 
@@ -15,16 +24,26 @@ export class PlanListerRepository {
   private readonly setFiltersPlan = (query: ListPlanRequest): SQLWrapper[] => {
     const filters: SQLWrapper[] = [];
 
-    if (query.plan_id || query.name || query.price) {
+    if (query.name || query.price) {
       const conditions: (SQLWrapper | undefined)[] = [
-        query.plan_id ? eq(plan.plan_id, query.plan_id) : undefined,
         query.name ? ilike(plan.name, `%${query.name}%`) : undefined,
-        query.price ? eq(plan.price, query.price) : undefined,
+        query.price
+          ? ilike(sql`CAST(${plan.price} AS TEXT)`, `%${query.price}%`)
+          : undefined,
       ];
 
-      const combined = or(...conditions);
+      const filteredConditions = conditions.filter(
+        (condition): condition is SQLWrapper => condition !== undefined
+      );
 
-      if (combined) filters.push(combined);
+      if (filteredConditions.length > 0) {
+        const combined = or(...filteredConditions);
+        if (combined) filters.push(combined);
+      }
+    }
+
+    if (query.plan_id) {
+      filters.push(eq(plan.plan_id, query.plan_id));
     }
 
     return filters;
