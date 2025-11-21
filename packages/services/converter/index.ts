@@ -1,11 +1,15 @@
 import { injectable } from 'tsyringe';
 import { Buffer } from 'node:buffer';
 import { IConvertAudioResult } from '@core/common/interfaces/IConvertAudioResult';
+import { IConvertVideoResult } from '@core/common/interfaces/IConvertVideoResult';
 import { IAudioFormatConfig } from '@core/common/interfaces/IAudioFormatConfig';
 import { AudioFormatDetector } from './audio/audioFormatDetector.service';
 import { AudioFormatValidator } from './audio/audioFormatValidator.service';
 import { AudioFfmpegConverter } from './audio/audioFfmpegConverter.service';
 import { AudioWaveformGenerator } from './audio/audioWaveformGenerator.service';
+import { VideoFormatDetector } from './video/videoFormatDetector.service';
+import { VideoFormatValidator } from './video/videoFormatValidator.service';
+import { VideoFfmpegConverter } from './video/videoFfmpegConverter.service';
 
 @injectable()
 export class ConverterService {
@@ -42,6 +46,28 @@ export class ConverterService {
   ): Promise<string | undefined> {
     const generator = new AudioWaveformGenerator();
     return generator.generate(audioBuffer);
+  }
+
+  async convertVideo(
+    inputBuffer: Buffer,
+    inputMimetype?: string | null
+  ): Promise<IConvertVideoResult> {
+    const formatDetector = new VideoFormatDetector();
+    const currentFormat =
+      formatDetector.detectFromBuffer(inputBuffer) ||
+      formatDetector.getExtensionFromMimetype(inputMimetype) ||
+      'mp4';
+
+    if (currentFormat === 'mp4') {
+      const validator = new VideoFormatValidator();
+      const result = await validator.checkAndReturnIfValid(inputBuffer);
+      if (result) {
+        return result;
+      }
+    }
+
+    const converter = new VideoFfmpegConverter();
+    return converter.convert(inputBuffer, currentFormat);
   }
 
   private getFormatConfig(ptt: boolean): IAudioFormatConfig {

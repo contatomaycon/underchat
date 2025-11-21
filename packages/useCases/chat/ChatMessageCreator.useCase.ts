@@ -435,16 +435,61 @@ export class ChatMessageCreatorUseCase {
   private async uploadVideos(
     videos: UploadFileRequest[],
     accountId: string
-  ): Promise<UploadFileResponse[]> {
-    const uploadPromises = videos.map((video) =>
-      this.storageService.uploadVideo(video, accountId)
-    );
+  ): Promise<
+    Array<
+      UploadFileResponse & {
+        duration?: number;
+        width?: number;
+        height?: number;
+      }
+    >
+  > {
+    const uploadPromises = videos.map(async (video) => {
+      const originalBuffer = await video.toBuffer();
+      const originalMimetype = video.mimetype || null;
+
+      const converted = await this.converterService.convertVideo(
+        originalBuffer,
+        originalMimetype
+      );
+
+      const filename = video.filename.replace(/\.[^.]+$/, '') || 'video';
+      const newFilename = `${filename}.${converted.extension}`;
+
+      const uploadResult = await this.storageService.uploadVideoFromBuffer(
+        converted.buffer,
+        newFilename,
+        converted.mimetype,
+        accountId,
+        converted.width,
+        converted.height
+      );
+
+      if (!uploadResult) {
+        return null;
+      }
+
+      return {
+        ...uploadResult,
+        mimetype: converted.mimetype,
+        duration: converted.duration,
+        width: converted.width ?? null,
+        height: converted.height ?? null,
+      };
+    });
 
     const uploadedVideos = await Promise.all(uploadPromises);
 
-    return uploadedVideos.filter(
-      (vid): vid is UploadFileResponse => vid !== null
+    const filtered = uploadedVideos.filter(
+      (video): video is NonNullable<typeof video> => video !== null
     );
+    return filtered as Array<
+      UploadFileResponse & {
+        duration?: number;
+        width?: number;
+        height?: number;
+      }
+    >;
   }
 
   private async uploadAudios(
