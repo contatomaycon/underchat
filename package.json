@@ -114,7 +114,7 @@
     "@types/lodash": "^4.17.20",
     "@types/mime-types": "^3.0.1",
     "@types/uuid": "^11.0.0",
-    "@whiskeysockets/baileys": "github:WhiskeySockets/Baileys#9720ff49caf0dbee182a7577a96e3639011824e6",
+    "@whiskeysockets/baileys": "github:contatomaycon/baileys",
     "audio-decode": "^2.2.3",
     "axios": "^1.13.2",
     "centrifuge": "^5.5.2",
