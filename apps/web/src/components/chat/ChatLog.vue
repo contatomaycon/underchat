@@ -1919,13 +1919,22 @@ onUnmounted(() => {
 
                       <div
                         v-if="hasQuotedSticker(item.message)"
-                        class="quoted-media quoted-media--image"
+                        class="quoted-sticker"
                       >
-                        <img
-                          :src="resolveQuotedStickerSrc(item.message)"
-                          alt="Sticker"
-                          style="width: 44px; height: 44px; object-fit: contain"
-                        />
+                        <div class="quoted-media quoted-media--image">
+                          <img
+                            :src="resolveQuotedStickerSrc(item.message)"
+                            alt="Sticker"
+                            style="
+                              width: 44px;
+                              height: 44px;
+                              object-fit: contain;
+                            "
+                          />
+                        </div>
+                        <div class="quoted-sticker-label">
+                          {{ t('sticker_label') }}
+                        </div>
                       </div>
 
                       <div
@@ -2035,11 +2044,7 @@ onUnmounted(() => {
                         <VIcon size="22" color="primary">tabler-user</VIcon>
                         <div class="quoted-contact-info">
                           <span class="quoted-contact-name">
-                            {{
-                              item.message.content?.quoted?.contact?.name
-                                ? `${item.message.content.quoted.contact.name} ${item.message.content.quoted.contact.last_name || ''}`.trim()
-                                : 'Contato'
-                            }}
+                            {{ t('contact_label') }}
                           </span>
                         </div>
                       </div>
@@ -3313,6 +3318,22 @@ onUnmounted(() => {
         color: rgba(var(--v-theme-on-surface), 0.6);
       }
 
+      .quoted-sticker {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .quoted-sticker-label {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: rgb(var(--v-theme-primary));
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
       .quoted-location {
         display: flex;
         align-items: center;
@@ -3326,6 +3347,28 @@ onUnmounted(() => {
       }
 
       .quoted-location-name {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: rgb(var(--v-theme-primary));
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .quoted-contact {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .quoted-contact-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .quoted-contact-name {
         font-size: 0.8rem;
         font-weight: 600;
         color: rgb(var(--v-theme-primary));

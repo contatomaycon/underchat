@@ -455,6 +455,7 @@
     "audio_label": "Audio",
     "sticker_label": "Sticker",
     "location_label": "Location",
+    "contact_label": "Contact",
     "open_in_google_maps": "Open in Google Maps",
     "max_images_selected": "You have already selected the maximum of 10 images",
     "can_select_more_images": "You can select only {count} more image(s)",

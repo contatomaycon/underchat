@@ -793,9 +793,22 @@ export class ChatMessageCreatorUseCase {
       inferredType = EMessageType.document;
     if (!quotedVideo && !quotedImage && !quotedDocument && quotedAudio)
       inferredType = EMessageType.audio;
-    if (!quotedVideo && !quotedImage && !quotedDocument && !quotedAudio && quotedSticker)
+    if (
+      !quotedVideo &&
+      !quotedImage &&
+      !quotedDocument &&
+      !quotedAudio &&
+      quotedSticker
+    )
       inferredType = EMessageType.sticker;
-    if (!quotedVideo && !quotedImage && !quotedDocument && !quotedAudio && !quotedSticker && quotedLocation)
+    if (
+      !quotedVideo &&
+      !quotedImage &&
+      !quotedDocument &&
+      !quotedAudio &&
+      !quotedSticker &&
+      quotedLocation
+    )
       inferredType = EMessageType.location;
     const quotedContact = chatMessage.content?.contact ?? null;
     if (

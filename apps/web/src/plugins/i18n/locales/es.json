@@ -456,6 +456,7 @@
     "audio_label": "Audio",
     "sticker_label": "Sticker",
     "location_label": "Ubicación",
+    "contact_label": "Contacto",
     "open_in_google_maps": "Abrir en Google Maps",
     "max_images_selected": "Ya has seleccionado el máximo de 10 imágenes",
     "can_select_more_images": "Puedes seleccionar solo {count} imagen(es) más",
