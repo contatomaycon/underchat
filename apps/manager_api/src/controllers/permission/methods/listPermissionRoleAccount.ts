@@ -14,12 +14,13 @@ export const listPermissionRoleAccount = async (
   const permissionRoleAccountListerUseCase = container.resolve(
     PermissionRoleAccountListerUseCase
   );
-  const { t } = request;
+  const { t, tokenJwtData } = request;
 
   try {
     const response = await permissionRoleAccountListerUseCase.execute(
       t,
-      request.params.account_id
+      request.params.account_id,
+      tokenJwtData.is_administrator
     );
 
     if (response) {

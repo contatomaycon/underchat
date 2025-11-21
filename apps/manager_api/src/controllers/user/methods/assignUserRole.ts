@@ -22,6 +22,7 @@ export const assignUserRole = async (
     const response = await userRoleAssignerUseCase.execute(
       t,
       request.params.user_id,
+      tokenJwtData.account_id,
       tokenJwtData.is_administrator,
       request.body
     );

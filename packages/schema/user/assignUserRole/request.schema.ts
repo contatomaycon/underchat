@@ -10,7 +10,6 @@ export type AssignUserRoleParamsRequest = Static<
 
 export const assignUserRoleRequestSchema = Type.Object({
   permission_role_id: Type.String({ format: 'uuid' }),
-  account_id: Type.String({ format: 'uuid' }),
 });
 
 export type AssignUserRoleRequest = Static<typeof assignUserRoleRequestSchema>;

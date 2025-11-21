@@ -417,24 +417,21 @@ export class UserService {
 
   assignUserRole = async (
     userId: string,
-    permissionRoleId: string,
-    accountId: string
+    permissionRoleId: string
   ): Promise<boolean> => {
     const currentRole = await this.getUserRole(userId);
 
     if (currentRole) {
       return this.permissionAssignmentUpdaterRepository.updatePermissionAssignment(
         userId,
-        permissionRoleId,
-        accountId
+        permissionRoleId
       );
     }
 
     const assignmentId =
       await this.permissionAssignmentCreatorRepository.createPermissionAssignment(
         userId,
-        permissionRoleId,
-        accountId
+        permissionRoleId
       );
 
     return assignmentId !== null;

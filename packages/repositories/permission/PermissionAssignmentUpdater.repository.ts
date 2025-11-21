@@ -12,14 +12,12 @@ export class PermissionAssignmentUpdaterRepository {
 
   updatePermissionAssignment = async (
     userId: string,
-    permissionRoleId: string,
-    accountId: string
+    permissionRoleId: string
   ): Promise<boolean> => {
     const result = await this.db
       .update(permissionAssignment)
       .set({
         permission_role_id: permissionRoleId,
-        account_id: accountId,
       })
       .where(eq(permissionAssignment.user_id, userId))
       .execute();

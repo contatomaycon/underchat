@@ -13,14 +13,20 @@ export class SectorRoleAccountListerUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    accountId: string
+    accountId: string,
+    isAdministrator: boolean
   ): Promise<ListRoleAccountResponse[] | null> {
-    const accountExists =
-      await this.accountService.existsAccountById(accountId);
-    if (!accountExists) {
-      throw new Error(t('account_not_found'));
+    if (!isAdministrator) {
+      const accountExists =
+        await this.accountService.existsAccountById(accountId);
+      if (!accountExists) {
+        throw new Error(t('account_not_found'));
+      }
     }
 
-    return this.permissionService.listPermissionRoleAccountById(accountId);
+    return this.permissionService.listPermissionRoleAccountById(
+      accountId,
+      isAdministrator
+    );
   }
 }

@@ -85,14 +85,8 @@ const assignRole = async () => {
   const validateForm = await refFormAssignRole.value?.validate();
   if (!validateForm?.valid) return;
 
-  const userData = await userStore.viewUserById(props.userId);
-  if (!userData?.account?.account_id) {
-    return;
-  }
-
   const payload: AssignUserRoleRequest = {
     permission_role_id: permissionRoleId.value,
-    account_id: userData.account.account_id,
   };
 
   const result = await userStore.assignUserRole(props.userId, payload);
@@ -165,4 +159,3 @@ onMounted(async () => {
     </VForm>
   </VDialog>
 </template>
-

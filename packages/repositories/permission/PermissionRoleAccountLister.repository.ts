@@ -12,8 +12,33 @@ export class PermissionRoleAccountListerRepository {
   ) {}
 
   listPermissionRoleAccountById = async (
-    accountId: string
+    accountId: string,
+    isAdministrator: boolean
   ): Promise<ListRoleAccountResponse[]> => {
+    const masterRoleId = '019a930d-c6f5-75af-82a5-8c20f9d0e6e2';
+
+    if (isAdministrator) {
+      const result = await this.db
+        .select({
+          id: permissionRole.permission_role_id,
+          name: permissionRole.name,
+        })
+        .from(permissionRole)
+        .where(
+          and(
+            eq(permissionRole.permission_role_id, masterRoleId),
+            isNull(permissionRole.deleted_at)
+          )
+        )
+        .execute();
+
+      if (!result?.length) {
+        return [];
+      }
+
+      return result as ListRoleAccountResponse[];
+    }
+
     const result = await this.db
       .select({
         id: permissionRole.permission_role_id,
