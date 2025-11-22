@@ -8,7 +8,19 @@ export const requiredValidator = (value: unknown, message: string) => {
     return Object.keys(value).length > 0 || message;
   }
 
-  return !!String(value).trim().length || message;
+  if (Array.isArray(value)) {
+    return value.length > 0 || message;
+  }
+
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  ) {
+    return !!String(value).trim().length || message;
+  }
+
+  return message;
 };
 
 export const emailValidator = (value: unknown, message: string) => {
