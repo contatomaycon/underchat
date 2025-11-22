@@ -188,15 +188,26 @@ const determineEmailToSave = (): string | null | undefined => {
   const emailValue = email.value?.trim() || '';
   const emailPartialOriginalTrimmed = emailPartialOriginal.value?.trim() || '';
 
-  if (isEmailDecrypted.value && emailValue) {
-    return emailValue;
+  if (isEmailDecrypted.value) {
+    return emailValue || null;
   }
 
   if (
     !isEmailDecrypted.value &&
     emailValue &&
-    !emailPartialOriginalTrimmed.includes('*') &&
     emailValue !== emailPartialOriginalTrimmed
+  ) {
+    return emailValue;
+  }
+
+  if (!emailValue && emailPartialOriginalTrimmed) {
+    return null;
+  }
+
+  if (
+    !isEmailDecrypted.value &&
+    emailValue &&
+    !emailPartialOriginalTrimmed.includes('*')
   ) {
     return emailValue;
   }
