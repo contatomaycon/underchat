@@ -6,7 +6,7 @@ import { LabelTemplateService } from '@core/services/labelTemplate.service';
 import { ContactExistsByEmailAndPhoneRepository } from '@core/repositories/contact/ContactExistsByEmailAndPhone.repository';
 import { EncryptService } from '@core/services/encrypt.service';
 import moment from 'moment';
-import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
+import { buildCandidatesWithDdi } from '@core/common/functions/buildCandidatesBR';
 
 @injectable()
 export class ContactUpdaterUseCase {
@@ -103,7 +103,7 @@ export class ContactUpdaterUseCase {
 
     const emailC = body.email ? this.encryptService.encrypt(body.email) : null;
 
-    const phones = buildCandidates(body.phone);
+    const phones = buildCandidatesWithDdi(body.phone, body.phone_ddi);
     const phonesC = phones.map((phone) => this.encryptService.encrypt(phone));
 
     await this.validateDuplicateContact(t, emailC, phonesC, contactId);

@@ -20,15 +20,14 @@ export class BaileysPhoneValidationService {
     const fullNumber = `${ddi}${number}`;
     const candidates = buildCandidates(fullNumber);
 
-    const validationPromises = candidates.map((candidate) => {
-      return socket.onWhatsApp(onlyDigits(candidate)).then((resp) => {
-        const item = resp?.[0];
-        return {
-          candidate,
-          exists: !!item?.exists,
-          jid: item?.jid ? normalizeJid(item.jid) : undefined,
-        };
-      });
+    const validationPromises = candidates.map(async (candidate) => {
+      const resp = await socket.onWhatsApp(onlyDigits(candidate));
+      const item = resp?.[0];
+      return {
+        candidate,
+        exists: !!item?.exists,
+        jid: item?.jid ? normalizeJid(item.jid) : undefined,
+      };
     });
 
     const result = await validationPromises.reduce(

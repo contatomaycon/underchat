@@ -9,7 +9,7 @@ import { EncryptService } from '@core/services/encrypt.service';
 import { PhoneValidationService } from '@core/services/phoneValidation.service';
 import { normalizePhoneNumber } from '@core/common/functions/normalizePhoneNumber';
 import moment from 'moment';
-import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
+import { buildCandidatesWithDdi } from '@core/common/functions/buildCandidatesBR';
 
 @injectable()
 export class ContactCreatorUseCase {
@@ -82,7 +82,7 @@ export class ContactCreatorUseCase {
     emailC: string | null;
     phonesC: string[];
   } {
-    const phones = buildCandidates(input.phone);
+    const phones = buildCandidatesWithDdi(input.phone, input.phone_ddi);
     const phonesC = phones.map((phone) => this.encryptService.encrypt(phone));
 
     return {
