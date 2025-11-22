@@ -15,7 +15,7 @@ class ContactController {
   public viewContactPhone = viewContactPhone;
   public viewContactEmail = viewContactEmail;
   public deleteContact = deleteContact;
-  public updateContact = editContact;
+  public editContact = editContact;
   public createContact = createContact;
   public exportContact = exportContact;
 }

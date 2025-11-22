@@ -75,7 +75,7 @@ export default async function contactRoutes(server: FastifyInstance) {
 
   server.patch('/contact/:contact_id', {
     schema: editContactSchema,
-    handler: contactController.updateContact,
+    handler: contactController.editContact,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactUpdatePermissions),

@@ -15,10 +15,40 @@ export class ContactUpdaterUseCase {
     private readonly encryptService: EncryptService
   ) {}
 
+  private async validatePhone(
+    t: TFunction<'translation', undefined>,
+    contactId: string,
+    phone?: string | null,
+    phoneDdi?: string | null
+  ) {
+    if (!phone) return;
+    if (!phoneDdi) throw new Error(t('phone_ddi_required'));
+
+    const phones = buildCandidatesWithDdi(phone, phoneDdi);
+    const phonesC = phones.map((phone) => this.encryptService.encrypt(phone));
+
+    await this.validatePhoneDuplicateContact(t, phonesC, contactId);
+  }
+
+  private async validateEmail(
+    t: TFunction<'translation', undefined>,
+    contactId: string,
+    email?: string | null
+  ) {
+    if (!email) return;
+
+    const emailC = this.encryptService.encrypt(email);
+
+    await this.validateEmailDuplicateContact(t, emailC, contactId);
+  }
+
   private validateBirthDate(
     t: TFunction<'translation', undefined>,
-    birthDate: string
+    birthDate?: string | null
   ) {
+    if (!birthDate) return;
+    if (typeof birthDate !== 'string' || birthDate.trim() === '') return;
+
     if (!moment(birthDate, 'YYYY-MM-DD', true).isValid()) {
       throw new Error(t('date_must_be_in_the_format_yyyy_mm_dd'));
     }
@@ -36,29 +66,33 @@ export class ContactUpdaterUseCase {
     }
   }
 
-  private async validateDuplicateContact(
+  private async validatePhoneDuplicateContact(
     t: TFunction<'translation', undefined>,
-    emailC: string | null,
     phonesC: string[],
     contactId: string
   ): Promise<void> {
-    if (!emailC && !phonesC.length) return;
-
-    const [emailExists, phoneExists] = await Promise.all([
-      emailC
-        ? this.contactService.existsContactByEmail(emailC, contactId)
-        : Promise.resolve(false),
-      phonesC.length > 0
-        ? this.contactService.existsContactByPhone(phonesC, contactId)
-        : Promise.resolve(false),
-    ]);
-
-    if (emailExists) {
-      throw new Error(t('contact_already_exists_email'));
-    }
+    const phoneExists = await this.contactService.existsContactByPhone(
+      phonesC,
+      contactId
+    );
 
     if (phoneExists) {
       throw new Error(t('contact_already_exists_phone'));
+    }
+  }
+
+  private async validateEmailDuplicateContact(
+    t: TFunction<'translation', undefined>,
+    emailC: string,
+    contactId: string
+  ): Promise<void> {
+    const emailExists = await this.contactService.existsContactByEmail(
+      emailC,
+      contactId
+    );
+
+    if (emailExists) {
+      throw new Error(t('contact_already_exists_email'));
     }
   }
 
@@ -85,20 +119,12 @@ export class ContactUpdaterUseCase {
       }
     }
 
-    if (
-      body?.birthday &&
-      typeof body.birthday === 'string' &&
-      body.birthday.trim() !== ''
-    ) {
-      this.validateBirthDate(t, body.birthday);
-    }
+    this.validateBirthDate(t, body.birthday);
 
-    const emailC = body.email ? this.encryptService.encrypt(body.email) : null;
-
-    const phones = buildCandidatesWithDdi(body.phone, body.phone_ddi);
-    const phonesC = phones.map((phone) => this.encryptService.encrypt(phone));
-
-    await this.validateDuplicateContact(t, emailC, phonesC, contactId);
+    await Promise.all([
+      this.validatePhone(t, contactId, body.phone, body.phone_ddi),
+      this.validateEmail(t, contactId, body.email),
+    ]);
 
     const contactUpdater = await this.contactService.updateContactById(
       body,
