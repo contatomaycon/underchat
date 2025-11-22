@@ -144,7 +144,7 @@ const handleSend = () => {
 const headers = computed(() => [
   { title: t('name'), key: 'name', sortable: true },
   { title: t('phone'), key: 'phone_partial', sortable: true },
-  { title: t('email'), key: 'email_partial', sortable: true },
+  { title: t('status'), key: 'status', sortable: true },
 ]);
 
 onMounted(() => {
@@ -201,8 +201,23 @@ onMounted(() => {
             {{ item.phone_partial || '-' }}
           </template>
 
-          <template #item.email_partial="{ item }">
-            {{ item.email_partial || '-' }}
+          <template #item.status="{ item }">
+            <VChip
+              v-if="item.is_valided"
+              class="uc-chip"
+              size="small"
+              color="success"
+            >
+              {{ $t('validated') }}
+            </VChip>
+            <VChip
+              v-else
+              class="uc-chip"
+              size="small"
+              color="error"
+            >
+              {{ $t('not_validated') }}
+            </VChip>
           </template>
 
           <template #no-data>
