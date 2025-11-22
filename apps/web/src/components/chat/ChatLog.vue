@@ -206,7 +206,7 @@ const handleContactClick = (message: ListMessageResult) => {
     name: contact.name ?? undefined,
     last_name: contact.last_name ?? undefined,
     email: contact.email ?? undefined,
-    phone: contact.phone_partial ?? contact.phone ?? undefined,
+    phone: contact.phone ?? contact.phone_partial ?? undefined,
     phone_ddi: contact.phone_ddi ?? '55',
     nickname: undefined,
     birthday: undefined,
