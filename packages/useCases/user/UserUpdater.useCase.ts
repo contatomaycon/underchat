@@ -48,10 +48,9 @@ export class UserUpdaterUseCase {
 
   private async validateAccount(
     t: TFunction<'translation', undefined>,
-    accountId: string | null | undefined,
-    isAdministrator: boolean
+    accountId: string | null | undefined
   ): Promise<void> {
-    if (!accountId || !isAdministrator) {
+    if (!accountId) {
       return;
     }
 
@@ -119,20 +118,24 @@ export class UserUpdaterUseCase {
     t: TFunction<'translation', undefined>,
     userId: string,
     body: UpdateUserRequest,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<void> {
-    await this.validateAccount(t, body.account_id, isAdministrator);
+    await this.validateAccount(t, body.account_id);
     await this.validateUserStatus(t, body.user_status_id);
     await this.validateEmail(t, body.email, userId);
+
+    const currentAccountId =
+      (await this.userService.getUserAccountId(userId)) ?? null;
+    const accountIdForUpdate = currentAccountId ?? accountId ?? null;
+
+    if (!accountIdForUpdate) {
+      throw new Error(t('account_not_found'));
+    }
 
     const emailData = this.encryptEmailData(body.email);
     const passwordEncrypted = body.password
       ? this.encryptService.encrypt(body.password)
       : null;
-
-    const accountIdToUpdate =
-      body.account_id && isAdministrator ? body.account_id : undefined;
 
     const createUserInput: IUpdateUser = {
       user_status_id: body.user_status_id ?? null,
@@ -140,21 +143,22 @@ export class UserUpdaterUseCase {
       email_partial: emailData.emailPartialEncrypted,
       email_c: emailData.emailC,
       password: passwordEncrypted,
-      account_id: accountIdToUpdate,
     };
 
     const hasAccountChange =
-      isAdministrator &&
       body.account_id &&
-      (await this.userService.getUserAccountId(userId)) !== body.account_id;
+      currentAccountId &&
+      body.account_id !== currentAccountId;
 
-    if (hasAccountChange) {
+    if (hasAccountChange && body.account_id) {
+      createUserInput.account_id = body.account_id;
+
       await this.userService.updateUserByIdWithAccountChange(
         t,
         userId,
         createUserInput,
-        accountId,
-        isAdministrator
+        body.account_id,
+        currentAccountId
       );
       return;
     }
@@ -162,8 +166,7 @@ export class UserUpdaterUseCase {
     const updateUser = await this.userService.updateUserById(
       userId,
       createUserInput,
-      accountId,
-      isAdministrator
+      accountIdForUpdate
     );
 
     if (!updateUser) {
@@ -353,7 +356,7 @@ export class UserUpdaterUseCase {
     }
 
     if (body.email || body.password || body.user_status_id || body.account_id) {
-      await this.insertUser(t, userId, body, accountId, isAdministrator);
+      await this.insertUser(t, userId, body, accountId);
     }
 
     if (body.user_info) {

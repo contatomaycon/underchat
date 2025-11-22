@@ -82,6 +82,28 @@ const backgroundColor = (s: string): string => {
   return EColor.primary;
 };
 
+const textColor = (s: string): string => {
+  const hex = backgroundColor(s);
+
+  if (!isHexColor(hex)) return '#FFFFFF';
+
+  let c = hex.substring(1);
+  if (c.length === 3) {
+    c = c
+      .split('')
+      .map((ch) => ch + ch)
+      .join('');
+  }
+
+  const r = Number.parseInt(c.slice(0, 2), 16);
+  const g = Number.parseInt(c.slice(2, 4), 16);
+  const b = Number.parseInt(c.slice(4, 6), 16);
+
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+
+  return yiq >= 128 ? '#000000' : '#FFFFFF';
+};
+
 const headers: DataTableHeader<ListSectorResponse>[] = [
   { title: t('name'), key: 'name' },
   ...(isAdministrator ? [{ title: t('status'), key: 'status' }] : []),
@@ -143,6 +165,10 @@ const openEditDialog = (id: string) => {
   sectorToEdit.value = id;
 
   isDialogEditSectorShow.value = true;
+};
+
+const handleSectorUpdated = async () => {
+  await sectorStore.listSectors(query.value);
 };
 
 const openAddRoleDialog = (id: string) => {
@@ -243,8 +269,12 @@ watch(
 
         <template #item.color="{ item }">
           <VChip
-            :style="{ backgroundColor: backgroundColor(item.color) }"
+            class="uc-chip"
             size="small"
+            :style="{
+              backgroundColor: backgroundColor(item.color),
+              color: textColor(item.color),
+            }"
           >
             {{ item.color }}
           </VChip>
@@ -331,6 +361,7 @@ watch(
         v-if="isDialogEditSectorShow"
         v-model="isDialogEditSectorShow"
         :sector-id="sectorToEdit"
+        @updated="handleSectorUpdated"
       />
 
       <AppAddSector v-if="isAddSectorVisible" v-model="isAddSectorVisible" />
@@ -354,5 +385,15 @@ watch(
 
 .invoice-list-filter {
   inline-size: 20rem;
+}
+
+.uc-chip {
+  height: 24px;
+  min-width: 88px;
+  justify-content: center;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

@@ -9,6 +9,7 @@ import { createAccountInfo } from './methods/createAccountInfo';
 import { editAccountInfo } from './methods/editAccountInfo';
 import { deleteAccountInfo } from './methods/deleteAccountInfo';
 import { listAllAccounts } from './methods/listAllAccounts';
+import { listAccountSubscriptions } from './methods/listAccountSubscriptions';
 
 @injectable()
 class AccountController {
@@ -22,6 +23,7 @@ class AccountController {
   public updateAccountInfo = editAccountInfo;
   public deleteAccountInfo = deleteAccountInfo;
   public listAllAccounts = listAllAccounts;
+  public listAccountSubscriptions = listAccountSubscriptions;
 }
 
 export default AccountController;

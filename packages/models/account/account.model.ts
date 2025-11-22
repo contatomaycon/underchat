@@ -12,6 +12,7 @@ import {
   labelTemplate,
   contact,
   contactGroup,
+  planCrossSellAccount,
 } from '@core/models';
 
 export const account = pgTable('account', {
@@ -58,4 +59,5 @@ export const accountRelations = relations(account, ({ one, many }) => ({
   alt: many(labelTemplate),
   ctc: many(contact),
   ctg: many(contactGroup),
+  pca: many(planCrossSellAccount),
 }));

@@ -14,12 +14,19 @@ export class UserRoleAssignerUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     userId: string,
+    accountId: string,
     isAdministrator: boolean,
     input: AssignUserRoleRequest
   ): Promise<boolean> {
+    const userAccountId = await this.userService.getUserAccountId(userId);
+
+    if (!userAccountId) {
+      throw new Error(t('user_not_found'));
+    }
+
     const existsUser = await this.userService.existsUserById(
       userId,
-      input.account_id,
+      accountId,
       isAdministrator
     );
 
@@ -29,7 +36,7 @@ export class UserRoleAssignerUseCase {
 
     const existsPermissionRole =
       await this.permissionService.existsPermissionRoleById(
-        input.account_id,
+        userAccountId,
         input.permission_role_id,
         isAdministrator
       );
@@ -38,23 +45,9 @@ export class UserRoleAssignerUseCase {
       throw new Error(t('permission_role_not_found'));
     }
 
-    const roleAccountId =
-      await this.permissionService.getPermissionRoleAccountId(
-        input.permission_role_id
-      );
-
-    if (!roleAccountId) {
-      throw new Error(t('permission_role_not_found'));
-    }
-
-    if (roleAccountId !== input.account_id) {
-      throw new Error(t('role_does_not_belong_to_user_account'));
-    }
-
     const assigned = await this.userService.assignUserRole(
       userId,
-      input.permission_role_id,
-      input.account_id
+      input.permission_role_id
     );
 
     if (!assigned) {

@@ -23,7 +23,6 @@ export const editSector = async (
       t,
       request.params.sector_id,
       request.body,
-      tokenJwtData.account_id,
       tokenJwtData.is_administrator
     );
 

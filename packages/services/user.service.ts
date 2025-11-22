@@ -32,6 +32,7 @@ import { PermissionAssignmentUpdaterRepository } from '@core/repositories/permis
 import { PermissionAssignmentDeleterRepository } from '@core/repositories/permission/PermissionAssignmentDeleter.repository';
 import { UserAccountViewerRepository } from '@core/repositories/user/UserAccountViewer.repository';
 import { UserEmailViewerExistsRepository } from '@core/repositories/user/UserEmailViewerExists.repository';
+import { UserTotalViewerRepository } from '@core/repositories/user/UserTotalViewer.repository';
 import { EncryptService } from './encrypt.service';
 import { IUserSensitiveDataDecrypted } from '@core/common/interfaces/IUserSensitiveDataDecrypted';
 
@@ -61,7 +62,8 @@ export class UserService {
     private readonly permissionAssignmentUpdaterRepository: PermissionAssignmentUpdaterRepository,
     private readonly permissionAssignmentDeleterRepository: PermissionAssignmentDeleterRepository,
     private readonly userAccountViewerRepository: UserAccountViewerRepository,
-    private readonly userEmailViewerExistsRepository: UserEmailViewerExistsRepository
+    private readonly userEmailViewerExistsRepository: UserEmailViewerExistsRepository,
+    private readonly userTotalViewerRepository: UserTotalViewerRepository
   ) {}
 
   listUsers = async (
@@ -69,7 +71,8 @@ export class UserService {
     currentPage: number,
     query: ListUserRequest,
     accountId: string,
-    isAdministrator: boolean
+    isAdministrator: boolean,
+    excludeUserId: string
   ): Promise<[ListUserResponse[], number]> => {
     const searchHashes = query.search
       ? this.encryptService.encrypt(query.search)
@@ -82,13 +85,15 @@ export class UserService {
         query,
         accountId,
         isAdministrator,
-        searchHashes
+        searchHashes,
+        excludeUserId
       ),
       this.userListerRepository.listUsersTotal(
         query,
         accountId,
         isAdministrator,
-        searchHashes
+        searchHashes,
+        excludeUserId
       ),
     ]);
 
@@ -160,32 +165,23 @@ export class UserService {
   updateUserById = async (
     userId: string,
     input: IUpdateUser,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<boolean> => {
-    return this.userUpdaterRepository.updateUserById(
-      userId,
-      input,
-      accountId,
-      isAdministrator
-    );
+    return this.userUpdaterRepository.updateUserById(userId, input, accountId);
   };
 
   updateUserByIdWithAccountChange = async (
     t: TFunction<'translation', undefined>,
     userId: string,
     input: IUpdateUser,
-    accountId: string,
-    isAdministrator: boolean
+    newAccountId: string,
+    currentAccountId: string
   ): Promise<boolean> => {
-    const currentAccountId = await this.getUserAccountId(userId);
-
     return this.userUpdaterTransactionRepository.updateUserWithAccountChange(
       t,
       userId,
       input,
-      accountId,
-      isAdministrator,
+      newAccountId,
       currentAccountId
     );
   };
@@ -415,24 +411,21 @@ export class UserService {
 
   assignUserRole = async (
     userId: string,
-    permissionRoleId: string,
-    accountId: string
+    permissionRoleId: string
   ): Promise<boolean> => {
     const currentRole = await this.getUserRole(userId);
 
     if (currentRole) {
       return this.permissionAssignmentUpdaterRepository.updatePermissionAssignment(
         userId,
-        permissionRoleId,
-        accountId
+        permissionRoleId
       );
     }
 
     const assignmentId =
       await this.permissionAssignmentCreatorRepository.createPermissionAssignment(
         userId,
-        permissionRoleId,
-        accountId
+        permissionRoleId
       );
 
     return assignmentId !== null;
@@ -464,5 +457,9 @@ export class UserService {
     if (!emailC) return false;
 
     return this.userEmailViewerExistsRepository.existsUserEmailById(emailC);
+  };
+
+  totalUserByAccount = async (accountId: string): Promise<number> => {
+    return this.userTotalViewerRepository.totalUserByAccount(accountId);
   };
 }

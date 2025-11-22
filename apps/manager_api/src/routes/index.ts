@@ -11,6 +11,7 @@ import userRoutes from './user.route';
 import zipcodeRoutes from './zipcode.route';
 import accountRoutes from './account.route';
 import planRoutes from './plan.route';
+import planCrossSellRoutes from './planCrossSell.route';
 import messageTemplateRoutes from './messageTemplate.route';
 import labelTemplateRoutes from './labelTemplate.route';
 import contactRoutes from './contact.route';
@@ -30,6 +31,7 @@ export default function registerRoutes(server: FastifyInstance) {
   server.register(zipcodeRoutes);
   server.register(accountRoutes);
   server.register(planRoutes);
+  server.register(planCrossSellRoutes);
   server.register(messageTemplateRoutes);
   server.register(labelTemplateRoutes);
   server.register(contactRoutes);

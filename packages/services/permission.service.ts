@@ -46,10 +46,12 @@ export class PermissionService {
   };
 
   listPermissionRoleAccountById = async (
-    accountId: string
+    accountId: string,
+    isAdministrator: boolean
   ): Promise<ListRoleAccountResponse[]> => {
     return this.permissionRoleAccountListerRepository.listPermissionRoleAccountById(
-      accountId
+      accountId,
+      isAdministrator
     );
   };
 

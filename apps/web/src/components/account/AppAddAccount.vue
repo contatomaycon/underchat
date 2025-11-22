@@ -81,8 +81,13 @@ onMounted(async () => {
   }
 });
 
-watch(isVisible, (visible) => {
-  if (visible) resetForm();
+watch(isVisible, async (visible) => {
+  if (visible) {
+    resetForm();
+    if (!planStore.listAll.length) {
+      await planStore.listPlanAll();
+    }
+  }
 });
 </script>
 

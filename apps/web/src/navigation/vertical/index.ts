@@ -11,6 +11,7 @@ import { EMessageTemplatePermissions } from '@core/common/enums/EPermissions/mes
 import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 
 export default [
   {
@@ -151,6 +152,34 @@ export default [
       EAccountPermissions.account_create,
       EAccountPermissions.account_update,
       EAccountPermissions.account_delete,
+    ],
+  },
+  {
+    title: 'plans',
+    icon: { icon: 'tabler-package' },
+    children: [
+      {
+        title: 'plans',
+        to: { name: 'plan' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-package' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EPlanPermissions.plan_group,
+          EPlanPermissions.plan_view,
+        ],
+      },
+      {
+        title: 'cross_sell',
+        to: { name: 'cross-sell' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-shopping-cart' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EPlanPermissions.plan_group,
+          EPlanPermissions.plan_view,
+        ],
+      },
     ],
   },
   {

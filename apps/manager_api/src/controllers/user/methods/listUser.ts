@@ -19,7 +19,8 @@ export const listUser = async (
       t,
       request.query,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator
+      tokenJwtData.is_administrator,
+      tokenJwtData.user_id
     );
 
     if (response) {

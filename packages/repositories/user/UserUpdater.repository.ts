@@ -48,15 +48,14 @@ export class UserUpdaterRepository {
   updateUserById = async (
     userId: string,
     input: IUpdateUser,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input);
 
-    const whereCondition =
-      isAdministrator && input.account_id
-        ? eq(user.user_id, userId)
-        : and(eq(user.user_id, userId), eq(user.account_id, accountId));
+    const whereCondition = and(
+      eq(user.user_id, userId),
+      eq(user.account_id, accountId)
+    );
 
     const result = await this.db
       .update(user)
@@ -75,15 +74,14 @@ export class UserUpdaterRepository {
     >,
     userId: string,
     input: IUpdateUser,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input);
 
-    const whereCondition =
-      isAdministrator && input.account_id
-        ? eq(user.user_id, userId)
-        : and(eq(user.user_id, userId), eq(user.account_id, accountId));
+    const whereCondition = and(
+      eq(user.user_id, userId),
+      eq(user.account_id, accountId)
+    );
 
     const result = await tx
       .update(user)

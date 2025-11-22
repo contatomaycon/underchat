@@ -12,7 +12,6 @@ import { ERolePermissions } from '@core/common/enums/EPermissions/role';
 import { EPermissionPermissions } from '@core/common/enums/EPermissions/permission';
 import { useRolesStore } from '@/@webcore/stores/role';
 import { usePermissionStore } from '@/@webcore/stores/permission';
-import { can } from '@/@layouts/plugins/casl';
 
 definePage({
   meta: {
@@ -162,10 +161,6 @@ watch(
   },
   { immediate: true, deep: true }
 );
-
-onMounted(() => {
-  console.log('permissionsEdit', can(permissionsEdit));
-});
 </script>
 
 <template>

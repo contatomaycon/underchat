@@ -12,8 +12,7 @@ export class PermissionAssignmentCreatorRepository {
 
   createPermissionAssignment = async (
     userId: string,
-    permissionRoleId: string,
-    accountId: string
+    permissionRoleId: string
   ): Promise<string | null> => {
     const permissionAssignmentId = uuidv7();
 
@@ -23,7 +22,6 @@ export class PermissionAssignmentCreatorRepository {
         permission_assignment_id: permissionAssignmentId,
         permission_role_id: permissionRoleId,
         user_id: userId,
-        account_id: accountId,
       })
       .execute();
 

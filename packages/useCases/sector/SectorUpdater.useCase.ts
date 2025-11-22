@@ -11,12 +11,11 @@ export class SectorUpdaterUseCase {
     t: TFunction<'translation', undefined>,
     sectorId: string,
     input: EditSectorParamsBody,
-    accountId: string,
     isAdministrator: boolean
   ): Promise<boolean> {
     const exists = await this.sectorService.existsSectorById(
       sectorId,
-      accountId,
+      input.account_id,
       isAdministrator
     );
 
@@ -34,8 +33,7 @@ export class SectorUpdaterUseCase {
 
     const sectorUpdate = await this.sectorService.updateSectorById(
       sectorId,
-      input,
-      accountId
+      input
     );
 
     if (!sectorUpdate) {
