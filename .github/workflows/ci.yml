@@ -61,42 +61,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
 
-      - name: Configure .npmrc and Git for GitHub repository access
-        env:
-          GIT_TOKEN: ${{ env.GIT_TOKEN }}
-        run: |
-          # Configurar Git para usar HTTPS em vez de SSH
-          git config --global url."https://${GIT_TOKEN}@github.com/".insteadOf "git@github.com:"
-          git config --global url."https://${GIT_TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
-
-          # Configurar credential helper para HTTPS
-          echo "https://${GIT_TOKEN}@github.com" > ~/.git-credentials
-          git config --global credential.helper store
-
-          # Configurar .npmrc
-          if [ -f .npmrc ]; then
-            sed -i "s/\${GIT_TOKEN}/${GIT_TOKEN}/g" .npmrc
-            echo "Configured .npmrc with GitHub token"
-            cat .npmrc | sed 's/\(authToken=\).*/\1***/'
-          else
-            echo "//github.com/:_authToken=${GIT_TOKEN}" > .npmrc
-            echo "always-auth=true" >> .npmrc
-            echo "Created .npmrc with GitHub token"
-          fi
-
-          # Modificar package.json temporariamente para usar HTTPS com token em vez de github:
-          sed -i "s|\"github:contatomaycon/baileys\"|\"https://${GIT_TOKEN}@github.com/contatomaycon/baileys.git\"|g" package.json
-          echo "Modified package.json to use HTTPS format with token"
-
-          # Verificar configuração do Git
-          echo "Git URL rewrite configuration:"
-          git config --global --get-regexp url
-
       - name: Install Dependencies
-        env:
-          GIT_TOKEN: ${{ env.GIT_TOKEN }}
-          GIT_SSH_COMMAND: git -c url."https://${GIT_TOKEN}@github.com/".insteadOf="git@github.com:"
-        run: pnpm install
+        run: |
+          echo "//github.com/:_authToken=${GIT_TOKEN}" > .npmrc
+          echo "always-auth=true" >> .npmrc
+          pnpm install
 
       - name: Run Lint
         run: pnpm run lint
