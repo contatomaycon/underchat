@@ -57,6 +57,8 @@ export class ContactUpdaterRepository {
       inputUpdate.notes = input.notes;
     }
 
+    inputUpdate.is_valided = input.is_valided ?? false;
+
     return inputUpdate;
   }
 

@@ -90,15 +90,16 @@ export class ContactCreatorUseCase {
   }
 
   private async checkContactExistence(
+    accountId: string,
     emailC: string | null,
     phonesC: string[]
   ): Promise<{ emailExists: boolean; phoneExists: boolean }> {
     const [emailExists, phoneExists] = await Promise.all([
       emailC
-        ? this.contactService.existsContactByEmail(emailC)
+        ? this.contactService.existsContactByEmail(accountId, emailC)
         : Promise.resolve(false),
       phonesC && phonesC.length > 0
-        ? this.contactService.existsContactByPhone(phonesC)
+        ? this.contactService.existsContactByPhone(accountId, phonesC)
         : Promise.resolve(false),
     ]);
 
@@ -131,6 +132,7 @@ export class ContactCreatorUseCase {
         throw new Error(t('no_active_worker_for_validation'));
       }
     }
+
     throw error;
   }
 
@@ -185,6 +187,7 @@ export class ContactCreatorUseCase {
     const { emailC, phonesC } = this.encryptContactData(input);
 
     const { emailExists, phoneExists } = await this.checkContactExistence(
+      accountId,
       emailC,
       phonesC
     );

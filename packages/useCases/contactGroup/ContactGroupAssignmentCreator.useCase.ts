@@ -94,7 +94,10 @@ export class ContactGroupAssignmentCreatorUseCase {
     accountId: string,
     contactGroupId: string
   ): Promise<IContactImportStatus> {
-    const phoneExists = await this.contactService.existsContactByPhone(phonesC);
+    const phoneExists = await this.contactService.existsContactByPhone(
+      accountId,
+      phonesC
+    );
 
     if (phoneExists) {
       return this.createStatusResult(

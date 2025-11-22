@@ -6,32 +6,97 @@ import { LabelTemplateService } from '@core/services/labelTemplate.service';
 import { EncryptService } from '@core/services/encrypt.service';
 import moment from 'moment';
 import { buildCandidatesWithDdi } from '@core/common/functions/buildCandidatesBR';
+import { PhoneValidationService } from '@core/services/phoneValidation.service';
+import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 
 @injectable()
 export class ContactUpdaterUseCase {
   constructor(
     private readonly contactService: ContactService,
     private readonly labelTemplateService: LabelTemplateService,
-    private readonly encryptService: EncryptService
+    private readonly encryptService: EncryptService,
+    private readonly phoneValidationService: PhoneValidationService
   ) {}
+
+  private handlePhoneValidationError(
+    t: TFunction<'translation', undefined>,
+    error: unknown
+  ): never {
+    if (error instanceof Error) {
+      if (error.message.includes('timeout')) {
+        throw new Error(t('phone_validation_timeout'));
+      }
+      if (error.message.includes('No active worker')) {
+        throw new Error(t('no_active_worker_for_validation'));
+      }
+    }
+
+    throw error;
+  }
+
+  private async validateAndNormalizePhone(
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    phone: string,
+    phoneDdi?: string | null
+  ): Promise<{ phone: string; phoneDdi: string | null }> {
+    try {
+      const validationResult = await this.phoneValidationService.validatePhone(
+        accountId,
+        phone,
+        phoneDdi
+      );
+
+      if (!validationResult.valid) {
+        throw new Error(t('phone_number_not_valid_on_whatsapp'));
+      }
+
+      if (!validationResult.phone) {
+        return { phone, phoneDdi: phoneDdi ?? null };
+      }
+
+      const normalizedPhone = extractPhoneAndDdi(validationResult.phone);
+      if (normalizedPhone) {
+        return {
+          phone: normalizedPhone.phone,
+          phoneDdi: normalizedPhone.phone_ddi,
+        };
+      }
+
+      return { phone, phoneDdi: phoneDdi ?? null };
+    } catch (error) {
+      this.handlePhoneValidationError(t, error);
+    }
+  }
 
   private async validatePhone(
     t: TFunction<'translation', undefined>,
+    accountId: string,
     contactId: string,
     phone?: string | null,
     phoneDdi?: string | null
-  ) {
+  ): Promise<{ phone: string; phoneDdi: string | null } | undefined> {
     if (!phone) return;
     if (!phoneDdi) throw new Error(t('phone_ddi_required'));
 
     const phones = buildCandidatesWithDdi(phone, phoneDdi);
     const phonesC = phones.map((phone) => this.encryptService.encrypt(phone));
 
-    await this.validatePhoneDuplicateContact(t, phonesC, contactId);
+    await this.validatePhoneDuplicateContact(t, phonesC, accountId, contactId);
+
+    const normalized = await this.validateAndNormalizePhone(
+      t,
+      accountId,
+      phone,
+      phoneDdi
+    );
+
+    return normalized;
   }
 
   private async validateEmail(
     t: TFunction<'translation', undefined>,
+    accountId: string,
     contactId: string,
     email?: string | null
   ) {
@@ -39,7 +104,7 @@ export class ContactUpdaterUseCase {
 
     const emailC = this.encryptService.encrypt(email);
 
-    await this.validateEmailDuplicateContact(t, emailC, contactId);
+    await this.validateEmailDuplicateContact(t, emailC, accountId, contactId);
   }
 
   private validateBirthDate(
@@ -69,9 +134,11 @@ export class ContactUpdaterUseCase {
   private async validatePhoneDuplicateContact(
     t: TFunction<'translation', undefined>,
     phonesC: string[],
+    accountId: string,
     contactId: string
   ): Promise<void> {
     const phoneExists = await this.contactService.existsContactByPhone(
+      accountId,
       phonesC,
       contactId
     );
@@ -84,9 +151,11 @@ export class ContactUpdaterUseCase {
   private async validateEmailDuplicateContact(
     t: TFunction<'translation', undefined>,
     emailC: string,
+    accountId: string,
     contactId: string
   ): Promise<void> {
     const emailExists = await this.contactService.existsContactByEmail(
+      accountId,
       emailC,
       contactId
     );
@@ -98,6 +167,7 @@ export class ContactUpdaterUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
+    accountId: string,
     contactId: string,
     body: UpdateContactRequest
   ): Promise<boolean> {
@@ -121,13 +191,19 @@ export class ContactUpdaterUseCase {
 
     this.validateBirthDate(t, body.birthday);
 
-    await Promise.all([
-      this.validatePhone(t, contactId, body.phone, body.phone_ddi),
-      this.validateEmail(t, contactId, body.email),
+    const [normalizedPhone, _] = await Promise.all([
+      this.validatePhone(t, accountId, contactId, body.phone, body.phone_ddi),
+      this.validateEmail(t, accountId, contactId, body.email),
     ]);
 
+    const bodyToUpdate: UpdateContactRequest = {
+      ...body,
+      phone: normalizedPhone?.phone ?? null,
+      phone_ddi: normalizedPhone?.phoneDdi ?? null,
+    };
+
     const contactUpdater = await this.contactService.updateContactById(
-      body,
+      bodyToUpdate,
       contactId
     );
 

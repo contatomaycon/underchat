@@ -216,6 +216,7 @@ export class ContactService {
       nickname: input.nickname,
       birthday: nullIfEmpty(input.birthday),
       notes: input.notes,
+      is_valided: input.phone && input.phone_ddi ? true : false,
     };
 
     return this.contactUpdaterRepository.updateContactById(contactId, payload);
@@ -293,20 +294,24 @@ export class ContactService {
   };
 
   existsContactByEmail = async (
+    accountId: string,
     emailC: string,
     contactId?: string | null
   ): Promise<boolean> => {
     return this.contactExistsByEmailAndPhoneRepository.existsContactByEmail(
+      accountId,
       emailC,
       contactId
     );
   };
 
   existsContactByPhone = async (
+    accountId: string,
     phonesC: string[],
     contactId?: string | null
   ): Promise<boolean> => {
     return this.contactExistsByEmailAndPhoneRepository.existsContactByPhone(
+      accountId,
       phonesC,
       contactId
     );

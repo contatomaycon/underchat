@@ -52,11 +52,13 @@ export class ContactExistsByEmailAndPhoneRepository {
   };
 
   existsContactByEmail = async (
+    accountId: string,
     emailC: string,
     excludeContactId?: string | null
   ): Promise<boolean> => {
     const conditions = [
       isNull(contact.deleted_at),
+      eq(contact.account_id, accountId),
       eq(contact.email_c, emailC),
     ];
 
@@ -80,11 +82,13 @@ export class ContactExistsByEmailAndPhoneRepository {
   };
 
   existsContactByPhone = async (
+    accountId: string,
     phonesC: string[],
     excludeContactId?: string | null
   ): Promise<boolean> => {
     const conditions = [
       isNull(contact.deleted_at),
+      eq(contact.account_id, accountId),
       inArray(contact.phone_c, phonesC),
     ];
 
