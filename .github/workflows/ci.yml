@@ -61,11 +61,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
 
-      - name: Install Dependencies
+      - name: Configure SSH for GitHub
         run: |
-          echo "//github.com/:_authToken=${GIT_TOKEN}" > .npmrc
-          echo "always-auth=true" >> .npmrc
-          pnpm install
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+          eval "$(ssh-agent -s)"
+          ssh-add ~/.ssh/id_rsa
+
+          ssh -T git@github.com || true
+
+      - name: Install Dependencies
+        run: pnpm install
 
       - name: Run Lint
         run: pnpm run lint
