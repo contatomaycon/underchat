@@ -191,7 +191,7 @@ export class ContactUpdaterUseCase {
 
     this.validateBirthDate(t, body.birthday);
 
-    const [normalizedPhone, _] = await Promise.all([
+    const [normalizedPhone] = await Promise.all([
       this.validatePhone(t, accountId, contactId, body.phone, body.phone_ddi),
       this.validateEmail(t, accountId, contactId, body.email),
     ]);

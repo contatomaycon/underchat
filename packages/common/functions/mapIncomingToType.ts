@@ -37,16 +37,6 @@ function hasQuotedRecursive(msg: proto.IMessage): boolean {
   return false;
 }
 
-function hasMentions(msg: proto.IMessage): boolean {
-  const ctx = msg.extendedTextMessage?.contextInfo;
-
-  if (ctx?.mentionedJid?.length) return true;
-  if ((msg as any).ephemeralMessage?.message)
-    return hasMentions((msg as any).ephemeralMessage.message as proto.IMessage);
-
-  return false;
-}
-
 function getViewOnceInner(msg: proto.IMessage): proto.IMessage | undefined {
   const v1 = (msg as any).viewOnceMessage?.message as
     | proto.IMessage
@@ -87,7 +77,7 @@ function detectProtocol({ pType, msg }: IMapCtx): EMessageType | undefined {
     return EMessageType.set_disappearing_messages;
 }
 
-function detectText({ text, msg }: IMapCtx): EMessageType | undefined {
+function detectText({ text }: IMapCtx): EMessageType | undefined {
   if (!text) return;
 
   return EMessageType.text;

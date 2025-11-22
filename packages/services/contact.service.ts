@@ -1,4 +1,4 @@
-import { inject, injectable } from 'tsyringe';
+import { injectable } from 'tsyringe';
 import { ContactListerRepository } from '@core/repositories/contact/ContactLister.repository';
 import { ListContactRequest } from '@core/schema/contact/listContact/request.schema';
 import { ListContactResponse } from '@core/schema/contact/listContact/response.schema';

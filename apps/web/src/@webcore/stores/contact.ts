@@ -169,7 +169,7 @@ export const useContactStore = defineStore('contact', {
         }
 
         return data.data;
-      } catch (error) {
+      } catch {
         return null;
       }
     },

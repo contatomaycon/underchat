@@ -704,7 +704,7 @@ export const useChatStore = defineStore('chat', {
         }
 
         return true;
-      } catch (error) {
+      } catch {
         if (shouldHandleLoading) {
           this.loading = false;
         }
@@ -763,7 +763,7 @@ export const useChatStore = defineStore('chat', {
         }
 
         return true;
-      } catch (error) {
+      } catch {
         if (shouldHandleLoading) {
           this.loading = false;
         }
@@ -822,7 +822,7 @@ export const useChatStore = defineStore('chat', {
         }
 
         return true;
-      } catch (error) {
+      } catch {
         if (shouldHandleLoading) {
           this.loading = false;
         }
@@ -880,7 +880,7 @@ export const useChatStore = defineStore('chat', {
         }
 
         return true;
-      } catch (error) {
+      } catch {
         if (shouldHandleLoading) {
           this.loading = false;
         }
@@ -966,7 +966,7 @@ export const useChatStore = defineStore('chat', {
         }
 
         return true;
-      } catch (error) {
+      } catch {
         if (shouldHandleLoading) {
           this.loading = false;
         }

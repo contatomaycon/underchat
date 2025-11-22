@@ -26,7 +26,10 @@ import {
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 import { remoteJid } from '@core/common/functions/remoteJid';
 import { StorageService } from '@core/services/storage.service';
-import { LinkPreview } from '@core/schema/chat/listMessageChats/response.schema';
+import {
+  LinkPreview,
+  MessageVersion,
+} from '@core/schema/chat/listMessageChats/response.schema';
 import { buildQuotedTextFromExtended } from '@core/common/functions/buildQuotedTextFromExtended';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
@@ -40,7 +43,6 @@ import { Buffer } from 'node:buffer';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IMessageMarkRead } from '@core/common/interfaces/IMessageMarkRead';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
-import { MessageVersion } from '@core/schema/chat/listMessageChats/response.schema';
 import { extractPhoneAndDdiFromContactMessage } from '@core/common/functions/extractPhoneAndDdi';
 import { EncryptService } from '@core/services/encrypt.service';
 import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';

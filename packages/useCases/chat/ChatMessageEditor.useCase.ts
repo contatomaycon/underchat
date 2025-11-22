@@ -1,4 +1,4 @@
-import { injectable, inject } from 'tsyringe';
+import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ChatService } from '@core/services/chat.service';
 import { EMessageType } from '@core/common/enums/EMessageType';

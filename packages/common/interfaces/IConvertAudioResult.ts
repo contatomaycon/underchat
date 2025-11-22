@@ -4,4 +4,3 @@ export interface IConvertAudioResult {
   extension: string;
   duration?: number;
 }
-

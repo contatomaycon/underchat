@@ -6,76 +6,6 @@ export interface IPhoneAndDdi {
   phone_ddi: string;
 }
 
-export function extractPhoneAndDdi(
-  phoneValue: string | null | undefined
-): IPhoneAndDdi | null {
-  if (!phoneValue) return null;
-
-  const hasPlus = phoneValue.trim().startsWith('+');
-  const digits = onlyDigits(phoneValue);
-
-  if (!digits || digits.length < 8) return null;
-
-  if (!hasPlus && digits.length < 10) return null;
-
-  const brazilResult = tryBrazilDdi(digits);
-  if (brazilResult) return brazilResult;
-
-  const usaCanadaResult = tryUsaCanadaDdi(digits);
-  if (usaCanadaResult) return usaCanadaResult;
-
-  const twoDigitResult = tryTwoDigitDdi(digits);
-  if (twoDigitResult) return twoDigitResult;
-
-  const threeDigitResult = tryThreeDigitDdi(digits);
-  if (threeDigitResult) return threeDigitResult;
-
-  const fallbackResult = tryFallbackPatterns(digits);
-  if (fallbackResult) return fallbackResult;
-
-  return null;
-}
-
-export function extractPhoneAndDdiFromContactMessage(
-  contactMessage: proto.Message.IContactMessage | null | undefined
-): IPhoneAndDdi | null {
-  if (!contactMessage?.vcard) return null;
-
-  const vcard = contactMessage.vcard;
-  const extracted = extractPhoneFromVCard(vcard);
-  if (!extracted) return null;
-
-  if (extracted.waid) {
-    const waidDigits = onlyDigits(extracted.waid);
-
-    if (extracted.fullPhone) {
-      const fullPhoneResult = extractPhoneAndDdi(extracted.fullPhone);
-      if (fullPhoneResult) {
-        const ddiDigits = onlyDigits(fullPhoneResult.phone_ddi);
-        let phoneWithoutDdi = waidDigits;
-
-        if (waidDigits.startsWith(ddiDigits)) {
-          phoneWithoutDdi = waidDigits.slice(ddiDigits.length);
-        }
-
-        return {
-          phone_ddi: fullPhoneResult.phone_ddi,
-          phone: phoneWithoutDdi,
-        };
-      }
-    }
-
-    const waidResult = extractPhoneAndDdi(extracted.waid);
-    if (waidResult) {
-      return waidResult;
-    }
-
-    return null;
-  }
-
-  return extractPhoneAndDdi(extracted.phone);
-}
-
 function tryBrazilDdi(digits: string): IPhoneAndDdi | null {
   if (digits.startsWith('55') && digits.length >= 12) {
     return {
@@ -327,4 +257,74 @@ function extractPhoneFromVCard(
   }
 
   return null;
+}
+
+export function extractPhoneAndDdi(
+  phoneValue: string | null | undefined
+): IPhoneAndDdi | null {
+  if (!phoneValue) return null;
+
+  const hasPlus = phoneValue.trim().startsWith('+');
+  const digits = onlyDigits(phoneValue);
+
+  if (!digits || digits.length < 8) return null;
+
+  if (!hasPlus && digits.length < 10) return null;
+
+  const brazilResult = tryBrazilDdi(digits);
+  if (brazilResult) return brazilResult;
+
+  const usaCanadaResult = tryUsaCanadaDdi(digits);
+  if (usaCanadaResult) return usaCanadaResult;
+
+  const twoDigitResult = tryTwoDigitDdi(digits);
+  if (twoDigitResult) return twoDigitResult;
+
+  const threeDigitResult = tryThreeDigitDdi(digits);
+  if (threeDigitResult) return threeDigitResult;
+
+  const fallbackResult = tryFallbackPatterns(digits);
+  if (fallbackResult) return fallbackResult;
+
+  return null;
+}
+
+export function extractPhoneAndDdiFromContactMessage(
+  contactMessage: proto.Message.IContactMessage | null | undefined
+): IPhoneAndDdi | null {
+  if (!contactMessage?.vcard) return null;
+
+  const vcard = contactMessage.vcard;
+  const extracted = extractPhoneFromVCard(vcard);
+  if (!extracted) return null;
+
+  if (extracted.waid) {
+    const waidDigits = onlyDigits(extracted.waid);
+
+    if (extracted.fullPhone) {
+      const fullPhoneResult = extractPhoneAndDdi(extracted.fullPhone);
+      if (fullPhoneResult) {
+        const ddiDigits = onlyDigits(fullPhoneResult.phone_ddi);
+        let phoneWithoutDdi = waidDigits;
+
+        if (waidDigits.startsWith(ddiDigits)) {
+          phoneWithoutDdi = waidDigits.slice(ddiDigits.length);
+        }
+
+        return {
+          phone_ddi: fullPhoneResult.phone_ddi,
+          phone: phoneWithoutDdi,
+        };
+      }
+    }
+
+    const waidResult = extractPhoneAndDdi(extracted.waid);
+    if (waidResult) {
+      return waidResult;
+    }
+
+    return null;
+  }
+
+  return extractPhoneAndDdi(extracted.phone);
 }

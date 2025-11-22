@@ -2,7 +2,6 @@ import { injectable } from 'tsyringe';
 import { Buffer } from 'node:buffer';
 import { IConvertAudioResult } from '@core/common/interfaces/IConvertAudioResult';
 import { IConvertVideoResult } from '@core/common/interfaces/IConvertVideoResult';
-import { IAudioFormatConfig } from '@core/common/interfaces/IAudioFormatConfig';
 import { AudioFormatDetector } from './audio/audioFormatDetector.service';
 import { AudioFormatValidator } from './audio/audioFormatValidator.service';
 import { AudioFfmpegConverter } from './audio/audioFfmpegConverter.service';

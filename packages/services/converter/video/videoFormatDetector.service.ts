@@ -16,11 +16,11 @@ export class VideoFormatDetector {
     const format =
       this.detectMp4Format(buffer, b0, b1, b2, b3) ||
       this.detectWebmFormat(b0, b1, b2, b3) ||
-      this.detectAviFormat(buffer, b0, b1, b2, b3) ||
-      this.detectMovFormat(buffer, b0, b1, b2, b3) ||
+      this.detectAviFormat(buffer) ||
+      this.detectMovFormat(buffer) ||
       this.detectMkvFormat(buffer, b0, b1, b2, b3) ||
       this.detectFlvFormat(buffer, b0, b1, b2, b3) ||
-      this.detect3gpFormat(buffer, b0, b1, b2, b3);
+      this.detect3gpFormat(buffer);
 
     return format || '';
   }
@@ -112,13 +112,7 @@ export class VideoFormatDetector {
     return null;
   }
 
-  private detectAviFormat(
-    buffer: Buffer,
-    b0: number,
-    b1: number,
-    b2: number,
-    b3: number
-  ): string | null {
+  private detectAviFormat(buffer: Buffer): string | null {
     if (buffer.length < 12) {
       return null;
     }
@@ -133,13 +127,7 @@ export class VideoFormatDetector {
     return null;
   }
 
-  private detectMovFormat(
-    buffer: Buffer,
-    b0: number,
-    b1: number,
-    b2: number,
-    b3: number
-  ): string | null {
+  private detectMovFormat(buffer: Buffer): string | null {
     if (buffer.length < 12) {
       return null;
     }
@@ -190,13 +178,7 @@ export class VideoFormatDetector {
     return null;
   }
 
-  private detect3gpFormat(
-    buffer: Buffer,
-    b0: number,
-    b1: number,
-    b2: number,
-    b3: number
-  ): string | null {
+  private detect3gpFormat(buffer: Buffer): string | null {
     if (buffer.length < 12) {
       return null;
     }

@@ -177,7 +177,6 @@ function processContactMessage(
   const nameMatch = vcard.match(/FN:([^\r\n]+)/);
   const telMatch = vcard.match(/TEL:([^\r\n]+)/);
   const emailMatch = vcard.match(/EMAIL:([^\r\n]+)/);
-  const nMatch = vcard.match(/N:([^;]+);([^;]*);/);
 
   const fullName = nameMatch?.[1]?.trim() || '';
   const nameParts = fullName.split(' ');
