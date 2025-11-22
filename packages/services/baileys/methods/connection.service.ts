@@ -448,10 +448,10 @@ export class BaileysConnectionService {
     this.pendingResolve = undefined;
   }
 
-  private onClose(
+  private async onClose(
     last: IBaileysUpdateEvent['lastDisconnect'],
     resolve: (s: IBaileysConnectionState) => void
-  ): void {
+  ): Promise<void> {
     this.connectionEstablished = false;
     const statusCode = this.extractStatusCode(last?.error);
     const statusMessage = this.extractStatusMessage(last?.error);
@@ -490,6 +490,15 @@ export class BaileysConnectionService {
       }
     }
 
+    if (
+      statusCode === ECodeMessage.loggedOut ||
+      statusCode === ECodeMessage.multideviceMismatch ||
+      statusCode === ECodeMessage.badSession ||
+      statusCode === ECodeMessage.connectionReplaced
+    ) {
+      await this.updateWorkerMismatchedStatus();
+    }
+
     if (statusCode === ECodeMessage.loggedOut) {
       this.clearFolder();
 
@@ -499,7 +508,7 @@ export class BaileysConnectionService {
         code: disconnectionCode,
         disconnected_user: true,
         account_id: ACCOUNT,
-        worker_status_id: EWorkerStatus.disponible,
+        worker_status_id: EWorkerStatus.mismatched,
       };
 
       this.streamProducerService.send(
@@ -581,6 +590,8 @@ export class BaileysConnectionService {
     this.setStatus(Status.disconnected, ECodeMessage.badSession);
     this.clearFolder();
 
+    await this.updateWorkerMismatchedStatus();
+
     return this.connect({
       initial_connection: this.initialConnection,
       allow_restore: true,
@@ -599,6 +610,28 @@ export class BaileysConnectionService {
 
     this.lastPayload = data;
     this.centrifugo.publishSub(CHANNEL, payload);
+  }
+
+  private async updateWorkerMismatchedStatus(): Promise<void> {
+    try {
+      const payload: IBaileysConnectionState = {
+        code: ECodeMessage.info,
+        status: Status.disconnected,
+        worker_id: WORKER,
+        account_id: ACCOUNT,
+        worker_status_id: EWorkerStatus.mismatched,
+      };
+
+      this.publishSub(payload);
+
+      await this.streamProducerService.send(
+        this.kafkaServiceQueueService.workerStatus(),
+        payload,
+        WORKER
+      );
+    } catch (error) {
+      console.error('Error updating worker mismatched status:', error);
+    }
   }
 
   private safeLogout(forceLogout = false): void {
