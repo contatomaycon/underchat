@@ -81,7 +81,7 @@ export class ContactGroupAssignmentCreatorUseCase {
     const { phone: phoneToSave, phoneDdi: phoneDdiToSave } =
       this.normalizePhoneFromValidation(contact.phone, contact.phone_ddi);
 
-    const contactCreated = await this.contactService.createContactTx(
+    const contactCreated = await this.contactService.createContactWithGroup(
       t,
       {
         ...contact,
@@ -89,7 +89,8 @@ export class ContactGroupAssignmentCreatorUseCase {
         phone_ddi: phoneDdiToSave,
       },
       contactGroupId,
-      accountId
+      accountId,
+      false
     );
 
     if (!contactCreated) {

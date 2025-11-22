@@ -201,6 +201,7 @@ export class ContactCreatorUseCase {
         input.phone,
         input.phone_ddi
       );
+
       phoneToSave = normalized.phone;
       phoneDdiToSave = normalized.phoneDdi ?? '55';
     }
@@ -213,7 +214,8 @@ export class ContactCreatorUseCase {
 
     const contactId = await this.contactService.createContact(
       contactToCreate,
-      accountId
+      accountId,
+      true
     );
 
     if (!contactId) {
