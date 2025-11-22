@@ -9,6 +9,7 @@ import { EncryptService } from '@core/services/encrypt.service';
 import { PhoneValidationService } from '@core/services/phoneValidation.service';
 import { normalizePhoneNumber } from '@core/common/functions/normalizePhoneNumber';
 import moment from 'moment';
+import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 
 @injectable()
 export class ContactCreatorUseCase {
@@ -79,17 +80,20 @@ export class ContactCreatorUseCase {
 
   private encryptContactData(input: CreateContactRequest): {
     emailC: string | null;
-    phoneC: string | null;
+    phonesC: string[];
   } {
+    const phones = buildCandidates(input.phone);
+    const phonesC = phones.map((phone) => this.encryptService.encrypt(phone));
+
     return {
       emailC: input.email ? this.encryptService.encrypt(input.email) : null,
-      phoneC: input.phone ? this.encryptService.encrypt(input.phone) : null,
+      phonesC: input.phone ? phonesC : [],
     };
   }
 
   private async checkContactExistence(
     emailC: string | null,
-    phoneC: string | null
+    phonesC: string[]
   ): Promise<{ emailExists: boolean; phoneExists: boolean }> {
     const [emailExists, phoneExists] = await Promise.all([
       emailC
@@ -97,9 +101,9 @@ export class ContactCreatorUseCase {
             emailC
           )
         : Promise.resolve(false),
-      phoneC
+      phonesC && phonesC.length > 0
         ? this.contactExistsByEmailAndPhoneRepository.existsContactByPhone(
-            phoneC
+            phonesC
           )
         : Promise.resolve(false),
     ]);
@@ -184,11 +188,11 @@ export class ContactCreatorUseCase {
 
     this.validateBirthdayIfPresent(t, input.birthday);
 
-    const { emailC, phoneC } = this.encryptContactData(input);
+    const { emailC, phonesC } = this.encryptContactData(input);
 
     const { emailExists, phoneExists } = await this.checkContactExistence(
       emailC,
-      phoneC
+      phonesC
     );
 
     this.validateContactNotExists(t, emailExists, phoneExists);
@@ -204,7 +208,7 @@ export class ContactCreatorUseCase {
         input.phone_ddi
       );
       phoneToSave = normalized.phone;
-      phoneDdiToSave = normalized.phoneDdi;
+      phoneDdiToSave = normalized.phoneDdi ?? '55';
     }
 
     const contactToCreate: CreateContactRequest = {

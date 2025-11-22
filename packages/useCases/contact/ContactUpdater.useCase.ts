@@ -6,6 +6,7 @@ import { LabelTemplateService } from '@core/services/labelTemplate.service';
 import { ContactExistsByEmailAndPhoneRepository } from '@core/repositories/contact/ContactExistsByEmailAndPhone.repository';
 import { EncryptService } from '@core/services/encrypt.service';
 import moment from 'moment';
+import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 
 @injectable()
 export class ContactUpdaterUseCase {
@@ -40,12 +41,10 @@ export class ContactUpdaterUseCase {
   private async validateDuplicateContact(
     t: TFunction<'translation', undefined>,
     emailC: string | null,
-    phoneC: string | null,
+    phonesC: string[],
     contactId: string
   ): Promise<void> {
-    if (!emailC && !phoneC) {
-      return;
-    }
+    if (!emailC && !phonesC.length) return;
 
     const [emailExists, phoneExists] = await Promise.all([
       emailC
@@ -54,9 +53,9 @@ export class ContactUpdaterUseCase {
             contactId
           )
         : Promise.resolve(false),
-      phoneC
+      phonesC.length > 0
         ? this.contactExistsByEmailAndPhoneRepository.existsContactByPhone(
-            phoneC,
+            phonesC,
             contactId
           )
         : Promise.resolve(false),
@@ -103,9 +102,11 @@ export class ContactUpdaterUseCase {
     }
 
     const emailC = body.email ? this.encryptService.encrypt(body.email) : null;
-    const phoneC = body.phone ? this.encryptService.encrypt(body.phone) : null;
 
-    await this.validateDuplicateContact(t, emailC, phoneC, contactId);
+    const phones = buildCandidates(body.phone);
+    const phonesC = phones.map((phone) => this.encryptService.encrypt(phone));
+
+    await this.validateDuplicateContact(t, emailC, phonesC, contactId);
 
     const contactUpdater = await this.contactService.updateContactById(
       body,

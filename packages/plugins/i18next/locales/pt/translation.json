@@ -317,6 +317,7 @@
   "phone_validation_timeout": "Tempo de espera para validação do telefone excedido!",
   "no_active_worker_for_validation": "Nenhum canal ativo encontrado para validação!",
   "phone_required_for_validation": "Telefone é obrigatório para validação!",
+  "phone_ddi_and_phone_required": "DDI e telefone são obrigatórios!",
   "profile_info_photo_upload_error": "Erro ao fazer upload da foto do perfil!",
   "profile_info_not_found": "Informações do perfil não encontradas!",
   "profile_info_view_success": "Informações do perfil visualizadas com sucesso!",

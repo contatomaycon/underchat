@@ -1,7 +1,7 @@
 import { onlyDigits } from './onlyDigits';
 
 function isBrazil(numeric: string): boolean {
-  return numeric.startsWith('55');
+  return numeric.startsWith('55') || numeric.startsWith('+55');
 }
 
 function buildCandidatesBR(numeric: string): string[] {

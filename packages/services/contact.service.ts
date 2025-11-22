@@ -101,23 +101,6 @@ export class ContactService {
       ? this.encryptService.encrypt(input.phone)
       : null;
 
-    const [emailExists, phoneExists] = await Promise.all([
-      emailC
-        ? this.contactExistsByEmailAndPhoneRepository.existsContactByEmail(
-            emailC
-          )
-        : Promise.resolve(false),
-      phoneC
-        ? this.contactExistsByEmailAndPhoneRepository.existsContactByPhone(
-            phoneC
-          )
-        : Promise.resolve(false),
-    ]);
-
-    if (emailExists || phoneExists) {
-      return null;
-    }
-
     const payload: ICreateContact = {
       account_id: accountId,
       label_template_id: input.label_template_id,
@@ -131,12 +114,7 @@ export class ContactService {
       phone_partial: phonePartialEncrypted,
       phone_c: phoneC,
       nickname: input.nickname,
-      birthday:
-        input.birthday &&
-        typeof input.birthday === 'string' &&
-        input.birthday.trim() !== ''
-          ? input.birthday
-          : null,
+      birthday: input.birthday,
       notes: input.notes,
     };
 
@@ -183,27 +161,6 @@ export class ContactService {
       ? this.encryptService.encrypt(input.phone)
       : null;
 
-    if (emailC || phoneC) {
-      const [emailExists, phoneExists] = await Promise.all([
-        emailC
-          ? this.contactExistsByEmailAndPhoneRepository.existsContactByEmail(
-              emailC,
-              contactId
-            )
-          : Promise.resolve(false),
-        phoneC
-          ? this.contactExistsByEmailAndPhoneRepository.existsContactByPhone(
-              phoneC,
-              contactId
-            )
-          : Promise.resolve(false),
-      ]);
-
-      if (emailExists || phoneExists) {
-        return null;
-      }
-    }
-
     const payload: IUpdateContact = {
       label_template_id: input.label_template_id,
       name: input.name,
@@ -216,12 +173,7 @@ export class ContactService {
       phone_partial: phonePartialEncrypted,
       phone_c: phoneC,
       nickname: input.nickname,
-      birthday:
-        input.birthday &&
-        typeof input.birthday === 'string' &&
-        input.birthday.trim() !== ''
-          ? input.birthday
-          : null,
+      birthday: input.birthday,
       notes: input.notes,
     };
 
@@ -260,23 +212,6 @@ export class ContactService {
       ? this.encryptService.encrypt(input.phone)
       : null;
 
-    const [emailExists, phoneExists] = await Promise.all([
-      emailC
-        ? this.contactExistsByEmailAndPhoneRepository.existsContactByEmail(
-            emailC
-          )
-        : Promise.resolve(false),
-      phoneC
-        ? this.contactExistsByEmailAndPhoneRepository.existsContactByPhone(
-            phoneC
-          )
-        : Promise.resolve(false),
-    ]);
-
-    if (emailExists || phoneExists) {
-      return null;
-    }
-
     const payload: ICreateContact = {
       account_id: accountId,
       label_template_id: input.label_template_id,
@@ -290,12 +225,7 @@ export class ContactService {
       phone_partial: phonePartialEncrypted,
       phone_c: phoneC,
       nickname: input.nickname,
-      birthday:
-        input.birthday &&
-        typeof input.birthday === 'string' &&
-        input.birthday.trim() !== ''
-          ? input.birthday
-          : null,
+      birthday: input.birthday,
       notes: input.notes,
     };
 

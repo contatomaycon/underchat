@@ -4,6 +4,7 @@ import { useLabelTemplateStore } from '@/@webcore/stores/labelTemplate';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import { VForm } from 'vuetify/components/VForm';
 import { useCountryCodes } from '@/composables/useCountryCodes';
+import { requiredValidator } from '@/@webcore/utils/validators';
 
 const contactStore = useContactStore();
 const labelTemplateStore = useLabelTemplateStore();
@@ -99,7 +100,10 @@ const addContact = async () => {
 
   if (!name.value) return;
 
+  if (!phone_ddi.value) return;
+
   const phoneNumber = phone.value ? phone.value.replaceAll(/\D/g, '') : null;
+  if (!phoneNumber) return;
 
   const payload: CreateContactRequest = {
     label_template_id: label_template_id.value ?? null,
@@ -238,6 +242,9 @@ watch(
                       variant="outlined"
                       readonly
                       append-inner-icon="tabler-chevron-down"
+                      :rules="[
+                        requiredValidator(phone_ddi, $t('phone_ddi_required')),
+                      ]"
                     />
                   </template>
                   <VCard>
@@ -281,6 +288,7 @@ watch(
                 :label="$t('phone') + ':'"
                 :placeholder="$t('phone')"
                 maxlength="15"
+                :rules="[requiredValidator(phone, $t('phone_required'))]"
               />
             </VCol>
           </VRow>
