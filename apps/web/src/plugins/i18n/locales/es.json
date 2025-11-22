@@ -512,7 +512,6 @@
     "contact_deleted_error": "Ocurrió un error al eliminar el contacto. Por favor, inténtalo de nuevo.",
     "contact_deleted_success": "¡Contacto eliminado con éxito!",
     "contact_export_error": "Ocurrió un error al exportar los contactos. Por favor, inténtalo de nuevo.",
-    "contact_groups_required": "¡Selecciona al menos un grupo de contactos!",
     "nickname": "Apodo",
     "contacts": "Contactos",
     "edit_contact": "Editar Contacto",

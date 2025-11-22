@@ -307,4 +307,24 @@ export class ContactService {
       email: this.getContactEmailDecrypted(sensitiveData.email),
     };
   };
+
+  existsContactByEmail = async (
+    emailC: string,
+    contactId?: string | null
+  ): Promise<boolean> => {
+    return this.contactExistsByEmailAndPhoneRepository.existsContactByEmail(
+      emailC,
+      contactId
+    );
+  };
+
+  existsContactByPhone = async (
+    phonesC: string[],
+    contactId?: string | null
+  ): Promise<boolean> => {
+    return this.contactExistsByEmailAndPhoneRepository.existsContactByPhone(
+      phonesC,
+      contactId
+    );
+  };
 }

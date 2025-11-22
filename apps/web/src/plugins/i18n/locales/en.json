@@ -512,7 +512,6 @@
     "contact_deleted_error": "An error occurred while deleting the contact. Please try again.",
     "contact_deleted_success": "Contact deleted successfully!",
     "contact_export_error": "An error occurred while exporting contacts. Please try again.",
-    "contact_groups_required": "Select at least one contact group!",
     "nickname": "Nickname",
     "contacts": "Contacts",
     "edit_contact": "Edit Contact",

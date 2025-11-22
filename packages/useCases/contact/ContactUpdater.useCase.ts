@@ -3,7 +3,6 @@ import { TFunction } from 'i18next';
 import { UpdateContactRequest } from '@core/schema/contact/editContact/request.schema';
 import { ContactService } from '@core/services/contact.service';
 import { LabelTemplateService } from '@core/services/labelTemplate.service';
-import { ContactExistsByEmailAndPhoneRepository } from '@core/repositories/contact/ContactExistsByEmailAndPhone.repository';
 import { EncryptService } from '@core/services/encrypt.service';
 import moment from 'moment';
 import { buildCandidatesWithDdi } from '@core/common/functions/buildCandidatesBR';
@@ -13,7 +12,6 @@ export class ContactUpdaterUseCase {
   constructor(
     private readonly contactService: ContactService,
     private readonly labelTemplateService: LabelTemplateService,
-    private readonly contactExistsByEmailAndPhoneRepository: ContactExistsByEmailAndPhoneRepository,
     private readonly encryptService: EncryptService
   ) {}
 
@@ -48,16 +46,10 @@ export class ContactUpdaterUseCase {
 
     const [emailExists, phoneExists] = await Promise.all([
       emailC
-        ? this.contactExistsByEmailAndPhoneRepository.existsContactByEmail(
-            emailC,
-            contactId
-          )
+        ? this.contactService.existsContactByEmail(emailC, contactId)
         : Promise.resolve(false),
       phonesC.length > 0
-        ? this.contactExistsByEmailAndPhoneRepository.existsContactByPhone(
-            phonesC,
-            contactId
-          )
+        ? this.contactService.existsContactByPhone(phonesC, contactId)
         : Promise.resolve(false),
     ]);
 

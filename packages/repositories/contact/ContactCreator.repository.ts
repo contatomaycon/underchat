@@ -36,9 +36,7 @@ export class ContactCreatorRepository {
       })
       .execute();
 
-    if (!result) {
-      return null;
-    }
+    if (!result) return null;
 
     return contactId;
   };

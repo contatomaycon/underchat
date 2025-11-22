@@ -523,7 +523,6 @@
     "contact_deleted_error": "Ocorreu um erro ao excluir o contato. Por favor, tente novamente.",
     "contact_deleted_success": "Contato excluído com sucesso!",
     "contact_export_error": "Ocorreu um erro ao exportar os contatos. Por favor, tente novamente.",
-    "contact_groups_required": "Selecione pelo menos um grupo de contatos!",
     "nickname": "Apelido",
     "contacts": "Contatos",
     "edit_contact": "Editar Contato",

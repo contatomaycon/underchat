@@ -4,7 +4,6 @@ import { AccountService } from '@core/services/account.service';
 import { LabelTemplateService } from '@core/services/labelTemplate.service';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import { ContactService } from '@core/services/contact.service';
-import { ContactExistsByEmailAndPhoneRepository } from '@core/repositories/contact/ContactExistsByEmailAndPhone.repository';
 import { EncryptService } from '@core/services/encrypt.service';
 import { PhoneValidationService } from '@core/services/phoneValidation.service';
 import { normalizePhoneNumber } from '@core/common/functions/normalizePhoneNumber';
@@ -17,7 +16,6 @@ export class ContactCreatorUseCase {
     private readonly labelTemplateService: LabelTemplateService,
     private readonly accountService: AccountService,
     private readonly contactService: ContactService,
-    private readonly contactExistsByEmailAndPhoneRepository: ContactExistsByEmailAndPhoneRepository,
     private readonly encryptService: EncryptService,
     private readonly phoneValidationService: PhoneValidationService
   ) {}
@@ -97,14 +95,10 @@ export class ContactCreatorUseCase {
   ): Promise<{ emailExists: boolean; phoneExists: boolean }> {
     const [emailExists, phoneExists] = await Promise.all([
       emailC
-        ? this.contactExistsByEmailAndPhoneRepository.existsContactByEmail(
-            emailC
-          )
+        ? this.contactService.existsContactByEmail(emailC)
         : Promise.resolve(false),
       phonesC && phonesC.length > 0
-        ? this.contactExistsByEmailAndPhoneRepository.existsContactByPhone(
-            phonesC
-          )
+        ? this.contactService.existsContactByPhone(phonesC)
         : Promise.resolve(false),
     ]);
 
