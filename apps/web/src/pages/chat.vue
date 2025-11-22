@@ -9,6 +9,7 @@ import ChatLog from '@/components/chat/ChatLog.vue';
 import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSidebarContent.vue';
 import AppContactPicker from '@/components/chat/AppContactPicker.vue';
 import AppAddContact from '@/components/contact/AppAddContact.vue';
+import AppEditContact from '@/components/contact/AppEditContact.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
@@ -109,6 +110,8 @@ const isContactViewModalOpen = ref(false);
 const selectedContactDetails = ref<ViewContactResponse | null>(null);
 const isAddContactModalOpen = ref(false);
 const addContactInitialData = ref<Partial<CreateContactRequest> | null>(null);
+const isEditContactModalOpen = ref(false);
+const editContactId = ref<string | null>(null);
 const viewContactEmail = ref<string | null>(null);
 const viewContactEmailPartial = ref<string | null>(null);
 const viewContactPhone = ref<string | null>(null);
@@ -3015,6 +3018,16 @@ const onOpenAddContactModal = (e: Event) => {
   isAddContactModalOpen.value = true;
 };
 
+const onOpenEditContactModal = (e: Event) => {
+  const customEvent = e as CustomEvent;
+  const contactId = customEvent.detail as string;
+
+  if (contactId) {
+    editContactId.value = contactId;
+    isEditContactModalOpen.value = true;
+  }
+};
+
 const focusComposer = () => {
   setTimeout(() => {
     const el = composerRef.value?.$el?.querySelector(
@@ -3465,6 +3478,10 @@ onMounted(async () => {
       'open-add-contact-modal',
       onOpenAddContactModal as EventListener
     );
+    globalThis.addEventListener(
+      'open-edit-contact-modal',
+      onOpenEditContactModal as EventListener
+    );
   }
 
   const handleResize = () => {
@@ -3497,6 +3514,10 @@ onUnmounted(async () => {
     globalThis.removeEventListener(
       'open-add-contact-modal',
       onOpenAddContactModal as EventListener
+    );
+    globalThis.removeEventListener(
+      'open-edit-contact-modal',
+      onOpenEditContactModal as EventListener
     );
   }
 
@@ -4657,6 +4678,11 @@ onBeforeUnmount(() => {
   <AppAddContact
     v-model="isAddContactModalOpen"
     :initial-data="addContactInitialData"
+  />
+
+  <AppEditContact
+    v-model="isEditContactModalOpen"
+    :contact-id="editContactId"
   />
 
   <VSnackbar

@@ -174,6 +174,21 @@ export class ContactService {
     return this.contactViewerRepository.viewContactById(contactId);
   };
 
+  getContactByPhone = async (
+    accountId: string,
+    phone: string,
+    phoneDdi: string | null
+  ): Promise<ViewContactResponse | null> => {
+    const phoneC = phone ? this.encryptService.encrypt(phone) : null;
+    if (!phoneC) return null;
+
+    return this.contactViewerRepository.viewContactByPhone(
+      accountId,
+      phoneC,
+      phoneDdi
+    );
+  };
+
   validateContact = async (
     contactId: string,
     phone: string,

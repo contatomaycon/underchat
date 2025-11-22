@@ -34,9 +34,11 @@ import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
+import { useContactStore } from '@/@webcore/stores/contact';
 
 const { t } = useI18n();
 const chatStore = useChatStore();
+const contactStore = useContactStore();
 const { activeChat } = storeToRefs(chatStore);
 const chatLogContainer = ref<HTMLElement | null>(null);
 
@@ -197,17 +199,43 @@ const permissionsCreateContact = [
 
 const canCreateContact = computed(() => can(permissionsCreateContact));
 
-const handleContactClick = (message: ListMessageResult) => {
+const handleContactClick = async (message: ListMessageResult) => {
   if (!canCreateContact.value) return;
   if (!message.content?.contact) return;
 
   const contact = message.content.contact;
+  const phone = contact.phone ?? contact.phone_partial;
+  const phoneDdi = contact.phone_ddi ?? '55';
+
+  console.log('phone', phone);
+  console.log('phoneDdi', phoneDdi);
+  console.log('contact', contact);
+
+  if (phone) {
+    const existingContact = await contactStore.getContactByPhone(
+      phone.replaceAll(/\D/g, ''),
+      phoneDdi
+    );
+
+    console.log('existingContact', existingContact);
+
+    if (existingContact) {
+      globalThis.dispatchEvent(
+        new CustomEvent('open-edit-contact-modal', {
+          detail: existingContact.contact_id,
+        })
+      );
+
+      return;
+    }
+  }
+
   const contactData: Partial<CreateContactRequest> = {
     name: contact.name ?? undefined,
     last_name: contact.last_name ?? undefined,
     email: contact.email ?? undefined,
-    phone: contact.phone ?? contact.phone_partial ?? undefined,
-    phone_ddi: contact.phone_ddi ?? '55',
+    phone: phone ?? undefined,
+    phone_ddi: phoneDdi,
     nickname: undefined,
     birthday: undefined,
     notes: undefined,

@@ -226,6 +226,41 @@ const determinePhoneToSave = (): string | null | undefined => {
   return undefined;
 };
 
+const loadContactData = async () => {
+  if (!contactId.value) return;
+
+  const contact = await contactStore.getContactById(contactId.value);
+  if (contact) {
+    label_template_id.value = contact.label_template?.label_template_id ?? null;
+    name.value = contact.name;
+    last_name.value = contact.last_name ?? null;
+
+    const emailPartial = contact.email_partial ?? '';
+    emailPartialOriginal.value = emailPartial;
+    email.value = emailPartial;
+    isEmailDecrypted.value = false;
+
+    phone_ddi.value = contact.phone_ddi ?? '55';
+
+    const phonePartial = contact.phone_partial ?? '';
+    phonePartialOriginal.value = phonePartial;
+    if (phonePartial.includes('*')) {
+      phone.value = null;
+    }
+
+    if (!phonePartial.includes('*')) {
+      phone.value = phonePartial.replaceAll(/\D/g, '');
+    }
+
+    isPhoneDecrypted.value = false;
+
+    nickname.value = contact.nickname ?? null;
+    birthday.value = contact.birthday ?? null;
+    notes.value = contact.notes ?? null;
+    isValided.value = contact.is_valided ?? false;
+  }
+};
+
 const updateContact = async () => {
   const validateForm = await refFormEditContact?.value?.validate();
   if (!validateForm?.valid) return;
@@ -262,38 +297,17 @@ const updateContact = async () => {
   }
 };
 
-onMounted(async () => {
-  if (!contactId.value) return;
-
-  const contact = await contactStore.getContactById(contactId.value);
-  if (contact) {
-    label_template_id.value = contact.label_template?.label_template_id ?? null;
-    name.value = contact.name;
-    last_name.value = contact.last_name ?? null;
-
-    const emailPartial = contact.email_partial ?? '';
-    emailPartialOriginal.value = emailPartial;
-    email.value = emailPartial;
-    isEmailDecrypted.value = false;
-
-    phone_ddi.value = contact.phone_ddi ?? '55';
-
-    const phonePartial = contact.phone_partial ?? '';
-    phonePartialOriginal.value = phonePartial;
-    if (phonePartial.includes('*')) {
-      phone.value = null;
-    }
-    if (!phonePartial.includes('*')) {
-      phone.value = phonePartial.replaceAll(/\D/g, '');
-    }
-    isPhoneDecrypted.value = false;
-
-    nickname.value = contact.nickname ?? null;
-    birthday.value = contact.birthday ?? null;
-    notes.value = contact.notes ?? null;
-    isValided.value = contact.is_valided ?? false;
+watch([contactId, isVisible], async ([newContactId, newIsVisible]) => {
+  if (newIsVisible && newContactId) {
+    await loadContactData();
   }
+});
+
+onMounted(async () => {
   await labelTemplateStore.listLabelTemplateAll();
+  if (contactId.value && isVisible.value) {
+    await loadContactData();
+  }
 });
 </script>
 
@@ -314,13 +328,8 @@ onMounted(async () => {
       <VCard>
         <VCardTitle class="d-flex align-center justify-space-between">
           <span>{{ $t('edit_contact') }}</span>
-          <VChip
-            :color="isValided ? 'success' : 'error'"
-            size="small"
-          >
-            {{
-              isValided ? $t('validated') : $t('not_validated')
-            }}
+          <VChip :color="isValided ? 'success' : 'error'" size="small">
+            {{ isValided ? $t('validated') : $t('not_validated') }}
           </VChip>
         </VCardTitle>
         <VCardText>
