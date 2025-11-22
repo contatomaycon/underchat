@@ -13,6 +13,11 @@ import {
 import { ListPlanAllResponse } from '@core/schema/plan/listPlanAll/response.schema';
 import { ListPlanRequest } from '@core/schema/plan/listPlan/request.schema';
 import { IListPlans } from '../interfaces/IListPlans';
+import { CreatePlanRequest } from '@core/schema/plan/createPlan/request.schema';
+import { UpdatePlanRequest } from '@core/schema/plan/updatePlan/request.schema';
+import { CreatePlanItemRequest } from '@core/schema/plan/createPlanItem/request.schema';
+import { ListPlanItemResponse } from '@core/schema/plan/listPlanItems/response.schema';
+import { ListPlanProductAllResponse } from '@core/schema/plan/listPlanProductAll/response.schema';
 
 export const usePlanStore = defineStore('plan', {
   state: () => ({
@@ -25,6 +30,7 @@ export const usePlanStore = defineStore('plan', {
     loading: false,
     list: [] as ListPlanResponse[],
     listAll: [] as ListPlanAllResponse[],
+    listProductAll: [] as ListPlanProductAllResponse[],
     pagings: {
       current_page: 1 as number,
       total_pages: 1 as number,
@@ -52,8 +58,7 @@ export const usePlanStore = defineStore('plan', {
               current_page: input.page,
               per_page: input.per_page,
               sort_by: input.sort_by,
-              plan_id: input.search,
-              name: input.name,
+              name: input.search,
               price: input.search,
             }
           : undefined;
@@ -130,6 +135,289 @@ export const usePlanStore = defineStore('plan', {
         this.loading = false;
 
         return null;
+      }
+    },
+
+    async createPlan(input: CreatePlanRequest): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<null>>('/plan', input);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const message =
+            data?.message ?? this.i18n.global.t('plan_creation_failed');
+
+          this.showSnackbar(message, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('plan_created_successfully'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('plan_creation_failed');
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async updatePlan(
+      planId: string,
+      input: UpdatePlanRequest
+    ): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<IApiResponse<null>>(
+          `/plan/${planId}`,
+          input
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const message =
+            data?.message ?? this.i18n.global.t('plan_update_failed');
+
+          this.showSnackbar(message, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('plan_updated_successfully'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('plan_update_failed');
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async deletePlan(planId: string): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.delete<IApiResponse<null>>(
+          `/plan/${planId}`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const message =
+            data?.message ?? this.i18n.global.t('plan_delete_failed');
+
+          this.showSnackbar(message, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('plan_deleted_successfully'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('plan_delete_failed');
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async createPlanItem(input: CreatePlanItemRequest): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<null>>(
+          '/plan/item',
+          input
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const message =
+            data?.message ?? this.i18n.global.t('plan_item_creation_failed');
+
+          this.showSnackbar(message, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('plan_item_added_successfully'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('plan_item_creation_failed');
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async listPlanItems(planId: string): Promise<ListPlanItemResponse[]> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<IApiResponse<ListPlanItemResponse[]>>(
+          `/plan/${planId}/items`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('plan_items_list_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return [];
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('plan_items_list_error');
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+
+        return [];
+      }
+    },
+
+    async deletePlanItem(planItemId: string): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.delete<IApiResponse<null>>(
+          `/plan/item/${planItemId}`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const message =
+            data?.message ?? this.i18n.global.t('plan_item_delete_failed');
+
+          this.showSnackbar(message, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('plan_item_deleted_successfully'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('plan_item_delete_failed');
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async listPlanProductAll(): Promise<ListPlanProductAllResponse[]> {
+      try {
+        this.loading = true;
+
+        const response =
+          await axios.get<IApiResponse<ListPlanProductAllResponse[]>>(
+            '/plan/product/all'
+          );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('plan_product_list_all_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return [];
+        }
+
+        this.listProductAll = data.data;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('plan_product_list_all_error');
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+
+        return [];
       }
     },
   },

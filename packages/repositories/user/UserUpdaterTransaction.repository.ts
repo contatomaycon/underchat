@@ -18,15 +18,11 @@ export class UserUpdaterTransactionRepository {
     t: TFunction<'translation', undefined>,
     userId: string,
     input: IUpdateUser,
-    accountId: string,
-    isAdministrator: boolean,
-    currentAccountId: string | null
+    newAccountId: string,
+    currentAccountId: string
   ): Promise<boolean> => {
     return this.db.transaction(async (tx) => {
-      const accountChanged =
-        isAdministrator &&
-        input.account_id &&
-        currentAccountId !== input.account_id;
+      const accountChanged = newAccountId !== currentAccountId;
 
       if (accountChanged) {
         await this.permissionAssignmentDeleterRepository.deletePermissionAssignmentByUserIdTx(
@@ -39,8 +35,7 @@ export class UserUpdaterTransactionRepository {
         tx,
         userId,
         input,
-        accountId,
-        isAdministrator
+        currentAccountId
       );
 
       if (!updateResult) {

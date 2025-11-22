@@ -79,6 +79,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'cross-sell': RouteRecordInfo<
+      'cross-sell',
+      '/cross-sell',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     'label': RouteRecordInfo<
       'label',
       '/label',
@@ -103,6 +110,13 @@ declare module 'vue-router/auto-routes' {
     'not-authorized': RouteRecordInfo<
       'not-authorized',
       '/not-authorized',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'plan': RouteRecordInfo<
+      'plan',
+      '/plan',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -196,6 +210,12 @@ declare module 'vue-router/auto-routes' {
       views:
         | never
     }
+    'src/pages/cross-sell.vue': {
+      routes:
+        | 'cross-sell'
+      views:
+        | never
+    }
     'src/pages/label.vue': {
       routes:
         | 'label'
@@ -217,6 +237,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/not-authorized.vue': {
       routes:
         | 'not-authorized'
+      views:
+        | never
+    }
+    'src/pages/plan.vue': {
+      routes:
+        | 'plan'
       views:
         | never
     }

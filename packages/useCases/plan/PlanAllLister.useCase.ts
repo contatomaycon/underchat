@@ -10,7 +10,7 @@ export class PlanAllListerUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     isAdministrator: boolean
-  ): Promise<ListPlanAllResponse[] | null> {
+  ): Promise<ListPlanAllResponse[]> {
     if (!isAdministrator) {
       throw new Error(t('plan_list_all_unauthorized'));
     }

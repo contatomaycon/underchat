@@ -23,7 +23,8 @@ export const createUser = async (
     const response = await userCreatorUseCase.execute(
       t,
       request.body,
-      accountIdToUse
+      accountIdToUse,
+      tokenJwtData.is_administrator
     );
 
     if (response) {

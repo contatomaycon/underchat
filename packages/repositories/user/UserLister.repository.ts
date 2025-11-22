@@ -20,6 +20,7 @@ import {
   ilike,
   inArray,
   SQL,
+  ne,
 } from 'drizzle-orm';
 import { isDefinedFilter } from '@core/common/functions/isDefinedFilter';
 import { ListUserResponse } from '@core/schema/user/listUser/response.schema';
@@ -126,7 +127,8 @@ export class UserListerRepository {
     query: ListUserRequest,
     accountId: string,
     isAdministrator: boolean,
-    searchHashes: string | null
+    searchHashes: string | null,
+    excludeUserId: string
   ): Promise<ListUserResponse[]> => {
     const filtersUser = this.setFiltersUser(query, searchHashes);
     const filters = this.setFilters(accountId, query);
@@ -138,6 +140,7 @@ export class UserListerRepository {
       where: and(
         accountCondition,
         isNull(user.deleted_at),
+        ne(user.user_id, excludeUserId),
         filters,
         ...filtersUser
       ),
@@ -275,7 +278,8 @@ export class UserListerRepository {
     query: ListUserRequest,
     accountId: string,
     isAdministrator: boolean,
-    searchHashes: string | null
+    searchHashes: string | null,
+    excludeUserId: string
   ): Promise<number> => {
     const filtersUser = this.setFiltersUser(query, searchHashes);
     const filters = this.setFilters(accountId, query);
@@ -295,7 +299,13 @@ export class UserListerRepository {
       .leftJoin(userDocument, eq(user.user_id, userDocument.user_id))
       .leftJoin(country, eq(userAddress.country_id, country.country_id))
       .where(
-        and(accountCondition, isNull(user.deleted_at), filters, ...filtersUser)
+        and(
+          accountCondition,
+          isNull(user.deleted_at),
+          ne(user.user_id, excludeUserId),
+          filters,
+          ...filtersUser
+        )
       )
       .execute();
 
