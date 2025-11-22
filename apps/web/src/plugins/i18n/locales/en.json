@@ -827,5 +827,7 @@
     "country_VN": "Vietnam",
     "country_WF": "Wallis and Futuna",
     "country_ZM": "Zambia",
-    "country_ZW": "Zimbabwe"
+    "country_ZW": "Zimbabwe",
+    "validated": "Validated",
+    "not_validated": "Not validated"
 }

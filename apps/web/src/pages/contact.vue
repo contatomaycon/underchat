@@ -168,6 +168,7 @@ const headers: DataTableHeader<ListContactResponse>[] = [
   { title: t('email'), key: 'email' },
   { title: t('phone'), key: 'phone_partial' },
   { title: t('label'), key: 'label_template' },
+  { title: t('status'), key: 'status' },
   { title: t('actions'), key: 'actions', sortable: false },
 ];
 
@@ -335,6 +336,25 @@ watch(
           </VChip>
 
           <VChip v-else class="uc-chip uc-badge--muted" size="small">-</VChip>
+        </template>
+
+        <template #item.status="{ item }">
+          <VChip
+            v-if="item.is_valided"
+            class="uc-chip"
+            size="small"
+            color="success"
+          >
+            {{ $t('validated') }}
+          </VChip>
+          <VChip
+            v-else
+            class="uc-chip"
+            size="small"
+            color="error"
+          >
+            {{ $t('not_validated') }}
+          </VChip>
         </template>
 
         <template #item.actions="{ item }">
