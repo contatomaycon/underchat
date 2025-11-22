@@ -61,6 +61,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
 
+      - name: Configure .npmrc for GitHub repository access
+        run: |
+          if [ -f .npmrc ]; then
+            sed -i "s/\${GIT_TOKEN}/${{ env.GIT_TOKEN }}/g" .npmrc
+            echo "Configured .npmrc with GitHub token"
+            cat .npmrc | sed 's/\(authToken=\).*/\1***/'
+          else
+            echo "//github.com/:_authToken=${{ env.GIT_TOKEN }}" > .npmrc
+            echo "always-auth=true" >> .npmrc
+            echo "Created .npmrc with GitHub token"
+          fi
+
       - name: Install Dependencies
         run: pnpm install
 

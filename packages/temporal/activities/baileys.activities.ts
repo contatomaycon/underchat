@@ -150,6 +150,8 @@ export async function updateStatusWorker(
 ): Promise<void> {
   const workerService = container.resolve(WorkerService);
 
+  if (input.worker_status_id === EWorkerStatus.mismatched) return;
+
   if (
     isHelmCheck &&
     isHelmConnectionCheck &&
