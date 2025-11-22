@@ -1,7 +1,7 @@
 import { onlyDigits } from './onlyDigits';
 
 function isBrazil(numeric: string): boolean {
-  return numeric.startsWith('55');
+  return numeric.startsWith('55') || numeric.startsWith('+55');
 }
 
 function buildCandidatesBR(numeric: string): string[] {
@@ -24,9 +24,37 @@ function buildCandidatesBR(numeric: string): string[] {
   return Array.from(new Set([without9, with9]));
 }
 
+function buildCandidatesBRWithDdi(phone: string): string[] {
+  if (phone.length < 10) return [phone];
+
+  const ddd = phone.slice(0, 2);
+  const local = phone.slice(2);
+
+  const without9Local =
+    local.length === 9 && local.startsWith('9') ? local.slice(1) : local;
+
+  const with9Local = local.length === 8 ? `9${local}` : local;
+
+  const without9 = `${ddd}${without9Local}`;
+  const with9 = `${ddd}${with9Local}`;
+
+  return Array.from(new Set([without9, with9]));
+}
+
 export function buildCandidates(numeric: string): string[] {
   const n = onlyDigits(numeric);
   if (!isBrazil(n)) return [n];
 
   return buildCandidatesBR(n);
+}
+
+export function buildCandidatesWithDdi(
+  phone: string,
+  phoneDdi: string
+): string[] {
+  const fullNumber = `${phoneDdi}${phone}`;
+  const n = onlyDigits(fullNumber);
+  if (!isBrazil(n)) return [onlyDigits(phone)];
+
+  return buildCandidatesBRWithDdi(phone);
 }

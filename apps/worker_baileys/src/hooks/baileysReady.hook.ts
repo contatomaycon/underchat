@@ -3,8 +3,55 @@ import fp from 'fastify-plugin';
 import { container } from 'tsyringe';
 import { BaileysService } from '@core/services/baileys';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
+import { baileysEnvironment } from '@core/config/environments';
+import { CentrifugoService } from '@core/services/centrifugo.service';
+import { StreamProducerService } from '@core/services/streamProducer.service';
+import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
+import { ECodeMessage } from '@core/common/enums/ECodeMessage';
+import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
 const RETRY_DELAY = 5000;
+let mismatchedStatusSent = false;
+
+const updateWorkerMismatchedStatus = async (
+  workerId: string,
+  accountId: string
+): Promise<void> => {
+  if (mismatchedStatusSent) {
+    return;
+  }
+
+  try {
+    const centrifugoService = container.resolve(CentrifugoService);
+    const streamProducerService = container.resolve(StreamProducerService);
+    const kafkaServiceQueueService = container.resolve(
+      KafkaServiceQueueService
+    );
+
+    const dataPublish: IBaileysConnectionState = {
+      code: ECodeMessage.info,
+      status: EBaileysConnectionStatus.info,
+      worker_id: workerId,
+      account_id: accountId,
+      worker_status_id: EWorkerStatus.mismatched,
+    };
+
+    const channel = workerCentrifugoQueue(accountId);
+    await centrifugoService.publishSub(channel, dataPublish);
+
+    await streamProducerService.send(
+      kafkaServiceQueueService.workerStatus(),
+      dataPublish,
+      workerId
+    );
+
+    mismatchedStatusSent = true;
+  } catch (error) {
+    console.error('Error updating worker mismatched status:', error);
+  }
+};
 
 const ensureConnected = async (
   attempt: number,
@@ -13,6 +60,8 @@ const ensureConnected = async (
 ): Promise<void> => {
   if (baileys.isConnected()) {
     log.info({ attempt }, 'Baileys conectado com sucesso');
+    mismatchedStatusSent = false;
+
     return;
   }
 
@@ -22,6 +71,12 @@ const ensureConnected = async (
       { attempt },
       'Baileys aguardando pareamento. Escaneie o QR Code ou aguarde a autorização.'
     );
+
+    await updateWorkerMismatchedStatus(
+      baileysEnvironment.baileysWorkerId,
+      baileysEnvironment.baileysAccountId
+    );
+
     setTimeout(() => ensureConnected(attempt, log, baileys), RETRY_DELAY);
     return;
   }
@@ -38,6 +93,7 @@ const ensureConnected = async (
       baileys.isConnected()
     ) {
       log.info('Baileys conectado com sucesso');
+      mismatchedStatusSent = false;
       return;
     }
 

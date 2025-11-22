@@ -4,11 +4,11 @@ import { AccountService } from '@core/services/account.service';
 import { LabelTemplateService } from '@core/services/labelTemplate.service';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import { ContactService } from '@core/services/contact.service';
-import { ContactExistsByEmailAndPhoneRepository } from '@core/repositories/contact/ContactExistsByEmailAndPhone.repository';
 import { EncryptService } from '@core/services/encrypt.service';
 import { PhoneValidationService } from '@core/services/phoneValidation.service';
-import { normalizePhoneNumber } from '@core/common/functions/normalizePhoneNumber';
 import moment from 'moment';
+import { buildCandidatesWithDdi } from '@core/common/functions/buildCandidatesBR';
+import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 
 @injectable()
 export class ContactCreatorUseCase {
@@ -16,7 +16,6 @@ export class ContactCreatorUseCase {
     private readonly labelTemplateService: LabelTemplateService,
     private readonly accountService: AccountService,
     private readonly contactService: ContactService,
-    private readonly contactExistsByEmailAndPhoneRepository: ContactExistsByEmailAndPhoneRepository,
     private readonly encryptService: EncryptService,
     private readonly phoneValidationService: PhoneValidationService
   ) {}
@@ -79,28 +78,28 @@ export class ContactCreatorUseCase {
 
   private encryptContactData(input: CreateContactRequest): {
     emailC: string | null;
-    phoneC: string | null;
+    phonesC: string[];
   } {
+    const phones = buildCandidatesWithDdi(input.phone, input.phone_ddi);
+    const phonesC = phones.map((phone) => this.encryptService.encrypt(phone));
+
     return {
       emailC: input.email ? this.encryptService.encrypt(input.email) : null,
-      phoneC: input.phone ? this.encryptService.encrypt(input.phone) : null,
+      phonesC: input.phone ? phonesC : [],
     };
   }
 
   private async checkContactExistence(
+    accountId: string,
     emailC: string | null,
-    phoneC: string | null
+    phonesC: string[]
   ): Promise<{ emailExists: boolean; phoneExists: boolean }> {
     const [emailExists, phoneExists] = await Promise.all([
       emailC
-        ? this.contactExistsByEmailAndPhoneRepository.existsContactByEmail(
-            emailC
-          )
+        ? this.contactService.existsContactByEmail(accountId, emailC)
         : Promise.resolve(false),
-      phoneC
-        ? this.contactExistsByEmailAndPhoneRepository.existsContactByPhone(
-            phoneC
-          )
+      phonesC && phonesC.length > 0
+        ? this.contactService.existsContactByPhone(accountId, phonesC)
         : Promise.resolve(false),
     ]);
 
@@ -133,6 +132,7 @@ export class ContactCreatorUseCase {
         throw new Error(t('no_active_worker_for_validation'));
       }
     }
+
     throw error;
   }
 
@@ -157,7 +157,7 @@ export class ContactCreatorUseCase {
         return { phone, phoneDdi: phoneDdi ?? null };
       }
 
-      const normalizedPhone = normalizePhoneNumber(validationResult.phone);
+      const normalizedPhone = extractPhoneAndDdi(validationResult.phone);
       if (normalizedPhone) {
         return {
           phone: normalizedPhone.phone,
@@ -184,11 +184,12 @@ export class ContactCreatorUseCase {
 
     this.validateBirthdayIfPresent(t, input.birthday);
 
-    const { emailC, phoneC } = this.encryptContactData(input);
+    const { emailC, phonesC } = this.encryptContactData(input);
 
     const { emailExists, phoneExists } = await this.checkContactExistence(
+      accountId,
       emailC,
-      phoneC
+      phonesC
     );
 
     this.validateContactNotExists(t, emailExists, phoneExists);
@@ -203,8 +204,9 @@ export class ContactCreatorUseCase {
         input.phone,
         input.phone_ddi
       );
+
       phoneToSave = normalized.phone;
-      phoneDdiToSave = normalized.phoneDdi;
+      phoneDdiToSave = normalized.phoneDdi ?? '55';
     }
 
     const contactToCreate: CreateContactRequest = {
@@ -215,7 +217,8 @@ export class ContactCreatorUseCase {
 
     const contactId = await this.contactService.createContact(
       contactToCreate,
-      accountId
+      accountId,
+      true
     );
 
     if (!contactId) {

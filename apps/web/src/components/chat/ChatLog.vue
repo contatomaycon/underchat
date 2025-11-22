@@ -13,6 +13,7 @@ import { useChatStore } from '@/@webcore/stores/chat';
 import {
   LinkPreview,
   ListMessageResult,
+  ContentMessageChat,
   DocumentMessageChat,
   VideoMessageChat,
   AudioMessageChat,
@@ -30,15 +31,21 @@ import { MglMap, MglMarker } from 'vue-maplibre-gl';
 import { can } from '@layouts/plugins/casl';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
+import { useContactStore } from '@/@webcore/stores/contact';
 
 const { t } = useI18n();
 const chatStore = useChatStore();
+const contactStore = useContactStore();
 const { activeChat } = storeToRefs(chatStore);
 const chatLogContainer = ref<HTMLElement | null>(null);
 
 const showSkeleton = computed(() => chatStore.listMessages.length === 0);
 const reactionEmojiIndex = new EmojiIndex(data);
+const showScrollToBottom = ref(false);
+const scrollElementRef = ref<HTMLElement | null>(null);
 
 const viewerOpen = ref(false);
 const viewerSrc = ref<string>('');
@@ -54,6 +61,13 @@ const locationData = ref<{
   address?: string | null;
 } | null>(null);
 const locationMapRef = ref<any>(null);
+
+const editMessageModalOpen = ref(false);
+const editingMessage = ref<ListMessageResult | null>(null);
+const editMessageText = ref<string>('');
+
+const editHistoryModalOpen = ref(false);
+const viewingEditHistory = ref<ListMessageResult | null>(null);
 
 const mapStyle = computed(() => {
   return {
@@ -176,6 +190,57 @@ const resolvePreviewUrl = (lp?: LinkPreview): string =>
 
 const isDeleted = (m: ListMessageResult): boolean => m.deleted === true;
 
+const permissionsCreateContact = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EContactPermissions.contact_group,
+  EContactPermissions.contact_create,
+];
+
+const canCreateContact = computed(() => can(permissionsCreateContact));
+
+const handleContactClick = async (message: ListMessageResult) => {
+  if (!canCreateContact.value) return;
+  if (!message.content?.contact) return;
+
+  const contact = message.content.contact;
+  const phone = contact.phone ?? contact.phone_partial;
+  const phoneDdi = contact.phone_ddi ?? '55';
+
+  if (phone) {
+    const existingContact = await contactStore.getContactByPhone(
+      phone.replaceAll(/\D/g, ''),
+      phoneDdi
+    );
+
+    if (existingContact) {
+      globalThis.dispatchEvent(
+        new CustomEvent('open-edit-contact-modal', {
+          detail: existingContact.contact_id,
+        })
+      );
+
+      return;
+    }
+  }
+
+  const contactData: Partial<CreateContactRequest> = {
+    name: contact.name ?? undefined,
+    last_name: contact.last_name ?? undefined,
+    email: contact.email ?? undefined,
+    phone: phone ?? undefined,
+    phone_ddi: phoneDdi,
+    nickname: undefined,
+    birthday: undefined,
+    notes: undefined,
+    label_template_id: undefined,
+  };
+
+  globalThis.dispatchEvent(
+    new CustomEvent('open-add-contact-modal', { detail: contactData })
+  );
+};
+
 const canInteractWithMessage = (m: ListMessageResult): boolean => {
   if (m.deleted) return false;
   if (m.summary?.is_sent_to_internal === false) return false;
@@ -218,15 +283,21 @@ const onReact = async (m: ListMessageResult, emoji: string) => {
   if (isDeleted(m)) return;
   if (!chatStore.activeChat?.chat_id) return;
 
+  const previousReactions = m.content?.reactions ?? null;
+
+  chatStore.updateMessageReaction(m.message_id, emoji);
+
+  showReactionPicker.value = null;
+  showEmojiPicker.value = null;
+
   const success = await chatStore.reactToMessage(
     chatStore.activeChat.chat_id,
     m.message_id,
     emoji
   );
 
-  if (success) {
-    showReactionPicker.value = null;
-    showEmojiPicker.value = null;
+  if (!success) {
+    chatStore.revertMessageReaction(m.message_id, previousReactions);
   }
 };
 
@@ -406,6 +477,151 @@ const shouldShowDownload = (message: ListMessageResult): boolean => {
   if (isDownloadableAudio(message)) return true;
   if (isDownloadableSticker(message)) return true;
   return false;
+};
+
+const canEditMessage = (message: ListMessageResult): boolean => {
+  if (!isTextMessage(message)) return false;
+  if (isTypeUser(message)) return false;
+  if (isDeleted(message)) return false;
+
+  const messageDate = new Date(message.date);
+  const now = new Date();
+  const diffInMinutes = (now.getTime() - messageDate.getTime()) / (1000 * 60);
+
+  return diffInMinutes < 10;
+};
+
+const hasMessageVersions = (message: ListMessageResult): boolean => {
+  return !!(message.content?.version && message.content.version.length > 0);
+};
+
+const getLatestMessageText = (message: ListMessageResult): string => {
+  if (!message.content) return '';
+
+  const versions = message.content.version;
+  if (versions && versions.length > 0) {
+    const sortedVersions = [...versions].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+    return sortedVersions[0].message || '';
+  }
+
+  return message.content.message || '';
+};
+
+const getMessageEditHistory = (
+  message: ListMessageResult
+): Array<{
+  text: string;
+  date: string;
+  isOriginal: boolean;
+}> => {
+  if (!message.content) return [];
+
+  const history: Array<{ text: string; date: string; isOriginal: boolean }> =
+    [];
+
+  const versions = message.content.version ?? [];
+  const sortedVersions = [...versions].sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
+
+  for (const version of sortedVersions) {
+    if (version.message) {
+      history.push({
+        text: version.message,
+        date: version.date,
+        isOriginal: false,
+      });
+    }
+  }
+
+  if (message.content.message) {
+    history.push({
+      text: message.content.message,
+      date: message.date,
+      isOriginal: true,
+    });
+  }
+
+  return history;
+};
+
+const onViewEditHistory = (m: ListMessageResult) => {
+  if (!hasMessageVersions(m)) return;
+
+  viewingEditHistory.value = m;
+  editHistoryModalOpen.value = true;
+};
+
+const onEdit = (m: ListMessageResult) => {
+  if (!canEditMessage(m)) return;
+
+  editingMessage.value = m;
+  editMessageText.value = getLatestMessageText(m);
+  editMessageModalOpen.value = true;
+};
+
+const onSaveEdit = async () => {
+  if (!editingMessage.value || !chatStore.activeChat?.chat_id) return;
+  if (!editMessageText.value.trim()) return;
+
+  const messageId = editingMessage.value.message_id;
+  const newMessageText = editMessageText.value.trim();
+  const previousMessage = { ...editingMessage.value };
+
+  const messageIndex = chatStore.listMessages.findIndex(
+    (m) => m.message_id === messageId
+  );
+
+  if (messageIndex !== -1) {
+    const message = chatStore.listMessages[messageIndex];
+    const versions = message.content?.version ?? [];
+    const newVersion = {
+      type: message.content?.type ?? EMessageType.text,
+      message: newMessageText,
+      date: new Date().toISOString(),
+    };
+
+    const baseContent: ContentMessageChat = message.content
+      ? { ...message.content }
+      : {
+          type: EMessageType.text,
+        };
+
+    const updatedMessage: ListMessageResult = {
+      ...message,
+      content: {
+        ...baseContent,
+        version: [...versions, newVersion],
+      },
+    };
+
+    chatStore.listMessages.splice(messageIndex, 1, updatedMessage);
+  }
+
+  editMessageModalOpen.value = false;
+  editingMessage.value = null;
+  editMessageText.value = '';
+
+  const success = await chatStore.editMessage(
+    chatStore.activeChat.chat_id,
+    messageId,
+    newMessageText
+  );
+
+  if (!success) {
+    if (messageIndex !== -1) {
+      chatStore.listMessages.splice(messageIndex, 1, previousMessage);
+    }
+    chatStore.showSnackbar(t('chat_edit_error'), EColor.error);
+  }
+};
+
+const onCancelEdit = () => {
+  editMessageModalOpen.value = false;
+  editingMessage.value = null;
+  editMessageText.value = '';
 };
 
 const stickerDownloadName = (sticker?: {
@@ -746,17 +962,17 @@ const onDelete = async (m: ListMessageResult) => {
     showEmojiPicker.value = null;
   }
 
+  chatStore.markMessageAsDeleted(m.message_id);
+
   const success = await chatStore.deleteMessage(
     chatStore.activeChat.chat_id,
     m.message_id
   );
 
-  if (success) {
-    chatStore.showSnackbar(t('chat_delete_success'), EColor.success);
-    return;
+  if (!success) {
+    chatStore.unmarkMessageAsDeleted(m.message_id);
+    chatStore.showSnackbar(t('chat_delete_error'), EColor.error);
   }
-
-  chatStore.showSnackbar(t('chat_delete_error'), EColor.error);
 };
 
 const showQuoted = (m: ListMessageResult) => !!m.content?.quoted;
@@ -929,9 +1145,6 @@ const resolveQuotedAudioMeta = (m: ListMessageResult): string => {
 };
 
 const getQuotedTargetId = (m: ListMessageResult): string | null => {
-  const byExplicitId = m.content?.message_quoted_id || null;
-  if (byExplicitId) return String(byExplicitId);
-
   const byKeyId = m.content?.quoted?.key?.id || null;
   if (byKeyId) {
     const matchByKey = chatStore.listMessages.find(
@@ -940,6 +1153,28 @@ const getQuotedTargetId = (m: ListMessageResult): string | null => {
     if (matchByKey) {
       return matchByKey.message_id;
     }
+  }
+
+  const byExplicitId = m.content?.message_quoted_id || null;
+  if (byExplicitId) {
+    const explicitIdStr = String(byExplicitId);
+
+    if (
+      explicitIdStr.match(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      )
+    ) {
+      return explicitIdStr;
+    }
+
+    const matchByExplicitKey = chatStore.listMessages.find(
+      (x) => x.message_key?.id === explicitIdStr
+    );
+    if (matchByExplicitKey) {
+      return matchByExplicitKey.message_id;
+    }
+
+    return explicitIdStr;
   }
 
   const text = m.content?.quoted?.message?.trim();
@@ -968,6 +1203,7 @@ const openImage = (m: ListMessageResult) => {
     viewerSrc.value = m.content.sticker.url;
     viewerCaption.value = '';
     viewerDownloadName.value = stickerDownloadName(m.content.sticker);
+    viewerOpen.value = true;
     return;
   }
 
@@ -1111,9 +1347,28 @@ const downloadViewerMedia = () => {
   downloadImage(viewerSrc.value, viewerDownloadName.value);
 };
 
+const checkIfShouldShowScrollButton = (target: HTMLElement) => {
+  if (!target) {
+    showScrollToBottom.value = false;
+    return;
+  }
+
+  const scrollTop = target.scrollTop;
+  const scrollHeight = target.scrollHeight;
+  const clientHeight = target.clientHeight;
+  const threshold = 50;
+
+  const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+  const isAtBottom = distanceFromBottom <= threshold;
+
+  showScrollToBottom.value = !isAtBottom;
+};
+
 const handleScroll = async (e: Event) => {
   const target = e.target as HTMLElement;
   if (!target) return;
+
+  checkIfShouldShowScrollButton(target);
 
   const scrollTop = target.scrollTop;
   const threshold = 200;
@@ -1133,8 +1388,51 @@ const handleScroll = async (e: Event) => {
       const newScrollHeight = target.scrollHeight;
       const scrollDifference = newScrollHeight - previousScrollHeight;
       target.scrollTop = previousScrollTop + scrollDifference;
+      checkIfShouldShowScrollButton(target);
     }
   }
+};
+
+const scrollToBottom = async () => {
+  const scrollElement = scrollElementRef.value;
+  if (!scrollElement) {
+    const psContainer = chatLogContainer.value?.closest('.ps') as HTMLElement;
+    if (!psContainer) return;
+
+    const foundElement =
+      (psContainer.querySelector('.ps__rail-y')
+        ?.parentElement as HTMLElement) ||
+      (psContainer.querySelector('.ps__container') as HTMLElement) ||
+      psContainer;
+
+    if (!foundElement) return;
+
+    foundElement.scrollTop = foundElement.scrollHeight;
+
+    await nextTick();
+
+    requestAnimationFrame(() => {
+      foundElement.scrollTop = foundElement.scrollHeight;
+
+      setTimeout(() => {
+        checkIfShouldShowScrollButton(foundElement);
+      }, 100);
+    });
+
+    return;
+  }
+
+  scrollElement.scrollTop = scrollElement.scrollHeight;
+
+  await nextTick();
+
+  requestAnimationFrame(() => {
+    scrollElement.scrollTop = scrollElement.scrollHeight;
+
+    setTimeout(() => {
+      checkIfShouldShowScrollButton(scrollElement);
+    }, 100);
+  });
 };
 
 watch(
@@ -1150,9 +1448,24 @@ watch(
           loadAudioWaveform(msg.message_id, msg.content.audio.waveform);
         }
       }
+
+      if (scrollElementRef.value) {
+        checkIfShouldShowScrollButton(scrollElementRef.value);
+      }
     });
   },
   { deep: true, immediate: true }
+);
+
+watch(
+  () => [chatStore.currentPage, chatStore.totalPages],
+  () => {
+    nextTick(() => {
+      if (scrollElementRef.value) {
+        checkIfShouldShowScrollButton(scrollElementRef.value);
+      }
+    });
+  }
 );
 
 watch(locationModalOpen, async (isOpen) => {
@@ -1273,7 +1586,12 @@ onMounted(() => {
         ?.parentElement as HTMLElement) || psContainer;
 
     if (scrollElement) {
+      scrollElementRef.value = scrollElement;
       scrollElement.addEventListener('scroll', handleScroll, { passive: true });
+
+      setTimeout(() => {
+        checkIfShouldShowScrollButton(scrollElement);
+      }, 100);
     }
 
     document.addEventListener('click', onClickOutside);
@@ -1529,7 +1847,12 @@ onUnmounted(() => {
                 }"
               >
                 <div
-                  v-if="canInteractWithMessage(item.message) && !isQueueStatus"
+                  v-if="
+                    (canInteractWithMessage(item.message) ||
+                      (item.message.deleted &&
+                        hasMessageVersions(item.message))) &&
+                    !isQueueStatus
+                  "
                   class="message-actions"
                 >
                   <VMenu
@@ -1555,51 +1878,87 @@ onUnmounted(() => {
                     </template>
 
                     <VList density="compact" min-width="180">
-                      <VListItem @click="onReply(item.message)">
-                        <template #prepend>
-                          <VIcon size="18">tabler-corner-up-left</VIcon>
-                        </template>
-                        <VListItemTitle>Responder</VListItemTitle>
-                      </VListItem>
-
-                      <VListItem
-                        v-if="shouldShowCopy(item.message)"
-                        @click="onCopy(item.message)"
+                      <template
+                        v-if="
+                          item.message.deleted &&
+                          hasMessageVersions(item.message)
+                        "
                       >
-                        <template #prepend>
-                          <VIcon size="18">tabler-copy</VIcon>
-                        </template>
-                        <VListItemTitle>Copiar</VListItemTitle>
-                      </VListItem>
+                        <VListItem @click="onViewEditHistory(item.message)">
+                          <template #prepend>
+                            <VIcon size="18">tabler-history</VIcon>
+                          </template>
+                          <VListItemTitle>Visualizar edições</VListItemTitle>
+                        </VListItem>
+                      </template>
 
-                      <VListItem
-                        v-if="shouldShowDownload(item.message)"
-                        @click="downloadMessage(item.message)"
-                      >
-                        <template #prepend>
-                          <VIcon size="18">tabler-download</VIcon>
-                        </template>
-                        <VListItemTitle>{{
-                          t('chat_action_download')
-                        }}</VListItemTitle>
-                      </VListItem>
+                      <template v-else>
+                        <VListItem @click="onReply(item.message)">
+                          <template #prepend>
+                            <VIcon size="18">tabler-corner-up-left</VIcon>
+                          </template>
+                          <VListItemTitle>Responder</VListItemTitle>
+                        </VListItem>
 
-                      <VListItem @click="toggleReactionPicker(item.message)">
-                        <template #prepend>
-                          <VIcon size="18">tabler-mood-smile</VIcon>
-                        </template>
-                        <VListItemTitle>Reagir</VListItemTitle>
-                      </VListItem>
+                        <VListItem
+                          v-if="shouldShowCopy(item.message)"
+                          @click="onCopy(item.message)"
+                        >
+                          <template #prepend>
+                            <VIcon size="18">tabler-copy</VIcon>
+                          </template>
+                          <VListItemTitle>Copiar</VListItemTitle>
+                        </VListItem>
 
-                      <VListItem
-                        v-if="!isTypeUser(item.message)"
-                        @click="onDelete(item.message)"
-                      >
-                        <template #prepend>
-                          <VIcon size="18">tabler-trash</VIcon>
-                        </template>
-                        <VListItemTitle>Apagar</VListItemTitle>
-                      </VListItem>
+                        <VListItem
+                          v-if="shouldShowDownload(item.message)"
+                          @click="downloadMessage(item.message)"
+                        >
+                          <template #prepend>
+                            <VIcon size="18">tabler-download</VIcon>
+                          </template>
+                          <VListItemTitle>{{
+                            t('chat_action_download')
+                          }}</VListItemTitle>
+                        </VListItem>
+
+                        <VListItem @click="toggleReactionPicker(item.message)">
+                          <template #prepend>
+                            <VIcon size="18">tabler-mood-smile</VIcon>
+                          </template>
+                          <VListItemTitle>Reagir</VListItemTitle>
+                        </VListItem>
+
+                        <VListItem
+                          v-if="canEditMessage(item.message)"
+                          @click="onEdit(item.message)"
+                        >
+                          <template #prepend>
+                            <VIcon size="18">tabler-edit</VIcon>
+                          </template>
+                          <VListItemTitle>Editar</VListItemTitle>
+                        </VListItem>
+
+                        <VListItem
+                          v-if="hasMessageVersions(item.message)"
+                          @click="onViewEditHistory(item.message)"
+                        >
+                          <template #prepend>
+                            <VIcon size="18">tabler-history</VIcon>
+                          </template>
+                          <VListItemTitle>Visualizar edições</VListItemTitle>
+                        </VListItem>
+
+                        <VListItem
+                          v-if="!isTypeUser(item.message)"
+                          @click="onDelete(item.message)"
+                        >
+                          <template #prepend>
+                            <VIcon size="18">tabler-trash</VIcon>
+                          </template>
+                          <VListItemTitle>Apagar</VListItemTitle>
+                        </VListItem>
+                      </template>
                     </VList>
                   </VMenu>
                 </div>
@@ -1633,14 +1992,22 @@ onUnmounted(() => {
 
                       <div
                         v-if="hasQuotedSticker(item.message)"
-                        class="quoted-media quoted-media--image"
+                        class="quoted-sticker"
                       >
-                        <VImg
-                          :src="resolveQuotedStickerSrc(item.message)"
-                          width="44"
-                          height="44"
-                          contain
-                        />
+                        <div class="quoted-media quoted-media--image">
+                          <img
+                            :src="resolveQuotedStickerSrc(item.message)"
+                            alt="Sticker"
+                            style="
+                              width: 44px;
+                              height: 44px;
+                              object-fit: contain;
+                            "
+                          />
+                        </div>
+                        <div class="quoted-sticker-label">
+                          {{ t('sticker_label') }}
+                        </div>
                       </div>
 
                       <div
@@ -1650,11 +2017,7 @@ onUnmounted(() => {
                         <VIcon size="22" color="primary">tabler-map-pin</VIcon>
                         <div class="quoted-location-info">
                           <span class="quoted-location-name">
-                            {{
-                              item.message.content?.quoted?.location?.name ||
-                              item.message.content?.quoted?.location?.address ||
-                              t('location_label', 'Localização')
-                            }}
+                            {{ t('location_label') }}
                           </span>
                         </div>
                       </div>
@@ -1750,11 +2113,7 @@ onUnmounted(() => {
                         <VIcon size="22" color="primary">tabler-user</VIcon>
                         <div class="quoted-contact-info">
                           <span class="quoted-contact-name">
-                            {{
-                              item.message.content?.quoted?.contact?.name
-                                ? `${item.message.content.quoted.contact.name} ${item.message.content.quoted.contact.last_name || ''}`.trim()
-                                : 'Contato'
-                            }}
+                            {{ t('contact_label') }}
                           </span>
                         </div>
                       </div>
@@ -1994,19 +2353,19 @@ onUnmounted(() => {
                     ]"
                     @click="openImage(item.message)"
                   >
-                    <VImg
-                      v-if="!item.message.content.sticker.is_animated"
-                      :src="item.message.content.sticker.url"
-                      class="sticker-thumb"
-                      max-width="100"
-                      max-height="100"
-                      contain
-                    />
                     <img
-                      v-else
                       :src="item.message.content.sticker.url"
-                      alt="Sticker animado"
-                      class="sticker-thumb sticker-thumb--animated"
+                      :alt="
+                        item.message.content.sticker.is_animated
+                          ? 'Sticker animado'
+                          : 'Sticker'
+                      "
+                      :class="[
+                        'sticker-thumb',
+                        item.message.content.sticker.is_animated
+                          ? 'sticker-thumb--animated'
+                          : '',
+                      ]"
                       style="
                         max-width: 100px;
                         max-height: 100px;
@@ -2175,7 +2534,7 @@ onUnmounted(() => {
                           : 'rgb(var(--v-theme-title))',
                       }"
                     >
-                      {{ item.message.content.message }}
+                      {{ getLatestMessageText(item.message) }}
                     </p>
                   </div>
 
@@ -2195,12 +2554,17 @@ onUnmounted(() => {
                   >
                     <div
                       class="contact-item d-flex align-center gap-3 pa-3"
+                      :class="{
+                        'contact-item--clickable':
+                          canCreateContact && !item.message.deleted,
+                      }"
                       :style="{
                         backgroundColor: isTypeUser(item.message)
                           ? 'rgba(var(--v-theme-surface), 0.5)'
                           : 'rgba(255, 255, 255, 0.3)',
                         borderRadius: '8px',
                       }"
+                      @click="handleContactClick(item.message)"
                     >
                       <VAvatar size="40" color="primary" variant="tonal">
                         <VIcon size="20">tabler-user</VIcon>
@@ -2234,7 +2598,7 @@ onUnmounted(() => {
                           : 'rgb(var(--v-theme-title))',
                       }"
                     >
-                      {{ item.message.content.message }}
+                      {{ getLatestMessageText(item.message) }}
                     </p>
                   </div>
 
@@ -2250,14 +2614,22 @@ onUnmounted(() => {
                     "
                   >
                     <p
-                      class="mb-2 mr-6 text-base message-text"
+                      class="mr-6 text-base message-text"
+                      :class="{
+                        'mb-2':
+                          !hasMessageVersions(item.message) &&
+                          !item.message.deleted,
+                        'mb-6':
+                          hasMessageVersions(item.message) ||
+                          item.message.deleted,
+                      }"
                       :style="{
                         color: isTypeUser(item.message)
                           ? 'rgb(var(--v-theme-on-surface))'
                           : 'rgb(var(--v-theme-title))',
                       }"
                     >
-                      {{ item.message.content?.message }}
+                      {{ getLatestMessageText(item.message) }}
                     </p>
                   </div>
 
@@ -2364,22 +2736,6 @@ onUnmounted(() => {
                   </div>
 
                   <div
-                    v-if="item.message.deleted"
-                    class="deleted-label-wrapper"
-                  >
-                    <span
-                      class="deleted-label"
-                      :style="{
-                        color: isTypeUser(item.message)
-                          ? 'rgba(var(--v-theme-on-surface), 0.65)'
-                          : 'rgba(var(--v-theme-title), 0.65)',
-                      }"
-                    >
-                      {{ t('chat_deleted_message_label') }}
-                    </span>
-                  </div>
-
-                  <div
                     v-if="
                       showReactionPicker === item.message.message_id &&
                       canInteractWithMessage(item.message) &&
@@ -2462,21 +2818,39 @@ onUnmounted(() => {
                         )
                       }}
                     </span>
-                    <span class="message-time">
-                      {{
-                        formatDate(item.message.date, {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          hour12: false,
-                        })
-                      }}
-                    </span>
-                    <VIcon
-                      size="16"
-                      :color="resolveFeedbackIcon(item.message).color"
-                    >
-                      {{ resolveFeedbackIcon(item.message).icon }}
-                    </VIcon>
+                    <div class="message-meta-content">
+                      <span
+                        v-if="item.message.deleted"
+                        class="message-deleted-badge"
+                        :title="t('chat_deleted_message_label')"
+                      >
+                        {{ t('chat_deleted_message_label') }}
+                      </span>
+                      <span
+                        v-else-if="hasMessageVersions(item.message)"
+                        class="message-edited-badge"
+                        :title="t('chat_edited')"
+                      >
+                        {{ t('chat_edited') }}
+                      </span>
+                      <div class="message-meta-row">
+                        <span class="message-time">
+                          {{
+                            formatDate(item.message.date, {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: false,
+                            })
+                          }}
+                        </span>
+                        <VIcon
+                          size="16"
+                          :color="resolveFeedbackIcon(item.message).color"
+                        >
+                          {{ resolveFeedbackIcon(item.message).icon }}
+                        </VIcon>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2486,6 +2860,21 @@ onUnmounted(() => {
       </template>
     </template>
   </div>
+
+  <Transition name="fade">
+    <VBtn
+      v-if="showScrollToBottom"
+      class="scroll-to-bottom-btn"
+      icon
+      size="small"
+      variant="flat"
+      color="white"
+      elevation="2"
+      @click="scrollToBottom"
+    >
+      <VIcon size="18" color="primary">tabler-arrow-down</VIcon>
+    </VBtn>
+  </Transition>
 
   <VDialog
     v-model="viewerOpen"
@@ -2542,6 +2931,95 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+  </VDialog>
+
+  <VDialog v-model="editMessageModalOpen" max-width="600" :scrollable="false">
+    <VCard>
+      <VCardTitle class="d-flex align-center justify-space-between">
+        <span>{{ t('chat_edit_message') }}</span>
+        <VBtn icon variant="text" size="small" @click="onCancelEdit">
+          <VIcon size="20">tabler-x</VIcon>
+        </VBtn>
+      </VCardTitle>
+      <VCardText>
+        <VTextarea
+          v-model="editMessageText"
+          :label="t('chat_message_label', 'Mensagem')"
+          rows="4"
+          auto-grow
+          variant="outlined"
+          counter
+          @keydown.enter.ctrl="onSaveEdit"
+          @keydown.enter.meta="onSaveEdit"
+        />
+      </VCardText>
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn variant="tonal" color="secondary" @click="onCancelEdit">
+          {{ t('cancel', 'Cancelar') }}
+        </VBtn>
+        <VBtn @click="onSaveEdit">
+          {{ t('save', 'Salvar') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog v-model="editHistoryModalOpen" max-width="600" :scrollable="false">
+    <VCard v-if="viewingEditHistory">
+      <VCardTitle class="d-flex align-center justify-space-between">
+        <span>{{ t('chat_edit_history') }}</span>
+        <VBtn
+          icon
+          variant="text"
+          size="small"
+          @click="editHistoryModalOpen = false"
+        >
+          <VIcon size="20">tabler-x</VIcon>
+        </VBtn>
+      </VCardTitle>
+      <VCardText>
+        <div class="edit-history-list">
+          <div
+            v-for="(item, index) in getMessageEditHistory(viewingEditHistory)"
+            :key="index"
+            class="edit-history-item"
+            :class="{
+              'edit-history-item--current': index === 0 && !item.isOriginal,
+              'edit-history-item--original': item.isOriginal,
+            }"
+          >
+            <div class="edit-history-header">
+              <span class="edit-history-label">
+                {{
+                  item.isOriginal
+                    ? t('chat_original_message')
+                    : t('chat_edited_version')
+                }}
+              </span>
+              <span class="edit-history-date">
+                {{
+                  formatDate(item.date, {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false,
+                  })
+                }}
+              </span>
+            </div>
+            <div class="edit-history-text">{{ item.text }}</div>
+          </div>
+        </div>
+      </VCardText>
+      <VCardText class="d-flex justify-end">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          @click="editHistoryModalOpen = false"
+        >
+          {{ t('close', 'Fechar') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
   </VDialog>
 
   <VDialog v-model="locationModalOpen" max-width="800" :scrollable="false">
@@ -2914,6 +3392,22 @@ onUnmounted(() => {
         color: rgba(var(--v-theme-on-surface), 0.6);
       }
 
+      .quoted-sticker {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .quoted-sticker-label {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: rgb(var(--v-theme-primary));
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
       .quoted-location {
         display: flex;
         align-items: center;
@@ -2927,6 +3421,28 @@ onUnmounted(() => {
       }
 
       .quoted-location-name {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: rgb(var(--v-theme-primary));
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .quoted-contact {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .quoted-contact-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .quoted-contact-name {
         font-size: 0.8rem;
         font-weight: 600;
         color: rgb(var(--v-theme-primary));
@@ -3076,6 +3592,33 @@ onUnmounted(() => {
       .video-bubble.is-deleted {
         pointer-events: none;
         opacity: 0.7;
+      }
+
+      .sticker-bubble {
+        display: inline-block;
+        cursor: pointer;
+        max-inline-size: 100px;
+        max-block-size: 100px;
+
+        .sticker-thumb {
+          display: block;
+          border-radius: 8px;
+        }
+
+        &.is-deleted {
+          cursor: default;
+          pointer-events: none;
+          filter: grayscale(0.85);
+          opacity: 0.6;
+        }
+      }
+
+      .sticker-bubble--left .sticker-thumb {
+        border-start-end-radius: 6px;
+      }
+
+      .sticker-bubble--right .sticker-thumb {
+        border-start-start-radius: 6px;
       }
 
       .audio-bubble {
@@ -3577,20 +4120,6 @@ onUnmounted(() => {
         color: rgb(var(--v-theme-error));
         font-weight: 600;
       }
-
-      .deleted-label-wrapper {
-        display: flex;
-        justify-content: flex-end;
-        padding-inline-end: 32px;
-        margin-top: 6px;
-        margin-bottom: 18px;
-      }
-
-      .deleted-label {
-        font-style: italic;
-        font-size: 0.75rem;
-        margin: 0;
-      }
     }
   }
 
@@ -3848,7 +4377,7 @@ onUnmounted(() => {
     right: 0;
     bottom: 6px;
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     gap: 4px;
     justify-content: flex-end;
     padding-inline: 16px 12px;
@@ -3858,13 +4387,34 @@ onUnmounted(() => {
       font-size: 0.95rem;
     }
 
+    .message-audio-duration {
+      margin-right: auto;
+      font-weight: 500;
+    }
+
+    .message-meta-content {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+    }
+
+    .message-meta-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
     .message-time {
       line-height: 1;
     }
 
-    .message-audio-duration {
-      margin-right: auto;
-      font-weight: 500;
+    .message-edited-badge,
+    .message-deleted-badge {
+      font-size: 0.65rem;
+      color: rgba(var(--v-theme-on-surface), 0.5);
+      font-style: italic;
+      line-height: 1;
     }
   }
 
@@ -4019,10 +4569,108 @@ onUnmounted(() => {
   }
 }
 
+.edit-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.edit-history-item {
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+
+  &.edit-history-item--current {
+    background: rgba(var(--v-theme-primary), 0.1);
+    border-color: rgba(var(--v-theme-primary), 0.3);
+  }
+
+  &.edit-history-item--original {
+    background: rgba(var(--v-theme-on-surface), 0.02);
+  }
+}
+
+.edit-history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.edit-history-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+}
+
+.edit-history-date {
+  font-size: 0.7rem;
+  color: rgba(var(--v-theme-on-surface), 0.5);
+}
+
+.edit-history-text {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: rgb(var(--v-theme-on-surface));
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.contact-item--clickable {
+  cursor: pointer;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+
+  &:hover {
+    opacity: 0.9;
+    transform: scale(1.01);
+  }
+
+  &:active {
+    transform: scale(0.99);
+  }
+}
+
 .location-map-wrapper {
   width: 100%;
   height: 500px;
   position: relative;
   overflow: hidden;
+}
+
+.scroll-to-bottom-btn {
+  position: fixed;
+  bottom: 160px;
+  right: 45px;
+  z-index: 10;
+  border-radius: 50% !important;
+  min-width: 36px !important;
+  width: 36px !important;
+  height: 36px !important;
+  background-color: rgb(var(--v-theme-surface)) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+
+  @media (max-width: 960px) {
+    bottom: 160px;
+    right: 45px;
+    min-width: 32px !important;
+    width: 32px !important;
+    height: 32px !important;
+  }
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+  transform: translateY(10px) scale(0.9);
 }
 </style>

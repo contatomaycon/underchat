@@ -140,6 +140,40 @@ export const useContactStore = defineStore('contact', {
       }
     },
 
+    async getContactByPhone(
+      phone: string,
+      phoneDdi?: string | null
+    ): Promise<ViewContactResponse | null> {
+      try {
+        const params = new URLSearchParams();
+        params.append('phone', phone);
+        if (phoneDdi) {
+          params.append('phone_ddi', phoneDdi);
+        }
+
+        const response = await axios.get<IApiResponse<ViewContactResponse>>(
+          `/contact/by-phone?${params.toString()}`
+        );
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          return null;
+        }
+
+        if (
+          !data?.data ||
+          (typeof data.data === 'object' && Object.keys(data.data).length === 0)
+        ) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        return null;
+      }
+    },
+
     async addContact(payload: CreateContactRequest): Promise<boolean> {
       try {
         this.loading = true;
@@ -215,6 +249,47 @@ export const useContactStore = defineStore('contact', {
         return true;
       } catch (error) {
         let errorMessage = this.i18n.global.t('contact_edit_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async validateContact(contactId: string): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<boolean>>(
+          `/contact/${contactId}/validate`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('contact_validation_failed');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('contact_validation_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('contact_validation_failed');
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }

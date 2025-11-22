@@ -24,6 +24,7 @@ export const viewContactResponseSchema = Type.Object({
   nickname: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   birthday: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   notes: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  is_valided: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
 });
 
 export type ViewContactResponse = Static<typeof viewContactResponseSchema>;

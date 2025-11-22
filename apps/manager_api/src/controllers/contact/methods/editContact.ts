@@ -16,11 +16,12 @@ export const editContact = async (
   reply: FastifyReply
 ) => {
   const contactUpdaterUseCase = container.resolve(ContactUpdaterUseCase);
-  const { t } = request;
+  const { t, tokenJwtData } = request;
 
   try {
     const response = await contactUpdaterUseCase.execute(
       t,
+      tokenJwtData.account_id,
       request.params.contact_id,
       request.body
     );

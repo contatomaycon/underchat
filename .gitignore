@@ -136,4 +136,4 @@ dist
 *.tool-versions
 
 # storage de worker_baileys 
-apps/worker_baileys/storage
+apps/worker_baileys/storagex

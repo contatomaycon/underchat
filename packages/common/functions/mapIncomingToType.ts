@@ -37,16 +37,6 @@ function hasQuotedRecursive(msg: proto.IMessage): boolean {
   return false;
 }
 
-function hasMentions(msg: proto.IMessage): boolean {
-  const ctx = msg.extendedTextMessage?.contextInfo;
-
-  if (ctx?.mentionedJid?.length) return true;
-  if ((msg as any).ephemeralMessage?.message)
-    return hasMentions((msg as any).ephemeralMessage.message as proto.IMessage);
-
-  return false;
-}
-
 function getViewOnceInner(msg: proto.IMessage): proto.IMessage | undefined {
   const v1 = (msg as any).viewOnceMessage?.message as
     | proto.IMessage
@@ -63,25 +53,6 @@ function getViewOnceInner(msg: proto.IMessage): proto.IMessage | undefined {
 
 function detectReactionOrPin({ msg }: IMapCtx): EMessageType | undefined {
   if (msg.reactionMessage) return EMessageType.react;
-  if ((msg as any).pinInChatMessage || (msg as any).pinInChat)
-    return EMessageType.pin_message;
-}
-
-function detectStatusTypes({
-  isStatus,
-  msg,
-  vOnce,
-  text,
-}: IMapCtx): EMessageType | undefined {
-  if (!isStatus) return;
-  if (msg.imageMessage || vOnce?.imageMessage) return EMessageType.status_image;
-  if (msg.videoMessage || vOnce?.videoMessage) return EMessageType.status_video;
-  if (text) return EMessageType.status_text;
-}
-
-function detectViewOnce({ vOnce }: IMapCtx): EMessageType | undefined {
-  if (vOnce?.imageMessage) return EMessageType.view_once_image;
-  if (vOnce?.videoMessage) return EMessageType.view_once_video;
 }
 
 function detectMedia({ msg }: IMapCtx): EMessageType | undefined {
@@ -95,21 +66,6 @@ function detectMedia({ msg }: IMapCtx): EMessageType | undefined {
   if (msg.contactsArrayMessage) return EMessageType.contacts;
 }
 
-function detectInteractive({ msg }: IMapCtx): EMessageType | undefined {
-  if (
-    (msg as any).buttonsResponseMessage ||
-    (msg as any).templateButtonReplyMessage
-  )
-    return EMessageType.button_reply;
-  if (msg.listResponseMessage) return EMessageType.list_reply;
-}
-
-function detectSpecial({ msg }: IMapCtx): EMessageType | undefined {
-  if ((msg as any).pollCreationMessage) return EMessageType.poll;
-  if ((msg as any).groupInviteMessage) return EMessageType.group_invite;
-  if ((msg as any).productMessage) return EMessageType.product;
-}
-
 function detectProtocol({ pType, msg }: IMapCtx): EMessageType | undefined {
   const T = proto.Message.ProtocolMessage.Type;
   if (pType === T.REVOKE) return EMessageType.delete_message;
@@ -121,9 +77,9 @@ function detectProtocol({ pType, msg }: IMapCtx): EMessageType | undefined {
     return EMessageType.set_disappearing_messages;
 }
 
-function detectText({ text, msg }: IMapCtx): EMessageType | undefined {
+function detectText({ text }: IMapCtx): EMessageType | undefined {
   if (!text) return;
-  if (hasMentions(msg)) return EMessageType.mention;
+
   return EMessageType.text;
 }
 
@@ -132,6 +88,13 @@ export function mapIncomingToType(m: WAMessage): EMessageType | undefined {
 
   const msg = m.message as proto.IMessage | undefined;
   if (!msg) return;
+
+  if (
+    (m.message as any).editedMessage?.message?.protocolMessage?.type ===
+    proto.Message.ProtocolMessage.Type.MESSAGE_EDIT
+  ) {
+    return EMessageType.edit_text;
+  }
 
   const ctx: IMapCtx = {
     msg,
@@ -143,11 +106,7 @@ export function mapIncomingToType(m: WAMessage): EMessageType | undefined {
 
   const detectors = [
     detectReactionOrPin,
-    detectStatusTypes,
-    detectViewOnce,
     detectMedia,
-    detectInteractive,
-    detectSpecial,
     detectProtocol,
     detectText,
   ];

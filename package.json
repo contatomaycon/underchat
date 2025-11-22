@@ -110,10 +110,12 @@
     "@temporalio/client": "^1.13.2",
     "@temporalio/worker": "^1.13.2",
     "@temporalio/workflow": "^1.13.2",
+    "@types/fluent-ffmpeg": "^2.1.28",
     "@types/lodash": "^4.17.20",
     "@types/mime-types": "^3.0.1",
     "@types/uuid": "^11.0.0",
-    "@whiskeysockets/baileys": "github:WhiskeySockets/Baileys#9720ff49caf0dbee182a7577a96e3639011824e6",
+    "@whiskeysockets/baileys": "github:contatomaycon/baileys",
+    "audio-decode": "^2.2.3",
     "axios": "^1.13.2",
     "centrifuge": "^5.5.2",
     "crypto-js": "^4.2.0",
@@ -126,6 +128,7 @@
     "fastify-plugin": "^5.1.0",
     "fastify-qs": "^5.0.0",
     "file-type": "^21.1.0",
+    "fluent-ffmpeg": "^2.1.3",
     "i18next": "^25.6.2",
     "i18next-fs-backend": "^2.6.1",
     "i18next-http-middleware": "^3.8.2",
@@ -139,6 +142,7 @@
     "moment": "^2.30.1",
     "moment-timezone": "^0.6.0",
     "node-vault": "^0.10.9",
+    "node-web-audio-api": "^1.0.7",
     "pg": "^8.16.3",
     "pino": "^10.1.0",
     "qrcode": "^1.5.4",
@@ -153,8 +157,7 @@
     "tsyringe": "^4.10.0",
     "typescript-eslint": "^8.46.4",
     "uuid": "^13.0.0",
-    "ws": "^8.18.3",
-    "audio-decode": "^2.2.3"
+    "ws": "^8.18.3"
   },
   "pnpm": {
     "overrides": {

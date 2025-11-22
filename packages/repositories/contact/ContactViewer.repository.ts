@@ -37,6 +37,7 @@ export class ContactViewerRepository {
         >`CASE WHEN ${contact.birthday} IS NULL THEN NULL ELSE to_char(${contact.birthday}, 'YYYY-MM-DD') END`,
         notes: contact.notes,
         created_at: contact.created_at,
+        is_valided: contact.is_valided,
       })
       .from(contact)
       .leftJoin(account, eq(contact.account_id, account.account_id))
@@ -45,6 +46,65 @@ export class ContactViewerRepository {
         eq(labelTemplate.label_template_id, contact.label_template_id)
       )
       .where(and(eq(contact.contact_id, contactId), isNull(contact.deleted_at)))
+      .execute();
+
+    if (!result.length) {
+      return null;
+    }
+
+    return result[0] as ViewContactResponse;
+  };
+
+  viewContactByPhone = async (
+    accountId: string,
+    phoneC: string,
+    phoneDdi: string | null
+  ): Promise<ViewContactResponse | null> => {
+    const conditions = [
+      isNull(contact.deleted_at),
+      eq(contact.account_id, accountId),
+      eq(contact.phone_c, phoneC),
+    ];
+
+    if (phoneDdi) {
+      conditions.push(eq(contact.phone_ddi, phoneDdi));
+    } else {
+      conditions.push(sql`${contact.phone_ddi} IS NULL`);
+    }
+
+    const result = await this.db
+      .select({
+        contact_id: contact.contact_id,
+        account: {
+          account_id: account.account_id,
+          name: account.name,
+        },
+        label_template: {
+          label_template_id: labelTemplate.label_template_id,
+          label: labelTemplate.label,
+          color: labelTemplate.color,
+        },
+        name: contact.name,
+        last_name: contact.last_name,
+        email_partial: contact.email_partial,
+        phone_ddi: contact.phone_ddi,
+        phone_partial: contact.phone_partial,
+        nickname: contact.nickname,
+        birthday: sql<
+          string | null
+        >`CASE WHEN ${contact.birthday} IS NULL THEN NULL ELSE to_char(${contact.birthday}, 'YYYY-MM-DD') END`,
+        notes: contact.notes,
+        created_at: contact.created_at,
+        is_valided: contact.is_valided,
+      })
+      .from(contact)
+      .leftJoin(account, eq(contact.account_id, account.account_id))
+      .leftJoin(
+        labelTemplate,
+        eq(labelTemplate.label_template_id, contact.label_template_id)
+      )
+      .where(and(...conditions))
+      .limit(1)
       .execute();
 
     if (!result.length) {

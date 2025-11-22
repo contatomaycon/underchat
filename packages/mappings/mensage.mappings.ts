@@ -587,6 +587,26 @@ export const mensageMappings = () => {
                 },
               },
             },
+            version: {
+              type: 'nested',
+              properties: {
+                type: {
+                  type: 'keyword',
+                },
+                message: {
+                  type: 'text',
+                  fields: {
+                    keyword: {
+                      type: 'keyword',
+                      ignore_above: 256,
+                    },
+                  },
+                },
+                date: {
+                  type: 'date',
+                },
+              },
+            },
           },
         },
         summary: {

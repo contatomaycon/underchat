@@ -655,10 +655,7 @@ export class MessageSendConsume {
       .trim();
 
     if (fullName) {
-      const nameParts = fullName.split(' ');
-      const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
-      const firstName = nameParts[0] || '';
-      lines.push(`N:${lastName};${firstName};;;`, `FN:${fullName}`);
+      lines.push(`N:;${fullName};;;`, `FN:${fullName}`);
     }
 
     if (contact.phone) {
@@ -667,12 +664,19 @@ export class MessageSendConsume {
         ? contact.phone_ddi.replaceAll(/\D/g, '')
         : '';
 
+      let phoneWithDdi = '';
       if (ddi && phone) {
-        phone = `+${ddi}${phone}`;
+        phoneWithDdi = `+${ddi}${phone}`;
+      } else if (phone) {
+        phoneWithDdi = `+${phone}`;
       }
 
+      const phoneWithDdiWithoutPlus = phoneWithDdi.replace('+', '');
+
       if (phone) {
-        lines.push(`TEL;TYPE=CELL:${phone}`);
+        lines.push(
+          `TEL;type=CELL;type=VOICE;waid=${phoneWithDdiWithoutPlus}:${phoneWithDdi}`
+        );
       }
     }
 
@@ -751,6 +755,41 @@ export class MessageSendConsume {
   }
 
   private async processText(jid: string, data: IChatMessage): Promise<void> {
+    const hasVersions =
+      data.content?.version && data.content.version.length > 0;
+    const hasMessageKey = data.message_key?.id && data.message_key?.remote_jid;
+
+    if (hasVersions && hasMessageKey && data.message_key && data.content) {
+      const messageKey = {
+        remoteJid: data.message_key.remote_jid ?? '',
+        fromMe: data.message_key.from_me ?? false,
+        id: data.message_key.id,
+        participant: data.message_key.participant ?? undefined,
+      };
+
+      const latestVersion = data.content.version
+        ? [...data.content.version].sort(
+            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+          )[0]
+        : null;
+
+      const newText = latestVersion?.message ?? data.content?.message ?? '';
+
+      const result = await this.baileysMessageEditDeleteService.editText(
+        jid,
+        newText,
+        messageKey
+      );
+
+      if (!result) {
+        throw new Error('Failed to edit message');
+      }
+
+      const update: IUpdateMessage = { message: result, data };
+      await this.pushUpdate(update);
+      return;
+    }
+
     const result = await this.baileysMessageTextService.sendText(
       jid,
       data.content?.message ?? '',
@@ -1110,6 +1149,72 @@ export class MessageSendConsume {
     };
   }
 
+  private createQuotedStickerMessage(
+    q: NonNullable<IChatMessage['content']>['quoted']
+  ): proto.IMessage | null {
+    if (q?.type !== EMessageType.sticker || !q?.sticker) return null;
+
+    return {
+      stickerMessage: {
+        mimetype: q.sticker.mimetype ?? 'image/webp',
+        isAnimated: q.sticker.is_animated ?? false,
+        fileLength: q.sticker.size ?? undefined,
+        width: q.sticker.width ?? undefined,
+        height: q.sticker.height ?? undefined,
+      },
+    };
+  }
+
+  private createQuotedLocationMessage(
+    q: NonNullable<IChatMessage['content']>['quoted']
+  ): proto.IMessage | null {
+    if (q?.type !== EMessageType.location || !q?.location) return null;
+
+    return {
+      locationMessage: {
+        degreesLatitude: q.location.latitude ?? undefined,
+        degreesLongitude: q.location.longitude ?? undefined,
+        name: q.location.name ?? undefined,
+        address: q.location.address ?? undefined,
+      },
+    };
+  }
+
+  private createQuotedContactMessage(
+    q: NonNullable<IChatMessage['content']>['quoted']
+  ): proto.IMessage | null {
+    if (q?.type !== EMessageType.contact_card || !q?.contact) return null;
+
+    const vcardLines: string[] = ['BEGIN:VCARD', 'VERSION:3.0'];
+
+    const fullName = [q.contact.name, q.contact.last_name]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+
+    if (fullName) {
+      vcardLines.push(`N:;${fullName};;;`, `FN:${fullName}`);
+    }
+
+    if (q.contact.phone) {
+      vcardLines.push(`TEL:${q.contact.phone}`);
+    }
+
+    if (q.contact.email) {
+      vcardLines.push(`EMAIL:${q.contact.email}`);
+    }
+
+    vcardLines.push('END:VCARD');
+    const vcard = vcardLines.join('\n');
+
+    return {
+      contactMessage: {
+        displayName: fullName || 'Contato',
+        vcard,
+      },
+    };
+  }
+
   private createQuotedTextMessage(
     q: NonNullable<IChatMessage['content']>['quoted']
   ): proto.IMessage | null {
@@ -1147,6 +1252,9 @@ export class MessageSendConsume {
       () => this.createQuotedVideoMessage(q),
       () => this.createQuotedDocumentMessage(q),
       () => this.createQuotedAudioMessage(q),
+      () => this.createQuotedStickerMessage(q),
+      () => this.createQuotedLocationMessage(q),
+      () => this.createQuotedContactMessage(q),
     ];
 
     for (const creator of messageCreators) {

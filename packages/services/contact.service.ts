@@ -14,11 +14,11 @@ import { ContactDeleterRepository } from '@core/repositories/contact/ContactDele
 import { ContactUpdaterRepository } from '@core/repositories/contact/ContactUpdater.repository';
 import { IUpdateContact } from '@core/common/interfaces/IUpdateContact';
 import { UpdateContactRequest } from '@core/schema/contact/editContact/request.schema';
-import { ContactCreatorTransactionRepository } from '@core/repositories/contact/ContactCreatorTransaction.repository';
 import { TFunction } from 'i18next';
 import { PasswordEncryptorService } from './passwordEncryptor.service';
 import { ContactSensitiveDataRepository } from '@core/repositories/contact/ContactSensitiveData.repository';
 import { ContactExistsByEmailAndPhoneRepository } from '@core/repositories/contact/ContactExistsByEmailAndPhone.repository';
+import { nullIfEmpty } from '@core/common/functions/nullIfEmpty';
 
 @injectable()
 export class ContactService {
@@ -30,7 +30,6 @@ export class ContactService {
     private readonly contactViewerRepository: ContactViewerRepository,
     private readonly contactDeleterRepository: ContactDeleterRepository,
     private readonly contactUpdaterRepository: ContactUpdaterRepository,
-    private readonly contactCreatorTransactionRepository: ContactCreatorTransactionRepository,
     private readonly passwordEncryptorService: PasswordEncryptorService,
     private readonly contactSensitiveDataRepository: ContactSensitiveDataRepository,
     private readonly contactExistsByEmailAndPhoneRepository: ContactExistsByEmailAndPhoneRepository
@@ -71,82 +70,184 @@ export class ContactService {
     return this.contactViewerExistsRepository.existsContactById(contactId);
   };
 
-  createContact = async (
-    input: CreateContactRequest,
-    accountId: string
-  ): Promise<string | null> => {
-    const emailCEncrypted = input.email
-      ? this.passwordEncryptorService.encrypt(input.email)
-      : null;
+  private processEmailFields(
+    input: CreateContactRequest | ICreateContact,
+    isAlreadyEncrypted: boolean
+  ): {
+    emailCEncrypted: string | null;
+    emailPartialEncrypted: string | null;
+    emailC: string | null;
+  } {
+    if (isAlreadyEncrypted) {
+      const encryptedInput = input as ICreateContact;
 
-    const emailPartialEncrypted = input.email
-      ? (
-          this.encryptService.sanitize(input.email, ETypeSanetize.email) ?? ''
-        ).slice(0, 50)
-      : null;
-
-    const emailC = input.email
-      ? this.encryptService.encrypt(input.email)
-      : null;
-
-    const phoneCEncrypted = input.phone
-      ? this.passwordEncryptorService.encrypt(input.phone)
-      : null;
-
-    const phonePartialEncrypted = input.phone
-      ? this.encryptService.sanitize(input.phone, ETypeSanetize.phone)
-      : null;
-
-    const phoneC = input.phone
-      ? this.encryptService.encrypt(input.phone)
-      : null;
-
-    const [emailExists, phoneExists] = await Promise.all([
-      emailC
-        ? this.contactExistsByEmailAndPhoneRepository.existsContactByEmail(
-            emailC
-          )
-        : Promise.resolve(false),
-      phoneC
-        ? this.contactExistsByEmailAndPhoneRepository.existsContactByPhone(
-            phoneC
-          )
-        : Promise.resolve(false),
-    ]);
-
-    if (emailExists || phoneExists) {
-      return null;
+      return {
+        emailCEncrypted: encryptedInput.email ?? null,
+        emailPartialEncrypted: encryptedInput.email_partial ?? null,
+        emailC: encryptedInput.email_c ?? null,
+      };
     }
 
-    const payload: ICreateContact = {
+    const plainEmail = 'email' in input ? input.email : null;
+    if (!plainEmail) {
+      return {
+        emailCEncrypted: null,
+        emailPartialEncrypted: null,
+        emailC: null,
+      };
+    }
+
+    return {
+      emailCEncrypted: this.passwordEncryptorService.encrypt(plainEmail),
+      emailPartialEncrypted: (
+        this.encryptService.sanitize(plainEmail, ETypeSanetize.email) ?? ''
+      ).slice(0, 50),
+      emailC: this.encryptService.encrypt(plainEmail),
+    };
+  }
+
+  private processPhoneFields(
+    input: CreateContactRequest | ICreateContact,
+    isAlreadyEncrypted: boolean
+  ): {
+    phoneCEncrypted: string | null;
+    phonePartialEncrypted: string | null;
+    phoneC: string | null;
+  } {
+    if (isAlreadyEncrypted) {
+      const encryptedInput = input as ICreateContact;
+
+      return {
+        phoneCEncrypted: encryptedInput.phone ?? null,
+        phonePartialEncrypted: encryptedInput.phone_partial ?? null,
+        phoneC: encryptedInput.phone_c ?? null,
+      };
+    }
+
+    const plainPhone = 'phone' in input ? input.phone : null;
+    if (!plainPhone) {
+      return {
+        phoneCEncrypted: null,
+        phonePartialEncrypted: null,
+        phoneC: null,
+      };
+    }
+
+    return {
+      phoneCEncrypted: this.passwordEncryptorService.encrypt(plainPhone),
+      phonePartialEncrypted: this.encryptService.sanitize(
+        plainPhone,
+        ETypeSanetize.phone
+      ),
+      phoneC: this.encryptService.encrypt(plainPhone),
+    };
+  }
+
+  private prepareContactPayload(
+    input: CreateContactRequest | ICreateContact,
+    accountId: string,
+    isValidated: boolean
+  ): ICreateContact {
+    const isAlreadyEncrypted = 'email_c' in input || 'phone_c' in input;
+
+    const emailFields = this.processEmailFields(input, isAlreadyEncrypted);
+    const phoneFields = this.processPhoneFields(input, isAlreadyEncrypted);
+
+    return {
       account_id: accountId,
       label_template_id: input.label_template_id,
+      is_valided: isValidated,
       name: input.name,
       last_name: input.last_name,
-      email: emailCEncrypted,
-      email_partial: emailPartialEncrypted,
-      email_c: emailC,
+      email: emailFields.emailCEncrypted,
+      email_partial: emailFields.emailPartialEncrypted,
+      email_c: emailFields.emailC,
       phone_ddi: input.phone_ddi,
-      phone: phoneCEncrypted,
-      phone_partial: phonePartialEncrypted,
-      phone_c: phoneC,
+      phone: phoneFields.phoneCEncrypted,
+      phone_partial: phoneFields.phonePartialEncrypted,
+      phone_c: phoneFields.phoneC,
       nickname: input.nickname,
-      birthday:
-        input.birthday &&
-        typeof input.birthday === 'string' &&
-        input.birthday.trim() !== ''
-          ? input.birthday
-          : null,
+      birthday: nullIfEmpty(input.birthday),
       notes: input.notes,
     };
+  }
 
+  createContact = async (
+    input: CreateContactRequest,
+    accountId: string,
+    isValidated: boolean = true
+  ): Promise<string | null> => {
+    const payload = this.prepareContactPayload(input, accountId, isValidated);
     return this.contactCreatorRepository.createContact(payload);
+  };
+
+  createContactWithGroup = async (
+    t: TFunction<'translation', undefined>,
+    input: ICreateContact,
+    contactGroupId: string,
+    accountId: string,
+    isValidated: boolean = false
+  ): Promise<boolean | null> => {
+    const payload = this.prepareContactPayload(input, accountId, isValidated);
+
+    return this.contactCreatorRepository.createContactWithGroup(
+      t,
+      payload,
+      contactGroupId
+    );
   };
 
   viewContactById = async (
     contactId: string
   ): Promise<ViewContactResponse | null> => {
     return this.contactViewerRepository.viewContactById(contactId);
+  };
+
+  getContactById = async (
+    contactId: string
+  ): Promise<ViewContactResponse | null> => {
+    return this.contactViewerRepository.viewContactById(contactId);
+  };
+
+  getContactByPhone = async (
+    accountId: string,
+    phone: string,
+    phoneDdi: string | null
+  ): Promise<ViewContactResponse | null> => {
+    const phoneC = phone ? this.encryptService.encrypt(phone) : null;
+    if (!phoneC) return null;
+
+    return this.contactViewerRepository.viewContactByPhone(
+      accountId,
+      phoneC,
+      phoneDdi
+    );
+  };
+
+  validateContact = async (
+    contactId: string,
+    phone: string,
+    phoneDdi: string | null
+  ): Promise<boolean> => {
+    const phoneCEncrypted = phone
+      ? this.passwordEncryptorService.encrypt(phone)
+      : null;
+
+    const phonePartialEncrypted = phone
+      ? this.encryptService.sanitize(phone, ETypeSanetize.phone)
+      : null;
+
+    const phoneC = phone ? this.encryptService.encrypt(phone) : null;
+
+    const payload: IUpdateContact = {
+      phone_ddi: phoneDdi,
+      phone: phoneCEncrypted,
+      phone_partial: phonePartialEncrypted,
+      phone_c: phoneC,
+      is_valided: true,
+    };
+
+    return this.contactUpdaterRepository.validateContact(contactId, payload);
   };
 
   deleteContactById = async (contactId: string): Promise<boolean> => {
@@ -183,27 +284,6 @@ export class ContactService {
       ? this.encryptService.encrypt(input.phone)
       : null;
 
-    if (emailC || phoneC) {
-      const [emailExists, phoneExists] = await Promise.all([
-        emailC
-          ? this.contactExistsByEmailAndPhoneRepository.existsContactByEmail(
-              emailC,
-              contactId
-            )
-          : Promise.resolve(false),
-        phoneC
-          ? this.contactExistsByEmailAndPhoneRepository.existsContactByPhone(
-              phoneC,
-              contactId
-            )
-          : Promise.resolve(false),
-      ]);
-
-      if (emailExists || phoneExists) {
-        return null;
-      }
-    }
-
     const payload: IUpdateContact = {
       label_template_id: input.label_template_id,
       name: input.name,
@@ -216,94 +296,12 @@ export class ContactService {
       phone_partial: phonePartialEncrypted,
       phone_c: phoneC,
       nickname: input.nickname,
-      birthday:
-        input.birthday &&
-        typeof input.birthday === 'string' &&
-        input.birthday.trim() !== ''
-          ? input.birthday
-          : null,
+      birthday: nullIfEmpty(input.birthday),
       notes: input.notes,
+      is_valided: !!(input.phone && input.phone_ddi),
     };
 
     return this.contactUpdaterRepository.updateContactById(contactId, payload);
-  };
-
-  createContactTx = async (
-    t: TFunction<'translation', undefined>,
-    input: ICreateContact,
-    contactGroupId: string,
-    accountId: string
-  ): Promise<boolean | null> => {
-    const emailCEncrypted = input?.email
-      ? this.passwordEncryptorService.encrypt(input.email)
-      : null;
-
-    const emailPartialEncrypted = input.email
-      ? (
-          this.encryptService.sanitize(input.email, ETypeSanetize.email) ?? ''
-        ).slice(0, 50)
-      : null;
-
-    const emailC = input.email
-      ? this.encryptService.encrypt(input.email)
-      : null;
-
-    const phoneCEncrypted = input.phone
-      ? this.passwordEncryptorService.encrypt(input.phone)
-      : null;
-
-    const phonePartialEncrypted = input.phone
-      ? this.encryptService.sanitize(input.phone, ETypeSanetize.phone)
-      : null;
-
-    const phoneC = input.phone
-      ? this.encryptService.encrypt(input.phone)
-      : null;
-
-    const [emailExists, phoneExists] = await Promise.all([
-      emailC
-        ? this.contactExistsByEmailAndPhoneRepository.existsContactByEmail(
-            emailC
-          )
-        : Promise.resolve(false),
-      phoneC
-        ? this.contactExistsByEmailAndPhoneRepository.existsContactByPhone(
-            phoneC
-          )
-        : Promise.resolve(false),
-    ]);
-
-    if (emailExists || phoneExists) {
-      return null;
-    }
-
-    const payload: ICreateContact = {
-      account_id: accountId,
-      label_template_id: input.label_template_id,
-      name: input.name,
-      last_name: input.last_name,
-      email: emailCEncrypted,
-      email_partial: emailPartialEncrypted,
-      email_c: emailC,
-      phone_ddi: input.phone_ddi ?? '55',
-      phone: phoneCEncrypted,
-      phone_partial: phonePartialEncrypted,
-      phone_c: phoneC,
-      nickname: input.nickname,
-      birthday:
-        input.birthday &&
-        typeof input.birthday === 'string' &&
-        input.birthday.trim() !== ''
-          ? input.birthday
-          : null,
-      notes: input.notes,
-    };
-
-    return this.contactCreatorTransactionRepository.createContactTx(
-      t,
-      contactGroupId,
-      payload
-    );
   };
 
   getContactPhoneDecrypted = (
@@ -375,5 +373,29 @@ export class ContactService {
       phone: this.getContactPhoneDecrypted(sensitiveData.phone),
       email: this.getContactEmailDecrypted(sensitiveData.email),
     };
+  };
+
+  existsContactByEmail = async (
+    accountId: string,
+    emailC: string,
+    contactId?: string | null
+  ): Promise<boolean> => {
+    return this.contactExistsByEmailAndPhoneRepository.existsContactByEmail(
+      accountId,
+      emailC,
+      contactId
+    );
+  };
+
+  existsContactByPhone = async (
+    accountId: string,
+    phonesC: string[],
+    contactId?: string | null
+  ): Promise<boolean> => {
+    return this.contactExistsByEmailAndPhoneRepository.existsContactByPhone(
+      accountId,
+      phonesC,
+      contactId
+    );
   };
 }

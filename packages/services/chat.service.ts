@@ -160,4 +160,54 @@ export class ChatService {
       return false;
     }
   };
+
+  findMessageByMessageId = async (
+    accountId: string,
+    messageId: string
+  ): Promise<IChatMessage | null> => {
+    const queryElastic = {
+      size: 1,
+      _source: true,
+      query: {
+        bool: {
+          must: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: {
+                    'account.id': accountId,
+                  },
+                },
+              },
+            },
+            {
+              term: {
+                message_id: messageId,
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select<IChatMessage>(
+      EElasticIndex.message,
+      queryElastic
+    );
+
+    const hit = result?.hits?.hits?.[0] as ElasticHit<IChatMessage> | undefined;
+    return hit?._source ?? null;
+  };
+
+  updateMessageContent = async (
+    messageId: string,
+    content: IChatMessage['content']
+  ): Promise<boolean> => {
+    return this.elasticDatabaseService.update(
+      EElasticIndex.message,
+      { content },
+      messageId
+    );
+  };
 }

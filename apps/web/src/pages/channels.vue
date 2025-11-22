@@ -90,6 +90,7 @@ const itemsStatus = ref([
   { id: EWorkerStatus.online, text: t('online') },
   { id: EWorkerStatus.new, text: t('new') },
   { id: EWorkerStatus.error, text: t('error') },
+  { id: EWorkerStatus.mismatched, text: t('mismatched') },
 ]);
 
 const itemsType = ref([
@@ -132,6 +133,8 @@ const resolveStatusVariant = (s: string | undefined | null) => {
     return { color: EColor.info, text: t('recreating') };
   if (s === EWorkerStatus.error)
     return { color: EColor.error, text: t('error') };
+  if (s === EWorkerStatus.mismatched)
+    return { color: EColor.error, text: t('mismatched') };
 
   return { color: EColor.primary, text: t('unknown') };
 };
@@ -393,7 +396,8 @@ onUnmounted(async () => {
               v-if="
                 EWorkerStatus.disponible === item.status?.id ||
                 EWorkerStatus.online === item.status?.id ||
-                EWorkerStatus.offline === item.status?.id
+                EWorkerStatus.offline === item.status?.id ||
+                EWorkerStatus.mismatched === item.status?.id
               "
               ><VTooltip
                 location="top"

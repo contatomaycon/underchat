@@ -230,6 +230,45 @@ export class StorageService {
     };
   }
 
+  public async uploadVideoFromBuffer(
+    buffer: Buffer,
+    filename: string,
+    mimetype: string,
+    accountId: string,
+    width?: number,
+    height?: number
+  ): Promise<UploadFileResponse | null> {
+    if (buffer.byteLength > MAX_VIDEO_UPLOAD_BYTES) {
+      throw new Error('VIDEO_SIZE_LIMIT_EXCEEDED');
+    }
+
+    const extension =
+      this.getFileExtension(filename) || this.extFromMime(mimetype) || 'mp4';
+    const normalizedName = filename.endsWith(`.${extension}`)
+      ? filename
+      : `${filename}.${extension}`;
+    const key = `${accountId}/${this.converterFilename(normalizedName)}`;
+
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: s3Environment.s3BucketName,
+        Key: key,
+        Body: buffer,
+        ContentType: mimetype,
+      })
+    );
+
+    return {
+      url: this.createUrl(key),
+      name: normalizedName,
+      extension,
+      size: buffer.byteLength,
+      mimetype,
+      width: width ?? null,
+      height: height ?? null,
+    };
+  }
+
   public async uploadAudio(
     file: UploadFileRequest,
     accountId: string
@@ -241,14 +280,14 @@ export class StorageService {
     }
 
     const initialExtension = this.getFileExtension(file.filename);
-    const fallbackExtension = this.extFromMime(file.mimetype ?? '') ?? 'ogg';
+    const fallbackExtension = this.extFromMime(file.mimetype ?? '') ?? 'opus';
     const extension = initialExtension || fallbackExtension;
 
     const normalizedName = initialExtension
       ? file.filename
       : `${file.filename}.${extension}`;
     const key = `${accountId}/${this.converterFilename(normalizedName)}`;
-    const mimetype = file.mimetype ?? 'audio/ogg';
+    const mimetype = file.mimetype ?? 'audio/ogg; codecs=opus';
 
     await this.client.send(
       new PutObjectCommand({
@@ -281,7 +320,7 @@ export class StorageService {
     }
 
     const extension =
-      this.getFileExtension(filename) || this.extFromMime(mimetype) || 'ogg';
+      this.getFileExtension(filename) || this.extFromMime(mimetype) || 'opus';
     const normalizedName = filename.endsWith(`.${extension}`)
       ? filename
       : `${filename}.${extension}`;

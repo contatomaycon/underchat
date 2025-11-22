@@ -1,6 +1,7 @@
 export interface ICreateContact {
   account_id?: string | null;
   label_template_id?: string | null;
+  is_valided?: boolean;
   name: string;
   last_name?: string | null;
   email?: string | null;

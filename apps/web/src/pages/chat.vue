@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { computed, watch, nextTick } from 'vue';
+import { computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { useDisplay, useTheme } from 'vuetify';
 import { themes } from '@/plugins/vuetify/theme';
@@ -8,6 +8,8 @@ import ChatLeftSidebarContent from '@/components/chat/ChatLeftSidebarContent.vue
 import ChatLog from '@/components/chat/ChatLog.vue';
 import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSidebarContent.vue';
 import AppContactPicker from '@/components/chat/AppContactPicker.vue';
+import AppAddContact from '@/components/contact/AppAddContact.vue';
+import AppEditContact from '@/components/contact/AppEditContact.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
@@ -17,6 +19,7 @@ import { useChatStore } from '@/@webcore/stores/chat';
 import { useContactStore } from '@/@webcore/stores/contact';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
+import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
 import {
   ContentMessageChat,
@@ -88,6 +91,7 @@ const { isLeftSidebarOpen } = useResponsiveLeftSidebar(
 const currentPage = ref(1);
 const perPage = ref(10);
 const chatLogPS = ref();
+const resizeHandler = ref<(() => void) | null>(null);
 const q = ref('');
 const msg = ref('');
 const isUserProfileSidebarOpen = ref(false);
@@ -104,6 +108,10 @@ const isContactPickerOpen = ref(false);
 const isLocationPickerOpen = ref(false);
 const isContactViewModalOpen = ref(false);
 const selectedContactDetails = ref<ViewContactResponse | null>(null);
+const isAddContactModalOpen = ref(false);
+const addContactInitialData = ref<Partial<CreateContactRequest> | null>(null);
+const isEditContactModalOpen = ref(false);
+const editContactId = ref<string | null>(null);
 const viewContactEmail = ref<string | null>(null);
 const viewContactEmailPartial = ref<string | null>(null);
 const viewContactPhone = ref<string | null>(null);
@@ -473,8 +481,10 @@ const cloneLinkPreview = (): ViewLinkPreviewResponse | undefined => {
   return structuredClone(preview);
 };
 
-const buildQuotedPayload = (): IQuotedMessage | null => {
-  const reply = chatStore.messageReply;
+const buildQuotedPayload = (
+  replyMessage?: ListMessageResult | null
+): IQuotedMessage | null => {
+  const reply = replyMessage ?? chatStore.messageReply;
   if (!reply) return null;
 
   const key = {
@@ -498,11 +508,16 @@ const buildQuotedPayload = (): IQuotedMessage | null => {
     video: reply.content?.video ?? null,
     document: reply.content?.document ?? null,
     audio: reply.content?.audio ?? null,
+    sticker: reply.content?.sticker ?? null,
+    location: reply.content?.location ?? null,
+    contact: reply.content?.contact ?? null,
   } satisfies IQuotedMessage;
 };
 
-const getQuotedContent = (): ContentMessageChat['quoted'] | undefined => {
-  const payload = buildQuotedPayload();
+const getQuotedContent = (
+  replyMessage?: ListMessageResult | null
+): ContentMessageChat['quoted'] | undefined => {
+  const payload = buildQuotedPayload(replyMessage);
   if (!payload) return undefined;
 
   const { type, ...rest } = payload;
@@ -590,13 +605,34 @@ const formattedRecordingTime = computed(() => {
 });
 const forceReflow = (el: HTMLElement): number => el.offsetWidth;
 
-const scrollToBottomInChatLog = () => {
+const scrollToBottomInChatLog = async (smooth: boolean = false) => {
   if (!chatLogPS.value) return;
 
   const scrollEl = chatLogPS.value.$el || chatLogPS.value;
   if (!scrollEl) return;
 
-  scrollEl.scrollTop = scrollEl.scrollHeight;
+  const psContainer =
+    (scrollEl.querySelector('.ps') as HTMLElement) ||
+    (scrollEl.closest('.ps') as HTMLElement) ||
+    scrollEl;
+
+  if (!psContainer) return;
+
+  const foundElement =
+    (psContainer.querySelector('.ps__rail-y')?.parentElement as HTMLElement) ||
+    (psContainer.querySelector('.ps__container') as HTMLElement) ||
+    psContainer;
+
+  if (!foundElement) return;
+
+  foundElement.scrollTop = foundElement.scrollHeight;
+
+  await nextTick();
+
+  requestAnimationFrame(() => {
+    foundElement.scrollTop = foundElement.scrollHeight;
+    chatLogPS.value?.update?.();
+  });
 };
 
 const highlightedMessageTimers = new Map<string, number>();
@@ -604,11 +640,19 @@ const highlightedMessageTimers = new Map<string, number>();
 const applyPersistentHighlight = (target: HTMLElement, id: string) => {
   target.classList.add('message-target-persistent');
 
+  const chatContent = target.querySelector('.chat-content') as HTMLElement;
+  if (chatContent) {
+    chatContent.classList.add('message-target-persistent-content');
+  }
+
   const existingTimer = highlightedMessageTimers.get(id);
   if (existingTimer) clearTimeout(existingTimer);
 
   const timeoutId = globalThis.setTimeout(() => {
     target.classList.remove('message-target-persistent');
+    if (chatContent) {
+      chatContent.classList.remove('message-target-persistent-content');
+    }
     highlightedMessageTimers.delete(id);
   }, 30_000) as unknown as number;
 
@@ -618,18 +662,38 @@ const applyPersistentHighlight = (target: HTMLElement, id: string) => {
 const isMessageLoaded = (id: string): boolean =>
   chatStore.listMessages.some((message) => message.message_id === id);
 
+const isMessageLoadedByKeyId = (keyId: string): boolean =>
+  chatStore.listMessages.some((message) => message.message_key?.id === keyId);
+
+const findMessageIdByKeyId = (keyId: string): string | null => {
+  const message = chatStore.listMessages.find(
+    (m) => m.message_key?.id === keyId
+  );
+  return message?.message_id || null;
+};
+
+const checkMessageLoaded = (id: string, isUuid: boolean): boolean => {
+  return isUuid ? isMessageLoaded(id) : isMessageLoadedByKeyId(id);
+};
+
 const ensureMessageLoaded = async (id: string): Promise<boolean> => {
   if (!id) return false;
-  if (isMessageLoaded(id)) return true;
+
+  const isUuid = !!id.match(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  );
+
+  if (checkMessageLoaded(id, isUuid)) return true;
 
   while (chatStore.currentPage < chatStore.totalPages) {
     const loaded = await chatStore.loadMoreMessages();
     if (!loaded) break;
     await nextTick();
-    if (isMessageLoaded(id)) return true;
+
+    if (checkMessageLoaded(id, isUuid)) return true;
   }
 
-  return isMessageLoaded(id);
+  return checkMessageLoaded(id, isUuid);
 };
 
 const scrollToMessageById = async (
@@ -648,19 +712,47 @@ const scrollToMessageById = async (
     return;
   }
 
-  const messageReady = await ensureMessageLoaded(id);
-  if (!messageReady) {
-    container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
-    chatLogPS.value?.update?.();
+  const isUuid = !!id.match(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  );
 
-    return;
+  let targetMessageId = id;
+  if (isUuid) {
+    const messageReady = await ensureMessageLoaded(targetMessageId);
+    if (!messageReady) {
+      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+      chatLogPS.value?.update?.();
+      return;
+    }
+  } else {
+    await ensureMessageLoaded(id);
+
+    const foundMessageId = findMessageIdByKeyId(id);
+    if (foundMessageId) {
+      targetMessageId = foundMessageId;
+    }
   }
 
   await nextTick();
 
-  const target =
-    (container.querySelector(`[data-message-id="${id}"]`) as HTMLElement) ||
-    (document.getElementById(`msg-${id}`) as HTMLElement);
+  let target =
+    (container.querySelector(
+      `[data-message-id="${targetMessageId}"]`
+    ) as HTMLElement) ||
+    (document.getElementById(`msg-${targetMessageId}`) as HTMLElement);
+
+  if (!target && !isUuid) {
+    const message = chatStore.listMessages.find(
+      (m) => m.message_key?.id === id
+    );
+    if (message) {
+      target =
+        (container.querySelector(
+          `[data-message-id="${message.message_id}"]`
+        ) as HTMLElement) ||
+        (document.getElementById(`msg-${message.message_id}`) as HTMLElement);
+    }
+  }
 
   if (target) {
     const top = getOffsetTop(container, target) - 60;
@@ -670,14 +762,24 @@ const scrollToMessageById = async (
     requestAnimationFrame(() => {
       container.scrollTo({ top, behavior: 'smooth' });
       chatLogPS.value?.update?.();
-    });
 
-    if (options.highlight) {
-      target.classList.remove('message-target-flash');
-      forceReflow(target);
-      target.classList.add('message-target-flash');
-      applyPersistentHighlight(target, id);
-    }
+      if (options.highlight) {
+        target.classList.remove(
+          'message-target-flash',
+          'message-target-persistent'
+        );
+        const existingChatContent = target.querySelector(
+          '.chat-content'
+        ) as HTMLElement;
+        if (existingChatContent) {
+          existingChatContent.classList.remove(
+            'message-target-persistent-content'
+          );
+        }
+
+        applyPersistentHighlight(target, targetMessageId);
+      }
+    });
 
     return;
   }
@@ -803,18 +905,28 @@ const createAudioFormData = (
   return formData;
 };
 
-const createTextMessageBody = (hash: string): CreateMessageChatsBody => {
+const createTextMessageBody = (
+  hash: string,
+  messageText?: string,
+  linkPreviewData?: ViewLinkPreviewResponse | null,
+  replyMessage?: ListMessageResult | null
+): CreateMessageChatsBody => {
+  const messageValue = messageText ?? msg.value;
+  const preview = linkPreviewData ?? linkPreview.value;
+  const replyId =
+    replyMessage?.message_id ?? chatStore.messageReply?.message_id;
+
   const inputCreateMessage: CreateMessageChatsBody = {
     type: EMessageType.text,
-    message: msg.value,
-    link_preview: linkPreview.value?.title
-      ? (linkPreview.value as ViewLinkPreviewResponse)
+    message: messageValue,
+    link_preview: preview?.title
+      ? (preview as ViewLinkPreviewResponse)
       : undefined,
     hash,
   };
 
-  if (chatStore.messageReply?.message_id) {
-    inputCreateMessage.message_quoted_id = chatStore.messageReply.message_id;
+  if (replyId) {
+    inputCreateMessage.message_quoted_id = replyId;
   }
 
   return inputCreateMessage;
@@ -879,14 +991,19 @@ const hasActiveChat = (): boolean => {
   return !!chatStore.activeChat?.worker?.id;
 };
 
-const sendImageMessage = async (): Promise<void> => {
+const sendImageMessage = async (
+  photosToSend?: ISelectedPhotoPreview[],
+  messageText?: string | null,
+  replyMessage?: ListMessageResult | null
+): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) return;
-  const photos = [...selectedPhotos.value];
+  const photos = photosToSend ?? [...selectedPhotos.value];
   if (photos.length === 0) return;
 
-  const replyId = chatStore.messageReply?.message_id ?? null;
-  const quotedPayload = getQuotedContent();
-  const messageValue = getComposerMessage();
+  const replyId =
+    replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent(replyMessage || null);
+  const messageValue = messageText ?? getComposerMessage();
 
   const messagesWithHashes = await Promise.all(
     photos.map(async (photo) => {
@@ -929,14 +1046,19 @@ const sendImageMessage = async (): Promise<void> => {
   );
 };
 
-const sendVideoMessage = async (): Promise<void> => {
+const sendVideoMessage = async (
+  videosToSend?: ISelectedVideoPreview[],
+  messageText?: string | null,
+  replyMessage?: ListMessageResult | null
+): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) return;
-  const videos = [...selectedVideos.value];
+  const videos = videosToSend ?? [...selectedVideos.value];
   if (videos.length === 0) return;
 
-  const replyId = chatStore.messageReply?.message_id ?? null;
-  const quotedPayload = getQuotedContent();
-  const messageValue = getComposerMessage();
+  const replyId =
+    replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent(replyMessage || null);
+  const messageValue = messageText ?? getComposerMessage();
 
   const messagesWithHashes = await Promise.all(
     videos.map(async (video) => {
@@ -985,7 +1107,9 @@ const sendAudioMessage = async (
   blob: Blob,
   mimeType: string,
   duration: number | null,
-  viewOnce: boolean
+  viewOnce: boolean,
+  messageText?: string | null,
+  replyMessage?: ListMessageResult | null
 ): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) return;
 
@@ -994,9 +1118,10 @@ const sendAudioMessage = async (
     return;
   }
 
-  const replyId = chatStore.messageReply?.message_id ?? null;
-  const quotedPayload = getQuotedContent();
-  const messageValue = getComposerMessage();
+  const replyId =
+    replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent(replyMessage || null);
+  const messageValue = messageText ?? getComposerMessage();
   const hash = createMessageHash();
 
   let extensionFromMime =
@@ -1060,14 +1185,19 @@ const sendAudioMessage = async (
   chatStore.clearMessageReply();
 };
 
-const sendAudioFilesMessage = async (): Promise<void> => {
+const sendAudioFilesMessage = async (
+  audiosToSend?: ISelectedAudioPreview[],
+  messageText?: string | null,
+  replyMessage?: ListMessageResult | null
+): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) return;
-  const audios = [...selectedAudios.value];
+  const audios = audiosToSend ?? [...selectedAudios.value];
   if (audios.length === 0) return;
 
-  const replyId = chatStore.messageReply?.message_id ?? null;
-  const quotedPayload = getQuotedContent();
-  const messageValue = getComposerMessage();
+  const replyId =
+    replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent(replyMessage || null);
+  const messageValue = messageText ?? getComposerMessage();
 
   const messagesWithHashes = await Promise.all(
     audios.map(async (audio) => {
@@ -1123,14 +1253,19 @@ const sendAudioFilesMessage = async (): Promise<void> => {
   );
 };
 
-const sendDocumentMessage = async (): Promise<void> => {
+const sendDocumentMessage = async (
+  documentsToSend?: ISelectedDocumentPreview[],
+  messageText?: string | null,
+  replyMessage?: ListMessageResult | null
+): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) return;
-  const docs = [...selectedDocuments.value];
+  const docs = documentsToSend ?? [...selectedDocuments.value];
   if (docs.length === 0) return;
 
-  const replyId = chatStore.messageReply?.message_id ?? null;
-  const quotedPayload = getQuotedContent();
-  const messageValue = getComposerMessage();
+  const replyId =
+    replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent(replyMessage || null);
+  const messageValue = messageText ?? getComposerMessage();
 
   const messagesWithHashes = await Promise.all(
     docs.map(async (doc) => {
@@ -1173,14 +1308,19 @@ const sendDocumentMessage = async (): Promise<void> => {
   );
 };
 
-const sendContactsMessage = async (): Promise<void> => {
+const sendContactsMessage = async (
+  contactsToSend?: ISelectedContactPreview[],
+  messageText?: string | null,
+  replyMessage?: ListMessageResult | null
+): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) return;
-  const contacts = [...selectedContacts.value];
+  const contacts = contactsToSend ?? [...selectedContacts.value];
   if (contacts.length === 0) return;
 
-  const replyId = chatStore.messageReply?.message_id ?? null;
-  const quotedPayload = getQuotedContent();
-  const messageValue = getComposerMessage();
+  const replyId =
+    replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent(replyMessage || null);
+  const messageValue = messageText ?? getComposerMessage();
 
   const messagesWithHashes = await Promise.all(
     contacts.map(async (contact) => {
@@ -1227,18 +1367,26 @@ const sendContactsMessage = async (): Promise<void> => {
     })
   );
 
-  chatStore.clearMessageReply();
-  clearSelectedContacts();
+  if (contactsToSend === undefined) {
+    chatStore.clearMessageReply();
+    clearSelectedContacts();
+  }
 };
 
-const sendLocationMessage = async (): Promise<void> => {
+const sendLocationMessage = async (
+  locationToSend?: typeof selectedLocation.value,
+  messageText?: string | null,
+  replyMessage?: ListMessageResult | null
+): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) return;
-  if (!selectedLocation.value) return;
+  const location = locationToSend ?? selectedLocation.value;
+  if (!location) return;
 
   const hash = createMessageHash();
-  const replyId = chatStore.messageReply?.message_id ?? null;
-  const quotedPayload = getQuotedContent();
-  const messageValue = getComposerMessage();
+  const replyId =
+    replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent(replyMessage || null);
+  const messageValue = messageText ?? getComposerMessage();
 
   const content: ContentMessageChat = {
     type: EMessageType.location,
@@ -1246,10 +1394,10 @@ const sendLocationMessage = async (): Promise<void> => {
     message_quoted_id: replyId ?? undefined,
     quoted: quotedPayload,
     location: {
-      latitude: selectedLocation.value.latitude,
-      longitude: selectedLocation.value.longitude,
-      name: selectedLocation.value.name ?? null,
-      address: selectedLocation.value.address ?? null,
+      latitude: location.latitude,
+      longitude: location.longitude,
+      name: location.name ?? null,
+      address: location.address ?? null,
     },
   };
 
@@ -1263,19 +1411,13 @@ const sendLocationMessage = async (): Promise<void> => {
   if (replyId) {
     formData.append('message_quoted_id', replyId);
   }
-  formData.append(
-    'location_latitude',
-    selectedLocation.value.latitude.toString()
-  );
-  formData.append(
-    'location_longitude',
-    selectedLocation.value.longitude.toString()
-  );
-  if (selectedLocation.value.name) {
-    formData.append('location_name', selectedLocation.value.name);
+  formData.append('location_latitude', location.latitude.toString());
+  formData.append('location_longitude', location.longitude.toString());
+  if (location.name) {
+    formData.append('location_name', location.name);
   }
-  if (selectedLocation.value.address) {
-    formData.append('location_address', selectedLocation.value.address);
+  if (location.address) {
+    formData.append('location_address', location.address);
   }
   formData.append('hash', hash);
 
@@ -1287,8 +1429,10 @@ const sendLocationMessage = async (): Promise<void> => {
     markUploadError(hash);
   }
 
-  chatStore.clearMessageReply();
-  selectedLocation.value = null;
+  if (locationToSend === undefined) {
+    chatStore.clearMessageReply();
+    selectedLocation.value = null;
+  }
 };
 
 const onContactsSelected = (contacts: ISelectedContactPreview[]) => {
@@ -1297,16 +1441,23 @@ const onContactsSelected = (contacts: ISelectedContactPreview[]) => {
   selectedContacts.value = [...selectedContacts.value, ...newContacts];
 };
 
-const sendTextMessage = async (): Promise<void> => {
+const sendTextMessage = async (
+  messageText?: string,
+  linkPreviewData?: ViewLinkPreviewResponse | null,
+  replyMessage?: ListMessageResult | null
+): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) return;
   const hash = createMessageHash();
-  const replyId = chatStore.messageReply?.message_id ?? null;
-  const quotedPayload = getQuotedContent();
-  const preview = cloneLinkPreview();
+  const messageValue = messageText ?? msg.value;
+  const replyId =
+    replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
+
+  const quotedPayload = getQuotedContent(replyMessage || null);
+  const preview = linkPreviewData ?? cloneLinkPreview();
 
   const content: ContentMessageChat = {
     type: EMessageType.text,
-    message: msg.value,
+    message: messageValue,
     message_quoted_id: replyId ?? undefined,
     quoted: quotedPayload,
     link_preview: preview,
@@ -1314,7 +1465,12 @@ const sendTextMessage = async (): Promise<void> => {
 
   await registerLocalMessage(content, hash);
 
-  const messageBody = createTextMessageBody(hash);
+  const messageBody = createTextMessageBody(
+    hash,
+    messageValue,
+    preview,
+    replyMessage || null
+  );
   const success = await chatStore.createMessage(messageBody);
 
   if (!success) {
@@ -1323,10 +1479,27 @@ const sendTextMessage = async (): Promise<void> => {
 };
 
 const finalizeSend = () => {
-  clearMessageFields();
-
   nextTick(() => {
-    scrollToBottomInChatLog();
+    const scrollEl = chatLogPS.value?.$el || chatLogPS.value;
+    if (scrollEl) {
+      const scrollTop = scrollEl.scrollTop;
+      const scrollHeight = scrollEl.scrollHeight;
+      const clientHeight = scrollEl.clientHeight;
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+      const isNearBottom = distanceFromBottom < 200;
+
+      scrollToBottomInChatLog(!isNearBottom);
+    } else {
+      scrollToBottomInChatLog(true);
+    }
+
+    setTimeout(() => {
+      const scrollEl = chatLogPS.value?.$el || chatLogPS.value;
+      if (scrollEl) {
+        scrollEl.scrollTop = scrollEl.scrollHeight;
+        chatLogPS.value?.update?.();
+      }
+    }, 300);
   });
 };
 
@@ -1335,48 +1508,81 @@ const sendMessage = async () => {
   if (!hasActiveChat()) return;
   if (isQueueStatus.value) return;
 
-  if (selectedDocuments.value.length > 0) {
-    await sendDocumentMessage();
+  const savedMsg = msg.value;
+  const savedLinkPreview = linkPreview.value ? { ...linkPreview.value } : null;
+  const savedPhotos = [...selectedPhotos.value];
+  const savedDocuments = [...selectedDocuments.value];
+  const savedVideos = [...selectedVideos.value];
+  const savedAudios = [...selectedAudios.value];
+  const savedContacts = [...selectedContacts.value];
+  const savedLocation = selectedLocation.value;
+  const savedReply = chatStore.messageReply;
+
+  chatStore.clearMessageReply();
+
+  msg.value = '';
+  linkPreview.value = null;
+  clearSelectedVideos();
+  clearSelectedAudios();
+  clearSelectedContacts();
+  selectedPhotos.value = [];
+  selectedDocuments.value = [];
+  selectedLocation.value = null;
+
+  if (savedDocuments.length > 0) {
+    await sendDocumentMessage(
+      savedDocuments,
+      savedMsg,
+      savedReply || undefined
+    );
     finalizeSend();
     return;
   }
 
-  if (selectedVideos.value.length > 0) {
-    await sendVideoMessage();
+  if (savedVideos.length > 0) {
+    await sendVideoMessage(savedVideos, savedMsg, savedReply || undefined);
     finalizeSend();
     return;
   }
 
-  if (selectedAudios.value.length > 0) {
-    await sendAudioFilesMessage();
+  if (savedAudios.length > 0) {
+    await sendAudioFilesMessage(savedAudios, savedMsg, savedReply || undefined);
     finalizeSend();
     return;
   }
 
-  if (selectedContacts.value.length > 0) {
-    await sendContactsMessage();
+  if (savedContacts.length > 0) {
+    await sendContactsMessage(savedContacts, savedMsg, savedReply || undefined);
     finalizeSend();
     return;
   }
 
-  if (selectedLocation.value) {
-    await sendLocationMessage();
+  if (savedLocation) {
+    await sendLocationMessage(savedLocation, savedMsg, savedReply || undefined);
     finalizeSend();
     return;
   }
 
-  if (selectedPhotos.value.length > 0) {
-    await sendImageMessage();
+  if (savedPhotos.length > 0) {
+    await sendImageMessage(savedPhotos, savedMsg, savedReply || undefined);
     finalizeSend();
     return;
   }
 
-  await sendTextMessage();
+  await sendTextMessage(savedMsg, savedLinkPreview, savedReply || undefined);
+
   finalizeSend();
 };
 
 const openChat = async (chatId: ListChatsResult['chat_id']) => {
   if (chatStore.activeChat?.chat_id === chatId) return;
+
+  if (chatLogPS.value) {
+    const scrollEl = chatLogPS.value.$el || chatLogPS.value;
+    if (scrollEl) {
+      scrollEl.scrollTop = 0;
+    }
+  }
 
   chatStore.setActiveChat(chatId);
 
@@ -1391,7 +1597,9 @@ const openChat = async (chatId: ListChatsResult['chat_id']) => {
     isLeftSidebarOpen.value = false;
   }
 
-  nextTick(() => {
+  await nextTick();
+
+  requestAnimationFrame(() => {
     scrollToBottomInChatLog();
   });
 };
@@ -1804,7 +2012,10 @@ const resetRecordingState = () => {
   audioChunksRef.value = [];
 };
 
-const handleRecorderStop = async () => {
+const handleRecorderStop = async (
+  savedMessageText?: string | null,
+  savedReply?: ListMessageResult | null
+) => {
   const recorder = mediaRecorderRef.value;
   const saveRecording = shouldPersistRecording.value;
   shouldPersistRecording.value = false;
@@ -1859,7 +2070,9 @@ const handleRecorderStop = async () => {
         blob,
         mimeType,
         audioRecordingDurationSeconds.value,
-        audioPendingViewOnce.value
+        audioPendingViewOnce.value,
+        savedMessageText,
+        savedReply || undefined
       );
       recordedAudioUrl.value = null;
     }
@@ -1867,10 +2080,26 @@ const handleRecorderStop = async () => {
   }
 
   releaseAudioResources();
-  resetRecordingState();
+
+  audioViewOnce.value = false;
+  audioPendingViewOnce.value = false;
+  audioRecordingStartAt.value = null;
+  audioRecordingAccumulated.value = 0;
+  audioRecordingElapsedMs.value = 0;
+  audioRecordingDurationSeconds.value = null;
+  audioChunksRef.value = [];
 };
 
-const stopAudioRecordingInternal = () => {
+let savedMessageTextForRecording: string | null | undefined = undefined;
+let savedReplyForRecording: ListMessageResult | null | undefined = undefined;
+
+const stopAudioRecordingInternal = (
+  savedMessageText?: string | null,
+  savedReply?: ListMessageResult | null
+) => {
+  savedMessageTextForRecording = savedMessageText;
+  savedReplyForRecording = savedReply;
+
   if (audioRecordingStartAt.value !== null) {
     audioRecordingAccumulated.value +=
       performance.now() - audioRecordingStartAt.value;
@@ -1879,14 +2108,19 @@ const stopAudioRecordingInternal = () => {
   updateRecordingElapsed();
 
   if (mediaRecorderRef.value) {
-    mediaRecorderRef.value.onstop = handleRecorderStop;
+    mediaRecorderRef.value.onstop = (_ev: Event) => {
+      void handleRecorderStop(
+        savedMessageTextForRecording,
+        savedReplyForRecording
+      );
+    };
     if (mediaRecorderRef.value.state !== 'inactive') {
       mediaRecorderRef.value.stop();
       return;
     }
   }
 
-  void handleRecorderStop();
+  void handleRecorderStop(savedMessageTextForRecording, savedReplyForRecording);
 };
 
 const cancelAudioRecording = () => {
@@ -1899,9 +2133,31 @@ const cancelAudioRecording = () => {
 
 const finalizeAudioRecording = () => {
   if (!isRecordingAudio.value) return;
+
+  const savedMsg = msg.value;
+  const savedReply = chatStore.messageReply;
+
+  msg.value = '';
+  linkPreview.value = null;
+  chatStore.clearMessageReply();
+
+  isRecordingAudio.value = false;
+  isRecordingPaused.value = false;
+
+  if (audioRecordingTimerId.value) {
+    clearInterval(audioRecordingTimerId.value);
+    audioRecordingTimerId.value = null;
+  }
+  if (audioRecordingRAFId.value) {
+    cancelAnimationFrame(audioRecordingRAFId.value);
+    audioRecordingRAFId.value = null;
+  }
+
+  audioRecordingElapsedMs.value = 0;
+
   shouldPersistRecording.value = true;
   audioPendingViewOnce.value = audioViewOnce.value;
-  void stopAudioRecordingInternal();
+  void stopAudioRecordingInternal(savedMsg, savedReply);
 };
 
 const togglePauseAudioRecording = async () => {
@@ -1988,7 +2244,12 @@ const startAudioRecording = async () => {
         audioChunksRef.value.push(event.data);
       }
     };
-    mediaRecorder.onstop = handleRecorderStop;
+    mediaRecorder.onstop = (_ev: Event) => {
+      void handleRecorderStop(
+        savedMessageTextForRecording,
+        savedReplyForRecording
+      );
+    };
 
     const audioCtx = new AudioContext();
     audioContextRef.value = audioCtx;
@@ -2671,6 +2932,94 @@ watch(
   { immediate: true }
 );
 
+let previousLoadingState = false;
+let previousActiveChatId: string | undefined = undefined;
+watch(
+  () =>
+    [
+      chatStore.loading,
+      chatStore.listMessages.length,
+      chatStore.activeChat?.chat_id,
+    ] as const,
+  async ([loading, messageCount, activeChatId]) => {
+    const currentLoading = Boolean(loading);
+    const currentMessageCount =
+      typeof messageCount === 'number' ? messageCount : 0;
+    const chatChanged = previousActiveChatId !== activeChatId;
+
+    const loadingFinished =
+      previousLoadingState && !currentLoading && currentMessageCount > 0;
+
+    const chatChangedWithMessages =
+      chatChanged && !currentLoading && currentMessageCount > 0;
+
+    previousLoadingState = currentLoading;
+    previousActiveChatId = activeChatId;
+
+    if ((loadingFinished || chatChangedWithMessages) && activeChatId) {
+      await nextTick();
+
+      requestAnimationFrame(() => {
+        scrollToBottomInChatLog();
+        hideScrollbarIfNotNeeded();
+      });
+    }
+  }
+);
+
+const hideScrollbarIfNotNeeded = () => {
+  if (!chatLogPS.value) return;
+
+  const scrollEl = chatLogPS.value.$el || chatLogPS.value;
+  if (!scrollEl) return;
+
+  const psContainer =
+    (scrollEl.querySelector('.ps') as HTMLElement) ||
+    (scrollEl.closest('.ps') as HTMLElement) ||
+    (scrollEl as HTMLElement);
+
+  if (!psContainer) return;
+
+  const needsScroll = psContainer.scrollHeight > psContainer.clientHeight;
+
+  const railY = psContainer.querySelector('.ps__rail-y') as HTMLElement;
+  if (railY) {
+    railY.style.display = needsScroll ? '' : 'none';
+  }
+};
+
+watch(
+  () => [chatStore.listMessages.length, chatStore.loading],
+  async () => {
+    await nextTick();
+    requestAnimationFrame(() => {
+      hideScrollbarIfNotNeeded();
+    });
+  }
+);
+
+const onOpenAddContactModal = (e: Event) => {
+  const customEvent = e as CustomEvent;
+  const contactData =
+    customEvent.detail as Partial<CreateContactRequest> | null;
+  if (contactData) {
+    addContactInitialData.value = contactData;
+  } else {
+    addContactInitialData.value = null;
+  }
+  isAddContactModalOpen.value = true;
+};
+
+const onOpenEditContactModal = (e: Event) => {
+  const customEvent = e as CustomEvent;
+  const contactId = customEvent.detail as string;
+
+  if (contactId) {
+    editContactId.value = contactId;
+    isEditContactModalOpen.value = true;
+  }
+};
+
 const focusComposer = () => {
   setTimeout(() => {
     const el = composerRef.value?.$el?.querySelector(
@@ -3081,7 +3430,9 @@ onMounted(async () => {
           const changeType = chatStore.addMessageActiveChat(messageData);
 
           if (changeType === 'created') {
-            scrollToMessageById(messageData.message_id);
+            nextTick(async () => {
+              await scrollToBottomInChatLog();
+            });
             globalThis.dispatchEvent(new CustomEvent('focus-composer'));
           }
 
@@ -3115,7 +3466,23 @@ onMounted(async () => {
       'retry-message',
       onRetryMessage as EventListener
     );
+    globalThis.addEventListener(
+      'open-add-contact-modal',
+      onOpenAddContactModal as EventListener
+    );
+    globalThis.addEventListener(
+      'open-edit-contact-modal',
+      onOpenEditContactModal as EventListener
+    );
   }
+
+  const handleResize = () => {
+    requestAnimationFrame(() => {
+      hideScrollbarIfNotNeeded();
+    });
+  };
+  window.addEventListener('resize', handleResize);
+  resizeHandler.value = handleResize;
 });
 
 onUnmounted(async () => {
@@ -3136,12 +3503,37 @@ onUnmounted(async () => {
       'retry-message',
       onRetryMessage as EventListener
     );
+    globalThis.removeEventListener(
+      'open-add-contact-modal',
+      onOpenAddContactModal as EventListener
+    );
+    globalThis.removeEventListener(
+      'open-edit-contact-modal',
+      onOpenEditContactModal as EventListener
+    );
+  }
+
+  if (resizeHandler.value) {
+    window.removeEventListener('resize', resizeHandler.value);
+    resizeHandler.value = null;
   }
 
   for (const timeoutId of highlightedMessageTimers.values()) {
     clearTimeout(timeoutId);
   }
   highlightedMessageTimers.clear();
+
+  const highlightedElements = document.querySelectorAll(
+    '.message-target-persistent'
+  );
+
+  for (const el of highlightedElements) {
+    el.classList.remove('message-target-persistent');
+    const chatContent = el.querySelector('.chat-content');
+    if (chatContent) {
+      chatContent.classList.remove('message-target-persistent-content');
+    }
+  }
 });
 
 onBeforeUnmount(() => {
@@ -4276,6 +4668,25 @@ onBeforeUnmount(() => {
     </VCard>
   </VDialog>
 
+  <AppAddContact
+    v-model="isAddContactModalOpen"
+    :initial-data="addContactInitialData"
+  />
+
+  <AppEditContact
+    v-model="isEditContactModalOpen"
+    :contact-id="editContactId"
+  />
+
+  <VSnackbar
+    v-model="contactStore.snackbar.status"
+    transition="scroll-y-reverse-transition"
+    location="top end"
+    :color="contactStore.snackbar.color"
+  >
+    {{ contactStore.snackbar.message }}
+  </VSnackbar>
+
   <VSnackbar
     v-model="chatStore.snackbar.status"
     transition="scroll-y-reverse-transition"
@@ -5005,9 +5416,10 @@ $chat-app-header-height: 76px;
   animation: messageTargetFlash 1.1s ease;
 }
 
-.message-target-persistent {
-  background-color: rgba(var(--v-theme-primary), 0.12);
+.message-target-persistent-content {
+  background-color: rgba(var(--v-theme-primary), 0.12) !important;
   transition: background-color 0.3s ease;
+  border-top-left-radius: 8px !important;
 }
 @keyframes messageTargetFlash {
   0% {

@@ -22,7 +22,7 @@ import {
 } from '@core/schema/chat/listMessageChats/response.schema';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
-import { IChatMessage } from '@core/common/interfaces/IChatMessage';
+import { IChatMessage, IReaction } from '@core/common/interfaces/IChatMessage';
 import { IChat } from '@core/common/interfaces/IChat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ViewLinkPreviewBody } from '@core/schema/chat/viewLinkPreview/request.schema';
@@ -401,7 +401,7 @@ export const useChatStore = defineStore('chat', {
 
         this.loading = false;
 
-        const data = response?.data as IApiResponse<ListChatsResponse>;
+        const data = response?.data;
 
         if (!data?.status || !data?.data) {
           this.listQueue = [];
@@ -438,7 +438,7 @@ export const useChatStore = defineStore('chat', {
 
         this.loading = false;
 
-        const data = response?.data as IApiResponse<ListChatsResponse>;
+        const data = response?.data;
 
         if (!data?.status || !data?.data) {
           this.listInChat = [];
@@ -467,7 +467,7 @@ export const useChatStore = defineStore('chat', {
 
         this.loading = false;
 
-        const data = response?.data as IApiResponse<null>;
+        const data = response?.data;
 
         if (!data?.status) {
           const errorMessage =
@@ -499,7 +499,7 @@ export const useChatStore = defineStore('chat', {
           }
         );
 
-        const data = response?.data as IApiResponse<ListMessageResponse>;
+        const data = response?.data;
 
         if (!data?.status || !data?.data) {
           this.listMessages = [];
@@ -554,7 +554,7 @@ export const useChatStore = defineStore('chat', {
           }
         );
 
-        const data = response?.data as IApiResponse<ListMessageResponse>;
+        const data = response?.data;
 
         if (!data?.status || !data?.data) {
           this.loadingMoreMessages = false;
@@ -563,10 +563,8 @@ export const useChatStore = defineStore('chat', {
         }
 
         this.currentPage = data.data.pagings.current_page;
-        this.listMessages = [
-          ...data.data.results.reverse(),
-          ...this.listMessages,
-        ];
+        const reversedResults = data.data.results.toReversed();
+        this.listMessages = [...reversedResults, ...this.listMessages];
         this.loadingMoreMessages = false;
 
         return true;
@@ -588,24 +586,15 @@ export const useChatStore = defineStore('chat', {
 
         this.loading = false;
 
-        const data = response?.data as IApiResponse<boolean>;
+        const data = response?.data;
 
         if (!data?.status) {
-          const errorMessage =
-            data?.message || this.i18n.global.t('chat_message_create_error');
-          this.showSnackbar(errorMessage, EColor.error);
-
           return false;
         }
 
         return true;
       } catch {
         this.loading = false;
-
-        this.showSnackbar(
-          this.i18n.global.t('chat_message_create_error'),
-          EColor.error
-        );
 
         return false;
       }
@@ -622,7 +611,7 @@ export const useChatStore = defineStore('chat', {
 
         this.loading = false;
 
-        const data = response?.data as IApiResponse<IChat>;
+        const data = response?.data;
 
         if (!data?.status) {
           const errorMessage =
@@ -706,27 +695,17 @@ export const useChatStore = defineStore('chat', {
           this.loading = false;
         }
 
-        const data = response?.data as IApiResponse<boolean>;
+        const data = response?.data;
 
         if (!data?.status) {
-          this.showSnackbar(data.message, EColor.error);
-
           return false;
         }
 
         return true;
-      } catch (error) {
+      } catch {
         if (shouldHandleLoading) {
           this.loading = false;
         }
-
-        const message =
-          isAxiosError(error) &&
-          typeof error.response?.data?.message === 'string'
-            ? (error.response.data.message as string)
-            : this.i18n.global.t('chat_message_create_error');
-
-        this.showSnackbar(message, EColor.error);
 
         return false;
       }
@@ -775,27 +754,17 @@ export const useChatStore = defineStore('chat', {
           this.loading = false;
         }
 
-        const data = response?.data as IApiResponse<boolean>;
+        const data = response?.data;
 
         if (!data?.status) {
-          this.showSnackbar(data.message, EColor.error);
-
           return false;
         }
 
         return true;
-      } catch (error) {
+      } catch {
         if (shouldHandleLoading) {
           this.loading = false;
         }
-
-        const message =
-          isAxiosError(error) &&
-          typeof error.response?.data?.message === 'string'
-            ? (error.response.data.message as string)
-            : this.i18n.global.t('chat_message_create_error');
-
-        this.showSnackbar(message, EColor.error);
 
         return false;
       }
@@ -844,27 +813,17 @@ export const useChatStore = defineStore('chat', {
           this.loading = false;
         }
 
-        const data = response?.data as IApiResponse<boolean>;
+        const data = response?.data;
 
         if (!data?.status) {
-          this.showSnackbar(data.message, EColor.error);
-
           return false;
         }
 
         return true;
-      } catch (error) {
+      } catch {
         if (shouldHandleLoading) {
           this.loading = false;
         }
-
-        const message =
-          isAxiosError(error) &&
-          typeof error.response?.data?.message === 'string'
-            ? (error.response.data.message as string)
-            : this.i18n.global.t('chat_message_create_error');
-
-        this.showSnackbar(message, EColor.error);
 
         return false;
       }
@@ -912,27 +871,17 @@ export const useChatStore = defineStore('chat', {
           this.loading = false;
         }
 
-        const data = response?.data as IApiResponse<boolean>;
+        const data = response?.data;
 
         if (!data?.status) {
-          this.showSnackbar(data.message, EColor.error);
-
           return false;
         }
 
         return true;
-      } catch (error) {
+      } catch {
         if (shouldHandleLoading) {
           this.loading = false;
         }
-
-        const message =
-          isAxiosError(error) &&
-          typeof error.response?.data?.message === 'string'
-            ? (error.response.data.message as string)
-            : this.i18n.global.t('chat_message_create_error');
-
-        this.showSnackbar(message, EColor.error);
 
         return false;
       }
@@ -965,11 +914,9 @@ export const useChatStore = defineStore('chat', {
           this.loading = false;
         }
 
-        const data = response?.data as IApiResponse<boolean>;
+        const data = response?.data;
 
         if (!data?.status) {
-          this.showSnackbar(data.message, EColor.error);
-
           return false;
         }
 
@@ -978,11 +925,6 @@ export const useChatStore = defineStore('chat', {
         if (shouldHandleLoading) {
           this.loading = false;
         }
-
-        this.showSnackbar(
-          this.i18n.global.t('chat_message_create_error'),
-          EColor.error
-        );
 
         return false;
       }
@@ -1015,27 +957,17 @@ export const useChatStore = defineStore('chat', {
           this.loading = false;
         }
 
-        const data = response?.data as IApiResponse<boolean>;
+        const data = response?.data;
 
         if (!data?.status) {
-          this.showSnackbar(data.message, EColor.error);
-
           return false;
         }
 
         return true;
-      } catch (error) {
+      } catch {
         if (shouldHandleLoading) {
           this.loading = false;
         }
-
-        const message =
-          isAxiosError(error) &&
-          typeof error.response?.data?.message === 'string'
-            ? (error.response.data.message as string)
-            : this.i18n.global.t('chat_message_create_error');
-
-        this.showSnackbar(message, EColor.error);
 
         return false;
       }
@@ -1053,22 +985,15 @@ export const useChatStore = defineStore('chat', {
 
         this.loading = false;
 
-        const data = response?.data as IApiResponse<ViewLinkPreviewResponse>;
+        const data = response?.data;
 
         if (!data?.status) {
-          this.showSnackbar(data.message, EColor.error);
-
           return null;
         }
 
         return data.data;
       } catch {
         this.loading = false;
-
-        this.showSnackbar(
-          this.i18n.global.t('chat_message_create_error'),
-          EColor.error
-        );
 
         return null;
       }
@@ -1133,6 +1058,78 @@ export const useChatStore = defineStore('chat', {
       this.messageReply = null;
     },
 
+    updateMessageReaction(messageId: string, emoji: string) {
+      const messageIndex = this.listMessages.findIndex(
+        (message) => message.message_id === messageId
+      );
+
+      if (messageIndex === -1) return;
+
+      const message = this.listMessages[messageIndex];
+      const reactions = message.content?.reactions ?? [];
+      const workerId = this.activeChat?.worker?.id ?? '';
+      const workerName = this.activeChat?.worker?.name ?? '';
+      const reactionsWithoutUser = reactions.filter(
+        (reaction) => reaction?.user_id !== workerId
+      );
+      let updatedReactions = reactionsWithoutUser;
+      if (emoji) {
+        updatedReactions = [
+          ...reactionsWithoutUser,
+          {
+            emoji,
+            user_id: workerId,
+            user_name: workerName,
+          },
+        ];
+      }
+
+      const reactionsValue =
+        updatedReactions.length > 0 ? updatedReactions : null;
+
+      const baseContent: ContentMessageChat = message.content
+        ? { ...message.content }
+        : {
+            type: EMessageType.text,
+          };
+
+      const updatedMessage: ListMessageResult = {
+        ...message,
+        content: {
+          ...baseContent,
+          reactions: reactionsValue,
+        },
+      };
+
+      this.listMessages.splice(messageIndex, 1, updatedMessage);
+    },
+    revertMessageReaction(
+      messageId: string,
+      previousReactions: IReaction[] | null
+    ) {
+      const messageIndex = this.listMessages.findIndex(
+        (message) => message.message_id === messageId
+      );
+
+      if (messageIndex === -1) return;
+
+      const message = this.listMessages[messageIndex];
+      const baseContent: ContentMessageChat = message.content
+        ? { ...message.content }
+        : {
+            type: EMessageType.text,
+          };
+
+      const updatedMessage: ListMessageResult = {
+        ...message,
+        content: {
+          ...baseContent,
+          reactions: previousReactions,
+        },
+      };
+
+      this.listMessages.splice(messageIndex, 1, updatedMessage);
+    },
     async reactToMessage(
       chatId: string,
       messageId: string,
@@ -1150,56 +1147,52 @@ export const useChatStore = defineStore('chat', {
           return false;
         }
 
-        const messageIndex = this.listMessages.findIndex(
-          (message) => message.message_id === messageId
-        );
-
-        if (messageIndex !== -1) {
-          const message = this.listMessages[messageIndex];
-          const reactions = message.content?.reactions ?? [];
-          const workerId = this.activeChat?.worker?.id ?? '';
-          const workerName = this.activeChat?.worker?.name ?? '';
-          const reactionsWithoutUser = reactions.filter(
-            (reaction) => reaction?.user_id !== workerId
-          );
-          let updatedReactions = reactionsWithoutUser;
-          if (emoji) {
-            updatedReactions = [
-              ...reactionsWithoutUser,
-              {
-                emoji,
-                user_id: workerId,
-                user_name: workerName,
-              },
-            ];
-          }
-
-          const reactionsValue =
-            updatedReactions.length > 0 ? updatedReactions : null;
-
-          const baseContent: ContentMessageChat = message.content
-            ? { ...message.content }
-            : {
-                type: EMessageType.text,
-              };
-
-          const updatedMessage: ListMessageResult = {
-            ...message,
-            content: {
-              ...baseContent,
-              reactions: reactionsValue,
-            },
-          };
-
-          this.listMessages.splice(messageIndex, 1, updatedMessage);
-        }
-
         return true;
       } catch {
         return false;
       }
     },
 
+    markMessageAsDeleted(messageId: string) {
+      const idx = this.listMessages.findIndex(
+        (item) => item.message_id === messageId
+      );
+      if (idx !== -1) {
+        this.listMessages[idx] = {
+          ...this.listMessages[idx],
+          deleted: true,
+        };
+      }
+    },
+    unmarkMessageAsDeleted(messageId: string) {
+      const idx = this.listMessages.findIndex(
+        (item) => item.message_id === messageId
+      );
+      if (idx !== -1) {
+        this.listMessages[idx] = {
+          ...this.listMessages[idx],
+          deleted: false,
+        };
+      }
+    },
+    async editMessage(
+      chatId: string,
+      messageId: string,
+      newMessage: string
+    ): Promise<boolean> {
+      try {
+        const response = await axios.post(
+          `/chat/${chatId}/message/${messageId}/edit`,
+          { message: newMessage }
+        );
+
+        const data = response?.data as IApiResponse<boolean>;
+
+        return data?.status ?? false;
+      } catch {
+        return false;
+      }
+    },
     async deleteMessage(chatId: string, messageId: string): Promise<boolean> {
       try {
         const response = await axios.post(

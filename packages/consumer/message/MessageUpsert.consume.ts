@@ -11,7 +11,11 @@ import { AccountService } from '@core/services/account.service';
 import { WorkerService } from '@core/services/worker.service';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ChatService } from '@core/services/chat.service';
-import { IChatMessage, IContent } from '@core/common/interfaces/IChatMessage';
+import {
+  IChatMessage,
+  IContent,
+  IQuotedMessage,
+} from '@core/common/interfaces/IChatMessage';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { PublishResult } from 'centrifuge';
@@ -22,7 +26,10 @@ import {
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 import { remoteJid } from '@core/common/functions/remoteJid';
 import { StorageService } from '@core/services/storage.service';
-import { LinkPreview } from '@core/schema/chat/listMessageChats/response.schema';
+import {
+  LinkPreview,
+  MessageVersion,
+} from '@core/schema/chat/listMessageChats/response.schema';
 import { buildQuotedTextFromExtended } from '@core/common/functions/buildQuotedTextFromExtended';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
@@ -36,6 +43,9 @@ import { Buffer } from 'node:buffer';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IMessageMarkRead } from '@core/common/interfaces/IMessageMarkRead';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
+import { extractPhoneAndDdiFromContactMessage } from '@core/common/functions/extractPhoneAndDdi';
+import { EncryptService } from '@core/services/encrypt.service';
+import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -52,7 +62,8 @@ export class MessageUpsertConsume {
     private readonly chatService: ChatService,
     private readonly centrifugoService: CentrifugoService,
     private readonly storageService: StorageService,
-    private readonly streamProducerService: StreamProducerService
+    private readonly streamProducerService: StreamProducerService,
+    private readonly encryptService: EncryptService
   ) {}
 
   private get consumerOrThrow(): Consumer {
@@ -387,6 +398,68 @@ export class MessageUpsertConsume {
     return true;
   }
 
+  private async handleEditMessage(
+    getChat: IChat,
+    data: IUpsertMessage
+  ): Promise<boolean | null> {
+    if (data.type !== EMessageType.edit_text) {
+      return null;
+    }
+
+    const editedMessage = (data.message?.message as any)?.editedMessage;
+    const protocolMessage = editedMessage?.message?.protocolMessage;
+    const targetMessageId = protocolMessage?.key?.id;
+    const editedContent = protocolMessage?.editedMessage;
+
+    if (!targetMessageId || !editedContent) {
+      return true;
+    }
+
+    const targetMessage = await this.findMessageByKeyId(
+      data.account_id,
+      getChat.chat_id,
+      targetMessageId
+    );
+
+    if (!targetMessage?.content) {
+      return true;
+    }
+
+    const newText =
+      editedContent.conversation ||
+      editedContent.extendedTextMessage?.text ||
+      '';
+
+    if (!newText) {
+      return true;
+    }
+
+    const newVersion: MessageVersion = {
+      type: targetMessage.content.type,
+      message: newText,
+      date: new Date().toISOString(),
+    };
+
+    const versions = targetMessage.content.version ?? [];
+    const updatedContent: IContent = {
+      ...targetMessage.content,
+      version: [...versions, newVersion],
+    };
+
+    const updatedMessage: IChatMessage = {
+      ...targetMessage,
+      content: updatedContent,
+      has_quoted: targetMessage.has_quoted,
+    };
+
+    await Promise.all([
+      this.chatService.saveMessageChat(updatedMessage),
+      this.centrifugoChatPublish(updatedMessage),
+    ]);
+
+    return true;
+  }
+
   private async handleDeleteMessage(
     getChat: IChat,
     data: IUpsertMessage
@@ -414,10 +487,31 @@ export class MessageUpsertConsume {
       return true;
     }
 
+    let content = targetMessage.content;
+    if (content?.version && content.version.length > 0) {
+      const sortedVersions = [...content.version].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+      const latestVersion = sortedVersions[0];
+      if (latestVersion && content.message === latestVersion.message) {
+        const oldestVersion = sortedVersions.at(-1);
+        if (
+          oldestVersion?.message &&
+          oldestVersion.message !== content.message
+        ) {
+          content = {
+            ...content,
+            message: oldestVersion.message,
+          };
+        }
+      }
+    }
+
     const updatedMessage: IChatMessage = {
       ...targetMessage,
       deleted: true,
       has_quoted: targetMessage.has_quoted,
+      content: content,
     };
 
     await Promise.all([
@@ -668,6 +762,180 @@ export class MessageUpsertConsume {
     };
   }
 
+  private parseVCard(vcard: string): {
+    name?: string;
+    last_name?: string;
+    phone?: string;
+    phone_ddi?: string;
+    email?: string;
+  } {
+    const result: {
+      name?: string;
+      last_name?: string;
+      phone?: string;
+      phone_ddi?: string;
+      email?: string;
+    } = {};
+
+    const lines = vcard.split('\n');
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      if (trimmed.startsWith('FN:')) {
+        this.parseFullName(trimmed.substring(3).trim(), result);
+        continue;
+      }
+
+      if (trimmed.startsWith('N:')) {
+        const nValue = trimmed.substring(2).trim();
+        const parts = nValue.split(';');
+        if (parts.length >= 2 && parts[1] && !result.name) {
+          this.parseFullName(parts[1].trim(), result);
+        }
+        continue;
+      }
+
+      if (trimmed.startsWith('TEL')) {
+        this.parseTelephone(trimmed, result);
+        continue;
+      }
+
+      if (trimmed.startsWith('EMAIL:')) {
+        result.email = trimmed.substring(6).trim();
+      }
+    }
+
+    return result;
+  }
+
+  private parseFullName(
+    fullName: string,
+    result: {
+      name?: string;
+      last_name?: string;
+    }
+  ): void {
+    if (!fullName) return;
+
+    const nameParts = fullName.split(' ');
+    if (nameParts.length === 0) return;
+
+    result.name = nameParts[0];
+    if (nameParts.length > 1) {
+      result.last_name = nameParts.slice(1).join(' ');
+    }
+  }
+
+  private parseTelephone(
+    telLine: string,
+    result: {
+      phone?: string;
+      phone_ddi?: string;
+    }
+  ): void {
+    const waidRegex = /waid=([^:]+):(.+)/;
+    const waidMatch = waidRegex.exec(telLine);
+    if (waidMatch) {
+      this.parseTelephoneWithWaid(
+        waidMatch[1].trim(),
+        waidMatch[2].trim(),
+        result
+      );
+      return;
+    }
+
+    const telRegex = /TEL[^:]*:(.+)/;
+    const telMatch = telRegex.exec(telLine);
+    if (!telMatch) return;
+
+    const phone = telMatch[1].trim();
+    this.parseTelephoneValue(phone, result);
+  }
+
+  private parseTelephoneWithWaid(
+    waid: string,
+    fullPhone: string,
+    result: {
+      phone?: string;
+      phone_ddi?: string;
+    }
+  ): void {
+    const waidDigits = waid.replaceAll(/\D/g, '');
+    result.phone = waidDigits;
+
+    if (!fullPhone.startsWith('+')) return;
+
+    const phoneDigits = fullPhone.substring(1).replaceAll(/\D/g, '');
+    if (phoneDigits.length > waidDigits.length) {
+      result.phone_ddi = phoneDigits.substring(
+        0,
+        phoneDigits.length - waidDigits.length
+      );
+    }
+  }
+
+  private parseTelephoneValue(
+    phone: string,
+    result: {
+      phone?: string;
+      phone_ddi?: string;
+    }
+  ): void {
+    if (phone.startsWith('+')) {
+      const phoneDigits = phone.substring(1).replaceAll(/\D/g, '');
+      if (phoneDigits.length > 10) {
+        result.phone_ddi = phoneDigits.substring(0, phoneDigits.length - 10);
+        result.phone = phoneDigits.substring(phoneDigits.length - 10);
+        return;
+      }
+      result.phone = phoneDigits;
+      return;
+    }
+
+    result.phone = phone.replaceAll(/\D/g, '');
+  }
+
+  private async handleContactMessage(
+    content: IContent,
+    data: IUpsertMessage
+  ): Promise<void> {
+    if (
+      content.type !== EMessageType.contact_card ||
+      !data.message?.message?.contactMessage?.vcard
+    ) {
+      return;
+    }
+
+    const contactMsg = data.message.message.contactMessage;
+    const vcard = contactMsg.vcard || '';
+    const parsed = this.parseVCard(vcard);
+
+    const phoneAndDdi = extractPhoneAndDdiFromContactMessage(contactMsg);
+
+    if (!phoneAndDdi) return;
+
+    const phonePartial = this.encryptService.sanitize(
+      phoneAndDdi.phone,
+      ETypeSanetize.phone
+    );
+
+    const emailPartial = parsed?.email
+      ? this.encryptService.sanitize(parsed.email, ETypeSanetize.email)
+      : null;
+
+    content.contact = {
+      contact_id: uuidv7(),
+      name: parsed.name || contactMsg.displayName || 'Contato',
+      last_name: parsed.last_name || null,
+      phone: phoneAndDdi.phone,
+      phone_partial: phonePartial,
+      phone_ddi: phoneAndDdi.phone_ddi,
+      email: parsed.email || null,
+      email_partial: emailPartial,
+    };
+  }
+
   private async createChatMessage(
     getChat: IChat,
     data: IUpsertMessage
@@ -676,6 +944,11 @@ export class MessageUpsertConsume {
       const reactionResult = await this.handleReactionMessage(getChat, data);
       if (reactionResult !== null) {
         return reactionResult;
+      }
+
+      const editResult = await this.handleEditMessage(getChat, data);
+      if (editResult !== null) {
+        return editResult;
       }
 
       const deleteResult = await this.handleDeleteMessage(getChat, data);
@@ -688,6 +961,16 @@ export class MessageUpsertConsume {
 
       const content = this.buildMessageContent(data);
 
+      const messageQuotedId = content.quoted?.key.id ?? null;
+      if (content.quoted && messageQuotedId) {
+        await this.enrichQuotedMessageContent(
+          content.quoted,
+          data.account_id,
+          getChat.chat_id,
+          messageQuotedId
+        );
+      }
+
       const hasQuotedFlag = data.has_quoted || !!content.quoted;
 
       await this.updateChatNameIfNeeded(getChat, data);
@@ -698,6 +981,7 @@ export class MessageUpsertConsume {
       await this.handleDocumentMessage(content, data);
       await this.handleStickerMessage(content, data);
       await this.handleLocationMessage(content, data);
+      await this.handleContactMessage(content, data);
 
       const isFromMe = data.message?.key?.fromMe ?? false;
 
@@ -797,6 +1081,75 @@ export class MessageUpsertConsume {
     } catch {
       return false;
     }
+  }
+
+  private enrichSticker(
+    quoted: IQuotedMessage,
+    originalContent: IContent
+  ): void {
+    if (quoted.sticker && !quoted.sticker.url && originalContent.sticker?.url) {
+      quoted.sticker.url = originalContent.sticker.url;
+    }
+  }
+
+  private enrichImage(quoted: IQuotedMessage, originalContent: IContent): void {
+    if (quoted.image && !quoted.image.url && originalContent.image?.url) {
+      quoted.image.url = originalContent.image.url;
+      if (!quoted.image.thumbnail && originalContent.image?.thumbnail) {
+        quoted.image.thumbnail = originalContent.image.thumbnail;
+      }
+    }
+  }
+
+  private enrichVideo(quoted: IQuotedMessage, originalContent: IContent): void {
+    if (quoted.video && !quoted.video.url && originalContent.video?.url) {
+      quoted.video.url = originalContent.video.url;
+      if (!quoted.video.thumbnail && originalContent.video?.thumbnail) {
+        quoted.video.thumbnail = originalContent.video.thumbnail;
+      }
+    }
+  }
+
+  private enrichDocument(
+    quoted: IQuotedMessage,
+    originalContent: IContent
+  ): void {
+    if (
+      quoted.document &&
+      !quoted.document.url &&
+      originalContent.document?.url
+    ) {
+      quoted.document.url = originalContent.document.url;
+    }
+  }
+
+  private enrichAudio(quoted: IQuotedMessage, originalContent: IContent): void {
+    if (quoted.audio && !quoted.audio.url && originalContent.audio?.url) {
+      quoted.audio.url = originalContent.audio.url;
+    }
+  }
+
+  private async enrichQuotedMessageContent(
+    quoted: IQuotedMessage,
+    accountId: string,
+    chatId: string,
+    messageQuotedId: string
+  ): Promise<void> {
+    if (!quoted || !messageQuotedId) return;
+
+    const originalMessage = await this.findMessageByKeyId(
+      accountId,
+      chatId,
+      messageQuotedId
+    );
+
+    if (!originalMessage?.content) return;
+
+    this.enrichSticker(quoted, originalMessage.content);
+    this.enrichImage(quoted, originalMessage.content);
+    this.enrichVideo(quoted, originalMessage.content);
+    this.enrichDocument(quoted, originalMessage.content);
+    this.enrichAudio(quoted, originalMessage.content);
   }
 
   private nameChat(data: IUpsertMessage) {

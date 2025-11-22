@@ -4,6 +4,7 @@ import { useLabelTemplateStore } from '@/@webcore/stores/labelTemplate';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import { VForm } from 'vuetify/components/VForm';
 import { useCountryCodes } from '@/composables/useCountryCodes';
+import { requiredValidator } from '@/@webcore/utils/validators';
 
 const contactStore = useContactStore();
 const labelTemplateStore = useLabelTemplateStore();
@@ -32,6 +33,7 @@ watch(isCountryMenuOpen, (isOpen) => {
 
 const props = defineProps<{
   modelValue: boolean;
+  initialData?: Partial<CreateContactRequest> | null;
 }>();
 
 const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
@@ -98,7 +100,10 @@ const addContact = async () => {
 
   if (!name.value) return;
 
+  if (!phone_ddi.value) return;
+
   const phoneNumber = phone.value ? phone.value.replaceAll(/\D/g, '') : null;
+  if (!phoneNumber) return;
 
   const payload: CreateContactRequest = {
     label_template_id: label_template_id.value ?? null,
@@ -122,15 +127,27 @@ const addContact = async () => {
 };
 
 const resetForm = () => {
-  label_template_id.value = null;
-  name.value = null;
-  last_name.value = null;
-  email.value = null;
-  phone_ddi.value = '55';
-  phone.value = null;
-  nickname.value = null;
-  birthday.value = null;
-  notes.value = null;
+  if (props.initialData) {
+    label_template_id.value = props.initialData.label_template_id ?? null;
+    name.value = props.initialData.name ?? null;
+    last_name.value = props.initialData.last_name ?? null;
+    email.value = props.initialData.email ?? null;
+    phone_ddi.value = props.initialData.phone_ddi ?? '55';
+    phone.value = props.initialData.phone ?? null;
+    nickname.value = props.initialData.nickname ?? null;
+    birthday.value = props.initialData.birthday ?? null;
+    notes.value = props.initialData.notes ?? null;
+  } else {
+    label_template_id.value = null;
+    name.value = null;
+    last_name.value = null;
+    email.value = null;
+    phone_ddi.value = '55';
+    phone.value = null;
+    nickname.value = null;
+    birthday.value = null;
+    notes.value = null;
+  }
   refFormAddContact.value?.resetValidation();
 };
 
@@ -140,8 +157,20 @@ onMounted(async () => {
 });
 
 watch(isVisible, (visible) => {
-  if (visible) resetForm();
+  if (visible) {
+    resetForm();
+  }
 });
+
+watch(
+  () => props.initialData,
+  () => {
+    if (isVisible.value && props.initialData) {
+      resetForm();
+    }
+  },
+  { deep: true }
+);
 </script>
 
 <template>
@@ -213,6 +242,9 @@ watch(isVisible, (visible) => {
                       variant="outlined"
                       readonly
                       append-inner-icon="tabler-chevron-down"
+                      :rules="[
+                        requiredValidator(phone_ddi, $t('phone_ddi_required')),
+                      ]"
                     />
                   </template>
                   <VCard>
@@ -256,6 +288,7 @@ watch(isVisible, (visible) => {
                 :label="$t('phone') + ':'"
                 :placeholder="$t('phone')"
                 maxlength="15"
+                :rules="[requiredValidator(phone, $t('phone_required'))]"
               />
             </VCol>
           </VRow>

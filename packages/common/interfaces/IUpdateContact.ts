@@ -12,4 +12,5 @@ export interface IUpdateContact {
   nickname?: string | null;
   birthday?: string | null;
   notes?: string | null;
+  is_valided: boolean;
 }

@@ -1,10 +1,26 @@
-import { isEmpty, isEmptyArray, isNullOrUndefined } from './helpers';
+import { isEmpty, isEmptyArray, isNullOrUndefined, isObject } from './helpers';
 
 export const requiredValidator = (value: unknown, message: string) => {
   if (isNullOrUndefined(value) || isEmptyArray(value) || value === false)
     return message;
 
-  return !!String(value).trim().length || message;
+  if (isObject(value)) {
+    return Object.keys(value).length > 0 || message;
+  }
+
+  if (Array.isArray(value)) {
+    return value.length > 0 || message;
+  }
+
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  ) {
+    return !!String(value).trim().length || message;
+  }
+
+  return message;
 };
 
 export const emailValidator = (value: unknown, message: string) => {

@@ -1,4 +1,11 @@
-import { pgTable, timestamp, varchar, uuid, text } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  timestamp,
+  varchar,
+  uuid,
+  text,
+  boolean,
+} from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { account } from '../account';
 import { labelTemplate } from '../label';
@@ -9,6 +16,7 @@ export const contact = pgTable('contact', {
   contact_id: uuid().primaryKey().notNull(),
   account_id: uuid().references(() => account.account_id),
   label_template_id: uuid().references(() => labelTemplate.label_template_id),
+  is_valided: boolean().default(false),
   name: varchar({ length: 100 }).notNull(),
   last_name: varchar({ length: 100 }),
   email: varchar({ length: 500 }),

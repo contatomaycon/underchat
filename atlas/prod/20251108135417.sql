@@ -3,6 +3,7 @@ CREATE TABLE "contact" (
   "contact_id" uuid NOT NULL,
   "account_id" uuid NULL,
   "label_template_id" uuid NULL,
+  "is_valided" boolean NULL DEFAULT false,
   "name" character varying(100) NOT NULL,
   "last_name" character varying(100) NULL,
   "email" character varying(500) NULL,

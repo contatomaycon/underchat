@@ -22,7 +22,7 @@ import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.servi
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { PublishResult } from 'centrifuge';
 import { StorageService } from '@core/services/storage.service';
-import { AudioConverterService } from '@core/services/audioConverter.service';
+import { ConverterService } from '@core/services/converter';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { ICreateVideoMessageParams } from '@core/common/interfaces/ICreateVideoMessageParams';
@@ -53,7 +53,7 @@ export class ChatMessageCreatorUseCase {
     private readonly streamProducerService: StreamProducerService,
     private readonly centrifugoService: CentrifugoService,
     private readonly storageService: StorageService,
-    private readonly audioConverterService: AudioConverterService,
+    private readonly converterService: ConverterService,
     private readonly contactService: ContactService,
     private readonly contactViewerRepository: ContactViewerRepository
   ) {}
@@ -435,21 +435,67 @@ export class ChatMessageCreatorUseCase {
   private async uploadVideos(
     videos: UploadFileRequest[],
     accountId: string
-  ): Promise<UploadFileResponse[]> {
-    const uploadPromises = videos.map((video) =>
-      this.storageService.uploadVideo(video, accountId)
-    );
+  ): Promise<
+    Array<
+      UploadFileResponse & {
+        duration?: number;
+        width?: number;
+        height?: number;
+      }
+    >
+  > {
+    const uploadPromises = videos.map(async (video) => {
+      const originalBuffer = await video.toBuffer();
+      const originalMimetype = video.mimetype || null;
+
+      const converted = await this.converterService.convertVideo(
+        originalBuffer,
+        originalMimetype
+      );
+
+      const filename = video.filename.replace(/\.[^.]+$/, '') || 'video';
+      const newFilename = `${filename}.${converted.extension}`;
+
+      const uploadResult = await this.storageService.uploadVideoFromBuffer(
+        converted.buffer,
+        newFilename,
+        converted.mimetype,
+        accountId,
+        converted.width,
+        converted.height
+      );
+
+      if (!uploadResult) {
+        return null;
+      }
+
+      return {
+        ...uploadResult,
+        mimetype: converted.mimetype,
+        duration: converted.duration,
+        width: converted.width ?? null,
+        height: converted.height ?? null,
+      };
+    });
 
     const uploadedVideos = await Promise.all(uploadPromises);
 
-    return uploadedVideos.filter(
-      (vid): vid is UploadFileResponse => vid !== null
+    const filtered = uploadedVideos.filter(
+      (video): video is NonNullable<typeof video> => video !== null
     );
+    return filtered as Array<
+      UploadFileResponse & {
+        duration?: number;
+        width?: number;
+        height?: number;
+      }
+    >;
   }
 
   private async uploadAudios(
     audios: UploadFileRequest[],
-    accountId: string
+    accountId: string,
+    isPtt: boolean
   ): Promise<
     Array<UploadFileResponse & { duration?: number; waveform?: string }>
   > {
@@ -457,9 +503,10 @@ export class ChatMessageCreatorUseCase {
       const originalBuffer = await audio.toBuffer();
       const originalMimetype = audio.mimetype || null;
 
-      const converted = await this.audioConverterService.convertAudio(
+      const converted = await this.converterService.convertAudio(
         originalBuffer,
-        originalMimetype
+        originalMimetype,
+        isPtt
       );
 
       const filename = audio.filename.replace(/\.[^.]+$/, '') || 'audio';
@@ -472,7 +519,7 @@ export class ChatMessageCreatorUseCase {
           converted.mimetype,
           accountId
         ),
-        this.audioConverterService
+        this.converterService
           .generateWaveformWithFfmpeg(converted.buffer)
           .catch(() => {
             return undefined;
@@ -659,9 +706,7 @@ export class ChatMessageCreatorUseCase {
         audio: {
           url: audioData.url,
           name: audioData.name,
-          mimetype: isPtt
-            ? 'audio/ogg; codecs=opus'
-            : (audioData.mimetype ?? 'audio/mpeg'),
+          mimetype: audioData.mimetype,
           extension: audioData.extension,
           size: audioData.size,
           duration: duration && Number.isFinite(duration) ? duration : null,
@@ -738,6 +783,8 @@ export class ChatMessageCreatorUseCase {
     const quotedVideo = chatMessage.content?.video ?? null;
     const quotedAudio = chatMessage.content?.audio ?? null;
     const quotedDocument = chatMessage.content?.document ?? null;
+    const quotedSticker = chatMessage.content?.sticker ?? null;
+    const quotedLocation = chatMessage.content?.location ?? null;
 
     let inferredType: EMessageType | null = chatMessage.content?.type ?? null;
     if (quotedVideo) inferredType = EMessageType.video;
@@ -746,12 +793,31 @@ export class ChatMessageCreatorUseCase {
       inferredType = EMessageType.document;
     if (!quotedVideo && !quotedImage && !quotedDocument && quotedAudio)
       inferredType = EMessageType.audio;
+    if (
+      !quotedVideo &&
+      !quotedImage &&
+      !quotedDocument &&
+      !quotedAudio &&
+      quotedSticker
+    )
+      inferredType = EMessageType.sticker;
+    if (
+      !quotedVideo &&
+      !quotedImage &&
+      !quotedDocument &&
+      !quotedAudio &&
+      !quotedSticker &&
+      quotedLocation
+    )
+      inferredType = EMessageType.location;
     const quotedContact = chatMessage.content?.contact ?? null;
     if (
       !quotedVideo &&
       !quotedImage &&
       !quotedDocument &&
       !quotedAudio &&
+      !quotedSticker &&
+      !quotedLocation &&
       quotedContact
     )
       inferredType = EMessageType.contact_card;
@@ -762,6 +828,8 @@ export class ChatMessageCreatorUseCase {
       video: quotedVideo,
       audio: quotedAudio,
       document: quotedDocument,
+      sticker: quotedSticker,
+      location: quotedLocation,
       contact: quotedContact,
       key: {
         remote_jid: chatMessage.message_key?.remote_jid ?? null,
@@ -1014,7 +1082,7 @@ export class ChatMessageCreatorUseCase {
     >;
 
     try {
-      validAudios = await this.uploadAudios(audios, accountId);
+      validAudios = await this.uploadAudios(audios, accountId, isPtt);
     } catch (error) {
       if (error instanceof Error) {
         if (error.message === 'AUDIO_SIZE_LIMIT_EXCEEDED') {
@@ -1839,10 +1907,33 @@ export class ChatMessageCreatorUseCase {
       return message;
     }
 
+    let content = message.content;
+    if (content?.version && content.version.length > 0) {
+      const sortedVersions = [...content.version].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+      const latestVersion = sortedVersions[0];
+      if (latestVersion && content.message === latestVersion.message) {
+        const oldestVersion = sortedVersions.at(-1);
+
+        if (
+          oldestVersion?.message &&
+          oldestVersion.message !== content.message &&
+          content
+        ) {
+          content = {
+            ...content,
+            message: oldestVersion.message,
+          };
+        }
+      }
+    }
+
     const updatedMessage: IChatMessage = {
       ...message,
       deleted: true,
       has_quoted: message.has_quoted,
+      content: content,
     };
 
     await this.chatService.saveMessageChat(updatedMessage);

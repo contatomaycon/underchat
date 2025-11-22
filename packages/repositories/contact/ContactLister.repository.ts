@@ -129,6 +129,7 @@ export class ContactListerRepository {
         >`CASE WHEN ${contact.birthday} IS NULL THEN NULL ELSE to_char(${contact.birthday}, 'YYYY-MM-DD') END`,
         notes: contact.notes,
         created_at: contact.created_at,
+        is_valided: contact.is_valided,
       })
       .from(contact)
       .leftJoin(account, eq(contact.account_id, account.account_id))
@@ -173,6 +174,7 @@ export class ContactListerRepository {
       nickname: contact.nickname ?? null,
       birthday: contact.birthday,
       notes: contact.notes ?? null,
+      is_valided: contact.is_valided ?? null,
     })) as ListContactResponse[];
   };
 

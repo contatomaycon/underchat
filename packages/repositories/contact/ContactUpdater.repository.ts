@@ -4,6 +4,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { eq } from 'drizzle-orm';
 import { IUpdateContact } from '@core/common/interfaces/IUpdateContact';
+import { nullIfEmpty } from '@core/common/functions/nullIfEmpty';
 
 @injectable()
 export class ContactUpdaterRepository {
@@ -49,17 +50,14 @@ export class ContactUpdaterRepository {
     }
 
     if (input.birthday !== undefined) {
-      inputUpdate.birthday =
-        input.birthday &&
-        typeof input.birthday === 'string' &&
-        input.birthday.trim() !== ''
-          ? input.birthday
-          : null;
+      inputUpdate.birthday = nullIfEmpty(input.birthday);
     }
 
     if (input.notes) {
       inputUpdate.notes = input.notes;
     }
+
+    inputUpdate.is_valided = input.is_valided ?? false;
 
     return inputUpdate;
   }
@@ -69,6 +67,27 @@ export class ContactUpdaterRepository {
     input: IUpdateContact
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input);
+
+    const result = await this.db
+      .update(contact)
+      .set(updateInput)
+      .where(eq(contact.contact_id, contactId))
+      .execute();
+
+    return result.rowCount === 1;
+  };
+
+  validateContact = async (
+    contactId: string,
+    input: IUpdateContact
+  ): Promise<boolean> => {
+    const updateInput: Partial<typeof contact.$inferInsert> = {
+      phone_ddi: input.phone_ddi ?? undefined,
+      phone: input.phone ?? undefined,
+      phone_partial: input.phone_partial ?? undefined,
+      phone_c: input.phone_c ?? undefined,
+      is_valided: true,
+    };
 
     const result = await this.db
       .update(contact)

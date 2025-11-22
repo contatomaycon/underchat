@@ -31,7 +31,8 @@ export class WorkerBaileysActivitiesListerRepository {
             eq(worker.worker_status_id, EWorkerStatus.disponible),
             eq(worker.worker_status_id, EWorkerStatus.error),
             eq(worker.worker_status_id, EWorkerStatus.offline),
-            eq(worker.worker_status_id, EWorkerStatus.online)
+            eq(worker.worker_status_id, EWorkerStatus.online),
+            eq(worker.worker_status_id, EWorkerStatus.mismatched)
           ),
           eq(worker.worker_type_id, EWorkerType.baileys)
         )

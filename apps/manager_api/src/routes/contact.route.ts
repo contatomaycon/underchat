@@ -15,6 +15,8 @@ import { viewContactEmailSchema } from '@core/schema/contact/viewContactEmail';
 import { deleteContactSchema } from '@core/schema/contact/deleteContact';
 import { editContactSchema } from '@core/schema/contact/editContact';
 import { exportContactSchema } from '@core/schema/contact/exportContact';
+import { validateContactSchema } from '@core/schema/contact/validateContact';
+import { viewContactByPhoneSchema } from '@core/schema/contact/viewContactByPhone';
 
 export default async function contactRoutes(server: FastifyInstance) {
   const contactController = container.resolve(ContactController);
@@ -75,7 +77,7 @@ export default async function contactRoutes(server: FastifyInstance) {
 
   server.patch('/contact/:contact_id', {
     schema: editContactSchema,
-    handler: contactController.updateContact,
+    handler: contactController.editContact,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactUpdatePermissions),
@@ -85,6 +87,24 @@ export default async function contactRoutes(server: FastifyInstance) {
   server.get('/contact/export', {
     schema: exportContactSchema,
     handler: contactController.exportContact,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactViewPermissions),
+    ],
+  });
+
+  server.post('/contact/:contact_id/validate', {
+    schema: validateContactSchema,
+    handler: contactController.validateContact,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactViewPermissions),
+    ],
+  });
+
+  server.get('/contact/by-phone', {
+    schema: viewContactByPhoneSchema,
+    handler: contactController.viewContactByPhone,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactViewPermissions),

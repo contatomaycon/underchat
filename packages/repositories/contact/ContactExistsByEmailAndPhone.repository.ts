@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { contact } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, count, eq, isNull, ne, or } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull, ne, or } from 'drizzle-orm';
 
 @injectable()
 export class ContactExistsByEmailAndPhoneRepository {
@@ -52,11 +52,13 @@ export class ContactExistsByEmailAndPhoneRepository {
   };
 
   existsContactByEmail = async (
+    accountId: string,
     emailC: string,
     excludeContactId?: string | null
   ): Promise<boolean> => {
     const conditions = [
       isNull(contact.deleted_at),
+      eq(contact.account_id, accountId),
       eq(contact.email_c, emailC),
     ];
 
@@ -80,12 +82,14 @@ export class ContactExistsByEmailAndPhoneRepository {
   };
 
   existsContactByPhone = async (
-    phoneC: string,
+    accountId: string,
+    phonesC: string[],
     excludeContactId?: string | null
   ): Promise<boolean> => {
     const conditions = [
       isNull(contact.deleted_at),
-      eq(contact.phone_c, phoneC),
+      eq(contact.account_id, accountId),
+      inArray(contact.phone_c, phonesC),
     ];
 
     if (excludeContactId) {
