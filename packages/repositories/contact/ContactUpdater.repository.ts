@@ -4,6 +4,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { eq } from 'drizzle-orm';
 import { IUpdateContact } from '@core/common/interfaces/IUpdateContact';
+import { nullIfEmpty } from '@core/common/functions/nullIfEmpty';
 
 @injectable()
 export class ContactUpdaterRepository {
@@ -49,12 +50,7 @@ export class ContactUpdaterRepository {
     }
 
     if (input.birthday !== undefined) {
-      inputUpdate.birthday =
-        input.birthday &&
-        typeof input.birthday === 'string' &&
-        input.birthday.trim() !== ''
-          ? input.birthday
-          : null;
+      inputUpdate.birthday = nullIfEmpty(input.birthday);
     }
 
     if (input.notes) {

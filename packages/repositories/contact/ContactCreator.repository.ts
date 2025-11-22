@@ -4,6 +4,7 @@ import { contact } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { v7 as uuidv7 } from 'uuid';
+import { nullIfEmpty } from '@core/common/functions/nullIfEmpty';
 
 @injectable()
 export class ContactCreatorRepository {
@@ -30,7 +31,7 @@ export class ContactCreatorRepository {
         phone_partial: input.phone_partial,
         phone_c: input.phone_c,
         nickname: input.nickname,
-        birthday: input.birthday,
+        birthday: nullIfEmpty(input.birthday),
         notes: input.notes,
       })
       .execute();

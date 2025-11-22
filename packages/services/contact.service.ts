@@ -19,6 +19,7 @@ import { TFunction } from 'i18next';
 import { PasswordEncryptorService } from './passwordEncryptor.service';
 import { ContactSensitiveDataRepository } from '@core/repositories/contact/ContactSensitiveData.repository';
 import { ContactExistsByEmailAndPhoneRepository } from '@core/repositories/contact/ContactExistsByEmailAndPhone.repository';
+import { nullIfEmpty } from '@core/common/functions/nullIfEmpty';
 
 @injectable()
 export class ContactService {
@@ -114,7 +115,7 @@ export class ContactService {
       phone_partial: phonePartialEncrypted,
       phone_c: phoneC,
       nickname: input.nickname,
-      birthday: input.birthday,
+      birthday: nullIfEmpty(input.birthday),
       notes: input.notes,
     };
 
@@ -173,7 +174,7 @@ export class ContactService {
       phone_partial: phonePartialEncrypted,
       phone_c: phoneC,
       nickname: input.nickname,
-      birthday: input.birthday,
+      birthday: nullIfEmpty(input.birthday),
       notes: input.notes,
     };
 
@@ -220,12 +221,12 @@ export class ContactService {
       email: emailCEncrypted,
       email_partial: emailPartialEncrypted,
       email_c: emailC,
-      phone_ddi: input.phone_ddi ?? '55',
+      phone_ddi: input.phone_ddi,
       phone: phoneCEncrypted,
       phone_partial: phonePartialEncrypted,
       phone_c: phoneC,
       nickname: input.nickname,
-      birthday: input.birthday,
+      birthday: nullIfEmpty(input.birthday),
       notes: input.notes,
     };
 
