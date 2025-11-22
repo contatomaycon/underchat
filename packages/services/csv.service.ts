@@ -1,8 +1,8 @@
 import { ICreateContact } from '@core/common/interfaces/ICreateContact';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { injectable, inject } from 'tsyringe';
-import { normalizePhoneNumber } from '@core/common/functions/normalizePhoneNumber';
 import { PasswordEncryptorService } from './passwordEncryptor.service';
+import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 
 @injectable()
 export class CsvFileReaderService {
@@ -115,7 +115,7 @@ export class CsvFileReaderService {
 
   private _determinePhoneDdi(
     ddiRaw: string,
-    normalizedPhone: ReturnType<typeof normalizePhoneNumber> | null
+    normalizedPhone: ReturnType<typeof extractPhoneAndDdi> | null
   ): string {
     const trimmedDdi = ddiRaw?.trim();
     if (trimmedDdi) {
@@ -150,9 +150,8 @@ export class CsvFileReaderService {
       const processedEmail = this.processEmail(emailRaw);
       const processedPhone = this.processPhone(phoneRaw);
 
-      const normalizedPhone = processedPhone
-        ? normalizePhoneNumber(processedPhone)
-        : null;
+      const fullPhone = `${ddiRaw ?? '55'}${processedPhone}`;
+      const normalizedPhone = fullPhone ? extractPhoneAndDdi(fullPhone) : null;
 
       const phoneDdi = this._determinePhoneDdi(ddiRaw, normalizedPhone);
 
@@ -275,7 +274,7 @@ export class CsvFileReaderService {
     const processedPhone = this.processPhone(tel);
 
     const normalizedPhone = processedPhone
-      ? normalizePhoneNumber(processedPhone)
+      ? extractPhoneAndDdi(processedPhone)
       : null;
 
     return {

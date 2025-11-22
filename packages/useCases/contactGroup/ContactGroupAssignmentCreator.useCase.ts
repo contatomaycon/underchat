@@ -5,9 +5,10 @@ import { CsvFileReaderService } from '@core/services/csv.service';
 import { ContactService } from '@core/services/contact.service';
 import { IContactImportStatus } from '@core/common/interfaces/IContactImportStatus';
 import { ICreateContact } from '@core/common/interfaces/ICreateContact';
-import { normalizePhoneNumber } from '@core/common/functions/normalizePhoneNumber';
 import { buildCandidatesWithDdi } from '@core/common/functions/buildCandidatesBR';
 import { EncryptService } from '@core/services/encrypt.service';
+import { onlyDigits } from '@core/common/functions/onlyDigits';
+import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 
 @injectable()
 export class ContactGroupAssignmentCreatorUseCase {
@@ -38,19 +39,44 @@ export class ContactGroupAssignmentCreatorUseCase {
     };
   }
 
+  private validateBrazilianPhone(
+    t: TFunction<'translation', undefined>,
+    phone: string,
+    phoneDdi: string
+  ): { isValid: boolean; message?: string } {
+    if (phoneDdi !== '55') return { isValid: true };
+
+    const phoneDigits = onlyDigits(phone);
+
+    if (phoneDigits.length !== 10 && phoneDigits.length !== 11) {
+      return {
+        isValid: false,
+        message: t('brazilian_phone_must_have_10_or_11_digits'),
+      };
+    }
+
+    const number = phoneDigits.slice(2);
+
+    if (number.length !== 8 && number.length !== 9) {
+      return {
+        isValid: false,
+        message: t('brazilian_phone_must_have_ddd_and_8_or_9_digits'),
+      };
+    }
+
+    return { isValid: true };
+  }
+
   private normalizePhoneFromValidation(
-    validationPhone: string | null | undefined,
     defaultPhone: string | null | undefined = '',
     defaultDdi: string | null | undefined = '55'
   ): { phone: string; phoneDdi: string } {
     const phone = defaultPhone ?? '';
     const ddi = defaultDdi ?? '55';
 
-    if (!validationPhone) {
-      return { phone, phoneDdi: ddi };
-    }
+    const validationPhone = `${ddi}${phone}`;
 
-    const normalizedPhone = normalizePhoneNumber(validationPhone);
+    const normalizedPhone = extractPhoneAndDdi(validationPhone);
     if (normalizedPhone) {
       return {
         phone: normalizedPhone.phone,
@@ -134,6 +160,19 @@ export class ContactGroupAssignmentCreatorUseCase {
             contact,
             'no_phone',
             t('phone_required_for_validation')
+          )
+        );
+
+        continue;
+      }
+
+      const validation = this.validateBrazilianPhone(t, phone, phoneDdi);
+      if (!validation.isValid) {
+        results.push(
+          this.createStatusResult(
+            contact,
+            'invalid',
+            validation.message || t('invalid_phone_format')
           )
         );
 

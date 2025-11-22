@@ -6,9 +6,9 @@ import { CreateContactRequest } from '@core/schema/contact/createContact/request
 import { ContactService } from '@core/services/contact.service';
 import { EncryptService } from '@core/services/encrypt.service';
 import { PhoneValidationService } from '@core/services/phoneValidation.service';
-import { normalizePhoneNumber } from '@core/common/functions/normalizePhoneNumber';
 import moment from 'moment';
 import { buildCandidatesWithDdi } from '@core/common/functions/buildCandidatesBR';
+import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 
 @injectable()
 export class ContactCreatorUseCase {
@@ -155,7 +155,7 @@ export class ContactCreatorUseCase {
         return { phone, phoneDdi: phoneDdi ?? null };
       }
 
-      const normalizedPhone = normalizePhoneNumber(validationResult.phone);
+      const normalizedPhone = extractPhoneAndDdi(validationResult.phone);
       if (normalizedPhone) {
         return {
           phone: normalizedPhone.phone,
