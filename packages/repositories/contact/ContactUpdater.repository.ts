@@ -76,4 +76,25 @@ export class ContactUpdaterRepository {
 
     return result.rowCount === 1;
   };
+
+  validateContact = async (
+    contactId: string,
+    input: IUpdateContact
+  ): Promise<boolean> => {
+    const updateInput: Partial<typeof contact.$inferInsert> = {
+      phone_ddi: input.phone_ddi ?? undefined,
+      phone: input.phone ?? undefined,
+      phone_partial: input.phone_partial ?? undefined,
+      phone_c: input.phone_c ?? undefined,
+      is_valided: true,
+    };
+
+    const result = await this.db
+      .update(contact)
+      .set(updateInput)
+      .where(eq(contact.contact_id, contactId))
+      .execute();
+
+    return result.rowCount === 1;
+  };
 }

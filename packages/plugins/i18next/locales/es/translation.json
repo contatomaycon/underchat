@@ -326,5 +326,11 @@
   "profile_info_file_size_exceeded": "El archivo supera el tamaño máximo permitido de {{max}}.",
   "brazilian_phone_must_have_10_or_11_digits": "¡El teléfono brasileño debe tener 10 u 11 dígitos!",
   "brazilian_phone_must_have_ddd_and_8_or_9_digits": "¡El teléfono brasileño debe tener DDD (2 dígitos) y número con 8 o 9 dígitos!",
-  "invalid_phone_format": "¡Formato de teléfono inválido!"
+  "invalid_phone_format": "¡Formato de teléfono inválido!",
+  "contact_already_validated": "¡El contacto ya está validado!",
+  "contact_validation_success": "¡Contacto validado con éxito!",
+  "contact_validation_failed": "¡Error al validar el contacto!",
+  "validate_contact": "Validar Contacto",
+  "validate_contact_confirmation": "¿Realmente desea validar este contacto? Esta acción verificará si el teléfono es válido en WhatsApp.",
+  "phone_ddi_required": "¡El DDI del teléfono es obligatorio!"
 }

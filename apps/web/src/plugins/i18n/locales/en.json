@@ -829,5 +829,10 @@
     "country_ZM": "Zambia",
     "country_ZW": "Zimbabwe",
     "validated": "Validated",
-    "not_validated": "Not validated"
+    "not_validated": "Not validated",
+    "validate_contact": "Validate Contact",
+    "validate_contact_confirmation": "Do you really want to validate this contact? This action will verify if the phone is valid on WhatsApp.",
+    "contact_validation_success": "Contact validated successfully!",
+    "contact_validation_failed": "Failed to validate contact!",
+    "contact_already_validated": "Contact is already validated!"
 }

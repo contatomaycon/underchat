@@ -227,6 +227,47 @@ export const useContactStore = defineStore('contact', {
       }
     },
 
+    async validateContact(contactId: string): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<boolean>>(
+          `/contact/${contactId}/validate`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('contact_validation_failed');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('contact_validation_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('contact_validation_failed');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
     async deleteContact(contactId: string): Promise<boolean> {
       try {
         this.loading = true;

@@ -168,6 +168,38 @@ export class ContactService {
     return this.contactViewerRepository.viewContactById(contactId);
   };
 
+  getContactById = async (
+    contactId: string
+  ): Promise<ViewContactResponse | null> => {
+    return this.contactViewerRepository.viewContactById(contactId);
+  };
+
+  validateContact = async (
+    contactId: string,
+    phone: string,
+    phoneDdi: string | null
+  ): Promise<boolean> => {
+    const phoneCEncrypted = phone
+      ? this.passwordEncryptorService.encrypt(phone)
+      : null;
+
+    const phonePartialEncrypted = phone
+      ? this.encryptService.sanitize(phone, ETypeSanetize.phone)
+      : null;
+
+    const phoneC = phone ? this.encryptService.encrypt(phone) : null;
+
+    const payload: IUpdateContact = {
+      phone_ddi: phoneDdi,
+      phone: phoneCEncrypted,
+      phone_partial: phonePartialEncrypted,
+      phone_c: phoneC,
+      is_valided: true,
+    };
+
+    return this.contactUpdaterRepository.validateContact(contactId, payload);
+  };
+
   deleteContactById = async (contactId: string): Promise<boolean> => {
     return this.contactDeleterRepository.deleteContactById(contactId);
   };

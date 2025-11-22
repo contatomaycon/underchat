@@ -840,5 +840,10 @@
     "country_ZM": "Zâmbia",
     "country_ZW": "Zimbábue",
     "validated": "Validado",
-    "not_validated": "Não validado"
+    "not_validated": "Não validado",
+    "validate_contact": "Validar Contato",
+    "validate_contact_confirmation": "Deseja realmente validar este contato? Esta ação irá verificar se o telefone é válido no WhatsApp.",
+    "contact_validation_success": "Contato validado com sucesso!",
+    "contact_validation_failed": "Falha ao validar o contato!",
+    "contact_already_validated": "Contato já está validado!"
 }

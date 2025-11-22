@@ -7,6 +7,7 @@ import { deleteContact } from './methods/deleteContact';
 import { editContact } from './methods/editContact';
 import { createContact } from './methods/createContact';
 import { exportContact } from './methods/exportContact';
+import { validateContact } from './methods/validateContact';
 
 @injectable()
 class ContactController {
@@ -18,6 +19,7 @@ class ContactController {
   public editContact = editContact;
   public createContact = createContact;
   public exportContact = exportContact;
+  public validateContact = validateContact;
 }
 
 export default ContactController;

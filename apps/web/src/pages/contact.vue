@@ -156,6 +156,9 @@ const exportContactsToCsv = async () => {
 const isDialogDeleterShow = ref(false);
 const contactToDelete = ref<string | null>(null);
 
+const isDialogValidateContactShow = ref(false);
+const contactToValidate = ref<string | null>(null);
+
 const isDialogEditContactShow = ref(false);
 const isAddContactVisible = ref(false);
 const isAddImportContactVisible = ref(false);
@@ -222,6 +225,22 @@ const openEditDialog = (id: string) => {
   contactToEdit.value = id;
 
   isDialogEditContactShow.value = true;
+};
+
+const openValidateDialog = (id: string) => {
+  contactToValidate.value = id;
+  isDialogValidateContactShow.value = true;
+};
+
+const handleValidate = async () => {
+  if (!contactToValidate.value) return;
+
+  const result = await contactStore.validateContact(contactToValidate.value);
+  if (result) {
+    await contactStore.listContact(query.value);
+  }
+
+  contactToValidate.value = null;
 };
 
 watch(
@@ -347,18 +366,30 @@ watch(
           >
             {{ $t('validated') }}
           </VChip>
-          <VChip
-            v-else
-            class="uc-chip"
-            size="small"
-            color="error"
-          >
+          <VChip v-else class="uc-chip" size="small" color="error">
             {{ $t('not_validated') }}
           </VChip>
         </template>
 
         <template #item.actions="{ item }">
           <div class="d-flex gap-1">
+            <IconBtn
+              v-if="
+                $canPermission(permissionsEdit) &&
+                !item.is_valided &&
+                (item?.contact_id || isAdministrator)
+              "
+              ><VTooltip
+                location="top"
+                transition="scale-transition"
+                activator="parent"
+              >
+                <span>{{ $t('validate_contact') }}</span> </VTooltip
+              ><VIcon
+                icon="tabler-refresh"
+                @click="openValidateDialog(item.contact_id)"
+            /></IconBtn>
+
             <IconBtn
               v-if="
                 $canPermission(permissionsEdit) &&
@@ -412,6 +443,14 @@ watch(
         :title="$t('delete_contact')"
         :message="$t('delete_contact_confirmation')"
         @confirm="handleDelete"
+      />
+
+      <VDialogHandler
+        v-if="isDialogValidateContactShow"
+        v-model="isDialogValidateContactShow"
+        :title="$t('validate_contact')"
+        :message="$t('validate_contact_confirmation')"
+        @confirm="handleValidate"
       />
 
       <AppEditContact
