@@ -396,7 +396,8 @@ onUnmounted(async () => {
               v-if="
                 EWorkerStatus.disponible === item.status?.id ||
                 EWorkerStatus.online === item.status?.id ||
-                EWorkerStatus.offline === item.status?.id
+                EWorkerStatus.offline === item.status?.id ||
+                EWorkerStatus.mismatched === item.status?.id
               "
               ><VTooltip
                 location="top"
