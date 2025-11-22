@@ -41,6 +41,9 @@ import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IMessageMarkRead } from '@core/common/interfaces/IMessageMarkRead';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
 import { MessageVersion } from '@core/schema/chat/listMessageChats/response.schema';
+import { extractPhoneAndDdiFromContactMessage } from '@core/common/functions/extractPhoneAndDdi';
+import { EncryptService } from '@core/services/encrypt.service';
+import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -57,7 +60,8 @@ export class MessageUpsertConsume {
     private readonly chatService: ChatService,
     private readonly centrifugoService: CentrifugoService,
     private readonly storageService: StorageService,
-    private readonly streamProducerService: StreamProducerService
+    private readonly streamProducerService: StreamProducerService,
+    private readonly encryptService: EncryptService
   ) {}
 
   private get consumerOrThrow(): Consumer {
@@ -904,19 +908,26 @@ export class MessageUpsertConsume {
     const vcard = contactMsg.vcard || '';
     const parsed = this.parseVCard(vcard);
 
-    const phonePartial = parsed.phone
-      ? parsed.phone.replaceAll(/\D/g, '').slice(-10)
-      : null;
+    const phoneAndDdi = extractPhoneAndDdiFromContactMessage(contactMsg);
 
-    const emailPartial = parsed.email ? parsed.email.slice(0, 50) : null;
+    if (!phoneAndDdi) return;
+
+    const phonePartial = this.encryptService.sanitize(
+      phoneAndDdi.phone,
+      ETypeSanetize.phone
+    );
+
+    const emailPartial = parsed?.email
+      ? this.encryptService.sanitize(parsed.email, ETypeSanetize.email)
+      : null;
 
     content.contact = {
       contact_id: uuidv7(),
       name: parsed.name || contactMsg.displayName || 'Contato',
       last_name: parsed.last_name || null,
-      phone: parsed.phone || null,
+      phone: phoneAndDdi.phone,
       phone_partial: phonePartial,
-      phone_ddi: parsed.phone_ddi || null,
+      phone_ddi: phoneAndDdi.phone_ddi,
       email: parsed.email || null,
       email_partial: emailPartial,
     };
