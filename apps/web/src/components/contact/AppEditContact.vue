@@ -180,6 +180,7 @@ const isLoadingPhone = ref(false);
 const nickname = ref<string | null>(null);
 const birthday = ref<string | null>(null);
 const notes = ref<string | null>(null);
+const isValided = ref<boolean>(false);
 
 const refFormEditContact = ref<VForm>();
 
@@ -290,6 +291,7 @@ onMounted(async () => {
     nickname.value = contact.nickname ?? null;
     birthday.value = contact.birthday ?? null;
     notes.value = contact.notes ?? null;
+    isValided.value = contact.is_valided ?? false;
   }
   await labelTemplateStore.listLabelTemplateAll();
 });
@@ -309,7 +311,18 @@ onMounted(async () => {
     </template>
 
     <VForm ref="refFormEditContact" @submit.prevent>
-      <VCard :title="$t('edit_contact')">
+      <VCard>
+        <VCardTitle class="d-flex align-center justify-space-between">
+          <span>{{ $t('edit_contact') }}</span>
+          <VChip
+            :color="isValided ? 'success' : 'error'"
+            size="small"
+          >
+            {{
+              isValided ? $t('validated') : $t('not_validated')
+            }}
+          </VChip>
+        </VCardTitle>
         <VCardText>
           <VRow>
             <VCol cols="12" md="6">

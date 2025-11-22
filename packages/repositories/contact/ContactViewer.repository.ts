@@ -37,6 +37,7 @@ export class ContactViewerRepository {
         >`CASE WHEN ${contact.birthday} IS NULL THEN NULL ELSE to_char(${contact.birthday}, 'YYYY-MM-DD') END`,
         notes: contact.notes,
         created_at: contact.created_at,
+        is_valided: contact.is_valided,
       })
       .from(contact)
       .leftJoin(account, eq(contact.account_id, account.account_id))
