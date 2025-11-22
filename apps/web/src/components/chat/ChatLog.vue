@@ -207,17 +207,11 @@ const handleContactClick = async (message: ListMessageResult) => {
   const phone = contact.phone ?? contact.phone_partial;
   const phoneDdi = contact.phone_ddi ?? '55';
 
-  console.log('phone', phone);
-  console.log('phoneDdi', phoneDdi);
-  console.log('contact', contact);
-
   if (phone) {
     const existingContact = await contactStore.getContactByPhone(
       phone.replaceAll(/\D/g, ''),
       phoneDdi
     );
-
-    console.log('existingContact', existingContact);
 
     if (existingContact) {
       globalThis.dispatchEvent(
@@ -532,7 +526,7 @@ const getMessageEditHistory = (
     (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
   );
 
-  sortedVersions.forEach((version) => {
+  for (const version of sortedVersions) {
     if (version.message) {
       history.push({
         text: version.message,
@@ -540,7 +534,7 @@ const getMessageEditHistory = (
         isOriginal: false,
       });
     }
-  });
+  }
 
   if (message.content.message) {
     history.push({
@@ -607,7 +601,6 @@ const onSaveEdit = async () => {
   }
 
   editMessageModalOpen.value = false;
-  const tempEditingMessage = editingMessage.value;
   editingMessage.value = null;
   editMessageText.value = '';
 

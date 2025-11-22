@@ -421,7 +421,7 @@ export class MessageUpsertConsume {
       targetMessageId
     );
 
-    if (!targetMessage || !targetMessage.content) {
+    if (!targetMessage?.content) {
       return true;
     }
 
@@ -488,17 +488,16 @@ export class MessageUpsertConsume {
     }
 
     let content = targetMessage.content;
-    if (content && content.version && content.version.length > 0) {
+    if (content?.version && content.version.length > 0) {
       const sortedVersions = [...content.version].sort(
         (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
       );
       const latestVersion = sortedVersions[0];
       if (latestVersion && content.message === latestVersion.message) {
-        const oldestVersion = sortedVersions[sortedVersions.length - 1];
+        const oldestVersion = sortedVersions.at(-1);
         if (
           oldestVersion?.message &&
-          oldestVersion.message !== content.message &&
-          content
+          oldestVersion.message !== content.message
         ) {
           content = {
             ...content,
@@ -835,7 +834,8 @@ export class MessageUpsertConsume {
       phone_ddi?: string;
     }
   ): void {
-    const waidMatch = telLine.match(/waid=([^:]+):(.+)/);
+    const waidRegex = /waid=([^:]+):(.+)/;
+    const waidMatch = waidRegex.exec(telLine);
     if (waidMatch) {
       this.parseTelephoneWithWaid(
         waidMatch[1].trim(),
@@ -845,7 +845,8 @@ export class MessageUpsertConsume {
       return;
     }
 
-    const telMatch = telLine.match(/TEL[^:]*:(.+)/);
+    const telRegex = /TEL[^:]*:(.+)/;
+    const telMatch = telRegex.exec(telLine);
     if (!telMatch) return;
 
     const phone = telMatch[1].trim();
@@ -1082,6 +1083,52 @@ export class MessageUpsertConsume {
     }
   }
 
+  private enrichSticker(
+    quoted: IQuotedMessage,
+    originalContent: IContent
+  ): void {
+    if (quoted.sticker && !quoted.sticker.url && originalContent.sticker?.url) {
+      quoted.sticker.url = originalContent.sticker.url;
+    }
+  }
+
+  private enrichImage(quoted: IQuotedMessage, originalContent: IContent): void {
+    if (quoted.image && !quoted.image.url && originalContent.image?.url) {
+      quoted.image.url = originalContent.image.url;
+      if (!quoted.image.thumbnail && originalContent.image?.thumbnail) {
+        quoted.image.thumbnail = originalContent.image.thumbnail;
+      }
+    }
+  }
+
+  private enrichVideo(quoted: IQuotedMessage, originalContent: IContent): void {
+    if (quoted.video && !quoted.video.url && originalContent.video?.url) {
+      quoted.video.url = originalContent.video.url;
+      if (!quoted.video.thumbnail && originalContent.video?.thumbnail) {
+        quoted.video.thumbnail = originalContent.video.thumbnail;
+      }
+    }
+  }
+
+  private enrichDocument(
+    quoted: IQuotedMessage,
+    originalContent: IContent
+  ): void {
+    if (
+      quoted.document &&
+      !quoted.document.url &&
+      originalContent.document?.url
+    ) {
+      quoted.document.url = originalContent.document.url;
+    }
+  }
+
+  private enrichAudio(quoted: IQuotedMessage, originalContent: IContent): void {
+    if (quoted.audio && !quoted.audio.url && originalContent.audio?.url) {
+      quoted.audio.url = originalContent.audio.url;
+    }
+  }
+
   private async enrichQuotedMessageContent(
     quoted: IQuotedMessage,
     accountId: string,
@@ -1098,51 +1145,11 @@ export class MessageUpsertConsume {
 
     if (!originalMessage?.content) return;
 
-    if (
-      quoted.sticker &&
-      !quoted.sticker.url &&
-      originalMessage.content.sticker?.url
-    ) {
-      quoted.sticker.url = originalMessage.content.sticker.url;
-    }
-
-    if (
-      quoted.image &&
-      !quoted.image.url &&
-      originalMessage.content.image?.url
-    ) {
-      quoted.image.url = originalMessage.content.image.url;
-      if (!quoted.image.thumbnail && originalMessage.content.image?.thumbnail) {
-        quoted.image.thumbnail = originalMessage.content.image.thumbnail;
-      }
-    }
-
-    if (
-      quoted.video &&
-      !quoted.video.url &&
-      originalMessage.content.video?.url
-    ) {
-      quoted.video.url = originalMessage.content.video.url;
-      if (!quoted.video.thumbnail && originalMessage.content.video?.thumbnail) {
-        quoted.video.thumbnail = originalMessage.content.video.thumbnail;
-      }
-    }
-
-    if (
-      quoted.document &&
-      !quoted.document.url &&
-      originalMessage.content.document?.url
-    ) {
-      quoted.document.url = originalMessage.content.document.url;
-    }
-
-    if (
-      quoted.audio &&
-      !quoted.audio.url &&
-      originalMessage.content.audio?.url
-    ) {
-      quoted.audio.url = originalMessage.content.audio.url;
-    }
+    this.enrichSticker(quoted, originalMessage.content);
+    this.enrichImage(quoted, originalMessage.content);
+    this.enrichVideo(quoted, originalMessage.content);
+    this.enrichDocument(quoted, originalMessage.content);
+    this.enrichAudio(quoted, originalMessage.content);
   }
 
   private nameChat(data: IUpsertMessage) {

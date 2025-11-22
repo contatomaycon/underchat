@@ -401,7 +401,7 @@ export const useChatStore = defineStore('chat', {
 
         this.loading = false;
 
-        const data = response?.data as IApiResponse<ListChatsResponse>;
+        const data = response?.data;
 
         if (!data?.status || !data?.data) {
           this.listQueue = [];
@@ -438,7 +438,7 @@ export const useChatStore = defineStore('chat', {
 
         this.loading = false;
 
-        const data = response?.data as IApiResponse<ListChatsResponse>;
+        const data = response?.data;
 
         if (!data?.status || !data?.data) {
           this.listInChat = [];
@@ -467,7 +467,7 @@ export const useChatStore = defineStore('chat', {
 
         this.loading = false;
 
-        const data = response?.data as IApiResponse<null>;
+        const data = response?.data;
 
         if (!data?.status) {
           const errorMessage =
@@ -499,7 +499,7 @@ export const useChatStore = defineStore('chat', {
           }
         );
 
-        const data = response?.data as IApiResponse<ListMessageResponse>;
+        const data = response?.data;
 
         if (!data?.status || !data?.data) {
           this.listMessages = [];
@@ -554,7 +554,7 @@ export const useChatStore = defineStore('chat', {
           }
         );
 
-        const data = response?.data as IApiResponse<ListMessageResponse>;
+        const data = response?.data;
 
         if (!data?.status || !data?.data) {
           this.loadingMoreMessages = false;
@@ -563,10 +563,8 @@ export const useChatStore = defineStore('chat', {
         }
 
         this.currentPage = data.data.pagings.current_page;
-        this.listMessages = [
-          ...data.data.results.reverse(),
-          ...this.listMessages,
-        ];
+        const reversedResults = data.data.results.toReversed();
+        this.listMessages = [...reversedResults, ...this.listMessages];
         this.loadingMoreMessages = false;
 
         return true;
@@ -588,7 +586,7 @@ export const useChatStore = defineStore('chat', {
 
         this.loading = false;
 
-        const data = response?.data as IApiResponse<boolean>;
+        const data = response?.data;
 
         if (!data?.status) {
           return false;
@@ -613,7 +611,7 @@ export const useChatStore = defineStore('chat', {
 
         this.loading = false;
 
-        const data = response?.data as IApiResponse<IChat>;
+        const data = response?.data;
 
         if (!data?.status) {
           const errorMessage =
@@ -697,7 +695,7 @@ export const useChatStore = defineStore('chat', {
           this.loading = false;
         }
 
-        const data = response?.data as IApiResponse<boolean>;
+        const data = response?.data;
 
         if (!data?.status) {
           return false;
@@ -756,7 +754,7 @@ export const useChatStore = defineStore('chat', {
           this.loading = false;
         }
 
-        const data = response?.data as IApiResponse<boolean>;
+        const data = response?.data;
 
         if (!data?.status) {
           return false;
@@ -815,7 +813,7 @@ export const useChatStore = defineStore('chat', {
           this.loading = false;
         }
 
-        const data = response?.data as IApiResponse<boolean>;
+        const data = response?.data;
 
         if (!data?.status) {
           return false;
@@ -873,7 +871,7 @@ export const useChatStore = defineStore('chat', {
           this.loading = false;
         }
 
-        const data = response?.data as IApiResponse<boolean>;
+        const data = response?.data;
 
         if (!data?.status) {
           return false;
@@ -916,7 +914,7 @@ export const useChatStore = defineStore('chat', {
           this.loading = false;
         }
 
-        const data = response?.data as IApiResponse<boolean>;
+        const data = response?.data;
 
         if (!data?.status) {
           return false;
@@ -959,7 +957,7 @@ export const useChatStore = defineStore('chat', {
           this.loading = false;
         }
 
-        const data = response?.data as IApiResponse<boolean>;
+        const data = response?.data;
 
         if (!data?.status) {
           return false;
@@ -987,7 +985,7 @@ export const useChatStore = defineStore('chat', {
 
         this.loading = false;
 
-        const data = response?.data as IApiResponse<ViewLinkPreviewResponse>;
+        const data = response?.data;
 
         if (!data?.status) {
           return null;

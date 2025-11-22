@@ -672,36 +672,28 @@ const findMessageIdByKeyId = (keyId: string): string | null => {
   return message?.message_id || null;
 };
 
+const checkMessageLoaded = (id: string, isUuid: boolean): boolean => {
+  return isUuid ? isMessageLoaded(id) : isMessageLoadedByKeyId(id);
+};
+
 const ensureMessageLoaded = async (id: string): Promise<boolean> => {
   if (!id) return false;
 
-  const isUuid = id.match(
+  const isUuid = !!id.match(
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
   );
 
-  if (isUuid) {
-    if (isMessageLoaded(id)) return true;
-  } else {
-    if (isMessageLoadedByKeyId(id)) return true;
-  }
+  if (checkMessageLoaded(id, isUuid)) return true;
 
   while (chatStore.currentPage < chatStore.totalPages) {
     const loaded = await chatStore.loadMoreMessages();
     if (!loaded) break;
     await nextTick();
 
-    if (isUuid) {
-      if (isMessageLoaded(id)) return true;
-    } else {
-      if (isMessageLoadedByKeyId(id)) return true;
-    }
+    if (checkMessageLoaded(id, isUuid)) return true;
   }
 
-  if (isUuid) {
-    return isMessageLoaded(id);
-  } else {
-    return isMessageLoadedByKeyId(id);
-  }
+  return checkMessageLoaded(id, isUuid);
 };
 
 const scrollToMessageById = async (
@@ -720,24 +712,24 @@ const scrollToMessageById = async (
     return;
   }
 
-  const isUuid = id.match(
+  const isUuid = !!id.match(
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
   );
 
   let targetMessageId = id;
-  if (!isUuid) {
-    await ensureMessageLoaded(id);
-
-    const foundMessageId = findMessageIdByKeyId(id);
-    if (foundMessageId) {
-      targetMessageId = foundMessageId;
-    }
-  } else {
+  if (isUuid) {
     const messageReady = await ensureMessageLoaded(targetMessageId);
     if (!messageReady) {
       container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
       chatLogPS.value?.update?.();
       return;
+    }
+  } else {
+    await ensureMessageLoaded(id);
+
+    const foundMessageId = findMessageIdByKeyId(id);
+    if (foundMessageId) {
+      targetMessageId = foundMessageId;
     }
   }
 
@@ -3534,13 +3526,14 @@ onUnmounted(async () => {
   const highlightedElements = document.querySelectorAll(
     '.message-target-persistent'
   );
-  highlightedElements.forEach((el) => {
+
+  for (const el of highlightedElements) {
     el.classList.remove('message-target-persistent');
     const chatContent = el.querySelector('.chat-content');
     if (chatContent) {
       chatContent.classList.remove('message-target-persistent-content');
     }
-  });
+  }
 });
 
 onBeforeUnmount(() => {

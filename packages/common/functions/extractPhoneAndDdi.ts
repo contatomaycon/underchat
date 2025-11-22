@@ -226,6 +226,29 @@ function tryFallbackPatterns(digits: string): IPhoneAndDdi | null {
   return null;
 }
 
+function extractWaidFromLine(
+  line: string
+): { waid: string; fullPhone: string } | null {
+  const waidRegex = /waid=([^:]+):(.+)/;
+  const waidMatch = waidRegex.exec(line);
+  if (!waidMatch) return null;
+
+  const waid = waidMatch[1].trim();
+  const fullPhone = waidMatch[2].trim();
+  if (!waid) return null;
+
+  return { waid, fullPhone };
+}
+
+function extractPhoneFromLine(line: string): string | null {
+  const telRegex = /TEL[^:]*:(.+)/;
+  const telMatch = telRegex.exec(line);
+  if (!telMatch) return null;
+
+  const phone = telMatch[1].trim();
+  return phone || null;
+}
+
 function extractPhoneFromVCard(
   vcard: string
 ): { waid?: string; fullPhone?: string; phone?: string } | null {
@@ -236,23 +259,16 @@ function extractPhoneFromVCard(
   for (const line of lines) {
     const trimmed = line.trim();
 
-    if (trimmed.startsWith('TEL')) {
-      const waidMatch = trimmed.match(/waid=([^:]+):(.+)/);
-      if (waidMatch) {
-        const waid = waidMatch[1].trim();
-        const fullPhone = waidMatch[2].trim();
-        if (waid) {
-          return { waid, fullPhone };
-        }
-      }
+    if (!trimmed.startsWith('TEL')) continue;
 
-      const telMatch = trimmed.match(/TEL[^:]*:(.+)/);
-      if (telMatch) {
-        const phone = telMatch[1].trim();
-        if (phone) {
-          return { phone };
-        }
-      }
+    const waidResult = extractWaidFromLine(trimmed);
+    if (waidResult) {
+      return waidResult;
+    }
+
+    const phone = extractPhoneFromLine(trimmed);
+    if (phone) {
+      return { phone };
     }
   }
 

@@ -1,8 +1,12 @@
-import { isEmpty, isEmptyArray, isNullOrUndefined } from './helpers';
+import { isEmpty, isEmptyArray, isNullOrUndefined, isObject } from './helpers';
 
 export const requiredValidator = (value: unknown, message: string) => {
   if (isNullOrUndefined(value) || isEmptyArray(value) || value === false)
     return message;
+
+  if (isObject(value)) {
+    return Object.keys(value).length > 0 || message;
+  }
 
   return !!String(value).trim().length || message;
 };

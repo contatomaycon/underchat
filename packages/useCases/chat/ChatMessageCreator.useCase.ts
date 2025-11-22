@@ -1908,13 +1908,14 @@ export class ChatMessageCreatorUseCase {
     }
 
     let content = message.content;
-    if (content && content.version && content.version.length > 0) {
+    if (content?.version && content.version.length > 0) {
       const sortedVersions = [...content.version].sort(
         (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
       );
       const latestVersion = sortedVersions[0];
       if (latestVersion && content.message === latestVersion.message) {
-        const oldestVersion = sortedVersions[sortedVersions.length - 1];
+        const oldestVersion = sortedVersions.at(-1);
+
         if (
           oldestVersion?.message &&
           oldestVersion.message !== content.message &&

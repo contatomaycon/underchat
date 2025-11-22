@@ -83,7 +83,7 @@ export class ContactValidatorUseCase {
     const sensitiveData =
       await this.contactService.getContactSensitiveDataDecrypted(contactId);
 
-    if (!sensitiveData || !sensitiveData.phone) {
+    if (!sensitiveData?.phone) {
       throw new Error(t('phone_required_for_validation'));
     }
 

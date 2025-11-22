@@ -76,7 +76,7 @@ export class AudioWaveformGenerator {
         const byteOffset = blockStart + j * 2;
         if (byteOffset + 1 < pcmData.length) {
           const sample = pcmData.readInt16LE(byteOffset);
-          const normalized = sample / 32768.0;
+          const normalized = sample / 32768;
           sum += Math.abs(normalized);
         }
       }
@@ -89,7 +89,7 @@ export class AudioWaveformGenerator {
       return undefined;
     }
 
-    const multiplier = 1.0 / maxValue;
+    const multiplier = 1 / maxValue;
     const normalizedData = filteredData.map((n) => n * multiplier);
 
     return new Uint8Array(normalizedData.map((n) => Math.floor(100 * n)));

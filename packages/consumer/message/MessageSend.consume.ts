@@ -664,8 +664,13 @@ export class MessageSendConsume {
         ? contact.phone_ddi.replaceAll(/\D/g, '')
         : '';
 
-      const phoneWithDdi =
-        ddi && phone ? `+${ddi}${phone}` : phone ? `+${phone}` : '';
+      let phoneWithDdi = '';
+      if (ddi && phone) {
+        phoneWithDdi = `+${ddi}${phone}`;
+      } else if (phone) {
+        phoneWithDdi = `+${phone}`;
+      }
+
       const phoneWithDdiWithoutPlus = phoneWithDdi.replace('+', '');
 
       if (phone) {

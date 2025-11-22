@@ -191,7 +191,7 @@ function processContactMessage(
     name: firstName || 'Contato',
     last_name: lastName,
     phone: phone,
-    phone_partial: phone ? phone.replace(/\D/g, '') : null,
+    phone_partial: phone ? phone.replaceAll(/\D/, '') : null,
     phone_ddi: null,
     email: emailMatch?.[1]?.trim() || null,
     email_partial: null,
