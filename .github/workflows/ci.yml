@@ -84,11 +84,18 @@ jobs:
             echo "Created .npmrc with GitHub token"
           fi
 
+          # Modificar package.json temporariamente para usar HTTPS com token em vez de github:
+          sed -i "s|\"github:contatomaycon/baileys\"|\"https://${GIT_TOKEN}@github.com/contatomaycon/baileys.git\"|g" package.json
+          echo "Modified package.json to use HTTPS format with token"
+
           # Verificar configuração do Git
           echo "Git URL rewrite configuration:"
           git config --global --get-regexp url
 
       - name: Install Dependencies
+        env:
+          GIT_TOKEN: ${{ env.GIT_TOKEN }}
+          GIT_SSH_COMMAND: git -c url."https://${GIT_TOKEN}@github.com/".insteadOf="git@github.com:"
         run: pnpm install
 
       - name: Run Lint
