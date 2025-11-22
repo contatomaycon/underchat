@@ -71,7 +71,8 @@ export class UserService {
     currentPage: number,
     query: ListUserRequest,
     accountId: string,
-    isAdministrator: boolean
+    isAdministrator: boolean,
+    excludeUserId: string
   ): Promise<[ListUserResponse[], number]> => {
     const searchHashes = query.search
       ? this.encryptService.encrypt(query.search)
@@ -84,13 +85,15 @@ export class UserService {
         query,
         accountId,
         isAdministrator,
-        searchHashes
+        searchHashes,
+        excludeUserId
       ),
       this.userListerRepository.listUsersTotal(
         query,
         accountId,
         isAdministrator,
-        searchHashes
+        searchHashes,
+        excludeUserId
       ),
     ]);
 
@@ -162,32 +165,23 @@ export class UserService {
   updateUserById = async (
     userId: string,
     input: IUpdateUser,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<boolean> => {
-    return this.userUpdaterRepository.updateUserById(
-      userId,
-      input,
-      accountId,
-      isAdministrator
-    );
+    return this.userUpdaterRepository.updateUserById(userId, input, accountId);
   };
 
   updateUserByIdWithAccountChange = async (
     t: TFunction<'translation', undefined>,
     userId: string,
     input: IUpdateUser,
-    accountId: string,
-    isAdministrator: boolean
+    newAccountId: string,
+    currentAccountId: string
   ): Promise<boolean> => {
-    const currentAccountId = await this.getUserAccountId(userId);
-
     return this.userUpdaterTransactionRepository.updateUserWithAccountChange(
       t,
       userId,
       input,
-      accountId,
-      isAdministrator,
+      newAccountId,
       currentAccountId
     );
   };

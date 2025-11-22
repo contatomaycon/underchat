@@ -17,7 +17,8 @@ export class UserListerUseCase {
     t: TFunction<'translation', undefined>,
     query: ListUserRequest,
     accountId: string,
-    isAdministrator: boolean
+    isAdministrator: boolean,
+    excludeUserId: string
   ): Promise<ListUserFinalResponse> {
     const perPage = query.per_page ?? 10;
     const currentPage = query.current_page ?? 1;
@@ -34,7 +35,8 @@ export class UserListerUseCase {
       currentPage,
       query,
       accountId,
-      isAdministrator
+      isAdministrator,
+      excludeUserId
     );
 
     const pagings = setPaginationData(
