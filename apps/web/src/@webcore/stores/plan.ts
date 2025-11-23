@@ -18,6 +18,11 @@ import { UpdatePlanRequest } from '@core/schema/plan/updatePlan/request.schema';
 import { CreatePlanItemRequest } from '@core/schema/plan/createPlanItem/request.schema';
 import { ListPlanItemResponse } from '@core/schema/plan/listPlanItems/response.schema';
 import { ListPlanProductAllResponse } from '@core/schema/plan/listPlanProductAll/response.schema';
+import {
+  ListSalesReportResponse,
+  SalesReportItem,
+} from '@core/schema/plan/listSalesReport/response.schema';
+import { ListSalesReportRequest } from '@core/schema/plan/listSalesReport/request.schema';
 
 export const usePlanStore = defineStore('plan', {
   state: () => ({
@@ -31,6 +36,14 @@ export const usePlanStore = defineStore('plan', {
     list: [] as ListPlanResponse[],
     listAll: [] as ListPlanAllResponse[],
     listProductAll: [] as ListPlanProductAllResponse[],
+    salesReport: [] as SalesReportItem[],
+    salesReportPagings: {
+      current_page: 1 as number,
+      total_pages: 1 as number,
+      per_page: 10 as number,
+      count: 0 as number,
+      total: 0 as number,
+    } as PagingResponseSchema,
     pagings: {
       current_page: 1 as number,
       total_pages: 1 as number,
@@ -418,6 +431,50 @@ export const usePlanStore = defineStore('plan', {
         this.loading = false;
 
         return [];
+      }
+    },
+
+    async listSalesReport(
+      input?: ListSalesReportRequest
+    ): Promise<ListSalesReportResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<IApiResponse<ListSalesReportResponse>>(
+          '/plan/sales-report',
+          {
+            params: input,
+          }
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('sales_report_list_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.salesReport = data.data.results;
+        this.salesReportPagings = data.data.pagings;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('sales_report_list_error');
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+
+        return null;
       }
     },
   },

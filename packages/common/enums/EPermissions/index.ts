@@ -16,6 +16,8 @@ import { ELabelTemplatePermissions } from './labelTemplate';
 import { EContactPermissions } from './contact';
 import { EContactGroupPermissions } from './contactGroup';
 import { EPermissionPermissions } from './permission';
+import { EExpenditurePermissions } from './expenditure';
+import { EFinancialPermissions } from './financial';
 
 export type EPermissionsRoles =
   | EUserPermissions
@@ -35,4 +37,6 @@ export type EPermissionsRoles =
   | ELabelTemplatePermissions
   | EContactPermissions
   | EContactGroupPermissions
-  | EPermissionPermissions;
+  | EPermissionPermissions
+  | EExpenditurePermissions
+  | EFinancialPermissions;

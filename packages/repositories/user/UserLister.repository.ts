@@ -61,6 +61,15 @@ export class UserListerRepository {
               .where(ilike(userDocument.document_partial, `%${searchTerm}%`))
           )
         : undefined,
+      searchTerm
+        ? inArray(
+            user.account_id,
+            this.db
+              .select({ account_id: account.account_id })
+              .from(account)
+              .where(ilike(account.name, `%${searchTerm}%`))
+          )
+        : undefined,
       searchHashes ? eq(user.email_c, searchHashes) : undefined,
       searchHashes
         ? inArray(

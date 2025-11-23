@@ -183,6 +183,11 @@
   "account_update_error": "Error updating account!",
   "plan_list_successfully": "Plan list retrieved successfully!",
   "plan_list_not_found": "No plans found!",
+  "sales_report_list_successfully": "Sales report retrieved successfully!",
+  "sales_report_list_not_found": "No sales data found!",
+  "financial_report_list_successfully": "Financial report retrieved successfully!",
+  "financial_report_list_not_found": "No financial data found!",
+  "financial_report_list_error": "An error occurred while listing the financial report. Please try again.",
   "account_name_cannot_exceed_10_characters": "Account name cannot exceed 10 characters",
   "api_key_creation_failed": "API key creation failed",
   "api_key_deleter_error": "Error deleting API key!",
@@ -336,5 +341,15 @@
   "contact_validation_failed": "Failed to validate contact!",
   "validate_contact": "Validate Contact",
   "validate_contact_confirmation": "Do you really want to validate this contact? This action will verify if the phone is valid on WhatsApp.",
-  "phone_ddi_required": "Phone DDI is required!"
+  "phone_ddi_required": "Phone DDI is required!",
+  "expenditure_list_successfully": "Expenditures list obtained successfully!",
+  "expenditure_list_not_found": "No expenditures found!",
+  "expenditure_created_successfully": "Expenditure created successfully!",
+  "expenditure_creation_failed": "Failed to create expenditure!",
+  "expenditure_updated_successfully": "Expenditure updated successfully!",
+  "expenditure_update_failed": "Failed to update expenditure!",
+  "expenditure_deleted_successfully": "Expenditure deleted successfully!",
+  "expenditure_delete_failed": "Failed to delete expenditure!",
+  "expenditure_name_required": "Expenditure name is required!",
+  "expenditure_price_invalid": "Invalid expenditure price!"
 }
