@@ -44,6 +44,10 @@ export class UserInfoUpdaterRepository {
       inputUpdate.birth_date = input.birth_date;
     }
 
+    if (input.photo !== undefined) {
+      inputUpdate.photo = input.photo;
+    }
+
     return inputUpdate;
   }
 

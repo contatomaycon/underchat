@@ -6,4 +6,5 @@ export interface IUpdateUserInfo {
   name?: string | null;
   last_name?: string | null;
   birth_date?: string | null;
+  photo?: string | null;
 }
