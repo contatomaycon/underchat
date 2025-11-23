@@ -326,9 +326,11 @@ function processWaid(waid: string): IPhoneAndDdi | null {
   return extractPhoneAndDdi(waidWithPlus);
 }
 
-function processWaidData(
-  extracted: { waid?: string; fullPhone?: string; phone?: string }
-): IPhoneAndDdi | null {
+function processWaidData(extracted: {
+  waid?: string;
+  fullPhone?: string;
+  phone?: string;
+}): IPhoneAndDdi | null {
   if (!extracted.waid) return null;
 
   const fullPhoneResult = processFullPhoneFromWaid(extracted.fullPhone);
