@@ -3619,18 +3619,40 @@ onBeforeUnmount(() => {
               <VImg
                 v-if="chatStore.activeChat.photo"
                 :src="chatStore.activeChat.photo"
-                :alt="chatStore.activeChat.contact?.name ?? chatStore.activeChat.name ?? ''"
+                :alt="
+                  chatStore.activeChat.contact?.name ??
+                  chatStore.activeChat.name ??
+                  ''
+                "
               />
               <VImg
                 v-else
                 :src="'/images/svg/avatar-default.svg'"
-                :alt="chatStore.activeChat.contact?.name ?? chatStore.activeChat.name ?? ''"
+                :alt="
+                  chatStore.activeChat.contact?.name ??
+                  chatStore.activeChat.name ??
+                  ''
+                "
               />
             </VAvatar>
 
             <div class="flex-grow-1 ms-4 overflow-hidden">
-              <div class="text-h6 mb-0 font-weight-regular">
-                {{ chatStore.activeChat.contact?.name ?? chatStore.activeChat.name }}
+              <div class="d-flex align-center gap-2 mb-0">
+                <div class="text-h6 mb-0 font-weight-regular">
+                  {{
+                    chatStore.activeChat.contact?.name ??
+                    chatStore.activeChat.name
+                  }}
+                </div>
+                <VChip
+                  v-if="chatStore.activeChat.contact?.name"
+                  size="x-small"
+                  variant="tonal"
+                  color="primary"
+                  class="contact-label"
+                >
+                  {{ $t('contact_label') }}
+                </VChip>
               </div>
               <p class="text-truncate mb-0 text-body-2">
                 {{
@@ -3730,7 +3752,8 @@ onBeforeUnmount(() => {
                 {{
                   chatStore.activeChat.contact?.name ??
                   chatStore.activeChat.name ??
-                  (chatStore.activeChat.contact?.phone_ddi && chatStore.activeChat.contact?.phone
+                  (chatStore.activeChat.contact?.phone_ddi &&
+                  chatStore.activeChat.contact?.phone
                     ? `+${chatStore.activeChat.contact.phone_ddi} ${chatStore.activeChat.contact.phone}`
                     : chatStore.activeChat.contact?.phone) ??
                   chatStore.activeChat.phone
@@ -5464,5 +5487,11 @@ $chat-app-header-height: 76px;
   max-height: 320px;
   overflow-y: auto;
   padding-inline-end: 4px;
+}
+.contact-label {
+  font-size: 0.625rem !important;
+  height: 16px !important;
+  opacity: 0.7;
+  flex-shrink: 0;
 }
 </style>

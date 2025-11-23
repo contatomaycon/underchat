@@ -44,11 +44,22 @@ const isChatContactActive = computed(() => {
         />
       </VAvatar>
       <div class="flex-grow-1 ms-4 overflow-hidden min-w-0">
-        <p class="text-base text-high-emphasis mb-0 text-truncate">
-          {{
-            limitCharacters(20, props.user?.contact?.name ?? props.user?.name)
-          }}
-        </p>
+        <div class="d-flex align-center gap-1 mb-0">
+          <p class="text-base text-high-emphasis mb-0 text-truncate">
+            {{
+              limitCharacters(20, props.user?.contact?.name ?? props.user?.name)
+            }}
+          </p>
+          <VChip
+            v-if="props.user?.contact?.name"
+            size="x-small"
+            variant="tonal"
+            color="primary"
+            class="contact-label"
+          >
+            {{ $t('contact_label') }}
+          </VChip>
+        </div>
         <p class="mb-0 text-truncate text-body-2">
           {{
             props.user?.contact?.name && props.user?.contact?.phone
@@ -142,5 +153,12 @@ const isChatContactActive = computed(() => {
   &--italic {
     font-style: italic;
   }
+}
+
+.contact-label {
+  font-size: 0.625rem !important;
+  height: 16px !important;
+  opacity: 0.7;
+  flex-shrink: 0;
 }
 </style>
