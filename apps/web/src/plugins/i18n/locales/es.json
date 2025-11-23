@@ -982,5 +982,6 @@
     "delete_expenditure_confirmation": "¿Estás seguro de que deseas eliminar este gasto?",
     "expenditure_name_required": "El nombre del gasto es obligatorio",
     "expenditure_price_invalid": "Precio del gasto inválido",
-    "description": "Descripción"
+    "description": "Descripción",
+    "financial_report_list_error": "Ocurrió un error al listar el informe financiero. Por favor, intente nuevamente."
 }

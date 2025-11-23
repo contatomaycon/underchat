@@ -187,6 +187,7 @@
   "sales_report_list_not_found": "Nenhum dado de venda encontrado!",
   "financial_report_list_successfully": "Relatório financeiro obtido com sucesso!",
   "financial_report_list_not_found": "Nenhum dado financeiro encontrado!",
+  "financial_report_list_error": "Ocorreu um erro ao listar o relatório financeiro. Por favor, tente novamente.",
   "account_name_cannot_exceed_10_characters": "O nome da conta não pode exceder mais que 10 caracteres!",
   "api_key_creation_failed": "Falha ao criar a chave API!",
   "api_key_deleter_error": "Erro ao eliminar a chave API!",

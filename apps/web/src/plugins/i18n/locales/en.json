@@ -982,5 +982,6 @@
     "delete_expenditure_confirmation": "Are you sure you want to delete this expenditure?",
     "expenditure_name_required": "Expenditure name is required",
     "expenditure_price_invalid": "Invalid expenditure price",
-    "description": "Description"
+    "description": "Description",
+    "financial_report_list_error": "An error occurred while listing the financial report. Please try again."
 }
