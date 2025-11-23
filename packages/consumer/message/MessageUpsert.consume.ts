@@ -139,7 +139,7 @@ export class MessageUpsertConsume {
     jidAlt?: string | null
   ): Promise<IChat | null> {
     const cached = await this.getChatFromCache(accountId, workerId, phone);
-    if (cached) {
+    if (cached && cached.status !== EChatStatus.closed) {
       return cached;
     }
 

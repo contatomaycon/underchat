@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import {
   UpdateChatStatusBody,
@@ -13,13 +13,15 @@ import {
 import { IChat } from '@core/common/interfaces/IChat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { UserService } from '@core/services/user.service';
+import Redis from 'ioredis';
 
 @injectable()
 export class ChatStatusUpdaterUseCase {
   constructor(
     private readonly chatService: ChatService,
     private readonly centrifugoService: CentrifugoService,
-    private readonly userService: UserService
+    private readonly userService: UserService,
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   async execute(
@@ -95,6 +97,12 @@ export class ChatStatusUpdaterUseCase {
     };
 
     await this.chatService.saveChat(updatedChat);
+
+    if (status === EChatStatus.closed) {
+      const cacheKey = `underchat:chat:${updatedChat.account.id}:${updatedChat.worker.id}:${updatedChat.phone}`;
+
+      await this.redis.del(cacheKey);
+    }
 
     const channelAccountId = updatedChat.account?.id ?? accountId;
 
