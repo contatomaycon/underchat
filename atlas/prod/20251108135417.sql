@@ -14,6 +14,7 @@ CREATE TABLE "contact" (
   "phone_partial" character varying(15) NULL,
   "phone_c" character varying(500) NULL,
   "nickname" character varying(100) NULL,
+  "photo" character varying(500) NULL,
   "birthday" timestamptz NULL,
   "notes" text NULL,
   "created_at" timestamptz NULL DEFAULT now(),
