@@ -29,6 +29,11 @@ const perPageQueue = ref(10);
 const currentPageInChat = ref(1);
 const perPageInChat = ref(10);
 
+type FilterType = 'new' | 'all' | 'in_chat' | 'queue' | 'chatbot';
+
+const activeFilter = ref<FilterType>('all');
+const expandedFilter = ref<FilterType | null>(null);
+
 const queueSelectionPermissions = [
   EGeneralPermissions.full_access,
   EGeneralPermissions.full_access_group,
@@ -131,6 +136,93 @@ onMounted(async () => {
   </div>
   <VDivider />
 
+  <div class="chat-filter-options px-3 py-3">
+    <div class="d-flex gap-2 flex-wrap">
+      <div class="chat-filter-item flex-grow-1">
+        <VBtn
+          :variant="activeFilter === 'new' ? 'flat' : 'text'"
+          :color="activeFilter === 'new' ? 'primary' : undefined"
+          class="chat-filter-btn w-100"
+          @click="
+            activeFilter = 'new';
+            expandedFilter = expandedFilter === 'new' ? null : 'new';
+          "
+        >
+          <VIcon size="24">tabler-plus</VIcon>
+        </VBtn>
+      </div>
+      <div class="chat-filter-item flex-grow-1">
+        <VBtn
+          :variant="activeFilter === 'all' ? 'flat' : 'text'"
+          :color="activeFilter === 'all' ? 'primary' : undefined"
+          class="chat-filter-btn w-100"
+          @click="
+            activeFilter = 'all';
+            expandedFilter = expandedFilter === 'all' ? null : 'all';
+          "
+        >
+          <VIcon size="24">tabler-list</VIcon>
+        </VBtn>
+      </div>
+      <div class="chat-filter-item flex-grow-1">
+        <VBtn
+          :variant="activeFilter === 'in_chat' ? 'flat' : 'text'"
+          :color="activeFilter === 'in_chat' ? 'primary' : undefined"
+          class="chat-filter-btn w-100"
+          @click="
+            activeFilter = 'in_chat';
+            expandedFilter = expandedFilter === 'in_chat' ? null : 'in_chat';
+          "
+        >
+          <VIcon size="24">tabler-message-circle</VIcon>
+        </VBtn>
+      </div>
+      <div class="chat-filter-item flex-grow-1">
+        <VBtn
+          :variant="activeFilter === 'queue' ? 'flat' : 'text'"
+          :color="activeFilter === 'queue' ? 'primary' : undefined"
+          class="chat-filter-btn w-100"
+          @click="
+            activeFilter = 'queue';
+            expandedFilter = expandedFilter === 'queue' ? null : 'queue';
+          "
+        >
+          <VIcon size="24">tabler-clock</VIcon>
+        </VBtn>
+      </div>
+      <div class="chat-filter-item flex-grow-1">
+        <VBtn
+          :variant="activeFilter === 'chatbot' ? 'flat' : 'text'"
+          :color="activeFilter === 'chatbot' ? 'primary' : undefined"
+          class="chat-filter-btn w-100"
+          @click="
+            activeFilter = 'chatbot';
+            expandedFilter = expandedFilter === 'chatbot' ? null : 'chatbot';
+          "
+        >
+          <VIcon size="24">tabler-robot</VIcon>
+        </VBtn>
+      </div>
+    </div>
+    <Transition name="expand">
+      <div v-if="expandedFilter" class="chat-filter-expanded-full">
+        {{
+          expandedFilter === 'new'
+            ? $t('new', 'Novo')
+            : expandedFilter === 'all'
+              ? $t('all', 'Todos')
+              : expandedFilter === 'in_chat'
+                ? $t('in_service')
+                : expandedFilter === 'queue'
+                  ? $t('waiting_for_service')
+                  : $t('chatbot', 'ChatBot')
+        }}
+      </div>
+    </Transition>
+  </div>
+
+  <VDivider />
+
   <PerfectScrollbar :options="{ wheelPropagation: false }">
     <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
       <li class="list-none">
@@ -197,5 +289,61 @@ onMounted(async () => {
   .v-field--focused {
     box-shadow: none !important;
   }
+}
+
+.chat-filter-options {
+  .d-flex {
+    width: 100%;
+  }
+
+  .chat-filter-item {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .chat-filter-btn {
+    min-height: 48px;
+    border-radius: 8px;
+    padding: 8px;
+    text-transform: none;
+    font-weight: 400;
+    min-width: 0;
+
+    .v-btn__content {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+  }
+
+  .chat-filter-expanded-full {
+    text-align: center;
+    padding: 8px 12px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: rgb(var(--v-theme-on-surface));
+    border-radius: 8px;
+    background: rgba(var(--v-theme-primary), 0.08);
+    margin-top: 8px;
+    width: 100%;
+  }
+}
+
+.expand-enter-active,
+.expand-leave-active {
+  transition: all 0.3s ease;
+  max-height: 50px;
+  overflow: hidden;
+}
+
+.expand-enter-from,
+.expand-leave-to {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 </style>
