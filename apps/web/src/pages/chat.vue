@@ -2127,6 +2127,19 @@ const cancelAudioRecording = () => {
   if (!isRecordingAudio.value && !mediaRecorderRef.value) {
     return;
   }
+
+  isRecordingAudio.value = false;
+  isRecordingPaused.value = false;
+
+  if (audioRecordingTimerId.value) {
+    clearInterval(audioRecordingTimerId.value);
+    audioRecordingTimerId.value = null;
+  }
+  if (audioRecordingRAFId.value) {
+    cancelAnimationFrame(audioRecordingRAFId.value);
+    audioRecordingRAFId.value = null;
+  }
+
   shouldPersistRecording.value = false;
   stopAudioRecordingInternal();
 };
