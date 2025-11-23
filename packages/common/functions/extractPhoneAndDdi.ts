@@ -229,12 +229,19 @@ function tryFallbackPatterns(digits: string): IPhoneAndDdi | null {
 function extractWaidFromLine(
   line: string
 ): { waid: string; fullPhone: string } | null {
-  const waidRegex = /waid=([^:;]+)\s*:\s*([^\n\r]+)/;
-  const waidMatch = waidRegex.exec(line);
-  if (!waidMatch) return null;
+  const waidIndex = line.indexOf('waid=');
+  if (waidIndex === -1) return null;
 
-  const waid = waidMatch[1].trim();
-  const fullPhone = waidMatch[2].trim();
+  const afterWaid = line.slice(waidIndex + 5);
+  const colonIndex = afterWaid.indexOf(':');
+  if (colonIndex === -1) return null;
+
+  const waid = afterWaid.slice(0, colonIndex).trim().replace(/[;:]/g, '');
+  const fullPhone = afterWaid
+    .slice(colonIndex + 1)
+    .trim()
+    .split(/[\n\r;]/)[0];
+
   if (!waid) return null;
 
   return { waid, fullPhone };

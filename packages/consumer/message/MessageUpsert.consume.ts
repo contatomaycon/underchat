@@ -846,11 +846,14 @@ export class MessageUpsertConsume {
   }
 
   private processEmailLine(trimmed: string, result: { email?: string }): void {
-    const emailRegex = /EMAIL[^:]*:(.+)/;
-    const emailMatch = emailRegex.exec(trimmed);
-    if (emailMatch) {
-      result.email = emailMatch[1].trim();
-    }
+    const emailIndex = trimmed.indexOf('EMAIL');
+    if (emailIndex === -1) return;
+
+    const afterEmail = trimmed.slice(emailIndex);
+    const colonIndex = afterEmail.indexOf(':');
+    if (colonIndex === -1) return;
+
+    result.email = afterEmail.slice(colonIndex + 1).trim().split(/[\n\r;]/)[0];
   }
 
   private parseFullName(
@@ -878,22 +881,26 @@ export class MessageUpsertConsume {
       phone_ddi?: string;
     }
   ): void {
-    const waidRegex = /waid=([^:;]+)\s*:\s*(.+)/;
-    const waidMatch = waidRegex.exec(telLine);
-    if (waidMatch) {
-      this.parseTelephoneWithWaid(
-        waidMatch[1].trim(),
-        waidMatch[2].trim(),
-        result
-      );
-      return;
+    const waidIndex = telLine.indexOf('waid=');
+    if (waidIndex !== -1) {
+      const afterWaid = telLine.slice(waidIndex + 5);
+      const colonIndex = afterWaid.indexOf(':');
+      if (colonIndex !== -1) {
+        const waid = afterWaid.slice(0, colonIndex).trim().replace(/[;:]/g, '');
+        const fullPhone = afterWaid.slice(colonIndex + 1).trim().split(/[\n\r;]/)[0];
+        this.parseTelephoneWithWaid(waid, fullPhone, result);
+        return;
+      }
     }
 
-    const telRegex = /\.?TEL[^:]*:\s*(.+)/;
-    const telMatch = telRegex.exec(telLine);
-    if (!telMatch) return;
+    const telIndex = telLine.indexOf('TEL');
+    if (telIndex === -1) return;
 
-    const phone = telMatch[1].trim();
+    const afterTel = telLine.slice(telIndex);
+    const colonIndex = afterTel.indexOf(':');
+    if (colonIndex === -1) return;
+
+    const phone = afterTel.slice(colonIndex + 1).trim().split(/[\n\r;]/)[0];
     this.parseTelephoneValue(phone, result);
   }
 
