@@ -871,7 +871,11 @@ onMounted(async () => {
         >
           {{ $t('cancel') }}
         </VBtn>
-        <VBtn :disabled="!selectedWorkerId" @click="handleOpenConversation">
+        <VBtn
+          :disabled="!selectedWorkerId || chatStore.loading"
+          :loading="chatStore.loading"
+          @click="handleOpenConversation"
+        >
           {{ $t('open_conversation') }}
         </VBtn>
       </VCardText>
