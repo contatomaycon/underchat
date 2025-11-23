@@ -43,9 +43,13 @@ import { Buffer } from 'node:buffer';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IMessageMarkRead } from '@core/common/interfaces/IMessageMarkRead';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
-import { extractPhoneAndDdiFromContactMessage } from '@core/common/functions/extractPhoneAndDdi';
+import {
+  extractPhoneAndDdiFromContactMessage,
+  extractPhoneAndDdi,
+} from '@core/common/functions/extractPhoneAndDdi';
 import { EncryptService } from '@core/services/encrypt.service';
 import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
+import { ContactService } from '@core/services/contact.service';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -63,7 +67,8 @@ export class MessageUpsertConsume {
     private readonly centrifugoService: CentrifugoService,
     private readonly storageService: StorageService,
     private readonly streamProducerService: StreamProducerService,
-    private readonly encryptService: EncryptService
+    private readonly encryptService: EncryptService,
+    private readonly contactService: ContactService
   ) {}
 
   private get consumerOrThrow(): Consumer {
@@ -1240,6 +1245,26 @@ export class MessageUpsertConsume {
         unread_count: isFromMe ? 0 : 1,
       },
     };
+
+    const phoneWithPlus = `+${phone}`;
+    const phoneAndDdi = extractPhoneAndDdi(phoneWithPlus);
+
+    if (phoneAndDdi) {
+      const existingContact = await this.contactService.getContactByPhone(
+        data.account_id,
+        phoneAndDdi.phone,
+        phoneAndDdi.phone_ddi
+      );
+
+      if (existingContact) {
+        inputChatMessage.contact = {
+          id: existingContact.contact_id,
+          name: existingContact.name,
+          phone: existingContact.phone_partial ?? phone,
+          phone_ddi: existingContact.phone_ddi ?? phoneAndDdi.phone_ddi,
+        };
+      }
+    }
 
     if (data.photo) {
       const photoResult = await this.storageService.uploadFromUrl(

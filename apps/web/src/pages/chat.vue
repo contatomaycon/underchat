@@ -3619,21 +3619,28 @@ onBeforeUnmount(() => {
               <VImg
                 v-if="chatStore.activeChat.photo"
                 :src="chatStore.activeChat.photo"
-                :alt="chatStore.activeChat.name ?? ''"
+                :alt="chatStore.activeChat.contact?.name ?? chatStore.activeChat.name ?? ''"
               />
               <VImg
                 v-else
                 :src="'/images/svg/avatar-default.svg'"
-                :alt="chatStore.activeChat.name ?? ''"
+                :alt="chatStore.activeChat.contact?.name ?? chatStore.activeChat.name ?? ''"
               />
             </VAvatar>
 
             <div class="flex-grow-1 ms-4 overflow-hidden">
               <div class="text-h6 mb-0 font-weight-regular">
-                {{ chatStore.activeChat.name }}
+                {{ chatStore.activeChat.contact?.name ?? chatStore.activeChat.name }}
               </div>
               <p class="text-truncate mb-0 text-body-2">
-                {{ formatPhoneBR(chatStore.activeChat.phone) }}
+                {{
+                  chatStore.activeChat.contact?.name &&
+                  chatStore.activeChat.contact?.phone
+                    ? chatStore.activeChat.contact.phone_ddi
+                      ? `+${chatStore.activeChat.contact.phone_ddi} ${chatStore.activeChat.contact.phone}`
+                      : chatStore.activeChat.contact.phone
+                    : formatPhoneBR(chatStore.activeChat.phone)
+                }}
               </p>
             </div>
           </div>
@@ -3720,7 +3727,14 @@ onBeforeUnmount(() => {
                 class="text-primary"
                 style="font-style: italic; font-size: 0.8rem; font-weight: 400"
               >
-                {{ chatStore.activeChat.name || chatStore.activeChat.phone }}
+                {{
+                  chatStore.activeChat.contact?.name ??
+                  chatStore.activeChat.name ??
+                  (chatStore.activeChat.contact?.phone_ddi && chatStore.activeChat.contact?.phone
+                    ? `+${chatStore.activeChat.contact.phone_ddi} ${chatStore.activeChat.contact.phone}`
+                    : chatStore.activeChat.contact?.phone) ??
+                  chatStore.activeChat.phone
+                }}
                 {{ $t('is_typing') }}
               </span>
             </div>

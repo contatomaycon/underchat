@@ -35,20 +35,28 @@ const isChatContactActive = computed(() => {
         <VImg
           v-if="props.user.photo"
           :src="props.user.photo"
-          :alt="props.user.name ?? ''"
+          :alt="props.user.contact?.name ?? props.user.name ?? ''"
         />
         <VImg
           v-else
           :src="'/images/svg/avatar-default.svg'"
-          :alt="props.user.name ?? ''"
+          :alt="props.user.contact?.name ?? props.user.name ?? ''"
         />
       </VAvatar>
       <div class="flex-grow-1 ms-4 overflow-hidden min-w-0">
         <p class="text-base text-high-emphasis mb-0 text-truncate">
-          {{ limitCharacters(20, props.user?.name) }}
+          {{
+            limitCharacters(20, props.user?.contact?.name ?? props.user?.name)
+          }}
         </p>
         <p class="mb-0 text-truncate text-body-2">
-          {{ formatPhoneBR(props.user?.phone) }}
+          {{
+            props.user?.contact?.name && props.user?.contact?.phone
+              ? props.user.contact.phone_ddi
+                ? `+${props.user.contact.phone_ddi} ${props.user.contact.phone}`
+                : props.user.contact.phone
+              : formatPhoneBR(props.user?.phone)
+          }}
         </p>
         <p
           v-if="

@@ -31,6 +31,7 @@ interface IContact {
   id: string;
   name: string;
   phone: string;
+  phone_ddi?: string | null;
 }
 
 interface IMessageKey {

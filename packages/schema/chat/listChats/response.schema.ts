@@ -33,6 +33,7 @@ export const contactSchema = Type.Object({
   id: Type.String(),
   name: Type.String(),
   phone: Type.String(),
+  phone_ddi: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export const listChatsResultSchema = Type.Object({
