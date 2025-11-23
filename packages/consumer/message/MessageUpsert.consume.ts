@@ -853,7 +853,10 @@ export class MessageUpsertConsume {
     const colonIndex = afterEmail.indexOf(':');
     if (colonIndex === -1) return;
 
-    result.email = afterEmail.slice(colonIndex + 1).trim().split(/[\n\r;]/)[0];
+    result.email = afterEmail
+      .slice(colonIndex + 1)
+      .trim()
+      .split(/[\n\r;]/)[0];
   }
 
   private parseFullName(
@@ -887,7 +890,10 @@ export class MessageUpsertConsume {
       const colonIndex = afterWaid.indexOf(':');
       if (colonIndex !== -1) {
         const waid = afterWaid.slice(0, colonIndex).trim().replace(/[;:]/g, '');
-        const fullPhone = afterWaid.slice(colonIndex + 1).trim().split(/[\n\r;]/)[0];
+        const fullPhone = afterWaid
+          .slice(colonIndex + 1)
+          .trim()
+          .split(/[\n\r;]/)[0];
         this.parseTelephoneWithWaid(waid, fullPhone, result);
         return;
       }
@@ -900,7 +906,10 @@ export class MessageUpsertConsume {
     const colonIndex = afterTel.indexOf(':');
     if (colonIndex === -1) return;
 
-    const phone = afterTel.slice(colonIndex + 1).trim().split(/[\n\r;]/)[0];
+    const phone = afterTel
+      .slice(colonIndex + 1)
+      .trim()
+      .split(/[\n\r;]/)[0];
     this.parseTelephoneValue(phone, result);
   }
 
