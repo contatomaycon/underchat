@@ -269,7 +269,7 @@ watch(
                 <span>{{ $t('assign_role') }}</span>
               </VTooltip>
               <VIcon
-                icon="tabler-user-plus"
+                icon="tabler-badge"
                 @click="openAssignRoleDialog(item.user_id)"
               />
             </IconBtn>

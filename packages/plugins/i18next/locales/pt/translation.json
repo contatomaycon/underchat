@@ -183,6 +183,10 @@
   "account_update_error": "Erro ao atualizar a conta!",
   "plan_list_successfully": "Lista de planos obtida com sucesso!",
   "plan_list_not_found": "Nenhum plano encontrado!",
+  "sales_report_list_successfully": "Relatório de vendas obtido com sucesso!",
+  "sales_report_list_not_found": "Nenhum dado de venda encontrado!",
+  "financial_report_list_successfully": "Relatório financeiro obtido com sucesso!",
+  "financial_report_list_not_found": "Nenhum dado financeiro encontrado!",
   "account_name_cannot_exceed_10_characters": "O nome da conta não pode exceder mais que 10 caracteres!",
   "api_key_creation_failed": "Falha ao criar a chave API!",
   "api_key_deleter_error": "Erro ao eliminar a chave API!",
@@ -336,5 +340,15 @@
   "contact_validation_failed": "Falha ao validar o contato!",
   "validate_contact": "Validar Contato",
   "validate_contact_confirmation": "Deseja realmente validar este contato? Esta ação irá verificar se o telefone é válido no WhatsApp.",
-  "phone_ddi_required": "DDI do telefone é obrigatório!"
+  "phone_ddi_required": "DDI do telefone é obrigatório!",
+  "expenditure_list_successfully": "Lista de despesas obtida com sucesso!",
+  "expenditure_list_not_found": "Nenhuma despesa encontrada!",
+  "expenditure_created_successfully": "Despesa criada com sucesso!",
+  "expenditure_creation_failed": "Falha ao criar a despesa!",
+  "expenditure_updated_successfully": "Despesa atualizada com sucesso!",
+  "expenditure_update_failed": "Falha ao atualizar a despesa!",
+  "expenditure_deleted_successfully": "Despesa excluída com sucesso!",
+  "expenditure_delete_failed": "Falha ao excluir a despesa!",
+  "expenditure_name_required": "Nome da despesa é obrigatório!",
+  "expenditure_price_invalid": "Preço da despesa inválido!"
 }

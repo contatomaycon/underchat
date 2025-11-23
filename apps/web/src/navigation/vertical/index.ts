@@ -12,6 +12,8 @@ import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/label
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
+import { EExpenditurePermissions } from '@core/common/enums/EPermissions/expenditure';
+import { EFinancialPermissions } from '@core/common/enums/EPermissions/financial';
 
 export default [
   {
@@ -191,6 +193,68 @@ export default [
       EGeneralPermissions.full_access_group,
       EServerPermissions.server_group,
       EServerPermissions.server_view,
+    ],
+  },
+  {
+    title: 'expenditures',
+    to: { name: 'expenditure' as keyof RouteNamedMap },
+    icon: { icon: 'tabler-currency-dollar' },
+    requiresAdministrator: true,
+    permissions: [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EExpenditurePermissions.expenditure_group,
+      EExpenditurePermissions.expenditure_view,
+    ],
+  },
+  {
+    title: 'reports',
+    icon: { icon: 'tabler-file-analytics' },
+    children: [
+      {
+        title: 'clients',
+        to: { name: 'reports-clients' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-users-group' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EAccountPermissions.account_group,
+          EAccountPermissions.account_view,
+        ],
+      },
+      {
+        title: 'sales',
+        to: { name: 'reports-sales' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-shopping-cart' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EPlanPermissions.plan_group,
+          EPlanPermissions.plan_view,
+        ],
+      },
+      {
+        title: 'users',
+        to: { name: 'reports-users' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-user-check' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EUserPermissions.user_group,
+          EUserPermissions.user_view,
+        ],
+      },
+      {
+        title: 'financial',
+        to: { name: 'reports-financial' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-currency-dollar' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EFinancialPermissions.financial_group,
+          EFinancialPermissions.financial_view,
+        ],
+      },
     ],
   },
 ];

@@ -16,6 +16,7 @@ import { createPlanItemSchema } from '@core/schema/plan/createPlanItem';
 import { listPlanItemsSchema } from '@core/schema/plan/listPlanItems';
 import { deletePlanItemSchema } from '@core/schema/plan/deletePlanItem';
 import { listPlanProductAllSchema } from '@core/schema/plan/listPlanProductAll';
+import { listSalesReportSchema } from '@core/schema/plan/listSalesReport/schema';
 
 export default function planRoutes(server: FastifyInstance) {
   const planController = container.resolve(PlanController);
@@ -95,6 +96,15 @@ export default function planRoutes(server: FastifyInstance) {
   server.get('/plan/product/all', {
     schema: listPlanProductAllSchema,
     handler: planController.listPlanProductAll,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planViewPermissions),
+    ],
+  });
+
+  server.get('/plan/sales-report', {
+    schema: listSalesReportSchema,
+    handler: planController.listSalesReport,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planViewPermissions),
