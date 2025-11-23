@@ -428,23 +428,19 @@ const setupCropArea = (
   img.style.width = `${displayWidth}px`;
   img.style.height = `${displayHeight}px`;
 
-  cropArea.value.aspectRatio = imgAspect;
+  cropArea.value.aspectRatio = 1;
 
-  const maxCropWidth = Math.min(displayWidth, cropPreviewSize);
-  const maxCropHeight = Math.min(displayHeight, cropPreviewSize);
+  const maxCropSize = Math.min(displayWidth, displayHeight, cropPreviewSize);
+  const cropSize = maxCropSize;
 
-  let cropWidth = maxCropWidth;
-  let cropHeight = cropWidth / cropArea.value.aspectRatio;
+  cropArea.value.width = cropSize;
+  cropArea.value.height = cropSize;
 
-  if (cropHeight > maxCropHeight) {
-    cropHeight = maxCropHeight;
-    cropWidth = cropHeight * cropArea.value.aspectRatio;
-  }
+  const imgLeft = (containerWidth - displayWidth) / 2;
+  const imgTop = (containerHeight - displayHeight) / 2;
 
-  cropArea.value.width = cropWidth;
-  cropArea.value.height = cropHeight;
-  cropArea.value.x = (displayWidth - cropWidth) / 2;
-  cropArea.value.y = (displayHeight - cropHeight) / 2;
+  cropArea.value.x = imgLeft + Math.max(0, (displayWidth - cropSize) / 2);
+  cropArea.value.y = imgTop + Math.max(0, (displayHeight - cropSize) / 2);
 };
 
 type CropResizeHandle = 'nw' | 'ne' | 'sw' | 'se';
@@ -513,11 +509,21 @@ const onCropDrag = (e: MouseEvent | TouchEvent) => {
   const x = clientX - rect.left - cropArea.value.startX;
   const y = clientY - rect.top - cropArea.value.startY;
 
-  const maxX = cropImageRef.value.offsetWidth - cropArea.value.width;
-  const maxY = cropImageRef.value.offsetHeight - cropArea.value.height;
+  const imgWidth = cropImageRef.value.offsetWidth;
+  const imgHeight = cropImageRef.value.offsetHeight;
+  const containerWidth = container.clientWidth;
+  const containerHeight = container.clientHeight;
 
-  cropArea.value.x = Math.max(0, Math.min(x, maxX));
-  cropArea.value.y = Math.max(0, Math.min(y, maxY));
+  const imgLeft = (containerWidth - imgWidth) / 2;
+  const imgTop = (containerHeight - imgHeight) / 2;
+
+  const minX = imgLeft;
+  const minY = imgTop;
+  const maxX = imgLeft + imgWidth - cropArea.value.width;
+  const maxY = imgTop + imgHeight - cropArea.value.height;
+
+  cropArea.value.x = Math.max(minX, Math.min(x, maxX));
+  cropArea.value.y = Math.max(minY, Math.min(y, maxY));
 };
 
 const getEventCoordinates = (
@@ -690,20 +696,9 @@ const onCropResize = (e: MouseEvent | TouchEvent) => {
   const deltaX = mouseX - fixedX;
   const deltaY = mouseY - fixedY;
 
-  const aspectRatio = cropArea.value.aspectRatio;
-  let newWidth = Math.abs(deltaX);
-  let newHeight = Math.abs(deltaY);
-
-  const widthFromHeight = newHeight * aspectRatio;
-  const heightFromWidth = newWidth / aspectRatio;
-
-  if (Math.abs(deltaX) > Math.abs(deltaY)) {
-    newWidth = Math.abs(deltaX);
-    newHeight = heightFromWidth;
-  } else {
-    newHeight = Math.abs(deltaY);
-    newWidth = widthFromHeight;
-  }
+  const maxDelta = Math.max(Math.abs(deltaX), Math.abs(deltaY));
+  let newWidth = maxDelta;
+  let newHeight = maxDelta;
 
   const { x: initialX, y: initialY } = calculateInitialPosition(
     handle,
@@ -712,11 +707,22 @@ const onCropResize = (e: MouseEvent | TouchEvent) => {
     newWidth
   );
 
-  const maxWidth = cropImageRef.value.offsetWidth;
-  const maxHeight = cropImageRef.value.offsetHeight;
+  const imgWidth = cropImageRef.value.offsetWidth;
+  const imgHeight = cropImageRef.value.offsetHeight;
+  const resizeContainer = cropImageRef.value.parentElement;
+  if (!resizeContainer) return;
+
+  const resizeContainerWidth = resizeContainer.clientWidth;
+  const resizeContainerHeight = resizeContainer.clientHeight;
+  const imgLeft = (resizeContainerWidth - imgWidth) / 2;
+  const imgTop = (resizeContainerHeight - imgHeight) / 2;
+
+  const maxWidth = imgLeft + imgWidth;
+  const maxHeight = imgTop + imgHeight;
   const minSize = 50;
+
   const minWidth = minSize;
-  const minHeight = minSize / aspectRatio;
+  const minHeight = minSize;
 
   const fixedPoint = { x: fixedX, y: fixedY };
   let dimensions = applyMinSizeConstraint(handle, fixedPoint, minWidth, {
@@ -726,21 +732,18 @@ const onCropResize = (e: MouseEvent | TouchEvent) => {
     y: initialY,
   });
 
-  if (dimensions.width / dimensions.height !== aspectRatio) {
-    if (dimensions.width < dimensions.height * aspectRatio) {
-      dimensions.width = dimensions.height * aspectRatio;
-    } else {
-      dimensions.height = dimensions.width / aspectRatio;
-    }
-    const { x, y } = calculateInitialPosition(
-      handle,
-      fixedPoint.x,
-      fixedPoint.y,
-      dimensions.width
-    );
-    dimensions.x = x;
-    dimensions.y = y;
-  }
+  const currentSize = Math.min(dimensions.width, dimensions.height);
+  dimensions.width = currentSize;
+  dimensions.height = currentSize;
+
+  const pos1 = calculateInitialPosition(
+    handle,
+    fixedPoint.x,
+    fixedPoint.y,
+    dimensions.width
+  );
+  dimensions.x = pos1.x;
+  dimensions.y = pos1.y;
 
   dimensions = applyMaxSizeConstraint(
     handle,
@@ -749,29 +752,50 @@ const onCropResize = (e: MouseEvent | TouchEvent) => {
     dimensions
   );
 
-  if (dimensions.width / dimensions.height !== aspectRatio) {
-    if (dimensions.width > dimensions.height * aspectRatio) {
-      dimensions.width = dimensions.height * aspectRatio;
-    } else {
-      dimensions.height = dimensions.width / aspectRatio;
-    }
-    const { x, y } = calculateInitialPosition(
-      handle,
-      fixedPoint.x,
-      fixedPoint.y,
-      dimensions.width
-    );
-    dimensions.x = x;
-    dimensions.y = y;
-  }
+  const maxSize = Math.min(dimensions.width, dimensions.height);
+  dimensions.width = maxSize;
+  dimensions.height = maxSize;
+
+  const pos2 = calculateInitialPosition(
+    handle,
+    fixedPoint.x,
+    fixedPoint.y,
+    dimensions.width
+  );
+  dimensions.x = pos2.x;
+  dimensions.y = pos2.y;
+
+  const finalImgWidth = cropImageRef.value.offsetWidth;
+  const finalImgHeight = cropImageRef.value.offsetHeight;
+  const finalContainer = cropImageRef.value.parentElement;
+  if (!finalContainer) return;
+
+  const finalContainerWidth = finalContainer.clientWidth;
+  const finalContainerHeight = finalContainer.clientHeight;
+  const finalImgLeft = (finalContainerWidth - finalImgWidth) / 2;
+  const finalImgTop = (finalContainerHeight - finalImgHeight) / 2;
+
+  const minX = finalImgLeft;
+  const minY = finalImgTop;
+  const maxX = finalImgLeft + finalImgWidth;
+  const maxY = finalImgTop + finalImgHeight;
 
   const finalPosition = applyBoundaryConstraints(
-    maxWidth,
-    maxHeight,
+    maxX,
+    maxY,
     dimensions.width,
     dimensions.height,
     dimensions.x,
     dimensions.y
+  );
+
+  finalPosition.x = Math.max(
+    minX,
+    Math.min(finalPosition.x, maxX - dimensions.width)
+  );
+  finalPosition.y = Math.max(
+    minY,
+    Math.min(finalPosition.y, maxY - dimensions.height)
   );
 
   cropArea.value.width = dimensions.width;
