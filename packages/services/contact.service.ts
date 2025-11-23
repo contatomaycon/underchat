@@ -260,13 +260,8 @@ export class ContactService {
     newPhoneDdi: string | null | undefined,
     newPhone: string | null | undefined
   ): boolean {
-    if (!currentContact) {
-      return !!(newPhone && newPhoneDdi);
-    }
-
-    if (!newPhoneDdi) {
-      return currentContact.is_valided ?? false;
-    }
+    if (!currentContact) return !!(newPhone && newPhoneDdi);
+    if (!newPhoneDdi) return currentContact.is_valided ?? false;
 
     const phoneChanged =
       newPhoneEncrypted !== currentContact.phone ||
