@@ -354,6 +354,14 @@ const addContact = async () => {
 
   const result = await contactStore.addContact(payload);
 
+  if (result && chatStore.activeChat?.chat_id && phoneNumber && phoneDdi) {
+    await chatStore.updateChatContact(
+      chatStore.activeChat.chat_id,
+      phoneNumber,
+      phoneDdi
+    );
+  }
+
   if (result) {
     await nextTick();
     emit('close');

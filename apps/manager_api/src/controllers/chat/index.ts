@@ -11,6 +11,7 @@ import { deleteMessage } from './methods/deleteMessage';
 import { editMessage } from './methods/editMessage';
 import { updateChatStatus } from './methods/updateChatStatus';
 import { clearChatSummary } from './methods/clearChatSummary';
+import { updateChatContact } from './methods/updateChatContact';
 
 @injectable()
 class ChatController {
@@ -26,6 +27,7 @@ class ChatController {
   public editMessage = editMessage;
   public updateChatStatus = updateChatStatus;
   public clearChatSummary = clearChatSummary;
+  public updateChatContact = updateChatContact;
 }
 
 export default ChatController;

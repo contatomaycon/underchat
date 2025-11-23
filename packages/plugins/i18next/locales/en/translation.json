@@ -336,5 +336,8 @@
   "contact_validation_failed": "Failed to validate contact!",
   "validate_contact": "Validate Contact",
   "validate_contact_confirmation": "Do you really want to validate this contact? This action will verify if the phone is valid on WhatsApp.",
-  "phone_ddi_required": "Phone DDI is required!"
+  "phone_ddi_required": "Phone DDI is required!",
+  "chat_contact_update_success": "Chat contact updated successfully!",
+  "chat_contact_update_not_found": "Chat not found for contact update!",
+  "chat_update_failed": "Failed to update chat!"
 }
