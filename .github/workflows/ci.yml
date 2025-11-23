@@ -64,16 +64,25 @@ jobs:
       - name: Configure SSH for GitHub
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
+          if [ -n "${{ secrets.SSH_PRIVATE_KEY }}" ]; then
+            echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+            chmod 600 ~/.ssh/id_rsa
 
-          ssh-keyscan github.com >> ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
+            ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
+            chmod 644 ~/.ssh/known_hosts
 
-          eval "$(ssh-agent -s)"
-          ssh-add ~/.ssh/id_rsa
-
-          ssh -T git@github.com || true
+            eval "$(ssh-agent -s)" || true
+            
+            if ssh-add ~/.ssh/id_rsa 2>&1; then
+              echo "SSH key added successfully"
+              ssh -T git@github.com 2>&1 || true
+            else
+              echo "Warning: Failed to add SSH key. This may be due to key format issues."
+              echo "Attempting to use GIT_TOKEN for authentication instead..."
+            fi
+          else
+            echo "Warning: SSH_PRIVATE_KEY secret is not set. Using GIT_TOKEN for authentication."
+          fi
 
       - name: Install Dependencies
         run: pnpm install
