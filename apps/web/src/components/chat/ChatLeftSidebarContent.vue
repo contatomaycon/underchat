@@ -416,6 +416,10 @@ const handleOpenConversation = async () => {
     selectedWorkerId.value = null;
     selectedSectorId.value = null;
 
+    activeFilter.value = 'in_chat';
+    expandedFilter.value = 'in_chat';
+    await loadChatsByFilter();
+
     emit('openChat', data.data.chat_id);
   } catch (error: any) {
     chatStore.loading = false;
