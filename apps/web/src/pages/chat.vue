@@ -3662,12 +3662,24 @@ onBeforeUnmount(() => {
           >
             <VAvatar
               size="40"
-              :variant="!chatStore.activeChat.photo ? 'tonal' : undefined"
+              :variant="
+                !(chatStore.activeChat.contact?.photo ??
+                  chatStore.activeChat.photo)
+                  ? 'tonal'
+                  : undefined
+              "
               class="cursor-pointer"
             >
               <VImg
-                v-if="chatStore.activeChat.photo"
-                :src="chatStore.activeChat.photo"
+                v-if="
+                  chatStore.activeChat.contact?.photo ??
+                  chatStore.activeChat.photo
+                "
+                :src="
+                  chatStore.activeChat.contact?.photo ??
+                  chatStore.activeChat.photo ??
+                  ''
+                "
                 :alt="
                   chatStore.activeChat.contact?.name ??
                   chatStore.activeChat.name ??

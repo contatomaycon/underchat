@@ -424,8 +424,10 @@ watch(
 );
 
 const openPhotoPreview = () => {
-  if (!chatStore.activeChat?.photo) return;
-  viewerSrc.value = chatStore.activeChat.photo;
+  const photoUrl =
+    chatStore.activeChat?.contact?.photo ?? chatStore.activeChat?.photo;
+  if (!photoUrl) return;
+  viewerSrc.value = photoUrl;
   viewerDownloadName.value =
     chatStore.activeChat.contact?.name ??
     chatStore.activeChat.name ??
@@ -497,13 +499,36 @@ onMounted(async () => {
     <div class="text-center px-6 pb-4 flex-shrink-0">
       <VAvatar
         size="120"
-        :variant="!chatStore.activeChat.photo ? 'tonal' : undefined"
-        :class="['mb-4', chatStore.activeChat.photo ? 'cursor-pointer' : '']"
-        @click="chatStore.activeChat?.photo ? openPhotoPreview() : null"
+        :variant="
+          !(chatStore.activeChat.contact?.photo ??
+            chatStore.activeChat.photo)
+            ? 'tonal'
+            : undefined
+        "
+        :class="[
+          'mb-4',
+          chatStore.activeChat.contact?.photo ??
+          chatStore.activeChat.photo
+            ? 'cursor-pointer'
+            : '',
+        ]"
+        @click="
+          (chatStore.activeChat?.contact?.photo ??
+            chatStore.activeChat?.photo)
+            ? openPhotoPreview()
+            : null
+        "
       >
         <VImg
-          v-if="chatStore.activeChat.photo"
-          :src="chatStore.activeChat.photo"
+          v-if="
+            chatStore.activeChat.contact?.photo ??
+            chatStore.activeChat.photo
+          "
+          :src="
+            chatStore.activeChat.contact?.photo ??
+            chatStore.activeChat.photo ??
+            ''
+          "
           :alt="
             chatStore.activeChat.contact?.name ??
             chatStore.activeChat.name ??

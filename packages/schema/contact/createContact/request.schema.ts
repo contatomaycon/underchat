@@ -75,6 +75,9 @@ export const createContactRequestSchema = Type.Object({
     ])
   ),
   photo: Type.Optional(uploadFileRequestSchema),
+  image_url: Type.Optional(
+    Type.Union([Type.String(), Type.Object({ value: Type.String() }), Type.Null()])
+  ),
 });
 
 export type CreateContactRequest = Static<typeof createContactRequestSchema>;
