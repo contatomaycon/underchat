@@ -751,7 +751,7 @@ const cropImage = () => {
     (blob) => {
       if (!blob) return;
 
-      const croppedFile = new File([blob], 'contact-photo.jpg', {
+      const croppedFile = new File([blob], 'temp.jpg', {
         type: 'image/jpeg',
       });
       photoFile.value = croppedFile;

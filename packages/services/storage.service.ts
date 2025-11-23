@@ -10,6 +10,7 @@ import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { extension as mimeToExt } from 'mime-types';
 import { fileTypeFromBuffer } from 'file-type';
 import sharp from 'sharp';
+import { v7 as uuidv7 } from 'uuid';
 
 const MAX_IMAGE_UPLOAD_BYTES = 16 * 1024 * 1024;
 const MAX_DOCUMENT_UPLOAD_BYTES = 100 * 1024 * 1024;
@@ -89,7 +90,9 @@ export class StorageService {
       throw new Error('IMAGE_SIZE_LIMIT_EXCEEDED');
     }
 
-    const path = `${accountId}/${this.converterFilename(file.filename)}`;
+    // Gerar nome do arquivo usando UUID v7, mantendo a extensão original
+    const generatedFilename = `${uuidv7()}.${extension}`;
+    const path = `${accountId}/${generatedFilename}`;
 
     let width: number | null = null;
     let height: number | null = null;
@@ -120,7 +123,7 @@ export class StorageService {
 
     return {
       url: this.createUrl(path),
-      name: file.filename,
+      name: generatedFilename,
       extension,
       size: buffer.byteLength,
       width,

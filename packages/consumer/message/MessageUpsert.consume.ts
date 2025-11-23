@@ -1288,6 +1288,7 @@ export class MessageUpsertConsume {
           name: existingContact.name,
           phone: existingContact.phone_partial ?? phone,
           phone_ddi: existingContact.phone_ddi ?? phoneAndDdi.phone_ddi,
+          photo: existingContact.photo ?? null,
         };
       }
     }
