@@ -1299,7 +1299,8 @@ export class MessageUpsertConsume {
         data.account_id,
         chatId
       );
-      inputChatMessage.photo = photoResult?.url;
+      inputChatMessage.photo =
+        inputChatMessage.contact?.photo ?? photoResult?.url ?? null;
     }
 
     await this.cacheChat(inputChatMessage);
