@@ -2,6 +2,7 @@
 import { ref, watch, computed } from 'vue';
 import { refDebounced } from '@vueuse/core';
 import { useServerStore } from '@/@webcore/stores/server';
+import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { EColor } from '@core/common/enums/EColor';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EServerPermissions } from '@core/common/enums/EPermissions/server';
@@ -60,6 +61,7 @@ const permissionsCreate = [
 
 const { t } = useI18n();
 const serverStore = useServerStore();
+useSnackbarCleanup(serverStore);
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },

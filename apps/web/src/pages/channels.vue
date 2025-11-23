@@ -8,6 +8,7 @@ import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { EWorkerPermissions } from '@core/common/enums/EPermissions/worker';
 import { useChannelsStore } from '@/@webcore/stores/channels';
+import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { getAdministrator, getUser } from '@/@webcore/localStorage/user';
@@ -71,6 +72,7 @@ const permissionsProfileStatus = [
 
 const { t } = useI18n();
 const channelsStore = useChannelsStore();
+useSnackbarCleanup(channelsStore);
 const isAdministrator = getAdministrator();
 const user = getUser();
 

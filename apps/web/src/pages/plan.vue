@@ -8,6 +8,7 @@ import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { DataTableHeader } from 'vuetify';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { usePlanStore } from '@/@webcore/stores/plan';
+import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { ListPlanResponse } from '@core/schema/plan/listPlan/response.schema';
 
 definePage({
@@ -42,6 +43,7 @@ const permissionsCreate = [
 
 const { t } = useI18n();
 const planStore = usePlanStore();
+useSnackbarCleanup(planStore);
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },

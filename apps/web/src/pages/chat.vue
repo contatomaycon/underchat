@@ -18,6 +18,7 @@ import { can } from '@layouts/plugins/casl';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useContactStore } from '@/@webcore/stores/contact';
+import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
@@ -81,6 +82,8 @@ definePage({
 
 const chatStore = useChatStore();
 const contactStore = useContactStore();
+useSnackbarCleanup(chatStore);
+useSnackbarCleanup(contactStore);
 const { name } = useTheme();
 const vuetifyDisplays = useDisplay();
 

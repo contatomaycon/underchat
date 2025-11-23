@@ -9,6 +9,7 @@ import { getAdministrator } from '@/@webcore/localStorage/user';
 import { DataTableHeader } from 'vuetify';
 import { ESectorPermissions } from '@core/common/enums/EPermissions/sector';
 import { useSectorsStore } from '@/@webcore/stores/sector';
+import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { ListSectorResponse } from '@core/schema/sector/listSector/response.schema';
 import { EColor } from '@core/common/enums/EColor';
 import { ESectorStatus } from '@core/common/enums/ESectorStatus';
@@ -48,6 +49,7 @@ const permissionsCreate = [
 
 const { t } = useI18n();
 const sectorStore = useSectorsStore();
+useSnackbarCleanup(sectorStore);
 const isAdministrator = getAdministrator();
 
 const itemsPerPage = ref([

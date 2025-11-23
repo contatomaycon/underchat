@@ -12,6 +12,7 @@ import { ERolePermissions } from '@core/common/enums/EPermissions/role';
 import { EPermissionPermissions } from '@core/common/enums/EPermissions/permission';
 import { useRolesStore } from '@/@webcore/stores/role';
 import { usePermissionStore } from '@/@webcore/stores/permission';
+import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 
 definePage({
   meta: {
@@ -61,6 +62,8 @@ const permissionsViewPermissions = [
 const { t } = useI18n();
 const roleStore = useRolesStore();
 const permissionStore = usePermissionStore();
+useSnackbarCleanup(roleStore);
+useSnackbarCleanup(permissionStore);
 const isAdministrator = getAdministrator();
 const currentPermissionRoleId = getUser()?.type.user_type_id ?? null;
 
