@@ -26,6 +26,7 @@ export const listContactResponseSchema = Type.Object({
   birthday: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   notes: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   is_valided: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
+  photo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export const listContactFinalResponseSchema = Type.Object({

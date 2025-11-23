@@ -604,8 +604,17 @@ onMounted(async () => {
           @mouseenter="hoveredContactId = contact.contact_id"
           @mouseleave="hoveredContactId = null"
         >
-          <VAvatar size="40" color="primary" variant="tonal">
-            <VIcon size="20">tabler-user</VIcon>
+          <VAvatar
+            size="40"
+            :variant="!contact.photo ? 'tonal' : undefined"
+            color="primary"
+          >
+            <VImg
+              v-if="contact.photo"
+              :src="contact.photo"
+              :alt="`${contact.name} ${contact.last_name || ''}`"
+            />
+            <VIcon v-else size="20">tabler-user</VIcon>
           </VAvatar>
           <div class="flex-grow-1">
             <div class="d-flex align-center gap-2">
