@@ -28,6 +28,10 @@ const emit = defineEmits<{
 const countrySearchQuery = ref('');
 const isCountryMenuOpen = ref(false);
 
+const viewerOpen = ref(false);
+const viewerSrc = ref<string>('');
+const viewerDownloadName = ref<string>('');
+
 const filteredCountryCodes = computed(() => {
   if (!countrySearchQuery.value) {
     return countryCodes.value;
@@ -419,6 +423,51 @@ watch(
   { immediate: true, deep: true }
 );
 
+const openPhotoPreview = () => {
+  if (!chatStore.activeChat?.photo) return;
+  viewerSrc.value = chatStore.activeChat.photo;
+  viewerDownloadName.value =
+    chatStore.activeChat.contact?.name ??
+    chatStore.activeChat.name ??
+    'profile-photo.jpg';
+  viewerOpen.value = true;
+};
+
+const downloadPreviewImage = async (url: string, filename?: string | null) => {
+  if (!url) return;
+
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const blobUrl = globalThis.URL.createObjectURL(blob);
+
+    const anchor = document.createElement('a');
+    anchor.href = blobUrl;
+    anchor.download = filename || 'image.jpg';
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+
+    setTimeout(() => {
+      globalThis.URL.revokeObjectURL(blobUrl);
+    }, 100);
+  } catch (error) {
+    const anchor = document.createElement('a');
+
+    anchor.href = url;
+    anchor.target = '_blank';
+    anchor.download = filename || 'image.jpg';
+    anchor.rel = 'noopener';
+    anchor.click();
+  }
+};
+
+const downloadViewerMedia = () => {
+  if (!viewerSrc.value) return;
+  downloadPreviewImage(viewerSrc.value, viewerDownloadName.value);
+};
+
 onMounted(async () => {
   await labelTemplateStore.listLabelTemplateAll();
   loadChatData();
@@ -449,7 +498,8 @@ onMounted(async () => {
       <VAvatar
         size="120"
         :variant="!chatStore.activeChat.photo ? 'tonal' : undefined"
-        class="mb-4"
+        :class="['mb-4', chatStore.activeChat.photo ? 'cursor-pointer' : '']"
+        @click="chatStore.activeChat?.photo ? openPhotoPreview() : null"
       >
         <VImg
           v-if="chatStore.activeChat.photo"
@@ -638,12 +688,117 @@ onMounted(async () => {
         </VCardText>
       </VForm>
     </PerfectScrollbar>
+
+    <VDialog
+      v-model="viewerOpen"
+      fullscreen
+      scrim="rgba(0,0,0,.9)"
+      :scrollable="false"
+    >
+      <div class="viewer-wrap" @click="viewerOpen = false">
+        <div class="viewer-box" @click.stop>
+          <div class="viewer-media-container">
+            <img
+              v-if="viewerSrc"
+              :src="viewerSrc"
+              alt=""
+              class="viewer-img"
+              loading="eager"
+              decoding="async"
+            />
+
+            <div class="viewer-actions">
+              <VBtn
+                v-if="viewerSrc"
+                class="viewer-download"
+                icon
+                size="36"
+                variant="text"
+                @click.stop="downloadViewerMedia"
+              >
+                <VIcon size="20">tabler-download</VIcon>
+              </VBtn>
+              <VBtn
+                class="viewer-close"
+                icon
+                size="36"
+                variant="text"
+                @click="viewerOpen = false"
+              >
+                <VIcon size="20">tabler-x</VIcon>
+              </VBtn>
+            </div>
+          </div>
+        </div>
+      </div>
+    </VDialog>
   </div>
 </template>
 
 <style scoped>
 .phone-field-wrapper {
   position: relative;
+}
+
+.viewer-wrap {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  padding: 16px;
+  overflow: hidden;
+}
+
+.viewer-box {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  max-width: 90vw;
+  max-height: 90vh;
+}
+
+.viewer-media-container {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.viewer-img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 90vw;
+  max-height: 85vh;
+  object-fit: contain;
+  border-radius: 12px;
+}
+
+.viewer-actions {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 10;
+}
+
+.viewer-close,
+.viewer-download {
+  color: white !important;
+  background: rgba(0, 0, 0, 0.5) !important;
+  border-radius: 50%;
+  min-width: 36px;
+  height: 36px;
+}
+
+.viewer-close:hover,
+.viewer-download:hover {
+  background: rgba(0, 0, 0, 0.7) !important;
 }
 
 .phone-eye-icon {
