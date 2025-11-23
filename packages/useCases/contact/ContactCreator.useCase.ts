@@ -250,6 +250,7 @@ export class ContactCreatorUseCase {
       birthday,
       notes,
       photo: input.photo,
+      image_url: input.image_url,
     };
 
     await this.validateAccountAndLabelTemplate(t, accountId, labelTemplateId);
@@ -292,6 +293,7 @@ export class ContactCreatorUseCase {
       birthday,
       notes,
       photo: input.photo,
+      image_url: input.image_url,
     };
 
     const contactId = await this.contactService.createContact(

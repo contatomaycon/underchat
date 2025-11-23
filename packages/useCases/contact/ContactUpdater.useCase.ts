@@ -299,6 +299,7 @@ export class ContactUpdaterUseCase {
       birthday,
       notes,
       photo: body.photo,
+      image_url: body.image_url,
     };
 
     const contactUpdater = await this.contactService.updateContactById(

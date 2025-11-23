@@ -344,6 +344,9 @@ const addContact = async () => {
   const phoneNumber = phone.value ? phone.value.replaceAll(/\D/g, '') : '';
   const phoneDdi = phone_ddi.value ?? '55';
 
+  const imageUrl =
+    chatStore.activeChat?.contact?.photo ?? chatStore.activeChat?.photo ?? null;
+
   const payload: CreateContactRequest = {
     label_template_id: label_template_id.value ?? null,
     name: name.value,
@@ -354,6 +357,7 @@ const addContact = async () => {
     nickname: nickname.value ?? null,
     birthday: birthday.value ?? null,
     notes: notes.value ?? null,
+    image_url: imageUrl,
   };
 
   const result = await contactStore.addContact(payload, null);
@@ -387,6 +391,9 @@ const updateContact = async () => {
   const emailToSave = determineEmailToSave();
   const phoneToSave = determinePhoneToSave();
 
+  const imageUrl =
+    chatStore.activeChat?.contact?.photo ?? chatStore.activeChat?.photo ?? null;
+
   const body: UpdateContactRequest = {
     label_template_id: label_template_id.value,
     name: name.value,
@@ -397,6 +404,7 @@ const updateContact = async () => {
     nickname: nickname.value,
     birthday: birthday.value,
     notes: notes.value,
+    image_url: imageUrl,
   };
 
   const result = await contactStore.updateContact(payload, body, null);
@@ -429,8 +437,8 @@ const openPhotoPreview = () => {
   if (!photoUrl) return;
   viewerSrc.value = photoUrl;
   viewerDownloadName.value =
-    chatStore.activeChat.contact?.name ??
-    chatStore.activeChat.name ??
+    chatStore.activeChat?.contact?.name ??
+    chatStore.activeChat?.name ??
     'profile-photo.jpg';
   viewerOpen.value = true;
 };
@@ -500,29 +508,25 @@ onMounted(async () => {
       <VAvatar
         size="120"
         :variant="
-          !(chatStore.activeChat.contact?.photo ??
-            chatStore.activeChat.photo)
+          !(chatStore.activeChat.contact?.photo ?? chatStore.activeChat.photo)
             ? 'tonal'
             : undefined
         "
         :class="[
           'mb-4',
-          chatStore.activeChat.contact?.photo ??
-          chatStore.activeChat.photo
+          (chatStore.activeChat.contact?.photo ?? chatStore.activeChat.photo)
             ? 'cursor-pointer'
             : '',
         ]"
         @click="
-          (chatStore.activeChat?.contact?.photo ??
-            chatStore.activeChat?.photo)
+          (chatStore.activeChat?.contact?.photo ?? chatStore.activeChat?.photo)
             ? openPhotoPreview()
             : null
         "
       >
         <VImg
           v-if="
-            chatStore.activeChat.contact?.photo ??
-            chatStore.activeChat.photo
+            chatStore.activeChat.contact?.photo ?? chatStore.activeChat.photo
           "
           :src="
             chatStore.activeChat.contact?.photo ??
