@@ -5,6 +5,8 @@ import AppAddContact from '@/components/contact/AppAddContact.vue';
 import AppEditContact from '@/components/contact/AppEditContact.vue';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useContactStore } from '@/@webcore/stores/contact';
+import { useChannelsStore } from '@/@webcore/stores/channels';
+import { useSectorsStore } from '@/@webcore/stores/sector';
 import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
@@ -19,6 +21,10 @@ import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { IChat } from '@core/common/interfaces/IChat';
 import { EColor } from '@core/common/enums/EColor';
 import VDialogHandler from '@/components/VDialogHandler.vue';
+import { ListWorkerResponse } from '@core/schema/worker/listWorker/response.schema';
+import { ListSectorResponse } from '@core/schema/sector/listSector/response.schema';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { ESectorStatus } from '@core/common/enums/ESectorStatus';
 
 const emit = defineEmits<{
   (e: 'openChat', id: ListChatsResult['chat_id']): void;
@@ -34,6 +40,8 @@ const props = defineProps<{
 
 const chatStore = useChatStore();
 const contactStore = useContactStore();
+const channelsStore = useChannelsStore();
+const sectorsStore = useSectorsStore();
 
 const currentPageQueue = ref(1);
 const perPageQueue = ref(10);
@@ -56,6 +64,13 @@ const isEditContactModalOpen = ref(false);
 const editContactId = ref<string | null>(null);
 const hoveredContactId = ref<string | null>(null);
 const editingContactId = ref<string | null>(null);
+const validatingContactId = ref<string | null>(null);
+const isSelectChannelSectorModalOpen = ref(false);
+const selectedContactForChat = ref<ListContactResponse | null>(null);
+const selectedWorkerId = ref<string | null>(null);
+const selectedSectorId = ref<string | null>(null);
+const availableWorkers = ref<ListWorkerResponse[]>([]);
+const availableSectors = ref<ListSectorResponse[]>([]);
 
 type FilterType = 'new' | 'all' | 'in_chat' | 'queue' | 'chatbot';
 
@@ -233,7 +248,13 @@ const handleAddContactModalClose = (isOpen: boolean) => {
 const handleValidateContact = (contactId: string, event: Event) => {
   event.stopPropagation();
   contactToValidate.value = contactId;
+  validatingContactId.value = contactId;
   isValidateContactDialogOpen.value = true;
+};
+
+const handleCancelValidateContact = () => {
+  validatingContactId.value = null;
+  contactToValidate.value = null;
 };
 
 const confirmValidateContact = async () => {
@@ -254,6 +275,7 @@ const confirmValidateContact = async () => {
   }
 
   contactToValidate.value = null;
+  validatingContactId.value = null;
 };
 
 const handleEditContact = (contactId: string, event: Event) => {
@@ -280,6 +302,40 @@ watch(debouncedContactSearch, () => {
   loadContacts();
 });
 
+const loadActiveWorkers = async () => {
+  if (!chatStore.user?.account_id) return;
+
+  const result = await channelsStore.listChannels({
+    page: 1,
+    per_page: 100,
+    sort_by: [],
+    status: EWorkerStatus.online,
+  });
+
+  if (result) {
+    availableWorkers.value = result.results.filter(
+      (worker) => worker.status?.id === EWorkerStatus.online
+    );
+  }
+};
+
+const loadActiveSectors = async () => {
+  if (!chatStore.user?.account_id) return;
+
+  const result = await sectorsStore.listSectors({
+    page: 1,
+    per_page: 100,
+    sort_by: [],
+    sector_status: ESectorStatus.active,
+  });
+
+  if (result) {
+    availableSectors.value = result.results.filter(
+      (sector) => sector.sector_status?.id === ESectorStatus.active
+    );
+  }
+};
+
 const handleContactClick = async (contact: ListContactResponse) => {
   if (!contact.phone_partial) {
     contactStore.showSnackbar(
@@ -289,27 +345,56 @@ const handleContactClick = async (contact: ListContactResponse) => {
     return;
   }
 
+  if (!contact.is_valided) {
+    contactStore.showSnackbar(
+      chatStore.i18n.global.t('contact_must_be_validated'),
+      EColor.warning
+    );
+    return;
+  }
+
+  selectedContactForChat.value = contact;
+  selectedWorkerId.value = null;
+  selectedSectorId.value = null;
+
+  await Promise.all([loadActiveWorkers(), loadActiveSectors()]);
+
+  isSelectChannelSectorModalOpen.value = true;
+};
+
+const handleOpenConversation = async () => {
+  if (!selectedContactForChat.value || !selectedWorkerId.value) {
+    chatStore.showSnackbar(
+      chatStore.i18n.global.t('select_channel_required'),
+      EColor.warning
+    );
+    return;
+  }
+
+  if (!selectedContactForChat.value.phone_partial) {
+    chatStore.showSnackbar(
+      chatStore.i18n.global.t('contact_phone_required'),
+      EColor.warning
+    );
+    return;
+  }
+
   try {
     chatStore.loading = true;
 
-    const phone = contact.phone_partial.replaceAll(/\D/g, '');
-
-    let workerId = chatStore.activeChat?.worker?.id;
-
-    if (!workerId) {
-      const anyChat = chatStore.listInChat[0] || chatStore.listQueue[0];
-
-      workerId = anyChat?.worker?.id;
-    }
-
-    if (!workerId) {
-      throw new Error('Worker ID not found');
-    }
+    const phone = selectedContactForChat.value.phone_partial.replaceAll(
+      /\D/g,
+      ''
+    );
 
     const response = await axios.post<IApiResponse<IChat>>('/chat', {
-      worker_id: workerId,
+      worker_id: selectedWorkerId.value,
       phone: phone,
-      name: contact.name + (contact.last_name ? ` ${contact.last_name}` : ''),
+      name:
+        selectedContactForChat.value.name +
+        (selectedContactForChat.value.last_name
+          ? ` ${selectedContactForChat.value.last_name}`
+          : ''),
     });
 
     chatStore.loading = false;
@@ -323,6 +408,11 @@ const handleContactClick = async (contact: ListContactResponse) => {
       return;
     }
 
+    isSelectChannelSectorModalOpen.value = false;
+    selectedContactForChat.value = null;
+    selectedWorkerId.value = null;
+    selectedSectorId.value = null;
+
     emit('openChat', data.data.chat_id);
   } catch (error: any) {
     chatStore.loading = false;
@@ -331,6 +421,13 @@ const handleContactClick = async (contact: ListContactResponse) => {
       chatStore.i18n.global.t('chat_creation_error');
     chatStore.showSnackbar(errorMessage, EColor.error);
   }
+};
+
+const handleCancelSelectChannelSector = () => {
+  isSelectChannelSectorModalOpen.value = false;
+  selectedContactForChat.value = null;
+  selectedWorkerId.value = null;
+  selectedSectorId.value = null;
 };
 
 onMounted(async () => {
@@ -492,9 +589,16 @@ onMounted(async () => {
         <li
           v-for="contact in accumulatedContacts"
           :key="`contact-${contact.contact_id}`"
-          class="contact-item d-flex align-center gap-3 pa-3 cursor-pointer"
+          class="contact-item d-flex align-center gap-3 pa-3"
           :class="{
-            'contact-item--editing': editingContactId === contact.contact_id,
+            'contact-item--editing':
+              editingContactId === contact.contact_id ||
+              validatingContactId === contact.contact_id ||
+              (isSelectChannelSectorModalOpen &&
+                selectedContactForChat?.contact_id === contact.contact_id),
+            'contact-item--not-validated': !contact.is_valided,
+            'cursor-pointer': contact.is_valided,
+            'cursor-not-allowed': !contact.is_valided,
           }"
           @click="handleContactClick(contact)"
           @mouseenter="hoveredContactId = contact.contact_id"
@@ -657,7 +761,106 @@ onMounted(async () => {
     :title="$t('validate_contact')"
     :message="$t('validate_contact_confirmation')"
     @confirm="confirmValidateContact"
+    @cancel="handleCancelValidateContact"
   />
+
+  <VDialog v-model="isSelectChannelSectorModalOpen" max-width="600" persistent>
+    <VCard>
+      <VCardTitle class="d-flex align-center justify-space-between">
+        <span>{{ $t('select_channel_sector') }}</span>
+        <IconBtn @click="handleCancelSelectChannelSector">
+          <VIcon>tabler-x</VIcon>
+        </IconBtn>
+      </VCardTitle>
+
+      <VDivider />
+
+      <VCardText class="pt-6">
+        <div class="mb-6">
+          <VLabel class="mb-2">{{ $t('channel') }} *</VLabel>
+          <VSelect
+            v-model="selectedWorkerId"
+            :items="availableWorkers"
+            item-title="name"
+            item-value="id"
+            :placeholder="$t('select_channel')"
+            variant="outlined"
+            density="comfortable"
+          >
+            <template #item="{ props, item }">
+              <VListItem
+                v-bind="props"
+                :title="item.raw.name"
+                :subtitle="item.raw.number || undefined"
+              />
+            </template>
+          </VSelect>
+          <div v-if="selectedWorkerId" class="mt-2">
+            <VChip
+              size="small"
+              color="primary"
+              variant="tonal"
+              class="channel-tag"
+            >
+              <VIcon size="16" class="me-1">tabler-device-mobile</VIcon>
+              {{
+                availableWorkers.find((w) => w.id === selectedWorkerId)?.name
+              }}
+              <span
+                v-if="
+                  availableWorkers.find((w) => w.id === selectedWorkerId)
+                    ?.number
+                "
+                class="ms-1 text-caption"
+              >
+                ({{
+                  availableWorkers.find((w) => w.id === selectedWorkerId)
+                    ?.number
+                }})
+              </span>
+            </VChip>
+          </div>
+        </div>
+
+        <div class="mb-6">
+          <VLabel class="mb-2">{{ $t('sector') }}</VLabel>
+          <VSelect
+            v-model="selectedSectorId"
+            :items="availableSectors"
+            item-title="name"
+            item-value="sector_id"
+            :placeholder="$t('select_sector')"
+            variant="outlined"
+            density="comfortable"
+            clearable
+          >
+            <template #item="{ props, item }">
+              <VListItem v-bind="props" :title="item.raw.name">
+                <template #prepend>
+                  <VAvatar :color="item.raw.color" size="24" class="me-2" />
+                </template>
+              </VListItem>
+            </template>
+          </VSelect>
+        </div>
+      </VCardText>
+
+      <VDivider />
+
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          @click="handleCancelSelectChannelSector"
+        >
+          {{ $t('cancel') }}
+        </VBtn>
+        <VBtn :disabled="!selectedWorkerId" @click="handleOpenConversation">
+          {{ $t('open_conversation') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
 </template>
 
 <style lang="scss">
@@ -686,7 +889,8 @@ onMounted(async () => {
   border-radius: 8px;
   transition:
     background-color 0.2s ease,
-    border-color 0.2s ease;
+    border-color 0.2s ease,
+    opacity 0.2s ease;
   border: 1px solid transparent;
 
   &:hover {
@@ -696,6 +900,14 @@ onMounted(async () => {
   &--editing {
     background-color: rgba(var(--v-theme-primary), 0.08);
     border-color: rgba(var(--v-theme-primary), 0.3);
+  }
+
+  &--not-validated {
+    opacity: 0.6;
+
+    &:hover {
+      background-color: rgba(var(--v-theme-error), 0.04);
+    }
   }
 }
 
