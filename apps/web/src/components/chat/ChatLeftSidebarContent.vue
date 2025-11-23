@@ -1,7 +1,9 @@
 <script lang="ts" setup>
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import ChatQueue from './ChatQueue.vue';
+import AppAddContact from '@/components/contact/AppAddContact.vue';
 import { useChatStore } from '@/@webcore/stores/chat';
+import { useContactStore } from '@/@webcore/stores/contact';
 import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
@@ -9,6 +11,12 @@ import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { can } from '@layouts/plugins/casl';
+import { refDebounced } from '@vueuse/core';
+import { ListContactResponse } from '@core/schema/contact/listContact/response.schema';
+import axios from '@webcore/axios';
+import { IApiResponse } from '@core/common/interfaces/IApiResponse';
+import { IChat } from '@core/common/interfaces/IChat';
+import { EColor } from '@core/common/enums/EColor';
 
 const emit = defineEmits<{
   (e: 'openChat', id: ListChatsResult['chat_id']): void;
@@ -23,11 +31,23 @@ const props = defineProps<{
 }>();
 
 const chatStore = useChatStore();
+const contactStore = useContactStore();
 
 const currentPageQueue = ref(1);
 const perPageQueue = ref(10);
 const currentPageInChat = ref(1);
 const perPageInChat = ref(10);
+
+const contactSearchQuery = ref('');
+const debouncedContactSearch = refDebounced(contactSearchQuery, 500);
+const currentPageContacts = ref(1);
+const perPageContacts = ref(50);
+const isAddContactModalOpen = ref(false);
+const isLoadingMoreContacts = ref(false);
+const contactScrollContainer = ref<InstanceType<
+  typeof PerfectScrollbar
+> | null>(null);
+const accumulatedContacts = ref<ListContactResponse[]>([]);
 
 type FilterType = 'new' | 'all' | 'in_chat' | 'queue' | 'chatbot';
 
@@ -99,6 +119,10 @@ const handleFilterClick = (filter: FilterType) => {
 
   if (filter === 'all' || filter === 'in_chat' || filter === 'queue') {
     loadChatsByFilter();
+  } else if (filter === 'new') {
+    currentPageContacts.value = 1;
+    accumulatedContacts.value = [];
+    loadContacts();
   }
 };
 
@@ -136,6 +160,124 @@ const loadChatsByFilter = async () => {
     };
 
     await chatStore.listQueueChats(requestQueue);
+  }
+};
+
+const loadContacts = async (append = false) => {
+  if (isLoadingMoreContacts.value || contactStore.loading) return;
+
+  isLoadingMoreContacts.value = true;
+
+  try {
+    const result = await contactStore.listContact({
+      page: currentPageContacts.value,
+      per_page: perPageContacts.value,
+      sort_by: [],
+      search: debouncedContactSearch.value || undefined,
+    });
+
+    if (result) {
+      if (append) {
+        accumulatedContacts.value.push(...result.results);
+      } else {
+        accumulatedContacts.value = [...result.results];
+      }
+    }
+  } finally {
+    isLoadingMoreContacts.value = false;
+  }
+};
+
+const hasMoreContacts = computed(() => {
+  const pagings = contactStore.pagings;
+  return currentPageContacts.value < pagings.total_pages;
+});
+
+const handleContactScroll = (e: Event) => {
+  const target = e.target as HTMLElement;
+  if (!target) return;
+
+  const scrollContainer = target.closest('.ps') as HTMLElement;
+  if (!scrollContainer) return;
+
+  const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+  const threshold = 100;
+
+  if (
+    scrollTop + clientHeight >= scrollHeight - threshold &&
+    hasMoreContacts.value &&
+    !isLoadingMoreContacts.value &&
+    !contactStore.loading
+  ) {
+    currentPageContacts.value += 1;
+    loadContacts(true);
+  }
+};
+
+const handleAddContactModalClose = (isOpen: boolean) => {
+  if (!isOpen) {
+    currentPageContacts.value = 1;
+    accumulatedContacts.value = [];
+    loadContacts();
+  }
+};
+
+watch(debouncedContactSearch, () => {
+  currentPageContacts.value = 1;
+  accumulatedContacts.value = [];
+  loadContacts();
+});
+
+const handleContactClick = async (contact: ListContactResponse) => {
+  if (!contact.phone_partial) {
+    contactStore.showSnackbar(
+      chatStore.i18n.global.t('contact_phone_required'),
+      EColor.warning
+    );
+    return;
+  }
+
+  try {
+    chatStore.loading = true;
+
+    const phone = contact.phone_partial.replaceAll(/\D/g, '');
+
+    let workerId = chatStore.activeChat?.worker?.id;
+
+    if (!workerId) {
+      const anyChat = chatStore.listInChat[0] || chatStore.listQueue[0];
+
+      workerId = anyChat?.worker?.id;
+    }
+
+    if (!workerId) {
+      throw new Error('Worker ID not found');
+    }
+
+    const response = await axios.post<IApiResponse<IChat>>('/chat', {
+      worker_id: workerId,
+      phone: phone,
+      name: contact.name + (contact.last_name ? ` ${contact.last_name}` : ''),
+    });
+
+    chatStore.loading = false;
+
+    const data = response?.data;
+
+    if (!data?.status || !data?.data) {
+      const errorMessage =
+        data?.message || chatStore.i18n.global.t('chat_creation_error');
+      chatStore.showSnackbar(errorMessage, EColor.error);
+      return;
+    }
+
+    emit('openChat', data.data.chat_id);
+  } catch (error: any) {
+    chatStore.loading = false;
+    const errorMessage =
+      error?.response?.data?.message ||
+      chatStore.i18n.global.t('chat_creation_error');
+    chatStore.showSnackbar(errorMessage, EColor.error);
   }
 };
 
@@ -265,7 +407,81 @@ onMounted(async () => {
 
   <VDivider />
 
-  <PerfectScrollbar :options="{ wheelPropagation: false }">
+  <template v-if="activeFilter === 'new'">
+    <div class="px-3 py-3">
+      <div class="d-flex align-center gap-2 mb-3">
+        <AppTextField
+          v-model="contactSearchQuery"
+          :placeholder="$t('search') + '...'"
+          prepend-inner-icon="tabler-search"
+          single-line
+          hide-details
+          dense
+          class="flex-grow-1"
+        />
+        <VBtn
+          color="primary"
+          prepend-icon="tabler-plus"
+          @click="isAddContactModalOpen = true"
+        >
+          {{ $t('add') }}
+        </VBtn>
+      </div>
+    </div>
+
+    <VDivider />
+
+    <PerfectScrollbar
+      ref="contactScrollContainer"
+      :options="{ wheelPropagation: false }"
+      @ps-scroll-y="handleContactScroll"
+    >
+      <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
+        <li
+          v-for="contact in accumulatedContacts"
+          :key="`contact-${contact.contact_id}`"
+          class="contact-item d-flex align-center gap-3 pa-3 cursor-pointer"
+          @click="handleContactClick(contact)"
+        >
+          <VAvatar size="40" color="primary" variant="tonal">
+            <VIcon size="20">tabler-user</VIcon>
+          </VAvatar>
+          <div class="flex-grow-1">
+            <div class="text-body-1 font-weight-medium">
+              {{ contact.name }}
+              {{ contact.last_name || '' }}
+            </div>
+            <div
+              v-if="contact.phone_partial"
+              class="text-caption text-disabled"
+            >
+              {{ contact.phone_partial }}
+            </div>
+          </div>
+        </li>
+
+        <li
+          v-if="
+            !accumulatedContacts.length &&
+            !contactStore.loading &&
+            !isLoadingMoreContacts
+          "
+          class="no-chat-items-text text-disabled"
+        >
+          {{ $t('no_contacts_found') }}
+        </li>
+
+        <li
+          v-if="contactStore.loading || isLoadingMoreContacts"
+          class="d-flex justify-center pa-4"
+        >
+          <VProgressCircular indeterminate color="primary" size="32" />
+        </li>
+      </ul>
+    </PerfectScrollbar>
+  </template>
+
+  <PerfectScrollbar v-else :options="{ wheelPropagation: false }">
     <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
       <li v-if="showInChatTitle" class="list-none">
         <h5 class="chat-header text-primary text-h5">
@@ -315,6 +531,11 @@ onMounted(async () => {
       </li>
     </ul>
   </PerfectScrollbar>
+
+  <AppAddContact
+    v-model="isAddContactModalOpen"
+    @update:model-value="handleAddContactModalClose"
+  />
 </template>
 
 <style lang="scss">
@@ -336,6 +557,15 @@ onMounted(async () => {
 .chat-list-search {
   .v-field--focused {
     box-shadow: none !important;
+  }
+}
+
+.contact-item {
+  border-radius: 8px;
+  transition: background-color 0.2s ease;
+
+  &:hover {
+    background-color: rgba(var(--v-theme-on-surface), 0.04);
   }
 }
 
