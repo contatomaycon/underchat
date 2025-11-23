@@ -34,6 +34,28 @@ type FilterType = 'new' | 'all' | 'in_chat' | 'queue' | 'chatbot';
 const activeFilter = ref<FilterType>('all');
 const expandedFilter = ref<FilterType | null>(null);
 
+const filteredInChat = computed(() => {
+  if (activeFilter.value === 'all' || activeFilter.value === 'in_chat') {
+    return chatStore.listInChat;
+  }
+  return [];
+});
+
+const filteredQueue = computed(() => {
+  if (activeFilter.value === 'all' || activeFilter.value === 'queue') {
+    return chatStore.listQueue;
+  }
+  return [];
+});
+
+const showInChatTitle = computed(() => {
+  return activeFilter.value === 'all';
+});
+
+const showQueueTitle = computed(() => {
+  return activeFilter.value === 'all';
+});
+
 const queueSelectionPermissions = [
   EGeneralPermissions.full_access,
   EGeneralPermissions.full_access_group,
@@ -67,23 +89,45 @@ const handleQueueClick = (
   emit('openChat', chatId);
 };
 
+const loadChatsByFilter = async () => {
+  if (activeFilter.value === 'all') {
+    const requestQueue: ListChatsQuery = {
+      current_page: currentPageQueue.value,
+      per_page: perPageQueue.value,
+      status: EChatStatus.queue,
+    };
+
+    const requestInChat: ListChatsQuery = {
+      current_page: currentPageInChat.value,
+      per_page: perPageInChat.value,
+      status: EChatStatus.in_chat,
+    };
+
+    await Promise.all([
+      chatStore.listQueueChats(requestQueue),
+      chatStore.listInChatChats(requestInChat),
+    ]);
+  } else if (activeFilter.value === 'in_chat') {
+    const requestInChat: ListChatsQuery = {
+      current_page: currentPageInChat.value,
+      per_page: perPageInChat.value,
+      status: EChatStatus.in_chat,
+    };
+
+    await chatStore.listInChatChats(requestInChat);
+  } else if (activeFilter.value === 'queue') {
+    const requestQueue: ListChatsQuery = {
+      current_page: currentPageQueue.value,
+      per_page: perPageQueue.value,
+      status: EChatStatus.queue,
+    };
+
+    await chatStore.listQueueChats(requestQueue);
+  }
+};
+
 onMounted(async () => {
-  const requestQueue: ListChatsQuery = {
-    current_page: currentPageQueue.value,
-    per_page: perPageQueue.value,
-    status: EChatStatus.queue,
-  };
-
-  const requestInChat: ListChatsQuery = {
-    current_page: currentPageInChat.value,
-    per_page: perPageInChat.value,
-    status: EChatStatus.in_chat,
-  };
-
-  await Promise.all([
-    chatStore.listQueueChats(requestQueue),
-    chatStore.listInChatChats(requestInChat),
-  ]);
+  await loadChatsByFilter();
 });
 </script>
 
@@ -159,6 +203,7 @@ onMounted(async () => {
           @click="
             activeFilter = 'all';
             expandedFilter = expandedFilter === 'all' ? null : 'all';
+            loadChatsByFilter();
           "
         >
           <VIcon size="24">tabler-list</VIcon>
@@ -172,6 +217,7 @@ onMounted(async () => {
           @click="
             activeFilter = 'in_chat';
             expandedFilter = expandedFilter === 'in_chat' ? null : 'in_chat';
+            loadChatsByFilter();
           "
         >
           <VIcon size="24">tabler-message-circle</VIcon>
@@ -185,6 +231,7 @@ onMounted(async () => {
           @click="
             activeFilter = 'queue';
             expandedFilter = expandedFilter === 'queue' ? null : 'queue';
+            loadChatsByFilter();
           "
         >
           <VIcon size="24">tabler-clock</VIcon>
@@ -225,34 +272,37 @@ onMounted(async () => {
 
   <PerfectScrollbar :options="{ wheelPropagation: false }">
     <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
-      <li class="list-none">
+      <li v-if="showInChatTitle" class="list-none">
         <h5 class="chat-header text-primary text-h5">
           {{ $t('in_service') }}
         </h5>
       </li>
 
       <ChatQueue
-        v-for="inChat in chatStore.listInChat"
+        v-for="inChat in filteredInChat"
         :key="`chat-${inChat.chat_id}`"
         :user="inChat"
         @click="$emit('openChat', inChat.chat_id)"
       />
 
       <li
-        v-if="!chatStore.listInChat.length"
+        v-if="
+          !filteredInChat.length &&
+          (activeFilter === 'all' || activeFilter === 'in_chat')
+        "
         class="no-chat-items-text text-disabled"
       >
         {{ $t('no_chat_in_service') }}
       </li>
 
-      <li class="list-none pt-2">
+      <li v-if="showQueueTitle" class="list-none pt-2">
         <h5 class="chat-header text-primary text-h5">
           {{ $t('waiting_for_service') }}
         </h5>
       </li>
 
       <ChatQueue
-        v-for="(queue, index) in chatStore.listQueue"
+        v-for="(queue, index) in filteredQueue"
         :key="`chat-${queue.chat_id}`"
         :user="queue"
         :disabled="!isQueueChatSelectable(index)"
@@ -260,7 +310,10 @@ onMounted(async () => {
       />
 
       <li
-        v-if="!chatStore.listQueue.length"
+        v-if="
+          !filteredQueue.length &&
+          (activeFilter === 'all' || activeFilter === 'queue')
+        "
         class="no-chat-items-text text-disabled"
       >
         {{ $t('no_chat_in_queue') }}
