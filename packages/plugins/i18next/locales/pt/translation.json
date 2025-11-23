@@ -343,5 +343,7 @@
   "phone_ddi_required": "DDI do telefone é obrigatório!",
   "chat_contact_update_success": "Contato do chat atualizado com sucesso!",
   "chat_contact_update_not_found": "Chat não encontrado para atualização de contato!",
-  "chat_update_failed": "Erro ao atualizar o chat!"
+  "chat_update_failed": "Erro ao atualizar o chat!",
+  "contact_photo_deleted_successfully": "Foto do contato removida com sucesso!",
+  "contact_photo_delete_error": "Erro ao remover a foto do contato!"
 }

@@ -12,8 +12,18 @@ export class ContactViewerRepository {
   ) {}
 
   viewContactById = async (
-    contactId: string
+    contactId: string,
+    accountId?: string
   ): Promise<(ViewContactResponse & { phone: string }) | null> => {
+    const conditions = [
+      eq(contact.contact_id, contactId),
+      isNull(contact.deleted_at),
+    ];
+
+    if (accountId) {
+      conditions.push(eq(contact.account_id, accountId));
+    }
+
     const result = await this.db
       .select({
         contact_id: contact.contact_id,
@@ -47,7 +57,7 @@ export class ContactViewerRepository {
         labelTemplate,
         eq(labelTemplate.label_template_id, contact.label_template_id)
       )
-      .where(and(eq(contact.contact_id, contactId), isNull(contact.deleted_at)))
+      .where(and(...conditions))
       .execute();
 
     if (!result.length) {

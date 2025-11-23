@@ -277,15 +277,17 @@ export class ContactService {
   };
 
   viewContactById = async (
-    contactId: string
+    contactId: string,
+    accountId?: string
   ): Promise<(ViewContactResponse & { phone: string }) | null> => {
-    return this.contactViewerRepository.viewContactById(contactId);
+    return this.contactViewerRepository.viewContactById(contactId, accountId);
   };
 
   getContactById = async (
-    contactId: string
+    contactId: string,
+    accountId?: string
   ): Promise<ViewContactResponse | null> => {
-    return this.contactViewerRepository.viewContactById(contactId);
+    return this.contactViewerRepository.viewContactById(contactId, accountId);
   };
 
   getContactByPhone = async (
@@ -358,7 +360,7 @@ export class ContactService {
     contactId: string,
     accountId?: string
   ): Promise<boolean | null> => {
-    const currentContact = await this.viewContactById(contactId);
+    const currentContact = await this.viewContactById(contactId, accountId);
 
     const emailField = this.extractFieldValue(
       input.email as string | { value: string } | null
@@ -541,5 +543,31 @@ export class ContactService {
       phonesC,
       contactId
     );
+  };
+
+  deleteContactPhoto = async (
+    contactId: string,
+    accountId: string
+  ): Promise<boolean> => {
+    const currentContact = await this.viewContactById(contactId, accountId);
+
+    if (!currentContact?.photo) {
+      return true;
+    }
+
+    const photoDeleted = await this.storageService.deleteImage(
+      currentContact.photo
+    );
+
+    if (!photoDeleted) {
+      return false;
+    }
+
+    const payload: IUpdateContact = {
+      photo: null,
+      is_valided: currentContact.is_valided ?? false,
+    };
+
+    return this.contactUpdaterRepository.updateContactById(contactId, payload);
   };
 }

@@ -9,6 +9,7 @@ import {
 import { useCountryCodes } from '@/composables/useCountryCodes';
 import { EColor } from '@core/common/enums/EColor';
 import { useChatStore } from '@/@webcore/stores/chat';
+import VDialogHandler from '@/components/VDialogHandler.vue';
 
 const contactStore = useContactStore();
 const labelTemplateStore = useLabelTemplateStore();
@@ -188,6 +189,7 @@ const photo = ref<string | null>(null);
 const photoFile = ref<File | null>(null);
 const photoPreview = ref<string | null>(null);
 const isCropModalOpen = ref(false);
+const isDeletePhotoDialogOpen = ref(false);
 const cropImageRef = ref<HTMLImageElement | null>(null);
 const cropCanvasRef = ref<HTMLCanvasElement | null>(null);
 const cropPreviewSize = 400;
@@ -866,6 +868,25 @@ const cancelCrop = () => {
   photoFile.value = null;
 };
 
+const removePhoto = (event: Event) => {
+  event.stopPropagation();
+  isDeletePhotoDialogOpen.value = true;
+};
+
+const handleRemovePhotoConfirm = async () => {
+  if (!contactId.value) return;
+
+  const result = await contactStore.deleteContactPhoto(contactId.value);
+
+  if (result) {
+    photo.value = null;
+    photoPreview.value = null;
+    photoFile.value = null;
+    await loadContactData();
+    await contactStore.listContact();
+  }
+};
+
 watch([contactId, isVisible], async ([newContactId, newIsVisible]) => {
   if (newIsVisible && newContactId) {
     await loadContactData();
@@ -930,6 +951,17 @@ onMounted(async () => {
                 <div class="photo-overlay">
                   <VIcon icon="tabler-camera" size="32" class="d-flex" />
                 </div>
+                <VBtn
+                  v-if="photoPreview || photo"
+                  icon
+                  size="x-small"
+                  color="error"
+                  variant="flat"
+                  class="photo-remove-btn"
+                  @click="removePhoto"
+                >
+                  <VIcon icon="tabler-trash" size="16" />
+                </VBtn>
               </div>
             </VCol>
           </VRow>
@@ -1157,6 +1189,13 @@ onMounted(async () => {
         </VCardText>
       </VCard>
     </VDialog>
+
+    <VDialogHandler
+      v-model="isDeletePhotoDialogOpen"
+      :title="$t('remove_photo')"
+      :message="$t('remove_photo_confirmation')"
+      @confirm="handleRemovePhotoConfirm"
+    />
   </VDialog>
 </template>
 
@@ -1189,6 +1228,15 @@ onMounted(async () => {
 
   &.hover .photo-overlay {
     opacity: 1;
+  }
+
+  .photo-remove-btn {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    z-index: 10;
+    pointer-events: auto;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   }
 }
 

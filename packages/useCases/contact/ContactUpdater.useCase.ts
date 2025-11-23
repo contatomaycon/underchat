@@ -82,7 +82,10 @@ export class ContactUpdaterUseCase {
       throw new Error(t('phone_ddi_required'));
     }
 
-    const currentContact = await this.contactService.viewContactById(contactId);
+    const currentContact = await this.contactService.viewContactById(
+      contactId,
+      accountId
+    );
 
     const currentDdi = currentContact?.phone_ddi ?? null;
     const newDdi = phoneDdi ?? null;

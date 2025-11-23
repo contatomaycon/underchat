@@ -2,20 +2,22 @@ import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { ViewContactRequest } from '@core/schema/contact/viewContact/request.schema';
-import { ContactViewerUseCase } from '@core/useCases/contact/ContactViewer.useCase';
+import { DeleteContactPhotoRequest } from '@core/schema/contact/deletePhoto/request.schema';
+import { ContactPhotoDeleterUseCase } from '@core/useCases/contact/ContactPhotoDeleter.useCase';
 
-export const viewContact = async (
+export const deletePhoto = async (
   request: FastifyRequest<{
-    Params: ViewContactRequest;
+    Params: DeleteContactPhotoRequest;
   }>,
   reply: FastifyReply
 ) => {
-  const contactViewerUseCase = container.resolve(ContactViewerUseCase);
+  const contactPhotoDeleterUseCase = container.resolve(
+    ContactPhotoDeleterUseCase
+  );
   const { t, tokenJwtData } = request;
 
   try {
-    const response = await contactViewerUseCase.execute(
+    const response = await contactPhotoDeleterUseCase.execute(
       t,
       request.params.contact_id,
       tokenJwtData.account_id
@@ -23,16 +25,15 @@ export const viewContact = async (
 
     if (response) {
       return sendResponse(reply, {
-        message: t('contact_view_successfully'),
+        message: t('contact_photo_deleted_successfully'),
         httpStatusCode: EHTTPStatusCode.ok,
-        data: response,
       });
     }
 
     request.server.logger.info(response, request.id);
 
     return sendResponse(reply, {
-      message: t('contact_not_found'),
+      message: t('contact_photo_delete_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {

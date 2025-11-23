@@ -1,17 +1,16 @@
 import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ContactService } from '@core/services/contact.service';
-import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
 
 @injectable()
-export class ContactViewerUseCase {
+export class ContactPhotoDeleterUseCase {
   constructor(private readonly contactService: ContactService) {}
 
   async execute(
     t: TFunction<'translation', undefined>,
     contactId: string,
     accountId: string
-  ): Promise<ViewContactResponse | null> {
+  ): Promise<boolean> {
     const contactExists =
       await this.contactService.existsContactById(contactId);
 
@@ -19,15 +18,15 @@ export class ContactViewerUseCase {
       throw new Error(t('contact_not_found'));
     }
 
-    const contact = await this.contactService.viewContactById(
+    const result = await this.contactService.deleteContactPhoto(
       contactId,
       accountId
     );
 
-    if (!contact) {
-      throw new Error(t('contact_not_found'));
+    if (!result) {
+      throw new Error(t('contact_photo_delete_error'));
     }
 
-    return contact;
+    return true;
   }
 }
