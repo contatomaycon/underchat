@@ -92,6 +92,9 @@ export const chatMappings = () => {
             phone_ddi: {
               type: 'keyword',
             },
+            photo: {
+              type: 'keyword',
+            },
           },
         },
         photo: {
