@@ -38,7 +38,11 @@ import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
 import { convertWaveformToBase64 } from '@core/common/functions/convertWaveform';
 import Redis from 'ioredis';
 import { EMessageType } from '@core/common/enums/EMessageType';
-import { downloadMediaMessage, WAMessageKey } from '@whiskeysockets/baileys';
+import {
+  downloadMediaMessage,
+  proto,
+  WAMessageKey,
+} from '@whiskeysockets/baileys';
 import { Buffer } from 'node:buffer';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IMessageMarkRead } from '@core/common/interfaces/IMessageMarkRead';
@@ -407,18 +411,19 @@ export class MessageUpsertConsume {
     getChat: IChat,
     data: IUpsertMessage
   ): Promise<boolean | null> {
-    if (data.type !== EMessageType.edit_text) {
-      return null;
-    }
+    if (data.type !== EMessageType.edit_text) return null;
 
-    const editedMessage = (data.message?.message as any)?.editedMessage;
-    const protocolMessage = editedMessage?.message?.protocolMessage;
+    const editedMessage = (data.message?.message?.editedMessage ??
+      data.message?.message) as proto.Message.IFutureProofMessage &
+      proto.IMessage;
+
+    const protocolMessage =
+      editedMessage?.message?.protocolMessage ?? editedMessage?.protocolMessage;
+
     const targetMessageId = protocolMessage?.key?.id;
     const editedContent = protocolMessage?.editedMessage;
 
-    if (!targetMessageId || !editedContent) {
-      return true;
-    }
+    if (!targetMessageId || !editedContent) return true;
 
     const targetMessage = await this.findMessageByKeyId(
       data.account_id,
