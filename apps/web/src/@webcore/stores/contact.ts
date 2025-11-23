@@ -117,23 +117,11 @@ export const useContactStore = defineStore('contact', {
         const data = response?.data;
 
         if (!data?.status || !data?.data) {
-          const mensage =
-            data?.message ?? this.i18n.global.t('contact_view_error');
-
-          this.showSnackbar(mensage, EColor.error);
-
           return null;
         }
 
         return data.data;
       } catch (error) {
-        let errorMessage = this.i18n.global.t('contact_view_error');
-        if (error instanceof AxiosError) {
-          errorMessage = error?.response?.data?.message ?? errorMessage;
-        }
-
-        this.showSnackbar(errorMessage, EColor.error);
-
         this.loading = false;
 
         return null;
