@@ -356,7 +356,7 @@ const addContact = async () => {
     notes: notes.value ?? null,
   };
 
-  const result = await contactStore.addContact(payload);
+  const result = await contactStore.addContact(payload, null);
 
   if (result && chatStore.activeChat?.chat_id && phoneNumber && phoneDdi) {
     await chatStore.updateChatContact(
@@ -399,7 +399,7 @@ const updateContact = async () => {
     notes: notes.value,
   };
 
-  const result = await contactStore.updateContact(payload, body);
+  const result = await contactStore.updateContact(payload, body, null);
 
   if (result) {
     await nextTick();

@@ -533,7 +533,6 @@
     "contact_export_error": "Ocurrió un error al exportar los contactos. Por favor, inténtalo de nuevo.",
     "nickname": "Apodo",
     "contacts": "Contactos",
-    "edit_contact": "Editar Contacto",
     "view_contact": "Ver Contacto",
     "delete_contact": "Eliminar Contacto",
     "delete_contact_confirmation": "¿Estás seguro de que deseas eliminar este contacto?",

@@ -33,6 +33,7 @@ export class ContactViewerRepository {
         phone_ddi: contact.phone_ddi,
         phone_partial: contact.phone_partial,
         nickname: contact.nickname,
+        photo: contact.photo,
         birthday: sql<
           string | null
         >`CASE WHEN ${contact.birthday} IS NULL THEN NULL ELSE to_char(${contact.birthday}, 'YYYY-MM-DD') END`,
@@ -91,6 +92,7 @@ export class ContactViewerRepository {
         phone_ddi: contact.phone_ddi,
         phone_partial: contact.phone_partial,
         nickname: contact.nickname,
+        photo: contact.photo,
         birthday: sql<
           string | null
         >`CASE WHEN ${contact.birthday} IS NULL THEN NULL ELSE to_char(${contact.birthday}, 'YYYY-MM-DD') END`,

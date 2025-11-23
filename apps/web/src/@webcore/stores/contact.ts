@@ -162,13 +162,94 @@ export const useContactStore = defineStore('contact', {
       }
     },
 
-    async addContact(payload: CreateContactRequest): Promise<boolean> {
+    extractFieldValue(
+      field: string | { value: string } | null | undefined
+    ): string {
+      if (field === null || field === undefined) {
+        return '';
+      }
+
+      if (typeof field === 'object' && 'value' in field) {
+        return field.value ?? '';
+      }
+
+      if (typeof field === 'string') {
+        return field;
+      }
+
+      return '';
+    },
+
+    async addContact(
+      payload: CreateContactRequest,
+      photoFile?: File | null
+    ): Promise<boolean> {
       try {
         this.loading = true;
 
+        const formData = new FormData();
+        const labelTemplateId = this.extractFieldValue(
+          payload.label_template_id as string | { value: string } | null
+        );
+        if (labelTemplateId) {
+          formData.append('label_template_id', labelTemplateId);
+        }
+        formData.append(
+          'name',
+          this.extractFieldValue(payload.name as string | { value: string })
+        );
+        const lastName = this.extractFieldValue(
+          payload.last_name as string | { value: string } | null
+        );
+        if (lastName) {
+          formData.append('last_name', lastName);
+        }
+        const email = this.extractFieldValue(
+          payload.email as string | { value: string } | null
+        );
+        if (email) {
+          formData.append('email', email);
+        }
+        formData.append(
+          'phone_ddi',
+          this.extractFieldValue(
+            payload.phone_ddi as string | { value: string }
+          )
+        );
+        formData.append(
+          'phone',
+          this.extractFieldValue(payload.phone as string | { value: string })
+        );
+        const nickname = this.extractFieldValue(
+          payload.nickname as string | { value: string } | null
+        );
+        if (nickname) {
+          formData.append('nickname', nickname);
+        }
+        const birthday = this.extractFieldValue(
+          payload.birthday as string | { value: string } | null
+        );
+        if (birthday) {
+          formData.append('birthday', birthday);
+        }
+        const notes = this.extractFieldValue(
+          payload.notes as string | { value: string } | null
+        );
+        if (notes) {
+          formData.append('notes', notes);
+        }
+        if (photoFile) {
+          formData.append('photo', photoFile);
+        }
+
         const response = await axios.post<IApiResponse<boolean>>(
           `/contact`,
-          payload
+          formData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+            },
+          }
         );
 
         this.loading = false;
@@ -206,14 +287,79 @@ export const useContactStore = defineStore('contact', {
 
     async updateContact(
       payload: EditContactParamsRequest,
-      body: UpdateContactRequest
+      body: UpdateContactRequest,
+      photoFile?: File | null
     ): Promise<boolean> {
       try {
         this.loading = true;
 
+        const formData = new FormData();
+        const labelTemplateId = this.extractFieldValue(
+          body.label_template_id as string | { value: string } | null
+        );
+        if (labelTemplateId) {
+          formData.append('label_template_id', labelTemplateId);
+        }
+        const name = this.extractFieldValue(
+          body.name as string | { value: string } | null
+        );
+        if (name) {
+          formData.append('name', name);
+        }
+        const lastName = this.extractFieldValue(
+          body.last_name as string | { value: string } | null
+        );
+        if (lastName) {
+          formData.append('last_name', lastName);
+        }
+        const email = this.extractFieldValue(
+          body.email as string | { value: string } | null
+        );
+        if (email) {
+          formData.append('email', email);
+        }
+        const phoneDdi = this.extractFieldValue(
+          body.phone_ddi as string | { value: string } | null
+        );
+        if (phoneDdi) {
+          formData.append('phone_ddi', phoneDdi);
+        }
+        const phone = this.extractFieldValue(
+          body.phone as string | { value: string } | null
+        );
+        if (phone) {
+          formData.append('phone', phone);
+        }
+        const nickname = this.extractFieldValue(
+          body.nickname as string | { value: string } | null
+        );
+        if (nickname) {
+          formData.append('nickname', nickname);
+        }
+        const birthday = this.extractFieldValue(
+          body.birthday as string | { value: string } | null
+        );
+        if (birthday) {
+          formData.append('birthday', birthday);
+        }
+        const notes = this.extractFieldValue(
+          body.notes as string | { value: string } | null
+        );
+        if (notes) {
+          formData.append('notes', notes);
+        }
+        if (photoFile) {
+          formData.append('photo', photoFile);
+        }
+
         const response = await axios.patch<IApiResponse<boolean>>(
           `/contact/${payload.contact_id}`,
-          body
+          formData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+            },
+          }
         );
 
         this.loading = false;

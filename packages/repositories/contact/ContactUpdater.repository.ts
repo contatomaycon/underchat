@@ -57,6 +57,10 @@ export class ContactUpdaterRepository {
       inputUpdate.notes = input.notes;
     }
 
+    if (input.photo !== undefined) {
+      inputUpdate.photo = input.photo;
+    }
+
     inputUpdate.is_valided = input.is_valided ?? false;
 
     return inputUpdate;

@@ -208,6 +208,24 @@ export class ContactUpdaterUseCase {
     }
   }
 
+  private extractFieldValue(
+    field: string | { value: string } | null | undefined
+  ): string | null {
+    if (field === null || field === undefined) {
+      return null;
+    }
+
+    if (typeof field === 'object' && 'value' in field) {
+      return field.value ?? null;
+    }
+
+    if (typeof field === 'string') {
+      return field;
+    }
+
+    return null;
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -221,10 +239,38 @@ export class ContactUpdaterUseCase {
       throw new Error(t('contact_not_found'));
     }
 
-    if (body?.label_template_id) {
+    const labelTemplateId = this.extractFieldValue(
+      body.label_template_id as string | { value: string } | null
+    );
+    const name = this.extractFieldValue(
+      body.name as string | { value: string } | null
+    );
+    const lastName = this.extractFieldValue(
+      body.last_name as string | { value: string } | null
+    );
+    const email = this.extractFieldValue(
+      body.email as string | { value: string } | null
+    );
+    const phoneDdi = this.extractFieldValue(
+      body.phone_ddi as string | { value: string } | null
+    );
+    const phone = this.extractFieldValue(
+      body.phone as string | { value: string } | null
+    );
+    const nickname = this.extractFieldValue(
+      body.nickname as string | { value: string } | null
+    );
+    const birthday = this.extractFieldValue(
+      body.birthday as string | { value: string } | null
+    );
+    const notes = this.extractFieldValue(
+      body.notes as string | { value: string } | null
+    );
+
+    if (labelTemplateId) {
       const labelTemplateExists =
         await this.labelTemplateService.existsLabelTemplateById(
-          body.label_template_id
+          labelTemplateId
         );
 
       if (!labelTemplateExists) {
@@ -232,22 +278,30 @@ export class ContactUpdaterUseCase {
       }
     }
 
-    this.validateBirthDate(t, body.birthday);
+    this.validateBirthDate(t, birthday);
 
     const [normalizedPhone] = await Promise.all([
-      this.validatePhone(t, accountId, contactId, body.phone, body.phone_ddi),
-      this.validateEmail(t, accountId, contactId, body.email),
+      this.validatePhone(t, accountId, contactId, phone, phoneDdi),
+      this.validateEmail(t, accountId, contactId, email),
     ]);
 
     const bodyToUpdate: UpdateContactRequest = {
-      ...body,
-      phone: normalizedPhone?.phone ?? null,
-      phone_ddi: normalizedPhone?.phoneDdi ?? null,
+      label_template_id: labelTemplateId,
+      name,
+      last_name: lastName,
+      email,
+      phone_ddi: normalizedPhone?.phoneDdi ?? phoneDdi,
+      phone: normalizedPhone?.phone ?? phone,
+      nickname,
+      birthday,
+      notes,
+      photo: body.photo,
     };
 
     const contactUpdater = await this.contactService.updateContactById(
       bodyToUpdate,
-      contactId
+      contactId,
+      accountId
     );
 
     if (!contactUpdater) {

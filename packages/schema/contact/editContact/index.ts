@@ -10,6 +10,7 @@ export const editContactSchema = {
   description: 'Edita um contato existente',
   tags: [ETagSwagger.contact],
   produces: ['application/json'],
+  consumes: ['multipart/form-data'],
   security: [
     {
       authenticateJwt: [],

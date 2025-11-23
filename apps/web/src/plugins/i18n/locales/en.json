@@ -533,7 +533,6 @@
     "contact_export_error": "An error occurred while exporting contacts. Please try again.",
     "nickname": "Nickname",
     "contacts": "Contacts",
-    "edit_contact": "Edit Contact",
     "view_contact": "View Contact",
     "delete_contact": "Delete Contact",
     "delete_contact_confirmation": "Are you sure you want to delete this contact?",
