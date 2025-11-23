@@ -2,6 +2,7 @@
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import ChatQueue from './ChatQueue.vue';
 import AppAddContact from '@/components/contact/AppAddContact.vue';
+import AppEditContact from '@/components/contact/AppEditContact.vue';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useContactStore } from '@/@webcore/stores/contact';
 import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
@@ -51,6 +52,10 @@ const contactScrollContainer = ref<InstanceType<
 const accumulatedContacts = ref<ListContactResponse[]>([]);
 const isValidateContactDialogOpen = ref(false);
 const contactToValidate = ref<string | null>(null);
+const isEditContactModalOpen = ref(false);
+const editContactId = ref<string | null>(null);
+const hoveredContactId = ref<string | null>(null);
+const editingContactId = ref<string | null>(null);
 
 type FilterType = 'new' | 'all' | 'in_chat' | 'queue' | 'chatbot';
 
@@ -249,6 +254,24 @@ const confirmValidateContact = async () => {
   }
 
   contactToValidate.value = null;
+};
+
+const handleEditContact = (contactId: string, event: Event) => {
+  event.stopPropagation();
+  editContactId.value = contactId;
+  editingContactId.value = contactId;
+  isEditContactModalOpen.value = true;
+};
+
+const handleEditContactModalClose = (isOpen: boolean) => {
+  if (!isOpen) {
+    editContactId.value = null;
+    editingContactId.value = null;
+    currentPageContacts.value = 1;
+    accumulatedContacts.value = [];
+
+    loadContacts();
+  }
 };
 
 watch(debouncedContactSearch, () => {
@@ -470,7 +493,12 @@ onMounted(async () => {
           v-for="contact in accumulatedContacts"
           :key="`contact-${contact.contact_id}`"
           class="contact-item d-flex align-center gap-3 pa-3 cursor-pointer"
+          :class="{
+            'contact-item--editing': editingContactId === contact.contact_id,
+          }"
           @click="handleContactClick(contact)"
+          @mouseenter="hoveredContactId = contact.contact_id"
+          @mouseleave="hoveredContactId = null"
         >
           <VAvatar size="40" color="primary" variant="tonal">
             <VIcon size="20">tabler-user</VIcon>
@@ -490,37 +518,54 @@ onMounted(async () => {
             </div>
           </div>
           <div class="d-flex align-center gap-2">
-            <IconBtn
-              v-if="!contact.is_valided"
-              size="small"
-              variant="text"
-              color="primary"
-              class="contact-validate-btn"
-              @click.stop="handleValidateContact(contact.contact_id, $event)"
-            >
-              <VIcon size="18">tabler-refresh</VIcon>
-              <VTooltip activator="parent" location="top">
-                {{ $t('validate_contact') }}
-              </VTooltip>
-            </IconBtn>
-            <VChip
-              v-if="contact.is_valided"
-              size="x-small"
-              color="success"
-              variant="flat"
-              class="contact-validation-chip contact-validation-chip--validated"
-            >
-              <VIcon size="10" class="me-0">tabler-check</VIcon>
-            </VChip>
-            <VChip
-              v-else
-              size="x-small"
-              color="error"
-              variant="flat"
-              class="contact-validation-chip contact-validation-chip--not-validated"
-            >
-              <VIcon size="10" class="me-0">tabler-x</VIcon>
-            </VChip>
+            <template v-if="hoveredContactId === contact.contact_id">
+              <IconBtn
+                v-if="!contact.is_valided"
+                size="small"
+                variant="text"
+                color="primary"
+                class="contact-action-btn"
+                @click.stop="handleValidateContact(contact.contact_id, $event)"
+              >
+                <VIcon size="18">tabler-refresh</VIcon>
+                <VTooltip activator="parent" location="top">
+                  {{ $t('validate_contact') }}
+                </VTooltip>
+              </IconBtn>
+              <IconBtn
+                size="small"
+                variant="text"
+                color="primary"
+                class="contact-action-btn"
+                @click.stop="handleEditContact(contact.contact_id, $event)"
+              >
+                <VIcon size="18">tabler-edit</VIcon>
+                <VTooltip activator="parent" location="top">
+                  {{ $t('edit_contact') }}
+                </VTooltip>
+              </IconBtn>
+            </template>
+
+            <template v-else>
+              <VChip
+                v-if="contact.is_valided"
+                size="x-small"
+                color="success"
+                variant="flat"
+                class="contact-validation-chip contact-validation-chip--validated"
+              >
+                <VIcon size="10" class="me-0">tabler-check</VIcon>
+              </VChip>
+              <VChip
+                v-else
+                size="x-small"
+                color="error"
+                variant="flat"
+                class="contact-validation-chip contact-validation-chip--not-validated"
+              >
+                <VIcon size="10" class="me-0">tabler-x</VIcon>
+              </VChip>
+            </template>
           </div>
         </li>
 
@@ -601,6 +646,12 @@ onMounted(async () => {
     @update:model-value="handleAddContactModalClose"
   />
 
+  <AppEditContact
+    v-model="isEditContactModalOpen"
+    :contact-id="editContactId"
+    @update:model-value="handleEditContactModalClose"
+  />
+
   <VDialogHandler
     v-model="isValidateContactDialogOpen"
     :title="$t('validate_contact')"
@@ -633,10 +684,18 @@ onMounted(async () => {
 
 .contact-item {
   border-radius: 8px;
-  transition: background-color 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease;
+  border: 1px solid transparent;
 
   &:hover {
     background-color: rgba(var(--v-theme-on-surface), 0.04);
+  }
+
+  &--editing {
+    background-color: rgba(var(--v-theme-primary), 0.08);
+    border-color: rgba(var(--v-theme-primary), 0.3);
   }
 }
 
@@ -666,13 +725,21 @@ onMounted(async () => {
   }
 }
 
-.contact-validate-btn {
+.contact-action-btn {
   opacity: 0;
   transition: opacity 0.2s ease;
 }
 
-.contact-item:hover .contact-validate-btn {
+.contact-item:hover .contact-action-btn {
   opacity: 1;
+}
+
+.contact-validation-chip {
+  transition: opacity 0.2s ease;
+}
+
+.contact-item:hover .contact-validation-chip {
+  opacity: 0;
 }
 
 .chat-filter-options {
