@@ -5,6 +5,8 @@ import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { mensageMappings } from '@core/mappings/mensage.mappings';
 import { IChat } from '@core/common/interfaces/IChat';
 import { chatMappings } from '@core/mappings/chat.mappings';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 
 type ElasticHit<T> = {
   _source?: T;
@@ -174,6 +176,94 @@ export class ChatService {
       console.error('Error clearing chat summary:', error);
       return false;
     }
+  };
+
+  findChatByPhone = async (
+    accountId: string,
+    workerId: string,
+    phone: string
+  ): Promise<IChat | null> => {
+    const candidates = buildCandidates(phone);
+    const shouldClauses: any[] = [];
+
+    if (Array.isArray(candidates) && candidates.length) {
+      shouldClauses.push({ terms: { phone: candidates } });
+    }
+
+    const queryElastic = {
+      size: 1,
+      _source: true,
+      query: {
+        bool: {
+          filter: [
+            {
+              nested: {
+                path: 'account',
+                query: { term: { 'account.id': accountId } },
+              },
+            },
+            {
+              nested: {
+                path: 'worker',
+                query: { term: { 'worker.id': workerId } },
+              },
+            },
+            {
+              terms: {
+                status: [
+                  EChatStatus.in_chat,
+                  EChatStatus.queue,
+                  EChatStatus.ura,
+                ],
+              },
+            },
+          ],
+          ...(shouldClauses.length
+            ? {
+                must: [
+                  { bool: { should: shouldClauses, minimum_should_match: 1 } },
+                ],
+              }
+            : {}),
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select<IChat>(
+      EElasticIndex.chat,
+      queryElastic
+    );
+
+    const hit = result?.hits?.hits?.[0] as ElasticHit<IChat> | undefined;
+    const chat = hit?._source ?? null;
+
+    if (chat && Array.isArray(chat.summary)) {
+      chat.summary = chat.summary[0] as IChat['summary'];
+    }
+
+    return chat;
+  };
+
+  updateChatSector = async (
+    chatId: string,
+    sector: IChat['sector']
+  ): Promise<boolean> => {
+    return this.elasticDatabaseService.update(
+      EElasticIndex.chat,
+      { sector },
+      chatId
+    );
+  };
+
+  updateChatWorker = async (
+    chatId: string,
+    worker: IChat['worker']
+  ): Promise<boolean> => {
+    return this.elasticDatabaseService.update(
+      EElasticIndex.chat,
+      { worker },
+      chatId
+    );
   };
 
   findMessageByMessageId = async (

@@ -147,6 +147,7 @@
   "chat_update_user_not_found": "¡Chat de usuario no encontrado!",
   "chat_create_success": "¡Chat creado con éxito!",
   "chat_create_not_found": "¡Chat no encontrado para crear!",
+  "chat_already_in_service": "¡Ya existe un servicio en curso para este número!",
   "chat_not_found": "¡Chat no encontrado!",
   "chat_access_denied": "¡Acceso denegado al chat!",
   "chat_create_error": "¡Error al crear el chat!",
