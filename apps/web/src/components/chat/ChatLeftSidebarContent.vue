@@ -17,6 +17,7 @@ import axios from '@webcore/axios';
 import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { IChat } from '@core/common/interfaces/IChat';
 import { EColor } from '@core/common/enums/EColor';
+import VDialogHandler from '@/components/VDialogHandler.vue';
 
 const emit = defineEmits<{
   (e: 'openChat', id: ListChatsResult['chat_id']): void;
@@ -48,6 +49,8 @@ const contactScrollContainer = ref<InstanceType<
   typeof PerfectScrollbar
 > | null>(null);
 const accumulatedContacts = ref<ListContactResponse[]>([]);
+const isValidateContactDialogOpen = ref(false);
+const contactToValidate = ref<string | null>(null);
 
 type FilterType = 'new' | 'all' | 'in_chat' | 'queue' | 'chatbot';
 
@@ -220,6 +223,32 @@ const handleAddContactModalClose = (isOpen: boolean) => {
     accumulatedContacts.value = [];
     loadContacts();
   }
+};
+
+const handleValidateContact = (contactId: string, event: Event) => {
+  event.stopPropagation();
+  contactToValidate.value = contactId;
+  isValidateContactDialogOpen.value = true;
+};
+
+const confirmValidateContact = async () => {
+  if (!contactToValidate.value) return;
+
+  const result = await contactStore.validateContact(contactToValidate.value);
+
+  if (result) {
+    const contactIndex = accumulatedContacts.value.findIndex(
+      (c) => c.contact_id === contactToValidate.value
+    );
+    if (contactIndex !== -1) {
+      accumulatedContacts.value[contactIndex] = {
+        ...accumulatedContacts.value[contactIndex],
+        is_valided: true,
+      };
+    }
+  }
+
+  contactToValidate.value = null;
 };
 
 watch(debouncedContactSearch, () => {
@@ -447,9 +476,11 @@ onMounted(async () => {
             <VIcon size="20">tabler-user</VIcon>
           </VAvatar>
           <div class="flex-grow-1">
-            <div class="text-body-1 font-weight-medium">
-              {{ contact.name }}
-              {{ contact.last_name || '' }}
+            <div class="d-flex align-center gap-2">
+              <div class="text-body-1 font-weight-medium">
+                {{ contact.name }}
+                {{ contact.last_name || '' }}
+              </div>
             </div>
             <div
               v-if="contact.phone_partial"
@@ -457,6 +488,39 @@ onMounted(async () => {
             >
               {{ contact.phone_partial }}
             </div>
+          </div>
+          <div class="d-flex align-center gap-2">
+            <IconBtn
+              v-if="!contact.is_valided"
+              size="small"
+              variant="text"
+              color="primary"
+              class="contact-validate-btn"
+              @click.stop="handleValidateContact(contact.contact_id, $event)"
+            >
+              <VIcon size="18">tabler-refresh</VIcon>
+              <VTooltip activator="parent" location="top">
+                {{ $t('validate_contact') }}
+              </VTooltip>
+            </IconBtn>
+            <VChip
+              v-if="contact.is_valided"
+              size="x-small"
+              color="success"
+              variant="flat"
+              class="contact-validation-chip contact-validation-chip--validated"
+            >
+              <VIcon size="10" class="me-0">tabler-check</VIcon>
+            </VChip>
+            <VChip
+              v-else
+              size="x-small"
+              color="error"
+              variant="flat"
+              class="contact-validation-chip contact-validation-chip--not-validated"
+            >
+              <VIcon size="10" class="me-0">tabler-x</VIcon>
+            </VChip>
           </div>
         </li>
 
@@ -536,6 +600,13 @@ onMounted(async () => {
     v-model="isAddContactModalOpen"
     @update:model-value="handleAddContactModalClose"
   />
+
+  <VDialogHandler
+    v-model="isValidateContactDialogOpen"
+    :title="$t('validate_contact')"
+    :message="$t('validate_contact_confirmation')"
+    @confirm="confirmValidateContact"
+  />
 </template>
 
 <style lang="scss">
@@ -567,6 +638,41 @@ onMounted(async () => {
   &:hover {
     background-color: rgba(var(--v-theme-on-surface), 0.04);
   }
+}
+
+.contact-validation-chip {
+  font-size: 0.5rem;
+  height: 16px;
+  min-width: 16px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &--validated {
+    background-color: rgba(var(--v-theme-success), 0.12) !important;
+    color: rgb(var(--v-theme-success)) !important;
+  }
+
+  &--not-validated {
+    background-color: rgba(var(--v-theme-error), 0.12) !important;
+    color: rgb(var(--v-theme-error)) !important;
+  }
+
+  .v-icon {
+    font-size: 10px;
+    width: 10px;
+    height: 10px;
+  }
+}
+
+.contact-validate-btn {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.contact-item:hover .contact-validate-btn {
+  opacity: 1;
 }
 
 .chat-filter-options {
