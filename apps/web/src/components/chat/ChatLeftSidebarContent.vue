@@ -32,7 +32,7 @@ const perPageInChat = ref(10);
 type FilterType = 'new' | 'all' | 'in_chat' | 'queue' | 'chatbot';
 
 const activeFilter = ref<FilterType>('all');
-const expandedFilter = ref<FilterType | null>(null);
+const expandedFilter = ref<FilterType | null>('all');
 
 const filteredInChat = computed(() => {
   if (activeFilter.value === 'all' || activeFilter.value === 'in_chat') {
@@ -87,6 +87,19 @@ const handleQueueClick = (
   }
 
   emit('openChat', chatId);
+};
+
+const handleFilterClick = (filter: FilterType) => {
+  if (activeFilter.value === filter && expandedFilter.value === filter) {
+    return;
+  }
+
+  activeFilter.value = filter;
+  expandedFilter.value = filter;
+
+  if (filter === 'all' || filter === 'in_chat' || filter === 'queue') {
+    loadChatsByFilter();
+  }
 };
 
 const loadChatsByFilter = async () => {
@@ -187,10 +200,7 @@ onMounted(async () => {
           :variant="activeFilter === 'new' ? 'flat' : 'text'"
           :color="activeFilter === 'new' ? 'primary' : undefined"
           class="chat-filter-btn w-100"
-          @click="
-            activeFilter = 'new';
-            expandedFilter = expandedFilter === 'new' ? null : 'new';
-          "
+          @click="handleFilterClick('new')"
         >
           <VIcon size="24">tabler-plus</VIcon>
         </VBtn>
@@ -200,11 +210,7 @@ onMounted(async () => {
           :variant="activeFilter === 'all' ? 'flat' : 'text'"
           :color="activeFilter === 'all' ? 'primary' : undefined"
           class="chat-filter-btn w-100"
-          @click="
-            activeFilter = 'all';
-            expandedFilter = expandedFilter === 'all' ? null : 'all';
-            loadChatsByFilter();
-          "
+          @click="handleFilterClick('all')"
         >
           <VIcon size="24">tabler-list</VIcon>
         </VBtn>
@@ -214,11 +220,7 @@ onMounted(async () => {
           :variant="activeFilter === 'in_chat' ? 'flat' : 'text'"
           :color="activeFilter === 'in_chat' ? 'primary' : undefined"
           class="chat-filter-btn w-100"
-          @click="
-            activeFilter = 'in_chat';
-            expandedFilter = expandedFilter === 'in_chat' ? null : 'in_chat';
-            loadChatsByFilter();
-          "
+          @click="handleFilterClick('in_chat')"
         >
           <VIcon size="24">tabler-message-circle</VIcon>
         </VBtn>
@@ -228,11 +230,7 @@ onMounted(async () => {
           :variant="activeFilter === 'queue' ? 'flat' : 'text'"
           :color="activeFilter === 'queue' ? 'primary' : undefined"
           class="chat-filter-btn w-100"
-          @click="
-            activeFilter = 'queue';
-            expandedFilter = expandedFilter === 'queue' ? null : 'queue';
-            loadChatsByFilter();
-          "
+          @click="handleFilterClick('queue')"
         >
           <VIcon size="24">tabler-clock</VIcon>
         </VBtn>
@@ -242,10 +240,7 @@ onMounted(async () => {
           :variant="activeFilter === 'chatbot' ? 'flat' : 'text'"
           :color="activeFilter === 'chatbot' ? 'primary' : undefined"
           class="chat-filter-btn w-100"
-          @click="
-            activeFilter = 'chatbot';
-            expandedFilter = expandedFilter === 'chatbot' ? null : 'chatbot';
-          "
+          @click="handleFilterClick('chatbot')"
         >
           <VIcon size="24">tabler-robot</VIcon>
         </VBtn>
