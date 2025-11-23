@@ -21,6 +21,7 @@ import { ViewContactResponse } from '@core/schema/contact/viewContact/response.s
 import { IViewWorkerNameAndId } from '@core/common/interfaces/IViewWorkerNameAndId';
 import { IViewAccountName } from '@core/common/interfaces/IViewAccountName';
 import { IViewUserNamePhoto } from '@core/common/interfaces/IViewUserNamePhoto';
+import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid';
 
 interface ContactData {
   contact: ViewContactResponse;
@@ -228,9 +229,17 @@ export class StartChatWithContactUseCase {
     currentDate: string
   ): IChat {
     const userData = requiredData.user;
+    const remoteJid = normalizePhoneToJid(
+      contactData.sensitiveData?.phone || null,
+      contactData.contact.phone_ddi || null
+    );
 
     return {
       ...existingChat,
+      message_key: existingChat.message_key || {
+        remote_jid: remoteJid || null,
+        remote_jid_alt: null,
+      },
       status: EChatStatus.in_chat,
       worker: {
         id: requiredData.worker.id,
@@ -263,9 +272,17 @@ export class StartChatWithContactUseCase {
     requiredData: RequiredData
   ): Promise<IChat> {
     const currentDate = new Date().toISOString();
+    const remoteJid = normalizePhoneToJid(
+      contactData.sensitiveData?.phone || null,
+      contactData.contact.phone_ddi || null
+    );
 
     const newChat: IChat = {
       chat_id: uuidv7(),
+      message_key: {
+        remote_jid: remoteJid || null,
+        remote_jid_alt: null,
+      },
       account: {
         id: requiredData.account.id,
         name: requiredData.account.name,
