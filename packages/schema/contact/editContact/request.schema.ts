@@ -92,6 +92,13 @@ export const updateContactRequestSchema = Type.Object({
     ])
   ),
   photo: Type.Optional(uploadFileRequestSchema),
+  image_url: Type.Optional(
+    Type.Union([
+      Type.String(),
+      Type.Object({ value: Type.String() }),
+      Type.Null(),
+    ])
+  ),
 });
 
 export type UpdateContactRequest = Static<typeof updateContactRequestSchema>;

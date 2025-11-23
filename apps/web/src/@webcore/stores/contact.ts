@@ -238,7 +238,12 @@ export const useContactStore = defineStore('contact', {
         if (notes) {
           formData.append('notes', notes);
         }
-        if (photoFile) {
+        const imageUrl = this.extractFieldValue(
+          payload.image_url as string | { value: string } | null
+        );
+        if (imageUrl) {
+          formData.append('image_url', imageUrl);
+        } else if (photoFile) {
           formData.append('photo', photoFile);
         }
 
@@ -348,7 +353,12 @@ export const useContactStore = defineStore('contact', {
         if (notes) {
           formData.append('notes', notes);
         }
-        if (photoFile) {
+        const imageUrl = this.extractFieldValue(
+          body.image_url as string | { value: string } | null
+        );
+        if (imageUrl) {
+          formData.append('image_url', imageUrl);
+        } else if (photoFile) {
           formData.append('photo', photoFile);
         }
 

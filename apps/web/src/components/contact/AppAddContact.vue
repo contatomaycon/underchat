@@ -138,6 +138,11 @@ const addContact = async () => {
   const phoneNumber = phone.value ? phone.value.replaceAll(/\D/g, '') : null;
   if (!phoneNumber) return;
 
+  const imageUrl =
+    photoPreview.value && !photoPreview.value.startsWith('data:')
+      ? photoPreview.value
+      : null;
+
   const result = await contactStore.addContact(
     {
       label_template_id: label_template_id.value ?? null,
@@ -149,8 +154,9 @@ const addContact = async () => {
       nickname: nickname.value ?? null,
       birthday: birthday.value ?? null,
       notes: notes.value ?? null,
+      image_url: imageUrl,
     },
-    photoFile.value
+    imageUrl ? null : photoFile.value
   );
 
   if (result) {

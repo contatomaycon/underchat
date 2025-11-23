@@ -238,7 +238,14 @@ export class ContactService {
   ): Promise<string | null> => {
     let photoUrl: string | null = null;
 
-    if (input.photo) {
+    const imageUrl = this.extractFieldValue(
+      input.image_url as string | { value: string } | null
+    );
+
+    if (imageUrl) {
+      photoUrl = imageUrl;
+    }
+    if (!imageUrl && input.photo) {
       const uploadResult = await this.storageService.uploadImage(
         input.photo,
         accountId
@@ -402,7 +409,14 @@ export class ContactService {
 
     let photoUrl: string | null | undefined = undefined;
 
-    if (input.photo && accountId) {
+    const imageUrl = this.extractFieldValue(
+      input.image_url as string | { value: string } | null
+    );
+
+    if (imageUrl) {
+      photoUrl = imageUrl;
+    }
+    if (!imageUrl && input.photo && accountId) {
       const uploadResult = await this.storageService.uploadImage(
         input.photo,
         accountId

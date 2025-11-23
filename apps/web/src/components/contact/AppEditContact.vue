@@ -338,10 +338,25 @@ const updateContact = async () => {
     notes: notes.value,
   };
 
+  let imageUrl: string | null = null;
+
+  if (!photoFile.value) {
+    if (photo.value && !photo.value.startsWith('data:')) {
+      imageUrl = photo.value;
+    } else if (photoPreview.value && !photoPreview.value.startsWith('data:')) {
+      imageUrl = photoPreview.value;
+    }
+  } else if (photoPreview.value && !photoPreview.value.startsWith('data:')) {
+    imageUrl = photoPreview.value;
+  }
+
   const result = await contactStore.updateContact(
     payload,
-    body,
-    photoFile.value
+    {
+      ...body,
+      image_url: imageUrl,
+    },
+    imageUrl ? null : photoFile.value
   );
 
   if (result) {
