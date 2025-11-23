@@ -236,7 +236,7 @@ function extractWaidFromLine(
   const colonIndex = afterWaid.indexOf(':');
   if (colonIndex === -1) return null;
 
-  const waid = afterWaid.slice(0, colonIndex).trim().replace(/[;:]/g, '');
+  const waid = afterWaid.slice(0, colonIndex).trim().replaceAll(/[;:]/g, '');
   const fullPhone = afterWaid
     .slice(colonIndex + 1)
     .trim()
