@@ -6,6 +6,7 @@ import { VForm } from 'vuetify/components';
 import { EColor } from '@core/common/enums/EColor';
 import axios from '@webcore/axios';
 import { IApiResponse } from '@core/common/interfaces/IApiResponse';
+import { setUser } from '@/@webcore/localStorage/user';
 
 defineEmits<{
   close: [];
@@ -532,7 +533,7 @@ const uploadPhoto = async (file: File) => {
     if (response.data?.status && response.data.data) {
       if (chatStore.user?.info) {
         chatStore.user.info.photo = response.data.data.photo;
-        chatStore.updateUser();
+        setUser(chatStore.user);
       }
       chatStore.showSnackbar(
         response.data.message || t('profile_photo_upload_success'),
@@ -565,7 +566,7 @@ const removePhoto = async () => {
     if (response.data?.status && response.data.data) {
       if (chatStore.user?.info) {
         chatStore.user.info.photo = response.data.data.photo;
-        chatStore.updateUser();
+        setUser(chatStore.user);
       }
       chatStore.showSnackbar(
         response.data.message || t('profile_photo_remove_success'),
@@ -595,38 +596,45 @@ const removePhoto = async () => {
     </div>
 
     <div class="text-center px-6">
-      <VBadge
-        location="bottom right"
-        offset-x="7"
-        offset-y="4"
-        bordered
-        :color="
-          resolveAvatarBadgeVariant(
-            chatStore.user?.chat_user?.status as EChatUserStatus
-          )
-        "
-        class="chat-user-profile-badge mb-3"
+      <div
+        class="profile-avatar-container position-relative d-inline-block mb-3"
       >
-        <VAvatar
-          size="84"
-          :variant="!chatStore.user?.info.photo ? 'tonal' : undefined"
+        <VBadge
+          location="bottom right"
+          offset-x="7"
+          offset-y="4"
+          bordered
           :color="
-            !chatStore.user?.info.photo
-              ? resolveAvatarBadgeVariant(
-                  chatStore.user?.chat_user?.status as EChatUserStatus
-                )
-              : undefined
+            resolveAvatarBadgeVariant(
+              chatStore.user?.chat_user?.status as EChatUserStatus
+            )
           "
-          class="cursor-pointer"
-          @click="openPhotoModal"
+          class="chat-user-profile-badge"
         >
-          <VImg
-            v-if="chatStore.user?.info.photo"
-            :src="chatStore.user?.info.photo"
-          />
-          <VImg v-else :src="'/images/svg/avatar-default.svg'" alt="Avatar" />
-        </VAvatar>
-      </VBadge>
+          <VAvatar
+            size="84"
+            :variant="!chatStore.user?.info.photo ? 'tonal' : undefined"
+            :color="
+              !chatStore.user?.info.photo
+                ? resolveAvatarBadgeVariant(
+                    chatStore.user?.chat_user?.status as EChatUserStatus
+                  )
+                : undefined
+            "
+            class="cursor-pointer profile-avatar"
+            @click="openPhotoModal"
+          >
+            <VImg
+              v-if="chatStore.user?.info.photo"
+              :src="chatStore.user?.info.photo"
+            />
+            <VImg v-else :src="'/images/svg/avatar-default.svg'" alt="Avatar" />
+          </VAvatar>
+        </VBadge>
+        <div class="profile-avatar-overlay d-flex align-center justify-center">
+          <VIcon icon="tabler-camera" size="24" color="white" />
+        </div>
+      </div>
       <h5 class="text-h5">
         {{ chatStore.user?.info.name }}
       </h5>
@@ -917,5 +925,34 @@ const removePhoto = async () => {
   bottom: -6px;
   right: -6px;
   cursor: nwse-resize;
+}
+
+.profile-avatar-container {
+  position: relative;
+  display: inline-block;
+}
+
+.profile-avatar {
+  transition: all 0.3s ease;
+}
+
+.profile-avatar-container:hover .profile-avatar {
+  transform: scale(1.05);
+  filter: brightness(0.9);
+}
+
+.profile-avatar-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.profile-avatar-container:hover .profile-avatar-overlay {
+  opacity: 1;
 }
 </style>
