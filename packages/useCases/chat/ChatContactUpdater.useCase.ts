@@ -57,6 +57,7 @@ export class ChatContactUpdaterUseCase {
         name: contact.name,
         phone: contact.phone_partial ?? body.phone,
         phone_ddi: contact.phone_ddi ?? body.phone_ddi,
+        photo: contact.photo ?? null,
       },
     };
 

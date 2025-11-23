@@ -31,10 +31,15 @@ const isChatContactActive = computed(() => {
       }"
       :aria-disabled="props.disabled ? 'true' : undefined"
     >
-      <VAvatar size="40" :variant="!props.user.photo ? 'tonal' : undefined">
+      <VAvatar
+        size="40"
+        :variant="
+          !(props.user.contact?.photo ?? props.user.photo) ? 'tonal' : undefined
+        "
+      >
         <VImg
-          v-if="props.user.photo"
-          :src="props.user.photo"
+          v-if="props.user.contact?.photo ?? props.user.photo"
+          :src="props.user.contact?.photo ?? props.user.photo ?? ''"
           :alt="props.user.contact?.name ?? props.user.name ?? ''"
         />
         <VImg
