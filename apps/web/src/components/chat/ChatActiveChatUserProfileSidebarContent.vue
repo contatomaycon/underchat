@@ -289,6 +289,42 @@ const loadContactData = async () => {
   }
 };
 
+const resetFormFields = () => {
+  name.value = null;
+  last_name.value = null;
+  phone.value = null;
+  phone_ddi.value = '55';
+  email.value = null;
+  nickname.value = null;
+  birthday.value = null;
+  notes.value = null;
+  label_template_id.value = null;
+};
+
+const processPhoneFromContact = (
+  contactPhone: string,
+  contactPhoneDdi?: string | null
+) => {
+  const phoneStr = contactPhoneDdi
+    ? `+${contactPhoneDdi} ${contactPhone}`
+    : contactPhone;
+  return extractPhoneAndDdi(phoneStr);
+};
+
+const processPhoneFromChat = (chatPhone: string) => {
+  const phoneStr = chatPhone.startsWith('+') ? chatPhone : `+${chatPhone}`;
+  return extractPhoneAndDdi(phoneStr);
+};
+
+const applyPhoneData = (phoneAndDdi: ReturnType<typeof extractPhoneAndDdi>) => {
+  if (!phoneAndDdi) return;
+
+  phone.value = phoneAndDdi.phone;
+  if (phoneAndDdi.phone_ddi) {
+    phone_ddi.value = phoneAndDdi.phone_ddi;
+  }
+};
+
 const loadChatData = () => {
   if (!chatStore.activeChat) return;
 
@@ -299,39 +335,21 @@ const loadChatData = () => {
     return;
   }
 
+  resetFormFields();
   name.value = activeChat.contact?.name ?? activeChat.name ?? null;
-  last_name.value = null;
-
-  phone.value = null;
-  phone_ddi.value = '55';
-  email.value = null;
-  nickname.value = null;
-  birthday.value = null;
-  notes.value = null;
-  label_template_id.value = null;
 
   if (activeChat.contact?.phone) {
-    const phoneStr = activeChat.contact.phone_ddi
-      ? `+${activeChat.contact.phone_ddi} ${activeChat.contact.phone}`
-      : activeChat.contact.phone;
-    const phoneAndDdi = extractPhoneAndDdi(phoneStr);
-    if (phoneAndDdi) {
-      phone.value = phoneAndDdi.phone;
-      if (phoneAndDdi.phone_ddi) {
-        phone_ddi.value = phoneAndDdi.phone_ddi;
-      }
-    }
-  } else if (activeChat.phone) {
-    const phoneStr = activeChat.phone.startsWith('+')
-      ? activeChat.phone
-      : `+${activeChat.phone}`;
-    const phoneAndDdi = extractPhoneAndDdi(phoneStr);
-    if (phoneAndDdi) {
-      phone.value = phoneAndDdi.phone;
-      if (phoneAndDdi.phone_ddi) {
-        phone_ddi.value = phoneAndDdi.phone_ddi;
-      }
-    }
+    const phoneAndDdi = processPhoneFromContact(
+      activeChat.contact.phone,
+      activeChat.contact.phone_ddi
+    );
+    applyPhoneData(phoneAndDdi);
+    return;
+  }
+
+  if (activeChat.phone) {
+    const phoneAndDdi = processPhoneFromChat(activeChat.phone);
+    applyPhoneData(phoneAndDdi);
   }
 };
 
@@ -463,6 +481,10 @@ const downloadPreviewImage = async (url: string, filename?: string | null) => {
       globalThis.URL.revokeObjectURL(blobUrl);
     }, 100);
   } catch (error) {
+    if (error instanceof Error) {
+      console.error('Error downloading image:', error.message);
+    }
+
     const anchor = document.createElement('a');
 
     anchor.href = url;

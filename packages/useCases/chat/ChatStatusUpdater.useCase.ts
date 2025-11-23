@@ -86,9 +86,9 @@ export class ChatStatusUpdaterUseCase {
     const updatedChat: IChat = {
       ...chat,
       status,
-      user: user !== undefined ? user : chat.user,
-      started_at: startedAt !== undefined ? startedAt : chat.started_at,
-      closed_at: closedAt !== undefined ? closedAt : chat.closed_at,
+      user: user === undefined ? chat.user : user,
+      started_at: startedAt === undefined ? chat.started_at : startedAt,
+      closed_at: closedAt === undefined ? chat.closed_at : closedAt,
       summary: {
         last_message: chat.summary?.last_message ?? null,
         last_date: chat.summary?.last_date ?? null,

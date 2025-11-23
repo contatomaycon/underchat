@@ -791,39 +791,66 @@ export class MessageUpsertConsume {
 
     for (const line of lines) {
       const trimmed = line.trim();
-
-      if (trimmed.startsWith('FN:')) {
-        this.parseFullName(trimmed.substring(3).trim(), result);
-        continue;
-      }
-
-      if (trimmed.startsWith('N:')) {
-        const nValue = trimmed.substring(2).trim();
-        const parts = nValue.split(';').map((p) => p.trim());
-
-        for (let i = 1; i < parts.length; i++) {
-          if (parts[i] && !result.name) {
-            this.parseFullName(parts[i], result);
-            break;
-          }
-        }
-        continue;
-      }
-
-      if (trimmed.startsWith('TEL') || trimmed.includes('.TEL')) {
-        this.parseTelephone(trimmed, result);
-        continue;
-      }
-
-      if (trimmed.startsWith('EMAIL:') || trimmed.includes('.EMAIL')) {
-        const emailMatch = trimmed.match(/EMAIL[^:]*:(.+)/);
-        if (emailMatch) {
-          result.email = emailMatch[1].trim();
-        }
-      }
+      this.processVCardLine(trimmed, result);
     }
 
     return result;
+  }
+
+  private processVCardLine(
+    trimmed: string,
+    result: {
+      name?: string;
+      last_name?: string;
+      phone?: string;
+      phone_ddi?: string;
+      email?: string;
+    }
+  ): void {
+    if (trimmed.startsWith('FN:')) {
+      this.parseFullName(trimmed.substring(3).trim(), result);
+      return;
+    }
+
+    if (trimmed.startsWith('N:')) {
+      this.processNLine(trimmed, result);
+      return;
+    }
+
+    if (trimmed.startsWith('TEL') || trimmed.includes('.TEL')) {
+      this.parseTelephone(trimmed, result);
+      return;
+    }
+
+    if (trimmed.startsWith('EMAIL:') || trimmed.includes('.EMAIL')) {
+      this.processEmailLine(trimmed, result);
+    }
+  }
+
+  private processNLine(
+    trimmed: string,
+    result: {
+      name?: string;
+      last_name?: string;
+    }
+  ): void {
+    const nValue = trimmed.substring(2).trim();
+    const parts = nValue.split(';').map((p) => p.trim());
+
+    for (let i = 1; i < parts.length; i++) {
+      if (parts[i] && !result.name) {
+        this.parseFullName(parts[i], result);
+        break;
+      }
+    }
+  }
+
+  private processEmailLine(trimmed: string, result: { email?: string }): void {
+    const emailRegex = /EMAIL[^:]*:(.+)/;
+    const emailMatch = emailRegex.exec(trimmed);
+    if (emailMatch) {
+      result.email = emailMatch[1].trim();
+    }
   }
 
   private parseFullName(
@@ -878,8 +905,8 @@ export class MessageUpsertConsume {
       phone_ddi?: string;
     }
   ): void {
-    if (fullPhone && fullPhone.trim()) {
-      const fullPhoneTrimmed = fullPhone.trim();
+    const fullPhoneTrimmed = fullPhone?.trim();
+    if (fullPhoneTrimmed) {
       const fullPhoneWithPlus = fullPhoneTrimmed.startsWith('+')
         ? fullPhoneTrimmed
         : `+${fullPhoneTrimmed}`;

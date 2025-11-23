@@ -737,7 +737,6 @@ const onCropResize = (e: MouseEvent | TouchEvent) => {
   const minSize = 50;
 
   const minWidth = minSize;
-  const minHeight = minSize;
 
   const fixedPoint = { x: fixedX, y: fixedY };
   let dimensions = applyMinSizeConstraint(handle, fixedPoint, minWidth, {

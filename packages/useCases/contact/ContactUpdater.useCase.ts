@@ -9,6 +9,8 @@ import { buildCandidatesWithDdi } from '@core/common/functions/buildCandidatesBR
 import { PhoneValidationService } from '@core/services/phoneValidation.service';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 
+type FieldValue = string | { value: string } | null;
+
 @injectable()
 export class ContactUpdaterUseCase {
   constructor(
@@ -243,32 +245,16 @@ export class ContactUpdaterUseCase {
     }
 
     const labelTemplateId = this.extractFieldValue(
-      body.label_template_id as string | { value: string } | null
+      body.label_template_id as FieldValue
     );
-    const name = this.extractFieldValue(
-      body.name as string | { value: string } | null
-    );
-    const lastName = this.extractFieldValue(
-      body.last_name as string | { value: string } | null
-    );
-    const email = this.extractFieldValue(
-      body.email as string | { value: string } | null
-    );
-    const phoneDdi = this.extractFieldValue(
-      body.phone_ddi as string | { value: string } | null
-    );
-    const phone = this.extractFieldValue(
-      body.phone as string | { value: string } | null
-    );
-    const nickname = this.extractFieldValue(
-      body.nickname as string | { value: string } | null
-    );
-    const birthday = this.extractFieldValue(
-      body.birthday as string | { value: string } | null
-    );
-    const notes = this.extractFieldValue(
-      body.notes as string | { value: string } | null
-    );
+    const name = this.extractFieldValue(body.name as FieldValue);
+    const lastName = this.extractFieldValue(body.last_name as FieldValue);
+    const email = this.extractFieldValue(body.email as FieldValue);
+    const phoneDdi = this.extractFieldValue(body.phone_ddi as FieldValue);
+    const phone = this.extractFieldValue(body.phone as FieldValue);
+    const nickname = this.extractFieldValue(body.nickname as FieldValue);
+    const birthday = this.extractFieldValue(body.birthday as FieldValue);
+    const notes = this.extractFieldValue(body.notes as FieldValue);
 
     if (labelTemplateId) {
       const labelTemplateExists =

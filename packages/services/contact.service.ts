@@ -21,6 +21,8 @@ import { ContactExistsByEmailAndPhoneRepository } from '@core/repositories/conta
 import { nullIfEmpty } from '@core/common/functions/nullIfEmpty';
 import { StorageService } from './storage.service';
 
+type FieldValue = string | { value: string } | null;
+
 @injectable()
 export class ContactService {
   constructor(
@@ -72,9 +74,7 @@ export class ContactService {
     return this.contactViewerExistsRepository.existsContactById(contactId);
   };
 
-  private extractFieldValue(
-    field: string | { value: string } | null | undefined
-  ): string | null {
+  private extractFieldValue(field: FieldValue | undefined): string | null {
     if (field === null || field === undefined) {
       return null;
     }
@@ -109,9 +109,7 @@ export class ContactService {
     }
 
     const emailField = 'email' in input ? input.email : null;
-    const plainEmail = this.extractFieldValue(
-      emailField as string | { value: string } | null
-    );
+    const plainEmail = this.extractFieldValue(emailField as FieldValue);
     if (!plainEmail) {
       return {
         emailCEncrypted: null,
@@ -148,9 +146,7 @@ export class ContactService {
     }
 
     const phoneField = 'phone' in input ? input.phone : null;
-    const plainPhone = this.extractFieldValue(
-      phoneField as string | { value: string } | null
-    );
+    const plainPhone = this.extractFieldValue(phoneField as FieldValue);
     if (!plainPhone) {
       return {
         phoneCEncrypted: null,
@@ -181,35 +177,26 @@ export class ContactService {
     const phoneFields = this.processPhoneFields(input, isAlreadyEncrypted);
 
     if (isAlreadyEncrypted) {
-      const encryptedInput = input as ICreateContact;
       return {
-        ...encryptedInput,
-        photo: photoUrl ?? encryptedInput.photo,
+        ...input,
+        photo: photoUrl ?? input.photo,
       };
     }
 
     const createInput = input as CreateContactRequest;
     const labelTemplateId = this.extractFieldValue(
-      createInput.label_template_id as string | { value: string } | null
+      createInput.label_template_id as FieldValue
     );
-    const name = this.extractFieldValue(
-      createInput.name as string | { value: string }
-    );
+    const name = this.extractFieldValue(createInput.name as FieldValue);
     const lastName = this.extractFieldValue(
-      createInput.last_name as string | { value: string } | null
+      createInput.last_name as FieldValue
     );
     const phoneDdi = this.extractFieldValue(
-      createInput.phone_ddi as string | { value: string }
+      createInput.phone_ddi as FieldValue
     );
-    const nickname = this.extractFieldValue(
-      createInput.nickname as string | { value: string } | null
-    );
-    const birthday = this.extractFieldValue(
-      createInput.birthday as string | { value: string } | null
-    );
-    const notes = this.extractFieldValue(
-      createInput.notes as string | { value: string } | null
-    );
+    const nickname = this.extractFieldValue(createInput.nickname as FieldValue);
+    const birthday = this.extractFieldValue(createInput.birthday as FieldValue);
+    const notes = this.extractFieldValue(createInput.notes as FieldValue);
 
     return {
       account_id: accountId,
@@ -238,9 +225,7 @@ export class ContactService {
   ): Promise<string | null> => {
     let photoUrl: string | null = null;
 
-    const imageUrl = this.extractFieldValue(
-      input.image_url as string | { value: string } | null
-    );
+    const imageUrl = this.extractFieldValue(input.image_url as FieldValue);
 
     if (imageUrl) {
       photoUrl = imageUrl;
@@ -369,9 +354,7 @@ export class ContactService {
   ): Promise<boolean | null> => {
     const currentContact = await this.viewContactById(contactId, accountId);
 
-    const emailField = this.extractFieldValue(
-      input.email as string | { value: string } | null
-    );
+    const emailField = this.extractFieldValue(input.email as FieldValue);
     const emailCEncrypted = emailField
       ? this.passwordEncryptorService.encrypt(emailField)
       : null;
@@ -384,9 +367,7 @@ export class ContactService {
 
     const emailC = emailField ? this.encryptService.encrypt(emailField) : null;
 
-    const phoneField = this.extractFieldValue(
-      input.phone as string | { value: string } | null
-    );
+    const phoneField = this.extractFieldValue(input.phone as FieldValue);
     const phoneCEncrypted = phoneField
       ? this.passwordEncryptorService.encrypt(phoneField)
       : null;
@@ -397,9 +378,7 @@ export class ContactService {
 
     const phoneC = phoneField ? this.encryptService.encrypt(phoneField) : null;
 
-    const phoneDdiField = this.extractFieldValue(
-      input.phone_ddi as string | { value: string } | null
-    );
+    const phoneDdiField = this.extractFieldValue(input.phone_ddi as FieldValue);
     const isValided = this.determineIsValided(
       currentContact,
       phoneCEncrypted,
@@ -409,9 +388,7 @@ export class ContactService {
 
     let photoUrl: string | null | undefined = undefined;
 
-    const imageUrl = this.extractFieldValue(
-      input.image_url as string | { value: string } | null
-    );
+    const imageUrl = this.extractFieldValue(input.image_url as FieldValue);
 
     if (imageUrl) {
       photoUrl = imageUrl;
@@ -425,23 +402,13 @@ export class ContactService {
     }
 
     const labelTemplateId = this.extractFieldValue(
-      input.label_template_id as string | { value: string } | null
+      input.label_template_id as FieldValue
     );
-    const name = this.extractFieldValue(
-      input.name as string | { value: string } | null
-    );
-    const lastName = this.extractFieldValue(
-      input.last_name as string | { value: string } | null
-    );
-    const nickname = this.extractFieldValue(
-      input.nickname as string | { value: string } | null
-    );
-    const birthday = this.extractFieldValue(
-      input.birthday as string | { value: string } | null
-    );
-    const notes = this.extractFieldValue(
-      input.notes as string | { value: string } | null
-    );
+    const name = this.extractFieldValue(input.name as FieldValue);
+    const lastName = this.extractFieldValue(input.last_name as FieldValue);
+    const nickname = this.extractFieldValue(input.nickname as FieldValue);
+    const birthday = this.extractFieldValue(input.birthday as FieldValue);
+    const notes = this.extractFieldValue(input.notes as FieldValue);
 
     const payload: IUpdateContact = {
       label_template_id: labelTemplateId,

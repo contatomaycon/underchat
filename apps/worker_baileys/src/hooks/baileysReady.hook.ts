@@ -58,9 +58,6 @@ const ensureConnected = async (
   log: FastifyInstance['log'],
   baileys: BaileysService
 ): Promise<void> => {
-  //console.log('ensureConnected');
-  //console.dir(baileys, { depth: null, colors: true });
-
   if (baileys.isConnected()) {
     log.info({ attempt }, 'Baileys conectado com sucesso');
     mismatchedStatusSent = false;

@@ -612,7 +612,14 @@ const uploadPhoto = async (file: File) => {
       );
     }
   } catch (error) {
-    chatStore.showSnackbar(t('profile_photo_upload_error'), EColor.error);
+    if (error instanceof Error) {
+      chatStore.showSnackbar(
+        error.message || t('profile_photo_upload_error'),
+        EColor.error
+      );
+    } else {
+      chatStore.showSnackbar(t('profile_photo_upload_error'), EColor.error);
+    }
   } finally {
     isUploadingPhoto.value = false;
   }
@@ -645,7 +652,14 @@ const removePhoto = async () => {
       );
     }
   } catch (error) {
-    chatStore.showSnackbar(t('profile_photo_remove_error'), EColor.error);
+    if (error instanceof Error) {
+      chatStore.showSnackbar(
+        error.message || t('profile_photo_remove_error'),
+        EColor.error
+      );
+    } else {
+      chatStore.showSnackbar(t('profile_photo_remove_error'), EColor.error);
+    }
   } finally {
     isUploadingPhoto.value = false;
   }

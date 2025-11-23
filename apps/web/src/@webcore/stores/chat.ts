@@ -4,7 +4,7 @@ import { getI18n } from '@/plugins/i18n';
 import { EColor } from '@core/common/enums/EColor';
 import { ISnackbar } from '@core/common/interfaces/ISnackbar';
 import axios from '@webcore/axios';
-import { isAxiosError, type AxiosRequestConfig } from 'axios';
+import { type AxiosRequestConfig } from 'axios';
 import {
   ListChatsResponse,
   ListChatsResult,
@@ -535,6 +535,10 @@ export const useChatStore = defineStore('chat', {
       } catch (error) {
         this.loading = false;
         this.listMessages = [];
+
+        if (error instanceof Error) {
+          this.showSnackbar(error.message, EColor.error);
+        }
 
         return;
       }

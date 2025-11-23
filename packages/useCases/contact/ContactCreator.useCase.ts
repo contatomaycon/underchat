@@ -10,6 +10,8 @@ import moment from 'moment';
 import { buildCandidatesWithDdi } from '@core/common/functions/buildCandidatesBR';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 
+type FieldValue = string | { value: string } | null;
+
 @injectable()
 export class ContactCreatorUseCase {
   constructor(
@@ -200,32 +202,16 @@ export class ContactCreatorUseCase {
     accountId: string
   ): Promise<boolean> {
     const labelTemplateId = this.extractFieldValue(
-      input.label_template_id as string | { value: string } | null
+      input.label_template_id as FieldValue
     );
-    const name = this.extractFieldValue(
-      input.name as string | { value: string }
-    );
-    const lastName = this.extractFieldValue(
-      input.last_name as string | { value: string } | null
-    );
-    const email = this.extractFieldValue(
-      input.email as string | { value: string } | null
-    );
-    const phoneDdi = this.extractFieldValue(
-      input.phone_ddi as string | { value: string }
-    );
-    const phone = this.extractFieldValue(
-      input.phone as string | { value: string }
-    );
-    const nickname = this.extractFieldValue(
-      input.nickname as string | { value: string } | null
-    );
-    const birthday = this.extractFieldValue(
-      input.birthday as string | { value: string } | null
-    );
-    const notes = this.extractFieldValue(
-      input.notes as string | { value: string } | null
-    );
+    const name = this.extractFieldValue(input.name as FieldValue);
+    const lastName = this.extractFieldValue(input.last_name as FieldValue);
+    const email = this.extractFieldValue(input.email as FieldValue);
+    const phoneDdi = this.extractFieldValue(input.phone_ddi as FieldValue);
+    const phone = this.extractFieldValue(input.phone as FieldValue);
+    const nickname = this.extractFieldValue(input.nickname as FieldValue);
+    const birthday = this.extractFieldValue(input.birthday as FieldValue);
+    const notes = this.extractFieldValue(input.notes as FieldValue);
 
     if (!name) {
       throw new Error(t('name_required'));
@@ -238,20 +224,6 @@ export class ContactCreatorUseCase {
     if (!phone) {
       throw new Error(t('phone_required'));
     }
-
-    const normalizedInput: CreateContactRequest = {
-      label_template_id: labelTemplateId,
-      name,
-      last_name: lastName,
-      email,
-      phone_ddi: phoneDdi,
-      phone,
-      nickname,
-      birthday,
-      notes,
-      photo: input.photo,
-      image_url: input.image_url,
-    };
 
     await this.validateAccountAndLabelTemplate(t, accountId, labelTemplateId);
 

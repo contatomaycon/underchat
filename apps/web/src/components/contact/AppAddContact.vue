@@ -15,6 +15,8 @@ const { items: countryCodes } = useCountryCodes();
 
 const { t } = useI18n();
 
+type FieldValue = string | { value: string } | null;
+
 const countrySearchQuery = ref('');
 const isCountryMenuOpen = ref(false);
 
@@ -166,9 +168,7 @@ const addContact = async () => {
   }
 };
 
-const extractFieldValue = (
-  field: string | { value: string } | null | undefined
-): string | null => {
+const extractFieldValue = (field: FieldValue | undefined): string | null => {
   if (field === null || field === undefined) {
     return null;
   }
@@ -187,33 +187,23 @@ const extractFieldValue = (
 const resetForm = () => {
   if (props.initialData) {
     label_template_id.value = extractFieldValue(
-      props.initialData.label_template_id as string | { value: string } | null
+      props.initialData.label_template_id as FieldValue
     );
-    name.value = extractFieldValue(
-      props.initialData.name as string | { value: string } | null
-    );
+    name.value = extractFieldValue(props.initialData.name as FieldValue);
     last_name.value = extractFieldValue(
-      props.initialData.last_name as string | { value: string } | null
+      props.initialData.last_name as FieldValue
     );
-    email.value = extractFieldValue(
-      props.initialData.email as string | { value: string } | null
-    );
+    email.value = extractFieldValue(props.initialData.email as FieldValue);
     phone_ddi.value =
-      extractFieldValue(
-        props.initialData.phone_ddi as string | { value: string } | null
-      ) ?? '55';
-    phone.value = extractFieldValue(
-      props.initialData.phone as string | { value: string } | null
-    );
+      extractFieldValue(props.initialData.phone_ddi as FieldValue) ?? '55';
+    phone.value = extractFieldValue(props.initialData.phone as FieldValue);
     nickname.value = extractFieldValue(
-      props.initialData.nickname as string | { value: string } | null
+      props.initialData.nickname as FieldValue
     );
     birthday.value = extractFieldValue(
-      props.initialData.birthday as string | { value: string } | null
+      props.initialData.birthday as FieldValue
     );
-    notes.value = extractFieldValue(
-      props.initialData.notes as string | { value: string } | null
-    );
+    notes.value = extractFieldValue(props.initialData.notes as FieldValue);
   } else {
     label_template_id.value = null;
     name.value = null;
@@ -603,7 +593,6 @@ const onCropResize = (e: MouseEvent | TouchEvent) => {
   const minSize = 50;
 
   const minWidth = minSize;
-  const minHeight = minSize;
 
   const fixedPoint = { x: fixedX, y: fixedY };
   let dimensions = applyMinSizeConstraint(handle, fixedPoint, minWidth, {

@@ -22,6 +22,8 @@ import { ViewContactPhoneResponse } from '@core/schema/contact/viewContactPhone/
 import { ViewContactEmailResponse } from '@core/schema/contact/viewContactEmail/response.schema';
 import { ExportContactResponse } from '@core/schema/contact/exportContact/response.schema';
 
+type FieldValue = string | { value: string } | null;
+
 export const useContactStore = defineStore('contact', {
   state: () => ({
     snackbar: {
@@ -124,6 +126,10 @@ export const useContactStore = defineStore('contact', {
       } catch (error) {
         this.loading = false;
 
+        if (error instanceof Error) {
+          this.showSnackbar(error.message, EColor.error);
+        }
+
         return null;
       }
     },
@@ -162,9 +168,7 @@ export const useContactStore = defineStore('contact', {
       }
     },
 
-    extractFieldValue(
-      field: string | { value: string } | null | undefined
-    ): string {
+    extractFieldValue(field: FieldValue | undefined): string {
       if (field === null || field === undefined) {
         return '';
       }
@@ -189,7 +193,7 @@ export const useContactStore = defineStore('contact', {
 
         const formData = new FormData();
         const labelTemplateId = this.extractFieldValue(
-          payload.label_template_id as string | { value: string } | null
+          payload.label_template_id as FieldValue
         );
         if (labelTemplateId) {
           formData.append('label_template_id', labelTemplateId);
@@ -199,14 +203,12 @@ export const useContactStore = defineStore('contact', {
           this.extractFieldValue(payload.name as string | { value: string })
         );
         const lastName = this.extractFieldValue(
-          payload.last_name as string | { value: string } | null
+          payload.last_name as FieldValue
         );
         if (lastName) {
           formData.append('last_name', lastName);
         }
-        const email = this.extractFieldValue(
-          payload.email as string | { value: string } | null
-        );
+        const email = this.extractFieldValue(payload.email as FieldValue);
         if (email) {
           formData.append('email', email);
         }
@@ -220,26 +222,20 @@ export const useContactStore = defineStore('contact', {
           'phone',
           this.extractFieldValue(payload.phone as string | { value: string })
         );
-        const nickname = this.extractFieldValue(
-          payload.nickname as string | { value: string } | null
-        );
+        const nickname = this.extractFieldValue(payload.nickname as FieldValue);
         if (nickname) {
           formData.append('nickname', nickname);
         }
-        const birthday = this.extractFieldValue(
-          payload.birthday as string | { value: string } | null
-        );
+        const birthday = this.extractFieldValue(payload.birthday as FieldValue);
         if (birthday) {
           formData.append('birthday', birthday);
         }
-        const notes = this.extractFieldValue(
-          payload.notes as string | { value: string } | null
-        );
+        const notes = this.extractFieldValue(payload.notes as FieldValue);
         if (notes) {
           formData.append('notes', notes);
         }
         const imageUrl = this.extractFieldValue(
-          payload.image_url as string | { value: string } | null
+          payload.image_url as FieldValue
         );
         if (imageUrl) {
           formData.append('image_url', imageUrl);
@@ -300,62 +296,44 @@ export const useContactStore = defineStore('contact', {
 
         const formData = new FormData();
         const labelTemplateId = this.extractFieldValue(
-          body.label_template_id as string | { value: string } | null
+          body.label_template_id as FieldValue
         );
         if (labelTemplateId) {
           formData.append('label_template_id', labelTemplateId);
         }
-        const name = this.extractFieldValue(
-          body.name as string | { value: string } | null
-        );
+        const name = this.extractFieldValue(body.name as FieldValue);
         if (name) {
           formData.append('name', name);
         }
-        const lastName = this.extractFieldValue(
-          body.last_name as string | { value: string } | null
-        );
+        const lastName = this.extractFieldValue(body.last_name as FieldValue);
         if (lastName) {
           formData.append('last_name', lastName);
         }
-        const email = this.extractFieldValue(
-          body.email as string | { value: string } | null
-        );
+        const email = this.extractFieldValue(body.email as FieldValue);
         if (email) {
           formData.append('email', email);
         }
-        const phoneDdi = this.extractFieldValue(
-          body.phone_ddi as string | { value: string } | null
-        );
+        const phoneDdi = this.extractFieldValue(body.phone_ddi as FieldValue);
         if (phoneDdi) {
           formData.append('phone_ddi', phoneDdi);
         }
-        const phone = this.extractFieldValue(
-          body.phone as string | { value: string } | null
-        );
+        const phone = this.extractFieldValue(body.phone as FieldValue);
         if (phone) {
           formData.append('phone', phone);
         }
-        const nickname = this.extractFieldValue(
-          body.nickname as string | { value: string } | null
-        );
+        const nickname = this.extractFieldValue(body.nickname as FieldValue);
         if (nickname) {
           formData.append('nickname', nickname);
         }
-        const birthday = this.extractFieldValue(
-          body.birthday as string | { value: string } | null
-        );
+        const birthday = this.extractFieldValue(body.birthday as FieldValue);
         if (birthday) {
           formData.append('birthday', birthday);
         }
-        const notes = this.extractFieldValue(
-          body.notes as string | { value: string } | null
-        );
+        const notes = this.extractFieldValue(body.notes as FieldValue);
         if (notes) {
           formData.append('notes', notes);
         }
-        const imageUrl = this.extractFieldValue(
-          body.image_url as string | { value: string } | null
-        );
+        const imageUrl = this.extractFieldValue(body.image_url as FieldValue);
         if (imageUrl) {
           formData.append('image_url', imageUrl);
         } else if (photoFile) {

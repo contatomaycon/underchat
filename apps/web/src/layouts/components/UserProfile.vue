@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { removeUserData } from '@/@webcore/localStorage/user';
+import { removeUserData, setUser } from '@/@webcore/localStorage/user';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { EColor } from '@core/common/enums/EColor';
 import axios from '@webcore/axios';
 import { IApiResponse } from '@core/common/interfaces/IApiResponse';
-import { setUser } from '@/@webcore/localStorage/user';
 
 const router = useRouter();
 const chatStore = useChatStore();
@@ -587,7 +586,14 @@ const uploadPhoto = async (file: File) => {
       );
     }
   } catch (error) {
-    chatStore.showSnackbar(t('profile_photo_upload_error'), EColor.error);
+    if (error instanceof Error) {
+      chatStore.showSnackbar(
+        error.message || t('profile_photo_upload_error'),
+        EColor.error
+      );
+    } else {
+      chatStore.showSnackbar(t('profile_photo_upload_error'), EColor.error);
+    }
   } finally {
     isUploadingPhoto.value = false;
   }
@@ -620,7 +626,14 @@ const removePhoto = async () => {
       );
     }
   } catch (error) {
-    chatStore.showSnackbar(t('profile_photo_remove_error'), EColor.error);
+    if (error instanceof Error) {
+      chatStore.showSnackbar(
+        error.message || t('profile_photo_remove_error'),
+        EColor.error
+      );
+    } else {
+      chatStore.showSnackbar(t('profile_photo_remove_error'), EColor.error);
+    }
   } finally {
     isUploadingPhoto.value = false;
   }

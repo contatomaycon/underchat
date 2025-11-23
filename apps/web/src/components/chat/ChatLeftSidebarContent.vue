@@ -939,6 +939,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: opacity 0.2s ease;
 
   &--validated {
     background-color: rgba(var(--v-theme-success), 0.12) !important;
@@ -964,10 +965,6 @@ onMounted(async () => {
 
 .contact-item:hover .contact-action-btn {
   opacity: 1;
-}
-
-.contact-validation-chip {
-  transition: opacity 0.2s ease;
 }
 
 .contact-item:hover .contact-validation-chip {
