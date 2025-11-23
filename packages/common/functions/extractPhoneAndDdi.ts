@@ -229,7 +229,7 @@ function tryFallbackPatterns(digits: string): IPhoneAndDdi | null {
 function extractWaidFromLine(
   line: string
 ): { waid: string; fullPhone: string } | null {
-  const waidRegex = /waid=([^:]+):(.+)/;
+  const waidRegex = /waid=([^:;]+)\s*:\s*(.+)/;
   const waidMatch = waidRegex.exec(line);
   if (!waidMatch) return null;
 
@@ -241,7 +241,7 @@ function extractWaidFromLine(
 }
 
 function extractPhoneFromLine(line: string): string | null {
-  const telRegex = /TEL[^:]*:(.+)/;
+  const telRegex = /\.?TEL[^:]*:\s*(.+)/;
   const telMatch = telRegex.exec(line);
   if (!telMatch) return null;
 
@@ -259,7 +259,7 @@ function extractPhoneFromVCard(
   for (const line of lines) {
     const trimmed = line.trim();
 
-    if (!trimmed.startsWith('TEL')) continue;
+    if (!trimmed.includes('TEL')) continue;
 
     const waidResult = extractWaidFromLine(trimmed);
     if (waidResult) {
@@ -315,28 +315,28 @@ export function extractPhoneAndDdiFromContactMessage(
   if (!extracted) return null;
 
   if (extracted.waid) {
-    const waidDigits = onlyDigits(extracted.waid);
+    if (extracted.fullPhone && extracted.fullPhone.trim()) {
+      const fullPhoneTrimmed = extracted.fullPhone.trim();
+      const fullPhoneWithPlus = fullPhoneTrimmed.startsWith('+')
+        ? fullPhoneTrimmed
+        : `+${fullPhoneTrimmed}`;
 
-    if (extracted.fullPhone) {
-      const fullPhoneResult = extractPhoneAndDdi(extracted.fullPhone);
+      const fullPhoneResult = extractPhoneAndDdi(fullPhoneWithPlus);
       if (fullPhoneResult) {
-        const ddiDigits = onlyDigits(fullPhoneResult.phone_ddi);
-        let phoneWithoutDdi = waidDigits;
-
-        if (waidDigits.startsWith(ddiDigits)) {
-          phoneWithoutDdi = waidDigits.slice(ddiDigits.length);
-        }
-
         return {
           phone_ddi: fullPhoneResult.phone_ddi,
-          phone: phoneWithoutDdi,
+          phone: fullPhoneResult.phone,
         };
       }
     }
 
-    const waidResult = extractPhoneAndDdi(extracted.waid);
-    if (waidResult) {
-      return waidResult;
+    const waidDigits = onlyDigits(extracted.waid);
+    if (waidDigits) {
+      const waidWithPlus = `+${waidDigits}`;
+      const waidResult = extractPhoneAndDdi(waidWithPlus);
+      if (waidResult) {
+        return waidResult;
+      }
     }
 
     return null;

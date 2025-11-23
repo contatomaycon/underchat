@@ -794,20 +794,27 @@ export class MessageUpsertConsume {
 
       if (trimmed.startsWith('N:')) {
         const nValue = trimmed.substring(2).trim();
-        const parts = nValue.split(';');
-        if (parts.length >= 2 && parts[1] && !result.name) {
-          this.parseFullName(parts[1].trim(), result);
+        const parts = nValue.split(';').map((p) => p.trim());
+
+        for (let i = 1; i < parts.length; i++) {
+          if (parts[i] && !result.name) {
+            this.parseFullName(parts[i], result);
+            break;
+          }
         }
         continue;
       }
 
-      if (trimmed.startsWith('TEL')) {
+      if (trimmed.startsWith('TEL') || trimmed.includes('.TEL')) {
         this.parseTelephone(trimmed, result);
         continue;
       }
 
-      if (trimmed.startsWith('EMAIL:')) {
-        result.email = trimmed.substring(6).trim();
+      if (trimmed.startsWith('EMAIL:') || trimmed.includes('.EMAIL')) {
+        const emailMatch = trimmed.match(/EMAIL[^:]*:(.+)/);
+        if (emailMatch) {
+          result.email = emailMatch[1].trim();
+        }
       }
     }
 
@@ -839,7 +846,7 @@ export class MessageUpsertConsume {
       phone_ddi?: string;
     }
   ): void {
-    const waidRegex = /waid=([^:]+):(.+)/;
+    const waidRegex = /waid=([^:;]+)\s*:\s*(.+)/;
     const waidMatch = waidRegex.exec(telLine);
     if (waidMatch) {
       this.parseTelephoneWithWaid(
@@ -850,7 +857,7 @@ export class MessageUpsertConsume {
       return;
     }
 
-    const telRegex = /TEL[^:]*:(.+)/;
+    const telRegex = /\.?TEL[^:]*:\s*(.+)/;
     const telMatch = telRegex.exec(telLine);
     if (!telMatch) return;
 
@@ -866,18 +873,32 @@ export class MessageUpsertConsume {
       phone_ddi?: string;
     }
   ): void {
-    const waidDigits = waid.replaceAll(/\D/g, '');
-    result.phone = waidDigits;
+    if (fullPhone && fullPhone.trim()) {
+      const fullPhoneTrimmed = fullPhone.trim();
+      const fullPhoneWithPlus = fullPhoneTrimmed.startsWith('+')
+        ? fullPhoneTrimmed
+        : `+${fullPhoneTrimmed}`;
 
-    if (!fullPhone.startsWith('+')) return;
-
-    const phoneDigits = fullPhone.substring(1).replaceAll(/\D/g, '');
-    if (phoneDigits.length > waidDigits.length) {
-      result.phone_ddi = phoneDigits.substring(
-        0,
-        phoneDigits.length - waidDigits.length
-      );
+      const fullPhoneResult = extractPhoneAndDdi(fullPhoneWithPlus);
+      if (fullPhoneResult) {
+        result.phone = fullPhoneResult.phone;
+        result.phone_ddi = fullPhoneResult.phone_ddi;
+        return;
+      }
     }
+
+    const waidDigits = waid.replaceAll(/\D/g, '');
+    if (waidDigits) {
+      const waidWithPlus = `+${waidDigits}`;
+      const waidResult = extractPhoneAndDdi(waidWithPlus);
+      if (waidResult) {
+        result.phone = waidResult.phone;
+        result.phone_ddi = waidResult.phone_ddi;
+        return;
+      }
+    }
+
+    result.phone = waidDigits;
   }
 
   private parseTelephoneValue(
