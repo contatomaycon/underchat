@@ -522,6 +522,7 @@
     "contact_list_error": "An error occurred while listing contacts. Please try again.",
     "contact_view_error": "An error occurred while viewing the contact. Please try again.",
     "contact_phone_required": "The contact needs to have a phone number to start a conversation.",
+    "contact_not_found": "Contact not found.",
     "no_contacts_found": "No contacts found.",
     "chat_creation_error": "Error creating chat. Please try again.",
     "contact_phone_view_successfully": "Decrypted phone retrieved successfully!",

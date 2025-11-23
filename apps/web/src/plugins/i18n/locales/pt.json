@@ -533,6 +533,7 @@
     "contact_list_error": "Ocorreu um erro ao listar os contatos. Por favor, tente novamente.",
     "contact_view_error": "Ocorreu um erro ao ver o contato. Por favor, tente novamente.",
     "contact_phone_required": "O contato precisa ter um telefone para iniciar uma conversa.",
+    "contact_not_found": "Contato não encontrado.",
     "no_contacts_found": "Nenhum contato encontrado.",
     "chat_creation_error": "Erro ao criar o chat. Por favor, tente novamente.",
     "contact_phone_view_successfully": "Telefone descriptografado recuperado com sucesso!",

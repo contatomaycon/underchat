@@ -15,6 +15,7 @@ import { editMessageSchema } from '@core/schema/chat/editMessage';
 import { updateChatStatusSchema } from '@core/schema/chat/updateChatStatus';
 import { clearChatSummarySchema } from '@core/schema/chat/clearChatSummary';
 import { updateChatContactSchema } from '@core/schema/chat/updateChatContact';
+import { startChatWithContactSchema } from '@core/schema/chat/startChatWithContact';
 
 export default function chatRoutes(server: FastifyInstance) {
   const chatController = container.resolve(ChatController);
@@ -31,6 +32,15 @@ export default function chatRoutes(server: FastifyInstance) {
   server.post('/chat', {
     schema: createChatSchema,
     handler: chatController.createChats,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+    ],
+  });
+
+  server.post('/chat/start-with-contact', {
+    schema: startChatWithContactSchema,
+    handler: chatController.startChatWithContact,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),

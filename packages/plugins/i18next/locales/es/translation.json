@@ -236,6 +236,8 @@
   "user_address1_view_successfully": "¡Dirección 1 descriptada recuperada con éxito!",
   "user_address2_view_successfully": "¡Dirección 2 descriptada recuperada con éxito!",
   "contact_not_found": "¡Contacto no encontrado!",
+  "contact_must_be_validated": "¡El contacto debe estar validado para abrir una conversación!",
+  "contact_phone_required": "¡El contacto necesita tener un número de teléfono para iniciar una conversación!",
   "contact_deleted_successfully": "¡Contacto eliminado con éxito!",
   "contact_deleter_error": "Error al eliminar el contacto!",
   "contact_update_successfully": "¡Contacto actualizado con éxito!",

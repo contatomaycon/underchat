@@ -371,10 +371,10 @@ const handleOpenConversation = async () => {
     return;
   }
 
-  if (!selectedContactForChat.value.phone_partial) {
+  if (!selectedContactForChat.value.contact_id) {
     chatStore.showSnackbar(
-      chatStore.i18n.global.t('contact_phone_required'),
-      EColor.warning
+      chatStore.i18n.global.t('contact_not_found'),
+      EColor.error
     );
     return;
   }
@@ -382,20 +382,23 @@ const handleOpenConversation = async () => {
   try {
     chatStore.loading = true;
 
-    const phone = selectedContactForChat.value.phone_partial.replaceAll(
-      /\D/g,
-      ''
-    );
-
-    const response = await axios.post<IApiResponse<IChat>>('/chat', {
+    const requestBody: {
+      contact_id: string;
+      worker_id: string;
+      sector_id?: string;
+    } = {
+      contact_id: selectedContactForChat.value.contact_id,
       worker_id: selectedWorkerId.value,
-      phone: phone,
-      name:
-        selectedContactForChat.value.name +
-        (selectedContactForChat.value.last_name
-          ? ` ${selectedContactForChat.value.last_name}`
-          : ''),
-    });
+    };
+
+    if (selectedSectorId.value) {
+      requestBody.sector_id = selectedSectorId.value;
+    }
+
+    const response = await axios.post<IApiResponse<IChat>>(
+      '/chat/start-with-contact',
+      requestBody
+    );
 
     chatStore.loading = false;
 

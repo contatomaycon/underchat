@@ -236,6 +236,8 @@
   "user_address1_view_successfully": "Decrypted address 1 retrieved successfully!",
   "user_address2_view_successfully": "Decrypted address 2 retrieved successfully!",
   "contact_not_found": "Contact not found!",
+  "contact_must_be_validated": "The contact must be validated to open a conversation!",
+  "contact_phone_required": "The contact needs to have a phone number to start a conversation!",
   "contact_deleted_successfully": "Contact deleted successfully!",
   "contact_deleter_error": "Error deleting contact!",
   "contact_update_successfully": "Contact updated successfully!",
