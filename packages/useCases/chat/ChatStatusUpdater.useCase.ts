@@ -39,8 +39,23 @@ export class ChatStatusUpdaterUseCase {
     }
 
     const status = body.status as EChatStatus;
+    const currentDate = new Date().toISOString();
 
-    let user: IChat['user'] | undefined;
+    let user: IChat['user'] | null | undefined;
+    let startedAt: string | null | undefined;
+    let closedAt: string | null | undefined;
+
+    if (
+      status === EChatStatus.in_chat &&
+      chat.status === EChatStatus.queue &&
+      !chat.started_at
+    ) {
+      startedAt = currentDate;
+    }
+
+    if (status === EChatStatus.closed && !chat.closed_at) {
+      closedAt = currentDate;
+    }
 
     if (status === EChatStatus.in_chat) {
       const userData = await this.userService.viewUserNamePhoto(userId);
@@ -57,7 +72,9 @@ export class ChatStatusUpdaterUseCase {
     const updated = await this.chatService.updateChatStatus(
       params.chat_id,
       status,
-      user
+      user,
+      startedAt,
+      closedAt
     );
 
     if (!updated) {
@@ -67,7 +84,9 @@ export class ChatStatusUpdaterUseCase {
     const updatedChat: IChat = {
       ...chat,
       status,
-      user: user ?? chat.user,
+      user: user !== undefined ? user : chat.user,
+      started_at: startedAt !== undefined ? startedAt : chat.started_at,
+      closed_at: closedAt !== undefined ? closedAt : chat.closed_at,
       summary: {
         last_message: chat.summary?.last_message ?? null,
         last_date: chat.summary?.last_date ?? null,

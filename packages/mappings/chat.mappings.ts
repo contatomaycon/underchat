@@ -109,6 +109,12 @@ export const chatMappings = () => {
         date: {
           type: 'date',
         },
+        started_at: {
+          type: 'date',
+        },
+        closed_at: {
+          type: 'date',
+        },
       },
     },
   };

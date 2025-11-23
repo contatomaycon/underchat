@@ -48,6 +48,8 @@ export class ChatCreatorUseCase {
       throw new Error(t('chat_create_not_found'));
     }
 
+    const currentDate = new Date().toISOString();
+
     const inputChatMessage: IChat = {
       chat_id: uuidv7(),
       account: viewAccountName,
@@ -56,7 +58,8 @@ export class ChatCreatorUseCase {
       name: body.name,
       phone: body.phone,
       status: EChatStatus.in_chat,
-      date: new Date().toISOString(),
+      date: currentDate,
+      started_at: currentDate,
     };
 
     const result = await this.chatService.saveChat(inputChatMessage);

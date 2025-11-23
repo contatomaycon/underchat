@@ -104,14 +104,29 @@ export class ChatService {
   updateChatStatus = async (
     chatId: string,
     status: IChat['status'],
-    user?: IChat['user']
+    user?: IChat['user'] | null,
+    startedAt?: string | null,
+    closedAt?: string | null
   ): Promise<boolean> => {
-    const updateData: { status: IChat['status']; user?: IChat['user'] } = {
+    const updateData: {
+      status: IChat['status'];
+      user?: IChat['user'] | null;
+      started_at?: string | null;
+      closed_at?: string | null;
+    } = {
       status,
     };
 
-    if (user) {
+    if (user !== undefined) {
       updateData.user = user;
+    }
+
+    if (startedAt !== undefined) {
+      updateData.started_at = startedAt;
+    }
+
+    if (closedAt !== undefined) {
+      updateData.closed_at = closedAt;
     }
 
     return this.elasticDatabaseService.update(

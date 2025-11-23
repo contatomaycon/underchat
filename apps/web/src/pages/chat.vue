@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { computed, watch, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { useDisplay, useTheme } from 'vuetify';
 import { themes } from '@/plugins/vuetify/theme';
@@ -10,6 +10,7 @@ import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSide
 import AppContactPicker from '@/components/chat/AppContactPicker.vue';
 import AppAddContact from '@/components/contact/AppAddContact.vue';
 import AppEditContact from '@/components/contact/AppEditContact.vue';
+import VDialogHandler from '@/components/VDialogHandler.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
@@ -450,6 +451,29 @@ const handleAttendChat = async () => {
     EChatStatus.in_chat
   );
 };
+
+const isCloseServiceDialogOpen = ref(false);
+
+const handleCloseService = () => {
+  isCloseServiceDialogOpen.value = true;
+};
+
+const confirmCloseService = async () => {
+  if (!chatStore.activeChat?.chat_id) return;
+
+  const success = await chatStore.updateChatStatus(
+    chatStore.activeChat.chat_id,
+    EChatStatus.closed
+  );
+
+  if (success) {
+    chatStore.showSnackbar(t('chat_closed_successfully'), EColor.success);
+  }
+};
+
+const isInChatStatus = computed(
+  () => chatStore.activeChat?.status === EChatStatus.in_chat
+);
 
 const canAccessContacts = computed(() => {
   const permissions = [
@@ -3621,6 +3645,17 @@ onBeforeUnmount(() => {
             <VIcon icon="tabler-menu-2" />
           </IconBtn>
 
+          <IconBtn
+            v-if="isInChatStatus"
+            class="me-2"
+            color="error"
+            variant="text"
+            :title="t('close_service')"
+            @click="handleCloseService"
+          >
+            <VIcon icon="tabler-x" />
+          </IconBtn>
+
           <div
             class="d-flex align-center cursor-pointer"
             @click="isActiveChatUserProfileSidebarOpen = true"
@@ -4860,6 +4895,13 @@ onBeforeUnmount(() => {
       </VCardText>
     </VCard>
   </VDialog>
+
+  <VDialogHandler
+    v-model="isCloseServiceDialogOpen"
+    :title="t('close_service')"
+    :message="t('close_service_confirmation')"
+    @confirm="confirmCloseService"
+  />
 </template>
 
 <style lang="scss">

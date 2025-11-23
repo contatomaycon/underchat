@@ -53,4 +53,6 @@ export interface IChat {
   phone: string;
   status: EChatStatus;
   date: string;
+  started_at?: string | null;
+  closed_at?: string | null;
 }

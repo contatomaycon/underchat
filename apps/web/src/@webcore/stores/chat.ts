@@ -209,6 +209,8 @@ export const useChatStore = defineStore('chat', {
         phone: chat.phone,
         status: chat.status,
         date: chat.date,
+        started_at: chat.started_at,
+        closed_at: chat.closed_at,
       };
 
       const isActiveChat = this.activeChat?.chat_id === chat.chat_id;
@@ -221,6 +223,11 @@ export const useChatStore = defineStore('chat', {
 
       if (chat.status === EChatStatus.in_chat) {
         this.handleInChatStatusChat(input, chat, isActiveChat);
+        return;
+      }
+
+      if (chat.status === EChatStatus.closed) {
+        this.handleClosedStatusChat(input, chat);
       }
     },
 
@@ -269,6 +276,8 @@ export const useChatStore = defineStore('chat', {
         phone: input.phone,
         status: input.status,
         date: input.date,
+        started_at: input.started_at,
+        closed_at: input.closed_at,
       };
     },
 
@@ -350,6 +359,15 @@ export const useChatStore = defineStore('chat', {
 
       if (this.activeChat?.chat_id === chat.chat_id) {
         this.activeChat = this.createUpdatedActiveChat(input, isActiveChat);
+      }
+    },
+
+    handleClosedStatusChat(input: ListChatsResult, chat: IChat): void {
+      this.removeFromList(this.listInChat, chat.chat_id);
+      this.removeFromList(this.listQueue, chat.chat_id);
+
+      if (this.activeChat?.chat_id === chat.chat_id) {
+        this.activeChat = null;
       }
     },
     updateChatUserImmediate() {
@@ -607,12 +625,18 @@ export const useChatStore = defineStore('chat', {
           return false;
         }
 
-        if (data.data && this.activeChat?.chat_id === chatId) {
-          this.activeChat = {
-            ...this.activeChat,
-            status: data.data.status,
-            user: data.data.user,
-          };
+        if (data.data) {
+          this.addChat(data.data);
+
+          if (this.activeChat?.chat_id === chatId) {
+            this.activeChat = {
+              ...this.activeChat,
+              status: data.data.status,
+              user: data.data.user,
+              started_at: data.data.started_at,
+              closed_at: data.data.closed_at,
+            };
+          }
         }
 
         return true;

@@ -49,6 +49,8 @@ export const listChatsResultSchema = Type.Object({
   phone: Type.String(),
   status: Type.String({ enum: Object.values(EChatStatus) }),
   date: Type.String(),
+  started_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  closed_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export const listChatsResponseSchema = Type.Object({
