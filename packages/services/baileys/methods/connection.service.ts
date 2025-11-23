@@ -1,6 +1,6 @@
 import {
   Browsers,
-  fetchLatestBaileysVersion,
+  fetchLatestWaWebVersion,
   makeWASocket,
   useMultiFileAuthState,
   type WASocket,
@@ -285,7 +285,7 @@ export class BaileysConnectionService {
 
   private async createSocket() {
     const { state, saveCreds } = await useMultiFileAuthState(FOLDER);
-    const { version } = await fetchLatestBaileysVersion();
+    const { version } = await fetchLatestWaWebVersion();
 
     const socket = makeWASocket({
       auth: state,
