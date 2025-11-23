@@ -76,10 +76,53 @@ export class ContactUpdaterUseCase {
     phone?: string | null,
     phoneDdi?: string | null
   ): Promise<{ phone: string; phoneDdi: string | null } | undefined> {
-    if (!phone) return;
-    if (!phoneDdi) throw new Error(t('phone_ddi_required'));
+    if (!phone && !phoneDdi) return;
 
-    const phones = buildCandidatesWithDdi(phone, phoneDdi);
+    if (!phoneDdi) {
+      throw new Error(t('phone_ddi_required'));
+    }
+
+    const currentContact = await this.contactService.viewContactById(contactId);
+
+    const currentDdi = currentContact?.phone_ddi ?? null;
+    const newDdi = phoneDdi ?? null;
+    const ddiChanged = String(currentDdi) !== String(newDdi);
+
+    if (!ddiChanged) {
+      if (!currentContact?.phone) {
+        return;
+      }
+
+      const currentPhoneDecrypted =
+        this.contactService.getContactPhoneDecrypted(currentContact.phone);
+
+      if (!currentPhoneDecrypted) {
+        return;
+      }
+
+      return {
+        phone: currentPhoneDecrypted,
+        phoneDdi: phoneDdi,
+      };
+    }
+
+    let phoneToValidate = phone;
+
+    if (!phoneToValidate) {
+      if (!currentContact?.phone) {
+        throw new Error(t('phone_required_when_ddi_provided'));
+      }
+
+      phoneToValidate = this.contactService.getContactPhoneDecrypted(
+        currentContact.phone
+      );
+
+      if (!phoneToValidate) {
+        throw new Error(t('phone_not_found_or_cannot_be_decrypted'));
+      }
+    }
+
+    const phones = buildCandidatesWithDdi(phoneToValidate, phoneDdi);
     const phonesC = phones.map((phone) => this.encryptService.encrypt(phone));
 
     await this.validatePhoneDuplicateContact(t, phonesC, accountId, contactId);
@@ -87,7 +130,7 @@ export class ContactUpdaterUseCase {
     const normalized = await this.validateAndNormalizePhone(
       t,
       accountId,
-      phone,
+      phoneToValidate,
       phoneDdi
     );
 

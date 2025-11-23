@@ -13,7 +13,7 @@ export class ContactViewerRepository {
 
   viewContactById = async (
     contactId: string
-  ): Promise<ViewContactResponse | null> => {
+  ): Promise<(ViewContactResponse & { phone: string }) | null> => {
     const result = await this.db
       .select({
         contact_id: contact.contact_id,
@@ -29,6 +29,7 @@ export class ContactViewerRepository {
         name: contact.name,
         last_name: contact.last_name,
         email_partial: contact.email_partial,
+        phone: contact.phone,
         phone_ddi: contact.phone_ddi,
         phone_partial: contact.phone_partial,
         nickname: contact.nickname,
@@ -52,7 +53,7 @@ export class ContactViewerRepository {
       return null;
     }
 
-    return result[0] as ViewContactResponse;
+    return result[0] as (ViewContactResponse & { phone: string }) | null;
   };
 
   viewContactByPhone = async (

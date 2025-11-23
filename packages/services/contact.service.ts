@@ -199,7 +199,7 @@ export class ContactService {
 
   viewContactById = async (
     contactId: string
-  ): Promise<ViewContactResponse | null> => {
+  ): Promise<(ViewContactResponse & { phone: string }) | null> => {
     return this.contactViewerRepository.viewContactById(contactId);
   };
 
@@ -254,10 +254,37 @@ export class ContactService {
     return this.contactDeleterRepository.deleteContactById(contactId);
   };
 
+  private determineIsValided(
+    currentContact: (ViewContactResponse & { phone: string }) | null,
+    newPhoneEncrypted: string | null,
+    newPhoneDdi: string | null | undefined,
+    newPhone: string | null | undefined
+  ): boolean {
+    if (!currentContact) {
+      return !!(newPhone && newPhoneDdi);
+    }
+
+    if (!newPhoneDdi) {
+      return currentContact.is_valided ?? false;
+    }
+
+    const phoneChanged =
+      newPhoneEncrypted !== currentContact.phone ||
+      newPhoneDdi !== currentContact.phone_ddi;
+
+    if (!phoneChanged) {
+      return currentContact.is_valided ?? false;
+    }
+
+    return !!(newPhone && newPhoneDdi);
+  }
+
   updateContactById = async (
     input: UpdateContactRequest,
     contactId: string
   ): Promise<boolean | null> => {
+    const currentContact = await this.viewContactById(contactId);
+
     const emailCEncrypted = input.email
       ? this.passwordEncryptorService.encrypt(input.email)
       : null;
@@ -284,6 +311,13 @@ export class ContactService {
       ? this.encryptService.encrypt(input.phone)
       : null;
 
+    const isValided = this.determineIsValided(
+      currentContact,
+      phoneCEncrypted,
+      input.phone_ddi,
+      input.phone
+    );
+
     const payload: IUpdateContact = {
       label_template_id: input.label_template_id,
       name: input.name,
@@ -298,7 +332,7 @@ export class ContactService {
       nickname: input.nickname,
       birthday: nullIfEmpty(input.birthday),
       notes: input.notes,
-      is_valided: !!(input.phone && input.phone_ddi),
+      is_valided: isValided,
     };
 
     return this.contactUpdaterRepository.updateContactById(contactId, payload);
