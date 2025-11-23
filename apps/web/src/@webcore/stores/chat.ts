@@ -1010,7 +1010,10 @@ export const useChatStore = defineStore('chat', {
         return;
       }
 
-      if ((chat.summary?.unread_count ?? 0) > 0) {
+      if (
+        chat.status === EChatStatus.in_chat &&
+        (chat.summary?.unread_count ?? 0) > 0
+      ) {
         const chatInQueue = this.listQueue.find((c) => c.chat_id === chatId);
         const chatInList = this.listInChat.find((c) => c.chat_id === chatId);
 
@@ -1031,12 +1034,13 @@ export const useChatStore = defineStore('chat', {
 
       this.activeChat = {
         chat_id: chat.chat_id,
-        summary: chat.summary
-          ? {
-              ...chat.summary,
-              unread_count: 0,
-            }
-          : chat.summary,
+        summary:
+          chat.status === EChatStatus.in_chat && chat.summary
+            ? {
+                ...chat.summary,
+                unread_count: 0,
+              }
+            : chat.summary,
         account: chat.account,
         worker: chat.worker,
         sector: chat.sector,

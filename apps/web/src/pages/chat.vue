@@ -3451,7 +3451,8 @@ onMounted(async () => {
 
       if (
         chatStore.user?.account_id &&
-        chatStore.activeChat?.chat_id === data.chat_id
+        chatStore.activeChat?.chat_id === data.chat_id &&
+        data.status === EChatStatus.in_chat
       ) {
         debouncedClearChatSummary(data.chat_id);
       }

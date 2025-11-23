@@ -149,7 +149,7 @@ export class ChatService {
       if (!chat) return false;
 
       const summary: IChat['summary'] = {
-        last_message: null,
+        last_message: chat.summary?.last_message ?? null,
         last_date: chat.summary?.last_date ?? new Date().toISOString(),
         unread_count: 0,
       };
