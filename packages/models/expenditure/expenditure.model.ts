@@ -24,4 +24,4 @@ export const expenditure = pgTable('expenditure', {
   deleted_at: timestamp({ mode: 'string', withTimezone: true }),
 });
 
-export const expenditureRelations = relations(expenditure, ({}) => ({}));
+export const expenditureRelations = relations(expenditure, () => ({}));
