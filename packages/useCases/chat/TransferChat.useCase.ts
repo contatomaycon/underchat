@@ -4,6 +4,11 @@ import { ChatService } from '@core/services/chat.service';
 import { UserService } from '@core/services/user.service';
 import { SectorService } from '@core/services/sector.service';
 import { ChatMessageCreatorUseCase } from './ChatMessageCreator.useCase';
+import { CentrifugoService } from '@core/services/centrifugo.service';
+import {
+  chatAccountCentrifugo,
+  chatQueueAccountCentrifugo,
+} from '@core/common/functions/centrifugoQueue';
 import {
   TransferChatParams,
   TransferChatBody,
@@ -19,7 +24,8 @@ export class TransferChatUseCase {
     private readonly chatService: ChatService,
     private readonly userService: UserService,
     private readonly sectorService: SectorService,
-    private readonly chatMessageCreatorUseCase: ChatMessageCreatorUseCase
+    private readonly chatMessageCreatorUseCase: ChatMessageCreatorUseCase,
+    private readonly centrifugoService: CentrifugoService
   ) {}
 
   async execute(
@@ -98,6 +104,19 @@ export class TransferChatUseCase {
     if (!saved) {
       throw new Error(t('chat_transfer_failed'));
     }
+
+    const channelAccountId = updatedChat.account?.id ?? accountId;
+
+    await Promise.all([
+      this.centrifugoService.publishSub(
+        chatAccountCentrifugo(channelAccountId),
+        updatedChat
+      ),
+      this.centrifugoService.publishSub(
+        chatQueueAccountCentrifugo(channelAccountId),
+        updatedChat
+      ),
+    ]);
 
     if (body.annotation && body.annotation.trim()) {
       const messageBody: CreateMessageChatsBody = {
