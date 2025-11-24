@@ -15,6 +15,8 @@ import VDialogHandler from '@/components/VDialogHandler.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
+import { EUserPermissions } from '@core/common/enums/EPermissions/user';
+import { ESectorPermissions } from '@core/common/enums/EPermissions/sector';
 import { can } from '@layouts/plugins/casl';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
@@ -678,20 +680,32 @@ watch(selectedTransferSector, (sectorId) => {
 
 watch(isTransferModalOpen, (isOpen) => {
   if (isOpen) {
-    transferType.value = 'user';
-    selectedTransferUser.value = null;
-    selectedTransferSector.value = null;
-    selectedTransferSectorUser.value = null;
-    transferUserSearch.value = '';
-    transferSectorSearch.value = '';
-    transferSectorUserSearch.value = '';
-    transferAnnotationText.value = '';
-    isTransferUserMenuOpen.value = false;
-    isTransferSectorMenuOpen.value = false;
-    isTransferSectorUserMenuOpen.value = false;
-    isTransferAnnotationEmojiOpen.value = false;
-    loadTransferUsers();
-    loadTransferSectors();
+    nextTick(() => {
+      try {
+        if (canAccessUsers.value) {
+          transferType.value = 'user';
+        } else if (canAccessSectors.value) {
+          transferType.value = 'sector';
+        }
+        selectedTransferUser.value = null;
+        selectedTransferSector.value = null;
+        selectedTransferSectorUser.value = null;
+        transferUserSearch.value = '';
+        transferSectorSearch.value = '';
+        transferSectorUserSearch.value = '';
+        transferAnnotationText.value = '';
+        isTransferUserMenuOpen.value = false;
+        isTransferSectorMenuOpen.value = false;
+        isTransferSectorUserMenuOpen.value = false;
+        isTransferAnnotationEmojiOpen.value = false;
+        if (canAccessUsers.value) {
+          loadTransferUsers();
+        }
+        if (canAccessSectors.value) {
+          loadTransferSectors();
+        }
+      } catch {}
+    });
   } else {
     transferAnnotationText.value = '';
   }
@@ -716,6 +730,42 @@ const canAccessContacts = computed(() => {
     EContactPermissions.contact_view,
   ];
   return can(permissions);
+});
+
+const canAccessUsers = computed(() => {
+  try {
+    const permissions = [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EUserPermissions.user_group,
+      EUserPermissions.user_view,
+    ];
+    return can(permissions);
+  } catch {
+    return false;
+  }
+});
+
+const canAccessSectors = computed(() => {
+  try {
+    const permissions = [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      ESectorPermissions.sector_group,
+      ESectorPermissions.sector_view,
+    ];
+    return can(permissions);
+  } catch {
+    return false;
+  }
+});
+
+const canTransfer = computed(() => {
+  try {
+    return canAccessUsers.value || canAccessSectors.value;
+  } catch {
+    return false;
+  }
 });
 
 const hasAttachmentsOrContent = computed(
@@ -4072,7 +4122,7 @@ onBeforeUnmount(() => {
 
           <div class="d-sm-flex align-center d-none text-medium-emphasis">
             <IconBtn
-              v-if="isInChatStatus"
+              v-if="isInChatStatus && canTransfer"
               @click="isTransferModalOpen = true"
               :title="t('transfer')"
             >
@@ -5324,14 +5374,18 @@ onBeforeUnmount(() => {
             <AppSelect
               v-model="transferType"
               :items="[
-                { value: 'user', title: $t('user') },
-                { value: 'sector', title: $t('sector') },
+                ...(canAccessUsers
+                  ? [{ value: 'user', title: $t('user') }]
+                  : []),
+                ...(canAccessSectors
+                  ? [{ value: 'sector', title: $t('sector') }]
+                  : []),
               ]"
               :label="$t('transfer_to') + ':'"
             />
           </VCol>
 
-          <VCol v-if="transferType === 'user'" cols="12">
+          <VCol v-if="transferType === 'user' && canAccessUsers" cols="12">
             <div>
               <VLabel class="mb-1 text-body-2">{{ $t('user') }}:</VLabel>
               <VMenu v-model="isTransferUserMenuOpen">
@@ -5394,7 +5448,7 @@ onBeforeUnmount(() => {
             </div>
           </VCol>
 
-          <template v-if="transferType === 'sector'">
+          <template v-if="transferType === 'sector' && canAccessSectors">
             <VCol cols="12">
               <div>
                 <VLabel class="mb-1 text-body-2">{{ $t('sector') }}:</VLabel>
@@ -5458,7 +5512,7 @@ onBeforeUnmount(() => {
               </div>
             </VCol>
 
-            <VCol v-if="selectedTransferSector" cols="12">
+            <VCol v-if="selectedTransferSector && canAccessUsers" cols="12">
               <div>
                 <VLabel class="mb-1 text-body-2"
                   >{{ $t('user') }} ({{ $t('sector') }}):</VLabel
