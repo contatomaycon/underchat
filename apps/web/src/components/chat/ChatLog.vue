@@ -137,6 +137,9 @@ const shouldBlurMessageContent = computed(() => {
 });
 
 const resolveFeedbackIcon = (message: ListMessageResult): FeedbackIcon => {
+  if (message.content?.type === EMessageType.annotation)
+    return { icon: 'tabler-file', color: undefined };
+
   if (isMessageUploadError(message))
     return { icon: 'tabler-alert-triangle', color: 'error' };
   if (message.summary?.is_sent_to_internal === false)

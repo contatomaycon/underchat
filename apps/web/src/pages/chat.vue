@@ -114,6 +114,9 @@ const fileAudioRef = ref<HTMLInputElement | null>(null);
 const isEmojiOpen = ref(false);
 const isContactPickerOpen = ref(false);
 const isLocationPickerOpen = ref(false);
+const isAnnotationModalOpen = ref(false);
+const annotationText = ref('');
+const isAnnotationEmojiOpen = ref(false);
 const isContactViewModalOpen = ref(false);
 const selectedContactDetails = ref<ViewContactResponse | null>(null);
 const isAddContactModalOpen = ref(false);
@@ -1718,6 +1721,60 @@ const sendTextMessage = async (
   }
 };
 
+const sendAnnotationMessage = async (): Promise<void> => {
+  if (!chatStore.activeChat?.chat_id) return;
+  if (!annotationText.value.trim()) return;
+
+  const hash = createMessageHash();
+  const messageValue = annotationText.value.trim();
+
+  const content: ContentMessageChat = {
+    type: EMessageType.annotation,
+    message: messageValue,
+  };
+
+  await registerLocalMessage(content, hash);
+
+  const messageBody: CreateMessageChatsBody = {
+    type: EMessageType.annotation,
+    message: messageValue,
+    hash,
+  };
+
+  isAnnotationModalOpen.value = false;
+  annotationText.value = '';
+
+  chatStore.createMessage(messageBody).then((success) => {
+    if (!success) {
+      markUploadError(hash);
+    }
+  });
+};
+
+const onAnnotationEmojiSelect = (emoji: any) => {
+  const emojiText = emoji.native || emoji.colons;
+  const textarea = annotationText.value;
+  const textareaElement = document.querySelector(
+    '#annotation-textarea'
+  ) as HTMLTextAreaElement;
+  if (textareaElement) {
+    const cursorPos = textareaElement.selectionStart || textarea.length;
+    annotationText.value =
+      textarea.slice(0, cursorPos) + emojiText + textarea.slice(cursorPos);
+    nextTick(() => {
+      textareaElement.setSelectionRange(
+        cursorPos + emojiText.length,
+        cursorPos + emojiText.length
+      );
+      textareaElement.focus();
+    });
+  } else {
+    annotationText.value = textarea + emojiText;
+  }
+
+  isAnnotationEmojiOpen.value = false;
+};
+
 const finalizeSend = () => {
   nextTick(() => {
     const scrollEl = chatLogPS.value?.$el || chatLogPS.value;
@@ -1888,7 +1945,14 @@ const previewImage = computed(() => {
 });
 
 const openAttach = (
-  type: 'document' | 'photo' | 'video' | 'audio' | 'contact' | 'location'
+  type:
+    | 'document'
+    | 'photo'
+    | 'video'
+    | 'audio'
+    | 'contact'
+    | 'location'
+    | 'annotation'
 ) => {
   switch (type) {
     case 'document':
@@ -1910,6 +1974,9 @@ const openAttach = (
       break;
     case 'location':
       isLocationPickerOpen.value = true;
+      break;
+    case 'annotation':
+      isAnnotationModalOpen.value = true;
       break;
   }
 };
@@ -4618,6 +4685,12 @@ onBeforeUnmount(() => {
                     >
                     <VListItemTitle>Localização</VListItemTitle>
                   </VListItem>
+                  <VListItem @click="openAttach('annotation')">
+                    <template #prepend
+                      ><VIcon size="20">tabler-note</VIcon></template
+                    >
+                    <VListItemTitle>{{ t('annotation') }}</VListItemTitle>
+                  </VListItem>
                 </VList>
               </VMenu>
 
@@ -5433,6 +5506,84 @@ onBeforeUnmount(() => {
           @click="handleTransfer"
         >
           {{ t('transfer') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog v-model="isAnnotationModalOpen" max-width="600">
+    <DialogCloseBtn @click="isAnnotationModalOpen = false" />
+    <VCard :title="$t('annotation')">
+      <VCardText>
+        <VRow>
+          <VCol cols="12">
+            <div class="d-flex align-center gap-2 mb-2">
+              <VLabel class="text-body-2">{{ $t('message') }}:</VLabel>
+              <VSpacer />
+              <VMenu
+                v-model="isAnnotationEmojiOpen"
+                location="top end"
+                :close-on-content-click="false"
+                offset="8"
+              >
+                <template #activator="{ props }">
+                  <IconBtn
+                    v-bind="props"
+                    size="small"
+                    variant="text"
+                    aria-label="Emoji"
+                  >
+                    <VIcon size="20">tabler-mood-smile</VIcon>
+                  </IconBtn>
+                </template>
+                <div class="emoji-picker-wrap">
+                  <Picker
+                    :data="emojiIndex"
+                    :per-line="8"
+                    :show-preview="false"
+                    :show-search="true"
+                    :show-skin-tones="false"
+                    @select="onAnnotationEmojiSelect"
+                  />
+                </div>
+              </VMenu>
+            </div>
+            <VTextarea
+              id="annotation-textarea"
+              v-model="annotationText"
+              :placeholder="$t('write_your_annotation')"
+              variant="outlined"
+              :maxlength="5000"
+              :rows="8"
+              :auto-grow="true"
+              :max-rows="12"
+              counter
+            />
+            <div class="text-caption text-medium-emphasis mt-1">
+              {{ $t('annotation_max_characters', { count: 5000 }) }}
+            </div>
+          </VCol>
+        </VRow>
+      </VCardText>
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          @click="
+            () => {
+              isAnnotationModalOpen = false;
+              annotationText = '';
+            }
+          "
+        >
+          {{ t('cancel') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          :disabled="!annotationText.trim()"
+          @click="sendAnnotationMessage"
+        >
+          {{ t('save') }}
         </VBtn>
       </VCardText>
     </VCard>
