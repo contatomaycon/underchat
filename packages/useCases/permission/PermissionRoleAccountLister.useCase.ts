@@ -25,9 +25,6 @@ export class PermissionRoleAccountListerUseCase {
       }
     }
 
-    return this.permissionService.listPermissionRoleAccountById(
-      accountId,
-      isAdministrator
-    );
+    return this.permissionService.listPermissionRoleAccountById(accountId);
   }
 }
