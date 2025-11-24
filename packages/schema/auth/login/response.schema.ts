@@ -77,6 +77,7 @@ export const authLoginResponseSchema = Type.Object({
   permissions: Type.Array(Type.String()),
   layout: Type.Union([accountInfoResponseSchema, Type.Null()]),
   token: Type.String(),
+  sectors: Type.Array(Type.String()),
 });
 
 export type AuthLoginResponse = Static<typeof authLoginResponseSchema>;

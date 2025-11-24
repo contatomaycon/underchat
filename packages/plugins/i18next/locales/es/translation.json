@@ -98,6 +98,7 @@
   "sector_role_successfully": "¡Cuentas de rol de sector obtenidas con éxito!",
   "sector_users_successfully": "¡Usuarios del sector obtenidos con éxito!",
   "sector_users_not_found": "¡No se encontraron usuarios en el sector!",
+  "user_sectors_successfully": "¡Sectores del usuario obtenidos con éxito!",
   "permission_role_count_sector_incompatible": "Contador de roles de sector incompatible",
   "phone_connection_required": "¡Se requiere teléfono!",
   "worker_connection_logs_success": "¡Registros de conexión del trabajador obtenidos con éxito!",

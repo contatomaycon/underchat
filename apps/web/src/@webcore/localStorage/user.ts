@@ -4,6 +4,15 @@ import {
   AccountInfoResponse,
 } from '@core/schema/auth/login/response.schema';
 
+export const setSectors = (sectors: string[]): void => {
+  localStorage.setItem('sectors', JSON.stringify(sectors));
+};
+
+export const getSectors = (): string[] => {
+  const sectors = localStorage.getItem('sectors');
+  return sectors ? JSON.parse(sectors) : [];
+};
+
 export const setToken = (token: string): void => {
   localStorage.setItem('token', token);
 };
@@ -58,6 +67,7 @@ export const removeUserData = (): boolean => {
   localStorage.removeItem('user');
   localStorage.removeItem('layout');
   localStorage.removeItem('isAdministrator');
+  localStorage.removeItem('sectors');
 
   return (
     !getToken() &&

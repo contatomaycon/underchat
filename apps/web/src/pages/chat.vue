@@ -17,6 +17,8 @@ import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 import { EUserPermissions } from '@core/common/enums/EPermissions/user';
 import { ESectorPermissions } from '@core/common/enums/EPermissions/sector';
+import { EPermissionsRoles } from '@core/common/enums/EPermissions';
+import { getPermissions, getSectors } from '@/@webcore/localStorage/user';
 import { can } from '@layouts/plugins/casl';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
@@ -3845,6 +3847,35 @@ onMounted(async () => {
   if (chatStore.user?.account_id) {
     const accountId = chatStore.user.account_id;
 
+    const permissions = getPermissions();
+    const canListAllChatsWithoutSectorLimit = permissions.some(
+      (perm: EPermissionsRoles) =>
+        perm === EGeneralPermissions.full_access ||
+        perm === EGeneralPermissions.full_access_group ||
+        perm === EChatPermissions.chat_group ||
+        perm === EChatPermissions.list_all_chats_without_sector_limit
+    );
+
+    const userSectors: string[] = canListAllChatsWithoutSectorLimit
+      ? []
+      : getSectors();
+
+    const canReceiveChatNotification = (chat: IChat): boolean => {
+      if (canListAllChatsWithoutSectorLimit) {
+        return true;
+      }
+
+      if (userSectors.length === 0) {
+        return !chat.sector?.id;
+      }
+
+      if (!chat.sector?.id) {
+        return false;
+      }
+
+      return userSectors.includes(chat.sector.id);
+    };
+
     await onMessage(
       chatAccountCentrifugo(accountId),
       (data: IChatMessage | IChatTyping | IChat) => {
@@ -3876,12 +3907,21 @@ onMounted(async () => {
 
         if ('chat_id' in data && !('message_id' in data)) {
           const chatData = data as IChat;
+
+          if (!canReceiveChatNotification(chatData)) {
+            return;
+          }
+
           chatStore.addChat(chatData);
         }
       }
     );
 
     await onMessage(chatQueueAccountCentrifugo(accountId), (data: IChat) => {
+      if (!canReceiveChatNotification(data)) {
+        return;
+      }
+
       chatStore.addChat(data);
 
       if (
