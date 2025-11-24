@@ -3763,9 +3763,26 @@ onBeforeUnmount(() => {
             <IconBtn @click="isSearchSidebarOpen = true">
               <VIcon icon="tabler-search" />
             </IconBtn>
-            <IconBtn>
-              <VIcon icon="tabler-dots-vertical" />
-            </IconBtn>
+            <VMenu
+              offset="8"
+              :close-on-content-click="true"
+              location="bottom end"
+            >
+              <template #activator="{ props }">
+                <IconBtn v-bind="props">
+                  <VIcon icon="tabler-dots-vertical" />
+                </IconBtn>
+              </template>
+
+              <VList density="comfortable" min-width="200">
+                <VListItem v-if="isInChatStatus" @click="handleCloseService">
+                  <template #prepend>
+                    <VIcon size="20" color="error">tabler-x</VIcon>
+                  </template>
+                  <VListItemTitle>{{ t('close_service') }}</VListItemTitle>
+                </VListItem>
+              </VList>
+            </VMenu>
           </div>
         </div>
 
