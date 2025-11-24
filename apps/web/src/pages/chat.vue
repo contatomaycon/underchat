@@ -7,6 +7,7 @@ import ChatActiveChatUserProfileSidebarContent from '@/components/chat/ChatActiv
 import ChatLeftSidebarContent from '@/components/chat/ChatLeftSidebarContent.vue';
 import ChatLog from '@/components/chat/ChatLog.vue';
 import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSidebarContent.vue';
+import ChatSearchSidebarContent from '@/components/chat/ChatSearchSidebarContent.vue';
 import AppContactPicker from '@/components/chat/AppContactPicker.vue';
 import AppAddContact from '@/components/contact/AppAddContact.vue';
 import AppEditContact from '@/components/contact/AppEditContact.vue';
@@ -100,6 +101,7 @@ const q = ref('');
 const msg = ref('');
 const isUserProfileSidebarOpen = ref(false);
 const isActiveChatUserProfileSidebarOpen = ref(false);
+const isSearchSidebarOpen = ref(false);
 const linkPreview = ref<ViewLinkPreviewResponse | null>(null);
 const composerRef = ref();
 
@@ -3620,6 +3622,19 @@ onBeforeUnmount(() => {
     </VNavigationDrawer>
 
     <VNavigationDrawer
+      v-model="isSearchSidebarOpen"
+      data-allow-mismatch
+      width="374"
+      absolute
+      temporary
+      location="end"
+      touchless
+      class="chat-search-sidebar"
+    >
+      <ChatSearchSidebarContent @close="isSearchSidebarOpen = false" />
+    </VNavigationDrawer>
+
+    <VNavigationDrawer
       v-model="isLeftSidebarOpen"
       data-allow-mismatch
       absolute
@@ -3736,7 +3751,7 @@ onBeforeUnmount(() => {
           <VSpacer />
 
           <div class="d-sm-flex align-center d-none text-medium-emphasis">
-            <IconBtn>
+            <IconBtn @click="isSearchSidebarOpen = true">
               <VIcon icon="tabler-search" />
             </IconBtn>
             <IconBtn>
