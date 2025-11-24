@@ -4091,9 +4091,23 @@ onBeforeUnmount(() => {
                       style="cursor: pointer"
                     >
                       <div class="contact-preview-container">
-                        <div class="contact-preview-icon-wrapper">
-                          <VIcon size="32" color="primary">tabler-user</VIcon>
-                        </div>
+                        <VAvatar
+                          size="48"
+                          :rounded="8"
+                          :variant="contact.photo ? undefined : 'tonal'"
+                        >
+                          <VImg
+                            v-if="contact.photo"
+                            :src="contact.photo"
+                            :alt="contact.name"
+                          />
+                          <VIcon
+                            v-else
+                            size="32"
+                            color="primary"
+                            icon="tabler-user"
+                          />
+                        </VAvatar>
                       </div>
                       <div class="contact-preview-meta">
                         <VTooltip location="bottom">
