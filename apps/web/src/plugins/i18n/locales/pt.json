@@ -972,5 +972,9 @@
     "select_sector": "Selecione o setor",
     "open_conversation": "Abrir Conversa",
     "select_channel_required": "Por favor, selecione um canal para abrir a conversa.",
-    "edit_contact": "Editar Contato"
+    "edit_contact": "Editar Contato",
+    "transfer": "Transferir",
+    "transfer_to": "Transferir para",
+    "transfer_successfully": "Atendimento transferido com sucesso!",
+    "user": "Usuário"
 }

@@ -19,6 +19,8 @@ import { can } from '@layouts/plugins/casl';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useContactStore } from '@/@webcore/stores/contact';
+import { useUsersStore } from '@/@webcore/stores/user';
+import { useSectorsStore } from '@/@webcore/stores/sector';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
@@ -29,6 +31,7 @@ import {
   ListMessageResult,
 } from '@core/schema/chat/listMessageChats/response.schema';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
+import axios from '@webcore/axios';
 import {
   chatAccountCentrifugo,
   chatQueueAccountCentrifugo,
@@ -479,6 +482,197 @@ const confirmCloseService = async () => {
 const handleActiveChatHeaderClick = () => {
   if (!canAccessContacts.value) return;
   isActiveChatUserProfileSidebarOpen.value = true;
+};
+
+const userStore = useUsersStore();
+const sectorsStore = useSectorsStore();
+
+const isTransferModalOpen = ref(false);
+const transferType = ref<'user' | 'sector'>('user');
+const selectedTransferUser = ref<string | null>(null);
+const selectedTransferSector = ref<string | null>(null);
+const selectedTransferSectorUser = ref<string | null>(null);
+const transferUsers = ref<any[]>([]);
+const transferSectors = ref<any[]>([]);
+const transferSectorUsers = ref<any[]>([]);
+const transferUserSearch = ref('');
+const transferSectorSearch = ref('');
+const transferSectorUserSearch = ref('');
+const isLoadingTransferUsers = ref(false);
+const isLoadingTransferSectors = ref(false);
+const isLoadingTransferSectorUsers = ref(false);
+const isTransferUserMenuOpen = ref(false);
+const isTransferSectorMenuOpen = ref(false);
+const isTransferSectorUserMenuOpen = ref(false);
+
+const filteredTransferUsers = computed(() => {
+  if (!transferUserSearch.value) {
+    return transferUsers.value;
+  }
+  const query = transferUserSearch.value.toLowerCase();
+  return transferUsers.value.filter((user) =>
+    user.title.toLowerCase().includes(query)
+  );
+});
+
+const filteredTransferSectors = computed(() => {
+  if (!transferSectorSearch.value) {
+    return transferSectors.value;
+  }
+  const query = transferSectorSearch.value.toLowerCase();
+  return transferSectors.value.filter((sector) =>
+    sector.title.toLowerCase().includes(query)
+  );
+});
+
+const filteredTransferSectorUsers = computed(() => {
+  if (!transferSectorUserSearch.value) {
+    return transferSectorUsers.value;
+  }
+  const query = transferSectorUserSearch.value.toLowerCase();
+  return transferSectorUsers.value.filter((user) =>
+    user.title.toLowerCase().includes(query)
+  );
+});
+
+watch(isTransferUserMenuOpen, (isOpen) => {
+  if (!isOpen) {
+    transferUserSearch.value = '';
+  } else {
+    loadTransferUsers();
+  }
+});
+
+watch(isTransferSectorMenuOpen, (isOpen) => {
+  if (!isOpen) {
+    transferSectorSearch.value = '';
+  } else {
+    loadTransferSectors();
+  }
+});
+
+watch(isTransferSectorUserMenuOpen, (isOpen) => {
+  if (!isOpen) {
+    transferSectorUserSearch.value = '';
+  } else if (selectedTransferSector.value) {
+    loadTransferSectorUsers(selectedTransferSector.value);
+  }
+});
+
+const loadTransferUsers = async () => {
+  if (!chatStore.user?.account_id) return;
+
+  isLoadingTransferUsers.value = true;
+  try {
+    const result = await userStore.listUsers({
+      page: 1,
+      per_page: 100,
+      search: null,
+      sort_by: [],
+    });
+
+    if (result) {
+      transferUsers.value = result.results.map((user) => ({
+        value: user.user_id,
+        title: user.user_info?.name
+          ? `${user.user_info.name}${user.user_info.last_name ? ' ' + user.user_info.last_name : ''}`
+          : user.email_partial || '',
+      }));
+    }
+  } finally {
+    isLoadingTransferUsers.value = false;
+  }
+};
+
+const loadTransferSectors = async () => {
+  if (!chatStore.user?.account_id) return;
+
+  isLoadingTransferSectors.value = true;
+  try {
+    const result = await sectorsStore.listSectors({
+      page: 1,
+      per_page: 100,
+      search: null,
+      sort_by: [],
+    });
+
+    if (result) {
+      transferSectors.value = result.results.map((sector) => ({
+        value: sector.sector_id,
+        title: sector.name,
+      }));
+    }
+  } finally {
+    isLoadingTransferSectors.value = false;
+  }
+};
+
+const loadTransferSectorUsers = async (sectorId: string) => {
+  if (!chatStore.user?.account_id || !sectorId) return;
+
+  isLoadingTransferSectorUsers.value = true;
+  try {
+    const response = await axios.get(`/sector-role/account/${sectorId}`);
+
+    if (response?.data?.status && response.data.data) {
+      const users = response.data.data;
+
+      transferSectorUsers.value = users.map((user: any) => ({
+        value: user.user_id,
+        title: user.user_info?.name
+          ? `${user.user_info.name}${user.user_info.last_name ? ' ' + user.user_info.last_name : ''}`
+          : user.email_partial || '',
+      }));
+    }
+  } catch (error) {
+    transferSectorUsers.value = [];
+  } finally {
+    isLoadingTransferSectorUsers.value = false;
+  }
+};
+
+watch(transferType, (newType) => {
+  selectedTransferUser.value = null;
+  selectedTransferSector.value = null;
+  selectedTransferSectorUser.value = null;
+  transferSectorUsers.value = [];
+  transferUserSearch.value = '';
+  transferSectorSearch.value = '';
+  transferSectorUserSearch.value = '';
+  isTransferUserMenuOpen.value = false;
+  isTransferSectorMenuOpen.value = false;
+  isTransferSectorUserMenuOpen.value = false;
+});
+
+watch(selectedTransferSector, (sectorId) => {
+  selectedTransferSectorUser.value = null;
+  transferSectorUsers.value = [];
+
+  if (sectorId) {
+    loadTransferSectorUsers(sectorId);
+  }
+});
+
+watch(isTransferModalOpen, (isOpen) => {
+  if (isOpen) {
+    transferType.value = 'user';
+    selectedTransferUser.value = null;
+    selectedTransferSector.value = null;
+    selectedTransferSectorUser.value = null;
+    transferUserSearch.value = '';
+    transferSectorSearch.value = '';
+    transferSectorUserSearch.value = '';
+    isTransferUserMenuOpen.value = false;
+    isTransferSectorMenuOpen.value = false;
+    isTransferSectorUserMenuOpen.value = false;
+  }
+});
+
+const handleTransfer = async () => {
+  if (!chatStore.activeChat?.chat_id) return;
+
+  isTransferModalOpen.value = false;
+  chatStore.showSnackbar(t('transfer_successfully'), EColor.success);
 };
 
 const isInChatStatus = computed(
@@ -3760,6 +3954,13 @@ onBeforeUnmount(() => {
           <VSpacer />
 
           <div class="d-sm-flex align-center d-none text-medium-emphasis">
+            <IconBtn
+              v-if="isInChatStatus"
+              @click="isTransferModalOpen = true"
+              :title="t('transfer')"
+            >
+              <VIcon icon="tabler-arrows-right-left" />
+            </IconBtn>
             <IconBtn @click="isSearchSidebarOpen = true">
               <VIcon icon="tabler-search" />
             </IconBtn>
@@ -4990,6 +5191,209 @@ onBeforeUnmount(() => {
     :message="t('close_service_confirmation')"
     @confirm="confirmCloseService"
   />
+
+  <VDialog v-model="isTransferModalOpen" max-width="600">
+    <DialogCloseBtn @click="isTransferModalOpen = false" />
+    <VCard :title="$t('transfer')">
+      <VCardText>
+        <VRow>
+          <VCol cols="12">
+            <AppSelect
+              v-model="transferType"
+              :items="[
+                { value: 'user', title: $t('user') },
+                { value: 'sector', title: $t('sector') },
+              ]"
+              :label="$t('transfer_to') + ':'"
+            />
+          </VCol>
+
+          <VCol v-if="transferType === 'user'" cols="12">
+            <div>
+              <VLabel class="mb-1 text-body-2">{{ $t('user') }}:</VLabel>
+              <VMenu v-model="isTransferUserMenuOpen">
+                <template #activator="{ props: menuProps }">
+                  <VTextField
+                    v-bind="menuProps"
+                    :model-value="
+                      transferUsers.find(
+                        (u) => u.value === selectedTransferUser
+                      )?.title || ''
+                    "
+                    :placeholder="$t('search') + '...'"
+                    variant="outlined"
+                    readonly
+                    append-inner-icon="tabler-chevron-down"
+                    :loading="isLoadingTransferUsers"
+                  />
+                </template>
+                <VCard>
+                  <VCardText class="pa-2">
+                    <AppTextField
+                      v-model="transferUserSearch"
+                      :placeholder="$t('search') + '...'"
+                      prepend-inner-icon="tabler-search"
+                      density="compact"
+                      hide-details
+                      autofocus
+                      @click.stop
+                    />
+                  </VCardText>
+                  <VDivider />
+                  <VList max-height="300" style="overflow-y: auto">
+                    <VListItem
+                      v-for="(item, index) in filteredTransferUsers"
+                      :key="index"
+                      :value="item.value"
+                      @click="
+                        () => {
+                          selectedTransferUser = item.value;
+                          isTransferUserMenuOpen = false;
+                        }
+                      "
+                      :active="selectedTransferUser === item.value"
+                    >
+                      <VListItemTitle>{{ item.title }}</VListItemTitle>
+                    </VListItem>
+                  </VList>
+                </VCard>
+              </VMenu>
+            </div>
+          </VCol>
+
+          <template v-if="transferType === 'sector'">
+            <VCol cols="12">
+              <div>
+                <VLabel class="mb-1 text-body-2">{{ $t('sector') }}:</VLabel>
+                <VMenu v-model="isTransferSectorMenuOpen">
+                  <template #activator="{ props: menuProps }">
+                    <VTextField
+                      v-bind="menuProps"
+                      :model-value="
+                        transferSectors.find(
+                          (s) => s.value === selectedTransferSector
+                        )?.title || ''
+                      "
+                      :placeholder="$t('search') + '...'"
+                      variant="outlined"
+                      readonly
+                      append-inner-icon="tabler-chevron-down"
+                      :loading="isLoadingTransferSectors"
+                    />
+                  </template>
+                  <VCard>
+                    <VCardText class="pa-2">
+                      <AppTextField
+                        v-model="transferSectorSearch"
+                        :placeholder="$t('search') + '...'"
+                        prepend-inner-icon="tabler-search"
+                        density="compact"
+                        hide-details
+                        autofocus
+                        @click.stop
+                      />
+                    </VCardText>
+                    <VDivider />
+                    <VList max-height="300" style="overflow-y: auto">
+                      <VListItem
+                        v-for="(item, index) in filteredTransferSectors"
+                        :key="index"
+                        :value="item.value"
+                        @click="
+                          () => {
+                            selectedTransferSector = item.value;
+                            isTransferSectorMenuOpen = false;
+                          }
+                        "
+                        :active="selectedTransferSector === item.value"
+                      >
+                        <VListItemTitle>{{ item.title }}</VListItemTitle>
+                      </VListItem>
+                    </VList>
+                  </VCard>
+                </VMenu>
+              </div>
+            </VCol>
+
+            <VCol v-if="selectedTransferSector" cols="12">
+              <div>
+                <VLabel class="mb-1 text-body-2"
+                  >{{ $t('user') }} ({{ $t('sector') }}):</VLabel
+                >
+                <VMenu v-model="isTransferSectorUserMenuOpen">
+                  <template #activator="{ props: menuProps }">
+                    <VTextField
+                      v-bind="menuProps"
+                      :model-value="
+                        transferSectorUsers.find(
+                          (u) => u.value === selectedTransferSectorUser
+                        )?.title || ''
+                      "
+                      :placeholder="$t('search') + '...'"
+                      variant="outlined"
+                      readonly
+                      append-inner-icon="tabler-chevron-down"
+                      :loading="isLoadingTransferSectorUsers"
+                    />
+                  </template>
+                  <VCard>
+                    <VCardText class="pa-2">
+                      <AppTextField
+                        v-model="transferSectorUserSearch"
+                        :placeholder="$t('search') + '...'"
+                        prepend-inner-icon="tabler-search"
+                        density="compact"
+                        hide-details
+                        autofocus
+                        @click.stop
+                      />
+                    </VCardText>
+                    <VDivider />
+                    <VList max-height="300" style="overflow-y: auto">
+                      <VListItem
+                        v-for="(item, index) in filteredTransferSectorUsers"
+                        :key="index"
+                        :value="item.value"
+                        @click="
+                          () => {
+                            selectedTransferSectorUser = item.value;
+                            isTransferSectorUserMenuOpen = false;
+                          }
+                        "
+                        :active="selectedTransferSectorUser === item.value"
+                      >
+                        <VListItemTitle>{{ item.title }}</VListItemTitle>
+                      </VListItem>
+                    </VList>
+                  </VCard>
+                </VMenu>
+              </div>
+            </VCol>
+          </template>
+        </VRow>
+      </VCardText>
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          @click="isTransferModalOpen = false"
+        >
+          {{ t('cancel') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          :disabled="
+            transferType === 'user'
+              ? !selectedTransferUser
+              : !selectedTransferSector
+          "
+          @click="handleTransfer"
+        >
+          {{ t('transfer') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
 </template>
 
 <style lang="scss">

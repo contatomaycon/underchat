@@ -961,5 +961,9 @@
     "select_sector": "Select sector",
     "open_conversation": "Open Conversation",
     "select_channel_required": "Please select a channel to open the conversation.",
-    "edit_contact": "Edit Contact"
+    "edit_contact": "Edit Contact",
+    "transfer": "Transfer",
+    "transfer_to": "Transfer to",
+    "transfer_successfully": "Service transferred successfully!",
+    "user": "User"
 }
