@@ -1307,8 +1307,10 @@ export class ChatMessageCreatorUseCase {
 
     const contactsData = await Promise.all(
       contactIds.map(async (contactId) => {
-        const contact =
-          await this.contactViewerRepository.viewContactById(contactId);
+        const contact = await this.contactViewerRepository.viewContactById(
+          contactId,
+          chat.account.id
+        );
         if (!contact) return null;
 
         const sensitiveData =

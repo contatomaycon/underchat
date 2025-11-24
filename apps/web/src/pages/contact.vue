@@ -11,6 +11,7 @@ import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 import { ListContactResponse } from '@core/schema/contact/listContact/response.schema';
 import { EColor } from '@core/common/enums/EColor';
 import AppAddContact from '@/components/contact/AppAddContact.vue';
+import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 
 definePage({
   meta: {
@@ -47,6 +48,7 @@ const permissionsCreate = [
 
 const { t } = useI18n();
 const contactStore = useContactStore();
+useSnackbarCleanup(contactStore);
 const isAdministrator = getAdministrator();
 
 const itemsPerPage = ref([

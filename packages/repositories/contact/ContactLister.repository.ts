@@ -130,6 +130,7 @@ export class ContactListerRepository {
         notes: contact.notes,
         created_at: contact.created_at,
         is_valided: contact.is_valided,
+        photo: contact.photo,
       })
       .from(contact)
       .leftJoin(account, eq(contact.account_id, account.account_id))
@@ -175,6 +176,7 @@ export class ContactListerRepository {
       birthday: contact.birthday,
       notes: contact.notes ?? null,
       is_valided: contact.is_valided ?? null,
+      photo: contact.photo ?? null,
     })) as ListContactResponse[];
   };
 

@@ -9,7 +9,8 @@ export class ContactViewerUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    contactId: string
+    contactId: string,
+    accountId: string
   ): Promise<ViewContactResponse | null> {
     const contactExists =
       await this.contactService.existsContactById(contactId);
@@ -18,6 +19,15 @@ export class ContactViewerUseCase {
       throw new Error(t('contact_not_found'));
     }
 
-    return this.contactService.viewContactById(contactId);
+    const contact = await this.contactService.viewContactById(
+      contactId,
+      accountId
+    );
+
+    if (!contact) {
+      throw new Error(t('contact_not_found'));
+    }
+
+    return contact;
   }
 }

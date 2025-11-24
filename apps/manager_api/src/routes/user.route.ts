@@ -19,7 +19,8 @@ import { createUserSchema } from '@core/schema/user/createUser';
 import { editUserSchema } from '@core/schema/user/editUser';
 import { assignUserRoleSchema } from '@core/schema/user/assignUserRole';
 import { viewUserRoleSchema } from '@core/schema/user/viewUserRole';
-import { roleViewPermissions } from '@/permissions/role.permissions';
+import { uploadPhotoSchema } from '@core/schema/user/uploadPhoto';
+import { deletePhotoSchema } from '@core/schema/user/deletePhoto';
 
 export default function userRoutes(server: FastifyInstance) {
   const userController = container.resolve(UserController);
@@ -119,7 +120,7 @@ export default function userRoutes(server: FastifyInstance) {
     handler: userController.viewUserRole,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, roleViewPermissions),
+        server.authenticateJwt(request, reply, userViewPermissions),
     ],
   });
 
@@ -128,7 +129,25 @@ export default function userRoutes(server: FastifyInstance) {
     handler: userController.assignUserRole,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, roleViewPermissions),
+        server.authenticateJwt(request, reply, userViewPermissions),
+    ],
+  });
+
+  server.post('/user/:user_id/photo', {
+    schema: uploadPhotoSchema,
+    handler: userController.uploadPhoto,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userUpdatePermissions),
+    ],
+  });
+
+  server.delete('/user/:user_id/photo', {
+    schema: deletePhotoSchema,
+    handler: userController.deletePhoto,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userUpdatePermissions),
     ],
   });
 }

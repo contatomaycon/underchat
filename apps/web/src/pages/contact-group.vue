@@ -7,6 +7,7 @@ import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { getAdministrator } from '@/@webcore/localStorage/user';
 import { DataTableHeader } from 'vuetify';
 import { useContactGroupStore } from '@/@webcore/stores/contactGroup';
+import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { EContactGroupPermissions } from '@core/common/enums/EPermissions/contactGroup';
 import { ListContactGroupResponse } from '@core/schema/contactGroup/listContactGroup/response.schema';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
@@ -47,6 +48,7 @@ const permissionsCreate = [
 
 const { t } = useI18n();
 const contactGroupStore = useContactGroupStore();
+useSnackbarCleanup(contactGroupStore);
 const isAdministrator = getAdministrator();
 
 const itemsPerPage = ref([

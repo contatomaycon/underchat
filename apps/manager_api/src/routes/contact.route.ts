@@ -17,6 +17,7 @@ import { editContactSchema } from '@core/schema/contact/editContact';
 import { exportContactSchema } from '@core/schema/contact/exportContact';
 import { validateContactSchema } from '@core/schema/contact/validateContact';
 import { viewContactByPhoneSchema } from '@core/schema/contact/viewContactByPhone';
+import { deleteContactPhotoSchema } from '@core/schema/contact/deletePhoto';
 
 export default async function contactRoutes(server: FastifyInstance) {
   const contactController = container.resolve(ContactController);
@@ -108,6 +109,15 @@ export default async function contactRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactViewPermissions),
+    ],
+  });
+
+  server.delete('/contact/:contact_id/photo', {
+    schema: deleteContactPhotoSchema,
+    handler: contactController.deletePhoto,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactUpdatePermissions),
     ],
   });
 }

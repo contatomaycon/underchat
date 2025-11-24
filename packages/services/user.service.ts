@@ -35,6 +35,8 @@ import { UserEmailViewerExistsRepository } from '@core/repositories/user/UserEma
 import { UserTotalViewerRepository } from '@core/repositories/user/UserTotalViewer.repository';
 import { EncryptService } from './encrypt.service';
 import { IUserSensitiveDataDecrypted } from '@core/common/interfaces/IUserSensitiveDataDecrypted';
+import { StorageService } from '@core/services/storage.service';
+import { UploadFileRequest } from '@core/schema/upload/request.schema';
 
 @injectable()
 export class UserService {
@@ -63,7 +65,8 @@ export class UserService {
     private readonly permissionAssignmentDeleterRepository: PermissionAssignmentDeleterRepository,
     private readonly userAccountViewerRepository: UserAccountViewerRepository,
     private readonly userEmailViewerExistsRepository: UserEmailViewerExistsRepository,
-    private readonly userTotalViewerRepository: UserTotalViewerRepository
+    private readonly userTotalViewerRepository: UserTotalViewerRepository,
+    private readonly storageService: StorageService
   ) {}
 
   listUsers = async (
@@ -461,5 +464,47 @@ export class UserService {
 
   totalUserByAccount = async (accountId: string): Promise<number> => {
     return this.userTotalViewerRepository.totalUserByAccount(accountId);
+  };
+
+  uploadUserPhoto = async (
+    t: TFunction<'translation', undefined>,
+    userId: string,
+    accountId: string,
+    photo?: UploadFileRequest | null,
+    removePhoto = false
+  ): Promise<string | null> => {
+    const updateData: IUpdateUserInfo = {};
+
+    if (removePhoto) {
+      updateData.photo = null;
+    }
+
+    if (photo && !removePhoto) {
+      const uploadResult = await this.storageService.uploadImage(
+        photo,
+        accountId
+      );
+
+      if (!uploadResult) {
+        throw new Error(t('profile_photo_upload_error'));
+      }
+
+      updateData.photo = uploadResult.url;
+    }
+
+    if (!removePhoto && !photo) {
+      return null;
+    }
+
+    const updated = await this.userInfoUpdaterRepository.updateUserInfoById(
+      userId,
+      updateData
+    );
+
+    if (!updated) {
+      throw new Error(t('profile_photo_upload_error'));
+    }
+
+    return updateData.photo ?? null;
   };
 }

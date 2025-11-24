@@ -9,6 +9,8 @@ import { buildCandidatesWithDdi } from '@core/common/functions/buildCandidatesBR
 import { PhoneValidationService } from '@core/services/phoneValidation.service';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 
+type FieldValue = string | { value: string } | null;
+
 @injectable()
 export class ContactUpdaterUseCase {
   constructor(
@@ -76,10 +78,56 @@ export class ContactUpdaterUseCase {
     phone?: string | null,
     phoneDdi?: string | null
   ): Promise<{ phone: string; phoneDdi: string | null } | undefined> {
-    if (!phone) return;
-    if (!phoneDdi) throw new Error(t('phone_ddi_required'));
+    if (!phone && !phoneDdi) return;
 
-    const phones = buildCandidatesWithDdi(phone, phoneDdi);
+    if (!phoneDdi) {
+      throw new Error(t('phone_ddi_required'));
+    }
+
+    const currentContact = await this.contactService.viewContactById(
+      contactId,
+      accountId
+    );
+
+    const currentDdi = currentContact?.phone_ddi ?? null;
+    const newDdi = phoneDdi ?? null;
+    const ddiChanged = String(currentDdi) !== String(newDdi);
+
+    if (!ddiChanged) {
+      if (!currentContact?.phone) {
+        return;
+      }
+
+      const currentPhoneDecrypted =
+        this.contactService.getContactPhoneDecrypted(currentContact.phone);
+
+      if (!currentPhoneDecrypted) {
+        return;
+      }
+
+      return {
+        phone: currentPhoneDecrypted,
+        phoneDdi: phoneDdi,
+      };
+    }
+
+    let phoneToValidate = phone;
+
+    if (!phoneToValidate) {
+      if (!currentContact?.phone) {
+        throw new Error(t('phone_required_when_ddi_provided'));
+      }
+
+      phoneToValidate = this.contactService.getContactPhoneDecrypted(
+        currentContact.phone
+      );
+
+      if (!phoneToValidate) {
+        throw new Error(t('phone_not_found_or_cannot_be_decrypted'));
+      }
+    }
+
+    const phones = buildCandidatesWithDdi(phoneToValidate, phoneDdi);
     const phonesC = phones.map((phone) => this.encryptService.encrypt(phone));
 
     await this.validatePhoneDuplicateContact(t, phonesC, accountId, contactId);
@@ -87,7 +135,7 @@ export class ContactUpdaterUseCase {
     const normalized = await this.validateAndNormalizePhone(
       t,
       accountId,
-      phone,
+      phoneToValidate,
       phoneDdi
     );
 
@@ -165,6 +213,24 @@ export class ContactUpdaterUseCase {
     }
   }
 
+  private extractFieldValue(
+    field: string | { value: string } | null | undefined
+  ): string | null {
+    if (field === null || field === undefined) {
+      return null;
+    }
+
+    if (typeof field === 'object' && 'value' in field) {
+      return field.value ?? null;
+    }
+
+    if (typeof field === 'string') {
+      return field;
+    }
+
+    return null;
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -178,10 +244,22 @@ export class ContactUpdaterUseCase {
       throw new Error(t('contact_not_found'));
     }
 
-    if (body?.label_template_id) {
+    const labelTemplateId = this.extractFieldValue(
+      body.label_template_id as FieldValue
+    );
+    const name = this.extractFieldValue(body.name as FieldValue);
+    const lastName = this.extractFieldValue(body.last_name as FieldValue);
+    const email = this.extractFieldValue(body.email as FieldValue);
+    const phoneDdi = this.extractFieldValue(body.phone_ddi as FieldValue);
+    const phone = this.extractFieldValue(body.phone as FieldValue);
+    const nickname = this.extractFieldValue(body.nickname as FieldValue);
+    const birthday = this.extractFieldValue(body.birthday as FieldValue);
+    const notes = this.extractFieldValue(body.notes as FieldValue);
+
+    if (labelTemplateId) {
       const labelTemplateExists =
         await this.labelTemplateService.existsLabelTemplateById(
-          body.label_template_id
+          labelTemplateId
         );
 
       if (!labelTemplateExists) {
@@ -189,22 +267,31 @@ export class ContactUpdaterUseCase {
       }
     }
 
-    this.validateBirthDate(t, body.birthday);
+    this.validateBirthDate(t, birthday);
 
     const [normalizedPhone] = await Promise.all([
-      this.validatePhone(t, accountId, contactId, body.phone, body.phone_ddi),
-      this.validateEmail(t, accountId, contactId, body.email),
+      this.validatePhone(t, accountId, contactId, phone, phoneDdi),
+      this.validateEmail(t, accountId, contactId, email),
     ]);
 
     const bodyToUpdate: UpdateContactRequest = {
-      ...body,
-      phone: normalizedPhone?.phone ?? null,
-      phone_ddi: normalizedPhone?.phoneDdi ?? null,
+      label_template_id: labelTemplateId,
+      name,
+      last_name: lastName,
+      email,
+      phone_ddi: normalizedPhone?.phoneDdi ?? phoneDdi,
+      phone: normalizedPhone?.phone ?? phone,
+      nickname,
+      birthday,
+      notes,
+      photo: body.photo,
+      image_url: body.image_url,
     };
 
     const contactUpdater = await this.contactService.updateContactById(
       bodyToUpdate,
-      contactId
+      contactId,
+      accountId
     );
 
     if (!contactUpdater) {

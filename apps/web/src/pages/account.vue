@@ -12,6 +12,7 @@ import { useAccountStore } from '@/@webcore/stores/account';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { ListAccountResponse } from '@core/schema/account/listAccount/response.schema';
 import { EColor } from '@core/common/enums/EColor';
+import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 
 definePage({
   meta: {
@@ -48,6 +49,7 @@ const permissionsCreate = [
 
 const { t } = useI18n();
 const accountStore = useAccountStore();
+useSnackbarCleanup(accountStore);
 const isAdministrator = getAdministrator();
 
 const itemsPerPage = ref([

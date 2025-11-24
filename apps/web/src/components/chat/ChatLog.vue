@@ -42,7 +42,9 @@ const contactStore = useContactStore();
 const { activeChat } = storeToRefs(chatStore);
 const chatLogContainer = ref<HTMLElement | null>(null);
 
-const showSkeleton = computed(() => chatStore.listMessages.length === 0);
+const showSkeleton = computed(() => 
+  chatStore.loading && chatStore.listMessages.length === 0
+);
 const reactionEmojiIndex = new EmojiIndex(data);
 const showScrollToBottom = ref(false);
 const scrollElementRef = ref<HTMLElement | null>(null);

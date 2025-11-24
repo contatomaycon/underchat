@@ -10,10 +10,13 @@ import { VNodeRenderer } from '@layouts/components/VNodeRenderer';
 import { themeConfig } from '@themeConfig';
 import { useAuthStore } from '@webcore/stores/auth';
 import { useChatStore } from '@webcore/stores/chat';
+import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { VForm } from 'vuetify/components/VForm';
 
 const authStore = useAuthStore();
 const chatStore = useChatStore();
+useSnackbarCleanup(authStore);
+useSnackbarCleanup(chatStore);
 const route = useRoute();
 const router = useRouter();
 const ability = useAbility();

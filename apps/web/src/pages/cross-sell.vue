@@ -8,6 +8,7 @@ import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { DataTableHeader } from 'vuetify';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { useCrossSellStore } from '@/@webcore/stores/crossSell';
+import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 
 definePage({
   meta: {
@@ -41,6 +42,7 @@ const permissionsCreate = [
 
 const { t } = useI18n();
 const crossSellStore = useCrossSellStore();
+useSnackbarCleanup(crossSellStore);
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },

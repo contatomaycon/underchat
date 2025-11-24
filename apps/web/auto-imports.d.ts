@@ -317,6 +317,7 @@ declare global {
   const useShare: typeof import('@vueuse/core').useShare
   const useSkins: typeof import('./src/@webcore/composable/useSkins').useSkins
   const useSlots: typeof import('vue').useSlots
+  const useSnackbarCleanup: typeof import('./src/composables/useSnackbarCleanup').useSnackbarCleanup
   const useSorted: typeof import('@vueuse/core').useSorted
   const useSpeechRecognition: typeof import('@vueuse/core').useSpeechRecognition
   const useSpeechSynthesis: typeof import('@vueuse/core').useSpeechSynthesis
@@ -696,6 +697,7 @@ declare module 'vue' {
     readonly useShare: UnwrapRef<typeof import('@vueuse/core')['useShare']>
     readonly useSkins: UnwrapRef<typeof import('./src/@webcore/composable/useSkins')['useSkins']>
     readonly useSlots: UnwrapRef<typeof import('vue')['useSlots']>
+    readonly useSnackbarCleanup: UnwrapRef<typeof import('./src/composables/useSnackbarCleanup')['useSnackbarCleanup']>
     readonly useSorted: UnwrapRef<typeof import('@vueuse/core')['useSorted']>
     readonly useSpeechRecognition: UnwrapRef<typeof import('@vueuse/core')['useSpeechRecognition']>
     readonly useSpeechSynthesis: UnwrapRef<typeof import('@vueuse/core')['useSpeechSynthesis']>

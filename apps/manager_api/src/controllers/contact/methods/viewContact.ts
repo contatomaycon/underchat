@@ -12,12 +12,13 @@ export const viewContact = async (
   reply: FastifyReply
 ) => {
   const contactViewerUseCase = container.resolve(ContactViewerUseCase);
-  const { t } = request;
+  const { t, tokenJwtData } = request;
 
   try {
     const response = await contactViewerUseCase.execute(
       t,
-      request.params.contact_id
+      request.params.contact_id,
+      tokenJwtData.account_id
     );
 
     if (response) {

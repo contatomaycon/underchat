@@ -22,6 +22,8 @@ import { ViewContactPhoneResponse } from '@core/schema/contact/viewContactPhone/
 import { ViewContactEmailResponse } from '@core/schema/contact/viewContactEmail/response.schema';
 import { ExportContactResponse } from '@core/schema/contact/exportContact/response.schema';
 
+type FieldValue = string | { value: string } | null;
+
 export const useContactStore = defineStore('contact', {
   state: () => ({
     snackbar: {
@@ -117,24 +119,16 @@ export const useContactStore = defineStore('contact', {
         const data = response?.data;
 
         if (!data?.status || !data?.data) {
-          const mensage =
-            data?.message ?? this.i18n.global.t('contact_view_error');
-
-          this.showSnackbar(mensage, EColor.error);
-
           return null;
         }
 
         return data.data;
       } catch (error) {
-        let errorMessage = this.i18n.global.t('contact_view_error');
-        if (error instanceof AxiosError) {
-          errorMessage = error?.response?.data?.message ?? errorMessage;
-        }
-
-        this.showSnackbar(errorMessage, EColor.error);
-
         this.loading = false;
+
+        if (error instanceof Error) {
+          this.showSnackbar(error.message, EColor.error);
+        }
 
         return null;
       }
@@ -174,13 +168,89 @@ export const useContactStore = defineStore('contact', {
       }
     },
 
-    async addContact(payload: CreateContactRequest): Promise<boolean> {
+    extractFieldValue(field: FieldValue | undefined): string {
+      if (field === null || field === undefined) {
+        return '';
+      }
+
+      if (typeof field === 'object' && 'value' in field) {
+        return field.value ?? '';
+      }
+
+      if (typeof field === 'string') {
+        return field;
+      }
+
+      return '';
+    },
+
+    async addContact(
+      payload: CreateContactRequest,
+      photoFile?: File | null
+    ): Promise<boolean> {
       try {
         this.loading = true;
 
+        const formData = new FormData();
+        const labelTemplateId = this.extractFieldValue(
+          payload.label_template_id as FieldValue
+        );
+        if (labelTemplateId) {
+          formData.append('label_template_id', labelTemplateId);
+        }
+        formData.append(
+          'name',
+          this.extractFieldValue(payload.name as string | { value: string })
+        );
+        const lastName = this.extractFieldValue(
+          payload.last_name as FieldValue
+        );
+        if (lastName) {
+          formData.append('last_name', lastName);
+        }
+        const email = this.extractFieldValue(payload.email as FieldValue);
+        if (email) {
+          formData.append('email', email);
+        }
+        formData.append(
+          'phone_ddi',
+          this.extractFieldValue(
+            payload.phone_ddi as string | { value: string }
+          )
+        );
+        formData.append(
+          'phone',
+          this.extractFieldValue(payload.phone as string | { value: string })
+        );
+        const nickname = this.extractFieldValue(payload.nickname as FieldValue);
+        if (nickname) {
+          formData.append('nickname', nickname);
+        }
+        const birthday = this.extractFieldValue(payload.birthday as FieldValue);
+        if (birthday) {
+          formData.append('birthday', birthday);
+        }
+        const notes = this.extractFieldValue(payload.notes as FieldValue);
+        if (notes) {
+          formData.append('notes', notes);
+        }
+        const imageUrl = this.extractFieldValue(
+          payload.image_url as FieldValue
+        );
+        if (imageUrl) {
+          formData.append('image_url', imageUrl);
+        } else if (photoFile) {
+          formData.append('photo', photoFile);
+        }
+
         const response = await axios.post<IApiResponse<boolean>>(
           `/contact`,
-          payload
+          formData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+            },
+          }
         );
 
         this.loading = false;
@@ -218,14 +288,66 @@ export const useContactStore = defineStore('contact', {
 
     async updateContact(
       payload: EditContactParamsRequest,
-      body: UpdateContactRequest
+      body: UpdateContactRequest,
+      photoFile?: File | null
     ): Promise<boolean> {
       try {
         this.loading = true;
 
+        const formData = new FormData();
+        const labelTemplateId = this.extractFieldValue(
+          body.label_template_id as FieldValue
+        );
+        if (labelTemplateId) {
+          formData.append('label_template_id', labelTemplateId);
+        }
+        const name = this.extractFieldValue(body.name as FieldValue);
+        if (name) {
+          formData.append('name', name);
+        }
+        const lastName = this.extractFieldValue(body.last_name as FieldValue);
+        if (lastName) {
+          formData.append('last_name', lastName);
+        }
+        const email = this.extractFieldValue(body.email as FieldValue);
+        if (email) {
+          formData.append('email', email);
+        }
+        const phoneDdi = this.extractFieldValue(body.phone_ddi as FieldValue);
+        if (phoneDdi) {
+          formData.append('phone_ddi', phoneDdi);
+        }
+        const phone = this.extractFieldValue(body.phone as FieldValue);
+        if (phone) {
+          formData.append('phone', phone);
+        }
+        const nickname = this.extractFieldValue(body.nickname as FieldValue);
+        if (nickname) {
+          formData.append('nickname', nickname);
+        }
+        const birthday = this.extractFieldValue(body.birthday as FieldValue);
+        if (birthday) {
+          formData.append('birthday', birthday);
+        }
+        const notes = this.extractFieldValue(body.notes as FieldValue);
+        if (notes) {
+          formData.append('notes', notes);
+        }
+        const imageUrl = this.extractFieldValue(body.image_url as FieldValue);
+        if (imageUrl) {
+          formData.append('image_url', imageUrl);
+        } else if (photoFile) {
+          formData.append('photo', photoFile);
+        }
+
         const response = await axios.patch<IApiResponse<boolean>>(
           `/contact/${payload.contact_id}`,
-          body
+          formData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+            },
+          }
         );
 
         this.loading = false;
@@ -249,6 +371,47 @@ export const useContactStore = defineStore('contact', {
         return true;
       } catch (error) {
         let errorMessage = this.i18n.global.t('contact_edit_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async deleteContactPhoto(contactId: string): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.delete<IApiResponse<boolean>>(
+          `/contact/${contactId}/photo`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('contact_photo_delete_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('contact_photo_deleted_successfully'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('contact_photo_delete_error');
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }

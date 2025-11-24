@@ -89,6 +89,12 @@ export const chatMappings = () => {
             phone: {
               type: 'keyword',
             },
+            phone_ddi: {
+              type: 'keyword',
+            },
+            photo: {
+              type: 'keyword',
+            },
           },
         },
         photo: {
@@ -104,6 +110,12 @@ export const chatMappings = () => {
           type: 'keyword',
         },
         date: {
+          type: 'date',
+        },
+        started_at: {
+          type: 'date',
+        },
+        closed_at: {
           type: 'date',
         },
       },

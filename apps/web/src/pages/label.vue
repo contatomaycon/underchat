@@ -9,6 +9,7 @@ import { getAdministrator } from '@/@webcore/localStorage/user';
 import { DataTableHeader } from 'vuetify';
 import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
 import { useLabelTemplateStore } from '@/@webcore/stores/labelTemplate';
+import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { ELabelStatus } from '@core/common/enums/ELabelStatus';
 import { ListLabelTemplateResponse } from '@core/schema/labelTemplate/listLabelTemplate/response.schema';
 import { EColor } from '@core/common/enums/EColor';
@@ -48,6 +49,7 @@ const permissionsCreate = [
 
 const { t } = useI18n();
 const labelTemplateStore = useLabelTemplateStore();
+useSnackbarCleanup(labelTemplateStore);
 const isAdministrator = getAdministrator();
 
 const itemsPerPage = ref([

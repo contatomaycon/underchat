@@ -10,6 +10,8 @@ import moment from 'moment';
 import { buildCandidatesWithDdi } from '@core/common/functions/buildCandidatesBR';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 
+type FieldValue = string | { value: string } | null;
+
 @injectable()
 export class ContactCreatorUseCase {
   constructor(
@@ -76,16 +78,21 @@ export class ContactCreatorUseCase {
     this.validateBirthDate(t, birthday);
   }
 
-  private encryptContactData(input: CreateContactRequest): {
+  private encryptContactData(
+    phone: string | null,
+    phoneDdi: string | null,
+    email: string | null
+  ): {
     emailC: string | null;
     phonesC: string[];
   } {
-    const phones = buildCandidatesWithDdi(input.phone, input.phone_ddi);
+    const phones =
+      phone && phoneDdi ? buildCandidatesWithDdi(phone, phoneDdi) : [];
     const phonesC = phones.map((phone) => this.encryptService.encrypt(phone));
 
     return {
-      emailC: input.email ? this.encryptService.encrypt(input.email) : null,
-      phonesC: input.phone ? phonesC : [],
+      emailC: email ? this.encryptService.encrypt(email) : null,
+      phonesC: phone ? phonesC : [],
     };
   }
 
@@ -171,20 +178,58 @@ export class ContactCreatorUseCase {
     }
   }
 
+  private extractFieldValue(
+    field: string | { value: string } | null | undefined
+  ): string | null {
+    if (field === null || field === undefined) {
+      return null;
+    }
+
+    if (typeof field === 'object' && 'value' in field) {
+      return field.value ?? null;
+    }
+
+    if (typeof field === 'string') {
+      return field;
+    }
+
+    return null;
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     input: CreateContactRequest,
     accountId: string
   ): Promise<boolean> {
-    await this.validateAccountAndLabelTemplate(
-      t,
-      accountId,
-      input.label_template_id
+    const labelTemplateId = this.extractFieldValue(
+      input.label_template_id as FieldValue
     );
+    const name = this.extractFieldValue(input.name as FieldValue);
+    const lastName = this.extractFieldValue(input.last_name as FieldValue);
+    const email = this.extractFieldValue(input.email as FieldValue);
+    const phoneDdi = this.extractFieldValue(input.phone_ddi as FieldValue);
+    const phone = this.extractFieldValue(input.phone as FieldValue);
+    const nickname = this.extractFieldValue(input.nickname as FieldValue);
+    const birthday = this.extractFieldValue(input.birthday as FieldValue);
+    const notes = this.extractFieldValue(input.notes as FieldValue);
 
-    this.validateBirthdayIfPresent(t, input.birthday);
+    if (!name) {
+      throw new Error(t('name_required'));
+    }
 
-    const { emailC, phonesC } = this.encryptContactData(input);
+    if (!phoneDdi) {
+      throw new Error(t('phone_ddi_required'));
+    }
+
+    if (!phone) {
+      throw new Error(t('phone_required'));
+    }
+
+    await this.validateAccountAndLabelTemplate(t, accountId, labelTemplateId);
+
+    this.validateBirthdayIfPresent(t, birthday);
+
+    const { emailC, phonesC } = this.encryptContactData(phone, phoneDdi, email);
 
     const { emailExists, phoneExists } = await this.checkContactExistence(
       accountId,
@@ -194,15 +239,15 @@ export class ContactCreatorUseCase {
 
     this.validateContactNotExists(t, emailExists, phoneExists);
 
-    let phoneToSave = input.phone;
-    let phoneDdiToSave = input.phone_ddi;
+    let phoneToSave = phone;
+    let phoneDdiToSave = phoneDdi;
 
-    if (input.phone) {
+    if (phone) {
       const normalized = await this.validateAndNormalizePhone(
         t,
         accountId,
-        input.phone,
-        input.phone_ddi
+        phone,
+        phoneDdi
       );
 
       phoneToSave = normalized.phone;
@@ -210,9 +255,17 @@ export class ContactCreatorUseCase {
     }
 
     const contactToCreate: CreateContactRequest = {
-      ...input,
-      phone: phoneToSave,
+      label_template_id: labelTemplateId,
+      name,
+      last_name: lastName,
+      email,
       phone_ddi: phoneDdiToSave,
+      phone: phoneToSave,
+      nickname,
+      birthday,
+      notes,
+      photo: input.photo,
+      image_url: input.image_url,
     };
 
     const contactId = await this.contactService.createContact(

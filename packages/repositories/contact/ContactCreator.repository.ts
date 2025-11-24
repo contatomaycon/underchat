@@ -49,6 +49,7 @@ export class ContactCreatorRepository {
         phone_partial: input.phone_partial,
         phone_c: input.phone_c,
         nickname: input.nickname,
+        photo: input.photo,
         birthday: nullIfEmpty(input.birthday),
         notes: input.notes,
       })

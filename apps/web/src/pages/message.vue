@@ -9,6 +9,7 @@ import { getAdministrator } from '@/@webcore/localStorage/user';
 import { DataTableHeader } from 'vuetify';
 import { EMessageTemplatePermissions } from '@core/common/enums/EPermissions/messageTemplate';
 import { useMessageTemplateStore } from '@/@webcore/stores/messageTemplate';
+import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { EMessageStatus } from '@core/common/enums/EMessageStatus';
 import { ListMessageTemplateResponse } from '@core/schema/messageTemplate/listMessageTemplate/response.schema';
 
@@ -47,6 +48,7 @@ const permissionsCreate = [
 
 const { t } = useI18n();
 const messageTemplateStore = useMessageTemplateStore();
+useSnackbarCleanup(messageTemplateStore);
 const isAdministrator = getAdministrator();
 
 const itemsPerPage = ref([

@@ -27,6 +27,7 @@ export const contact = pgTable('contact', {
   phone_partial: varchar({ length: 15 }),
   phone_c: varchar({ length: 500 }),
   nickname: varchar({ length: 100 }),
+  photo: varchar({ length: 500 }),
   birthday: timestamp({
     mode: 'string',
     withTimezone: true,

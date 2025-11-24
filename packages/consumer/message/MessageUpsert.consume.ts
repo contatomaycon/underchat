@@ -38,14 +38,22 @@ import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
 import { convertWaveformToBase64 } from '@core/common/functions/convertWaveform';
 import Redis from 'ioredis';
 import { EMessageType } from '@core/common/enums/EMessageType';
-import { downloadMediaMessage, WAMessageKey } from '@whiskeysockets/baileys';
+import {
+  downloadMediaMessage,
+  proto,
+  WAMessageKey,
+} from '@whiskeysockets/baileys';
 import { Buffer } from 'node:buffer';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IMessageMarkRead } from '@core/common/interfaces/IMessageMarkRead';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
-import { extractPhoneAndDdiFromContactMessage } from '@core/common/functions/extractPhoneAndDdi';
+import {
+  extractPhoneAndDdiFromContactMessage,
+  extractPhoneAndDdi,
+} from '@core/common/functions/extractPhoneAndDdi';
 import { EncryptService } from '@core/services/encrypt.service';
 import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
+import { ContactService } from '@core/services/contact.service';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -63,7 +71,8 @@ export class MessageUpsertConsume {
     private readonly centrifugoService: CentrifugoService,
     private readonly storageService: StorageService,
     private readonly streamProducerService: StreamProducerService,
-    private readonly encryptService: EncryptService
+    private readonly encryptService: EncryptService,
+    private readonly contactService: ContactService
   ) {}
 
   private get consumerOrThrow(): Consumer {
@@ -130,7 +139,7 @@ export class MessageUpsertConsume {
     jidAlt?: string | null
   ): Promise<IChat | null> {
     const cached = await this.getChatFromCache(accountId, workerId, phone);
-    if (cached) {
+    if (cached && cached.status !== EChatStatus.closed) {
       return cached;
     }
 
@@ -402,18 +411,19 @@ export class MessageUpsertConsume {
     getChat: IChat,
     data: IUpsertMessage
   ): Promise<boolean | null> {
-    if (data.type !== EMessageType.edit_text) {
-      return null;
-    }
+    if (data.type !== EMessageType.edit_text) return null;
 
-    const editedMessage = (data.message?.message as any)?.editedMessage;
-    const protocolMessage = editedMessage?.message?.protocolMessage;
+    const editedMessage = (data.message?.message?.editedMessage ??
+      data.message?.message) as proto.Message.IFutureProofMessage &
+      proto.IMessage;
+
+    const protocolMessage =
+      editedMessage?.message?.protocolMessage ?? editedMessage?.protocolMessage;
+
     const targetMessageId = protocolMessage?.key?.id;
     const editedContent = protocolMessage?.editedMessage;
 
-    if (!targetMessageId || !editedContent) {
-      return true;
-    }
+    if (!targetMessageId || !editedContent) return true;
 
     const targetMessage = await this.findMessageByKeyId(
       data.account_id,
@@ -781,32 +791,72 @@ export class MessageUpsertConsume {
 
     for (const line of lines) {
       const trimmed = line.trim();
-
-      if (trimmed.startsWith('FN:')) {
-        this.parseFullName(trimmed.substring(3).trim(), result);
-        continue;
-      }
-
-      if (trimmed.startsWith('N:')) {
-        const nValue = trimmed.substring(2).trim();
-        const parts = nValue.split(';');
-        if (parts.length >= 2 && parts[1] && !result.name) {
-          this.parseFullName(parts[1].trim(), result);
-        }
-        continue;
-      }
-
-      if (trimmed.startsWith('TEL')) {
-        this.parseTelephone(trimmed, result);
-        continue;
-      }
-
-      if (trimmed.startsWith('EMAIL:')) {
-        result.email = trimmed.substring(6).trim();
-      }
+      this.processVCardLine(trimmed, result);
     }
 
     return result;
+  }
+
+  private processVCardLine(
+    trimmed: string,
+    result: {
+      name?: string;
+      last_name?: string;
+      phone?: string;
+      phone_ddi?: string;
+      email?: string;
+    }
+  ): void {
+    if (trimmed.startsWith('FN:')) {
+      this.parseFullName(trimmed.substring(3).trim(), result);
+      return;
+    }
+
+    if (trimmed.startsWith('N:')) {
+      this.processNLine(trimmed, result);
+      return;
+    }
+
+    if (trimmed.startsWith('TEL') || trimmed.includes('.TEL')) {
+      this.parseTelephone(trimmed, result);
+      return;
+    }
+
+    if (trimmed.startsWith('EMAIL:') || trimmed.includes('.EMAIL')) {
+      this.processEmailLine(trimmed, result);
+    }
+  }
+
+  private processNLine(
+    trimmed: string,
+    result: {
+      name?: string;
+      last_name?: string;
+    }
+  ): void {
+    const nValue = trimmed.substring(2).trim();
+    const parts = nValue.split(';').map((p) => p.trim());
+
+    for (let i = 1; i < parts.length; i++) {
+      if (parts[i] && !result.name) {
+        this.parseFullName(parts[i], result);
+        break;
+      }
+    }
+  }
+
+  private processEmailLine(trimmed: string, result: { email?: string }): void {
+    const emailIndex = trimmed.indexOf('EMAIL');
+    if (emailIndex === -1) return;
+
+    const afterEmail = trimmed.slice(emailIndex);
+    const colonIndex = afterEmail.indexOf(':');
+    if (colonIndex === -1) return;
+
+    result.email = afterEmail
+      .slice(colonIndex + 1)
+      .trim()
+      .split(/[\n\r;]/)[0];
   }
 
   private parseFullName(
@@ -834,22 +884,35 @@ export class MessageUpsertConsume {
       phone_ddi?: string;
     }
   ): void {
-    const waidRegex = /waid=([^:]+):(.+)/;
-    const waidMatch = waidRegex.exec(telLine);
-    if (waidMatch) {
-      this.parseTelephoneWithWaid(
-        waidMatch[1].trim(),
-        waidMatch[2].trim(),
-        result
-      );
-      return;
+    const waidIndex = telLine.indexOf('waid=');
+    if (waidIndex !== -1) {
+      const afterWaid = telLine.slice(waidIndex + 5);
+      const colonIndex = afterWaid.indexOf(':');
+      if (colonIndex !== -1) {
+        const waid = afterWaid
+          .slice(0, colonIndex)
+          .trim()
+          .replaceAll(/[;:]/g, '');
+        const fullPhone = afterWaid
+          .slice(colonIndex + 1)
+          .trim()
+          .split(/[\n\r;]/)[0];
+        this.parseTelephoneWithWaid(waid, fullPhone, result);
+        return;
+      }
     }
 
-    const telRegex = /TEL[^:]*:(.+)/;
-    const telMatch = telRegex.exec(telLine);
-    if (!telMatch) return;
+    const telIndex = telLine.indexOf('TEL');
+    if (telIndex === -1) return;
 
-    const phone = telMatch[1].trim();
+    const afterTel = telLine.slice(telIndex);
+    const colonIndex = afterTel.indexOf(':');
+    if (colonIndex === -1) return;
+
+    const phone = afterTel
+      .slice(colonIndex + 1)
+      .trim()
+      .split(/[\n\r;]/)[0];
     this.parseTelephoneValue(phone, result);
   }
 
@@ -861,18 +924,32 @@ export class MessageUpsertConsume {
       phone_ddi?: string;
     }
   ): void {
-    const waidDigits = waid.replaceAll(/\D/g, '');
-    result.phone = waidDigits;
+    const fullPhoneTrimmed = fullPhone?.trim();
+    if (fullPhoneTrimmed) {
+      const fullPhoneWithPlus = fullPhoneTrimmed.startsWith('+')
+        ? fullPhoneTrimmed
+        : `+${fullPhoneTrimmed}`;
 
-    if (!fullPhone.startsWith('+')) return;
-
-    const phoneDigits = fullPhone.substring(1).replaceAll(/\D/g, '');
-    if (phoneDigits.length > waidDigits.length) {
-      result.phone_ddi = phoneDigits.substring(
-        0,
-        phoneDigits.length - waidDigits.length
-      );
+      const fullPhoneResult = extractPhoneAndDdi(fullPhoneWithPlus);
+      if (fullPhoneResult) {
+        result.phone = fullPhoneResult.phone;
+        result.phone_ddi = fullPhoneResult.phone_ddi;
+        return;
+      }
     }
+
+    const waidDigits = waid.replaceAll(/\D/g, '');
+    if (waidDigits) {
+      const waidWithPlus = `+${waidDigits}`;
+      const waidResult = extractPhoneAndDdi(waidWithPlus);
+      if (waidResult) {
+        result.phone = waidResult.phone;
+        result.phone_ddi = waidResult.phone_ddi;
+        return;
+      }
+    }
+
+    result.phone = waidDigits;
   }
 
   private parseTelephoneValue(
@@ -1241,13 +1318,35 @@ export class MessageUpsertConsume {
       },
     };
 
+    const phoneWithPlus = `+${phone}`;
+    const phoneAndDdi = extractPhoneAndDdi(phoneWithPlus);
+
+    if (phoneAndDdi) {
+      const existingContact = await this.contactService.getContactByPhone(
+        data.account_id,
+        phoneAndDdi.phone,
+        phoneAndDdi.phone_ddi
+      );
+
+      if (existingContact) {
+        inputChatMessage.contact = {
+          id: existingContact.contact_id,
+          name: existingContact.name,
+          phone: existingContact.phone_partial ?? phone,
+          phone_ddi: existingContact.phone_ddi ?? phoneAndDdi.phone_ddi,
+          photo: existingContact.photo ?? null,
+        };
+      }
+    }
+
     if (data.photo) {
       const photoResult = await this.storageService.uploadFromUrl(
         data.photo,
         data.account_id,
         chatId
       );
-      inputChatMessage.photo = photoResult?.url;
+      inputChatMessage.photo =
+        inputChatMessage.contact?.photo ?? photoResult?.url ?? null;
     }
 
     await this.cacheChat(inputChatMessage);

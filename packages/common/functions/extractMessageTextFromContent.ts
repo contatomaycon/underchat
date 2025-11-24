@@ -14,8 +14,8 @@ function getTextByMessageType(content: IContent): string | null {
         content.location?.name ?? content.location?.address ?? '[Localização]'
       );
 
-    case EMessageType.contacts:
-      return content.contact?.name ?? '[Contato]';
+    case EMessageType.contact_card:
+      return '[Contato]';
 
     case EMessageType.document:
       return content.document?.name ?? '[Documento]';

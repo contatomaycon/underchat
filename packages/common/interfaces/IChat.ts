@@ -31,6 +31,8 @@ interface IContact {
   id: string;
   name: string;
   phone: string;
+  phone_ddi?: string | null;
+  photo?: string | null;
 }
 
 interface IMessageKey {
@@ -52,4 +54,6 @@ export interface IChat {
   phone: string;
   status: EChatStatus;
   date: string;
+  started_at?: string | null;
+  closed_at?: string | null;
 }

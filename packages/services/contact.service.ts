@@ -19,6 +19,9 @@ import { PasswordEncryptorService } from './passwordEncryptor.service';
 import { ContactSensitiveDataRepository } from '@core/repositories/contact/ContactSensitiveData.repository';
 import { ContactExistsByEmailAndPhoneRepository } from '@core/repositories/contact/ContactExistsByEmailAndPhone.repository';
 import { nullIfEmpty } from '@core/common/functions/nullIfEmpty';
+import { StorageService } from './storage.service';
+
+type FieldValue = string | { value: string } | null;
 
 @injectable()
 export class ContactService {
@@ -32,7 +35,8 @@ export class ContactService {
     private readonly contactUpdaterRepository: ContactUpdaterRepository,
     private readonly passwordEncryptorService: PasswordEncryptorService,
     private readonly contactSensitiveDataRepository: ContactSensitiveDataRepository,
-    private readonly contactExistsByEmailAndPhoneRepository: ContactExistsByEmailAndPhoneRepository
+    private readonly contactExistsByEmailAndPhoneRepository: ContactExistsByEmailAndPhoneRepository,
+    private readonly storageService: StorageService
   ) {}
 
   listContacts = async (
@@ -70,6 +74,22 @@ export class ContactService {
     return this.contactViewerExistsRepository.existsContactById(contactId);
   };
 
+  private extractFieldValue(field: FieldValue | undefined): string | null {
+    if (field === null || field === undefined) {
+      return null;
+    }
+
+    if (typeof field === 'object' && 'value' in field) {
+      return field.value ?? null;
+    }
+
+    if (typeof field === 'string') {
+      return field;
+    }
+
+    return null;
+  }
+
   private processEmailFields(
     input: CreateContactRequest | ICreateContact,
     isAlreadyEncrypted: boolean
@@ -88,7 +108,8 @@ export class ContactService {
       };
     }
 
-    const plainEmail = 'email' in input ? input.email : null;
+    const emailField = 'email' in input ? input.email : null;
+    const plainEmail = this.extractFieldValue(emailField as FieldValue);
     if (!plainEmail) {
       return {
         emailCEncrypted: null,
@@ -124,7 +145,8 @@ export class ContactService {
       };
     }
 
-    const plainPhone = 'phone' in input ? input.phone : null;
+    const phoneField = 'phone' in input ? input.phone : null;
+    const plainPhone = this.extractFieldValue(phoneField as FieldValue);
     if (!plainPhone) {
       return {
         phoneCEncrypted: null,
@@ -146,29 +168,53 @@ export class ContactService {
   private prepareContactPayload(
     input: CreateContactRequest | ICreateContact,
     accountId: string,
-    isValidated: boolean
+    isValidated: boolean,
+    photoUrl?: string | null
   ): ICreateContact {
     const isAlreadyEncrypted = 'email_c' in input || 'phone_c' in input;
 
     const emailFields = this.processEmailFields(input, isAlreadyEncrypted);
     const phoneFields = this.processPhoneFields(input, isAlreadyEncrypted);
 
+    if (isAlreadyEncrypted) {
+      return {
+        ...input,
+        photo: photoUrl ?? input.photo,
+      };
+    }
+
+    const createInput = input as CreateContactRequest;
+    const labelTemplateId = this.extractFieldValue(
+      createInput.label_template_id as FieldValue
+    );
+    const name = this.extractFieldValue(createInput.name as FieldValue);
+    const lastName = this.extractFieldValue(
+      createInput.last_name as FieldValue
+    );
+    const phoneDdi = this.extractFieldValue(
+      createInput.phone_ddi as FieldValue
+    );
+    const nickname = this.extractFieldValue(createInput.nickname as FieldValue);
+    const birthday = this.extractFieldValue(createInput.birthday as FieldValue);
+    const notes = this.extractFieldValue(createInput.notes as FieldValue);
+
     return {
       account_id: accountId,
-      label_template_id: input.label_template_id,
+      label_template_id: labelTemplateId,
       is_valided: isValidated,
-      name: input.name,
-      last_name: input.last_name,
+      name: name ?? '',
+      last_name: lastName,
       email: emailFields.emailCEncrypted,
       email_partial: emailFields.emailPartialEncrypted,
       email_c: emailFields.emailC,
-      phone_ddi: input.phone_ddi,
+      phone_ddi: phoneDdi ?? '',
       phone: phoneFields.phoneCEncrypted,
       phone_partial: phoneFields.phonePartialEncrypted,
       phone_c: phoneFields.phoneC,
-      nickname: input.nickname,
-      birthday: nullIfEmpty(input.birthday),
-      notes: input.notes,
+      nickname,
+      photo: photoUrl,
+      birthday: nullIfEmpty(birthday),
+      notes,
     };
   }
 
@@ -177,7 +223,27 @@ export class ContactService {
     accountId: string,
     isValidated: boolean = true
   ): Promise<string | null> => {
-    const payload = this.prepareContactPayload(input, accountId, isValidated);
+    let photoUrl: string | null = null;
+
+    const imageUrl = this.extractFieldValue(input.image_url as FieldValue);
+
+    if (imageUrl) {
+      photoUrl = imageUrl;
+    }
+    if (!imageUrl && input.photo) {
+      const uploadResult = await this.storageService.uploadImage(
+        input.photo,
+        accountId
+      );
+      photoUrl = uploadResult?.url ?? null;
+    }
+
+    const payload = this.prepareContactPayload(
+      input,
+      accountId,
+      isValidated,
+      photoUrl
+    );
     return this.contactCreatorRepository.createContact(payload);
   };
 
@@ -188,7 +254,12 @@ export class ContactService {
     accountId: string,
     isValidated: boolean = false
   ): Promise<boolean | null> => {
-    const payload = this.prepareContactPayload(input, accountId, isValidated);
+    const payload = this.prepareContactPayload(
+      input,
+      accountId,
+      isValidated,
+      input.photo
+    );
 
     return this.contactCreatorRepository.createContactWithGroup(
       t,
@@ -198,15 +269,17 @@ export class ContactService {
   };
 
   viewContactById = async (
-    contactId: string
-  ): Promise<ViewContactResponse | null> => {
-    return this.contactViewerRepository.viewContactById(contactId);
+    contactId: string,
+    accountId?: string
+  ): Promise<(ViewContactResponse & { phone: string }) | null> => {
+    return this.contactViewerRepository.viewContactById(contactId, accountId);
   };
 
   getContactById = async (
-    contactId: string
+    contactId: string,
+    accountId?: string
   ): Promise<ViewContactResponse | null> => {
-    return this.contactViewerRepository.viewContactById(contactId);
+    return this.contactViewerRepository.viewContactById(contactId, accountId);
   };
 
   getContactByPhone = async (
@@ -254,51 +327,105 @@ export class ContactService {
     return this.contactDeleterRepository.deleteContactById(contactId);
   };
 
+  private determineIsValided(
+    currentContact: (ViewContactResponse & { phone: string }) | null,
+    newPhoneEncrypted: string | null,
+    newPhoneDdi: string | null | undefined,
+    newPhone: string | null | undefined
+  ): boolean {
+    if (!currentContact) return !!(newPhone && newPhoneDdi);
+    if (!newPhoneDdi) return currentContact.is_valided ?? false;
+
+    const phoneChanged =
+      newPhoneEncrypted !== currentContact.phone ||
+      newPhoneDdi !== currentContact.phone_ddi;
+
+    if (!phoneChanged) {
+      return currentContact.is_valided ?? false;
+    }
+
+    return !!(newPhone && newPhoneDdi);
+  }
+
   updateContactById = async (
     input: UpdateContactRequest,
-    contactId: string
+    contactId: string,
+    accountId?: string
   ): Promise<boolean | null> => {
-    const emailCEncrypted = input.email
-      ? this.passwordEncryptorService.encrypt(input.email)
+    const currentContact = await this.viewContactById(contactId, accountId);
+
+    const emailField = this.extractFieldValue(input.email as FieldValue);
+    const emailCEncrypted = emailField
+      ? this.passwordEncryptorService.encrypt(emailField)
       : null;
 
-    const emailPartialEncrypted = input.email
+    const emailPartialEncrypted = emailField
       ? (
-          this.encryptService.sanitize(input.email, ETypeSanetize.email) ?? ''
+          this.encryptService.sanitize(emailField, ETypeSanetize.email) ?? ''
         ).slice(0, 50)
       : null;
 
-    const emailC = input.email
-      ? this.encryptService.encrypt(input.email)
+    const emailC = emailField ? this.encryptService.encrypt(emailField) : null;
+
+    const phoneField = this.extractFieldValue(input.phone as FieldValue);
+    const phoneCEncrypted = phoneField
+      ? this.passwordEncryptorService.encrypt(phoneField)
       : null;
 
-    const phoneCEncrypted = input.phone
-      ? this.passwordEncryptorService.encrypt(input.phone)
+    const phonePartialEncrypted = phoneField
+      ? this.encryptService.sanitize(phoneField, ETypeSanetize.phone)
       : null;
 
-    const phonePartialEncrypted = input.phone
-      ? this.encryptService.sanitize(input.phone, ETypeSanetize.phone)
-      : null;
+    const phoneC = phoneField ? this.encryptService.encrypt(phoneField) : null;
 
-    const phoneC = input.phone
-      ? this.encryptService.encrypt(input.phone)
-      : null;
+    const phoneDdiField = this.extractFieldValue(input.phone_ddi as FieldValue);
+    const isValided = this.determineIsValided(
+      currentContact,
+      phoneCEncrypted,
+      phoneDdiField,
+      phoneField
+    );
+
+    let photoUrl: string | null | undefined = undefined;
+
+    const imageUrl = this.extractFieldValue(input.image_url as FieldValue);
+
+    if (imageUrl) {
+      photoUrl = imageUrl;
+    }
+    if (!imageUrl && input.photo && accountId) {
+      const uploadResult = await this.storageService.uploadImage(
+        input.photo,
+        accountId
+      );
+      photoUrl = uploadResult?.url ?? null;
+    }
+
+    const labelTemplateId = this.extractFieldValue(
+      input.label_template_id as FieldValue
+    );
+    const name = this.extractFieldValue(input.name as FieldValue);
+    const lastName = this.extractFieldValue(input.last_name as FieldValue);
+    const nickname = this.extractFieldValue(input.nickname as FieldValue);
+    const birthday = this.extractFieldValue(input.birthday as FieldValue);
+    const notes = this.extractFieldValue(input.notes as FieldValue);
 
     const payload: IUpdateContact = {
-      label_template_id: input.label_template_id,
-      name: input.name,
-      last_name: input.last_name,
+      label_template_id: labelTemplateId,
+      name,
+      last_name: lastName,
       email: emailCEncrypted,
       email_partial: emailPartialEncrypted,
       email_c: emailC,
-      phone_ddi: input.phone_ddi,
+      phone_ddi: phoneDdiField,
       phone: phoneCEncrypted,
       phone_partial: phonePartialEncrypted,
       phone_c: phoneC,
-      nickname: input.nickname,
-      birthday: nullIfEmpty(input.birthday),
-      notes: input.notes,
-      is_valided: !!(input.phone && input.phone_ddi),
+      nickname,
+      photo: photoUrl,
+      birthday: nullIfEmpty(birthday),
+      notes,
+      is_valided: isValided,
     };
 
     return this.contactUpdaterRepository.updateContactById(contactId, payload);
@@ -397,5 +524,31 @@ export class ContactService {
       phonesC,
       contactId
     );
+  };
+
+  deleteContactPhoto = async (
+    contactId: string,
+    accountId: string
+  ): Promise<boolean> => {
+    const currentContact = await this.viewContactById(contactId, accountId);
+
+    if (!currentContact?.photo) {
+      return true;
+    }
+
+    const photoDeleted = await this.storageService.deleteImage(
+      currentContact.photo
+    );
+
+    if (!photoDeleted) {
+      return false;
+    }
+
+    const payload: IUpdateContact = {
+      photo: null,
+      is_valided: currentContact.is_valided ?? false,
+    };
+
+    return this.contactUpdaterRepository.updateContactById(contactId, payload);
   };
 }

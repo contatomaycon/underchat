@@ -33,6 +33,8 @@ export const contactSchema = Type.Object({
   id: Type.String(),
   name: Type.String(),
   phone: Type.String(),
+  phone_ddi: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  photo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export const listChatsResultSchema = Type.Object({
@@ -48,6 +50,8 @@ export const listChatsResultSchema = Type.Object({
   phone: Type.String(),
   status: Type.String({ enum: Object.values(EChatStatus) }),
   date: Type.String(),
+  started_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  closed_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export const listChatsResponseSchema = Type.Object({

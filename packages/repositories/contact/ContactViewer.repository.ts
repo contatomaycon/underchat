@@ -12,8 +12,18 @@ export class ContactViewerRepository {
   ) {}
 
   viewContactById = async (
-    contactId: string
-  ): Promise<ViewContactResponse | null> => {
+    contactId: string,
+    accountId?: string
+  ): Promise<(ViewContactResponse & { phone: string }) | null> => {
+    const conditions = [
+      eq(contact.contact_id, contactId),
+      isNull(contact.deleted_at),
+    ];
+
+    if (accountId) {
+      conditions.push(eq(contact.account_id, accountId));
+    }
+
     const result = await this.db
       .select({
         contact_id: contact.contact_id,
@@ -29,9 +39,11 @@ export class ContactViewerRepository {
         name: contact.name,
         last_name: contact.last_name,
         email_partial: contact.email_partial,
+        phone: contact.phone,
         phone_ddi: contact.phone_ddi,
         phone_partial: contact.phone_partial,
         nickname: contact.nickname,
+        photo: contact.photo,
         birthday: sql<
           string | null
         >`CASE WHEN ${contact.birthday} IS NULL THEN NULL ELSE to_char(${contact.birthday}, 'YYYY-MM-DD') END`,
@@ -45,14 +57,14 @@ export class ContactViewerRepository {
         labelTemplate,
         eq(labelTemplate.label_template_id, contact.label_template_id)
       )
-      .where(and(eq(contact.contact_id, contactId), isNull(contact.deleted_at)))
+      .where(and(...conditions))
       .execute();
 
     if (!result.length) {
       return null;
     }
 
-    return result[0] as ViewContactResponse;
+    return result[0] as (ViewContactResponse & { phone: string }) | null;
   };
 
   viewContactByPhone = async (
@@ -90,6 +102,7 @@ export class ContactViewerRepository {
         phone_ddi: contact.phone_ddi,
         phone_partial: contact.phone_partial,
         nickname: contact.nickname,
+        photo: contact.photo,
         birthday: sql<
           string | null
         >`CASE WHEN ${contact.birthday} IS NULL THEN NULL ELSE to_char(${contact.birthday}, 'YYYY-MM-DD') END`,

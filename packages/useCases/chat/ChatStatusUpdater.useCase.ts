@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import {
   UpdateChatStatusBody,
@@ -13,13 +13,15 @@ import {
 import { IChat } from '@core/common/interfaces/IChat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { UserService } from '@core/services/user.service';
+import Redis from 'ioredis';
 
 @injectable()
 export class ChatStatusUpdaterUseCase {
   constructor(
     private readonly chatService: ChatService,
     private readonly centrifugoService: CentrifugoService,
-    private readonly userService: UserService
+    private readonly userService: UserService,
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   async execute(
@@ -39,8 +41,23 @@ export class ChatStatusUpdaterUseCase {
     }
 
     const status = body.status as EChatStatus;
+    const currentDate = new Date().toISOString();
 
-    let user: IChat['user'] | undefined;
+    let user: IChat['user'] | null | undefined;
+    let startedAt: string | null | undefined;
+    let closedAt: string | null | undefined;
+
+    if (
+      status === EChatStatus.in_chat &&
+      chat.status === EChatStatus.queue &&
+      !chat.started_at
+    ) {
+      startedAt = currentDate;
+    }
+
+    if (status === EChatStatus.closed && !chat.closed_at) {
+      closedAt = currentDate;
+    }
 
     if (status === EChatStatus.in_chat) {
       const userData = await this.userService.viewUserNamePhoto(userId);
@@ -57,7 +74,9 @@ export class ChatStatusUpdaterUseCase {
     const updated = await this.chatService.updateChatStatus(
       params.chat_id,
       status,
-      user
+      user,
+      startedAt,
+      closedAt
     );
 
     if (!updated) {
@@ -67,7 +86,9 @@ export class ChatStatusUpdaterUseCase {
     const updatedChat: IChat = {
       ...chat,
       status,
-      user: user ?? chat.user,
+      user: user === undefined ? chat.user : user,
+      started_at: startedAt === undefined ? chat.started_at : startedAt,
+      closed_at: closedAt === undefined ? chat.closed_at : closedAt,
       summary: {
         last_message: chat.summary?.last_message ?? null,
         last_date: chat.summary?.last_date ?? null,
@@ -76,6 +97,12 @@ export class ChatStatusUpdaterUseCase {
     };
 
     await this.chatService.saveChat(updatedChat);
+
+    if (status === EChatStatus.closed) {
+      const cacheKey = `underchat:chat:${updatedChat.account.id}:${updatedChat.worker.id}:${updatedChat.phone}`;
+
+      await this.redis.del(cacheKey);
+    }
 
     const channelAccountId = updatedChat.account?.id ?? accountId;
 

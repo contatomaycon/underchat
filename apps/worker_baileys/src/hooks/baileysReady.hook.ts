@@ -12,7 +12,7 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
-const RETRY_DELAY = 5000;
+const RETRY_DELAY = 10000;
 let mismatchedStatusSent = false;
 
 const updateWorkerMismatchedStatus = async (

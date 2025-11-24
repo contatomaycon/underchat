@@ -4,7 +4,7 @@ import { getI18n } from '@/plugins/i18n';
 import { EColor } from '@core/common/enums/EColor';
 import { ISnackbar } from '@core/common/interfaces/ISnackbar';
 import axios from '@webcore/axios';
-import { isAxiosError, type AxiosRequestConfig } from 'axios';
+import { type AxiosRequestConfig } from 'axios';
 import {
   ListChatsResponse,
   ListChatsResult,
@@ -25,6 +25,7 @@ import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/req
 import { IChatMessage, IReaction } from '@core/common/interfaces/IChatMessage';
 import { IChat } from '@core/common/interfaces/IChat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { UpdateChatContactResult } from '@core/schema/chat/updateChatContact/response.schema';
 import { ViewLinkPreviewBody } from '@core/schema/chat/viewLinkPreview/request.schema';
 import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
@@ -208,6 +209,8 @@ export const useChatStore = defineStore('chat', {
         phone: chat.phone,
         status: chat.status,
         date: chat.date,
+        started_at: chat.started_at,
+        closed_at: chat.closed_at,
       };
 
       const isActiveChat = this.activeChat?.chat_id === chat.chat_id;
@@ -220,6 +223,11 @@ export const useChatStore = defineStore('chat', {
 
       if (chat.status === EChatStatus.in_chat) {
         this.handleInChatStatusChat(input, chat, isActiveChat);
+        return;
+      }
+
+      if (chat.status === EChatStatus.closed) {
+        this.handleClosedStatusChat(input, chat);
       }
     },
 
@@ -268,6 +276,8 @@ export const useChatStore = defineStore('chat', {
         phone: input.phone,
         status: input.status,
         date: input.date,
+        started_at: input.started_at,
+        closed_at: input.closed_at,
       };
     },
 
@@ -349,6 +359,15 @@ export const useChatStore = defineStore('chat', {
 
       if (this.activeChat?.chat_id === chat.chat_id) {
         this.activeChat = this.createUpdatedActiveChat(input, isActiveChat);
+      }
+    },
+
+    handleClosedStatusChat(input: ListChatsResult, chat: IChat): void {
+      this.removeFromList(this.listInChat, chat.chat_id);
+      this.removeFromList(this.listQueue, chat.chat_id);
+
+      if (this.activeChat?.chat_id === chat.chat_id) {
+        this.activeChat = null;
       }
     },
     updateChatUserImmediate() {
@@ -505,10 +524,6 @@ export const useChatStore = defineStore('chat', {
           this.listMessages = [];
           this.loading = false;
 
-          const errorMessage =
-            data?.message || this.i18n.global.t('chat_list_not_found');
-          this.showSnackbar(errorMessage, EColor.error);
-
           return;
         }
 
@@ -521,16 +536,9 @@ export const useChatStore = defineStore('chat', {
         this.loading = false;
         this.listMessages = [];
 
-        let errorMessage = this.i18n.global.t('chat_list_not_found');
-
-        if (isAxiosError(error)) {
-          const backendMessage = error?.response?.data?.message;
-          if (backendMessage) {
-            errorMessage = backendMessage;
-          }
+        if (error instanceof Error) {
+          this.showSnackbar(error.message, EColor.error);
         }
-
-        this.showSnackbar(errorMessage, EColor.error);
 
         return;
       }
@@ -621,12 +629,18 @@ export const useChatStore = defineStore('chat', {
           return false;
         }
 
-        if (data.data && this.activeChat?.chat_id === chatId) {
-          this.activeChat = {
-            ...this.activeChat,
-            status: data.data.status,
-            user: data.data.user,
-          };
+        if (data.data) {
+          this.addChat(data.data);
+
+          if (this.activeChat?.chat_id === chatId) {
+            this.activeChat = {
+              ...this.activeChat,
+              status: data.data.status,
+              user: data.data.user,
+              started_at: data.data.started_at,
+              closed_at: data.data.closed_at,
+            };
+          }
         }
 
         return true;
@@ -647,6 +661,36 @@ export const useChatStore = defineStore('chat', {
         await axios.post(`/chat/${chatId}/clear-summary`, {});
 
         return true;
+      } catch {
+        return false;
+      }
+    },
+
+    async updateChatContact(
+      chatId: string,
+      phone: string,
+      phoneDdi: string
+    ): Promise<boolean> {
+      if (!chatId || !phone || !phoneDdi) return false;
+
+      try {
+        const response = await axios.patch<
+          IApiResponse<UpdateChatContactResult>
+        >(`/chat/${chatId}/contact`, {
+          phone,
+          phone_ddi: phoneDdi,
+        });
+
+        if (response?.data?.status && response?.data?.data) {
+          const chatData: IChat = {
+            ...response.data.data,
+            status: response.data.data.status as EChatStatus,
+          };
+          this.addChat(chatData);
+          return true;
+        }
+
+        return false;
       } catch {
         return false;
       }
@@ -1010,7 +1054,10 @@ export const useChatStore = defineStore('chat', {
         return;
       }
 
-      if ((chat.summary?.unread_count ?? 0) > 0) {
+      if (
+        chat.status === EChatStatus.in_chat &&
+        (chat.summary?.unread_count ?? 0) > 0
+      ) {
         const chatInQueue = this.listQueue.find((c) => c.chat_id === chatId);
         const chatInList = this.listInChat.find((c) => c.chat_id === chatId);
 
@@ -1031,12 +1078,13 @@ export const useChatStore = defineStore('chat', {
 
       this.activeChat = {
         chat_id: chat.chat_id,
-        summary: chat.summary
-          ? {
-              ...chat.summary,
-              unread_count: 0,
-            }
-          : chat.summary,
+        summary:
+          chat.status === EChatStatus.in_chat && chat.summary
+            ? {
+                ...chat.summary,
+                unread_count: 0,
+              }
+            : chat.summary,
         account: chat.account,
         worker: chat.worker,
         sector: chat.sector,

@@ -66,7 +66,10 @@ export class ContactValidatorUseCase {
     contactId: string,
     accountId: string
   ): Promise<boolean> {
-    const contact = await this.contactService.getContactById(contactId);
+    const contact = await this.contactService.getContactById(
+      contactId,
+      accountId
+    );
 
     if (!contact) {
       throw new Error(t('contact_not_found'));

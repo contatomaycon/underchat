@@ -5,6 +5,8 @@ import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { mensageMappings } from '@core/mappings/mensage.mappings';
 import { IChat } from '@core/common/interfaces/IChat';
 import { chatMappings } from '@core/mappings/chat.mappings';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 
 type ElasticHit<T> = {
   _source?: T;
@@ -104,14 +106,29 @@ export class ChatService {
   updateChatStatus = async (
     chatId: string,
     status: IChat['status'],
-    user?: IChat['user']
+    user?: IChat['user'] | null,
+    startedAt?: string | null,
+    closedAt?: string | null
   ): Promise<boolean> => {
-    const updateData: { status: IChat['status']; user?: IChat['user'] } = {
+    const updateData: {
+      status: IChat['status'];
+      user?: IChat['user'] | null;
+      started_at?: string | null;
+      closed_at?: string | null;
+    } = {
       status,
     };
 
-    if (user) {
+    if (user !== undefined) {
       updateData.user = user;
+    }
+
+    if (startedAt !== undefined) {
+      updateData.started_at = startedAt;
+    }
+
+    if (closedAt !== undefined) {
+      updateData.closed_at = closedAt;
     }
 
     return this.elasticDatabaseService.update(
@@ -149,7 +166,7 @@ export class ChatService {
       if (!chat) return false;
 
       const summary: IChat['summary'] = {
-        last_message: null,
+        last_message: chat.summary?.last_message ?? null,
         last_date: chat.summary?.last_date ?? new Date().toISOString(),
         unread_count: 0,
       };
@@ -159,6 +176,94 @@ export class ChatService {
       console.error('Error clearing chat summary:', error);
       return false;
     }
+  };
+
+  findChatByPhone = async (
+    accountId: string,
+    workerId: string,
+    phone: string
+  ): Promise<IChat | null> => {
+    const candidates = buildCandidates(phone);
+    const shouldClauses: any[] = [];
+
+    if (Array.isArray(candidates) && candidates.length) {
+      shouldClauses.push({ terms: { phone: candidates } });
+    }
+
+    const queryElastic = {
+      size: 1,
+      _source: true,
+      query: {
+        bool: {
+          filter: [
+            {
+              nested: {
+                path: 'account',
+                query: { term: { 'account.id': accountId } },
+              },
+            },
+            {
+              nested: {
+                path: 'worker',
+                query: { term: { 'worker.id': workerId } },
+              },
+            },
+            {
+              terms: {
+                status: [
+                  EChatStatus.in_chat,
+                  EChatStatus.queue,
+                  EChatStatus.ura,
+                ],
+              },
+            },
+          ],
+          ...(shouldClauses.length
+            ? {
+                must: [
+                  { bool: { should: shouldClauses, minimum_should_match: 1 } },
+                ],
+              }
+            : {}),
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select<IChat>(
+      EElasticIndex.chat,
+      queryElastic
+    );
+
+    const hit = result?.hits?.hits?.[0] as ElasticHit<IChat> | undefined;
+    const chat = hit?._source ?? null;
+
+    if (chat && Array.isArray(chat.summary)) {
+      chat.summary = chat.summary[0] as IChat['summary'];
+    }
+
+    return chat;
+  };
+
+  updateChatSector = async (
+    chatId: string,
+    sector: IChat['sector']
+  ): Promise<boolean> => {
+    return this.elasticDatabaseService.update(
+      EElasticIndex.chat,
+      { sector },
+      chatId
+    );
+  };
+
+  updateChatWorker = async (
+    chatId: string,
+    worker: IChat['worker']
+  ): Promise<boolean> => {
+    return this.elasticDatabaseService.update(
+      EElasticIndex.chat,
+      { worker },
+      chatId
+    );
   };
 
   findMessageByMessageId = async (

@@ -229,19 +229,26 @@ function tryFallbackPatterns(digits: string): IPhoneAndDdi | null {
 function extractWaidFromLine(
   line: string
 ): { waid: string; fullPhone: string } | null {
-  const waidRegex = /waid=([^:]+):(.+)/;
-  const waidMatch = waidRegex.exec(line);
-  if (!waidMatch) return null;
+  const waidIndex = line.indexOf('waid=');
+  if (waidIndex === -1) return null;
 
-  const waid = waidMatch[1].trim();
-  const fullPhone = waidMatch[2].trim();
+  const afterWaid = line.slice(waidIndex + 5);
+  const colonIndex = afterWaid.indexOf(':');
+  if (colonIndex === -1) return null;
+
+  const waid = afterWaid.slice(0, colonIndex).trim().replaceAll(/[;:]/g, '');
+  const fullPhone = afterWaid
+    .slice(colonIndex + 1)
+    .trim()
+    .split(/[\n\r;]/)[0];
+
   if (!waid) return null;
 
   return { waid, fullPhone };
 }
 
 function extractPhoneFromLine(line: string): string | null {
-  const telRegex = /TEL[^:]*:(.+)/;
+  const telRegex = /\.?TEL[^:]*:\s*([^\n\r]+)/;
   const telMatch = telRegex.exec(line);
   if (!telMatch) return null;
 
@@ -259,7 +266,7 @@ function extractPhoneFromVCard(
   for (const line of lines) {
     const trimmed = line.trim();
 
-    if (!trimmed.startsWith('TEL')) continue;
+    if (!trimmed.includes('TEL')) continue;
 
     const waidResult = extractWaidFromLine(trimmed);
     if (waidResult) {
@@ -305,6 +312,42 @@ export function extractPhoneAndDdi(
   return null;
 }
 
+function processFullPhoneFromWaid(
+  fullPhone: string | undefined
+): IPhoneAndDdi | null {
+  const fullPhoneTrimmed = fullPhone?.trim();
+  if (!fullPhoneTrimmed) return null;
+
+  const fullPhoneWithPlus = fullPhoneTrimmed.startsWith('+')
+    ? fullPhoneTrimmed
+    : `+${fullPhoneTrimmed}`;
+
+  return extractPhoneAndDdi(fullPhoneWithPlus);
+}
+
+function processWaid(waid: string): IPhoneAndDdi | null {
+  const waidDigits = onlyDigits(waid);
+  if (!waidDigits) return null;
+
+  const waidWithPlus = `+${waidDigits}`;
+  return extractPhoneAndDdi(waidWithPlus);
+}
+
+function processWaidData(extracted: {
+  waid?: string;
+  fullPhone?: string;
+  phone?: string;
+}): IPhoneAndDdi | null {
+  if (!extracted.waid) return null;
+
+  const fullPhoneResult = processFullPhoneFromWaid(extracted.fullPhone);
+  if (fullPhoneResult) {
+    return fullPhoneResult;
+  }
+
+  return processWaid(extracted.waid);
+}
+
 export function extractPhoneAndDdiFromContactMessage(
   contactMessage: proto.Message.IContactMessage | null | undefined
 ): IPhoneAndDdi | null {
@@ -314,33 +357,8 @@ export function extractPhoneAndDdiFromContactMessage(
   const extracted = extractPhoneFromVCard(vcard);
   if (!extracted) return null;
 
-  if (extracted.waid) {
-    const waidDigits = onlyDigits(extracted.waid);
-
-    if (extracted.fullPhone) {
-      const fullPhoneResult = extractPhoneAndDdi(extracted.fullPhone);
-      if (fullPhoneResult) {
-        const ddiDigits = onlyDigits(fullPhoneResult.phone_ddi);
-        let phoneWithoutDdi = waidDigits;
-
-        if (waidDigits.startsWith(ddiDigits)) {
-          phoneWithoutDdi = waidDigits.slice(ddiDigits.length);
-        }
-
-        return {
-          phone_ddi: fullPhoneResult.phone_ddi,
-          phone: phoneWithoutDdi,
-        };
-      }
-    }
-
-    const waidResult = extractPhoneAndDdi(extracted.waid);
-    if (waidResult) {
-      return waidResult;
-    }
-
-    return null;
-  }
+  const waidResult = processWaidData(extracted);
+  if (waidResult) return waidResult;
 
   return extractPhoneAndDdi(extracted.phone);
 }

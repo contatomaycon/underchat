@@ -10,6 +10,7 @@ export interface IUpdateContact {
   phone_partial?: string | null;
   phone_c?: string | null;
   nickname?: string | null;
+  photo?: string | null;
   birthday?: string | null;
   notes?: string | null;
   is_valided: boolean;

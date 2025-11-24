@@ -13,6 +13,7 @@ import { ListUserResponse } from '@core/schema/user/listUser/response.schema';
 import { EUserStatus } from '@core/common/enums/EUserStatus';
 import { getAdministrator, getUser } from '@/@webcore/localStorage/user';
 import { can } from '@/@layouts/plugins/casl';
+import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 
 definePage({
   meta: {
@@ -55,6 +56,7 @@ const permissionsAssignRole = [
 
 const { t } = useI18n();
 const userStore = useUsersStore();
+useSnackbarCleanup(userStore);
 
 const isAdministrator = computed(() => getAdministrator());
 const currentUser = computed(() => getUser());

@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { computed, watch, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { useDisplay, useTheme } from 'vuetify';
 import { themes } from '@/plugins/vuetify/theme';
@@ -10,6 +10,7 @@ import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSide
 import AppContactPicker from '@/components/chat/AppContactPicker.vue';
 import AppAddContact from '@/components/contact/AppAddContact.vue';
 import AppEditContact from '@/components/contact/AppEditContact.vue';
+import VDialogHandler from '@/components/VDialogHandler.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
@@ -17,6 +18,7 @@ import { can } from '@layouts/plugins/casl';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useContactStore } from '@/@webcore/stores/contact';
+import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
@@ -80,6 +82,8 @@ definePage({
 
 const chatStore = useChatStore();
 const contactStore = useContactStore();
+useSnackbarCleanup(chatStore);
+useSnackbarCleanup(contactStore);
 const { name } = useTheme();
 const vuetifyDisplays = useDisplay();
 
@@ -450,6 +454,29 @@ const handleAttendChat = async () => {
     EChatStatus.in_chat
   );
 };
+
+const isCloseServiceDialogOpen = ref(false);
+
+const handleCloseService = () => {
+  isCloseServiceDialogOpen.value = true;
+};
+
+const confirmCloseService = async () => {
+  if (!chatStore.activeChat?.chat_id) return;
+
+  const success = await chatStore.updateChatStatus(
+    chatStore.activeChat.chat_id,
+    EChatStatus.closed
+  );
+
+  if (success) {
+    chatStore.showSnackbar(t('chat_closed_successfully'), EColor.success);
+  }
+};
+
+const isInChatStatus = computed(
+  () => chatStore.activeChat?.status === EChatStatus.in_chat
+);
 
 const canAccessContacts = computed(() => {
   const permissions = [
@@ -2127,6 +2154,19 @@ const cancelAudioRecording = () => {
   if (!isRecordingAudio.value && !mediaRecorderRef.value) {
     return;
   }
+
+  isRecordingAudio.value = false;
+  isRecordingPaused.value = false;
+
+  if (audioRecordingTimerId.value) {
+    clearInterval(audioRecordingTimerId.value);
+    audioRecordingTimerId.value = null;
+  }
+  if (audioRecordingRAFId.value) {
+    cancelAnimationFrame(audioRecordingRAFId.value);
+    audioRecordingRAFId.value = null;
+  }
+
   shouldPersistRecording.value = false;
   stopAudioRecordingInternal();
 };
@@ -3451,7 +3491,8 @@ onMounted(async () => {
 
       if (
         chatStore.user?.account_id &&
-        chatStore.activeChat?.chat_id === data.chat_id
+        chatStore.activeChat?.chat_id === data.chat_id &&
+        data.status === EChatStatus.in_chat
       ) {
         debouncedClearChatSummary(data.chat_id);
       }
@@ -3607,33 +3648,85 @@ onBeforeUnmount(() => {
             <VIcon icon="tabler-menu-2" />
           </IconBtn>
 
+          <IconBtn
+            v-if="isInChatStatus"
+            class="me-2"
+            color="error"
+            variant="text"
+            :title="t('close_service')"
+            @click="handleCloseService"
+          >
+            <VIcon icon="tabler-x" />
+          </IconBtn>
+
           <div
             class="d-flex align-center cursor-pointer"
             @click="isActiveChatUserProfileSidebarOpen = true"
           >
             <VAvatar
               size="40"
-              :variant="!chatStore.activeChat.photo ? 'tonal' : undefined"
+              :variant="
+                !(chatStore.activeChat.contact?.photo ??
+                  chatStore.activeChat.photo)
+                  ? 'tonal'
+                  : undefined
+              "
               class="cursor-pointer"
             >
               <VImg
-                v-if="chatStore.activeChat.photo"
-                :src="chatStore.activeChat.photo"
-                :alt="chatStore.activeChat.name ?? ''"
+                v-if="
+                  chatStore.activeChat.contact?.photo ??
+                  chatStore.activeChat.photo
+                "
+                :src="
+                  chatStore.activeChat.contact?.photo ??
+                  chatStore.activeChat.photo ??
+                  ''
+                "
+                :alt="
+                  chatStore.activeChat.contact?.name ??
+                  chatStore.activeChat.name ??
+                  ''
+                "
               />
               <VImg
                 v-else
                 :src="'/images/svg/avatar-default.svg'"
-                :alt="chatStore.activeChat.name ?? ''"
+                :alt="
+                  chatStore.activeChat.contact?.name ??
+                  chatStore.activeChat.name ??
+                  ''
+                "
               />
             </VAvatar>
 
             <div class="flex-grow-1 ms-4 overflow-hidden">
-              <div class="text-h6 mb-0 font-weight-regular">
-                {{ chatStore.activeChat.name }}
+              <div class="d-flex align-center gap-2 mb-0">
+                <div class="text-h6 mb-0 font-weight-regular">
+                  {{
+                    chatStore.activeChat.contact?.name ??
+                    chatStore.activeChat.name
+                  }}
+                </div>
+                <VChip
+                  v-if="chatStore.activeChat.contact?.name"
+                  size="x-small"
+                  variant="tonal"
+                  color="primary"
+                  class="contact-label"
+                >
+                  {{ $t('contact_label') }}
+                </VChip>
               </div>
               <p class="text-truncate mb-0 text-body-2">
-                {{ formatPhoneBR(chatStore.activeChat.phone) }}
+                {{
+                  chatStore.activeChat.contact?.name &&
+                  chatStore.activeChat.contact?.phone
+                    ? chatStore.activeChat.contact.phone_ddi
+                      ? `+${chatStore.activeChat.contact.phone_ddi} ${chatStore.activeChat.contact.phone}`
+                      : chatStore.activeChat.contact.phone
+                    : formatPhoneBR(chatStore.activeChat.phone)
+                }}
               </p>
             </div>
           </div>
@@ -3720,7 +3813,15 @@ onBeforeUnmount(() => {
                 class="text-primary"
                 style="font-style: italic; font-size: 0.8rem; font-weight: 400"
               >
-                {{ chatStore.activeChat.name || chatStore.activeChat.phone }}
+                {{
+                  chatStore.activeChat.contact?.name ??
+                  chatStore.activeChat.name ??
+                  (chatStore.activeChat.contact?.phone_ddi &&
+                  chatStore.activeChat.contact?.phone
+                    ? `+${chatStore.activeChat.contact.phone_ddi} ${chatStore.activeChat.contact.phone}`
+                    : chatStore.activeChat.contact?.phone) ??
+                  chatStore.activeChat.phone
+                }}
                 {{ $t('is_typing') }}
               </span>
             </div>
@@ -4809,6 +4910,13 @@ onBeforeUnmount(() => {
       </VCardText>
     </VCard>
   </VDialog>
+
+  <VDialogHandler
+    v-model="isCloseServiceDialogOpen"
+    :title="t('close_service')"
+    :message="t('close_service_confirmation')"
+    @confirm="confirmCloseService"
+  />
 </template>
 
 <style lang="scss">
@@ -5450,5 +5558,11 @@ $chat-app-header-height: 76px;
   max-height: 320px;
   overflow-y: auto;
   padding-inline-end: 4px;
+}
+.contact-label {
+  font-size: 0.625rem !important;
+  height: 16px !important;
+  opacity: 0.7;
+  flex-shrink: 0;
 }
 </style>
