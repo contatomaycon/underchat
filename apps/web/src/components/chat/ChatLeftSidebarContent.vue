@@ -13,6 +13,7 @@ import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 import { can } from '@layouts/plugins/casl';
 import { refDebounced } from '@vueuse/core';
 import { ListContactResponse } from '@core/schema/contact/listContact/response.schema';
@@ -107,6 +108,16 @@ const queueSelectionPermissions = [
 ];
 
 const canSelectAnyQueueChat = computed(() => can(queueSelectionPermissions));
+
+const canAccessContacts = computed(() => {
+  const permissions = [
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EContactPermissions.contact_group,
+    EContactPermissions.contact_view,
+  ];
+  return can(permissions);
+});
 
 const modelSearch = computed({
   get: () => props.search,
@@ -302,6 +313,14 @@ watch(debouncedContactSearch, () => {
   loadContacts();
 });
 
+watch(canAccessContacts, (hasAccess) => {
+  if (!hasAccess && activeFilter.value === 'new') {
+    activeFilter.value = 'all';
+    expandedFilter.value = 'all';
+    loadChatsByFilter();
+  }
+});
+
 const loadActiveWorkers = async () => {
   if (!chatStore.user?.account_id) return;
 
@@ -493,7 +512,7 @@ onMounted(async () => {
 
   <div class="chat-filter-options px-3 py-3">
     <div class="d-flex gap-2 flex-wrap">
-      <div class="chat-filter-item flex-grow-1">
+      <div v-if="canAccessContacts" class="chat-filter-item flex-grow-1">
         <VBtn
           :variant="activeFilter === 'new' ? 'flat' : 'text'"
           :color="activeFilter === 'new' ? 'primary' : undefined"
