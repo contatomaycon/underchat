@@ -506,6 +506,8 @@ const isLoadingTransferSectorUsers = ref(false);
 const isTransferUserMenuOpen = ref(false);
 const isTransferSectorMenuOpen = ref(false);
 const isTransferSectorUserMenuOpen = ref(false);
+const transferAnnotationText = ref('');
+const isTransferAnnotationEmojiOpen = ref(false);
 
 const filteredTransferUsers = computed(() => {
   if (!transferUserSearch.value) {
@@ -659,6 +661,12 @@ watch(transferType, (newType) => {
   isTransferSectorUserMenuOpen.value = false;
 });
 
+watch(isTransferModalOpen, (isOpen) => {
+  if (!isOpen) {
+    transferAnnotationText.value = '';
+  }
+});
+
 watch(selectedTransferSector, (sectorId) => {
   selectedTransferSectorUser.value = null;
   transferSectorUsers.value = [];
@@ -677,9 +685,15 @@ watch(isTransferModalOpen, (isOpen) => {
     transferUserSearch.value = '';
     transferSectorSearch.value = '';
     transferSectorUserSearch.value = '';
+    transferAnnotationText.value = '';
     isTransferUserMenuOpen.value = false;
     isTransferSectorMenuOpen.value = false;
     isTransferSectorUserMenuOpen.value = false;
+    isTransferAnnotationEmojiOpen.value = false;
+    loadTransferUsers();
+    loadTransferSectors();
+  } else {
+    transferAnnotationText.value = '';
   }
 });
 
@@ -1773,6 +1787,30 @@ const onAnnotationEmojiSelect = (emoji: any) => {
   }
 
   isAnnotationEmojiOpen.value = false;
+};
+
+const onTransferAnnotationEmojiSelect = (emoji: any) => {
+  const emojiText = emoji.native || emoji.colons;
+  const textarea = transferAnnotationText.value;
+  const textareaElement = document.querySelector(
+    '#transfer-annotation-textarea'
+  ) as HTMLTextAreaElement;
+  if (textareaElement) {
+    const cursorPos = textareaElement.selectionStart || textarea.length;
+    transferAnnotationText.value =
+      textarea.slice(0, cursorPos) + emojiText + textarea.slice(cursorPos);
+    nextTick(() => {
+      textareaElement.setSelectionRange(
+        cursorPos + emojiText.length,
+        cursorPos + emojiText.length
+      );
+      textareaElement.focus();
+    });
+  } else {
+    transferAnnotationText.value = textarea + emojiText;
+  }
+
+  isTransferAnnotationEmojiOpen.value = false;
 };
 
 const finalizeSend = () => {
@@ -5486,6 +5524,54 @@ onBeforeUnmount(() => {
               </div>
             </VCol>
           </template>
+
+          <VCol cols="12">
+            <div class="d-flex align-center gap-2 mb-2">
+              <VLabel class="text-body-2">{{ $t('annotation') }}:</VLabel>
+              <VSpacer />
+              <VMenu
+                v-model="isTransferAnnotationEmojiOpen"
+                location="top end"
+                :close-on-content-click="false"
+                offset="8"
+              >
+                <template #activator="{ props }">
+                  <IconBtn
+                    v-bind="props"
+                    size="small"
+                    variant="text"
+                    aria-label="Emoji"
+                  >
+                    <VIcon size="20">tabler-mood-smile</VIcon>
+                  </IconBtn>
+                </template>
+                <div class="emoji-picker-wrap">
+                  <Picker
+                    :data="emojiIndex"
+                    :per-line="8"
+                    :show-preview="false"
+                    :show-search="true"
+                    :show-skin-tones="false"
+                    @select="onTransferAnnotationEmojiSelect"
+                  />
+                </div>
+              </VMenu>
+            </div>
+            <VTextarea
+              id="transfer-annotation-textarea"
+              v-model="transferAnnotationText"
+              :placeholder="$t('write_your_annotation')"
+              variant="outlined"
+              :maxlength="5000"
+              :rows="6"
+              :auto-grow="true"
+              :max-rows="10"
+              counter
+            />
+            <div class="text-caption text-medium-emphasis mt-1">
+              {{ $t('annotation_max_characters', { count: 5000 }) }}
+            </div>
+          </VCol>
         </VRow>
       </VCardText>
       <VCardText class="d-flex justify-end flex-wrap gap-3">
