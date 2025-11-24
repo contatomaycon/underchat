@@ -461,6 +461,9 @@ export class MessageSendConsume {
       [EMessageType.text]: data.content?.message
         ? () => this.processTextMessage(jid, chatId, data, hasQuoted)
         : null,
+      [EMessageType.system]: data.content?.message
+        ? () => this.processTextMessage(jid, chatId, data, hasQuoted)
+        : null,
       [EMessageType.contact_card]: data.content?.contact
         ? this.createActionHandler(
             jid,
