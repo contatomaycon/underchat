@@ -14,4 +14,5 @@ export enum EMessageType {
   edit_text = 'edit_text',
   set_disappearing_messages = 'set_disappearing_messages',
   annotation = 'annotation',
+  system = 'system',
 }
