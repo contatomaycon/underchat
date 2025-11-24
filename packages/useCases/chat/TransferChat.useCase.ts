@@ -10,6 +10,7 @@ import {
 } from '@core/schema/chat/transferChat/request.schema';
 import { IChat } from '@core/common/interfaces/IChat';
 import { EMessageType } from '@core/common/enums/EMessageType';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
 
 @injectable()
@@ -85,23 +86,18 @@ export class TransferChatUseCase {
       throw new Error(t('sector_not_found'));
     }
 
-    const updated = await this.chatService.updateChatUserAndSector(
-      params.chat_id,
-      user,
-      sector
-    );
-
-    if (!updated) {
-      throw new Error(t('chat_transfer_failed'));
-    }
-
     const updatedChat: IChat = {
       ...chat,
+      status: EChatStatus.queue,
       user: user !== undefined ? user : chat.user,
       sector: sector !== undefined ? sector : chat.sector,
     };
 
-    await this.chatService.saveChat(updatedChat);
+    const saved = await this.chatService.saveChat(updatedChat);
+
+    if (!saved) {
+      throw new Error(t('chat_transfer_failed'));
+    }
 
     if (body.annotation && body.annotation.trim()) {
       const messageBody: CreateMessageChatsBody = {
