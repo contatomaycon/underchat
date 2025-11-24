@@ -3666,8 +3666,10 @@ onBeforeUnmount(() => {
             <VAvatar
               size="40"
               :variant="
-                !(chatStore.activeChat.contact?.photo ??
-                  chatStore.activeChat.photo)
+                !(
+                  chatStore.activeChat.contact?.photo ??
+                  chatStore.activeChat.photo
+                )
                   ? 'tonal'
                   : undefined
               "
@@ -4664,6 +4666,22 @@ onBeforeUnmount(() => {
 
     <VCard :title="$t('view_contact')" v-if="selectedContactDetails">
       <VCardText>
+        <VRow>
+          <VCol cols="12" class="d-flex justify-center mb-4">
+            <VAvatar size="120">
+              <VImg
+                v-if="selectedContactDetails.photo"
+                :src="selectedContactDetails.photo"
+                :alt="selectedContactDetails.name"
+              />
+              <VImg
+                v-else
+                :src="'/images/svg/avatar-default.svg'"
+                :alt="selectedContactDetails.name"
+              />
+            </VAvatar>
+          </VCol>
+        </VRow>
         <VRow>
           <VCol cols="12" md="6">
             <AppTextField
