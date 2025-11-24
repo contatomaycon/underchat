@@ -532,6 +532,59 @@ export class MessageUpsertConsume {
     return true;
   }
 
+  private async updateChatPhotoIfNeeded(
+    getChat: IChat,
+    data: IUpsertMessage
+  ): Promise<void> {
+    if (!data.photo) return;
+
+    const needsPhotoUpdate = !getChat.photo;
+    const needsContactPhotoUpdate = getChat.contact && !getChat.contact.photo;
+
+    if (!needsPhotoUpdate && !needsContactPhotoUpdate) return;
+
+    const photoResult = await this.storageService.uploadFromUrl(
+      data.photo,
+      data.account_id,
+      getChat.chat_id
+    );
+
+    if (!photoResult?.url) return;
+
+    if (needsPhotoUpdate) getChat.photo = photoResult.url;
+
+    if (needsContactPhotoUpdate && getChat.contact?.id) {
+      await this.contactService.updateContactById(
+        {
+          image_url: photoResult.url,
+        },
+        getChat.contact.id,
+        data.account_id
+      );
+
+      getChat.contact = {
+        ...getChat.contact,
+        photo: photoResult.url,
+      };
+    }
+
+    const updateData: Partial<IChat> = {};
+    if (needsPhotoUpdate) {
+      updateData.photo = photoResult.url;
+    }
+
+    if (needsContactPhotoUpdate && getChat.contact) {
+      updateData.contact = getChat.contact;
+    }
+
+    if (Object.keys(updateData).length > 0) {
+      await this.chatService.saveChat({
+        ...getChat,
+        ...updateData,
+      });
+    }
+  }
+
   private async updateChatNameIfNeeded(
     getChat: IChat,
     data: IUpsertMessage
@@ -1018,6 +1071,8 @@ export class MessageUpsertConsume {
     data: IUpsertMessage
   ): Promise<boolean> {
     try {
+      await this.updateChatPhotoIfNeeded(getChat, data);
+
       const reactionResult = await this.handleReactionMessage(getChat, data);
       if (reactionResult !== null) {
         return reactionResult;
