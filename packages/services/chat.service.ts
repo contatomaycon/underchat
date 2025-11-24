@@ -138,6 +138,31 @@ export class ChatService {
     );
   };
 
+  updateChatUserAndSector = async (
+    chatId: string,
+    user?: IChat['user'] | null,
+    sector?: IChat['sector'] | null
+  ): Promise<boolean> => {
+    const updateData: {
+      user?: IChat['user'] | null;
+      sector?: IChat['sector'] | null;
+    } = {};
+
+    if (user !== undefined) {
+      updateData.user = user;
+    }
+
+    if (sector !== undefined) {
+      updateData.sector = sector;
+    }
+
+    return this.elasticDatabaseService.update(
+      EElasticIndex.chat,
+      updateData,
+      chatId
+    );
+  };
+
   updateChatSummary = async (
     chatId: string,
     summary: IChat['summary']

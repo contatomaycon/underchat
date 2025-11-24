@@ -351,5 +351,8 @@
   "chat_contact_update_not_found": "Chat não encontrado para atualização de contato!",
   "chat_update_failed": "Erro ao atualizar o chat!",
   "contact_photo_deleted_successfully": "Foto do contato removida com sucesso!",
-  "contact_photo_delete_error": "Erro ao remover a foto do contato!"
+  "contact_photo_delete_error": "Erro ao remover a foto do contato!",
+  "chat_transfer_success": "Atendimento transferido com sucesso!",
+  "chat_transfer_failed": "Falha ao transferir atendimento!",
+  "transfer_requires_user_or_sector": "É necessário informar usuário ou setor para transferir!"
 }

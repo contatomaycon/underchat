@@ -968,5 +968,8 @@
     "transfer": "Transfer",
     "transfer_to": "Transfer to",
     "transfer_successfully": "Service transferred successfully!",
+    "user_required": "User is required!",
+    "sector_required": "Sector is required!",
+    "chat_transfer_error": "Error transferring service. Please try again.",
     "user": "User"
 }

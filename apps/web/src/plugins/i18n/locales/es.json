@@ -968,5 +968,8 @@
     "transfer": "Transferir",
     "transfer_to": "Transferir a",
     "transfer_successfully": "¡Servicio transferido con éxito!",
+    "user_required": "¡El usuario es obligatorio!",
+    "sector_required": "¡El sector es obligatorio!",
+    "chat_transfer_error": "Error al transferir el servicio. Por favor, inténtalo de nuevo.",
     "user": "Usuario"
 }

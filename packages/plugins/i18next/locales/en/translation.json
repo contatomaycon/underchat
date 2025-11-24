@@ -351,5 +351,8 @@
   "chat_contact_update_not_found": "Chat not found for contact update!",
   "chat_update_failed": "Failed to update chat!",
   "contact_photo_deleted_successfully": "Contact photo deleted successfully!",
-  "contact_photo_delete_error": "Error deleting contact photo!"
+  "contact_photo_delete_error": "Error deleting contact photo!",
+  "chat_transfer_success": "Service transferred successfully!",
+  "chat_transfer_failed": "Failed to transfer service!",
+  "transfer_requires_user_or_sector": "User or sector is required to transfer!"
 }

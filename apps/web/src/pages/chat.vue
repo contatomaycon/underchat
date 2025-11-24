@@ -714,8 +714,35 @@ watch(isTransferModalOpen, (isOpen) => {
 const handleTransfer = async () => {
   if (!chatStore.activeChat?.chat_id) return;
 
-  isTransferModalOpen.value = false;
-  chatStore.showSnackbar(t('transfer_successfully'), EColor.success);
+  if (transferType.value === 'user' && !selectedTransferUser.value) {
+    chatStore.showSnackbar(t('user_required'), EColor.error);
+    return;
+  }
+
+  if (transferType.value === 'sector' && !selectedTransferSector.value) {
+    chatStore.showSnackbar(t('sector_required'), EColor.error);
+    return;
+  }
+
+  const userId =
+    transferType.value === 'user'
+      ? selectedTransferUser.value
+      : selectedTransferSectorUser.value || null;
+  const sectorId =
+    transferType.value === 'sector' ? selectedTransferSector.value : null;
+  const annotation = transferAnnotationText.value.trim() || null;
+
+  const success = await chatStore.transferChat(
+    chatStore.activeChat.chat_id,
+    userId,
+    sectorId,
+    annotation
+  );
+
+  if (success) {
+    isTransferModalOpen.value = false;
+    chatStore.showSnackbar(t('transfer_successfully'), EColor.success);
+  }
 };
 
 const isInChatStatus = computed(
@@ -5643,6 +5670,7 @@ onBeforeUnmount(() => {
               ? !selectedTransferUser
               : !selectedTransferSector
           "
+          :loading="chatStore.loading"
           @click="handleTransfer"
         >
           {{ t('transfer') }}

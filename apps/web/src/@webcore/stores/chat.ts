@@ -4,7 +4,7 @@ import { getI18n } from '@/plugins/i18n';
 import { EColor } from '@core/common/enums/EColor';
 import { ISnackbar } from '@core/common/interfaces/ISnackbar';
 import axios from '@webcore/axios';
-import { type AxiosRequestConfig } from 'axios';
+import { type AxiosRequestConfig, AxiosError } from 'axios';
 import {
   ListChatsResponse,
   ListChatsResult,
@@ -648,6 +648,49 @@ export const useChatStore = defineStore('chat', {
         this.loading = false;
 
         const errorMessage = this.i18n.global.t('chat_status_update_error');
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return false;
+      }
+    },
+
+    async transferChat(
+      chatId: string,
+      userId?: string | null,
+      sectorId?: string | null,
+      annotation?: string | null
+    ): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<
+          IApiResponse<{ chat_id: string; status: boolean }>
+        >(`/chat/${chatId}/transfer`, {
+          user_id: userId || undefined,
+          sector_id: sectorId || undefined,
+          annotation: annotation?.trim() || undefined,
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const errorMessage =
+            data?.message || this.i18n.global.t('chat_transfer_error');
+          this.showSnackbar(errorMessage, EColor.error);
+
+          return false;
+        }
+        return true;
+      } catch (error) {
+        this.loading = false;
+
+        let errorMessage = this.i18n.global.t('chat_transfer_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
         this.showSnackbar(errorMessage, EColor.error);
 
         return false;
