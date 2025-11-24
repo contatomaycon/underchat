@@ -150,6 +150,7 @@
   "chat_already_in_service": "There is already a service in progress for this number!",
   "chat_not_found": "Chat not found!",
   "chat_access_denied": "Access denied to chat!",
+  "messages_search_success": "Messages found successfully!",
   "chat_create_error": "Error creating chat!",
   "documents_required": "Select at least one document!",
   "audio_required": "Select at least one audio!",

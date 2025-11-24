@@ -150,6 +150,7 @@
   "chat_already_in_service": "Já existe um atendimento em andamento para este número!",
   "chat_not_found": "Chat não encontrado!",
   "chat_access_denied": "Acesso negado ao chat!",
+  "messages_search_success": "Mensagens encontradas com sucesso!",
   "chat_create_error": "Erro ao criar o chat!",
   "documents_required": "Selecione ao menos um documento!",
   "audio_required": "Selecione ao menos um áudio!",

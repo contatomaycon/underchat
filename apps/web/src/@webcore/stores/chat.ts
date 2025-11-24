@@ -30,6 +30,7 @@ import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/respo
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
+import { SearchMessagesResponse } from '@core/schema/chat/searchMessages/response.schema';
 
 type LocalMessageState = {
   status: 'uploading' | 'error';
@@ -1226,6 +1227,52 @@ export const useChatStore = defineStore('chat', {
         return true;
       } catch {
         return false;
+      }
+    },
+
+    async searchMessages(
+      chatId: string,
+      search: string,
+      currentPage: number = 1,
+      perPage: number = 50
+    ): Promise<SearchMessagesResponse> {
+      try {
+        const response = await axios.get<IApiResponse<SearchMessagesResponse>>(
+          `/chat/${chatId}/search`,
+          {
+            params: { search, current_page: currentPage, per_page: perPage },
+          }
+        );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const pagings = {
+            current_page: 1,
+            total_pages: 0,
+            per_page: perPage,
+            count: 0,
+            total: 0,
+          };
+          return {
+            results: [],
+            pagings,
+          };
+        }
+
+        return data.data;
+      } catch {
+        const pagings = {
+          current_page: 1,
+          total_pages: 0,
+          per_page: perPage,
+          count: 0,
+          total: 0,
+        };
+        return {
+          results: [],
+          pagings,
+        };
       }
     },
   },
