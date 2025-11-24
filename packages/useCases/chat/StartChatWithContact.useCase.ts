@@ -125,8 +125,7 @@ export class StartChatWithContactUseCase {
       throw new Error(t('contact_phone_required'));
     }
 
-    const lastNamePart = contact.last_name ? ` ${contact.last_name}` : '';
-    const contactName = `${contact.name}${lastNamePart}`;
+    const contactName = contact.name ?? contact.last_name;
     const phonePartial = this.encryptService.sanitize(
       sensitiveData.phone,
       ETypeSanetize.phone
