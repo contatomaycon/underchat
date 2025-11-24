@@ -96,6 +96,8 @@
   "sector_role_account_successfully": "Sector role account retrieved successfully!",
   "sector_role_account_not_found": "No sector role accounts found!",
   "sector_role_successfully": "Sector role accounts retrieved successfully!",
+  "sector_users_successfully": "Sector users retrieved successfully!",
+  "sector_users_not_found": "No users found in sector!",
   "permission_role_count_sector_incompatible": "Sector role count incompatible!",
   "phone_connection_required": "Phone is required!",
   "worker_connection_logs_success": "Worker connection logs retrieved successfully!",

@@ -22,6 +22,7 @@ import { ViewSectorResponse } from '@core/schema/sector/viewSector/response.sche
 import { ListRoleAccountResponse } from '@core/schema/sector/listSectorRoleAccount/response.schema';
 import { CreateSectorRoleRequest } from '@core/schema/sector/createSectorRole/request.schema';
 import { ListSectorRoleAccountSectorResponse } from '@core/schema/sector/viewSectorRoleAccountSector/response.schema';
+import { ListSectorUsersResponse } from '@core/schema/sector/listSectorUsers/response.schema';
 
 export const useSectorsStore = defineStore('sectors', {
   state: () => ({
@@ -170,6 +171,37 @@ export const useSectorsStore = defineStore('sectors', {
         }
 
         this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listSectorUsers(
+      sectorId: string
+    ): Promise<ListSectorUsersResponse[] | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListSectorUsersResponse[]>
+        >(`/sector/${sectorId}/users`);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('sector_users_not_found');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
 
         this.loading = false;
 

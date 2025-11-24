@@ -18,6 +18,8 @@ import { SectorRoleTransactionCreatorRepository } from '@core/repositories/secto
 import { CreateSectorRoleRequest } from '@core/schema/sector/createSectorRole/request.schema';
 import { TFunction } from 'i18next';
 import { SectorByIdExistsRepository } from '@core/repositories/sector/SectorByIdExists.repository';
+import { SectorUsersListerRepository } from '@core/repositories/sector/SectorUsersLister.repository';
+import { ListSectorUsersResponse } from '@core/schema/sector/listSectorUsers/response.schema';
 
 @injectable()
 export class SectorService {
@@ -32,7 +34,8 @@ export class SectorService {
     private readonly sectorRoleViewerExistsRepository: SectorRoleViewerExistsRepository,
     private readonly sectorRoleListerRepository: SectorRoleListerRepository,
     private readonly sectorRoleTransactionCreatorRepository: SectorRoleTransactionCreatorRepository,
-    private readonly sectorByIdExistsRepository: SectorByIdExistsRepository
+    private readonly sectorByIdExistsRepository: SectorByIdExistsRepository,
+    private readonly sectorUsersListerRepository: SectorUsersListerRepository
   ) {}
 
   existsSectorById = async (
@@ -149,6 +152,16 @@ export class SectorService {
     return this.sectorByIdExistsRepository.sectorByIdExists(
       sectorId,
       accountId
+    );
+  };
+
+  listSectorUsers = async (
+    accountId: string,
+    sectorId: string
+  ): Promise<ListSectorUsersResponse[]> => {
+    return this.sectorUsersListerRepository.listSectorUsers(
+      accountId,
+      sectorId
     );
   };
 }

@@ -31,7 +31,6 @@ import {
   ListMessageResult,
 } from '@core/schema/chat/listMessageChats/response.schema';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
-import axios from '@webcore/axios';
 import {
   chatAccountCentrifugo,
   chatQueueAccountCentrifugo,
@@ -526,12 +525,15 @@ const filteredTransferSectors = computed(() => {
 });
 
 const filteredTransferSectorUsers = computed(() => {
+  if (!transferSectorUsers.value || transferSectorUsers.value.length === 0) {
+    return [];
+  }
   if (!transferSectorUserSearch.value) {
     return transferSectorUsers.value;
   }
   const query = transferSectorUserSearch.value.toLowerCase();
   return transferSectorUsers.value.filter((user) =>
-    user.title.toLowerCase().includes(query)
+    user?.title?.toLowerCase().includes(query)
   );
 });
 
@@ -612,17 +614,27 @@ const loadTransferSectorUsers = async (sectorId: string) => {
 
   isLoadingTransferSectorUsers.value = true;
   try {
-    const response = await axios.get(`/sector-role/account/${sectorId}`);
+    const users = await sectorsStore.listSectorUsers(sectorId);
 
-    if (response?.data?.status && response.data.data) {
-      const users = response.data.data;
+    if (users && users.length > 0) {
+      transferSectorUsers.value = users
+        .map((user: any) => {
+          const name = user.user_info?.name || '';
+          const lastName = user.user_info?.last_name || '';
+          const fullName =
+            name && lastName ? `${name} ${lastName}` : name || lastName;
+          const title = fullName || user.email_partial || '';
 
-      transferSectorUsers.value = users.map((user: any) => ({
-        value: user.user_id,
-        title: user.user_info?.name
-          ? `${user.user_info.name}${user.user_info.last_name ? ' ' + user.user_info.last_name : ''}`
-          : user.email_partial || '',
-      }));
+          return {
+            value: user.user_id,
+            title: title,
+          };
+        })
+        .filter(
+          (item: { value: string; title: string }) => item.value && item.title
+        );
+    } else {
+      transferSectorUsers.value = [];
     }
   } catch (error) {
     transferSectorUsers.value = [];
@@ -5242,6 +5254,16 @@ onBeforeUnmount(() => {
                   <VDivider />
                   <VList max-height="300" style="overflow-y: auto">
                     <VListItem
+                      v-if="filteredTransferUsers.length === 0"
+                      disabled
+                    >
+                      <VListItemTitle
+                        class="text-center text-body-2 text-medium-emphasis"
+                      >
+                        {{ $t('no_results_found') }}
+                      </VListItemTitle>
+                    </VListItem>
+                    <VListItem
                       v-for="(item, index) in filteredTransferUsers"
                       :key="index"
                       :value="item.value"
@@ -5295,6 +5317,16 @@ onBeforeUnmount(() => {
                     </VCardText>
                     <VDivider />
                     <VList max-height="300" style="overflow-y: auto">
+                      <VListItem
+                        v-if="filteredTransferSectors.length === 0"
+                        disabled
+                      >
+                        <VListItemTitle
+                          class="text-center text-body-2 text-medium-emphasis"
+                        >
+                          {{ $t('no_results_found') }}
+                        </VListItemTitle>
+                      </VListItem>
                       <VListItem
                         v-for="(item, index) in filteredTransferSectors"
                         :key="index"
@@ -5350,20 +5382,31 @@ onBeforeUnmount(() => {
                     </VCardText>
                     <VDivider />
                     <VList max-height="300" style="overflow-y: auto">
-                      <VListItem
-                        v-for="(item, index) in filteredTransferSectorUsers"
-                        :key="index"
-                        :value="item.value"
-                        @click="
-                          () => {
-                            selectedTransferSectorUser = item.value;
-                            isTransferSectorUserMenuOpen = false;
-                          }
-                        "
-                        :active="selectedTransferSectorUser === item.value"
-                      >
-                        <VListItemTitle>{{ item.title }}</VListItemTitle>
-                      </VListItem>
+                      <template v-if="filteredTransferSectorUsers.length === 0">
+                        <VListItem disabled>
+                          <VListItemTitle
+                            class="text-center text-body-2 text-medium-emphasis"
+                          >
+                            {{ $t('no_results_found') }}
+                          </VListItemTitle>
+                        </VListItem>
+                      </template>
+                      <template v-else>
+                        <VListItem
+                          v-for="(item, index) in filteredTransferSectorUsers"
+                          :key="`sector-user-${item.value}-${index}`"
+                          :value="item.value"
+                          @click="
+                            () => {
+                              selectedTransferSectorUser = item.value;
+                              isTransferSectorUserMenuOpen = false;
+                            }
+                          "
+                          :active="selectedTransferSectorUser === item.value"
+                        >
+                          <VListItemTitle>{{ item.title }}</VListItemTitle>
+                        </VListItem>
+                      </template>
                     </VList>
                   </VCard>
                 </VMenu>

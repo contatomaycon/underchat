@@ -96,6 +96,8 @@
   "sector_role_account_successfully": "Conta de cargo de setor obtida com sucesso!",
   "sector_role_account_not_found": "Conta de cargo de setor não encontrada!",
   "sector_role_successfully": "Contas de cargo de setor obtidas com sucesso!",
+  "sector_users_successfully": "Usuários do setor obtidos com sucesso!",
+  "sector_users_not_found": "Nenhum usuário encontrado no setor!",
   "permission_role_count_sector_incompatible": "Contagem de cargos de setor incompatível!",
   "phone_connection_required": "Telefone é obrigatório!",
   "worker_connection_logs_success": "Registros de conexão do canal obtidos com sucesso!",
