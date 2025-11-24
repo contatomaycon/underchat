@@ -4199,6 +4199,7 @@ onBeforeUnmount(() => {
               <VIcon icon="tabler-search" />
             </IconBtn>
             <VMenu
+              v-if="isInChatStatus"
               offset="8"
               :close-on-content-click="true"
               location="bottom end"
@@ -4210,7 +4211,7 @@ onBeforeUnmount(() => {
               </template>
 
               <VList density="comfortable" min-width="200">
-                <VListItem v-if="isInChatStatus" @click="handleCloseService">
+                <VListItem @click="handleCloseService">
                   <template #prepend>
                     <VIcon size="20" color="error">tabler-x</VIcon>
                   </template>
