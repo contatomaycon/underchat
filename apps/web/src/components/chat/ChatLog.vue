@@ -251,6 +251,7 @@ const canInteractWithMessage = (m: ListMessageResult): boolean => {
   if (m.deleted) return false;
   if (m.summary?.is_sent_to_internal === false) return false;
   if (m.content?.type === EMessageType.view_once) return false;
+  if (m.content?.type === EMessageType.annotation) return false;
   return true;
 };
 
@@ -1793,7 +1794,8 @@ onUnmounted(() => {
                   hoveredMessageId === item.message.message_id &&
                   canInteractWithMessage(item.message) &&
                   showReactionPicker !== item.message.message_id &&
-                  !isQueueStatus
+                  !isQueueStatus &&
+                  item.message.content?.type !== EMessageType.annotation
                 "
                 :class="[
                   'reaction-trigger-container',
@@ -1857,7 +1859,8 @@ onUnmounted(() => {
                     (canInteractWithMessage(item.message) ||
                       (item.message.deleted &&
                         hasMessageVersions(item.message))) &&
-                    !isQueueStatus
+                    !isQueueStatus &&
+                    item.message.content?.type !== EMessageType.annotation
                   "
                   class="message-actions"
                 >
@@ -2731,7 +2734,8 @@ onUnmounted(() => {
                   <div
                     v-if="
                       item.message.content?.reactions &&
-                      item.message.content.reactions.length > 0
+                      item.message.content.reactions.length > 0 &&
+                      item.message.content?.type !== EMessageType.annotation
                     "
                     :class="[
                       'reactions-summary',
