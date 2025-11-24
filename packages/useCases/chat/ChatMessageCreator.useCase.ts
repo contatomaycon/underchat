@@ -846,14 +846,24 @@ export class ChatMessageCreatorUseCase {
   }
 
   private async publishMessage(message: IChatMessage): Promise<boolean> {
-    const [result, ,] = await Promise.all([
+    const isAnnotation =
+      message.content?.type === ('annotation' as EMessageType | string);
+
+    const promises: Promise<any>[] = [
       this.chatService.saveMessageChat(message),
       this.centrifugoChatPublish(message),
-      this.streamProducerService.send(
-        this.kafkaBaileysQueueService.workerSendMessage(message.worker.id),
-        message
-      ),
-    ]);
+    ];
+
+    if (!isAnnotation) {
+      promises.push(
+        this.streamProducerService.send(
+          this.kafkaBaileysQueueService.workerSendMessage(message.worker.id),
+          message
+        )
+      );
+    }
+
+    const [result] = await Promise.all(promises);
 
     if (!result) {
       return false;
