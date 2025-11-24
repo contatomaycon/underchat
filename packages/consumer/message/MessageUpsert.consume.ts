@@ -1054,8 +1054,22 @@ export class MessageUpsertConsume {
       ? this.encryptService.sanitize(parsed.email, ETypeSanetize.email)
       : null;
 
+    let existingContactId: string | null = null;
+    let existingContactPhoto: string | null = null;
+
+    const existingContact = await this.contactService.getContactByPhone(
+      data.account_id,
+      phoneAndDdi.phone,
+      phoneAndDdi.phone_ddi
+    );
+
+    if (existingContact) {
+      existingContactId = existingContact.contact_id;
+      existingContactPhoto = existingContact.photo ?? null;
+    }
+
     content.contact = {
-      contact_id: uuidv7(),
+      contact_id: existingContactId,
       name: parsed.name || contactMsg.displayName || 'Contato',
       last_name: parsed.last_name || null,
       phone: phoneAndDdi.phone,
@@ -1063,6 +1077,7 @@ export class MessageUpsertConsume {
       phone_ddi: phoneAndDdi.phone_ddi,
       email: parsed.email || null,
       email_partial: emailPartial,
+      photo: existingContactPhoto,
     };
   }
 

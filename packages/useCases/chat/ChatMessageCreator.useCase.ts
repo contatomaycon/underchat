@@ -1325,6 +1325,7 @@ export class ChatMessageCreatorUseCase {
           phone_ddi: contact.phone_ddi || null,
           email: sensitiveData?.email || null,
           email_partial: contact.email_partial,
+          photo: contact.photo || null,
         };
       })
     );
@@ -1374,6 +1375,7 @@ export class ChatMessageCreatorUseCase {
             phone_ddi: contactData.phone_ddi,
             email: contactData.email,
             email_partial: contactData.email_partial,
+            photo: contactData.photo,
           },
         },
         date: new Date().toISOString(),

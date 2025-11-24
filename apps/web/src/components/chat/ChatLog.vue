@@ -2575,8 +2575,25 @@ onUnmounted(() => {
                       }"
                       @click="handleContactClick(item.message)"
                     >
-                      <VAvatar size="40" color="primary" variant="tonal">
-                        <VIcon size="20">tabler-user</VIcon>
+                      <VAvatar
+                        size="40"
+                        :variant="
+                          item.message.content.contact.photo
+                            ? undefined
+                            : 'tonal'
+                        "
+                        :color="
+                          item.message.content.contact.photo
+                            ? undefined
+                            : 'primary'
+                        "
+                      >
+                        <VImg
+                          v-if="item.message.content.contact.photo"
+                          :src="item.message.content.contact.photo"
+                          :alt="item.message.content.contact.name"
+                        />
+                        <VIcon v-else size="20">tabler-user</VIcon>
                       </VAvatar>
                       <div class="flex-grow-1">
                         <div

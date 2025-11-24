@@ -1,7 +1,7 @@
 import * as schema from '@core/models';
 import { contact, labelTemplate, account } from '@core/models';
 import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 
@@ -69,20 +69,15 @@ export class ContactViewerRepository {
 
   viewContactByPhone = async (
     accountId: string,
-    phoneC: string,
-    phoneDdi: string | null
+    phonesC: string[],
+    phoneDdi: string
   ): Promise<ViewContactResponse | null> => {
     const conditions = [
       isNull(contact.deleted_at),
       eq(contact.account_id, accountId),
-      eq(contact.phone_c, phoneC),
+      inArray(contact.phone_c, phonesC),
+      eq(contact.phone_ddi, phoneDdi),
     ];
-
-    if (phoneDdi) {
-      conditions.push(eq(contact.phone_ddi, phoneDdi));
-    } else {
-      conditions.push(sql`${contact.phone_ddi} IS NULL`);
-    }
 
     const result = await this.db
       .select({
