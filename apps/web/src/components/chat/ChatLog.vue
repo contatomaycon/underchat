@@ -1849,9 +1849,12 @@ onUnmounted(() => {
                   },
                 ]"
                 :style="{
-                  backgroundColor: isTypeUser(item.message)
-                    ? 'rgb(var(--v-theme-surface))'
-                    : 'rgb(217, 253, 211)',
+                  backgroundColor:
+                    item.message.content?.type === EMessageType.annotation
+                      ? 'rgb(255, 243, 205)'
+                      : isTypeUser(item.message)
+                        ? 'rgb(var(--v-theme-surface))'
+                        : 'rgb(217, 253, 211)',
                 }"
               >
                 <div
