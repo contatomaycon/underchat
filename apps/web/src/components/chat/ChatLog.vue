@@ -213,25 +213,19 @@ const handleContactClick = async (message: ListMessageResult) => {
   if (!message.content?.contact) return;
 
   const contact = message.content.contact;
-  const phone = contact.phone ?? contact.phone_partial;
-  const phoneDdi = contact.phone_ddi ?? '55';
 
-  if (phone) {
-    const existingContact = await contactStore.getContactByPhone(
-      phone.replaceAll(/\D/g, ''),
-      phoneDdi
+  if (contact.contact_id) {
+    globalThis.dispatchEvent(
+      new CustomEvent('open-edit-contact-modal', {
+        detail: contact.contact_id,
+      })
     );
 
-    if (existingContact) {
-      globalThis.dispatchEvent(
-        new CustomEvent('open-edit-contact-modal', {
-          detail: existingContact.contact_id,
-        })
-      );
-
-      return;
-    }
+    return;
   }
+
+  const phone = contact.phone ?? contact.phone_partial;
+  const phoneDdi = contact.phone_ddi ?? '55';
 
   const contactData: Partial<CreateContactRequest> = {
     name: contact.name ?? undefined,

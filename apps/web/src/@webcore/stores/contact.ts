@@ -134,40 +134,6 @@ export const useContactStore = defineStore('contact', {
       }
     },
 
-    async getContactByPhone(
-      phone: string,
-      phoneDdi?: string | null
-    ): Promise<ViewContactResponse | null> {
-      try {
-        const params = new URLSearchParams();
-        params.append('phone', phone);
-        if (phoneDdi) {
-          params.append('phone_ddi', phoneDdi);
-        }
-
-        const response = await axios.get<IApiResponse<ViewContactResponse>>(
-          `/contact/by-phone?${params.toString()}`
-        );
-
-        const data = response?.data;
-
-        if (!data?.status) {
-          return null;
-        }
-
-        if (
-          !data?.data ||
-          (typeof data.data === 'object' && Object.keys(data.data).length === 0)
-        ) {
-          return null;
-        }
-
-        return data.data;
-      } catch {
-        return null;
-      }
-    },
-
     extractFieldValue(field: FieldValue | undefined): string {
       if (field === null || field === undefined) {
         return '';

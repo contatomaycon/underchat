@@ -1063,15 +1063,20 @@ export class MessageUpsertConsume {
       phoneAndDdi.phone_ddi
     );
 
+    let existingContactName =
+      parsed.name || contactMsg.displayName || 'Contato';
+    let existingContactLastName = parsed.last_name || null;
     if (existingContact) {
       existingContactId = existingContact.contact_id;
       existingContactPhoto = existingContact.photo ?? null;
+      existingContactName = existingContact.name;
+      existingContactLastName = existingContact.last_name ?? null;
     }
 
     content.contact = {
       contact_id: existingContactId,
-      name: parsed.name || contactMsg.displayName || 'Contato',
-      last_name: parsed.last_name || null,
+      name: existingContactName,
+      last_name: existingContactLastName,
       phone: phoneAndDdi.phone,
       phone_partial: phonePartial,
       phone_ddi: phoneAndDdi.phone_ddi,
