@@ -848,16 +848,13 @@ export class ChatMessageCreatorUseCase {
   private async publishMessage(message: IChatMessage): Promise<boolean> {
     const isAnnotation =
       message.content?.type === ('annotation' as EMessageType | string);
-    const isSystem =
-      message.content?.type === ('system' as EMessageType | string);
-    const shouldSkipKafka = isAnnotation || isSystem;
 
     const promises: Promise<any>[] = [
       this.chatService.saveMessageChat(message),
       this.centrifugoChatPublish(message),
     ];
 
-    if (!shouldSkipKafka) {
+    if (!isAnnotation) {
       promises.push(
         this.streamProducerService.send(
           this.kafkaBaileysQueueService.workerSendMessage(message.worker.id),
