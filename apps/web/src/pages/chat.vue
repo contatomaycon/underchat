@@ -476,6 +476,11 @@ const confirmCloseService = async () => {
   }
 };
 
+const handleActiveChatHeaderClick = () => {
+  if (!canAccessContacts.value) return;
+  isActiveChatUserProfileSidebarOpen.value = true;
+};
+
 const isInChatStatus = computed(
   () => chatStore.activeChat?.status === EChatStatus.in_chat
 );
@@ -3607,6 +3612,7 @@ onBeforeUnmount(() => {
     </VNavigationDrawer>
 
     <VNavigationDrawer
+      v-if="canAccessContacts"
       v-model="isActiveChatUserProfileSidebarOpen"
       data-allow-mismatch
       width="374"
@@ -3675,8 +3681,11 @@ onBeforeUnmount(() => {
           </IconBtn>
 
           <div
-            class="d-flex align-center cursor-pointer"
-            @click="isActiveChatUserProfileSidebarOpen = true"
+            :class="[
+              'd-flex align-center',
+              { 'cursor-pointer': canAccessContacts },
+            ]"
+            @click="handleActiveChatHeaderClick"
           >
             <VAvatar
               size="40"
