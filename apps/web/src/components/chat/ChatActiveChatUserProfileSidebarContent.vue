@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { nextTick } from 'vue';
+import { nextTick, computed } from 'vue';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useContactStore } from '@/@webcore/stores/contact';
@@ -14,6 +14,9 @@ import { useCountryCodes } from '@/composables/useCountryCodes';
 import { requiredValidator } from '@/@webcore/utils/validators';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import { EColor } from '@core/common/enums/EColor';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
+import { can } from '@layouts/plugins/casl';
 
 const chatStore = useChatStore();
 const contactStore = useContactStore();
@@ -56,6 +59,16 @@ const isPhoneDecrypted = ref(false);
 const isLoadingPhone = ref(false);
 const isEmailDecrypted = ref(false);
 const isLoadingEmail = ref(false);
+
+const canAccessLabelTemplate = computed(() => {
+  const permissions = [
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    ELabelTemplatePermissions.label_template_group,
+    ELabelTemplatePermissions.label_view,
+  ];
+  return can(permissions);
+});
 
 const photoFile = ref<File | null>(null);
 const photoPreview = ref<string | null>(null);
@@ -1027,7 +1040,9 @@ const cancelCrop = () => {
 };
 
 onMounted(async () => {
-  await labelTemplateStore.listLabelTemplateAll();
+  if (canAccessLabelTemplate.value) {
+    await labelTemplateStore.listLabelTemplateAll();
+  }
   loadChatData();
 });
 </script>

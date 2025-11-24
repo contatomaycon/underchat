@@ -10,6 +10,9 @@ import { useCountryCodes } from '@/composables/useCountryCodes';
 import { EColor } from '@core/common/enums/EColor';
 import { useChatStore } from '@/@webcore/stores/chat';
 import VDialogHandler from '@/components/VDialogHandler.vue';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
+import { can } from '@layouts/plugins/casl';
 
 const contactStore = useContactStore();
 const labelTemplateStore = useLabelTemplateStore();
@@ -155,6 +158,16 @@ const emailValidator = (v: string | null | undefined) => {
   const re = /^[^\s@]+@(?:[^\s@.]+\.)+[^\s@.]{2,}$/;
   return re.test(s) || t('email_invalid');
 };
+
+const canAccessLabelTemplate = computed(() => {
+  const permissions = [
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    ELabelTemplatePermissions.label_template_group,
+    ELabelTemplatePermissions.label_view,
+  ];
+  return can(permissions);
+});
 
 const itemsLabel = computed(() =>
   (labelTemplateStore.listAll ?? []).map((item) => ({
@@ -932,7 +945,9 @@ watch([contactId, isVisible], async ([newContactId, newIsVisible]) => {
 });
 
 onMounted(async () => {
-  await labelTemplateStore.listLabelTemplateAll();
+  if (canAccessLabelTemplate.value) {
+    await labelTemplateStore.listLabelTemplateAll();
+  }
   if (contactId.value && isVisible.value) {
     await loadContactData();
   }

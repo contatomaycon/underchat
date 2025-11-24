@@ -7,6 +7,9 @@ import { useCountryCodes } from '@/composables/useCountryCodes';
 import { requiredValidator } from '@/@webcore/utils/validators';
 import { EColor } from '@core/common/enums/EColor';
 import { useChatStore } from '@/@webcore/stores/chat';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
+import { can } from '@layouts/plugins/casl';
 
 const contactStore = useContactStore();
 const labelTemplateStore = useLabelTemplateStore();
@@ -80,6 +83,16 @@ const emailValidator = (v: string | null | undefined) => {
   const re = /^[^\s@]+@(?:[^\s@.]+\.)+[^\s@.]{2,}$/;
   return re.test(s) || t('email_invalid');
 };
+
+const canAccessLabelTemplate = computed(() => {
+  const permissions = [
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    ELabelTemplatePermissions.label_template_group,
+    ELabelTemplatePermissions.label_view,
+  ];
+  return can(permissions);
+});
 
 const itemsLabel = computed(() =>
   (labelTemplateStore.listAll ?? []).map((item) => ({
@@ -769,7 +782,9 @@ const cancelCrop = () => {
 
 onMounted(async () => {
   resetForm();
-  await labelTemplateStore.listLabelTemplateAll();
+  if (canAccessLabelTemplate.value) {
+    await labelTemplateStore.listLabelTemplateAll();
+  }
 });
 
 watch(isVisible, (visible) => {
