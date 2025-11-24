@@ -37,6 +37,8 @@
     "no_more_results": "No more results",
     "search_minimum_characters": "Type at least {count} characters to search",
     "search": "Search",
+    "search_service_placeholder": "Search service...",
+    "searching": "Searching...",
     "select_state": "Select status",
     "all": "All",
     "confirm": "Confirm",

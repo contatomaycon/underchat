@@ -154,6 +154,7 @@
   "chat_not_found": "Chat não encontrado!",
   "chat_access_denied": "Acesso negado ao chat!",
   "messages_search_success": "Mensagens encontradas com sucesso!",
+  "chats_search_success": "Atendimentos encontrados com sucesso!",
   "chat_create_error": "Erro ao criar o chat!",
   "documents_required": "Selecione ao menos um documento!",
   "audio_required": "Selecione ao menos um áudio!",

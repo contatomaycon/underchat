@@ -37,6 +37,8 @@
     "no_more_results": "Não há mais resultados",
     "search_minimum_characters": "Digite pelo menos {count} caracteres para pesquisar",
     "search": "Buscar",
+    "search_service_placeholder": "Pesquisar atendimento...",
+    "searching": "Pesquisando...",
     "select_state": "Selecione o status",
     "all": "Todos",
     "confirm": "Confirmar",

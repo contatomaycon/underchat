@@ -14,6 +14,7 @@ import { clearChatSummary } from './methods/clearChatSummary';
 import { startChatWithContact } from './methods/startChatWithContact';
 import { searchMessages } from './methods/searchMessages';
 import { transferChat } from './methods/transferChat';
+import { searchChats } from './methods/searchChats';
 
 @injectable()
 class ChatController {
@@ -32,6 +33,7 @@ class ChatController {
   public startChatWithContact = startChatWithContact;
   public searchMessages = searchMessages;
   public transferChat = transferChat;
+  public searchChats = searchChats;
 }
 
 export default ChatController;

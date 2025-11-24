@@ -10,6 +10,8 @@ import {
   ListChatsResult,
 } from '@core/schema/chat/listChats/response.schema';
 import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
+import { SearchChatsResponse } from '@core/schema/chat/searchChats/response.schema';
+import { SearchChatsQuery } from '@core/schema/chat/searchChats/request.schema';
 import { UpdateChatsUserRequest } from '@core/schema/chat/updateChatsUser/request.schema';
 import { getUser, setUser, getPermissions } from '../localStorage/user';
 import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
@@ -472,6 +474,40 @@ export const useChatStore = defineStore('chat', {
         this.listInChat = [];
 
         return [] as ListChatsResult[];
+      }
+    },
+
+    async searchChats(
+      input: SearchChatsQuery
+    ): Promise<SearchChatsResponse | null> {
+      try {
+        this.loading = true;
+
+        const request: SearchChatsQuery = {
+          current_page: input.current_page ?? 1,
+          per_page: input.per_page ?? 20,
+          search: input.search,
+        };
+
+        const response = await axios.get<IApiResponse<SearchChatsResponse>>(
+          `/chat/search`,
+          {
+            params: request,
+          }
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        this.loading = false;
+        return null;
       }
     },
 
