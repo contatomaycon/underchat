@@ -42,8 +42,8 @@ const contactStore = useContactStore();
 const { activeChat } = storeToRefs(chatStore);
 const chatLogContainer = ref<HTMLElement | null>(null);
 
-const showSkeleton = computed(() => 
-  chatStore.loading && chatStore.listMessages.length === 0
+const showSkeleton = computed(
+  () => chatStore.loading && chatStore.listMessages.length === 0
 );
 const reactionEmojiIndex = new EmojiIndex(data);
 const showScrollToBottom = ref(false);
@@ -160,8 +160,15 @@ const resolveFeedbackIcon = (message: ListMessageResult): FeedbackIcon => {
 };
 
 const resolvePhoto = (message: ListMessageResult): string => {
-  if (isTypeUser(message) && chatStore.activeChat?.photo)
-    return chatStore.activeChat.photo;
+  if (isTypeUser(message)) {
+    if (chatStore.activeChat?.contact?.photo) {
+      return chatStore.activeChat.contact.photo;
+    }
+
+    if (chatStore.activeChat?.photo) {
+      return chatStore.activeChat.photo;
+    }
+  }
   if (!isTypeUser(message) && message.user?.photo) return message.user.photo;
   if (!isTypeUser(message) && chatStore.user?.info.photo)
     return chatStore.user.info.photo;

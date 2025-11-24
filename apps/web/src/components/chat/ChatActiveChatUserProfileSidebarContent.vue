@@ -407,17 +407,10 @@ const addContact = async () => {
     birthday: birthday.value ?? null,
     notes: notes.value ?? null,
     image_url: imageUrl,
+    chat_id: chatStore.activeChat?.chat_id ?? undefined,
   };
 
   const result = await contactStore.addContact(payload, photoFile.value);
-
-  if (result && chatStore.activeChat?.chat_id && phoneNumber && phoneDdi) {
-    await chatStore.updateChatContact(
-      chatStore.activeChat.chat_id,
-      phoneNumber,
-      phoneDdi
-    );
-  }
 
   if (result) {
     await nextTick();
@@ -457,6 +450,7 @@ const updateContact = async () => {
     birthday: birthday.value,
     notes: notes.value,
     image_url: imageUrl,
+    chat_id: chatStore.activeChat?.chat_id ?? undefined,
   };
 
   const result = await contactStore.updateContact(
@@ -1271,10 +1265,15 @@ onMounted(async () => {
         </VRow>
 
         <VCardText class="d-flex justify-end flex-wrap gap-3 pa-0 mt-4">
-          <VBtn variant="tonal" color="secondary" @click="$emit('close')">
+          <VBtn
+            variant="tonal"
+            color="secondary"
+            :disabled="contactStore.loading"
+            @click="$emit('close')"
+          >
             {{ $t('cancel') }}
           </VBtn>
-          <VBtn @click="saveContact">
+          <VBtn :loading="contactStore.loading" @click="saveContact">
             {{ isContact ? $t('save') : $t('add') }}
           </VBtn>
         </VCardText>

@@ -242,6 +242,9 @@ export const useContactStore = defineStore('contact', {
         } else if (photoFile) {
           formData.append('photo', photoFile);
         }
+        if (payload.chat_id) {
+          formData.append('chat_id', payload.chat_id);
+        }
 
         const response = await axios.post<IApiResponse<boolean>>(
           `/contact`,
@@ -338,6 +341,9 @@ export const useContactStore = defineStore('contact', {
           formData.append('image_url', imageUrl);
         } else if (photoFile) {
           formData.append('photo', photoFile);
+        }
+        if (body.chat_id) {
+          formData.append('chat_id', body.chat_id);
         }
 
         const response = await axios.patch<IApiResponse<boolean>>(

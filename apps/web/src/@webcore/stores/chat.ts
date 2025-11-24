@@ -25,7 +25,6 @@ import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/req
 import { IChatMessage, IReaction } from '@core/common/interfaces/IChatMessage';
 import { IChat } from '@core/common/interfaces/IChat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
-import { UpdateChatContactResult } from '@core/schema/chat/updateChatContact/response.schema';
 import { ViewLinkPreviewBody } from '@core/schema/chat/viewLinkPreview/request.schema';
 import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
@@ -661,36 +660,6 @@ export const useChatStore = defineStore('chat', {
         await axios.post(`/chat/${chatId}/clear-summary`, {});
 
         return true;
-      } catch {
-        return false;
-      }
-    },
-
-    async updateChatContact(
-      chatId: string,
-      phone: string,
-      phoneDdi: string
-    ): Promise<boolean> {
-      if (!chatId || !phone || !phoneDdi) return false;
-
-      try {
-        const response = await axios.patch<
-          IApiResponse<UpdateChatContactResult>
-        >(`/chat/${chatId}/contact`, {
-          phone,
-          phone_ddi: phoneDdi,
-        });
-
-        if (response?.data?.status && response?.data?.data) {
-          const chatData: IChat = {
-            ...response.data.data,
-            status: response.data.data.status as EChatStatus,
-          };
-          this.addChat(chatData);
-          return true;
-        }
-
-        return false;
       } catch {
         return false;
       }
