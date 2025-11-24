@@ -25,4 +25,3 @@ export const expenditure = pgTable('expenditure', {
 });
 
 export const expenditureRelations = relations(expenditure, ({}) => ({}));
-
