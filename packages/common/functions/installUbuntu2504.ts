@@ -90,8 +90,13 @@ export async function installUbuntu2504(
       sleep 3 && \
       hash -r"`,
 
+    `bash -c "mkdir -p /home/app && \
+      chown $USER:$USER /home/app && \
+      git clone --single-branch --branch ${generalEnvironment.gitBranch} https://github.com/${generalEnvironment.gitRepo}.git /home/app"`,
+
     sshKeyContent
-      ? `bash -c "mkdir -p ~/.ssh && \
+      ? `bash -c "cd /home/app && \
+          mkdir -p ~/.ssh && \
           printf '%b' '${sshKeyContent}' > ~/.ssh/id_rsa && \
           chmod 600 ~/.ssh/id_rsa && \
           ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null || true && \
@@ -101,11 +106,7 @@ export async function installUbuntu2504(
           ssh-add ~/.ssh/id_rsa 2>/dev/null || true && \
           git config --global url.\\"git@github.com:\\".insteadOf \\"https://github.com/\\" || true && \
           git config --global url.\\"git@gitlab.com:\\".insteadOf \\"https://gitlab.com/\\" || true"`
-      : 'echo "SSH key not found, skipping SSH configuration"',
-
-    `bash -c "mkdir -p /home/app && \
-      chown $USER:$USER /home/app && \
-      git clone --single-branch --branch ${generalEnvironment.gitBranch} git@github.com:contatomaycon/underchat.git /home/app"`,
+      : 'echo "SSH key not found, skipping SSH configuration for Docker builds"',
 
     `bash -c "printf '%b' '${envContent}' > /home/app/.env && chown $USER:$USER /home/app/.env"`,
 
