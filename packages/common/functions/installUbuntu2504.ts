@@ -92,7 +92,12 @@ export async function installUbuntu2504(
 
     `bash -c "mkdir -p /home/app && \
       chown $USER:$USER /home/app && \
-      git clone --single-branch --branch ${generalEnvironment.gitBranch} https://github.com/${generalEnvironment.gitRepo} /home/app"`,
+      REPO=\\"${generalEnvironment.gitRepo}\\" && \
+      if echo \\"$REPO\\" | grep -qE '^github.com/'; then \
+        git clone --single-branch --branch ${generalEnvironment.gitBranch} https://\\"$REPO\\" /home/app; \
+      else \
+        git clone --single-branch --branch ${generalEnvironment.gitBranch} https://github.com/\\"$REPO\\" /home/app; \
+      fi"`,
 
     sshKeyContent
       ? `bash -c "cd /home/app && \
