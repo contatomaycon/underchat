@@ -83,12 +83,12 @@ export const updateUserRequestSchema = Type.Object({
       value: Type.Union([Type.String(), Type.Null()]),
     })
   ),
-  city: Type.Optional(
+  city_fiscal_code: Type.Optional(
     Type.Object({
       value: Type.Union([Type.String(), Type.Null()]),
     })
   ),
-  state: Type.Optional(
+  state_fiscal_code: Type.Optional(
     Type.Object({
       value: Type.Union([Type.String(), Type.Null()]),
     })

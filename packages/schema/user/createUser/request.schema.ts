@@ -50,11 +50,11 @@ export const createUserRequestSchema = Type.Object({
       value: Type.Union([Type.String(), Type.Null()]),
     })
   ),
-  city: Type.Object({
-    value: Type.String(),
+  city_fiscal_code: Type.Object({
+    value: Type.Union([Type.String(), Type.Null()]),
   }),
-  state: Type.Object({
-    value: Type.String(),
+  state_fiscal_code: Type.Object({
+    value: Type.Union([Type.String(), Type.Null()]),
   }),
   district: Type.Object({
     value: Type.String(),

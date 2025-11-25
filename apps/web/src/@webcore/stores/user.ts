@@ -213,8 +213,8 @@ export const useUsersStore = defineStore('users', {
           zip_code: string;
           address1: string;
           address2: string | null;
-          city: string;
-          state: string;
+          city_fiscal_code: string | null;
+          state_fiscal_code: string | null;
           district: string;
         };
       },
@@ -255,8 +255,18 @@ export const useUsersStore = defineStore('users', {
         if (payload.user_address.address2) {
           formData.append('address2', payload.user_address.address2);
         }
-        formData.append('city', payload.user_address.city);
-        formData.append('state', payload.user_address.state);
+        if (payload.user_address.city_fiscal_code) {
+          formData.append(
+            'city_fiscal_code',
+            payload.user_address.city_fiscal_code
+          );
+        }
+        if (payload.user_address.state_fiscal_code) {
+          formData.append(
+            'state_fiscal_code',
+            payload.user_address.state_fiscal_code
+          );
+        }
         formData.append('district', payload.user_address.district);
 
         if (photoFile instanceof File) {
@@ -398,11 +408,17 @@ export const useUsersStore = defineStore('users', {
         ) {
           formData.append('address2', body.address2.value);
         }
-        if (body.city?.value !== undefined && body.city.value !== null) {
-          formData.append('city', body.city.value);
+        if (
+          body.city_fiscal_code?.value !== undefined &&
+          body.city_fiscal_code.value !== null
+        ) {
+          formData.append('city_fiscal_code', body.city_fiscal_code.value);
         }
-        if (body.state?.value !== undefined && body.state.value !== null) {
-          formData.append('state', body.state.value);
+        if (
+          body.state_fiscal_code?.value !== undefined &&
+          body.state_fiscal_code.value !== null
+        ) {
+          formData.append('state_fiscal_code', body.state_fiscal_code.value);
         }
         if (
           body.district?.value !== undefined &&

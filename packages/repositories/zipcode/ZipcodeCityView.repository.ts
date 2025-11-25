@@ -17,6 +17,7 @@ export class ZipcodeCityViewRepository {
       .select({
         id_zipcode_city: zipcodeCity.id_zipcode_city,
         city: zipcodeCity.city,
+        fiscal_code: zipcodeCity.fiscal_code,
       })
       .from(zipcodeCity)
       .where(eq(zipcodeCity.id_zipcode_state, request.id_zipcode_state))

@@ -187,8 +187,8 @@ export class UserListerRepository {
             zip_code: true,
             address1_partial: true,
             address2_partial: true,
-            city: true,
-            state: true,
+            city_fiscal_code: true,
+            state_fiscal_code: true,
             district: true,
           },
           with: {
@@ -197,6 +197,17 @@ export class UserListerRepository {
                 country_id: true,
                 iso_code: true,
                 name: true,
+              },
+            },
+            uzc: {
+              columns: {
+                city: true,
+              },
+            },
+            uzs: {
+              columns: {
+                state: true,
+                abbreviation: true,
               },
             },
           },
@@ -258,8 +269,14 @@ export class UserListerRepository {
             zip_code: user.uua.zip_code,
             address1_partial: user.uua.address1_partial,
             address2_partial: user.uua.address2_partial,
-            city: user.uua.city,
-            state: user.uua.state,
+            city: user.uua.uzc?.city ?? null,
+            state: user.uua.uzs
+              ? user.uua.uzs.abbreviation
+                ? `${user.uua.uzs.state} (${user.uua.uzs.abbreviation})`
+                : user.uua.uzs.state
+              : null,
+            city_fiscal_code: user.uua.city_fiscal_code,
+            state_fiscal_code: user.uua.state_fiscal_code,
             district: user.uua.district,
             country: user.uua.uuc
               ? {

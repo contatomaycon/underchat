@@ -144,8 +144,8 @@ export class UserTransactionCreatorRepository {
         address2: address2Encrypted,
         address2_partial: address2PartialEncrypted,
         address2_c: address2C,
-        city: input.city.value,
-        state: input.state.value,
+        city_fiscal_code: input.city_fiscal_code?.value ?? null,
+        state_fiscal_code: input.state_fiscal_code?.value ?? null,
         district: input.district.value,
       };
 

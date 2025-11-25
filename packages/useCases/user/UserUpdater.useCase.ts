@@ -354,8 +354,8 @@ export class UserUpdaterUseCase {
       address2: address2Data.addressCEncrypted,
       address2_partial: address2Data.addressPartialEncrypted,
       address2_c: address2Data.addressC,
-      city: this.extractStringValue(body.city),
-      state: this.extractStringValue(body.state),
+      city_fiscal_code: this.extractStringValue(body.city_fiscal_code),
+      state_fiscal_code: this.extractStringValue(body.state_fiscal_code),
       district: this.extractStringValue(body.district),
     };
   }
@@ -527,8 +527,8 @@ export class UserUpdaterUseCase {
       body.zip_code?.value ||
       body.address1?.value ||
       body.address2?.value ||
-      body.city?.value ||
-      body.state?.value ||
+      body.city_fiscal_code?.value ||
+      body.state_fiscal_code?.value ||
       body.district?.value
     );
   }

@@ -18,6 +18,7 @@ export class ZipcodeStateViewRepository {
         id_zipcode_state: zipcodeState.id_zipcode_state,
         state: zipcodeState.state,
         abbreviation: zipcodeState.abbreviation,
+        fiscal_code: zipcodeState.fiscal_code,
       })
       .from(zipcodeState);
 

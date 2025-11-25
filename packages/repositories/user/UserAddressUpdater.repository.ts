@@ -48,12 +48,12 @@ export class UserAddressUpdaterRepository {
       inputUpdate.address2_c = input.address2_c;
     }
 
-    if (input.city) {
-      inputUpdate.city = input.city;
+    if (input.city_fiscal_code !== undefined) {
+      inputUpdate.city_fiscal_code = input.city_fiscal_code;
     }
 
-    if (input.state) {
-      inputUpdate.state = input.state;
+    if (input.state_fiscal_code !== undefined) {
+      inputUpdate.state_fiscal_code = input.state_fiscal_code;
     }
 
     if (input.district) {
