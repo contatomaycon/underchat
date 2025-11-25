@@ -198,11 +198,6 @@ export const useSectorsStore = defineStore('sectors', {
 
         return data.data;
       } catch (error) {
-        let errorMessage = this.i18n.global.t('sector_users_not_found');
-        if (error instanceof AxiosError) {
-          errorMessage = error?.response?.data?.message ?? errorMessage;
-        }
-
         this.loading = false;
 
         return null;

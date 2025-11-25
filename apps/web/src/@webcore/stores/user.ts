@@ -13,7 +13,6 @@ import {
 import { ListUserRequest } from '@core/schema/user/listUser/request.schema';
 import { IListUsers } from '../interfaces/IListUsers';
 import { ViewUserResponse } from '@core/schema/user/viewUser/response.schema';
-import { CreateUserRequest } from '@core/schema/user/createUser/request.schema';
 import {
   EditUserParamsRequest,
   UpdateUserRequest,

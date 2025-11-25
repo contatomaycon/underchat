@@ -835,7 +835,7 @@ export const useChannelsStore = defineStore('channels', {
         }
 
         return data.data.generate_protocol_at_transfer;
-      } catch (error) {
+      } catch {
         return null;
       }
     },
@@ -897,7 +897,7 @@ export const useChannelsStore = defineStore('channels', {
         }
 
         return data.data.generate_protocol_at_start;
-      } catch (error) {
+      } catch {
         return null;
       }
     },
@@ -959,7 +959,7 @@ export const useChannelsStore = defineStore('channels', {
         }
 
         return data.data.generate_protocol_at_ura;
-      } catch (error) {
+      } catch {
         return null;
       }
     },
