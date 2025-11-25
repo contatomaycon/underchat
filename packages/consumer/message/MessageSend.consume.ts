@@ -1221,7 +1221,11 @@ export class MessageSendConsume {
   private createQuotedTextMessage(
     q: NonNullable<IChatMessage['content']>['quoted']
   ): proto.IMessage | null {
-    if (q?.type !== EMessageType.text || !q?.message) return null;
+    if (
+      (q?.type !== EMessageType.text && q?.type !== EMessageType.system) ||
+      !q?.message
+    )
+      return null;
 
     return {
       conversation: q.message,

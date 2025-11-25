@@ -162,7 +162,10 @@ export class ChatMessageCreatorUseCase {
     t: TFunction<'translation', undefined>,
     body: CreateMessageChatsBody
   ) {
-    if (body.type === EMessageType.text && !body.message) {
+    if (
+      (body.type === EMessageType.text || body.type === EMessageType.system) &&
+      !body.message
+    ) {
       throw new Error(t('message_content_required'));
     }
   }
@@ -846,8 +849,8 @@ export class ChatMessageCreatorUseCase {
   }
 
   private async publishMessage(message: IChatMessage): Promise<boolean> {
-    const isAnnotation =
-      message.content?.type === ('annotation' as EMessageType | string);
+    const messageType = message.content?.type;
+    const isAnnotation = messageType === EMessageType.annotation;
 
     const promises: Promise<any>[] = [
       this.chatService.saveMessageChat(message),
@@ -855,12 +858,10 @@ export class ChatMessageCreatorUseCase {
     ];
 
     if (!isAnnotation) {
-      promises.push(
-        this.streamProducerService.send(
-          this.kafkaBaileysQueueService.workerSendMessage(message.worker.id),
-          message
-        )
+      const kafkaTopic = this.kafkaBaileysQueueService.workerSendMessage(
+        message.worker.id
       );
+      promises.push(this.streamProducerService.send(kafkaTopic, message));
     }
 
     const [result] = await Promise.all(promises);
