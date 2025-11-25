@@ -345,7 +345,7 @@
     "zip_code": "CEP",
     "zip_code_required": "CEP é obrigatório",
     "address_required": "Endereço é obrigatório",
-    "address_secondary": "Endereço Secundário",
+    "address_secondary": "Complemento",
     "city": "Cidade",
     "city_required": "Cidade é obrigatória",
     "state": "Estado",

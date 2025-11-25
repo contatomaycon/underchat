@@ -343,7 +343,7 @@
     "zip_code": "Código Postal",
     "zip_code_required": "Código Postal es obligatorio",
     "address_required": "Dirección es obligatoria",
-    "address_secondary": "Dirección Secundaria",
+    "address_secondary": "Complemento",
     "city": "Ciudad",
     "city_required": "Ciudad es obligatoria",
     "state": "Estado",

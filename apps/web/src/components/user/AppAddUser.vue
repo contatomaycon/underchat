@@ -229,6 +229,11 @@ const validateStep2 = async (): Promise<boolean> => {
   return validation?.valid ?? false;
 };
 
+const validateStep3 = async (): Promise<boolean> => {
+  const validation = await refFormAddUser.value?.validate();
+  return validation?.valid ?? false;
+};
+
 const navigateToNextTab = (currentTab: string): string => {
   if (currentTab === 'user_data') return 'additional_info';
   if (currentTab === 'additional_info') return 'address';
@@ -239,6 +244,51 @@ const navigateToPrevTab = (currentTab: string): string => {
   if (currentTab === 'additional_info') return 'user_data';
   if (currentTab === 'address') return 'additional_info';
   return currentTab;
+};
+
+const isAdvancing = (fromTab: string, toTab: string): boolean => {
+  const tabOrder = ['user_data', 'additional_info', 'address'];
+  const fromIndex = tabOrder.indexOf(fromTab);
+  const toIndex = tabOrder.indexOf(toTab);
+  return toIndex > fromIndex;
+};
+
+const onTabChange = async (newTab: string) => {
+  const currentTab = tab.value;
+  
+  if (currentTab === newTab) {
+    return;
+  }
+
+  const advancing = isAdvancing(currentTab, newTab);
+
+  if (!advancing) {
+    tab.value = newTab;
+    return;
+  }
+
+  if (currentTab === 'user_data') {
+    const isValid = await validateStep1();
+    if (!isValid) return;
+    tab.value = newTab;
+    return;
+  }
+
+  if (currentTab === 'additional_info') {
+    const isValid = await validateStep2();
+    if (!isValid) return;
+    tab.value = newTab;
+    return;
+  }
+
+  if (currentTab === 'address') {
+    const isValid = await validateStep3();
+    if (!isValid) return;
+    tab.value = newTab;
+    return;
+  }
+
+  tab.value = newTab;
 };
 
 const goNext = async () => {
@@ -1108,7 +1158,7 @@ onMounted(resetForm);
       </VCardTitle>
       <VDivider />
 
-      <VTabs v-model="tab" class="px-6">
+      <VTabs :model-value="tab" @update:model-value="onTabChange" class="px-6">
         <VTab value="user_data">{{ t('user_data') }}</VTab>
         <VTab value="additional_info">{{ t('additional_info') }}</VTab>
         <VTab value="address">{{ t('address') }}</VTab>
@@ -1117,7 +1167,7 @@ onMounted(resetForm);
 
       <VCard flat>
         <VCardText class="pa-6">
-          <VWindow v-model="tab" class="disable-tab-transition">
+          <VWindow :model-value="tab" @update:model-value="onTabChange" class="disable-tab-transition">
             <VWindowItem value="user_data">
               <VForm class="mt-4" ref="refFormStep1" @submit.prevent>
                 <VRow>
@@ -1459,23 +1509,58 @@ onMounted(resetForm);
                     />
                   </VCol>
                   <VCol cols="12" md="6">
-                    <AppTextField
-                      v-model="address1"
-                      :disabled="!country_id"
-                      :label="$t('address') + ':'"
-                      :placeholder="$t('address')"
-                      :rules="[
-                        requiredValidator(address1, $t('address_required')),
-                      ]"
-                    />
-                  </VCol>
-                  <VCol cols="12" md="6">
-                    <AppTextField
-                      v-model="address2"
-                      :disabled="!country_id"
-                      :label="$t('address_secondary') + ':'"
-                      :placeholder="$t('address_secondary')"
-                    />
+                    <div>
+                      <VLabel class="mb-1 text-body-2"
+                        >{{ $t('state') }}:</VLabel
+                      >
+                      <VMenu v-model="isStateMenuOpen">
+                        <template #activator="{ props: menuProps }">
+                          <VTextField
+                            v-bind="menuProps"
+                            :model-value="
+                              filteredStates.find((s) => s.value === state_id)
+                                ?.title || ''
+                            "
+                            :placeholder="$t('state')"
+                            variant="outlined"
+                            readonly
+                            :disabled="!country_id"
+                            append-inner-icon="tabler-chevron-down"
+                          />
+                        </template>
+                        <VCard>
+                          <VCardText class="pa-2">
+                            <AppTextField
+                              v-model="stateSearchQuery"
+                              :placeholder="$t('search') + '...'"
+                              prepend-inner-icon="tabler-search"
+                              density="compact"
+                              hide-details
+                              autofocus
+                              @click.stop
+                            />
+                          </VCardText>
+                          <VDivider />
+                          <VList max-height="300" style="overflow-y: auto">
+                            <VListItem
+                              v-for="(item, index) in filteredStates"
+                              :key="index"
+                              :value="item.value"
+                              @click="
+                                () => {
+                                  onStateChange(item.value);
+                                  state = item.title;
+                                  isStateMenuOpen = false;
+                                }
+                              "
+                              :active="state_id === item.value"
+                            >
+                              <VListItemTitle>{{ item.title }}</VListItemTitle>
+                            </VListItem>
+                          </VList>
+                        </VCard>
+                      </VMenu>
+                    </div>
                   </VCol>
                   <VCol cols="12" md="6">
                     <div>
@@ -1532,58 +1617,23 @@ onMounted(resetForm);
                     </div>
                   </VCol>
                   <VCol cols="12" md="6">
-                    <div>
-                      <VLabel class="mb-1 text-body-2"
-                        >{{ $t('state') }}:</VLabel
-                      >
-                      <VMenu v-model="isStateMenuOpen">
-                        <template #activator="{ props: menuProps }">
-                          <VTextField
-                            v-bind="menuProps"
-                            :model-value="
-                              filteredStates.find((s) => s.value === state_id)
-                                ?.title || ''
-                            "
-                            :placeholder="$t('state')"
-                            variant="outlined"
-                            readonly
-                            :disabled="!country_id"
-                            append-inner-icon="tabler-chevron-down"
-                          />
-                        </template>
-                        <VCard>
-                          <VCardText class="pa-2">
-                            <AppTextField
-                              v-model="stateSearchQuery"
-                              :placeholder="$t('search') + '...'"
-                              prepend-inner-icon="tabler-search"
-                              density="compact"
-                              hide-details
-                              autofocus
-                              @click.stop
-                            />
-                          </VCardText>
-                          <VDivider />
-                          <VList max-height="300" style="overflow-y: auto">
-                            <VListItem
-                              v-for="(item, index) in filteredStates"
-                              :key="index"
-                              :value="item.value"
-                              @click="
-                                () => {
-                                  onStateChange(item.value);
-                                  state = item.title;
-                                  isStateMenuOpen = false;
-                                }
-                              "
-                              :active="state_id === item.value"
-                            >
-                              <VListItemTitle>{{ item.title }}</VListItemTitle>
-                            </VListItem>
-                          </VList>
-                        </VCard>
-                      </VMenu>
-                    </div>
+                    <AppTextField
+                      v-model="address1"
+                      :disabled="!country_id"
+                      :label="$t('address') + ':'"
+                      :placeholder="$t('address')"
+                      :rules="[
+                        requiredValidator(address1, $t('address_required')),
+                      ]"
+                    />
+                  </VCol>
+                  <VCol cols="12" md="6">
+                    <AppTextField
+                      v-model="address2"
+                      :disabled="!country_id"
+                      :label="$t('address_secondary') + ':'"
+                      :placeholder="$t('address_secondary')"
+                    />
                   </VCol>
                   <VCol cols="12" md="6">
                     <AppTextField

@@ -342,7 +342,7 @@
     "zip_code": "Zip Code",
     "zip_code_required": "Zip Code is required",
     "address_required": "Address is required",
-    "address_secondary": "Address Secondary",
+    "address_secondary": "Complement",
     "city": "City",
     "city_required": "City is required",
     "state": "State",

@@ -286,6 +286,21 @@ const refFormStep2 = ref<VForm>();
 
 const zipInputRef = ref<HTMLInputElement | null>(null);
 
+const validateStep1 = async (): Promise<boolean> => {
+  const validation = await refFormStep1.value?.validate();
+  return validation?.valid ?? false;
+};
+
+const validateStep2 = async (): Promise<boolean> => {
+  const validation = await refFormStep2.value?.validate();
+  return validation?.valid ?? false;
+};
+
+const validateStep3 = async (): Promise<boolean> => {
+  const validation = await refFormEditUser.value?.validate();
+  return validation?.valid ?? false;
+};
+
 const navigateToNextTab = (currentTab: string): string => {
   if (currentTab === 'user_data') return 'additional_info';
   if (currentTab === 'additional_info') return 'address';
@@ -298,8 +313,63 @@ const navigateToPrevTab = (currentTab: string): string => {
   return currentTab;
 };
 
-const goNext = () => {
-  tab.value = navigateToNextTab(tab.value);
+const isAdvancing = (fromTab: string, toTab: string): boolean => {
+  const tabOrder = ['user_data', 'additional_info', 'address'];
+  const fromIndex = tabOrder.indexOf(fromTab);
+  const toIndex = tabOrder.indexOf(toTab);
+  return toIndex > fromIndex;
+};
+
+const onTabChange = async (newTab: string) => {
+  const currentTab = tab.value;
+  
+  if (currentTab === newTab) {
+    return;
+  }
+
+  const advancing = isAdvancing(currentTab, newTab);
+
+  if (!advancing) {
+    tab.value = newTab;
+    return;
+  }
+
+  if (currentTab === 'user_data') {
+    const isValid = await validateStep1();
+    if (!isValid) return;
+    tab.value = newTab;
+    return;
+  }
+
+  if (currentTab === 'additional_info') {
+    const isValid = await validateStep2();
+    if (!isValid) return;
+    tab.value = newTab;
+    return;
+  }
+
+  if (currentTab === 'address') {
+    const isValid = await validateStep3();
+    if (!isValid) return;
+    tab.value = newTab;
+    return;
+  }
+
+  tab.value = newTab;
+};
+
+const goNext = async () => {
+  if (tab.value === 'user_data') {
+    const isValid = await validateStep1();
+    if (!isValid) return;
+    tab.value = navigateToNextTab(tab.value);
+    return;
+  }
+  if (tab.value === 'additional_info') {
+    const isValid = await validateStep2();
+    if (!isValid) return;
+    tab.value = navigateToNextTab(tab.value);
+  }
 };
 
 const goPrev = () => {
@@ -1984,7 +2054,7 @@ watch(
       </VCardTitle>
       <VDivider />
 
-      <VTabs v-model="tab" class="px-6">
+      <VTabs :model-value="tab" @update:model-value="onTabChange" class="px-6">
         <VTab value="user_data">{{ t('user_data') }}</VTab>
         <VTab value="additional_info">{{ t('additional_info') }}</VTab>
         <VTab value="address">{{ t('address') }}</VTab>
@@ -1993,7 +2063,7 @@ watch(
 
       <VCard flat>
         <VCardText class="pa-6">
-          <VWindow v-model="tab" class="disable-tab-transition">
+          <VWindow :model-value="tab" @update:model-value="onTabChange" class="disable-tab-transition">
             <VWindowItem value="user_data">
               <VForm class="mt-4" ref="refFormStep1" @submit.prevent>
                 <VRow>
@@ -2157,13 +2227,7 @@ watch(
                           :append-inner-icon="
                             isPasswordVisible ? 'tabler-eye-off' : 'tabler-eye'
                           "
-                          :rules="[
-                            rules.passwordMinIfFilled,
-                            requiredValidator(
-                              password,
-                              $t('password_required')
-                            ),
-                          ]"
+                          :rules="[rules.passwordMinIfFilled]"
                           @click:append-inner="
                             isPasswordVisible = !isPasswordVisible
                           "
@@ -2422,50 +2486,58 @@ watch(
                     />
                   </VCol>
                   <VCol cols="12" md="6">
-                    <AppTextField
-                      v-model="address1Formatted"
-                      :disabled="!country_id"
-                      :label="$t('address') + ':'"
-                      :placeholder="$t('address')"
-                      @focus="startEditAddress1"
-                      @click="startEditAddress1"
-                    >
-                      <template #append-inner>
-                        <VIcon
-                          :icon="
-                            isAddress1Decrypted
-                              ? 'tabler-eye-off'
-                              : 'tabler-eye'
-                          "
-                          class="cursor-pointer"
-                          :class="{ 'opacity-50': isLoadingAddress1 }"
-                          @click.stop="toggleAddress1Visibility"
-                        />
-                      </template>
-                    </AppTextField>
-                  </VCol>
-                  <VCol cols="12" md="6">
-                    <AppTextField
-                      v-model="address2Formatted"
-                      :disabled="!country_id"
-                      :label="$t('address_secondary') + ':'"
-                      :placeholder="$t('address_secondary')"
-                      @focus="startEditAddress2"
-                      @click="startEditAddress2"
-                    >
-                      <template #append-inner>
-                        <VIcon
-                          :icon="
-                            isAddress2Decrypted
-                              ? 'tabler-eye-off'
-                              : 'tabler-eye'
-                          "
-                          class="cursor-pointer"
-                          :class="{ 'opacity-50': isLoadingAddress2 }"
-                          @click.stop="toggleAddress2Visibility"
-                        />
-                      </template>
-                    </AppTextField>
+                    <div>
+                      <VLabel class="mb-1 text-body-2"
+                        >{{ $t('state') }}:</VLabel
+                      >
+                      <VMenu v-model="isStateMenuOpen">
+                        <template #activator="{ props: menuProps }">
+                          <VTextField
+                            v-bind="menuProps"
+                            :model-value="
+                              filteredStates.find((s) => s.value === state_id)
+                                ?.title || ''
+                            "
+                            :placeholder="$t('state')"
+                            variant="outlined"
+                            readonly
+                            :disabled="!country_id"
+                            append-inner-icon="tabler-chevron-down"
+                          />
+                        </template>
+                        <VCard>
+                          <VCardText class="pa-2">
+                            <AppTextField
+                              v-model="stateSearchQuery"
+                              :placeholder="$t('search') + '...'"
+                              prepend-inner-icon="tabler-search"
+                              density="compact"
+                              hide-details
+                              autofocus
+                              @click.stop
+                            />
+                          </VCardText>
+                          <VDivider />
+                          <VList max-height="300" style="overflow-y: auto">
+                            <VListItem
+                              v-for="(item, index) in filteredStates"
+                              :key="index"
+                              :value="item.value"
+                              @click="
+                                () => {
+                                  onStateChange(item.value);
+                                  state = item.title;
+                                  isStateMenuOpen = false;
+                                }
+                              "
+                              :active="state_id === item.value"
+                            >
+                              <VListItemTitle>{{ item.title }}</VListItemTitle>
+                            </VListItem>
+                          </VList>
+                        </VCard>
+                      </VMenu>
+                    </div>
                   </VCol>
                   <VCol cols="12" md="6">
                     <div>
@@ -2522,58 +2594,50 @@ watch(
                     </div>
                   </VCol>
                   <VCol cols="12" md="6">
-                    <div>
-                      <VLabel class="mb-1 text-body-2"
-                        >{{ $t('state') }}:</VLabel
-                      >
-                      <VMenu v-model="isStateMenuOpen">
-                        <template #activator="{ props: menuProps }">
-                          <VTextField
-                            v-bind="menuProps"
-                            :model-value="
-                              filteredStates.find((s) => s.value === state_id)
-                                ?.title || ''
-                            "
-                            :placeholder="$t('state')"
-                            variant="outlined"
-                            readonly
-                            :disabled="!country_id"
-                            append-inner-icon="tabler-chevron-down"
-                          />
-                        </template>
-                        <VCard>
-                          <VCardText class="pa-2">
-                            <AppTextField
-                              v-model="stateSearchQuery"
-                              :placeholder="$t('search') + '...'"
-                              prepend-inner-icon="tabler-search"
-                              density="compact"
-                              hide-details
-                              autofocus
-                              @click.stop
-                            />
-                          </VCardText>
-                          <VDivider />
-                          <VList max-height="300" style="overflow-y: auto">
-                            <VListItem
-                              v-for="(item, index) in filteredStates"
-                              :key="index"
-                              :value="item.value"
-                              @click="
-                                () => {
-                                  onStateChange(item.value);
-                                  state = item.title;
-                                  isStateMenuOpen = false;
-                                }
-                              "
-                              :active="state_id === item.value"
-                            >
-                              <VListItemTitle>{{ item.title }}</VListItemTitle>
-                            </VListItem>
-                          </VList>
-                        </VCard>
-                      </VMenu>
-                    </div>
+                    <AppTextField
+                      v-model="address1Formatted"
+                      :disabled="!country_id"
+                      :label="$t('address') + ':'"
+                      :placeholder="$t('address')"
+                      @focus="startEditAddress1"
+                      @click="startEditAddress1"
+                    >
+                      <template #append-inner>
+                        <VIcon
+                          :icon="
+                            isAddress1Decrypted
+                              ? 'tabler-eye-off'
+                              : 'tabler-eye'
+                          "
+                          class="cursor-pointer"
+                          :class="{ 'opacity-50': isLoadingAddress1 }"
+                          @click.stop="toggleAddress1Visibility"
+                        />
+                      </template>
+                    </AppTextField>
+                  </VCol>
+                  <VCol cols="12" md="6">
+                    <AppTextField
+                      v-model="address2Formatted"
+                      :disabled="!country_id"
+                      :label="$t('address_secondary') + ':'"
+                      :placeholder="$t('address_secondary')"
+                      @focus="startEditAddress2"
+                      @click="startEditAddress2"
+                    >
+                      <template #append-inner>
+                        <VIcon
+                          :icon="
+                            isAddress2Decrypted
+                              ? 'tabler-eye-off'
+                              : 'tabler-eye'
+                          "
+                          class="cursor-pointer"
+                          :class="{ 'opacity-50': isLoadingAddress2 }"
+                          @click.stop="toggleAddress2Visibility"
+                        />
+                      </template>
+                    </AppTextField>
                   </VCol>
                   <VCol cols="12" md="6">
                     <AppTextField
