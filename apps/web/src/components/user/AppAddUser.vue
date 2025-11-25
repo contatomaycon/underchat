@@ -15,6 +15,8 @@ const userStore = useUsersStore();
 const accountStore = useAccountStore();
 const { items: countryCodes } = useCountryCodes();
 const {
+  states,
+  cities,
   filteredStates,
   filteredCities,
   stateSearchQuery,
@@ -253,9 +255,13 @@ const isAdvancing = (fromTab: string, toTab: string): boolean => {
   return toIndex > fromIndex;
 };
 
-const onTabChange = async (newTab: string) => {
+const onTabChange = async (newTab: string | unknown) => {
+  if (typeof newTab !== 'string') {
+    return;
+  }
+
   const currentTab = tab.value;
-  
+
   if (currentTab === newTab) {
     return;
   }
@@ -320,7 +326,7 @@ const rules = {
     !password.value || v === password.value || t('the_password_do_not_match'),
 };
 
-const updateAddressFields = (response: {
+const updateAddressFields = async (response: {
   address_1: string;
   address_2?: string | null;
   city: string;
@@ -329,9 +335,42 @@ const updateAddressFields = (response: {
 }) => {
   address1.value = response.address_1;
   address2.value = response.address_2 ?? null;
-  city.value = response.city;
-  state.value = response.state;
   district.value = response.district;
+
+  if (country_id.value) {
+    await loadStates(country_id.value);
+
+    const stateValue = response.state.trim();
+    const stateMatch = stateValue.match(/^(.+?)\s*\(([^)]+)\)$/);
+    const stateName = stateMatch ? stateMatch[1].trim() : stateValue;
+    const stateAbbreviation = stateMatch ? stateMatch[2].trim() : null;
+
+    const foundState = states.value.find(
+      (s) =>
+        s.state.toLowerCase() === stateName.toLowerCase() ||
+        (stateAbbreviation &&
+          s.abbreviation?.toLowerCase() === stateAbbreviation.toLowerCase()) ||
+        s.state.toLowerCase() === stateValue.toLowerCase() ||
+        s.abbreviation?.toLowerCase() === stateValue.toLowerCase()
+    );
+
+    if (foundState) {
+      state_id.value = foundState.id_zipcode_state;
+      state.value = foundState.abbreviation
+        ? `${foundState.state} (${foundState.abbreviation})`
+        : foundState.state;
+      await loadCities(foundState.id_zipcode_state);
+
+      const foundCity = cities.value.find(
+        (c) => c.city.toLowerCase() === response.city.toLowerCase()
+      );
+
+      if (foundCity) {
+        city_id.value = foundCity.id_zipcode_city;
+        city.value = foundCity.city;
+      }
+    }
+  }
 };
 
 const viewZipcode = async () => {
@@ -346,7 +385,7 @@ const viewZipcode = async () => {
 
   const response = await userStore.viewZipcode(params);
   if (response) {
-    updateAddressFields(response);
+    await updateAddressFields(response);
   }
 };
 
@@ -364,14 +403,21 @@ const validateRequiredFields = (): boolean => {
     country_id.value &&
     zip_code.value &&
     address1.value &&
-    city.value &&
-    state.value &&
+    city_id.value &&
+    state_id.value &&
     district.value
   );
 };
 
 const buildUserPayload = () => {
   const phoneNumber = phone.value!.replaceAll(/\D/g, '');
+
+  const selectedState = states.value.find(
+    (s) => s.id_zipcode_state === state_id.value
+  );
+  const selectedCity = cities.value.find(
+    (c) => c.id_zipcode_city === city_id.value
+  );
 
   return {
     email: email.value!,
@@ -394,8 +440,8 @@ const buildUserPayload = () => {
       zip_code: zip_code.value!,
       address1: address1.value!,
       address2: address2.value,
-      city: city.value!,
-      state: state.value!,
+      city_fiscal_code: selectedCity?.fiscal_code ?? null,
+      state_fiscal_code: selectedState?.fiscal_code ?? null,
       district: district.value!,
     },
   };
@@ -1167,7 +1213,11 @@ onMounted(resetForm);
 
       <VCard flat>
         <VCardText class="pa-6">
-          <VWindow :model-value="tab" @update:model-value="onTabChange" class="disable-tab-transition">
+          <VWindow
+            :model-value="tab"
+            @update:model-value="onTabChange"
+            class="disable-tab-transition"
+          >
             <VWindowItem value="user_data">
               <VForm class="mt-4" ref="refFormStep1" @submit.prevent>
                 <VRow>

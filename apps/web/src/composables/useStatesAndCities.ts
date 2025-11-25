@@ -6,11 +6,13 @@ interface StateItem {
   id_zipcode_state: string;
   state: string;
   abbreviation: string | null;
+  fiscal_code: string | null;
 }
 
 interface CityItem {
   id_zipcode_city: string;
   city: string;
+  fiscal_code: string | null;
 }
 
 export const useStatesAndCities = () => {

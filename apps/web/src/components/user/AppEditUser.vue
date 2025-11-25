@@ -322,9 +322,13 @@ const isAdvancing = (fromTab: string, toTab: string): boolean => {
   return toIndex > fromIndex;
 };
 
-const onTabChange = async (newTab: string) => {
+const onTabChange = async (newTab: string | unknown) => {
+  if (typeof newTab !== 'string') {
+    return;
+  }
+
   const currentTab = tab.value;
-  
+
   if (currentTab === newTab) {
     return;
   }
@@ -931,62 +935,6 @@ const buildUserDocument = (): {
   }
 
   return userDocument;
-};
-
-const buildUserAddress = (): {
-  country_id?: number | null;
-  zip_code?: string | null;
-  address1?: string | null;
-  address2?: string | null;
-  city?: string | null;
-  state?: string | null;
-  district?: string | null;
-} | null => {
-  const userAddress: {
-    country_id?: number | null;
-    zip_code?: string | null;
-    address1?: string | null;
-    address2?: string | null;
-    city?: string | null;
-    state?: string | null;
-    district?: string | null;
-  } = {};
-
-  if (country_id.value !== initialValues.value.country_id) {
-    userAddress.country_id = country_id.value;
-  }
-
-  if (zip_code.value !== initialValues.value.zip_code) {
-    userAddress.zip_code = zip_code.value;
-  }
-
-  const address1ToSave = determineAddress1ToSave();
-  if (address1ToSave !== undefined) {
-    userAddress.address1 = address1ToSave ?? null;
-  }
-
-  const address2ToSave = determineAddress2ToSave();
-  if (address2ToSave !== undefined) {
-    userAddress.address2 = address2ToSave ?? null;
-  }
-
-  if (city.value !== initialValues.value.city) {
-    userAddress.city = city.value;
-  }
-
-  if (state.value !== initialValues.value.state) {
-    userAddress.state = state.value;
-  }
-
-  if (district.value !== initialValues.value.district) {
-    userAddress.district = district.value;
-  }
-
-  if (Object.keys(userAddress).length === 0) {
-    return null;
-  }
-
-  return userAddress;
 };
 
 const createFileInput = (): HTMLInputElement => {
@@ -1765,16 +1713,27 @@ const buildUpdateUserBody = (): UpdateUserRequest => {
     body.address2 = { value: address2ToSave };
   }
 
-  const cityValue =
-    city.value !== initialValues.value.city ? city.value : undefined;
-  if (cityValue !== undefined) {
-    body.city = { value: cityValue };
+  const selectedState = states.value.find(
+    (s) => s.id_zipcode_state === state_id.value
+  );
+  const selectedCity = cities.value.find(
+    (c) => c.id_zipcode_city === city_id.value
+  );
+
+  const cityFiscalCodeValue =
+    city_id.value !== null && selectedCity?.fiscal_code
+      ? selectedCity.fiscal_code
+      : undefined;
+  if (cityFiscalCodeValue !== undefined) {
+    body.city_fiscal_code = { value: cityFiscalCodeValue };
   }
 
-  const stateValue =
-    state.value !== initialValues.value.state ? state.value : undefined;
-  if (stateValue !== undefined) {
-    body.state = { value: stateValue };
+  const stateFiscalCodeValue =
+    state_id.value !== null && selectedState?.fiscal_code
+      ? selectedState.fiscal_code
+      : undefined;
+  if (stateFiscalCodeValue !== undefined) {
+    body.state_fiscal_code = { value: stateFiscalCodeValue };
   }
 
   const districtValue =
@@ -1843,7 +1802,7 @@ watch(isCityMenuOpen, (isOpen) => {
   }
 });
 
-const updateAddressFromZipcode = (response: {
+const updateAddressFromZipcode = async (response: {
   address_1: string;
   address_2?: string | null;
   city: string;
@@ -1856,9 +1815,42 @@ const updateAddressFromZipcode = (response: {
   address2.value = response.address_2 ?? null;
   address2PartialOriginal.value = response.address_2 ?? '';
   isAddress2Decrypted.value = true;
-  city.value = response.city;
-  state.value = response.state;
   district.value = response.district;
+
+  if (country_id.value) {
+    await loadStates(country_id.value);
+
+    const stateValue = response.state.trim();
+    const stateMatch = stateValue.match(/^(.+?)\s*\(([^)]+)\)$/);
+    const stateName = stateMatch ? stateMatch[1].trim() : stateValue;
+    const stateAbbreviation = stateMatch ? stateMatch[2].trim() : null;
+
+    const foundState = states.value.find(
+      (s) =>
+        s.state.toLowerCase() === stateName.toLowerCase() ||
+        (stateAbbreviation &&
+          s.abbreviation?.toLowerCase() === stateAbbreviation.toLowerCase()) ||
+        s.state.toLowerCase() === stateValue.toLowerCase() ||
+        s.abbreviation?.toLowerCase() === stateValue.toLowerCase()
+    );
+
+    if (foundState) {
+      state_id.value = foundState.id_zipcode_state;
+      state.value = foundState.abbreviation
+        ? `${foundState.state} (${foundState.abbreviation})`
+        : foundState.state;
+      await loadCities(foundState.id_zipcode_state);
+
+      const foundCity = cities.value.find(
+        (c) => c.city.toLowerCase() === response.city.toLowerCase()
+      );
+
+      if (foundCity) {
+        city_id.value = foundCity.id_zipcode_city;
+        city.value = foundCity.city;
+      }
+    }
+  }
 };
 
 const viewZipcode = async () => {
@@ -1875,7 +1867,7 @@ const viewZipcode = async () => {
 
   const response = await userStore.viewZipcode(params);
   if (response) {
-    updateAddressFromZipcode(response);
+    await updateAddressFromZipcode(response);
   }
 };
 
@@ -2004,7 +1996,8 @@ const loadUserData = async () => {
           (s) =>
             s.state.toLowerCase() === stateName.toLowerCase() ||
             (stateAbbreviation &&
-              s.abbreviation?.toLowerCase() === stateAbbreviation.toLowerCase()) ||
+              s.abbreviation?.toLowerCase() ===
+                stateAbbreviation.toLowerCase()) ||
             s.state.toLowerCase() === stateValue.toLowerCase() ||
             s.abbreviation?.toLowerCase() === stateValue.toLowerCase()
         );
@@ -2103,7 +2096,11 @@ watch(
 
       <VCard flat>
         <VCardText class="pa-6">
-          <VWindow :model-value="tab" @update:model-value="onTabChange" class="disable-tab-transition">
+          <VWindow
+            :model-value="tab"
+            @update:model-value="onTabChange"
+            class="disable-tab-transition"
+          >
             <VWindowItem value="user_data">
               <VForm class="mt-4" ref="refFormStep1" @submit.prevent>
                 <VRow>
