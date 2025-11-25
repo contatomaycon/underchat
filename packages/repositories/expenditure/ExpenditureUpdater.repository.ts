@@ -26,7 +26,7 @@ export class ExpenditureUpdaterRepository {
 
     if (input.price !== undefined) {
       inputUpdate.price =
-        input.price !== null ? input.price.toString() : undefined;
+        input.price === null ? undefined : input.price.toString();
     }
 
     return inputUpdate;

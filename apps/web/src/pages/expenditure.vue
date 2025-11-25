@@ -10,7 +10,6 @@ import { EExpenditurePermissions } from '@core/common/enums/EPermissions/expendi
 import { useExpendituresStore } from '@/@webcore/stores/expenditure';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { ListExpenditureResponse } from '@core/schema/expenditure/listExpenditure/response.schema';
-import { EColor } from '@core/common/enums/EColor';
 
 definePage({
   meta: {
@@ -90,7 +89,7 @@ const parsePriceFromSearch = (
 ): number | undefined => {
   if (!search) return undefined;
 
-  let cleanValue = search.replace(/[R$\s€£]/gi, '').trim();
+  let cleanValue = search.replaceAll(/[R$\s€£]/gi, '').trim();
 
   if (!/^[\d.,]+$/.test(cleanValue)) {
     return undefined;
@@ -241,7 +240,7 @@ watch(
         </template>
 
         <template #item.created_at="{ item }">
-          <span>{{ formatDateTime(item.created_at) }}</span>
+          <span>{{ formatDateTime(item.created_at ?? null) }}</span>
         </template>
 
         <template #item.actions="{ item }">

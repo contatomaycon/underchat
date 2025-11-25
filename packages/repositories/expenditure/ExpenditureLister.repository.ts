@@ -2,16 +2,7 @@ import * as schema from '@core/models';
 import { expenditure } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import {
-  and,
-  count,
-  eq,
-  isNull,
-  SQLWrapper,
-  or,
-  ilike,
-  sql,
-} from 'drizzle-orm';
+import { and, count, isNull, SQLWrapper, or, ilike, sql } from 'drizzle-orm';
 import { ListExpenditureRequest } from '@core/schema/expenditure/listExpenditure/request.schema';
 import { ListExpenditureResponse } from '@core/schema/expenditure/listExpenditure/response.schema';
 
