@@ -20,6 +20,8 @@ const userStore = useUsersStore();
 const accountStore = useAccountStore();
 const { items: countryCodes } = useCountryCodes();
 const {
+  states,
+  cities,
   filteredStates,
   filteredCities,
   stateSearchQuery,
@@ -1988,6 +1990,44 @@ const loadUserData = async () => {
 
     user_status_id.value = responseUser.user_status?.user_status_id ?? null;
     initialValues.value.user_status_id = user_status_id.value;
+
+    if (country_id.value) {
+      await loadStates(country_id.value);
+
+      if (state.value) {
+        const stateValue = state.value.trim();
+        const stateMatch = stateValue.match(/^(.+?)\s*\(([^)]+)\)$/);
+        const stateName = stateMatch ? stateMatch[1].trim() : stateValue;
+        const stateAbbreviation = stateMatch ? stateMatch[2].trim() : null;
+
+        const foundState = states.value.find(
+          (s) =>
+            s.state.toLowerCase() === stateName.toLowerCase() ||
+            (stateAbbreviation &&
+              s.abbreviation?.toLowerCase() === stateAbbreviation.toLowerCase()) ||
+            s.state.toLowerCase() === stateValue.toLowerCase() ||
+            s.abbreviation?.toLowerCase() === stateValue.toLowerCase()
+        );
+
+        if (foundState) {
+          state_id.value = foundState.id_zipcode_state;
+          state.value = foundState.abbreviation
+            ? `${foundState.state} (${foundState.abbreviation})`
+            : foundState.state;
+          await loadCities(foundState.id_zipcode_state);
+
+          if (city.value) {
+            const foundCity = cities.value.find(
+              (c) => c.city.toLowerCase() === city.value?.toLowerCase()
+            );
+
+            if (foundCity) {
+              city_id.value = foundCity.id_zipcode_city;
+            }
+          }
+        }
+      }
+    }
   }
 
   await nextTick();
