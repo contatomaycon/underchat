@@ -13,6 +13,7 @@ import { VForm } from 'vuetify/components/VForm';
 import { useCountryCodes } from '@/composables/useCountryCodes';
 import { ViewZipcodeRequest } from '@core/schema/zipcode/viewZipcode/request.schema';
 import { getAdministrator, getUser } from '@/@webcore/localStorage/user';
+import { EColor } from '@core/common/enums/EColor';
 
 const userStore = useUsersStore();
 const accountStore = useAccountStore();
@@ -187,6 +188,39 @@ const city = ref<string | null>(null);
 const state = ref<string | null>(null);
 const district = ref<string | null>(null);
 const user_status_id = ref<string | null>(null);
+
+const photo = ref<string | null>(null);
+const photoFile = ref<File | null>(null);
+const photoPreview = ref<string | null>(null);
+const photoRemoved = ref<boolean>(false);
+const isCropModalOpen = ref(false);
+const cropImageRef = ref<HTMLImageElement | null>(null);
+const cropCanvasRef = ref<HTMLCanvasElement | null>(null);
+const cropPreviewSize = 400;
+
+const cropDialog = ref({
+  imageSrc: '',
+  croppedImage: '',
+});
+
+const cropArea = ref({
+  x: 0,
+  y: 0,
+  width: 200,
+  height: 200,
+  aspectRatio: 1,
+  isDragging: false,
+  isResizing: false,
+  startX: 0,
+  startY: 0,
+  initialWidth: 0,
+  initialHeight: 0,
+  initialX: 0,
+  initialY: 0,
+  resizeHandle: null as 'nw' | 'ne' | 'sw' | 'se' | null,
+});
+
+const MAX_FILE_SIZE_BYTES = 16 * 1024 * 1024;
 
 const initialValues = ref<{
   email: string | null;
@@ -809,6 +843,511 @@ const buildUserAddress = (): {
   return userAddress;
 };
 
+const openFileSelector = () => {
+  const input = window.document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = (e: Event) => {
+    const target = e.target as HTMLInputElement;
+    const file = target.files?.[0];
+    if (file) {
+      handleImageSelect(file);
+    }
+  };
+  input.click();
+};
+
+const handleImageSelect = (file: File) => {
+  if (file.size > MAX_FILE_SIZE_BYTES) {
+    userStore.showSnackbar(
+      t('profile_status_file_size_exceeded', { max: '16 MB' }),
+      EColor.error
+    );
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (e: ProgressEvent<FileReader>) => {
+    const result = e.target?.result as string;
+    if (result) {
+      cropDialog.value.imageSrc = result;
+      isCropModalOpen.value = true;
+      photoFile.value = file;
+      nextTick(() => {
+        initializeCrop();
+      });
+    }
+  };
+  reader.readAsDataURL(file);
+};
+
+const initializeCrop = () => {
+  if (!cropImageRef.value) return;
+
+  const img = cropImageRef.value;
+  const containerWidth = 400;
+  const containerHeight = 400;
+
+  if (img.complete) {
+    setupCropArea(img, containerWidth, containerHeight);
+    return;
+  }
+
+  img.onload = () => {
+    setupCropArea(img, containerWidth, containerHeight);
+  };
+};
+
+const setupCropArea = (
+  img: HTMLImageElement,
+  containerWidth: number,
+  containerHeight: number
+) => {
+  const imgAspect = img.naturalWidth / img.naturalHeight;
+  const containerAspect = containerWidth / containerHeight;
+
+  let displayWidth = containerWidth;
+  let displayHeight = containerHeight;
+
+  if (imgAspect > containerAspect) {
+    displayHeight = containerWidth / imgAspect;
+  }
+
+  if (imgAspect <= containerAspect) {
+    displayWidth = containerHeight * imgAspect;
+  }
+
+  img.style.width = `${displayWidth}px`;
+  img.style.height = `${displayHeight}px`;
+
+  cropArea.value.aspectRatio = 1;
+
+  const maxCropSize = Math.min(displayWidth, displayHeight, cropPreviewSize);
+  const cropSize = maxCropSize;
+
+  cropArea.value.width = cropSize;
+  cropArea.value.height = cropSize;
+
+  const imgLeft = (containerWidth - displayWidth) / 2;
+  const imgTop = (containerHeight - displayHeight) / 2;
+
+  cropArea.value.x = imgLeft + Math.max(0, (displayWidth - cropSize) / 2);
+  cropArea.value.y = imgTop + Math.max(0, (displayHeight - cropSize) / 2);
+};
+
+type CropResizeHandle = 'nw' | 'ne' | 'sw' | 'se';
+
+const startCropDrag = (e: MouseEvent | TouchEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+  cropArea.value.isDragging = true;
+  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+  const container = cropImageRef.value?.parentElement;
+  if (!container) return;
+
+  const rect = container.getBoundingClientRect();
+  cropArea.value.startX = clientX - rect.left - cropArea.value.x;
+  cropArea.value.startY = clientY - rect.top - cropArea.value.y;
+
+  window.document.addEventListener('mousemove', onCropDrag);
+  window.document.addEventListener('touchmove', onCropDrag);
+  window.document.addEventListener('mouseup', endCropDrag);
+  window.document.addEventListener('touchend', endCropDrag);
+};
+
+const startCropResize = (
+  handle: CropResizeHandle,
+  e: MouseEvent | TouchEvent
+) => {
+  e.preventDefault();
+  e.stopPropagation();
+  cropArea.value.isResizing = true;
+  cropArea.value.resizeHandle = handle;
+
+  cropArea.value.initialWidth = cropArea.value.width;
+  cropArea.value.initialHeight = cropArea.value.height;
+  cropArea.value.initialX = cropArea.value.x;
+  cropArea.value.initialY = cropArea.value.y;
+
+  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+  const container = cropImageRef.value?.parentElement;
+  if (!container) return;
+
+  const rect = container.getBoundingClientRect();
+  cropArea.value.startX = clientX - rect.left;
+  cropArea.value.startY = clientY - rect.top;
+
+  window.document.addEventListener('mousemove', onCropResize);
+  window.document.addEventListener('touchmove', onCropResize);
+  window.document.addEventListener('mouseup', endCropResize);
+  window.document.addEventListener('touchend', endCropResize);
+};
+
+const onCropDrag = (e: MouseEvent | TouchEvent) => {
+  if (!cropArea.value.isDragging || !cropImageRef.value) return;
+
+  e.preventDefault();
+  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+  const container = cropImageRef.value.parentElement;
+  if (!container) return;
+
+  const rect = container.getBoundingClientRect();
+  const x = clientX - rect.left - cropArea.value.startX;
+  const y = clientY - rect.top - cropArea.value.startY;
+
+  const imgWidth = cropImageRef.value.offsetWidth;
+  const imgHeight = cropImageRef.value.offsetHeight;
+  const containerWidth = container.clientWidth;
+  const containerHeight = container.clientHeight;
+
+  const imgLeft = (containerWidth - imgWidth) / 2;
+  const imgTop = (containerHeight - imgHeight) / 2;
+
+  const minX = imgLeft;
+  const minY = imgTop;
+  const maxX = imgLeft + imgWidth - cropArea.value.width;
+  const maxY = imgTop + imgHeight - cropArea.value.height;
+
+  cropArea.value.x = Math.max(minX, Math.min(x, maxX));
+  cropArea.value.y = Math.max(minY, Math.min(y, maxY));
+};
+
+const getEventCoordinates = (
+  e: MouseEvent | TouchEvent
+): { x: number; y: number } => {
+  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+  return { x: clientX, y: clientY };
+};
+
+const getFixedPoint = (
+  handle: CropResizeHandle,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+): { x: number; y: number } => {
+  switch (handle) {
+    case 'nw':
+      return { x: x + width, y: y + height };
+    case 'ne':
+      return { x, y: y + height };
+    case 'sw':
+      return { x: x + width, y };
+    case 'se':
+      return { x, y };
+    default:
+      return { x, y };
+  }
+};
+
+const calculateInitialPosition = (
+  handle: CropResizeHandle,
+  fixedX: number,
+  fixedY: number,
+  size: number
+): { x: number; y: number } => {
+  switch (handle) {
+    case 'nw':
+      return { x: fixedX - size, y: fixedY - size };
+    case 'ne':
+      return { x: fixedX, y: fixedY - size };
+    case 'sw':
+      return { x: fixedX - size, y: fixedY };
+    case 'se':
+      return { x: fixedX, y: fixedY };
+    default:
+      return { x: fixedX, y: fixedY };
+  }
+};
+
+const applyMinSizeConstraint = (
+  handle: CropResizeHandle,
+  fixedPoint: { x: number; y: number },
+  minSize: number,
+  dimensions: { width: number; height: number; x: number; y: number }
+): { width: number; height: number; x: number; y: number } => {
+  if (dimensions.width < minSize) {
+    dimensions.width = minSize;
+  }
+  if (dimensions.height < minSize) {
+    dimensions.height = minSize;
+  }
+
+  const { x, y } = calculateInitialPosition(
+    handle,
+    fixedPoint.x,
+    fixedPoint.y,
+    dimensions.width
+  );
+  dimensions.x = x;
+  dimensions.y = y;
+
+  return dimensions;
+};
+
+const applyMaxSizeConstraint = (
+  handle: CropResizeHandle,
+  fixedPoint: { x: number; y: number },
+  constraints: { maxWidth: number; maxHeight: number },
+  dimensions: { width: number; height: number; x: number; y: number }
+): { width: number; height: number; x: number; y: number } => {
+  if (dimensions.width > constraints.maxWidth) {
+    dimensions.width = constraints.maxWidth;
+  }
+  if (dimensions.height > constraints.maxHeight) {
+    dimensions.height = constraints.maxHeight;
+  }
+
+  const { x, y } = calculateInitialPosition(
+    handle,
+    fixedPoint.x,
+    fixedPoint.y,
+    dimensions.width
+  );
+  dimensions.x = x;
+  dimensions.y = y;
+
+  return dimensions;
+};
+
+const applyBoundaryConstraints = (
+  maxWidth: number,
+  maxHeight: number,
+  width: number,
+  height: number,
+  x: number,
+  y: number
+): { x: number; y: number } => {
+  let newX = x;
+  let newY = y;
+
+  if (newX < 0) {
+    newX = 0;
+  }
+  if (newY < 0) {
+    newY = 0;
+  }
+  if (newX + width > maxWidth) {
+    newX = maxWidth - width;
+  }
+  if (newY + height > maxHeight) {
+    newY = maxHeight - height;
+  }
+
+  return { x: newX, y: newY };
+};
+
+const onCropResize = (e: MouseEvent | TouchEvent) => {
+  if (
+    !cropArea.value.isResizing ||
+    !cropImageRef.value ||
+    !cropArea.value.resizeHandle
+  )
+    return;
+
+  e.preventDefault();
+
+  const container = cropImageRef.value.parentElement;
+  if (!container) return;
+
+  const { x: clientX, y: clientY } = getEventCoordinates(e);
+  const rect = container.getBoundingClientRect();
+  const mouseX = clientX - rect.left;
+  const mouseY = clientY - rect.top;
+
+  const handle = cropArea.value.resizeHandle;
+  const { x: fixedX, y: fixedY } = getFixedPoint(
+    handle,
+    cropArea.value.initialX,
+    cropArea.value.initialY,
+    cropArea.value.initialWidth,
+    cropArea.value.initialHeight
+  );
+
+  const deltaX = mouseX - fixedX;
+  const deltaY = mouseY - fixedY;
+  const size = Math.max(Math.abs(deltaX), Math.abs(deltaY));
+
+  const { x: initialX, y: initialY } = calculateInitialPosition(
+    handle,
+    fixedX,
+    fixedY,
+    size
+  );
+
+  const imgWidth = cropImageRef.value.offsetWidth;
+  const imgHeight = cropImageRef.value.offsetHeight;
+  const resizeContainer = cropImageRef.value.parentElement;
+  if (!resizeContainer) return;
+
+  const resizeContainerWidth = resizeContainer.clientWidth;
+  const resizeContainerHeight = resizeContainer.clientHeight;
+  const imgLeft = (resizeContainerWidth - imgWidth) / 2;
+  const imgTop = (resizeContainerHeight - imgHeight) / 2;
+
+  const maxWidth = imgLeft + imgWidth;
+  const maxHeight = imgTop + imgHeight;
+  const minSize = 50;
+
+  const fixedPoint = { x: fixedX, y: fixedY };
+  let dimensions = applyMinSizeConstraint(handle, fixedPoint, minSize, {
+    width: size,
+    height: size,
+    x: initialX,
+    y: initialY,
+  });
+
+  dimensions = applyMaxSizeConstraint(
+    handle,
+    fixedPoint,
+    { maxWidth, maxHeight },
+    dimensions
+  );
+
+  const finalImgWidth = cropImageRef.value.offsetWidth;
+  const finalImgHeight = cropImageRef.value.offsetHeight;
+  const finalContainer = cropImageRef.value.parentElement;
+  if (!finalContainer) return;
+
+  const finalContainerWidth = finalContainer.clientWidth;
+  const finalContainerHeight = finalContainer.clientHeight;
+  const finalImgLeft = (finalContainerWidth - finalImgWidth) / 2;
+  const finalImgTop = (finalContainerHeight - finalImgHeight) / 2;
+
+  const minX = finalImgLeft;
+  const minY = finalImgTop;
+  const maxX = finalImgLeft + finalImgWidth;
+  const maxY = finalImgTop + finalImgHeight;
+
+  const finalPosition = applyBoundaryConstraints(
+    maxX,
+    maxY,
+    dimensions.width,
+    dimensions.height,
+    dimensions.x,
+    dimensions.y
+  );
+
+  finalPosition.x = Math.max(
+    minX,
+    Math.min(finalPosition.x, maxX - dimensions.width)
+  );
+  finalPosition.y = Math.max(
+    minY,
+    Math.min(finalPosition.y, maxY - dimensions.height)
+  );
+
+  cropArea.value.width = dimensions.width;
+  cropArea.value.height = dimensions.height;
+  cropArea.value.x = finalPosition.x;
+  cropArea.value.y = finalPosition.y;
+};
+
+const endCropDrag = () => {
+  cropArea.value.isDragging = false;
+  window.document.removeEventListener('mousemove', onCropDrag);
+  window.document.removeEventListener('touchmove', onCropDrag);
+  window.document.removeEventListener('mouseup', endCropDrag);
+  window.document.removeEventListener('touchend', endCropDrag);
+};
+
+const endCropResize = () => {
+  cropArea.value.isResizing = false;
+  cropArea.value.resizeHandle = null;
+  window.document.removeEventListener('mousemove', onCropResize);
+  window.document.removeEventListener('touchmove', onCropResize);
+  window.document.removeEventListener('mouseup', endCropResize);
+  window.document.removeEventListener('touchend', endCropResize);
+};
+
+const cropImage = () => {
+  if (!cropImageRef.value || !cropCanvasRef.value) return;
+
+  const img = cropImageRef.value;
+  const canvas = cropCanvasRef.value;
+  const ctx = canvas.getContext('2d');
+
+  if (!ctx || !img.complete) {
+    userStore.showSnackbar(t('wait_image_load'), EColor.warning);
+    return;
+  }
+
+  const container = img.parentElement;
+  if (!container) return;
+
+  const containerWidth = container.clientWidth;
+  const containerHeight = container.clientHeight;
+  const imgLeft = (containerWidth - img.offsetWidth) / 2;
+  const imgTop = (containerHeight - img.offsetHeight) / 2;
+
+  const relativeX = cropArea.value.x - imgLeft;
+  const relativeY = cropArea.value.y - imgTop;
+
+  const scaleX = img.naturalWidth / img.offsetWidth;
+  const scaleY = img.naturalHeight / img.offsetHeight;
+
+  const sourceX = relativeX * scaleX;
+  const sourceY = relativeY * scaleY;
+  const sourceWidth = cropArea.value.width * scaleX;
+  const sourceHeight = cropArea.value.height * scaleY;
+
+  canvas.width = cropPreviewSize;
+  canvas.height = cropPreviewSize;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  ctx.drawImage(
+    img,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    0,
+    0,
+    cropPreviewSize,
+    cropPreviewSize
+  );
+
+  canvas.toBlob(
+    (blob) => {
+      if (!blob) return;
+
+      const croppedFile = new File([blob], 'user-photo.jpg', {
+        type: 'image/jpeg',
+      });
+      photoFile.value = croppedFile;
+      photoPreview.value = canvas.toDataURL('image/jpeg');
+      cropDialog.value.croppedImage = canvas.toDataURL('image/jpeg');
+      isCropModalOpen.value = false;
+    },
+    'image/jpeg',
+    0.9
+  );
+};
+
+const cancelCrop = () => {
+  isCropModalOpen.value = false;
+  cropDialog.value.imageSrc = '';
+  cropDialog.value.croppedImage = '';
+  photoFile.value = null;
+};
+
+const removePhoto = () => {
+  photo.value = null;
+  photoFile.value = null;
+  photoPreview.value = null;
+  photoRemoved.value = true;
+  cropDialog.value.imageSrc = '';
+  cropDialog.value.croppedImage = '';
+};
+
 const updateUser = async () => {
   if (!userId.value) {
     return;
@@ -819,50 +1358,142 @@ const updateUser = async () => {
   };
 
   const emailToSave = determineEmailToSave();
+  const passwordValue = password.value;
+  const userStatusIdValue =
+    user_status_id.value !== initialValues.value.user_status_id
+      ? user_status_id.value
+      : undefined;
+  const accountIdValue =
+    isAdministrator.value && accountId.value !== initialValues.value.account_id
+      ? accountId.value
+      : undefined;
+
+  const phoneDdiValue =
+    phone_ddi.value !== initialValues.value.phone_ddi
+      ? phone_ddi.value
+      : undefined;
+  const phoneToSave = determinePhoneToSave();
+  const nameValue =
+    name.value !== initialValues.value.name ? name.value : undefined;
+  const lastNameValue =
+    last_name.value !== initialValues.value.last_name
+      ? last_name.value
+      : undefined;
+  const birthDateValue =
+    birth_date.value !== initialValues.value.birth_date
+      ? birth_date.value
+      : undefined;
+
+  const documentTypeIdValue =
+    user_document_type_id.value !== initialValues.value.user_document_type_id
+      ? user_document_type_id.value
+      : undefined;
+  const documentToSave = determineDocumentToSave();
+
+  const countryIdValue =
+    country_id.value !== initialValues.value.country_id
+      ? country_id.value
+      : undefined;
+  const zipCodeValue =
+    zip_code.value !== initialValues.value.zip_code
+      ? zip_code.value
+      : undefined;
+  const address1ToSave = determineAddress1ToSave();
+  const address2ToSave = determineAddress2ToSave();
+  const cityValue =
+    city.value !== initialValues.value.city ? city.value : undefined;
+  const stateValue =
+    state.value !== initialValues.value.state ? state.value : undefined;
+  const districtValue =
+    district.value !== initialValues.value.district
+      ? district.value
+      : undefined;
+
+  let photoUrl: string | null | undefined = undefined;
+
+  if (photoRemoved.value) {
+    photoUrl = null;
+  } else if (!photoFile.value) {
+    if (photo.value && !photo.value.startsWith('data:')) {
+      photoUrl = photo.value;
+    } else if (photoPreview.value && !photoPreview.value.startsWith('data:')) {
+      photoUrl = photoPreview.value;
+    }
+  } else if (photoPreview.value && !photoPreview.value.startsWith('data:')) {
+    photoUrl = photoPreview.value;
+  }
 
   const body: UpdateUserRequest = {};
 
   if (emailToSave !== undefined) {
-    body.email = emailToSave;
+    body.email = { value: emailToSave };
+  }
+  if (passwordValue) {
+    body.password = { value: passwordValue };
+  }
+  if (userStatusIdValue !== undefined) {
+    body.user_status_id = { value: userStatusIdValue };
+  }
+  if (accountIdValue !== undefined) {
+    body.account_id = { value: accountIdValue };
+  }
+  if (phoneDdiValue !== undefined) {
+    body.phone_ddi = { value: phoneDdiValue };
+  }
+  if (phoneToSave !== undefined) {
+    body.phone = { value: phoneToSave };
+  }
+  if (nameValue !== undefined) {
+    body.name = { value: nameValue };
+  }
+  if (lastNameValue !== undefined) {
+    body.last_name = { value: lastNameValue };
+  }
+  if (birthDateValue !== undefined) {
+    body.birth_date = { value: birthDateValue };
+  }
+  if (documentTypeIdValue !== undefined) {
+    body.document_type_id = { value: documentTypeIdValue };
+  }
+  if (documentToSave !== undefined) {
+    body.document = { value: documentToSave };
+  }
+  if (countryIdValue !== undefined) {
+    body.country_id = { value: countryIdValue };
+  }
+  if (zipCodeValue !== undefined) {
+    body.zip_code = { value: zipCodeValue };
+  }
+  if (address1ToSave !== undefined) {
+    body.address1 = { value: address1ToSave };
+  }
+  if (address2ToSave !== undefined) {
+    body.address2 = { value: address2ToSave };
+  }
+  if (cityValue !== undefined) {
+    body.city = { value: cityValue };
+  }
+  if (stateValue !== undefined) {
+    body.state = { value: stateValue };
+  }
+  if (districtValue !== undefined) {
+    body.district = { value: districtValue };
+  }
+  if (photoUrl !== undefined) {
+    body.photo_url = { value: photoUrl };
   }
 
-  if (password.value) {
-    body.password = password.value;
-  }
-
-  if (user_status_id.value !== initialValues.value.user_status_id) {
-    body.user_status_id = user_status_id.value;
-  }
-
-  if (
-    isAdministrator.value &&
-    accountId.value !== initialValues.value.account_id
-  ) {
-    body.account_id = accountId.value;
-  }
-
-  const userInfo = buildUserInfo();
-  if (userInfo) {
-    body.user_info = userInfo;
-  }
-
-  const userDocument = buildUserDocument();
-  if (userDocument) {
-    body.user_document = userDocument;
-  }
-
-  const userAddress = buildUserAddress();
-  if (userAddress) {
-    body.user_address = userAddress;
-  }
-
-  const hasPayload = Object.keys(body).length > 0;
+  const hasPayload = Object.keys(body).length > 0 || photoFile.value;
 
   if (!hasPayload) {
     return;
   }
 
-  const result = await userStore.updateUser(payload, body);
+  const result = await userStore.updateUser(
+    payload,
+    body,
+    photoUrl ? null : photoFile.value
+  );
 
   if (result) {
     isVisible.value = false;
@@ -962,6 +1593,10 @@ const loadUserData = async () => {
 
     birth_date.value = responseUser.user_info?.birth_date ?? null;
     initialValues.value.birth_date = birth_date.value;
+
+    photo.value = responseUser.user_info?.photo ?? null;
+    photoPreview.value = responseUser.user_info?.photo ?? null;
+    photoRemoved.value = false;
 
     user_document_type_id.value =
       responseUser.user_document?.user_document_type?.user_document_type_id ??
@@ -1092,140 +1727,219 @@ watch(
           <VWindow v-model="tab" class="disable-tab-transition">
             <VWindowItem value="user_data">
               <VForm class="mt-4" ref="refFormStep1" @submit.prevent>
-                <VRow class="mb-2">
-                  <VCol v-if="isAdministrator" md="6" cols="12">
-                    <AppTextField
-                      v-model="emailFormatted"
-                      type="email"
-                      :label="$t('email') + ':'"
-                      :placeholder="$t('email')"
-                      :rules="[
-                        emailValidator,
-                        requiredValidator(emailFormatted, $t('email_required')),
-                      ]"
-                      @focus="startEditEmail"
-                      @click="startEditEmail"
-                    >
-                      <template #append-inner>
-                        <VIcon
-                          :icon="
-                            isEmailDecrypted ? 'tabler-eye-off' : 'tabler-eye'
-                          "
-                          class="cursor-pointer"
-                          :class="{ 'opacity-50': isLoadingEmail }"
-                          @click.stop="toggleEmailVisibility"
+                <VRow>
+                  <VCol
+                    cols="12"
+                    md="4"
+                    class="d-flex flex-column align-center justify-center pa-6"
+                  >
+                    <div class="d-flex flex-column align-center gap-3 w-100">
+                      <VAvatar
+                        size="200"
+                        class="cursor-pointer"
+                        @click="openFileSelector"
+                      >
+                        <VImg
+                          v-if="photoPreview || photo"
+                          :src="photoPreview || photo || ''"
                         />
-                      </template>
-                    </AppTextField>
-                  </VCol>
-
-                  <VCol v-if="isAdministrator" cols="12" md="6">
-                    <AppAutocomplete
-                      v-model="accountId"
-                      :items="accountsOptions"
-                      item-title="name"
-                      item-value="account_id"
-                      :label="$t('account') + ':'"
-                      :placeholder="$t('select_account')"
-                    />
-                  </VCol>
-
-                  <VCol v-if="!isAdministrator" md="6" cols="12">
-                    <AppTextField
-                      v-model="emailFormatted"
-                      type="email"
-                      :label="$t('email') + ':'"
-                      :placeholder="$t('email')"
-                      :rules="[
-                        emailValidator,
-                        requiredValidator(emailFormatted, $t('email_required')),
-                      ]"
-                      @focus="startEditEmail"
-                      @click="startEditEmail"
-                    >
-                      <template #append-inner>
-                        <VIcon
-                          :icon="
-                            isEmailDecrypted ? 'tabler-eye-off' : 'tabler-eye'
-                          "
-                          class="cursor-pointer"
-                          :class="{ 'opacity-50': isLoadingEmail }"
-                          @click.stop="toggleEmailVisibility"
+                        <VImg
+                          v-else
+                          :src="'/images/svg/avatar-default.svg'"
+                          alt="Avatar"
                         />
-                      </template>
-                    </AppTextField>
+                        <div
+                          class="photo-overlay d-flex align-center justify-center"
+                        >
+                          <VIcon icon="tabler-camera" size="32" color="white" />
+                        </div>
+                      </VAvatar>
+                      <div class="d-flex flex-column gap-2 w-100">
+                        <VBtn
+                          color="primary"
+                          variant="outlined"
+                          size="small"
+                          block
+                          @click="openFileSelector"
+                        >
+                          <VIcon icon="tabler-upload" class="me-2" />
+                          {{
+                            photo || photoPreview
+                              ? $t('change_photo')
+                              : $t('add_photo')
+                          }}
+                        </VBtn>
+                        <VBtn
+                          v-if="photo || photoPreview"
+                          color="error"
+                          variant="outlined"
+                          size="small"
+                          block
+                          @click="removePhoto"
+                        >
+                          <VIcon icon="tabler-trash" class="me-2" />
+                          {{ $t('remove_photo') }}
+                        </VBtn>
+                      </div>
+                    </div>
                   </VCol>
+                  <VDivider vertical class="d-none d-md-block" />
+                  <VCol cols="12" md="8" class="pa-6">
+                    <VRow class="mb-2">
+                      <VCol v-if="isAdministrator" md="6" cols="12">
+                        <AppTextField
+                          v-model="emailFormatted"
+                          type="email"
+                          :label="$t('email') + ':'"
+                          :placeholder="$t('email')"
+                          :rules="[
+                            emailValidator,
+                            requiredValidator(
+                              emailFormatted,
+                              $t('email_required')
+                            ),
+                          ]"
+                          @focus="startEditEmail"
+                          @click="startEditEmail"
+                        >
+                          <template #append-inner>
+                            <VIcon
+                              :icon="
+                                isEmailDecrypted
+                                  ? 'tabler-eye-off'
+                                  : 'tabler-eye'
+                              "
+                              class="cursor-pointer"
+                              :class="{ 'opacity-50': isLoadingEmail }"
+                              @click.stop="toggleEmailVisibility"
+                            />
+                          </template>
+                        </AppTextField>
+                      </VCol>
 
-                  <VCol v-if="!isAdministrator" md="6" cols="12">
-                    <VLabel>{{ $t('status') }}:</VLabel>
-                    <AppAutocomplete
-                      item-title="text"
-                      item-value="id"
-                      :items="itemsStatus"
-                      v-model="user_status_id"
-                      :placeholder="$t('select_state')"
-                    />
-                  </VCol>
-                </VRow>
-                <VRow class="mb-2">
-                  <VCol cols="12" md="6">
-                    <AppTextField
-                      id="new-password"
-                      name="new-password"
-                      v-model="password"
-                      :label="$t('password') + ':'"
-                      :placeholder="$t('password')"
-                      :type="isPasswordVisible ? 'text' : 'password'"
-                      :autocomplete="isPasswordVisible ? 'off' : 'new-password'"
-                      autocapitalize="off"
-                      autocorrect="off"
-                      spellcheck="false"
-                      :append-inner-icon="
-                        isPasswordVisible ? 'tabler-eye-off' : 'tabler-eye'
-                      "
-                      :rules="[
-                        rules.passwordMinIfFilled,
-                        requiredValidator(password, $t('password_required')),
-                      ]"
-                      @click:append-inner="
-                        isPasswordVisible = !isPasswordVisible
-                      "
-                    />
-                  </VCol>
+                      <VCol v-if="isAdministrator" cols="12" md="6">
+                        <AppAutocomplete
+                          v-model="accountId"
+                          :items="accountsOptions"
+                          item-title="name"
+                          item-value="account_id"
+                          :label="$t('account') + ':'"
+                          :placeholder="$t('select_account')"
+                        />
+                      </VCol>
 
-                  <VCol cols="12" md="6">
-                    <AppTextField
-                      id="confirm-new-password"
-                      name="new-password"
-                      v-model="confirmPassword"
-                      :label="$t('confirm_password') + ':'"
-                      :placeholder="$t('confirm_password')"
-                      :type="isConfirmVisible ? 'text' : 'password'"
-                      :autocomplete="isConfirmVisible ? 'off' : 'new-password'"
-                      autocapitalize="off"
-                      autocorrect="off"
-                      spellcheck="false"
-                      :append-inner-icon="
-                        isConfirmVisible ? 'tabler-eye-off' : 'tabler-eye'
-                      "
-                      :rules="[
-                        rules.confirmRequiredIfPassword,
-                        rules.confirmMatches,
-                      ]"
-                      @click:append-inner="isConfirmVisible = !isConfirmVisible"
-                    />
-                  </VCol>
-                </VRow>
-                <VRow v-if="isAdministrator" class="mb-2">
-                  <VCol md="6" cols="12">
-                    <VLabel>{{ $t('status') }}:</VLabel>
-                    <AppAutocomplete
-                      item-title="text"
-                      item-value="id"
-                      :items="itemsStatus"
-                      v-model="user_status_id"
-                      :placeholder="$t('select_state')"
-                    />
+                      <VCol v-if="!isAdministrator" md="6" cols="12">
+                        <AppTextField
+                          v-model="emailFormatted"
+                          type="email"
+                          :label="$t('email') + ':'"
+                          :placeholder="$t('email')"
+                          :rules="[
+                            emailValidator,
+                            requiredValidator(
+                              emailFormatted,
+                              $t('email_required')
+                            ),
+                          ]"
+                          @focus="startEditEmail"
+                          @click="startEditEmail"
+                        >
+                          <template #append-inner>
+                            <VIcon
+                              :icon="
+                                isEmailDecrypted
+                                  ? 'tabler-eye-off'
+                                  : 'tabler-eye'
+                              "
+                              class="cursor-pointer"
+                              :class="{ 'opacity-50': isLoadingEmail }"
+                              @click.stop="toggleEmailVisibility"
+                            />
+                          </template>
+                        </AppTextField>
+                      </VCol>
+
+                      <VCol v-if="!isAdministrator" md="6" cols="12">
+                        <VLabel>{{ $t('status') }}:</VLabel>
+                        <AppAutocomplete
+                          item-title="text"
+                          item-value="id"
+                          :items="itemsStatus"
+                          v-model="user_status_id"
+                          :placeholder="$t('select_state')"
+                        />
+                      </VCol>
+                    </VRow>
+                    <VRow class="mb-2">
+                      <VCol cols="12" md="6">
+                        <AppTextField
+                          id="new-password"
+                          name="new-password"
+                          v-model="password"
+                          :label="$t('password') + ':'"
+                          :placeholder="$t('password')"
+                          :type="isPasswordVisible ? 'text' : 'password'"
+                          :autocomplete="
+                            isPasswordVisible ? 'off' : 'new-password'
+                          "
+                          autocapitalize="off"
+                          autocorrect="off"
+                          spellcheck="false"
+                          :append-inner-icon="
+                            isPasswordVisible ? 'tabler-eye-off' : 'tabler-eye'
+                          "
+                          :rules="[
+                            rules.passwordMinIfFilled,
+                            requiredValidator(
+                              password,
+                              $t('password_required')
+                            ),
+                          ]"
+                          @click:append-inner="
+                            isPasswordVisible = !isPasswordVisible
+                          "
+                        />
+                      </VCol>
+
+                      <VCol cols="12" md="6">
+                        <AppTextField
+                          id="confirm-new-password"
+                          name="new-password"
+                          v-model="confirmPassword"
+                          :label="$t('confirm_password') + ':'"
+                          :placeholder="$t('confirm_password')"
+                          :type="isConfirmVisible ? 'text' : 'password'"
+                          :autocomplete="
+                            isConfirmVisible ? 'off' : 'new-password'
+                          "
+                          autocapitalize="off"
+                          autocorrect="off"
+                          spellcheck="false"
+                          :append-inner-icon="
+                            isConfirmVisible ? 'tabler-eye-off' : 'tabler-eye'
+                          "
+                          :rules="[
+                            rules.confirmRequiredIfPassword,
+                            rules.confirmMatches,
+                          ]"
+                          @click:append-inner="
+                            isConfirmVisible = !isConfirmVisible
+                          "
+                        />
+                      </VCol>
+                    </VRow>
+                    <VRow v-if="isAdministrator" class="mb-2">
+                      <VCol md="6" cols="12">
+                        <VLabel>{{ $t('status') }}:</VLabel>
+                        <AppAutocomplete
+                          item-title="text"
+                          item-value="id"
+                          :items="itemsStatus"
+                          v-model="user_status_id"
+                          :placeholder="$t('select_state')"
+                        />
+                      </VCol>
+                    </VRow>
                   </VCol>
                 </VRow>
                 <VCardText class="d-flex justify-end flex-wrap gap-3 mt-4 pt-4">
@@ -1525,4 +2239,173 @@ watch(
       </VCard>
     </VCard>
   </VDialog>
+
+  <!-- Crop Image Dialog -->
+  <VDialog v-model="isCropModalOpen" max-width="500" persistent>
+    <VCard>
+      <VCardTitle class="d-flex justify-space-between align-center">
+        <span>{{ $t('crop_image') }}</span>
+        <IconBtn @click="cancelCrop">
+          <VIcon icon="tabler-x" />
+        </IconBtn>
+      </VCardTitle>
+
+      <VCardText>
+        <div class="crop-container position-relative">
+          <img
+            ref="cropImageRef"
+            :src="cropDialog.imageSrc"
+            alt="Para cortar"
+            class="crop-image"
+            @load="initializeCrop"
+          />
+
+          <div
+            class="crop-area"
+            :style="{
+              left: `${cropArea.x}px`,
+              top: `${cropArea.y}px`,
+              width: `${cropArea.width}px`,
+              height: `${cropArea.height}px`,
+            }"
+            @mousedown.stop="startCropDrag"
+            @touchstart.stop="startCropDrag"
+          >
+            <div class="crop-area-border"></div>
+            <div class="crop-area-handles">
+              <div
+                class="crop-handle crop-handle-nw"
+                @mousedown.stop="startCropResize('nw', $event)"
+                @touchstart.stop="startCropResize('nw', $event)"
+              ></div>
+              <div
+                class="crop-handle crop-handle-ne"
+                @mousedown.stop="startCropResize('ne', $event)"
+                @touchstart.stop="startCropResize('ne', $event)"
+              ></div>
+              <div
+                class="crop-handle crop-handle-sw"
+                @mousedown.stop="startCropResize('sw', $event)"
+                @touchstart.stop="startCropResize('sw', $event)"
+              ></div>
+              <div
+                class="crop-handle crop-handle-se"
+                @mousedown.stop="startCropResize('se', $event)"
+                @touchstart.stop="startCropResize('se', $event)"
+              ></div>
+            </div>
+          </div>
+        </div>
+
+        <canvas ref="cropCanvasRef" style="display: none"></canvas>
+      </VCardText>
+
+      <VCardText class="d-flex justify-end gap-3 flex-wrap">
+        <VBtn variant="tonal" color="secondary" @click="cancelCrop">
+          {{ $t('cancel') }}
+        </VBtn>
+        <VBtn color="primary" @click="cropImage">
+          {{ $t('apply_crop') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
 </template>
+
+<style lang="scss" scoped>
+.crop-container {
+  width: 100%;
+  max-width: 400px;
+  height: 400px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f5f5f5;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+}
+
+.crop-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
+}
+
+.crop-area {
+  position: absolute;
+  border: 2px solid rgb(var(--v-theme-primary));
+  background: rgba(var(--v-theme-primary), 0.05);
+  cursor: move;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+  z-index: 10;
+  touch-action: none;
+}
+
+.crop-area-border {
+  position: absolute;
+  inset: 0;
+  border: 2px dashed rgba(255, 255, 255, 0.8);
+  pointer-events: none;
+}
+
+.crop-area-handles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.crop-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: rgb(var(--v-theme-primary));
+  border: 2px solid white;
+  border-radius: 50%;
+  pointer-events: all;
+  cursor: nwse-resize;
+  z-index: 11;
+}
+
+.crop-handle-nw {
+  top: -6px;
+  left: -6px;
+  cursor: nwse-resize;
+}
+
+.crop-handle-ne {
+  top: -6px;
+  right: -6px;
+  cursor: nesw-resize;
+}
+
+.crop-handle-sw {
+  bottom: -6px;
+  left: -6px;
+  cursor: nesw-resize;
+}
+
+.crop-handle-se {
+  bottom: -6px;
+  right: -6px;
+  cursor: nwse-resize;
+}
+
+.photo-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  z-index: 1;
+  border-radius: 50%;
+}
+
+.cursor-pointer:hover .photo-overlay {
+  opacity: 1;
+}
+</style>

@@ -47,6 +47,7 @@ export class UserViewerRepository {
             name: true,
             last_name: true,
             birth_date: true,
+            photo: true,
           },
         },
         uud: {
@@ -116,6 +117,7 @@ export class UserViewerRepository {
             name: result.uui.name,
             last_name: result.uui.last_name,
             birth_date: result.uui.birth_date,
+            photo: result.uui.photo,
           }
         : null,
       user_document: result.uud

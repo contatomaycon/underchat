@@ -309,14 +309,127 @@ export const useUsersStore = defineStore('users', {
 
     async updateUser(
       payload: EditUserParamsRequest,
-      body: UpdateUserRequest
+      body: UpdateUserRequest,
+      photoFile?: File | null
     ): Promise<boolean> {
       try {
         this.loading = true;
 
+        const formData = new FormData();
+
+        if (body.email?.value !== undefined && body.email.value !== null) {
+          formData.append('email', body.email.value);
+        }
+        if (
+          body.password?.value !== undefined &&
+          body.password.value !== null
+        ) {
+          formData.append('password', body.password.value);
+        }
+        if (
+          body.account_id?.value !== undefined &&
+          body.account_id.value !== null
+        ) {
+          formData.append('account_id', body.account_id.value);
+        }
+        if (
+          body.user_status_id?.value !== undefined &&
+          body.user_status_id.value !== null
+        ) {
+          formData.append('user_status_id', body.user_status_id.value);
+        }
+        if (
+          body.phone_ddi?.value !== undefined &&
+          body.phone_ddi.value !== null
+        ) {
+          formData.append('phone_ddi', body.phone_ddi.value);
+        }
+        if (body.phone?.value !== undefined && body.phone.value !== null) {
+          formData.append('phone', body.phone.value);
+        }
+        if (body.name?.value !== undefined && body.name.value !== null) {
+          formData.append('name', body.name.value);
+        }
+        if (
+          body.last_name?.value !== undefined &&
+          body.last_name.value !== null
+        ) {
+          formData.append('last_name', body.last_name.value);
+        }
+        if (
+          body.birth_date?.value !== undefined &&
+          body.birth_date.value !== null
+        ) {
+          formData.append('birth_date', body.birth_date.value);
+        }
+        if (
+          body.document_type_id?.value !== undefined &&
+          body.document_type_id.value !== null
+        ) {
+          formData.append('document_type_id', body.document_type_id.value);
+        }
+        if (
+          body.document?.value !== undefined &&
+          body.document.value !== null
+        ) {
+          formData.append('document', body.document.value);
+        }
+        if (
+          body.country_id?.value !== undefined &&
+          body.country_id.value !== null
+        ) {
+          formData.append('country_id', body.country_id.value.toString());
+        }
+        if (
+          body.zip_code?.value !== undefined &&
+          body.zip_code.value !== null
+        ) {
+          formData.append('zip_code', body.zip_code.value);
+        }
+        if (
+          body.address1?.value !== undefined &&
+          body.address1.value !== null
+        ) {
+          formData.append('address1', body.address1.value);
+        }
+        if (
+          body.address2?.value !== undefined &&
+          body.address2.value !== null
+        ) {
+          formData.append('address2', body.address2.value);
+        }
+        if (body.city?.value !== undefined && body.city.value !== null) {
+          formData.append('city', body.city.value);
+        }
+        if (body.state?.value !== undefined && body.state.value !== null) {
+          formData.append('state', body.state.value);
+        }
+        if (
+          body.district?.value !== undefined &&
+          body.district.value !== null
+        ) {
+          formData.append('district', body.district.value);
+        }
+        if (
+          body.photo_url?.value !== undefined &&
+          body.photo_url.value !== null
+        ) {
+          formData.append('photo_url', body.photo_url.value);
+        }
+        if (photoFile instanceof File) {
+          formData.append('photo', photoFile);
+        }
+
+        const config: AxiosRequestConfig<FormData> = {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        };
+
         const response = await axios.patch<IApiResponse<boolean>>(
           `/user/${payload.user_id}`,
-          body
+          formData,
+          config
         );
 
         this.loading = false;
