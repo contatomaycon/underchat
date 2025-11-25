@@ -410,11 +410,13 @@ export const useUsersStore = defineStore('users', {
         ) {
           formData.append('district', body.district.value);
         }
-        if (
-          body.photo_url?.value !== undefined &&
-          body.photo_url.value !== null
-        ) {
-          formData.append('photo_url', body.photo_url.value);
+        if (body.photo_url?.value !== undefined) {
+          if (body.photo_url.value === null) {
+            formData.append('photo_url', '');
+          }
+          if (body.photo_url.value !== null) {
+            formData.append('photo_url', body.photo_url.value);
+          }
         }
         if (photoFile instanceof File) {
           formData.append('photo', photoFile);

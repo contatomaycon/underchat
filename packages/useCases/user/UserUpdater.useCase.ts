@@ -13,6 +13,7 @@ import { IUpdateUserAddress } from '@core/common/interfaces/IUpdateUserAddress';
 import { CountryService } from '@core/services/country.service';
 import { AccountService } from '@core/services/account.service';
 import { StorageService } from '@core/services/storage.service';
+import { UploadFileRequest } from '@core/schema/upload/request.schema';
 
 @injectable()
 export class UserUpdaterUseCase {
@@ -29,6 +30,39 @@ export class UserUpdaterUseCase {
     field: { value: string | null } | null | undefined
   ): string | null {
     return field?.value ?? null;
+  }
+
+  private extractPhotoUrlValue(
+    field: { value: string | null } | null | undefined
+  ): string | null {
+    const value = field?.value ?? null;
+    return value === '' ? null : value;
+  }
+
+  private async processPhotoUpload(
+    t: TFunction<'translation', undefined>,
+    body: UpdateUserRequest,
+    accountId: string
+  ): Promise<string | null> {
+    if (body.photo_url !== undefined) {
+      const photoUrlValue = this.extractPhotoUrlValue(body.photo_url);
+      return photoUrlValue;
+    }
+
+    if (body.photo) {
+      const uploadResult = await this.storageService.uploadImage(
+        body.photo as UploadFileRequest,
+        accountId
+      );
+
+      if (!uploadResult) {
+        throw new Error(t('profile_info_photo_upload_error'));
+      }
+
+      return uploadResult.url;
+    }
+
+    return null;
   }
 
   private extractNumberValue(
@@ -257,7 +291,8 @@ export class UserUpdaterUseCase {
 
   private buildUpdateUserInfoInput(
     t: TFunction<'translation', undefined>,
-    body: UpdateUserRequest
+    body: UpdateUserRequest,
+    photoUrl: string | null
   ): IUpdateUserInfo {
     const phoneValue = this.extractStringValue(body.phone);
     const phoneData = this.encryptPhoneData(phoneValue);
@@ -265,7 +300,6 @@ export class UserUpdaterUseCase {
     const birthDate = birthDateValue
       ? this.validateBirthDate(t, birthDateValue)
       : null;
-    const photoUrlValue = this.extractStringValue(body.photo_url);
 
     return {
       phone_ddi: this.extractStringValue(body.phone_ddi),
@@ -275,7 +309,7 @@ export class UserUpdaterUseCase {
       name: this.extractStringValue(body.name),
       last_name: this.extractStringValue(body.last_name),
       birth_date: birthDate,
-      photo: photoUrlValue,
+      photo: photoUrl,
     };
   }
 
@@ -408,15 +442,18 @@ export class UserUpdaterUseCase {
   private async updateUserInfoData(
     t: TFunction<'translation', undefined>,
     userId: string,
-    body: UpdateUserRequest
+    body: UpdateUserRequest,
+    accountId: string
   ): Promise<void> {
-    const photoUrlValue = this.extractStringValue(body.photo_url);
+    const photoUrlValue = this.extractPhotoUrlValue(body.photo_url);
 
     if (photoUrlValue === null) {
       await this.deleteUserPhotoFromStorage(userId);
     }
 
-    const userInfo = this.buildUpdateUserInfoInput(t, body);
+    const photoUrl = await this.processPhotoUpload(t, body, accountId);
+
+    const userInfo = this.buildUpdateUserInfoInput(t, body, photoUrl);
     const updateUserInfo = await this.userService.updateUserInfoById(
       userId,
       userInfo
@@ -475,7 +512,8 @@ export class UserUpdaterUseCase {
       body.name?.value ||
       body.last_name?.value ||
       body.birth_date?.value ||
-      body.photo_url !== undefined
+      body.photo_url !== undefined ||
+      body.photo !== undefined
     );
   }
 
@@ -521,7 +559,7 @@ export class UserUpdaterUseCase {
 
     if (this.hasUserInfoFields(body)) {
       await this.validateUserInfoFields(t, body, userId);
-      updatePromises.push(this.updateUserInfoData(t, userId, body));
+      updatePromises.push(this.updateUserInfoData(t, userId, body, accountId));
     }
 
     if (this.hasUserDocumentFields(body)) {

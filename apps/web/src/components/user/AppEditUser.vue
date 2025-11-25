@@ -1536,7 +1536,9 @@ const determinePhotoUrl = (): string | null | undefined => {
 };
 
 const hasUpdatePayload = (body: UpdateUserRequest): boolean => {
-  return Object.keys(body).length > 0 || !!photoFile.value;
+  return (
+    Object.keys(body).length > 0 || !!photoFile.value || photoRemoved.value
+  );
 };
 
 const updateUser = async () => {
