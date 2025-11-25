@@ -105,7 +105,7 @@ export async function installUbuntu2504(
 
     `bash -c "mkdir -p /home/app && \
       chown $USER:$USER /home/app && \
-      git clone --single-branch --branch ${generalEnvironment.gitBranch} git@github.com:${generalEnvironment.gitRepo} /home/app"`,
+      git clone --single-branch --branch ${generalEnvironment.gitBranch} git@github.com:${generalEnvironment.gitRepo}.git /home/app"`,
 
     `bash -c "printf '%b' '${envContent}' > /home/app/.env && chown $USER:$USER /home/app/.env"`,
 
