@@ -413,7 +413,7 @@ watch(
             <img
               v-if="photoViewerSrc"
               :src="photoViewerSrc"
-              alt="User photo"
+              alt="User"
               class="viewer-img"
               loading="eager"
               decoding="async"

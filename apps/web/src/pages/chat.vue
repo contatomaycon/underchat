@@ -547,18 +547,18 @@ const filteredTransferSectorUsers = computed(() => {
 });
 
 watch(isTransferUserMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    transferUserSearch.value = '';
-  } else {
+  if (isOpen) {
     loadTransferUsers();
+  } else {
+    transferUserSearch.value = '';
   }
 });
 
 watch(isTransferSectorMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    transferSectorSearch.value = '';
-  } else {
+  if (isOpen) {
     loadTransferSectors();
+  } else {
+    transferSectorSearch.value = '';
   }
 });
 
@@ -583,12 +583,22 @@ const loadTransferUsers = async () => {
     });
 
     if (result) {
-      transferUsers.value = result.results.map((user) => ({
-        value: user.user_id,
-        title: user.user_info?.name
-          ? `${user.user_info.name}${user.user_info.last_name ? ' ' + user.user_info.last_name : ''}`
-          : user.email_partial || '',
-      }));
+      transferUsers.value = result.results.map((user) => {
+        let title = '';
+        if (user.user_info?.name) {
+          const fullName = user.user_info.name;
+          const lastName = user.user_info.last_name
+            ? ` ${user.user_info.last_name}`
+            : '';
+          title = `${fullName}${lastName}`;
+        } else {
+          title = user.email_partial || '';
+        }
+        return {
+          value: user.user_id,
+          title: title,
+        };
+      });
     }
   } finally {
     isLoadingTransferUsers.value = false;
@@ -647,6 +657,12 @@ const loadTransferSectorUsers = async (sectorId: string) => {
     }
   } catch (error) {
     transferSectorUsers.value = [];
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : chatStore.i18n.global.t('transfer_sector_users_error') ||
+          'Erro ao carregar usuários do setor';
+    chatStore.showSnackbar(errorMessage, EColor.error);
   } finally {
     isLoadingTransferSectorUsers.value = false;
   }

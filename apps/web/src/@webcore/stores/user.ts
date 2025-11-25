@@ -191,11 +191,93 @@ export const useUsersStore = defineStore('users', {
       return null;
     },
 
+    shouldAppendStringValue(
+      field: { value?: string | null } | undefined
+    ): boolean {
+      return field?.value !== undefined && field.value !== null;
+    },
+
+    shouldAppendNumberValue(
+      field: { value?: number | null } | undefined
+    ): boolean {
+      return field?.value !== undefined && field.value !== null;
+    },
+
+    buildUpdateUserFormData(
+      body: UpdateUserRequest,
+      photoFile?: File | null
+    ): FormData {
+      const formData = new FormData();
+
+      if (this.shouldAppendStringValue(body.email)) {
+        formData.append('email', body.email!.value!);
+      }
+      if (this.shouldAppendStringValue(body.password)) {
+        formData.append('password', body.password!.value!);
+      }
+      if (this.shouldAppendStringValue(body.account_id)) {
+        formData.append('account_id', body.account_id!.value!);
+      }
+      if (this.shouldAppendStringValue(body.user_status_id)) {
+        formData.append('user_status_id', body.user_status_id!.value!);
+      }
+      if (this.shouldAppendStringValue(body.phone_ddi)) {
+        formData.append('phone_ddi', body.phone_ddi!.value!);
+      }
+      if (this.shouldAppendStringValue(body.phone)) {
+        formData.append('phone', body.phone!.value!);
+      }
+      if (this.shouldAppendStringValue(body.name)) {
+        formData.append('name', body.name!.value!);
+      }
+      if (this.shouldAppendStringValue(body.last_name)) {
+        formData.append('last_name', body.last_name!.value!);
+      }
+      if (this.shouldAppendStringValue(body.birth_date)) {
+        formData.append('birth_date', body.birth_date!.value!);
+      }
+      if (this.shouldAppendStringValue(body.document_type_id)) {
+        formData.append('document_type_id', body.document_type_id!.value!);
+      }
+      if (this.shouldAppendStringValue(body.document)) {
+        formData.append('document', body.document!.value!);
+      }
+      if (this.shouldAppendNumberValue(body.country_id)) {
+        formData.append('country_id', body.country_id!.value!.toString());
+      }
+      if (this.shouldAppendStringValue(body.zip_code)) {
+        formData.append('zip_code', body.zip_code!.value!);
+      }
+      if (this.shouldAppendStringValue(body.address1)) {
+        formData.append('address1', body.address1!.value!);
+      }
+      if (this.shouldAppendStringValue(body.address2)) {
+        formData.append('address2', body.address2!.value!);
+      }
+      if (this.shouldAppendStringValue(body.city_fiscal_code)) {
+        formData.append('city_fiscal_code', body.city_fiscal_code!.value!);
+      }
+      if (this.shouldAppendStringValue(body.state_fiscal_code)) {
+        formData.append('state_fiscal_code', body.state_fiscal_code!.value!);
+      }
+      if (this.shouldAppendStringValue(body.district)) {
+        formData.append('district', body.district!.value!);
+      }
+      if (body.photo_url?.value !== undefined) {
+        formData.append('photo_url', body.photo_url.value ?? '');
+      }
+      if (photoFile instanceof File) {
+        formData.append('photo', photoFile);
+      }
+
+      return formData;
+    },
+
     async addUser(
       payload: {
         email: string;
         password: string;
-        account_id?: string | undefined;
+        account_id?: string;
         user_info: {
           phone_ddi: string;
           phone: string;
@@ -324,118 +406,7 @@ export const useUsersStore = defineStore('users', {
       try {
         this.loading = true;
 
-        const formData = new FormData();
-
-        if (body.email?.value !== undefined && body.email.value !== null) {
-          formData.append('email', body.email.value);
-        }
-        if (
-          body.password?.value !== undefined &&
-          body.password.value !== null
-        ) {
-          formData.append('password', body.password.value);
-        }
-        if (
-          body.account_id?.value !== undefined &&
-          body.account_id.value !== null
-        ) {
-          formData.append('account_id', body.account_id.value);
-        }
-        if (
-          body.user_status_id?.value !== undefined &&
-          body.user_status_id.value !== null
-        ) {
-          formData.append('user_status_id', body.user_status_id.value);
-        }
-        if (
-          body.phone_ddi?.value !== undefined &&
-          body.phone_ddi.value !== null
-        ) {
-          formData.append('phone_ddi', body.phone_ddi.value);
-        }
-        if (body.phone?.value !== undefined && body.phone.value !== null) {
-          formData.append('phone', body.phone.value);
-        }
-        if (body.name?.value !== undefined && body.name.value !== null) {
-          formData.append('name', body.name.value);
-        }
-        if (
-          body.last_name?.value !== undefined &&
-          body.last_name.value !== null
-        ) {
-          formData.append('last_name', body.last_name.value);
-        }
-        if (
-          body.birth_date?.value !== undefined &&
-          body.birth_date.value !== null
-        ) {
-          formData.append('birth_date', body.birth_date.value);
-        }
-        if (
-          body.document_type_id?.value !== undefined &&
-          body.document_type_id.value !== null
-        ) {
-          formData.append('document_type_id', body.document_type_id.value);
-        }
-        if (
-          body.document?.value !== undefined &&
-          body.document.value !== null
-        ) {
-          formData.append('document', body.document.value);
-        }
-        if (
-          body.country_id?.value !== undefined &&
-          body.country_id.value !== null
-        ) {
-          formData.append('country_id', body.country_id.value.toString());
-        }
-        if (
-          body.zip_code?.value !== undefined &&
-          body.zip_code.value !== null
-        ) {
-          formData.append('zip_code', body.zip_code.value);
-        }
-        if (
-          body.address1?.value !== undefined &&
-          body.address1.value !== null
-        ) {
-          formData.append('address1', body.address1.value);
-        }
-        if (
-          body.address2?.value !== undefined &&
-          body.address2.value !== null
-        ) {
-          formData.append('address2', body.address2.value);
-        }
-        if (
-          body.city_fiscal_code?.value !== undefined &&
-          body.city_fiscal_code.value !== null
-        ) {
-          formData.append('city_fiscal_code', body.city_fiscal_code.value);
-        }
-        if (
-          body.state_fiscal_code?.value !== undefined &&
-          body.state_fiscal_code.value !== null
-        ) {
-          formData.append('state_fiscal_code', body.state_fiscal_code.value);
-        }
-        if (
-          body.district?.value !== undefined &&
-          body.district.value !== null
-        ) {
-          formData.append('district', body.district.value);
-        }
-        if (body.photo_url?.value !== undefined) {
-          if (body.photo_url.value === null) {
-            formData.append('photo_url', '');
-          }
-          if (body.photo_url.value !== null) {
-            formData.append('photo_url', body.photo_url.value);
-          }
-        }
-        if (photoFile instanceof File) {
-          formData.append('photo', photoFile);
-        }
+        const formData = this.buildUpdateUserFormData(body, photoFile);
 
         const config: AxiosRequestConfig<FormData> = {
           headers: {

@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { nextTick, computed, watch, onMounted } from 'vue';
+import { nextTick, computed, watch, onMounted, type Ref } from 'vue';
 import { useUsersStore } from '@/@webcore/stores/user';
 import { useAccountStore } from '@/@webcore/stores/account';
 import { ECountry } from '@core/common/enums/ECountry';
@@ -15,6 +15,7 @@ import { useStatesAndCities } from '@/composables/useStatesAndCities';
 import { ViewZipcodeRequest } from '@core/schema/zipcode/viewZipcode/request.schema';
 import { getAdministrator, getUser } from '@/@webcore/localStorage/user';
 import { EColor } from '@core/common/enums/EColor';
+import { ViewUserResponse } from '@core/schema/user/viewUser/response.schema';
 
 const userStore = useUsersStore();
 const accountStore = useAccountStore();
@@ -938,7 +939,7 @@ const buildUserDocument = (): {
 };
 
 const createFileInput = (): HTMLInputElement => {
-  const input = window.document.createElement('input');
+  const input = globalThis.document.createElement('input');
   input.type = 'file';
   input.accept = 'image/*';
   return input;
@@ -1058,10 +1059,10 @@ const setupCropArea = (
 type CropResizeHandle = 'nw' | 'ne' | 'sw' | 'se';
 
 const addCropEventListeners = () => {
-  window.document.addEventListener('mousemove', onCropDrag);
-  window.document.addEventListener('touchmove', onCropDrag);
-  window.document.addEventListener('mouseup', endCropDrag);
-  window.document.addEventListener('touchend', endCropDrag);
+  globalThis.document.addEventListener('mousemove', onCropDrag);
+  globalThis.document.addEventListener('touchmove', onCropDrag);
+  globalThis.document.addEventListener('mouseup', endCropDrag);
+  globalThis.document.addEventListener('touchend', endCropDrag);
 };
 
 const startCropDrag = (e: MouseEvent | TouchEvent) => {
@@ -1081,10 +1082,10 @@ const startCropDrag = (e: MouseEvent | TouchEvent) => {
 };
 
 const addCropResizeEventListeners = () => {
-  window.document.addEventListener('mousemove', onCropResize);
-  window.document.addEventListener('touchmove', onCropResize);
-  window.document.addEventListener('mouseup', endCropResize);
-  window.document.addEventListener('touchend', endCropResize);
+  globalThis.document.addEventListener('mousemove', onCropResize);
+  globalThis.document.addEventListener('touchmove', onCropResize);
+  globalThis.document.addEventListener('mouseup', endCropResize);
+  globalThis.document.addEventListener('touchend', endCropResize);
 };
 
 const startCropResize = (
@@ -1404,10 +1405,10 @@ const onCropResize = (e: MouseEvent | TouchEvent) => {
 };
 
 const removeCropEventListeners = () => {
-  window.document.removeEventListener('mousemove', onCropDrag);
-  window.document.removeEventListener('touchmove', onCropDrag);
-  window.document.removeEventListener('mouseup', endCropDrag);
-  window.document.removeEventListener('touchend', endCropDrag);
+  globalThis.document.removeEventListener('mousemove', onCropDrag);
+  globalThis.document.removeEventListener('touchmove', onCropDrag);
+  globalThis.document.removeEventListener('mouseup', endCropDrag);
+  globalThis.document.removeEventListener('touchend', endCropDrag);
 };
 
 const endCropDrag = () => {
@@ -1416,10 +1417,10 @@ const endCropDrag = () => {
 };
 
 const removeCropResizeEventListeners = () => {
-  window.document.removeEventListener('mousemove', onCropResize);
-  window.document.removeEventListener('touchmove', onCropResize);
-  window.document.removeEventListener('mouseup', endCropResize);
-  window.document.removeEventListener('touchend', endCropResize);
+  globalThis.document.removeEventListener('mousemove', onCropResize);
+  globalThis.document.removeEventListener('touchmove', onCropResize);
+  globalThis.document.removeEventListener('mouseup', endCropResize);
+  globalThis.document.removeEventListener('touchend', endCropResize);
 };
 
 const endCropResize = () => {
@@ -1610,108 +1611,109 @@ const updateUser = async () => {
   }
 };
 
+const getChangedValue = <T,>(current: T, initial: T): T | undefined => {
+  return current === initial ? undefined : current;
+};
+
+const addFieldIfDefined = <K extends keyof UpdateUserRequest>(
+  body: UpdateUserRequest,
+  key: K,
+  value: string | null | undefined
+): void => {
+  if (value !== undefined && value !== null && value !== '') {
+    body[key] = { value } as UpdateUserRequest[K];
+  }
+};
+
+const addFieldIfChanged = <K extends keyof UpdateUserRequest>(
+  body: UpdateUserRequest,
+  key: K,
+  current: string | number | null | undefined,
+  initial: string | number | null | undefined
+): void => {
+  const changed = getChangedValue(current, initial);
+  if (changed !== undefined) {
+    body[key] = { value: changed } as UpdateUserRequest[K];
+  }
+};
+
 const buildUpdateUserBody = (): UpdateUserRequest => {
   const body: UpdateUserRequest = {};
 
   const emailToSave = determineEmailToSave();
-  if (emailToSave !== undefined) {
-    body.email = { value: emailToSave };
+  addFieldIfDefined(body, 'email', emailToSave);
+
+  addFieldIfDefined(body, 'password', password.value);
+
+  addFieldIfChanged(
+    body,
+    'user_status_id',
+    user_status_id.value,
+    initialValues.value.user_status_id
+  );
+
+  if (
+    isAdministrator.value &&
+    accountId.value !== initialValues.value.account_id
+  ) {
+    addFieldIfDefined(body, 'account_id', accountId.value);
   }
 
-  const passwordValue = password.value;
-  if (passwordValue) {
-    body.password = { value: passwordValue };
-  }
-
-  const userStatusIdValue =
-    user_status_id.value !== initialValues.value.user_status_id
-      ? user_status_id.value
-      : undefined;
-  if (userStatusIdValue !== undefined) {
-    body.user_status_id = { value: userStatusIdValue };
-  }
-
-  const accountIdValue =
-    isAdministrator.value && accountId.value !== initialValues.value.account_id
-      ? accountId.value
-      : undefined;
-  if (accountIdValue !== undefined) {
-    body.account_id = { value: accountIdValue };
-  }
-
-  const phoneDdiValue =
-    phone_ddi.value !== initialValues.value.phone_ddi
-      ? phone_ddi.value
-      : undefined;
-  if (phoneDdiValue !== undefined) {
-    body.phone_ddi = { value: phoneDdiValue };
-  }
+  addFieldIfChanged(
+    body,
+    'phone_ddi',
+    phone_ddi.value,
+    initialValues.value.phone_ddi
+  );
 
   const phoneToSave = determinePhoneToSave();
-  if (phoneToSave !== undefined) {
-    body.phone = { value: phoneToSave };
-  }
+  addFieldIfDefined(body, 'phone', phoneToSave);
 
-  const nameValue =
-    name.value !== initialValues.value.name ? name.value : undefined;
-  if (nameValue !== undefined) {
-    body.name = { value: nameValue };
-  }
+  addFieldIfChanged(body, 'name', name.value, initialValues.value.name);
 
-  const lastNameValue =
-    last_name.value !== initialValues.value.last_name
-      ? last_name.value
-      : undefined;
-  if (lastNameValue !== undefined) {
-    body.last_name = { value: lastNameValue };
-  }
+  addFieldIfChanged(
+    body,
+    'last_name',
+    last_name.value,
+    initialValues.value.last_name
+  );
 
-  const birthDateValue =
-    birth_date.value !== initialValues.value.birth_date
-      ? birth_date.value
-      : undefined;
-  if (birthDateValue !== undefined) {
-    body.birth_date = { value: birthDateValue };
-  }
+  addFieldIfChanged(
+    body,
+    'birth_date',
+    birth_date.value,
+    initialValues.value.birth_date
+  );
 
-  const documentTypeIdValue =
-    user_document_type_id.value !== initialValues.value.user_document_type_id
-      ? user_document_type_id.value
-      : undefined;
-  if (documentTypeIdValue !== undefined) {
-    body.document_type_id = { value: documentTypeIdValue };
-  }
+  addFieldIfChanged(
+    body,
+    'document_type_id',
+    user_document_type_id.value,
+    initialValues.value.user_document_type_id
+  );
 
   const documentToSave = determineDocumentToSave();
-  if (documentToSave !== undefined) {
-    body.document = { value: documentToSave };
-  }
+  addFieldIfDefined(body, 'document', documentToSave);
 
-  const countryIdValue =
-    country_id.value !== initialValues.value.country_id
-      ? country_id.value
-      : undefined;
-  if (countryIdValue !== undefined) {
-    body.country_id = { value: countryIdValue };
-  }
+  addFieldIfChanged(
+    body,
+    'country_id',
+    country_id.value,
+    initialValues.value.country_id
+  );
 
-  const zipCodeValue =
-    zip_code.value !== initialValues.value.zip_code
-      ? zip_code.value
-      : undefined;
-  if (zipCodeValue !== undefined) {
-    body.zip_code = { value: zipCodeValue };
-  }
+  addFieldIfChanged(
+    body,
+    'zip_code',
+    zip_code.value,
+    initialValues.value.zip_code
+  );
 
   const address1ToSave = determineAddress1ToSave();
-  if (address1ToSave !== undefined) {
-    body.address1 = { value: address1ToSave };
-  }
+  addFieldIfDefined(body, 'address1', address1ToSave);
 
   const address2ToSave = determineAddress2ToSave();
-  if (address2ToSave !== undefined) {
-    body.address2 = { value: address2ToSave };
-  }
+  addFieldIfDefined(body, 'address2', address2ToSave);
 
   const selectedState = states.value.find(
     (s) => s.id_zipcode_state === state_id.value
@@ -1720,34 +1722,23 @@ const buildUpdateUserBody = (): UpdateUserRequest => {
     (c) => c.id_zipcode_city === city_id.value
   );
 
-  const cityFiscalCodeValue =
-    city_id.value !== null && selectedCity?.fiscal_code
-      ? selectedCity.fiscal_code
-      : undefined;
-  if (cityFiscalCodeValue !== undefined) {
-    body.city_fiscal_code = { value: cityFiscalCodeValue };
+  if (city_id.value !== null && selectedCity?.fiscal_code) {
+    addFieldIfDefined(body, 'city_fiscal_code', selectedCity.fiscal_code);
   }
 
-  const stateFiscalCodeValue =
-    state_id.value !== null && selectedState?.fiscal_code
-      ? selectedState.fiscal_code
-      : undefined;
-  if (stateFiscalCodeValue !== undefined) {
-    body.state_fiscal_code = { value: stateFiscalCodeValue };
+  if (state_id.value !== null && selectedState?.fiscal_code) {
+    addFieldIfDefined(body, 'state_fiscal_code', selectedState.fiscal_code);
   }
 
-  const districtValue =
-    district.value !== initialValues.value.district
-      ? district.value
-      : undefined;
-  if (districtValue !== undefined) {
-    body.district = { value: districtValue };
-  }
+  addFieldIfChanged(
+    body,
+    'district',
+    district.value,
+    initialValues.value.district
+  );
 
   const photoUrl = determinePhotoUrl();
-  if (photoUrl !== undefined) {
-    body.photo_url = { value: photoUrl };
-  }
+  addFieldIfDefined(body, 'photo_url', photoUrl);
 
   return body;
 };
@@ -1886,142 +1877,205 @@ const loadAccounts = async () => {
   await loadAdministratorAccounts();
 };
 
-const loadUserData = async () => {
+const setFieldValue = <K extends keyof typeof initialValues.value>(
+  field: K,
+  value: (typeof initialValues.value)[K]
+): void => {
+  (initialValues.value[field] as typeof value) = value;
+};
+
+const setPartialField = (
+  partial: string,
+  fieldRef: Ref<string | null>,
+  originalRef: Ref<string | null>,
+  initialKey: keyof typeof initialValues.value,
+  isDecryptedRef: Ref<boolean>
+): void => {
+  originalRef.value = partial;
+  fieldRef.value = partial;
+  setFieldValue(initialKey, partial);
+  isDecryptedRef.value = false;
+};
+
+const setPhonePartial = (phonePartial: string): void => {
+  phonePartialOriginal.value = phonePartial;
+  initialValues.value.phone = phonePartial;
+  phone.value = phonePartial.includes('*')
+    ? null
+    : phonePartial.replaceAll(/\D/g, '');
+  isPhoneDecrypted.value = false;
+};
+
+const setAddress1Partial = (address1Partial: string): void => {
+  address1PartialOriginal.value = address1Partial;
+  initialValues.value.address1 = address1Partial;
+  address1.value = address1Partial.includes('*') ? null : address1Partial;
+  isAddress1Decrypted.value = false;
+};
+
+const setAddress2Partial = (address2Partial: string): void => {
+  address2PartialOriginal.value = address2Partial;
+  initialValues.value.address2 = address2Partial;
+  if (address2Partial) {
+    address2.value = address2Partial.includes('*') ? null : address2Partial;
+  } else {
+    address2.value = null;
+  }
+  isAddress2Decrypted.value = false;
+};
+
+const parseStateValue = (
+  stateValue: string
+): {
+  stateName: string;
+  stateAbbreviation: string | null;
+} => {
+  const trimmed = stateValue.trim();
+  const stateMatch = trimmed.match(/^(.+?)\s*\(([^)]+)\)$/);
+  return {
+    stateName: stateMatch ? stateMatch[1].trim() : trimmed,
+    stateAbbreviation: stateMatch ? stateMatch[2].trim() : null,
+  };
+};
+
+const findMatchingState = (
+  stateName: string,
+  stateAbbreviation: string | null,
+  stateValue: string
+) => {
+  return states.value.find(
+    (s) =>
+      s.state.toLowerCase() === stateName.toLowerCase() ||
+      (stateAbbreviation &&
+        s.abbreviation?.toLowerCase() === stateAbbreviation.toLowerCase()) ||
+      s.state.toLowerCase() === stateValue.toLowerCase() ||
+      s.abbreviation?.toLowerCase() === stateValue.toLowerCase()
+  );
+};
+
+const findMatchingCity = (cityName: string) => {
+  return cities.value.find(
+    (c) => c.city.toLowerCase() === cityName.toLowerCase()
+  );
+};
+
+const loadStateAndCity = async (): Promise<void> => {
+  if (!country_id.value) return;
+
+  await loadStates(country_id.value);
+
+  if (!state.value) return;
+
+  const stateValue = state.value.trim();
+  const { stateName, stateAbbreviation } = parseStateValue(stateValue);
+  const foundState = findMatchingState(
+    stateName,
+    stateAbbreviation,
+    stateValue
+  );
+
+  if (!foundState) return;
+
+  state_id.value = foundState.id_zipcode_state;
+  state.value = foundState.abbreviation
+    ? `${foundState.state} (${foundState.abbreviation})`
+    : foundState.state;
+  await loadCities(foundState.id_zipcode_state);
+
+  if (city.value) {
+    const foundCity = findMatchingCity(city.value);
+    if (foundCity) {
+      city_id.value = foundCity.id_zipcode_city;
+    }
+  }
+};
+
+const loadBasicUserInfo = (responseUser: ViewUserResponse): void => {
+  accountId.value = responseUser.account?.account_id ?? null;
+  setFieldValue('account_id', accountId.value);
+
+  const emailPartial = responseUser.email_partial ?? '';
+  setPartialField(
+    emailPartial,
+    email,
+    emailPartialOriginal,
+    'email',
+    isEmailDecrypted
+  );
+
+  phone_ddi.value = responseUser.user_info?.phone_ddi ?? null;
+  setFieldValue('phone_ddi', phone_ddi.value);
+
+  const phonePartial = responseUser.user_info?.phone_partial ?? '';
+  setPhonePartial(phonePartial);
+
+  name.value = responseUser.user_info?.name ?? null;
+  setFieldValue('name', name.value);
+
+  last_name.value = responseUser.user_info?.last_name ?? null;
+  setFieldValue('last_name', last_name.value);
+
+  birth_date.value = responseUser.user_info?.birth_date ?? null;
+  setFieldValue('birth_date', birth_date.value);
+
+  photo.value = responseUser.user_info?.photo ?? null;
+  photoPreview.value = responseUser.user_info?.photo ?? null;
+  photoRemoved.value = false;
+
+  user_document_type_id.value =
+    responseUser.user_document?.user_document_type?.user_document_type_id ??
+    null;
+  setFieldValue('user_document_type_id', user_document_type_id.value);
+
+  const documentPartial = responseUser.user_document?.document_partial ?? '';
+  documentPartialOriginal.value = documentPartial;
+  setFieldValue('document', documentPartial);
+  document.value = null;
+  isDocumentDecrypted.value = false;
+
+  user_status_id.value = responseUser.user_status?.user_status_id ?? null;
+  setFieldValue('user_status_id', user_status_id.value);
+};
+
+const loadUserAddress = (responseUser: ViewUserResponse): void => {
+  country_id.value = responseUser.user_address?.country?.country_id ?? null;
+  setFieldValue('country_id', country_id.value);
+
+  zip_code.value = responseUser.user_address?.zip_code ?? null;
+  setFieldValue('zip_code', zip_code.value);
+  initialZipCode.value = zip_code.value;
+
+  const address1Partial = responseUser.user_address?.address1_partial ?? '';
+  setAddress1Partial(address1Partial);
+
+  const address2Partial = responseUser.user_address?.address2_partial ?? '';
+  setAddress2Partial(address2Partial);
+
+  city.value = responseUser.user_address?.city ?? null;
+  setFieldValue('city', city.value);
+
+  state.value = responseUser.user_address?.state ?? null;
+  setFieldValue('state', state.value);
+
+  district.value = responseUser.user_address?.district ?? null;
+  setFieldValue('district', district.value);
+};
+
+const loadUserData = async (): Promise<void> => {
   if (!userId.value) return;
 
   await loadAccounts();
 
   const responseUser = await userStore.viewUserById(userId.value);
-  if (responseUser) {
-    accountId.value = responseUser.account?.account_id ?? null;
-    initialValues.value.account_id = accountId.value;
-    const emailPartial = responseUser.email_partial ?? '';
-    emailPartialOriginal.value = emailPartial;
-    email.value = emailPartial;
-    initialValues.value.email = emailPartial;
-    isEmailDecrypted.value = false;
-
-    phone_ddi.value = responseUser.user_info?.phone_ddi ?? null;
-    initialValues.value.phone_ddi = phone_ddi.value;
-
-    const phonePartial = responseUser.user_info?.phone_partial ?? '';
-    phonePartialOriginal.value = phonePartial;
-    initialValues.value.phone = phonePartial;
-    if (phonePartial.includes('*')) {
-      phone.value = null;
-    }
-    if (!phonePartial.includes('*')) {
-      phone.value = phonePartial.replaceAll(/\D/g, '');
-    }
-    isPhoneDecrypted.value = false;
-
-    name.value = responseUser.user_info?.name ?? null;
-    initialValues.value.name = name.value;
-
-    last_name.value = responseUser.user_info?.last_name ?? null;
-    initialValues.value.last_name = last_name.value;
-
-    birth_date.value = responseUser.user_info?.birth_date ?? null;
-    initialValues.value.birth_date = birth_date.value;
-
-    photo.value = responseUser.user_info?.photo ?? null;
-    photoPreview.value = responseUser.user_info?.photo ?? null;
-    photoRemoved.value = false;
-
-    user_document_type_id.value =
-      responseUser.user_document?.user_document_type?.user_document_type_id ??
-      null;
-    initialValues.value.user_document_type_id = user_document_type_id.value;
-
-    const documentPartial = responseUser.user_document?.document_partial ?? '';
-    documentPartialOriginal.value = documentPartial;
-    initialValues.value.document = documentPartial;
-    document.value = null;
-    isDocumentDecrypted.value = false;
-
-    country_id.value = responseUser.user_address?.country?.country_id ?? null;
-    initialValues.value.country_id = country_id.value;
-
-    zip_code.value = responseUser.user_address?.zip_code ?? null;
-    initialValues.value.zip_code = zip_code.value;
-    initialZipCode.value = zip_code.value;
-
-    const address1Partial = responseUser.user_address?.address1_partial ?? '';
-    address1PartialOriginal.value = address1Partial;
-    initialValues.value.address1 = address1Partial;
-    if (address1Partial.includes('*')) {
-      address1.value = null;
-    }
-    if (!address1Partial.includes('*')) {
-      address1.value = address1Partial;
-    }
-    isAddress1Decrypted.value = false;
-
-    const address2Partial = responseUser.user_address?.address2_partial ?? '';
-    address2PartialOriginal.value = address2Partial;
-    initialValues.value.address2 = address2Partial;
-    if (address2Partial && address2Partial.includes('*')) {
-      address2.value = null;
-    }
-    if (address2Partial && !address2Partial.includes('*')) {
-      address2.value = address2Partial;
-    }
-    if (!address2Partial) {
-      address2.value = null;
-    }
-    isAddress2Decrypted.value = false;
-
-    city.value = responseUser.user_address?.city ?? null;
-    initialValues.value.city = city.value;
-
-    state.value = responseUser.user_address?.state ?? null;
-    initialValues.value.state = state.value;
-
-    district.value = responseUser.user_address?.district ?? null;
-    initialValues.value.district = district.value;
-
-    user_status_id.value = responseUser.user_status?.user_status_id ?? null;
-    initialValues.value.user_status_id = user_status_id.value;
-
-    if (country_id.value) {
-      await loadStates(country_id.value);
-
-      if (state.value) {
-        const stateValue = state.value.trim();
-        const stateMatch = stateValue.match(/^(.+?)\s*\(([^)]+)\)$/);
-        const stateName = stateMatch ? stateMatch[1].trim() : stateValue;
-        const stateAbbreviation = stateMatch ? stateMatch[2].trim() : null;
-
-        const foundState = states.value.find(
-          (s) =>
-            s.state.toLowerCase() === stateName.toLowerCase() ||
-            (stateAbbreviation &&
-              s.abbreviation?.toLowerCase() ===
-                stateAbbreviation.toLowerCase()) ||
-            s.state.toLowerCase() === stateValue.toLowerCase() ||
-            s.abbreviation?.toLowerCase() === stateValue.toLowerCase()
-        );
-
-        if (foundState) {
-          state_id.value = foundState.id_zipcode_state;
-          state.value = foundState.abbreviation
-            ? `${foundState.state} (${foundState.abbreviation})`
-            : foundState.state;
-          await loadCities(foundState.id_zipcode_state);
-
-          if (city.value) {
-            const foundCity = cities.value.find(
-              (c) => c.city.toLowerCase() === city.value?.toLowerCase()
-            );
-
-            if (foundCity) {
-              city_id.value = foundCity.id_zipcode_city;
-            }
-          }
-        }
-      }
-    }
+  if (!responseUser) {
+    await nextTick();
+    isInitializing.value = false;
+    return;
   }
+
+  loadBasicUserInfo(responseUser);
+  loadUserAddress(responseUser);
+  await loadStateAndCity();
 
   await nextTick();
   isInitializing.value = false;

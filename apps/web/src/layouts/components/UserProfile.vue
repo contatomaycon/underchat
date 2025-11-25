@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { removeUserData, setUser } from '@/@webcore/localStorage/user';
+import { removeUserData } from '@/@webcore/localStorage/user';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useProfileStore } from '@/@webcore/stores/profile';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';

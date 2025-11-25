@@ -67,7 +67,7 @@ export class ChatListerUseCase {
       },
     ];
 
-    const filterClauses: (IElasticsearchBoolClause | any)[] = [
+    const filterClauses: IElasticsearchBoolClause[] = [
       {
         term: {
           status: query.status,
@@ -101,8 +101,9 @@ export class ChatListerUseCase {
               },
             },
           },
-        });
-      } else {
+        } as unknown as IElasticsearchBoolClause);
+      }
+      if (userSectors.length === 0) {
         filterClauses.push({
           bool: {
             must_not: {
@@ -111,7 +112,7 @@ export class ChatListerUseCase {
               },
             },
           },
-        });
+        } as unknown as IElasticsearchBoolClause);
       }
     }
 

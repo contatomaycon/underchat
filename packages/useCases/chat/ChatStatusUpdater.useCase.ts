@@ -31,6 +31,52 @@ export class ChatStatusUpdaterUseCase {
     @inject('Redis') private readonly redis: Redis
   ) {}
 
+  private async sendProtocolMessage(
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    chatId: string,
+    protocolText: string
+  ): Promise<void> {
+    const protocol = generateProtocol();
+    const message = protocolText.replaceAll(
+      /\{\{\s*protocolo\s*\}\}/gi,
+      protocol
+    );
+
+    const protocolMessageBody: CreateMessageChatsBody = {
+      type: EMessageType.system,
+      message,
+    };
+
+    await this.chatMessageCreatorUseCase.execute(
+      t,
+      accountId,
+      {
+        chat_id: chatId,
+      },
+      protocolMessageBody
+    );
+  }
+
+  private async handleInChatStatus(
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    chatId: string,
+    chat: IChat
+  ): Promise<void> {
+    const workerConfigFields =
+      await this.workerService.viewWorkerConfigFieldsByWorkerId(chat.worker.id);
+
+    if (workerConfigFields?.generate_protocol_at_start) {
+      await this.sendProtocolMessage(
+        t,
+        accountId,
+        chatId,
+        workerConfigFields.generate_protocol_at_start
+      );
+    }
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -93,9 +139,9 @@ export class ChatStatusUpdaterUseCase {
     const updatedChat: IChat = {
       ...chat,
       status,
-      user: user === undefined ? chat.user : user,
-      started_at: startedAt === undefined ? chat.started_at : startedAt,
-      closed_at: closedAt === undefined ? chat.closed_at : closedAt,
+      user: user ?? chat.user,
+      started_at: startedAt ?? chat.started_at,
+      closed_at: closedAt ?? chat.closed_at,
       summary: {
         last_message: chat.summary?.last_message ?? null,
         last_date: chat.summary?.last_date ?? null,
@@ -114,34 +160,7 @@ export class ChatStatusUpdaterUseCase {
     const channelAccountId = updatedChat.account?.id ?? accountId;
 
     if (status === EChatStatus.in_chat) {
-      const workerConfigFields =
-        await this.workerService.viewWorkerConfigFieldsByWorkerId(
-          chat.worker.id
-        );
-
-      if (workerConfigFields?.generate_protocol_at_start) {
-        const protocol = generateProtocol();
-        const protocolText = workerConfigFields.generate_protocol_at_start;
-
-        const message = protocolText.replace(
-          /\{\{\s*protocolo\s*\}\}/gi,
-          protocol
-        );
-
-        const protocolMessageBody: CreateMessageChatsBody = {
-          type: EMessageType.system,
-          message,
-        };
-
-        await this.chatMessageCreatorUseCase.execute(
-          t,
-          accountId,
-          {
-            chat_id: params.chat_id,
-          },
-          protocolMessageBody
-        );
-      }
+      await this.handleInChatStatus(t, accountId, params.chat_id, chat);
     }
 
     await Promise.all([

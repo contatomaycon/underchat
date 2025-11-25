@@ -13,7 +13,6 @@ import { IUpdateUserAddress } from '@core/common/interfaces/IUpdateUserAddress';
 import { CountryService } from '@core/services/country.service';
 import { AccountService } from '@core/services/account.service';
 import { StorageService } from '@core/services/storage.service';
-import { UploadFileRequest } from '@core/schema/upload/request.schema';
 
 @injectable()
 export class UserUpdaterUseCase {
@@ -51,7 +50,7 @@ export class UserUpdaterUseCase {
 
     if (body.photo) {
       const uploadResult = await this.storageService.uploadImage(
-        body.photo as UploadFileRequest,
+        body.photo,
         accountId
       );
 

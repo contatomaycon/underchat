@@ -272,11 +272,13 @@ export class UserListerRepository {
             address1_partial: user.uua.address1_partial,
             address2_partial: user.uua.address2_partial,
             city: user.uua.uzc?.city ?? null,
-            state: user.uua.uzs
-              ? user.uua.uzs.abbreviation
-                ? `${user.uua.uzs.state} (${user.uua.uzs.abbreviation})`
-                : user.uua.uzs.state
-              : null,
+            state: (() => {
+              if (!user.uua.uzs) return null;
+              if (user.uua.uzs.abbreviation) {
+                return `${user.uua.uzs.state} (${user.uua.uzs.abbreviation})`;
+              }
+              return user.uua.uzs.state;
+            })(),
             city_fiscal_code: user.uua.city_fiscal_code,
             state_fiscal_code: user.uua.state_fiscal_code,
             district: user.uua.district,

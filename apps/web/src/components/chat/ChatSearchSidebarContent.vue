@@ -3,6 +3,7 @@ import { useChatStore } from '@/@webcore/stores/chat';
 import { computed, watch, onUnmounted } from 'vue';
 import { SearchMessagesResult } from '@core/schema/chat/searchMessages/response.schema';
 import { formatDate } from '@/@webcore/utils/formatters';
+import { EColor } from '@core/common/enums/EColor';
 
 const emit = defineEmits<{
   close: [];
@@ -42,7 +43,7 @@ const highlightText = (
   if (!text || !search) return text || '';
 
   const regex = new RegExp(
-    `(${search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`,
+    `(${search.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)})`,
     'gi'
   );
   return text.replace(regex, '<mark class="search-highlight">$1</mark>');
@@ -97,6 +98,11 @@ const handleSearch = async (reset: boolean = true) => {
     currentPage.value = response.pagings.current_page;
     totalPages.value = response.pagings.total_pages;
   } catch (error) {
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : t('search_messages_error') || 'Erro ao buscar mensagens';
+    chatStore.showSnackbar(errorMessage, EColor.error);
     if (reset) {
       searchResults.value = [];
     }

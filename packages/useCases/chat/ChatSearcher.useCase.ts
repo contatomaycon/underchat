@@ -75,12 +75,12 @@ export class ChatSearcherUseCase {
       },
     ];
 
-    const filterClauses: (IElasticsearchBoolClause | any)[] = [
+    const filterClauses: IElasticsearchBoolClause[] = [
       {
         terms: {
           status: [EChatStatus.queue, EChatStatus.in_chat],
         },
-      },
+      } as unknown as IElasticsearchBoolClause,
     ];
 
     if (!this.canViewOthersChats(actions)) {
@@ -116,7 +116,7 @@ export class ChatSearcherUseCase {
           ],
           minimum_should_match: 1,
         },
-      });
+      } as unknown as IElasticsearchBoolClause);
     }
 
     if (!this.canListAllChatsWithoutSectorLimit(actions)) {
@@ -130,8 +130,9 @@ export class ChatSearcherUseCase {
               },
             },
           },
-        });
-      } else {
+        } as unknown as IElasticsearchBoolClause);
+      }
+      if (userSectors.length === 0) {
         filterClauses.push({
           bool: {
             must_not: {
@@ -140,102 +141,103 @@ export class ChatSearcherUseCase {
               },
             },
           },
-        });
+        } as unknown as IElasticsearchBoolClause);
       }
     }
 
     const shouldClauses: any[] = [];
 
-    shouldClauses.push({
-      wildcard: {
-        'name.keyword': {
-          value: `*${searchTerm.toLowerCase()}*`,
-          case_insensitive: true,
-        },
-      },
-    });
-
-    shouldClauses.push({
-      query_string: {
-        default_field: 'name',
-        query: `*${searchTerm}*`,
-        analyze_wildcard: true,
-        default_operator: 'OR',
-      },
-    });
-
-    shouldClauses.push({
-      nested: {
-        path: 'contact',
-        query: {
-          wildcard: {
-            'contact.name.keyword': {
-              value: `*${searchTerm.toLowerCase()}*`,
-              case_insensitive: true,
-            },
-          },
-        },
-      },
-    });
-
-    shouldClauses.push({
-      nested: {
-        path: 'contact',
-        query: {
-          query_string: {
-            default_field: 'contact.name',
-            query: `*${searchTerm}*`,
-            analyze_wildcard: true,
-            default_operator: 'OR',
-          },
-        },
-      },
-    });
-
-    const phoneCandidates = buildCandidates(searchTerm);
-    if (phoneCandidates.length > 0) {
-      shouldClauses.push({
-        terms: {
-          phone: phoneCandidates,
-        },
-      });
-
-      shouldClauses.push({
-        nested: {
-          path: 'contact',
-          query: {
-            terms: {
-              'contact.phone': phoneCandidates,
-            },
-          },
-        },
-      });
-    }
-
-    const phoneDigits = searchTerm.replace(/\D/g, '');
-    if (phoneDigits.length >= 3) {
-      shouldClauses.push({
+    shouldClauses.push(
+      {
         wildcard: {
-          phone: {
-            value: `*${phoneDigits}*`,
+          'name.keyword': {
+            value: `*${searchTerm.toLowerCase()}*`,
             case_insensitive: true,
           },
         },
-      });
-
-      shouldClauses.push({
+      },
+      {
+        query_string: {
+          default_field: 'name',
+          query: `*${searchTerm}*`,
+          analyze_wildcard: true,
+          default_operator: 'OR',
+        },
+      },
+      {
         nested: {
           path: 'contact',
           query: {
             wildcard: {
-              'contact.phone': {
-                value: `*${phoneDigits}*`,
+              'contact.name.keyword': {
+                value: `*${searchTerm.toLowerCase()}*`,
                 case_insensitive: true,
               },
             },
           },
         },
-      });
+      },
+      {
+        nested: {
+          path: 'contact',
+          query: {
+            query_string: {
+              default_field: 'contact.name',
+              query: `*${searchTerm}*`,
+              analyze_wildcard: true,
+              default_operator: 'OR',
+            },
+          },
+        },
+      }
+    );
+
+    const phoneCandidates = buildCandidates(searchTerm);
+    if (phoneCandidates.length > 0) {
+      shouldClauses.push(
+        {
+          terms: {
+            phone: phoneCandidates,
+          },
+        },
+        {
+          nested: {
+            path: 'contact',
+            query: {
+              terms: {
+                'contact.phone': phoneCandidates,
+              },
+            },
+          },
+        }
+      );
+    }
+
+    const phoneDigits = searchTerm.replaceAll(/\D/g, '');
+    if (phoneDigits.length >= 3) {
+      shouldClauses.push(
+        {
+          wildcard: {
+            phone: {
+              value: `*${phoneDigits}*`,
+              case_insensitive: true,
+            },
+          },
+        },
+        {
+          nested: {
+            path: 'contact',
+            query: {
+              wildcard: {
+                'contact.phone': {
+                  value: `*${phoneDigits}*`,
+                  case_insensitive: true,
+                },
+              },
+            },
+          },
+        }
+      );
     }
 
     const queryElastic: any = {

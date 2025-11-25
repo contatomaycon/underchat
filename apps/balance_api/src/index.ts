@@ -13,6 +13,7 @@ import elasticLogsPlugin from '@core/plugins/elasticLogs';
 import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 import centrifugoPlugin from '@core/plugins/centrifugo';
+import redisPlugin from '@core/plugins/redis';
 import consumerPlugin from './consumer';
 import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
@@ -35,6 +36,7 @@ server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
   module: ERouteModule.balancer,
 });
 server.register(safePlugin(dbConnector, 'database'));
+server.register(safePlugin(redisPlugin, 'redis'));
 server.register(safePlugin(authenticateKeyApi, 'authenticateKeyApi'));
 server.register(safePlugin(i18nextPlugin, 'i18next'));
 server.register(safePlugin(corsPlugin, 'cors'));

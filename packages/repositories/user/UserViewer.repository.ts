@@ -108,11 +108,15 @@ export class UserViewerRepository {
     }
 
     const cityName = result.uua?.uzc?.city ?? null;
-    const stateName = result.uua?.uzs
-      ? result.uua.uzs.abbreviation
-        ? `${result.uua.uzs.state} (${result.uua.uzs.abbreviation})`
-        : result.uua.uzs.state
-      : null;
+    let stateName: string | null = null;
+    if (result.uua?.uzs) {
+      if (result.uua.uzs.abbreviation) {
+        stateName = `${result.uua.uzs.state} (${result.uua.uzs.abbreviation})`;
+      }
+      if (!result.uua.uzs.abbreviation) {
+        stateName = result.uua.uzs.state;
+      }
+    }
 
     const userById: ViewUserResponse = {
       user_id: result.user_id,

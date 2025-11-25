@@ -538,10 +538,10 @@ const formatWhatsAppText = (text: string): string => {
 
   let formatted = escapeHtml(text);
 
-  formatted = formatted.replace(/`([^`]+?)`/g, '<code>$1</code>');
-  formatted = formatted.replace(/~([^~]+?)~/g, '<s>$1</s>');
-  formatted = formatted.replace(/(?<!_)_([^_\n]+?)_(?!_)/g, '<em>$1</em>');
-  formatted = formatted.replace(
+  formatted = formatted.replaceAll(/`([^`]+?)`/g, '<code>$1</code>');
+  formatted = formatted.replaceAll(/~([^~]+?)~/g, '<s>$1</s>');
+  formatted = formatted.replaceAll(/(?<!_)_([^_\n]+?)_(?!_)/g, '<em>$1</em>');
+  formatted = formatted.replaceAll(
     /(?<!\*)\*([^*\n]+?)\*(?!\*)/g,
     '<strong>$1</strong>'
   );

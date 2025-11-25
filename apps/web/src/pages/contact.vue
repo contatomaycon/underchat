@@ -544,7 +544,7 @@ watch(
             <img
               v-if="photoViewerSrc"
               :src="photoViewerSrc"
-              alt="Contact photo"
+              alt="Contact"
               class="viewer-img"
               loading="eager"
               decoding="async"

@@ -10,7 +10,6 @@ import { EWorkerProfileStatusType } from '@core/common/enums/EWorkerProfileStatu
 import { can } from '@layouts/plugins/casl';
 import { ListContactGroupAllResponse } from '@core/schema/contactGroup/listContactGroupAll/response.schema';
 import { ListContactResponse } from '@core/schema/contact/listContact/response.schema';
-import { WorkerConfig } from '@core/schema/worker/updateWorkerConfig/response.schema';
 import { ViewWorkerConfigResponse } from '@core/schema/worker/viewWorkerConfig/response.schema';
 
 const channelStore = useChannelsStore();
@@ -514,10 +513,7 @@ const deleteTransferProtocolText = async () => {
 
   try {
     isSavingTransferProtocol.value = true;
-    const result = await channelStore.updateTransferProtocolText(
-      channelId.value,
-      null
-    );
+    await channelStore.updateTransferProtocolText(channelId.value, null);
 
     workerConfigForm.generate_protocol_at_transfer = false;
     transferProtocolText.value = '';
@@ -567,10 +563,7 @@ const deleteStartProtocolText = async () => {
 
   try {
     isSavingStartProtocol.value = true;
-    const result = await channelStore.updateStartProtocolText(
-      channelId.value,
-      null
-    );
+    await channelStore.updateStartProtocolText(channelId.value, null);
 
     workerConfigForm.generate_protocol_at_start = false;
     startProtocolText.value = '';
@@ -618,10 +611,7 @@ const deleteUraProtocolText = async () => {
 
   try {
     isSavingUraProtocol.value = true;
-    const result = await channelStore.updateUraProtocolText(
-      channelId.value,
-      null
-    );
+    await channelStore.updateUraProtocolText(channelId.value, null);
 
     workerConfigForm.generate_protocol_at_ura = false;
     uraProtocolText.value = '';
@@ -1653,10 +1643,11 @@ const saveProfilePhoto = async () => {
       profilePhotoFile.value = null;
     }
   } catch (error) {
-    channelStore.showSnackbar(
-      t('profile_photo_upload_error') || 'Erro ao fazer upload da foto',
-      EColor.error
-    );
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : t('profile_photo_upload_error') || 'Erro ao fazer upload da foto';
+    channelStore.showSnackbar(errorMessage, EColor.error);
   } finally {
     isUploadingProfilePhoto.value = false;
   }
@@ -1683,7 +1674,9 @@ const saveProfileInfo = async () => {
       cropDialog.value.croppedImage = '';
     }
   } catch (error) {
-    channelStore.showSnackbar(t('profile_info_upload_error'), EColor.error);
+    const errorMessage =
+      error instanceof Error ? error.message : t('profile_info_upload_error');
+    channelStore.showSnackbar(errorMessage, EColor.error);
   } finally {
     isSavingProfileInfo.value = false;
   }
@@ -1711,10 +1704,11 @@ const removeProfilePhoto = async () => {
       cropDialog.value.croppedImage = '';
     }
   } catch (error) {
-    channelStore.showSnackbar(
-      t('profile_photo_remove_error') || 'Erro ao remover a foto do perfil',
-      EColor.error
-    );
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : t('profile_photo_remove_error') || 'Erro ao remover a foto do perfil';
+    channelStore.showSnackbar(errorMessage, EColor.error);
   } finally {
     isRemovingProfilePhoto.value = false;
   }

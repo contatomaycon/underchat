@@ -530,7 +530,7 @@ const resetForm = () => {
 };
 
 const createFileInput = (): HTMLInputElement => {
-  const input = window.document.createElement('input');
+  const input = globalThis.document.createElement('input');
   input.type = 'file';
   input.accept = 'image/*';
   return input;
@@ -658,10 +658,10 @@ const getEventCoordinates = (
 };
 
 const addCropEventListeners = () => {
-  window.document.addEventListener('mousemove', onCropDrag);
-  window.document.addEventListener('touchmove', onCropDrag);
-  window.document.addEventListener('mouseup', endCropDrag);
-  window.document.addEventListener('touchend', endCropDrag);
+  globalThis.document.addEventListener('mousemove', onCropDrag);
+  globalThis.document.addEventListener('touchmove', onCropDrag);
+  globalThis.document.addEventListener('mouseup', endCropDrag);
+  globalThis.document.addEventListener('touchend', endCropDrag);
 };
 
 const startCropDrag = (e: MouseEvent | TouchEvent) => {
@@ -681,10 +681,10 @@ const startCropDrag = (e: MouseEvent | TouchEvent) => {
 };
 
 const addCropResizeEventListeners = () => {
-  window.document.addEventListener('mousemove', onCropResize);
-  window.document.addEventListener('touchmove', onCropResize);
-  window.document.addEventListener('mouseup', endCropResize);
-  window.document.addEventListener('touchend', endCropResize);
+  globalThis.document.addEventListener('mousemove', onCropResize);
+  globalThis.document.addEventListener('touchmove', onCropResize);
+  globalThis.document.addEventListener('mouseup', endCropResize);
+  globalThis.document.addEventListener('touchend', endCropResize);
 };
 
 const startCropResize = (
@@ -996,10 +996,10 @@ const onCropResize = (e: MouseEvent | TouchEvent) => {
 };
 
 const removeCropEventListeners = () => {
-  window.document.removeEventListener('mousemove', onCropDrag);
-  window.document.removeEventListener('touchmove', onCropDrag);
-  window.document.removeEventListener('mouseup', endCropDrag);
-  window.document.removeEventListener('touchend', endCropDrag);
+  globalThis.document.removeEventListener('mousemove', onCropDrag);
+  globalThis.document.removeEventListener('touchmove', onCropDrag);
+  globalThis.document.removeEventListener('mouseup', endCropDrag);
+  globalThis.document.removeEventListener('touchend', endCropDrag);
 };
 
 const endCropDrag = () => {
@@ -1008,10 +1008,10 @@ const endCropDrag = () => {
 };
 
 const removeCropResizeEventListeners = () => {
-  window.document.removeEventListener('mousemove', onCropResize);
-  window.document.removeEventListener('touchmove', onCropResize);
-  window.document.removeEventListener('mouseup', endCropResize);
-  window.document.removeEventListener('touchend', endCropResize);
+  globalThis.document.removeEventListener('mousemove', onCropResize);
+  globalThis.document.removeEventListener('touchmove', onCropResize);
+  globalThis.document.removeEventListener('mouseup', endCropResize);
+  globalThis.document.removeEventListener('touchend', endCropResize);
 };
 
 const endCropResize = () => {

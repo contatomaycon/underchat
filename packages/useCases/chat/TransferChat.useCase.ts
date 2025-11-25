@@ -31,6 +31,129 @@ export class TransferChatUseCase {
     private readonly workerService: WorkerService
   ) {}
 
+  private async loadUserAndSector(
+    body: TransferChatBody,
+    accountId: string,
+    isAdministrator: boolean
+  ): Promise<{
+    userData: Awaited<ReturnType<UserService['viewUserNamePhoto']>> | null;
+    sectorData: Awaited<ReturnType<SectorService['viewSectorById']>> | null;
+  }> {
+    const userPromise = body.user_id
+      ? this.userService.viewUserNamePhoto(body.user_id)
+      : Promise.resolve(null);
+    const sectorPromise = body.sector_id
+      ? this.sectorService.viewSectorById(
+          body.sector_id,
+          accountId,
+          isAdministrator
+        )
+      : Promise.resolve(null);
+
+    const [userData, sectorData] = await Promise.all([
+      userPromise,
+      sectorPromise,
+    ]);
+
+    return { userData, sectorData };
+  }
+
+  private validateUserAndSector(
+    t: TFunction<'translation', undefined>,
+    body: TransferChatBody,
+    user: IChat['user'] | null | undefined,
+    sector: IChat['sector'] | null | undefined
+  ): void {
+    if (user === undefined && sector === undefined) {
+      throw new Error(t('transfer_requires_user_or_sector'));
+    }
+
+    if (body.user_id && user === undefined) {
+      throw new Error(t('user_not_found'));
+    }
+
+    if (body.sector_id && sector === undefined) {
+      throw new Error(t('sector_not_found'));
+    }
+  }
+
+  private buildUserFromData(
+    body: TransferChatBody,
+    userData: Awaited<ReturnType<UserService['viewUserNamePhoto']>> | null
+  ): IChat['user'] | null | undefined {
+    if (!body.user_id) return undefined;
+
+    if (!userData) return undefined;
+
+    return {
+      id: userData.id,
+      name: userData.name,
+      photo: userData.photo,
+    };
+  }
+
+  private buildSectorFromData(
+    body: TransferChatBody,
+    sectorData: Awaited<ReturnType<SectorService['viewSectorById']>> | null
+  ): IChat['sector'] | null | undefined {
+    if (!body.sector_id) return undefined;
+
+    if (!sectorData) return undefined;
+
+    return {
+      id: sectorData.sector_id,
+      name: sectorData.name,
+    };
+  }
+
+  private async sendAnnotationMessage(
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    chatId: string,
+    annotation: string
+  ): Promise<void> {
+    const messageBody: CreateMessageChatsBody = {
+      type: EMessageType.annotation,
+      message: annotation.trim(),
+    };
+
+    await this.chatMessageCreatorUseCase.execute(
+      t,
+      accountId,
+      {
+        chat_id: chatId,
+      },
+      messageBody
+    );
+  }
+
+  private async sendProtocolMessage(
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    chatId: string,
+    protocolText: string
+  ): Promise<void> {
+    const protocol = generateProtocol();
+    const message = protocolText.replaceAll(
+      /\{\{\s*protocolo\s*\}\}/gi,
+      protocol
+    );
+
+    const protocolMessageBody: CreateMessageChatsBody = {
+      type: EMessageType.system,
+      message,
+    };
+
+    await this.chatMessageCreatorUseCase.execute(
+      t,
+      accountId,
+      {
+        chat_id: chatId,
+      },
+      protocolMessageBody
+    );
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -47,70 +170,29 @@ export class TransferChatUseCase {
       throw new Error(t('chat_not_found'));
     }
 
-    let user: IChat['user'] | null | undefined = undefined;
-    let sector: IChat['sector'] | null | undefined = undefined;
+    const { userData, sectorData } = await this.loadUserAndSector(
+      body,
+      accountId,
+      isAdministrator
+    );
 
-    const userPromise = body.user_id
-      ? this.userService.viewUserNamePhoto(body.user_id)
-      : Promise.resolve(null);
-    const sectorPromise = body.sector_id
-      ? this.sectorService.viewSectorById(
-          body.sector_id,
-          accountId,
-          isAdministrator
-        )
-      : Promise.resolve(null);
+    const workerConfigFields =
+      await this.workerService.viewWorkerConfigFieldsByWorkerId(chat.worker.id);
 
-    const [userData, sectorData, workerConfigFields] = await Promise.all([
-      userPromise,
-      sectorPromise,
-      this.workerService.viewWorkerConfigFieldsByWorkerId(chat.worker.id),
-    ]);
+    let user = this.buildUserFromData(body, userData);
+    let sector = this.buildSectorFromData(body, sectorData);
 
-    if (body.user_id) {
-      if (!userData) {
-        throw new Error(t('user_not_found'));
-      }
-
-      user = {
-        id: userData.id,
-        name: userData.name,
-        photo: userData.photo,
-      };
+    if (body.sector_id && !body.user_id) {
+      user = null;
     }
 
-    if (body.sector_id) {
-      if (!sectorData) {
-        throw new Error(t('sector_not_found'));
-      }
-
-      sector = {
-        id: sectorData.sector_id,
-        name: sectorData.name,
-      };
-
-      if (!body.user_id) {
-        user = null;
-      }
-    }
-
-    if (user === undefined && sector === undefined) {
-      throw new Error(t('transfer_requires_user_or_sector'));
-    }
-
-    if (body.user_id && user === undefined) {
-      throw new Error(t('user_not_found'));
-    }
-
-    if (body.sector_id && sector === undefined) {
-      throw new Error(t('sector_not_found'));
-    }
+    this.validateUserAndSector(t, body, user, sector);
 
     const updatedChat: IChat = {
       ...chat,
       status: EChatStatus.queue,
-      user: user !== undefined ? user : chat.user,
-      sector: sector !== undefined ? sector : chat.sector,
+      user: user ?? chat.user,
+      sector: sector ?? chat.sector,
     };
 
     const saved = await this.chatService.saveChat(updatedChat);
@@ -132,43 +214,21 @@ export class TransferChatUseCase {
       ),
     ]);
 
-    if (body.annotation && body.annotation.trim()) {
-      const messageBody: CreateMessageChatsBody = {
-        type: EMessageType.annotation,
-        message: body.annotation.trim(),
-      };
-
-      await this.chatMessageCreatorUseCase.execute(
+    if (body.annotation?.trim()) {
+      await this.sendAnnotationMessage(
         t,
         accountId,
-        {
-          chat_id: params.chat_id,
-        },
-        messageBody
+        params.chat_id,
+        body.annotation
       );
     }
 
     if (workerConfigFields?.generate_protocol_at_transfer) {
-      const protocol = generateProtocol();
-      const protocolText = workerConfigFields.generate_protocol_at_transfer;
-
-      const message = protocolText.replace(
-        /\{\{\s*protocolo\s*\}\}/gi,
-        protocol
-      );
-
-      const protocolMessageBody: CreateMessageChatsBody = {
-        type: EMessageType.system,
-        message,
-      };
-
-      await this.chatMessageCreatorUseCase.execute(
+      await this.sendProtocolMessage(
         t,
         accountId,
-        {
-          chat_id: params.chat_id,
-        },
-        protocolMessageBody
+        params.chat_id,
+        workerConfigFields.generate_protocol_at_transfer
       );
     }
 
