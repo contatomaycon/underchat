@@ -56,22 +56,29 @@ export class UserTransactionCreatorRepository {
   createUser = async (
     t: TFunction<'translation', undefined>,
     accountId: string,
-    input: CreateUserRequest
+    input: CreateUserRequest,
+    photoUrl?: string | null
   ): Promise<boolean> => {
     await this.db.transaction(async (tx) => {
+      if (!input.email?.value || !input.password?.value) {
+        throw new Error(t('email_required'));
+      }
+
       const emailCEncrypted = this.passwordEncryptorService.encrypt(
-        input.email
+        input.email.value
       );
 
       const emailPartialEncrypted = this.encryptService.sanitize(
-        input.email,
+        input.email.value,
         ETypeSanetize.email
       );
-      const emailC = this.encryptService.encrypt(input.email);
-      const passwordEncrypted = this.encryptService.encrypt(input.password);
+      const emailC = this.encryptService.encrypt(input.email.value);
+      const passwordEncrypted = this.encryptService.encrypt(
+        input.password.value
+      );
 
-      const phoneC = input.user_info?.phone
-        ? this.encryptService.encrypt(input.user_info.phone)
+      const phoneC = input.phone.value
+        ? this.encryptService.encrypt(input.phone.value)
         : null;
 
       const [emailExists, phoneExists] = await Promise.all([
@@ -107,56 +114,52 @@ export class UserTransactionCreatorRepository {
       }
 
       const addressEncrypted = this.passwordEncryptorService.encrypt(
-        input.user_address?.address1
+        input.address1.value
       );
       const addressPartialEncrypted = this.encryptService.sanitize(
-        input.user_address?.address1,
+        input.address1.value,
         ETypeSanetize.other
       );
-      const address1C = this.encryptService.encrypt(
-        input.user_address?.address1
-      );
+      const address1C = this.encryptService.encrypt(input.address1.value);
 
-      const address2Encrypted = input.user_address?.address2
-        ? this.passwordEncryptorService.encrypt(input.user_address?.address2)
+      const address2Encrypted = input.address2?.value
+        ? this.passwordEncryptorService.encrypt(input.address2.value)
         : null;
-      const address2PartialEncrypted = input.user_address?.address2
+      const address2PartialEncrypted = input.address2?.value
         ? this.encryptService.sanitize(
-            input.user_address?.address2,
+            input.address2.value,
             ETypeSanetize.other
           )
         : null;
-      const address2C = input.user_address?.address2
-        ? this.encryptService.encrypt(input.user_address?.address2)
+      const address2C = input.address2?.value
+        ? this.encryptService.encrypt(input.address2.value)
         : null;
 
       const createUserAddress: ICreateUserAddress = {
-        country_id: input.user_address?.country_id,
-        zip_code: input.user_address?.zip_code,
+        country_id: input.country_id.value,
+        zip_code: input.zip_code.value,
         address1: addressEncrypted,
         address1_partial: addressPartialEncrypted,
         address1_c: address1C,
         address2: address2Encrypted,
         address2_partial: address2PartialEncrypted,
         address2_c: address2C,
-        city: input.user_address?.city,
-        state: input.user_address?.state,
-        district: input.user_address?.district,
+        city: input.city.value,
+        state: input.state.value,
+        district: input.district.value,
       };
 
       const documentEncrypted = this.passwordEncryptorService.encrypt(
-        input.user_document?.document
+        input.document.value
       );
       const documentPartialEncrypted = this.encryptService.sanitize(
-        input.user_document?.document,
+        input.document.value,
         ETypeSanetize.document
       );
-      const documentC = this.encryptService.encrypt(
-        input.user_document?.document
-      );
+      const documentC = this.encryptService.encrypt(input.document.value);
 
       const createUserDocument: ICreateUserDocument = {
-        user_document_type_id: input.user_document?.user_document_type_id,
+        user_document_type_id: input.document_type_id.value,
         document: documentEncrypted,
         document_partial: documentPartialEncrypted,
         document_c: documentC,
@@ -167,25 +170,26 @@ export class UserTransactionCreatorRepository {
       }
 
       const phoneEncrypted = this.passwordEncryptorService.encrypt(
-        input.user_info.phone
+        input.phone.value
       );
 
       const phonePartialEncrypted = this.encryptService.sanitize(
-        input.user_info.phone,
+        input.phone.value,
         ETypeSanetize.phone
       );
 
-      const birthDate = input.user_info?.birth_date
-        ? this.validateBirthDate(t, input.user_info.birth_date)
+      const birthDate = input.birth_date?.value
+        ? this.validateBirthDate(t, input.birth_date.value)
         : null;
 
       const createUserInfo: ICreateUserInfo = {
-        phone_ddi: input.user_info.phone_ddi,
+        phone_ddi: input.phone_ddi.value,
         phone: phoneEncrypted,
         phone_partial: phonePartialEncrypted,
         phone_c: phoneC,
-        name: input.user_info.name,
-        last_name: input.user_info.last_name,
+        photo: photoUrl ?? null,
+        name: input.name.value,
+        last_name: input.last_name.value,
         birth_date: birthDate ?? null,
       };
 

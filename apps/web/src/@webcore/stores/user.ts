@@ -5,7 +5,7 @@ import { EColor } from '@core/common/enums/EColor';
 import { ISnackbar } from '@core/common/interfaces/ISnackbar';
 import { PagingResponseSchema } from '@core/schema/common/pagingResponseSchema';
 import axios from '@webcore/axios';
-import { AxiosError } from 'axios';
+import { AxiosError, AxiosRequestConfig } from 'axios';
 import {
   ListUserFinalResponse,
   ListUserResponse,
@@ -174,13 +174,105 @@ export const useUsersStore = defineStore('users', {
       }
     },
 
-    async addUser(payload: CreateUserRequest): Promise<boolean> {
+    extractFieldValue(
+      field: string | { value: string | null } | null | undefined
+    ): string | null {
+      if (field === null || field === undefined) {
+        return null;
+      }
+
+      if (typeof field === 'object' && 'value' in field) {
+        return field.value ?? null;
+      }
+
+      if (typeof field === 'string') {
+        return field;
+      }
+
+      return null;
+    },
+
+    async addUser(
+      payload: {
+        email: string;
+        password: string;
+        account_id?: string | undefined;
+        user_info: {
+          phone_ddi: string;
+          phone: string;
+          name: string;
+          last_name: string;
+          birth_date: string | null;
+        };
+        user_document: {
+          user_document_type_id: string;
+          document: string;
+        };
+        user_address: {
+          country_id: number;
+          zip_code: string;
+          address1: string;
+          address2: string | null;
+          city: string;
+          state: string;
+          district: string;
+        };
+      },
+      photoFile?: File | null
+    ): Promise<boolean> {
       try {
         this.loading = true;
 
+        const formData = new FormData();
+
+        formData.append('email', payload.email);
+        formData.append('password', payload.password);
+
+        if (payload.account_id) {
+          formData.append('account_id', payload.account_id);
+        }
+
+        formData.append('phone_ddi', payload.user_info.phone_ddi);
+        formData.append('phone', payload.user_info.phone);
+        formData.append('name', payload.user_info.name);
+        formData.append('last_name', payload.user_info.last_name);
+        if (payload.user_info.birth_date) {
+          formData.append('birth_date', payload.user_info.birth_date);
+        }
+
+        formData.append(
+          'document_type_id',
+          payload.user_document.user_document_type_id
+        );
+        formData.append('document', payload.user_document.document);
+
+        formData.append(
+          'country_id',
+          payload.user_address.country_id.toString()
+        );
+        formData.append('zip_code', payload.user_address.zip_code);
+        formData.append('address1', payload.user_address.address1);
+        if (payload.user_address.address2) {
+          formData.append('address2', payload.user_address.address2);
+        }
+        formData.append('city', payload.user_address.city);
+        formData.append('state', payload.user_address.state);
+        formData.append('district', payload.user_address.district);
+
+        if (photoFile instanceof File) {
+          formData.append('photo', photoFile);
+        }
+
+        const config: AxiosRequestConfig<FormData> = {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        };
+
         const response = await axios.post<IApiResponse<boolean>>(
           `/user`,
-          payload
+          formData,
+          config
         );
 
         this.loading = false;

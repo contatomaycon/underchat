@@ -36,6 +36,7 @@ export class UserInfoCreatorRepository {
         phone: input.phone,
         phone_partial: input.phone_partial,
         phone_c: input.phone_c,
+        photo: input.photo,
         name: input.name,
         last_name: input.last_name,
         birth_date: input.birth_date,

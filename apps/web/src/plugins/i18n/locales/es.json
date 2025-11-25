@@ -175,6 +175,7 @@
     "wait_image_load": "Espere a que la imagen se cargue completamente",
     "crop_image": "Recortar Imagen",
     "apply_crop": "Aplicar Recorte",
+    "add_photo": "Agregar Foto",
     "change_photo": "Cambiar Foto",
     "remove_photo": "Eliminar Foto",
     "remove_photo_confirmation": "¿Estás seguro de que deseas eliminar la foto de este contacto?",

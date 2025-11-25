@@ -150,12 +150,14 @@ export class UserService {
   createUser = async (
     t: TFunction<'translation', undefined>,
     accountId: string,
-    input: CreateUserRequest
+    input: CreateUserRequest,
+    photoUrl?: string | null
   ): Promise<boolean> => {
     return this.userTransactionCreatorRepository.createUser(
       t,
       accountId,
-      input
+      input,
+      photoUrl
     );
   };
 
