@@ -1097,19 +1097,28 @@ onMounted(async () => {
                     </VCardText>
                     <VDivider />
                     <VList max-height="300" style="overflow-y: auto">
-                      <VListItem
-                        v-for="(item, index) in filteredCountryCodes"
-                        :key="index"
-                        :value="item.value"
-                        @click="
-                          () => {
-                            phone_ddi = item.value;
-                            isCountryMenuOpen = false;
-                          }
-                        "
-                        :active="phone_ddi === item.value"
-                      >
-                        <VListItemTitle>{{ item.title }}</VListItemTitle>
+                      <template v-if="filteredCountryCodes.length > 0">
+                        <VListItem
+                          v-for="(item, index) in filteredCountryCodes"
+                          :key="index"
+                          :value="item.value"
+                          @click="
+                            () => {
+                              phone_ddi = item.value;
+                              isCountryMenuOpen = false;
+                            }
+                          "
+                          :active="phone_ddi === item.value"
+                        >
+                          <VListItemTitle>{{ item.title }}</VListItemTitle>
+                        </VListItem>
+                      </template>
+                      <VListItem v-else-if="countrySearchQuery" disabled>
+                        <VListItemTitle
+                          class="text-center text-body-2 text-medium-emphasis"
+                        >
+                          {{ $t('no_results_found') }}
+                        </VListItemTitle>
                       </VListItem>
                     </VList>
                   </VCard>

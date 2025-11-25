@@ -165,6 +165,7 @@ export class UserListerRepository {
             name: true,
             last_name: true,
             birth_date: true,
+            photo: true,
           },
         },
         uud: {
@@ -249,6 +250,7 @@ export class UserListerRepository {
             name: user.uui.name,
             last_name: user.uui.last_name,
             birth_date: user.uui.birth_date,
+            photo: user.uui.photo,
           }
         : null,
       user_document: user.uud

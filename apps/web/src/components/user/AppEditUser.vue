@@ -2361,19 +2361,30 @@ watch(
                           </VCardText>
                           <VDivider />
                           <VList max-height="300" style="overflow-y: auto">
-                            <VListItem
-                              v-for="(item, index) in filteredCountryCodes"
-                              :key="index"
-                              :value="item.value"
-                              @click="
-                                () => {
-                                  phone_ddi = item.value;
-                                  isCountryMenuOpen = false;
-                                }
-                              "
-                              :active="phone_ddi === item.value"
-                            >
-                              <VListItemTitle>{{ item.title }}</VListItemTitle>
+                            <template v-if="filteredCountryCodes.length > 0">
+                              <VListItem
+                                v-for="(item, index) in filteredCountryCodes"
+                                :key="index"
+                                :value="item.value"
+                                @click="
+                                  () => {
+                                    phone_ddi = item.value;
+                                    isCountryMenuOpen = false;
+                                  }
+                                "
+                                :active="phone_ddi === item.value"
+                              >
+                                <VListItemTitle>{{
+                                  item.title
+                                }}</VListItemTitle>
+                              </VListItem>
+                            </template>
+                            <VListItem v-else-if="countrySearchQuery" disabled>
+                              <VListItemTitle
+                                class="text-center text-body-2 text-medium-emphasis"
+                              >
+                                {{ $t('no_results_found') }}
+                              </VListItemTitle>
                             </VListItem>
                           </VList>
                         </VCard>
@@ -2556,20 +2567,31 @@ watch(
                           </VCardText>
                           <VDivider />
                           <VList max-height="300" style="overflow-y: auto">
-                            <VListItem
-                              v-for="(item, index) in filteredStates"
-                              :key="index"
-                              :value="item.value"
-                              @click="
-                                () => {
-                                  onStateChange(item.value);
-                                  state = item.title;
-                                  isStateMenuOpen = false;
-                                }
-                              "
-                              :active="state_id === item.value"
-                            >
-                              <VListItemTitle>{{ item.title }}</VListItemTitle>
+                            <template v-if="filteredStates.length > 0">
+                              <VListItem
+                                v-for="(item, index) in filteredStates"
+                                :key="index"
+                                :value="item.value"
+                                @click="
+                                  () => {
+                                    onStateChange(item.value);
+                                    state = item.title;
+                                    isStateMenuOpen = false;
+                                  }
+                                "
+                                :active="state_id === item.value"
+                              >
+                                <VListItemTitle>{{
+                                  item.title
+                                }}</VListItemTitle>
+                              </VListItem>
+                            </template>
+                            <VListItem v-else-if="stateSearchQuery" disabled>
+                              <VListItemTitle
+                                class="text-center text-body-2 text-medium-emphasis"
+                              >
+                                {{ $t('no_results_found') }}
+                              </VListItemTitle>
                             </VListItem>
                           </VList>
                         </VCard>
@@ -2610,20 +2632,31 @@ watch(
                           </VCardText>
                           <VDivider />
                           <VList max-height="300" style="overflow-y: auto">
-                            <VListItem
-                              v-for="(item, index) in filteredCities"
-                              :key="index"
-                              :value="item.value"
-                              @click="
-                                () => {
-                                  city_id = item.value;
-                                  city = item.title;
-                                  isCityMenuOpen = false;
-                                }
-                              "
-                              :active="city_id === item.value"
-                            >
-                              <VListItemTitle>{{ item.title }}</VListItemTitle>
+                            <template v-if="filteredCities.length > 0">
+                              <VListItem
+                                v-for="(item, index) in filteredCities"
+                                :key="index"
+                                :value="item.value"
+                                @click="
+                                  () => {
+                                    city_id = item.value;
+                                    city = item.title;
+                                    isCityMenuOpen = false;
+                                  }
+                                "
+                                :active="city_id === item.value"
+                              >
+                                <VListItemTitle>{{
+                                  item.title
+                                }}</VListItemTitle>
+                              </VListItem>
+                            </template>
+                            <VListItem v-else-if="citySearchQuery" disabled>
+                              <VListItemTitle
+                                class="text-center text-body-2 text-medium-emphasis"
+                              >
+                                {{ $t('no_results_found') }}
+                              </VListItemTitle>
                             </VListItem>
                           </VList>
                         </VCard>

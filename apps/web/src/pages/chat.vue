@@ -5486,29 +5486,28 @@ onBeforeUnmount(() => {
                   </VCardText>
                   <VDivider />
                   <VList max-height="300" style="overflow-y: auto">
-                    <VListItem
-                      v-if="filteredTransferUsers.length === 0"
-                      disabled
-                    >
+                    <template v-if="filteredTransferUsers.length > 0">
+                      <VListItem
+                        v-for="(item, index) in filteredTransferUsers"
+                        :key="index"
+                        :value="item.value"
+                        @click="
+                          () => {
+                            selectedTransferUser = item.value;
+                            isTransferUserMenuOpen = false;
+                          }
+                        "
+                        :active="selectedTransferUser === item.value"
+                      >
+                        <VListItemTitle>{{ item.title }}</VListItemTitle>
+                      </VListItem>
+                    </template>
+                    <VListItem v-else-if="transferUserSearch" disabled>
                       <VListItemTitle
                         class="text-center text-body-2 text-medium-emphasis"
                       >
                         {{ $t('no_results_found') }}
                       </VListItemTitle>
-                    </VListItem>
-                    <VListItem
-                      v-for="(item, index) in filteredTransferUsers"
-                      :key="index"
-                      :value="item.value"
-                      @click="
-                        () => {
-                          selectedTransferUser = item.value;
-                          isTransferUserMenuOpen = false;
-                        }
-                      "
-                      :active="selectedTransferUser === item.value"
-                    >
-                      <VListItemTitle>{{ item.title }}</VListItemTitle>
                     </VListItem>
                   </VList>
                 </VCard>
@@ -5550,29 +5549,28 @@ onBeforeUnmount(() => {
                     </VCardText>
                     <VDivider />
                     <VList max-height="300" style="overflow-y: auto">
-                      <VListItem
-                        v-if="filteredTransferSectors.length === 0"
-                        disabled
-                      >
+                      <template v-if="filteredTransferSectors.length > 0">
+                        <VListItem
+                          v-for="(item, index) in filteredTransferSectors"
+                          :key="index"
+                          :value="item.value"
+                          @click="
+                            () => {
+                              selectedTransferSector = item.value;
+                              isTransferSectorMenuOpen = false;
+                            }
+                          "
+                          :active="selectedTransferSector === item.value"
+                        >
+                          <VListItemTitle>{{ item.title }}</VListItemTitle>
+                        </VListItem>
+                      </template>
+                      <VListItem v-else-if="transferSectorSearch" disabled>
                         <VListItemTitle
                           class="text-center text-body-2 text-medium-emphasis"
                         >
                           {{ $t('no_results_found') }}
                         </VListItemTitle>
-                      </VListItem>
-                      <VListItem
-                        v-for="(item, index) in filteredTransferSectors"
-                        :key="index"
-                        :value="item.value"
-                        @click="
-                          () => {
-                            selectedTransferSector = item.value;
-                            isTransferSectorMenuOpen = false;
-                          }
-                        "
-                        :active="selectedTransferSector === item.value"
-                      >
-                        <VListItemTitle>{{ item.title }}</VListItemTitle>
                       </VListItem>
                     </VList>
                   </VCard>
@@ -5615,16 +5613,7 @@ onBeforeUnmount(() => {
                     </VCardText>
                     <VDivider />
                     <VList max-height="300" style="overflow-y: auto">
-                      <template v-if="filteredTransferSectorUsers.length === 0">
-                        <VListItem disabled>
-                          <VListItemTitle
-                            class="text-center text-body-2 text-medium-emphasis"
-                          >
-                            {{ $t('no_results_found') }}
-                          </VListItemTitle>
-                        </VListItem>
-                      </template>
-                      <template v-else>
+                      <template v-if="filteredTransferSectorUsers.length > 0">
                         <VListItem
                           v-for="(item, index) in filteredTransferSectorUsers"
                           :key="`sector-user-${item.value}-${index}`"
@@ -5640,6 +5629,13 @@ onBeforeUnmount(() => {
                           <VListItemTitle>{{ item.title }}</VListItemTitle>
                         </VListItem>
                       </template>
+                      <VListItem v-else-if="transferSectorUserSearch" disabled>
+                        <VListItemTitle
+                          class="text-center text-body-2 text-medium-emphasis"
+                        >
+                          {{ $t('no_results_found') }}
+                        </VListItemTitle>
+                      </VListItem>
                     </VList>
                   </VCard>
                 </VMenu>

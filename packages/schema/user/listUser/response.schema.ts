@@ -18,6 +18,7 @@ const userInfoSchema = Type.Object({
   name: Type.Union([Type.String(), Type.Null()]),
   last_name: Type.Union([Type.String(), Type.Null()]),
   birth_date: Type.Union([Type.String(), Type.Null()]),
+  photo: Type.Union([Type.String(), Type.Null()]),
 });
 
 const documentTypeSchema = Type.Object({
