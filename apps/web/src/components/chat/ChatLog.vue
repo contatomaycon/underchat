@@ -518,6 +518,37 @@ const getLatestMessageText = (message: ListMessageResult): string => {
   return message.content.message || '';
 };
 
+const shouldFormatMessage = (message: ListMessageResult): boolean => {
+  const messageType = message.content?.type;
+  return (
+    messageType === EMessageType.text ||
+    messageType === EMessageType.system ||
+    messageType === EMessageType.annotation
+  );
+};
+
+const formatWhatsAppText = (text: string): string => {
+  if (!text) return '';
+
+  const escapeHtml = (str: string) => {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  };
+
+  let formatted = escapeHtml(text);
+
+  formatted = formatted.replace(/`([^`]+?)`/g, '<code>$1</code>');
+  formatted = formatted.replace(/~([^~]+?)~/g, '<s>$1</s>');
+  formatted = formatted.replace(/(?<!_)_([^_\n]+?)_(?!_)/g, '<em>$1</em>');
+  formatted = formatted.replace(
+    /(?<!\*)\*([^*\n]+?)\*(?!\*)/g,
+    '<strong>$1</strong>'
+  );
+
+  return formatted;
+};
+
 const getMessageEditHistory = (
   message: ListMessageResult
 ): Array<{
@@ -2191,7 +2222,22 @@ onUnmounted(() => {
                             : 'rgb(var(--v-theme-title))',
                         }"
                       >
-                        {{ resolveQuotedText(item.message) }}
+                        <span
+                          v-if="
+                            item.message.content?.quoted?.type ===
+                              EMessageType.text ||
+                            item.message.content?.quoted?.type ===
+                              EMessageType.system ||
+                            item.message.content?.quoted?.type ===
+                              EMessageType.annotation
+                          "
+                          v-html="
+                            formatWhatsAppText(resolveQuotedText(item.message))
+                          "
+                        ></span>
+                        <span v-else>{{
+                          resolveQuotedText(item.message)
+                        }}</span>
                       </div>
                     </div>
                   </div>
@@ -2324,7 +2370,11 @@ onUnmounted(() => {
                           : 'rgb(var(--v-theme-title))',
                       }"
                     >
-                      {{ item.message.content.image.caption }}
+                      <span
+                        v-html="
+                          formatWhatsAppText(item.message.content.image.caption)
+                        "
+                      ></span>
                     </p>
                   </div>
 
@@ -2370,7 +2420,11 @@ onUnmounted(() => {
                           : 'rgb(var(--v-theme-title))',
                       }"
                     >
-                      {{ item.message.content.video.caption }}
+                      <span
+                        v-html="
+                          formatWhatsAppText(item.message.content.video.caption)
+                        "
+                      ></span>
                     </p>
                   </div>
 
@@ -2569,7 +2623,15 @@ onUnmounted(() => {
                           : 'rgb(var(--v-theme-title))',
                       }"
                     >
-                      {{ getLatestMessageText(item.message) }}
+                      <span
+                        v-if="shouldFormatMessage(item.message)"
+                        v-html="
+                          formatWhatsAppText(getLatestMessageText(item.message))
+                        "
+                      ></span>
+                      <span v-else>{{
+                        getLatestMessageText(item.message)
+                      }}</span>
                     </p>
                   </div>
 
@@ -2650,7 +2712,15 @@ onUnmounted(() => {
                           : 'rgb(var(--v-theme-title))',
                       }"
                     >
-                      {{ getLatestMessageText(item.message) }}
+                      <span
+                        v-if="shouldFormatMessage(item.message)"
+                        v-html="
+                          formatWhatsAppText(getLatestMessageText(item.message))
+                        "
+                      ></span>
+                      <span v-else>{{
+                        getLatestMessageText(item.message)
+                      }}</span>
                     </p>
                   </div>
 
@@ -2666,6 +2736,27 @@ onUnmounted(() => {
                     "
                   >
                     <p
+                      v-if="shouldFormatMessage(item.message)"
+                      class="mr-6 text-base message-text"
+                      :class="{
+                        'mb-2':
+                          !hasMessageVersions(item.message) &&
+                          !item.message.deleted,
+                        'mb-6':
+                          hasMessageVersions(item.message) ||
+                          item.message.deleted,
+                      }"
+                      :style="{
+                        color: isTypeUser(item.message)
+                          ? 'rgb(var(--v-theme-on-surface))'
+                          : 'rgb(var(--v-theme-title))',
+                      }"
+                      v-html="
+                        formatWhatsAppText(getLatestMessageText(item.message))
+                      "
+                    ></p>
+                    <p
+                      v-else
                       class="mr-6 text-base message-text"
                       :class="{
                         'mb-2':
