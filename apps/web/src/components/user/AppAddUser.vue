@@ -1,19 +1,30 @@
 <script lang="ts" setup>
-import { computed, onMounted, nextTick } from 'vue';
+import { computed, onMounted, nextTick, watch } from 'vue';
 import { useUsersStore } from '@/@webcore/stores/user';
 import { useAccountStore } from '@/@webcore/stores/account';
-import { CreateUserRequest } from '@core/schema/user/createUser/request.schema';
 import { VForm } from 'vuetify/components/VForm';
 import { EUserDocumentType } from '@core/common/enums/EUserDocumentType';
 import { ECountry } from '@core/common/enums/ECountry';
 import { ViewZipcodeRequest } from '@core/schema/zipcode/viewZipcode/request.schema';
 import { useCountryCodes } from '@/composables/useCountryCodes';
+import { useStatesAndCities } from '@/composables/useStatesAndCities';
 import { getAdministrator, getUser } from '@/@webcore/localStorage/user';
 import { EColor } from '@core/common/enums/EColor';
 
 const userStore = useUsersStore();
 const accountStore = useAccountStore();
 const { items: countryCodes } = useCountryCodes();
+const {
+  filteredStates,
+  filteredCities,
+  stateSearchQuery,
+  citySearchQuery,
+  loadStates,
+  loadCities,
+  clearCities,
+  loadingStates,
+  loadingCities,
+} = useStatesAndCities();
 const { t } = useI18n();
 
 const isAdministrator = computed(() => getAdministrator());
@@ -160,6 +171,10 @@ const address1 = ref<string | null>(null);
 const address2 = ref<string | null>(null);
 const city = ref<string | null>(null);
 const state = ref<string | null>(null);
+const state_id = ref<string | null>(null);
+const city_id = ref<string | null>(null);
+const isStateMenuOpen = ref(false);
+const isCityMenuOpen = ref(false);
 const district = ref<string | null>(null);
 
 const isPasswordVisible = ref(false);
@@ -358,12 +373,19 @@ const clearAddressFields = () => {
   address2.value = '';
   city.value = '';
   state.value = '';
+  state_id.value = null;
+  city_id.value = null;
   district.value = '';
+  clearCities();
 };
 
 const onCountryChange = async (val: number | null) => {
   country_id.value = val;
   clearAddressFields();
+
+  if (country_id.value) {
+    await loadStates(country_id.value);
+  }
 
   if (country_id.value && zip_code.value) {
     await viewZipcode();
@@ -373,6 +395,29 @@ const onCountryChange = async (val: number | null) => {
   await nextTick();
   zipInputRef.value?.focus?.();
 };
+
+const onStateChange = async (stateId: string | null) => {
+  state_id.value = stateId;
+  city_id.value = null;
+  city.value = '';
+  clearCities();
+
+  if (stateId) {
+    await loadCities(stateId);
+  }
+};
+
+watch(isStateMenuOpen, (isOpen) => {
+  if (!isOpen) {
+    stateSearchQuery.value = '';
+  }
+});
+
+watch(isCityMenuOpen, (isOpen) => {
+  if (!isOpen) {
+    citySearchQuery.value = '';
+  }
+});
 
 const resetForm = () => {
   name.value = null;
@@ -1433,22 +1478,112 @@ onMounted(resetForm);
                     />
                   </VCol>
                   <VCol cols="12" md="6">
-                    <AppTextField
-                      v-model="city"
-                      :disabled="!country_id"
-                      :label="$t('city') + ':'"
-                      :placeholder="$t('city')"
-                      :rules="[requiredValidator(city, $t('city_required'))]"
-                    />
+                    <div>
+                      <VLabel class="mb-1 text-body-2"
+                        >{{ $t('city') }}:</VLabel
+                      >
+                      <VMenu v-model="isCityMenuOpen">
+                        <template #activator="{ props: menuProps }">
+                          <VTextField
+                            v-bind="menuProps"
+                            :model-value="
+                              filteredCities.find((c) => c.value === city_id)
+                                ?.title || ''
+                            "
+                            :placeholder="$t('city')"
+                            variant="outlined"
+                            readonly
+                            :disabled="!state_id || !country_id"
+                            append-inner-icon="tabler-chevron-down"
+                          />
+                        </template>
+                        <VCard>
+                          <VCardText class="pa-2">
+                            <AppTextField
+                              v-model="citySearchQuery"
+                              :placeholder="$t('search') + '...'"
+                              prepend-inner-icon="tabler-search"
+                              density="compact"
+                              hide-details
+                              autofocus
+                              @click.stop
+                            />
+                          </VCardText>
+                          <VDivider />
+                          <VList max-height="300" style="overflow-y: auto">
+                            <VListItem
+                              v-for="(item, index) in filteredCities"
+                              :key="index"
+                              :value="item.value"
+                              @click="
+                                () => {
+                                  city_id = item.value;
+                                  city = item.title;
+                                  isCityMenuOpen = false;
+                                }
+                              "
+                              :active="city_id === item.value"
+                            >
+                              <VListItemTitle>{{ item.title }}</VListItemTitle>
+                            </VListItem>
+                          </VList>
+                        </VCard>
+                      </VMenu>
+                    </div>
                   </VCol>
                   <VCol cols="12" md="6">
-                    <AppTextField
-                      v-model="state"
-                      :disabled="!country_id"
-                      :label="$t('state') + ':'"
-                      :placeholder="$t('state')"
-                      :rules="[requiredValidator(state, $t('state_required'))]"
-                    />
+                    <div>
+                      <VLabel class="mb-1 text-body-2"
+                        >{{ $t('state') }}:</VLabel
+                      >
+                      <VMenu v-model="isStateMenuOpen">
+                        <template #activator="{ props: menuProps }">
+                          <VTextField
+                            v-bind="menuProps"
+                            :model-value="
+                              filteredStates.find((s) => s.value === state_id)
+                                ?.title || ''
+                            "
+                            :placeholder="$t('state')"
+                            variant="outlined"
+                            readonly
+                            :disabled="!country_id"
+                            append-inner-icon="tabler-chevron-down"
+                          />
+                        </template>
+                        <VCard>
+                          <VCardText class="pa-2">
+                            <AppTextField
+                              v-model="stateSearchQuery"
+                              :placeholder="$t('search') + '...'"
+                              prepend-inner-icon="tabler-search"
+                              density="compact"
+                              hide-details
+                              autofocus
+                              @click.stop
+                            />
+                          </VCardText>
+                          <VDivider />
+                          <VList max-height="300" style="overflow-y: auto">
+                            <VListItem
+                              v-for="(item, index) in filteredStates"
+                              :key="index"
+                              :value="item.value"
+                              @click="
+                                () => {
+                                  onStateChange(item.value);
+                                  state = item.title;
+                                  isStateMenuOpen = false;
+                                }
+                              "
+                              :active="state_id === item.value"
+                            >
+                              <VListItemTitle>{{ item.title }}</VListItemTitle>
+                            </VListItem>
+                          </VList>
+                        </VCard>
+                      </VMenu>
+                    </div>
                   </VCol>
                   <VCol cols="12" md="6">
                     <AppTextField

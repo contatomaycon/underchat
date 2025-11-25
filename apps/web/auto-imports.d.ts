@@ -321,6 +321,7 @@ declare global {
   const useSorted: typeof import('@vueuse/core').useSorted
   const useSpeechRecognition: typeof import('@vueuse/core').useSpeechRecognition
   const useSpeechSynthesis: typeof import('@vueuse/core').useSpeechSynthesis
+  const useStatesAndCities: typeof import('./src/composables/useStatesAndCities').useStatesAndCities
   const useStepper: typeof import('@vueuse/core').useStepper
   const useStorage: (typeof import('@vueuse/core'))['useStorage']
   const useStorageAsync: typeof import('@vueuse/core').useStorageAsync
@@ -701,6 +702,7 @@ declare module 'vue' {
     readonly useSorted: UnwrapRef<typeof import('@vueuse/core')['useSorted']>
     readonly useSpeechRecognition: UnwrapRef<typeof import('@vueuse/core')['useSpeechRecognition']>
     readonly useSpeechSynthesis: UnwrapRef<typeof import('@vueuse/core')['useSpeechSynthesis']>
+    readonly useStatesAndCities: UnwrapRef<typeof import('./src/composables/useStatesAndCities')['useStatesAndCities']>
     readonly useStepper: UnwrapRef<typeof import('@vueuse/core')['useStepper']>
     readonly useStorageAsync: UnwrapRef<typeof import('@vueuse/core')['useStorageAsync']>
     readonly useStyleTag: UnwrapRef<typeof import('@vueuse/core')['useStyleTag']>
