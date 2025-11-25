@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { workerConfig } from '@core/models';
 import { WorkerConfigViewerRepository } from '@core/repositories/worker/WorkerConfigViewer.repository';
@@ -6,12 +6,14 @@ import { WorkerConfigUpserterRepository } from '@core/repositories/worker/Worker
 import { IUpdateWorkerConfig } from '@core/common/interfaces/IUpdateWorkerConfig';
 import { ViewWorkerConfigResponse } from '@core/schema/worker/viewWorkerConfig/response.schema';
 import { WorkerConfig } from '@core/schema/worker/updateWorkerConfig/response.schema';
+import Redis from 'ioredis';
 
 @injectable()
 export class WorkerConfigService {
   constructor(
     private readonly workerConfigViewerRepository: WorkerConfigViewerRepository,
-    private readonly workerConfigUpserterRepository: WorkerConfigUpserterRepository
+    private readonly workerConfigUpserterRepository: WorkerConfigUpserterRepository,
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   async viewWorkerConfig(workerId: string): Promise<ViewWorkerConfigResponse> {
@@ -36,6 +38,8 @@ export class WorkerConfigService {
       workerId,
       input
     );
+
+    await this.invalidateWorkerConfigCache(workerId);
 
     const result =
       await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
@@ -70,10 +74,15 @@ export class WorkerConfigService {
     workerId: string,
     text: string | null
   ): Promise<string | null> {
-    return await this.workerConfigUpserterRepository.updateTransferProtocolText(
-      workerId,
-      text
-    );
+    const [result] = await Promise.all([
+      this.workerConfigUpserterRepository.updateTransferProtocolText(
+        workerId,
+        text
+      ),
+      this.invalidateWorkerConfigCache(workerId),
+    ]);
+
+    return result;
   }
 
   async viewTransferProtocolText(workerId: string): Promise<string | null> {
@@ -93,10 +102,15 @@ export class WorkerConfigService {
     workerId: string,
     text: string | null
   ): Promise<string | null> {
-    return await this.workerConfigUpserterRepository.updateStartProtocolText(
-      workerId,
-      text
-    );
+    const [result] = await Promise.all([
+      this.workerConfigUpserterRepository.updateStartProtocolText(
+        workerId,
+        text
+      ),
+      this.invalidateWorkerConfigCache(workerId),
+    ]);
+
+    return result;
   }
 
   async viewStartProtocolText(workerId: string): Promise<string | null> {
@@ -116,10 +130,12 @@ export class WorkerConfigService {
     workerId: string,
     text: string | null
   ): Promise<string | null> {
-    return await this.workerConfigUpserterRepository.updateUraProtocolText(
-      workerId,
-      text
-    );
+    const [result] = await Promise.all([
+      this.workerConfigUpserterRepository.updateUraProtocolText(workerId, text),
+      this.invalidateWorkerConfigCache(workerId),
+    ]);
+
+    return result;
   }
 
   async viewUraProtocolText(workerId: string): Promise<string | null> {
@@ -133,5 +149,9 @@ export class WorkerConfigService {
     }
 
     return result.generate_protocol_at_ura || null;
+  }
+
+  private async invalidateWorkerConfigCache(workerId: string): Promise<void> {
+    await this.redis.del(`worker:${workerId}:config_fields`);
   }
 }

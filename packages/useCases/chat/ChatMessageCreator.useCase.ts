@@ -42,6 +42,7 @@ import {
   chatAccountCentrifugo,
   chatQueueAccountCentrifugo,
 } from '@core/common/functions/centrifugoQueue';
+import { WorkerService } from '@core/services/worker.service';
 
 @injectable()
 export class ChatMessageCreatorUseCase {
@@ -55,7 +56,8 @@ export class ChatMessageCreatorUseCase {
     private readonly storageService: StorageService,
     private readonly converterService: ConverterService,
     private readonly contactService: ContactService,
-    private readonly contactViewerRepository: ContactViewerRepository
+    private readonly contactViewerRepository: ContactViewerRepository,
+    private readonly workerService: WorkerService
   ) {}
 
   private async getChat(
@@ -109,6 +111,31 @@ export class ChatMessageCreatorUseCase {
     await this.redis.set(cacheKey, JSON.stringify(data), 'EX', 1800);
 
     return data;
+  }
+
+  private async formatOperatorTextWithAttendeeName(
+    chat: IChat,
+    message: string | null
+  ): Promise<string> {
+    const text = message ?? '';
+
+    if (!text || !chat.worker?.id || !chat.user?.name) {
+      return text;
+    }
+
+    const workerConfig =
+      await this.workerService.viewWorkerConfigFieldsByWorkerId(chat.worker.id);
+
+    if (!workerConfig?.show_attendee_name) {
+      return text;
+    }
+
+    const prefix = `*${chat.user.name}*:\n\n`;
+    if (text.startsWith(prefix)) {
+      return text;
+    }
+
+    return `${prefix}${text}`;
   }
 
   private async getChatMessage(
@@ -1286,11 +1313,16 @@ export class ChatMessageCreatorUseCase {
       }
     }
 
+    const formattedMessage = await this.formatOperatorTextWithAttendeeName(
+      chat,
+      message
+    );
+
     const textMessage = this.createTextMessage({
       chat,
       chatId,
       type,
-      message,
+      message: formattedMessage,
       linkPreview,
       messageQuotedId: messageQuotedId ?? null,
       quotedMessage,
