@@ -42,7 +42,7 @@ const highlightText = (
 ): string => {
   if (!text || !search) return text || '';
 
-  const escapedSearch = search.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escapedSearch = search.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
   const regex = new RegExp(`(${escapedSearch})`, 'gi');
   return text.replace(regex, '<mark class="search-highlight">$1</mark>');
 };
