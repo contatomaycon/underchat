@@ -153,7 +153,7 @@ export class TransferChatUseCase {
 
       const protocolMessageBody: CreateMessageChatsBody = {
         type: EMessageType.system,
-        message: `${t('transfer_protocol')}: ${protocol}`,
+        message: `${t('transfer_protocol')}: *${protocol}*`,
       };
 
       await this.chatMessageCreatorUseCase.execute(
