@@ -197,7 +197,7 @@ export const useSectorsStore = defineStore('sectors', {
         }
 
         return data.data;
-      } catch (error) {
+      } catch {
         this.loading = false;
 
         return null;

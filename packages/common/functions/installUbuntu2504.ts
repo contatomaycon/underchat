@@ -16,7 +16,6 @@ export async function installUbuntu2504(
   return [
     'dpkg --configure -a',
     'apt-get update',
-    'apt-get upgrade -y',
 
     'apt-get install git -y',
     'apt-get install curl -y',
