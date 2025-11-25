@@ -203,120 +203,69 @@ export const useUsersStore = defineStore('users', {
       return field?.value !== undefined && field.value !== null;
     },
 
+    appendStringField(
+      formData: FormData,
+      field: { value?: string | null } | undefined,
+      fieldName: string
+    ): void {
+      if (this.shouldAppendStringValue(field)) {
+        const value = field?.value;
+        if (value) {
+          formData.append(fieldName, value);
+        }
+      }
+    },
+
+    appendNumberField(
+      formData: FormData,
+      field: { value?: number | null } | undefined,
+      fieldName: string
+    ): void {
+      if (this.shouldAppendNumberValue(field)) {
+        const value = field?.value;
+        if (value !== null && value !== undefined) {
+          formData.append(fieldName, value.toString());
+        }
+      }
+    },
+
     buildUpdateUserFormData(
       body: UpdateUserRequest,
       photoFile?: File | null
     ): FormData {
       const formData = new FormData();
 
-      if (this.shouldAppendStringValue(body.email)) {
-        const value = body.email?.value;
-        if (value !== null && value !== undefined) {
-          formData.append('email', value);
-        }
-      }
-      if (this.shouldAppendStringValue(body.password)) {
-        const value = body.password?.value;
-        if (value !== null && value !== undefined) {
-          formData.append('password', value);
-        }
-      }
-      if (this.shouldAppendStringValue(body.account_id)) {
-        const value = body.account_id?.value;
-        if (value !== null && value !== undefined) {
-          formData.append('account_id', value);
-        }
-      }
-      if (this.shouldAppendStringValue(body.user_status_id)) {
-        const value = body.user_status_id?.value;
-        if (value !== null && value !== undefined) {
-          formData.append('user_status_id', value);
-        }
-      }
-      if (this.shouldAppendStringValue(body.phone_ddi)) {
-        const value = body.phone_ddi?.value;
-        if (value !== null && value !== undefined) {
-          formData.append('phone_ddi', value);
-        }
-      }
-      if (this.shouldAppendStringValue(body.phone)) {
-        const value = body.phone?.value;
-        if (value !== null && value !== undefined) {
-          formData.append('phone', value);
-        }
-      }
-      if (this.shouldAppendStringValue(body.name)) {
-        const value = body.name?.value;
-        if (value !== null && value !== undefined) {
-          formData.append('name', value);
-        }
-      }
-      if (this.shouldAppendStringValue(body.last_name)) {
-        const value = body.last_name?.value;
-        if (value !== null && value !== undefined) {
-          formData.append('last_name', value);
-        }
-      }
-      if (this.shouldAppendStringValue(body.birth_date)) {
-        const value = body.birth_date?.value;
-        if (value !== null && value !== undefined) {
-          formData.append('birth_date', value);
-        }
-      }
-      if (this.shouldAppendStringValue(body.document_type_id)) {
-        const value = body.document_type_id?.value;
-        if (value !== null && value !== undefined) {
-          formData.append('document_type_id', value);
-        }
-      }
-      if (this.shouldAppendStringValue(body.document)) {
-        const value = body.document?.value;
-        if (value !== null && value !== undefined) {
-          formData.append('document', value);
-        }
-      }
-      if (this.shouldAppendNumberValue(body.country_id)) {
-        const value = body.country_id?.value;
-        if (value !== null && value !== undefined) {
-          formData.append('country_id', value.toString());
-        }
-      }
-      if (this.shouldAppendStringValue(body.zip_code)) {
-        const value = body.zip_code?.value;
-        if (value !== null && value !== undefined) {
-          formData.append('zip_code', value);
-        }
-      }
-      if (this.shouldAppendStringValue(body.address1)) {
-        const value = body.address1?.value;
-        if (value !== null && value !== undefined) {
-          formData.append('address1', value);
-        }
-      }
-      if (this.shouldAppendStringValue(body.address2)) {
-        const value = body.address2?.value;
-        if (value !== null && value !== undefined) {
-          formData.append('address2', value);
-        }
-      }
-      if (this.shouldAppendStringValue(body.city_fiscal_code)) {
-        const value = body.city_fiscal_code?.value;
-        if (value !== null && value !== undefined) {
-          formData.append('city_fiscal_code', value);
-        }
-      }
-      if (this.shouldAppendStringValue(body.state_fiscal_code)) {
-        const value = body.state_fiscal_code?.value;
-        if (value !== null && value !== undefined) {
-          formData.append('state_fiscal_code', value);
-        }
-      }
-      if (this.shouldAppendStringValue(body.district)) {
-        const value = body.district?.value;
-        if (value !== null && value !== undefined) {
-          formData.append('district', value);
-        }
-      }
+      this.appendStringField(formData, body.email, 'email');
+      this.appendStringField(formData, body.password, 'password');
+      this.appendStringField(formData, body.account_id, 'account_id');
+      this.appendStringField(formData, body.user_status_id, 'user_status_id');
+      this.appendStringField(formData, body.phone_ddi, 'phone_ddi');
+      this.appendStringField(formData, body.phone, 'phone');
+      this.appendStringField(formData, body.name, 'name');
+      this.appendStringField(formData, body.last_name, 'last_name');
+      this.appendStringField(formData, body.birth_date, 'birth_date');
+      this.appendStringField(
+        formData,
+        body.document_type_id,
+        'document_type_id'
+      );
+      this.appendStringField(formData, body.document, 'document');
+      this.appendNumberField(formData, body.country_id, 'country_id');
+      this.appendStringField(formData, body.zip_code, 'zip_code');
+      this.appendStringField(formData, body.address1, 'address1');
+      this.appendStringField(formData, body.address2, 'address2');
+      this.appendStringField(
+        formData,
+        body.city_fiscal_code,
+        'city_fiscal_code'
+      );
+      this.appendStringField(
+        formData,
+        body.state_fiscal_code,
+        'state_fiscal_code'
+      );
+      this.appendStringField(formData, body.district, 'district');
+
       if (body.photo_url?.value !== undefined) {
         formData.append('photo_url', body.photo_url.value ?? '');
       }

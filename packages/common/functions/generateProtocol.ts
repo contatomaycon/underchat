@@ -4,8 +4,10 @@ export function generateProtocol(): string {
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
 
-  const randomDigits = Array.from({ length: 7 }, () =>
-    Math.floor(Math.random() * 10)
+  const randomArray = new Uint32Array(7);
+  crypto.getRandomValues(randomArray);
+  const randomDigits = Array.from(randomArray, (value) =>
+    (value % 10).toString()
   ).join('');
 
   return `${year}${month}${day}${randomDigits}`;

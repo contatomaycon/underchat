@@ -42,10 +42,8 @@ const highlightText = (
 ): string => {
   if (!text || !search) return text || '';
 
-  const regex = new RegExp(
-    `(${search.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)})`,
-    'gi'
-  );
+  const escapedSearch = search.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`(${escapedSearch})`, 'gi');
   return text.replace(regex, '<mark class="search-highlight">$1</mark>');
 };
 

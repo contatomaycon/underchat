@@ -1812,9 +1812,22 @@ const updateAddressFromZipcode = async (response: {
     await loadStates(country_id.value);
 
     const stateValue = response.state.trim();
-    const stateMatch = stateValue.match(/^(.+?)\s*\(([^)]+)\)$/);
-    const stateName = stateMatch ? stateMatch[1].trim() : stateValue;
-    const stateAbbreviation = stateMatch ? stateMatch[2].trim() : null;
+    let stateName = stateValue;
+    let stateAbbreviation: string | null = null;
+
+    const lastOpenParen = stateValue.lastIndexOf('(');
+    const lastCloseParen = stateValue.lastIndexOf(')');
+
+    if (
+      lastOpenParen > 0 &&
+      lastCloseParen > lastOpenParen &&
+      lastCloseParen === stateValue.length - 1
+    ) {
+      stateName = stateValue.slice(0, lastOpenParen).trim();
+      stateAbbreviation = stateValue
+        .slice(lastOpenParen + 1, lastCloseParen)
+        .trim();
+    }
 
     const foundState = states.value.find(
       (s) =>
@@ -1931,10 +1944,24 @@ const parseStateValue = (
   stateAbbreviation: string | null;
 } => {
   const trimmed = stateValue.trim();
-  const stateMatch = trimmed.match(/^(.+?)\s*\(([^)]+)\)$/);
+  let stateName = trimmed;
+  let stateAbbreviation: string | null = null;
+
+  const lastOpenParen = trimmed.lastIndexOf('(');
+  const lastCloseParen = trimmed.lastIndexOf(')');
+
+  if (
+    lastOpenParen > 0 &&
+    lastCloseParen > lastOpenParen &&
+    lastCloseParen === trimmed.length - 1
+  ) {
+    stateName = trimmed.slice(0, lastOpenParen).trim();
+    stateAbbreviation = trimmed.slice(lastOpenParen + 1, lastCloseParen).trim();
+  }
+
   return {
-    stateName: stateMatch ? stateMatch[1].trim() : trimmed,
-    stateAbbreviation: stateMatch ? stateMatch[2].trim() : null,
+    stateName,
+    stateAbbreviation,
   };
 };
 
