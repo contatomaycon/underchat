@@ -2256,6 +2256,10 @@ watch(
                     </AppTextField>
                   </VCol>
 
+                  <VCol cols="12">
+                    <VDivider />
+                  </VCol>
+
                   <VCol cols="12" md="6">
                     <AppTextField
                       v-model="name"
