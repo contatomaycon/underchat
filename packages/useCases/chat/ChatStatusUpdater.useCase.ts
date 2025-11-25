@@ -13,6 +13,11 @@ import {
 import { IChat } from '@core/common/interfaces/IChat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { UserService } from '@core/services/user.service';
+import { WorkerService } from '@core/services/worker.service';
+import { ChatMessageCreatorUseCase } from './ChatMessageCreator.useCase';
+import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
+import { EMessageType } from '@core/common/enums/EMessageType';
+import { generateProtocol } from '@core/common/functions/generateProtocol';
 import Redis from 'ioredis';
 
 @injectable()
@@ -21,6 +26,8 @@ export class ChatStatusUpdaterUseCase {
     private readonly chatService: ChatService,
     private readonly centrifugoService: CentrifugoService,
     private readonly userService: UserService,
+    private readonly workerService: WorkerService,
+    private readonly chatMessageCreatorUseCase: ChatMessageCreatorUseCase,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -105,6 +112,37 @@ export class ChatStatusUpdaterUseCase {
     }
 
     const channelAccountId = updatedChat.account?.id ?? accountId;
+
+    if (status === EChatStatus.in_chat) {
+      const workerConfigFields =
+        await this.workerService.viewWorkerConfigFieldsByWorkerId(
+          chat.worker.id
+        );
+
+      if (workerConfigFields?.generate_protocol_at_start) {
+        const protocol = generateProtocol();
+        const protocolText = workerConfigFields.generate_protocol_at_start;
+
+        const message = protocolText.replace(
+          /\{\{\s*protocolo\s*\}\}/gi,
+          protocol
+        );
+
+        const protocolMessageBody: CreateMessageChatsBody = {
+          type: EMessageType.system,
+          message,
+        };
+
+        await this.chatMessageCreatorUseCase.execute(
+          t,
+          accountId,
+          {
+            chat_id: params.chat_id,
+          },
+          protocolMessageBody
+        );
+      }
+    }
 
     await Promise.all([
       this.centrifugoService.publishSub(
