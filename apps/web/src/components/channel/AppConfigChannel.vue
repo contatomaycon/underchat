@@ -464,6 +464,14 @@ const saveWorkerConfig = async () => {
   }
 };
 
+const onWorkerConfigCheckboxChange = async (
+  field: WorkerConfigField,
+  value: boolean | null
+) => {
+  workerConfigForm[field] = Boolean(value);
+  await saveWorkerConfig();
+};
+
 type WorkerConfigField = keyof WorkerConfigForm;
 
 const openTransferProtocolModal = async () => {
@@ -1864,11 +1872,14 @@ onMounted(async () => {
                           option.key !== 'generate_protocol_at_start' &&
                           option.key !== 'generate_protocol_at_ura'
                         "
-                        v-model="workerConfigForm[option.key]"
+                        :model-value="workerConfigForm[option.key]"
                         :label="option.title"
                         color="primary"
                         hide-details
                         :disabled="isSavingWorkerConfig"
+                        @update:model-value="
+                          onWorkerConfigCheckboxChange(option.key, $event)
+                        "
                       />
                       <VCheckbox
                         v-else-if="
@@ -1910,17 +1921,6 @@ onMounted(async () => {
                   </VCard>
                 </VCol>
               </VRow>
-
-              <div class="d-flex justify-end">
-                <VBtn
-                  color="primary"
-                  :loading="isSavingWorkerConfig"
-                  :disabled="isLoadingWorkerConfig"
-                  @click="saveWorkerConfig"
-                >
-                  {{ $t('channel_general_config_save') }}
-                </VBtn>
-              </div>
             </div>
           </VWindowItem>
 
