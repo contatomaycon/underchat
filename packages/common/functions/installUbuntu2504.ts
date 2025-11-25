@@ -38,7 +38,7 @@ export async function installUbuntu2504(
     'apt-get install libssl-dev -y',
     'apt-get install gnupg -y',
     'apt-get install lsb-release -y',
-    'apt-get install openssh-client -y',
+    'DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::="--force-confnew" openssh-client',
 
     'rm -rf /home/app || true',
     'rm -rf /home/underchat || true',
