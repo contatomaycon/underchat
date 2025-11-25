@@ -363,5 +363,8 @@
   "start_protocol_text_view_success": "Texto do protocolo ao iniciar obtido com sucesso!",
   "transfer_protocol_text_update_success": "Texto do protocolo de transferência atualizado com sucesso!",
   "transfer_protocol_text_update_error": "Erro ao atualizar o texto do protocolo de transferência!",
-  "transfer_protocol_text_view_success": "Texto do protocolo de transferência obtido com sucesso!"
+  "transfer_protocol_text_view_success": "Texto do protocolo de transferência obtido com sucesso!",
+  "ura_protocol_text_update_success": "Texto do protocolo na URA atualizado com sucesso!",
+  "ura_protocol_text_update_error": "Erro ao atualizar o texto do protocolo na URA!",
+  "ura_protocol_text_view_success": "Texto do protocolo na URA obtido com sucesso!"
 }

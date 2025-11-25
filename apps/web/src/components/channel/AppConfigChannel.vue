@@ -216,6 +216,9 @@ const isSavingTransferProtocol = ref(false);
 const startProtocolText = ref<string>('');
 const startProtocolModalOpen = ref(false);
 const isSavingStartProtocol = ref(false);
+const uraProtocolText = ref<string>('');
+const uraProtocolModalOpen = ref(false);
+const isSavingUraProtocol = ref(false);
 
 const statusTypeOptions = computed(() => [
   {
@@ -410,15 +413,19 @@ const loadWorkerConfig = async (force = false) => {
     applyWorkerConfig(result);
     workerConfigLoadedFor.value = channelId.value;
 
-    const [protocolTransferText, protocolStartText] = await Promise.all([
-      channelStore.fetchTransferProtocolText(channelId.value),
-      channelStore.fetchStartProtocolText(channelId.value),
-    ]);
+    const [protocolTransferText, protocolStartText, protocolUraText] =
+      await Promise.all([
+        channelStore.fetchTransferProtocolText(channelId.value),
+        channelStore.fetchStartProtocolText(channelId.value),
+        channelStore.fetchUraProtocolText(channelId.value),
+      ]);
 
     const hasTransferProtocolText =
       protocolTransferText !== null && protocolTransferText.trim().length > 0;
     const hasStartProtocolText =
       protocolStartText !== null && protocolStartText.trim().length > 0;
+    const hasUraProtocolText =
+      protocolUraText !== null && protocolUraText.trim().length > 0;
 
     transferProtocolText.value = hasTransferProtocolText
       ? protocolTransferText
@@ -427,6 +434,9 @@ const loadWorkerConfig = async (force = false) => {
 
     startProtocolText.value = hasStartProtocolText ? protocolStartText : '';
     workerConfigForm.generate_protocol_at_start = hasStartProtocolText;
+
+    uraProtocolText.value = hasUraProtocolText ? protocolUraText : '';
+    workerConfigForm.generate_protocol_at_ura = hasUraProtocolText;
   } finally {
     isLoadingWorkerConfig.value = false;
   }
@@ -559,6 +569,57 @@ const deleteStartProtocolText = async () => {
     closeStartProtocolModal();
   } finally {
     isSavingStartProtocol.value = false;
+  }
+};
+
+const openUraProtocolModal = async () => {
+  if (!channelId.value) return;
+
+  const protocolText = await channelStore.fetchUraProtocolText(channelId.value);
+  uraProtocolText.value = protocolText || '';
+  uraProtocolModalOpen.value = true;
+};
+
+const closeUraProtocolModal = () => {
+  uraProtocolModalOpen.value = false;
+};
+
+const saveUraProtocolText = async () => {
+  if (!channelId.value) return;
+
+  try {
+    isSavingUraProtocol.value = true;
+    const text = uraProtocolText.value.trim() || null;
+    const result = await channelStore.updateUraProtocolText(
+      channelId.value,
+      text
+    );
+
+    const hasText = result !== null && result.trim().length > 0;
+    workerConfigForm.generate_protocol_at_ura = hasText;
+    uraProtocolText.value = result || '';
+
+    closeUraProtocolModal();
+  } finally {
+    isSavingUraProtocol.value = false;
+  }
+};
+
+const deleteUraProtocolText = async () => {
+  if (!channelId.value) return;
+
+  try {
+    isSavingUraProtocol.value = true;
+    const result = await channelStore.updateUraProtocolText(
+      channelId.value,
+      null
+    );
+
+    workerConfigForm.generate_protocol_at_ura = false;
+    uraProtocolText.value = '';
+    closeUraProtocolModal();
+  } finally {
+    isSavingUraProtocol.value = false;
   }
 };
 
@@ -1800,7 +1861,8 @@ onMounted(async () => {
                       <VCheckbox
                         v-if="
                           option.key !== 'generate_protocol_at_transfer' &&
-                          option.key !== 'generate_protocol_at_start'
+                          option.key !== 'generate_protocol_at_start' &&
+                          option.key !== 'generate_protocol_at_ura'
                         "
                         v-model="workerConfigForm[option.key]"
                         :label="option.title"
@@ -1831,6 +1893,15 @@ onMounted(async () => {
                           isSavingWorkerConfig || isSavingStartProtocol
                         "
                         @click.stop.prevent="openStartProtocolModal"
+                      />
+                      <VCheckbox
+                        v-else-if="option.key === 'generate_protocol_at_ura'"
+                        :model-value="workerConfigForm[option.key]"
+                        :label="option.title"
+                        color="primary"
+                        hide-details
+                        :disabled="isSavingWorkerConfig || isSavingUraProtocol"
+                        @click.stop.prevent="openUraProtocolModal"
                       />
                       <p class="text-body-2 text-medium-emphasis mb-0">
                         {{ option.description }}
@@ -2718,6 +2789,63 @@ onMounted(async () => {
           :loading="isSavingStartProtocol"
           :disabled="isSavingStartProtocol"
           @click="saveStartProtocolText"
+        >
+          {{ $t('save') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog v-model="uraProtocolModalOpen" max-width="600" persistent>
+    <VCard>
+      <VCardTitle class="d-flex justify-space-between align-center">
+        <span>{{
+          $t('channel_general_config_generate_protocol_ura_title')
+        }}</span>
+        <IconBtn @click="closeUraProtocolModal">
+          <VIcon icon="tabler-x" />
+        </IconBtn>
+      </VCardTitle>
+      <VCardText>
+        <VTextarea
+          v-model="uraProtocolText"
+          :label="$t('ura_protocol_text_label')"
+          :placeholder="$t('ura_protocol_text_placeholder')"
+          :maxlength="2000"
+          rows="8"
+          counter
+          auto-grow
+        />
+        <div class="text-caption text-medium-emphasis mt-2">
+          {{ $t('ura_protocol_text_hint') }}
+        </div>
+        <div class="text-caption text-medium-emphasis">
+          {{ $t('ura_protocol_tag_hint') }}
+        </div>
+      </VCardText>
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          :disabled="isSavingUraProtocol"
+          @click="closeUraProtocolModal"
+        >
+          {{ $t('close') }}
+        </VBtn>
+        <VBtn
+          color="error"
+          variant="tonal"
+          :loading="isSavingUraProtocol"
+          :disabled="isSavingUraProtocol"
+          @click="deleteUraProtocolText"
+        >
+          {{ $t('delete') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          :loading="isSavingUraProtocol"
+          :disabled="isSavingUraProtocol"
+          @click="saveUraProtocolText"
         >
           {{ $t('save') }}
         </VBtn>

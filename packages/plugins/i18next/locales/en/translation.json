@@ -363,5 +363,8 @@
   "start_protocol_text_view_success": "Start protocol text retrieved successfully!",
   "transfer_protocol_text_update_success": "Transfer protocol text updated successfully!",
   "transfer_protocol_text_update_error": "Error updating transfer protocol text!",
-  "transfer_protocol_text_view_success": "Transfer protocol text retrieved successfully!"
+  "transfer_protocol_text_view_success": "Transfer protocol text retrieved successfully!",
+  "ura_protocol_text_update_success": "URA protocol text updated successfully!",
+  "ura_protocol_text_update_error": "Error updating URA protocol text!",
+  "ura_protocol_text_view_success": "URA protocol text retrieved successfully!"
 }

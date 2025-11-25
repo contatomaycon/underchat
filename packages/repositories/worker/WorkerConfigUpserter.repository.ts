@@ -295,4 +295,78 @@ export class WorkerConfigUpserterRepository {
 
     return result[0]?.generate_protocol_at_start || null;
   }
+
+  updateUraProtocolText = async (
+    workerId: string,
+    text: string | null
+  ): Promise<string | null> => {
+    await this.db.transaction(async (tx) => {
+      await this.ensureSingleConfigPerWorker(tx, workerId);
+
+      const existingConfig = await this.findExistingConfigTx(tx, workerId);
+
+      if (existingConfig) {
+        await this.updateUraProtocolTextTx(tx, workerId, text);
+        return;
+      }
+
+      await this.createUraProtocolTextTx(tx, workerId, text);
+    });
+
+    return this.getUraProtocolText(workerId);
+  };
+
+  private async updateUraProtocolTextTx(
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
+    workerId: string,
+    text: string | null
+  ): Promise<void> {
+    await tx
+      .update(workerConfig)
+      .set({
+        generate_protocol_at_ura: text || null,
+        updated_at: new Date().toISOString(),
+      })
+      .where(eq(workerConfig.worker_id, workerId))
+      .execute();
+  }
+
+  private async createUraProtocolTextTx(
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
+    workerId: string,
+    text: string | null
+  ): Promise<void> {
+    await tx
+      .insert(workerConfig)
+      .values({
+        worker_config_id: uuidv7(),
+        worker_id: workerId,
+        is_automatic_attendance: false,
+        show_attendee_name: false,
+        show_worker_name: false,
+        generate_protocol_at_ura: text || null,
+      })
+      .execute();
+  }
+
+  private async getUraProtocolText(workerId: string): Promise<string | null> {
+    const result = await this.db
+      .select({
+        generate_protocol_at_ura: workerConfig.generate_protocol_at_ura,
+      })
+      .from(workerConfig)
+      .where(eq(workerConfig.worker_id, workerId))
+      .limit(1)
+      .execute();
+
+    return result[0]?.generate_protocol_at_ura || null;
+  }
 }

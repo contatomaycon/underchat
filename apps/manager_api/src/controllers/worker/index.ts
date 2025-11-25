@@ -19,6 +19,8 @@ import { updateTransferProtocolText } from './methods/updateTransferProtocolText
 import { viewTransferProtocolText } from './methods/viewTransferProtocolText';
 import { updateStartProtocolText } from './methods/updateStartProtocolText';
 import { viewStartProtocolText } from './methods/viewStartProtocolText';
+import { updateUraProtocolText } from './methods/updateUraProtocolText';
+import { viewUraProtocolText } from './methods/viewUraProtocolText';
 
 @injectable()
 class WorkerController {
@@ -42,6 +44,8 @@ class WorkerController {
   public viewTransferProtocolText = viewTransferProtocolText;
   public updateStartProtocolText = updateStartProtocolText;
   public viewStartProtocolText = viewStartProtocolText;
+  public updateUraProtocolText = updateUraProtocolText;
+  public viewUraProtocolText = viewUraProtocolText;
 }
 
 export default WorkerController;
