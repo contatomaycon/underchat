@@ -51,7 +51,7 @@ const isVisible = computed({
   set: (v) => emit('update:modelValue', v),
 });
 
-function formatPhone(value: string | null | undefined): string {
+const formatPhone = (value: string | null | undefined): string => {
   if (!value) return '';
 
   const numbers = value.replaceAll(/\D/g, '').slice(0, 11);
@@ -66,7 +66,7 @@ function formatPhone(value: string | null | undefined): string {
     return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 6)}-${numbers.slice(6)}`;
   }
   return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`;
-}
+};
 
 const phoneFormatted = computed({
   get: () => formatPhone(phone.value),
@@ -124,6 +124,7 @@ const docPlaceholder = computed(() =>
 );
 
 const onlyDigits = (s: string) => s.replaceAll(/\D+/g, '');
+
 const cpfRegex = /^\d{11}$/;
 const cnpjRegex = /^\d{14}$/;
 
@@ -203,22 +204,45 @@ const cropArea = ref({
 
 const MAX_FILE_SIZE_BYTES = 16 * 1024 * 1024;
 
-async function goNext() {
-  if (tab.value === 'user_data') {
-    const v = await refFormStep1.value?.validate();
-    if (!v?.valid) return;
-    tab.value = 'additional_info';
-  } else if (tab.value === 'additional_info') {
-    const v = await refFormStep2.value?.validate();
-    if (!v?.valid) return;
-    tab.value = 'address';
-  }
-}
+const validateStep1 = async (): Promise<boolean> => {
+  const validation = await refFormStep1.value?.validate();
+  return validation?.valid ?? false;
+};
 
-function goPrev() {
-  if (tab.value === 'additional_info') tab.value = 'user_data';
-  else if (tab.value === 'address') tab.value = 'additional_info';
-}
+const validateStep2 = async (): Promise<boolean> => {
+  const validation = await refFormStep2.value?.validate();
+  return validation?.valid ?? false;
+};
+
+const navigateToNextTab = (currentTab: string): string => {
+  if (currentTab === 'user_data') return 'additional_info';
+  if (currentTab === 'additional_info') return 'address';
+  return currentTab;
+};
+
+const navigateToPrevTab = (currentTab: string): string => {
+  if (currentTab === 'additional_info') return 'user_data';
+  if (currentTab === 'address') return 'additional_info';
+  return currentTab;
+};
+
+const goNext = async () => {
+  if (tab.value === 'user_data') {
+    const isValid = await validateStep1();
+    if (!isValid) return;
+    tab.value = navigateToNextTab(tab.value);
+    return;
+  }
+  if (tab.value === 'additional_info') {
+    const isValid = await validateStep2();
+    if (!isValid) return;
+    tab.value = navigateToNextTab(tab.value);
+  }
+};
+
+const goPrev = () => {
+  tab.value = navigateToPrevTab(tab.value);
+};
 
 const rules = {
   passwordMinIfFilled: (v: string | null) =>
@@ -229,6 +253,20 @@ const rules = {
 
   confirmMatches: (v: string | null) =>
     !password.value || v === password.value || t('the_password_do_not_match'),
+};
+
+const updateAddressFields = (response: {
+  address_1: string;
+  address_2?: string | null;
+  city: string;
+  state: string;
+  district: string;
+}) => {
+  address1.value = response.address_1;
+  address2.value = response.address_2 ?? null;
+  city.value = response.city;
+  state.value = response.state;
+  district.value = response.district;
 };
 
 const viewZipcode = async () => {
@@ -243,41 +281,34 @@ const viewZipcode = async () => {
 
   const response = await userStore.viewZipcode(params);
   if (response) {
-    address1.value = response.address_1;
-    address2.value = response.address_2;
-    city.value = response.city;
-    state.value = response.state;
-    district.value = response.district;
+    updateAddressFields(response);
   }
 };
 
-const addUser = async () => {
-  const validateForm = await refFormAddUser?.value?.validate();
-  if (!validateForm?.valid) return;
+const validateRequiredFields = (): boolean => {
+  return !!(
+    email.value &&
+    password.value &&
+    phone_ddi.value &&
+    phone.value &&
+    name.value &&
+    last_name.value &&
+    birth_date.value &&
+    user_document_type_id.value &&
+    document.value &&
+    country_id.value &&
+    zip_code.value &&
+    address1.value &&
+    city.value &&
+    state.value &&
+    district.value
+  );
+};
 
-  if (
-    !email.value ||
-    !password.value ||
-    !phone_ddi.value ||
-    !phone.value ||
-    !name.value ||
-    !last_name.value ||
-    !birth_date.value ||
-    !user_document_type_id.value ||
-    !document.value ||
-    !country_id.value ||
-    !zip_code.value ||
-    !address1.value ||
-    !city.value ||
-    !state.value ||
-    !district.value
-  ) {
-    return;
-  }
+const buildUserPayload = () => {
+  const phoneNumber = phone.value!.replaceAll(/\D/g, '');
 
-  const phoneNumber = phone.value.replaceAll(/\D/g, '');
-
-  const payload = {
+  return {
     email: email.value!,
     password: password.value!,
     account_id:
@@ -303,31 +334,44 @@ const addUser = async () => {
       district: district.value!,
     },
   };
+};
 
+const addUser = async () => {
+  const validateForm = await refFormAddUser?.value?.validate();
+  if (!validateForm?.valid) return;
+
+  if (!validateRequiredFields()) {
+    return;
+  }
+
+  const payload = buildUserPayload();
   const result = await userStore.addUser(payload, photoFile.value);
 
   if (result) {
     isVisible.value = false;
-
     await userStore.listUsers();
   }
 };
 
-const onCountryChange = async (val: number | null) => {
-  country_id.value = val;
-
+const clearAddressFields = () => {
   address1.value = '';
   address2.value = '';
   city.value = '';
   state.value = '';
   district.value = '';
+};
+
+const onCountryChange = async (val: number | null) => {
+  country_id.value = val;
+  clearAddressFields();
 
   if (country_id.value && zip_code.value) {
     await viewZipcode();
-  } else {
-    await nextTick();
-    zipInputRef.value?.focus?.();
+    return;
   }
+
+  await nextTick();
+  zipInputRef.value?.focus?.();
 };
 
 const resetForm = () => {
@@ -344,10 +388,15 @@ const resetForm = () => {
   refFormAddUser.value?.resetValidation();
 };
 
-const openFileSelector = () => {
+const createFileInput = (): HTMLInputElement => {
   const input = window.document.createElement('input');
   input.type = 'file';
   input.accept = 'image/*';
+  return input;
+};
+
+const openFileSelector = () => {
+  const input = createFileInput();
   input.onchange = (e: Event) => {
     const target = e.target as HTMLInputElement;
     const file = target.files?.[0];
@@ -358,12 +407,19 @@ const openFileSelector = () => {
   input.click();
 };
 
-const handleImageSelect = (file: File) => {
+const validateFileSize = (file: File): boolean => {
   if (file.size > MAX_FILE_SIZE_BYTES) {
     userStore.showSnackbar(
       t('profile_status_file_size_exceeded', { max: '16 MB' }),
       EColor.error
     );
+    return false;
+  }
+  return true;
+};
+
+const handleImageSelect = (file: File) => {
+  if (!validateFileSize(file)) {
     return;
   }
 
@@ -399,11 +455,11 @@ const initializeCrop = () => {
   };
 };
 
-const setupCropArea = (
+const calculateImageDimensions = (
   img: HTMLImageElement,
   containerWidth: number,
   containerHeight: number
-) => {
+): { displayWidth: number; displayHeight: number } => {
   const imgAspect = img.naturalWidth / img.naturalHeight;
   const containerAspect = containerWidth / containerHeight;
 
@@ -417,6 +473,20 @@ const setupCropArea = (
   if (imgAspect <= containerAspect) {
     displayWidth = containerHeight * imgAspect;
   }
+
+  return { displayWidth, displayHeight };
+};
+
+const setupCropArea = (
+  img: HTMLImageElement,
+  containerWidth: number,
+  containerHeight: number
+) => {
+  const { displayWidth, displayHeight } = calculateImageDimensions(
+    img,
+    containerWidth,
+    containerHeight
+  );
 
   img.style.width = `${displayWidth}px`;
   img.style.height = `${displayHeight}px`;
@@ -438,13 +508,27 @@ const setupCropArea = (
 
 type CropResizeHandle = 'nw' | 'ne' | 'sw' | 'se';
 
+const getEventCoordinates = (
+  e: MouseEvent | TouchEvent
+): { x: number; y: number } => {
+  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+  return { x: clientX, y: clientY };
+};
+
+const addCropEventListeners = () => {
+  window.document.addEventListener('mousemove', onCropDrag);
+  window.document.addEventListener('touchmove', onCropDrag);
+  window.document.addEventListener('mouseup', endCropDrag);
+  window.document.addEventListener('touchend', endCropDrag);
+};
+
 const startCropDrag = (e: MouseEvent | TouchEvent) => {
   e.preventDefault();
   e.stopPropagation();
   cropArea.value.isDragging = true;
-  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
 
+  const { x: clientX, y: clientY } = getEventCoordinates(e);
   const container = cropImageRef.value?.parentElement;
   if (!container) return;
 
@@ -452,10 +536,14 @@ const startCropDrag = (e: MouseEvent | TouchEvent) => {
   cropArea.value.startX = clientX - rect.left - cropArea.value.x;
   cropArea.value.startY = clientY - rect.top - cropArea.value.y;
 
-  window.document.addEventListener('mousemove', onCropDrag);
-  window.document.addEventListener('touchmove', onCropDrag);
-  window.document.addEventListener('mouseup', endCropDrag);
-  window.document.addEventListener('touchend', endCropDrag);
+  addCropEventListeners();
+};
+
+const addCropResizeEventListeners = () => {
+  window.document.addEventListener('mousemove', onCropResize);
+  window.document.addEventListener('touchmove', onCropResize);
+  window.document.addEventListener('mouseup', endCropResize);
+  window.document.addEventListener('touchend', endCropResize);
 };
 
 const startCropResize = (
@@ -472,9 +560,7 @@ const startCropResize = (
   cropArea.value.initialX = cropArea.value.x;
   cropArea.value.initialY = cropArea.value.y;
 
-  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-
+  const { x: clientX, y: clientY } = getEventCoordinates(e);
   const container = cropImageRef.value?.parentElement;
   if (!container) return;
 
@@ -482,28 +568,20 @@ const startCropResize = (
   cropArea.value.startX = clientX - rect.left;
   cropArea.value.startY = clientY - rect.top;
 
-  window.document.addEventListener('mousemove', onCropResize);
-  window.document.addEventListener('touchmove', onCropResize);
-  window.document.addEventListener('mouseup', endCropResize);
-  window.document.addEventListener('touchend', endCropResize);
+  addCropResizeEventListeners();
 };
 
-const onCropDrag = (e: MouseEvent | TouchEvent) => {
-  if (!cropArea.value.isDragging || !cropImageRef.value) return;
-
-  e.preventDefault();
-  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-
-  const container = cropImageRef.value.parentElement;
-  if (!container) return;
-
+const calculateCropDragPosition = (
+  clientX: number,
+  clientY: number,
+  container: HTMLElement
+): { x: number; y: number } => {
   const rect = container.getBoundingClientRect();
   const x = clientX - rect.left - cropArea.value.startX;
   const y = clientY - rect.top - cropArea.value.startY;
 
-  const imgWidth = cropImageRef.value.offsetWidth;
-  const imgHeight = cropImageRef.value.offsetHeight;
+  const imgWidth = cropImageRef.value!.offsetWidth;
+  const imgHeight = cropImageRef.value!.offsetHeight;
   const containerWidth = container.clientWidth;
   const containerHeight = container.clientHeight;
 
@@ -515,16 +593,23 @@ const onCropDrag = (e: MouseEvent | TouchEvent) => {
   const maxX = imgLeft + imgWidth - cropArea.value.width;
   const maxY = imgTop + imgHeight - cropArea.value.height;
 
-  cropArea.value.x = Math.max(minX, Math.min(x, maxX));
-  cropArea.value.y = Math.max(minY, Math.min(y, maxY));
+  return {
+    x: Math.max(minX, Math.min(x, maxX)),
+    y: Math.max(minY, Math.min(y, maxY)),
+  };
 };
 
-const getEventCoordinates = (
-  e: MouseEvent | TouchEvent
-): { x: number; y: number } => {
-  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-  return { x: clientX, y: clientY };
+const onCropDrag = (e: MouseEvent | TouchEvent) => {
+  if (!cropArea.value.isDragging || !cropImageRef.value) return;
+
+  e.preventDefault();
+  const { x: clientX, y: clientY } = getEventCoordinates(e);
+  const container = cropImageRef.value.parentElement;
+  if (!container) return;
+
+  const position = calculateCropDragPosition(clientX, clientY, container);
+  cropArea.value.x = position.x;
+  cropArea.value.y = position.y;
 };
 
 const getFixedPoint = (
@@ -645,25 +730,18 @@ const applyBoundaryConstraints = (
   return { x: newX, y: newY };
 };
 
-const onCropResize = (e: MouseEvent | TouchEvent) => {
-  if (
-    !cropArea.value.isResizing ||
-    !cropImageRef.value ||
-    !cropArea.value.resizeHandle
-  )
-    return;
-
-  e.preventDefault();
-
-  const container = cropImageRef.value.parentElement;
-  if (!container) return;
+const calculateCropResizeDimensions = (
+  e: MouseEvent | TouchEvent,
+  handle: CropResizeHandle
+): { width: number; height: number; x: number; y: number } | null => {
+  const container = cropImageRef.value?.parentElement;
+  if (!container) return null;
 
   const { x: clientX, y: clientY } = getEventCoordinates(e);
   const rect = container.getBoundingClientRect();
   const mouseX = clientX - rect.left;
   const mouseY = clientY - rect.top;
 
-  const handle = cropArea.value.resizeHandle;
   const { x: fixedX, y: fixedY } = getFixedPoint(
     handle,
     cropArea.value.initialX,
@@ -683,10 +761,10 @@ const onCropResize = (e: MouseEvent | TouchEvent) => {
     size
   );
 
-  const imgWidth = cropImageRef.value.offsetWidth;
-  const imgHeight = cropImageRef.value.offsetHeight;
-  const resizeContainer = cropImageRef.value.parentElement;
-  if (!resizeContainer) return;
+  const imgWidth = cropImageRef.value!.offsetWidth;
+  const imgHeight = cropImageRef.value!.offsetHeight;
+  const resizeContainer = cropImageRef.value!.parentElement;
+  if (!resizeContainer) return null;
 
   const resizeContainerWidth = resizeContainer.clientWidth;
   const resizeContainerHeight = resizeContainer.clientHeight;
@@ -712,10 +790,10 @@ const onCropResize = (e: MouseEvent | TouchEvent) => {
     dimensions
   );
 
-  const finalImgWidth = cropImageRef.value.offsetWidth;
-  const finalImgHeight = cropImageRef.value.offsetHeight;
-  const finalContainer = cropImageRef.value.parentElement;
-  if (!finalContainer) return;
+  const finalImgWidth = cropImageRef.value!.offsetWidth;
+  const finalImgHeight = cropImageRef.value!.offsetHeight;
+  const finalContainer = cropImageRef.value!.parentElement;
+  if (!finalContainer) return null;
 
   const finalContainerWidth = finalContainer.clientWidth;
   const finalContainerHeight = finalContainer.clientHeight;
@@ -745,27 +823,133 @@ const onCropResize = (e: MouseEvent | TouchEvent) => {
     Math.min(finalPosition.y, maxY - dimensions.height)
   );
 
-  cropArea.value.width = dimensions.width;
-  cropArea.value.height = dimensions.height;
-  cropArea.value.x = finalPosition.x;
-  cropArea.value.y = finalPosition.y;
+  return {
+    width: dimensions.width,
+    height: dimensions.height,
+    x: finalPosition.x,
+    y: finalPosition.y,
+  };
 };
 
-const endCropDrag = () => {
-  cropArea.value.isDragging = false;
+const onCropResize = (e: MouseEvent | TouchEvent) => {
+  if (
+    !cropArea.value.isResizing ||
+    !cropImageRef.value ||
+    !cropArea.value.resizeHandle
+  ) {
+    return;
+  }
+
+  e.preventDefault();
+
+  const dimensions = calculateCropResizeDimensions(
+    e,
+    cropArea.value.resizeHandle
+  );
+  if (!dimensions) return;
+
+  cropArea.value.width = dimensions.width;
+  cropArea.value.height = dimensions.height;
+  cropArea.value.x = dimensions.x;
+  cropArea.value.y = dimensions.y;
+};
+
+const removeCropEventListeners = () => {
   window.document.removeEventListener('mousemove', onCropDrag);
   window.document.removeEventListener('touchmove', onCropDrag);
   window.document.removeEventListener('mouseup', endCropDrag);
   window.document.removeEventListener('touchend', endCropDrag);
 };
 
-const endCropResize = () => {
-  cropArea.value.isResizing = false;
-  cropArea.value.resizeHandle = null;
+const endCropDrag = () => {
+  cropArea.value.isDragging = false;
+  removeCropEventListeners();
+};
+
+const removeCropResizeEventListeners = () => {
   window.document.removeEventListener('mousemove', onCropResize);
   window.document.removeEventListener('touchmove', onCropResize);
   window.document.removeEventListener('mouseup', endCropResize);
   window.document.removeEventListener('touchend', endCropResize);
+};
+
+const endCropResize = () => {
+  cropArea.value.isResizing = false;
+  cropArea.value.resizeHandle = null;
+  removeCropResizeEventListeners();
+};
+
+const calculateCropCoordinates = (
+  img: HTMLImageElement,
+  container: HTMLElement
+): {
+  sourceX: number;
+  sourceY: number;
+  sourceWidth: number;
+  sourceHeight: number;
+} => {
+  const containerWidth = container.clientWidth;
+  const containerHeight = container.clientHeight;
+  const imgLeft = (containerWidth - img.offsetWidth) / 2;
+  const imgTop = (containerHeight - img.offsetHeight) / 2;
+
+  const relativeX = cropArea.value.x - imgLeft;
+  const relativeY = cropArea.value.y - imgTop;
+
+  const scaleX = img.naturalWidth / img.offsetWidth;
+  const scaleY = img.naturalHeight / img.offsetHeight;
+
+  return {
+    sourceX: relativeX * scaleX,
+    sourceY: relativeY * scaleY,
+    sourceWidth: cropArea.value.width * scaleX,
+    sourceHeight: cropArea.value.height * scaleY,
+  };
+};
+
+const drawCroppedImage = (
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  canvas: HTMLCanvasElement,
+  coordinates: {
+    sourceX: number;
+    sourceY: number;
+    sourceWidth: number;
+    sourceHeight: number;
+  }
+) => {
+  canvas.width = cropPreviewSize;
+  canvas.height = cropPreviewSize;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  ctx.drawImage(
+    img,
+    coordinates.sourceX,
+    coordinates.sourceY,
+    coordinates.sourceWidth,
+    coordinates.sourceHeight,
+    0,
+    0,
+    cropPreviewSize,
+    cropPreviewSize
+  );
+};
+
+const createCroppedFile = (blob: Blob): File => {
+  return new File([blob], 'user-photo.jpg', {
+    type: 'image/jpeg',
+  });
+};
+
+const handleCropSuccess = (canvas: HTMLCanvasElement) => {
+  const croppedFile = createCroppedFile(
+    new Blob([canvas.toDataURL('image/jpeg')], { type: 'image/jpeg' })
+  );
+  photoFile.value = croppedFile;
+  photoPreview.value = canvas.toDataURL('image/jpeg');
+  cropDialog.value.croppedImage = canvas.toDataURL('image/jpeg');
+  isCropModalOpen.value = false;
 };
 
 const cropImage = () => {
@@ -783,46 +967,13 @@ const cropImage = () => {
   const container = img.parentElement;
   if (!container) return;
 
-  const containerWidth = container.clientWidth;
-  const containerHeight = container.clientHeight;
-  const imgLeft = (containerWidth - img.offsetWidth) / 2;
-  const imgTop = (containerHeight - img.offsetHeight) / 2;
-
-  const relativeX = cropArea.value.x - imgLeft;
-  const relativeY = cropArea.value.y - imgTop;
-
-  const scaleX = img.naturalWidth / img.offsetWidth;
-  const scaleY = img.naturalHeight / img.offsetHeight;
-
-  const sourceX = relativeX * scaleX;
-  const sourceY = relativeY * scaleY;
-  const sourceWidth = cropArea.value.width * scaleX;
-  const sourceHeight = cropArea.value.height * scaleY;
-
-  canvas.width = cropPreviewSize;
-  canvas.height = cropPreviewSize;
-
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  ctx.drawImage(
-    img,
-    sourceX,
-    sourceY,
-    sourceWidth,
-    sourceHeight,
-    0,
-    0,
-    cropPreviewSize,
-    cropPreviewSize
-  );
+  const coordinates = calculateCropCoordinates(img, container);
+  drawCroppedImage(ctx, img, canvas, coordinates);
 
   canvas.toBlob(
     (blob) => {
       if (!blob) return;
-
-      const croppedFile = new File([blob], 'user-photo.jpg', {
-        type: 'image/jpeg',
-      });
+      const croppedFile = createCroppedFile(blob);
       photoFile.value = croppedFile;
       photoPreview.value = canvas.toDataURL('image/jpeg');
       cropDialog.value.croppedImage = canvas.toDataURL('image/jpeg');
@@ -847,15 +998,24 @@ const removePhoto = () => {
   cropDialog.value.croppedImage = '';
 };
 
-const loadAccounts = async () => {
-  if (isAdministrator.value) {
-    const accounts = await accountStore.listAllAccounts();
-    if (accounts) {
-      accountsOptions.value = accounts;
-    }
-  } else if (currentUser.value?.account_id) {
+const loadAdministratorAccounts = async () => {
+  if (!isAdministrator.value) return;
+  const accounts = await accountStore.listAllAccounts();
+  if (accounts) {
+    accountsOptions.value = accounts;
+  }
+};
+
+const setCurrentUserAccount = () => {
+  if (isAdministrator.value) return;
+  if (currentUser.value?.account_id) {
     accountId.value = currentUser.value.account_id;
   }
+};
+
+const loadAccounts = async () => {
+  await loadAdministratorAccounts();
+  setCurrentUserAccount();
 };
 
 watch(isVisible, async (visible) => {
@@ -867,9 +1027,7 @@ watch(isVisible, async (visible) => {
 
 onMounted(async () => {
   await loadAccounts();
-  if (!isAdministrator.value && currentUser.value?.account_id) {
-    accountId.value = currentUser.value.account_id;
-  }
+  setCurrentUserAccount();
 });
 
 let timer: number | null = null;
@@ -1049,7 +1207,7 @@ onMounted(resetForm);
                       <VCol cols="12" md="6">
                         <AppTextField
                           id="confirm-new-password"
-                          name="new-password"
+                          name="confirm-new-password"
                           v-model="confirmPassword"
                           :label="$t('confirm_password') + ':'"
                           :placeholder="$t('confirm_password')"
@@ -1321,7 +1479,6 @@ onMounted(resetForm);
     </VCard>
   </VDialog>
 
-  <!-- Crop Image Dialog -->
   <VDialog v-model="isCropModalOpen" max-width="500" persistent>
     <VCard>
       <VCardTitle class="d-flex justify-space-between align-center">

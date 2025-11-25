@@ -270,18 +270,25 @@ const refFormStep2 = ref<VForm>();
 
 const zipInputRef = ref<HTMLInputElement | null>(null);
 
-async function goNext() {
-  if (tab.value === 'user_data') {
-    tab.value = 'additional_info';
-  } else if (tab.value === 'additional_info') {
-    tab.value = 'address';
-  }
-}
+const navigateToNextTab = (currentTab: string): string => {
+  if (currentTab === 'user_data') return 'additional_info';
+  if (currentTab === 'additional_info') return 'address';
+  return currentTab;
+};
 
-function goPrev() {
-  if (tab.value === 'additional_info') tab.value = 'user_data';
-  else if (tab.value === 'address') tab.value = 'additional_info';
-}
+const navigateToPrevTab = (currentTab: string): string => {
+  if (currentTab === 'additional_info') return 'user_data';
+  if (currentTab === 'address') return 'additional_info';
+  return currentTab;
+};
+
+const goNext = () => {
+  tab.value = navigateToNextTab(tab.value);
+};
+
+const goPrev = () => {
+  tab.value = navigateToPrevTab(tab.value);
+};
 
 const rules = {
   passwordMinIfFilled: (v: string | null) =>
@@ -294,79 +301,92 @@ const rules = {
     !password.value || v === password.value || t('the_password_do_not_match'),
 };
 
+const getPhoneFormattedValue = (): string => {
+  if (isPhoneDecrypted.value && phone.value) {
+    return formatPhone(phone.value);
+  }
+  if (phone.value && !isPhoneDecrypted.value) {
+    return formatPhone(phone.value);
+  }
+  return phonePartialOriginal.value ?? '';
+};
+
+const setPhoneFormattedValue = (value: string) => {
+  if (isPhoneDecrypted.value) {
+    phone.value = value.replaceAll(/\D/g, '');
+    return;
+  }
+  const numbers = value.replaceAll(/\D/g, '');
+  phone.value = numbers;
+  phonePartialOriginal.value = value;
+};
+
 const phoneFormatted = computed({
-  get: () => {
-    if (isPhoneDecrypted.value && phone.value) {
-      return formatPhone(phone.value);
-    }
-    if (phone.value && !isPhoneDecrypted.value) {
-      return formatPhone(phone.value);
-    }
-    return phonePartialOriginal.value ?? '';
-  },
-  set: (value: string) => {
-    if (isPhoneDecrypted.value) {
-      phone.value = value.replaceAll(/\D/g, '');
-      return;
-    }
-    const numbers = value.replaceAll(/\D/g, '');
-    phone.value = numbers;
-    phonePartialOriginal.value = value;
-  },
+  get: getPhoneFormattedValue,
+  set: setPhoneFormattedValue,
 });
+
+const getEmailFormattedValue = (): string => {
+  if (isEmailDecrypted.value) {
+    return email.value ?? '';
+  }
+  return emailPartialOriginal.value ?? '';
+};
+
+const setEmailFormattedValue = (value: string) => {
+  if (isEmailDecrypted.value) {
+    email.value = value;
+    return;
+  }
+  emailPartialOriginal.value = value;
+  email.value = value;
+};
 
 const emailFormatted = computed({
-  get: () => {
-    if (isEmailDecrypted.value) {
-      return email.value ?? '';
-    }
-    const partial = emailPartialOriginal.value ?? '';
-    return partial;
-  },
-  set: (value: string) => {
-    if (isEmailDecrypted.value) {
-      email.value = value;
-      return;
-    }
-    emailPartialOriginal.value = value;
-    email.value = value;
-  },
+  get: getEmailFormattedValue,
+  set: setEmailFormattedValue,
 });
+
+const getAddress1FormattedValue = (): string => {
+  if (isAddress1Decrypted.value) {
+    return address1.value ?? '';
+  }
+  return address1PartialOriginal.value ?? '';
+};
+
+const setAddress1FormattedValue = (value: string) => {
+  if (isAddress1Decrypted.value) {
+    address1.value = value;
+    return;
+  }
+  address1PartialOriginal.value = value;
+  address1.value = value;
+};
 
 const address1Formatted = computed({
-  get: () => {
-    if (isAddress1Decrypted.value) {
-      return address1.value ?? '';
-    }
-    const partial = address1PartialOriginal.value ?? '';
-    return partial;
-  },
-  set: (value: string) => {
-    if (isAddress1Decrypted.value) {
-      address1.value = value;
-      return;
-    }
-    address1PartialOriginal.value = value;
-    address1.value = value;
-  },
+  get: getAddress1FormattedValue,
+  set: setAddress1FormattedValue,
 });
 
-const address2Formatted = computed({
-  get: () => {
-    if (isAddress2Decrypted.value) {
-      return address2.value ?? '';
-    }
-    const partial = address2PartialOriginal.value ?? '';
-    return partial;
-  },
-  set: (value: string) => {
-    if (isAddress2Decrypted.value) {
-      address2.value = value;
-      return;
-    }
-    address2PartialOriginal.value = value;
+const getAddress2FormattedValue = (): string => {
+  if (isAddress2Decrypted.value) {
+    return address2.value ?? '';
+  }
+  return address2PartialOriginal.value ?? '';
+};
+
+const setAddress2FormattedValue = (value: string) => {
+  if (isAddress2Decrypted.value) {
     address2.value = value;
-  },
+    return;
+  }
+  address2PartialOriginal.value = value;
+  address2.value = value;
+};
+
+const address2Formatted = computed({
+  get: getAddress2FormattedValue,
+  set: setAddress2FormattedValue,
 });
 
 const startEditPhone = async () => {
@@ -385,23 +405,22 @@ const startEditPhone = async () => {
   }
 };
 
-const togglePhoneVisibility = async () => {
-  if (!userId.value) return;
-
-  if (isPhoneDecrypted.value) {
-    isPhoneDecrypted.value = false;
-    if (phonePartialOriginal.value?.includes('*')) {
-      phone.value = null;
-    } else if (phonePartialOriginal.value) {
-      phone.value = phonePartialOriginal.value.replaceAll(/\D/g, '');
-    } else {
-      phone.value = null;
-    }
+const resetPhoneToPartial = () => {
+  isPhoneDecrypted.value = false;
+  if (phonePartialOriginal.value?.includes('*')) {
+    phone.value = null;
     return;
   }
+  if (phonePartialOriginal.value) {
+    phone.value = phonePartialOriginal.value.replaceAll(/\D/g, '');
+    return;
+  }
+  phone.value = null;
+};
 
+const decryptPhone = async () => {
   isLoadingPhone.value = true;
-  const decryptedPhone = await userStore.getUserPhoneDecrypted(userId.value);
+  const decryptedPhone = await userStore.getUserPhoneDecrypted(userId.value!);
   isLoadingPhone.value = false;
 
   if (decryptedPhone) {
@@ -409,6 +428,17 @@ const togglePhoneVisibility = async () => {
     initialValues.value.phone = decryptedPhone.replaceAll(/\D/g, '');
     isPhoneDecrypted.value = true;
   }
+};
+
+const togglePhoneVisibility = async () => {
+  if (!userId.value) return;
+
+  if (isPhoneDecrypted.value) {
+    resetPhoneToPartial();
+    return;
+  }
+
+  await decryptPhone();
 };
 
 const startEditEmail = async () => {
@@ -427,17 +457,14 @@ const startEditEmail = async () => {
   }
 };
 
-const toggleEmailVisibility = async () => {
-  if (!userId.value) return;
+const resetEmailToPartial = () => {
+  isEmailDecrypted.value = false;
+  email.value = emailPartialOriginal.value;
+};
 
-  if (isEmailDecrypted.value) {
-    isEmailDecrypted.value = false;
-    email.value = emailPartialOriginal.value;
-    return;
-  }
-
+const decryptEmail = async () => {
   isLoadingEmail.value = true;
-  const decryptedEmail = await userStore.getUserEmailDecrypted(userId.value);
+  const decryptedEmail = await userStore.getUserEmailDecrypted(userId.value!);
   isLoadingEmail.value = false;
 
   if (decryptedEmail) {
@@ -445,6 +472,17 @@ const toggleEmailVisibility = async () => {
     initialValues.value.email = decryptedEmail;
     isEmailDecrypted.value = true;
   }
+};
+
+const toggleEmailVisibility = async () => {
+  if (!userId.value) return;
+
+  if (isEmailDecrypted.value) {
+    resetEmailToPartial();
+    return;
+  }
+
+  await decryptEmail();
 };
 
 const startEditDocument = async () => {
@@ -528,24 +566,23 @@ const startEditAddress1 = async () => {
   }
 };
 
-const toggleAddress1Visibility = async () => {
-  if (!userId.value) return;
-
-  if (isAddress1Decrypted.value) {
-    isAddress1Decrypted.value = false;
-    if (address1PartialOriginal.value?.includes('*')) {
-      address1.value = null;
-    } else if (address1PartialOriginal.value) {
-      address1.value = address1PartialOriginal.value;
-    } else {
-      address1.value = null;
-    }
+const resetAddress1ToPartial = () => {
+  isAddress1Decrypted.value = false;
+  if (address1PartialOriginal.value?.includes('*')) {
+    address1.value = null;
     return;
   }
+  if (address1PartialOriginal.value) {
+    address1.value = address1PartialOriginal.value;
+    return;
+  }
+  address1.value = null;
+};
 
+const decryptAddress1 = async () => {
   isLoadingAddress1.value = true;
   const decryptedAddress1 = await userStore.getUserAddress1Decrypted(
-    userId.value
+    userId.value!
   );
   isLoadingAddress1.value = false;
 
@@ -554,6 +591,17 @@ const toggleAddress1Visibility = async () => {
     initialValues.value.address1 = decryptedAddress1;
     isAddress1Decrypted.value = true;
   }
+};
+
+const toggleAddress1Visibility = async () => {
+  if (!userId.value) return;
+
+  if (isAddress1Decrypted.value) {
+    resetAddress1ToPartial();
+    return;
+  }
+
+  await decryptAddress1();
 };
 
 const startEditAddress2 = async () => {
@@ -574,24 +622,23 @@ const startEditAddress2 = async () => {
   }
 };
 
-const toggleAddress2Visibility = async () => {
-  if (!userId.value) return;
-
-  if (isAddress2Decrypted.value) {
-    isAddress2Decrypted.value = false;
-    if (address2PartialOriginal.value?.includes('*')) {
-      address2.value = null;
-    } else if (address2PartialOriginal.value) {
-      address2.value = address2PartialOriginal.value;
-    } else {
-      address2.value = null;
-    }
+const resetAddress2ToPartial = () => {
+  isAddress2Decrypted.value = false;
+  if (address2PartialOriginal.value?.includes('*')) {
+    address2.value = null;
     return;
   }
+  if (address2PartialOriginal.value) {
+    address2.value = address2PartialOriginal.value;
+    return;
+  }
+  address2.value = null;
+};
 
+const decryptAddress2 = async () => {
   isLoadingAddress2.value = true;
   const decryptedAddress2 = await userStore.getUserAddress2Decrypted(
-    userId.value
+    userId.value!
   );
   isLoadingAddress2.value = false;
 
@@ -600,6 +647,17 @@ const toggleAddress2Visibility = async () => {
     initialValues.value.address2 = decryptedAddress2;
     isAddress2Decrypted.value = true;
   }
+};
+
+const toggleAddress2Visibility = async () => {
+  if (!userId.value) return;
+
+  if (isAddress2Decrypted.value) {
+    resetAddress2ToPartial();
+    return;
+  }
+
+  await decryptAddress2();
 };
 
 const determineEmailToSave = (): string | null | undefined => {
@@ -843,10 +901,15 @@ const buildUserAddress = (): {
   return userAddress;
 };
 
-const openFileSelector = () => {
+const createFileInput = (): HTMLInputElement => {
   const input = window.document.createElement('input');
   input.type = 'file';
   input.accept = 'image/*';
+  return input;
+};
+
+const openFileSelector = () => {
+  const input = createFileInput();
   input.onchange = (e: Event) => {
     const target = e.target as HTMLInputElement;
     const file = target.files?.[0];
@@ -857,12 +920,19 @@ const openFileSelector = () => {
   input.click();
 };
 
-const handleImageSelect = (file: File) => {
+const validateFileSize = (file: File): boolean => {
   if (file.size > MAX_FILE_SIZE_BYTES) {
     userStore.showSnackbar(
       t('profile_status_file_size_exceeded', { max: '16 MB' }),
       EColor.error
     );
+    return false;
+  }
+  return true;
+};
+
+const handleImageSelect = (file: File) => {
+  if (!validateFileSize(file)) {
     return;
   }
 
@@ -898,11 +968,11 @@ const initializeCrop = () => {
   };
 };
 
-const setupCropArea = (
+const calculateImageDimensions = (
   img: HTMLImageElement,
   containerWidth: number,
   containerHeight: number
-) => {
+): { displayWidth: number; displayHeight: number } => {
   const imgAspect = img.naturalWidth / img.naturalHeight;
   const containerAspect = containerWidth / containerHeight;
 
@@ -916,6 +986,20 @@ const setupCropArea = (
   if (imgAspect <= containerAspect) {
     displayWidth = containerHeight * imgAspect;
   }
+
+  return { displayWidth, displayHeight };
+};
+
+const setupCropArea = (
+  img: HTMLImageElement,
+  containerWidth: number,
+  containerHeight: number
+) => {
+  const { displayWidth, displayHeight } = calculateImageDimensions(
+    img,
+    containerWidth,
+    containerHeight
+  );
 
   img.style.width = `${displayWidth}px`;
   img.style.height = `${displayHeight}px`;
@@ -937,13 +1021,19 @@ const setupCropArea = (
 
 type CropResizeHandle = 'nw' | 'ne' | 'sw' | 'se';
 
+const addCropEventListeners = () => {
+  window.document.addEventListener('mousemove', onCropDrag);
+  window.document.addEventListener('touchmove', onCropDrag);
+  window.document.addEventListener('mouseup', endCropDrag);
+  window.document.addEventListener('touchend', endCropDrag);
+};
+
 const startCropDrag = (e: MouseEvent | TouchEvent) => {
   e.preventDefault();
   e.stopPropagation();
   cropArea.value.isDragging = true;
-  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
 
+  const { x: clientX, y: clientY } = getEventCoordinates(e);
   const container = cropImageRef.value?.parentElement;
   if (!container) return;
 
@@ -951,10 +1041,14 @@ const startCropDrag = (e: MouseEvent | TouchEvent) => {
   cropArea.value.startX = clientX - rect.left - cropArea.value.x;
   cropArea.value.startY = clientY - rect.top - cropArea.value.y;
 
-  window.document.addEventListener('mousemove', onCropDrag);
-  window.document.addEventListener('touchmove', onCropDrag);
-  window.document.addEventListener('mouseup', endCropDrag);
-  window.document.addEventListener('touchend', endCropDrag);
+  addCropEventListeners();
+};
+
+const addCropResizeEventListeners = () => {
+  window.document.addEventListener('mousemove', onCropResize);
+  window.document.addEventListener('touchmove', onCropResize);
+  window.document.addEventListener('mouseup', endCropResize);
+  window.document.addEventListener('touchend', endCropResize);
 };
 
 const startCropResize = (
@@ -971,9 +1065,7 @@ const startCropResize = (
   cropArea.value.initialX = cropArea.value.x;
   cropArea.value.initialY = cropArea.value.y;
 
-  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-
+  const { x: clientX, y: clientY } = getEventCoordinates(e);
   const container = cropImageRef.value?.parentElement;
   if (!container) return;
 
@@ -981,28 +1073,20 @@ const startCropResize = (
   cropArea.value.startX = clientX - rect.left;
   cropArea.value.startY = clientY - rect.top;
 
-  window.document.addEventListener('mousemove', onCropResize);
-  window.document.addEventListener('touchmove', onCropResize);
-  window.document.addEventListener('mouseup', endCropResize);
-  window.document.addEventListener('touchend', endCropResize);
+  addCropResizeEventListeners();
 };
 
-const onCropDrag = (e: MouseEvent | TouchEvent) => {
-  if (!cropArea.value.isDragging || !cropImageRef.value) return;
-
-  e.preventDefault();
-  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-
-  const container = cropImageRef.value.parentElement;
-  if (!container) return;
-
+const calculateCropDragPosition = (
+  clientX: number,
+  clientY: number,
+  container: HTMLElement
+): { x: number; y: number } => {
   const rect = container.getBoundingClientRect();
   const x = clientX - rect.left - cropArea.value.startX;
   const y = clientY - rect.top - cropArea.value.startY;
 
-  const imgWidth = cropImageRef.value.offsetWidth;
-  const imgHeight = cropImageRef.value.offsetHeight;
+  const imgWidth = cropImageRef.value!.offsetWidth;
+  const imgHeight = cropImageRef.value!.offsetHeight;
   const containerWidth = container.clientWidth;
   const containerHeight = container.clientHeight;
 
@@ -1014,8 +1098,23 @@ const onCropDrag = (e: MouseEvent | TouchEvent) => {
   const maxX = imgLeft + imgWidth - cropArea.value.width;
   const maxY = imgTop + imgHeight - cropArea.value.height;
 
-  cropArea.value.x = Math.max(minX, Math.min(x, maxX));
-  cropArea.value.y = Math.max(minY, Math.min(y, maxY));
+  return {
+    x: Math.max(minX, Math.min(x, maxX)),
+    y: Math.max(minY, Math.min(y, maxY)),
+  };
+};
+
+const onCropDrag = (e: MouseEvent | TouchEvent) => {
+  if (!cropArea.value.isDragging || !cropImageRef.value) return;
+
+  e.preventDefault();
+  const { x: clientX, y: clientY } = getEventCoordinates(e);
+  const container = cropImageRef.value.parentElement;
+  if (!container) return;
+
+  const position = calculateCropDragPosition(clientX, clientY, container);
+  cropArea.value.x = position.x;
+  cropArea.value.y = position.y;
 };
 
 const getEventCoordinates = (
@@ -1144,25 +1243,18 @@ const applyBoundaryConstraints = (
   return { x: newX, y: newY };
 };
 
-const onCropResize = (e: MouseEvent | TouchEvent) => {
-  if (
-    !cropArea.value.isResizing ||
-    !cropImageRef.value ||
-    !cropArea.value.resizeHandle
-  )
-    return;
-
-  e.preventDefault();
-
-  const container = cropImageRef.value.parentElement;
-  if (!container) return;
+const calculateCropResizeDimensions = (
+  e: MouseEvent | TouchEvent,
+  handle: CropResizeHandle
+): { width: number; height: number; x: number; y: number } | null => {
+  const container = cropImageRef.value?.parentElement;
+  if (!container) return null;
 
   const { x: clientX, y: clientY } = getEventCoordinates(e);
   const rect = container.getBoundingClientRect();
   const mouseX = clientX - rect.left;
   const mouseY = clientY - rect.top;
 
-  const handle = cropArea.value.resizeHandle;
   const { x: fixedX, y: fixedY } = getFixedPoint(
     handle,
     cropArea.value.initialX,
@@ -1182,10 +1274,10 @@ const onCropResize = (e: MouseEvent | TouchEvent) => {
     size
   );
 
-  const imgWidth = cropImageRef.value.offsetWidth;
-  const imgHeight = cropImageRef.value.offsetHeight;
-  const resizeContainer = cropImageRef.value.parentElement;
-  if (!resizeContainer) return;
+  const imgWidth = cropImageRef.value!.offsetWidth;
+  const imgHeight = cropImageRef.value!.offsetHeight;
+  const resizeContainer = cropImageRef.value!.parentElement;
+  if (!resizeContainer) return null;
 
   const resizeContainerWidth = resizeContainer.clientWidth;
   const resizeContainerHeight = resizeContainer.clientHeight;
@@ -1211,10 +1303,10 @@ const onCropResize = (e: MouseEvent | TouchEvent) => {
     dimensions
   );
 
-  const finalImgWidth = cropImageRef.value.offsetWidth;
-  const finalImgHeight = cropImageRef.value.offsetHeight;
-  const finalContainer = cropImageRef.value.parentElement;
-  if (!finalContainer) return;
+  const finalImgWidth = cropImageRef.value!.offsetWidth;
+  const finalImgHeight = cropImageRef.value!.offsetHeight;
+  const finalContainer = cropImageRef.value!.parentElement;
+  if (!finalContainer) return null;
 
   const finalContainerWidth = finalContainer.clientWidth;
   const finalContainerHeight = finalContainer.clientHeight;
@@ -1244,27 +1336,133 @@ const onCropResize = (e: MouseEvent | TouchEvent) => {
     Math.min(finalPosition.y, maxY - dimensions.height)
   );
 
-  cropArea.value.width = dimensions.width;
-  cropArea.value.height = dimensions.height;
-  cropArea.value.x = finalPosition.x;
-  cropArea.value.y = finalPosition.y;
+  return {
+    width: dimensions.width,
+    height: dimensions.height,
+    x: finalPosition.x,
+    y: finalPosition.y,
+  };
 };
 
-const endCropDrag = () => {
-  cropArea.value.isDragging = false;
+const onCropResize = (e: MouseEvent | TouchEvent) => {
+  if (
+    !cropArea.value.isResizing ||
+    !cropImageRef.value ||
+    !cropArea.value.resizeHandle
+  ) {
+    return;
+  }
+
+  e.preventDefault();
+
+  const dimensions = calculateCropResizeDimensions(
+    e,
+    cropArea.value.resizeHandle
+  );
+  if (!dimensions) return;
+
+  cropArea.value.width = dimensions.width;
+  cropArea.value.height = dimensions.height;
+  cropArea.value.x = dimensions.x;
+  cropArea.value.y = dimensions.y;
+};
+
+const removeCropEventListeners = () => {
   window.document.removeEventListener('mousemove', onCropDrag);
   window.document.removeEventListener('touchmove', onCropDrag);
   window.document.removeEventListener('mouseup', endCropDrag);
   window.document.removeEventListener('touchend', endCropDrag);
 };
 
-const endCropResize = () => {
-  cropArea.value.isResizing = false;
-  cropArea.value.resizeHandle = null;
+const endCropDrag = () => {
+  cropArea.value.isDragging = false;
+  removeCropEventListeners();
+};
+
+const removeCropResizeEventListeners = () => {
   window.document.removeEventListener('mousemove', onCropResize);
   window.document.removeEventListener('touchmove', onCropResize);
   window.document.removeEventListener('mouseup', endCropResize);
   window.document.removeEventListener('touchend', endCropResize);
+};
+
+const endCropResize = () => {
+  cropArea.value.isResizing = false;
+  cropArea.value.resizeHandle = null;
+  removeCropResizeEventListeners();
+};
+
+const calculateCropCoordinates = (
+  img: HTMLImageElement,
+  container: HTMLElement
+): {
+  sourceX: number;
+  sourceY: number;
+  sourceWidth: number;
+  sourceHeight: number;
+} => {
+  const containerWidth = container.clientWidth;
+  const containerHeight = container.clientHeight;
+  const imgLeft = (containerWidth - img.offsetWidth) / 2;
+  const imgTop = (containerHeight - img.offsetHeight) / 2;
+
+  const relativeX = cropArea.value.x - imgLeft;
+  const relativeY = cropArea.value.y - imgTop;
+
+  const scaleX = img.naturalWidth / img.offsetWidth;
+  const scaleY = img.naturalHeight / img.offsetHeight;
+
+  return {
+    sourceX: relativeX * scaleX,
+    sourceY: relativeY * scaleY,
+    sourceWidth: cropArea.value.width * scaleX,
+    sourceHeight: cropArea.value.height * scaleY,
+  };
+};
+
+const drawCroppedImage = (
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  canvas: HTMLCanvasElement,
+  coordinates: {
+    sourceX: number;
+    sourceY: number;
+    sourceWidth: number;
+    sourceHeight: number;
+  }
+) => {
+  canvas.width = cropPreviewSize;
+  canvas.height = cropPreviewSize;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  ctx.drawImage(
+    img,
+    coordinates.sourceX,
+    coordinates.sourceY,
+    coordinates.sourceWidth,
+    coordinates.sourceHeight,
+    0,
+    0,
+    cropPreviewSize,
+    cropPreviewSize
+  );
+};
+
+const createCroppedFile = (blob: Blob): File => {
+  return new File([blob], 'user-photo.jpg', {
+    type: 'image/jpeg',
+  });
+};
+
+const handleCropSuccess = (canvas: HTMLCanvasElement) => {
+  const croppedFile = createCroppedFile(
+    new Blob([canvas.toDataURL('image/jpeg')], { type: 'image/jpeg' })
+  );
+  photoFile.value = croppedFile;
+  photoPreview.value = canvas.toDataURL('image/jpeg');
+  cropDialog.value.croppedImage = canvas.toDataURL('image/jpeg');
+  isCropModalOpen.value = false;
 };
 
 const cropImage = () => {
@@ -1282,46 +1480,13 @@ const cropImage = () => {
   const container = img.parentElement;
   if (!container) return;
 
-  const containerWidth = container.clientWidth;
-  const containerHeight = container.clientHeight;
-  const imgLeft = (containerWidth - img.offsetWidth) / 2;
-  const imgTop = (containerHeight - img.offsetHeight) / 2;
-
-  const relativeX = cropArea.value.x - imgLeft;
-  const relativeY = cropArea.value.y - imgTop;
-
-  const scaleX = img.naturalWidth / img.offsetWidth;
-  const scaleY = img.naturalHeight / img.offsetHeight;
-
-  const sourceX = relativeX * scaleX;
-  const sourceY = relativeY * scaleY;
-  const sourceWidth = cropArea.value.width * scaleX;
-  const sourceHeight = cropArea.value.height * scaleY;
-
-  canvas.width = cropPreviewSize;
-  canvas.height = cropPreviewSize;
-
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  ctx.drawImage(
-    img,
-    sourceX,
-    sourceY,
-    sourceWidth,
-    sourceHeight,
-    0,
-    0,
-    cropPreviewSize,
-    cropPreviewSize
-  );
+  const coordinates = calculateCropCoordinates(img, container);
+  drawCroppedImage(ctx, img, canvas, coordinates);
 
   canvas.toBlob(
     (blob) => {
       if (!blob) return;
-
-      const croppedFile = new File([blob], 'user-photo.jpg', {
-        type: 'image/jpeg',
-      });
+      const croppedFile = createCroppedFile(blob);
       photoFile.value = croppedFile;
       photoPreview.value = canvas.toDataURL('image/jpeg');
       cropDialog.value.croppedImage = canvas.toDataURL('image/jpeg');
@@ -1348,6 +1513,32 @@ const removePhoto = () => {
   cropDialog.value.croppedImage = '';
 };
 
+const determinePhotoUrl = (): string | null | undefined => {
+  if (photoRemoved.value) {
+    return null;
+  }
+
+  if (!photoFile.value) {
+    if (photo.value && !photo.value.startsWith('data:')) {
+      return photo.value;
+    }
+    if (photoPreview.value && !photoPreview.value.startsWith('data:')) {
+      return photoPreview.value;
+    }
+    return undefined;
+  }
+
+  if (photoPreview.value && !photoPreview.value.startsWith('data:')) {
+    return photoPreview.value;
+  }
+
+  return undefined;
+};
+
+const hasUpdatePayload = (body: UpdateUserRequest): boolean => {
+  return Object.keys(body).length > 0 || !!photoFile.value;
+};
+
 const updateUser = async () => {
   if (!userId.value) {
     return;
@@ -1357,138 +1548,13 @@ const updateUser = async () => {
     user_id: userId.value,
   };
 
-  const emailToSave = determineEmailToSave();
-  const passwordValue = password.value;
-  const userStatusIdValue =
-    user_status_id.value !== initialValues.value.user_status_id
-      ? user_status_id.value
-      : undefined;
-  const accountIdValue =
-    isAdministrator.value && accountId.value !== initialValues.value.account_id
-      ? accountId.value
-      : undefined;
+  const body = buildUpdateUserBody();
 
-  const phoneDdiValue =
-    phone_ddi.value !== initialValues.value.phone_ddi
-      ? phone_ddi.value
-      : undefined;
-  const phoneToSave = determinePhoneToSave();
-  const nameValue =
-    name.value !== initialValues.value.name ? name.value : undefined;
-  const lastNameValue =
-    last_name.value !== initialValues.value.last_name
-      ? last_name.value
-      : undefined;
-  const birthDateValue =
-    birth_date.value !== initialValues.value.birth_date
-      ? birth_date.value
-      : undefined;
-
-  const documentTypeIdValue =
-    user_document_type_id.value !== initialValues.value.user_document_type_id
-      ? user_document_type_id.value
-      : undefined;
-  const documentToSave = determineDocumentToSave();
-
-  const countryIdValue =
-    country_id.value !== initialValues.value.country_id
-      ? country_id.value
-      : undefined;
-  const zipCodeValue =
-    zip_code.value !== initialValues.value.zip_code
-      ? zip_code.value
-      : undefined;
-  const address1ToSave = determineAddress1ToSave();
-  const address2ToSave = determineAddress2ToSave();
-  const cityValue =
-    city.value !== initialValues.value.city ? city.value : undefined;
-  const stateValue =
-    state.value !== initialValues.value.state ? state.value : undefined;
-  const districtValue =
-    district.value !== initialValues.value.district
-      ? district.value
-      : undefined;
-
-  let photoUrl: string | null | undefined = undefined;
-
-  if (photoRemoved.value) {
-    photoUrl = null;
-  } else if (!photoFile.value) {
-    if (photo.value && !photo.value.startsWith('data:')) {
-      photoUrl = photo.value;
-    } else if (photoPreview.value && !photoPreview.value.startsWith('data:')) {
-      photoUrl = photoPreview.value;
-    }
-  } else if (photoPreview.value && !photoPreview.value.startsWith('data:')) {
-    photoUrl = photoPreview.value;
-  }
-
-  const body: UpdateUserRequest = {};
-
-  if (emailToSave !== undefined) {
-    body.email = { value: emailToSave };
-  }
-  if (passwordValue) {
-    body.password = { value: passwordValue };
-  }
-  if (userStatusIdValue !== undefined) {
-    body.user_status_id = { value: userStatusIdValue };
-  }
-  if (accountIdValue !== undefined) {
-    body.account_id = { value: accountIdValue };
-  }
-  if (phoneDdiValue !== undefined) {
-    body.phone_ddi = { value: phoneDdiValue };
-  }
-  if (phoneToSave !== undefined) {
-    body.phone = { value: phoneToSave };
-  }
-  if (nameValue !== undefined) {
-    body.name = { value: nameValue };
-  }
-  if (lastNameValue !== undefined) {
-    body.last_name = { value: lastNameValue };
-  }
-  if (birthDateValue !== undefined) {
-    body.birth_date = { value: birthDateValue };
-  }
-  if (documentTypeIdValue !== undefined) {
-    body.document_type_id = { value: documentTypeIdValue };
-  }
-  if (documentToSave !== undefined) {
-    body.document = { value: documentToSave };
-  }
-  if (countryIdValue !== undefined) {
-    body.country_id = { value: countryIdValue };
-  }
-  if (zipCodeValue !== undefined) {
-    body.zip_code = { value: zipCodeValue };
-  }
-  if (address1ToSave !== undefined) {
-    body.address1 = { value: address1ToSave };
-  }
-  if (address2ToSave !== undefined) {
-    body.address2 = { value: address2ToSave };
-  }
-  if (cityValue !== undefined) {
-    body.city = { value: cityValue };
-  }
-  if (stateValue !== undefined) {
-    body.state = { value: stateValue };
-  }
-  if (districtValue !== undefined) {
-    body.district = { value: districtValue };
-  }
-  if (photoUrl !== undefined) {
-    body.photo_url = { value: photoUrl };
-  }
-
-  const hasPayload = Object.keys(body).length > 0 || photoFile.value;
-
-  if (!hasPayload) {
+  if (!hasUpdatePayload(body)) {
     return;
   }
 
+  const photoUrl = determinePhotoUrl();
   const result = await userStore.updateUser(
     payload,
     body,
@@ -1497,14 +1563,142 @@ const updateUser = async () => {
 
   if (result) {
     isVisible.value = false;
-
     await userStore.listUsers();
   }
 };
 
-const onCountryChange = async (val: number | null) => {
-  country_id.value = val;
+const buildUpdateUserBody = (): UpdateUserRequest => {
+  const body: UpdateUserRequest = {};
 
+  const emailToSave = determineEmailToSave();
+  if (emailToSave !== undefined) {
+    body.email = { value: emailToSave };
+  }
+
+  const passwordValue = password.value;
+  if (passwordValue) {
+    body.password = { value: passwordValue };
+  }
+
+  const userStatusIdValue =
+    user_status_id.value !== initialValues.value.user_status_id
+      ? user_status_id.value
+      : undefined;
+  if (userStatusIdValue !== undefined) {
+    body.user_status_id = { value: userStatusIdValue };
+  }
+
+  const accountIdValue =
+    isAdministrator.value && accountId.value !== initialValues.value.account_id
+      ? accountId.value
+      : undefined;
+  if (accountIdValue !== undefined) {
+    body.account_id = { value: accountIdValue };
+  }
+
+  const phoneDdiValue =
+    phone_ddi.value !== initialValues.value.phone_ddi
+      ? phone_ddi.value
+      : undefined;
+  if (phoneDdiValue !== undefined) {
+    body.phone_ddi = { value: phoneDdiValue };
+  }
+
+  const phoneToSave = determinePhoneToSave();
+  if (phoneToSave !== undefined) {
+    body.phone = { value: phoneToSave };
+  }
+
+  const nameValue =
+    name.value !== initialValues.value.name ? name.value : undefined;
+  if (nameValue !== undefined) {
+    body.name = { value: nameValue };
+  }
+
+  const lastNameValue =
+    last_name.value !== initialValues.value.last_name
+      ? last_name.value
+      : undefined;
+  if (lastNameValue !== undefined) {
+    body.last_name = { value: lastNameValue };
+  }
+
+  const birthDateValue =
+    birth_date.value !== initialValues.value.birth_date
+      ? birth_date.value
+      : undefined;
+  if (birthDateValue !== undefined) {
+    body.birth_date = { value: birthDateValue };
+  }
+
+  const documentTypeIdValue =
+    user_document_type_id.value !== initialValues.value.user_document_type_id
+      ? user_document_type_id.value
+      : undefined;
+  if (documentTypeIdValue !== undefined) {
+    body.document_type_id = { value: documentTypeIdValue };
+  }
+
+  const documentToSave = determineDocumentToSave();
+  if (documentToSave !== undefined) {
+    body.document = { value: documentToSave };
+  }
+
+  const countryIdValue =
+    country_id.value !== initialValues.value.country_id
+      ? country_id.value
+      : undefined;
+  if (countryIdValue !== undefined) {
+    body.country_id = { value: countryIdValue };
+  }
+
+  const zipCodeValue =
+    zip_code.value !== initialValues.value.zip_code
+      ? zip_code.value
+      : undefined;
+  if (zipCodeValue !== undefined) {
+    body.zip_code = { value: zipCodeValue };
+  }
+
+  const address1ToSave = determineAddress1ToSave();
+  if (address1ToSave !== undefined) {
+    body.address1 = { value: address1ToSave };
+  }
+
+  const address2ToSave = determineAddress2ToSave();
+  if (address2ToSave !== undefined) {
+    body.address2 = { value: address2ToSave };
+  }
+
+  const cityValue =
+    city.value !== initialValues.value.city ? city.value : undefined;
+  if (cityValue !== undefined) {
+    body.city = { value: cityValue };
+  }
+
+  const stateValue =
+    state.value !== initialValues.value.state ? state.value : undefined;
+  if (stateValue !== undefined) {
+    body.state = { value: stateValue };
+  }
+
+  const districtValue =
+    district.value !== initialValues.value.district
+      ? district.value
+      : undefined;
+  if (districtValue !== undefined) {
+    body.district = { value: districtValue };
+  }
+
+  const photoUrl = determinePhotoUrl();
+  if (photoUrl !== undefined) {
+    body.photo_url = { value: photoUrl };
+  }
+
+  return body;
+};
+
+const clearAddressFields = () => {
   address1.value = '';
   address1PartialOriginal.value = '';
   isAddress1Decrypted.value = false;
@@ -1514,9 +1708,31 @@ const onCountryChange = async (val: number | null) => {
   city.value = '';
   state.value = '';
   district.value = '';
+};
 
+const onCountryChange = async (val: number | null) => {
+  country_id.value = val;
+  clearAddressFields();
   await nextTick();
   zipInputRef.value?.focus?.();
+};
+
+const updateAddressFromZipcode = (response: {
+  address_1: string;
+  address_2?: string | null;
+  city: string;
+  state: string;
+  district: string;
+}) => {
+  address1.value = response.address_1;
+  address1PartialOriginal.value = response.address_1;
+  isAddress1Decrypted.value = true;
+  address2.value = response.address_2 ?? null;
+  address2PartialOriginal.value = response.address_2 ?? '';
+  isAddress2Decrypted.value = true;
+  city.value = response.city;
+  state.value = response.state;
+  district.value = response.district;
 };
 
 const viewZipcode = async () => {
@@ -1533,28 +1749,23 @@ const viewZipcode = async () => {
 
   const response = await userStore.viewZipcode(params);
   if (response) {
-    address1.value = response.address_1;
-    address1PartialOriginal.value = response.address_1;
-    isAddress1Decrypted.value = true;
-    address2.value = response.address_2;
-    address2PartialOriginal.value = response.address_2 ?? '';
-    isAddress2Decrypted.value = true;
-    city.value = response.city;
-    state.value = response.state;
-    district.value = response.district;
+    updateAddressFromZipcode(response);
   }
 };
 
 const isInitializing = ref(true);
 const initialZipCode = ref<string | null>(null);
 
-const loadAccounts = async () => {
-  if (isAdministrator.value) {
-    const accounts = await accountStore.listAllAccounts();
-    if (accounts) {
-      accountsOptions.value = accounts;
-    }
+const loadAdministratorAccounts = async () => {
+  if (!isAdministrator.value) return;
+  const accounts = await accountStore.listAllAccounts();
+  if (accounts) {
+    accountsOptions.value = accounts;
   }
+};
+
+const loadAccounts = async () => {
+  await loadAdministratorAccounts();
 };
 
 const loadUserData = async () => {
@@ -1580,7 +1791,8 @@ const loadUserData = async () => {
     initialValues.value.phone = phonePartial;
     if (phonePartial.includes('*')) {
       phone.value = null;
-    } else {
+    }
+    if (!phonePartial.includes('*')) {
       phone.value = phonePartial.replaceAll(/\D/g, '');
     }
     isPhoneDecrypted.value = false;
@@ -1621,7 +1833,8 @@ const loadUserData = async () => {
     initialValues.value.address1 = address1Partial;
     if (address1Partial.includes('*')) {
       address1.value = null;
-    } else {
+    }
+    if (!address1Partial.includes('*')) {
       address1.value = address1Partial;
     }
     isAddress1Decrypted.value = false;
@@ -1631,9 +1844,11 @@ const loadUserData = async () => {
     initialValues.value.address2 = address2Partial;
     if (address2Partial && address2Partial.includes('*')) {
       address2.value = null;
-    } else if (address2Partial) {
+    }
+    if (address2Partial && !address2Partial.includes('*')) {
       address2.value = address2Partial;
-    } else {
+    }
+    if (!address2Partial) {
       address2.value = null;
     }
     isAddress2Decrypted.value = false;
@@ -1904,7 +2119,7 @@ watch(
                       <VCol cols="12" md="6">
                         <AppTextField
                           id="confirm-new-password"
-                          name="new-password"
+                          name="confirm-new-password"
                           v-model="confirmPassword"
                           :label="$t('confirm_password') + ':'"
                           :placeholder="$t('confirm_password')"
