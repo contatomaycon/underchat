@@ -99,6 +99,117 @@ const userToEdit = ref<string | null>(null);
 const isAssignRoleDialogShow = ref(false);
 const userToAssignRole = ref<string | null>(null);
 
+function formatPhone(value: string | null | undefined): string {
+  if (!value) return '';
+
+  const numbers = value.replaceAll(/\D/g, '').slice(0, 11);
+
+  if (numbers.length <= 2) {
+    return numbers;
+  }
+  if (numbers.length <= 6) {
+    return `(${numbers.slice(0, 2)}) ${numbers.slice(2)}`;
+  }
+  if (numbers.length <= 10) {
+    return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 6)}-${numbers.slice(6)}`;
+  }
+  return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`;
+}
+
+const visibleData = ref<
+  Map<
+    string,
+    {
+      email?: string | null;
+      phone?: string | null;
+      document?: string | null;
+    }
+  >
+>(new Map());
+
+const loadingData = ref<
+  Map<
+    string,
+    {
+      email?: boolean;
+      phone?: boolean;
+      document?: boolean;
+    }
+  >
+>(new Map());
+
+const toggleEmailVisibility = async (userId: string, emailPartial: string) => {
+  const current = visibleData.value.get(userId);
+  if (current?.email !== undefined) {
+    visibleData.value.set(userId, { ...current, email: undefined });
+    return;
+  }
+
+  const loading = loadingData.value.get(userId) || {};
+  loadingData.value.set(userId, { ...loading, email: true });
+
+  const decryptedEmail = await userStore.getUserEmailDecrypted(userId);
+
+  loadingData.value.set(userId, { ...loading, email: false });
+
+  if (decryptedEmail) {
+    visibleData.value.set(userId, {
+      ...current,
+      email: decryptedEmail,
+    });
+  }
+};
+
+const togglePhoneVisibility = async (
+  userId: string,
+  phonePartial: string | null | undefined
+) => {
+  const current = visibleData.value.get(userId);
+  if (current?.phone !== undefined) {
+    visibleData.value.set(userId, { ...current, phone: undefined });
+    return;
+  }
+
+  const loading = loadingData.value.get(userId) || {};
+  loadingData.value.set(userId, { ...loading, phone: true });
+
+  const decryptedPhone = await userStore.getUserPhoneDecrypted(userId);
+
+  loadingData.value.set(userId, { ...loading, phone: false });
+
+  if (decryptedPhone) {
+    visibleData.value.set(userId, {
+      ...current,
+      phone: decryptedPhone,
+    });
+  }
+};
+
+const toggleDocumentVisibility = async (
+  userId: string,
+  documentPartial: string | null | undefined
+) => {
+  const current = visibleData.value.get(userId);
+  if (current?.document !== undefined) {
+    visibleData.value.set(userId, { ...current, document: undefined });
+    return;
+  }
+
+  const loading = loadingData.value.get(userId) || {};
+  loadingData.value.set(userId, { ...loading, document: true });
+
+  const decryptedDocument = await userStore.getUserDocumentDecrypted(userId);
+
+  loadingData.value.set(userId, { ...loading, document: false });
+
+  if (decryptedDocument) {
+    visibleData.value.set(userId, {
+      ...current,
+      document: decryptedDocument,
+    });
+  }
+};
+
 const headers: DataTableHeader<ListUserResponse>[] = [
   { title: t('account'), key: 'account' },
   { title: t('status'), key: 'status' },
@@ -248,12 +359,89 @@ watch(
           {{ item.user_status?.name }}
         </template>
 
+        <template #item.email_partial="{ item }">
+          <div class="d-flex align-center user-data-cell">
+            <span class="user-data-text">
+              {{
+                visibleData.get(item.user_id)?.email ??
+                item.email_partial ??
+                '-'
+              }}
+            </span>
+            <VIcon
+              :icon="
+                visibleData.get(item.user_id)?.email !== undefined
+                  ? 'tabler-eye-off'
+                  : 'tabler-eye'
+              "
+              class="cursor-pointer user-data-icon"
+              :class="{
+                'opacity-50': loadingData.get(item.user_id)?.email,
+              }"
+              size="18"
+              @click="toggleEmailVisibility(item.user_id, item.email_partial)"
+            />
+          </div>
+        </template>
+
         <template #item.phone_partial="{ item }">
-          {{ item.user_info?.phone_partial }}
+          <div class="d-flex align-center user-data-cell">
+            <span class="user-data-text">
+              {{
+                visibleData.get(item.user_id)?.phone
+                  ? formatPhone(visibleData.get(item.user_id)?.phone)
+                  : item.user_info?.phone_partial ?? '-'
+              }}
+            </span>
+            <VIcon
+              :icon="
+                visibleData.get(item.user_id)?.phone !== undefined
+                  ? 'tabler-eye-off'
+                  : 'tabler-eye'
+              "
+              class="cursor-pointer user-data-icon"
+              :class="{
+                'opacity-50': loadingData.get(item.user_id)?.phone,
+              }"
+              size="18"
+              @click="
+                togglePhoneVisibility(
+                  item.user_id,
+                  item.user_info?.phone_partial
+                )
+              "
+            />
+          </div>
         </template>
 
         <template #item.document_partial="{ item }">
-          {{ item.user_document?.document_partial }}
+          <div class="d-flex align-center user-data-cell">
+            <span class="user-data-text">
+              {{
+                visibleData.get(item.user_id)?.document ??
+                item.user_document?.document_partial ??
+                '-'
+              }}
+            </span>
+            <VIcon
+              :icon="
+                visibleData.get(item.user_id)?.document !== undefined
+                  ? 'tabler-eye-off'
+                  : 'tabler-eye'
+              "
+              class="cursor-pointer user-data-icon"
+              :class="{
+                'opacity-50': loadingData.get(item.user_id)?.document,
+              }"
+              size="18"
+              @click="
+                toggleDocumentVisibility(
+                  item.user_id,
+                  item.user_document?.document_partial
+                )
+              "
+            />
+          </div>
         </template>
 
         <template #item.created_at="{ item }">
@@ -354,5 +542,24 @@ watch(
 
 .invoice-list-filter {
   inline-size: 20rem;
+}
+
+.user-data-cell {
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.user-data-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-data-icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
 }
 </style>
