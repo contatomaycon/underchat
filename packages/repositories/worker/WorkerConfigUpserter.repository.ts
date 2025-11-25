@@ -99,19 +99,6 @@ export class WorkerConfigUpserterRepository {
       updateData.show_worker_name = input.show_worker_name;
     }
 
-    if (input.generate_protocol_at_ura !== undefined) {
-      updateData.generate_protocol_at_ura = input.generate_protocol_at_ura;
-    }
-
-    if (input.generate_protocol_at_start !== undefined) {
-      updateData.generate_protocol_at_start = input.generate_protocol_at_start;
-    }
-
-    if (input.generate_protocol_at_transfer !== undefined) {
-      updateData.generate_protocol_at_transfer =
-        input.generate_protocol_at_transfer;
-    }
-
     return updateData;
   }
 
@@ -154,11 +141,84 @@ export class WorkerConfigUpserterRepository {
         is_automatic_attendance: input.is_automatic_attendance ?? false,
         show_attendee_name: input.show_attendee_name ?? false,
         show_worker_name: input.show_worker_name ?? false,
-        generate_protocol_at_ura: input.generate_protocol_at_ura ?? false,
-        generate_protocol_at_start: input.generate_protocol_at_start ?? false,
-        generate_protocol_at_transfer:
-          input.generate_protocol_at_transfer ?? false,
       })
       .execute();
+  }
+
+  updateTransferProtocolText = async (
+    workerId: string,
+    text: string | null
+  ): Promise<string | null> => {
+    await this.db.transaction(async (tx) => {
+      await this.ensureSingleConfigPerWorker(tx, workerId);
+
+      const existingConfig = await this.findExistingConfigTx(tx, workerId);
+
+      if (existingConfig) {
+        await this.updateTransferProtocolTextTx(tx, workerId, text);
+        return;
+      }
+
+      await this.createTransferProtocolTextTx(tx, workerId, text);
+    });
+
+    return this.getTransferProtocolText(workerId);
+  };
+
+  private async updateTransferProtocolTextTx(
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
+    workerId: string,
+    text: string | null
+  ): Promise<void> {
+    await tx
+      .update(workerConfig)
+      .set({
+        generate_protocol_at_transfer: text || null,
+        updated_at: new Date().toISOString(),
+      })
+      .where(eq(workerConfig.worker_id, workerId))
+      .execute();
+  }
+
+  private async createTransferProtocolTextTx(
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
+    workerId: string,
+    text: string | null
+  ): Promise<void> {
+    await tx
+      .insert(workerConfig)
+      .values({
+        worker_config_id: uuidv7(),
+        worker_id: workerId,
+        is_automatic_attendance: false,
+        show_attendee_name: false,
+        show_worker_name: false,
+        generate_protocol_at_transfer: text || null,
+      })
+      .execute();
+  }
+
+  private async getTransferProtocolText(
+    workerId: string
+  ): Promise<string | null> {
+    const result = await this.db
+      .select({
+        generate_protocol_at_transfer:
+          workerConfig.generate_protocol_at_transfer,
+      })
+      .from(workerConfig)
+      .where(eq(workerConfig.worker_id, workerId))
+      .limit(1)
+      .execute();
+
+    return result[0]?.generate_protocol_at_transfer || null;
   }
 }

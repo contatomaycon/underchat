@@ -186,15 +186,14 @@ const cropArea = ref({
 const cropPreviewSize = 160;
 /* removed isInitializingGeneralTab flag */
 
-type WorkerConfigForm = Pick<
-  WorkerConfig,
-  | 'is_automatic_attendance'
-  | 'show_attendee_name'
-  | 'show_worker_name'
-  | 'generate_protocol_at_ura'
-  | 'generate_protocol_at_start'
-  | 'generate_protocol_at_transfer'
->;
+type WorkerConfigForm = {
+  is_automatic_attendance: boolean;
+  show_attendee_name: boolean;
+  show_worker_name: boolean;
+  generate_protocol_at_ura: boolean;
+  generate_protocol_at_start: boolean;
+  generate_protocol_at_transfer: boolean;
+};
 
 const createDefaultWorkerConfig = (): WorkerConfigForm => ({
   is_automatic_attendance: false,
@@ -211,6 +210,9 @@ const workerConfigForm = reactive<WorkerConfigForm>(
 const isLoadingWorkerConfig = ref(false);
 const isSavingWorkerConfig = ref(false);
 const workerConfigLoadedFor = ref<string | null>(null);
+const transferProtocolText = ref<string>('');
+const transferProtocolModalOpen = ref(false);
+const isSavingTransferProtocol = ref(false);
 
 const statusTypeOptions = computed(() => [
   {
@@ -375,10 +377,15 @@ const applyWorkerConfig = (config?: ViewWorkerConfigResponse | null) => {
     nextState.is_automatic_attendance = config.is_automatic_attendance;
     nextState.show_attendee_name = config.show_attendee_name;
     nextState.show_worker_name = config.show_worker_name;
-    nextState.generate_protocol_at_ura = config.generate_protocol_at_ura;
-    nextState.generate_protocol_at_start = config.generate_protocol_at_start;
-    nextState.generate_protocol_at_transfer =
-      config.generate_protocol_at_transfer;
+    nextState.generate_protocol_at_ura = Boolean(
+      config.generate_protocol_at_ura
+    );
+    nextState.generate_protocol_at_start = Boolean(
+      config.generate_protocol_at_start
+    );
+    nextState.generate_protocol_at_transfer = Boolean(
+      config.generate_protocol_at_transfer
+    );
   }
 
   Object.assign(workerConfigForm, nextState);
@@ -399,6 +406,15 @@ const loadWorkerConfig = async (force = false) => {
 
     applyWorkerConfig(result);
     workerConfigLoadedFor.value = channelId.value;
+
+    const protocolText = await channelStore.fetchTransferProtocolText(
+      channelId.value
+    );
+    const hasProtocolText =
+      typeof protocolText === 'string' && protocolText.trim().length > 0;
+
+    transferProtocolText.value = hasProtocolText ? protocolText : '';
+    workerConfigForm.generate_protocol_at_transfer = hasProtocolText;
   } finally {
     isLoadingWorkerConfig.value = false;
   }
@@ -427,6 +443,59 @@ const saveWorkerConfig = async () => {
 };
 
 type WorkerConfigField = keyof WorkerConfigForm;
+
+const openTransferProtocolModal = async () => {
+  if (!channelId.value) return;
+
+  const protocolText = await channelStore.fetchTransferProtocolText(
+    channelId.value
+  );
+  transferProtocolText.value = protocolText || '';
+  transferProtocolModalOpen.value = true;
+};
+
+const closeTransferProtocolModal = () => {
+  transferProtocolModalOpen.value = false;
+};
+
+const saveTransferProtocolText = async () => {
+  if (!channelId.value) return;
+
+  try {
+    isSavingTransferProtocol.value = true;
+    const text = transferProtocolText.value.trim() || null;
+    const result = await channelStore.updateTransferProtocolText(
+      channelId.value,
+      text
+    );
+
+    const hasText = result !== null && result.trim().length > 0;
+    workerConfigForm.generate_protocol_at_transfer = hasText;
+    transferProtocolText.value = result || '';
+
+    closeTransferProtocolModal();
+  } finally {
+    isSavingTransferProtocol.value = false;
+  }
+};
+
+const deleteTransferProtocolText = async () => {
+  if (!channelId.value) return;
+
+  try {
+    isSavingTransferProtocol.value = true;
+    const result = await channelStore.updateTransferProtocolText(
+      channelId.value,
+      null
+    );
+
+    workerConfigForm.generate_protocol_at_transfer = false;
+    transferProtocolText.value = '';
+    closeTransferProtocolModal();
+  } finally {
+    isSavingTransferProtocol.value = false;
+  }
+};
 
 const workerConfigOptions = computed(() => [
   {
@@ -1664,11 +1733,23 @@ onMounted(async () => {
                   <VCard class="general-config-card h-100" variant="outlined">
                     <div class="d-flex flex-column gap-2">
                       <VCheckbox
+                        v-if="option.key !== 'generate_protocol_at_transfer'"
                         v-model="workerConfigForm[option.key]"
                         :label="option.title"
                         color="primary"
                         hide-details
                         :disabled="isSavingWorkerConfig"
+                      />
+                      <VCheckbox
+                        v-else
+                        :model-value="workerConfigForm[option.key]"
+                        :label="option.title"
+                        color="primary"
+                        hide-details
+                        :disabled="
+                          isSavingWorkerConfig || isSavingTransferProtocol
+                        "
+                        @click.stop.prevent="openTransferProtocolModal"
                       />
                       <p class="text-body-2 text-medium-emphasis mb-0">
                         {{ option.description }}
@@ -2445,6 +2526,63 @@ onMounted(async () => {
             {{ previewDialog.caption }}
           </p>
         </div>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog v-model="transferProtocolModalOpen" max-width="600" persistent>
+    <VCard>
+      <VCardTitle class="d-flex justify-space-between align-center">
+        <span>{{
+          $t('channel_general_config_generate_protocol_transfer_title')
+        }}</span>
+        <IconBtn @click="closeTransferProtocolModal">
+          <VIcon icon="tabler-x" />
+        </IconBtn>
+      </VCardTitle>
+      <VCardText>
+        <VTextarea
+          v-model="transferProtocolText"
+          :label="$t('transfer_protocol_text_label')"
+          :placeholder="$t('transfer_protocol_text_placeholder')"
+          :maxlength="2000"
+          rows="8"
+          counter
+          auto-grow
+        />
+        <div class="text-caption text-medium-emphasis mt-2">
+          {{ $t('transfer_protocol_text_hint') }}
+        </div>
+        <div class="text-caption text-medium-emphasis">
+          {{ $t('transfer_protocol_tag_hint') }}
+        </div>
+      </VCardText>
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          :disabled="isSavingTransferProtocol"
+          @click="closeTransferProtocolModal"
+        >
+          {{ $t('close') }}
+        </VBtn>
+        <VBtn
+          color="error"
+          variant="tonal"
+          :loading="isSavingTransferProtocol"
+          :disabled="isSavingTransferProtocol"
+          @click="deleteTransferProtocolText"
+        >
+          {{ $t('delete') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          :loading="isSavingTransferProtocol"
+          :disabled="isSavingTransferProtocol"
+          @click="saveTransferProtocolText"
+        >
+          {{ $t('save') }}
+        </VBtn>
       </VCardText>
     </VCard>
   </VDialog>

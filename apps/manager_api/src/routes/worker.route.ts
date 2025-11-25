@@ -27,6 +27,8 @@ import { uploadProfileInfoSchema } from '@core/schema/worker/uploadProfileInfo';
 import { viewProfileInfoSchema } from '@core/schema/worker/viewProfileInfo';
 import { viewWorkerConfigSchema } from '@core/schema/worker/viewWorkerConfig';
 import { updateWorkerConfigSchema } from '@core/schema/worker/updateWorkerConfig';
+import { updateTransferProtocolTextSchema } from '@core/schema/worker/updateTransferProtocolText';
+import { viewTransferProtocolTextSchema } from '@core/schema/worker/viewTransferProtocolText';
 
 export default function workerRoutes(server: FastifyInstance) {
   const workerController = container.resolve(WorkerController);
@@ -169,6 +171,24 @@ export default function workerRoutes(server: FastifyInstance) {
   server.post('/worker/:worker_id/config', {
     schema: updateWorkerConfigSchema,
     handler: workerController.updateWorkerConfig,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerEditPermissions),
+    ],
+  });
+
+  server.get('/worker/:worker_id/config/transfer-protocol', {
+    schema: viewTransferProtocolTextSchema,
+    handler: workerController.viewTransferProtocolText,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerViewPermissions),
+    ],
+  });
+
+  server.patch('/worker/:worker_id/config/transfer-protocol', {
+    schema: updateTransferProtocolTextSchema,
+    handler: workerController.updateTransferProtocolText,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerEditPermissions),

@@ -150,10 +150,16 @@ export class TransferChatUseCase {
 
     if (workerConfigFields?.generate_protocol_at_transfer) {
       const protocol = generateProtocol();
+      const protocolText = workerConfigFields.generate_protocol_at_transfer;
+
+      const message = protocolText.replace(
+        /\{\{\s*protocolo\s*\}\}/gi,
+        protocol
+      );
 
       const protocolMessageBody: CreateMessageChatsBody = {
         type: EMessageType.system,
-        message: `${t('transfer_protocol')}: *${protocol}*`,
+        message,
       };
 
       await this.chatMessageCreatorUseCase.execute(

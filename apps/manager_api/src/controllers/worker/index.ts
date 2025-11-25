@@ -15,6 +15,8 @@ import { uploadProfileInfo } from './methods/uploadProfileInfo';
 import { viewProfileInfo } from './methods/viewProfileInfo';
 import { viewWorkerConfig } from './methods/viewWorkerConfig';
 import { updateWorkerConfig } from './methods/updateWorkerConfig';
+import { updateTransferProtocolText } from './methods/updateTransferProtocolText';
+import { viewTransferProtocolText } from './methods/viewTransferProtocolText';
 
 @injectable()
 class WorkerController {
@@ -34,6 +36,8 @@ class WorkerController {
   public viewProfileInfo = viewProfileInfo;
   public viewWorkerConfig = viewWorkerConfig;
   public updateWorkerConfig = updateWorkerConfig;
+  public updateTransferProtocolText = updateTransferProtocolText;
+  public viewTransferProtocolText = viewTransferProtocolText;
 }
 
 export default WorkerController;

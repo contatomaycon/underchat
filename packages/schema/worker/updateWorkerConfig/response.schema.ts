@@ -6,9 +6,9 @@ export const workerConfigSchema = Type.Object({
   is_automatic_attendance: Type.Boolean(),
   show_attendee_name: Type.Boolean(),
   show_worker_name: Type.Boolean(),
-  generate_protocol_at_ura: Type.Boolean(),
-  generate_protocol_at_start: Type.Boolean(),
-  generate_protocol_at_transfer: Type.Boolean(),
+  generate_protocol_at_ura: Type.Union([Type.String(), Type.Null()]),
+  generate_protocol_at_start: Type.Union([Type.String(), Type.Null()]),
+  generate_protocol_at_transfer: Type.Union([Type.String(), Type.Null()]),
   created_at: Type.Union([Type.String(), Type.Null()]),
   updated_at: Type.Union([Type.String(), Type.Null()]),
 });

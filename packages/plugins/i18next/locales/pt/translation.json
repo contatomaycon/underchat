@@ -357,5 +357,8 @@
   "chat_transfer_success": "Atendimento transferido com sucesso!",
   "chat_transfer_failed": "Falha ao transferir atendimento!",
   "transfer_requires_user_or_sector": "É necessário informar usuário ou setor para transferir!",
-  "transfer_protocol": "Protocolo de transferência"
+  "transfer_protocol": "Protocolo de transferência",
+  "transfer_protocol_text_update_success": "Texto do protocolo de transferência atualizado com sucesso!",
+  "transfer_protocol_text_update_error": "Erro ao atualizar o texto do protocolo de transferência!",
+  "transfer_protocol_text_view_success": "Texto do protocolo de transferência obtido com sucesso!"
 }

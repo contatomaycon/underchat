@@ -58,12 +58,34 @@ export class WorkerConfigService {
       is_automatic_attendance: result.is_automatic_attendance ?? false,
       show_attendee_name: result.show_attendee_name ?? false,
       show_worker_name: result.show_worker_name ?? false,
-      generate_protocol_at_ura: result.generate_protocol_at_ura ?? false,
-      generate_protocol_at_start: result.generate_protocol_at_start ?? false,
-      generate_protocol_at_transfer:
-        result.generate_protocol_at_transfer ?? false,
+      generate_protocol_at_ura: result.generate_protocol_at_ura,
+      generate_protocol_at_start: result.generate_protocol_at_start,
+      generate_protocol_at_transfer: result.generate_protocol_at_transfer,
       created_at: result.created_at ?? null,
       updated_at: result.updated_at ?? null,
     };
+  }
+
+  async updateTransferProtocolText(
+    workerId: string,
+    text: string | null
+  ): Promise<string | null> {
+    return await this.workerConfigUpserterRepository.updateTransferProtocolText(
+      workerId,
+      text
+    );
+  }
+
+  async viewTransferProtocolText(workerId: string): Promise<string | null> {
+    const result =
+      await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
+        workerId
+      );
+
+    if (!result) {
+      return null;
+    }
+
+    return result.generate_protocol_at_transfer || null;
   }
 }
