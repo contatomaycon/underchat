@@ -88,4 +88,27 @@ export class WorkerConfigService {
 
     return result.generate_protocol_at_transfer || null;
   }
+
+  async updateStartProtocolText(
+    workerId: string,
+    text: string | null
+  ): Promise<string | null> {
+    return await this.workerConfigUpserterRepository.updateStartProtocolText(
+      workerId,
+      text
+    );
+  }
+
+  async viewStartProtocolText(workerId: string): Promise<string | null> {
+    const result =
+      await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
+        workerId
+      );
+
+    if (!result) {
+      return null;
+    }
+
+    return result.generate_protocol_at_start || null;
+  }
 }

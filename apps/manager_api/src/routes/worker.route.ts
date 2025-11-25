@@ -29,6 +29,8 @@ import { viewWorkerConfigSchema } from '@core/schema/worker/viewWorkerConfig';
 import { updateWorkerConfigSchema } from '@core/schema/worker/updateWorkerConfig';
 import { updateTransferProtocolTextSchema } from '@core/schema/worker/updateTransferProtocolText';
 import { viewTransferProtocolTextSchema } from '@core/schema/worker/viewTransferProtocolText';
+import { updateStartProtocolTextSchema } from '@core/schema/worker/updateStartProtocolText';
+import { viewStartProtocolTextSchema } from '@core/schema/worker/viewStartProtocolText';
 
 export default function workerRoutes(server: FastifyInstance) {
   const workerController = container.resolve(WorkerController);
@@ -189,6 +191,24 @@ export default function workerRoutes(server: FastifyInstance) {
   server.patch('/worker/:worker_id/config/transfer-protocol', {
     schema: updateTransferProtocolTextSchema,
     handler: workerController.updateTransferProtocolText,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerEditPermissions),
+    ],
+  });
+
+  server.get('/worker/:worker_id/config/start-protocol', {
+    schema: viewStartProtocolTextSchema,
+    handler: workerController.viewStartProtocolText,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerViewPermissions),
+    ],
+  });
+
+  server.patch('/worker/:worker_id/config/start-protocol', {
+    schema: updateStartProtocolTextSchema,
+    handler: workerController.updateStartProtocolText,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerEditPermissions),

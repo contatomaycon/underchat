@@ -213,6 +213,9 @@ const workerConfigLoadedFor = ref<string | null>(null);
 const transferProtocolText = ref<string>('');
 const transferProtocolModalOpen = ref(false);
 const isSavingTransferProtocol = ref(false);
+const startProtocolText = ref<string>('');
+const startProtocolModalOpen = ref(false);
+const isSavingStartProtocol = ref(false);
 
 const statusTypeOptions = computed(() => [
   {
@@ -407,14 +410,23 @@ const loadWorkerConfig = async (force = false) => {
     applyWorkerConfig(result);
     workerConfigLoadedFor.value = channelId.value;
 
-    const protocolText = await channelStore.fetchTransferProtocolText(
-      channelId.value
-    );
-    const hasProtocolText =
-      typeof protocolText === 'string' && protocolText.trim().length > 0;
+    const [protocolTransferText, protocolStartText] = await Promise.all([
+      channelStore.fetchTransferProtocolText(channelId.value),
+      channelStore.fetchStartProtocolText(channelId.value),
+    ]);
 
-    transferProtocolText.value = hasProtocolText ? protocolText : '';
-    workerConfigForm.generate_protocol_at_transfer = hasProtocolText;
+    const hasTransferProtocolText =
+      protocolTransferText !== null && protocolTransferText.trim().length > 0;
+    const hasStartProtocolText =
+      protocolStartText !== null && protocolStartText.trim().length > 0;
+
+    transferProtocolText.value = hasTransferProtocolText
+      ? protocolTransferText
+      : '';
+    workerConfigForm.generate_protocol_at_transfer = hasTransferProtocolText;
+
+    startProtocolText.value = hasStartProtocolText ? protocolStartText : '';
+    workerConfigForm.generate_protocol_at_start = hasStartProtocolText;
   } finally {
     isLoadingWorkerConfig.value = false;
   }
@@ -494,6 +506,59 @@ const deleteTransferProtocolText = async () => {
     closeTransferProtocolModal();
   } finally {
     isSavingTransferProtocol.value = false;
+  }
+};
+
+const openStartProtocolModal = async () => {
+  if (!channelId.value) return;
+
+  const protocolText = await channelStore.fetchStartProtocolText(
+    channelId.value
+  );
+  startProtocolText.value = protocolText || '';
+  startProtocolModalOpen.value = true;
+};
+
+const closeStartProtocolModal = () => {
+  startProtocolModalOpen.value = false;
+};
+
+const saveStartProtocolText = async () => {
+  if (!channelId.value) return;
+
+  try {
+    isSavingStartProtocol.value = true;
+    const text = startProtocolText.value.trim() || null;
+    const result = await channelStore.updateStartProtocolText(
+      channelId.value,
+      text
+    );
+
+    const hasText = result !== null && result.trim().length > 0;
+    workerConfigForm.generate_protocol_at_start = hasText;
+    startProtocolText.value = result || '';
+
+    closeStartProtocolModal();
+  } finally {
+    isSavingStartProtocol.value = false;
+  }
+};
+
+const deleteStartProtocolText = async () => {
+  if (!channelId.value) return;
+
+  try {
+    isSavingStartProtocol.value = true;
+    const result = await channelStore.updateStartProtocolText(
+      channelId.value,
+      null
+    );
+
+    workerConfigForm.generate_protocol_at_start = false;
+    startProtocolText.value = '';
+    closeStartProtocolModal();
+  } finally {
+    isSavingStartProtocol.value = false;
   }
 };
 
@@ -1733,7 +1798,10 @@ onMounted(async () => {
                   <VCard class="general-config-card h-100" variant="outlined">
                     <div class="d-flex flex-column gap-2">
                       <VCheckbox
-                        v-if="option.key !== 'generate_protocol_at_transfer'"
+                        v-if="
+                          option.key !== 'generate_protocol_at_transfer' &&
+                          option.key !== 'generate_protocol_at_start'
+                        "
                         v-model="workerConfigForm[option.key]"
                         :label="option.title"
                         color="primary"
@@ -1741,7 +1809,9 @@ onMounted(async () => {
                         :disabled="isSavingWorkerConfig"
                       />
                       <VCheckbox
-                        v-else
+                        v-else-if="
+                          option.key === 'generate_protocol_at_transfer'
+                        "
                         :model-value="workerConfigForm[option.key]"
                         :label="option.title"
                         color="primary"
@@ -1750,6 +1820,17 @@ onMounted(async () => {
                           isSavingWorkerConfig || isSavingTransferProtocol
                         "
                         @click.stop.prevent="openTransferProtocolModal"
+                      />
+                      <VCheckbox
+                        v-else-if="option.key === 'generate_protocol_at_start'"
+                        :model-value="workerConfigForm[option.key]"
+                        :label="option.title"
+                        color="primary"
+                        hide-details
+                        :disabled="
+                          isSavingWorkerConfig || isSavingStartProtocol
+                        "
+                        @click.stop.prevent="openStartProtocolModal"
                       />
                       <p class="text-body-2 text-medium-emphasis mb-0">
                         {{ option.description }}
@@ -2580,6 +2661,63 @@ onMounted(async () => {
           :loading="isSavingTransferProtocol"
           :disabled="isSavingTransferProtocol"
           @click="saveTransferProtocolText"
+        >
+          {{ $t('save') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog v-model="startProtocolModalOpen" max-width="600" persistent>
+    <VCard>
+      <VCardTitle class="d-flex justify-space-between align-center">
+        <span>{{
+          $t('channel_general_config_generate_protocol_start_title')
+        }}</span>
+        <IconBtn @click="closeStartProtocolModal">
+          <VIcon icon="tabler-x" />
+        </IconBtn>
+      </VCardTitle>
+      <VCardText>
+        <VTextarea
+          v-model="startProtocolText"
+          :label="$t('start_protocol_text_label')"
+          :placeholder="$t('start_protocol_text_placeholder')"
+          :maxlength="2000"
+          rows="8"
+          counter
+          auto-grow
+        />
+        <div class="text-caption text-medium-emphasis mt-2">
+          {{ $t('start_protocol_text_hint') }}
+        </div>
+        <div class="text-caption text-medium-emphasis">
+          {{ $t('start_protocol_tag_hint') }}
+        </div>
+      </VCardText>
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          :disabled="isSavingStartProtocol"
+          @click="closeStartProtocolModal"
+        >
+          {{ $t('close') }}
+        </VBtn>
+        <VBtn
+          color="error"
+          variant="tonal"
+          :loading="isSavingStartProtocol"
+          :disabled="isSavingStartProtocol"
+          @click="deleteStartProtocolText"
+        >
+          {{ $t('delete') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          :loading="isSavingStartProtocol"
+          :disabled="isSavingStartProtocol"
+          @click="saveStartProtocolText"
         >
           {{ $t('save') }}
         </VBtn>

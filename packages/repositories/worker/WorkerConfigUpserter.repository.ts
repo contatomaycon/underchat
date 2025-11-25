@@ -221,4 +221,78 @@ export class WorkerConfigUpserterRepository {
 
     return result[0]?.generate_protocol_at_transfer || null;
   }
+
+  updateStartProtocolText = async (
+    workerId: string,
+    text: string | null
+  ): Promise<string | null> => {
+    await this.db.transaction(async (tx) => {
+      await this.ensureSingleConfigPerWorker(tx, workerId);
+
+      const existingConfig = await this.findExistingConfigTx(tx, workerId);
+
+      if (existingConfig) {
+        await this.updateStartProtocolTextTx(tx, workerId, text);
+        return;
+      }
+
+      await this.createStartProtocolTextTx(tx, workerId, text);
+    });
+
+    return this.getStartProtocolText(workerId);
+  };
+
+  private async updateStartProtocolTextTx(
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
+    workerId: string,
+    text: string | null
+  ): Promise<void> {
+    await tx
+      .update(workerConfig)
+      .set({
+        generate_protocol_at_start: text || null,
+        updated_at: new Date().toISOString(),
+      })
+      .where(eq(workerConfig.worker_id, workerId))
+      .execute();
+  }
+
+  private async createStartProtocolTextTx(
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
+    workerId: string,
+    text: string | null
+  ): Promise<void> {
+    await tx
+      .insert(workerConfig)
+      .values({
+        worker_config_id: uuidv7(),
+        worker_id: workerId,
+        is_automatic_attendance: false,
+        show_attendee_name: false,
+        show_worker_name: false,
+        generate_protocol_at_start: text || null,
+      })
+      .execute();
+  }
+
+  private async getStartProtocolText(workerId: string): Promise<string | null> {
+    const result = await this.db
+      .select({
+        generate_protocol_at_start: workerConfig.generate_protocol_at_start,
+      })
+      .from(workerConfig)
+      .where(eq(workerConfig.worker_id, workerId))
+      .limit(1)
+      .execute();
+
+    return result[0]?.generate_protocol_at_start || null;
+  }
 }
