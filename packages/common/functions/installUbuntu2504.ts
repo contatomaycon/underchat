@@ -38,7 +38,7 @@ export async function installUbuntu2504(
     'apt-get install libssl-dev -y',
     'apt-get install gnupg -y',
     'apt-get install lsb-release -y',
-    'DEBIAN_FRONTEND=noninteractive apt-get install openssh-client -y',
+    'apt-get install openssh-client -y',
 
     'rm -rf /home/app || true',
     'rm -rf /home/underchat || true',
@@ -90,13 +90,8 @@ export async function installUbuntu2504(
       sleep 3 && \
       hash -r"`,
 
-    `bash -c "mkdir -p /home/app && \
-      chown $USER:$USER /home/app && \
-      git clone --single-branch --branch ${generalEnvironment.gitBranch} https://${generalEnvironment.gitRepo} /home/app"`,
-
     sshKeyContent
-      ? `bash -c "cd /home/app && \
-          mkdir -p ~/.ssh && \
+      ? `bash -c "mkdir -p ~/.ssh && \
           printf '%b' '${sshKeyContent}' > ~/.ssh/id_rsa && \
           chmod 600 ~/.ssh/id_rsa && \
           ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null || true && \
@@ -106,7 +101,11 @@ export async function installUbuntu2504(
           ssh-add ~/.ssh/id_rsa 2>/dev/null || true && \
           git config --global url.\\"git@github.com:\\".insteadOf \\"https://github.com/\\" || true && \
           git config --global url.\\"git@gitlab.com:\\".insteadOf \\"https://gitlab.com/\\" || true"`
-      : 'echo "SSH key not found, skipping SSH configuration for Docker builds"',
+      : 'echo "SSH key not found, skipping SSH configuration"',
+
+    `bash -c "mkdir -p /home/app && \
+      chown $USER:$USER /home/app && \
+      git clone --single-branch --branch ${generalEnvironment.gitBranch} git@github.com:${generalEnvironment.gitRepo} /home/app"`,
 
     `bash -c "printf '%b' '${envContent}' > /home/app/.env && chown $USER:$USER /home/app/.env"`,
 
