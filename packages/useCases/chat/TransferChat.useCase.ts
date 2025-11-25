@@ -17,6 +17,8 @@ import { IChat } from '@core/common/interfaces/IChat';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
+import { WorkerService } from '@core/services/worker.service';
+import { generateProtocol } from '@core/common/functions/generateProtocol';
 
 @injectable()
 export class TransferChatUseCase {
@@ -25,7 +27,8 @@ export class TransferChatUseCase {
     private readonly userService: UserService,
     private readonly sectorService: SectorService,
     private readonly chatMessageCreatorUseCase: ChatMessageCreatorUseCase,
-    private readonly centrifugoService: CentrifugoService
+    private readonly centrifugoService: CentrifugoService,
+    private readonly workerService: WorkerService
   ) {}
 
   async execute(
@@ -47,11 +50,28 @@ export class TransferChatUseCase {
     let user: IChat['user'] | null | undefined = undefined;
     let sector: IChat['sector'] | null | undefined = undefined;
 
+    const userPromise = body.user_id
+      ? this.userService.viewUserNamePhoto(body.user_id)
+      : Promise.resolve(null);
+    const sectorPromise = body.sector_id
+      ? this.sectorService.viewSectorById(
+          body.sector_id,
+          accountId,
+          isAdministrator
+        )
+      : Promise.resolve(null);
+
+    const [userData, sectorData, workerConfigFields] = await Promise.all([
+      userPromise,
+      sectorPromise,
+      this.workerService.viewWorkerConfigFieldsByWorkerId(chat.worker.id),
+    ]);
+
     if (body.user_id) {
-      const userData = await this.userService.viewUserNamePhoto(body.user_id);
       if (!userData) {
         throw new Error(t('user_not_found'));
       }
+
       user = {
         id: userData.id,
         name: userData.name,
@@ -60,12 +80,6 @@ export class TransferChatUseCase {
     }
 
     if (body.sector_id) {
-      const sectorData = await this.sectorService.viewSectorById(
-        body.sector_id,
-        accountId,
-        isAdministrator
-      );
-
       if (!sectorData) {
         throw new Error(t('sector_not_found'));
       }
@@ -131,6 +145,24 @@ export class TransferChatUseCase {
           chat_id: params.chat_id,
         },
         messageBody
+      );
+    }
+
+    if (workerConfigFields?.generate_protocol_at_transfer) {
+      const protocol = generateProtocol();
+
+      const protocolMessageBody: CreateMessageChatsBody = {
+        type: EMessageType.system,
+        message: `${t('transfer_protocol')}: ${protocol}`,
+      };
+
+      await this.chatMessageCreatorUseCase.execute(
+        t,
+        accountId,
+        {
+          chat_id: params.chat_id,
+        },
+        protocolMessageBody
       );
     }
 

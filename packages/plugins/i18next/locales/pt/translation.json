@@ -356,5 +356,6 @@
   "contact_photo_delete_error": "Erro ao remover a foto do contato!",
   "chat_transfer_success": "Atendimento transferido com sucesso!",
   "chat_transfer_failed": "Falha ao transferir atendimento!",
-  "transfer_requires_user_or_sector": "É necessário informar usuário ou setor para transferir!"
+  "transfer_requires_user_or_sector": "É necessário informar usuário ou setor para transferir!",
+  "transfer_protocol": "Protocolo de transferência"
 }

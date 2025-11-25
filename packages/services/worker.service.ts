@@ -36,6 +36,8 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IViewWorkerNameAndContainerId } from '@core/common/interfaces/IViewWorkerNameAndContainerId';
 import { WorkerNameAndIdViewerRepository } from '@core/repositories/worker/WorkerNameAndIdViewer.repository';
 import { IViewWorkerNameAndId } from '@core/common/interfaces/IViewWorkerNameAndId';
+import { WorkerConfigFieldsViewerRepository } from '@core/repositories/worker/WorkerConfigFieldsViewer.repository';
+import { IWorkerConfigFields } from '@core/common/interfaces/IWorkerConfigFields';
 
 @injectable()
 export class WorkerService {
@@ -60,7 +62,8 @@ export class WorkerService {
     private readonly workerTypeViewerRepository: WorkerTypeViewerRepository,
     private readonly workerBaileysActivitiesListerRepository: WorkerBaileysActivitiesListerRepository,
     private readonly workerStatusUpdaterRepository: WorkerStatusUpdaterRepository,
-    private readonly workerNameAndIdViewerRepository: WorkerNameAndIdViewerRepository
+    private readonly workerNameAndIdViewerRepository: WorkerNameAndIdViewerRepository,
+    private readonly workerConfigFieldsViewerRepository: WorkerConfigFieldsViewerRepository
   ) {
     this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
   }
@@ -386,6 +389,14 @@ export class WorkerService {
   ): Promise<IViewWorkerNameAndId | null> => {
     return this.workerNameAndIdViewerRepository.viewWorkerNameAndId(
       accountId,
+      workerId
+    );
+  };
+
+  viewWorkerConfigFieldsByWorkerId = async (
+    workerId: string
+  ): Promise<IWorkerConfigFields | null> => {
+    return this.workerConfigFieldsViewerRepository.viewWorkerConfigFieldsByWorkerId(
       workerId
     );
   };

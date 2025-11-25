@@ -356,5 +356,6 @@
   "contact_photo_delete_error": "Error deleting contact photo!",
   "chat_transfer_success": "Service transferred successfully!",
   "chat_transfer_failed": "Failed to transfer service!",
-  "transfer_requires_user_or_sector": "User or sector is required to transfer!"
+  "transfer_requires_user_or_sector": "User or sector is required to transfer!",
+  "transfer_protocol": "Transfer protocol"
 }
