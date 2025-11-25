@@ -1541,6 +1541,11 @@ const hasUpdatePayload = (body: UpdateUserRequest): boolean => {
   );
 };
 
+const hasChanges = computed(() => {
+  const body = buildUpdateUserBody();
+  return hasUpdatePayload(body);
+});
+
 const updateUser = async () => {
   if (!userId.value) {
     return;
@@ -2447,7 +2452,9 @@ watch(
                   >
                     {{ $t('cancel') }}
                   </VBtn>
-                  <VBtn @click="updateUser"> {{ $t('save') }} </VBtn>
+                  <VBtn :disabled="!hasChanges" @click="updateUser">
+                    {{ $t('save') }}
+                  </VBtn>
                 </VCardText>
               </VForm>
             </VWindowItem>
