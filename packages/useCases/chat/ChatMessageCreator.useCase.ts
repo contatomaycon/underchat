@@ -115,11 +115,18 @@ export class ChatMessageCreatorUseCase {
 
   private async formatOperatorTextWithAttendeeName(
     chat: IChat,
-    message: string | null
+    message: string | null,
+    messageType?: EMessageType
   ): Promise<string> {
     const text = message ?? '';
 
-    if (!text || !chat.worker?.id || !chat.user?.name) {
+    if (
+      !text ||
+      !chat.worker?.id ||
+      !chat.user?.name ||
+      messageType === EMessageType.system ||
+      messageType === EMessageType.annotation
+    ) {
       return text;
     }
 
@@ -1315,7 +1322,8 @@ export class ChatMessageCreatorUseCase {
 
     const formattedMessage = await this.formatOperatorTextWithAttendeeName(
       chat,
-      message
+      message,
+      type
     );
 
     const textMessage = this.createTextMessage({
