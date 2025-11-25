@@ -860,26 +860,27 @@ const cropImage = () => {
     return;
   }
 
+  const container = img.parentElement;
+  if (!container) return;
+
+  const containerWidth = container.clientWidth;
+  const containerHeight = container.clientHeight;
+  const imgLeft = (containerWidth - img.offsetWidth) / 2;
+  const imgTop = (containerHeight - img.offsetHeight) / 2;
+
+  const relativeX = cropArea.value.x - imgLeft;
+  const relativeY = cropArea.value.y - imgTop;
+
   const scaleX = img.naturalWidth / img.offsetWidth;
   const scaleY = img.naturalHeight / img.offsetHeight;
 
-  const sourceX = cropArea.value.x * scaleX;
-  const sourceY = cropArea.value.y * scaleY;
+  const sourceX = relativeX * scaleX;
+  const sourceY = relativeY * scaleY;
   const sourceWidth = cropArea.value.width * scaleX;
   const sourceHeight = cropArea.value.height * scaleY;
 
-  const outputAspectRatio = cropArea.value.aspectRatio;
-  let outputWidth = cropPreviewSize;
-  let outputHeight = cropPreviewSize;
-
-  if (outputAspectRatio > 1) {
-    outputHeight = cropPreviewSize / outputAspectRatio;
-  } else {
-    outputWidth = cropPreviewSize * outputAspectRatio;
-  }
-
-  canvas.width = outputWidth;
-  canvas.height = outputHeight;
+  canvas.width = cropPreviewSize;
+  canvas.height = cropPreviewSize;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -891,8 +892,8 @@ const cropImage = () => {
     sourceHeight,
     0,
     0,
-    outputWidth,
-    outputHeight
+    cropPreviewSize,
+    cropPreviewSize
   );
 
   canvas.toBlob(
