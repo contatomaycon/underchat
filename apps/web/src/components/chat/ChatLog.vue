@@ -1807,7 +1807,23 @@ onUnmounted(() => {
             class="chat-avatar"
             :class="!isTypeUser(item.message) ? 'ms-4' : 'me-4'"
           >
+            <VTooltip
+              v-if="!isTypeUser(item.message) && item.message.user?.name"
+              location="top"
+              :text="item.message.user.name"
+            >
+              <template #activator="{ props }">
+                <VAvatar
+                  v-bind="props"
+                  size="32"
+                  :variant="!isPhotoExist(item.message) ? 'tonal' : undefined"
+                >
+                  <VImg :src="resolvePhoto(item.message)" />
+                </VAvatar>
+              </template>
+            </VTooltip>
             <VAvatar
+              v-else
               size="32"
               :variant="!isPhotoExist(item.message) ? 'tonal' : undefined"
             >
