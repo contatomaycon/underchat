@@ -357,5 +357,8 @@
   "chat_transfer_success": "Service transferred successfully!",
   "chat_transfer_failed": "Failed to transfer service!",
   "transfer_requires_user_or_sector": "User or sector is required to transfer!",
-  "transfer_protocol": "Transfer protocol"
+  "transfer_protocol": "Transfer protocol",
+  "transfer_protocol_text_update_success": "Transfer protocol text updated successfully!",
+  "transfer_protocol_text_update_error": "Error updating transfer protocol text!",
+  "transfer_protocol_text_view_success": "Transfer protocol text retrieved successfully!"
 }
