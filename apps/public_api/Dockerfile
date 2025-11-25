@@ -12,9 +12,29 @@ COPY packages/plugins/i18next/locales ./packages/plugins/i18next/locales
 RUN pnpm dlx turbo@latest prune public --docker
 
 FROM pruned AS deps
+
+RUN apk update && \
+    apk add --no-cache openssh-client
+
 WORKDIR /app
-COPY --from=pruned /app/out/json/ ./
+COPY --from=pruned /app/out/json/ .
+COPY --from=pruned /app/infra/ssh/docker_key /tmp/docker_key
+
+RUN mkdir -p ~/.ssh && \
+    cp /tmp/docker_key ~/.ssh/id_rsa && \
+    chmod 600 ~/.ssh/id_rsa && \
+    ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null || true && \
+    ssh-keyscan gitlab.com >> ~/.ssh/known_hosts 2>/dev/null || true && \
+    chmod 644 ~/.ssh/known_hosts && \
+    eval "$(ssh-agent -s)" > /dev/null && \
+    ssh-add ~/.ssh/id_rsa 2>/dev/null || true && \
+    git config --global url."git@github.com:".insteadOf "https://github.com/" || true && \
+    git config --global url."git@gitlab.com:".insteadOf "https://gitlab.com/" || true
+
 RUN pnpm install --frozen-lockfile --ignore-scripts
+
+RUN rm -rf ~/.ssh/id_rsa ~/.ssh/known_hosts /tmp/docker_key && \
+    ssh-add -D 2>/dev/null || true
 
 FROM deps AS builder
 WORKDIR /app
