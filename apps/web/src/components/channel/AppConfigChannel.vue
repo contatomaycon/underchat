@@ -109,6 +109,7 @@ const channelId = toRef(props, 'channelId');
 const currentTab = ref<'general' | 'profile-status' | 'profile-info'>(
   'general'
 );
+const isInitialLoad = ref(false);
 const selectedStatusPreviews = ref<StatusPreview[]>([]);
 const existingStatus = ref<ProfileStatus[]>([]);
 const isSavingProfileStatus = ref(false);
@@ -183,6 +184,7 @@ const cropArea = ref({
   initialY: 0,
 });
 const cropPreviewSize = 160;
+/* removed isInitializingGeneralTab flag */
 
 type WorkerConfigForm = Pick<
   WorkerConfig,
@@ -394,6 +396,7 @@ const loadWorkerConfig = async (force = false) => {
   try {
     isLoadingWorkerConfig.value = true;
     const result = await channelStore.fetchWorkerConfig(channelId.value);
+
     applyWorkerConfig(result);
     workerConfigLoadedFor.value = channelId.value;
   } finally {
@@ -1447,7 +1450,6 @@ const saveProfilePhoto = async () => {
       profilePhotoFile.value = null;
     }
   } catch (error) {
-    console.error('Erro ao fazer upload da foto do perfil:', error);
     channelStore.showSnackbar(
       t('profile_photo_upload_error') || 'Erro ao fazer upload da foto',
       EColor.error
@@ -1478,7 +1480,6 @@ const saveProfileInfo = async () => {
       cropDialog.value.croppedImage = '';
     }
   } catch (error) {
-    console.error('Erro ao salvar informações do perfil:', error);
     channelStore.showSnackbar(t('profile_info_upload_error'), EColor.error);
   } finally {
     isSavingProfileInfo.value = false;
@@ -1507,7 +1508,6 @@ const removeProfilePhoto = async () => {
       cropDialog.value.croppedImage = '';
     }
   } catch (error) {
-    console.error('Erro ao remover foto do perfil:', error);
     channelStore.showSnackbar(
       t('profile_photo_remove_error') || 'Erro ao remover a foto do perfil',
       EColor.error
@@ -1524,37 +1524,62 @@ const cancelCrop = () => {
   profilePhotoFile.value = null;
 };
 
-watch(isVisible, async (visible) => {
-  if (visible) {
-    currentTab.value = 'general';
-    await loadWorkerConfig(true);
-    await fetchProfileStatus();
+watch(isVisible, async (visible, oldVisible) => {
+  if (!visible) {
+    resetPendingSelections();
+    closePreview();
+    cancelCrop();
+    resetWorkerConfigState();
+    isInitialLoad.value = false;
     return;
   }
 
-  resetPendingSelections();
-  closePreview();
-  cancelCrop();
-  resetWorkerConfigState();
-});
+  if (oldVisible === false) {
+    currentTab.value = 'general';
+    isInitialLoad.value = true;
 
-watch(currentTab, async (newTab) => {
-  if (newTab === 'general' && isVisible.value && channelId.value) {
-    await loadWorkerConfig();
-  }
-  if (newTab === 'profile-status' && isVisible.value && channelId.value) {
-    await fetchProfileStatus();
-  }
-  if (newTab === 'profile-info' && isVisible.value && channelId.value) {
-    await loadProfileInfo();
+    if (channelId.value) {
+      await loadWorkerConfig(true);
+      isInitialLoad.value = false;
+    }
   }
 });
 
-watch(channelId, async (newValue, oldValue) => {
-  if (isVisible.value && newValue && newValue !== oldValue) {
+watch(
+  channelId,
+  async (newValue, oldValue) => {
+    if (!isVisible.value) return;
+    if (!newValue) return;
+    if (newValue === oldValue) return;
+
+    if (isInitialLoad.value) {
+      isInitialLoad.value = false;
+      return;
+    }
+
     resetWorkerConfigState();
+
+    if (currentTab.value === 'general') {
+      await loadWorkerConfig(true);
+    } else if (currentTab.value === 'profile-status') {
+      await fetchProfileStatus();
+    } else if (currentTab.value === 'profile-info') {
+      await loadProfileInfo();
+    }
+  },
+  { immediate: false }
+);
+
+watch(currentTab, async (newTab, oldTab) => {
+  if (!isVisible.value || !channelId.value) return;
+  if (newTab === oldTab) return;
+
+  if (newTab === 'general') {
     await loadWorkerConfig(true);
+  } else if (newTab === 'profile-status') {
     await fetchProfileStatus();
+  } else if (newTab === 'profile-info') {
+    await loadProfileInfo();
   }
 });
 
@@ -1564,6 +1589,14 @@ watch(selectedType, () => {
 
 onBeforeUnmount(() => {
   resetPendingSelections();
+});
+
+onMounted(async () => {
+  if (isVisible.value && channelId.value) {
+    currentTab.value = 'general';
+
+    await loadWorkerConfig(true);
+  }
 });
 </script>
 
