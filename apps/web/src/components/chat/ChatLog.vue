@@ -474,7 +474,9 @@ const shouldShowCopy = (message: ListMessageResult): boolean => {
   if (isDownloadableVideo(message)) return false;
   if (isDownloadableAudio(message)) return false;
   if (isDownloadableSticker(message)) return false;
-  return isTextMessage(message);
+  return (
+    isTextMessage(message) || message.content?.type === EMessageType.system
+  );
 };
 
 const shouldShowDownload = (message: ListMessageResult): boolean => {
@@ -1756,7 +1758,11 @@ onUnmounted(() => {
           class="chat-group d-flex align-start position-relative"
           :class="[
             {
-              'flex-row-reverse': !isTypeUser(item.message),
+              'flex-row-reverse':
+                !isTypeUser(item.message) &&
+                item.message.content?.type !== EMessageType.system,
+              'justify-center':
+                item.message.content?.type === EMessageType.system,
               'mb-6':
                 index < messagesWithSeparators.length - 1 &&
                 messagesWithSeparators[index + 1]?.type === 'message',
@@ -1766,6 +1772,7 @@ onUnmounted(() => {
           @mouseleave="onMouseLeave"
         >
           <div
+            v-if="item.message.content?.type !== EMessageType.system"
             class="chat-avatar"
             :class="!isTypeUser(item.message) ? 'ms-4' : 'me-4'"
           >
@@ -1779,7 +1786,13 @@ onUnmounted(() => {
 
           <div
             class="chat-body d-inline-flex flex-column position-relative"
-            :class="!isTypeUser(item.message) ? 'align-end' : 'align-start'"
+            :class="
+              item.message.content?.type === EMessageType.system
+                ? 'align-center'
+                : !isTypeUser(item.message)
+                  ? 'align-end'
+                  : 'align-start'
+            "
           >
             <div
               class="chat-content-wrapper"
@@ -1842,7 +1855,11 @@ onUnmounted(() => {
               <div
                 class="chat-content py-2 px-2 elevation-2"
                 :class="[
-                  isTypeUser(item.message) ? 'chat-left' : 'chat-right',
+                  item.message.content?.type === EMessageType.system
+                    ? 'chat-center'
+                    : isTypeUser(item.message)
+                      ? 'chat-left'
+                      : 'chat-right',
                   {
                     'is-deleted': item.message.deleted,
                     'has-actions': !item.message.deleted,
@@ -1852,16 +1869,19 @@ onUnmounted(() => {
                   backgroundColor:
                     item.message.content?.type === EMessageType.annotation
                       ? 'rgb(255, 243, 205)'
-                      : isTypeUser(item.message)
-                        ? 'rgb(var(--v-theme-surface))'
-                        : 'rgb(217, 253, 211)',
+                      : item.message.content?.type === EMessageType.system
+                        ? 'rgb(227, 242, 253)'
+                        : isTypeUser(item.message)
+                          ? 'rgb(var(--v-theme-surface))'
+                          : 'rgb(217, 253, 211)',
                 }"
               >
                 <div
                   v-if="
                     (canInteractWithMessage(item.message) ||
                       (item.message.deleted &&
-                        hasMessageVersions(item.message))) &&
+                        hasMessageVersions(item.message)) ||
+                      item.message.content?.type === EMessageType.system) &&
                     !isQueueStatus &&
                     item.message.content?.type !== EMessageType.annotation
                   "
@@ -1962,7 +1982,10 @@ onUnmounted(() => {
                         </VListItem>
 
                         <VListItem
-                          v-if="!isTypeUser(item.message)"
+                          v-if="
+                            !isTypeUser(item.message) &&
+                            item.message.content?.type !== EMessageType.system
+                          "
                           @click="onDelete(item.message)"
                         >
                           <template #prepend>
@@ -2742,9 +2765,11 @@ onUnmounted(() => {
                     "
                     :class="[
                       'reactions-summary',
-                      !isTypeUser(item.message)
-                        ? 'reactions-summary--right'
-                        : 'reactions-summary--left',
+                      item.message.content?.type === EMessageType.system
+                        ? 'reactions-summary--center'
+                        : !isTypeUser(item.message)
+                          ? 'reactions-summary--right'
+                          : 'reactions-summary--left',
                     ]"
                   >
                     <div class="reaction-summary-bubble">
@@ -3227,6 +3252,14 @@ onUnmounted(() => {
 
       &.chat-right {
         border-start-start-radius: 6px;
+        .message-meta {
+          color: rgba(17, 27, 33, 0.6);
+        }
+      }
+
+      &.chat-center {
+        border-radius: 6px;
+        margin: 0 auto;
         .message-meta {
           color: rgba(17, 27, 33, 0.6);
         }
@@ -4369,6 +4402,12 @@ onUnmounted(() => {
       justify-content: flex-start;
       margin-inline-start: 0;
       left: 16px;
+    }
+
+    &--center {
+      justify-content: center;
+      left: 50%;
+      transform: translateX(-50%) translateY(60%);
     }
 
     .reaction-summary-bubble {
