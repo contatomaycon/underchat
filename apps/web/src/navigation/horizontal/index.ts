@@ -5,6 +5,7 @@ import { EServerPermissions } from '@core/common/enums/EPermissions/server';
 import { EWorkerPermissions } from '@core/common/enums/EPermissions/worker';
 import { ERolePermissions } from '@core/common/enums/EPermissions/role';
 import { ESectorPermissions } from '@core/common/enums/EPermissions/sector';
+import { EExpenditurePermissions } from '@core/common/enums/EPermissions/expenditure';
 import { EUserPermissions } from '@core/common/enums/EPermissions/user';
 import { EAccountPermissions } from '@core/common/enums/EPermissions/account';
 import { EMessageTemplatePermissions } from '@core/common/enums/EPermissions/messageTemplate';
@@ -180,6 +181,20 @@ export default [
           EPlanPermissions.plan_view,
         ],
       },
+    ],
+  },
+  {
+    title: 'expenditure',
+    to: { name: 'expenditure' as keyof RouteNamedMap },
+    icon: { icon: 'tabler-currency-dollar' },
+    permissions: [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EExpenditurePermissions.expenditure_group,
+      EExpenditurePermissions.expenditure_view,
+      EExpenditurePermissions.expenditure_create,
+      EExpenditurePermissions.expenditure_update,
+      EExpenditurePermissions.expenditure_delete,
     ],
   },
   {
