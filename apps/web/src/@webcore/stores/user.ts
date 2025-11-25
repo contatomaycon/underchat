@@ -210,58 +210,112 @@ export const useUsersStore = defineStore('users', {
       const formData = new FormData();
 
       if (this.shouldAppendStringValue(body.email)) {
-        formData.append('email', body.email!.value!);
+        const value = body.email?.value;
+        if (value !== null && value !== undefined) {
+          formData.append('email', value);
+        }
       }
       if (this.shouldAppendStringValue(body.password)) {
-        formData.append('password', body.password!.value!);
+        const value = body.password?.value;
+        if (value !== null && value !== undefined) {
+          formData.append('password', value);
+        }
       }
       if (this.shouldAppendStringValue(body.account_id)) {
-        formData.append('account_id', body.account_id!.value!);
+        const value = body.account_id?.value;
+        if (value !== null && value !== undefined) {
+          formData.append('account_id', value);
+        }
       }
       if (this.shouldAppendStringValue(body.user_status_id)) {
-        formData.append('user_status_id', body.user_status_id!.value!);
+        const value = body.user_status_id?.value;
+        if (value !== null && value !== undefined) {
+          formData.append('user_status_id', value);
+        }
       }
       if (this.shouldAppendStringValue(body.phone_ddi)) {
-        formData.append('phone_ddi', body.phone_ddi!.value!);
+        const value = body.phone_ddi?.value;
+        if (value !== null && value !== undefined) {
+          formData.append('phone_ddi', value);
+        }
       }
       if (this.shouldAppendStringValue(body.phone)) {
-        formData.append('phone', body.phone!.value!);
+        const value = body.phone?.value;
+        if (value !== null && value !== undefined) {
+          formData.append('phone', value);
+        }
       }
       if (this.shouldAppendStringValue(body.name)) {
-        formData.append('name', body.name!.value!);
+        const value = body.name?.value;
+        if (value !== null && value !== undefined) {
+          formData.append('name', value);
+        }
       }
       if (this.shouldAppendStringValue(body.last_name)) {
-        formData.append('last_name', body.last_name!.value!);
+        const value = body.last_name?.value;
+        if (value !== null && value !== undefined) {
+          formData.append('last_name', value);
+        }
       }
       if (this.shouldAppendStringValue(body.birth_date)) {
-        formData.append('birth_date', body.birth_date!.value!);
+        const value = body.birth_date?.value;
+        if (value !== null && value !== undefined) {
+          formData.append('birth_date', value);
+        }
       }
       if (this.shouldAppendStringValue(body.document_type_id)) {
-        formData.append('document_type_id', body.document_type_id!.value!);
+        const value = body.document_type_id?.value;
+        if (value !== null && value !== undefined) {
+          formData.append('document_type_id', value);
+        }
       }
       if (this.shouldAppendStringValue(body.document)) {
-        formData.append('document', body.document!.value!);
+        const value = body.document?.value;
+        if (value !== null && value !== undefined) {
+          formData.append('document', value);
+        }
       }
       if (this.shouldAppendNumberValue(body.country_id)) {
-        formData.append('country_id', body.country_id!.value!.toString());
+        const value = body.country_id?.value;
+        if (value !== null && value !== undefined) {
+          formData.append('country_id', value.toString());
+        }
       }
       if (this.shouldAppendStringValue(body.zip_code)) {
-        formData.append('zip_code', body.zip_code!.value!);
+        const value = body.zip_code?.value;
+        if (value !== null && value !== undefined) {
+          formData.append('zip_code', value);
+        }
       }
       if (this.shouldAppendStringValue(body.address1)) {
-        formData.append('address1', body.address1!.value!);
+        const value = body.address1?.value;
+        if (value !== null && value !== undefined) {
+          formData.append('address1', value);
+        }
       }
       if (this.shouldAppendStringValue(body.address2)) {
-        formData.append('address2', body.address2!.value!);
+        const value = body.address2?.value;
+        if (value !== null && value !== undefined) {
+          formData.append('address2', value);
+        }
       }
       if (this.shouldAppendStringValue(body.city_fiscal_code)) {
-        formData.append('city_fiscal_code', body.city_fiscal_code!.value!);
+        const value = body.city_fiscal_code?.value;
+        if (value !== null && value !== undefined) {
+          formData.append('city_fiscal_code', value);
+        }
       }
       if (this.shouldAppendStringValue(body.state_fiscal_code)) {
-        formData.append('state_fiscal_code', body.state_fiscal_code!.value!);
+        const value = body.state_fiscal_code?.value;
+        if (value !== null && value !== undefined) {
+          formData.append('state_fiscal_code', value);
+        }
       }
       if (this.shouldAppendStringValue(body.district)) {
-        formData.append('district', body.district!.value!);
+        const value = body.district?.value;
+        if (value !== null && value !== undefined) {
+          formData.append('district', value);
+        }
       }
       if (body.photo_url?.value !== undefined) {
         formData.append('photo_url', body.photo_url.value ?? '');
