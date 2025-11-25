@@ -167,6 +167,7 @@ const isAddImportContactVisible = ref(false);
 const contactToEdit = ref<string | null>(null);
 
 const headers: DataTableHeader<ListContactResponse>[] = [
+  { title: '', key: 'photo', sortable: false, width: '80px' },
   { title: t('name'), key: 'name' },
   { title: t('lastname'), key: 'last_name' },
   { title: t('nickname'), key: 'nickname' },
@@ -232,6 +233,47 @@ const openEditDialog = (id: string) => {
 const openValidateDialog = (id: string) => {
   contactToValidate.value = id;
   isDialogValidateContactShow.value = true;
+};
+
+const photoViewerOpen = ref(false);
+const photoViewerSrc = ref<string>('');
+const photoViewerDownloadName = ref<string>('contact-photo.jpg');
+
+const openPhotoViewer = (photoUrl: string | null) => {
+  if (!photoUrl) return;
+  photoViewerSrc.value = photoUrl;
+  photoViewerDownloadName.value = `contact-photo-${Date.now()}.jpg`;
+  photoViewerOpen.value = true;
+};
+
+const downloadPhoto = async (url: string, filename?: string | null) => {
+  if (!url) return;
+
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const blobUrl = globalThis.URL.createObjectURL(blob);
+
+    const anchor = document.createElement('a');
+    anchor.href = blobUrl;
+    anchor.download = filename || 'contact-photo.jpg';
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+
+    setTimeout(() => {
+      globalThis.URL.revokeObjectURL(blobUrl);
+    }, 100);
+  } catch (error) {
+    console.error('Erro ao baixar imagem:', error);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.target = '_blank';
+    anchor.download = filename || 'contact-photo.jpg';
+    anchor.rel = 'noopener';
+    anchor.click();
+  }
 };
 
 const handleValidate = async () => {
@@ -323,6 +365,27 @@ watch(
         @update:options="handleTableChange"
         :loading-text="$t('loading_text')"
       >
+        <template #item.photo="{ item }">
+          <div
+            class="contact-photo-square"
+            :class="{ 'cursor-pointer': item?.photo }"
+            @click="item?.photo && openPhotoViewer(item.photo)"
+          >
+            <VImg
+              v-if="item?.photo"
+              :src="item.photo"
+              alt="Contact photo"
+              cover
+            />
+            <VImg
+              v-else
+              :src="'/images/svg/avatar-default.svg'"
+              alt="Default avatar"
+              cover
+            />
+          </div>
+        </template>
+
         <template #item.name="{ item }">
           {{ item?.name }}
         </template>
@@ -469,6 +532,52 @@ watch(
       />
     </VCard>
 
+    <VDialog
+      v-model="photoViewerOpen"
+      fullscreen
+      scrim="rgba(0,0,0,.9)"
+      :scrollable="false"
+    >
+      <div class="viewer-wrap" @click="photoViewerOpen = false">
+        <div class="viewer-box" @click.stop>
+          <div class="viewer-media-container">
+            <img
+              v-if="photoViewerSrc"
+              :src="photoViewerSrc"
+              alt="Contact photo"
+              class="viewer-img"
+              loading="eager"
+              decoding="async"
+            />
+
+            <div class="viewer-actions">
+              <VBtn
+                v-if="photoViewerSrc"
+                class="viewer-download"
+                icon
+                size="36"
+                variant="text"
+                @click.stop="
+                  downloadPhoto(photoViewerSrc, photoViewerDownloadName)
+                "
+              >
+                <VIcon size="20">tabler-download</VIcon>
+              </VBtn>
+              <VBtn
+                class="viewer-close"
+                icon
+                size="36"
+                variant="text"
+                @click="photoViewerOpen = false"
+              >
+                <VIcon size="20">tabler-x</VIcon>
+              </VBtn>
+            </div>
+          </div>
+        </div>
+      </div>
+    </VDialog>
+
     <VSnackbar
       v-model="contactStore.snackbar.status"
       transition="scroll-y-reverse-transition"
@@ -497,5 +606,83 @@ watch(
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.contact-photo-square {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  overflow: hidden;
+  display: inline-block;
+  transition: opacity 0.2s ease;
+
+  &:hover {
+    opacity: 0.8;
+  }
+
+  :deep(.v-img) {
+    width: 100%;
+    height: 100%;
+  }
+}
+
+.viewer-wrap {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  padding: 16px;
+  overflow: hidden;
+}
+
+.viewer-box {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  max-width: 90vw;
+  max-height: 90vh;
+}
+
+.viewer-media-container {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.viewer-img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 90vw;
+  max-height: 85vh;
+  object-fit: contain;
+  border-radius: 12px;
+}
+
+.viewer-actions {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 10;
+}
+
+.viewer-close,
+.viewer-download {
+  color: white !important;
+  background: rgba(0, 0, 0, 0.5) !important;
+  border-radius: 50%;
+  min-width: 36px;
+  height: 36px;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.7) !important;
+  }
 }
 </style>
