@@ -19,6 +19,7 @@ import {
   setUser,
 } from '../localStorage/user';
 import { EPermissionRole } from '@core/common/enums/EPermissionRole';
+import { updateAbilityPermissions } from '@/plugins/casl/ability';
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -96,6 +97,7 @@ export const useAuthStore = defineStore('auth', {
         setLayout(this.layout);
         setAdministrator(isAdministrator);
         setSectors(data.data.sectors ?? []);
+        updateAbilityPermissions(this.permissions);
 
         return true;
       } catch (error) {
