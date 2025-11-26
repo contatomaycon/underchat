@@ -939,7 +939,7 @@ const handleRemovePhotoConfirm = async () => {
 };
 
 const loadLabelTemplates = async () => {
-  if (canAccessLabelTemplate.value && labelTemplateStore.listAll.length === 0) {
+  if (labelTemplateStore.listAll.length === 0) {
     const labelTemplates = await chatStore.listChatLabelTemplates();
     labelTemplateStore.listAll = labelTemplates.map((lt) => ({
       label_template_id: lt.label_template_id,
@@ -1396,4 +1396,3 @@ onMounted(() => {
   cursor: nwse-resize;
 }
 </style>
-
