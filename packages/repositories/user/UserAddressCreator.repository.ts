@@ -40,8 +40,8 @@ export class UserAddressCreatorRepository {
         address2: input.address2,
         address2_partial: input.address2_partial,
         address2_c: input.address2_c,
-        city: input.city,
-        state: input.state,
+        city_fiscal_code: input.city_fiscal_code,
+        state_fiscal_code: input.state_fiscal_code,
         district: input.district,
       })
       .execute();

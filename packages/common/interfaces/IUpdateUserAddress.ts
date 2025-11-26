@@ -7,7 +7,7 @@ export interface IUpdateUserAddress {
   address2?: string | null;
   address2_partial?: string | null;
   address2_c?: string | null;
-  city?: string | null;
-  state?: string | null;
+  city_fiscal_code?: string | null;
+  state_fiscal_code?: string | null;
   district?: string | null;
 }

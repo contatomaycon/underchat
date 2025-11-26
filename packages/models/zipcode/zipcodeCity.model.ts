@@ -6,7 +6,13 @@ import {
   numeric,
   smallint,
 } from 'drizzle-orm/pg-core';
-import { country, zipcode, zipcodeState, zipcodeDistrict } from '@core/models';
+import {
+  country,
+  zipcode,
+  zipcodeState,
+  zipcodeDistrict,
+  userAddress,
+} from '@core/models';
 import { relations } from 'drizzle-orm';
 
 export const zipcodeCity = pgTable('zipcode_city', {
@@ -46,4 +52,5 @@ export const zipcodeCityRelations = relations(zipcodeCity, ({ one, many }) => ({
   }),
   zcd: many(zipcodeDistrict),
   zcp: many(zipcode),
+  zzc: many(userAddress),
 }));

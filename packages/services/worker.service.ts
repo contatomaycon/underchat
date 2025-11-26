@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import Docker from 'dockerode';
 import { EWorkerImage } from '@core/common/enums/EWorkerImage';
 import { WorkerCreatorRepository } from '@core/repositories/worker/WorkerCreator.repository';
@@ -36,6 +36,9 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IViewWorkerNameAndContainerId } from '@core/common/interfaces/IViewWorkerNameAndContainerId';
 import { WorkerNameAndIdViewerRepository } from '@core/repositories/worker/WorkerNameAndIdViewer.repository';
 import { IViewWorkerNameAndId } from '@core/common/interfaces/IViewWorkerNameAndId';
+import { WorkerConfigFieldsViewerRepository } from '@core/repositories/worker/WorkerConfigFieldsViewer.repository';
+import { IWorkerConfigFields } from '@core/common/interfaces/IWorkerConfigFields';
+import Redis from 'ioredis';
 
 @injectable()
 export class WorkerService {
@@ -60,7 +63,9 @@ export class WorkerService {
     private readonly workerTypeViewerRepository: WorkerTypeViewerRepository,
     private readonly workerBaileysActivitiesListerRepository: WorkerBaileysActivitiesListerRepository,
     private readonly workerStatusUpdaterRepository: WorkerStatusUpdaterRepository,
-    private readonly workerNameAndIdViewerRepository: WorkerNameAndIdViewerRepository
+    private readonly workerNameAndIdViewerRepository: WorkerNameAndIdViewerRepository,
+    private readonly workerConfigFieldsViewerRepository: WorkerConfigFieldsViewerRepository,
+    @inject('Redis') private readonly redis: Redis
   ) {
     this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
   }
@@ -388,5 +393,31 @@ export class WorkerService {
       accountId,
       workerId
     );
+  };
+
+  viewWorkerConfigFieldsByWorkerId = async (
+    workerId: string
+  ): Promise<IWorkerConfigFields | null> => {
+    const cacheKey = `worker:${workerId}:config_fields`;
+
+    const cached = await this.redis.get(cacheKey);
+    if (cached) {
+      try {
+        return JSON.parse(cached) as IWorkerConfigFields;
+      } catch {
+        await this.redis.del(cacheKey);
+      }
+    }
+
+    const result =
+      await this.workerConfigFieldsViewerRepository.viewWorkerConfigFieldsByWorkerId(
+        workerId
+      );
+
+    if (result) {
+      await this.redis.set(cacheKey, JSON.stringify(result), 'EX', 60 * 60 * 8);
+    }
+
+    return result;
   };
 }

@@ -90,7 +90,7 @@ export const locationSchema = Type.Object({
 });
 
 export const contactSchema = Type.Object({
-  contact_id: Type.String(),
+  contact_id: Type.Union([Type.String(), Type.Null()]),
   name: Type.String(),
   last_name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   phone: Type.Optional(Type.Union([Type.String(), Type.Null()])),
@@ -98,6 +98,7 @@ export const contactSchema = Type.Object({
   phone_ddi: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   email: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   email_partial: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  photo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export const quotedMessageSchema = Type.Object({

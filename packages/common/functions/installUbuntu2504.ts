@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { promises as fs } from 'node:fs';
 import { getPackageNodeVersion } from './getPackageNodeVersion';
 import { generalEnvironment } from '@core/config/environments';
 import { readEnvFile } from './readEnvFile';
@@ -13,10 +14,19 @@ export async function installUbuntu2504(
   const patchEnv = path.join(__dirname, '../../../.env');
   const envContent = await readEnvFile(patchEnv);
 
+  const patchSshKey = path.join(__dirname, '../../../infra/ssh/docker_key');
+  let sshKeyContent = '';
+  try {
+    sshKeyContent = await fs.readFile(patchSshKey, 'utf-8');
+    sshKeyContent = sshKeyContent
+      .split('\n')
+      .map((line) => line.replaceAll(/(["`\\$])/g, String.raw`\$1`))
+      .join(String.raw`\n`);
+  } catch {}
+
   return [
     'dpkg --configure -a',
     'apt-get update',
-    'apt-get upgrade -y',
 
     'apt-get install git -y',
     'apt-get install curl -y',
@@ -28,6 +38,7 @@ export async function installUbuntu2504(
     'apt-get install libssl-dev -y',
     'apt-get install gnupg -y',
     'apt-get install lsb-release -y',
+    'DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::="--force-confnew" openssh-client',
 
     'rm -rf /home/app || true',
     'rm -rf /home/underchat || true',
@@ -79,9 +90,22 @@ export async function installUbuntu2504(
       sleep 3 && \
       hash -r"`,
 
+    sshKeyContent
+      ? `bash -c "mkdir -p ~/.ssh && \
+          printf '%b' '${sshKeyContent}' > ~/.ssh/id_rsa && \
+          chmod 600 ~/.ssh/id_rsa && \
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null || true && \
+          ssh-keyscan gitlab.com >> ~/.ssh/known_hosts 2>/dev/null || true && \
+          chmod 644 ~/.ssh/known_hosts && \
+          eval \\$(ssh-agent -s) > /dev/null && \
+          ssh-add ~/.ssh/id_rsa 2>/dev/null || true && \
+          git config --global url.\\"git@github.com:\\".insteadOf \\"https://github.com/\\" || true && \
+          git config --global url.\\"git@gitlab.com:\\".insteadOf \\"https://gitlab.com/\\" || true"`
+      : 'echo "SSH key not found, skipping SSH configuration"',
+
     `bash -c "mkdir -p /home/app && \
       chown $USER:$USER /home/app && \
-      git clone --single-branch --branch ${generalEnvironment.gitBranch} https://oauth2:${generalEnvironment.gitToken}@${generalEnvironment.gitRepo} /home/app"`,
+      git clone --single-branch --branch ${generalEnvironment.gitBranch} git@github.com:${generalEnvironment.gitRepo}.git /home/app"`,
 
     `bash -c "printf '%b' '${envContent}' > /home/app/.env && chown $USER:$USER /home/app/.env"`,
 

@@ -7,6 +7,9 @@ import { useCountryCodes } from '@/composables/useCountryCodes';
 import { requiredValidator } from '@/@webcore/utils/validators';
 import { EColor } from '@core/common/enums/EColor';
 import { useChatStore } from '@/@webcore/stores/chat';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
+import { can } from '@layouts/plugins/casl';
 
 const contactStore = useContactStore();
 const labelTemplateStore = useLabelTemplateStore();
@@ -80,6 +83,16 @@ const emailValidator = (v: string | null | undefined) => {
   const re = /^[^\s@]+@(?:[^\s@.]+\.)+[^\s@.]{2,}$/;
   return re.test(s) || t('email_invalid');
 };
+
+const canAccessLabelTemplate = computed(() => {
+  const permissions = [
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    ELabelTemplatePermissions.label_template_group,
+    ELabelTemplatePermissions.label_view,
+  ];
+  return can(permissions);
+});
 
 const itemsLabel = computed(() =>
   (labelTemplateStore.listAll ?? []).map((item) => ({
@@ -769,7 +782,9 @@ const cancelCrop = () => {
 
 onMounted(async () => {
   resetForm();
-  await labelTemplateStore.listLabelTemplateAll();
+  if (canAccessLabelTemplate.value) {
+    await labelTemplateStore.listLabelTemplateAll();
+  }
 });
 
 watch(isVisible, (visible) => {
@@ -908,19 +923,29 @@ watch(
                     </VCardText>
                     <VDivider />
                     <VList max-height="300" style="overflow-y: auto">
+                      <template v-if="filteredCountryCodes.length > 0">
+                        <VListItem
+                          v-for="(item, index) in filteredCountryCodes"
+                          :key="index"
+                          :value="item.value"
+                          @click="
+                            () => {
+                              phone_ddi = item.value;
+                              isCountryMenuOpen = false;
+                            }
+                          "
+                          :active="phone_ddi === item.value"
+                        >
+                          <VListItemTitle>{{ item.title }}</VListItemTitle>
+                        </VListItem>
+                      </template>
                       <VListItem
-                        v-for="(item, index) in filteredCountryCodes"
-                        :key="index"
-                        :value="item.value"
-                        @click="
-                          () => {
-                            phone_ddi = item.value;
-                            isCountryMenuOpen = false;
-                          }
-                        "
-                        :active="phone_ddi === item.value"
+                        v-else-if="countrySearchQuery"
+                        disabled
                       >
-                        <VListItemTitle>{{ item.title }}</VListItemTitle>
+                        <VListItemTitle class="text-center text-body-2 text-medium-emphasis">
+                          {{ $t('no_results_found') }}
+                        </VListItemTitle>
                       </VListItem>
                     </VList>
                   </VCard>

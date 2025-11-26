@@ -37,4 +37,5 @@ export interface ISelectedContactPreview {
   phone_partial?: string | null;
   email?: string | null;
   email_partial?: string | null;
+  photo?: string | null;
 }

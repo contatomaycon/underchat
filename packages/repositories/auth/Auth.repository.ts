@@ -11,6 +11,8 @@ import {
   permissionAssignment,
   permissionRole,
   chatUser,
+  zipcodeCity,
+  zipcodeState,
 } from '@core/models';
 import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -57,8 +59,9 @@ export class AuthRepository {
           zip_code: userAddress.zip_code,
           address1_partial: userAddress.address1_partial,
           address2_partial: userAddress.address2_partial,
-          city: userAddress.city,
-          state: userAddress.state,
+          city: zipcodeCity.city,
+          state: zipcodeState.state,
+          state_abbreviation: zipcodeState.abbreviation,
           district: userAddress.district,
         },
         chat_user: {
@@ -91,6 +94,14 @@ export class AuthRepository {
         )
       )
       .leftJoin(userAddress, eq(userAddress.user_id, user.user_id))
+      .leftJoin(
+        zipcodeCity,
+        eq(userAddress.city_fiscal_code, zipcodeCity.fiscal_code)
+      )
+      .leftJoin(
+        zipcodeState,
+        eq(userAddress.state_fiscal_code, zipcodeState.fiscal_code)
+      )
       .leftJoin(chatUser, eq(chatUser.user_id, user.user_id))
       .where(
         and(

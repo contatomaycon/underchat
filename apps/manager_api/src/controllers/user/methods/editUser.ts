@@ -19,7 +19,10 @@ export const editUser = async (
   const { t, tokenJwtData } = request;
 
   try {
-    const accountIdToUse = request.body.account_id || tokenJwtData.account_id;
+    const accountIdToUse =
+      tokenJwtData.is_administrator && request.body.account_id?.value
+        ? request.body.account_id.value
+        : tokenJwtData.account_id;
 
     const response = await userUpdaterUseCase.execute(
       t,

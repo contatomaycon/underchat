@@ -165,6 +165,7 @@ export class UserListerRepository {
             name: true,
             last_name: true,
             birth_date: true,
+            photo: true,
           },
         },
         uud: {
@@ -187,8 +188,8 @@ export class UserListerRepository {
             zip_code: true,
             address1_partial: true,
             address2_partial: true,
-            city: true,
-            state: true,
+            city_fiscal_code: true,
+            state_fiscal_code: true,
             district: true,
           },
           with: {
@@ -197,6 +198,17 @@ export class UserListerRepository {
                 country_id: true,
                 iso_code: true,
                 name: true,
+              },
+            },
+            uzc: {
+              columns: {
+                city: true,
+              },
+            },
+            uzs: {
+              columns: {
+                state: true,
+                abbreviation: true,
               },
             },
           },
@@ -238,6 +250,7 @@ export class UserListerRepository {
             name: user.uui.name,
             last_name: user.uui.last_name,
             birth_date: user.uui.birth_date,
+            photo: user.uui.photo,
           }
         : null,
       user_document: user.uud
@@ -258,8 +271,16 @@ export class UserListerRepository {
             zip_code: user.uua.zip_code,
             address1_partial: user.uua.address1_partial,
             address2_partial: user.uua.address2_partial,
-            city: user.uua.city,
-            state: user.uua.state,
+            city: user.uua.uzc?.city ?? null,
+            state: (() => {
+              if (!user.uua.uzs) return null;
+              if (user.uua.uzs.abbreviation) {
+                return `${user.uua.uzs.state} (${user.uua.uzs.abbreviation})`;
+              }
+              return user.uua.uzs.state;
+            })(),
+            city_fiscal_code: user.uua.city_fiscal_code,
+            state_fiscal_code: user.uua.state_fiscal_code,
             district: user.uua.district,
             country: user.uua.uuc
               ? {

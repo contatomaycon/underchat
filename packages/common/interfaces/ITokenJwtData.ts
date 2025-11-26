@@ -6,4 +6,5 @@ export interface ITokenJwtData {
   permission_role_id: string;
   is_administrator: boolean;
   actions: IJwtGroupHierarchy[];
+  sectors: string[];
 }

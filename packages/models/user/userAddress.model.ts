@@ -6,7 +6,7 @@ import {
   smallint,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import { country, user } from '@core/models';
+import { country, user, zipcodeCity, zipcodeState } from '@core/models';
 
 export const userAddress = pgTable('user_address', {
   user_address_id: uuid().primaryKey().notNull(),
@@ -23,8 +23,8 @@ export const userAddress = pgTable('user_address', {
   address2: varchar({ length: 1000 }),
   address2_partial: varchar({ length: 200 }),
   address2_c: varchar({ length: 500 }),
-  city: varchar({ length: 100 }).notNull(),
-  state: varchar({ length: 100 }).notNull(),
+  city_fiscal_code: varchar({ length: 10 }),
+  state_fiscal_code: varchar({ length: 10 }),
   district: varchar({ length: 100 }).notNull(),
   created_at: timestamp({
     mode: 'string',
@@ -45,5 +45,13 @@ export const userAddressRelations = relations(userAddress, ({ one }) => ({
   uuc: one(country, {
     fields: [userAddress.country_id],
     references: [country.country_id],
+  }),
+  uzc: one(zipcodeCity, {
+    fields: [userAddress.city_fiscal_code],
+    references: [zipcodeCity.fiscal_code],
+  }),
+  uzs: one(zipcodeState, {
+    fields: [userAddress.state_fiscal_code],
+    references: [zipcodeState.fiscal_code],
   }),
 }));

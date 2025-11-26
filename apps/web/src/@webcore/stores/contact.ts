@@ -134,40 +134,6 @@ export const useContactStore = defineStore('contact', {
       }
     },
 
-    async getContactByPhone(
-      phone: string,
-      phoneDdi?: string | null
-    ): Promise<ViewContactResponse | null> {
-      try {
-        const params = new URLSearchParams();
-        params.append('phone', phone);
-        if (phoneDdi) {
-          params.append('phone_ddi', phoneDdi);
-        }
-
-        const response = await axios.get<IApiResponse<ViewContactResponse>>(
-          `/contact/by-phone?${params.toString()}`
-        );
-
-        const data = response?.data;
-
-        if (!data?.status) {
-          return null;
-        }
-
-        if (
-          !data?.data ||
-          (typeof data.data === 'object' && Object.keys(data.data).length === 0)
-        ) {
-          return null;
-        }
-
-        return data.data;
-      } catch {
-        return null;
-      }
-    },
-
     extractFieldValue(field: FieldValue | undefined): string {
       if (field === null || field === undefined) {
         return '';
@@ -182,6 +148,62 @@ export const useContactStore = defineStore('contact', {
       }
 
       return '';
+    },
+
+    buildUpdateContactFormData(
+      body: UpdateContactRequest,
+      photoFile?: File | null
+    ): FormData {
+      const formData = new FormData();
+      const labelTemplateId = this.extractFieldValue(
+        body.label_template_id as FieldValue
+      );
+      if (labelTemplateId) {
+        formData.append('label_template_id', labelTemplateId);
+      }
+      const name = this.extractFieldValue(body.name as FieldValue);
+      if (name) {
+        formData.append('name', name);
+      }
+      const lastName = this.extractFieldValue(body.last_name as FieldValue);
+      if (lastName) {
+        formData.append('last_name', lastName);
+      }
+      const email = this.extractFieldValue(body.email as FieldValue);
+      if (email) {
+        formData.append('email', email);
+      }
+      const phoneDdi = this.extractFieldValue(body.phone_ddi as FieldValue);
+      if (phoneDdi) {
+        formData.append('phone_ddi', phoneDdi);
+      }
+      const phone = this.extractFieldValue(body.phone as FieldValue);
+      if (phone) {
+        formData.append('phone', phone);
+      }
+      const nickname = this.extractFieldValue(body.nickname as FieldValue);
+      if (nickname) {
+        formData.append('nickname', nickname);
+      }
+      const birthday = this.extractFieldValue(body.birthday as FieldValue);
+      if (birthday) {
+        formData.append('birthday', birthday);
+      }
+      const notes = this.extractFieldValue(body.notes as FieldValue);
+      if (notes) {
+        formData.append('notes', notes);
+      }
+      const imageUrl = this.extractFieldValue(body.image_url as FieldValue);
+      if (imageUrl) {
+        formData.append('image_url', imageUrl);
+      } else if (photoFile) {
+        formData.append('photo', photoFile);
+      }
+      const chatId = this.extractFieldValue(body.chat_id as FieldValue);
+      if (chatId) {
+        formData.append('chat_id', chatId);
+      }
+      return formData;
     },
 
     async addContact(
@@ -242,6 +264,10 @@ export const useContactStore = defineStore('contact', {
         } else if (photoFile) {
           formData.append('photo', photoFile);
         }
+        const chatId = this.extractFieldValue(payload.chat_id as FieldValue);
+        if (chatId) {
+          formData.append('chat_id', chatId);
+        }
 
         const response = await axios.post<IApiResponse<boolean>>(
           `/contact`,
@@ -294,51 +320,7 @@ export const useContactStore = defineStore('contact', {
       try {
         this.loading = true;
 
-        const formData = new FormData();
-        const labelTemplateId = this.extractFieldValue(
-          body.label_template_id as FieldValue
-        );
-        if (labelTemplateId) {
-          formData.append('label_template_id', labelTemplateId);
-        }
-        const name = this.extractFieldValue(body.name as FieldValue);
-        if (name) {
-          formData.append('name', name);
-        }
-        const lastName = this.extractFieldValue(body.last_name as FieldValue);
-        if (lastName) {
-          formData.append('last_name', lastName);
-        }
-        const email = this.extractFieldValue(body.email as FieldValue);
-        if (email) {
-          formData.append('email', email);
-        }
-        const phoneDdi = this.extractFieldValue(body.phone_ddi as FieldValue);
-        if (phoneDdi) {
-          formData.append('phone_ddi', phoneDdi);
-        }
-        const phone = this.extractFieldValue(body.phone as FieldValue);
-        if (phone) {
-          formData.append('phone', phone);
-        }
-        const nickname = this.extractFieldValue(body.nickname as FieldValue);
-        if (nickname) {
-          formData.append('nickname', nickname);
-        }
-        const birthday = this.extractFieldValue(body.birthday as FieldValue);
-        if (birthday) {
-          formData.append('birthday', birthday);
-        }
-        const notes = this.extractFieldValue(body.notes as FieldValue);
-        if (notes) {
-          formData.append('notes', notes);
-        }
-        const imageUrl = this.extractFieldValue(body.image_url as FieldValue);
-        if (imageUrl) {
-          formData.append('image_url', imageUrl);
-        } else if (photoFile) {
-          formData.append('photo', photoFile);
-        }
+        const formData = this.buildUpdateContactFormData(body, photoFile);
 
         const response = await axios.patch<IApiResponse<boolean>>(
           `/contact/${payload.contact_id}`,

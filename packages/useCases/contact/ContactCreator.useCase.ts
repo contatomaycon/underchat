@@ -9,6 +9,13 @@ import { PhoneValidationService } from '@core/services/phoneValidation.service';
 import moment from 'moment';
 import { buildCandidatesWithDdi } from '@core/common/functions/buildCandidatesBR';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
+import { ChatService } from '@core/services/chat.service';
+import { CentrifugoService } from '@core/services/centrifugo.service';
+import {
+  chatAccountCentrifugo,
+  chatQueueAccountCentrifugo,
+} from '@core/common/functions/centrifugoQueue';
+import { IChat } from '@core/common/interfaces/IChat';
 
 type FieldValue = string | { value: string } | null;
 
@@ -19,7 +26,9 @@ export class ContactCreatorUseCase {
     private readonly accountService: AccountService,
     private readonly contactService: ContactService,
     private readonly encryptService: EncryptService,
-    private readonly phoneValidationService: PhoneValidationService
+    private readonly phoneValidationService: PhoneValidationService,
+    private readonly chatService: ChatService,
+    private readonly centrifugoService: CentrifugoService
   ) {}
 
   private validateBirthDate(
@@ -278,6 +287,74 @@ export class ContactCreatorUseCase {
       throw new Error(t('contact_creation_failed'));
     }
 
+    const chatId = this.extractFieldValue(input.chat_id as FieldValue);
+
+    if (chatId) {
+      await this.updateChatWithContactData(
+        t,
+        accountId,
+        chatId,
+        contactId,
+        phoneToSave,
+        phoneDdiToSave
+      );
+    }
+
     return true;
+  }
+
+  private async updateChatWithContactData(
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    chatId: string,
+    contactId: string,
+    phone: string,
+    phoneDdi: string
+  ): Promise<void> {
+    const chat = await this.chatService.findChatByChatId(accountId, chatId);
+
+    if (!chat) {
+      return;
+    }
+
+    const contact = await this.contactService.getContactById(
+      contactId,
+      accountId
+    );
+
+    if (!contact) {
+      return;
+    }
+
+    const updatedChat: IChat = {
+      ...chat,
+      contact: {
+        id: contact.contact_id,
+        name: contact.name,
+        phone: contact.phone_partial ?? phone ?? chat.phone ?? '',
+        phone_ddi:
+          contact.phone_ddi ?? phoneDdi ?? chat.contact?.phone_ddi ?? null,
+        photo: contact.photo ?? null,
+      },
+    };
+
+    const saved = await this.chatService.saveChat(updatedChat);
+
+    if (!saved) {
+      return;
+    }
+
+    const channelAccountId = updatedChat.account?.id ?? accountId;
+
+    await Promise.all([
+      this.centrifugoService.publishSub(
+        chatAccountCentrifugo(channelAccountId),
+        updatedChat
+      ),
+      this.centrifugoService.publishSub(
+        chatQueueAccountCentrifugo(channelAccountId),
+        updatedChat
+      ),
+    ]);
   }
 }

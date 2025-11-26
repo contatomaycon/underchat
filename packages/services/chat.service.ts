@@ -138,6 +138,31 @@ export class ChatService {
     );
   };
 
+  updateChatUserAndSector = async (
+    chatId: string,
+    user?: IChat['user'] | null,
+    sector?: IChat['sector'] | null
+  ): Promise<boolean> => {
+    const updateData: {
+      user?: IChat['user'] | null;
+      sector?: IChat['sector'] | null;
+    } = {};
+
+    if (user !== undefined) {
+      updateData.user = user;
+    }
+
+    if (sector !== undefined) {
+      updateData.sector = sector;
+    }
+
+    return this.elasticDatabaseService.update(
+      EElasticIndex.chat,
+      updateData,
+      chatId
+    );
+  };
+
   updateChatSummary = async (
     chatId: string,
     summary: IChat['summary']
@@ -264,6 +289,58 @@ export class ChatService {
       { worker },
       chatId
     );
+  };
+
+  findChatsByContactId = async (
+    accountId: string,
+    contactId: string
+  ): Promise<IChat[]> => {
+    const queryElastic = {
+      size: 1000,
+      _source: true,
+      query: {
+        bool: {
+          must: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: {
+                    'account.id': accountId,
+                  },
+                },
+              },
+            },
+            {
+              nested: {
+                path: 'contact',
+                query: {
+                  term: {
+                    'contact.id': contactId,
+                  },
+                },
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select<IChat>(
+      EElasticIndex.chat,
+      queryElastic
+    );
+
+    const chats =
+      result?.hits?.hits?.map((hit) => {
+        const chat = (hit as ElasticHit<IChat>)._source;
+        if (chat && Array.isArray(chat.summary)) {
+          chat.summary = chat.summary[0] as IChat['summary'];
+        }
+        return chat;
+      }) ?? [];
+
+    return chats.filter((chat): chat is IChat => chat !== undefined);
   };
 
   findMessageByMessageId = async (

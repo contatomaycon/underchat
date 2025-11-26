@@ -532,6 +532,59 @@ export class MessageUpsertConsume {
     return true;
   }
 
+  private async updateChatPhotoIfNeeded(
+    getChat: IChat,
+    data: IUpsertMessage
+  ): Promise<void> {
+    if (!data.photo) return;
+
+    const needsPhotoUpdate = !getChat.photo;
+    const needsContactPhotoUpdate = getChat.contact && !getChat.contact.photo;
+
+    if (!needsPhotoUpdate && !needsContactPhotoUpdate) return;
+
+    const photoResult = await this.storageService.uploadFromUrl(
+      data.photo,
+      data.account_id,
+      getChat.chat_id
+    );
+
+    if (!photoResult?.url) return;
+
+    if (needsPhotoUpdate) getChat.photo = photoResult.url;
+
+    if (needsContactPhotoUpdate && getChat.contact?.id) {
+      await this.contactService.updateContactById(
+        {
+          image_url: photoResult.url,
+        },
+        getChat.contact.id,
+        data.account_id
+      );
+
+      getChat.contact = {
+        ...getChat.contact,
+        photo: photoResult.url,
+      };
+    }
+
+    const updateData: Partial<IChat> = {};
+    if (needsPhotoUpdate) {
+      updateData.photo = photoResult.url;
+    }
+
+    if (needsContactPhotoUpdate && getChat.contact) {
+      updateData.contact = getChat.contact;
+    }
+
+    if (Object.keys(updateData).length > 0) {
+      await this.chatService.saveChat({
+        ...getChat,
+        ...updateData,
+      });
+    }
+  }
+
   private async updateChatNameIfNeeded(
     getChat: IChat,
     data: IUpsertMessage
@@ -1001,15 +1054,35 @@ export class MessageUpsertConsume {
       ? this.encryptService.sanitize(parsed.email, ETypeSanetize.email)
       : null;
 
+    let existingContactId: string | null = null;
+    let existingContactPhoto: string | null = null;
+
+    const existingContact = await this.contactService.getContactByPhone(
+      data.account_id,
+      phoneAndDdi.phone,
+      phoneAndDdi.phone_ddi
+    );
+
+    let existingContactName =
+      parsed.name || contactMsg.displayName || 'Contato';
+    let existingContactLastName = parsed.last_name || null;
+    if (existingContact) {
+      existingContactId = existingContact.contact_id;
+      existingContactPhoto = existingContact.photo ?? null;
+      existingContactName = existingContact.name;
+      existingContactLastName = existingContact.last_name ?? null;
+    }
+
     content.contact = {
-      contact_id: uuidv7(),
-      name: parsed.name || contactMsg.displayName || 'Contato',
-      last_name: parsed.last_name || null,
+      contact_id: existingContactId,
+      name: existingContactName,
+      last_name: existingContactLastName,
       phone: phoneAndDdi.phone,
       phone_partial: phonePartial,
       phone_ddi: phoneAndDdi.phone_ddi,
       email: parsed.email || null,
       email_partial: emailPartial,
+      photo: existingContactPhoto,
     };
   }
 
@@ -1018,6 +1091,8 @@ export class MessageUpsertConsume {
     data: IUpsertMessage
   ): Promise<boolean> {
     try {
+      await this.updateChatPhotoIfNeeded(getChat, data);
+
       const reactionResult = await this.handleReactionMessage(getChat, data);
       if (reactionResult !== null) {
         return reactionResult;

@@ -3,10 +3,20 @@ import axios from 'axios';
 import { ZipcodeResponseSchema } from '@core/schema/zipcode/viewZipcode/response.schema';
 import { ViewZipcodeRequest } from '@core/schema/zipcode/viewZipcode/request.schema';
 import { ZipcodeViewRepository } from '@core/repositories/zipcode/ZipcodeView.repository';
+import { ZipcodeStateViewRepository } from '@core/repositories/zipcode/ZipcodeStateView.repository';
+import { ZipcodeCityViewRepository } from '@core/repositories/zipcode/ZipcodeCityView.repository';
+import { ListStatesRequest } from '@core/schema/zipcode/listStates/request.schema';
+import { ListCitiesRequest } from '@core/schema/zipcode/listCities/request.schema';
+import { StateListResponse } from '@core/schema/zipcode/listStates/response.schema';
+import { CityListResponse } from '@core/schema/zipcode/listCities/response.schema';
 
 @injectable()
 export class ZipcodeService {
-  constructor(private readonly zipcodeViewRepository: ZipcodeViewRepository) {}
+  constructor(
+    private readonly zipcodeViewRepository: ZipcodeViewRepository,
+    private readonly zipcodeStateViewRepository: ZipcodeStateViewRepository,
+    private readonly zipcodeCityViewRepository: ZipcodeCityViewRepository
+  ) {}
 
   private readonly clearCode = (zipCode: string): string => {
     return zipCode.replaceAll(/\D/g, '');
@@ -48,5 +58,17 @@ export class ZipcodeService {
 
   viewZipcode = async (request: ViewZipcodeRequest) => {
     return this.zipcodeViewRepository.zipcodeView(request);
+  };
+
+  listStates = async (
+    request: ListStatesRequest
+  ): Promise<StateListResponse> => {
+    return this.zipcodeStateViewRepository.listStates(request);
+  };
+
+  listCities = async (
+    request: ListCitiesRequest
+  ): Promise<CityListResponse> => {
+    return this.zipcodeCityViewRepository.listCities(request);
   };
 }

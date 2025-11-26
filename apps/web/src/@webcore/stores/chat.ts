@@ -4,12 +4,14 @@ import { getI18n } from '@/plugins/i18n';
 import { EColor } from '@core/common/enums/EColor';
 import { ISnackbar } from '@core/common/interfaces/ISnackbar';
 import axios from '@webcore/axios';
-import { type AxiosRequestConfig } from 'axios';
+import { type AxiosRequestConfig, AxiosError } from 'axios';
 import {
   ListChatsResponse,
   ListChatsResult,
 } from '@core/schema/chat/listChats/response.schema';
 import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
+import { SearchChatsResponse } from '@core/schema/chat/searchChats/response.schema';
+import { SearchChatsQuery } from '@core/schema/chat/searchChats/request.schema';
 import { UpdateChatsUserRequest } from '@core/schema/chat/updateChatsUser/request.schema';
 import { getUser, setUser, getPermissions } from '../localStorage/user';
 import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
@@ -25,12 +27,12 @@ import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/req
 import { IChatMessage, IReaction } from '@core/common/interfaces/IChatMessage';
 import { IChat } from '@core/common/interfaces/IChat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
-import { UpdateChatContactResult } from '@core/schema/chat/updateChatContact/response.schema';
 import { ViewLinkPreviewBody } from '@core/schema/chat/viewLinkPreview/request.schema';
 import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
+import { SearchMessagesResponse } from '@core/schema/chat/searchMessages/response.schema';
 
 type LocalMessageState = {
   status: 'uploading' | 'error';
@@ -475,6 +477,40 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
+    async searchChats(
+      input: SearchChatsQuery
+    ): Promise<SearchChatsResponse | null> {
+      try {
+        this.loading = true;
+
+        const request: SearchChatsQuery = {
+          current_page: input.current_page ?? 1,
+          per_page: input.per_page ?? 20,
+          search: input.search,
+        };
+
+        const response = await axios.get<IApiResponse<SearchChatsResponse>>(
+          `/chat/search`,
+          {
+            params: request,
+          }
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        this.loading = false;
+        return null;
+      }
+    },
+
     async updateChatsUser(input: UpdateChatsUserRequest): Promise<void> {
       try {
         this.loading = true;
@@ -654,6 +690,49 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
+    async transferChat(
+      chatId: string,
+      userId?: string | null,
+      sectorId?: string | null,
+      annotation?: string | null
+    ): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<
+          IApiResponse<{ chat_id: string; status: boolean }>
+        >(`/chat/${chatId}/transfer`, {
+          user_id: userId || undefined,
+          sector_id: sectorId || undefined,
+          annotation: annotation?.trim() || undefined,
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const errorMessage =
+            data?.message || this.i18n.global.t('chat_transfer_error');
+          this.showSnackbar(errorMessage, EColor.error);
+
+          return false;
+        }
+        return true;
+      } catch (error) {
+        this.loading = false;
+
+        let errorMessage = this.i18n.global.t('chat_transfer_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return false;
+      }
+    },
+
     async clearChatSummary(chatId: string): Promise<boolean> {
       if (!chatId) return false;
 
@@ -661,36 +740,6 @@ export const useChatStore = defineStore('chat', {
         await axios.post(`/chat/${chatId}/clear-summary`, {});
 
         return true;
-      } catch {
-        return false;
-      }
-    },
-
-    async updateChatContact(
-      chatId: string,
-      phone: string,
-      phoneDdi: string
-    ): Promise<boolean> {
-      if (!chatId || !phone || !phoneDdi) return false;
-
-      try {
-        const response = await axios.patch<
-          IApiResponse<UpdateChatContactResult>
-        >(`/chat/${chatId}/contact`, {
-          phone,
-          phone_ddi: phoneDdi,
-        });
-
-        if (response?.data?.status && response?.data?.data) {
-          const chatData: IChat = {
-            ...response.data.data,
-            status: response.data.data.status as EChatStatus,
-          };
-          this.addChat(chatData);
-          return true;
-        }
-
-        return false;
       } catch {
         return false;
       }
@@ -1257,6 +1306,52 @@ export const useChatStore = defineStore('chat', {
         return true;
       } catch {
         return false;
+      }
+    },
+
+    async searchMessages(
+      chatId: string,
+      search: string,
+      currentPage: number = 1,
+      perPage: number = 50
+    ): Promise<SearchMessagesResponse> {
+      try {
+        const response = await axios.get<IApiResponse<SearchMessagesResponse>>(
+          `/chat/${chatId}/search`,
+          {
+            params: { search, current_page: currentPage, per_page: perPage },
+          }
+        );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const pagings = {
+            current_page: 1,
+            total_pages: 0,
+            per_page: perPage,
+            count: 0,
+            total: 0,
+          };
+          return {
+            results: [],
+            pagings,
+          };
+        }
+
+        return data.data;
+      } catch {
+        const pagings = {
+          current_page: 1,
+          total_pages: 0,
+          per_page: perPage,
+          count: 0,
+          total: 0,
+        };
+        return {
+          results: [],
+          pagings,
+        };
       }
     },
   },

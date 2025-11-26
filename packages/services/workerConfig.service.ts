@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { workerConfig } from '@core/models';
 import { WorkerConfigViewerRepository } from '@core/repositories/worker/WorkerConfigViewer.repository';
@@ -6,12 +6,14 @@ import { WorkerConfigUpserterRepository } from '@core/repositories/worker/Worker
 import { IUpdateWorkerConfig } from '@core/common/interfaces/IUpdateWorkerConfig';
 import { ViewWorkerConfigResponse } from '@core/schema/worker/viewWorkerConfig/response.schema';
 import { WorkerConfig } from '@core/schema/worker/updateWorkerConfig/response.schema';
+import Redis from 'ioredis';
 
 @injectable()
 export class WorkerConfigService {
   constructor(
     private readonly workerConfigViewerRepository: WorkerConfigViewerRepository,
-    private readonly workerConfigUpserterRepository: WorkerConfigUpserterRepository
+    private readonly workerConfigUpserterRepository: WorkerConfigUpserterRepository,
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   async viewWorkerConfig(workerId: string): Promise<ViewWorkerConfigResponse> {
@@ -37,6 +39,8 @@ export class WorkerConfigService {
       input
     );
 
+    await this.invalidateWorkerConfigCache(workerId);
+
     const result =
       await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
         workerId
@@ -58,12 +62,96 @@ export class WorkerConfigService {
       is_automatic_attendance: result.is_automatic_attendance ?? false,
       show_attendee_name: result.show_attendee_name ?? false,
       show_worker_name: result.show_worker_name ?? false,
-      generate_protocol_at_ura: result.generate_protocol_at_ura ?? false,
-      generate_protocol_at_start: result.generate_protocol_at_start ?? false,
-      generate_protocol_at_transfer:
-        result.generate_protocol_at_transfer ?? false,
+      generate_protocol_at_ura: result.generate_protocol_at_ura,
+      generate_protocol_at_start: result.generate_protocol_at_start,
+      generate_protocol_at_transfer: result.generate_protocol_at_transfer,
       created_at: result.created_at ?? null,
       updated_at: result.updated_at ?? null,
     };
+  }
+
+  async updateTransferProtocolText(
+    workerId: string,
+    text: string | null
+  ): Promise<string | null> {
+    const [result] = await Promise.all([
+      this.workerConfigUpserterRepository.updateTransferProtocolText(
+        workerId,
+        text
+      ),
+      this.invalidateWorkerConfigCache(workerId),
+    ]);
+
+    return result;
+  }
+
+  async viewTransferProtocolText(workerId: string): Promise<string | null> {
+    const result =
+      await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
+        workerId
+      );
+
+    if (!result) {
+      return null;
+    }
+
+    return result.generate_protocol_at_transfer || null;
+  }
+
+  async updateStartProtocolText(
+    workerId: string,
+    text: string | null
+  ): Promise<string | null> {
+    const [result] = await Promise.all([
+      this.workerConfigUpserterRepository.updateStartProtocolText(
+        workerId,
+        text
+      ),
+      this.invalidateWorkerConfigCache(workerId),
+    ]);
+
+    return result;
+  }
+
+  async viewStartProtocolText(workerId: string): Promise<string | null> {
+    const result =
+      await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
+        workerId
+      );
+
+    if (!result) {
+      return null;
+    }
+
+    return result.generate_protocol_at_start || null;
+  }
+
+  async updateUraProtocolText(
+    workerId: string,
+    text: string | null
+  ): Promise<string | null> {
+    const [result] = await Promise.all([
+      this.workerConfigUpserterRepository.updateUraProtocolText(workerId, text),
+      this.invalidateWorkerConfigCache(workerId),
+    ]);
+
+    return result;
+  }
+
+  async viewUraProtocolText(workerId: string): Promise<string | null> {
+    const result =
+      await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
+        workerId
+      );
+
+    if (!result) {
+      return null;
+    }
+
+    return result.generate_protocol_at_ura || null;
+  }
+
+  private async invalidateWorkerConfigCache(workerId: string): Promise<void> {
+    await this.redis.del(`worker:${workerId}:config_fields`);
   }
 }

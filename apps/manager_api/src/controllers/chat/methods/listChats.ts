@@ -19,7 +19,8 @@ export const listChats = async (
       tokenJwtData.account_id,
       request.query,
       tokenJwtData.user_id,
-      tokenJwtData.actions
+      tokenJwtData.actions,
+      tokenJwtData.sectors
     );
 
     if (response) {

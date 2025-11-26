@@ -11,8 +11,10 @@ import { deleteMessage } from './methods/deleteMessage';
 import { editMessage } from './methods/editMessage';
 import { updateChatStatus } from './methods/updateChatStatus';
 import { clearChatSummary } from './methods/clearChatSummary';
-import { updateChatContact } from './methods/updateChatContact';
 import { startChatWithContact } from './methods/startChatWithContact';
+import { searchMessages } from './methods/searchMessages';
+import { transferChat } from './methods/transferChat';
+import { searchChats } from './methods/searchChats';
 
 @injectable()
 class ChatController {
@@ -28,8 +30,10 @@ class ChatController {
   public editMessage = editMessage;
   public updateChatStatus = updateChatStatus;
   public clearChatSummary = clearChatSummary;
-  public updateChatContact = updateChatContact;
   public startChatWithContact = startChatWithContact;
+  public searchMessages = searchMessages;
+  public transferChat = transferChat;
+  public searchChats = searchChats;
 }
 
 export default ChatController;

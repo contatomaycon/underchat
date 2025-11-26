@@ -85,6 +85,11 @@ export const chatMappings = () => {
             },
             name: {
               type: 'text',
+              fields: {
+                keyword: {
+                  type: 'keyword',
+                },
+              },
             },
             phone: {
               type: 'keyword',
@@ -102,6 +107,11 @@ export const chatMappings = () => {
         },
         name: {
           type: 'text',
+          fields: {
+            keyword: {
+              type: 'keyword',
+            },
+          },
         },
         phone: {
           type: 'keyword',

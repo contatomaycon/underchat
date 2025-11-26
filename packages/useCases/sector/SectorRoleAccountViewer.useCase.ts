@@ -19,14 +19,12 @@ export class SectorRoleAccountListerUseCase {
     if (!isAdministrator) {
       const accountExists =
         await this.accountService.existsAccountById(accountId);
+
       if (!accountExists) {
         throw new Error(t('account_not_found'));
       }
     }
 
-    return this.permissionService.listPermissionRoleAccountById(
-      accountId,
-      isAdministrator
-    );
+    return this.permissionService.listPermissionRoleAccountById(accountId);
   }
 }

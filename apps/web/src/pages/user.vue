@@ -99,7 +99,12 @@ const userToEdit = ref<string | null>(null);
 const isAssignRoleDialogShow = ref(false);
 const userToAssignRole = ref<string | null>(null);
 
+const photoViewerOpen = ref(false);
+const photoViewerSrc = ref<string>('');
+const photoViewerDownloadName = ref<string>('user-photo.jpg');
+
 const headers: DataTableHeader<ListUserResponse>[] = [
+  { title: '', key: 'photo', sortable: false, width: '80px' },
   { title: t('account'), key: 'account' },
   { title: t('status'), key: 'status' },
   { title: t('email_partial'), key: 'email_partial' },
@@ -166,6 +171,43 @@ const openEditDialog = (id: string) => {
 const openAssignRoleDialog = (id: string) => {
   userToAssignRole.value = id;
   isAssignRoleDialogShow.value = true;
+};
+
+const openPhotoViewer = (photoUrl: string | null) => {
+  if (!photoUrl) return;
+  photoViewerSrc.value = photoUrl;
+  photoViewerDownloadName.value = `user-photo-${Date.now()}.jpg`;
+  photoViewerOpen.value = true;
+};
+
+const downloadPhoto = async (url: string, filename?: string | null) => {
+  if (!url) return;
+
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const blobUrl = globalThis.URL.createObjectURL(blob);
+
+    const anchor = document.createElement('a');
+    anchor.href = blobUrl;
+    anchor.download = filename || 'user-photo.jpg';
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+
+    setTimeout(() => {
+      globalThis.URL.revokeObjectURL(blobUrl);
+    }, 100);
+  } catch (error) {
+    console.error('Erro ao baixar imagem:', error);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.target = '_blank';
+    anchor.download = filename || 'user-photo.jpg';
+    anchor.rel = 'noopener';
+    anchor.click();
+  }
 };
 
 watch(
@@ -240,6 +282,29 @@ watch(
         @update:options="handleTableChange"
         :loading-text="$t('loading_text')"
       >
+        <template #item.photo="{ item }">
+          <div
+            class="user-photo-square"
+            :class="{ 'cursor-pointer': item.user_info?.photo }"
+            @click="
+              item.user_info?.photo && openPhotoViewer(item.user_info.photo)
+            "
+          >
+            <VImg
+              v-if="item.user_info?.photo"
+              :src="item.user_info.photo"
+              alt="User photo"
+              cover
+            />
+            <VImg
+              v-else
+              :src="'/images/svg/avatar-default.svg'"
+              alt="Default avatar"
+              cover
+            />
+          </div>
+        </template>
+
         <template #item.account="{ item }">
           {{ item.account?.name }}
         </template>
@@ -336,6 +401,52 @@ watch(
       />
     </VCard>
 
+    <VDialog
+      v-model="photoViewerOpen"
+      fullscreen
+      scrim="rgba(0,0,0,.9)"
+      :scrollable="false"
+    >
+      <div class="viewer-wrap" @click="photoViewerOpen = false">
+        <div class="viewer-box" @click.stop>
+          <div class="viewer-media-container">
+            <img
+              v-if="photoViewerSrc"
+              :src="photoViewerSrc"
+              alt="User"
+              class="viewer-img"
+              loading="eager"
+              decoding="async"
+            />
+
+            <div class="viewer-actions">
+              <VBtn
+                v-if="photoViewerSrc"
+                class="viewer-download"
+                icon
+                size="36"
+                variant="text"
+                @click.stop="
+                  downloadPhoto(photoViewerSrc, photoViewerDownloadName)
+                "
+              >
+                <VIcon size="20">tabler-download</VIcon>
+              </VBtn>
+              <VBtn
+                class="viewer-close"
+                icon
+                size="36"
+                variant="text"
+                @click="photoViewerOpen = false"
+              >
+                <VIcon size="20">tabler-x</VIcon>
+              </VBtn>
+            </div>
+          </div>
+        </div>
+      </div>
+    </VDialog>
+
     <VSnackbar
       v-model="userStore.snackbar.status"
       transition="scroll-y-reverse-transition"
@@ -354,5 +465,83 @@ watch(
 
 .invoice-list-filter {
   inline-size: 20rem;
+}
+
+.user-photo-square {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  overflow: hidden;
+  display: inline-block;
+  transition: opacity 0.2s ease;
+
+  &:hover {
+    opacity: 0.8;
+  }
+
+  :deep(.v-img) {
+    width: 100%;
+    height: 100%;
+  }
+}
+
+.viewer-wrap {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  padding: 16px;
+  overflow: hidden;
+}
+
+.viewer-box {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  max-width: 90vw;
+  max-height: 90vh;
+}
+
+.viewer-media-container {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.viewer-img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 90vw;
+  max-height: 85vh;
+  object-fit: contain;
+  border-radius: 12px;
+}
+
+.viewer-actions {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 10;
+}
+
+.viewer-close,
+.viewer-download {
+  color: white !important;
+  background: rgba(0, 0, 0, 0.5) !important;
+  border-radius: 50%;
+  min-width: 36px;
+  height: 36px;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.7) !important;
+  }
 }
 </style>

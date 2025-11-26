@@ -31,11 +31,25 @@ export class ChatListerUseCase {
     return hasRequiredPermission(actions, permissions);
   }
 
+  private canListAllChatsWithoutSectorLimit(
+    actions: IJwtGroupHierarchy[]
+  ): boolean {
+    const permissions = [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.chat_group,
+      EChatPermissions.list_all_chats_without_sector_limit,
+    ];
+
+    return hasRequiredPermission(actions, permissions);
+  }
+
   async execute(
     accountId: string,
     query: ListChatsQuery,
     userId: string,
-    actions: IJwtGroupHierarchy[]
+    actions: IJwtGroupHierarchy[],
+    userSectors: string[]
   ): Promise<ListChatsResponse> {
     const currentPage = query.current_page ?? 1;
     const perPage = query.per_page ?? 10;
@@ -73,6 +87,32 @@ export class ChatListerUseCase {
             },
           },
         });
+      }
+    }
+
+    if (!this.canListAllChatsWithoutSectorLimit(actions)) {
+      if (userSectors.length > 0) {
+        filterClauses.push({
+          nested: {
+            path: 'sector',
+            query: {
+              terms: {
+                'sector.id': userSectors,
+              },
+            },
+          },
+        } as unknown as IElasticsearchBoolClause);
+      }
+      if (userSectors.length === 0) {
+        filterClauses.push({
+          bool: {
+            must_not: {
+              exists: {
+                field: 'sector',
+              },
+            },
+          },
+        } as unknown as IElasticsearchBoolClause);
       }
     }
 

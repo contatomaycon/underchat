@@ -99,6 +99,15 @@ export const updateContactRequestSchema = Type.Object({
       Type.Null(),
     ])
   ),
+  chat_id: Type.Optional(
+    Type.Union([
+      Type.String({ format: 'uuid' }),
+      Type.Object({
+        value: Type.String({ format: 'uuid' }),
+      }),
+      Type.Null(),
+    ])
+  ),
 });
 
 export type UpdateContactRequest = Static<typeof updateContactRequestSchema>;

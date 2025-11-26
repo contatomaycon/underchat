@@ -47,6 +47,7 @@ export class UserViewerRepository {
             name: true,
             last_name: true,
             birth_date: true,
+            photo: true,
           },
         },
         uud: {
@@ -69,8 +70,8 @@ export class UserViewerRepository {
             zip_code: true,
             address1_partial: true,
             address2_partial: true,
-            city: true,
-            state: true,
+            city_fiscal_code: true,
+            state_fiscal_code: true,
             district: true,
           },
           with: {
@@ -79,6 +80,17 @@ export class UserViewerRepository {
                 country_id: true,
                 iso_code: true,
                 name: true,
+              },
+            },
+            uzc: {
+              columns: {
+                city: true,
+              },
+            },
+            uzs: {
+              columns: {
+                state: true,
+                abbreviation: true,
               },
             },
           },
@@ -93,6 +105,17 @@ export class UserViewerRepository {
 
     if (!result) {
       return null;
+    }
+
+    const cityName = result.uua?.uzc?.city ?? null;
+    let stateName: string | null = null;
+    if (result.uua?.uzs) {
+      if (result.uua.uzs.abbreviation) {
+        stateName = `${result.uua.uzs.state} (${result.uua.uzs.abbreviation})`;
+      }
+      if (!result.uua.uzs.abbreviation) {
+        stateName = result.uua.uzs.state;
+      }
     }
 
     const userById: ViewUserResponse = {
@@ -116,6 +139,7 @@ export class UserViewerRepository {
             name: result.uui.name,
             last_name: result.uui.last_name,
             birth_date: result.uui.birth_date,
+            photo: result.uui.photo,
           }
         : null,
       user_document: result.uud
@@ -136,8 +160,10 @@ export class UserViewerRepository {
             zip_code: result.uua.zip_code,
             address1_partial: result.uua.address1_partial,
             address2_partial: result.uua.address2_partial,
-            city: result.uua.city,
-            state: result.uua.state,
+            city: cityName,
+            state: stateName,
+            city_fiscal_code: result.uua.city_fiscal_code,
+            state_fiscal_code: result.uua.state_fiscal_code,
             district: result.uua.district,
             country: result.uua.uuc
               ? {

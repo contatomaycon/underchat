@@ -10,9 +10,11 @@ import { useSectorsStore } from '@/@webcore/stores/sector';
 import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
+import { SearchChatsQuery } from '@core/schema/chat/searchChats/request.schema';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 import { can } from '@layouts/plugins/casl';
 import { refDebounced } from '@vueuse/core';
 import { ListContactResponse } from '@core/schema/contact/listContact/response.schema';
@@ -52,6 +54,17 @@ const contactSearchQuery = ref('');
 const debouncedContactSearch = refDebounced(contactSearchQuery, 500);
 const currentPageContacts = ref(1);
 const perPageContacts = ref(50);
+const searchQuery = ref('');
+const debouncedSearchQuery = refDebounced(searchQuery, 500);
+const searchResults = ref<ListChatsResult[]>([]);
+const isSearching = ref(false);
+const searchPagings = ref({
+  current_page: 1,
+  total_pages: 1,
+  per_page: 20,
+  count: 0,
+  total: 0,
+});
 const isAddContactModalOpen = ref(false);
 const isLoadingMoreContacts = ref(false);
 const contactScrollContainer = ref<InstanceType<
@@ -107,6 +120,16 @@ const queueSelectionPermissions = [
 ];
 
 const canSelectAnyQueueChat = computed(() => can(queueSelectionPermissions));
+
+const canAccessContacts = computed(() => {
+  const permissions = [
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EContactPermissions.contact_group,
+    EContactPermissions.contact_view,
+  ];
+  return can(permissions);
+});
 
 const modelSearch = computed({
   get: () => props.search,
@@ -302,6 +325,72 @@ watch(debouncedContactSearch, () => {
   loadContacts();
 });
 
+const performSearch = async () => {
+  if (
+    !debouncedSearchQuery.value ||
+    debouncedSearchQuery.value.trim().length === 0
+  ) {
+    searchResults.value = [];
+    searchPagings.value = {
+      current_page: 1,
+      total_pages: 1,
+      per_page: 20,
+      count: 0,
+      total: 0,
+    };
+    return;
+  }
+
+  isSearching.value = true;
+  try {
+    const request: SearchChatsQuery = {
+      current_page: 1,
+      per_page: 20,
+      search: debouncedSearchQuery.value.trim(),
+    };
+
+    const result = await chatStore.searchChats(request);
+
+    if (result) {
+      searchResults.value = result.results;
+      searchPagings.value = result.pagings;
+    } else {
+      searchResults.value = [];
+      searchPagings.value = {
+        current_page: 1,
+        total_pages: 1,
+        per_page: 20,
+        count: 0,
+        total: 0,
+      };
+    }
+  } catch {
+    searchResults.value = [];
+  } finally {
+    isSearching.value = false;
+  }
+};
+
+watch(debouncedSearchQuery, () => {
+  performSearch();
+});
+
+watch(
+  () => activeFilter.value,
+  () => {
+    searchQuery.value = '';
+    searchResults.value = [];
+  }
+);
+
+watch(canAccessContacts, (hasAccess) => {
+  if (!hasAccess && activeFilter.value === 'new') {
+    activeFilter.value = 'all';
+    expandedFilter.value = 'all';
+    loadChatsByFilter();
+  }
+});
+
 const loadActiveWorkers = async () => {
   if (!chatStore.user?.account_id) return;
 
@@ -479,10 +568,13 @@ onMounted(async () => {
 
     <AppTextField
       id="search"
-      v-model="modelSearch"
-      placeholder="Search..."
+      v-model="searchQuery"
+      :placeholder="
+        $t('search_service_placeholder', 'Pesquisar atendimento...')
+      "
       prepend-inner-icon="tabler-search"
       class="ms-4 me-1 chat-list-search"
+      :loading="isSearching"
     />
 
     <IconBtn v-if="$vuetify.display.smAndDown" @click="$emit('close')">
@@ -493,7 +585,7 @@ onMounted(async () => {
 
   <div class="chat-filter-options px-3 py-3">
     <div class="d-flex gap-2 flex-wrap">
-      <div class="chat-filter-item flex-grow-1">
+      <div v-if="canAccessContacts" class="chat-filter-item flex-grow-1">
         <VBtn
           :variant="activeFilter === 'new' ? 'flat' : 'text'"
           :color="activeFilter === 'new' ? 'primary' : undefined"
@@ -563,7 +655,34 @@ onMounted(async () => {
 
   <VDivider />
 
-  <template v-if="activeFilter === 'new'">
+  <template v-if="searchQuery && searchQuery.trim().length > 0">
+    <PerfectScrollbar
+      :options="{ wheelPropagation: false }"
+      class="flex-grow-1"
+    >
+      <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
+        <li v-if="isSearching" class="no-chat-items-text text-disabled">
+          {{ $t('searching') }}
+        </li>
+        <template v-else>
+          <ChatQueue
+            v-for="result in searchResults"
+            :key="`search-${result.chat_id}`"
+            :user="result"
+            @click="$emit('openChat', result.chat_id)"
+          />
+          <li
+            v-if="!searchResults.length && !isSearching"
+            class="no-chat-items-text text-disabled"
+          >
+            {{ $t('no_results_found') }}
+          </li>
+        </template>
+      </ul>
+    </PerfectScrollbar>
+  </template>
+
+  <template v-else-if="activeFilter === 'new'">
     <div class="px-3 py-3">
       <div class="d-flex align-center gap-2 mb-3">
         <AppTextField

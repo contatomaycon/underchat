@@ -42,6 +42,7 @@ import {
   chatAccountCentrifugo,
   chatQueueAccountCentrifugo,
 } from '@core/common/functions/centrifugoQueue';
+import { WorkerService } from '@core/services/worker.service';
 
 @injectable()
 export class ChatMessageCreatorUseCase {
@@ -55,7 +56,8 @@ export class ChatMessageCreatorUseCase {
     private readonly storageService: StorageService,
     private readonly converterService: ConverterService,
     private readonly contactService: ContactService,
-    private readonly contactViewerRepository: ContactViewerRepository
+    private readonly contactViewerRepository: ContactViewerRepository,
+    private readonly workerService: WorkerService
   ) {}
 
   private async getChat(
@@ -111,6 +113,38 @@ export class ChatMessageCreatorUseCase {
     return data;
   }
 
+  private async formatOperatorTextWithAttendeeName(
+    chat: IChat,
+    message: string | null,
+    messageType?: EMessageType
+  ): Promise<string> {
+    const text = message ?? '';
+
+    if (
+      !text ||
+      !chat.worker?.id ||
+      !chat.user?.name ||
+      messageType === EMessageType.system ||
+      messageType === EMessageType.annotation
+    ) {
+      return text;
+    }
+
+    const workerConfig =
+      await this.workerService.viewWorkerConfigFieldsByWorkerId(chat.worker.id);
+
+    if (!workerConfig?.show_attendee_name) {
+      return text;
+    }
+
+    const prefix = `*${chat.user.name}*:\n\n`;
+    if (text.startsWith(prefix)) {
+      return text;
+    }
+
+    return `${prefix}${text}`;
+  }
+
   private async getChatMessage(
     accountId: string,
     chatId: string,
@@ -162,7 +196,10 @@ export class ChatMessageCreatorUseCase {
     t: TFunction<'translation', undefined>,
     body: CreateMessageChatsBody
   ) {
-    if (body.type === EMessageType.text && !body.message) {
+    if (
+      (body.type === EMessageType.text || body.type === EMessageType.system) &&
+      !body.message
+    ) {
       throw new Error(t('message_content_required'));
     }
   }
@@ -846,14 +883,22 @@ export class ChatMessageCreatorUseCase {
   }
 
   private async publishMessage(message: IChatMessage): Promise<boolean> {
-    const [result, ,] = await Promise.all([
+    const messageType = message.content?.type;
+    const isAnnotation = messageType === EMessageType.annotation;
+
+    const promises: Promise<any>[] = [
       this.chatService.saveMessageChat(message),
       this.centrifugoChatPublish(message),
-      this.streamProducerService.send(
-        this.kafkaBaileysQueueService.workerSendMessage(message.worker.id),
-        message
-      ),
-    ]);
+    ];
+
+    if (!isAnnotation) {
+      const kafkaTopic = this.kafkaBaileysQueueService.workerSendMessage(
+        message.worker.id
+      );
+      promises.push(this.streamProducerService.send(kafkaTopic, message));
+    }
+
+    const [result] = await Promise.all(promises);
 
     if (!result) {
       return false;
@@ -1275,11 +1320,17 @@ export class ChatMessageCreatorUseCase {
       }
     }
 
+    const formattedMessage = await this.formatOperatorTextWithAttendeeName(
+      chat,
+      message,
+      type
+    );
+
     const textMessage = this.createTextMessage({
       chat,
       chatId,
       type,
-      message,
+      message: formattedMessage,
       linkPreview,
       messageQuotedId: messageQuotedId ?? null,
       quotedMessage,
@@ -1325,6 +1376,7 @@ export class ChatMessageCreatorUseCase {
           phone_ddi: contact.phone_ddi || null,
           email: sensitiveData?.email || null,
           email_partial: contact.email_partial,
+          photo: contact.photo || null,
         };
       })
     );
@@ -1374,6 +1426,7 @@ export class ChatMessageCreatorUseCase {
             phone_ddi: contactData.phone_ddi,
             email: contactData.email,
             email_partial: contactData.email_partial,
+            photo: contactData.photo,
           },
         },
         date: new Date().toISOString(),
