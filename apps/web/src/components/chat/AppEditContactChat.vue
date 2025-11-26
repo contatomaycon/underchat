@@ -1,7 +1,6 @@
 <script lang="ts" setup>
 import { nextTick, toRef } from 'vue';
 import { VForm } from 'vuetify/components/VForm';
-import { useLabelTemplateStore } from '@/@webcore/stores/labelTemplate';
 import {
   EditContactParamsRequest,
   UpdateContactRequest,
@@ -13,8 +12,10 @@ import VDialogHandler from '@/components/VDialogHandler.vue';
 import { requiredValidator } from '@/@webcore/utils/validators';
 
 const chatStore = useChatStore();
-const labelTemplateStore = useLabelTemplateStore();
 const { items: countryCodes } = useCountryCodes();
+const labelTemplates = ref<Array<{ label_template_id: string; label: string }>>(
+  []
+);
 
 const { t } = useI18n();
 
@@ -157,7 +158,7 @@ const emailValidator = (v: string | null | undefined) => {
 };
 
 const itemsLabel = computed(() =>
-  (labelTemplateStore.listAll ?? []).map((item) => ({
+  labelTemplates.value.map((item) => ({
     value: item.label_template_id,
     title: item.label,
   }))
@@ -924,12 +925,11 @@ const handleRemovePhotoConfirm = async () => {
 };
 
 const loadLabelTemplates = async () => {
-  if (labelTemplateStore.listAll.length === 0) {
-    const labelTemplates = await chatStore.listChatLabelTemplates();
-    labelTemplateStore.listAll = labelTemplates.map((lt) => ({
+  if (labelTemplates.value.length === 0) {
+    const templates = await chatStore.listChatLabelTemplates();
+    labelTemplates.value = templates.map((lt) => ({
       label_template_id: lt.label_template_id,
       label: lt.label,
-      color: '',
     }));
   }
 };
