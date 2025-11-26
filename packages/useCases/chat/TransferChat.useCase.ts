@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ChatService } from '@core/services/chat.service';
 import { UserService } from '@core/services/user.service';
@@ -19,6 +19,7 @@ import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
 import { WorkerService } from '@core/services/worker.service';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
+import Redis from 'ioredis';
 
 @injectable()
 export class TransferChatUseCase {
@@ -28,7 +29,8 @@ export class TransferChatUseCase {
     private readonly sectorService: SectorService,
     private readonly chatMessageCreatorUseCase: ChatMessageCreatorUseCase,
     private readonly centrifugoService: CentrifugoService,
-    private readonly workerService: WorkerService
+    private readonly workerService: WorkerService,
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   private async loadUserAndSector(
@@ -154,6 +156,12 @@ export class TransferChatUseCase {
     );
   }
 
+  private async invalidateChatCache(chat: IChat): Promise<void> {
+    const cacheKey = `underchat:chat:${chat.account.id}:${chat.worker.id}:${chat.phone}`;
+    const cacheKeyChat = `chat:${chat.account.id}:${chat.chat_id}`;
+    await Promise.all([this.redis.del(cacheKey), this.redis.del(cacheKeyChat)]);
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -207,6 +215,8 @@ export class TransferChatUseCase {
     if (!saved) {
       throw new Error(t('chat_transfer_failed'));
     }
+
+    await this.invalidateChatCache(updatedChat);
 
     const channelAccountId = updatedChat.account?.id ?? accountId;
 

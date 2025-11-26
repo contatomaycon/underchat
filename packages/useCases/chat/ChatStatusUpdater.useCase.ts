@@ -77,6 +77,12 @@ export class ChatStatusUpdaterUseCase {
     }
   }
 
+  private async invalidateChatCache(chat: IChat): Promise<void> {
+    const cacheKey = `underchat:chat:${chat.account.id}:${chat.worker.id}:${chat.phone}`;
+    const cacheKeyChat = `chat:${chat.account.id}:${chat.chat_id}`;
+    await Promise.all([this.redis.del(cacheKey), this.redis.del(cacheKeyChat)]);
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -151,10 +157,8 @@ export class ChatStatusUpdaterUseCase {
 
     await this.chatService.saveChat(updatedChat);
 
-    if (status === EChatStatus.closed) {
-      const cacheKey = `underchat:chat:${updatedChat.account.id}:${updatedChat.worker.id}:${updatedChat.phone}`;
-
-      await this.redis.del(cacheKey);
+    if (status === EChatStatus.in_chat || status === EChatStatus.closed) {
+      await this.invalidateChatCache(updatedChat);
     }
 
     const channelAccountId = updatedChat.account?.id ?? accountId;
