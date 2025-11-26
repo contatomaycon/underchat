@@ -14,9 +14,6 @@ import { useCountryCodes } from '@/composables/useCountryCodes';
 import { requiredValidator } from '@/@webcore/utils/validators';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import { EColor } from '@core/common/enums/EColor';
-import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
-import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
-import { can } from '@layouts/plugins/casl';
 
 const chatStore = useChatStore();
 const contactStore = useContactStore();
@@ -63,16 +60,6 @@ const isPhoneDecrypted = ref(false);
 const isLoadingPhone = ref(false);
 const isEmailDecrypted = ref(false);
 const isLoadingEmail = ref(false);
-
-const canAccessLabelTemplate = computed(() => {
-  const permissions = [
-    EGeneralPermissions.full_access,
-    EGeneralPermissions.full_access_group,
-    ELabelTemplatePermissions.label_template_group,
-    ELabelTemplatePermissions.label_view,
-  ];
-  return can(permissions);
-});
 
 const photoFile = ref<File | null>(null);
 const photoPreview = ref<string | null>(null);
@@ -1044,7 +1031,7 @@ const cancelCrop = () => {
 };
 
 const loadLabelTemplates = async () => {
-  if (canAccessLabelTemplate.value && labelTemplateStore.listAll.length === 0) {
+  if (labelTemplateStore.listAll.length === 0) {
     const labelTemplates = await chatStore.listChatLabelTemplates();
     labelTemplateStore.listAll = labelTemplates.map((lt) => ({
       label_template_id: lt.label_template_id,
