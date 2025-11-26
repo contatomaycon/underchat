@@ -5487,7 +5487,7 @@ onBeforeUnmount(() => {
                         <VListItemTitle>{{ item.title }}</VListItemTitle>
                       </VListItem>
                     </template>
-                    <VListItem v-else-if="transferUserSearch" disabled>
+                    <VListItem v-else-if="!isLoadingTransferUsers" disabled>
                       <VListItemTitle
                         class="text-center text-body-2 text-medium-emphasis"
                       >
@@ -5550,7 +5550,7 @@ onBeforeUnmount(() => {
                           <VListItemTitle>{{ item.title }}</VListItemTitle>
                         </VListItem>
                       </template>
-                      <VListItem v-else-if="transferSectorSearch" disabled>
+                      <VListItem v-else-if="!isLoadingTransferSectors" disabled>
                         <VListItemTitle
                           class="text-center text-body-2 text-medium-emphasis"
                         >
@@ -5614,7 +5614,10 @@ onBeforeUnmount(() => {
                           <VListItemTitle>{{ item.title }}</VListItemTitle>
                         </VListItem>
                       </template>
-                      <VListItem v-else-if="transferSectorUserSearch" disabled>
+                      <VListItem
+                        v-else-if="!isLoadingTransferSectorUsers"
+                        disabled
+                      >
                         <VListItemTitle
                           class="text-center text-body-2 text-medium-emphasis"
                         >
