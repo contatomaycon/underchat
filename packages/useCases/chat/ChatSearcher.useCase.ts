@@ -120,8 +120,10 @@ export class ChatSearcherUseCase {
     }
 
     if (!this.canListAllChatsWithoutSectorLimit(actions)) {
+      const sectorFilterClauses: IElasticsearchBoolClause[] = [];
+
       if (userSectors.length > 0) {
-        filterClauses.push({
+        sectorFilterClauses.push({
           nested: {
             path: 'sector',
             query: {
@@ -133,7 +135,7 @@ export class ChatSearcherUseCase {
         } as unknown as IElasticsearchBoolClause);
       }
       if (userSectors.length === 0) {
-        filterClauses.push({
+        sectorFilterClauses.push({
           bool: {
             must_not: {
               exists: {
@@ -143,6 +145,26 @@ export class ChatSearcherUseCase {
           },
         } as unknown as IElasticsearchBoolClause);
       }
+
+      // Permite visualizar chats com user.id = userId independentemente do setor
+      filterClauses.push({
+        bool: {
+          should: [
+            {
+              nested: {
+                path: 'user',
+                query: {
+                  term: {
+                    'user.id': userId,
+                  },
+                },
+              },
+            },
+            ...sectorFilterClauses,
+          ],
+          minimum_should_match: 1,
+        },
+      } as unknown as IElasticsearchBoolClause);
     }
 
     const shouldClauses: any[] = [];

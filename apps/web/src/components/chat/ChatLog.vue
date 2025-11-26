@@ -115,15 +115,16 @@ const audioWaveforms = reactive<Record<string, number[]>>({});
 
 type FeedbackIcon = { icon: string; color?: string };
 
-const canViewChatContent = computed(() => {
+const canViewChatContent = () => {
   const permissions = [
     EGeneralPermissions.full_access,
     EGeneralPermissions.full_access_group,
     EChatPermissions.chat_group,
     EChatPermissions.preview_chat,
   ];
+
   return can(permissions);
-});
+};
 
 const shouldBlurMessageContent = computed(() => {
   if (!activeChat.value) {
@@ -133,7 +134,7 @@ const shouldBlurMessageContent = computed(() => {
   const chatStatus = activeChat.value.status;
   const isQueueOrUra =
     chatStatus === EChatStatus.queue || chatStatus === EChatStatus.ura;
-  return isQueueOrUra && !canViewChatContent.value;
+  return isQueueOrUra && !canViewChatContent();
 });
 
 const resolveFeedbackIcon = (message: ListMessageResult): FeedbackIcon => {

@@ -3881,6 +3881,10 @@ onMounted(async () => {
         return true;
       }
 
+      if (chat.user?.id === chatStore.user?.user_id) {
+        return true;
+      }
+
       if (userSectors.length === 0) {
         return !chat.sector?.id;
       }

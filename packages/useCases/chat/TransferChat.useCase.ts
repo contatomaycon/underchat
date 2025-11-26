@@ -182,8 +182,15 @@ export class TransferChatUseCase {
     let user = this.buildUserFromData(body, userData);
     let sector = this.buildSectorFromData(body, sectorData);
 
-    if (body.sector_id && !body.user_id) {
+    const shouldClearUser = body.sector_id && !body.user_id;
+    const shouldClearSector = body.user_id && !body.sector_id;
+
+    if (shouldClearUser) {
       user = null;
+    }
+
+    if (shouldClearSector) {
+      sector = null;
     }
 
     this.validateUserAndSector(t, body, user, sector);
@@ -191,8 +198,8 @@ export class TransferChatUseCase {
     const updatedChat: IChat = {
       ...chat,
       status: EChatStatus.queue,
-      user: user ?? chat.user,
-      sector: sector ?? chat.sector,
+      user: shouldClearUser ? null : (user ?? chat.user),
+      sector: shouldClearSector ? null : (sector ?? chat.sector),
     };
 
     const saved = await this.chatService.saveChat(updatedChat);
