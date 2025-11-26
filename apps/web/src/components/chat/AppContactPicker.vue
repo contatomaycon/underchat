@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useContactStore } from '@/@webcore/stores/contact';
 import { refDebounced } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
@@ -147,10 +147,6 @@ const headers = computed(() => [
   { title: t('phone'), key: 'phone_partial', sortable: true },
   { title: t('status'), key: 'status', sortable: true },
 ]);
-
-onMounted(() => {
-  loadContacts();
-});
 </script>
 
 <template>
@@ -211,12 +207,7 @@ onMounted(() => {
             >
               {{ $t('validated') }}
             </VChip>
-            <VChip
-              v-else
-              class="uc-chip"
-              size="small"
-              color="error"
-            >
+            <VChip v-else class="uc-chip" size="small" color="error">
               {{ $t('not_validated') }}
             </VChip>
           </template>
