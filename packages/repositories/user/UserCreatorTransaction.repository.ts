@@ -16,6 +16,7 @@ import { UserInfoCreatorRepository } from './UserInfoCreator.repository';
 import { UserExistsByEmailAndPhoneRepository } from './UserExistsByEmailAndPhone.repository';
 import moment from 'moment';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
+import { ChatUserCreatorRepository } from '../chat/ChatUserCreator.repository';
 
 @injectable()
 export class UserTransactionCreatorRepository {
@@ -27,7 +28,8 @@ export class UserTransactionCreatorRepository {
     private readonly userAddressCreatorRepository: UserAddressCreatorRepository,
     private readonly userDocumentCreatorRepository: UserDocumentCreatorRepository,
     private readonly userInfoCreatorRepository: UserInfoCreatorRepository,
-    private readonly userExistsByEmailAndPhoneRepository: UserExistsByEmailAndPhoneRepository
+    private readonly userExistsByEmailAndPhoneRepository: UserExistsByEmailAndPhoneRepository,
+    private readonly chatUserCreatorRepository: ChatUserCreatorRepository
   ) {}
 
   private validateBirthDate(
@@ -193,25 +195,28 @@ export class UserTransactionCreatorRepository {
         birth_date: birthDate ?? null,
       };
 
-      const [userAddress, userDocument, userInfo] = await Promise.all([
-        this.userAddressCreatorRepository.createUserAddress(
-          tx,
-          createUserAddress,
-          createUserId
-        ),
-        this.userDocumentCreatorRepository.createUserDocument(
-          tx,
-          createUserDocument,
-          createUserId
-        ),
-        this.userInfoCreatorRepository.createUserInfo(
-          tx,
-          createUserInfo,
-          createUserId
-        ),
-      ]);
+      const [userAddress, userDocument, userInfo, chatUser] = await Promise.all(
+        [
+          this.userAddressCreatorRepository.createUserAddress(
+            tx,
+            createUserAddress,
+            createUserId
+          ),
+          this.userDocumentCreatorRepository.createUserDocument(
+            tx,
+            createUserDocument,
+            createUserId
+          ),
+          this.userInfoCreatorRepository.createUserInfo(
+            tx,
+            createUserInfo,
+            createUserId
+          ),
+          this.chatUserCreatorRepository.createChatUser(tx, createUserId),
+        ]
+      );
 
-      if (!userAddress || !userDocument || !userInfo) {
+      if (!userAddress || !userDocument || !userInfo || !chatUser) {
         throw new Error('user_creation_failed');
       }
     });

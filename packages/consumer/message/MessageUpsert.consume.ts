@@ -54,6 +54,7 @@ import {
 import { EncryptService } from '@core/services/encrypt.service';
 import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
 import { ContactService } from '@core/services/contact.service';
+import { UserService } from '@core/services/user.service';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -72,7 +73,8 @@ export class MessageUpsertConsume {
     private readonly storageService: StorageService,
     private readonly streamProducerService: StreamProducerService,
     private readonly encryptService: EncryptService,
-    private readonly contactService: ContactService
+    private readonly contactService: ContactService,
+    private readonly userService: UserService
   ) {}
 
   private get consumerOrThrow(): Consumer {
@@ -1422,6 +1424,22 @@ export class MessageUpsertConsume {
       );
       inputChatMessage.photo =
         inputChatMessage.contact?.photo ?? photoResult?.url ?? null;
+    }
+
+    const workerConfig =
+      await this.workerService.viewWorkerConfigFieldsByWorkerId(data.worker_id);
+
+    if (workerConfig?.is_automatic_attendance) {
+      const selectedUser =
+        await this.userService.getAvailableUserWithLeastChats(data.account_id);
+
+      if (selectedUser) {
+        inputChatMessage.user = {
+          id: selectedUser.id,
+          name: selectedUser.name,
+          photo: selectedUser.photo,
+        };
+      }
     }
 
     await this.cacheChat(inputChatMessage);
