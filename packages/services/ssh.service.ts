@@ -186,14 +186,8 @@ export class SshService {
 
     const commandsMap: Record<EAllowedDistroVersion, string[]> = {
       [EAllowedDistroVersion.Ubuntu_25_04]: await installUbuntu2504(webView),
-      [EAllowedDistroVersion.Ubuntu_24_10]: [
-        'sudo apt-get update',
-        'sudo apt-get dist-upgrade -y',
-      ],
-      [EAllowedDistroVersion.Ubuntu_24_04]: [
-        'sudo apt-get update',
-        'sudo apt-get upgrade -y',
-      ],
+      [EAllowedDistroVersion.Ubuntu_24_10]: ['sudo apt-get update'],
+      [EAllowedDistroVersion.Ubuntu_24_04]: ['sudo apt-get update'],
     };
 
     return commandsMap[key] ?? [];

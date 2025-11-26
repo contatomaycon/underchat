@@ -8,13 +8,15 @@ import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { generalEnvironment } from '@core/config/environments';
 import { PermissionService } from '@core/services/permission.service';
 import { AccountService } from '@core/services/account.service';
+import { UserService } from '@core/services/user.service';
 
 @injectable()
 export class AuthLoginUseCase {
   constructor(
     private readonly authService: AuthService,
     private readonly permissionService: PermissionService,
-    private readonly accountService: AccountService
+    private readonly accountService: AccountService,
+    private readonly userService: UserService
   ) {}
 
   async execute(
@@ -45,9 +47,10 @@ export class AuthLoginUseCase {
       }
     );
 
-    const [permissions, accountInfo] = await Promise.all([
+    const [permissions, accountInfo, sectors] = await Promise.all([
       this.permissionService.viewPermissionByUserId(result.user_id),
       this.accountService.viewAccountInfoByAccountId(result.account_id),
+      this.userService.listUserSectors(result.account_id, result.user_id),
     ]);
 
     return {
@@ -55,6 +58,7 @@ export class AuthLoginUseCase {
       token,
       permissions,
       layout: accountInfo,
+      sectors,
     };
   }
 }

@@ -111,15 +111,6 @@ export class GeneralEnvironment {
       : 'https';
   }
 
-  public get gitToken(): string {
-    const token = process.env.GIT_TOKEN;
-    if (!token) {
-      throw new InvalidConfigurationError('GIT_TOKEN is not defined.');
-    }
-
-    return token;
-  }
-
   public get gitRepo(): string {
     const repo = process.env.GIT_REPO;
     if (!repo) {

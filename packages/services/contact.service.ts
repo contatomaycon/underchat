@@ -20,6 +20,7 @@ import { ContactSensitiveDataRepository } from '@core/repositories/contact/Conta
 import { ContactExistsByEmailAndPhoneRepository } from '@core/repositories/contact/ContactExistsByEmailAndPhone.repository';
 import { nullIfEmpty } from '@core/common/functions/nullIfEmpty';
 import { StorageService } from './storage.service';
+import { buildCandidatesWithDdi } from '@core/common/functions/buildCandidatesBR';
 
 type FieldValue = string | { value: string } | null;
 
@@ -289,11 +290,15 @@ export class ContactService {
   ): Promise<ViewContactResponse | null> => {
     const phoneC = phone ? this.encryptService.encrypt(phone) : null;
     if (!phoneC) return null;
+    const phoneDdiToSave = phoneDdi ?? '55';
+
+    const phones = buildCandidatesWithDdi(phone, phoneDdiToSave);
+    const phonesC = phones.map((phone) => this.encryptService.encrypt(phone));
 
     return this.contactViewerRepository.viewContactByPhone(
       accountId,
-      phoneC,
-      phoneDdi
+      phonesC,
+      phoneDdiToSave
     );
   };
 

@@ -14,8 +14,10 @@ import { deleteMessageSchema } from '@core/schema/chat/deleteMessage';
 import { editMessageSchema } from '@core/schema/chat/editMessage';
 import { updateChatStatusSchema } from '@core/schema/chat/updateChatStatus';
 import { clearChatSummarySchema } from '@core/schema/chat/clearChatSummary';
-import { updateChatContactSchema } from '@core/schema/chat/updateChatContact';
 import { startChatWithContactSchema } from '@core/schema/chat/startChatWithContact';
+import { searchMessagesSchema } from '@core/schema/chat/searchMessages';
+import { transferChatSchema } from '@core/schema/chat/transferChat';
+import { searchChatsSchema } from '@core/schema/chat/searchChats';
 
 export default function chatRoutes(server: FastifyInstance) {
   const chatController = container.resolve(ChatController);
@@ -59,6 +61,15 @@ export default function chatRoutes(server: FastifyInstance) {
   server.get('/chat/:chat_id', {
     schema: listMessageChatsSchema,
     handler: chatController.listMessageChats,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+    ],
+  });
+
+  server.get('/chat/:chat_id/search', {
+    schema: searchMessagesSchema,
+    handler: chatController.searchMessages,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
@@ -137,9 +148,18 @@ export default function chatRoutes(server: FastifyInstance) {
     ],
   });
 
-  server.patch('/chat/:chat_id/contact', {
-    schema: updateChatContactSchema,
-    handler: chatController.updateChatContact,
+  server.post('/chat/:chat_id/transfer', {
+    schema: transferChatSchema,
+    handler: chatController.transferChat,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+    ],
+  });
+
+  server.get('/chat/search', {
+    schema: searchChatsSchema,
+    handler: chatController.searchChats,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),

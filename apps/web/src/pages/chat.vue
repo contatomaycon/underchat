@@ -7,6 +7,7 @@ import ChatActiveChatUserProfileSidebarContent from '@/components/chat/ChatActiv
 import ChatLeftSidebarContent from '@/components/chat/ChatLeftSidebarContent.vue';
 import ChatLog from '@/components/chat/ChatLog.vue';
 import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSidebarContent.vue';
+import ChatSearchSidebarContent from '@/components/chat/ChatSearchSidebarContent.vue';
 import AppContactPicker from '@/components/chat/AppContactPicker.vue';
 import AppAddContact from '@/components/contact/AppAddContact.vue';
 import AppEditContact from '@/components/contact/AppEditContact.vue';
@@ -14,10 +15,16 @@ import VDialogHandler from '@/components/VDialogHandler.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
+import { EUserPermissions } from '@core/common/enums/EPermissions/user';
+import { ESectorPermissions } from '@core/common/enums/EPermissions/sector';
+import { EPermissionsRoles } from '@core/common/enums/EPermissions';
+import { getPermissions, getSectors } from '@/@webcore/localStorage/user';
 import { can } from '@layouts/plugins/casl';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useContactStore } from '@/@webcore/stores/contact';
+import { useUsersStore } from '@/@webcore/stores/user';
+import { useSectorsStore } from '@/@webcore/stores/sector';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
@@ -100,6 +107,7 @@ const q = ref('');
 const msg = ref('');
 const isUserProfileSidebarOpen = ref(false);
 const isActiveChatUserProfileSidebarOpen = ref(false);
+const isSearchSidebarOpen = ref(false);
 const linkPreview = ref<ViewLinkPreviewResponse | null>(null);
 const composerRef = ref();
 
@@ -110,6 +118,9 @@ const fileAudioRef = ref<HTMLInputElement | null>(null);
 const isEmojiOpen = ref(false);
 const isContactPickerOpen = ref(false);
 const isLocationPickerOpen = ref(false);
+const isAnnotationModalOpen = ref(false);
+const annotationText = ref('');
+const isAnnotationEmojiOpen = ref(false);
 const isContactViewModalOpen = ref(false);
 const selectedContactDetails = ref<ViewContactResponse | null>(null);
 const isAddContactModalOpen = ref(false);
@@ -474,6 +485,284 @@ const confirmCloseService = async () => {
   }
 };
 
+const handleActiveChatHeaderClick = () => {
+  if (!canAccessContacts.value) return;
+  isActiveChatUserProfileSidebarOpen.value = true;
+};
+
+const userStore = useUsersStore();
+const sectorsStore = useSectorsStore();
+
+const isTransferModalOpen = ref(false);
+const transferType = ref<'user' | 'sector'>('user');
+const selectedTransferUser = ref<string | null>(null);
+const selectedTransferSector = ref<string | null>(null);
+const selectedTransferSectorUser = ref<string | null>(null);
+const transferUsers = ref<any[]>([]);
+const transferSectors = ref<any[]>([]);
+const transferSectorUsers = ref<any[]>([]);
+const transferUserSearch = ref('');
+const transferSectorSearch = ref('');
+const transferSectorUserSearch = ref('');
+const isLoadingTransferUsers = ref(false);
+const isLoadingTransferSectors = ref(false);
+const isLoadingTransferSectorUsers = ref(false);
+const isTransferUserMenuOpen = ref(false);
+const isTransferSectorMenuOpen = ref(false);
+const isTransferSectorUserMenuOpen = ref(false);
+const transferAnnotationText = ref('');
+const isTransferAnnotationEmojiOpen = ref(false);
+
+const filteredTransferUsers = computed(() => {
+  if (!transferUserSearch.value) {
+    return transferUsers.value;
+  }
+  const query = transferUserSearch.value.toLowerCase();
+  return transferUsers.value.filter((user) =>
+    user.title.toLowerCase().includes(query)
+  );
+});
+
+const filteredTransferSectors = computed(() => {
+  if (!transferSectorSearch.value) {
+    return transferSectors.value;
+  }
+  const query = transferSectorSearch.value.toLowerCase();
+  return transferSectors.value.filter((sector) =>
+    sector.title.toLowerCase().includes(query)
+  );
+});
+
+const filteredTransferSectorUsers = computed(() => {
+  if (!transferSectorUsers.value || transferSectorUsers.value.length === 0) {
+    return [];
+  }
+  if (!transferSectorUserSearch.value) {
+    return transferSectorUsers.value;
+  }
+  const query = transferSectorUserSearch.value.toLowerCase();
+  return transferSectorUsers.value.filter((user) =>
+    user?.title?.toLowerCase().includes(query)
+  );
+});
+
+watch(isTransferUserMenuOpen, (isOpen) => {
+  if (isOpen) {
+    loadTransferUsers();
+  } else {
+    transferUserSearch.value = '';
+  }
+});
+
+watch(isTransferSectorMenuOpen, (isOpen) => {
+  if (isOpen) {
+    loadTransferSectors();
+  } else {
+    transferSectorSearch.value = '';
+  }
+});
+
+watch(isTransferSectorUserMenuOpen, (isOpen) => {
+  if (!isOpen) {
+    transferSectorUserSearch.value = '';
+  } else if (selectedTransferSector.value) {
+    loadTransferSectorUsers(selectedTransferSector.value);
+  }
+});
+
+const loadTransferUsers = async () => {
+  if (!chatStore.user?.account_id) return;
+
+  isLoadingTransferUsers.value = true;
+  try {
+    const result = await userStore.listUsers({
+      page: 1,
+      per_page: 100,
+      search: null,
+      sort_by: [],
+    });
+
+    if (result) {
+      transferUsers.value = result.results.map((user) => {
+        let title = '';
+        if (user.user_info?.name) {
+          const fullName = user.user_info.name;
+          const lastName = user.user_info.last_name
+            ? ` ${user.user_info.last_name}`
+            : '';
+          title = `${fullName}${lastName}`;
+        } else {
+          title = user.email_partial || '';
+        }
+        return {
+          value: user.user_id,
+          title: title,
+        };
+      });
+    }
+  } finally {
+    isLoadingTransferUsers.value = false;
+  }
+};
+
+const loadTransferSectors = async () => {
+  if (!chatStore.user?.account_id) return;
+
+  isLoadingTransferSectors.value = true;
+  try {
+    const result = await sectorsStore.listSectors({
+      page: 1,
+      per_page: 100,
+      search: null,
+      sort_by: [],
+    });
+
+    if (result) {
+      transferSectors.value = result.results.map((sector) => ({
+        value: sector.sector_id,
+        title: sector.name,
+      }));
+    }
+  } finally {
+    isLoadingTransferSectors.value = false;
+  }
+};
+
+const loadTransferSectorUsers = async (sectorId: string) => {
+  if (!chatStore.user?.account_id || !sectorId) return;
+
+  isLoadingTransferSectorUsers.value = true;
+  try {
+    const users = await sectorsStore.listSectorUsers(sectorId);
+
+    if (users && users.length > 0) {
+      transferSectorUsers.value = users
+        .map((user: any) => {
+          const name = user.user_info?.name || '';
+          const lastName = user.user_info?.last_name || '';
+          const fullName =
+            name && lastName ? `${name} ${lastName}` : name || lastName;
+          const title = fullName || user.email_partial || '';
+
+          return {
+            value: user.user_id,
+            title: title,
+          };
+        })
+        .filter(
+          (item: { value: string; title: string }) => item.value && item.title
+        );
+    } else {
+      transferSectorUsers.value = [];
+    }
+  } catch (error) {
+    transferSectorUsers.value = [];
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : chatStore.i18n.global.t('transfer_sector_users_error') ||
+          'Erro ao carregar usuários do setor';
+    chatStore.showSnackbar(errorMessage, EColor.error);
+  } finally {
+    isLoadingTransferSectorUsers.value = false;
+  }
+};
+
+watch(transferType, (newType) => {
+  selectedTransferUser.value = null;
+  selectedTransferSector.value = null;
+  selectedTransferSectorUser.value = null;
+  transferSectorUsers.value = [];
+  transferUserSearch.value = '';
+  transferSectorSearch.value = '';
+  transferSectorUserSearch.value = '';
+  isTransferUserMenuOpen.value = false;
+  isTransferSectorMenuOpen.value = false;
+  isTransferSectorUserMenuOpen.value = false;
+});
+
+watch(isTransferModalOpen, (isOpen) => {
+  if (!isOpen) {
+    transferAnnotationText.value = '';
+  }
+});
+
+watch(selectedTransferSector, (sectorId) => {
+  selectedTransferSectorUser.value = null;
+  transferSectorUsers.value = [];
+
+  if (sectorId) {
+    loadTransferSectorUsers(sectorId);
+  }
+});
+
+watch(isTransferModalOpen, (isOpen) => {
+  if (isOpen) {
+    nextTick(() => {
+      try {
+        if (canAccessUsers.value) {
+          transferType.value = 'user';
+        } else if (canAccessSectors.value) {
+          transferType.value = 'sector';
+        }
+        selectedTransferUser.value = null;
+        selectedTransferSector.value = null;
+        selectedTransferSectorUser.value = null;
+        transferUserSearch.value = '';
+        transferSectorSearch.value = '';
+        transferSectorUserSearch.value = '';
+        transferAnnotationText.value = '';
+        isTransferUserMenuOpen.value = false;
+        isTransferSectorMenuOpen.value = false;
+        isTransferSectorUserMenuOpen.value = false;
+        isTransferAnnotationEmojiOpen.value = false;
+        if (canAccessUsers.value) {
+          loadTransferUsers();
+        }
+        if (canAccessSectors.value) {
+          loadTransferSectors();
+        }
+      } catch {}
+    });
+  } else {
+    transferAnnotationText.value = '';
+  }
+});
+
+const handleTransfer = async () => {
+  if (!chatStore.activeChat?.chat_id) return;
+
+  if (transferType.value === 'user' && !selectedTransferUser.value) {
+    chatStore.showSnackbar(t('user_required'), EColor.error);
+    return;
+  }
+
+  if (transferType.value === 'sector' && !selectedTransferSector.value) {
+    chatStore.showSnackbar(t('sector_required'), EColor.error);
+    return;
+  }
+
+  const userId =
+    transferType.value === 'user'
+      ? selectedTransferUser.value
+      : selectedTransferSectorUser.value || null;
+  const sectorId =
+    transferType.value === 'sector' ? selectedTransferSector.value : null;
+  const annotation = transferAnnotationText.value.trim() || null;
+
+  const success = await chatStore.transferChat(
+    chatStore.activeChat.chat_id,
+    userId,
+    sectorId,
+    annotation
+  );
+
+  if (success) {
+    isTransferModalOpen.value = false;
+    chatStore.showSnackbar(t('transfer_successfully'), EColor.success);
+  }
+};
+
 const isInChatStatus = computed(
   () => chatStore.activeChat?.status === EChatStatus.in_chat
 );
@@ -486,6 +775,42 @@ const canAccessContacts = computed(() => {
     EContactPermissions.contact_view,
   ];
   return can(permissions);
+});
+
+const canAccessUsers = computed(() => {
+  try {
+    const permissions = [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EUserPermissions.user_group,
+      EUserPermissions.user_view,
+    ];
+    return can(permissions);
+  } catch {
+    return false;
+  }
+});
+
+const canAccessSectors = computed(() => {
+  try {
+    const permissions = [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      ESectorPermissions.sector_group,
+      ESectorPermissions.sector_view,
+    ];
+    return can(permissions);
+  } catch {
+    return false;
+  }
+});
+
+const canTransfer = computed(() => {
+  try {
+    return canAccessUsers.value || canAccessSectors.value;
+  } catch {
+    return false;
+  }
 });
 
 const hasAttachmentsOrContent = computed(
@@ -1505,6 +1830,84 @@ const sendTextMessage = async (
   }
 };
 
+const sendAnnotationMessage = async (): Promise<void> => {
+  if (!chatStore.activeChat?.chat_id) return;
+  if (!annotationText.value.trim()) return;
+
+  const hash = createMessageHash();
+  const messageValue = annotationText.value.trim();
+
+  const content: ContentMessageChat = {
+    type: EMessageType.annotation,
+    message: messageValue,
+  };
+
+  await registerLocalMessage(content, hash);
+
+  const messageBody: CreateMessageChatsBody = {
+    type: EMessageType.annotation,
+    message: messageValue,
+    hash,
+  };
+
+  isAnnotationModalOpen.value = false;
+  annotationText.value = '';
+
+  chatStore.createMessage(messageBody).then((success) => {
+    if (!success) {
+      markUploadError(hash);
+    }
+  });
+};
+
+const onAnnotationEmojiSelect = (emoji: any) => {
+  const emojiText = emoji.native || emoji.colons;
+  const textarea = annotationText.value;
+  const textareaElement = document.querySelector(
+    '#annotation-textarea'
+  ) as HTMLTextAreaElement;
+  if (textareaElement) {
+    const cursorPos = textareaElement.selectionStart || textarea.length;
+    annotationText.value =
+      textarea.slice(0, cursorPos) + emojiText + textarea.slice(cursorPos);
+    nextTick(() => {
+      textareaElement.setSelectionRange(
+        cursorPos + emojiText.length,
+        cursorPos + emojiText.length
+      );
+      textareaElement.focus();
+    });
+  } else {
+    annotationText.value = textarea + emojiText;
+  }
+
+  isAnnotationEmojiOpen.value = false;
+};
+
+const onTransferAnnotationEmojiSelect = (emoji: any) => {
+  const emojiText = emoji.native || emoji.colons;
+  const textarea = transferAnnotationText.value;
+  const textareaElement = document.querySelector(
+    '#transfer-annotation-textarea'
+  ) as HTMLTextAreaElement;
+  if (textareaElement) {
+    const cursorPos = textareaElement.selectionStart || textarea.length;
+    transferAnnotationText.value =
+      textarea.slice(0, cursorPos) + emojiText + textarea.slice(cursorPos);
+    nextTick(() => {
+      textareaElement.setSelectionRange(
+        cursorPos + emojiText.length,
+        cursorPos + emojiText.length
+      );
+      textareaElement.focus();
+    });
+  } else {
+    transferAnnotationText.value = textarea + emojiText;
+  }
+
+  isTransferAnnotationEmojiOpen.value = false;
+};
+
 const finalizeSend = () => {
   nextTick(() => {
     const scrollEl = chatLogPS.value?.$el || chatLogPS.value;
@@ -1675,7 +2078,14 @@ const previewImage = computed(() => {
 });
 
 const openAttach = (
-  type: 'document' | 'photo' | 'video' | 'audio' | 'contact' | 'location'
+  type:
+    | 'document'
+    | 'photo'
+    | 'video'
+    | 'audio'
+    | 'contact'
+    | 'location'
+    | 'annotation'
 ) => {
   switch (type) {
     case 'document':
@@ -1697,6 +2107,9 @@ const openAttach = (
       break;
     case 'location':
       isLocationPickerOpen.value = true;
+      break;
+    case 'annotation':
+      isAnnotationModalOpen.value = true;
       break;
   }
 };
@@ -3450,6 +3863,35 @@ onMounted(async () => {
   if (chatStore.user?.account_id) {
     const accountId = chatStore.user.account_id;
 
+    const permissions = getPermissions();
+    const canListAllChatsWithoutSectorLimit = permissions.some(
+      (perm: EPermissionsRoles) =>
+        perm === EGeneralPermissions.full_access ||
+        perm === EGeneralPermissions.full_access_group ||
+        perm === EChatPermissions.chat_group ||
+        perm === EChatPermissions.list_all_chats_without_sector_limit
+    );
+
+    const userSectors: string[] = canListAllChatsWithoutSectorLimit
+      ? []
+      : getSectors();
+
+    const canReceiveChatNotification = (chat: IChat): boolean => {
+      if (canListAllChatsWithoutSectorLimit) {
+        return true;
+      }
+
+      if (userSectors.length === 0) {
+        return !chat.sector?.id;
+      }
+
+      if (!chat.sector?.id) {
+        return false;
+      }
+
+      return userSectors.includes(chat.sector.id);
+    };
+
     await onMessage(
       chatAccountCentrifugo(accountId),
       (data: IChatMessage | IChatTyping | IChat) => {
@@ -3481,12 +3923,21 @@ onMounted(async () => {
 
         if ('chat_id' in data && !('message_id' in data)) {
           const chatData = data as IChat;
+
+          if (!canReceiveChatNotification(chatData)) {
+            return;
+          }
+
           chatStore.addChat(chatData);
         }
       }
     );
 
     await onMessage(chatQueueAccountCentrifugo(accountId), (data: IChat) => {
+      if (!canReceiveChatNotification(data)) {
+        return;
+      }
+
       chatStore.addChat(data);
 
       if (
@@ -3605,6 +4056,7 @@ onBeforeUnmount(() => {
     </VNavigationDrawer>
 
     <VNavigationDrawer
+      v-if="canAccessContacts"
       v-model="isActiveChatUserProfileSidebarOpen"
       data-allow-mismatch
       width="374"
@@ -3617,6 +4069,19 @@ onBeforeUnmount(() => {
       <ChatActiveChatUserProfileSidebarContent
         @close="isActiveChatUserProfileSidebarOpen = false"
       />
+    </VNavigationDrawer>
+
+    <VNavigationDrawer
+      v-model="isSearchSidebarOpen"
+      data-allow-mismatch
+      width="374"
+      absolute
+      temporary
+      location="end"
+      touchless
+      class="chat-search-sidebar"
+    >
+      <ChatSearchSidebarContent @close="isSearchSidebarOpen = false" />
     </VNavigationDrawer>
 
     <VNavigationDrawer
@@ -3660,14 +4125,19 @@ onBeforeUnmount(() => {
           </IconBtn>
 
           <div
-            class="d-flex align-center cursor-pointer"
-            @click="isActiveChatUserProfileSidebarOpen = true"
+            :class="[
+              'd-flex align-center',
+              { 'cursor-pointer': canAccessContacts },
+            ]"
+            @click="handleActiveChatHeaderClick"
           >
             <VAvatar
               size="40"
               :variant="
-                !(chatStore.activeChat.contact?.photo ??
-                  chatStore.activeChat.photo)
+                !(
+                  chatStore.activeChat.contact?.photo ??
+                  chatStore.activeChat.photo
+                )
                   ? 'tonal'
                   : undefined
               "
@@ -3734,12 +4204,37 @@ onBeforeUnmount(() => {
           <VSpacer />
 
           <div class="d-sm-flex align-center d-none text-medium-emphasis">
-            <IconBtn>
+            <IconBtn
+              v-if="isInChatStatus && canTransfer"
+              @click="isTransferModalOpen = true"
+              :title="t('transfer')"
+            >
+              <VIcon icon="tabler-arrows-right-left" />
+            </IconBtn>
+            <IconBtn @click="isSearchSidebarOpen = true">
               <VIcon icon="tabler-search" />
             </IconBtn>
-            <IconBtn>
-              <VIcon icon="tabler-dots-vertical" />
-            </IconBtn>
+            <VMenu
+              v-if="isInChatStatus"
+              offset="8"
+              :close-on-content-click="true"
+              location="bottom end"
+            >
+              <template #activator="{ props }">
+                <IconBtn v-bind="props">
+                  <VIcon icon="tabler-dots-vertical" />
+                </IconBtn>
+              </template>
+
+              <VList density="comfortable" min-width="200">
+                <VListItem @click="handleCloseService">
+                  <template #prepend>
+                    <VIcon size="20" color="error">tabler-x</VIcon>
+                  </template>
+                  <VListItemTitle>{{ t('close_service') }}</VListItemTitle>
+                </VListItem>
+              </VList>
+            </VMenu>
           </div>
         </div>
 
@@ -4091,9 +4586,23 @@ onBeforeUnmount(() => {
                       style="cursor: pointer"
                     >
                       <div class="contact-preview-container">
-                        <div class="contact-preview-icon-wrapper">
-                          <VIcon size="32" color="primary">tabler-user</VIcon>
-                        </div>
+                        <VAvatar
+                          size="48"
+                          :rounded="8"
+                          :variant="contact.photo ? undefined : 'tonal'"
+                        >
+                          <VImg
+                            v-if="contact.photo"
+                            :src="contact.photo"
+                            :alt="contact.name"
+                          />
+                          <VIcon
+                            v-else
+                            size="32"
+                            color="primary"
+                            icon="tabler-user"
+                          />
+                        </VAvatar>
                       </div>
                       <div class="contact-preview-meta">
                         <VTooltip location="bottom">
@@ -4347,6 +4856,12 @@ onBeforeUnmount(() => {
                       ><VIcon size="20">tabler-map-pin</VIcon></template
                     >
                     <VListItemTitle>Localização</VListItemTitle>
+                  </VListItem>
+                  <VListItem @click="openAttach('annotation')">
+                    <template #prepend
+                      ><VIcon size="20">tabler-note</VIcon></template
+                    >
+                    <VListItemTitle>{{ t('annotation') }}</VListItemTitle>
                   </VListItem>
                 </VList>
               </VMenu>
@@ -4651,6 +5166,22 @@ onBeforeUnmount(() => {
     <VCard :title="$t('view_contact')" v-if="selectedContactDetails">
       <VCardText>
         <VRow>
+          <VCol cols="12" class="d-flex justify-center mb-4">
+            <VAvatar size="120">
+              <VImg
+                v-if="selectedContactDetails.photo"
+                :src="selectedContactDetails.photo"
+                :alt="selectedContactDetails.name"
+              />
+              <VImg
+                v-else
+                :src="'/images/svg/avatar-default.svg'"
+                :alt="selectedContactDetails.name"
+              />
+            </VAvatar>
+          </VCol>
+        </VRow>
+        <VRow>
           <VCol cols="12" md="6">
             <AppTextField
               :model-value="selectedContactDetails.name"
@@ -4917,6 +5448,367 @@ onBeforeUnmount(() => {
     :message="t('close_service_confirmation')"
     @confirm="confirmCloseService"
   />
+
+  <VDialog v-model="isTransferModalOpen" max-width="600">
+    <DialogCloseBtn @click="isTransferModalOpen = false" />
+    <VCard :title="$t('transfer')">
+      <VCardText>
+        <VRow>
+          <VCol cols="12">
+            <AppSelect
+              v-model="transferType"
+              :items="[
+                ...(canAccessUsers
+                  ? [{ value: 'user', title: $t('user') }]
+                  : []),
+                ...(canAccessSectors
+                  ? [{ value: 'sector', title: $t('sector') }]
+                  : []),
+              ]"
+              :label="$t('transfer_to') + ':'"
+            />
+          </VCol>
+
+          <VCol v-if="transferType === 'user' && canAccessUsers" cols="12">
+            <div>
+              <VLabel class="mb-1 text-body-2">{{ $t('user') }}:</VLabel>
+              <VMenu v-model="isTransferUserMenuOpen">
+                <template #activator="{ props: menuProps }">
+                  <VTextField
+                    v-bind="menuProps"
+                    :model-value="
+                      transferUsers.find(
+                        (u) => u.value === selectedTransferUser
+                      )?.title || ''
+                    "
+                    :placeholder="$t('search') + '...'"
+                    variant="outlined"
+                    readonly
+                    append-inner-icon="tabler-chevron-down"
+                    :loading="isLoadingTransferUsers"
+                  />
+                </template>
+                <VCard>
+                  <VCardText class="pa-2">
+                    <AppTextField
+                      v-model="transferUserSearch"
+                      :placeholder="$t('search') + '...'"
+                      prepend-inner-icon="tabler-search"
+                      density="compact"
+                      hide-details
+                      autofocus
+                      @click.stop
+                    />
+                  </VCardText>
+                  <VDivider />
+                  <VList max-height="300" style="overflow-y: auto">
+                    <template v-if="filteredTransferUsers.length > 0">
+                      <VListItem
+                        v-for="(item, index) in filteredTransferUsers"
+                        :key="index"
+                        :value="item.value"
+                        @click="
+                          () => {
+                            selectedTransferUser = item.value;
+                            isTransferUserMenuOpen = false;
+                          }
+                        "
+                        :active="selectedTransferUser === item.value"
+                      >
+                        <VListItemTitle>{{ item.title }}</VListItemTitle>
+                      </VListItem>
+                    </template>
+                    <VListItem v-else-if="transferUserSearch" disabled>
+                      <VListItemTitle
+                        class="text-center text-body-2 text-medium-emphasis"
+                      >
+                        {{ $t('no_results_found') }}
+                      </VListItemTitle>
+                    </VListItem>
+                  </VList>
+                </VCard>
+              </VMenu>
+            </div>
+          </VCol>
+
+          <template v-if="transferType === 'sector' && canAccessSectors">
+            <VCol cols="12">
+              <div>
+                <VLabel class="mb-1 text-body-2">{{ $t('sector') }}:</VLabel>
+                <VMenu v-model="isTransferSectorMenuOpen">
+                  <template #activator="{ props: menuProps }">
+                    <VTextField
+                      v-bind="menuProps"
+                      :model-value="
+                        transferSectors.find(
+                          (s) => s.value === selectedTransferSector
+                        )?.title || ''
+                      "
+                      :placeholder="$t('search') + '...'"
+                      variant="outlined"
+                      readonly
+                      append-inner-icon="tabler-chevron-down"
+                      :loading="isLoadingTransferSectors"
+                    />
+                  </template>
+                  <VCard>
+                    <VCardText class="pa-2">
+                      <AppTextField
+                        v-model="transferSectorSearch"
+                        :placeholder="$t('search') + '...'"
+                        prepend-inner-icon="tabler-search"
+                        density="compact"
+                        hide-details
+                        autofocus
+                        @click.stop
+                      />
+                    </VCardText>
+                    <VDivider />
+                    <VList max-height="300" style="overflow-y: auto">
+                      <template v-if="filteredTransferSectors.length > 0">
+                        <VListItem
+                          v-for="(item, index) in filteredTransferSectors"
+                          :key="index"
+                          :value="item.value"
+                          @click="
+                            () => {
+                              selectedTransferSector = item.value;
+                              isTransferSectorMenuOpen = false;
+                            }
+                          "
+                          :active="selectedTransferSector === item.value"
+                        >
+                          <VListItemTitle>{{ item.title }}</VListItemTitle>
+                        </VListItem>
+                      </template>
+                      <VListItem v-else-if="transferSectorSearch" disabled>
+                        <VListItemTitle
+                          class="text-center text-body-2 text-medium-emphasis"
+                        >
+                          {{ $t('no_results_found') }}
+                        </VListItemTitle>
+                      </VListItem>
+                    </VList>
+                  </VCard>
+                </VMenu>
+              </div>
+            </VCol>
+
+            <VCol v-if="selectedTransferSector && canAccessUsers" cols="12">
+              <div>
+                <VLabel class="mb-1 text-body-2"
+                  >{{ $t('user') }} ({{ $t('sector') }}):</VLabel
+                >
+                <VMenu v-model="isTransferSectorUserMenuOpen">
+                  <template #activator="{ props: menuProps }">
+                    <VTextField
+                      v-bind="menuProps"
+                      :model-value="
+                        transferSectorUsers.find(
+                          (u) => u.value === selectedTransferSectorUser
+                        )?.title || ''
+                      "
+                      :placeholder="$t('search') + '...'"
+                      variant="outlined"
+                      readonly
+                      append-inner-icon="tabler-chevron-down"
+                      :loading="isLoadingTransferSectorUsers"
+                    />
+                  </template>
+                  <VCard>
+                    <VCardText class="pa-2">
+                      <AppTextField
+                        v-model="transferSectorUserSearch"
+                        :placeholder="$t('search') + '...'"
+                        prepend-inner-icon="tabler-search"
+                        density="compact"
+                        hide-details
+                        autofocus
+                        @click.stop
+                      />
+                    </VCardText>
+                    <VDivider />
+                    <VList max-height="300" style="overflow-y: auto">
+                      <template v-if="filteredTransferSectorUsers.length > 0">
+                        <VListItem
+                          v-for="(item, index) in filteredTransferSectorUsers"
+                          :key="`sector-user-${item.value}-${index}`"
+                          :value="item.value"
+                          @click="
+                            () => {
+                              selectedTransferSectorUser = item.value;
+                              isTransferSectorUserMenuOpen = false;
+                            }
+                          "
+                          :active="selectedTransferSectorUser === item.value"
+                        >
+                          <VListItemTitle>{{ item.title }}</VListItemTitle>
+                        </VListItem>
+                      </template>
+                      <VListItem v-else-if="transferSectorUserSearch" disabled>
+                        <VListItemTitle
+                          class="text-center text-body-2 text-medium-emphasis"
+                        >
+                          {{ $t('no_results_found') }}
+                        </VListItemTitle>
+                      </VListItem>
+                    </VList>
+                  </VCard>
+                </VMenu>
+              </div>
+            </VCol>
+          </template>
+
+          <VCol cols="12">
+            <div class="d-flex align-center gap-2 mb-2">
+              <VLabel class="text-body-2">{{ $t('annotation') }}:</VLabel>
+              <VSpacer />
+              <VMenu
+                v-model="isTransferAnnotationEmojiOpen"
+                location="top end"
+                :close-on-content-click="false"
+                offset="8"
+              >
+                <template #activator="{ props }">
+                  <IconBtn
+                    v-bind="props"
+                    size="small"
+                    variant="text"
+                    aria-label="Emoji"
+                  >
+                    <VIcon size="20">tabler-mood-smile</VIcon>
+                  </IconBtn>
+                </template>
+                <div class="emoji-picker-wrap">
+                  <Picker
+                    :data="emojiIndex"
+                    :per-line="8"
+                    :show-preview="false"
+                    :show-search="true"
+                    :show-skin-tones="false"
+                    @select="onTransferAnnotationEmojiSelect"
+                  />
+                </div>
+              </VMenu>
+            </div>
+            <VTextarea
+              id="transfer-annotation-textarea"
+              v-model="transferAnnotationText"
+              :placeholder="$t('write_your_annotation')"
+              variant="outlined"
+              :maxlength="5000"
+              :rows="6"
+              :auto-grow="true"
+              :max-rows="10"
+              counter
+            />
+            <div class="text-caption text-medium-emphasis mt-1">
+              {{ $t('annotation_max_characters', { count: 5000 }) }}
+            </div>
+          </VCol>
+        </VRow>
+      </VCardText>
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          @click="isTransferModalOpen = false"
+        >
+          {{ t('cancel') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          :disabled="
+            transferType === 'user'
+              ? !selectedTransferUser
+              : !selectedTransferSector
+          "
+          :loading="chatStore.loading"
+          @click="handleTransfer"
+        >
+          {{ t('transfer') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog v-model="isAnnotationModalOpen" max-width="600">
+    <DialogCloseBtn @click="isAnnotationModalOpen = false" />
+    <VCard :title="$t('annotation')">
+      <VCardText>
+        <VRow>
+          <VCol cols="12">
+            <div class="d-flex align-center gap-2 mb-2">
+              <VLabel class="text-body-2">{{ $t('message') }}:</VLabel>
+              <VSpacer />
+              <VMenu
+                v-model="isAnnotationEmojiOpen"
+                location="top end"
+                :close-on-content-click="false"
+                offset="8"
+              >
+                <template #activator="{ props }">
+                  <IconBtn
+                    v-bind="props"
+                    size="small"
+                    variant="text"
+                    aria-label="Emoji"
+                  >
+                    <VIcon size="20">tabler-mood-smile</VIcon>
+                  </IconBtn>
+                </template>
+                <div class="emoji-picker-wrap">
+                  <Picker
+                    :data="emojiIndex"
+                    :per-line="8"
+                    :show-preview="false"
+                    :show-search="true"
+                    :show-skin-tones="false"
+                    @select="onAnnotationEmojiSelect"
+                  />
+                </div>
+              </VMenu>
+            </div>
+            <VTextarea
+              id="annotation-textarea"
+              v-model="annotationText"
+              :placeholder="$t('write_your_annotation')"
+              variant="outlined"
+              :maxlength="5000"
+              :rows="8"
+              :auto-grow="true"
+              :max-rows="12"
+              counter
+            />
+            <div class="text-caption text-medium-emphasis mt-1">
+              {{ $t('annotation_max_characters', { count: 5000 }) }}
+            </div>
+          </VCol>
+        </VRow>
+      </VCardText>
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          @click="
+            () => {
+              isAnnotationModalOpen = false;
+              annotationText = '';
+            }
+          "
+        >
+          {{ t('cancel') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          :disabled="!annotationText.trim()"
+          @click="sendAnnotationMessage"
+        >
+          {{ t('save') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
 </template>
 
 <style lang="scss">

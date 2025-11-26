@@ -7,7 +7,7 @@ export interface ICreateUserAddress {
   address2?: string | null;
   address2_partial?: string | null;
   address2_c?: string | null;
-  city: string;
-  state: string;
+  city_fiscal_code: string | null;
+  state_fiscal_code: string | null;
   district: string;
 }

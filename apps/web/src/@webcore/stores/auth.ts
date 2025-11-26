@@ -14,6 +14,7 @@ import {
   setAdministrator,
   setLayout,
   setPermissions,
+  setSectors,
   setToken,
   setUser,
 } from '../localStorage/user';
@@ -99,6 +100,7 @@ export const useAuthStore = defineStore('auth', {
         setPermissions(this.permissions);
         setLayout(this.layout);
         setAdministrator(isAdministrator);
+        setSectors(data.data.sectors ?? []);
 
         return true;
       } catch (error) {

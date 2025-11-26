@@ -5,7 +5,7 @@ import { EColor } from '@core/common/enums/EColor';
 import { ISnackbar } from '@core/common/interfaces/ISnackbar';
 import { PagingResponseSchema } from '@core/schema/common/pagingResponseSchema';
 import axios from '@webcore/axios';
-import { AxiosError } from 'axios';
+import { AxiosError, AxiosRequestConfig } from 'axios';
 import {
   ListUserFinalResponse,
   ListUserResponse,
@@ -13,7 +13,6 @@ import {
 import { ListUserRequest } from '@core/schema/user/listUser/request.schema';
 import { IListUsers } from '../interfaces/IListUsers';
 import { ViewUserResponse } from '@core/schema/user/viewUser/response.schema';
-import { CreateUserRequest } from '@core/schema/user/createUser/request.schema';
 import {
   EditUserParamsRequest,
   UpdateUserRequest,
@@ -174,13 +173,200 @@ export const useUsersStore = defineStore('users', {
       }
     },
 
-    async addUser(payload: CreateUserRequest): Promise<boolean> {
+    extractFieldValue(
+      field: string | { value: string | null } | null | undefined
+    ): string | null {
+      if (field === null || field === undefined) {
+        return null;
+      }
+
+      if (typeof field === 'object' && 'value' in field) {
+        return field.value ?? null;
+      }
+
+      if (typeof field === 'string') {
+        return field;
+      }
+
+      return null;
+    },
+
+    shouldAppendStringValue(
+      field: { value?: string | null } | undefined
+    ): boolean {
+      return field?.value !== undefined && field.value !== null;
+    },
+
+    shouldAppendNumberValue(
+      field: { value?: number | null } | undefined
+    ): boolean {
+      return field?.value !== undefined && field.value !== null;
+    },
+
+    appendStringField(
+      formData: FormData,
+      field: { value?: string | null } | undefined,
+      fieldName: string
+    ): void {
+      if (this.shouldAppendStringValue(field)) {
+        const value = field?.value;
+        if (value) {
+          formData.append(fieldName, value);
+        }
+      }
+    },
+
+    appendNumberField(
+      formData: FormData,
+      field: { value?: number | null } | undefined,
+      fieldName: string
+    ): void {
+      if (this.shouldAppendNumberValue(field)) {
+        const value = field?.value;
+        if (value !== null && value !== undefined) {
+          formData.append(fieldName, value.toString());
+        }
+      }
+    },
+
+    buildUpdateUserFormData(
+      body: UpdateUserRequest,
+      photoFile?: File | null
+    ): FormData {
+      const formData = new FormData();
+
+      this.appendStringField(formData, body.email, 'email');
+      this.appendStringField(formData, body.password, 'password');
+      this.appendStringField(formData, body.account_id, 'account_id');
+      this.appendStringField(formData, body.user_status_id, 'user_status_id');
+      this.appendStringField(formData, body.phone_ddi, 'phone_ddi');
+      this.appendStringField(formData, body.phone, 'phone');
+      this.appendStringField(formData, body.name, 'name');
+      this.appendStringField(formData, body.last_name, 'last_name');
+      this.appendStringField(formData, body.birth_date, 'birth_date');
+      this.appendStringField(
+        formData,
+        body.document_type_id,
+        'document_type_id'
+      );
+      this.appendStringField(formData, body.document, 'document');
+      this.appendNumberField(formData, body.country_id, 'country_id');
+      this.appendStringField(formData, body.zip_code, 'zip_code');
+      this.appendStringField(formData, body.address1, 'address1');
+      this.appendStringField(formData, body.address2, 'address2');
+      this.appendStringField(
+        formData,
+        body.city_fiscal_code,
+        'city_fiscal_code'
+      );
+      this.appendStringField(
+        formData,
+        body.state_fiscal_code,
+        'state_fiscal_code'
+      );
+      this.appendStringField(formData, body.district, 'district');
+
+      if (body.photo_url?.value !== undefined) {
+        formData.append('photo_url', body.photo_url.value ?? '');
+      }
+      if (photoFile instanceof File) {
+        formData.append('photo', photoFile);
+      }
+
+      return formData;
+    },
+
+    async addUser(
+      payload: {
+        email: string;
+        password: string;
+        account_id?: string;
+        user_info: {
+          phone_ddi: string;
+          phone: string;
+          name: string;
+          last_name: string;
+          birth_date: string | null;
+        };
+        user_document: {
+          user_document_type_id: string;
+          document: string;
+        };
+        user_address: {
+          country_id: number;
+          zip_code: string;
+          address1: string;
+          address2: string | null;
+          city_fiscal_code: string | null;
+          state_fiscal_code: string | null;
+          district: string;
+        };
+      },
+      photoFile?: File | null
+    ): Promise<boolean> {
       try {
         this.loading = true;
 
+        const formData = new FormData();
+
+        formData.append('email', payload.email);
+        formData.append('password', payload.password);
+
+        if (payload.account_id) {
+          formData.append('account_id', payload.account_id);
+        }
+
+        formData.append('phone_ddi', payload.user_info.phone_ddi);
+        formData.append('phone', payload.user_info.phone);
+        formData.append('name', payload.user_info.name);
+        formData.append('last_name', payload.user_info.last_name);
+        if (payload.user_info.birth_date) {
+          formData.append('birth_date', payload.user_info.birth_date);
+        }
+
+        formData.append(
+          'document_type_id',
+          payload.user_document.user_document_type_id
+        );
+        formData.append('document', payload.user_document.document);
+
+        formData.append(
+          'country_id',
+          payload.user_address.country_id.toString()
+        );
+        formData.append('zip_code', payload.user_address.zip_code);
+        formData.append('address1', payload.user_address.address1);
+        if (payload.user_address.address2) {
+          formData.append('address2', payload.user_address.address2);
+        }
+        if (payload.user_address.city_fiscal_code) {
+          formData.append(
+            'city_fiscal_code',
+            payload.user_address.city_fiscal_code
+          );
+        }
+        if (payload.user_address.state_fiscal_code) {
+          formData.append(
+            'state_fiscal_code',
+            payload.user_address.state_fiscal_code
+          );
+        }
+        formData.append('district', payload.user_address.district);
+
+        if (photoFile instanceof File) {
+          formData.append('photo', photoFile);
+        }
+
+        const config: AxiosRequestConfig<FormData> = {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        };
+
         const response = await axios.post<IApiResponse<boolean>>(
           `/user`,
-          payload
+          formData,
+          config
         );
 
         this.loading = false;
@@ -217,14 +403,24 @@ export const useUsersStore = defineStore('users', {
 
     async updateUser(
       payload: EditUserParamsRequest,
-      body: UpdateUserRequest
+      body: UpdateUserRequest,
+      photoFile?: File | null
     ): Promise<boolean> {
       try {
         this.loading = true;
 
+        const formData = this.buildUpdateUserFormData(body, photoFile);
+
+        const config: AxiosRequestConfig<FormData> = {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        };
+
         const response = await axios.patch<IApiResponse<boolean>>(
           `/user/${payload.user_id}`,
-          body
+          formData,
+          config
         );
 
         this.loading = false;

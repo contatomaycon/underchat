@@ -16,6 +16,7 @@ import { ITokenJwtData } from '@core/common/interfaces/ITokenJwtData';
 import { routePathWithoutPrefix } from '@core/common/functions/routePathWithoutPrefix';
 import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 import Redis from 'ioredis';
+import { UserService } from '@core/services/user.service';
 
 async function handleApiKeyCache(
   redis: Redis,
@@ -50,10 +51,10 @@ async function handleApiKeyCache(
   return responseAuth;
 }
 
-function generateTokenJwtAccess(
+async function generateTokenJwtAccess(
   userId: string,
   responseAuth: IJwtGroupHierarchy[]
-): ITokenJwtData {
+): Promise<ITokenJwtData> {
   const accountId = responseAuth.find(
     (item) => item.account_id !== null
   )?.account_id;
@@ -63,12 +64,19 @@ function generateTokenJwtAccess(
 
   const isAdministrator = permissionRoleId === EPermissionRole.administrator;
 
+  let sectors: string[] = [];
+  if (accountId) {
+    const userService = container.resolve(UserService);
+    sectors = await userService.listUserSectors(accountId, userId);
+  }
+
   return {
     account_id: accountId,
     user_id: userId,
     permission_role_id: permissionRoleId,
     is_administrator: isAdministrator,
     actions: responseAuth,
+    sectors,
   } as ITokenJwtData;
 }
 
@@ -136,7 +144,7 @@ async function authenticateJwt(
       });
     }
 
-    request.tokenJwtData = generateTokenJwtAccess(
+    request.tokenJwtData = await generateTokenJwtAccess(
       decoded.user_id,
       responseAuth
     );

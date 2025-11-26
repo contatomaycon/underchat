@@ -384,6 +384,49 @@ export class MessageSendConsume {
     return () => this.processActionMessage(jid, chatId, data, type, processor);
   }
 
+  private createMediaTypeHandler(
+    url: string | undefined,
+    jid: string,
+    chatId: string,
+    data: IChatMessage,
+    type: EMessageType,
+    lastType: EMessageType | undefined,
+    processor: (j: string, d: IChatMessage) => Promise<void>
+  ): (() => Promise<void>) | null {
+    if (!url) return null;
+    return this.createMediaHandler(
+      jid,
+      chatId,
+      data,
+      type,
+      lastType,
+      processor
+    );
+  }
+
+  private createActionTypeHandler(
+    condition: boolean | undefined,
+    jid: string,
+    chatId: string,
+    data: IChatMessage,
+    type: EMessageType,
+    processor: (j: string, d: IChatMessage) => Promise<void>
+  ): (() => Promise<void>) | null {
+    if (!condition) return null;
+    return this.createActionHandler(jid, chatId, data, type, processor);
+  }
+
+  private createTextMessageHandler(
+    message: string | undefined,
+    jid: string,
+    chatId: string,
+    data: IChatMessage,
+    hasQuoted: boolean
+  ): (() => Promise<void>) | null {
+    if (!message) return null;
+    return () => this.processTextMessage(jid, chatId, data, hasQuoted);
+  }
+
   private selectMessageHandler(
     currentType: EMessageType | undefined,
     jid: string,
@@ -399,95 +442,97 @@ export class MessageSendConsume {
     const handlers: Partial<
       Record<EMessageType, (() => Promise<void>) | null>
     > = {
-      [EMessageType.image]: data.content?.image?.url
-        ? this.createMediaHandler(
-            jid,
-            chatId,
-            data,
-            EMessageType.image,
-            lastType,
-            (j, d) => this.processImage(j, d)
-          )
-        : null,
-      [EMessageType.document]: data.content?.document?.url
-        ? this.createMediaHandler(
-            jid,
-            chatId,
-            data,
-            EMessageType.document,
-            lastType,
-            (j, d) => this.processDocument(j, d)
-          )
-        : null,
-      [EMessageType.audio]: data.content?.audio?.url
-        ? this.createMediaHandler(
-            jid,
-            chatId,
-            data,
-            EMessageType.audio,
-            lastType,
-            (j, d) => this.processAudio(j, d)
-          )
-        : null,
-      [EMessageType.video]: data.content?.video?.url
-        ? this.createMediaHandler(
-            jid,
-            chatId,
-            data,
-            EMessageType.video,
-            lastType,
-            (j, d) => this.processVideo(j, d)
-          )
-        : null,
-      [EMessageType.sticker]: data.content?.sticker?.url
-        ? this.createMediaHandler(
-            jid,
-            chatId,
-            data,
-            EMessageType.sticker,
-            lastType,
-            (j, d) => this.processSticker(j, d)
-          )
-        : null,
-      [EMessageType.location]: data.content?.location
-        ? this.createActionHandler(
-            jid,
-            chatId,
-            data,
-            EMessageType.location,
-            (j, d) => this.processLocation(j, d)
-          )
-        : null,
-      [EMessageType.text]: data.content?.message
-        ? () => this.processTextMessage(jid, chatId, data, hasQuoted)
-        : null,
-      [EMessageType.contact_card]: data.content?.contact
-        ? this.createActionHandler(
-            jid,
-            chatId,
-            data,
-            EMessageType.contact_card,
-            (j, d) => this.processContact(j, d)
-          )
-        : null,
-      [EMessageType.delete_message]: data.message_key?.id
-        ? this.createActionHandler(
-            jid,
-            chatId,
-            data,
-            EMessageType.delete_message,
-            (j, d) => this.processDelete(j, d)
-          )
-        : null,
-      [EMessageType.react]: data.message_key?.id
-        ? this.createActionHandler(
-            jid,
-            chatId,
-            data,
-            EMessageType.react,
-            (j, d) => this.processReact(j, d)
-          )
-        : null,
+      [EMessageType.image]: this.createMediaTypeHandler(
+        data.content?.image?.url ?? undefined,
+        jid,
+        chatId,
+        data,
+        EMessageType.image,
+        lastType,
+        (j, d) => this.processImage(j, d)
+      ),
+      [EMessageType.document]: this.createMediaTypeHandler(
+        data.content?.document?.url ?? undefined,
+        jid,
+        chatId,
+        data,
+        EMessageType.document,
+        lastType,
+        (j, d) => this.processDocument(j, d)
+      ),
+      [EMessageType.audio]: this.createMediaTypeHandler(
+        data.content?.audio?.url ?? undefined,
+        jid,
+        chatId,
+        data,
+        EMessageType.audio,
+        lastType,
+        (j, d) => this.processAudio(j, d)
+      ),
+      [EMessageType.video]: this.createMediaTypeHandler(
+        data.content?.video?.url ?? undefined,
+        jid,
+        chatId,
+        data,
+        EMessageType.video,
+        lastType,
+        (j, d) => this.processVideo(j, d)
+      ),
+      [EMessageType.sticker]: this.createMediaTypeHandler(
+        data.content?.sticker?.url ?? undefined,
+        jid,
+        chatId,
+        data,
+        EMessageType.sticker,
+        lastType,
+        (j, d) => this.processSticker(j, d)
+      ),
+      [EMessageType.location]: this.createActionTypeHandler(
+        !!data.content?.location,
+        jid,
+        chatId,
+        data,
+        EMessageType.location,
+        (j, d) => this.processLocation(j, d)
+      ),
+      [EMessageType.text]: this.createTextMessageHandler(
+        data.content?.message ?? undefined,
+        jid,
+        chatId,
+        data,
+        hasQuoted
+      ),
+      [EMessageType.system]: this.createTextMessageHandler(
+        data.content?.message ?? undefined,
+        jid,
+        chatId,
+        data,
+        hasQuoted
+      ),
+      [EMessageType.contact_card]: this.createActionTypeHandler(
+        !!data.content?.contact,
+        jid,
+        chatId,
+        data,
+        EMessageType.contact_card,
+        (j, d) => this.processContact(j, d)
+      ),
+      [EMessageType.delete_message]: this.createActionTypeHandler(
+        !!data.message_key?.id,
+        jid,
+        chatId,
+        data,
+        EMessageType.delete_message,
+        (j, d) => this.processDelete(j, d)
+      ),
+      [EMessageType.react]: this.createActionTypeHandler(
+        !!data.message_key?.id,
+        jid,
+        chatId,
+        data,
+        EMessageType.react,
+        (j, d) => this.processReact(j, d)
+      ),
     };
 
     return handlers[currentType] ?? null;
@@ -667,7 +712,8 @@ export class MessageSendConsume {
       let phoneWithDdi = '';
       if (ddi && phone) {
         phoneWithDdi = `+${ddi}${phone}`;
-      } else if (phone) {
+      }
+      if (!ddi && phone) {
         phoneWithDdi = `+${phone}`;
       }
 
@@ -1218,7 +1264,11 @@ export class MessageSendConsume {
   private createQuotedTextMessage(
     q: NonNullable<IChatMessage['content']>['quoted']
   ): proto.IMessage | null {
-    if (q?.type !== EMessageType.text || !q?.message) return null;
+    if (
+      (q?.type !== EMessageType.text && q?.type !== EMessageType.system) ||
+      !q?.message
+    )
+      return null;
 
     return {
       conversation: q.message,

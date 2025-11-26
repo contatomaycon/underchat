@@ -45,8 +45,8 @@ export const authUserResponseSchema = Type.Object({
       zip_code: Type.String(),
       address1_partial: Type.String(),
       address2_partial: Type.Union([Type.String(), Type.Null()]),
-      city: Type.String(),
-      state: Type.String(),
+      city: Type.Union([Type.String(), Type.Null()]),
+      state: Type.Union([Type.String(), Type.Null()]),
       district: Type.String(),
     }),
     Type.Null(),
@@ -77,6 +77,7 @@ export const authLoginResponseSchema = Type.Object({
   permissions: Type.Array(Type.String()),
   layout: Type.Union([accountInfoResponseSchema, Type.Null()]),
   token: Type.String(),
+  sectors: Type.Array(Type.String()),
 });
 
 export type AuthLoginResponse = Static<typeof authLoginResponseSchema>;

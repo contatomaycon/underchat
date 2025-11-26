@@ -16,8 +16,8 @@ export const createUser = async (
 
   try {
     const accountIdToUse =
-      tokenJwtData.is_administrator && request.body.account_id
-        ? request.body.account_id
+      tokenJwtData.is_administrator && request.body.account_id?.value
+        ? request.body.account_id.value
         : tokenJwtData.account_id;
 
     const response = await userCreatorUseCase.execute(

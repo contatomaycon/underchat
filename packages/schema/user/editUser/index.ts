@@ -9,6 +9,7 @@ import {
 export const editUserSchema = {
   description: 'Edita um usuário existente',
   tags: [ETagSwagger.user],
+  consumes: ['multipart/form-data'],
   produces: ['application/json'],
   security: [
     {

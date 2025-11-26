@@ -7,6 +7,7 @@ import { createSector } from './methods/createSector';
 import { listSectorRoleAccount } from './methods/listSectorRoleAccount';
 import { listSectorRoleAccountSector } from './methods/listSectorRoleAccountSector';
 import { createSectorRole } from './methods/createSectorRole';
+import { listSectorUsers } from './methods/listSectorUsers';
 
 @injectable()
 class SectorController {
@@ -18,6 +19,7 @@ class SectorController {
   public listSectorRoleAccount = listSectorRoleAccount;
   public listSectorRoleAccountSector = listSectorRoleAccountSector;
   public createSectorRole = createSectorRole;
+  public listSectorUsers = listSectorUsers;
 }
 
 export default SectorController;

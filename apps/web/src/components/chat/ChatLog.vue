@@ -42,8 +42,8 @@ const contactStore = useContactStore();
 const { activeChat } = storeToRefs(chatStore);
 const chatLogContainer = ref<HTMLElement | null>(null);
 
-const showSkeleton = computed(() => 
-  chatStore.loading && chatStore.listMessages.length === 0
+const showSkeleton = computed(
+  () => chatStore.loading && chatStore.listMessages.length === 0
 );
 const reactionEmojiIndex = new EmojiIndex(data);
 const showScrollToBottom = ref(false);
@@ -137,6 +137,9 @@ const shouldBlurMessageContent = computed(() => {
 });
 
 const resolveFeedbackIcon = (message: ListMessageResult): FeedbackIcon => {
+  if (message.content?.type === EMessageType.annotation)
+    return { icon: 'tabler-file', color: undefined };
+
   if (isMessageUploadError(message))
     return { icon: 'tabler-alert-triangle', color: 'error' };
   if (message.summary?.is_sent_to_internal === false)
@@ -160,8 +163,15 @@ const resolveFeedbackIcon = (message: ListMessageResult): FeedbackIcon => {
 };
 
 const resolvePhoto = (message: ListMessageResult): string => {
-  if (isTypeUser(message) && chatStore.activeChat?.photo)
-    return chatStore.activeChat.photo;
+  if (isTypeUser(message)) {
+    if (chatStore.activeChat?.contact?.photo) {
+      return chatStore.activeChat.contact.photo;
+    }
+
+    if (chatStore.activeChat?.photo) {
+      return chatStore.activeChat.photo;
+    }
+  }
   if (!isTypeUser(message) && message.user?.photo) return message.user.photo;
   if (!isTypeUser(message) && chatStore.user?.info.photo)
     return chatStore.user.info.photo;
@@ -206,25 +216,19 @@ const handleContactClick = async (message: ListMessageResult) => {
   if (!message.content?.contact) return;
 
   const contact = message.content.contact;
-  const phone = contact.phone ?? contact.phone_partial;
-  const phoneDdi = contact.phone_ddi ?? '55';
 
-  if (phone) {
-    const existingContact = await contactStore.getContactByPhone(
-      phone.replaceAll(/\D/g, ''),
-      phoneDdi
+  if (contact.contact_id) {
+    globalThis.dispatchEvent(
+      new CustomEvent('open-edit-contact-modal', {
+        detail: contact.contact_id,
+      })
     );
 
-    if (existingContact) {
-      globalThis.dispatchEvent(
-        new CustomEvent('open-edit-contact-modal', {
-          detail: existingContact.contact_id,
-        })
-      );
-
-      return;
-    }
+    return;
   }
+
+  const phone = contact.phone ?? contact.phone_partial;
+  const phoneDdi = contact.phone_ddi ?? '55';
 
   const contactData: Partial<CreateContactRequest> = {
     name: contact.name ?? undefined,
@@ -247,6 +251,7 @@ const canInteractWithMessage = (m: ListMessageResult): boolean => {
   if (m.deleted) return false;
   if (m.summary?.is_sent_to_internal === false) return false;
   if (m.content?.type === EMessageType.view_once) return false;
+  if (m.content?.type === EMessageType.annotation) return false;
   return true;
 };
 
@@ -469,7 +474,9 @@ const shouldShowCopy = (message: ListMessageResult): boolean => {
   if (isDownloadableVideo(message)) return false;
   if (isDownloadableAudio(message)) return false;
   if (isDownloadableSticker(message)) return false;
-  return isTextMessage(message);
+  return (
+    isTextMessage(message) || message.content?.type === EMessageType.system
+  );
 };
 
 const shouldShowDownload = (message: ListMessageResult): boolean => {
@@ -509,6 +516,37 @@ const getLatestMessageText = (message: ListMessageResult): string => {
   }
 
   return message.content.message || '';
+};
+
+const shouldFormatMessage = (message: ListMessageResult): boolean => {
+  const messageType = message.content?.type;
+  return (
+    messageType === EMessageType.text ||
+    messageType === EMessageType.system ||
+    messageType === EMessageType.annotation
+  );
+};
+
+const formatWhatsAppText = (text: string): string => {
+  if (!text) return '';
+
+  const escapeHtml = (str: string) => {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  };
+
+  let formatted = escapeHtml(text);
+
+  formatted = formatted.replaceAll(/`([^`]+?)`/g, '<code>$1</code>');
+  formatted = formatted.replaceAll(/~([^~]+?)~/g, '<s>$1</s>');
+  formatted = formatted.replaceAll(/(?<!_)_([^_\n]+?)_(?!_)/g, '<em>$1</em>');
+  formatted = formatted.replaceAll(
+    /(?<!\*)\*([^*\n]+?)\*(?!\*)/g,
+    '<strong>$1</strong>'
+  );
+
+  return formatted;
 };
 
 const getMessageEditHistory = (
@@ -1751,7 +1789,11 @@ onUnmounted(() => {
           class="chat-group d-flex align-start position-relative"
           :class="[
             {
-              'flex-row-reverse': !isTypeUser(item.message),
+              'flex-row-reverse':
+                !isTypeUser(item.message) &&
+                item.message.content?.type !== EMessageType.system,
+              'justify-center':
+                item.message.content?.type === EMessageType.system,
               'mb-6':
                 index < messagesWithSeparators.length - 1 &&
                 messagesWithSeparators[index + 1]?.type === 'message',
@@ -1761,10 +1803,27 @@ onUnmounted(() => {
           @mouseleave="onMouseLeave"
         >
           <div
+            v-if="item.message.content?.type !== EMessageType.system"
             class="chat-avatar"
             :class="!isTypeUser(item.message) ? 'ms-4' : 'me-4'"
           >
+            <VTooltip
+              v-if="!isTypeUser(item.message) && item.message.user?.name"
+              location="top"
+              :text="item.message.user.name"
+            >
+              <template #activator="{ props }">
+                <VAvatar
+                  v-bind="props"
+                  size="32"
+                  :variant="!isPhotoExist(item.message) ? 'tonal' : undefined"
+                >
+                  <VImg :src="resolvePhoto(item.message)" />
+                </VAvatar>
+              </template>
+            </VTooltip>
             <VAvatar
+              v-else
               size="32"
               :variant="!isPhotoExist(item.message) ? 'tonal' : undefined"
             >
@@ -1774,7 +1833,13 @@ onUnmounted(() => {
 
           <div
             class="chat-body d-inline-flex flex-column position-relative"
-            :class="!isTypeUser(item.message) ? 'align-end' : 'align-start'"
+            :class="
+              item.message.content?.type === EMessageType.system
+                ? 'align-center'
+                : !isTypeUser(item.message)
+                  ? 'align-end'
+                  : 'align-start'
+            "
           >
             <div
               class="chat-content-wrapper"
@@ -1789,7 +1854,8 @@ onUnmounted(() => {
                   hoveredMessageId === item.message.message_id &&
                   canInteractWithMessage(item.message) &&
                   showReactionPicker !== item.message.message_id &&
-                  !isQueueStatus
+                  !isQueueStatus &&
+                  item.message.content?.type !== EMessageType.annotation
                 "
                 :class="[
                   'reaction-trigger-container',
@@ -1836,24 +1902,35 @@ onUnmounted(() => {
               <div
                 class="chat-content py-2 px-2 elevation-2"
                 :class="[
-                  isTypeUser(item.message) ? 'chat-left' : 'chat-right',
+                  item.message.content?.type === EMessageType.system
+                    ? 'chat-center'
+                    : isTypeUser(item.message)
+                      ? 'chat-left'
+                      : 'chat-right',
                   {
                     'is-deleted': item.message.deleted,
                     'has-actions': !item.message.deleted,
                   },
                 ]"
                 :style="{
-                  backgroundColor: isTypeUser(item.message)
-                    ? 'rgb(var(--v-theme-surface))'
-                    : 'rgb(217, 253, 211)',
+                  backgroundColor:
+                    item.message.content?.type === EMessageType.annotation
+                      ? 'rgb(255, 243, 205)'
+                      : item.message.content?.type === EMessageType.system
+                        ? 'rgb(227, 242, 253)'
+                        : isTypeUser(item.message)
+                          ? 'rgb(var(--v-theme-surface))'
+                          : 'rgb(217, 253, 211)',
                 }"
               >
                 <div
                   v-if="
                     (canInteractWithMessage(item.message) ||
                       (item.message.deleted &&
-                        hasMessageVersions(item.message))) &&
-                    !isQueueStatus
+                        hasMessageVersions(item.message)) ||
+                      item.message.content?.type === EMessageType.system) &&
+                    !isQueueStatus &&
+                    item.message.content?.type !== EMessageType.annotation
                   "
                   class="message-actions"
                 >
@@ -1952,7 +2029,10 @@ onUnmounted(() => {
                         </VListItem>
 
                         <VListItem
-                          v-if="!isTypeUser(item.message)"
+                          v-if="
+                            !isTypeUser(item.message) &&
+                            item.message.content?.type !== EMessageType.system
+                          "
                           @click="onDelete(item.message)"
                         >
                           <template #prepend>
@@ -2158,7 +2238,22 @@ onUnmounted(() => {
                             : 'rgb(var(--v-theme-title))',
                         }"
                       >
-                        {{ resolveQuotedText(item.message) }}
+                        <span
+                          v-if="
+                            item.message.content?.quoted?.type ===
+                              EMessageType.text ||
+                            item.message.content?.quoted?.type ===
+                              EMessageType.system ||
+                            item.message.content?.quoted?.type ===
+                              EMessageType.annotation
+                          "
+                          v-html="
+                            formatWhatsAppText(resolveQuotedText(item.message))
+                          "
+                        ></span>
+                        <span v-else>{{
+                          resolveQuotedText(item.message)
+                        }}</span>
                       </div>
                     </div>
                   </div>
@@ -2291,7 +2386,11 @@ onUnmounted(() => {
                           : 'rgb(var(--v-theme-title))',
                       }"
                     >
-                      {{ item.message.content.image.caption }}
+                      <span
+                        v-html="
+                          formatWhatsAppText(item.message.content.image.caption)
+                        "
+                      ></span>
                     </p>
                   </div>
 
@@ -2337,7 +2436,11 @@ onUnmounted(() => {
                           : 'rgb(var(--v-theme-title))',
                       }"
                     >
-                      {{ item.message.content.video.caption }}
+                      <span
+                        v-html="
+                          formatWhatsAppText(item.message.content.video.caption)
+                        "
+                      ></span>
                     </p>
                   </div>
 
@@ -2536,7 +2639,15 @@ onUnmounted(() => {
                           : 'rgb(var(--v-theme-title))',
                       }"
                     >
-                      {{ getLatestMessageText(item.message) }}
+                      <span
+                        v-if="shouldFormatMessage(item.message)"
+                        v-html="
+                          formatWhatsAppText(getLatestMessageText(item.message))
+                        "
+                      ></span>
+                      <span v-else>{{
+                        getLatestMessageText(item.message)
+                      }}</span>
                     </p>
                   </div>
 
@@ -2568,8 +2679,25 @@ onUnmounted(() => {
                       }"
                       @click="handleContactClick(item.message)"
                     >
-                      <VAvatar size="40" color="primary" variant="tonal">
-                        <VIcon size="20">tabler-user</VIcon>
+                      <VAvatar
+                        size="40"
+                        :variant="
+                          item.message.content.contact.photo
+                            ? undefined
+                            : 'tonal'
+                        "
+                        :color="
+                          item.message.content.contact.photo
+                            ? undefined
+                            : 'primary'
+                        "
+                      >
+                        <VImg
+                          v-if="item.message.content.contact.photo"
+                          :src="item.message.content.contact.photo"
+                          :alt="item.message.content.contact.name"
+                        />
+                        <VIcon v-else size="20">tabler-user</VIcon>
                       </VAvatar>
                       <div class="flex-grow-1">
                         <div
@@ -2600,7 +2728,15 @@ onUnmounted(() => {
                           : 'rgb(var(--v-theme-title))',
                       }"
                     >
-                      {{ getLatestMessageText(item.message) }}
+                      <span
+                        v-if="shouldFormatMessage(item.message)"
+                        v-html="
+                          formatWhatsAppText(getLatestMessageText(item.message))
+                        "
+                      ></span>
+                      <span v-else>{{
+                        getLatestMessageText(item.message)
+                      }}</span>
                     </p>
                   </div>
 
@@ -2616,6 +2752,27 @@ onUnmounted(() => {
                     "
                   >
                     <p
+                      v-if="shouldFormatMessage(item.message)"
+                      class="mr-6 text-base message-text"
+                      :class="{
+                        'mb-2':
+                          !hasMessageVersions(item.message) &&
+                          !item.message.deleted,
+                        'mb-6':
+                          hasMessageVersions(item.message) ||
+                          item.message.deleted,
+                      }"
+                      :style="{
+                        color: isTypeUser(item.message)
+                          ? 'rgb(var(--v-theme-on-surface))'
+                          : 'rgb(var(--v-theme-title))',
+                      }"
+                      v-html="
+                        formatWhatsAppText(getLatestMessageText(item.message))
+                      "
+                    ></p>
+                    <p
+                      v-else
                       class="mr-6 text-base message-text"
                       :class="{
                         'mb-2':
@@ -2710,13 +2867,16 @@ onUnmounted(() => {
                   <div
                     v-if="
                       item.message.content?.reactions &&
-                      item.message.content.reactions.length > 0
+                      item.message.content.reactions.length > 0 &&
+                      item.message.content?.type !== EMessageType.annotation
                     "
                     :class="[
                       'reactions-summary',
-                      !isTypeUser(item.message)
-                        ? 'reactions-summary--right'
-                        : 'reactions-summary--left',
+                      item.message.content?.type === EMessageType.system
+                        ? 'reactions-summary--center'
+                        : !isTypeUser(item.message)
+                          ? 'reactions-summary--right'
+                          : 'reactions-summary--left',
                     ]"
                   >
                     <div class="reaction-summary-bubble">
@@ -3199,6 +3359,14 @@ onUnmounted(() => {
 
       &.chat-right {
         border-start-start-radius: 6px;
+        .message-meta {
+          color: rgba(17, 27, 33, 0.6);
+        }
+      }
+
+      &.chat-center {
+        border-radius: 6px;
+        margin: 0 auto;
         .message-meta {
           color: rgba(17, 27, 33, 0.6);
         }
@@ -4341,6 +4509,12 @@ onUnmounted(() => {
       justify-content: flex-start;
       margin-inline-start: 0;
       left: 16px;
+    }
+
+    &--center {
+      justify-content: center;
+      left: 50%;
+      transform: translateX(-50%) translateY(60%);
     }
 
     .reaction-summary-bubble {

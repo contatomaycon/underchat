@@ -33,6 +33,7 @@ import { PermissionAssignmentDeleterRepository } from '@core/repositories/permis
 import { UserAccountViewerRepository } from '@core/repositories/user/UserAccountViewer.repository';
 import { UserEmailViewerExistsRepository } from '@core/repositories/user/UserEmailViewerExists.repository';
 import { UserTotalViewerRepository } from '@core/repositories/user/UserTotalViewer.repository';
+import { UserSectorsListerRepository } from '@core/repositories/user/UserSectorsLister.repository';
 import { EncryptService } from './encrypt.service';
 import { IUserSensitiveDataDecrypted } from '@core/common/interfaces/IUserSensitiveDataDecrypted';
 import { StorageService } from '@core/services/storage.service';
@@ -66,6 +67,7 @@ export class UserService {
     private readonly userAccountViewerRepository: UserAccountViewerRepository,
     private readonly userEmailViewerExistsRepository: UserEmailViewerExistsRepository,
     private readonly userTotalViewerRepository: UserTotalViewerRepository,
+    private readonly userSectorsListerRepository: UserSectorsListerRepository,
     private readonly storageService: StorageService
   ) {}
 
@@ -148,12 +150,14 @@ export class UserService {
   createUser = async (
     t: TFunction<'translation', undefined>,
     accountId: string,
-    input: CreateUserRequest
+    input: CreateUserRequest,
+    photoUrl?: string | null
   ): Promise<boolean> => {
     return this.userTransactionCreatorRepository.createUser(
       t,
       accountId,
-      input
+      input,
+      photoUrl
     );
   };
 
@@ -452,6 +456,13 @@ export class UserService {
 
   getUserAccountId = async (userId: string): Promise<string | null> => {
     return this.userAccountViewerRepository.getUserAccountId(userId);
+  };
+
+  listUserSectors = async (
+    accountId: string,
+    userId: string
+  ): Promise<string[]> => {
+    return this.userSectorsListerRepository.listUserSectors(accountId, userId);
   };
 
   existsUserEmailById = async (userEmail: string): Promise<boolean> => {

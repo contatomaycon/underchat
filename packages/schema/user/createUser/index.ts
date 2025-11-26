@@ -7,6 +7,7 @@ export const createUserSchema = {
   description: 'Adiciona um novo usuário',
   tags: [ETagSwagger.user],
   produces: ['application/json'],
+  consumes: ['multipart/form-data'],
   security: [
     {
       authenticateJwt: [],

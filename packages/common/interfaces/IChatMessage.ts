@@ -55,7 +55,7 @@ export interface IReaction {
 }
 
 export interface IContactMessage {
-  contact_id: string;
+  contact_id: string | null;
   name: string;
   last_name?: string | null;
   phone?: string | null;
@@ -63,6 +63,7 @@ export interface IContactMessage {
   phone_ddi?: string | null;
   email?: string | null;
   email_partial?: string | null;
+  photo?: string | null;
 }
 
 export interface IContent {

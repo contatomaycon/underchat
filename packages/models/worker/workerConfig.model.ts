@@ -1,4 +1,10 @@
-import { pgTable, timestamp, uuid, boolean } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  timestamp,
+  uuid,
+  boolean,
+  varchar,
+} from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { worker } from '@core/models';
 
@@ -10,9 +16,9 @@ export const workerConfig = pgTable('worker_config', {
   is_automatic_attendance: boolean().default(false),
   show_attendee_name: boolean().default(false),
   show_worker_name: boolean().default(false),
-  generate_protocol_at_ura: boolean().default(false),
-  generate_protocol_at_start: boolean().default(false),
-  generate_protocol_at_transfer: boolean().default(false),
+  generate_protocol_at_ura: varchar({ length: 2000 }),
+  generate_protocol_at_start: varchar({ length: 2000 }),
+  generate_protocol_at_transfer: varchar({ length: 2000 }),
   created_at: timestamp({
     mode: 'string',
     withTimezone: true,

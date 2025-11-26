@@ -12,6 +12,7 @@ const userInfoSchema = Type.Object({
   name: Type.Union([Type.String(), Type.Null()]),
   last_name: Type.Union([Type.String(), Type.Null()]),
   birth_date: Type.Union([Type.String(), Type.Null()]),
+  photo: Type.Union([Type.String(), Type.Null()]),
 });
 
 const documentTypeSchema = Type.Object({
@@ -42,8 +43,10 @@ const userAddressSchema = Type.Object({
   zip_code: Type.String(),
   address1_partial: Type.String(),
   address2_partial: Type.Union([Type.String(), Type.Null()]),
-  city: Type.String(),
-  state: Type.String(),
+  city: Type.Union([Type.String(), Type.Null()]),
+  state: Type.Union([Type.String(), Type.Null()]),
+  city_fiscal_code: Type.Union([Type.String(), Type.Null()]),
+  state_fiscal_code: Type.Union([Type.String(), Type.Null()]),
   district: Type.String(),
 });
 

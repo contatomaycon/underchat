@@ -10,7 +10,6 @@ import { EWorkerProfileStatusType } from '@core/common/enums/EWorkerProfileStatu
 import { can } from '@layouts/plugins/casl';
 import { ListContactGroupAllResponse } from '@core/schema/contactGroup/listContactGroupAll/response.schema';
 import { ListContactResponse } from '@core/schema/contact/listContact/response.schema';
-import { WorkerConfig } from '@core/schema/worker/updateWorkerConfig/response.schema';
 import { ViewWorkerConfigResponse } from '@core/schema/worker/viewWorkerConfig/response.schema';
 
 const channelStore = useChannelsStore();
@@ -109,6 +108,7 @@ const channelId = toRef(props, 'channelId');
 const currentTab = ref<'general' | 'profile-status' | 'profile-info'>(
   'general'
 );
+const isInitialLoad = ref(false);
 const selectedStatusPreviews = ref<StatusPreview[]>([]);
 const existingStatus = ref<ProfileStatus[]>([]);
 const isSavingProfileStatus = ref(false);
@@ -183,16 +183,16 @@ const cropArea = ref({
   initialY: 0,
 });
 const cropPreviewSize = 160;
+/* removed isInitializingGeneralTab flag */
 
-type WorkerConfigForm = Pick<
-  WorkerConfig,
-  | 'is_automatic_attendance'
-  | 'show_attendee_name'
-  | 'show_worker_name'
-  | 'generate_protocol_at_ura'
-  | 'generate_protocol_at_start'
-  | 'generate_protocol_at_transfer'
->;
+type WorkerConfigForm = {
+  is_automatic_attendance: boolean;
+  show_attendee_name: boolean;
+  show_worker_name: boolean;
+  generate_protocol_at_ura: boolean;
+  generate_protocol_at_start: boolean;
+  generate_protocol_at_transfer: boolean;
+};
 
 const createDefaultWorkerConfig = (): WorkerConfigForm => ({
   is_automatic_attendance: false,
@@ -209,6 +209,15 @@ const workerConfigForm = reactive<WorkerConfigForm>(
 const isLoadingWorkerConfig = ref(false);
 const isSavingWorkerConfig = ref(false);
 const workerConfigLoadedFor = ref<string | null>(null);
+const transferProtocolText = ref<string>('');
+const transferProtocolModalOpen = ref(false);
+const isSavingTransferProtocol = ref(false);
+const startProtocolText = ref<string>('');
+const startProtocolModalOpen = ref(false);
+const isSavingStartProtocol = ref(false);
+const uraProtocolText = ref<string>('');
+const uraProtocolModalOpen = ref(false);
+const isSavingUraProtocol = ref(false);
 
 const statusTypeOptions = computed(() => [
   {
@@ -373,10 +382,15 @@ const applyWorkerConfig = (config?: ViewWorkerConfigResponse | null) => {
     nextState.is_automatic_attendance = config.is_automatic_attendance;
     nextState.show_attendee_name = config.show_attendee_name;
     nextState.show_worker_name = config.show_worker_name;
-    nextState.generate_protocol_at_ura = config.generate_protocol_at_ura;
-    nextState.generate_protocol_at_start = config.generate_protocol_at_start;
-    nextState.generate_protocol_at_transfer =
-      config.generate_protocol_at_transfer;
+    nextState.generate_protocol_at_ura = Boolean(
+      config.generate_protocol_at_ura
+    );
+    nextState.generate_protocol_at_start = Boolean(
+      config.generate_protocol_at_start
+    );
+    nextState.generate_protocol_at_transfer = Boolean(
+      config.generate_protocol_at_transfer
+    );
   }
 
   Object.assign(workerConfigForm, nextState);
@@ -394,8 +408,34 @@ const loadWorkerConfig = async (force = false) => {
   try {
     isLoadingWorkerConfig.value = true;
     const result = await channelStore.fetchWorkerConfig(channelId.value);
+
     applyWorkerConfig(result);
     workerConfigLoadedFor.value = channelId.value;
+
+    const [protocolTransferText, protocolStartText, protocolUraText] =
+      await Promise.all([
+        channelStore.fetchTransferProtocolText(channelId.value),
+        channelStore.fetchStartProtocolText(channelId.value),
+        channelStore.fetchUraProtocolText(channelId.value),
+      ]);
+
+    const hasTransferProtocolText =
+      protocolTransferText !== null && protocolTransferText.trim().length > 0;
+    const hasStartProtocolText =
+      protocolStartText !== null && protocolStartText.trim().length > 0;
+    const hasUraProtocolText =
+      protocolUraText !== null && protocolUraText.trim().length > 0;
+
+    transferProtocolText.value = hasTransferProtocolText
+      ? protocolTransferText
+      : '';
+    workerConfigForm.generate_protocol_at_transfer = hasTransferProtocolText;
+
+    startProtocolText.value = hasStartProtocolText ? protocolStartText : '';
+    workerConfigForm.generate_protocol_at_start = hasStartProtocolText;
+
+    uraProtocolText.value = hasUraProtocolText ? protocolUraText : '';
+    workerConfigForm.generate_protocol_at_ura = hasUraProtocolText;
   } finally {
     isLoadingWorkerConfig.value = false;
   }
@@ -423,7 +463,163 @@ const saveWorkerConfig = async () => {
   }
 };
 
+const onWorkerConfigCheckboxChange = async (
+  field: WorkerConfigField,
+  value: boolean | null
+) => {
+  workerConfigForm[field] = Boolean(value);
+  await saveWorkerConfig();
+};
+
 type WorkerConfigField = keyof WorkerConfigForm;
+
+const openTransferProtocolModal = async () => {
+  if (!channelId.value) return;
+
+  const protocolText = await channelStore.fetchTransferProtocolText(
+    channelId.value
+  );
+  transferProtocolText.value = protocolText || '';
+  transferProtocolModalOpen.value = true;
+};
+
+const closeTransferProtocolModal = () => {
+  transferProtocolModalOpen.value = false;
+};
+
+const saveTransferProtocolText = async () => {
+  if (!channelId.value) return;
+
+  try {
+    isSavingTransferProtocol.value = true;
+    const text = transferProtocolText.value.trim() || null;
+    const result = await channelStore.updateTransferProtocolText(
+      channelId.value,
+      text
+    );
+
+    const hasText = result !== null && result.trim().length > 0;
+    workerConfigForm.generate_protocol_at_transfer = hasText;
+    transferProtocolText.value = result || '';
+
+    closeTransferProtocolModal();
+  } finally {
+    isSavingTransferProtocol.value = false;
+  }
+};
+
+const deleteTransferProtocolText = async () => {
+  if (!channelId.value) return;
+
+  try {
+    isSavingTransferProtocol.value = true;
+    await channelStore.updateTransferProtocolText(channelId.value, null);
+
+    workerConfigForm.generate_protocol_at_transfer = false;
+    transferProtocolText.value = '';
+    closeTransferProtocolModal();
+  } finally {
+    isSavingTransferProtocol.value = false;
+  }
+};
+
+const openStartProtocolModal = async () => {
+  if (!channelId.value) return;
+
+  const protocolText = await channelStore.fetchStartProtocolText(
+    channelId.value
+  );
+  startProtocolText.value = protocolText || '';
+  startProtocolModalOpen.value = true;
+};
+
+const closeStartProtocolModal = () => {
+  startProtocolModalOpen.value = false;
+};
+
+const saveStartProtocolText = async () => {
+  if (!channelId.value) return;
+
+  try {
+    isSavingStartProtocol.value = true;
+    const text = startProtocolText.value.trim() || null;
+    const result = await channelStore.updateStartProtocolText(
+      channelId.value,
+      text
+    );
+
+    const hasText = result !== null && result.trim().length > 0;
+    workerConfigForm.generate_protocol_at_start = hasText;
+    startProtocolText.value = result || '';
+
+    closeStartProtocolModal();
+  } finally {
+    isSavingStartProtocol.value = false;
+  }
+};
+
+const deleteStartProtocolText = async () => {
+  if (!channelId.value) return;
+
+  try {
+    isSavingStartProtocol.value = true;
+    await channelStore.updateStartProtocolText(channelId.value, null);
+
+    workerConfigForm.generate_protocol_at_start = false;
+    startProtocolText.value = '';
+    closeStartProtocolModal();
+  } finally {
+    isSavingStartProtocol.value = false;
+  }
+};
+
+const openUraProtocolModal = async () => {
+  if (!channelId.value) return;
+
+  const protocolText = await channelStore.fetchUraProtocolText(channelId.value);
+  uraProtocolText.value = protocolText || '';
+  uraProtocolModalOpen.value = true;
+};
+
+const closeUraProtocolModal = () => {
+  uraProtocolModalOpen.value = false;
+};
+
+const saveUraProtocolText = async () => {
+  if (!channelId.value) return;
+
+  try {
+    isSavingUraProtocol.value = true;
+    const text = uraProtocolText.value.trim() || null;
+    const result = await channelStore.updateUraProtocolText(
+      channelId.value,
+      text
+    );
+
+    const hasText = result !== null && result.trim().length > 0;
+    workerConfigForm.generate_protocol_at_ura = hasText;
+    uraProtocolText.value = result || '';
+
+    closeUraProtocolModal();
+  } finally {
+    isSavingUraProtocol.value = false;
+  }
+};
+
+const deleteUraProtocolText = async () => {
+  if (!channelId.value) return;
+
+  try {
+    isSavingUraProtocol.value = true;
+    await channelStore.updateUraProtocolText(channelId.value, null);
+
+    workerConfigForm.generate_protocol_at_ura = false;
+    uraProtocolText.value = '';
+    closeUraProtocolModal();
+  } finally {
+    isSavingUraProtocol.value = false;
+  }
+};
 
 const workerConfigOptions = computed(() => [
   {
@@ -1447,11 +1643,11 @@ const saveProfilePhoto = async () => {
       profilePhotoFile.value = null;
     }
   } catch (error) {
-    console.error('Erro ao fazer upload da foto do perfil:', error);
-    channelStore.showSnackbar(
-      t('profile_photo_upload_error') || 'Erro ao fazer upload da foto',
-      EColor.error
-    );
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : t('profile_photo_upload_error') || 'Erro ao fazer upload da foto';
+    channelStore.showSnackbar(errorMessage, EColor.error);
   } finally {
     isUploadingProfilePhoto.value = false;
   }
@@ -1478,8 +1674,9 @@ const saveProfileInfo = async () => {
       cropDialog.value.croppedImage = '';
     }
   } catch (error) {
-    console.error('Erro ao salvar informações do perfil:', error);
-    channelStore.showSnackbar(t('profile_info_upload_error'), EColor.error);
+    const errorMessage =
+      error instanceof Error ? error.message : t('profile_info_upload_error');
+    channelStore.showSnackbar(errorMessage, EColor.error);
   } finally {
     isSavingProfileInfo.value = false;
   }
@@ -1507,11 +1704,11 @@ const removeProfilePhoto = async () => {
       cropDialog.value.croppedImage = '';
     }
   } catch (error) {
-    console.error('Erro ao remover foto do perfil:', error);
-    channelStore.showSnackbar(
-      t('profile_photo_remove_error') || 'Erro ao remover a foto do perfil',
-      EColor.error
-    );
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : t('profile_photo_remove_error') || 'Erro ao remover a foto do perfil';
+    channelStore.showSnackbar(errorMessage, EColor.error);
   } finally {
     isRemovingProfilePhoto.value = false;
   }
@@ -1524,37 +1721,62 @@ const cancelCrop = () => {
   profilePhotoFile.value = null;
 };
 
-watch(isVisible, async (visible) => {
-  if (visible) {
-    currentTab.value = 'general';
-    await loadWorkerConfig(true);
-    await fetchProfileStatus();
+watch(isVisible, async (visible, oldVisible) => {
+  if (!visible) {
+    resetPendingSelections();
+    closePreview();
+    cancelCrop();
+    resetWorkerConfigState();
+    isInitialLoad.value = false;
     return;
   }
 
-  resetPendingSelections();
-  closePreview();
-  cancelCrop();
-  resetWorkerConfigState();
-});
+  if (oldVisible === false) {
+    currentTab.value = 'general';
+    isInitialLoad.value = true;
 
-watch(currentTab, async (newTab) => {
-  if (newTab === 'general' && isVisible.value && channelId.value) {
-    await loadWorkerConfig();
-  }
-  if (newTab === 'profile-status' && isVisible.value && channelId.value) {
-    await fetchProfileStatus();
-  }
-  if (newTab === 'profile-info' && isVisible.value && channelId.value) {
-    await loadProfileInfo();
+    if (channelId.value) {
+      await loadWorkerConfig(true);
+      isInitialLoad.value = false;
+    }
   }
 });
 
-watch(channelId, async (newValue, oldValue) => {
-  if (isVisible.value && newValue && newValue !== oldValue) {
+watch(
+  channelId,
+  async (newValue, oldValue) => {
+    if (!isVisible.value) return;
+    if (!newValue) return;
+    if (newValue === oldValue) return;
+
+    if (isInitialLoad.value) {
+      isInitialLoad.value = false;
+      return;
+    }
+
     resetWorkerConfigState();
+
+    if (currentTab.value === 'general') {
+      await loadWorkerConfig(true);
+    } else if (currentTab.value === 'profile-status') {
+      await fetchProfileStatus();
+    } else if (currentTab.value === 'profile-info') {
+      await loadProfileInfo();
+    }
+  },
+  { immediate: false }
+);
+
+watch(currentTab, async (newTab, oldTab) => {
+  if (!isVisible.value || !channelId.value) return;
+  if (newTab === oldTab) return;
+
+  if (newTab === 'general') {
     await loadWorkerConfig(true);
+  } else if (newTab === 'profile-status') {
     await fetchProfileStatus();
+  } else if (newTab === 'profile-info') {
+    await loadProfileInfo();
   }
 });
 
@@ -1564,6 +1786,14 @@ watch(selectedType, () => {
 
 onBeforeUnmount(() => {
   resetPendingSelections();
+});
+
+onMounted(async () => {
+  if (isVisible.value && channelId.value) {
+    currentTab.value = 'general';
+
+    await loadWorkerConfig(true);
+  }
 });
 </script>
 
@@ -1631,11 +1861,52 @@ onBeforeUnmount(() => {
                   <VCard class="general-config-card h-100" variant="outlined">
                     <div class="d-flex flex-column gap-2">
                       <VCheckbox
-                        v-model="workerConfigForm[option.key]"
+                        v-if="
+                          option.key !== 'generate_protocol_at_transfer' &&
+                          option.key !== 'generate_protocol_at_start' &&
+                          option.key !== 'generate_protocol_at_ura'
+                        "
+                        :model-value="workerConfigForm[option.key]"
                         :label="option.title"
                         color="primary"
                         hide-details
                         :disabled="isSavingWorkerConfig"
+                        @update:model-value="
+                          onWorkerConfigCheckboxChange(option.key, $event)
+                        "
+                      />
+                      <VCheckbox
+                        v-else-if="
+                          option.key === 'generate_protocol_at_transfer'
+                        "
+                        :model-value="workerConfigForm[option.key]"
+                        :label="option.title"
+                        color="primary"
+                        hide-details
+                        :disabled="
+                          isSavingWorkerConfig || isSavingTransferProtocol
+                        "
+                        @click.stop.prevent="openTransferProtocolModal"
+                      />
+                      <VCheckbox
+                        v-else-if="option.key === 'generate_protocol_at_start'"
+                        :model-value="workerConfigForm[option.key]"
+                        :label="option.title"
+                        color="primary"
+                        hide-details
+                        :disabled="
+                          isSavingWorkerConfig || isSavingStartProtocol
+                        "
+                        @click.stop.prevent="openStartProtocolModal"
+                      />
+                      <VCheckbox
+                        v-else-if="option.key === 'generate_protocol_at_ura'"
+                        :model-value="workerConfigForm[option.key]"
+                        :label="option.title"
+                        color="primary"
+                        hide-details
+                        :disabled="isSavingWorkerConfig || isSavingUraProtocol"
+                        @click.stop.prevent="openUraProtocolModal"
                       />
                       <p class="text-body-2 text-medium-emphasis mb-0">
                         {{ option.description }}
@@ -1644,17 +1915,6 @@ onBeforeUnmount(() => {
                   </VCard>
                 </VCol>
               </VRow>
-
-              <div class="d-flex justify-end">
-                <VBtn
-                  color="primary"
-                  :loading="isSavingWorkerConfig"
-                  :disabled="isLoadingWorkerConfig"
-                  @click="saveWorkerConfig"
-                >
-                  {{ $t('channel_general_config_save') }}
-                </VBtn>
-              </div>
             </div>
           </VWindowItem>
 
@@ -2412,6 +2672,177 @@ onBeforeUnmount(() => {
             {{ previewDialog.caption }}
           </p>
         </div>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog v-model="transferProtocolModalOpen" max-width="600" persistent>
+    <VCard>
+      <VCardTitle class="d-flex justify-space-between align-center">
+        <span>{{
+          $t('channel_general_config_generate_protocol_transfer_title')
+        }}</span>
+        <IconBtn @click="closeTransferProtocolModal">
+          <VIcon icon="tabler-x" />
+        </IconBtn>
+      </VCardTitle>
+      <VCardText>
+        <VTextarea
+          v-model="transferProtocolText"
+          :label="$t('transfer_protocol_text_label')"
+          :placeholder="$t('transfer_protocol_text_placeholder')"
+          :maxlength="2000"
+          rows="8"
+          counter
+          auto-grow
+        />
+        <div class="text-caption text-medium-emphasis mt-2">
+          {{ $t('transfer_protocol_text_hint') }}
+        </div>
+        <div class="text-caption text-medium-emphasis">
+          {{ $t('transfer_protocol_tag_hint') }}
+        </div>
+      </VCardText>
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          :disabled="isSavingTransferProtocol"
+          @click="closeTransferProtocolModal"
+        >
+          {{ $t('close') }}
+        </VBtn>
+        <VBtn
+          color="error"
+          variant="tonal"
+          :loading="isSavingTransferProtocol"
+          :disabled="isSavingTransferProtocol"
+          @click="deleteTransferProtocolText"
+        >
+          {{ $t('delete') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          :loading="isSavingTransferProtocol"
+          :disabled="isSavingTransferProtocol"
+          @click="saveTransferProtocolText"
+        >
+          {{ $t('save') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog v-model="startProtocolModalOpen" max-width="600" persistent>
+    <VCard>
+      <VCardTitle class="d-flex justify-space-between align-center">
+        <span>{{
+          $t('channel_general_config_generate_protocol_start_title')
+        }}</span>
+        <IconBtn @click="closeStartProtocolModal">
+          <VIcon icon="tabler-x" />
+        </IconBtn>
+      </VCardTitle>
+      <VCardText>
+        <VTextarea
+          v-model="startProtocolText"
+          :label="$t('start_protocol_text_label')"
+          :placeholder="$t('start_protocol_text_placeholder')"
+          :maxlength="2000"
+          rows="8"
+          counter
+          auto-grow
+        />
+        <div class="text-caption text-medium-emphasis mt-2">
+          {{ $t('start_protocol_text_hint') }}
+        </div>
+        <div class="text-caption text-medium-emphasis">
+          {{ $t('start_protocol_tag_hint') }}
+        </div>
+      </VCardText>
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          :disabled="isSavingStartProtocol"
+          @click="closeStartProtocolModal"
+        >
+          {{ $t('close') }}
+        </VBtn>
+        <VBtn
+          color="error"
+          variant="tonal"
+          :loading="isSavingStartProtocol"
+          :disabled="isSavingStartProtocol"
+          @click="deleteStartProtocolText"
+        >
+          {{ $t('delete') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          :loading="isSavingStartProtocol"
+          :disabled="isSavingStartProtocol"
+          @click="saveStartProtocolText"
+        >
+          {{ $t('save') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog v-model="uraProtocolModalOpen" max-width="600" persistent>
+    <VCard>
+      <VCardTitle class="d-flex justify-space-between align-center">
+        <span>{{
+          $t('channel_general_config_generate_protocol_ura_title')
+        }}</span>
+        <IconBtn @click="closeUraProtocolModal">
+          <VIcon icon="tabler-x" />
+        </IconBtn>
+      </VCardTitle>
+      <VCardText>
+        <VTextarea
+          v-model="uraProtocolText"
+          :label="$t('ura_protocol_text_label')"
+          :placeholder="$t('ura_protocol_text_placeholder')"
+          :maxlength="2000"
+          rows="8"
+          counter
+          auto-grow
+        />
+        <div class="text-caption text-medium-emphasis mt-2">
+          {{ $t('ura_protocol_text_hint') }}
+        </div>
+        <div class="text-caption text-medium-emphasis">
+          {{ $t('ura_protocol_tag_hint') }}
+        </div>
+      </VCardText>
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          :disabled="isSavingUraProtocol"
+          @click="closeUraProtocolModal"
+        >
+          {{ $t('close') }}
+        </VBtn>
+        <VBtn
+          color="error"
+          variant="tonal"
+          :loading="isSavingUraProtocol"
+          :disabled="isSavingUraProtocol"
+          @click="deleteUraProtocolText"
+        >
+          {{ $t('delete') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          :loading="isSavingUraProtocol"
+          :disabled="isSavingUraProtocol"
+          @click="saveUraProtocolText"
+        >
+          {{ $t('save') }}
+        </VBtn>
       </VCardText>
     </VCard>
   </VDialog>

@@ -10,6 +10,9 @@ import { useCountryCodes } from '@/composables/useCountryCodes';
 import { EColor } from '@core/common/enums/EColor';
 import { useChatStore } from '@/@webcore/stores/chat';
 import VDialogHandler from '@/components/VDialogHandler.vue';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
+import { can } from '@layouts/plugins/casl';
 
 const contactStore = useContactStore();
 const labelTemplateStore = useLabelTemplateStore();
@@ -155,6 +158,16 @@ const emailValidator = (v: string | null | undefined) => {
   const re = /^[^\s@]+@(?:[^\s@.]+\.)+[^\s@.]{2,}$/;
   return re.test(s) || t('email_invalid');
 };
+
+const canAccessLabelTemplate = computed(() => {
+  const permissions = [
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    ELabelTemplatePermissions.label_template_group,
+    ELabelTemplatePermissions.label_view,
+  ];
+  return can(permissions);
+});
 
 const itemsLabel = computed(() =>
   (labelTemplateStore.listAll ?? []).map((item) => ({
@@ -847,26 +860,27 @@ const cropImage = () => {
     return;
   }
 
+  const container = img.parentElement;
+  if (!container) return;
+
+  const containerWidth = container.clientWidth;
+  const containerHeight = container.clientHeight;
+  const imgLeft = (containerWidth - img.offsetWidth) / 2;
+  const imgTop = (containerHeight - img.offsetHeight) / 2;
+
+  const relativeX = cropArea.value.x - imgLeft;
+  const relativeY = cropArea.value.y - imgTop;
+
   const scaleX = img.naturalWidth / img.offsetWidth;
   const scaleY = img.naturalHeight / img.offsetHeight;
 
-  const sourceX = cropArea.value.x * scaleX;
-  const sourceY = cropArea.value.y * scaleY;
+  const sourceX = relativeX * scaleX;
+  const sourceY = relativeY * scaleY;
   const sourceWidth = cropArea.value.width * scaleX;
   const sourceHeight = cropArea.value.height * scaleY;
 
-  const outputAspectRatio = cropArea.value.aspectRatio;
-  let outputWidth = cropPreviewSize;
-  let outputHeight = cropPreviewSize;
-
-  if (outputAspectRatio > 1) {
-    outputHeight = cropPreviewSize / outputAspectRatio;
-  } else {
-    outputWidth = cropPreviewSize * outputAspectRatio;
-  }
-
-  canvas.width = outputWidth;
-  canvas.height = outputHeight;
+  canvas.width = cropPreviewSize;
+  canvas.height = cropPreviewSize;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -878,8 +892,8 @@ const cropImage = () => {
     sourceHeight,
     0,
     0,
-    outputWidth,
-    outputHeight
+    cropPreviewSize,
+    cropPreviewSize
   );
 
   canvas.toBlob(
@@ -932,7 +946,9 @@ watch([contactId, isVisible], async ([newContactId, newIsVisible]) => {
 });
 
 onMounted(async () => {
-  await labelTemplateStore.listLabelTemplateAll();
+  if (canAccessLabelTemplate.value) {
+    await labelTemplateStore.listLabelTemplateAll();
+  }
   if (contactId.value && isVisible.value) {
     await loadContactData();
   }
@@ -1081,19 +1097,28 @@ onMounted(async () => {
                     </VCardText>
                     <VDivider />
                     <VList max-height="300" style="overflow-y: auto">
-                      <VListItem
-                        v-for="(item, index) in filteredCountryCodes"
-                        :key="index"
-                        :value="item.value"
-                        @click="
-                          () => {
-                            phone_ddi = item.value;
-                            isCountryMenuOpen = false;
-                          }
-                        "
-                        :active="phone_ddi === item.value"
-                      >
-                        <VListItemTitle>{{ item.title }}</VListItemTitle>
+                      <template v-if="filteredCountryCodes.length > 0">
+                        <VListItem
+                          v-for="(item, index) in filteredCountryCodes"
+                          :key="index"
+                          :value="item.value"
+                          @click="
+                            () => {
+                              phone_ddi = item.value;
+                              isCountryMenuOpen = false;
+                            }
+                          "
+                          :active="phone_ddi === item.value"
+                        >
+                          <VListItemTitle>{{ item.title }}</VListItemTitle>
+                        </VListItem>
+                      </template>
+                      <VListItem v-else-if="countrySearchQuery" disabled>
+                        <VListItemTitle
+                          class="text-center text-body-2 text-medium-emphasis"
+                        >
+                          {{ $t('no_results_found') }}
+                        </VListItemTitle>
                       </VListItem>
                     </VList>
                   </VCard>

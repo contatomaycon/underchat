@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { nextTick } from 'vue';
+import { nextTick, computed } from 'vue';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useContactStore } from '@/@webcore/stores/contact';
@@ -14,6 +14,9 @@ import { useCountryCodes } from '@/composables/useCountryCodes';
 import { requiredValidator } from '@/@webcore/utils/validators';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import { EColor } from '@core/common/enums/EColor';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
+import { can } from '@layouts/plugins/casl';
 
 const chatStore = useChatStore();
 const contactStore = useContactStore();
@@ -56,6 +59,16 @@ const isPhoneDecrypted = ref(false);
 const isLoadingPhone = ref(false);
 const isEmailDecrypted = ref(false);
 const isLoadingEmail = ref(false);
+
+const canAccessLabelTemplate = computed(() => {
+  const permissions = [
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    ELabelTemplatePermissions.label_template_group,
+    ELabelTemplatePermissions.label_view,
+  ];
+  return can(permissions);
+});
 
 const photoFile = ref<File | null>(null);
 const photoPreview = ref<string | null>(null);
@@ -407,17 +420,10 @@ const addContact = async () => {
     birthday: birthday.value ?? null,
     notes: notes.value ?? null,
     image_url: imageUrl,
+    chat_id: chatStore.activeChat?.chat_id ?? undefined,
   };
 
   const result = await contactStore.addContact(payload, photoFile.value);
-
-  if (result && chatStore.activeChat?.chat_id && phoneNumber && phoneDdi) {
-    await chatStore.updateChatContact(
-      chatStore.activeChat.chat_id,
-      phoneNumber,
-      phoneDdi
-    );
-  }
 
   if (result) {
     await nextTick();
@@ -457,6 +463,7 @@ const updateContact = async () => {
     birthday: birthday.value,
     notes: notes.value,
     image_url: imageUrl,
+    chat_id: chatStore.activeChat?.chat_id ?? undefined,
   };
 
   const result = await contactStore.updateContact(
@@ -1033,7 +1040,9 @@ const cancelCrop = () => {
 };
 
 onMounted(async () => {
-  await labelTemplateStore.listLabelTemplateAll();
+  if (canAccessLabelTemplate.value) {
+    await labelTemplateStore.listLabelTemplateAll();
+  }
   loadChatData();
 });
 </script>
@@ -1271,10 +1280,15 @@ onMounted(async () => {
         </VRow>
 
         <VCardText class="d-flex justify-end flex-wrap gap-3 pa-0 mt-4">
-          <VBtn variant="tonal" color="secondary" @click="$emit('close')">
+          <VBtn
+            variant="tonal"
+            color="secondary"
+            :disabled="contactStore.loading"
+            @click="$emit('close')"
+          >
             {{ $t('cancel') }}
           </VBtn>
-          <VBtn @click="saveContact">
+          <VBtn :loading="contactStore.loading" @click="saveContact">
             {{ isContact ? $t('save') : $t('add') }}
           </VBtn>
         </VCardText>

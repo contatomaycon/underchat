@@ -1,18 +1,17 @@
 <script lang="ts" setup>
 import { useChatStore } from '@/@webcore/stores/chat';
+import { useProfileStore } from '@/@webcore/stores/profile';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { VForm } from 'vuetify/components';
 import { EColor } from '@core/common/enums/EColor';
-import axios from '@webcore/axios';
-import { IApiResponse } from '@core/common/interfaces/IApiResponse';
-import { setUser } from '@/@webcore/localStorage/user';
 
 defineEmits<{
   close: [];
 }>();
 
 const chatStore = useChatStore();
+const profileStore = useProfileStore();
 const { t } = useI18n();
 
 const refFormProfileSidebarContent = ref<VForm>();
@@ -581,48 +580,16 @@ const uploadPhoto = async (file: File) => {
 
   isUploadingPhoto.value = true;
 
-  try {
-    const formData = new FormData();
-    formData.append('photo', file);
+  const result = await profileStore.uploadUserPhoto(
+    chatStore.user.user_id,
+    file
+  );
 
-    const response = await axios.post<IApiResponse<{ photo: string | null }>>(
-      `/user/${chatStore.user.user_id}/photo`,
-      formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      }
-    );
-
-    if (response.data?.status && response.data.data) {
-      if (chatStore.user?.info) {
-        chatStore.user.info.photo = response.data.data.photo;
-        setUser(chatStore.user);
-      }
-      chatStore.showSnackbar(
-        response.data.message || t('profile_photo_upload_success'),
-        EColor.success
-      );
-      closePhotoModal();
-    } else {
-      chatStore.showSnackbar(
-        response.data?.message || t('profile_photo_upload_error'),
-        EColor.error
-      );
-    }
-  } catch (error) {
-    if (error instanceof Error) {
-      chatStore.showSnackbar(
-        error.message || t('profile_photo_upload_error'),
-        EColor.error
-      );
-    } else {
-      chatStore.showSnackbar(t('profile_photo_upload_error'), EColor.error);
-    }
-  } finally {
-    isUploadingPhoto.value = false;
+  if (result) {
+    closePhotoModal();
   }
+
+  isUploadingPhoto.value = false;
 };
 
 const removePhoto = async () => {
@@ -630,39 +597,13 @@ const removePhoto = async () => {
 
   isUploadingPhoto.value = true;
 
-  try {
-    const response = await axios.delete<IApiResponse<{ photo: string | null }>>(
-      `/user/${chatStore.user.user_id}/photo`
-    );
+  const result = await profileStore.removeUserPhoto(chatStore.user.user_id);
 
-    if (response.data?.status && response.data.data) {
-      if (chatStore.user?.info) {
-        chatStore.user.info.photo = response.data.data.photo;
-        setUser(chatStore.user);
-      }
-      chatStore.showSnackbar(
-        response.data.message || t('profile_photo_remove_success'),
-        EColor.success
-      );
-      closePhotoModal();
-    } else {
-      chatStore.showSnackbar(
-        response.data?.message || t('profile_photo_remove_error'),
-        EColor.error
-      );
-    }
-  } catch (error) {
-    if (error instanceof Error) {
-      chatStore.showSnackbar(
-        error.message || t('profile_photo_remove_error'),
-        EColor.error
-      );
-    } else {
-      chatStore.showSnackbar(t('profile_photo_remove_error'), EColor.error);
-    }
-  } finally {
-    isUploadingPhoto.value = false;
+  if (result) {
+    closePhotoModal();
   }
+
+  isUploadingPhoto.value = false;
 };
 </script>
 
@@ -794,6 +735,15 @@ const removePhoto = async () => {
         </div>
       </VForm>
     </PerfectScrollbar>
+
+    <VSnackbar
+      v-model="profileStore.snackbar.status"
+      transition="scroll-y-reverse-transition"
+      location="top end"
+      :color="profileStore.snackbar.color"
+    >
+      {{ profileStore.snackbar.message }}
+    </VSnackbar>
   </template>
 
   <VDialog v-model="isPhotoModalOpen" max-width="500" persistent>

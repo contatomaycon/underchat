@@ -360,6 +360,9 @@ export const mensageMappings = () => {
                     email_partial: {
                       type: 'keyword',
                     },
+                    photo: {
+                      type: 'text',
+                    },
                   },
                 },
               },
@@ -570,6 +573,9 @@ export const mensageMappings = () => {
                 },
                 email_partial: {
                   type: 'keyword',
+                },
+                photo: {
+                  type: 'text',
                 },
               },
             },
