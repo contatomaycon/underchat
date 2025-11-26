@@ -1,14 +1,15 @@
 <script lang="ts" setup>
 import { ref, computed, watch } from 'vue';
-import { useContactStore } from '@/@webcore/stores/contact';
+import { useChatStore } from '@/@webcore/stores/chat';
 import { refDebounced } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 import { EColor } from '@core/common/enums/EColor';
 import { ISelectedContactPreview } from '@core/common/interfaces/IChatFilePreview';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
+import { ListChatContactsResponse } from '@core/schema/chat/listContacts/response.schema';
 
 const { t } = useI18n();
-const contactStore = useContactStore();
+const chatStore = useChatStore();
 
 const props = defineProps<{
   modelValue: boolean;
@@ -28,6 +29,15 @@ const isVisible = computed({
 const selectedContacts = ref<Set<string>>(new Set());
 const searchQuery = ref('');
 const debouncedSearch = refDebounced(searchQuery, 500);
+const contactsList = ref<ListChatContactsResponse[]>([]);
+const contactsPagings = ref({
+  current_page: 1,
+  total_pages: 1,
+  per_page: 10,
+  count: 0,
+  total: 0,
+});
+const isLoadingContacts = ref(false);
 
 const existingContactIds = computed(() => {
   return new Set(props.existingContacts?.map((c) => c.contact_id) || []);
@@ -69,12 +79,24 @@ watch(
 );
 
 const loadContacts = async () => {
-  await contactStore.listContact({
-    page: options.value.page,
-    per_page: options.value.itemsPerPage,
-    sort_by: options.value.sortBy,
-    search: debouncedSearch.value || undefined,
-  });
+  if (isLoadingContacts.value) return;
+
+  isLoadingContacts.value = true;
+
+  try {
+    const result = await chatStore.listChatContacts(
+      options.value.page,
+      options.value.itemsPerPage,
+      debouncedSearch.value || undefined
+    );
+
+    if (result) {
+      contactsList.value = result.results;
+      contactsPagings.value = result.pagings;
+    }
+  } finally {
+    isLoadingContacts.value = false;
+  }
 };
 
 const handleTableChange = (o: {
@@ -99,7 +121,7 @@ const toggleContact = (contactId: string) => {
   }
 
   if (totalSelectedCount.value >= 10) {
-    contactStore.showSnackbar(
+    chatStore.showSnackbar(
       t('max_contacts_selected', { count: 10 }),
       EColor.warning
     );
@@ -118,7 +140,7 @@ const isContactExisting = (contactId: string): boolean => {
 };
 
 const getSelectedContactsData = (): ISelectedContactPreview[] => {
-  return contactStore.list
+  return contactsList.value
     .filter((contact) => selectedContacts.value.has(contact.contact_id))
     .map((contact) => ({
       contact_id: contact.contact_id,
@@ -135,7 +157,7 @@ const getSelectedContactsData = (): ISelectedContactPreview[] => {
 const handleSend = () => {
   const contacts = getSelectedContactsData();
   if (contacts.length === 0) {
-    contactStore.showSnackbar(t('select_at_least_one_contact'), EColor.warning);
+    chatStore.showSnackbar(t('select_at_least_one_contact'), EColor.warning);
     return;
   }
   emit('select', contacts);
@@ -171,9 +193,9 @@ const headers = computed(() => [
           v-model:page="options.page"
           v-model:items-per-page="options.itemsPerPage"
           :headers="headers"
-          :items="contactStore.list"
-          :items-length="contactStore.pagings.total"
-          :loading="contactStore.loading"
+          :items="contactsList"
+          :items-length="contactsPagings.total"
+          :loading="isLoadingContacts"
           :sort-by="options.sortBy"
           @update:options="handleTableChange"
           :loading-text="$t('loading_text')"
@@ -220,7 +242,7 @@ const headers = computed(() => [
             <TablePagination
               v-model:page="options.page"
               :items-per-page="options.itemsPerPage"
-              :total-items="contactStore.pagings.total"
+              :total-items="contactsPagings.total"
             />
           </template>
         </VDataTableServer>

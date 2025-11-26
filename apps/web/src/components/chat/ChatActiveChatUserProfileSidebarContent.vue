@@ -210,7 +210,7 @@ const togglePhoneVisibility = async () => {
   }
 
   isLoadingPhone.value = true;
-  const decryptedPhone = await contactStore.getContactPhoneDecrypted(
+  const decryptedPhone = await chatStore.getChatContactPhoneDecrypted(
     contactId.value
   );
   isLoadingPhone.value = false;
@@ -231,7 +231,7 @@ const toggleEmailVisibility = async () => {
   }
 
   isLoadingEmail.value = true;
-  const decryptedEmail = await contactStore.getContactEmailDecrypted(
+  const decryptedEmail = await chatStore.getChatContactEmailDecrypted(
     contactId.value
   );
   isLoadingEmail.value = false;
@@ -298,7 +298,7 @@ const determinePhoneToSave = (): string | null | undefined => {
 const loadContactData = async () => {
   if (!contactId.value) return;
 
-  const contact = await contactStore.getContactById(contactId.value);
+  const contact = await chatStore.getChatContactById(contactId.value);
   if (contact) {
     label_template_id.value = contact.label_template?.label_template_id ?? null;
     name.value = contact.name;
@@ -1041,7 +1041,12 @@ const cancelCrop = () => {
 
 onMounted(async () => {
   if (canAccessLabelTemplate.value) {
-    await labelTemplateStore.listLabelTemplateAll();
+    const labelTemplates = await chatStore.listChatLabelTemplates();
+    labelTemplateStore.listAll = labelTemplates.map((lt) => ({
+      label_template_id: lt.label_template_id,
+      label: lt.label,
+      color: '',
+    }));
   }
   loadChatData();
 });

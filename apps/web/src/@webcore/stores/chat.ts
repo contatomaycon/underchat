@@ -33,6 +33,11 @@ import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { SearchMessagesResponse } from '@core/schema/chat/searchMessages/response.schema';
+import { ListChatContactsFinalResponse } from '@core/schema/chat/listContacts/response.schema';
+import { ViewChatContactResponse } from '@core/schema/chat/viewContact/response.schema';
+import { ViewChatContactEmailResponse } from '@core/schema/chat/viewContactEmail/response.schema';
+import { ViewChatContactPhoneResponse } from '@core/schema/chat/viewContactPhone/response.schema';
+import { ListChatLabelTemplatesResponse } from '@core/schema/chat/listLabelTemplates/response.schema';
 
 type LocalMessageState = {
   status: 'uploading' | 'error';
@@ -1352,6 +1357,112 @@ export const useChatStore = defineStore('chat', {
           results: [],
           pagings,
         };
+      }
+    },
+
+    async listChatContacts(
+      page: number = 1,
+      perPage: number = 50,
+      search?: string
+    ): Promise<ListChatContactsFinalResponse | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ListChatContactsFinalResponse>
+        >('/chat/contacts', {
+          params: {
+            current_page: page,
+            per_page: perPage,
+            search,
+          },
+        });
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        return null;
+      }
+    },
+
+    async getChatContactById(
+      contactId: string
+    ): Promise<ViewChatContactResponse | null> {
+      try {
+        const response = await axios.get<IApiResponse<ViewChatContactResponse>>(
+          `/chat/contacts/${contactId}`
+        );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        return null;
+      }
+    },
+
+    async getChatContactEmailDecrypted(
+      contactId: string
+    ): Promise<string | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ViewChatContactEmailResponse>
+        >(`/chat/contacts/${contactId}/email`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data.email;
+      } catch (error) {
+        return null;
+      }
+    },
+
+    async getChatContactPhoneDecrypted(
+      contactId: string
+    ): Promise<string | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ViewChatContactPhoneResponse>
+        >(`/chat/contacts/${contactId}/phone`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data.phone;
+      } catch (error) {
+        return null;
+      }
+    },
+
+    async listChatLabelTemplates(): Promise<ListChatLabelTemplatesResponse[]> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ListChatLabelTemplatesResponse[]>
+        >('/chat/label-templates');
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return [];
+        }
+
+        return data.data;
+      } catch (error) {
+        return [];
       }
     },
   },

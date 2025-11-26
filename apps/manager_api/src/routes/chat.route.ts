@@ -23,6 +23,11 @@ import { listTransferOptionsSchema } from '@core/schema/chat/listTransferOptions
 import { listTransferUsersSchema } from '@core/schema/chat/listTransferUsers';
 import { listTransferSectorsSchema } from '@core/schema/chat/listTransferSectors';
 import { listTransferSectorUsersSchema } from '@core/schema/chat/listTransferSectorUsers';
+import { listChatContactsSchema } from '@core/schema/chat/listContacts';
+import { viewChatContactSchema } from '@core/schema/chat/viewContact';
+import { viewChatContactEmailSchema } from '@core/schema/chat/viewContactEmail';
+import { viewChatContactPhoneSchema } from '@core/schema/chat/viewContactPhone';
+import { listChatLabelTemplatesSchema } from '@core/schema/chat/listLabelTemplates';
 
 export default function chatRoutes(server: FastifyInstance) {
   const chatController = container.resolve(ChatController);
@@ -210,6 +215,51 @@ export default function chatRoutes(server: FastifyInstance) {
   server.get('/chat/transfer/sectors/:sector_id/users', {
     schema: listTransferSectorUsersSchema,
     handler: chatController.listTransferSectorUsers,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+    ],
+  });
+
+  server.get('/chat/contacts', {
+    schema: listChatContactsSchema,
+    handler: chatController.listContacts,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+    ],
+  });
+
+  server.get('/chat/contacts/:contact_id', {
+    schema: viewChatContactSchema,
+    handler: chatController.viewContact,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+    ],
+  });
+
+  server.get('/chat/contacts/:contact_id/email', {
+    schema: viewChatContactEmailSchema,
+    handler: chatController.viewContactEmail,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+    ],
+  });
+
+  server.get('/chat/contacts/:contact_id/phone', {
+    schema: viewChatContactPhoneSchema,
+    handler: chatController.viewContactPhone,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+    ],
+  });
+
+  server.get('/chat/label-templates', {
+    schema: listChatLabelTemplatesSchema,
+    handler: chatController.listLabelTemplates,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),

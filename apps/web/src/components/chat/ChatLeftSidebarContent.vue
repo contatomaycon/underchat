@@ -5,8 +5,7 @@ import AppAddContact from '@/components/contact/AppAddContact.vue';
 import AppEditContact from '@/components/contact/AppEditContact.vue';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useContactStore } from '@/@webcore/stores/contact';
-import { useChannelsStore } from '@/@webcore/stores/channels';
-import { useSectorsStore } from '@/@webcore/stores/sector';
+import { ListChatContactsResponse } from '@core/schema/chat/listContacts/response.schema';
 import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
@@ -17,7 +16,6 @@ import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 import { can } from '@layouts/plugins/casl';
 import { refDebounced } from '@vueuse/core';
-import { ListContactResponse } from '@core/schema/contact/listContact/response.schema';
 import axios from '@webcore/axios';
 import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { IChat } from '@core/common/interfaces/IChat';
@@ -43,8 +41,7 @@ const props = defineProps<{
 
 const chatStore = useChatStore();
 const contactStore = useContactStore();
-const channelsStore = useChannelsStore();
-const sectorsStore = useSectorsStore();
+const chatStoreForContacts = useChatStore();
 
 const currentPageQueue = ref(1);
 const perPageQueue = ref(10);
@@ -71,7 +68,8 @@ const isLoadingMoreContacts = ref(false);
 const contactScrollContainer = ref<InstanceType<
   typeof PerfectScrollbar
 > | null>(null);
-const accumulatedContacts = ref<ListContactResponse[]>([]);
+const accumulatedContacts = ref<ListChatContactsResponse[]>([]);
+const contactsTotalPages = ref(1);
 const isValidateContactDialogOpen = ref(false);
 const contactToValidate = ref<string | null>(null);
 const isEditContactModalOpen = ref(false);
@@ -80,7 +78,7 @@ const hoveredContactId = ref<string | null>(null);
 const editingContactId = ref<string | null>(null);
 const validatingContactId = ref<string | null>(null);
 const isSelectChannelSectorModalOpen = ref(false);
-const selectedContactForChat = ref<ListContactResponse | null>(null);
+const selectedContactForChat = ref<ListChatContactsResponse | null>(null);
 const selectedWorkerId = ref<string | null>(null);
 const selectedSectorId = ref<string | null>(null);
 const availableWorkers = ref<TransferWorker[]>([]);
@@ -130,11 +128,6 @@ const canAccessContacts = computed(() => {
     EContactPermissions.contact_view,
   ];
   return can(permissions);
-});
-
-const modelSearch = computed({
-  get: () => props.search,
-  set: (value: string) => emit('update:search', value),
 });
 
 const isQueueChatSelectable = (index: number): boolean => {
@@ -211,17 +204,16 @@ const loadChatsByFilter = async () => {
 };
 
 const loadContacts = async (append = false) => {
-  if (isLoadingMoreContacts.value || contactStore.loading) return;
+  if (isLoadingMoreContacts.value) return;
 
   isLoadingMoreContacts.value = true;
 
   try {
-    const result = await contactStore.listContact({
-      page: currentPageContacts.value,
-      per_page: perPageContacts.value,
-      sort_by: [],
-      search: debouncedContactSearch.value || undefined,
-    });
+    const result = await chatStoreForContacts.listChatContacts(
+      currentPageContacts.value,
+      perPageContacts.value,
+      debouncedContactSearch.value || undefined
+    );
 
     if (result) {
       if (append) {
@@ -229,6 +221,7 @@ const loadContacts = async (append = false) => {
       } else {
         accumulatedContacts.value = [...result.results];
       }
+      contactsTotalPages.value = result.pagings.total_pages;
     }
   } finally {
     isLoadingMoreContacts.value = false;
@@ -236,8 +229,7 @@ const loadContacts = async (append = false) => {
 };
 
 const hasMoreContacts = computed(() => {
-  const pagings = contactStore.pagings;
-  return currentPageContacts.value < pagings.total_pages;
+  return currentPageContacts.value < contactsTotalPages.value;
 });
 
 const handleContactScroll = (e: Event) => {
@@ -253,8 +245,7 @@ const handleContactScroll = (e: Event) => {
   if (
     scrollTop + clientHeight >= scrollHeight - threshold &&
     hasMoreContacts.value &&
-    !isLoadingMoreContacts.value &&
-    !contactStore.loading
+    !isLoadingMoreContacts.value
   ) {
     currentPageContacts.value += 1;
     loadContacts(true);
@@ -415,7 +406,7 @@ const loadTransferOptions = async () => {
   }
 };
 
-const handleContactClick = async (contact: ListContactResponse) => {
+const handleContactClick = async (contact: ListChatContactsResponse) => {
   if (!contact.phone_partial) {
     contactStore.showSnackbar(
       chatStore.i18n.global.t('contact_phone_required'),

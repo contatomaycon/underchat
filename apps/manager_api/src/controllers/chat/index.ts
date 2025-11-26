@@ -20,6 +20,11 @@ import { listTransferOptions } from './methods/listTransferOptions';
 import { listTransferUsers } from './methods/listTransferUsers';
 import { listTransferSectors } from './methods/listTransferSectors';
 import { listTransferSectorUsers } from './methods/listTransferSectorUsers';
+import { listContacts } from './methods/listContacts';
+import { viewContact } from './methods/viewContact';
+import { viewContactEmail } from './methods/viewContactEmail';
+import { viewContactPhone } from './methods/viewContactPhone';
+import { listLabelTemplates } from './methods/listLabelTemplates';
 
 @injectable()
 class ChatController {
@@ -44,6 +49,11 @@ class ChatController {
   public listTransferUsers = listTransferUsers;
   public listTransferSectors = listTransferSectors;
   public listTransferSectorUsers = listTransferSectorUsers;
+  public listContacts = listContacts;
+  public viewContact = viewContact;
+  public viewContactEmail = viewContactEmail;
+  public viewContactPhone = viewContactPhone;
+  public listLabelTemplates = listLabelTemplates;
 }
 
 export default ChatController;

@@ -30,7 +30,7 @@ import { useUsersStore } from '@/@webcore/stores/user';
 import { useSectorsStore } from '@/@webcore/stores/sector';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
-import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
+import { ViewChatContactResponse } from '@core/schema/chat/viewContact/response.schema';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
 import {
@@ -125,7 +125,7 @@ const isAnnotationModalOpen = ref(false);
 const annotationText = ref('');
 const isAnnotationEmojiOpen = ref(false);
 const isContactViewModalOpen = ref(false);
-const selectedContactDetails = ref<ViewContactResponse | null>(null);
+const selectedContactDetails = ref<ViewChatContactResponse | null>(null);
 const isAddContactModalOpen = ref(false);
 const addContactInitialData = ref<Partial<CreateContactRequest> | null>(null);
 const isEditContactModalOpen = ref(false);
@@ -2998,7 +2998,7 @@ const toggleViewEmailVisibility = async () => {
   }
 
   isLoadingViewEmail.value = true;
-  const decryptedEmail = await contactStore.getContactEmailDecrypted(
+  const decryptedEmail = await chatStore.getChatContactEmailDecrypted(
     selectedContactDetails.value.contact_id
   );
   isLoadingViewEmail.value = false;
@@ -3025,7 +3025,7 @@ const toggleViewPhoneVisibility = async () => {
   }
 
   isLoadingViewPhone.value = true;
-  const decryptedPhone = await contactStore.getContactPhoneDecrypted(
+  const decryptedPhone = await chatStore.getChatContactPhoneDecrypted(
     selectedContactDetails.value.contact_id
   );
   isLoadingViewPhone.value = false;
@@ -3037,7 +3037,7 @@ const toggleViewPhoneVisibility = async () => {
 };
 
 const viewContact = async (contactId: string) => {
-  const contact = await contactStore.getContactById(contactId);
+  const contact = await chatStore.getChatContactById(contactId);
   if (contact) {
     selectedContactDetails.value = contact;
     viewContactEmailPartial.value = contact.email_partial ?? null;
