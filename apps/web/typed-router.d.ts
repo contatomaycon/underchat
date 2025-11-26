@@ -128,6 +128,34 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'reports-clients': RouteRecordInfo<
+      'reports-clients',
+      '/reports-clients',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'reports-financial': RouteRecordInfo<
+      'reports-financial',
+      '/reports-financial',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'reports-sales': RouteRecordInfo<
+      'reports-sales',
+      '/reports-sales',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'reports-users': RouteRecordInfo<
+      'reports-users',
+      '/reports-users',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     'role': RouteRecordInfo<
       'role',
       '/role',
@@ -256,6 +284,30 @@ declare module 'vue-router/auto-routes' {
     'src/pages/plan.vue': {
       routes:
         | 'plan'
+      views:
+        | never
+    }
+    'src/pages/reports-clients.vue': {
+      routes:
+        | 'reports-clients'
+      views:
+        | never
+    }
+    'src/pages/reports-financial.vue': {
+      routes:
+        | 'reports-financial'
+      views:
+        | never
+    }
+    'src/pages/reports-sales.vue': {
+      routes:
+        | 'reports-sales'
+      views:
+        | never
+    }
+    'src/pages/reports-users.vue': {
+      routes:
+        | 'reports-users'
       views:
         | never
     }
