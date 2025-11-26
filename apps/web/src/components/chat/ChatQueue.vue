@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { useChatStore } from '@/@webcore/stores/chat';
+import { useChannelsStore } from '@/@webcore/stores/channels';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { limitCharacters } from '@core/common/functions/limitCharacters';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
@@ -9,6 +10,7 @@ import { useI18n } from 'vue-i18n';
 const { t } = useI18n();
 
 const chatStore = useChatStore();
+const channelsStore = useChannelsStore();
 
 const props = defineProps<{
   user: ListChatsResult;
@@ -18,6 +20,30 @@ const props = defineProps<{
 const isChatContactActive = computed(() => {
   return chatStore.activeChat?.chat_id === props.user.chat_id;
 });
+
+const workerName = computed(() => props.user?.worker?.name ?? '');
+const showWorkerNameLabel = ref(false);
+
+const loadWorkerConfig = async (workerId?: string | null) => {
+  if (!workerId) {
+    showWorkerNameLabel.value = false;
+    return;
+  }
+
+  const config = await channelsStore.fetchWorkerConfig(workerId);
+  showWorkerNameLabel.value = Boolean(config?.show_worker_name);
+};
+
+onMounted(() => {
+  void loadWorkerConfig(props.user?.worker?.id);
+});
+
+watch(
+  () => props.user?.worker?.id,
+  newId => {
+    void loadWorkerConfig(newId);
+  }
+);
 </script>
 
 <template>
@@ -31,6 +57,12 @@ const isChatContactActive = computed(() => {
       }"
       :aria-disabled="props.disabled ? 'true' : undefined"
     >
+      <div
+        v-if="showWorkerNameLabel && workerName"
+        class="chat-worker-label text-caption"
+      >
+        {{ workerName }}
+      </div>
       <VAvatar
         size="40"
         :variant="
@@ -124,6 +156,9 @@ const isChatContactActive = computed(() => {
   padding-block: 8px;
   padding-inline: 12px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  position: relative;
+  border-top-left-radius: 0;
+  margin-bottom: 10px;
 
   @include mixins.before-pseudo;
   @include vuetifyStates.states($active: false);
@@ -144,6 +179,23 @@ const isChatContactActive = computed(() => {
     opacity: 0.6;
     pointer-events: none;
   }
+}
+
+.chat-worker-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translateY(-100%);
+  padding: 2px 10px;
+  border-radius: 0 vuetify.$border-radius-root 0 0;
+  background-color: rgb(var(--v-theme-primary));
+  color: rgb(var(--v-theme-on-primary));
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.16);
+  max-width: 160px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
 }
 
 .chat-message-preview {
