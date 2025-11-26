@@ -148,7 +148,7 @@ watch(
 .chat-list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 1rem 0 0;
 }
 
 .chat {
@@ -158,7 +158,7 @@ watch(
   border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   position: relative;
   border-top-left-radius: 0;
-  margin-bottom: 10px;
+  margin-bottom: 0;
 
   @include mixins.before-pseudo;
   @include vuetifyStates.states($active: false);

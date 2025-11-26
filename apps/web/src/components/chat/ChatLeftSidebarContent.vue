@@ -1004,12 +1004,12 @@ onMounted(async () => {
 
 <style lang="scss">
 .chat-list {
-  --chat-content-spacing-x: 16px;
+  --chat-content-spacing-x: 0px;
 
   padding-block-end: 0.75rem;
 
   .chat-header {
-    margin-block: 0.5rem 0.25rem;
+    margin-block: 0.5rem 0.75rem;
   }
 
   .chat-header,
