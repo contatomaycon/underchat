@@ -54,6 +54,7 @@ watch(
       :class="{
         'chat-active': isChatContactActive,
         'chat-disabled': props.disabled,
+        'chat-has-label': showWorkerNameLabel && workerName,
       }"
       :aria-disabled="props.disabled ? 'true' : undefined"
     >
@@ -148,7 +149,7 @@ watch(
 .chat-list {
   list-style: none;
   margin: 0;
-  padding: 1rem 0 0;
+  padding: 0;
 }
 
 .chat {
@@ -178,6 +179,10 @@ watch(
     cursor: not-allowed;
     opacity: 0.6;
     pointer-events: none;
+  }
+
+  &.chat-has-label {
+    margin-top: 1.125rem;
   }
 }
 
