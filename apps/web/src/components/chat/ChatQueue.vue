@@ -123,6 +123,7 @@ const isChatContactActive = computed(() => {
   border-radius: vuetify.$border-radius-root;
   padding-block: 8px;
   padding-inline: 12px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
 
   @include mixins.before-pseudo;
   @include vuetifyStates.states($active: false);
