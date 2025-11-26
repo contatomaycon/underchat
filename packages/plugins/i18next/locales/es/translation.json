@@ -370,5 +370,7 @@
   "transfer_users_listed_successfully": "¡Usuarios para transferencia listados con éxito!",
   "transfer_sectors_listed_successfully": "¡Sectores para transferencia listados con éxito!",
   "transfer_sector_users_listed_successfully": "¡Usuarios del sector para transferencia listados con éxito!",
-  "transfer_options_listed_successfully": "¡Opciones de transferencia listadas con éxito!"
+  "transfer_options_listed_successfully": "¡Opciones de transferencia listadas con éxito!",
+  "simultaneous_attendance_view_success": "¡Cantidad de atenciones simultáneas obtenida con éxito!",
+  "simultaneous_attendance_update_success": "¡Cantidad de atenciones simultáneas actualizada con éxito!"
 }

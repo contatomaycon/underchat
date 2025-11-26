@@ -368,4 +368,80 @@ export class WorkerConfigUpserterRepository {
 
     return result[0]?.generate_protocol_at_ura || null;
   }
+
+  updateSimultaneousAttendance = async (
+    workerId: string,
+    quantity: number | null
+  ): Promise<number | null> => {
+    await this.db.transaction(async (tx) => {
+      await this.ensureSingleConfigPerWorker(tx, workerId);
+
+      const existingConfig = await this.findExistingConfigTx(tx, workerId);
+
+      if (existingConfig) {
+        await this.updateSimultaneousAttendanceTx(tx, workerId, quantity);
+        return;
+      }
+
+      await this.createSimultaneousAttendanceTx(tx, workerId, quantity);
+    });
+
+    return this.getSimultaneousAttendance(workerId);
+  };
+
+  private async updateSimultaneousAttendanceTx(
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
+    workerId: string,
+    quantity: number | null
+  ): Promise<void> {
+    await tx
+      .update(workerConfig)
+      .set({
+        simultaneous_attendance: quantity || null,
+        updated_at: new Date().toISOString(),
+      })
+      .where(eq(workerConfig.worker_id, workerId))
+      .execute();
+  }
+
+  private async createSimultaneousAttendanceTx(
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
+    workerId: string,
+    quantity: number | null
+  ): Promise<void> {
+    await tx
+      .insert(workerConfig)
+      .values({
+        worker_config_id: uuidv7(),
+        worker_id: workerId,
+        is_automatic_attendance: false,
+        show_attendee_name: false,
+        show_worker_name: false,
+        simultaneous_attendance: quantity || null,
+      })
+      .execute();
+  }
+
+  private async getSimultaneousAttendance(
+    workerId: string
+  ): Promise<number | null> {
+    const result = await this.db
+      .select({
+        simultaneous_attendance: workerConfig.simultaneous_attendance,
+      })
+      .from(workerConfig)
+      .where(eq(workerConfig.worker_id, workerId))
+      .limit(1)
+      .execute();
+
+    return result[0]?.simultaneous_attendance || null;
+  }
 }

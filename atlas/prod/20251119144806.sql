@@ -8,6 +8,7 @@ CREATE TABLE "worker_config" (
   "generate_protocol_at_ura" character varying(2000) NULL,
   "generate_protocol_at_start" character varying(2000) NULL,
   "generate_protocol_at_transfer" character varying(2000) NULL,
+  "simultaneous_attendance" integer NULL,
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
   PRIMARY KEY ("worker_config_id"),

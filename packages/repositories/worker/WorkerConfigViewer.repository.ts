@@ -20,6 +20,7 @@ export class WorkerConfigViewerRepository {
         is_automatic_attendance: workerConfig.is_automatic_attendance,
         show_attendee_name: workerConfig.show_attendee_name,
         show_worker_name: workerConfig.show_worker_name,
+        simultaneous_attendance: workerConfig.simultaneous_attendance,
         generate_protocol_at_ura: workerConfig.generate_protocol_at_ura,
         generate_protocol_at_start: workerConfig.generate_protocol_at_start,
         generate_protocol_at_transfer:

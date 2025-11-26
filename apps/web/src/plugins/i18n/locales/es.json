@@ -994,5 +994,13 @@
     "user_required": "¡El usuario es obligatorio!",
     "sector_required": "¡El sector es obligatorio!",
     "chat_transfer_error": "Error al transferir el servicio. Por favor, inténtalo de nuevo.",
-    "user": "Usuario"
+    "user": "Usuario",
+    "channel_general_config_simultaneous_attendance_title": "Atención simultánea",
+    "channel_general_config_simultaneous_attendance_description": "Define la cantidad de atenciones que pueden realizarse simultáneamente por este canal.",
+    "simultaneous_attendance_quantity_label": "Cantidad de atenciones simultáneas",
+    "simultaneous_attendance_quantity_placeholder": "Ingrese la cantidad",
+    "simultaneous_attendance_invalid_number": "Por favor, ingrese un número entero válido mayor que cero.",
+    "simultaneous_attendance_description": "Define cuántas atenciones puede realizar este canal al mismo tiempo por un mismo agente.",
+    "simultaneous_attendance_update_error": "Error al actualizar la cantidad de atenciones simultáneas.",
+    "simultaneous_attendance_update_success": "¡Cantidad de atenciones simultáneas actualizada con éxito!"
 }

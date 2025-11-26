@@ -62,6 +62,7 @@ export class WorkerConfigService {
       is_automatic_attendance: result.is_automatic_attendance ?? false,
       show_attendee_name: result.show_attendee_name ?? false,
       show_worker_name: result.show_worker_name ?? false,
+      simultaneous_attendance: result.simultaneous_attendance ?? null,
       generate_protocol_at_ura: result.generate_protocol_at_ura,
       generate_protocol_at_start: result.generate_protocol_at_start,
       generate_protocol_at_transfer: result.generate_protocol_at_transfer,
@@ -149,6 +150,34 @@ export class WorkerConfigService {
     }
 
     return result.generate_protocol_at_ura || null;
+  }
+
+  async updateSimultaneousAttendance(
+    workerId: string,
+    quantity: number | null
+  ): Promise<number | null> {
+    const [result] = await Promise.all([
+      this.workerConfigUpserterRepository.updateSimultaneousAttendance(
+        workerId,
+        quantity
+      ),
+      this.invalidateWorkerConfigCache(workerId),
+    ]);
+
+    return result;
+  }
+
+  async viewSimultaneousAttendance(workerId: string): Promise<number | null> {
+    const result =
+      await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
+        workerId
+      );
+
+    if (!result) {
+      return null;
+    }
+
+    return result.simultaneous_attendance || null;
   }
 
   private async invalidateWorkerConfigCache(workerId: string): Promise<void> {

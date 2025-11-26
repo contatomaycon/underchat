@@ -1100,6 +1100,72 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
+    async fetchSimultaneousAttendance(
+      workerId: string
+    ): Promise<number | null> {
+      if (!workerId) return null;
+
+      try {
+        const response = await axios.get<
+          IApiResponse<{ simultaneous_attendance: number | null }>
+        >(`/worker/${workerId}/config/simultaneous-attendance`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data.simultaneous_attendance;
+      } catch {
+        return null;
+      }
+    },
+
+    async updateSimultaneousAttendance(
+      workerId: string,
+      quantity: number | null
+    ): Promise<number | null> {
+      if (!workerId) return null;
+
+      try {
+        const response = await axios.patch<
+          IApiResponse<{ simultaneous_attendance: number | null }>
+        >(`/worker/${workerId}/config/simultaneous-attendance`, {
+          quantity: quantity || null,
+        });
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('simultaneous_attendance_update_error');
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('simultaneous_attendance_update_success'),
+          EColor.success
+        );
+
+        return data.data.simultaneous_attendance;
+      } catch (error) {
+        let message = this.i18n.global.t(
+          'simultaneous_attendance_update_error'
+        );
+        if (error instanceof AxiosError) {
+          message = error?.response?.data?.message ?? message;
+        }
+
+        this.showSnackbar(message, EColor.error);
+
+        return null;
+      }
+    },
+
     updateStatusChannel(input: IBaileysConnectionState): void {
       const index = this.list.findIndex(
         (c) => c.account?.id === input.account_id && c.id === input.worker_id
