@@ -15,11 +15,14 @@ import VDialogHandler from '@/components/VDialogHandler.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
-import { EUserPermissions } from '@core/common/enums/EPermissions/user';
-import { ESectorPermissions } from '@core/common/enums/EPermissions/sector';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { getPermissions, getSectors } from '@/@webcore/localStorage/user';
 import { can } from '@layouts/plugins/casl';
+import { TransferUserResponse } from '@core/schema/chat/listTransferUsers/response.schema';
+import { TransferSectorResponse } from '@core/schema/chat/listTransferSectors/response.schema';
+import { TransferSectorUserResponse } from '@core/schema/chat/listTransferSectorUsers/response.schema';
+import axios from '@webcore/axios';
+import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useContactStore } from '@/@webcore/stores/contact';
@@ -575,31 +578,24 @@ const loadTransferUsers = async () => {
 
   isLoadingTransferUsers.value = true;
   try {
-    const result = await userStore.listUsers({
-      page: 1,
-      per_page: 100,
-      search: null,
-      sort_by: [],
-    });
+    const response = await axios.get<IApiResponse<TransferUserResponse[]>>(
+      '/chat/transfer/users'
+    );
 
-    if (result) {
-      transferUsers.value = result.results.map((user) => {
-        let title = '';
-        if (user.user_info?.name) {
-          const fullName = user.user_info.name;
-          const lastName = user.user_info.last_name
-            ? ` ${user.user_info.last_name}`
-            : '';
-          title = `${fullName}${lastName}`;
-        } else {
-          title = user.email_partial || '';
-        }
-        return {
-          value: user.user_id,
-          title: title,
-        };
-      });
+    const data = response?.data;
+
+    if (data?.status && data?.data) {
+      transferUsers.value = data.data.map((user) => ({
+        value: user.id,
+        title: user.name,
+      }));
     }
+  } catch (error) {
+    console.error('Error loading transfer users:', error);
+    chatStore.showSnackbar(
+      chatStore.i18n.global.t('error_loading_transfer_users'),
+      EColor.error
+    );
   } finally {
     isLoadingTransferUsers.value = false;
   }
@@ -610,19 +606,24 @@ const loadTransferSectors = async () => {
 
   isLoadingTransferSectors.value = true;
   try {
-    const result = await sectorsStore.listSectors({
-      page: 1,
-      per_page: 100,
-      search: null,
-      sort_by: [],
-    });
+    const response = await axios.get<IApiResponse<TransferSectorResponse[]>>(
+      '/chat/transfer/sectors'
+    );
 
-    if (result) {
-      transferSectors.value = result.results.map((sector) => ({
-        value: sector.sector_id,
+    const data = response?.data;
+
+    if (data?.status && data?.data) {
+      transferSectors.value = data.data.map((sector) => ({
+        value: sector.id,
         title: sector.name,
       }));
     }
+  } catch (error) {
+    console.error('Error loading transfer sectors:', error);
+    chatStore.showSnackbar(
+      chatStore.i18n.global.t('error_loading_transfer_sectors'),
+      EColor.error
+    );
   } finally {
     isLoadingTransferSectors.value = false;
   }
@@ -633,25 +634,17 @@ const loadTransferSectorUsers = async (sectorId: string) => {
 
   isLoadingTransferSectorUsers.value = true;
   try {
-    const users = await sectorsStore.listSectorUsers(sectorId);
+    const response = await axios.get<
+      IApiResponse<TransferSectorUserResponse[]>
+    >(`/chat/transfer/sectors/${sectorId}/users`);
 
-    if (users && users.length > 0) {
-      transferSectorUsers.value = users
-        .map((user: any) => {
-          const name = user.user_info?.name || '';
-          const lastName = user.user_info?.last_name || '';
-          const fullName =
-            name && lastName ? `${name} ${lastName}` : name || lastName;
-          const title = fullName || user.email_partial || '';
+    const data = response?.data;
 
-          return {
-            value: user.user_id,
-            title: title,
-          };
-        })
-        .filter(
-          (item: { value: string; title: string }) => item.value && item.title
-        );
+    if (data?.status && data?.data) {
+      transferSectorUsers.value = data.data.map((user) => ({
+        value: user.id,
+        title: user.name,
+      }));
     } else {
       transferSectorUsers.value = [];
     }
@@ -700,11 +693,7 @@ watch(isTransferModalOpen, (isOpen) => {
   if (isOpen) {
     nextTick(() => {
       try {
-        if (canAccessUsers.value) {
-          transferType.value = 'user';
-        } else if (canAccessSectors.value) {
-          transferType.value = 'sector';
-        }
+        transferType.value = 'user';
         selectedTransferUser.value = null;
         selectedTransferSector.value = null;
         selectedTransferSectorUser.value = null;
@@ -716,12 +705,8 @@ watch(isTransferModalOpen, (isOpen) => {
         isTransferSectorMenuOpen.value = false;
         isTransferSectorUserMenuOpen.value = false;
         isTransferAnnotationEmojiOpen.value = false;
-        if (canAccessUsers.value) {
-          loadTransferUsers();
-        }
-        if (canAccessSectors.value) {
-          loadTransferSectors();
-        }
+        loadTransferUsers();
+        loadTransferSectors();
       } catch {}
     });
   } else {
@@ -777,40 +762,8 @@ const canAccessContacts = computed(() => {
   return can(permissions);
 });
 
-const canAccessUsers = computed(() => {
-  try {
-    const permissions = [
-      EGeneralPermissions.full_access,
-      EGeneralPermissions.full_access_group,
-      EUserPermissions.user_group,
-      EUserPermissions.user_view,
-    ];
-    return can(permissions);
-  } catch {
-    return false;
-  }
-});
-
-const canAccessSectors = computed(() => {
-  try {
-    const permissions = [
-      EGeneralPermissions.full_access,
-      EGeneralPermissions.full_access_group,
-      ESectorPermissions.sector_group,
-      ESectorPermissions.sector_view,
-    ];
-    return can(permissions);
-  } catch {
-    return false;
-  }
-});
-
 const canTransfer = computed(() => {
-  try {
-    return canAccessUsers.value || canAccessSectors.value;
-  } catch {
-    return false;
-  }
+  return true;
 });
 
 const hasAttachmentsOrContent = computed(
@@ -5478,18 +5431,14 @@ onBeforeUnmount(() => {
             <AppSelect
               v-model="transferType"
               :items="[
-                ...(canAccessUsers
-                  ? [{ value: 'user', title: $t('user') }]
-                  : []),
-                ...(canAccessSectors
-                  ? [{ value: 'sector', title: $t('sector') }]
-                  : []),
+                { value: 'user', title: $t('user') },
+                { value: 'sector', title: $t('sector') },
               ]"
               :label="$t('transfer_to') + ':'"
             />
           </VCol>
 
-          <VCol v-if="transferType === 'user' && canAccessUsers" cols="12">
+          <VCol v-if="transferType === 'user'" cols="12">
             <div>
               <VLabel class="mb-1 text-body-2">{{ $t('user') }}:</VLabel>
               <VMenu v-model="isTransferUserMenuOpen">
@@ -5551,7 +5500,7 @@ onBeforeUnmount(() => {
             </div>
           </VCol>
 
-          <template v-if="transferType === 'sector' && canAccessSectors">
+          <template v-if="transferType === 'sector'">
             <VCol cols="12">
               <div>
                 <VLabel class="mb-1 text-body-2">{{ $t('sector') }}:</VLabel>
@@ -5614,7 +5563,7 @@ onBeforeUnmount(() => {
               </div>
             </VCol>
 
-            <VCol v-if="selectedTransferSector && canAccessUsers" cols="12">
+            <VCol v-if="selectedTransferSector" cols="12">
               <div>
                 <VLabel class="mb-1 text-body-2"
                   >{{ $t('user') }} ({{ $t('sector') }}):</VLabel

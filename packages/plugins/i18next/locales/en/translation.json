@@ -366,5 +366,9 @@
   "transfer_protocol_text_view_success": "Transfer protocol text retrieved successfully!",
   "ura_protocol_text_update_success": "URA protocol text updated successfully!",
   "ura_protocol_text_update_error": "Error updating URA protocol text!",
-  "ura_protocol_text_view_success": "URA protocol text retrieved successfully!"
+  "ura_protocol_text_view_success": "URA protocol text retrieved successfully!",
+  "transfer_users_listed_successfully": "Users for transfer listed successfully!",
+  "transfer_sectors_listed_successfully": "Sectors for transfer listed successfully!",
+  "transfer_sector_users_listed_successfully": "Sector users for transfer listed successfully!",
+  "transfer_options_listed_successfully": "Transfer options listed successfully!"
 }

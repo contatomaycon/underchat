@@ -20,6 +20,9 @@ import { transferChatSchema } from '@core/schema/chat/transferChat';
 import { searchChatsSchema } from '@core/schema/chat/searchChats';
 import { viewWorkerConfigForChatSchema } from '@core/schema/chat/viewWorkerConfigForChat';
 import { listTransferOptionsSchema } from '@core/schema/chat/listTransferOptions';
+import { listTransferUsersSchema } from '@core/schema/chat/listTransferUsers';
+import { listTransferSectorsSchema } from '@core/schema/chat/listTransferSectors';
+import { listTransferSectorUsersSchema } from '@core/schema/chat/listTransferSectorUsers';
 
 export default function chatRoutes(server: FastifyInstance) {
   const chatController = container.resolve(ChatController);
@@ -180,6 +183,33 @@ export default function chatRoutes(server: FastifyInstance) {
   server.get('/chat/transfer-options', {
     schema: listTransferOptionsSchema,
     handler: chatController.listTransferOptions,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+    ],
+  });
+
+  server.get('/chat/transfer/users', {
+    schema: listTransferUsersSchema,
+    handler: chatController.listTransferUsers,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+    ],
+  });
+
+  server.get('/chat/transfer/sectors', {
+    schema: listTransferSectorsSchema,
+    handler: chatController.listTransferSectors,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+    ],
+  });
+
+  server.get('/chat/transfer/sectors/:sector_id/users', {
+    schema: listTransferSectorUsersSchema,
+    handler: chatController.listTransferSectorUsers,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),

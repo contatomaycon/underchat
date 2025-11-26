@@ -35,6 +35,7 @@ import { UserEmailViewerExistsRepository } from '@core/repositories/user/UserEma
 import { UserTotalViewerRepository } from '@core/repositories/user/UserTotalViewer.repository';
 import { UserSectorsListerRepository } from '@core/repositories/user/UserSectorsLister.repository';
 import { UserOnlineListerRepository } from '@core/repositories/user/UserOnlineLister.repository';
+import { UserTransferListerRepository } from '@core/repositories/user/UserTransferLister.repository';
 import { EncryptService } from './encrypt.service';
 import { IUserSensitiveDataDecrypted } from '@core/common/interfaces/IUserSensitiveDataDecrypted';
 import { StorageService } from '@core/services/storage.service';
@@ -44,6 +45,7 @@ import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { IChat } from '@core/common/interfaces/IChat';
 import { IElasticsearchBoolClause } from '@core/common/interfaces/IElasticsearchQuery';
+import { TransferUserResponse } from '@core/schema/chat/listTransferUsers/response.schema';
 
 @injectable()
 export class UserService {
@@ -75,6 +77,7 @@ export class UserService {
     private readonly userTotalViewerRepository: UserTotalViewerRepository,
     private readonly userSectorsListerRepository: UserSectorsListerRepository,
     private readonly userOnlineListerRepository: UserOnlineListerRepository,
+    private readonly userTransferListerRepository: UserTransferListerRepository,
     private readonly storageService: StorageService,
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
@@ -660,5 +663,15 @@ export class UserService {
     }
 
     return updateData.photo ?? null;
+  };
+
+  listUsersForTransfer = async (
+    accountId: string,
+    excludeUserId: string
+  ): Promise<TransferUserResponse[]> => {
+    return this.userTransferListerRepository.listUsersForTransfer(
+      accountId,
+      excludeUserId
+    );
   };
 }

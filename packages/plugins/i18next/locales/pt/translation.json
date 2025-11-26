@@ -366,5 +366,9 @@
   "transfer_protocol_text_view_success": "Texto do protocolo de transferência obtido com sucesso!",
   "ura_protocol_text_update_success": "Texto do protocolo na URA atualizado com sucesso!",
   "ura_protocol_text_update_error": "Erro ao atualizar o texto do protocolo na URA!",
-  "ura_protocol_text_view_success": "Texto do protocolo na URA obtido com sucesso!"
+  "ura_protocol_text_view_success": "Texto do protocolo na URA obtido com sucesso!",
+  "transfer_users_listed_successfully": "Usuários para transferência listados com sucesso!",
+  "transfer_sectors_listed_successfully": "Setores para transferência listados com sucesso!",
+  "transfer_sector_users_listed_successfully": "Usuários do setor para transferência listados com sucesso!",
+  "transfer_options_listed_successfully": "Opções de transferência listadas com sucesso!"
 }
