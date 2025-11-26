@@ -41,7 +41,6 @@ const itemsStatus = ref([
   { value: EAccountStatus.blocked, title: t('blocked') },
 ]);
 
-
 const headers: DataTableHeader<ListAccountResponse>[] = [
   { title: t('name'), key: 'name' },
   { title: t('account_status'), key: 'account_status' },
@@ -81,21 +80,23 @@ const handleTableChange = (o: {
   options.value.sortBy = o.sortBy;
 };
 
-// Estatísticas
 const totalClients = computed(() => accountStore.pagings.total);
 const activeClients = computed(() => {
   return accountStore.list.filter(
-    (account) => account.account_status?.account_status_id === EAccountStatus.active
+    (account) =>
+      account.account_status?.account_status_id === EAccountStatus.active
   ).length;
 });
 const inactiveClients = computed(() => {
   return accountStore.list.filter(
-    (account) => account.account_status?.account_status_id === EAccountStatus.inactive
+    (account) =>
+      account.account_status?.account_status_id === EAccountStatus.inactive
   ).length;
 });
 const blockedClients = computed(() => {
   return accountStore.list.filter(
-    (account) => account.account_status?.account_status_id === EAccountStatus.blocked
+    (account) =>
+      account.account_status?.account_status_id === EAccountStatus.blocked
   ).length;
 });
 
@@ -133,7 +134,6 @@ const resolvePlanVariant = (planName?: string | null) => {
       return { color: 'primary', text: planName };
   }
 };
-
 
 watch(
   query,
@@ -278,7 +278,9 @@ watch(
         <template #item.account_status="{ item }">
           <VChip
             :color="
-              item.account_status?.account_status_id === EAccountStatus.active ? 'success' : 'error'
+              item.account_status?.account_status_id === EAccountStatus.active
+                ? 'success'
+                : 'error'
             "
             size="small"
           >
