@@ -1737,8 +1737,12 @@ const buildUpdateUserBody = (): UpdateUserRequest => {
     initialValues.value.district
   );
 
-  const photoUrl = determinePhotoUrl();
-  addFieldIfDefined(body, 'photo_url', photoUrl);
+  if (photoRemoved.value) {
+    body.photo_url = { value: null };
+  } else {
+    const photoUrl = determinePhotoUrl();
+    addFieldIfDefined(body, 'photo_url', photoUrl);
+  }
 
   return body;
 };
