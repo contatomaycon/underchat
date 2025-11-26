@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed, onMounted } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { refDebounced } from '@vueuse/core';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EAccountPermissions } from '@core/common/enums/EPermissions/account';
@@ -8,7 +8,6 @@ import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { DataTableHeader } from 'vuetify';
 import { useAccountStore } from '@/@webcore/stores/account';
-import { usePlanStore } from '@/@webcore/stores/plan';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { ListAccountResponse } from '@core/schema/account/listAccount/response.schema';
 
@@ -25,7 +24,6 @@ definePage({
 
 const { t } = useI18n();
 const accountStore = useAccountStore();
-const planStore = usePlanStore();
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -40,10 +38,9 @@ const itemsStatus = ref([
   { value: null, title: t('all') },
   { value: EAccountStatus.active, title: t('active') },
   { value: EAccountStatus.inactive, title: t('inactive') },
+  { value: EAccountStatus.blocked, title: t('blocked') },
 ]);
 
-const selectedPlan = ref<string | null>(null);
-const plans = ref<Array<{ value: string; title: string }>>([]);
 
 const headers: DataTableHeader<ListAccountResponse>[] = [
   { title: t('name'), key: 'name' },
@@ -71,7 +68,6 @@ const query = computed(() => ({
   sort_by: options.value.sortBy,
   account_status: options.value.account_status,
   name: debouncedSearch.value,
-  plan: selectedPlan.value,
   search: debouncedSearch.value,
 }));
 
@@ -89,14 +85,35 @@ const handleTableChange = (o: {
 const totalClients = computed(() => accountStore.pagings.total);
 const activeClients = computed(() => {
   return accountStore.list.filter(
-    (account) => account.account_status?.name === t('active')
+    (account) => account.account_status?.account_status_id === EAccountStatus.active
   ).length;
 });
 const inactiveClients = computed(() => {
   return accountStore.list.filter(
-    (account) => account.account_status?.name === t('inactive')
+    (account) => account.account_status?.account_status_id === EAccountStatus.inactive
   ).length;
 });
+const blockedClients = computed(() => {
+  return accountStore.list.filter(
+    (account) => account.account_status?.account_status_id === EAccountStatus.blocked
+  ).length;
+});
+
+const resolveStatusText = (statusId?: string | null) => {
+  if (!statusId) {
+    return '-';
+  }
+
+  if (statusId === EAccountStatus.active) {
+    return t('active');
+  } else if (statusId === EAccountStatus.inactive) {
+    return t('inactive');
+  } else if (statusId === EAccountStatus.blocked) {
+    return t('blocked');
+  }
+
+  return '-';
+};
 
 const resolvePlanVariant = (planName?: string | null) => {
   if (!planName) {
@@ -117,13 +134,6 @@ const resolvePlanVariant = (planName?: string | null) => {
   }
 };
 
-onMounted(async () => {
-  await planStore.listPlanAll();
-  plans.value = planStore.listAll.map((plan) => ({
-    value: plan.plan_id,
-    title: plan.name,
-  }));
-});
 
 watch(
   query,
@@ -179,11 +189,27 @@ watch(
                   <div class="text-body-2 text-medium-emphasis mb-1">
                     {{ $t('inactive_clients') }}
                   </div>
-                  <div class="text-h5 text-warning font-weight-bold">
+                  <div class="text-h5 text-error font-weight-bold">
                     {{ inactiveClients }}
                   </div>
                 </div>
-                <VIcon icon="tabler-user-x" size="40" color="warning" />
+                <VIcon icon="tabler-user-x" size="40" color="error" />
+              </div>
+            </VCardText>
+          </VCard>
+
+          <VCard class="flex-grow-1" min-width="200">
+            <VCardText>
+              <div class="d-flex justify-space-between align-center">
+                <div>
+                  <div class="text-body-2 text-medium-emphasis mb-1">
+                    {{ $t('blocked_clients') }}
+                  </div>
+                  <div class="text-h5 text-error font-weight-bold">
+                    {{ blockedClients }}
+                  </div>
+                </div>
+                <VIcon icon="tabler-user-off" size="40" color="error" />
               </div>
             </VCardText>
           </VCard>
@@ -204,14 +230,6 @@ watch(
             </div>
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
-            <div class="status-filter">
-              <VLabel>{{ $t('plan') }}:</VLabel>
-              <AppSelect
-                v-model="selectedPlan"
-                :items="[{ value: null, title: $t('all') }, ...plans]"
-                :placeholder="$t('select_plan')"
-              />
-            </div>
             <div class="status-filter">
               <VLabel>{{ $t('status') }}:</VLabel>
               <AppSelect
@@ -260,11 +278,11 @@ watch(
         <template #item.account_status="{ item }">
           <VChip
             :color="
-              item.account_status?.name === t('active') ? 'success' : 'warning'
+              item.account_status?.account_status_id === EAccountStatus.active ? 'success' : 'error'
             "
             size="small"
           >
-            {{ item.account_status?.name ?? '-' }}
+            {{ resolveStatusText(item.account_status?.account_status_id) }}
           </VChip>
         </template>
 
