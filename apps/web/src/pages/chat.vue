@@ -3893,6 +3893,14 @@ onMounted(async () => {
         return true;
       }
 
+      if (
+        chat.status === EChatStatus.queue &&
+        !chat.sector?.id &&
+        !chat.user?.id
+      ) {
+        return true;
+      }
+
       if (userSectors.length === 0) {
         return !chat.sector?.id;
       }

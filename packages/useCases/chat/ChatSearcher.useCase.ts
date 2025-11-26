@@ -146,22 +146,53 @@ export class ChatSearcherUseCase {
         } as unknown as IElasticsearchBoolClause);
       }
 
-      // Permite visualizar chats com user.id = userId independentemente do setor
-      filterClauses.push({
+      const shouldClauses: IElasticsearchBoolClause[] = [
+        {
+          nested: {
+            path: 'user',
+            query: {
+              term: {
+                'user.id': userId,
+              },
+            },
+          },
+        },
+        ...sectorFilterClauses,
+      ];
+
+      shouldClauses.push({
         bool: {
-          should: [
+          must: [
             {
-              nested: {
-                path: 'user',
-                query: {
-                  term: {
-                    'user.id': userId,
+              term: {
+                status: EChatStatus.queue,
+              },
+            },
+            {
+              bool: {
+                must_not: {
+                  exists: {
+                    field: 'sector',
                   },
                 },
               },
             },
-            ...sectorFilterClauses,
+            {
+              bool: {
+                must_not: {
+                  exists: {
+                    field: 'user',
+                  },
+                },
+              },
+            },
           ],
+        },
+      } as unknown as IElasticsearchBoolClause);
+
+      filterClauses.push({
+        bool: {
+          should: shouldClauses,
           minimum_should_match: 1,
         },
       } as unknown as IElasticsearchBoolClause);

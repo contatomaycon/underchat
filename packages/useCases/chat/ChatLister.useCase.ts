@@ -117,21 +117,50 @@ export class ChatListerUseCase {
         } as unknown as IElasticsearchBoolClause);
       }
 
-      filterClauses.push({
-        bool: {
-          should: [
-            {
-              nested: {
-                path: 'user',
-                query: {
-                  term: {
-                    'user.id': userId,
+      const shouldClauses: IElasticsearchBoolClause[] = [
+        {
+          nested: {
+            path: 'user',
+            query: {
+              term: {
+                'user.id': userId,
+              },
+            },
+          },
+        },
+        ...sectorFilterClauses,
+      ];
+
+      if (query.status === EChatStatus.queue) {
+        shouldClauses.push({
+          bool: {
+            must: [
+              {
+                bool: {
+                  must_not: {
+                    exists: {
+                      field: 'sector',
+                    },
                   },
                 },
               },
-            },
-            ...sectorFilterClauses,
-          ],
+              {
+                bool: {
+                  must_not: {
+                    exists: {
+                      field: 'user',
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        } as unknown as IElasticsearchBoolClause);
+      }
+
+      filterClauses.push({
+        bool: {
+          should: shouldClauses,
           minimum_should_match: 1,
         },
       } as unknown as IElasticsearchBoolClause);
