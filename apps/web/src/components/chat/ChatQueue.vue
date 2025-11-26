@@ -40,7 +40,7 @@ onMounted(() => {
 
 watch(
   () => props.user?.worker?.id,
-  newId => {
+  (newId) => {
     void loadWorkerConfig(newId);
   }
 );
@@ -188,9 +188,8 @@ watch(
   transform: translateY(-100%);
   padding: 2px 10px;
   border-radius: 0 vuetify.$border-radius-root 0 0;
-  background-color: rgb(var(--v-theme-primary));
-  color: rgb(var(--v-theme-on-primary));
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.16);
+  background-color: rgba(var(--v-theme-primary), 0.12);
+  color: rgb(var(--v-theme-primary));
   max-width: 160px;
   white-space: nowrap;
   overflow: hidden;
