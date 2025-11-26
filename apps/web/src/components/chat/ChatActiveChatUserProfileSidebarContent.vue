@@ -2,7 +2,6 @@
 import { nextTick, computed, watch } from 'vue';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { useChatStore } from '@/@webcore/stores/chat';
-import { useContactStore } from '@/@webcore/stores/contact';
 import { useLabelTemplateStore } from '@/@webcore/stores/labelTemplate';
 import { VForm } from 'vuetify/components/VForm';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
@@ -16,7 +15,6 @@ import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import { EColor } from '@core/common/enums/EColor';
 
 const chatStore = useChatStore();
-const contactStore = useContactStore();
 const labelTemplateStore = useLabelTemplateStore();
 const { items: countryCodes } = useCountryCodes();
 
@@ -414,7 +412,7 @@ const addContact = async () => {
     chat_id: chatStore.activeChat?.chat_id ?? undefined,
   };
 
-  const result = await contactStore.addContact(payload, photoFile.value);
+  const result = await chatStore.createChatContact(payload, photoFile.value);
 
   if (result) {
     await nextTick();
@@ -457,7 +455,7 @@ const updateContact = async () => {
     chat_id: chatStore.activeChat?.chat_id ?? undefined,
   };
 
-  const result = await contactStore.updateContact(
+  const result = await chatStore.updateChatContact(
     payload,
     body,
     photoFile.value
@@ -1295,12 +1293,12 @@ onMounted(() => {
           <VBtn
             variant="tonal"
             color="secondary"
-            :disabled="contactStore.loading"
+            :disabled="chatStore.loading"
             @click="$emit('close')"
           >
             {{ $t('cancel') }}
           </VBtn>
-          <VBtn :loading="contactStore.loading" @click="saveContact">
+          <VBtn :loading="chatStore.loading" @click="saveContact">
             {{ isContact ? $t('save') : $t('add') }}
           </VBtn>
         </VCardText>

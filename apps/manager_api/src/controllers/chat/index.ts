@@ -25,6 +25,10 @@ import { viewContact } from './methods/viewContact';
 import { viewContactEmail } from './methods/viewContactEmail';
 import { viewContactPhone } from './methods/viewContactPhone';
 import { listLabelTemplates } from './methods/listLabelTemplates';
+import { createContact } from './methods/createContact';
+import { updateContact } from './methods/updateContact';
+import { deleteContactPhoto } from './methods/deleteContactPhoto';
+import { validateContact } from './methods/validateContact';
 
 @injectable()
 class ChatController {
@@ -54,6 +58,10 @@ class ChatController {
   public viewContactEmail = viewContactEmail;
   public viewContactPhone = viewContactPhone;
   public listLabelTemplates = listLabelTemplates;
+  public createContact = createContact;
+  public updateContact = updateContact;
+  public deleteContactPhoto = deleteContactPhoto;
+  public validateContact = validateContact;
 }
 
 export default ChatController;

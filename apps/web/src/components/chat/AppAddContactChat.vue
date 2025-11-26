@@ -1,5 +1,4 @@
 <script lang="ts" setup>
-import { useContactStore } from '@/@webcore/stores/contact';
 import { useLabelTemplateStore } from '@/@webcore/stores/labelTemplate';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import { VForm } from 'vuetify/components/VForm';
@@ -8,9 +7,8 @@ import { requiredValidator } from '@/@webcore/utils/validators';
 import { EColor } from '@core/common/enums/EColor';
 import { useChatStore } from '@/@webcore/stores/chat';
 
-const contactStore = useContactStore();
-const labelTemplateStore = useLabelTemplateStore();
 const chatStore = useChatStore();
+const labelTemplateStore = useLabelTemplateStore();
 const { items: countryCodes } = useCountryCodes();
 
 const { t } = useI18n();
@@ -145,7 +143,7 @@ const addContact = async () => {
       ? photoPreview.value
       : null;
 
-  const result = await contactStore.addContact(
+  const result = await chatStore.createChatContact(
     {
       label_template_id: label_template_id.value ?? null,
       name: name.value,
@@ -802,9 +800,9 @@ watch(
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <template v-if="contactStore.loading">
+    <template v-if="chatStore.loading">
       <VOverlay
-        :model-value="contactStore.loading"
+        :model-value="chatStore.loading"
         class="align-center justify-center"
       >
         <VProgressCircular color="primary" indeterminate size="32" />

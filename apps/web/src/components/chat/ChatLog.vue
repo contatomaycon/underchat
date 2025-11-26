@@ -33,11 +33,9 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
-import { useContactStore } from '@/@webcore/stores/contact';
 
 const { t } = useI18n();
 const chatStore = useChatStore();
-const contactStore = useContactStore();
 const { activeChat } = storeToRefs(chatStore);
 const chatLogContainer = ref<HTMLElement | null>(null);
 

@@ -2,7 +2,6 @@
 import { nextTick, toRef } from 'vue';
 import { VForm } from 'vuetify/components/VForm';
 import { useLabelTemplateStore } from '@/@webcore/stores/labelTemplate';
-import { useContactStore } from '@/@webcore/stores/contact';
 import {
   EditContactParamsRequest,
   UpdateContactRequest,
@@ -13,9 +12,8 @@ import { useChatStore } from '@/@webcore/stores/chat';
 import VDialogHandler from '@/components/VDialogHandler.vue';
 import { requiredValidator } from '@/@webcore/utils/validators';
 
-const contactStore = useContactStore();
-const labelTemplateStore = useLabelTemplateStore();
 const chatStore = useChatStore();
+const labelTemplateStore = useLabelTemplateStore();
 const { items: countryCodes } = useCountryCodes();
 
 const { t } = useI18n();
@@ -352,7 +350,7 @@ const updateContact = async () => {
     imageUrl = photoPreview.value;
   }
 
-  const result = await contactStore.updateContact(
+  const result = await chatStore.updateChatContact(
     payload,
     {
       ...body,
@@ -915,7 +913,7 @@ const removePhoto = (event: Event) => {
 const handleRemovePhotoConfirm = async () => {
   if (!contactId.value) return;
 
-  const result = await contactStore.deleteContactPhoto(contactId.value);
+  const result = await chatStore.deleteChatContactPhoto(contactId.value);
 
   if (result) {
     photo.value = null;
@@ -956,9 +954,9 @@ onMounted(() => {
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <template v-if="contactStore.loading">
+    <template v-if="chatStore.loading">
       <VOverlay
-        :model-value="contactStore.loading"
+        :model-value="chatStore.loading"
         class="align-center justify-center"
       >
         <VProgressCircular color="primary" indeterminate size="32" />

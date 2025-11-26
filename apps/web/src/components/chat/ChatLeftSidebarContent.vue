@@ -4,7 +4,6 @@ import ChatQueue from './ChatQueue.vue';
 import AppAddContactChat from '@/components/chat/AppAddContactChat.vue';
 import AppEditContactChat from '@/components/chat/AppEditContactChat.vue';
 import { useChatStore } from '@/@webcore/stores/chat';
-import { useContactStore } from '@/@webcore/stores/contact';
 import { ListChatContactsResponse } from '@core/schema/chat/listContacts/response.schema';
 import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
@@ -15,9 +14,6 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { can } from '@layouts/plugins/casl';
 import { refDebounced } from '@vueuse/core';
-import axios from '@webcore/axios';
-import { IApiResponse } from '@core/common/interfaces/IApiResponse';
-import { IChat } from '@core/common/interfaces/IChat';
 import { EColor } from '@core/common/enums/EColor';
 import VDialogHandler from '@/components/VDialogHandler.vue';
 import {
@@ -39,8 +35,6 @@ const props = defineProps<{
 }>();
 
 const chatStore = useChatStore();
-const contactStore = useContactStore();
-const chatStoreForContacts = useChatStore();
 
 const currentPageQueue = ref(1);
 const perPageQueue = ref(10);
@@ -198,7 +192,7 @@ const loadContacts = async (append = false) => {
   isLoadingMoreContacts.value = true;
 
   try {
-    const result = await chatStoreForContacts.listChatContacts(
+    const result = await chatStore.listChatContacts(
       currentPageContacts.value,
       perPageContacts.value,
       debouncedContactSearch.value || undefined
@@ -264,7 +258,7 @@ const handleCancelValidateContact = () => {
 const confirmValidateContact = async () => {
   if (!contactToValidate.value) return;
 
-  const result = await contactStore.validateContact(contactToValidate.value);
+  const result = await chatStore.validateChatContact(contactToValidate.value);
 
   if (result) {
     const contactIndex = accumulatedContacts.value.findIndex(
@@ -379,28 +373,19 @@ const loadTransferOptions = async () => {
   if (!chatStore.user?.account_id) return;
 
   try {
-    const response = await axios.get<IApiResponse<ListTransferOptionsResponse>>(
-      '/chat/transfer-options'
-    );
-
-    const data = response?.data;
-
-    if (data?.status && data?.data) {
-      availableWorkers.value = data.data.workers;
-      availableSectors.value = data.data.sectors;
+    const result = await chatStore.listTransferOptions();
+    if (result) {
+      availableWorkers.value = result.workers;
+      availableSectors.value = result.sectors;
     }
   } catch (error) {
     console.error('Error loading transfer options:', error);
-    chatStore.showSnackbar(
-      chatStore.i18n.global.t('error_loading_transfer_options'),
-      EColor.error
-    );
   }
 };
 
 const handleContactClick = async (contact: ListChatContactsResponse) => {
   if (!contact.phone_partial) {
-    contactStore.showSnackbar(
+    chatStore.showSnackbar(
       chatStore.i18n.global.t('contact_phone_required'),
       EColor.warning
     );
@@ -408,7 +393,7 @@ const handleContactClick = async (contact: ListChatContactsResponse) => {
   }
 
   if (!contact.is_valided) {
-    contactStore.showSnackbar(
+    chatStore.showSnackbar(
       chatStore.i18n.global.t('contact_must_be_validated'),
       EColor.warning
     );
@@ -442,34 +427,13 @@ const handleOpenConversation = async () => {
   }
 
   try {
-    chatStore.loading = true;
-
-    const requestBody: {
-      contact_id: string;
-      worker_id: string;
-      sector_id?: string;
-    } = {
-      contact_id: selectedContactForChat.value.contact_id,
-      worker_id: selectedWorkerId.value,
-    };
-
-    if (selectedSectorId.value) {
-      requestBody.sector_id = selectedSectorId.value;
-    }
-
-    const response = await axios.post<IApiResponse<IChat>>(
-      '/chat/start-with-contact',
-      requestBody
+    const chat = await chatStore.startChatWithContact(
+      selectedContactForChat.value.contact_id,
+      selectedWorkerId.value,
+      selectedSectorId.value
     );
 
-    chatStore.loading = false;
-
-    const data = response?.data;
-
-    if (!data?.status || !data?.data) {
-      const errorMessage =
-        data?.message || chatStore.i18n.global.t('chat_creation_error');
-      chatStore.showSnackbar(errorMessage, EColor.error);
+    if (!chat) {
       return;
     }
 
@@ -482,13 +446,9 @@ const handleOpenConversation = async () => {
     expandedFilter.value = 'in_chat';
     await loadChatsByFilter();
 
-    emit('openChat', data.data.chat_id);
+    emit('openChat', chat.chat_id);
   } catch (error: any) {
-    chatStore.loading = false;
-    const errorMessage =
-      error?.response?.data?.message ||
-      chatStore.i18n.global.t('chat_creation_error');
-    chatStore.showSnackbar(errorMessage, EColor.error);
+    console.error('Error starting chat with contact:', error);
   }
 };
 
@@ -784,7 +744,7 @@ onMounted(async () => {
         <li
           v-if="
             !accumulatedContacts.length &&
-            !contactStore.loading &&
+            !chatStore.loading &&
             !isLoadingMoreContacts
           "
           class="no-chat-items-text text-disabled"
@@ -793,7 +753,7 @@ onMounted(async () => {
         </li>
 
         <li
-          v-if="contactStore.loading || isLoadingMoreContacts"
+          v-if="chatStore.loading || isLoadingMoreContacts"
           class="d-flex justify-center pa-4"
         >
           <VProgressCircular indeterminate color="primary" size="32" />
@@ -912,7 +872,9 @@ onMounted(async () => {
             >
               <VIcon size="16" class="me-1">tabler-device-mobile</VIcon>
               {{
-                availableWorkers.find((w) => w.id === selectedWorkerId)?.name
+                availableWorkers.find(
+                  (w: TransferWorker) => w.id === selectedWorkerId
+                )?.name
               }}
               <span
                 v-if="

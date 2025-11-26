@@ -28,6 +28,10 @@ import { viewChatContactSchema } from '@core/schema/chat/viewContact';
 import { viewChatContactEmailSchema } from '@core/schema/chat/viewContactEmail';
 import { viewChatContactPhoneSchema } from '@core/schema/chat/viewContactPhone';
 import { listChatLabelTemplatesSchema } from '@core/schema/chat/listLabelTemplates';
+import { createChatContactSchema } from '@core/schema/chat/createContact';
+import { updateChatContactSchema } from '@core/schema/chat/updateContact';
+import { deleteChatContactPhotoSchema } from '@core/schema/chat/deleteContactPhoto';
+import { validateChatContactSchema } from '@core/schema/chat/validateContact';
 
 export default function chatRoutes(server: FastifyInstance) {
   const chatController = container.resolve(ChatController);
@@ -260,6 +264,42 @@ export default function chatRoutes(server: FastifyInstance) {
   server.get('/chat/label-templates', {
     schema: listChatLabelTemplatesSchema,
     handler: chatController.listLabelTemplates,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+    ],
+  });
+
+  server.post('/chat/contacts', {
+    schema: createChatContactSchema,
+    handler: chatController.createContact,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+    ],
+  });
+
+  server.patch('/chat/contacts/:contact_id', {
+    schema: updateChatContactSchema,
+    handler: chatController.updateContact,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+    ],
+  });
+
+  server.delete('/chat/contacts/:contact_id/photo', {
+    schema: deleteChatContactPhotoSchema,
+    handler: chatController.deleteContactPhoto,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+    ],
+  });
+
+  server.post('/chat/contacts/:contact_id/validate', {
+    schema: validateChatContactSchema,
+    handler: chatController.validateContact,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),

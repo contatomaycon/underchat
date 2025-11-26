@@ -16,14 +16,8 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { getPermissions, getSectors } from '@/@webcore/localStorage/user';
-import { TransferUserResponse } from '@core/schema/chat/listTransferUsers/response.schema';
-import { TransferSectorResponse } from '@core/schema/chat/listTransferSectors/response.schema';
-import { TransferSectorUserResponse } from '@core/schema/chat/listTransferSectorUsers/response.schema';
-import axios from '@webcore/axios';
-import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
-import { useContactStore } from '@/@webcore/stores/contact';
 import { useUsersStore } from '@/@webcore/stores/user';
 import { useSectorsStore } from '@/@webcore/stores/sector';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
@@ -89,9 +83,7 @@ definePage({
 });
 
 const chatStore = useChatStore();
-const contactStore = useContactStore();
 useSnackbarCleanup(chatStore);
-useSnackbarCleanup(contactStore);
 const { name } = useTheme();
 const vuetifyDisplays = useDisplay();
 
@@ -575,24 +567,13 @@ const loadTransferUsers = async () => {
 
   isLoadingTransferUsers.value = true;
   try {
-    const response = await axios.get<IApiResponse<TransferUserResponse[]>>(
-      '/chat/transfer/users'
-    );
-
-    const data = response?.data;
-
-    if (data?.status && data?.data) {
-      transferUsers.value = data.data.map((user) => ({
-        value: user.id,
-        title: user.name,
-      }));
-    }
+    const users = await chatStore.listTransferUsers();
+    transferUsers.value = users.map((user) => ({
+      value: user.id,
+      title: user.name,
+    }));
   } catch (error) {
     console.error('Error loading transfer users:', error);
-    chatStore.showSnackbar(
-      chatStore.i18n.global.t('error_loading_transfer_users'),
-      EColor.error
-    );
   } finally {
     isLoadingTransferUsers.value = false;
   }
@@ -603,24 +584,13 @@ const loadTransferSectors = async () => {
 
   isLoadingTransferSectors.value = true;
   try {
-    const response = await axios.get<IApiResponse<TransferSectorResponse[]>>(
-      '/chat/transfer/sectors'
-    );
-
-    const data = response?.data;
-
-    if (data?.status && data?.data) {
-      transferSectors.value = data.data.map((sector) => ({
-        value: sector.id,
-        title: sector.name,
-      }));
-    }
+    const sectors = await chatStore.listTransferSectors();
+    transferSectors.value = sectors.map((sector) => ({
+      value: sector.id,
+      title: sector.name,
+    }));
   } catch (error) {
     console.error('Error loading transfer sectors:', error);
-    chatStore.showSnackbar(
-      chatStore.i18n.global.t('error_loading_transfer_sectors'),
-      EColor.error
-    );
   } finally {
     isLoadingTransferSectors.value = false;
   }
@@ -631,28 +601,14 @@ const loadTransferSectorUsers = async (sectorId: string) => {
 
   isLoadingTransferSectorUsers.value = true;
   try {
-    const response = await axios.get<
-      IApiResponse<TransferSectorUserResponse[]>
-    >(`/chat/transfer/sectors/${sectorId}/users`);
-
-    const data = response?.data;
-
-    if (data?.status && data?.data) {
-      transferSectorUsers.value = data.data.map((user) => ({
-        value: user.id,
-        title: user.name,
-      }));
-    } else {
-      transferSectorUsers.value = [];
-    }
+    const users = await chatStore.listTransferSectorUsers(sectorId);
+    transferSectorUsers.value = users.map((user) => ({
+      value: user.id,
+      title: user.name,
+    }));
   } catch (error) {
     transferSectorUsers.value = [];
-    const errorMessage =
-      error instanceof Error
-        ? error.message
-        : chatStore.i18n.global.t('transfer_sector_users_error') ||
-          'Erro ao carregar usuários do setor';
-    chatStore.showSnackbar(errorMessage, EColor.error);
+    console.error('Error loading transfer sector users:', error);
   } finally {
     isLoadingTransferSectorUsers.value = false;
   }
@@ -5101,9 +5057,9 @@ onBeforeUnmount(() => {
   <VDialog v-model="isContactViewModalOpen" max-width="600">
     <DialogCloseBtn @click="isContactViewModalOpen = false" />
 
-    <template v-if="contactStore.loading">
+    <template v-if="chatStore.loading">
       <VOverlay
-        :model-value="contactStore.loading"
+        :model-value="chatStore.loading"
         class="align-center justify-center"
       >
         <VProgressCircular color="primary" indeterminate size="32" />
@@ -5256,15 +5212,6 @@ onBeforeUnmount(() => {
     v-model="isEditContactModalOpen"
     :contact-id="editContactId"
   />
-
-  <VSnackbar
-    v-model="contactStore.snackbar.status"
-    transition="scroll-y-reverse-transition"
-    location="top end"
-    :color="contactStore.snackbar.color"
-  >
-    {{ contactStore.snackbar.message }}
-  </VSnackbar>
 
   <VSnackbar
     v-model="chatStore.snackbar.status"
