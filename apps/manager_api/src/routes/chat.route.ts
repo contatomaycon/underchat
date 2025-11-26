@@ -3,11 +3,9 @@ import { container } from 'tsyringe';
 import { listChatsSchema } from '@core/schema/chat/listChats';
 import ChatController from '@/controllers/chat';
 import { chatPermissions } from '@/permissions';
-import { listChatsUserSchema } from '@core/schema/chat/listChatsUser';
 import { updateChatsUserSchema } from '@core/schema/chat/updateChatsUser';
 import { listMessageChatsSchema } from '@core/schema/chat/listMessageChats';
 import { createMessageChatsSchema } from '@core/schema/chat/createMessageChats';
-import { createChatSchema } from '@core/schema/chat/createChat';
 import { viewLinkPreviewSchema } from '@core/schema/chat/viewLinkPreview';
 import { reactMessageSchema } from '@core/schema/chat/reactMessage';
 import { deleteMessageSchema } from '@core/schema/chat/deleteMessage';
@@ -39,15 +37,6 @@ export default function chatRoutes(server: FastifyInstance) {
   server.get('/chat', {
     schema: listChatsSchema,
     handler: chatController.listChats,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, chatPermissions),
-    ],
-  });
-
-  server.post('/chat', {
-    schema: createChatSchema,
-    handler: chatController.createChats,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
@@ -93,15 +82,6 @@ export default function chatRoutes(server: FastifyInstance) {
   server.post('/chat/:chat_id', {
     schema: createMessageChatsSchema,
     handler: chatController.createMessageChats,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, chatPermissions),
-    ],
-  });
-
-  server.get('/chat/user', {
-    schema: listChatsUserSchema,
-    handler: chatController.listChatsUser,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
