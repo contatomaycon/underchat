@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed, onMounted } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { refDebounced } from '@vueuse/core';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EUserPermissions } from '@core/common/enums/EPermissions/user';

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EFinancialPermissions } from '@core/common/enums/EPermissions/financial';
 import { useI18n } from 'vue-i18n';
@@ -23,8 +23,8 @@ const expenditureStore = useExpendituresStore();
 const viewType = ref<'annual' | 'monthly' | 'daily'>('annual');
 
 // Mock data - será substituído quando a API estiver pronta
-const annualRevenue = ref(1225.0);
-const annualExpense = ref(2300.0);
+const annualRevenue = ref(1225);
+const annualExpense = ref(2300);
 const annualNet = computed(() => annualRevenue.value - annualExpense.value);
 
 interface MonthlyDetail {
@@ -37,9 +37,9 @@ interface MonthlyDetail {
 const monthlyDetails = ref<MonthlyDetail[]>([
   {
     month: 'Novembro',
-    income: 1225.0,
-    outgoing: 2300.0,
-    net: -1075.0,
+    income: 1225,
+    outgoing: 2300,
+    net: -1075,
   },
 ]);
 
@@ -196,10 +196,10 @@ onMounted(async () => {
                 <VTable>
                   <thead>
                     <tr>
-                      <th class="text-left">{{ $t('month') }}</th>
-                      <th class="text-left">{{ $t('income') }}</th>
-                      <th class="text-left">{{ $t('outgoing') }}</th>
-                      <th class="text-left">{{ $t('net') }}</th>
+                      <th scope="col" class="text-left">{{ $t('month') }}</th>
+                      <th scope="col" class="text-left">{{ $t('income') }}</th>
+                      <th scope="col" class="text-left">{{ $t('outgoing') }}</th>
+                      <th scope="col" class="text-left">{{ $t('net') }}</th>
                     </tr>
                   </thead>
                   <tbody>
