@@ -176,8 +176,6 @@ const addContact = async () => {
 
   if (result) {
     isVisible.value = false;
-
-    await contactStore.listContact();
   }
 };
 
@@ -780,16 +778,25 @@ const cancelCrop = () => {
   photoPreview.value = null;
 };
 
-onMounted(async () => {
-  resetForm();
-  if (canAccessLabelTemplate.value) {
-    await labelTemplateStore.listLabelTemplateAll();
+const loadLabelTemplates = async () => {
+  if (canAccessLabelTemplate.value && labelTemplateStore.listAll.length === 0) {
+    const labelTemplates = await chatStore.listChatLabelTemplates();
+    labelTemplateStore.listAll = labelTemplates.map((lt) => ({
+      label_template_id: lt.label_template_id,
+      label: lt.label,
+      color: '',
+    }));
   }
+};
+
+onMounted(() => {
+  resetForm();
 });
 
-watch(isVisible, (visible) => {
+watch(isVisible, async (visible) => {
   if (visible) {
     resetForm();
+    await loadLabelTemplates();
   }
 });
 

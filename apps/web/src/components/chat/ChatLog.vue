@@ -31,7 +31,6 @@ import { MglMap, MglMarker } from 'vue-maplibre-gl';
 import { can } from '@layouts/plugins/casl';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
-import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import { useContactStore } from '@/@webcore/stores/contact';
@@ -203,17 +202,7 @@ const resolvePreviewUrl = (lp?: LinkPreview): string =>
 
 const isDeleted = (m: ListMessageResult): boolean => m.deleted === true;
 
-const permissionsCreateContact = [
-  EGeneralPermissions.full_access,
-  EGeneralPermissions.full_access_group,
-  EContactPermissions.contact_group,
-  EContactPermissions.contact_create,
-];
-
-const canCreateContact = computed(() => can(permissionsCreateContact));
-
 const handleContactClick = async (message: ListMessageResult) => {
-  if (!canCreateContact.value) return;
   if (!message.content?.contact) return;
 
   const contact = message.content.contact;
@@ -2669,8 +2658,7 @@ onUnmounted(() => {
                     <div
                       class="contact-item d-flex align-center gap-3 pa-3"
                       :class="{
-                        'contact-item--clickable':
-                          canCreateContact && !item.message.deleted,
+                        'contact-item--clickable': !item.message.deleted,
                       }"
                       :style="{
                         backgroundColor: isTypeUser(item.message)

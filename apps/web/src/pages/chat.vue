@@ -9,15 +9,13 @@ import ChatLog from '@/components/chat/ChatLog.vue';
 import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSidebarContent.vue';
 import ChatSearchSidebarContent from '@/components/chat/ChatSearchSidebarContent.vue';
 import AppContactPicker from '@/components/chat/AppContactPicker.vue';
-import AppAddContact from '@/components/contact/AppAddContact.vue';
-import AppEditContact from '@/components/contact/AppEditContact.vue';
+import AppAddContactChat from '@/components/chat/AppAddContactChat.vue';
+import AppEditContactChat from '@/components/chat/AppEditContactChat.vue';
 import VDialogHandler from '@/components/VDialogHandler.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
-import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { getPermissions, getSectors } from '@/@webcore/localStorage/user';
-import { can } from '@layouts/plugins/casl';
 import { TransferUserResponse } from '@core/schema/chat/listTransferUsers/response.schema';
 import { TransferSectorResponse } from '@core/schema/chat/listTransferSectors/response.schema';
 import { TransferSectorUserResponse } from '@core/schema/chat/listTransferSectorUsers/response.schema';
@@ -489,7 +487,6 @@ const confirmCloseService = async () => {
 };
 
 const handleActiveChatHeaderClick = () => {
-  if (!canAccessContacts.value) return;
   isActiveChatUserProfileSidebarOpen.value = true;
 };
 
@@ -752,16 +749,6 @@ const isInChatStatus = computed(
   () => chatStore.activeChat?.status === EChatStatus.in_chat
 );
 
-const canAccessContacts = computed(() => {
-  const permissions = [
-    EGeneralPermissions.full_access,
-    EGeneralPermissions.full_access_group,
-    EContactPermissions.contact_group,
-    EContactPermissions.contact_view,
-  ];
-  return can(permissions);
-});
-
 const canTransfer = computed(() => {
   return true;
 });
@@ -773,7 +760,7 @@ const hasAttachmentsOrContent = computed(
     selectedDocuments.value.length > 0 ||
     selectedVideos.value.length > 0 ||
     selectedAudios.value.length > 0 ||
-    (canAccessContacts.value && selectedContacts.value.length > 0) ||
+    selectedContacts.value.length > 0 ||
     isRecordingAudio.value
 );
 
@@ -2054,9 +2041,7 @@ const openAttach = (
       fileAudioRef.value?.click();
       break;
     case 'contact':
-      if (canAccessContacts.value) {
-        isContactPickerOpen.value = true;
-      }
+      isContactPickerOpen.value = true;
       break;
     case 'location':
       isLocationPickerOpen.value = true;
@@ -4029,7 +4014,6 @@ onBeforeUnmount(() => {
     </VNavigationDrawer>
 
     <VNavigationDrawer
-      v-if="canAccessContacts"
       v-model="isActiveChatUserProfileSidebarOpen"
       data-allow-mismatch
       width="374"
@@ -4040,6 +4024,7 @@ onBeforeUnmount(() => {
       class="active-chat-user-profile-sidebar"
     >
       <ChatActiveChatUserProfileSidebarContent
+        :is-open="isActiveChatUserProfileSidebarOpen"
         @close="isActiveChatUserProfileSidebarOpen = false"
       />
     </VNavigationDrawer>
@@ -4098,10 +4083,7 @@ onBeforeUnmount(() => {
           </IconBtn>
 
           <div
-            :class="[
-              'd-flex align-center',
-              { 'cursor-pointer': canAccessContacts },
-            ]"
+            class="d-flex align-center cursor-pointer"
             @click="handleActiveChatHeaderClick"
           >
             <VAvatar
@@ -4530,7 +4512,7 @@ onBeforeUnmount(() => {
 
           <Transition name="fade">
             <div
-              v-if="canAccessContacts && selectedContacts.length > 0"
+              v-if="selectedContacts.length > 0"
               class="composer-attachment mt-3"
             >
               <VCard class="composer-attachment-card">
@@ -4815,10 +4797,7 @@ onBeforeUnmount(() => {
                     >
                     <VListItemTitle>Áudio</VListItemTitle>
                   </VListItem>
-                  <VListItem
-                    v-if="canAccessContacts"
-                    @click="openAttach('contact')"
-                  >
+                  <VListItem @click="openAttach('contact')">
                     <template #prepend
                       ><VIcon size="20">tabler-user</VIcon></template
                     >
@@ -4955,7 +4934,6 @@ onBeforeUnmount(() => {
   </VLayout>
 
   <AppContactPicker
-    v-if="canAccessContacts"
     v-model="isContactPickerOpen"
     :existing-contacts="selectedContacts"
     @select="onContactsSelected"
@@ -5120,11 +5098,7 @@ onBeforeUnmount(() => {
     </VCard>
   </VDialog>
 
-  <VDialog
-    v-if="canAccessContacts"
-    v-model="isContactViewModalOpen"
-    max-width="600"
-  >
+  <VDialog v-model="isContactViewModalOpen" max-width="600">
     <DialogCloseBtn @click="isContactViewModalOpen = false" />
 
     <template v-if="contactStore.loading">
@@ -5273,12 +5247,12 @@ onBeforeUnmount(() => {
     </VCard>
   </VDialog>
 
-  <AppAddContact
+  <AppAddContactChat
     v-model="isAddContactModalOpen"
     :initial-data="addContactInitialData"
   />
 
-  <AppEditContact
+  <AppEditContactChat
     v-model="isEditContactModalOpen"
     :contact-id="editContactId"
   />

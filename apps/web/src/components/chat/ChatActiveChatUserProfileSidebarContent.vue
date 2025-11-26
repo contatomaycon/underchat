@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { nextTick, computed } from 'vue';
+import { nextTick, computed, watch } from 'vue';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useContactStore } from '@/@webcore/stores/contact';
@@ -24,6 +24,10 @@ const labelTemplateStore = useLabelTemplateStore();
 const { items: countryCodes } = useCountryCodes();
 
 const { t } = useI18n();
+
+const props = defineProps<{
+  isOpen?: boolean;
+}>();
 
 const emit = defineEmits<{
   close: [];
@@ -1039,8 +1043,8 @@ const cancelCrop = () => {
   photoPreview.value = null;
 };
 
-onMounted(async () => {
-  if (canAccessLabelTemplate.value) {
+const loadLabelTemplates = async () => {
+  if (canAccessLabelTemplate.value && labelTemplateStore.listAll.length === 0) {
     const labelTemplates = await chatStore.listChatLabelTemplates();
     labelTemplateStore.listAll = labelTemplates.map((lt) => ({
       label_template_id: lt.label_template_id,
@@ -1048,7 +1052,23 @@ onMounted(async () => {
       color: '',
     }));
   }
-  loadChatData();
+};
+
+watch(
+  () => props.isOpen,
+  async (isOpen) => {
+    if (isOpen) {
+      await loadLabelTemplates();
+      loadChatData();
+    }
+  }
+);
+
+onMounted(() => {
+  if (props.isOpen) {
+    loadLabelTemplates();
+    loadChatData();
+  }
 });
 </script>
 

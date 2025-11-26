@@ -1,8 +1,8 @@
 <script lang="ts" setup>
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import ChatQueue from './ChatQueue.vue';
-import AppAddContact from '@/components/contact/AppAddContact.vue';
-import AppEditContact from '@/components/contact/AppEditContact.vue';
+import AppAddContactChat from '@/components/chat/AppAddContactChat.vue';
+import AppEditContactChat from '@/components/chat/AppEditContactChat.vue';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useContactStore } from '@/@webcore/stores/contact';
 import { ListChatContactsResponse } from '@core/schema/chat/listContacts/response.schema';
@@ -13,7 +13,6 @@ import { SearchChatsQuery } from '@core/schema/chat/searchChats/request.schema';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
-import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 import { can } from '@layouts/plugins/casl';
 import { refDebounced } from '@vueuse/core';
 import axios from '@webcore/axios';
@@ -119,16 +118,6 @@ const queueSelectionPermissions = [
 ];
 
 const canSelectAnyQueueChat = computed(() => can(queueSelectionPermissions));
-
-const canAccessContacts = computed(() => {
-  const permissions = [
-    EGeneralPermissions.full_access,
-    EGeneralPermissions.full_access_group,
-    EContactPermissions.contact_group,
-    EContactPermissions.contact_view,
-  ];
-  return can(permissions);
-});
 
 const isQueueChatSelectable = (index: number): boolean => {
   if (canSelectAnyQueueChat.value) {
@@ -375,13 +364,16 @@ watch(
   }
 );
 
-watch(canAccessContacts, (hasAccess) => {
-  if (!hasAccess && activeFilter.value === 'new') {
-    activeFilter.value = 'all';
-    expandedFilter.value = 'all';
-    loadChatsByFilter();
+watch(
+  () => false,
+  (hasAccess) => {
+    if (!hasAccess && activeFilter.value === 'new') {
+      activeFilter.value = 'all';
+      expandedFilter.value = 'all';
+      loadChatsByFilter();
+    }
   }
-});
+);
 
 const loadTransferOptions = async () => {
   if (!chatStore.user?.account_id) return;
@@ -566,7 +558,7 @@ onMounted(async () => {
 
   <div class="chat-filter-options px-3 py-3">
     <div class="d-flex gap-2 flex-wrap">
-      <div v-if="canAccessContacts" class="chat-filter-item flex-grow-1">
+      <div class="chat-filter-item flex-grow-1">
         <VBtn
           :variant="activeFilter === 'new' ? 'flat' : 'text'"
           :color="activeFilter === 'new' ? 'primary' : undefined"
@@ -861,12 +853,12 @@ onMounted(async () => {
     </ul>
   </PerfectScrollbar>
 
-  <AppAddContact
+  <AppAddContactChat
     v-model="isAddContactModalOpen"
     @update:model-value="handleAddContactModalClose"
   />
 
-  <AppEditContact
+  <AppEditContactChat
     v-model="isEditContactModalOpen"
     :contact-id="editContactId"
     @update:model-value="handleEditContactModalClose"

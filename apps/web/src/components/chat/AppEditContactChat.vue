@@ -1,15 +1,20 @@
 <script lang="ts" setup>
-import { useContactStore } from '@/@webcore/stores/contact';
-import { useLabelTemplateStore } from '@/@webcore/stores/labelTemplate';
-import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
+import { nextTick, toRef } from 'vue';
 import { VForm } from 'vuetify/components/VForm';
+import { useLabelTemplateStore } from '@/@webcore/stores/labelTemplate';
+import { useContactStore } from '@/@webcore/stores/contact';
+import {
+  EditContactParamsRequest,
+  UpdateContactRequest,
+} from '@core/schema/contact/editContact/request.schema';
 import { useCountryCodes } from '@/composables/useCountryCodes';
-import { requiredValidator } from '@/@webcore/utils/validators';
 import { EColor } from '@core/common/enums/EColor';
 import { useChatStore } from '@/@webcore/stores/chat';
+import VDialogHandler from '@/components/VDialogHandler.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
 import { can } from '@layouts/plugins/casl';
+import { requiredValidator } from '@/@webcore/utils/validators';
 
 const contactStore = useContactStore();
 const labelTemplateStore = useLabelTemplateStore();
@@ -17,8 +22,6 @@ const chatStore = useChatStore();
 const { items: countryCodes } = useCountryCodes();
 
 const { t } = useI18n();
-
-type FieldValue = string | { value: string } | null;
 
 const countrySearchQuery = ref('');
 const isCountryMenuOpen = ref(false);
@@ -41,17 +44,12 @@ watch(isCountryMenuOpen, (isOpen) => {
 
 const props = defineProps<{
   modelValue: boolean;
-  initialData?: Partial<CreateContactRequest> | null;
+  contactId: string | null;
 }>();
 
-const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
-
-const isVisible = computed({
-  get: () => props.modelValue,
-  set: (v) => emit('update:modelValue', v),
-});
-
-const phone_ddi = ref<string | null>('55');
+const phone_ddi = ref<string | null>(null);
+const phone = ref<string | null>(null);
+const phonePartialOriginal = ref<string | null>(null);
 
 function formatPhone(value: string | null | undefined): string {
   if (!value) return '';
@@ -71,11 +69,90 @@ function formatPhone(value: string | null | undefined): string {
 }
 
 const phoneFormatted = computed({
-  get: () => formatPhone(phone.value),
+  get: () => {
+    if (isPhoneDecrypted.value && phone.value) {
+      return formatPhone(phone.value);
+    }
+    if (phone.value) {
+      return formatPhone(phone.value);
+    }
+    return phonePartialOriginal.value ?? '';
+  },
   set: (value: string) => {
-    phone.value = value.replaceAll(/\D/g, '');
+    if (isPhoneDecrypted.value) {
+      phone.value = value.replaceAll(/\D/g, '');
+      return;
+    }
+    const numbers = value.replaceAll(/\D/g, '');
+    phone.value = numbers;
+    phonePartialOriginal.value = value;
   },
 });
+
+const emailFormatted = computed({
+  get: () => {
+    if (isEmailDecrypted.value) {
+      return email.value ?? '';
+    }
+    const partial = emailPartialOriginal.value ?? '';
+    return partial;
+  },
+  set: (value: string) => {
+    if (isEmailDecrypted.value) {
+      email.value = value;
+      return;
+    }
+    emailPartialOriginal.value = value;
+    email.value = value;
+  },
+});
+
+const togglePhoneVisibility = async () => {
+  if (!contactId.value) return;
+
+  if (isPhoneDecrypted.value) {
+    if (phonePartialOriginal.value?.includes('*')) {
+      phone.value = null;
+    }
+    if (!phonePartialOriginal.value?.includes('*')) {
+      phone.value = phonePartialOriginal.value?.replaceAll(/\D/g, '') ?? null;
+    }
+    isPhoneDecrypted.value = false;
+    return;
+  }
+
+  isLoadingPhone.value = true;
+  const decryptedPhone = await chatStore.getChatContactPhoneDecrypted(
+    contactId.value
+  );
+  isLoadingPhone.value = false;
+
+  if (decryptedPhone) {
+    phone.value = decryptedPhone.replaceAll(/\D/g, '');
+    isPhoneDecrypted.value = true;
+  }
+};
+
+const toggleEmailVisibility = async () => {
+  if (!contactId.value) return;
+
+  if (isEmailDecrypted.value) {
+    email.value = emailPartialOriginal.value;
+    isEmailDecrypted.value = false;
+    return;
+  }
+
+  isLoadingEmail.value = true;
+  const decryptedEmail = await chatStore.getChatContactEmailDecrypted(
+    contactId.value
+  );
+  isLoadingEmail.value = false;
+
+  if (decryptedEmail) {
+    email.value = decryptedEmail;
+    isEmailDecrypted.value = true;
+  }
+};
 
 const emailValidator = (v: string | null | undefined) => {
   const s = (v ?? '').trim();
@@ -101,17 +178,33 @@ const itemsLabel = computed(() =>
   }))
 );
 
+const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
+
+const isVisible = computed({
+  get: () => props.modelValue,
+  set: (v) => emit('update:modelValue', v),
+});
+
+const contactId = toRef(props, 'contactId');
+
 const label_template_id = ref<string | null>(null);
 const name = ref<string | null>(null);
 const last_name = ref<string | null>(null);
 const email = ref<string | null>(null);
-const phone = ref<string | null>(null);
+const emailPartialOriginal = ref<string | null>(null);
+const isEmailDecrypted = ref(false);
+const isLoadingEmail = ref(false);
+const isPhoneDecrypted = ref(false);
+const isLoadingPhone = ref(false);
 const nickname = ref<string | null>(null);
 const birthday = ref<string | null>(null);
 const notes = ref<string | null>(null);
+const isValided = ref<boolean>(false);
+const photo = ref<string | null>(null);
 const photoFile = ref<File | null>(null);
 const photoPreview = ref<string | null>(null);
 const isCropModalOpen = ref(false);
+const isDeletePhotoDialogOpen = ref(false);
 const cropImageRef = ref<HTMLImageElement | null>(null);
 const cropCanvasRef = ref<HTMLCanvasElement | null>(null);
 const cropPreviewSize = 400;
@@ -140,35 +233,142 @@ const cropArea = ref({
 
 const MAX_FILE_SIZE_BYTES = 16 * 1024 * 1024;
 
-const refFormAddContact = ref<VForm>();
+const refFormEditContact = ref<VForm>();
 
-const addContact = async () => {
-  const validateForm = await refFormAddContact?.value?.validate();
+const determineEmailToSave = (): string | null | undefined => {
+  const emailValue = email.value?.trim() || '';
+  const emailPartialOriginalTrimmed = emailPartialOriginal.value?.trim() || '';
+
+  if (isEmailDecrypted.value) {
+    return emailValue || null;
+  }
+
+  if (
+    !isEmailDecrypted.value &&
+    emailValue &&
+    emailValue !== emailPartialOriginalTrimmed
+  ) {
+    return emailValue;
+  }
+
+  if (!emailValue && emailPartialOriginalTrimmed) {
+    return null;
+  }
+
+  if (
+    !isEmailDecrypted.value &&
+    emailValue &&
+    !emailPartialOriginalTrimmed.includes('*')
+  ) {
+    return emailValue;
+  }
+
+  return undefined;
+};
+
+const determinePhoneToSave = (): string | null | undefined => {
+  const phoneValue = phone.value ? phone.value.replaceAll(/\D/g, '') : '';
+  const phonePartialOriginalNumbers = phonePartialOriginal.value
+    ? phonePartialOriginal.value.replaceAll(/\D/g, '')
+    : '';
+
+  if (isPhoneDecrypted.value && phoneValue) {
+    return phoneValue;
+  }
+
+  if (
+    !isPhoneDecrypted.value &&
+    phoneValue &&
+    !phonePartialOriginal.value?.includes('*') &&
+    phoneValue !== phonePartialOriginalNumbers
+  ) {
+    return phoneValue;
+  }
+
+  return undefined;
+};
+
+const loadContactData = async () => {
+  if (!contactId.value) return;
+
+  const contact = await chatStore.getChatContactById(contactId.value);
+  if (contact) {
+    label_template_id.value = contact.label_template?.label_template_id ?? null;
+    name.value = contact.name;
+    last_name.value = contact.last_name ?? null;
+
+    const emailPartial = contact.email_partial ?? '';
+    emailPartialOriginal.value = emailPartial;
+    email.value = emailPartial;
+    isEmailDecrypted.value = false;
+
+    phone_ddi.value = contact.phone_ddi ?? '55';
+
+    const phonePartial = contact.phone_partial ?? '';
+    phonePartialOriginal.value = phonePartial;
+    if (phonePartial.includes('*')) {
+      phone.value = null;
+    }
+
+    if (!phonePartial.includes('*')) {
+      phone.value = phonePartial.replaceAll(/\D/g, '');
+    }
+
+    isPhoneDecrypted.value = false;
+
+    nickname.value = contact.nickname ?? null;
+    birthday.value = contact.birthday ?? null;
+    notes.value = contact.notes ?? null;
+    isValided.value = contact.is_valided ?? false;
+    photo.value = contact.photo ?? null;
+    photoPreview.value = contact.photo ?? null;
+    photoFile.value = null;
+  }
+};
+
+const updateContact = async () => {
+  const validateForm = await refFormEditContact?.value?.validate();
   if (!validateForm?.valid) return;
 
-  if (!name.value) return;
+  if (!contactId.value) {
+    return;
+  }
 
-  if (!phone_ddi.value) return;
+  const payload: EditContactParamsRequest = {
+    contact_id: contactId.value,
+  };
 
-  const phoneNumber = phone.value ? phone.value.replaceAll(/\D/g, '') : null;
-  if (!phoneNumber) return;
+  const emailToSave = determineEmailToSave();
+  const phoneToSave = determinePhoneToSave();
 
-  const imageUrl =
-    photoPreview.value && !photoPreview.value.startsWith('data:')
-      ? photoPreview.value
-      : null;
+  const body: UpdateContactRequest = {
+    label_template_id: label_template_id.value,
+    name: name.value,
+    last_name: last_name.value,
+    email: emailToSave,
+    phone_ddi: phone_ddi.value,
+    phone: phoneToSave,
+    nickname: nickname.value,
+    birthday: birthday.value,
+    notes: notes.value,
+  };
 
-  const result = await contactStore.addContact(
+  let imageUrl: string | null = null;
+
+  if (!photoFile.value) {
+    if (photo.value && !photo.value.startsWith('data:')) {
+      imageUrl = photo.value;
+    } else if (photoPreview.value && !photoPreview.value.startsWith('data:')) {
+      imageUrl = photoPreview.value;
+    }
+  } else if (photoPreview.value && !photoPreview.value.startsWith('data:')) {
+    imageUrl = photoPreview.value;
+  }
+
+  const result = await contactStore.updateContact(
+    payload,
     {
-      label_template_id: label_template_id.value ?? null,
-      name: name.value,
-      last_name: last_name.value ?? null,
-      email: email.value ?? null,
-      phone_ddi: phone_ddi.value,
-      phone: phoneNumber,
-      nickname: nickname.value ?? null,
-      birthday: birthday.value ?? null,
-      notes: notes.value ?? null,
+      ...body,
       image_url: imageUrl,
     },
     imageUrl ? null : photoFile.value
@@ -176,63 +376,7 @@ const addContact = async () => {
 
   if (result) {
     isVisible.value = false;
-
-    await contactStore.listContact();
   }
-};
-
-const extractFieldValue = (field: FieldValue | undefined): string | null => {
-  if (field === null || field === undefined) {
-    return null;
-  }
-
-  if (typeof field === 'object' && 'value' in field) {
-    return field.value ?? null;
-  }
-
-  if (typeof field === 'string') {
-    return field;
-  }
-
-  return null;
-};
-
-const resetForm = () => {
-  if (props.initialData) {
-    label_template_id.value = extractFieldValue(
-      props.initialData.label_template_id as FieldValue
-    );
-    name.value = extractFieldValue(props.initialData.name as FieldValue);
-    last_name.value = extractFieldValue(
-      props.initialData.last_name as FieldValue
-    );
-    email.value = extractFieldValue(props.initialData.email as FieldValue);
-    phone_ddi.value =
-      extractFieldValue(props.initialData.phone_ddi as FieldValue) ?? '55';
-    phone.value = extractFieldValue(props.initialData.phone as FieldValue);
-    nickname.value = extractFieldValue(
-      props.initialData.nickname as FieldValue
-    );
-    birthday.value = extractFieldValue(
-      props.initialData.birthday as FieldValue
-    );
-    notes.value = extractFieldValue(props.initialData.notes as FieldValue);
-  } else {
-    label_template_id.value = null;
-    name.value = null;
-    last_name.value = null;
-    email.value = null;
-    phone_ddi.value = '55';
-    phone.value = null;
-    nickname.value = null;
-    birthday.value = null;
-    notes.value = null;
-  }
-  photoFile.value = null;
-  photoPreview.value = null;
-  cropDialog.value.imageSrc = '';
-  cropDialog.value.croppedImage = '';
-  refFormAddContact.value?.resetValidation();
 };
 
 const openFileSelector = () => {
@@ -735,11 +879,8 @@ const cropImage = () => {
   const sourceWidth = cropArea.value.width * scaleX;
   const sourceHeight = cropArea.value.height * scaleY;
 
-  const outputWidth = cropPreviewSize;
-  const outputHeight = cropPreviewSize;
-
-  canvas.width = outputWidth;
-  canvas.height = outputHeight;
+  canvas.width = cropPreviewSize;
+  canvas.height = cropPreviewSize;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -751,8 +892,8 @@ const cropImage = () => {
     sourceHeight,
     0,
     0,
-    outputWidth,
-    outputHeight
+    cropPreviewSize,
+    cropPreviewSize
   );
 
   canvas.toBlob(
@@ -777,31 +918,51 @@ const cancelCrop = () => {
   cropDialog.value.imageSrc = '';
   cropDialog.value.croppedImage = '';
   photoFile.value = null;
-  photoPreview.value = null;
 };
 
-onMounted(async () => {
-  resetForm();
-  if (canAccessLabelTemplate.value) {
-    await labelTemplateStore.listLabelTemplateAll();
-  }
-});
+const removePhoto = (event: Event) => {
+  event.stopPropagation();
+  isDeletePhotoDialogOpen.value = true;
+};
 
-watch(isVisible, (visible) => {
-  if (visible) {
-    resetForm();
-  }
-});
+const handleRemovePhotoConfirm = async () => {
+  if (!contactId.value) return;
 
-watch(
-  () => props.initialData,
-  () => {
-    if (isVisible.value && props.initialData) {
-      resetForm();
+  const result = await contactStore.deleteContactPhoto(contactId.value);
+
+  if (result) {
+    photo.value = null;
+    photoPreview.value = null;
+    photoFile.value = null;
+    await loadContactData();
+  }
+};
+
+const loadLabelTemplates = async () => {
+  if (canAccessLabelTemplate.value && labelTemplateStore.listAll.length === 0) {
+    const labelTemplates = await chatStore.listChatLabelTemplates();
+    labelTemplateStore.listAll = labelTemplates.map((lt) => ({
+      label_template_id: lt.label_template_id,
+      label: lt.label,
+      color: '',
+    }));
+  }
+};
+
+watch([contactId, isVisible], async ([newContactId, newIsVisible]) => {
+  if (newIsVisible) {
+    await loadLabelTemplates();
+    if (newContactId) {
+      await loadContactData();
     }
-  },
-  { deep: true }
-);
+  }
+});
+
+onMounted(() => {
+  if (contactId.value && isVisible.value) {
+    loadContactData();
+  }
+});
 </script>
 
 <template>
@@ -817,8 +978,14 @@ watch(
       </VOverlay>
     </template>
 
-    <VForm ref="refFormAddContact" @submit.prevent>
-      <VCard :title="$t('add_contact')">
+    <VForm ref="refFormEditContact" @submit.prevent>
+      <VCard>
+        <VCardTitle class="d-flex align-center justify-space-between">
+          <span>{{ $t('edit_contact') }}</span>
+          <VChip :color="isValided ? 'success' : 'error'" size="small">
+            {{ isValided ? $t('validated') : $t('not_validated') }}
+          </VChip>
+        </VCardTitle>
         <VCardText>
           <VRow>
             <VCol cols="12" class="d-flex justify-center">
@@ -835,8 +1002,8 @@ watch(
               >
                 <VAvatar size="120" class="cursor-pointer">
                   <VImg
-                    v-if="photoPreview"
-                    :src="photoPreview"
+                    v-if="photoPreview || photo"
+                    :src="(photoPreview || photo) ?? undefined"
                     alt="Foto de perfil"
                   />
                   <VImg
@@ -848,6 +1015,17 @@ watch(
                 <div class="photo-overlay">
                   <VIcon icon="tabler-camera" size="32" class="d-flex" />
                 </div>
+                <VBtn
+                  v-if="photoPreview || photo"
+                  icon
+                  size="x-small"
+                  color="error"
+                  variant="flat"
+                  class="photo-remove-btn"
+                  @click="removePhoto"
+                >
+                  <VIcon icon="tabler-trash" size="16" />
+                </VBtn>
               </div>
             </VCol>
           </VRow>
@@ -880,12 +1058,21 @@ watch(
 
             <VCol cols="12" md="6">
               <AppTextField
-                v-model="email"
+                v-model="emailFormatted"
                 type="email"
                 :label="$t('email') + ':'"
                 :placeholder="$t('email')"
                 :rules="[emailValidator]"
-              />
+              >
+                <template #append-inner>
+                  <VIcon
+                    :icon="isEmailDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
+                    class="cursor-pointer"
+                    :class="{ 'opacity-50': isLoadingEmail }"
+                    @click="toggleEmailVisibility"
+                  />
+                </template>
+              </AppTextField>
             </VCol>
           </VRow>
           <VRow>
@@ -904,9 +1091,6 @@ watch(
                       variant="outlined"
                       readonly
                       append-inner-icon="tabler-chevron-down"
-                      :rules="[
-                        requiredValidator(phone_ddi, $t('phone_ddi_required')),
-                      ]"
                     />
                   </template>
                   <VCard>
@@ -959,8 +1143,16 @@ watch(
                 :label="$t('phone') + ':'"
                 :placeholder="$t('phone')"
                 maxlength="15"
-                :rules="[requiredValidator(phone, $t('phone_required'))]"
-              />
+              >
+                <template #append-inner>
+                  <VIcon
+                    :icon="isPhoneDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
+                    class="cursor-pointer"
+                    :class="{ 'opacity-50': isLoadingPhone }"
+                    @click="togglePhoneVisibility"
+                  />
+                </template>
+              </AppTextField>
             </VCol>
           </VRow>
           <VRow>
@@ -997,7 +1189,7 @@ watch(
           <VBtn variant="tonal" color="secondary" @click="isVisible = false">
             {{ $t('cancel') }}
           </VBtn>
-          <VBtn @click="addContact"> {{ $t('add') }} </VBtn>
+          <VBtn @click="updateContact"> {{ $t('save') }} </VBtn>
         </VCardText>
       </VCard>
     </VForm>
@@ -1070,6 +1262,13 @@ watch(
         </VCardText>
       </VCard>
     </VDialog>
+
+    <VDialogHandler
+      v-model="isDeletePhotoDialogOpen"
+      :title="$t('remove_photo')"
+      :message="$t('remove_photo_confirmation')"
+      @confirm="handleRemovePhotoConfirm"
+    />
   </VDialog>
 </template>
 
@@ -1102,6 +1301,15 @@ watch(
 
   &.hover .photo-overlay {
     opacity: 1;
+  }
+
+  .photo-remove-btn {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    z-index: 10;
+    pointer-events: auto;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   }
 }
 
@@ -1188,3 +1396,4 @@ watch(
   cursor: nwse-resize;
 }
 </style>
+
