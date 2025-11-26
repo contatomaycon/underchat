@@ -30,7 +30,7 @@ const loadWorkerConfig = async (workerId?: string | null) => {
     return;
   }
 
-  const config = await channelsStore.fetchWorkerConfig(workerId);
+  const config = await channelsStore.fetchWorkerConfigForChat(workerId);
   showWorkerNameLabel.value = Boolean(config?.show_worker_name);
 };
 

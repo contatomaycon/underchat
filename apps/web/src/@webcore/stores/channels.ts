@@ -26,6 +26,7 @@ import { WorkerProfileInfo } from '@core/schema/worker/uploadProfileInfo/respons
 import { WorkerConfig } from '@core/schema/worker/updateWorkerConfig/response.schema';
 import { ViewWorkerConfigResponse } from '@core/schema/worker/viewWorkerConfig/response.schema';
 import { UpdateWorkerConfigRequest } from '@core/schema/worker/updateWorkerConfig/request.schema';
+import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerConfigForChat/response.schema';
 
 export const useChannelsStore = defineStore('channels', {
   state: () => ({
@@ -45,6 +46,10 @@ export const useChannelsStore = defineStore('channels', {
       total: 0 as number,
     } as PagingResponseSchema,
     workerConfigCache: {} as Record<string, ViewWorkerConfigResponse | null>,
+    workerConfigForChatCache: {} as Record<
+      string,
+      ViewWorkerConfigForChatResponse | null
+    >,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -783,6 +788,47 @@ export const useChannelsStore = defineStore('channels', {
         this.showSnackbar(message, EColor.error);
 
         this.workerConfigCache[workerId] = null;
+        return null;
+      }
+    },
+
+    async fetchWorkerConfigForChat(
+      workerId: string
+    ): Promise<ViewWorkerConfigForChatResponse | null> {
+      if (!workerId) return null;
+
+      if (this.workerConfigForChatCache[workerId] !== undefined) {
+        return this.workerConfigForChatCache[workerId];
+      }
+
+      try {
+        const response = await axios.get<
+          IApiResponse<ViewWorkerConfigForChatResponse>
+        >(`/chat/worker/${workerId}/config`);
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('channel_general_config_load_error');
+          this.showSnackbar(message, EColor.error);
+
+          this.workerConfigForChatCache[workerId] = null;
+          return null;
+        }
+
+        this.workerConfigForChatCache[workerId] = data.data ?? null;
+        return this.workerConfigForChatCache[workerId];
+      } catch (error) {
+        let message = this.i18n.global.t('channel_general_config_load_error');
+        if (error instanceof AxiosError) {
+          message = error?.response?.data?.message ?? message;
+        }
+
+        this.showSnackbar(message, EColor.error);
+
+        this.workerConfigForChatCache[workerId] = null;
         return null;
       }
     },

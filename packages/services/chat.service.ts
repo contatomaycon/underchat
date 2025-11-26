@@ -7,6 +7,8 @@ import { IChat } from '@core/common/interfaces/IChat';
 import { chatMappings } from '@core/mappings/chat.mappings';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
+import { WorkerConfigForChatViewerRepository } from '@core/repositories/chat/WorkerConfigForChatViewer.repository';
+import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerConfigForChat/response.schema';
 
 type ElasticHit<T> = {
   _source?: T;
@@ -15,7 +17,8 @@ type ElasticHit<T> = {
 @injectable()
 export class ChatService {
   constructor(
-    private readonly elasticDatabaseService: ElasticDatabaseService
+    private readonly elasticDatabaseService: ElasticDatabaseService,
+    private readonly workerConfigForChatViewerRepository: WorkerConfigForChatViewerRepository
   ) {}
 
   saveMessageChat = async (messageChat: IChatMessage): Promise<boolean> => {
@@ -390,6 +393,14 @@ export class ChatService {
       EElasticIndex.message,
       { content },
       messageId
+    );
+  };
+
+  viewWorkerConfigForChat = async (
+    workerId: string
+  ): Promise<ViewWorkerConfigForChatResponse> => {
+    return this.workerConfigForChatViewerRepository.viewWorkerConfigForChatByWorkerId(
+      workerId
     );
   };
 }

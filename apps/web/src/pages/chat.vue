@@ -3881,6 +3881,14 @@ onMounted(async () => {
         return true;
       }
 
+      const chatExistsInList =
+        chatStore.listQueue.some((c) => c.chat_id === chat.chat_id) ||
+        chatStore.listInChat.some((c) => c.chat_id === chat.chat_id);
+
+      if (chatExistsInList) {
+        return true;
+      }
+
       if (chat.user?.id === chatStore.user?.user_id) {
         return true;
       }
