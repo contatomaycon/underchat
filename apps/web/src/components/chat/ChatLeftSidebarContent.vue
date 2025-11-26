@@ -23,10 +23,11 @@ import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { IChat } from '@core/common/interfaces/IChat';
 import { EColor } from '@core/common/enums/EColor';
 import VDialogHandler from '@/components/VDialogHandler.vue';
-import { ListWorkerResponse } from '@core/schema/worker/listWorker/response.schema';
-import { ListSectorResponse } from '@core/schema/sector/listSector/response.schema';
-import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
-import { ESectorStatus } from '@core/common/enums/ESectorStatus';
+import {
+  ListTransferOptionsResponse,
+  TransferWorker,
+  TransferSector,
+} from '@core/schema/chat/listTransferOptions/response.schema';
 
 const emit = defineEmits<{
   (e: 'openChat', id: ListChatsResult['chat_id']): void;
@@ -82,8 +83,8 @@ const isSelectChannelSectorModalOpen = ref(false);
 const selectedContactForChat = ref<ListContactResponse | null>(null);
 const selectedWorkerId = ref<string | null>(null);
 const selectedSectorId = ref<string | null>(null);
-const availableWorkers = ref<ListWorkerResponse[]>([]);
-const availableSectors = ref<ListSectorResponse[]>([]);
+const availableWorkers = ref<TransferWorker[]>([]);
+const availableSectors = ref<TransferSector[]>([]);
 
 type FilterType = 'new' | 'all' | 'in_chat' | 'queue' | 'chatbot';
 
@@ -391,36 +392,25 @@ watch(canAccessContacts, (hasAccess) => {
   }
 });
 
-const loadActiveWorkers = async () => {
+const loadTransferOptions = async () => {
   if (!chatStore.user?.account_id) return;
 
-  const result = await channelsStore.listChannels({
-    page: 1,
-    per_page: 100,
-    sort_by: [],
-    status: EWorkerStatus.online,
-  });
-
-  if (result) {
-    availableWorkers.value = result.results.filter(
-      (worker) => worker.status?.id === EWorkerStatus.online
+  try {
+    const response = await axios.get<IApiResponse<ListTransferOptionsResponse>>(
+      '/chat/transfer-options'
     );
-  }
-};
 
-const loadActiveSectors = async () => {
-  if (!chatStore.user?.account_id) return;
+    const data = response?.data;
 
-  const result = await sectorsStore.listSectors({
-    page: 1,
-    per_page: 100,
-    sort_by: [],
-    sector_status: ESectorStatus.active,
-  });
-
-  if (result) {
-    availableSectors.value = result.results.filter(
-      (sector) => sector.sector_status?.id === ESectorStatus.active
+    if (data?.status && data?.data) {
+      availableWorkers.value = data.data.workers;
+      availableSectors.value = data.data.sectors;
+    }
+  } catch (error) {
+    console.error('Error loading transfer options:', error);
+    chatStore.showSnackbar(
+      chatStore.i18n.global.t('error_loading_transfer_options'),
+      EColor.error
     );
   }
 };
@@ -446,7 +436,7 @@ const handleContactClick = async (contact: ListContactResponse) => {
   selectedWorkerId.value = null;
   selectedSectorId.value = null;
 
-  await Promise.all([loadActiveWorkers(), loadActiveSectors()]);
+  await loadTransferOptions();
 
   isSelectChannelSectorModalOpen.value = true;
 };

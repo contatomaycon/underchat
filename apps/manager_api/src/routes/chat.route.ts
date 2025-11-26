@@ -19,6 +19,7 @@ import { searchMessagesSchema } from '@core/schema/chat/searchMessages';
 import { transferChatSchema } from '@core/schema/chat/transferChat';
 import { searchChatsSchema } from '@core/schema/chat/searchChats';
 import { viewWorkerConfigForChatSchema } from '@core/schema/chat/viewWorkerConfigForChat';
+import { listTransferOptionsSchema } from '@core/schema/chat/listTransferOptions';
 
 export default function chatRoutes(server: FastifyInstance) {
   const chatController = container.resolve(ChatController);
@@ -170,6 +171,15 @@ export default function chatRoutes(server: FastifyInstance) {
   server.get('/chat/worker/:worker_id/config', {
     schema: viewWorkerConfigForChatSchema,
     handler: chatController.viewWorkerConfigForChat,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+    ],
+  });
+
+  server.get('/chat/transfer-options', {
+    schema: listTransferOptionsSchema,
+    handler: chatController.listTransferOptions,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),

@@ -20,6 +20,8 @@ import { TFunction } from 'i18next';
 import { SectorByIdExistsRepository } from '@core/repositories/sector/SectorByIdExists.repository';
 import { SectorUsersListerRepository } from '@core/repositories/sector/SectorUsersLister.repository';
 import { ListSectorUsersResponse } from '@core/schema/sector/listSectorUsers/response.schema';
+import { SectorAllListerRepository } from '@core/repositories/sector/SectorAllLister.repository';
+import { TransferSector } from '@core/schema/chat/listTransferOptions/response.schema';
 
 @injectable()
 export class SectorService {
@@ -35,7 +37,8 @@ export class SectorService {
     private readonly sectorRoleListerRepository: SectorRoleListerRepository,
     private readonly sectorRoleTransactionCreatorRepository: SectorRoleTransactionCreatorRepository,
     private readonly sectorByIdExistsRepository: SectorByIdExistsRepository,
-    private readonly sectorUsersListerRepository: SectorUsersListerRepository
+    private readonly sectorUsersListerRepository: SectorUsersListerRepository,
+    private readonly sectorAllListerRepository: SectorAllListerRepository
   ) {}
 
   existsSectorById = async (
@@ -162,6 +165,16 @@ export class SectorService {
     return this.sectorUsersListerRepository.listSectorUsers(
       accountId,
       sectorId
+    );
+  };
+
+  listAllSectors = async (
+    accountId: string,
+    isAdministrator: boolean
+  ): Promise<TransferSector[]> => {
+    return this.sectorAllListerRepository.listAllSectors(
+      accountId,
+      isAdministrator
     );
   };
 }

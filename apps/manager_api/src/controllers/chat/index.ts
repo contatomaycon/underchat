@@ -16,6 +16,7 @@ import { searchMessages } from './methods/searchMessages';
 import { transferChat } from './methods/transferChat';
 import { searchChats } from './methods/searchChats';
 import { viewWorkerConfigForChat } from './methods/viewWorkerConfigForChat';
+import { listTransferOptions } from './methods/listTransferOptions';
 
 @injectable()
 class ChatController {
@@ -36,6 +37,7 @@ class ChatController {
   public transferChat = transferChat;
   public searchChats = searchChats;
   public viewWorkerConfigForChat = viewWorkerConfigForChat;
+  public listTransferOptions = listTransferOptions;
 }
 
 export default ChatController;
