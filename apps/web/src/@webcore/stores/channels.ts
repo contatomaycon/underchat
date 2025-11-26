@@ -44,6 +44,7 @@ export const useChannelsStore = defineStore('channels', {
       count: 0 as number,
       total: 0 as number,
     } as PagingResponseSchema,
+    workerConfigCache: {} as Record<string, ViewWorkerConfigResponse | null>,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -747,8 +748,12 @@ export const useChannelsStore = defineStore('channels', {
 
     async fetchWorkerConfig(
       workerId: string
-    ): Promise<ViewWorkerConfigResponse> {
+    ): Promise<ViewWorkerConfigResponse | null> {
       if (!workerId) return null;
+
+      if (this.workerConfigCache[workerId] !== undefined) {
+        return this.workerConfigCache[workerId];
+      }
 
       try {
         const response = await axios.get<
@@ -763,10 +768,12 @@ export const useChannelsStore = defineStore('channels', {
             this.i18n.global.t('channel_general_config_load_error');
           this.showSnackbar(message, EColor.error);
 
+          this.workerConfigCache[workerId] = null;
           return null;
         }
 
-        return data.data ?? null;
+        this.workerConfigCache[workerId] = data.data ?? null;
+        return this.workerConfigCache[workerId];
       } catch (error) {
         let message = this.i18n.global.t('channel_general_config_load_error');
         if (error instanceof AxiosError) {
@@ -775,6 +782,7 @@ export const useChannelsStore = defineStore('channels', {
 
         this.showSnackbar(message, EColor.error);
 
+        this.workerConfigCache[workerId] = null;
         return null;
       }
     },
