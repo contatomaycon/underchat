@@ -4,12 +4,14 @@ import ChatQueue from './ChatQueue.vue';
 import AppAddContactChat from '@/components/chat/AppAddContactChat.vue';
 import AppEditContactChat from '@/components/chat/AppEditContactChat.vue';
 import { useChatStore } from '@/@webcore/stores/chat';
+import { useChannelsStore } from '@/@webcore/stores/channels';
 import { ListChatContactsResponse } from '@core/schema/chat/listContacts/response.schema';
 import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { SearchChatsQuery } from '@core/schema/chat/searchChats/request.schema';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
+import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerConfigForChat/response.schema';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { can } from '@layouts/plugins/casl';
@@ -35,6 +37,7 @@ const props = defineProps<{
 }>();
 
 const chatStore = useChatStore();
+const channelsStore = useChannelsStore();
 
 const currentPageQueue = ref(1);
 const perPageQueue = ref(10);
@@ -76,6 +79,7 @@ const selectedWorkerId = ref<string | null>(null);
 const selectedSectorId = ref<string | null>(null);
 const availableWorkers = ref<TransferWorker[]>([]);
 const availableSectors = ref<TransferSector[]>([]);
+const workerConfigForChat = ref<ViewWorkerConfigForChatResponse | null>(null);
 
 type FilterType = 'new' | 'all' | 'in_chat' | 'queue' | 'chatbot';
 
@@ -382,6 +386,38 @@ const loadTransferOptions = async () => {
     console.error('Error loading transfer options:', error);
   }
 };
+
+const loadWorkerConfigForSelectedWorker = async () => {
+  if (!selectedWorkerId.value) {
+    workerConfigForChat.value = null;
+    return;
+  }
+
+  try {
+    const config = await channelsStore.fetchWorkerConfigForChat(
+      selectedWorkerId.value
+    );
+    workerConfigForChat.value = config;
+  } catch (error) {
+    console.error('Error loading worker config:', error);
+    workerConfigForChat.value = null;
+  }
+};
+
+watch(selectedWorkerId, () => {
+  void loadWorkerConfigForSelectedWorker();
+});
+
+const userStatus = computed(
+  () =>
+    (chatStore.user?.chat_user?.status as EChatUserStatus | undefined) ||
+    EChatUserStatus.offline
+);
+
+const cannotOpenConversation = computed(() => {
+  if (!workerConfigForChat.value?.allow_attendance_only_online) return false;
+  return userStatus.value !== EChatUserStatus.online;
+});
 
 const handleContactClick = async (contact: ListChatContactsResponse) => {
   if (!contact.phone_partial) {
@@ -913,6 +949,19 @@ onMounted(async () => {
             </template>
           </VSelect>
         </div>
+
+        <VAlert
+          v-if="
+            workerConfigForChat?.allow_attendance_only_online &&
+            cannotOpenConversation
+          "
+          type="warning"
+          variant="tonal"
+          density="compact"
+          class="mt-4"
+        >
+          {{ $t('attendance_only_online_required') }}
+        </VAlert>
       </VCardText>
 
       <VDivider />
@@ -926,7 +975,9 @@ onMounted(async () => {
           {{ $t('cancel') }}
         </VBtn>
         <VBtn
-          :disabled="!selectedWorkerId || chatStore.loading"
+          :disabled="
+            !selectedWorkerId || chatStore.loading || cannotOpenConversation
+          "
           :loading="chatStore.loading"
           @click="handleOpenConversation"
         >

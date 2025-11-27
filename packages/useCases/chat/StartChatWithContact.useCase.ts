@@ -23,6 +23,8 @@ import { IViewWorkerNameAndId } from '@core/common/interfaces/IViewWorkerNameAnd
 import { IViewAccountName } from '@core/common/interfaces/IViewAccountName';
 import { IViewUserNamePhoto } from '@core/common/interfaces/IViewUserNamePhoto';
 import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid';
+import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 
 interface ContactData {
   contact: ViewContactResponse;
@@ -50,7 +52,8 @@ export class StartChatWithContactUseCase {
     private readonly workerConfigService: WorkerConfigService,
     private readonly contactService: ContactService,
     private readonly sectorService: SectorService,
-    private readonly encryptService: EncryptService
+    private readonly encryptService: EncryptService,
+    private readonly chatUserViewerRepository: ChatUserViewerRepository
   ) {}
 
   async execute(
@@ -74,6 +77,18 @@ export class StartChatWithContactUseCase {
       body.sector_id,
       isAdministrator
     );
+
+    const workerConfigFields =
+      await this.workerService.viewWorkerConfigFieldsByWorkerId(body.worker_id);
+
+    if (workerConfigFields?.allow_attendance_only_online) {
+      const userStatus =
+        await this.chatUserViewerRepository.findStatusByUserId(userId);
+
+      if (userStatus !== EChatUserStatus.online) {
+        throw new Error(t('attendance_only_online_allowed'));
+      }
+    }
 
     const existingChat = await this.chatService.findChatByPhone(
       accountId,
