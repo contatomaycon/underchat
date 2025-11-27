@@ -7,6 +7,65 @@ import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
 
 let initializedAccountId: string | null = null;
 
+const updateCurrentUserStatus = (
+  status: EChatUserStatus,
+  chatStore: ReturnType<typeof useChatStore>
+): void => {
+  const currentUser = chatStore.user;
+  if (!currentUser) return;
+
+  const updatedChatUser = currentUser.chat_user
+    ? {
+        ...currentUser.chat_user,
+        status,
+      }
+    : {
+        status,
+      };
+
+  chatStore.user = {
+    ...currentUser,
+    chat_user: updatedChatUser as AuthUserResponse['chat_user'],
+  };
+
+  chatStore.updateChatUserImmediate();
+};
+
+const updateUserInList = (
+  userId: string,
+  status: EChatUserStatus,
+  usersStore: ReturnType<typeof useUsersStore>
+): void => {
+  const index = usersStore.list.findIndex((user) => user.user_id === userId);
+
+  if (index === -1) return;
+
+  const existing = usersStore.list[index];
+  if (!existing.chat_user) return;
+
+  usersStore.list[index] = {
+    ...existing,
+    chat_user: {
+      ...existing.chat_user,
+      status,
+    },
+  };
+};
+
+const handleUserPresenceEvent = (
+  data: any,
+  chatStore: ReturnType<typeof useChatStore>,
+  usersStore: ReturnType<typeof useUsersStore>
+): void => {
+  const status = data.status as EChatUserStatus;
+
+  if (data.user_id === chatStore.user?.user_id) {
+    updateCurrentUserStatus(status, chatStore);
+  }
+
+  updateUserInList(data.user_id, status, usersStore);
+};
+
 export const initUserPresenceSubscription = async (
   accountId: string
 ): Promise<void> => {
@@ -23,47 +82,7 @@ export const initUserPresenceSubscription = async (
     if (!data || typeof data !== 'object') return;
 
     if ('event' in data && data.event === 'user_presence') {
-      const status = data.status as EChatUserStatus;
-
-      if (data.user_id === chatStore.user?.user_id) {
-        const currentUser = chatStore.user;
-
-        if (currentUser) {
-          const updatedChatUser = currentUser.chat_user
-            ? {
-                ...currentUser.chat_user,
-                status,
-              }
-            : {
-                status,
-              };
-
-          chatStore.user = {
-            ...currentUser,
-            chat_user: updatedChatUser as AuthUserResponse['chat_user'],
-          };
-
-          chatStore.updateChatUserImmediate();
-        }
-      }
-
-      const index = usersStore.list.findIndex(
-        (user) => user.user_id === data.user_id
-      );
-
-      if (index !== -1) {
-        const existing = usersStore.list[index];
-
-        if (existing.chat_user) {
-          usersStore.list[index] = {
-            ...existing,
-            chat_user: {
-              ...existing.chat_user,
-              status,
-            },
-          };
-        }
-      }
+      handleUserPresenceEvent(data, chatStore, usersStore);
     }
   });
 };

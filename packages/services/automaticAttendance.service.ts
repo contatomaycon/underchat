@@ -130,18 +130,28 @@ export class AutomaticAttendanceService {
     return userStatus === EChatUserStatus.online;
   }
 
-  private async processChatAttendance(
-    t: TFunction<'translation', undefined>,
-    accountId: string,
-    workerId: string,
-    userId: string,
-    queueChat: IChat,
-    user: IChat['user'],
-    startedAt: string,
+  private async processChatAttendance(params: {
+    t: TFunction<'translation', undefined>;
+    accountId: string;
+    workerId: string;
+    userId: string;
+    queueChat: IChat;
+    user: IChat['user'];
+    startedAt: string;
     workerConfigFields: Awaited<
       ReturnType<WorkerService['viewWorkerConfigFieldsByWorkerId']>
-    > | null
-  ): Promise<void> {
+    > | null;
+  }): Promise<void> {
+    const {
+      t,
+      accountId,
+      workerId,
+      userId,
+      queueChat,
+      user,
+      startedAt,
+      workerConfigFields,
+    } = params;
     const updated = await this.chatService.updateChatStatus(
       queueChat.chat_id,
       EChatStatus.in_chat,
@@ -324,7 +334,7 @@ export class AutomaticAttendanceService {
 
       const startedAt = queueChat.started_at ?? currentDate;
 
-      const processPromise = this.processChatAttendance(
+      const processPromise = this.processChatAttendance({
         t,
         accountId,
         workerId,
@@ -332,8 +342,8 @@ export class AutomaticAttendanceService {
         queueChat,
         user,
         startedAt,
-        workerConfigFields
-      );
+        workerConfigFields,
+      });
 
       processPromises.push(processPromise);
     }
