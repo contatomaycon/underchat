@@ -40,7 +40,6 @@ import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { EColor } from '@core/common/enums/EColor';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
-import { resolveAvatarBadgeVariant } from '@webcore/utils/formatters';
 import {
   IChatMessage,
   IQuotedMessage,
@@ -3877,6 +3876,65 @@ onMounted(async () => {
       return userSectors.includes(chat.sector.id);
     };
 
+    const handleMessageEvent = (messageData: IChatMessage): void => {
+      if (chatStore.activeChat?.chat_id !== messageData.chat_id) {
+        return;
+      }
+
+      handleTypingEvent(messageData);
+
+      const changeType = chatStore.addMessageActiveChat(messageData);
+
+      if (changeType === 'created') {
+        nextTick(async () => {
+          await scrollToBottomInChatLog();
+        });
+        globalThis.dispatchEvent(new CustomEvent('focus-composer'));
+      }
+    };
+
+    const handleActiveChatSwitch = async (chatData: IChat): Promise<void> => {
+      const previousActiveChatId = chatStore.activeChat?.chat_id;
+
+      if (previousActiveChatId !== chatData.chat_id) {
+        chatStore.listMessages = [];
+        chatStore.currentPage = 1;
+        chatStore.totalPages = 1;
+        currentPage.value = 1;
+      }
+
+      chatStore.setActiveChat(chatData.chat_id);
+
+      if (chatStore.activeChat?.chat_id === chatData.chat_id) {
+        const requestQueue: ListMessageChatsQuery = {
+          current_page: 1,
+          per_page: perPage.value,
+        };
+        await chatStore.getChatById(requestQueue);
+
+        await nextTick();
+        requestAnimationFrame(() => {
+          scrollToBottomInChatLog();
+        });
+      }
+    };
+
+    const handleChatUpdateEvent = (chatData: IChat): void => {
+      if (!canReceiveChatNotification(chatData)) {
+        return;
+      }
+
+      chatStore.addChat(chatData);
+
+      const isActiveChatForUser =
+        (chatData as any)._active &&
+        chatData.user?.id === chatStore.user?.user_id;
+
+      if (isActiveChatForUser) {
+        void handleActiveChatSwitch(chatData);
+      }
+    };
+
     await onMessage(
       chatAccountCentrifugo(accountId),
       (data: IChatMessage | IChatTyping | IChat | any) => {
@@ -3886,65 +3944,12 @@ onMounted(async () => {
         }
 
         if ('message_id' in data) {
-          const messageData = data as IChatMessage;
-
-          if (chatStore.activeChat?.chat_id !== messageData.chat_id) {
-            return;
-          }
-
-          handleTypingEvent(messageData);
-
-          const changeType = chatStore.addMessageActiveChat(messageData);
-
-          if (changeType === 'created') {
-            nextTick(async () => {
-              await scrollToBottomInChatLog();
-            });
-            globalThis.dispatchEvent(new CustomEvent('focus-composer'));
-          }
-
+          handleMessageEvent(data as IChatMessage);
           return;
         }
 
         if ('chat_id' in data && !('message_id' in data)) {
-          const chatData = data as IChat;
-
-          if (!canReceiveChatNotification(chatData)) {
-            return;
-          }
-
-          chatStore.addChat(chatData);
-
-          if (
-            (chatData as any)._active &&
-            chatData.user?.id === chatStore.user?.user_id
-          ) {
-            const previousActiveChatId = chatStore.activeChat?.chat_id;
-
-            if (previousActiveChatId !== chatData.chat_id) {
-              chatStore.listMessages = [];
-              chatStore.currentPage = 1;
-              chatStore.totalPages = 1;
-              currentPage.value = 1;
-            }
-
-            chatStore.setActiveChat(chatData.chat_id);
-
-            if (chatStore.activeChat?.chat_id === chatData.chat_id) {
-              (async () => {
-                const requestQueue: ListMessageChatsQuery = {
-                  current_page: 1,
-                  per_page: perPage.value,
-                };
-                await chatStore.getChatById(requestQueue);
-
-                await nextTick();
-                requestAnimationFrame(() => {
-                  scrollToBottomInChatLog();
-                });
-              })();
-            }
-          }
+          handleChatUpdateEvent(data as IChat);
         }
       }
     );

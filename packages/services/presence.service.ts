@@ -103,10 +103,10 @@ export class PresenceService {
     const key = this.getKey(userId);
     const exists = await this.redis.exists(key);
 
-    if (!exists) {
-      await this.redis.setex(key, this.ttlSeconds, '1');
-    } else {
+    if (exists) {
       await this.redis.expire(key, this.ttlSeconds);
+    } else {
+      await this.redis.setex(key, this.ttlSeconds, '1');
     }
 
     const cachedStatus = this.statusCache.get(userId);
@@ -187,10 +187,10 @@ export class PresenceService {
     const key = this.getKey(userId);
     const exists = await this.redis.exists(key);
 
-    if (!exists) {
-      await this.redis.setex(key, this.ttlSeconds, '1');
-    } else {
+    if (exists) {
       await this.redis.expire(key, this.ttlSeconds);
+    } else {
+      await this.redis.setex(key, this.ttlSeconds, '1');
     }
 
     const newStatus = EChatUserStatus.away;

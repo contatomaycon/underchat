@@ -61,7 +61,7 @@ import { TFunction } from 'i18next';
 export class MessageUpsertConsume {
   private consumer: Consumer | null = null;
   private processingChain: Promise<void> = Promise.resolve();
-  private t: TFunction<'translation', undefined> | null = null;
+  private readonly t: TFunction<'translation', undefined> | null = null;
 
   constructor(
     @inject('Redis') private readonly redis: Redis,

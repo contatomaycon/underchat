@@ -671,8 +671,8 @@ const saveSimultaneousAttendance = async () => {
     return;
   }
 
-  const quantity = parseInt(quantityValue, 10);
-  if (isNaN(quantity) || quantity < 1) {
+  const quantity = Number.parseInt(quantityValue, 10);
+  if (Number.isNaN(quantity) || quantity < 1) {
     return;
   }
 
@@ -2982,8 +2982,8 @@ onMounted(async () => {
           :rules="[
             (v) => {
               if (!v || v.trim() === '') return true;
-              const num = parseInt(v, 10);
-              if (isNaN(num) || num < 1) {
+              const num = Number.parseInt(v, 10);
+              if (Number.isNaN(num) || num < 1) {
                 return $t('simultaneous_attendance_invalid_number');
               }
               return true;
@@ -3019,7 +3019,7 @@ onMounted(async () => {
           :disabled="
             isSavingSimultaneousAttendance ||
             !simultaneousAttendanceInput.trim() ||
-            parseInt(simultaneousAttendanceInput, 10) < 1
+            Number.parseInt(simultaneousAttendanceInput, 10) < 1
           "
           @click="saveSimultaneousAttendance"
         >

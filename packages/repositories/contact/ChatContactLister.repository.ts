@@ -25,8 +25,11 @@ export class ChatContactListerRepository {
     if (search) {
       const searchConditions = [
         ilike(contact.name, `%${search}%`),
+        ilike(contact.last_name, `%${search}%`),
+        ilike(contact.nickname, `%${search}%`),
         ilike(contact.email_partial, `%${search}%`),
         ilike(contact.phone_partial, `%${search}%`),
+        ilike(labelTemplate.label, `%${search}%`),
       ];
       whereConditions.push(or(...searchConditions) as SQL);
     }
@@ -91,8 +94,11 @@ export class ChatContactListerRepository {
     if (search) {
       const searchConditions = [
         ilike(contact.name, `%${search}%`),
+        ilike(contact.last_name, `%${search}%`),
+        ilike(contact.nickname, `%${search}%`),
         ilike(contact.email_partial, `%${search}%`),
         ilike(contact.phone_partial, `%${search}%`),
+        ilike(labelTemplate.label, `%${search}%`),
       ];
       whereConditions.push(or(...searchConditions) as SQL);
     }
@@ -102,6 +108,10 @@ export class ChatContactListerRepository {
         count: count(),
       })
       .from(contact)
+      .leftJoin(
+        labelTemplate,
+        eq(contact.label_template_id, labelTemplate.label_template_id)
+      )
       .where(and(...whereConditions))
       .execute();
 

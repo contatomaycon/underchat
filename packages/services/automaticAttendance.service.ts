@@ -92,6 +92,145 @@ export class AutomaticAttendanceService {
     return [...chatsWithUserSector, ...chatsWithoutSector];
   }
 
+  private async validateAutomaticAttendance(
+    workerId: string,
+    userId: string,
+    accountId: string,
+    simultaneousAttendanceLimit: number | null
+  ): Promise<boolean> {
+    if (
+      simultaneousAttendanceLimit === null ||
+      simultaneousAttendanceLimit <= 0
+    ) {
+      return true;
+    }
+
+    const currentInChatCount = await this.chatService.countInChatChatsByUserId(
+      accountId,
+      workerId,
+      userId
+    );
+
+    return currentInChatCount < simultaneousAttendanceLimit;
+  }
+
+  private async validateUserCanAttend(
+    userId: string,
+    workerConfigFields: Awaited<
+      ReturnType<WorkerService['viewWorkerConfigFieldsByWorkerId']>
+    > | null
+  ): Promise<boolean> {
+    if (!workerConfigFields?.allow_attendance_only_online) {
+      return true;
+    }
+
+    const userStatus =
+      await this.chatUserViewerRepository.findStatusByUserId(userId);
+
+    return userStatus === EChatUserStatus.online;
+  }
+
+  private async processChatAttendance(
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    workerId: string,
+    userId: string,
+    queueChat: IChat,
+    user: IChat['user'],
+    startedAt: string,
+    workerConfigFields: Awaited<
+      ReturnType<WorkerService['viewWorkerConfigFieldsByWorkerId']>
+    > | null
+  ): Promise<void> {
+    const updated = await this.chatService.updateChatStatus(
+      queueChat.chat_id,
+      EChatStatus.in_chat,
+      user,
+      startedAt,
+      null
+    );
+
+    if (!updated) {
+      return;
+    }
+
+    const updatedChat: IChat = {
+      ...queueChat,
+      status: EChatStatus.in_chat,
+      user,
+      started_at: startedAt,
+      summary: {
+        last_message: queueChat.summary?.last_message ?? null,
+        last_date: queueChat.summary?.last_date ?? null,
+        unread_count: 0,
+      },
+    };
+
+    const channelAccountId = updatedChat.account?.id ?? accountId;
+
+    const [saved] = await Promise.all([
+      this.chatService.saveChat(updatedChat),
+      this.invalidateChatCache(updatedChat),
+    ]);
+
+    if (!saved) {
+      return;
+    }
+
+    let protocol: string | null = null;
+    if (workerConfigFields?.generate_protocol_at_start) {
+      protocol = await this.sendProtocolMessage(
+        t,
+        accountId,
+        queueChat.chat_id,
+        workerConfigFields.generate_protocol_at_start,
+        'protocol_start'
+      );
+    }
+
+    const existingProtocols = updatedChat.protocol_start ?? [];
+    let protocolStart: string[] | null = null;
+    if (protocol) {
+      protocolStart = [...existingProtocols, protocol];
+    } else if (existingProtocols.length > 0) {
+      protocolStart = existingProtocols;
+    }
+
+    const chatWithProtocol: IChat = {
+      ...updatedChat,
+      protocol_start: protocolStart,
+    };
+
+    const publishPromises = [
+      this.centrifugoService.publishSub(
+        chatAccountCentrifugo(channelAccountId),
+        chatWithProtocol
+      ),
+      this.centrifugoService.publishSub(
+        chatQueueAccountCentrifugo(channelAccountId),
+        chatWithProtocol
+      ),
+    ];
+
+    await Promise.all(publishPromises);
+
+    const userInChatCount = await this.chatService.countInChatChatsByUserId(
+      accountId,
+      workerId,
+      userId
+    );
+
+    if (userInChatCount === 1) {
+      await this.centrifugoService.publishSub(
+        chatAccountCentrifugo(channelAccountId),
+        {
+          ...updatedChat,
+          _active: true,
+        } as any
+      );
+    }
+  }
+
   async handleAutomaticAttendance(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -123,17 +262,15 @@ export class AutomaticAttendanceService {
     const hasLimit =
       simultaneousAttendanceLimit !== null && simultaneousAttendanceLimit > 0;
 
-    if (hasLimit) {
-      const currentInChatCount =
-        await this.chatService.countInChatChatsByUserId(
-          accountId,
-          workerId,
-          userId
-        );
-
-      if (currentInChatCount >= simultaneousAttendanceLimit) {
-        return;
-      }
+    if (
+      !(await this.validateAutomaticAttendance(
+        workerId,
+        userId,
+        accountId,
+        simultaneousAttendanceLimit
+      ))
+    ) {
+      return;
     }
 
     const filteredChats = this.filterChatsByUserSectors(
@@ -158,13 +295,8 @@ export class AutomaticAttendanceService {
       return;
     }
 
-    if (workerConfigFields?.allow_attendance_only_online) {
-      const userStatus =
-        await this.chatUserViewerRepository.findStatusByUserId(userId);
-
-      if (userStatus !== EChatUserStatus.online) {
-        return;
-      }
+    if (!(await this.validateUserCanAttend(userId, workerConfigFields))) {
+      return;
     }
 
     const user: IChat['user'] = {
@@ -178,111 +310,30 @@ export class AutomaticAttendanceService {
 
     for (const queueChat of chatsToProcess) {
       if (hasLimit) {
-        const currentInChatCount =
-          await this.chatService.countInChatChatsByUserId(
-            accountId,
+        if (
+          !(await this.validateAutomaticAttendance(
             workerId,
-            userId
-          );
-
-        if (currentInChatCount >= simultaneousAttendanceLimit) {
+            userId,
+            accountId,
+            simultaneousAttendanceLimit
+          ))
+        ) {
           break;
         }
       }
 
       const startedAt = queueChat.started_at ?? currentDate;
 
-      const processPromise = (async () => {
-        const updated = await this.chatService.updateChatStatus(
-          queueChat.chat_id,
-          EChatStatus.in_chat,
-          user,
-          startedAt,
-          null
-        );
-
-        if (!updated) {
-          return;
-        }
-
-        const updatedChat: IChat = {
-          ...queueChat,
-          status: EChatStatus.in_chat,
-          user,
-          started_at: startedAt,
-          summary: {
-            last_message: queueChat.summary?.last_message ?? null,
-            last_date: queueChat.summary?.last_date ?? null,
-            unread_count: 0,
-          },
-        };
-
-        const channelAccountId = updatedChat.account?.id ?? accountId;
-
-        const [saved] = await Promise.all([
-          this.chatService.saveChat(updatedChat),
-          this.invalidateChatCache(updatedChat),
-        ]);
-
-        if (!saved) {
-          return;
-        }
-
-        let protocol: string | null = null;
-        const protocolPromise = workerConfigFields?.generate_protocol_at_start
-          ? this.sendProtocolMessage(
-              t,
-              accountId,
-              queueChat.chat_id,
-              workerConfigFields.generate_protocol_at_start,
-              'protocol_start'
-            ).then((generatedProtocol) => {
-              protocol = generatedProtocol;
-              return generatedProtocol;
-            })
-          : Promise.resolve(null);
-
-        await protocolPromise;
-
-        const existingProtocols = updatedChat.protocol_start ?? [];
-        const chatWithProtocol: IChat = {
-          ...updatedChat,
-          protocol_start: protocol
-            ? [...existingProtocols, protocol]
-            : existingProtocols.length > 0
-              ? existingProtocols
-              : null,
-        };
-
-        const publishPromises = [
-          this.centrifugoService.publishSub(
-            chatAccountCentrifugo(channelAccountId),
-            chatWithProtocol
-          ),
-          this.centrifugoService.publishSub(
-            chatQueueAccountCentrifugo(channelAccountId),
-            chatWithProtocol
-          ),
-        ];
-
-        await Promise.all(publishPromises);
-
-        const userInChatCount = await this.chatService.countInChatChatsByUserId(
-          accountId,
-          workerId,
-          userId
-        );
-
-        if (userInChatCount === 1) {
-          await this.centrifugoService.publishSub(
-            chatAccountCentrifugo(channelAccountId),
-            {
-              ...updatedChat,
-              _active: true,
-            } as any
-          );
-        }
-      })();
+      const processPromise = this.processChatAttendance(
+        t,
+        accountId,
+        workerId,
+        userId,
+        queueChat,
+        user,
+        startedAt,
+        workerConfigFields
+      );
 
       processPromises.push(processPromise);
     }
@@ -334,8 +385,8 @@ export class AutomaticAttendanceService {
       sectorId
     );
 
-    const sectorUserIds = sectorUsers.map((su) => su.user_id);
-    return onlineUsers.filter((ou) => sectorUserIds.includes(ou.id));
+    const sectorUserIds = new Set(sectorUsers.map((su) => su.user_id));
+    return onlineUsers.filter((ou) => sectorUserIds.has(ou.id));
   }
 
   private async calculateUserLoads(
@@ -474,13 +525,16 @@ export class AutomaticAttendanceService {
     await protocolPromise;
 
     const existingProtocols = updatedChat.protocol_start ?? [];
+    let protocolStart: string[] | null = null;
+    if (protocol) {
+      protocolStart = [...existingProtocols, protocol];
+    } else if (existingProtocols.length > 0) {
+      protocolStart = existingProtocols;
+    }
+
     const chatWithProtocol: IChat = {
       ...updatedChat,
-      protocol_start: protocol
-        ? [...existingProtocols, protocol]
-        : existingProtocols.length > 0
-          ? existingProtocols
-          : null,
+      protocol_start: protocolStart,
     };
 
     const publishPromises = [

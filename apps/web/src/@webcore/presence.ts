@@ -19,7 +19,7 @@ const isManualBusyStatus = (): boolean => {
 export const startHeartbeat = (intervalMs = 20000): void => {
   if (heartbeatTimer) return;
 
-  heartbeatTimer = window.setInterval(() => {
+  heartbeatTimer = globalThis.setInterval(() => {
     if (isManualBusyStatus()) {
       return;
     }
@@ -38,14 +38,14 @@ export const startHeartbeat = (intervalMs = 20000): void => {
 export const stopHeartbeat = (): void => {
   if (!heartbeatTimer) return;
 
-  window.clearInterval(heartbeatTimer);
+  globalThis.clearInterval(heartbeatTimer);
   heartbeatTimer = null;
 };
 
 export const startAwayHeartbeat = (intervalMs = 60000): void => {
   if (awayHeartbeatTimer) return;
 
-  awayHeartbeatTimer = window.setInterval(() => {
+  awayHeartbeatTimer = globalThis.setInterval(() => {
     if (isManualBusyStatus()) {
       return;
     }
@@ -64,14 +64,14 @@ export const startAwayHeartbeat = (intervalMs = 60000): void => {
 export const stopAwayHeartbeat = (): void => {
   if (!awayHeartbeatTimer) return;
 
-  window.clearInterval(awayHeartbeatTimer);
+  globalThis.clearInterval(awayHeartbeatTimer);
   awayHeartbeatTimer = null;
 };
 
 const startBusyHeartbeat = (intervalMs = 60000): void => {
   if (busyHeartbeatTimer) return;
 
-  busyHeartbeatTimer = window.setInterval(() => {
+  busyHeartbeatTimer = globalThis.setInterval(() => {
     if (!isManualBusyStatus()) {
       return;
     }
@@ -83,7 +83,7 @@ const startBusyHeartbeat = (intervalMs = 60000): void => {
 const stopBusyHeartbeat = (): void => {
   if (!busyHeartbeatTimer) return;
 
-  window.clearInterval(busyHeartbeatTimer);
+  globalThis.clearInterval(busyHeartbeatTimer);
   busyHeartbeatTimer = null;
 };
 

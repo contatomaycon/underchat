@@ -29,10 +29,14 @@ export const initUserPresenceSubscription = async (
         const currentUser = chatStore.user;
 
         if (currentUser) {
-          const updatedChatUser = {
-            ...(currentUser.chat_user ?? {}),
-            status,
-          };
+          const updatedChatUser = currentUser.chat_user
+            ? {
+                ...currentUser.chat_user,
+                status,
+              }
+            : {
+                status,
+              };
 
           chatStore.user = {
             ...currentUser,

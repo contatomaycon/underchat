@@ -19,7 +19,6 @@ import { refDebounced } from '@vueuse/core';
 import { EColor } from '@core/common/enums/EColor';
 import VDialogHandler from '@/components/VDialogHandler.vue';
 import {
-  ListTransferOptionsResponse,
   TransferWorker,
   TransferSector,
 } from '@core/schema/chat/listTransferOptions/response.schema';
