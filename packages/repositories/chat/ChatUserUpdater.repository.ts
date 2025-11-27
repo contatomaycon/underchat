@@ -5,10 +5,11 @@ import {
   NodePgQueryResultHKT,
 } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, count, ExtractTablesWithRelations } from 'drizzle-orm';
+import { and, eq, count, ExtractTablesWithRelations, ne } from 'drizzle-orm';
 import { UpdateChatsUserRequest } from '@core/schema/chat/updateChatsUser/request.schema';
 import { PgTransaction } from 'drizzle-orm/pg-core';
 import { v7 as uuidv7 } from 'uuid';
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 
 @injectable()
 export class ChatUserUpdaterRepository {
@@ -116,5 +117,18 @@ export class ChatUserUpdaterRepository {
 
       return this.addChatUserById(tx, userId, input);
     });
+  };
+
+  updateStatusIfChanged = async (
+    userId: string,
+    newStatus: EChatUserStatus
+  ): Promise<boolean> => {
+    const result = await this.db
+      .update(chatUser)
+      .set({ status: newStatus })
+      .where(and(eq(chatUser.user_id, userId), ne(chatUser.status, newStatus)))
+      .execute();
+
+    return result.rowCount === 1;
   };
 }

@@ -31,7 +31,7 @@ export class ChatUserCreatorRepository {
       .values({
         chat_user_id: chatUserId,
         user_id: userId,
-        status: EChatUserStatus.online,
+        status: EChatUserStatus.offline,
         notifications: true,
       })
       .execute();

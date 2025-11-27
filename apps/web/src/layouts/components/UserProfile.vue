@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { removeUserData } from '@/@webcore/localStorage/user';
+import { presenceOffline } from '@/@webcore/presence';
+import { initUserPresenceSubscription } from '@/@webcore/presenceCentrifugo';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useProfileStore } from '@/@webcore/stores/profile';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
@@ -582,6 +584,8 @@ const removePhoto = async () => {
 };
 
 const logout = async () => {
+  await presenceOffline().catch(() => {});
+
   chatStore.clearUser();
   const result = removeUserData();
 
@@ -593,6 +597,12 @@ const logout = async () => {
     });
   }
 };
+
+onMounted(() => {
+  if (chatStore.user?.account_id) {
+    initUserPresenceSubscription(chatStore.user.account_id).catch(() => {});
+  }
+});
 </script>
 
 <template>

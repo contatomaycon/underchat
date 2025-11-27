@@ -39,6 +39,7 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { EColor } from '@core/common/enums/EColor';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import {
   IChatMessage,
   IQuotedMessage,
@@ -3843,7 +3844,7 @@ onMounted(async () => {
 
     await onMessage(
       chatAccountCentrifugo(accountId),
-      (data: IChatMessage | IChatTyping | IChat) => {
+      (data: IChatMessage | IChatTyping | IChat | any) => {
         if ('type' in data && data.type === 'typing') {
           handleTypingEvent(data as IChatTyping);
           return;

@@ -5,6 +5,7 @@ import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { VForm } from 'vuetify/components';
 import { EColor } from '@core/common/enums/EColor';
+import { refreshPresenceForCurrentRoute } from '@/@webcore/presence';
 
 defineEmits<{
   close: [];
@@ -19,8 +20,6 @@ const refFormProfileSidebarContent = ref<VForm>();
 const userStatusRadioOptions = [
   { title: t('online'), value: 'online', color: 'success' },
   { title: t('busy'), value: 'busy', color: 'error' },
-  { title: t('away'), value: 'away', color: 'warning' },
-  { title: t('offline'), value: 'offline', color: 'secondary' },
   { title: t('do_not_disturb'), value: 'do_not_disturb', color: 'error' },
 ];
 
@@ -32,6 +31,8 @@ const updateProfileSidebarContent = async () => {
 
   chatStore.updateChatUserImmediate();
   await updateChatUser();
+
+  refreshPresenceForCurrentRoute();
 };
 
 const isPhotoModalOpen = ref(false);
