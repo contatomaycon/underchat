@@ -3892,6 +3892,11 @@ onMounted(async () => {
             (chatData as any)._active &&
             chatData.user?.id === chatStore.user?.user_id
           ) {
+            if (chatStore.activeChat?.chat_id !== chatData.chat_id) {
+              chatStore.listMessages = [];
+              chatStore.currentPage = 1;
+              chatStore.totalPages = 1;
+            }
             chatStore.setActiveChat(chatData.chat_id);
           }
         }

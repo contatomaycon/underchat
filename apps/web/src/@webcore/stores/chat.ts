@@ -386,6 +386,9 @@ export const useChatStore = defineStore('chat', {
 
       if (this.activeChat?.chat_id === chat.chat_id) {
         this.activeChat = null;
+        this.listMessages = [];
+        this.currentPage = 1;
+        this.totalPages = 1;
       }
     },
     updateChatUserImmediate() {
@@ -686,7 +689,10 @@ export const useChatStore = defineStore('chat', {
 
           if (this.activeChat?.chat_id === chatId) {
             if (data.data.status === EChatStatus.closed) {
-              this.clearActiveChat();
+              this.activeChat = null;
+              this.listMessages = [];
+              this.currentPage = 1;
+              this.totalPages = 1;
             } else {
               this.activeChat = {
                 ...this.activeChat,
@@ -742,8 +748,12 @@ export const useChatStore = defineStore('chat', {
 
           return false;
         }
+
         if (this.activeChat?.chat_id === chatId) {
-          this.clearActiveChat();
+          this.activeChat = null;
+          this.listMessages = [];
+          this.currentPage = 1;
+          this.totalPages = 1;
         }
 
         return true;
@@ -1128,7 +1138,16 @@ export const useChatStore = defineStore('chat', {
 
       if (!chat?.chat_id) {
         this.activeChat = null;
+        this.listMessages = [];
+        this.currentPage = 1;
+        this.totalPages = 1;
         return;
+      }
+
+      if (this.activeChat?.chat_id && this.activeChat.chat_id !== chatId) {
+        this.listMessages = [];
+        this.currentPage = 1;
+        this.totalPages = 1;
       }
 
       if (
@@ -1177,13 +1196,6 @@ export const useChatStore = defineStore('chat', {
 
     setMessageReply(m: ListMessageResult) {
       this.messageReply = m;
-    },
-
-    clearActiveChat() {
-      this.activeChat = null;
-      this.listMessages = [];
-      this.currentPage = 1;
-      this.totalPages = 1;
     },
 
     clearMessageReply() {
