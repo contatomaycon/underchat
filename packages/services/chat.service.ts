@@ -166,6 +166,69 @@ export class ChatService {
     );
   };
 
+  countInChatChatsByUserId = async (
+    accountId: string,
+    workerId: string,
+    userId: string
+  ): Promise<number> => {
+    const queryElastic = {
+      size: 0,
+      query: {
+        bool: {
+          must: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: {
+                    'account.id': accountId,
+                  },
+                },
+              },
+            },
+            {
+              nested: {
+                path: 'worker',
+                query: {
+                  term: {
+                    'worker.id': workerId,
+                  },
+                },
+              },
+            },
+            {
+              nested: {
+                path: 'user',
+                query: {
+                  term: {
+                    'user.id': userId,
+                  },
+                },
+              },
+            },
+            {
+              term: {
+                status: EChatStatus.in_chat,
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select<IChat>(
+      EElasticIndex.chat,
+      queryElastic
+    );
+
+    const total = result?.hits?.total;
+    if (typeof total === 'number') {
+      return total;
+    }
+
+    return total?.value ?? 0;
+  };
+
   updateChatSummary = async (
     chatId: string,
     summary: IChat['summary']

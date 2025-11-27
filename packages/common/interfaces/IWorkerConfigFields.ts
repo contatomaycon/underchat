@@ -5,4 +5,5 @@ export interface IWorkerConfigFields {
   generate_protocol_at_ura: string | null;
   generate_protocol_at_start: string | null;
   generate_protocol_at_transfer: string | null;
+  simultaneous_attendance: number | null;
 }

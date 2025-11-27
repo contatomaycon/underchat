@@ -1002,5 +1002,8 @@
     "simultaneous_attendance_invalid_number": "Por favor, ingrese un número entero válido mayor que cero.",
     "simultaneous_attendance_description": "Define cuántas atenciones puede realizar este canal al mismo tiempo por un mismo agente.",
     "simultaneous_attendance_update_error": "Error al actualizar la cantidad de atenciones simultáneas.",
-    "simultaneous_attendance_update_success": "¡Cantidad de atenciones simultáneas actualizada con éxito!"
+    "simultaneous_attendance_update_success": "¡Cantidad de atenciones simultáneas actualizada con éxito!",
+    "simultaneous_attendance_limit_reached": "Ha alcanzado el límite de atenciones simultáneas permitidas para este canal. Límite: {limit} atención(es).",
+    "simultaneous_attendance_limit_reached_title": "Límite de atenciones alcanzado",
+    "simultaneous_attendance_limit_message": "Puede atender hasta {limit} atención(es) simultánea(s). Su límite ha sido alcanzado."
 }

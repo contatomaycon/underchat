@@ -14,6 +14,7 @@ import { IChat } from '@core/common/interfaces/IChat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { UserService } from '@core/services/user.service';
 import { WorkerService } from '@core/services/worker.service';
+import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { ChatMessageCreatorUseCase } from './ChatMessageCreator.useCase';
 import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
 import { EMessageType } from '@core/common/enums/EMessageType';
@@ -27,6 +28,7 @@ export class ChatStatusUpdaterUseCase {
     private readonly centrifugoService: CentrifugoService,
     private readonly userService: UserService,
     private readonly workerService: WorkerService,
+    private readonly workerConfigService: WorkerConfigService,
     private readonly chatMessageCreatorUseCase: ChatMessageCreatorUseCase,
     @inject('Redis') private readonly redis: Redis
   ) {}
@@ -119,6 +121,31 @@ export class ChatStatusUpdaterUseCase {
     }
 
     if (status === EChatStatus.in_chat) {
+      const simultaneousAttendanceLimit =
+        await this.workerConfigService.viewSimultaneousAttendance(
+          chat.worker.id
+        );
+      const simultaneousAttendanceLimitInt = Number(
+        simultaneousAttendanceLimit
+      );
+
+      if (simultaneousAttendanceLimitInt > 0) {
+        const currentInChatCount =
+          await this.chatService.countInChatChatsByUserId(
+            accountId,
+            chat.worker.id,
+            userId
+          );
+
+        if (currentInChatCount >= simultaneousAttendanceLimitInt) {
+          throw new Error(
+            t('simultaneous_attendance_limit_reached', {
+              limit: simultaneousAttendanceLimit,
+            })
+          );
+        }
+      }
+
       const userData = await this.userService.viewUserNamePhoto(userId);
 
       if (userData) {

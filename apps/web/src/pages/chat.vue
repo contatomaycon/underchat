@@ -20,6 +20,8 @@ import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useUsersStore } from '@/@webcore/stores/user';
 import { useSectorsStore } from '@/@webcore/stores/sector';
+import { useChannelsStore } from '@/@webcore/stores/channels';
+import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerConfigForChat/response.schema';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { ViewChatContactResponse } from '@core/schema/chat/viewContact/response.schema';
@@ -83,6 +85,7 @@ definePage({
 });
 
 const chatStore = useChatStore();
+const channelStore = useChannelsStore();
 useSnackbarCleanup(chatStore);
 const { name } = useTheme();
 const vuetifyDisplays = useDisplay();
@@ -450,13 +453,54 @@ const isQueueStatus = computed(
   () => chatStore.activeChat?.status === EChatStatus.queue
 );
 
+const workerConfigForChat = ref<ViewWorkerConfigForChatResponse>(null);
+
+const canAttendChat = computed(() => {
+  if (!isQueueStatus.value) return false;
+  if (!workerConfigForChat.value?.simultaneous_attendance) return true;
+  if (!chatStore.activeChat?.worker?.id || !chatStore.user?.user_id)
+    return true;
+
+  const limit = workerConfigForChat.value.simultaneous_attendance;
+  const currentInChatCount = chatStore.listInChat.filter(
+    (chat) =>
+      chat.user?.id === chatStore.user?.user_id &&
+      chat.worker?.id === chatStore.activeChat?.worker?.id
+  ).length;
+
+  return currentInChatCount < limit;
+});
+
+const loadWorkerConfigForChat = async () => {
+  const workerId = chatStore.activeChat?.worker?.id;
+  if (!workerId) {
+    workerConfigForChat.value = null;
+    return;
+  }
+
+  const config = await channelStore.fetchWorkerConfigForChat(workerId);
+  workerConfigForChat.value = config;
+};
+
+watch(
+  () => chatStore.activeChat?.worker?.id,
+  () => {
+    void loadWorkerConfigForChat();
+  },
+  { immediate: true }
+);
+
 const handleAttendChat = async () => {
   if (!chatStore.activeChat?.chat_id) return;
 
-  await chatStore.updateChatStatus(
+  const success = await chatStore.updateChatStatus(
     chatStore.activeChat.chat_id,
     EChatStatus.in_chat
   );
+
+  if (success) {
+    chatStore.showSnackbar(t('chat_attended_successfully'), EColor.success);
+  }
 };
 
 const isCloseServiceDialogOpen = ref(false);
@@ -4676,14 +4720,34 @@ onBeforeUnmount(() => {
             class="d-flex align-center justify-space-between pa-4 bg-surface rounded mb-2"
           >
             <span class="text-body-2 text-medium-emphasis">
-              {{
-                t(
-                  'chat_queue_message',
-                  'Para iniciar o atendimento clique em atender'
-                )
-              }}
+              <template v-if="canAttendChat">
+                {{
+                  t(
+                    'chat_queue_message',
+                    'Para iniciar o atendimento clique em atender'
+                  )
+                }}
+              </template>
+              <template
+                v-else-if="workerConfigForChat?.simultaneous_attendance"
+              >
+                {{
+                  t('simultaneous_attendance_limit_message', {
+                    limit: workerConfigForChat.simultaneous_attendance,
+                  })
+                }}
+              </template>
+              <template v-else>
+                {{
+                  t(
+                    'chat_queue_message',
+                    'Para iniciar o atendimento clique em atender'
+                  )
+                }}
+              </template>
             </span>
             <VBtn
+              v-if="canAttendChat"
               color="primary"
               size="small"
               @click="handleAttendChat"

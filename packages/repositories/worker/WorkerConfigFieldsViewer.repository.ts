@@ -23,6 +23,7 @@ export class WorkerConfigFieldsViewerRepository {
         generate_protocol_at_start: workerConfig.generate_protocol_at_start,
         generate_protocol_at_transfer:
           workerConfig.generate_protocol_at_transfer,
+        simultaneous_attendance: workerConfig.simultaneous_attendance,
       })
       .from(workerConfig)
       .where(eq(workerConfig.worker_id, workerId))

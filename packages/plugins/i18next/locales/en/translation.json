@@ -372,5 +372,6 @@
   "transfer_sector_users_listed_successfully": "Sector users for transfer listed successfully!",
   "transfer_options_listed_successfully": "Transfer options listed successfully!",
   "simultaneous_attendance_view_success": "Number of simultaneous attendances retrieved successfully!",
-  "simultaneous_attendance_update_success": "Number of simultaneous attendances updated successfully!"
+  "simultaneous_attendance_update_success": "Number of simultaneous attendances updated successfully!",
+  "simultaneous_attendance_limit_reached": "You have reached the limit of simultaneous attendances allowed for this channel. Limit: {{limit}} attendance(s)."
 }

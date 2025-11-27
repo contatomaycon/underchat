@@ -1002,5 +1002,8 @@
     "simultaneous_attendance_invalid_number": "Please enter a valid integer greater than zero.",
     "simultaneous_attendance_description": "Defines how many attendances this channel can handle at the same time by the same agent.",
     "simultaneous_attendance_update_error": "Error updating the number of simultaneous attendances.",
-    "simultaneous_attendance_update_success": "Number of simultaneous attendances updated successfully!"
+    "simultaneous_attendance_update_success": "Number of simultaneous attendances updated successfully!",
+    "simultaneous_attendance_limit_reached": "You have reached the limit of simultaneous attendances allowed for this channel. Limit: {limit} attendance(s).",
+    "simultaneous_attendance_limit_reached_title": "Attendance limit reached",
+    "simultaneous_attendance_limit_message": "You can attend up to {limit} simultaneous attendance(s). Your limit has been reached."
 }

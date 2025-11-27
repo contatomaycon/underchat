@@ -696,10 +696,14 @@ export const useChatStore = defineStore('chat', {
         }
 
         return true;
-      } catch {
+      } catch (error) {
         this.loading = false;
 
-        const errorMessage = this.i18n.global.t('chat_status_update_error');
+        let errorMessage = this.i18n.global.t('chat_status_update_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
         this.showSnackbar(errorMessage, EColor.error);
 
         return false;

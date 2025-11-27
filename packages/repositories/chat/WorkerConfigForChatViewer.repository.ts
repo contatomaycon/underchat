@@ -19,6 +19,7 @@ export class WorkerConfigForChatViewerRepository {
         show_worker_name: workerConfig.show_worker_name,
         show_attendee_name: workerConfig.show_attendee_name,
         is_automatic_attendance: workerConfig.is_automatic_attendance,
+        simultaneous_attendance: workerConfig.simultaneous_attendance,
       })
       .from(workerConfig)
       .where(eq(workerConfig.worker_id, workerId))
