@@ -13,7 +13,7 @@ export const resolveAvatarBadgeVariant = (status: EChatUserStatus) => {
   if (status === EChatUserStatus.busy) return 'error';
   if (status === EChatUserStatus.away) return 'warning';
   if (status === EChatUserStatus.offline) return 'secondary';
-  if (status === EChatUserStatus.do_not_disturb) return 'error';
+  if (status === EChatUserStatus.do_not_disturb) return 'warning';
   return 'secondary';
 };
 

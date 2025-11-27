@@ -213,6 +213,12 @@ export class UserListerRepository {
             },
           },
         },
+        ucu: {
+          columns: {
+            chat_user_id: true,
+            status: true,
+          },
+        },
       },
       columns: {
         user_id: true,
@@ -291,6 +297,13 @@ export class UserListerRepository {
               : null,
           }
         : null,
+      chat_user:
+        user.ucu && user.ucu.status
+          ? {
+              chat_user_id: user.ucu.chat_user_id,
+              status: user.ucu.status,
+            }
+          : null,
       created_at: user.created_at,
     }));
   };

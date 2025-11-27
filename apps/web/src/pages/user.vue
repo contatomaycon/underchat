@@ -11,6 +11,8 @@ import { ERolePermissions } from '@core/common/enums/EPermissions/role';
 import { useUsersStore } from '@/@webcore/stores/user';
 import { ListUserResponse } from '@core/schema/user/listUser/response.schema';
 import { EUserStatus } from '@core/common/enums/EUserStatus';
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
+import { resolveAvatarBadgeVariant } from '@webcore/utils/formatters';
 import { getAdministrator, getUser } from '@/@webcore/localStorage/user';
 import { can } from '@/@layouts/plugins/casl';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
@@ -102,6 +104,14 @@ const userToAssignRole = ref<string | null>(null);
 const photoViewerOpen = ref(false);
 const photoViewerSrc = ref<string>('');
 const photoViewerDownloadName = ref<string>('user-photo.jpg');
+
+const resolvePresenceLabel = (status?: EChatUserStatus | null): string => {
+  if (!status) {
+    return t('offline');
+  }
+
+  return t(status);
+};
 
 const headers: DataTableHeader<ListUserResponse>[] = [
   { title: '', key: 'photo', sortable: false, width: '80px' },
@@ -283,26 +293,54 @@ watch(
         :loading-text="$t('loading_text')"
       >
         <template #item.photo="{ item }">
-          <div
-            class="user-photo-square"
-            :class="{ 'cursor-pointer': item.user_info?.photo }"
-            @click="
-              item.user_info?.photo && openPhotoViewer(item.user_info.photo)
-            "
-          >
-            <VImg
-              v-if="item.user_info?.photo"
-              :src="item.user_info.photo"
-              alt="User photo"
-              cover
-            />
-            <VImg
-              v-else
-              :src="'/images/svg/avatar-default.svg'"
-              alt="Default avatar"
-              cover
-            />
-          </div>
+          <VTooltip location="top" transition="scale-transition">
+            <template #activator="{ props }">
+              <VBadge
+                v-bind="props"
+                dot
+                location="bottom right"
+                offset-x="3"
+                offset-y="3"
+                bordered
+                :color="
+                  resolveAvatarBadgeVariant(
+                    (item.chat_user?.status as EChatUserStatus) ||
+                      EChatUserStatus.offline
+                  )
+                "
+              >
+                <div
+                  class="user-photo-square"
+                  :class="{ 'cursor-pointer': item.user_info?.photo }"
+                  @click="
+                    item.user_info?.photo &&
+                    openPhotoViewer(item.user_info.photo)
+                  "
+                >
+                  <VImg
+                    v-if="item.user_info?.photo"
+                    :src="item.user_info.photo"
+                    alt="User photo"
+                    cover
+                  />
+                  <VImg
+                    v-else
+                    :src="'/images/svg/avatar-default.svg'"
+                    alt="Default avatar"
+                    cover
+                  />
+                </div>
+              </VBadge>
+            </template>
+            <span>
+              {{
+                resolvePresenceLabel(
+                  (item.chat_user?.status as EChatUserStatus) ||
+                    EChatUserStatus.offline
+                )
+              }}
+            </span>
+          </VTooltip>
         </template>
 
         <template #item.account="{ item }">

@@ -3,10 +3,14 @@ import { TFunction } from 'i18next';
 import { ChatUserService } from '@core/services/chatUser.service';
 import { UpdateChatsUserRequest } from '@core/schema/chat/updateChatsUser/request.schema';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
+import { PresenceService } from '@core/services/presence.service';
 
 @injectable()
 export class ChatUserUpdaterUseCase {
-  constructor(private readonly chatUserService: ChatUserService) {}
+  constructor(
+    private readonly chatUserService: ChatUserService,
+    private readonly presenceService: PresenceService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,
@@ -27,6 +31,13 @@ export class ChatUserUpdaterUseCase {
 
     if (!updateChatUser) {
       throw new Error(t('chat_update_user_not_found'));
+    }
+
+    if (input.status) {
+      await this.presenceService['publishUserStatus']?.(
+        userId,
+        input.status as EChatUserStatus
+      );
     }
 
     return updateChatUser;

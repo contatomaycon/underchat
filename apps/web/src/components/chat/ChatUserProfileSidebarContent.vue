@@ -20,7 +20,7 @@ const refFormProfileSidebarContent = ref<VForm>();
 const userStatusRadioOptions = [
   { title: t('online'), value: 'online', color: 'success' },
   { title: t('busy'), value: 'busy', color: 'error' },
-  { title: t('do_not_disturb'), value: 'do_not_disturb', color: 'error' },
+  { title: t('do_not_disturb'), value: 'do_not_disturb', color: 'warning' },
 ];
 
 const updateChatUser = useDebounceFn(chatStore.updateChatUserDebounce, 1000);
