@@ -5,6 +5,7 @@ import {
   permissionAssignment,
   user,
   userInfo,
+  chatUser,
 } from '@core/models';
 import { ListSectorUsersResponse } from '@core/schema/sector/listSectorUsers/response.schema';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -29,6 +30,9 @@ export class SectorUsersListerRepository {
           name: userInfo.name,
           last_name: userInfo.last_name,
         },
+        chat_user: {
+          status: chatUser.status,
+        },
       })
       .from(sectorRole)
       .innerJoin(
@@ -44,6 +48,7 @@ export class SectorUsersListerRepository {
       )
       .innerJoin(user, eq(permissionAssignment.user_id, user.user_id))
       .leftJoin(userInfo, eq(user.user_id, userInfo.user_id))
+      .leftJoin(chatUser, eq(user.user_id, chatUser.user_id))
       .where(
         and(
           eq(sectorRole.sector_id, sectorId),
@@ -58,7 +63,8 @@ export class SectorUsersListerRepository {
         user.user_id,
         user.email_partial,
         userInfo.name,
-        userInfo.last_name
+        userInfo.last_name,
+        chatUser.status
       )
       .execute();
 

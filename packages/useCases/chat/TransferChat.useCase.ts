@@ -20,6 +20,8 @@ import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/req
 import { WorkerService } from '@core/services/worker.service';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
 import { AutomaticAttendanceService } from '@core/services/automaticAttendance.service';
+import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import Redis from 'ioredis';
 
 @injectable()
@@ -32,6 +34,7 @@ export class TransferChatUseCase {
     private readonly centrifugoService: CentrifugoService,
     private readonly workerService: WorkerService,
     private readonly automaticAttendanceService: AutomaticAttendanceService,
+    private readonly chatUserViewerRepository: ChatUserViewerRepository,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -212,6 +215,15 @@ export class TransferChatUseCase {
     }
 
     this.validateUserAndSector(t, body, user, sector);
+
+    if (workerConfigFields?.allow_attendance_only_online && body.user_id) {
+      const targetUserStatus =
+        await this.chatUserViewerRepository.findStatusByUserId(body.user_id);
+
+      if (targetUserStatus !== EChatUserStatus.online) {
+        throw new Error(t('user_unavailable_for_transfer'));
+      }
+    }
 
     const updatedChat: IChat = {
       ...chat,

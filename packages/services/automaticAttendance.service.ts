@@ -17,6 +17,8 @@ import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/req
 import { ChatMessageCreatorUseCase } from '@core/useCases/chat/ChatMessageCreator.useCase';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
 import { IViewUserNamePhoto } from '@core/common/interfaces/IViewUserNamePhoto';
+import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import Redis from 'ioredis';
 
 @injectable()
@@ -29,6 +31,7 @@ export class AutomaticAttendanceService {
     private readonly centrifugoService: CentrifugoService,
     private readonly chatMessageCreatorUseCase: ChatMessageCreatorUseCase,
     private readonly sectorService: SectorService,
+    private readonly chatUserViewerRepository: ChatUserViewerRepository,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -153,6 +156,15 @@ export class AutomaticAttendanceService {
 
     if (!userData) {
       return;
+    }
+
+    if (workerConfigFields?.allow_attendance_only_online) {
+      const userStatus =
+        await this.chatUserViewerRepository.findStatusByUserId(userId);
+
+      if (userStatus !== EChatUserStatus.online) {
+        return;
+      }
     }
 
     const user: IChat['user'] = {

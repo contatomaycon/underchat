@@ -378,5 +378,7 @@
   "transfer_options_listed_successfully": "Transfer options listed successfully!",
   "simultaneous_attendance_view_success": "Number of simultaneous attendances retrieved successfully!",
   "simultaneous_attendance_update_success": "Number of simultaneous attendances updated successfully!",
-  "simultaneous_attendance_limit_reached": "You have reached the limit of simultaneous attendances allowed for this channel. Limit: {{limit}} attendance(s)."
+  "simultaneous_attendance_limit_reached": "You have reached the limit of simultaneous attendances allowed for this channel. Limit: {{limit}} attendance(s).",
+  "attendance_only_online_allowed": "You cannot attend while not having online status.",
+  "user_unavailable_for_transfer": "This user is currently unavailable."
 }

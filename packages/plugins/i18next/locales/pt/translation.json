@@ -378,5 +378,7 @@
   "transfer_options_listed_successfully": "Opções de transferência listadas com sucesso!",
   "simultaneous_attendance_view_success": "Quantidade de atendimentos simultâneos obtida com sucesso!",
   "simultaneous_attendance_update_success": "Quantidade de atendimentos simultâneos atualizada com sucesso!",
-  "simultaneous_attendance_limit_reached": "Você já atingiu o limite de atendimentos simultâneos permitidos para este canal. Limite: {{limit}} atendimento(s)."
+  "simultaneous_attendance_limit_reached": "Você já atingiu o limite de atendimentos simultâneos permitidos para este canal. Limite: {{limit}} atendimento(s).",
+  "attendance_only_online_allowed": "Você não pode atender enquanto não estiver com status online.",
+  "user_unavailable_for_transfer": "Este usuário encontra-se indisponível no momento."
 }

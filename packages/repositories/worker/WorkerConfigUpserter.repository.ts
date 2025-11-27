@@ -98,6 +98,11 @@ export class WorkerConfigUpserterRepository {
       updateData.show_worker_name = input.show_worker_name;
     }
 
+    if (input.allow_attendance_only_online !== undefined) {
+      updateData.allow_attendance_only_online =
+        input.allow_attendance_only_online;
+    }
+
     return updateData;
   }
 
@@ -140,6 +145,8 @@ export class WorkerConfigUpserterRepository {
         is_automatic_attendance: input.is_automatic_attendance ?? false,
         show_attendee_name: input.show_attendee_name ?? false,
         show_worker_name: input.show_worker_name ?? false,
+        allow_attendance_only_online:
+          input.allow_attendance_only_online ?? false,
       })
       .execute();
   }
@@ -200,6 +207,7 @@ export class WorkerConfigUpserterRepository {
         is_automatic_attendance: false,
         show_attendee_name: false,
         show_worker_name: false,
+        allow_attendance_only_online: false,
         generate_protocol_at_transfer: text || null,
       })
       .execute();
@@ -277,6 +285,7 @@ export class WorkerConfigUpserterRepository {
         is_automatic_attendance: false,
         show_attendee_name: false,
         show_worker_name: false,
+        allow_attendance_only_online: false,
         generate_protocol_at_start: text || null,
       })
       .execute();
@@ -351,6 +360,7 @@ export class WorkerConfigUpserterRepository {
         is_automatic_attendance: false,
         show_attendee_name: false,
         show_worker_name: false,
+        allow_attendance_only_online: false,
         generate_protocol_at_ura: text || null,
       })
       .execute();
@@ -425,6 +435,7 @@ export class WorkerConfigUpserterRepository {
         is_automatic_attendance: false,
         show_attendee_name: false,
         show_worker_name: false,
+        allow_attendance_only_online: false,
         simultaneous_attendance: quantity || null,
       })
       .execute();

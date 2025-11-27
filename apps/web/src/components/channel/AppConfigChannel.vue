@@ -189,6 +189,7 @@ type WorkerConfigForm = {
   is_automatic_attendance: boolean;
   show_attendee_name: boolean;
   show_worker_name: boolean;
+  allow_attendance_only_online: boolean;
   simultaneous_attendance: boolean;
   generate_protocol_at_ura: boolean;
   generate_protocol_at_start: boolean;
@@ -199,6 +200,7 @@ const createDefaultWorkerConfig = (): WorkerConfigForm => ({
   is_automatic_attendance: false,
   show_attendee_name: false,
   show_worker_name: false,
+  allow_attendance_only_online: false,
   simultaneous_attendance: false,
   generate_protocol_at_ura: false,
   generate_protocol_at_start: false,
@@ -388,6 +390,8 @@ const applyWorkerConfig = (config?: ViewWorkerConfigResponse | null) => {
     nextState.is_automatic_attendance = config.is_automatic_attendance;
     nextState.show_attendee_name = config.show_attendee_name;
     nextState.show_worker_name = config.show_worker_name;
+    nextState.allow_attendance_only_online =
+      config.allow_attendance_only_online;
     nextState.simultaneous_attendance = Boolean(config.simultaneous_attendance);
     nextState.generate_protocol_at_ura = Boolean(
       config.generate_protocol_at_ura
@@ -721,6 +725,13 @@ const workerConfigOptions = computed(() => [
     key: 'show_worker_name' as WorkerConfigField,
     title: t('channel_general_config_show_worker_name_title'),
     description: t('channel_general_config_show_worker_name_description'),
+  },
+  {
+    key: 'allow_attendance_only_online' as WorkerConfigField,
+    title: t('channel_general_config_allow_attendance_only_online_title'),
+    description: t(
+      'channel_general_config_allow_attendance_only_online_description'
+    ),
   },
   {
     key: 'simultaneous_attendance' as WorkerConfigField,

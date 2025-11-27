@@ -62,6 +62,8 @@ export class WorkerConfigService {
       is_automatic_attendance: result.is_automatic_attendance ?? false,
       show_attendee_name: result.show_attendee_name ?? false,
       show_worker_name: result.show_worker_name ?? false,
+      allow_attendance_only_online:
+        result.allow_attendance_only_online ?? false,
       simultaneous_attendance: result.simultaneous_attendance ?? null,
       generate_protocol_at_ura: result.generate_protocol_at_ura,
       generate_protocol_at_start: result.generate_protocol_at_start,

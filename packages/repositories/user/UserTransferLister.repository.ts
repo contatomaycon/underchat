@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { user, userInfo } from '@core/models';
+import { user, userInfo, chatUser } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, asc, eq, isNull, ne } from 'drizzle-orm';
@@ -20,9 +20,11 @@ export class UserTransferListerRepository {
         id: user.user_id,
         name: userInfo.name,
         email_partial: user.email_partial,
+        status: chatUser.status,
       })
       .from(user)
       .leftJoin(userInfo, eq(user.user_id, userInfo.user_id))
+      .leftJoin(chatUser, eq(user.user_id, chatUser.user_id))
       .where(
         and(
           eq(user.account_id, accountId),
@@ -41,6 +43,7 @@ export class UserTransferListerRepository {
     return result.map((user) => ({
       id: user.id,
       name: user.name || user.email_partial || '',
+      status: user.status || null,
     }));
   };
 }

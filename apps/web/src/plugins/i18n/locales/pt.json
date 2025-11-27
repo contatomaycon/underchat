@@ -142,6 +142,8 @@
     "channel_general_config_show_attendee_name_description": "Exibe diretamente na conversa o nome de quem está respondendo.",
     "channel_general_config_show_worker_name_title": "Mostrar nome do canal no chat",
     "channel_general_config_show_worker_name_description": "Exibe o nome do canal no cabeçalho e nas mensagens do atendimento.",
+    "channel_general_config_allow_attendance_only_online_title": "Permitir atendimento apenas para atendentes com status online",
+    "channel_general_config_allow_attendance_only_online_description": "Restringe o atendimento apenas a atendentes com status online. Atendentes com outros status não poderão atender manualmente, receber transferências ou novos atendimentos automáticos.",
     "channel_general_config_generate_protocol_ura_title": "Gerar protocolo na URA",
     "channel_general_config_generate_protocol_ura_description": "Cria um protocolo assim que o cliente interage com a URA.",
     "channel_general_config_generate_protocol_start_title": "Gerar protocolo ao iniciar o atendimento",

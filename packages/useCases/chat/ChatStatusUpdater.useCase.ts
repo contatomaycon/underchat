@@ -20,6 +20,8 @@ import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/req
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
 import { AutomaticAttendanceService } from '@core/services/automaticAttendance.service';
+import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import Redis from 'ioredis';
 
 @injectable()
@@ -32,6 +34,7 @@ export class ChatStatusUpdaterUseCase {
     private readonly workerConfigService: WorkerConfigService,
     private readonly chatMessageCreatorUseCase: ChatMessageCreatorUseCase,
     private readonly automaticAttendanceService: AutomaticAttendanceService,
+    private readonly chatUserViewerRepository: ChatUserViewerRepository,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -135,6 +138,20 @@ export class ChatStatusUpdaterUseCase {
     }
 
     if (status === EChatStatus.in_chat) {
+      const workerConfig =
+        await this.workerService.viewWorkerConfigFieldsByWorkerId(
+          chat.worker.id
+        );
+
+      if (workerConfig?.allow_attendance_only_online) {
+        const userStatus =
+          await this.chatUserViewerRepository.findStatusByUserId(userId);
+
+        if (userStatus !== EChatUserStatus.online) {
+          throw new Error(t('attendance_only_online_allowed'));
+        }
+      }
+
       const simultaneousAttendanceLimit =
         await this.workerConfigService.viewSimultaneousAttendance(
           chat.worker.id

@@ -40,6 +40,7 @@ import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { EColor } from '@core/common/enums/EColor';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
+import { resolveAvatarBadgeVariant } from '@webcore/utils/formatters';
 import {
   IChatMessage,
   IQuotedMessage,
@@ -454,8 +455,30 @@ const isQueueStatus = computed(
 
 const workerConfigForChat = ref<ViewWorkerConfigForChatResponse>(null);
 
+const getStatusColor = (status: EChatUserStatus): string => {
+  const colorMap: Record<EChatUserStatus, string> = {
+    [EChatUserStatus.online]: '#4caf50',
+    [EChatUserStatus.busy]: '#f44336',
+    [EChatUserStatus.away]: '#ff9800',
+    [EChatUserStatus.offline]: '#9e9e9e',
+    [EChatUserStatus.do_not_disturb]: '#ff9800',
+  };
+  return colorMap[status] || '#9e9e9e';
+};
+
 const canAttendChat = computed(() => {
   if (!isQueueStatus.value) return false;
+
+  const userStatus = chatStore.user?.chat_user?.status as
+    | EChatUserStatus
+    | undefined;
+
+  if (workerConfigForChat.value?.allow_attendance_only_online) {
+    if (userStatus !== EChatUserStatus.online) {
+      return false;
+    }
+  }
+
   if (!workerConfigForChat.value?.simultaneous_attendance) return true;
   if (!chatStore.activeChat?.worker?.id || !chatStore.user?.user_id)
     return true;
@@ -607,6 +630,7 @@ const loadTransferUsers = async () => {
     transferUsers.value = users.map((user) => ({
       value: user.id,
       title: user.name,
+      status: user.status || null,
     }));
   } catch (error) {
     console.error('Error loading transfer users:', error);
@@ -641,6 +665,7 @@ const loadTransferSectorUsers = async (sectorId: string) => {
     transferSectorUsers.value = users.map((user) => ({
       value: user.id,
       title: user.name,
+      status: user.status,
     }));
   } catch (error) {
     transferSectorUsers.value = [];
@@ -678,8 +703,9 @@ watch(selectedTransferSector, (sectorId) => {
   }
 });
 
-watch(isTransferModalOpen, (isOpen) => {
+watch(isTransferModalOpen, async (isOpen) => {
   if (isOpen) {
+    await loadWorkerConfigForChat();
     nextTick(() => {
       try {
         transferType.value = 'user';
@@ -5492,7 +5518,37 @@ onBeforeUnmount(() => {
                         "
                         :active="selectedTransferUser === item.value"
                       >
-                        <VListItemTitle>{{ item.title }}</VListItemTitle>
+                        <VListItemTitle>
+                          <template
+                            v-if="
+                              workerConfigForChat?.allow_attendance_only_online &&
+                              item.status
+                            "
+                          >
+                            <div class="d-flex align-center gap-2">
+                              <span
+                                class="v-badge v-badge--dot v-badge--inline"
+                                :style="{
+                                  backgroundColor: getStatusColor(
+                                    (item.status as EChatUserStatus) ||
+                                      EChatUserStatus.offline
+                                  ),
+                                }"
+                                style="
+                                  width: 8px;
+                                  height: 8px;
+                                  border-radius: 50%;
+                                  display: inline-block;
+                                  margin-right: 8px;
+                                "
+                              ></span>
+                              <span>{{ item.title }}</span>
+                            </div>
+                          </template>
+                          <template v-else>
+                            {{ item.title }}
+                          </template>
+                        </VListItemTitle>
                       </VListItem>
                     </template>
                     <VListItem v-else-if="!isLoadingTransferUsers" disabled>
@@ -5619,7 +5675,37 @@ onBeforeUnmount(() => {
                           "
                           :active="selectedTransferSectorUser === item.value"
                         >
-                          <VListItemTitle>{{ item.title }}</VListItemTitle>
+                          <VListItemTitle>
+                            <template
+                              v-if="
+                                workerConfigForChat?.allow_attendance_only_online &&
+                                item.status
+                              "
+                            >
+                              <div class="d-flex align-center gap-2">
+                                <span
+                                  class="v-badge v-badge--dot v-badge--inline"
+                                  :style="{
+                                    backgroundColor: getStatusColor(
+                                      (item.status as EChatUserStatus) ||
+                                        EChatUserStatus.offline
+                                    ),
+                                  }"
+                                  style="
+                                    width: 8px;
+                                    height: 8px;
+                                    border-radius: 50%;
+                                    display: inline-block;
+                                    margin-right: 8px;
+                                  "
+                                ></span>
+                                <span>{{ item.title }}</span>
+                              </div>
+                            </template>
+                            <template v-else>
+                              {{ item.title }}
+                            </template>
+                          </VListItemTitle>
                         </VListItem>
                       </template>
                       <VListItem

@@ -140,6 +140,8 @@
     "channel_general_config_show_attendee_name_description": "Displays who is responding directly inside the conversation.",
     "channel_general_config_show_worker_name_title": "Show channel name in the chat",
     "channel_general_config_show_worker_name_description": "Displays the channel name in the chat header and conversation.",
+    "channel_general_config_allow_attendance_only_online_title": "Allow attendance only for agents with online status",
+    "channel_general_config_allow_attendance_only_online_description": "Restricts attendance to agents with online status only. Agents with other statuses will not be able to attend manually, receive transfers, or new automatic attendances.",
     "channel_general_config_generate_protocol_ura_title": "Generate protocol in the IVR",
     "channel_general_config_generate_protocol_ura_description": "Creates a protocol as soon as the client interacts with the IVR.",
     "channel_general_config_generate_protocol_start_title": "Generate protocol when service starts",
