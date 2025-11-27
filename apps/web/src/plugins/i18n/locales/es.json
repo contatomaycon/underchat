@@ -135,7 +135,7 @@
     "channel_general_config_title": "Preferencias de atención",
     "channel_general_config_subtitle": "Define cómo debe comportarse este canal durante el servicio.",
     "channel_general_config_auto_attendance_title": "Distribuir conversaciones automáticamente",
-    "channel_general_config_auto_attendance_description": "Asigna nuevas conversaciones automáticamente a los agentes disponibles.",
+    "channel_general_config_auto_attendance_description": "Asigna nuevas conversaciones automáticamente a los agentes con estado en línea tan pronto como llegan.",
     "channel_general_config_show_attendee_name_title": "Mostrar el nombre del agente al cliente",
     "channel_general_config_show_attendee_name_description": "Muestra dentro del chat quién está respondiendo.",
     "channel_general_config_show_worker_name_title": "Mostrar el nombre del canal en el chat",
