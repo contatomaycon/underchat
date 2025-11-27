@@ -16,6 +16,7 @@ import { resolveAvatarBadgeVariant } from '@webcore/utils/formatters';
 import { getAdministrator, getUser } from '@/@webcore/localStorage/user';
 import { can } from '@/@layouts/plugins/casl';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
+import { useTheme } from 'vuetify';
 
 definePage({
   meta: {
@@ -57,6 +58,7 @@ const permissionsAssignRole = [
 ];
 
 const { t } = useI18n();
+const { global } = useTheme();
 const userStore = useUsersStore();
 useSnackbarCleanup(userStore);
 
@@ -305,7 +307,8 @@ watch(
                 :color="
                   resolveAvatarBadgeVariant(
                     (item.chat_user?.status as EChatUserStatus) ||
-                      EChatUserStatus.offline
+                      EChatUserStatus.offline,
+                    global.name.value === 'dark'
                   )
                 "
               >

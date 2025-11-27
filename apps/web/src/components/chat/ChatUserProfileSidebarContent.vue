@@ -6,6 +6,7 @@ import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { VForm } from 'vuetify/components';
 import { EColor } from '@core/common/enums/EColor';
 import { refreshPresenceForCurrentRoute } from '@/@webcore/presence';
+import { useTheme } from 'vuetify';
 
 defineEmits<{
   close: [];
@@ -14,6 +15,7 @@ defineEmits<{
 const chatStore = useChatStore();
 const profileStore = useProfileStore();
 const { t } = useI18n();
+const { global } = useTheme();
 
 const refFormProfileSidebarContent = ref<VForm>();
 
@@ -627,7 +629,8 @@ const removePhoto = async () => {
           bordered
           :color="
             resolveAvatarBadgeVariant(
-              chatStore.user?.chat_user?.status as EChatUserStatus
+              chatStore.user?.chat_user?.status as EChatUserStatus,
+              global.name.value === 'dark'
             )
           "
           class="chat-user-profile-badge"

@@ -6,11 +6,13 @@ import { useChatStore } from '@/@webcore/stores/chat';
 import { useProfileStore } from '@/@webcore/stores/profile';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { EColor } from '@core/common/enums/EColor';
+import { useTheme } from 'vuetify';
 
 const router = useRouter();
 const chatStore = useChatStore();
 const profileStore = useProfileStore();
 const { t } = useI18n();
+const { global } = useTheme();
 
 const isPhotoModalOpen = ref(false);
 const isCropModalOpen = ref(false);
@@ -614,7 +616,8 @@ onMounted(() => {
     bordered
     :color="
       resolveAvatarBadgeVariant(
-        chatStore.user?.chat_user?.status as EChatUserStatus
+        chatStore.user?.chat_user?.status as EChatUserStatus,
+        global.name.value === 'dark'
       )
     "
   >

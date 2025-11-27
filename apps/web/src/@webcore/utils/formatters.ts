@@ -8,11 +8,20 @@ export const avatarText = (value?: string | null): string => {
   return (words[0].charAt(0) + words[1].charAt(0)).toUpperCase();
 };
 
-export const resolveAvatarBadgeVariant = (status: EChatUserStatus) => {
+export const getOfflineColor = (isDark: boolean): string => {
+  return isDark ? '#9e9e9e' : '#757575';
+};
+
+export const resolveAvatarBadgeVariant = (
+  status: EChatUserStatus,
+  isDark?: boolean
+) => {
   if (status === EChatUserStatus.online) return 'success';
   if (status === EChatUserStatus.busy) return 'error';
   if (status === EChatUserStatus.away) return 'warning';
-  if (status === EChatUserStatus.offline) return 'secondary';
+  if (status === EChatUserStatus.offline) {
+    return getOfflineColor(isDark ?? false);
+  }
   if (status === EChatUserStatus.do_not_disturb) return 'warning';
   return 'secondary';
 };

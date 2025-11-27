@@ -461,10 +461,10 @@ const getStatusColor = (status: EChatUserStatus): string => {
     [EChatUserStatus.online]: '#4caf50',
     [EChatUserStatus.busy]: '#f44336',
     [EChatUserStatus.away]: '#ff9800',
-    [EChatUserStatus.offline]: isDark ? '#757575' : '#9e9e9e',
+    [EChatUserStatus.offline]: isDark ? '#9e9e9e' : '#757575',
     [EChatUserStatus.do_not_disturb]: '#ff9800',
   };
-  return colorMap[status] || (isDark ? '#757575' : '#9e9e9e');
+  return colorMap[status] || (isDark ? '#9e9e9e' : '#757575');
 };
 
 const userStatus = computed(

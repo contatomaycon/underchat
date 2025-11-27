@@ -57,6 +57,7 @@ declare global {
   const getCurrentInstance: typeof import('vue').getCurrentInstance
   const getCurrentScope: typeof import('vue').getCurrentScope
   const getCurrentWatcher: typeof import('vue').getCurrentWatcher
+  const getOfflineColor: typeof import('./src/@webcore/utils/formatters').getOfflineColor
   const h: typeof import('vue').h
   const hexToRgb: typeof import('./src/@webcore/utils/colorConverter').hexToRgb
   const ignorableWatch: typeof import('@vueuse/core').ignorableWatch
@@ -445,6 +446,7 @@ declare module 'vue' {
     readonly getCurrentInstance: UnwrapRef<typeof import('vue')['getCurrentInstance']>
     readonly getCurrentScope: UnwrapRef<typeof import('vue')['getCurrentScope']>
     readonly getCurrentWatcher: UnwrapRef<typeof import('vue')['getCurrentWatcher']>
+    readonly getOfflineColor: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['getOfflineColor']>
     readonly h: UnwrapRef<typeof import('vue')['h']>
     readonly hexToRgb: UnwrapRef<typeof import('./src/@webcore/utils/colorConverter')['hexToRgb']>
     readonly ignorableWatch: UnwrapRef<typeof import('@vueuse/core')['ignorableWatch']>

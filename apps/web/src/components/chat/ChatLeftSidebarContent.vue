@@ -18,6 +18,7 @@ import { can } from '@layouts/plugins/casl';
 import { refDebounced } from '@vueuse/core';
 import { EColor } from '@core/common/enums/EColor';
 import VDialogHandler from '@/components/VDialogHandler.vue';
+import { useTheme } from 'vuetify';
 import {
   TransferWorker,
   TransferSector,
@@ -37,6 +38,7 @@ const props = defineProps<{
 
 const chatStore = useChatStore();
 const channelsStore = useChannelsStore();
+const { global } = useTheme();
 
 const currentPageQueue = ref(1);
 const perPageQueue = ref(10);
@@ -509,7 +511,8 @@ onMounted(async () => {
       bordered
       :color="
         resolveAvatarBadgeVariant(
-          chatStore.user?.chat_user?.status as EChatUserStatus
+          chatStore.user?.chat_user?.status as EChatUserStatus,
+          global.name.value === 'dark'
         )
       "
       class="cursor-pointer"
