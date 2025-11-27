@@ -3892,12 +3892,21 @@ onMounted(async () => {
             (chatData as any)._active &&
             chatData.user?.id === chatStore.user?.user_id
           ) {
+            const previousActiveChatId = chatStore.activeChat?.chat_id;
+
+            if (previousActiveChatId !== chatData.chat_id) {
+              chatStore.listMessages = [];
+              chatStore.currentPage = 1;
+              chatStore.totalPages = 1;
+              currentPage.value = 1;
+            }
+
             chatStore.setActiveChat(chatData.chat_id);
 
             if (chatStore.activeChat?.chat_id === chatData.chat_id) {
               (async () => {
                 const requestQueue: ListMessageChatsQuery = {
-                  current_page: currentPage.value,
+                  current_page: 1,
                   per_page: perPage.value,
                 };
                 await chatStore.getChatById(requestQueue);
