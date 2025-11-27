@@ -10,10 +10,12 @@ import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 
 @injectable()
 export class PresenceService {
-  private readonly ttlSeconds = 60;
+  private readonly ttlSeconds = 90;
+  private readonly monitorIntervalMs = 30_000;
   private readonly keyPrefix = 'presence:user:';
 
   private readonly statusCache = new Map<string, EChatUserStatus>();
+  private monitorTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
@@ -25,6 +27,19 @@ export class PresenceService {
 
   private getKey(userId: string): string {
     return `${this.keyPrefix}${userId}`;
+  }
+
+  private async refreshPresenceKey(userId: string): Promise<void> {
+    await this.redis.set(this.getKey(userId), '1', 'EX', this.ttlSeconds);
+  }
+
+  private getActiveStatuses(): EChatUserStatus[] {
+    return [
+      EChatUserStatus.online,
+      EChatUserStatus.away,
+      EChatUserStatus.busy,
+      EChatUserStatus.do_not_disturb,
+    ];
   }
 
   private async ensureChatUserRow(
@@ -68,8 +83,7 @@ export class PresenceService {
   }
 
   async setUserOnline(userId: string): Promise<void> {
-    const key = this.getKey(userId);
-    await this.redis.setex(key, this.ttlSeconds, '1');
+    await this.refreshPresenceKey(userId);
 
     const newStatus = EChatUserStatus.online;
     const cachedStatus = this.statusCache.get(userId);
@@ -78,6 +92,7 @@ export class PresenceService {
       cachedStatus ?? (await this.chatUserViewer.findStatusByUserId(userId));
 
     if (currentStatus === newStatus) {
+      this.statusCache.set(userId, newStatus);
       await this.publishUserStatus(userId, newStatus);
       return;
     }
@@ -102,14 +117,7 @@ export class PresenceService {
   }
 
   async heartbeat(userId: string): Promise<void> {
-    const key = this.getKey(userId);
-    const exists = await this.redis.exists(key);
-
-    if (exists) {
-      await this.redis.expire(key, this.ttlSeconds);
-    } else {
-      await this.redis.setex(key, this.ttlSeconds, '1');
-    }
+    await this.refreshPresenceKey(userId);
 
     const cachedStatus = this.statusCache.get(userId);
     const currentStatus =
@@ -162,6 +170,7 @@ export class PresenceService {
       cachedStatus ?? (await this.chatUserViewer.findStatusByUserId(userId));
 
     if (currentStatus === newStatus) {
+      this.statusCache.set(userId, newStatus);
       await this.publishUserStatus(userId, newStatus);
       return;
     }
@@ -186,14 +195,7 @@ export class PresenceService {
   }
 
   async setUserAway(userId: string): Promise<void> {
-    const key = this.getKey(userId);
-    const exists = await this.redis.exists(key);
-
-    if (exists) {
-      await this.redis.expire(key, this.ttlSeconds);
-    } else {
-      await this.redis.setex(key, this.ttlSeconds, '1');
-    }
+    await this.refreshPresenceKey(userId);
 
     const newStatus = EChatUserStatus.away;
     const cachedStatus = this.statusCache.get(userId);
@@ -202,6 +204,7 @@ export class PresenceService {
       cachedStatus ?? (await this.chatUserViewer.findStatusByUserId(userId));
 
     if (currentStatus === newStatus) {
+      this.statusCache.set(userId, newStatus);
       await this.publishUserStatus(userId, newStatus);
       return;
     }
@@ -255,12 +258,14 @@ export class PresenceService {
 
     if (currentStatus === targetStatus) {
       this.statusCache.set(userId, targetStatus);
+      await this.publishUserStatus(userId, targetStatus);
       return;
     }
 
     if (currentStatus === null) {
       await this.ensureChatUserRow(userId, targetStatus);
       this.statusCache.set(userId, targetStatus);
+      await this.publishUserStatus(userId, targetStatus);
       return;
     }
 
@@ -269,8 +274,46 @@ export class PresenceService {
       targetStatus
     );
 
-    if (updated) {
+    if (updated || currentStatus !== targetStatus) {
       this.statusCache.set(userId, targetStatus);
+      await this.publishUserStatus(userId, targetStatus);
     }
+  }
+
+  private async syncActiveUsersFromRedis(): Promise<void> {
+    const activeUserIds = await this.chatUserViewer.listUserIdsByStatuses(
+      this.getActiveStatuses()
+    );
+
+    await Promise.all(
+      activeUserIds.map(async (userId) => {
+        try {
+          await this.syncStatusFromRedis(userId);
+        } catch (error) {
+          console.error('Failed to sync presence status', { userId, error });
+        }
+      })
+    );
+  }
+
+  startMonitoring(): void {
+    if (this.monitorTimer) return;
+
+    void this.syncActiveUsersFromRedis().catch((error) => {
+      console.error('Failed to run initial presence sync', error);
+    });
+
+    this.monitorTimer = setInterval(() => {
+      this.syncActiveUsersFromRedis().catch((error) => {
+        console.error('Failed to monitor presence', error);
+      });
+    }, this.monitorIntervalMs);
+  }
+
+  stopMonitoring(): void {
+    if (!this.monitorTimer) return;
+
+    clearInterval(this.monitorTimer);
+    this.monitorTimer = null;
   }
 }

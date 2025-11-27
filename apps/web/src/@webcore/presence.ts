@@ -20,7 +20,7 @@ export const startHeartbeat = (intervalMs = 20000): void => {
   if (heartbeatTimer) return;
 
   heartbeatTimer = globalThis.setInterval(() => {
-    if (isManualBusyStatus()) {
+    if (!isLoggedIn() || isManualBusyStatus()) {
       return;
     }
 
@@ -46,7 +46,7 @@ export const startAwayHeartbeat = (intervalMs = 60000): void => {
   if (awayHeartbeatTimer) return;
 
   awayHeartbeatTimer = globalThis.setInterval(() => {
-    if (isManualBusyStatus()) {
+    if (!isLoggedIn()) {
       return;
     }
 
@@ -72,7 +72,14 @@ const startBusyHeartbeat = (intervalMs = 60000): void => {
   if (busyHeartbeatTimer) return;
 
   busyHeartbeatTimer = globalThis.setInterval(() => {
-    if (!isManualBusyStatus()) {
+    if (!isLoggedIn() || !isManualBusyStatus()) {
+      return;
+    }
+
+    const currentRoute = router.currentRoute.value;
+    const path = currentRoute?.path ?? '';
+
+    if (!path.startsWith('/chat')) {
       return;
     }
 
@@ -129,14 +136,6 @@ const handleRoutePresence = (path: string): void => {
     stopBusyHeartbeat();
 
     presenceOnline().catch(() => {});
-
-    return;
-  }
-
-  if (isManualBusyStatus()) {
-    stopHeartbeat();
-    stopAwayHeartbeat();
-    startBusyHeartbeat();
 
     return;
   }
