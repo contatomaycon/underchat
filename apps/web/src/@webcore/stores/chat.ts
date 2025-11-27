@@ -685,17 +685,13 @@ export const useChatStore = defineStore('chat', {
           this.addChat(data.data);
 
           if (this.activeChat?.chat_id === chatId) {
-            if (data.data.status === EChatStatus.closed) {
-              this.clearActiveChat();
-            } else {
-              this.activeChat = {
-                ...this.activeChat,
-                status: data.data.status,
-                user: data.data.user,
-                started_at: data.data.started_at,
-                closed_at: data.data.closed_at,
-              };
-            }
+            this.activeChat = {
+              ...this.activeChat,
+              status: data.data.status,
+              user: data.data.user,
+              started_at: data.data.started_at,
+              closed_at: data.data.closed_at,
+            };
           }
         }
 
@@ -742,10 +738,6 @@ export const useChatStore = defineStore('chat', {
 
           return false;
         }
-        if (this.activeChat?.chat_id === chatId) {
-          this.clearActiveChat();
-        }
-
         return true;
       } catch (error) {
         this.loading = false;
@@ -1177,13 +1169,6 @@ export const useChatStore = defineStore('chat', {
 
     setMessageReply(m: ListMessageResult) {
       this.messageReply = m;
-    },
-
-    clearActiveChat() {
-      this.activeChat = null;
-      this.listMessages = [];
-      this.currentPage = 1;
-      this.totalPages = 1;
     },
 
     clearMessageReply() {
