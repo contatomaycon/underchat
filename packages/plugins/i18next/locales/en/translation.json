@@ -198,6 +198,8 @@
   "expenditure_deleter_error": "Error deleting expenditure!",
   "expenditure_update_successfully": "Expenditure updated successfully!",
   "expenditure_update_error": "Error updating expenditure!",
+  "financial_report_list_successfully": "Financial report retrieved successfully!",
+  "financial_report_list_not_found": "No data found for financial report!",
   "plan_list_successfully": "Plan list retrieved successfully!",
   "plan_list_not_found": "No plans found!",
   "account_name_cannot_exceed_10_characters": "Account name cannot exceed 10 characters",

@@ -198,6 +198,8 @@
   "expenditure_deleter_error": "Error al eliminar el gasto!",
   "expenditure_update_successfully": "¡Gasto actualizado con éxito!",
   "expenditure_update_error": "Error al actualizar el gasto!",
+  "financial_report_list_successfully": "¡Informe financiero obtenido con éxito!",
+  "financial_report_list_not_found": "¡No se encontraron datos para el informe financiero!",
   "plan_list_successfully": "¡Lista de planes obtenida con éxito!",
   "plan_list_not_found": "¡No se encontraron planes!",
   "account_name_cannot_exceed_10_characters": "¡El nombre de la cuenta no puede exceder los 10 caracteres!",

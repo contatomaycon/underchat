@@ -18,6 +18,7 @@ import contactRoutes from './contact.route';
 import contactGroupRoutes from './contactGroup.route';
 import permissionRoutes from './permission.route';
 import expenditureRoutes from './expenditure.route';
+import financialReportRoutes from './financialReport.route';
 
 export default function registerRoutes(server: FastifyInstance) {
   server.register(authRoutes);
@@ -39,4 +40,5 @@ export default function registerRoutes(server: FastifyInstance) {
   server.register(contactGroupRoutes);
   server.register(permissionRoutes);
   server.register(expenditureRoutes);
+  server.register(financialReportRoutes);
 }

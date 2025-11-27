@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EFinancialPermissions } from '@core/common/enums/EPermissions/financial';
 import { useI18n } from 'vue-i18n';
-import { useExpendituresStore } from '@/@webcore/stores/expenditure';
+import { useFinancialReportStore } from '@/@webcore/stores/financialReport';
+import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 
 definePage({
   meta: {
@@ -17,42 +18,129 @@ definePage({
 });
 
 const { t } = useI18n();
-const expenditureStore = useExpendituresStore();
+const financialReportStore = useFinancialReportStore();
+useSnackbarCleanup(financialReportStore);
 
-// Tipo de visualização: Anual, Mensal, Diário
 const viewType = ref<'annual' | 'monthly' | 'daily'>('annual');
 
-// Mock data - será substituído quando a API estiver pronta
-const annualRevenue = ref(1225);
-const annualExpense = ref(2300);
-const annualNet = computed(() => annualRevenue.value - annualExpense.value);
-
-interface MonthlyDetail {
-  month: string;
-  income: number;
-  outgoing: number;
-  net: number;
-}
-
-const monthlyDetails = ref<MonthlyDetail[]>([
-  {
-    month: 'Novembro',
-    income: 1225,
-    outgoing: 2300,
-    net: -1075,
-  },
-]);
-
-const loading = ref(false);
-
-// Filtros
 const startDate = ref<string | null>(null);
 const endDate = ref<string | null>(null);
-const selectedExpenditure = ref<string | null>(null);
+const startYear = ref<number | null>(null);
+const endYear = ref<number | null>(null);
 
-// Carregar despesas para o filtro
+const currentYear = new Date().getFullYear();
+const years = computed(() => {
+  const yearsList = [];
+  for (let year = 2020; year <= currentYear + 1; year++) {
+    yearsList.push({ value: year, title: year.toString() });
+  }
+  return yearsList;
+});
+
+const formatDateForApi = (
+  date: string | Date | null,
+  isEndDate = false
+): string | null => {
+  if (!date) return null;
+
+  let d: Date;
+
+  if (date instanceof Date) {
+    d = new Date(date);
+  } else if (typeof date === 'string') {
+    if (date.includes('/')) {
+      const parts = date.split('/');
+      if (parts.length === 3) {
+        const day = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10);
+        const year = parseInt(parts[2], 10);
+        if (!Number.isNaN(day) && !Number.isNaN(month) && !Number.isNaN(year)) {
+          d = new Date(year, month - 1, day);
+        } else {
+          d = new Date(date);
+        }
+      } else {
+        d = new Date(date);
+      }
+    } else {
+      d = new Date(date);
+    }
+  } else {
+    d = new Date(date);
+  }
+
+  if (Number.isNaN(d.getTime())) return null;
+
+  if (isEndDate) {
+    d.setHours(23, 59, 59, 999);
+  } else {
+    d.setHours(0, 0, 0, 0);
+  }
+
+  return d.toISOString();
+};
+
+const query = computed(() => {
+  if (viewType.value === 'annual') {
+    let startDateValue: string | null = null;
+    let endDateValue: string | null = null;
+
+    if (startYear.value) {
+      const start = new Date(startYear.value, 0, 1);
+      start.setHours(0, 0, 0, 0);
+      startDateValue = start.toISOString();
+    }
+
+    if (endYear.value) {
+      const end = new Date(endYear.value, 11, 31);
+      end.setHours(23, 59, 59, 999);
+      endDateValue = end.toISOString();
+    }
+
+    return {
+      start_date: startDateValue,
+      end_date: endDateValue,
+      period: viewType.value,
+    };
+  }
+
+  return {
+    start_date: formatDateForApi(startDate.value, false),
+    end_date: formatDateForApi(endDate.value, true),
+    period: viewType.value,
+  };
+});
+
+const annualRevenue = computed(() => {
+  return Number(financialReportStore.report?.total_income || '0');
+});
+
+const annualExpense = computed(() => {
+  return Number(financialReportStore.report?.total_outgoing || '0');
+});
+
+const annualNet = computed(() => {
+  return Number(financialReportStore.report?.total_net || '0');
+});
+
+const monthlyDetails = computed(() => {
+  return financialReportStore.report?.monthly_details || [];
+});
+
+const dailyDetails = computed(() => {
+  return financialReportStore.report?.daily_details || [];
+});
+
+const loadFinancialReport = async () => {
+  await financialReportStore.listFinancialReport(query.value);
+};
+
+watch([viewType, startDate, endDate, startYear, endYear], () => {
+  loadFinancialReport();
+});
+
 onMounted(async () => {
-  await expenditureStore.listExpenditures({});
+  await loadFinancialReport();
 });
 </script>
 
@@ -74,39 +162,46 @@ onMounted(async () => {
           </VTabs>
         </div>
 
-        <!-- Filtros -->
         <div class="d-flex align-center flex-wrap gap-4 mb-6">
-          <div class="invoice-list-filter">
-            <VLabel>{{ $t('start_date') }}:</VLabel>
-            <AppDateTimePicker
-              v-model="startDate"
-              :placeholder="$t('select_date')"
-            />
-          </div>
-          <div class="invoice-list-filter">
-            <VLabel>{{ $t('end_date') }}:</VLabel>
-            <AppDateTimePicker
-              v-model="endDate"
-              :placeholder="$t('select_date')"
-            />
-          </div>
-          <div class="invoice-list-filter">
-            <VLabel>{{ $t('expenditure') }}:</VLabel>
-            <AppSelect
-              v-model="selectedExpenditure"
-              :items="[
-                { value: null, title: $t('all') },
-                ...expenditureStore.list.map((exp) => ({
-                  value: exp.expenditure_id,
-                  title: exp.name,
-                })),
-              ]"
-              :placeholder="$t('select_expenditure')"
-            />
-          </div>
+          <template v-if="viewType === 'annual'">
+            <div class="invoice-list-filter">
+              <VLabel>{{ $t('start_year') }}:</VLabel>
+              <AppSelect
+                v-model="startYear"
+                :items="years"
+                :placeholder="$t('select_year')"
+                clearable
+              />
+            </div>
+            <div class="invoice-list-filter">
+              <VLabel>{{ $t('end_year') }}:</VLabel>
+              <AppSelect
+                v-model="endYear"
+                :items="years"
+                :placeholder="$t('select_year')"
+                clearable
+              />
+            </div>
+          </template>
+
+          <template v-else>
+            <div class="invoice-list-filter">
+              <VLabel>{{ $t('start_date') }}:</VLabel>
+              <AppDateTimePicker
+                v-model="startDate"
+                :placeholder="$t('select_date')"
+              />
+            </div>
+            <div class="invoice-list-filter">
+              <VLabel>{{ $t('end_date') }}:</VLabel>
+              <AppDateTimePicker
+                v-model="endDate"
+                :placeholder="$t('select_date')"
+              />
+            </div>
+          </template>
         </div>
 
-        <!-- Cards de Resumo Anual -->
         <VWindow v-model="viewType" class="disable-tab-transition">
           <VWindowItem value="annual">
             <div class="d-flex gap-4 flex-wrap mb-6">
@@ -189,16 +284,17 @@ onMounted(async () => {
               </VCard>
             </div>
 
-            <!-- Detalhamento Mensal -->
             <VCard>
-              <VCardTitle>{{ $t('monthly_detail') }}</VCardTitle>
+              <VCardTitle>{{ $t('annual_detail') }}</VCardTitle>
               <VCardText>
                 <VTable>
                   <thead>
                     <tr>
-                      <th scope="col" class="text-left">{{ $t('month') }}</th>
+                      <th scope="col" class="text-left">{{ $t('year') }}</th>
                       <th scope="col" class="text-left">{{ $t('income') }}</th>
-                      <th scope="col" class="text-left">{{ $t('outgoing') }}</th>
+                      <th scope="col" class="text-left">
+                        {{ $t('outgoing') }}
+                      </th>
                       <th scope="col" class="text-left">{{ $t('net') }}</th>
                     </tr>
                   </thead>
@@ -210,7 +306,7 @@ onMounted(async () => {
                           new Intl.NumberFormat('pt-BR', {
                             style: 'currency',
                             currency: 'BRL',
-                          }).format(detail.income)
+                          }).format(Number(detail.income))
                         }}
                       </td>
                       <td class="text-error font-weight-medium">
@@ -218,18 +314,22 @@ onMounted(async () => {
                           new Intl.NumberFormat('pt-BR', {
                             style: 'currency',
                             currency: 'BRL',
-                          }).format(detail.outgoing)
+                          }).format(Number(detail.outgoing))
                         }}
                       </td>
                       <td
                         class="font-weight-medium"
-                        :class="detail.net >= 0 ? 'text-success' : 'text-error'"
+                        :class="
+                          Number(detail.net) >= 0
+                            ? 'text-success'
+                            : 'text-error'
+                        "
                       >
                         {{
                           new Intl.NumberFormat('pt-BR', {
                             style: 'currency',
                             currency: 'BRL',
-                          }).format(detail.net)
+                          }).format(Number(detail.net))
                         }}
                       </td>
                     </tr>
@@ -243,9 +343,59 @@ onMounted(async () => {
             <VCard>
               <VCardTitle>{{ $t('monthly_report') }}</VCardTitle>
               <VCardText>
-                <div class="text-body-1 text-medium-emphasis">
-                  {{ $t('monthly_view_coming_soon') }}
-                </div>
+                <VTable>
+                  <thead>
+                    <tr>
+                      <th scope="col" class="text-left">{{ $t('month') }}</th>
+                      <th scope="col" class="text-left">{{ $t('income') }}</th>
+                      <th scope="col" class="text-left">
+                        {{ $t('outgoing') }}
+                      </th>
+                      <th scope="col" class="text-left">{{ $t('net') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="detail in monthlyDetails" :key="detail.month">
+                      <td>{{ detail.month }}</td>
+                      <td class="text-success font-weight-medium">
+                        {{
+                          new Intl.NumberFormat('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          }).format(Number(detail.income))
+                        }}
+                      </td>
+                      <td class="text-error font-weight-medium">
+                        {{
+                          new Intl.NumberFormat('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          }).format(Number(detail.outgoing))
+                        }}
+                      </td>
+                      <td
+                        class="font-weight-medium"
+                        :class="
+                          Number(detail.net) >= 0
+                            ? 'text-success'
+                            : 'text-error'
+                        "
+                      >
+                        {{
+                          new Intl.NumberFormat('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          }).format(Number(detail.net))
+                        }}
+                      </td>
+                    </tr>
+                    <tr v-if="monthlyDetails.length === 0">
+                      <td colspan="4" class="text-center text-medium-emphasis">
+                        {{ $t('no_data_available') }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </VTable>
               </VCardText>
             </VCard>
           </VWindowItem>
@@ -254,9 +404,59 @@ onMounted(async () => {
             <VCard>
               <VCardTitle>{{ $t('daily_report') }}</VCardTitle>
               <VCardText>
-                <div class="text-body-1 text-medium-emphasis">
-                  {{ $t('daily_view_coming_soon') }}
-                </div>
+                <VTable>
+                  <thead>
+                    <tr>
+                      <th scope="col" class="text-left">Data</th>
+                      <th scope="col" class="text-left">{{ $t('income') }}</th>
+                      <th scope="col" class="text-left">
+                        {{ $t('outgoing') }}
+                      </th>
+                      <th scope="col" class="text-left">{{ $t('net') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="detail in dailyDetails" :key="detail.date">
+                      <td>{{ detail.date }}</td>
+                      <td class="text-success font-weight-medium">
+                        {{
+                          new Intl.NumberFormat('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          }).format(Number(detail.income))
+                        }}
+                      </td>
+                      <td class="text-error font-weight-medium">
+                        {{
+                          new Intl.NumberFormat('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          }).format(Number(detail.outgoing))
+                        }}
+                      </td>
+                      <td
+                        class="font-weight-medium"
+                        :class="
+                          Number(detail.net) >= 0
+                            ? 'text-success'
+                            : 'text-error'
+                        "
+                      >
+                        {{
+                          new Intl.NumberFormat('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          }).format(Number(detail.net))
+                        }}
+                      </td>
+                    </tr>
+                    <tr v-if="dailyDetails.length === 0">
+                      <td colspan="4" class="text-center text-medium-emphasis">
+                        {{ $t('no_data_available') }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </VTable>
               </VCardText>
             </VCard>
           </VWindowItem>
