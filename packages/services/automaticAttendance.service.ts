@@ -32,18 +32,6 @@ export class AutomaticAttendanceService {
     @inject('Redis') private readonly redis: Redis
   ) {}
 
-  private normalizeSimultaneousAttendanceLimit(
-    value: number | string | null | undefined
-  ): { limit: number | null; hasLimit: boolean } {
-    const parsed = value === null || value === undefined ? null : Number(value);
-
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      return { limit: null, hasLimit: false };
-    }
-
-    return { limit: parsed, hasLimit: true };
-  }
-
   private async sendProtocolMessage(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -91,11 +79,6 @@ export class AutomaticAttendanceService {
       return;
     }
 
-    const { limit: simultaneousAttendanceLimit, hasLimit } =
-      this.normalizeSimultaneousAttendanceLimit(
-        workerConfig.simultaneous_attendance
-      );
-
     const queueChats = await this.chatService.findQueueChatsByWorkerId(
       accountId,
       workerId,
@@ -106,6 +89,11 @@ export class AutomaticAttendanceService {
     if (queueChats.length === 0) {
       return;
     }
+
+    const simultaneousAttendanceLimit =
+      workerConfig.simultaneous_attendance ?? null;
+    const hasLimit =
+      simultaneousAttendanceLimit !== null && simultaneousAttendanceLimit > 0;
 
     if (hasLimit) {
       const currentInChatCount =
@@ -255,10 +243,10 @@ export class AutomaticAttendanceService {
       };
     }
 
-    const { limit: simultaneousAttendanceLimit, hasLimit } =
-      this.normalizeSimultaneousAttendanceLimit(
-        workerConfig.simultaneous_attendance
-      );
+    const simultaneousAttendanceLimit =
+      workerConfig.simultaneous_attendance ?? null;
+    const hasLimit =
+      simultaneousAttendanceLimit !== null && simultaneousAttendanceLimit > 0;
 
     return { shouldProcess: true, simultaneousAttendanceLimit, hasLimit };
   }
@@ -479,22 +467,6 @@ export class AutomaticAttendanceService {
 
     if (!selectedUser) {
       return;
-    }
-
-    if (hasLimit) {
-      const currentInChatCount =
-        await this.chatService.countInChatChatsByUserId(
-          accountId,
-          workerId,
-          selectedUser.id
-        );
-
-      if (
-        simultaneousAttendanceLimit !== null &&
-        currentInChatCount >= simultaneousAttendanceLimit
-      ) {
-        return;
-      }
     }
 
     await this.processAutomaticAttendance(

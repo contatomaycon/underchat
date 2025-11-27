@@ -229,6 +229,86 @@ export class ChatService {
     return total?.value ?? 0;
   };
 
+  countQueueChatsByUserId = async (
+    accountId: string,
+    workerId: string,
+    userId: string
+  ): Promise<number> => {
+    const queryElastic = {
+      size: 0,
+      query: {
+        bool: {
+          must: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: {
+                    'account.id': accountId,
+                  },
+                },
+              },
+            },
+            {
+              nested: {
+                path: 'worker',
+                query: {
+                  term: {
+                    'worker.id': workerId,
+                  },
+                },
+              },
+            },
+            {
+              nested: {
+                path: 'user',
+                query: {
+                  term: {
+                    'user.id': userId,
+                  },
+                },
+              },
+            },
+            {
+              term: {
+                status: EChatStatus.queue,
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select<IChat>(
+      EElasticIndex.chat,
+      queryElastic
+    );
+
+    const total = result?.hits?.total;
+    if (typeof total === 'number') {
+      return total;
+    }
+
+    return total?.value ?? 0;
+  };
+
+  countTotalChatsByUserId = async (
+    accountId: string,
+    workerId: string,
+    userId: string
+  ): Promise<{ inChat: number; queue: number; total: number }> => {
+    const [inChat, queue] = await Promise.all([
+      this.countInChatChatsByUserId(accountId, workerId, userId),
+      this.countQueueChatsByUserId(accountId, workerId, userId),
+    ]);
+
+    return {
+      inChat,
+      queue,
+      total: inChat + queue,
+    };
+  };
+
   updateChatSummary = async (
     chatId: string,
     summary: IChat['summary']
