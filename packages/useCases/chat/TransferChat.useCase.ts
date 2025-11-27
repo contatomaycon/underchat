@@ -170,7 +170,8 @@ export class TransferChatUseCase {
     isAdministrator: boolean,
     params: TransferChatParams,
     body: TransferChatBody,
-    userId: string
+    userId: string,
+    userSectors: string[]
   ): Promise<{ chat_id: string; status: boolean }> {
     const chat = await this.chatService.findChatByChatId(
       accountId,
@@ -257,6 +258,7 @@ export class TransferChatUseCase {
       accountId,
       chat.worker.id,
       userId,
+      userSectors,
       params.chat_id
     );
 

@@ -91,6 +91,7 @@ export class ChatStatusUpdaterUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     userId: string,
+    userSectors: string[],
     params: UpdateChatStatusParams,
     body: UpdateChatStatusBody
   ): Promise<IChat | null> {
@@ -213,6 +214,7 @@ export class ChatStatusUpdaterUseCase {
         accountId,
         chat.worker.id,
         userId,
+        userSectors,
         params.chat_id
       );
     }

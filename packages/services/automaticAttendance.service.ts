@@ -65,11 +65,30 @@ export class AutomaticAttendanceService {
     await Promise.all([this.redis.del(cacheKey), this.redis.del(cacheKeyChat)]);
   }
 
+  private filterChatsByUserSectors(
+    chats: IChat[],
+    userSectors: string[]
+  ): IChat[] {
+    const chatsWithUserSector: IChat[] = [];
+    const chatsWithoutSector: IChat[] = [];
+
+    for (const chat of chats) {
+      if (!chat.sector?.id) {
+        chatsWithoutSector.push(chat);
+      } else if (userSectors.includes(chat.sector.id)) {
+        chatsWithUserSector.push(chat);
+      }
+    }
+
+    return [...chatsWithUserSector, ...chatsWithoutSector];
+  }
+
   async handleAutomaticAttendance(
     t: TFunction<'translation', undefined>,
     accountId: string,
     workerId: string,
     userId: string,
+    userSectors: string[],
     excludeChatId?: string
   ): Promise<void> {
     const workerConfig =
@@ -108,8 +127,17 @@ export class AutomaticAttendanceService {
       }
     }
 
-    const userChats = queueChats.filter((chat) => chat.user?.id === userId);
-    const otherChats = queueChats.filter((chat) => chat.user?.id !== userId);
+    const filteredChats = this.filterChatsByUserSectors(
+      queueChats,
+      userSectors
+    );
+
+    if (filteredChats.length === 0) {
+      return;
+    }
+
+    const userChats = filteredChats.filter((chat) => chat.user?.id === userId);
+    const otherChats = filteredChats.filter((chat) => chat.user?.id !== userId);
     const chatsToProcess = [...userChats, ...otherChats];
 
     const [userData, workerConfigFields] = await Promise.all([
