@@ -3893,6 +3893,21 @@ onMounted(async () => {
             chatData.user?.id === chatStore.user?.user_id
           ) {
             chatStore.setActiveChat(chatData.chat_id);
+
+            if (chatStore.activeChat?.chat_id === chatData.chat_id) {
+              (async () => {
+                const requestQueue: ListMessageChatsQuery = {
+                  current_page: currentPage.value,
+                  per_page: perPage.value,
+                };
+                await chatStore.getChatById(requestQueue);
+
+                await nextTick();
+                requestAnimationFrame(() => {
+                  scrollToBottomInChatLog();
+                });
+              })();
+            }
           }
         }
       }
