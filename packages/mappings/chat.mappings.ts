@@ -128,6 +128,15 @@ export const chatMappings = () => {
         closed_at: {
           type: 'date',
         },
+        protocol_ura: {
+          type: 'keyword',
+        },
+        protocol_start: {
+          type: 'keyword',
+        },
+        protocol_transfer: {
+          type: 'keyword',
+        },
       },
     },
   };

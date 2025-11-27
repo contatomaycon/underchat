@@ -135,8 +135,9 @@ export class TransferChatUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     chatId: string,
-    protocolText: string
-  ): Promise<void> {
+    protocolText: string,
+    protocolType: 'protocol_ura' | 'protocol_start' | 'protocol_transfer'
+  ): Promise<string> {
     const protocol = generateProtocol();
     const message = protocolText.replaceAll(
       /\{\{\s*protocolo\s*\}\}/gi,
@@ -148,14 +149,19 @@ export class TransferChatUseCase {
       message,
     };
 
-    await this.chatMessageCreatorUseCase.execute(
-      t,
-      accountId,
-      {
-        chat_id: chatId,
-      },
-      protocolMessageBody
-    );
+    await Promise.all([
+      this.chatMessageCreatorUseCase.execute(
+        t,
+        accountId,
+        {
+          chat_id: chatId,
+        },
+        protocolMessageBody
+      ),
+      this.chatService.updateChatProtocol(chatId, protocolType, protocol),
+    ]);
+
+    return protocol;
   }
 
   private async invalidateChatCache(chat: IChat): Promise<void> {
@@ -249,7 +255,8 @@ export class TransferChatUseCase {
         t,
         accountId,
         params.chat_id,
-        workerConfigFields.generate_protocol_at_transfer
+        workerConfigFields.generate_protocol_at_transfer,
+        'protocol_transfer'
       );
     }
 

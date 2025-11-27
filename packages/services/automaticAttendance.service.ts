@@ -36,8 +36,9 @@ export class AutomaticAttendanceService {
     t: TFunction<'translation', undefined>,
     accountId: string,
     chatId: string,
-    protocolText: string
-  ): Promise<void> {
+    protocolText: string,
+    protocolType: 'protocol_ura' | 'protocol_start' | 'protocol_transfer'
+  ): Promise<string> {
     const protocol = generateProtocol();
     const message = protocolText.replaceAll(
       /\{\{\s*protocolo\s*\}\}/gi,
@@ -49,14 +50,19 @@ export class AutomaticAttendanceService {
       message,
     };
 
-    await this.chatMessageCreatorUseCase.execute(
-      t,
-      accountId,
-      {
-        chat_id: chatId,
-      },
-      protocolMessageBody
-    );
+    await Promise.all([
+      this.chatMessageCreatorUseCase.execute(
+        t,
+        accountId,
+        {
+          chat_id: chatId,
+        },
+        protocolMessageBody
+      ),
+      this.chatService.updateChatProtocol(chatId, protocolType, protocol),
+    ]);
+
+    return protocol;
   }
 
   private async invalidateChatCache(chat: IChat): Promise<void> {
@@ -215,7 +221,8 @@ export class AutomaticAttendanceService {
               t,
               accountId,
               queueChat.chat_id,
-              workerConfigFields.generate_protocol_at_start
+              workerConfigFields.generate_protocol_at_start,
+              'protocol_start'
             )
           : Promise.resolve();
 
@@ -425,7 +432,8 @@ export class AutomaticAttendanceService {
           t,
           accountId,
           chatId,
-          workerConfigFields.generate_protocol_at_start
+          workerConfigFields.generate_protocol_at_start,
+          'protocol_start'
         )
       : Promise.resolve();
 

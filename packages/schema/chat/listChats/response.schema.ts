@@ -52,6 +52,9 @@ export const listChatsResultSchema = Type.Object({
   date: Type.String(),
   started_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   closed_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  protocol_ura: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  protocol_start: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  protocol_transfer: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export const listChatsResponseSchema = Type.Object({

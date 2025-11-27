@@ -166,6 +166,26 @@ export class ChatService {
     );
   };
 
+  updateChatProtocol = async (
+    chatId: string,
+    protocolType: 'protocol_ura' | 'protocol_start' | 'protocol_transfer',
+    protocol: string
+  ): Promise<boolean> => {
+    const updateData: {
+      protocol_ura?: string | null;
+      protocol_start?: string | null;
+      protocol_transfer?: string | null;
+    } = {};
+
+    updateData[protocolType] = protocol;
+
+    return this.elasticDatabaseService.update(
+      EElasticIndex.chat,
+      updateData,
+      chatId
+    );
+  };
+
   countInChatChatsByUserId = async (
     accountId: string,
     workerId: string,
