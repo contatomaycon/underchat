@@ -171,18 +171,11 @@ export class ChatService {
     protocolType: 'protocol_ura' | 'protocol_start' | 'protocol_transfer',
     protocol: string
   ): Promise<boolean> => {
-    const updateData: {
-      protocol_ura?: string | null;
-      protocol_start?: string | null;
-      protocol_transfer?: string | null;
-    } = {};
-
-    updateData[protocolType] = protocol;
-
-    return this.elasticDatabaseService.update(
+    return this.elasticDatabaseService.updateArrayField(
       EElasticIndex.chat,
-      updateData,
-      chatId
+      chatId,
+      protocolType,
+      protocol
     );
   };
 

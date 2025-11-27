@@ -214,9 +214,14 @@ export class ChatStatusUpdaterUseCase {
       );
     }
 
+    const existingProtocols = updatedChat.protocol_start ?? [];
     const chatWithProtocol: IChat = {
       ...updatedChat,
-      protocol_start: protocol ?? updatedChat.protocol_start ?? null,
+      protocol_start: protocol
+        ? [...existingProtocols, protocol]
+        : existingProtocols.length > 0
+          ? existingProtocols
+          : null,
     };
 
     await Promise.all([

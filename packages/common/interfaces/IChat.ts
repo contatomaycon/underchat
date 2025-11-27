@@ -56,7 +56,7 @@ export interface IChat {
   date: string;
   started_at?: string | null;
   closed_at?: string | null;
-  protocol_ura?: string | null;
-  protocol_start?: string | null;
-  protocol_transfer?: string | null;
+  protocol_ura?: string[] | null;
+  protocol_start?: string[] | null;
+  protocol_transfer?: string[] | null;
 }

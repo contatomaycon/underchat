@@ -241,9 +241,14 @@ export class TransferChatUseCase {
       );
     }
 
+    const existingProtocols = updatedChat.protocol_transfer ?? [];
     const chatWithProtocol: IChat = {
       ...updatedChat,
-      protocol_transfer: protocol ?? updatedChat.protocol_transfer ?? null,
+      protocol_transfer: protocol
+        ? [...existingProtocols, protocol]
+        : existingProtocols.length > 0
+          ? existingProtocols
+          : null,
     };
 
     await Promise.all([
