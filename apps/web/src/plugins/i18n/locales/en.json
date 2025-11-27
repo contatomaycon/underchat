@@ -1030,6 +1030,7 @@
     "total_users": "Total Users",
     "active_users": "Active Users",
     "inactive_users": "Inactive Users",
+    "blocked_users": "Blocked Users",
     "total_clients": "Total Clients",
     "active_clients": "Active Clients",
     "inactive_clients": "Inactive Clients",

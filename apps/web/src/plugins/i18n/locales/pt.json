@@ -1045,6 +1045,7 @@
     "total_users": "Total de Usuários",
     "active_users": "Usuários Ativos",
     "inactive_users": "Usuários Inativos",
+    "blocked_users": "Usuários Bloqueados",
     "total_clients": "Total de Clientes",
     "active_clients": "Clientes Ativos",
     "inactive_clients": "Clientes Inativos",

@@ -276,16 +276,7 @@ watch(
         </template>
 
         <template #item.account_status="{ item }">
-          <VChip
-            :color="
-              item.account_status?.account_status_id === EAccountStatus.active
-                ? 'success'
-                : 'error'
-            "
-            size="small"
-          >
-            {{ resolveStatusText(item.account_status?.account_status_id) }}
-          </VChip>
+          {{ resolveStatusText(item.account_status?.account_status_id) }}
         </template>
 
         <template #item.plan="{ item }">
