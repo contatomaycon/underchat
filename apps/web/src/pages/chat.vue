@@ -512,14 +512,10 @@ const handleCloseService = () => {
 const confirmCloseService = async () => {
   if (!chatStore.activeChat?.chat_id) return;
 
-  const success = await chatStore.updateChatStatus(
+  await chatStore.updateChatStatus(
     chatStore.activeChat.chat_id,
     EChatStatus.closed
   );
-
-  if (success) {
-    chatStore.showSnackbar(t('chat_closed_successfully'), EColor.success);
-  }
 };
 
 const handleActiveChatHeaderClick = () => {
