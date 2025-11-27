@@ -86,7 +86,7 @@ definePage({
 const chatStore = useChatStore();
 const channelStore = useChannelsStore();
 useSnackbarCleanup(chatStore);
-const { name } = useTheme();
+const { name, global } = useTheme();
 const vuetifyDisplays = useDisplay();
 
 const contact_id = ref('contact-id');
@@ -455,14 +455,16 @@ const isQueueStatus = computed(
 const workerConfigForChat = ref<ViewWorkerConfigForChatResponse>(null);
 
 const getStatusColor = (status: EChatUserStatus): string => {
+  const isDark = global.name.value === 'dark';
+
   const colorMap: Record<EChatUserStatus, string> = {
     [EChatUserStatus.online]: '#4caf50',
     [EChatUserStatus.busy]: '#f44336',
     [EChatUserStatus.away]: '#ff9800',
-    [EChatUserStatus.offline]: '#9e9e9e',
+    [EChatUserStatus.offline]: isDark ? '#757575' : '#9e9e9e',
     [EChatUserStatus.do_not_disturb]: '#ff9800',
   };
-  return colorMap[status] || '#9e9e9e';
+  return colorMap[status] || (isDark ? '#757575' : '#9e9e9e');
 };
 
 const userStatus = computed(
