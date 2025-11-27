@@ -16,21 +16,6 @@ const isManualBusyStatus = (): boolean => {
   );
 };
 
-export const presenceOnline = async (): Promise<void> => {
-  await axios.post('/presence/online', {});
-  startHeartbeat();
-};
-
-export const presenceOffline = async (): Promise<void> => {
-  stopHeartbeat();
-  stopAwayHeartbeat();
-  await axios.post('/presence/offline', {});
-};
-
-export const presenceAway = async (): Promise<void> => {
-  await axios.post('/presence/away', {});
-};
-
 export const startHeartbeat = (intervalMs = 20000): void => {
   if (heartbeatTimer) return;
 
@@ -102,8 +87,20 @@ const stopBusyHeartbeat = (): void => {
   busyHeartbeatTimer = null;
 };
 
-export const refreshPresenceForCurrentRoute = (): void => {
-  handleRoutePresence(router.currentRoute.value?.path ?? '');
+export const presenceOnline = async (): Promise<void> => {
+  await axios.post('/presence/online', {});
+  startHeartbeat();
+};
+
+export const presenceOffline = async (): Promise<void> => {
+  stopHeartbeat();
+  stopAwayHeartbeat();
+  stopBusyHeartbeat();
+  await axios.post('/presence/offline', {});
+};
+
+export const presenceAway = async (): Promise<void> => {
+  await axios.post('/presence/away', {});
 };
 
 const handleRoutePresence = (path: string): void => {
@@ -132,6 +129,10 @@ const handleRoutePresence = (path: string): void => {
   stopBusyHeartbeat();
   presenceAway().catch(() => {});
   startAwayHeartbeat();
+};
+
+export const refreshPresenceForCurrentRoute = (): void => {
+  handleRoutePresence(router.currentRoute.value?.path ?? '');
 };
 
 router.afterEach((to) => {

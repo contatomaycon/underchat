@@ -83,7 +83,7 @@ export class ChatStatusUpdaterUseCase {
       await this.workerService.viewWorkerConfigFieldsByWorkerId(chat.worker.id);
 
     if (workerConfigFields?.generate_protocol_at_start) {
-      return await this.sendProtocolMessage(
+      return this.sendProtocolMessage(
         t,
         accountId,
         chatId,

@@ -6,7 +6,6 @@ import { ContactService } from '@core/services/contact.service';
 import { ListChatContactsResponse } from '@core/schema/chat/listContacts/response.schema';
 import { ViewChatContactResponse } from '@core/schema/chat/viewContact/response.schema';
 import { ListChatLabelTemplatesResponse } from '@core/schema/chat/listLabelTemplates/response.schema';
-import { setPaginationData } from '@core/common/functions/createPaginationData';
 
 @injectable()
 export class ChatContactService {

@@ -1398,7 +1398,7 @@ export const useChatStore = defineStore('chat', {
         }
 
         return data.data;
-      } catch (error) {
+      } catch {
         return null;
       }
     },
@@ -1418,7 +1418,7 @@ export const useChatStore = defineStore('chat', {
         }
 
         return data.data;
-      } catch (error) {
+      } catch {
         return null;
       }
     },
@@ -1438,7 +1438,7 @@ export const useChatStore = defineStore('chat', {
         }
 
         return data.data.email;
-      } catch (error) {
+      } catch {
         return null;
       }
     },
@@ -1458,7 +1458,7 @@ export const useChatStore = defineStore('chat', {
         }
 
         return data.data.phone;
-      } catch (error) {
+      } catch {
         return null;
       }
     },
@@ -1476,7 +1476,7 @@ export const useChatStore = defineStore('chat', {
         }
 
         return data.data;
-      } catch (error) {
+      } catch {
         return [];
       }
     },
@@ -1791,7 +1791,7 @@ export const useChatStore = defineStore('chat', {
         }
 
         return data.data;
-      } catch (error) {
+      } catch {
         const errorMessage = this.i18n.global.t('error_loading_transfer_users');
         this.showSnackbar(errorMessage, EColor.error);
         return [];
@@ -1811,7 +1811,7 @@ export const useChatStore = defineStore('chat', {
         }
 
         return data.data;
-      } catch (error) {
+      } catch {
         const errorMessage = this.i18n.global.t(
           'error_loading_transfer_sectors'
         );
@@ -1835,7 +1835,7 @@ export const useChatStore = defineStore('chat', {
         }
 
         return data.data;
-      } catch (error) {
+      } catch {
         const errorMessage =
           this.i18n.global.t('transfer_sector_users_error') ||
           'Erro ao carregar usuários do setor';
@@ -1861,7 +1861,7 @@ export const useChatStore = defineStore('chat', {
         }
 
         return data.data;
-      } catch (error) {
+      } catch {
         const errorMessage = this.i18n.global.t(
           'error_loading_transfer_options'
         );

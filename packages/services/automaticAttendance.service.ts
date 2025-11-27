@@ -362,7 +362,9 @@ export class AutomaticAttendanceService {
         );
 
         const isAtLimit =
-          hasLimit && load.inChat >= simultaneousAttendanceLimit!;
+          hasLimit &&
+          simultaneousAttendanceLimit !== null &&
+          load.inChat >= simultaneousAttendanceLimit;
 
         return {
           user,

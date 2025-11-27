@@ -44,7 +44,6 @@ import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { IChat } from '@core/common/interfaces/IChat';
-import { IElasticsearchBoolClause } from '@core/common/interfaces/IElasticsearchQuery';
 import { TransferUserResponse } from '@core/schema/chat/listTransferUsers/response.schema';
 
 @injectable()
