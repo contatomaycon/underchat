@@ -76,13 +76,6 @@ const startBusyHeartbeat = (intervalMs = 60000): void => {
       return;
     }
 
-    const currentRoute = router.currentRoute.value;
-    const path = currentRoute?.path ?? '';
-
-    if (!path.startsWith('/chat')) {
-      return;
-    }
-
     axios.post('/presence/heartbeat', {}).catch(() => {});
   }, intervalMs);
 };
@@ -120,18 +113,17 @@ const handleRoutePresence = (path: string): void => {
     return;
   }
 
+  if (isManualBusyStatus()) {
+    stopHeartbeat();
+    stopAwayHeartbeat();
+
+    axios.post('/presence/heartbeat', {}).catch(() => {});
+    startBusyHeartbeat();
+
+    return;
+  }
+
   if (path.startsWith('/chat')) {
-    if (isManualBusyStatus()) {
-      stopHeartbeat();
-      stopAwayHeartbeat();
-
-      axios.post('/presence/heartbeat', {}).catch(() => {});
-
-      startBusyHeartbeat();
-
-      return;
-    }
-
     stopAwayHeartbeat();
     stopBusyHeartbeat();
 
