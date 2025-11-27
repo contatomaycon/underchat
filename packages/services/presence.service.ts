@@ -78,6 +78,7 @@ export class PresenceService {
       cachedStatus ?? (await this.chatUserViewer.findStatusByUserId(userId));
 
     if (currentStatus === newStatus) {
+      await this.publishUserStatus(userId, newStatus);
       return;
     }
 
@@ -95,8 +96,9 @@ export class PresenceService {
 
     if (updated) {
       this.statusCache.set(userId, newStatus);
-      await this.publishUserStatus(userId, newStatus);
     }
+
+    await this.publishUserStatus(userId, newStatus);
   }
 
   async heartbeat(userId: string): Promise<void> {
@@ -110,11 +112,6 @@ export class PresenceService {
     }
 
     const cachedStatus = this.statusCache.get(userId);
-
-    if (cachedStatus === EChatUserStatus.online) {
-      return;
-    }
-
     const currentStatus =
       cachedStatus ?? (await this.chatUserViewer.findStatusByUserId(userId));
 
@@ -123,6 +120,7 @@ export class PresenceService {
       currentStatus === EChatUserStatus.do_not_disturb
     ) {
       this.statusCache.set(userId, currentStatus);
+      await this.publishUserStatus(userId, currentStatus);
       return;
     }
 
@@ -130,6 +128,7 @@ export class PresenceService {
 
     if (currentStatus === newStatus) {
       this.statusCache.set(userId, newStatus);
+      await this.publishUserStatus(userId, newStatus);
       return;
     }
 
@@ -147,8 +146,9 @@ export class PresenceService {
 
     if (updated) {
       this.statusCache.set(userId, newStatus);
-      await this.publishUserStatus(userId, newStatus);
     }
+
+    await this.publishUserStatus(userId, newStatus);
   }
 
   async setUserOffline(userId: string): Promise<void> {
@@ -162,6 +162,7 @@ export class PresenceService {
       cachedStatus ?? (await this.chatUserViewer.findStatusByUserId(userId));
 
     if (currentStatus === newStatus) {
+      await this.publishUserStatus(userId, newStatus);
       return;
     }
 
@@ -179,8 +180,9 @@ export class PresenceService {
 
     if (updated) {
       this.statusCache.set(userId, newStatus);
-      await this.publishUserStatus(userId, newStatus);
     }
+
+    await this.publishUserStatus(userId, newStatus);
   }
 
   async setUserAway(userId: string): Promise<void> {
@@ -200,6 +202,7 @@ export class PresenceService {
       cachedStatus ?? (await this.chatUserViewer.findStatusByUserId(userId));
 
     if (currentStatus === newStatus) {
+      await this.publishUserStatus(userId, newStatus);
       return;
     }
 
@@ -217,8 +220,9 @@ export class PresenceService {
 
     if (updated) {
       this.statusCache.set(userId, newStatus);
-      await this.publishUserStatus(userId, newStatus);
     }
+
+    await this.publishUserStatus(userId, newStatus);
   }
 
   async isUserOnline(userId: string): Promise<boolean> {

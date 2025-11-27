@@ -3,9 +3,9 @@ import { router } from '@/plugins/1.router';
 import { isLoggedIn, getUser } from './localStorage/user';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 
-let heartbeatTimer: number | null = null;
-let awayHeartbeatTimer: number | null = null;
-let busyHeartbeatTimer: number | null = null;
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+let awayHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+let busyHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
 const isManualBusyStatus = (): boolean => {
   const user = getUser();
@@ -89,6 +89,7 @@ const stopBusyHeartbeat = (): void => {
 
 export const presenceOnline = async (): Promise<void> => {
   await axios.post('/presence/online', {});
+
   startHeartbeat();
 };
 
@@ -96,6 +97,7 @@ export const presenceOffline = async (): Promise<void> => {
   stopHeartbeat();
   stopAwayHeartbeat();
   stopBusyHeartbeat();
+
   await axios.post('/presence/offline', {});
 };
 
@@ -111,17 +113,31 @@ const handleRoutePresence = (path: string): void => {
     return;
   }
 
+  if (path.startsWith('/chat')) {
+    if (isManualBusyStatus()) {
+      stopHeartbeat();
+      stopAwayHeartbeat();
+
+      axios.post('/presence/heartbeat', {}).catch(() => {});
+
+      startBusyHeartbeat();
+
+      return;
+    }
+
+    stopAwayHeartbeat();
+    stopBusyHeartbeat();
+
+    presenceOnline().catch(() => {});
+
+    return;
+  }
+
   if (isManualBusyStatus()) {
     stopHeartbeat();
     stopAwayHeartbeat();
     startBusyHeartbeat();
-    return;
-  }
 
-  if (path.startsWith('/chat')) {
-    stopAwayHeartbeat();
-    stopBusyHeartbeat();
-    presenceOnline().catch(() => {});
     return;
   }
 
