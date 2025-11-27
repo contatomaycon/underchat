@@ -3919,7 +3919,7 @@ onMounted(async () => {
       }
     };
 
-    const handleChatUpdateEvent = (chatData: IChat): void => {
+    const handleChatUpdateEvent = async (chatData: IChat): Promise<void> => {
       if (!canReceiveChatNotification(chatData)) {
         return;
       }
@@ -3931,13 +3931,13 @@ onMounted(async () => {
         chatData.user?.id === chatStore.user?.user_id;
 
       if (isActiveChatForUser) {
-        void handleActiveChatSwitch(chatData);
+        await handleActiveChatSwitch(chatData);
       }
     };
 
     await onMessage(
       chatAccountCentrifugo(accountId),
-      (data: IChatMessage | IChatTyping | IChat | any) => {
+      async (data: IChatMessage | IChatTyping | IChat | any) => {
         if ('type' in data && data.type === 'typing') {
           handleTypingEvent(data as IChatTyping);
           return;
@@ -3949,7 +3949,7 @@ onMounted(async () => {
         }
 
         if ('chat_id' in data && !('message_id' in data)) {
-          handleChatUpdateEvent(data as IChat);
+          await handleChatUpdateEvent(data as IChat);
         }
       }
     );
