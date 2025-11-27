@@ -1007,5 +1007,6 @@
     "simultaneous_attendance_update_success": "Number of simultaneous attendances updated successfully!",
     "simultaneous_attendance_limit_reached": "You have reached the limit of simultaneous attendances allowed for this channel. Limit: {limit} attendance(s).",
     "simultaneous_attendance_limit_reached_title": "Attendance limit reached",
-    "simultaneous_attendance_limit_message": "You can attend up to {limit} simultaneous attendance(s). Your limit has been reached."
+    "simultaneous_attendance_limit_message": "You can attend up to {limit} simultaneous attendance(s). Your limit has been reached.",
+    "attendance_only_online_required": "You need to be online to attend this chat."
 }

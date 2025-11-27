@@ -466,22 +466,24 @@ const getStatusColor = (status: EChatUserStatus): string => {
   return colorMap[status] || '#9e9e9e';
 };
 
-const canAttendChat = computed(() => {
+const userStatus = computed(
+  () =>
+    (chatStore.user?.chat_user?.status as EChatUserStatus | undefined) ||
+    EChatUserStatus.offline
+);
+
+const cannotAttendDueToStatus = computed(() => {
   if (!isQueueStatus.value) return false;
+  if (!workerConfigForChat.value?.allow_attendance_only_online) return false;
+  return userStatus.value !== EChatUserStatus.online;
+});
 
-  const userStatus = chatStore.user?.chat_user?.status as
-    | EChatUserStatus
-    | undefined;
-
-  if (workerConfigForChat.value?.allow_attendance_only_online) {
-    if (userStatus !== EChatUserStatus.online) {
-      return false;
-    }
-  }
-
-  if (!workerConfigForChat.value?.simultaneous_attendance) return true;
+const cannotAttendDueToLimit = computed(() => {
+  if (!isQueueStatus.value) return false;
+  if (cannotAttendDueToStatus.value) return false; // Prioriza mensagem de status
+  if (!workerConfigForChat.value?.simultaneous_attendance) return false;
   if (!chatStore.activeChat?.worker?.id || !chatStore.user?.user_id)
-    return true;
+    return false;
 
   const limit = workerConfigForChat.value.simultaneous_attendance;
   const currentInChatCount = chatStore.listInChat.filter(
@@ -490,7 +492,14 @@ const canAttendChat = computed(() => {
       chat.worker?.id === chatStore.activeChat?.worker?.id
   ).length;
 
-  return currentInChatCount < limit;
+  return currentInChatCount >= limit;
+});
+
+const canAttendChat = computed(() => {
+  if (!isQueueStatus.value) return false;
+  if (cannotAttendDueToStatus.value) return false;
+  if (cannotAttendDueToLimit.value) return false;
+  return true;
 });
 
 const loadWorkerConfigForChat = async () => {
@@ -4777,12 +4786,13 @@ onBeforeUnmount(() => {
                   )
                 }}
               </template>
-              <template
-                v-else-if="workerConfigForChat?.simultaneous_attendance"
-              >
+              <template v-else-if="cannotAttendDueToStatus">
+                {{ t('attendance_only_online_required') }}
+              </template>
+              <template v-else-if="cannotAttendDueToLimit">
                 {{
                   t('simultaneous_attendance_limit_message', {
-                    limit: workerConfigForChat.simultaneous_attendance,
+                    limit: workerConfigForChat?.simultaneous_attendance,
                   })
                 }}
               </template>

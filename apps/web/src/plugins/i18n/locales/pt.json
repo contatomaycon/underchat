@@ -1018,5 +1018,6 @@
     "simultaneous_attendance_update_success": "Quantidade de atendimentos simultâneos atualizada com sucesso!",
     "simultaneous_attendance_limit_reached": "Você já atingiu o limite de atendimentos simultâneos permitidos para este canal. Limite: {limit} atendimento(s).",
     "simultaneous_attendance_limit_reached_title": "Limite de atendimentos atingido",
-    "simultaneous_attendance_limit_message": "Você pode atender até {limit} atendimento(s) simultâneo(s). Seu limite foi atingido."
+    "simultaneous_attendance_limit_message": "Você pode atender até {limit} atendimento(s) simultâneo(s). Seu limite foi atingido.",
+    "attendance_only_online_required": "Você precisa estar com status online para atender este chat."
 }
