@@ -996,7 +996,7 @@
     "chat_transfer_error": "Error transferring service. Please try again.",
     "user": "User",
     "channel_general_config_simultaneous_attendance_title": "Simultaneous attendance",
-    "channel_general_config_simultaneous_attendance_description": "Defines the number of attendances that can be performed simultaneously by this channel.",
+    "channel_general_config_simultaneous_attendance_description": "Defines the number of attendances that can be performed simultaneously by this channel by the same agent.",
     "simultaneous_attendance_quantity_label": "Number of simultaneous attendances",
     "simultaneous_attendance_quantity_placeholder": "Enter the quantity",
     "simultaneous_attendance_invalid_number": "Please enter a valid integer greater than zero.",

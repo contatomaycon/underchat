@@ -1007,7 +1007,7 @@
     "chat_transfer_error": "Erro ao transferir atendimento. Por favor, tente novamente.",
     "user": "Usuário",
     "channel_general_config_simultaneous_attendance_title": "Atendimento simultâneo",
-    "channel_general_config_simultaneous_attendance_description": "Define a quantidade de atendimentos que podem ser realizados simultaneamente por este canal.",
+    "channel_general_config_simultaneous_attendance_description": "Define a quantidade de atendimentos que podem ser realizados simultaneamente por este canal por um mesmo atendente.",
     "simultaneous_attendance_quantity_label": "Quantidade de atendimentos simultâneos",
     "simultaneous_attendance_quantity_placeholder": "Digite a quantidade",
     "simultaneous_attendance_invalid_number": "Por favor, digite um número inteiro válido maior que zero.",
