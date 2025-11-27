@@ -357,6 +357,100 @@ export class ChatService {
     );
   };
 
+  findQueueChatsByWorkerId = async (
+    accountId: string,
+    workerId: string,
+    userId?: string,
+    excludeChatId?: string
+  ): Promise<IChat[]> => {
+    const filterClauses: any[] = [
+      {
+        nested: {
+          path: 'account',
+          query: {
+            term: {
+              'account.id': accountId,
+            },
+          },
+        },
+      },
+      {
+        nested: {
+          path: 'worker',
+          query: {
+            term: {
+              'worker.id': workerId,
+            },
+          },
+        },
+      },
+      {
+        term: {
+          status: EChatStatus.queue,
+        },
+      },
+    ];
+
+    if (excludeChatId) {
+      filterClauses.push({
+        bool: {
+          must_not: {
+            term: {
+              chat_id: excludeChatId,
+            },
+          },
+        },
+      });
+    }
+
+    const queryElastic: any = {
+      size: 100,
+      _source: true,
+      query: {
+        bool: {
+          filter: filterClauses,
+        },
+      },
+      sort: [
+        {
+          date: {
+            order: 'asc',
+          },
+        },
+      ],
+    };
+
+    const result = await this.elasticDatabaseService.select<IChat>(
+      EElasticIndex.chat,
+      queryElastic
+    );
+
+    if (!result) {
+      return [];
+    }
+
+    const hits = result?.hits?.hits ?? [];
+
+    const chats = hits
+      .map((hit: ElasticHit<IChat>) => {
+        const chat = hit._source;
+        if (chat && Array.isArray(chat.summary)) {
+          chat.summary = chat.summary[0] as IChat['summary'];
+        }
+        return chat;
+      })
+      .filter((chat): chat is IChat => chat !== undefined);
+
+    if (userId && chats.length > 0) {
+      const userChats = chats.filter((chat) => chat.user?.id === userId);
+      const otherChats = chats.filter((chat) => chat.user?.id !== userId);
+
+      return [...userChats, ...otherChats];
+    }
+
+    return chats;
+  };
+
   findChatsByContactId = async (
     accountId: string,
     contactId: string

@@ -3887,6 +3887,13 @@ onMounted(async () => {
           }
 
           chatStore.addChat(chatData);
+
+          if (
+            (chatData as any)._active &&
+            chatData.user?.id === chatStore.user?.user_id
+          ) {
+            chatStore.setActiveChat(chatData.chat_id);
+          }
         }
       }
     );
