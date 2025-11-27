@@ -216,6 +216,7 @@ export class AutomaticAttendanceService {
           return;
         }
 
+        let protocol: string | null = null;
         const protocolPromise = workerConfigFields?.generate_protocol_at_start
           ? this.sendProtocolMessage(
               t,
@@ -223,21 +224,31 @@ export class AutomaticAttendanceService {
               queueChat.chat_id,
               workerConfigFields.generate_protocol_at_start,
               'protocol_start'
-            )
-          : Promise.resolve();
+            ).then((generatedProtocol) => {
+              protocol = generatedProtocol;
+              return generatedProtocol;
+            })
+          : Promise.resolve(null);
+
+        await protocolPromise;
+
+        const chatWithProtocol: IChat = {
+          ...updatedChat,
+          protocol_start: protocol ?? updatedChat.protocol_start ?? null,
+        };
 
         const publishPromises = [
           this.centrifugoService.publishSub(
             chatAccountCentrifugo(channelAccountId),
-            updatedChat
+            chatWithProtocol
           ),
           this.centrifugoService.publishSub(
             chatQueueAccountCentrifugo(channelAccountId),
-            updatedChat
+            chatWithProtocol
           ),
         ];
 
-        await Promise.all([protocolPromise, ...publishPromises]);
+        await Promise.all(publishPromises);
 
         const userInChatCount = await this.chatService.countInChatChatsByUserId(
           accountId,
@@ -427,6 +438,7 @@ export class AutomaticAttendanceService {
     const workerConfigFields =
       await this.workerService.viewWorkerConfigFieldsByWorkerId(workerId);
 
+    let protocol: string | null = null;
     const protocolPromise = workerConfigFields?.generate_protocol_at_start
       ? this.sendProtocolMessage(
           t,
@@ -434,21 +446,31 @@ export class AutomaticAttendanceService {
           chatId,
           workerConfigFields.generate_protocol_at_start,
           'protocol_start'
-        )
-      : Promise.resolve();
+        ).then((generatedProtocol) => {
+          protocol = generatedProtocol;
+          return generatedProtocol;
+        })
+      : Promise.resolve(null);
+
+    await protocolPromise;
+
+    const chatWithProtocol: IChat = {
+      ...updatedChat,
+      protocol_start: protocol ?? updatedChat.protocol_start ?? null,
+    };
 
     const publishPromises = [
       this.centrifugoService.publishSub(
         chatAccountCentrifugo(channelAccountId),
-        updatedChat
+        chatWithProtocol
       ),
       this.centrifugoService.publishSub(
         chatQueueAccountCentrifugo(channelAccountId),
-        updatedChat
+        chatWithProtocol
       ),
     ];
 
-    await Promise.all([protocolPromise, ...publishPromises]);
+    await Promise.all(publishPromises);
 
     const userInChatCount = await this.chatService.countInChatChatsByUserId(
       accountId,
@@ -460,7 +482,7 @@ export class AutomaticAttendanceService {
       await this.centrifugoService.publishSub(
         chatAccountCentrifugo(channelAccountId),
         {
-          ...updatedChat,
+          ...chatWithProtocol,
           _active: true,
         } as any
       );

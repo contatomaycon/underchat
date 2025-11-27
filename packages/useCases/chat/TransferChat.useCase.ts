@@ -230,14 +230,30 @@ export class TransferChatUseCase {
 
     const channelAccountId = updatedChat.account?.id ?? accountId;
 
+    let protocol: string | null = null;
+    if (workerConfigFields?.generate_protocol_at_transfer) {
+      protocol = await this.sendProtocolMessage(
+        t,
+        accountId,
+        params.chat_id,
+        workerConfigFields.generate_protocol_at_transfer,
+        'protocol_transfer'
+      );
+    }
+
+    const chatWithProtocol: IChat = {
+      ...updatedChat,
+      protocol_transfer: protocol ?? updatedChat.protocol_transfer ?? null,
+    };
+
     await Promise.all([
       this.centrifugoService.publishSub(
         chatAccountCentrifugo(channelAccountId),
-        updatedChat
+        chatWithProtocol
       ),
       this.centrifugoService.publishSub(
         chatQueueAccountCentrifugo(channelAccountId),
-        updatedChat
+        chatWithProtocol
       ),
     ]);
 
@@ -247,16 +263,6 @@ export class TransferChatUseCase {
         accountId,
         params.chat_id,
         body.annotation
-      );
-    }
-
-    if (workerConfigFields?.generate_protocol_at_transfer) {
-      await this.sendProtocolMessage(
-        t,
-        accountId,
-        params.chat_id,
-        workerConfigFields.generate_protocol_at_transfer,
-        'protocol_transfer'
       );
     }
 

@@ -53,6 +53,8 @@ export class ChatStatusUpdaterUseCase {
       message,
     };
 
+    console.log('protocolMessageBody', protocolMessageBody);
+
     await Promise.all([
       this.chatMessageCreatorUseCase.execute(
         t,
@@ -73,12 +75,12 @@ export class ChatStatusUpdaterUseCase {
     accountId: string,
     chatId: string,
     chat: IChat
-  ): Promise<void> {
+  ): Promise<string | null> {
     const workerConfigFields =
       await this.workerService.viewWorkerConfigFieldsByWorkerId(chat.worker.id);
 
     if (workerConfigFields?.generate_protocol_at_start) {
-      await this.sendProtocolMessage(
+      return await this.sendProtocolMessage(
         t,
         accountId,
         chatId,
@@ -86,6 +88,8 @@ export class ChatStatusUpdaterUseCase {
         'protocol_start'
       );
     }
+
+    return null;
   }
 
   private async invalidateChatCache(chat: IChat): Promise<void> {
@@ -200,18 +204,29 @@ export class ChatStatusUpdaterUseCase {
 
     const channelAccountId = updatedChat.account?.id ?? accountId;
 
+    let protocol: string | null = null;
     if (status === EChatStatus.in_chat) {
-      await this.handleInChatStatus(t, accountId, params.chat_id, chat);
+      protocol = await this.handleInChatStatus(
+        t,
+        accountId,
+        params.chat_id,
+        chat
+      );
     }
+
+    const chatWithProtocol: IChat = {
+      ...updatedChat,
+      protocol_start: protocol ?? updatedChat.protocol_start ?? null,
+    };
 
     await Promise.all([
       this.centrifugoService.publishSub(
         chatAccountCentrifugo(channelAccountId),
-        updatedChat
+        chatWithProtocol
       ),
       this.centrifugoService.publishSub(
         chatQueueAccountCentrifugo(channelAccountId),
-        updatedChat
+        chatWithProtocol
       ),
     ]);
 
@@ -226,6 +241,6 @@ export class ChatStatusUpdaterUseCase {
       );
     }
 
-    return updatedChat;
+    return chatWithProtocol;
   }
 }
