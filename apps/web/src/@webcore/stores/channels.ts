@@ -1129,11 +1129,14 @@ export const useChannelsStore = defineStore('channels', {
       if (!workerId) return null;
 
       try {
+        const body: { quantity?: number } = {};
+        if (quantity !== null) {
+          body.quantity = quantity;
+        }
+
         const response = await axios.patch<
           IApiResponse<{ simultaneous_attendance: number | null }>
-        >(`/worker/${workerId}/config/simultaneous-attendance`, {
-          quantity: quantity || null,
-        });
+        >(`/worker/${workerId}/config/simultaneous-attendance`, body);
 
         const data = response?.data;
 
