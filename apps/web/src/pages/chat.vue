@@ -18,8 +18,6 @@ import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { getPermissions, getSectors } from '@/@webcore/localStorage/user';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
-import { useUsersStore } from '@/@webcore/stores/user';
-import { useSectorsStore } from '@/@webcore/stores/sector';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerConfigForChat/response.schema';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
@@ -521,9 +519,6 @@ const confirmCloseService = async () => {
 const handleActiveChatHeaderClick = () => {
   isActiveChatUserProfileSidebarOpen.value = true;
 };
-
-const userStore = useUsersStore();
-const sectorsStore = useSectorsStore();
 
 const isTransferModalOpen = ref(false);
 const transferType = ref<'user' | 'sector'>('user');

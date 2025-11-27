@@ -171,6 +171,10 @@ export class ChatService {
     workerId: string,
     userId: string
   ): Promise<number> => {
+    const startOfToday = new Date();
+    startOfToday.setUTCHours(0, 0, 0, 0);
+    const startOfTodayIso = startOfToday.toISOString();
+
     const queryElastic = {
       size: 0,
       query: {
@@ -209,6 +213,13 @@ export class ChatService {
             {
               term: {
                 status: EChatStatus.in_chat,
+              },
+            },
+            {
+              range: {
+                started_at: {
+                  gte: startOfTodayIso,
+                },
               },
             },
           ],
