@@ -12,6 +12,7 @@ import { StartChatWithContactRequest } from '@core/schema/chat/startChatWithCont
 import { AccountService } from '@core/services/account.service';
 import { UserService } from '@core/services/user.service';
 import { WorkerService } from '@core/services/worker.service';
+import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { ContactService } from '@core/services/contact.service';
 import { SectorService } from '@core/services/sector.service';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
@@ -46,6 +47,7 @@ export class StartChatWithContactUseCase {
     private readonly accountService: AccountService,
     private readonly userService: UserService,
     private readonly workerService: WorkerService,
+    private readonly workerConfigService: WorkerConfigService,
     private readonly contactService: ContactService,
     private readonly sectorService: SectorService,
     private readonly encryptService: EncryptService
@@ -97,7 +99,7 @@ export class StartChatWithContactUseCase {
       }
     }
 
-    return this.createNewChat(contactData, requiredData);
+    return this.createNewChat(t, contactData, requiredData);
   }
 
   private async validateAndGetContactData(
@@ -178,6 +180,34 @@ export class StartChatWithContactUseCase {
     return { user, account, worker, sector };
   }
 
+  private async validateSimultaneousAttendanceLimit(
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    workerId: string,
+    userId: string
+  ): Promise<void> {
+    const simultaneousAttendanceLimit =
+      await this.workerConfigService.viewSimultaneousAttendance(workerId);
+    const simultaneousAttendanceLimitInt = Number(simultaneousAttendanceLimit);
+
+    if (simultaneousAttendanceLimitInt > 0) {
+      const currentInChatCount =
+        await this.chatService.countInChatChatsByUserId(
+          accountId,
+          workerId,
+          userId
+        );
+
+      if (currentInChatCount >= simultaneousAttendanceLimitInt) {
+        throw new Error(
+          t('simultaneous_attendance_limit_reached', {
+            limit: simultaneousAttendanceLimit,
+          })
+        );
+      }
+    }
+  }
+
   private async updateExistingChat(
     t: TFunction<'translation', undefined>,
     existingChat: IChat,
@@ -186,6 +216,15 @@ export class StartChatWithContactUseCase {
   ): Promise<IChat> {
     const currentDate = new Date().toISOString();
     const userData = requiredData.user;
+
+    if (userData) {
+      await this.validateSimultaneousAttendanceLimit(
+        t,
+        requiredData.account.id,
+        requiredData.worker.id,
+        userData.id
+      );
+    }
 
     const updatedChat = this.buildUpdatedChat(
       existingChat,
@@ -268,9 +307,21 @@ export class StartChatWithContactUseCase {
   }
 
   private async createNewChat(
+    t: TFunction<'translation', undefined>,
     contactData: ContactData,
     requiredData: RequiredData
   ): Promise<IChat> {
+    const userData = requiredData.user;
+
+    if (userData) {
+      await this.validateSimultaneousAttendanceLimit(
+        t,
+        requiredData.account.id,
+        requiredData.worker.id,
+        userData.id
+      );
+    }
+
     const currentDate = new Date().toISOString();
     const remoteJid = normalizePhoneToJid(
       contactData.sensitiveData?.phone || null,

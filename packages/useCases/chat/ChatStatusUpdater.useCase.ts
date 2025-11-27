@@ -19,6 +19,7 @@ import { ChatMessageCreatorUseCase } from './ChatMessageCreator.useCase';
 import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
+import { AutomaticAttendanceService } from '@core/services/automaticAttendance.service';
 import Redis from 'ioredis';
 
 @injectable()
@@ -30,6 +31,7 @@ export class ChatStatusUpdaterUseCase {
     private readonly workerService: WorkerService,
     private readonly workerConfigService: WorkerConfigService,
     private readonly chatMessageCreatorUseCase: ChatMessageCreatorUseCase,
+    private readonly automaticAttendanceService: AutomaticAttendanceService,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -204,6 +206,16 @@ export class ChatStatusUpdaterUseCase {
         updatedChat
       ),
     ]);
+
+    if (status === EChatStatus.closed) {
+      await this.automaticAttendanceService.handleAutomaticAttendance(
+        t,
+        accountId,
+        chat.worker.id,
+        userId,
+        params.chat_id
+      );
+    }
 
     return updatedChat;
   }
