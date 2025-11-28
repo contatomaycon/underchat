@@ -108,13 +108,14 @@ export class PresenceService {
   }
 
   async setUserOnline(userId: string): Promise<void> {
-    await this.refreshPresenceKey(userId, EChatUserStatus.online);
-
     const newStatus = EChatUserStatus.online;
     const cachedStatus = this.statusCache.get(userId);
 
-    const currentStatus =
-      cachedStatus ?? (await this.chatUserViewer.findStatusByUserId(userId));
+    const [currentStatus] = await Promise.all([
+      cachedStatus ??
+        this.chatUserViewer.findStatusByUserId(userId).then((s) => s ?? null),
+      this.refreshPresenceKey(userId, newStatus),
+    ]);
 
     if (currentStatus === newStatus) {
       this.statusCache.set(userId, newStatus);
@@ -123,9 +124,11 @@ export class PresenceService {
     }
 
     if (currentStatus === null) {
-      await this.ensureChatUserRow(userId, newStatus);
+      await Promise.all([
+        this.ensureChatUserRow(userId, newStatus),
+        this.publishUserStatus(userId, newStatus),
+      ]);
       this.statusCache.set(userId, newStatus);
-      await this.publishUserStatus(userId, newStatus);
       return;
     }
 
@@ -150,32 +153,39 @@ export class PresenceService {
       currentStatus === EChatUserStatus.busy ||
       currentStatus === EChatUserStatus.do_not_disturb
     ) {
-      await this.refreshPresenceKey(userId, currentStatus);
+      await Promise.all([
+        this.refreshPresenceKey(userId, currentStatus),
+        this.publishUserStatus(userId, currentStatus),
+      ]);
       this.statusCache.set(userId, currentStatus);
-      await this.publishUserStatus(userId, currentStatus);
       return;
     }
 
     const newStatus = EChatUserStatus.online;
-    await this.refreshPresenceKey(userId, newStatus);
 
     if (currentStatus === newStatus) {
+      await Promise.all([
+        this.refreshPresenceKey(userId, newStatus),
+        this.publishUserStatus(userId, newStatus),
+      ]);
       this.statusCache.set(userId, newStatus);
-      await this.publishUserStatus(userId, newStatus);
       return;
     }
 
     if (currentStatus === null) {
-      await this.ensureChatUserRow(userId, newStatus);
+      await Promise.all([
+        this.refreshPresenceKey(userId, newStatus),
+        this.ensureChatUserRow(userId, newStatus),
+        this.publishUserStatus(userId, newStatus),
+      ]);
       this.statusCache.set(userId, newStatus);
-      await this.publishUserStatus(userId, newStatus);
       return;
     }
 
-    const updated = await this.chatUserUpdater.updateStatusIfChanged(
-      userId,
-      newStatus
-    );
+    const [updated] = await Promise.all([
+      this.chatUserUpdater.updateStatusIfChanged(userId, newStatus),
+      this.refreshPresenceKey(userId, newStatus),
+    ]);
 
     if (updated) {
       this.statusCache.set(userId, newStatus);
@@ -186,13 +196,14 @@ export class PresenceService {
 
   async setUserOffline(userId: string): Promise<void> {
     const key = this.getKey(userId);
-    await this.redis.del(key);
-
     const newStatus = EChatUserStatus.offline;
     const cachedStatus = this.statusCache.get(userId);
 
-    const currentStatus =
-      cachedStatus ?? (await this.chatUserViewer.findStatusByUserId(userId));
+    const [currentStatus] = await Promise.all([
+      cachedStatus ??
+        this.chatUserViewer.findStatusByUserId(userId).then((s) => s ?? null),
+      this.redis.del(key),
+    ]);
 
     if (currentStatus === newStatus) {
       this.statusCache.set(userId, newStatus);
@@ -201,9 +212,11 @@ export class PresenceService {
     }
 
     if (currentStatus === null) {
-      await this.ensureChatUserRow(userId, newStatus);
+      await Promise.all([
+        this.ensureChatUserRow(userId, newStatus),
+        this.publishUserStatus(userId, newStatus),
+      ]);
       this.statusCache.set(userId, newStatus);
-      await this.publishUserStatus(userId, newStatus);
       return;
     }
 
@@ -220,13 +233,14 @@ export class PresenceService {
   }
 
   async setUserAway(userId: string): Promise<void> {
-    await this.refreshPresenceKey(userId, EChatUserStatus.away);
-
     const newStatus = EChatUserStatus.away;
     const cachedStatus = this.statusCache.get(userId);
 
-    const currentStatus =
-      cachedStatus ?? (await this.chatUserViewer.findStatusByUserId(userId));
+    const [currentStatus] = await Promise.all([
+      cachedStatus ??
+        this.chatUserViewer.findStatusByUserId(userId).then((s) => s ?? null),
+      this.refreshPresenceKey(userId, newStatus),
+    ]);
 
     if (currentStatus === newStatus) {
       this.statusCache.set(userId, newStatus);
@@ -235,9 +249,11 @@ export class PresenceService {
     }
 
     if (currentStatus === null) {
-      await this.ensureChatUserRow(userId, newStatus);
+      await Promise.all([
+        this.ensureChatUserRow(userId, newStatus),
+        this.publishUserStatus(userId, newStatus),
+      ]);
       this.statusCache.set(userId, newStatus);
-      await this.publishUserStatus(userId, newStatus);
       return;
     }
 
@@ -254,13 +270,14 @@ export class PresenceService {
   }
 
   async setUserBusy(userId: string): Promise<void> {
-    await this.refreshPresenceKey(userId, EChatUserStatus.busy);
-
     const newStatus = EChatUserStatus.busy;
     const cachedStatus = this.statusCache.get(userId);
 
-    const currentStatus =
-      cachedStatus ?? (await this.chatUserViewer.findStatusByUserId(userId));
+    const [currentStatus] = await Promise.all([
+      cachedStatus ??
+        this.chatUserViewer.findStatusByUserId(userId).then((s) => s ?? null),
+      this.refreshPresenceKey(userId, newStatus),
+    ]);
 
     if (currentStatus === newStatus) {
       this.statusCache.set(userId, newStatus);
@@ -269,9 +286,11 @@ export class PresenceService {
     }
 
     if (currentStatus === null) {
-      await this.ensureChatUserRow(userId, newStatus);
+      await Promise.all([
+        this.ensureChatUserRow(userId, newStatus),
+        this.publishUserStatus(userId, newStatus),
+      ]);
       this.statusCache.set(userId, newStatus);
-      await this.publishUserStatus(userId, newStatus);
       return;
     }
 
@@ -288,13 +307,14 @@ export class PresenceService {
   }
 
   async setUserDoNotDisturb(userId: string): Promise<void> {
-    await this.refreshPresenceKey(userId, EChatUserStatus.do_not_disturb);
-
     const newStatus = EChatUserStatus.do_not_disturb;
     const cachedStatus = this.statusCache.get(userId);
 
-    const currentStatus =
-      cachedStatus ?? (await this.chatUserViewer.findStatusByUserId(userId));
+    const [currentStatus] = await Promise.all([
+      cachedStatus ??
+        this.chatUserViewer.findStatusByUserId(userId).then((s) => s ?? null),
+      this.refreshPresenceKey(userId, newStatus),
+    ]);
 
     if (currentStatus === newStatus) {
       this.statusCache.set(userId, newStatus);
@@ -303,9 +323,11 @@ export class PresenceService {
     }
 
     if (currentStatus === null) {
-      await this.ensureChatUserRow(userId, newStatus);
+      await Promise.all([
+        this.ensureChatUserRow(userId, newStatus),
+        this.publishUserStatus(userId, newStatus),
+      ]);
       this.statusCache.set(userId, newStatus);
-      await this.publishUserStatus(userId, newStatus);
       return;
     }
 
@@ -336,11 +358,14 @@ export class PresenceService {
   }
 
   async syncStatusFromRedis(userId: string): Promise<void> {
-    const cachedValue = await this.redis.get(this.getKey(userId));
+    const [cachedValue, cachedStatus] = await Promise.all([
+      this.redis.get(this.getKey(userId)),
+      Promise.resolve(this.statusCache.get(userId)),
+    ]);
+
     const cachedPresence = this.parseStatusFromCache(cachedValue);
     const targetStatus = cachedPresence ?? EChatUserStatus.offline;
 
-    const cachedStatus = this.statusCache.get(userId);
     if (cachedStatus === targetStatus) {
       return;
     }
@@ -355,9 +380,11 @@ export class PresenceService {
     }
 
     if (currentStatus === null) {
-      await this.ensureChatUserRow(userId, targetStatus);
+      await Promise.all([
+        this.ensureChatUserRow(userId, targetStatus),
+        this.publishUserStatus(userId, targetStatus),
+      ]);
       this.statusCache.set(userId, targetStatus);
-      await this.publishUserStatus(userId, targetStatus);
       return;
     }
 

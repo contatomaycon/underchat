@@ -75,10 +75,10 @@ export class AuthLoginUseCase {
       return;
     }
 
-    await this.invalidateUserJwtCache(userId);
-
-    const accountId =
-      await this.userAccountViewerRepository.getUserAccountId(userId);
+    const [accountId] = await Promise.all([
+      this.userAccountViewerRepository.getUserAccountId(userId),
+      this.invalidateUserJwtCache(userId),
+    ]);
 
     if (accountId) {
       await this.notifyPreviousSession(userId, accountId);
@@ -119,6 +119,7 @@ export class AuthLoginUseCase {
       this.permissionService.viewPermissionByUserId(result.user_id),
       this.accountService.viewAccountInfoByAccountId(result.account_id),
       this.userService.listUserSectors(result.account_id, result.user_id),
+      this.presenceService.setUserAway(result.user_id).then(() => undefined),
     ]);
 
     return {
