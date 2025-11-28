@@ -106,15 +106,20 @@ export class MessageTemplateUpdaterUseCase {
       }
     }
 
+    let resolvedAttachmentUrl: string | null | undefined;
+    if (attachmentUrl) {
+      resolvedAttachmentUrl = attachmentUrl.url;
+    } else if (body.attachment_url) {
+      resolvedAttachmentUrl = null;
+    } else {
+      resolvedAttachmentUrl = undefined;
+    }
+
     const inputWithAttachment: IUpdateMessageTemplate = {
       message_template_id: messageTemplateId,
       message: body.message?.value,
       command: body.command?.value,
-      attachment_url: attachmentUrl
-        ? attachmentUrl.url
-        : body.attachment_url
-          ? null
-          : undefined,
+      attachment_url: resolvedAttachmentUrl,
       message_status_id: body.message_status_id?.value,
       type: body.type?.value,
     };

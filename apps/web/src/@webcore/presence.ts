@@ -225,8 +225,10 @@ const bindPresenceListeners = (): void => {
 
 bindPresenceListeners();
 
-void (async () => {
+const isReady = async (): Promise<void> => {
   await router.isReady();
 
   refreshPresenceForCurrentRoute();
-})();
+};
+
+isReady().catch(() => {});
