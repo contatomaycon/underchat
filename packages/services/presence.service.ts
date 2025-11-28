@@ -29,6 +29,10 @@ export class PresenceService {
     return `${this.keyPrefix}${userId}`;
   }
 
+  private async clearPresenceKey(userId: string): Promise<void> {
+    await this.redis.del(this.getKey(userId));
+  }
+
   async isUserLoggedIn(userId: string): Promise<boolean> {
     const key = this.getKey(userId);
     const exists = await this.redis.exists(key);
@@ -56,6 +60,16 @@ export class PresenceService {
     }
 
     return null;
+  }
+
+  private async getCurrentStatus(
+    userId: string
+  ): Promise<EChatUserStatus | null> {
+    const cached = this.statusCache.get(userId);
+    if (cached) return cached;
+
+    const dbStatus = await this.chatUserViewer.findStatusByUserId(userId);
+    return dbStatus ?? null;
   }
 
   private getActiveStatuses(): EChatUserStatus[] {
@@ -107,240 +121,99 @@ export class PresenceService {
     }
   }
 
-  async setUserOnline(userId: string): Promise<void> {
-    const newStatus = EChatUserStatus.online;
-    const cachedStatus = this.statusCache.get(userId);
+  private async persistStatus(
+    userId: string,
+    newStatus: EChatUserStatus,
+    options: {
+      touchRedis?: boolean;
+      clearRedis?: boolean;
+      forcePublish?: boolean;
+    } = {}
+  ): Promise<void> {
+    const {
+      touchRedis = false,
+      clearRedis = false,
+      forcePublish = false,
+    } = options;
 
-    const [currentStatus] = await Promise.all([
-      cachedStatus ??
-        this.chatUserViewer.findStatusByUserId(userId).then((s) => s ?? null),
-      this.refreshPresenceKey(userId, newStatus),
-    ]);
+    const currentStatus = await this.getCurrentStatus(userId);
 
-    if (currentStatus === newStatus) {
+    if (clearRedis) {
+      await this.clearPresenceKey(userId);
+    } else if (touchRedis) {
+      await this.refreshPresenceKey(userId, newStatus);
+    }
+
+    if (currentStatus === null) {
+      await this.ensureChatUserRow(userId, newStatus);
+    }
+
+    if (currentStatus !== newStatus) {
+      await this.chatUserUpdater.updateStatusIfChanged(userId, newStatus);
       this.statusCache.set(userId, newStatus);
       await this.publishUserStatus(userId, newStatus);
       return;
     }
 
-    if (currentStatus === null) {
-      await Promise.all([
-        this.ensureChatUserRow(userId, newStatus),
-        this.publishUserStatus(userId, newStatus),
-      ]);
-      this.statusCache.set(userId, newStatus);
-      return;
+    this.statusCache.set(userId, newStatus);
+    if (forcePublish) {
+      await this.publishUserStatus(userId, newStatus);
     }
+  }
 
-    const updated = await this.chatUserUpdater.updateStatusIfChanged(
-      userId,
-      newStatus
-    );
-
-    if (updated) {
-      this.statusCache.set(userId, newStatus);
-    }
-
-    await this.publishUserStatus(userId, newStatus);
+  async setUserOnline(userId: string): Promise<void> {
+    await this.persistStatus(userId, EChatUserStatus.online, {
+      touchRedis: true,
+      forcePublish: true,
+    });
   }
 
   async heartbeat(userId: string): Promise<void> {
-    const cachedStatus = this.statusCache.get(userId);
-    const currentStatus =
-      cachedStatus ?? (await this.chatUserViewer.findStatusByUserId(userId));
+    const currentStatus = await this.getCurrentStatus(userId);
 
     if (
       currentStatus === EChatUserStatus.busy ||
       currentStatus === EChatUserStatus.do_not_disturb
     ) {
-      await Promise.all([
-        this.refreshPresenceKey(userId, currentStatus),
-        this.publishUserStatus(userId, currentStatus),
-      ]);
-      this.statusCache.set(userId, currentStatus);
+      await this.persistStatus(userId, currentStatus, {
+        touchRedis: true,
+        forcePublish: true,
+      });
       return;
     }
 
-    const newStatus = EChatUserStatus.online;
-
-    if (currentStatus === newStatus) {
-      await Promise.all([
-        this.refreshPresenceKey(userId, newStatus),
-        this.publishUserStatus(userId, newStatus),
-      ]);
-      this.statusCache.set(userId, newStatus);
-      return;
-    }
-
-    if (currentStatus === null) {
-      await Promise.all([
-        this.refreshPresenceKey(userId, newStatus),
-        this.ensureChatUserRow(userId, newStatus),
-        this.publishUserStatus(userId, newStatus),
-      ]);
-      this.statusCache.set(userId, newStatus);
-      return;
-    }
-
-    const [updated] = await Promise.all([
-      this.chatUserUpdater.updateStatusIfChanged(userId, newStatus),
-      this.refreshPresenceKey(userId, newStatus),
-    ]);
-
-    if (updated) {
-      this.statusCache.set(userId, newStatus);
-    }
-
-    await this.publishUserStatus(userId, newStatus);
+    await this.persistStatus(userId, EChatUserStatus.online, {
+      touchRedis: true,
+      forcePublish: true,
+    });
   }
 
   async setUserOffline(userId: string): Promise<void> {
-    const key = this.getKey(userId);
-    const newStatus = EChatUserStatus.offline;
-    const cachedStatus = this.statusCache.get(userId);
-
-    const [currentStatus] = await Promise.all([
-      cachedStatus ??
-        this.chatUserViewer.findStatusByUserId(userId).then((s) => s ?? null),
-      this.redis.del(key),
-    ]);
-
-    if (currentStatus === newStatus) {
-      this.statusCache.set(userId, newStatus);
-      await this.publishUserStatus(userId, newStatus);
-      return;
-    }
-
-    if (currentStatus === null) {
-      await Promise.all([
-        this.ensureChatUserRow(userId, newStatus),
-        this.publishUserStatus(userId, newStatus),
-      ]);
-      this.statusCache.set(userId, newStatus);
-      return;
-    }
-
-    const updated = await this.chatUserUpdater.updateStatusIfChanged(
-      userId,
-      newStatus
-    );
-
-    if (updated) {
-      this.statusCache.set(userId, newStatus);
-    }
-
-    await this.publishUserStatus(userId, newStatus);
+    await this.persistStatus(userId, EChatUserStatus.offline, {
+      clearRedis: true,
+      forcePublish: true,
+    });
   }
 
   async setUserAway(userId: string): Promise<void> {
-    const newStatus = EChatUserStatus.away;
-    const cachedStatus = this.statusCache.get(userId);
-
-    const [currentStatus] = await Promise.all([
-      cachedStatus ??
-        this.chatUserViewer.findStatusByUserId(userId).then((s) => s ?? null),
-      this.refreshPresenceKey(userId, newStatus),
-    ]);
-
-    if (currentStatus === newStatus) {
-      this.statusCache.set(userId, newStatus);
-      await this.publishUserStatus(userId, newStatus);
-      return;
-    }
-
-    if (currentStatus === null) {
-      await Promise.all([
-        this.ensureChatUserRow(userId, newStatus),
-        this.publishUserStatus(userId, newStatus),
-      ]);
-      this.statusCache.set(userId, newStatus);
-      return;
-    }
-
-    const updated = await this.chatUserUpdater.updateStatusIfChanged(
-      userId,
-      newStatus
-    );
-
-    if (updated) {
-      this.statusCache.set(userId, newStatus);
-    }
-
-    await this.publishUserStatus(userId, newStatus);
+    await this.persistStatus(userId, EChatUserStatus.away, {
+      touchRedis: true,
+      forcePublish: true,
+    });
   }
 
   async setUserBusy(userId: string): Promise<void> {
-    const newStatus = EChatUserStatus.busy;
-    const cachedStatus = this.statusCache.get(userId);
-
-    const [currentStatus] = await Promise.all([
-      cachedStatus ??
-        this.chatUserViewer.findStatusByUserId(userId).then((s) => s ?? null),
-      this.refreshPresenceKey(userId, newStatus),
-    ]);
-
-    if (currentStatus === newStatus) {
-      this.statusCache.set(userId, newStatus);
-      await this.publishUserStatus(userId, newStatus);
-      return;
-    }
-
-    if (currentStatus === null) {
-      await Promise.all([
-        this.ensureChatUserRow(userId, newStatus),
-        this.publishUserStatus(userId, newStatus),
-      ]);
-      this.statusCache.set(userId, newStatus);
-      return;
-    }
-
-    const updated = await this.chatUserUpdater.updateStatusIfChanged(
-      userId,
-      newStatus
-    );
-
-    if (updated) {
-      this.statusCache.set(userId, newStatus);
-    }
-
-    await this.publishUserStatus(userId, newStatus);
+    await this.persistStatus(userId, EChatUserStatus.busy, {
+      touchRedis: true,
+      forcePublish: true,
+    });
   }
 
   async setUserDoNotDisturb(userId: string): Promise<void> {
-    const newStatus = EChatUserStatus.do_not_disturb;
-    const cachedStatus = this.statusCache.get(userId);
-
-    const [currentStatus] = await Promise.all([
-      cachedStatus ??
-        this.chatUserViewer.findStatusByUserId(userId).then((s) => s ?? null),
-      this.refreshPresenceKey(userId, newStatus),
-    ]);
-
-    if (currentStatus === newStatus) {
-      this.statusCache.set(userId, newStatus);
-      await this.publishUserStatus(userId, newStatus);
-      return;
-    }
-
-    if (currentStatus === null) {
-      await Promise.all([
-        this.ensureChatUserRow(userId, newStatus),
-        this.publishUserStatus(userId, newStatus),
-      ]);
-      this.statusCache.set(userId, newStatus);
-      return;
-    }
-
-    const updated = await this.chatUserUpdater.updateStatusIfChanged(
-      userId,
-      newStatus
-    );
-
-    if (updated) {
-      this.statusCache.set(userId, newStatus);
-    }
-
-    await this.publishUserStatus(userId, newStatus);
+    await this.persistStatus(userId, EChatUserStatus.do_not_disturb, {
+      touchRedis: true,
+      forcePublish: true,
+    });
   }
 
   async isUserOnline(userId: string): Promise<boolean> {
@@ -358,45 +231,15 @@ export class PresenceService {
   }
 
   async syncStatusFromRedis(userId: string): Promise<void> {
-    const [cachedValue, cachedStatus] = await Promise.all([
-      this.redis.get(this.getKey(userId)),
-      Promise.resolve(this.statusCache.get(userId)),
-    ]);
-
+    const cachedValue = await this.redis.get(this.getKey(userId));
     const cachedPresence = this.parseStatusFromCache(cachedValue);
     const targetStatus = cachedPresence ?? EChatUserStatus.offline;
 
-    if (cachedStatus === targetStatus) {
-      return;
-    }
-
-    const currentStatus =
-      cachedStatus ?? (await this.chatUserViewer.findStatusByUserId(userId));
-
-    if (currentStatus === targetStatus) {
-      this.statusCache.set(userId, targetStatus);
-      await this.publishUserStatus(userId, targetStatus);
-      return;
-    }
-
-    if (currentStatus === null) {
-      await Promise.all([
-        this.ensureChatUserRow(userId, targetStatus),
-        this.publishUserStatus(userId, targetStatus),
-      ]);
-      this.statusCache.set(userId, targetStatus);
-      return;
-    }
-
-    const updated = await this.chatUserUpdater.updateStatusIfChanged(
-      userId,
-      targetStatus
-    );
-
-    if (updated || currentStatus !== targetStatus) {
-      this.statusCache.set(userId, targetStatus);
-      await this.publishUserStatus(userId, targetStatus);
-    }
+    await this.persistStatus(userId, targetStatus, {
+      touchRedis: cachedPresence !== null,
+      clearRedis: cachedPresence === null,
+      forcePublish: true,
+    });
   }
 
   private async syncActiveUsersFromRedis(): Promise<void> {
