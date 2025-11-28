@@ -1,4 +1,5 @@
-import { singleton } from 'tsyringe';
+import { singleton, inject } from 'tsyringe';
+import Redis from 'ioredis';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { PresenceService } from '@core/services/presence.service';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
@@ -12,7 +13,8 @@ export class PresenceCentrifugoConsume {
   constructor(
     private readonly centrifugoService: CentrifugoService,
     private readonly presenceService: PresenceService,
-    private readonly userAccountViewerRepository: UserAccountViewerRepository
+    private readonly userAccountViewerRepository: UserAccountViewerRepository,
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   async start(): Promise<void> {
@@ -36,6 +38,38 @@ export class PresenceCentrifugoConsume {
     this.isRunning = false;
   }
 
+  private getUserCacheKey(userId: string): string {
+    return `presence:user:exists:${userId}`;
+  }
+
+  private async ensureValidUser(userId: string): Promise<boolean> {
+    const cacheKey = this.getUserCacheKey(userId);
+    const cached = await this.redis.get(cacheKey);
+
+    if (cached === '0') {
+      return false;
+    }
+
+    if (cached === '1') {
+      return true;
+    }
+
+    const accountId =
+      await this.userAccountViewerRepository.getUserAccountId(userId);
+
+    if (!accountId) {
+      console.warn(
+        `Invalid user_id in presence message: ${userId} - user does not exist or was deleted`
+      );
+
+      await this.redis.set(cacheKey, '0', 'EX', 86_400);
+      return false;
+    }
+
+    await this.redis.set(cacheKey, '1', 'EX', 86_400);
+    return true;
+  }
+
   private async handlePresenceMessage(data: unknown): Promise<void> {
     try {
       if (!data || typeof data !== 'object') return;
@@ -50,14 +84,8 @@ export class PresenceCentrifugoConsume {
         return;
       }
 
-      const accountId = await this.userAccountViewerRepository.getUserAccountId(
-        message.user_id
-      );
-
-      if (!accountId) {
-        console.warn(
-          `Invalid user_id in presence message: ${message.user_id} - user does not exist or was deleted`
-        );
+      const isValidUser = await this.ensureValidUser(message.user_id);
+      if (!isValidUser) {
         return;
       }
 
