@@ -14,6 +14,7 @@ CREATE TABLE "message_template" (
   "command" character varying(100) NOT NULL,
   "message" text NOT NULL,
   "attachment_url" character varying(500) NULL,
+  "type" character varying(50) NOT NULL DEFAULT 'text',
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
   "deleted_at" timestamptz NULL,

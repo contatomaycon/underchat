@@ -28,6 +28,7 @@ export class MessageTemplateViewerRepository {
         attachment_url: messageTemplate.attachment_url,
         command: messageTemplate.command,
         message: messageTemplate.message,
+        type: messageTemplate.type,
         created_at: messageTemplate.created_at,
       })
       .from(messageTemplate)

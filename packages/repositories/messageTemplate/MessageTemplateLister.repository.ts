@@ -92,6 +92,7 @@ export class MessageTemplateListerRepository {
         message_template_id: messageTemplate.message_template_id,
         message: messageTemplate.message,
         command: messageTemplate.command,
+        type: messageTemplate.type,
         account: {
           account_id: account.account_id,
           name: account.name,

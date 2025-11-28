@@ -11,6 +11,7 @@ import { EMessageTemplatePermissions } from '@core/common/enums/EPermissions/mes
 import { useMessageTemplateStore } from '@/@webcore/stores/messageTemplate';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { EMessageStatus } from '@core/common/enums/EMessageStatus';
+import { EMessageType } from '@core/common/enums/EMessageType';
 import { ListMessageTemplateResponse } from '@core/schema/messageTemplate/listMessageTemplate/response.schema';
 
 definePage({
@@ -103,6 +104,54 @@ function getAttachmentIcon(url: string | null | undefined): string {
 function openAttachment(url: string | null | undefined) {
   if (!url) return;
   window.open(url, '_blank');
+}
+
+type AttachmentPreviewType = 'image' | 'video' | 'audio';
+
+const attachmentPreviewDialog = ref<{
+  open: boolean;
+  src: string | null;
+  type: AttachmentPreviewType | null;
+}>({
+  open: false,
+  src: null,
+  type: null,
+});
+
+const closeAttachmentPreview = () => {
+  attachmentPreviewDialog.value = {
+    open: false,
+    src: null,
+    type: null,
+  };
+};
+
+function openAttachmentPreview(item: ListMessageTemplateResponse) {
+  const url = item.attachment_url;
+  if (!url) return;
+
+  let type: AttachmentPreviewType | null = null;
+
+  if (item.type === EMessageType.image) type = 'image';
+  else if (item.type === EMessageType.video) type = 'video';
+  else if (item.type === EMessageType.audio) type = 'audio';
+
+  if (!type) {
+    const ext = getExtFromUrl(url);
+    if (imageExts.has(ext)) type = 'image';
+    else if (audioExts.has(ext)) type = 'audio';
+  }
+
+  if (!type) {
+    openAttachment(url);
+    return;
+  }
+
+  attachmentPreviewDialog.value = {
+    open: true,
+    src: url,
+    type,
+  };
 }
 
 const isDialogDeleterShow = ref(false);
@@ -260,12 +309,28 @@ watch(
         </template>
 
         <template #item.message_status="{ item }">
-          {{ item.message_status?.name }}
+          <VChip
+            v-if="item.message_status"
+            :color="
+              item.message_status.message_status_id === EMessageStatus.active
+                ? 'success'
+                : 'error'
+            "
+            size="small"
+            variant="tonal"
+          >
+            {{
+              item.message_status.message_status_id === EMessageStatus.active
+                ? $t('active')
+                : $t('inactive')
+            }}
+          </VChip>
+          <span v-else class="text-medium-emphasis">-</span>
         </template>
 
         <template #item.attachment_url="{ item }">
           <div v-if="item.attachment_url" class="d-flex align-center">
-            <IconBtn @click="openAttachment(item.attachment_url)">
+            <IconBtn @click="openAttachmentPreview(item)">
               <VTooltip
                 location="top"
                 transition="scale-transition"
@@ -331,6 +396,63 @@ watch(
           />
         </template>
       </VDataTableServer>
+
+      <VDialog v-model="attachmentPreviewDialog.open" max-width="800">
+        <DialogCloseBtn @click="closeAttachmentPreview" />
+        <VCard :title="$t('preview')">
+          <VCardText>
+            <VImg
+              v-if="
+                attachmentPreviewDialog.src &&
+                attachmentPreviewDialog.type === 'image'
+              "
+              :src="attachmentPreviewDialog.src"
+              max-height="420"
+              class="rounded"
+              contain
+            />
+            <video
+              v-if="
+                attachmentPreviewDialog.src &&
+                attachmentPreviewDialog.type === 'video'
+              "
+              :src="attachmentPreviewDialog.src"
+              max-height="600"
+              class="rounded"
+              style="width: 100%"
+              controls
+            >
+              <track kind="captions" />
+            </video>
+            <div
+              v-if="
+                attachmentPreviewDialog.src &&
+                attachmentPreviewDialog.type === 'audio'
+              "
+              class="d-flex flex-column align-center pa-6"
+            >
+              <div class="w-100 d-flex flex-column align-center">
+                <audio
+                  :src="attachmentPreviewDialog.src"
+                  controls
+                  style="width: 100%"
+                >
+                  <track kind="captions" />
+                </audio>
+              </div>
+            </div>
+          </VCardText>
+          <VCardText class="d-flex justify-end">
+            <VBtn
+              variant="tonal"
+              color="secondary"
+              @click="closeAttachmentPreview"
+            >
+              {{ $t('cancel') }}
+            </VBtn>
+          </VCardText>
+        </VCard>
+      </VDialog>
 
       <VDialogHandler
         v-if="isDialogDeleterShow"

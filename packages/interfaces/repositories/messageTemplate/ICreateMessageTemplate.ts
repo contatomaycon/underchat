@@ -4,4 +4,5 @@ export interface ICreateMessageTemplate {
   command: string;
   attachment_url?: string | null;
   message_status_id: string;
+  type: string;
 }

@@ -24,6 +24,9 @@ export const updateMessageTemplateRequestSchema = Type.Object({
       Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
     ),
   }),
+  type: Type.Object({
+    value: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  }),
 });
 
 export type UpdateMessageTemplateRequest = Static<

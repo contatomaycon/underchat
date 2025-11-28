@@ -17,6 +17,7 @@ export const viewMessageTemplateResponseSchema = Type.Object({
   command: Type.String(),
   message: Type.String(),
   attachment_url: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  type: Type.String(),
   created_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 

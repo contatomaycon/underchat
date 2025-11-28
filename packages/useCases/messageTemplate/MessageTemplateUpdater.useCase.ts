@@ -33,6 +33,8 @@ export class MessageTemplateUpdaterUseCase {
       'aac',
       'flac',
       'opus',
+      'mp4',
+      'webm',
     ];
 
     const buffer = await file.toBuffer();
@@ -84,18 +86,37 @@ export class MessageTemplateUpdaterUseCase {
     if (body.attachment_url?.filename) {
       await this.validateAttachment(body.attachment_url, t);
 
-      attachmentUrl = await this.storageService.uploadImage(
-        body.attachment_url,
-        accountId
-      );
+      const messageType = body.type?.value || 'text';
+
+      if (messageType === 'image') {
+        attachmentUrl = await this.storageService.uploadImage(
+          body.attachment_url,
+          accountId
+        );
+      } else if (messageType === 'video') {
+        attachmentUrl = await this.storageService.uploadVideo(
+          body.attachment_url,
+          accountId
+        );
+      } else if (messageType === 'audio') {
+        attachmentUrl = await this.storageService.uploadAudio(
+          body.attachment_url,
+          accountId
+        );
+      }
     }
 
     const inputWithAttachment: IUpdateMessageTemplate = {
       message_template_id: messageTemplateId,
-      message: body.message.value,
-      command: body.command.value,
-      attachment_url: attachmentUrl ? attachmentUrl.url : null,
-      message_status_id: body.message_status_id.value,
+      message: body.message?.value,
+      command: body.command?.value,
+      attachment_url: attachmentUrl
+        ? attachmentUrl.url
+        : body.attachment_url
+          ? null
+          : undefined,
+      message_status_id: body.message_status_id?.value,
+      type: body.type?.value,
     };
 
     const messageTemplateUpdater =

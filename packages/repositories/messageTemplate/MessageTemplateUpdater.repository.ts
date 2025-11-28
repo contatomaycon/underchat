@@ -32,6 +32,10 @@ export class MessageTemplateUpdaterRepository {
       inputUpdate.attachment_url = input.attachment_url;
     }
 
+    if (input?.type) {
+      inputUpdate.type = input.type;
+    }
+
     return inputUpdate;
   }
 
