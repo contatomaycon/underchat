@@ -2,7 +2,6 @@
 import { ref, watch, computed } from 'vue';
 import { refDebounced } from '@vueuse/core';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
-import { EUserPermissions } from '@core/common/enums/EPermissions/user';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
@@ -11,14 +10,15 @@ import { useUsersStore } from '@/@webcore/stores/user';
 import { EUserStatus } from '@core/common/enums/EUserStatus';
 import { ListUserResponse } from '@core/schema/user/listUser/response.schema';
 import { IListUsers } from '@/@webcore/interfaces/IListUsers';
+import { EFinancialPermissions } from '@core/common/enums/EPermissions/financial';
 
 definePage({
   meta: {
     permissions: [
       EGeneralPermissions.full_access,
       EGeneralPermissions.full_access_group,
-      EUserPermissions.user_group,
-      EUserPermissions.user_view,
+      EFinancialPermissions.financial_group,
+      EFinancialPermissions.financial_view,
     ],
   },
 });

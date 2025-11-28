@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted } from 'vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
-import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
@@ -9,14 +8,15 @@ import { DataTableHeader } from 'vuetify';
 import { usePlanStore } from '@/@webcore/stores/plan';
 import { ListPlanSalesResponse } from '@core/schema/plan/listPlanSales/response.schema';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
+import { EFinancialPermissions } from '@core/common/enums/EPermissions/financial';
 
 definePage({
   meta: {
     permissions: [
       EGeneralPermissions.full_access,
       EGeneralPermissions.full_access_group,
-      EPlanPermissions.plan_group,
-      EPlanPermissions.plan_view,
+      EFinancialPermissions.financial_group,
+      EFinancialPermissions.financial_view,
     ],
   },
 });

@@ -209,8 +209,8 @@ export default [
         permissions: [
           EGeneralPermissions.full_access,
           EGeneralPermissions.full_access_group,
-          EPlanPermissions.plan_group,
-          EPlanPermissions.plan_view,
+          EFinancialPermissions.financial_group,
+          EFinancialPermissions.financial_view,
         ],
       },
       {
@@ -220,8 +220,8 @@ export default [
         permissions: [
           EGeneralPermissions.full_access,
           EGeneralPermissions.full_access_group,
-          EAccountPermissions.account_group,
-          EAccountPermissions.account_view,
+          EFinancialPermissions.financial_group,
+          EFinancialPermissions.financial_view,
         ],
       },
       {
@@ -231,8 +231,8 @@ export default [
         permissions: [
           EGeneralPermissions.full_access,
           EGeneralPermissions.full_access_group,
-          EUserPermissions.user_group,
-          EUserPermissions.user_view,
+          EFinancialPermissions.financial_group,
+          EFinancialPermissions.financial_view,
         ],
       },
       {
