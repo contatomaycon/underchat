@@ -8,6 +8,14 @@ export const avatarText = (value?: string | null): string => {
   return (words[0].charAt(0) + words[1].charAt(0)).toUpperCase();
 };
 
+export const getOfflineColorDark = (): string => {
+  return '#9e9e9e';
+};
+
+export const getOfflineColorLight = (): string => {
+  return '#757575';
+};
+
 export const resolveAvatarBadgeVariant = (
   status: EChatUserStatus,
   isDark?: boolean
@@ -86,11 +94,3 @@ export function formatDateToMonthShort(
 
 export const prefixWithPlus = (value: number) =>
   value > 0 ? `+${value}` : `${value}`;
-
-export const getOfflineColorDark = (): string => {
-  return '#9e9e9e';
-};
-
-export const getOfflineColorLight = (): string => {
-  return '#757575';
-};

@@ -101,6 +101,7 @@ const resizeHandler = ref<(() => void) | null>(null);
 const q = ref('');
 const msg = ref('');
 const isUserProfileSidebarOpen = ref(false);
+const isUpdatingUserProfileStatus = ref(false);
 const isActiveChatUserProfileSidebarOpen = ref(false);
 const isSearchSidebarOpen = ref(false);
 const linkPreview = ref<ViewLinkPreviewResponse | null>(null);
@@ -4072,9 +4073,11 @@ onBeforeUnmount(() => {
       class="user-profile-sidebar"
       location="start"
       width="370"
+      :persistent="isUpdatingUserProfileStatus"
     >
       <ChatUserProfileSidebarContent
         @close="isUserProfileSidebarOpen = false"
+        @update:is-updating="isUpdatingUserProfileStatus = $event"
       />
     </VNavigationDrawer>
 

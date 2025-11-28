@@ -113,27 +113,7 @@ const stopHeartbeatLoop = (): void => {
   heartbeatTimer = null;
 };
 
-let applyModeRef: (mode: PresenceMode, forcePost?: boolean) => Promise<void>;
-let scheduleHeartbeatLoopRef: (mode: PresenceMode) => void;
-
-async function handleHeartbeatTick(): Promise<void> {
-  if (!isLoggedIn()) {
-    stopHeartbeatLoop();
-    currentMode = null;
-    return;
-  }
-
-  const targetMode = resolveTargetMode();
-
-  if (currentMode !== targetMode) {
-    await applyModeRef(targetMode, true);
-    return;
-  }
-
-  await sendPresence(targetMode, true).catch(() => {});
-}
-
-function scheduleHeartbeatLoop(mode: PresenceMode): void {
+const scheduleHeartbeatLoop = (mode: PresenceMode): void => {
   stopHeartbeatLoop();
 
   if (mode === EChatUserStatus.offline) {
@@ -144,11 +124,12 @@ function scheduleHeartbeatLoop(mode: PresenceMode): void {
   heartbeatTimer = globalThis.setInterval(() => {
     void handleHeartbeatTick();
   }, interval);
-}
+};
 
-scheduleHeartbeatLoopRef = scheduleHeartbeatLoop;
-
-async function applyMode(mode: PresenceMode, forcePost = false): Promise<void> {
+const applyMode = async (
+  mode: PresenceMode,
+  forcePost = false
+): Promise<void> => {
   const sameMode = currentMode === mode;
   currentMode = mode;
 
@@ -157,10 +138,25 @@ async function applyMode(mode: PresenceMode, forcePost = false): Promise<void> {
     updateLocalPresenceStatus(mode);
   }
 
-  scheduleHeartbeatLoopRef(mode);
-}
+  scheduleHeartbeatLoop(mode);
+};
 
-applyModeRef = applyMode;
+const handleHeartbeatTick = async (): Promise<void> => {
+  if (!isLoggedIn()) {
+    stopHeartbeatLoop();
+    currentMode = null;
+    return;
+  }
+
+  const targetMode = resolveTargetMode();
+
+  if (currentMode !== targetMode) {
+    await applyMode(targetMode, true);
+    return;
+  }
+
+  await sendPresence(targetMode, true).catch(() => {});
+};
 
 export const presenceOnline = async (): Promise<void> => {
   await applyMode(EChatUserStatus.online, true);
@@ -247,6 +243,6 @@ const bindPresenceListeners = (): void => {
 
 bindPresenceListeners();
 
-await router.isReady();
-
-refreshPresenceForCurrentRoute();
+router.isReady().then(() => {
+  refreshPresenceForCurrentRoute();
+});
