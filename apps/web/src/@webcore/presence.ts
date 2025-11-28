@@ -1,19 +1,27 @@
 import axios from '@webcore/axios';
 import { router } from '@/plugins/1.router';
-import { isLoggedIn, getUser } from './localStorage/user';
-import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
+import { isLoggedIn, getToken } from './localStorage/user';
 import { useChatStore } from '@/@webcore/stores/chat';
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
 
+type PresenceMode = EChatUserStatus;
+
+const HEARTBEAT_INTERVALS: Record<PresenceMode, number> = {
+  [EChatUserStatus.online]: 20000,
+  [EChatUserStatus.away]: 60000,
+  [EChatUserStatus.busy]: 60000,
+  [EChatUserStatus.do_not_disturb]: 60000,
+  [EChatUserStatus.offline]: 60000,
+};
+
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-let awayHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
-let busyHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
-let doNotDisturbHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let listenersBound = false;
-let lastHandledPath: string | null = null;
+let currentMode: PresenceMode | null = null;
+
+const chatStore = useChatStore();
 
 const updateLocalPresenceStatus = (status: EChatUserStatus): void => {
-  const chatStore = useChatStore();
   const currentUser = chatStore.user;
 
   if (!currentUser) return;
@@ -38,207 +46,136 @@ const updateLocalPresenceStatus = (status: EChatUserStatus): void => {
   chatStore.updateChatUserImmediate();
 };
 
-const isManualBusyStatus = (): boolean => {
-  const user = getUser();
-  const status = user?.chat_user?.status as EChatUserStatus | undefined;
+const resolveUserStatus = (): EChatUserStatus | null => {
+  const status = chatStore.user?.chat_user?.status;
 
-  return status === EChatUserStatus.busy;
+  return (status as EChatUserStatus) ?? null;
 };
 
-const isManualDoNotDisturbStatus = (): boolean => {
-  const user = getUser();
-  const status = user?.chat_user?.status as EChatUserStatus | undefined;
+const resolveRoutePath = (): string => router.currentRoute.value?.path ?? '';
 
-  return status === EChatUserStatus.do_not_disturb;
+const resolveTargetMode = (): PresenceMode => {
+  if (!isLoggedIn()) return EChatUserStatus.offline;
+
+  const userStatus = resolveUserStatus();
+  if (
+    userStatus === EChatUserStatus.busy ||
+    userStatus === EChatUserStatus.do_not_disturb
+  ) {
+    return userStatus;
+  }
+
+  const path = resolveRoutePath();
+  if (path.startsWith('/chat')) {
+    return EChatUserStatus.online;
+  }
+
+  return EChatUserStatus.away;
 };
 
-export const startHeartbeat = (intervalMs = 20000): void => {
-  if (heartbeatTimer) return;
+const getEndpointForMode = (
+  mode: PresenceMode,
+  asHeartbeat: boolean
+): string => {
+  if (mode === EChatUserStatus.online) {
+    return asHeartbeat ? '/presence/heartbeat' : '/presence/online';
+  }
 
-  heartbeatTimer = globalThis.setInterval(() => {
-    if (!isLoggedIn() || isManualBusyStatus() || isManualDoNotDisturbStatus()) {
-      return;
-    }
+  if (mode === EChatUserStatus.away) {
+    return '/presence/away';
+  }
 
-    const currentRoute = router.currentRoute.value;
-    const path = currentRoute?.path ?? '';
+  if (mode === EChatUserStatus.busy) {
+    return '/presence/busy';
+  }
 
-    if (!path.startsWith('/chat')) {
-      return;
-    }
+  if (mode === EChatUserStatus.do_not_disturb) {
+    return '/presence/do-not-disturb';
+  }
 
-    axios.post('/presence/heartbeat', {}).catch(() => {});
-  }, intervalMs);
+  return '/presence/offline';
 };
 
-export const stopHeartbeat = (): void => {
+const sendPresence = async (
+  mode: PresenceMode,
+  asHeartbeat = false
+): Promise<void> => {
+  const endpoint = getEndpointForMode(mode, asHeartbeat);
+
+  await axios.post(endpoint, {});
+};
+
+const stopHeartbeatLoop = (): void => {
   if (!heartbeatTimer) return;
 
-  globalThis.clearInterval(heartbeatTimer);
+  clearInterval(heartbeatTimer);
   heartbeatTimer = null;
 };
 
-export const startAwayHeartbeat = (intervalMs = 60000): void => {
-  if (awayHeartbeatTimer) return;
+const scheduleHeartbeatLoop = (mode: PresenceMode): void => {
+  stopHeartbeatLoop();
 
-  awayHeartbeatTimer = globalThis.setInterval(() => {
-    if (!isLoggedIn()) {
-      return;
-    }
+  if (mode === EChatUserStatus.offline) {
+    return;
+  }
 
-    const currentRoute = router.currentRoute.value;
-    const path = currentRoute?.path ?? '';
-
-    if (path.startsWith('/chat')) {
-      return;
-    }
-
-    axios.post('/presence/away', {}).catch(() => {});
-  }, intervalMs);
+  const interval = HEARTBEAT_INTERVALS[mode] ?? 60000;
+  heartbeatTimer = globalThis.setInterval(() => {
+    void handleHeartbeatTick();
+  }, interval);
 };
 
-export const stopAwayHeartbeat = (): void => {
-  if (!awayHeartbeatTimer) return;
+const applyMode = async (
+  mode: PresenceMode,
+  forcePost = false
+): Promise<void> => {
+  const sameMode = currentMode === mode;
+  currentMode = mode;
 
-  globalThis.clearInterval(awayHeartbeatTimer);
-  awayHeartbeatTimer = null;
+  if (!sameMode || forcePost) {
+    await sendPresence(mode, false).catch(() => {});
+    updateLocalPresenceStatus(mode);
+  }
+
+  scheduleHeartbeatLoop(mode);
 };
 
-const startBusyHeartbeat = (intervalMs = 60000): void => {
-  if (busyHeartbeatTimer) return;
+const handleHeartbeatTick = async (): Promise<void> => {
+  if (!isLoggedIn()) {
+    stopHeartbeatLoop();
+    currentMode = null;
+    return;
+  }
 
-  busyHeartbeatTimer = globalThis.setInterval(() => {
-    if (!isLoggedIn() || !isManualBusyStatus()) {
-      return;
-    }
+  const targetMode = resolveTargetMode();
 
-    axios.post('/presence/busy', {}).catch(() => {});
-  }, intervalMs);
-};
+  if (currentMode !== targetMode) {
+    await applyMode(targetMode, true);
+    return;
+  }
 
-const stopBusyHeartbeat = (): void => {
-  if (!busyHeartbeatTimer) return;
-
-  globalThis.clearInterval(busyHeartbeatTimer);
-  busyHeartbeatTimer = null;
-};
-
-const startDoNotDisturbHeartbeat = (intervalMs = 60000): void => {
-  if (doNotDisturbHeartbeatTimer) return;
-
-  doNotDisturbHeartbeatTimer = globalThis.setInterval(() => {
-    if (!isLoggedIn() || !isManualDoNotDisturbStatus()) {
-      return;
-    }
-
-    axios.post('/presence/do-not-disturb', {}).catch(() => {});
-  }, intervalMs);
-};
-
-const stopDoNotDisturbHeartbeat = (): void => {
-  if (!doNotDisturbHeartbeatTimer) return;
-
-  globalThis.clearInterval(doNotDisturbHeartbeatTimer);
-  doNotDisturbHeartbeatTimer = null;
+  await sendPresence(targetMode, true).catch(() => {});
 };
 
 export const presenceOnline = async (): Promise<void> => {
-  await axios.post('/presence/online', {});
-  updateLocalPresenceStatus(EChatUserStatus.online);
-
-  startHeartbeat();
+  await applyMode(EChatUserStatus.online, true);
 };
 
 export const presenceOffline = async (): Promise<void> => {
-  stopHeartbeat();
-  stopAwayHeartbeat();
-  stopBusyHeartbeat();
-  stopDoNotDisturbHeartbeat();
-
-  await axios.post('/presence/offline', {});
-  updateLocalPresenceStatus(EChatUserStatus.offline);
+  stopHeartbeatLoop();
+  await applyMode(EChatUserStatus.offline, true);
 };
 
 export const presenceAway = async (): Promise<void> => {
-  await axios.post('/presence/away', {});
-  updateLocalPresenceStatus(EChatUserStatus.away);
+  await applyMode(EChatUserStatus.away, true);
 };
 
 export const presenceBusy = async (): Promise<void> => {
-  stopHeartbeat();
-  stopAwayHeartbeat();
-  stopDoNotDisturbHeartbeat();
-
-  await axios.post('/presence/busy', {});
-  updateLocalPresenceStatus(EChatUserStatus.busy);
-  startBusyHeartbeat();
+  await applyMode(EChatUserStatus.busy, true);
 };
 
 export const presenceDoNotDisturb = async (): Promise<void> => {
-  stopHeartbeat();
-  stopAwayHeartbeat();
-  stopBusyHeartbeat();
-
-  await axios.post('/presence/do-not-disturb', {});
-  updateLocalPresenceStatus(EChatUserStatus.do_not_disturb);
-  startDoNotDisturbHeartbeat();
-};
-
-const handleRoutePresence = (path: string): void => {
-  if (!isLoggedIn()) {
-    stopHeartbeat();
-    stopAwayHeartbeat();
-    stopBusyHeartbeat();
-    stopDoNotDisturbHeartbeat();
-    lastHandledPath = null;
-    return;
-  }
-
-  const normalizedPath = path || router.currentRoute.value?.path || '';
-
-  if (lastHandledPath === normalizedPath) {
-    return;
-  }
-
-  lastHandledPath = normalizedPath;
-
-  if (isManualBusyStatus()) {
-    stopHeartbeat();
-    stopAwayHeartbeat();
-    stopDoNotDisturbHeartbeat();
-
-    axios.post('/presence/busy', {}).catch(() => {});
-    startBusyHeartbeat();
-
-    return;
-  }
-
-  if (isManualDoNotDisturbStatus()) {
-    stopHeartbeat();
-    stopAwayHeartbeat();
-    stopBusyHeartbeat();
-
-    axios.post('/presence/do-not-disturb', {}).catch(() => {});
-    startDoNotDisturbHeartbeat();
-
-    return;
-  }
-
-  if (normalizedPath.startsWith('/chat')) {
-    stopAwayHeartbeat();
-    stopBusyHeartbeat();
-    stopDoNotDisturbHeartbeat();
-
-    presenceOnline().catch(() => {});
-
-    return;
-  }
-
-  stopHeartbeat();
-  stopBusyHeartbeat();
-  stopDoNotDisturbHeartbeat();
-  presenceAway().catch(() => {});
-  startAwayHeartbeat();
+  await applyMode(EChatUserStatus.do_not_disturb, true);
 };
 
 export const refreshUpdateProfileSidebarContent = (
@@ -246,37 +183,33 @@ export const refreshUpdateProfileSidebarContent = (
 ): void => {
   if (status === EChatUserStatus.online) {
     presenceOnline().catch(() => {});
-    startHeartbeat();
-
     return;
   }
 
   if (status === EChatUserStatus.do_not_disturb) {
     presenceDoNotDisturb().catch(() => {});
-    startDoNotDisturbHeartbeat();
-
     return;
   }
 
   if (status === EChatUserStatus.busy) {
     presenceBusy().catch(() => {});
-    startBusyHeartbeat();
-
     return;
   }
+
+  presenceAway().catch(() => {});
 };
 
 export const refreshPresenceForCurrentRoute = (): void => {
-  handleRoutePresence(router.currentRoute.value?.path ?? '');
+  const targetMode = resolveTargetMode();
+  applyMode(targetMode, false).catch(() => {});
 };
 
 const bindPresenceListeners = (): void => {
   if (listenersBound) return;
-
   listenersBound = true;
 
-  router.afterEach((to) => {
-    handleRoutePresence(to.path ?? '');
+  router.afterEach(() => {
+    refreshPresenceForCurrentRoute();
   });
 
   globalThis.addEventListener('focus', refreshPresenceForCurrentRoute);
@@ -285,10 +218,40 @@ const bindPresenceListeners = (): void => {
       refreshPresenceForCurrentRoute();
     }
   });
+
+  const sendOfflineOnUnload = (): void => {
+    if (!isLoggedIn()) return;
+
+    const token = getToken();
+    if (!token) return;
+
+    const url = `${import.meta.env.VITE_BACKEND_URL}/v1/presence/offline`;
+
+    if (globalThis.navigator?.sendBeacon) {
+      const headers = {
+        type: 'application/json',
+      };
+      const body = new Blob([JSON.stringify({})], headers);
+      globalThis.navigator.sendBeacon(url, body);
+      return;
+    }
+
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: '{}',
+      keepalive: true,
+    }).catch(() => {});
+  };
+
+  globalThis.addEventListener('beforeunload', sendOfflineOnUnload);
 };
 
 bindPresenceListeners();
 
 router.isReady().then(() => {
-  handleRoutePresence(router.currentRoute.value?.path ?? '');
+  refreshPresenceForCurrentRoute();
 });
