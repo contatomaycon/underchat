@@ -34,6 +34,10 @@ export class ChatQuickMessageTemplatesListerRepository {
         message: messageTemplate.message,
         attachment_url: messageTemplate.attachment_url,
         type: messageTemplate.type,
+        mimetype: messageTemplate.mimetype,
+        duration: messageTemplate.duration,
+        width: messageTemplate.width,
+        height: messageTemplate.height,
       })
       .from(messageTemplate)
       .innerJoin(
@@ -55,6 +59,10 @@ export class ChatQuickMessageTemplatesListerRepository {
       message: message.message,
       attachment_url: message.attachment_url ?? null,
       type: message.type,
+      mimetype: message.mimetype ?? null,
+      duration: message.duration ?? null,
+      width: message.width ?? null,
+      height: message.height ?? null,
     })) as ListQuickMessageTemplatesResponse[];
   };
 }

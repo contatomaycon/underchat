@@ -11,4 +11,10 @@ export interface IProcessMediaMessagesParams {
   messageQuotedId: string | null | undefined;
   t: TFunction<'translation', undefined>;
   hash: string | null;
+  isQuickMessage?: boolean;
+  quickMessageUrl?: string | null;
+  quickMessageMimetype?: string | null;
+  quickMessageDuration?: number | null;
+  quickMessageWidth?: number | null;
+  quickMessageHeight?: number | null;
 }

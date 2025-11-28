@@ -3388,6 +3388,44 @@ const selectQuickMessage = (
   msg.value = '';
 };
 
+const createQuickMessageFormData = (
+  type: string,
+  messageValue: string | null,
+  hash: string,
+  template: typeof selectedQuickMessage.value
+): FormData => {
+  const formData = new FormData();
+  formData.append('type', type);
+  formData.append('is_quick_message', 'true');
+  formData.append('hash', hash);
+
+  if (messageValue) {
+    formData.append('message', messageValue);
+  }
+
+  if (template?.attachment_url) {
+    formData.append('quick_message_url', template.attachment_url);
+  }
+
+  if (template?.mimetype) {
+    formData.append('quick_message_mimetype', template.mimetype);
+  }
+
+  if (template?.duration !== null && template?.duration !== undefined) {
+    formData.append('quick_message_duration', template.duration.toString());
+  }
+
+  if (template?.width !== null && template?.width !== undefined) {
+    formData.append('quick_message_width', template.width.toString());
+  }
+
+  if (template?.height !== null && template?.height !== undefined) {
+    formData.append('quick_message_height', template.height.toString());
+  }
+
+  return formData;
+};
+
 const sendQuickMessage = async () => {
   if (!selectedQuickMessage.value) return;
   if (!hasActiveChat()) return;
@@ -3395,43 +3433,84 @@ const sendQuickMessage = async () => {
 
   const template = selectedQuickMessage.value;
 
+  selectedQuickMessage.value = null;
+  showQuickMessageList.value = false;
+
   if (template.type === 'text') {
     msg.value = template.message;
     await nextTick();
     onSendText();
-  } else if (template.type === 'image' && template.attachment_url) {
-    const photoPreview: ISelectedPhotoPreview = {
-      file: new File([], 'image.jpg', { type: 'image/jpeg' }),
-      preview: template.attachment_url,
-    };
-    await sendImageMessage([photoPreview], template.message || null, null);
-    finalizeSend();
-  } else if (template.type === 'video' && template.attachment_url) {
-    const videoPreview: ISelectedVideoPreview = {
-      file: new File([], 'video.mp4', { type: 'video/mp4' }),
-      preview: template.attachment_url,
-      name: 'video.mp4',
-      size: 0,
-      type: 'video/mp4',
-      duration: null,
-    };
-    await sendVideoMessage([videoPreview], template.message || null, null);
-    finalizeSend();
-  } else if (template.type === 'audio' && template.attachment_url) {
-    const audioPreview: ISelectedAudioPreview = {
-      file: new File([], 'audio.mp3', { type: 'audio/mpeg' }),
-      preview: template.attachment_url,
-      name: 'audio.mp3',
-      size: 0,
-      type: 'audio/mpeg',
-      duration: null,
-    };
-    await sendAudioFilesMessage([audioPreview], template.message || null, null);
-    finalizeSend();
+    return;
   }
 
-  selectedQuickMessage.value = null;
-  showQuickMessageList.value = false;
+  if (!template.attachment_url) {
+    return;
+  }
+
+  const hash = createMessageHash();
+  const messageValue = template.message || null;
+
+  const content: ContentMessageChat = {
+    type: template.type as EMessageType,
+    message: messageValue,
+    [template.type]: {
+      url: template.attachment_url,
+      caption: messageValue,
+      mimetype: template.mimetype || null,
+      ...(template.type === 'video' && {
+        duration: template.duration ?? null,
+        width: template.width ?? null,
+        height: template.height ?? null,
+      }),
+      ...(template.type === 'audio' && {
+        duration: template.duration ?? null,
+      }),
+      ...(template.type === 'image' && {
+        width: template.width ?? null,
+        height: template.height ?? null,
+      }),
+    },
+  };
+
+  await registerLocalMessage(content, hash);
+
+  const formData = createQuickMessageFormData(
+    template.type,
+    messageValue,
+    hash,
+    template
+  );
+
+  let success = false;
+
+  if (template.type === 'image') {
+    success = await chatStore.createMessageWithImages(formData, {
+      skipLoading: true,
+      onUploadProgress: (progress) => {
+        markUploadProgress(hash, progress);
+      },
+    });
+  } else if (template.type === 'video') {
+    success = await chatStore.createMessageWithVideos(formData, {
+      skipLoading: true,
+      onUploadProgress: (progress) => {
+        markUploadProgress(hash, progress);
+      },
+    });
+  } else if (template.type === 'audio') {
+    success = await chatStore.createMessageWithAudios(formData, {
+      skipLoading: true,
+      onUploadProgress: (progress) => {
+        markUploadProgress(hash, progress);
+      },
+    });
+  }
+
+  if (!success) {
+    markUploadError(hash);
+  } else {
+    finalizeSend();
+  }
 };
 
 const cancelQuickMessage = () => {

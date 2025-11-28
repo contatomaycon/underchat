@@ -954,22 +954,50 @@ export class ChatMessageCreatorUseCase {
     images: UploadFileRequest[],
     params: IProcessMediaMessagesParams
   ): Promise<boolean> {
-    const { chat, chatId, accountId, type, message, messageQuotedId, t, hash } =
-      params;
+    const {
+      chat,
+      chatId,
+      accountId,
+      type,
+      message,
+      messageQuotedId,
+      t,
+      hash,
+      isQuickMessage,
+      quickMessageUrl,
+      quickMessageMimetype,
+      quickMessageWidth,
+      quickMessageHeight,
+    } = params;
     let validImages: UploadFileResponse[];
-    try {
-      validImages = await this.uploadImages(images, accountId);
-    } catch (error) {
-      if (error instanceof Error) {
-        if (error.message === 'IMAGE_SIZE_LIMIT_EXCEEDED') {
-          throw new Error(t('image_size_exceeded'));
-        }
-        if (error.message === 'INVALID_IMAGE_FORMAT') {
-          throw new Error(t('invalid_image_format'));
-        }
-      }
 
-      throw error;
+    if (isQuickMessage && quickMessageUrl) {
+      validImages = [
+        {
+          url: quickMessageUrl,
+          name: `image.${quickMessageMimetype?.split('/')[1] || 'jpg'}`,
+          mimetype: quickMessageMimetype || 'image/jpeg',
+          size: 0,
+          extension: quickMessageMimetype?.split('/')[1] || 'jpg',
+          width: quickMessageWidth || null,
+          height: quickMessageHeight || null,
+        },
+      ];
+    } else {
+      try {
+        validImages = await this.uploadImages(images, accountId);
+      } catch (error) {
+        if (error instanceof Error) {
+          if (error.message === 'IMAGE_SIZE_LIMIT_EXCEEDED') {
+            throw new Error(t('image_size_exceeded'));
+          }
+          if (error.message === 'INVALID_IMAGE_FORMAT') {
+            throw new Error(t('invalid_image_format'));
+          }
+        }
+
+        throw error;
+      }
     }
 
     if (validImages.length === 0) {
@@ -1033,22 +1061,57 @@ export class ChatMessageCreatorUseCase {
     videoDuration: number | null,
     params: IProcessMediaMessagesParams
   ): Promise<boolean> {
-    const { chat, chatId, accountId, type, message, messageQuotedId, t, hash } =
-      params;
+    const {
+      chat,
+      chatId,
+      accountId,
+      type,
+      message,
+      messageQuotedId,
+      t,
+      hash,
+      isQuickMessage,
+      quickMessageUrl,
+      quickMessageMimetype,
+      quickMessageDuration,
+      quickMessageWidth,
+      quickMessageHeight,
+    } = params;
     let validVideos: UploadFileResponse[];
-    try {
-      validVideos = await this.uploadVideos(videos, accountId);
-    } catch (error) {
-      if (error instanceof Error) {
-        if (error.message === 'VIDEO_SIZE_LIMIT_EXCEEDED') {
-          throw new Error(t('video_size_exceeded'));
-        }
-        if (error.message === 'INVALID_VIDEO_FORMAT') {
-          throw new Error(t('invalid_video_format'));
-        }
-      }
 
-      throw error;
+    if (isQuickMessage && quickMessageUrl) {
+      const finalDuration = videoDuration ?? quickMessageDuration ?? null;
+      validVideos = [
+        {
+          url: quickMessageUrl,
+          name: `video.${quickMessageMimetype?.split('/')[1] || 'mp4'}`,
+          mimetype: quickMessageMimetype || 'video/mp4',
+          size: 0,
+          extension: quickMessageMimetype?.split('/')[1] || 'mp4',
+          width: quickMessageWidth || null,
+          height: quickMessageHeight || null,
+        } as UploadFileResponse & { duration?: number },
+      ];
+      if (finalDuration !== null && validVideos[0]) {
+        (
+          validVideos[0] as UploadFileResponse & { duration?: number }
+        ).duration = finalDuration;
+      }
+    } else {
+      try {
+        validVideos = await this.uploadVideos(videos, accountId);
+      } catch (error) {
+        if (error instanceof Error) {
+          if (error.message === 'VIDEO_SIZE_LIMIT_EXCEEDED') {
+            throw new Error(t('video_size_exceeded'));
+          }
+          if (error.message === 'INVALID_VIDEO_FORMAT') {
+            throw new Error(t('invalid_video_format'));
+          }
+        }
+
+        throw error;
+      }
     }
 
     if (validVideos.length === 0) {
@@ -1069,6 +1132,12 @@ export class ChatMessageCreatorUseCase {
     }
 
     const quotedId = messageQuotedId ?? null;
+    const finalVideoDuration =
+      videoDuration ??
+      (isQuickMessage ? quickMessageDuration : null) ??
+      (validVideos[0] as UploadFileResponse & { duration?: number })
+        ?.duration ??
+      null;
 
     if (validVideos.length === 1) {
       const videoMessage = this.createVideoMessage(
@@ -1080,7 +1149,7 @@ export class ChatMessageCreatorUseCase {
           videoData: validVideos[0],
           messageQuotedId: quotedId,
           quotedMessage,
-          videoDuration,
+          videoDuration: finalVideoDuration,
         },
         hash
       );
@@ -1091,6 +1160,14 @@ export class ChatMessageCreatorUseCase {
     }
 
     const publishTasks = validVideos.map((videoData) => {
+      const videoDataWithDuration = videoData as UploadFileResponse & {
+        duration?: number;
+      };
+      const finalDuration =
+        videoDuration ??
+        (isQuickMessage ? quickMessageDuration : null) ??
+        videoDataWithDuration.duration ??
+        null;
       const videoMessage = this.createVideoMessage(
         {
           chat,
@@ -1100,7 +1177,7 @@ export class ChatMessageCreatorUseCase {
           videoData,
           messageQuotedId: quotedId,
           quotedMessage,
-          videoDuration,
+          videoDuration: finalDuration,
         },
         hash
       );
@@ -1120,22 +1197,48 @@ export class ChatMessageCreatorUseCase {
     isPtt: boolean,
     params: IProcessMediaMessagesParams
   ): Promise<boolean> {
-    const { chat, chatId, accountId, type, message, messageQuotedId, t, hash } =
-      params;
+    const {
+      chat,
+      chatId,
+      accountId,
+      type,
+      message,
+      messageQuotedId,
+      t,
+      hash,
+      isQuickMessage,
+      quickMessageUrl,
+      quickMessageMimetype,
+      quickMessageDuration,
+    } = params;
     let validAudios: Array<
       UploadFileResponse & { duration?: number; waveform?: string }
     >;
 
-    try {
-      validAudios = await this.uploadAudios(audios, accountId, isPtt);
-    } catch (error) {
-      if (error instanceof Error) {
-        if (error.message === 'AUDIO_SIZE_LIMIT_EXCEEDED') {
-          throw new Error(t('audio_size_exceeded'));
+    if (isQuickMessage && quickMessageUrl) {
+      const finalDuration = audioDuration ?? quickMessageDuration ?? null;
+      validAudios = [
+        {
+          url: quickMessageUrl,
+          name: `audio.${quickMessageMimetype?.split('/')[1] || 'mp3'}`,
+          mimetype: quickMessageMimetype || 'audio/mpeg',
+          size: 0,
+          extension: quickMessageMimetype?.split('/')[1] || 'mp3',
+          duration: finalDuration ?? undefined,
+        },
+      ];
+    } else {
+      try {
+        validAudios = await this.uploadAudios(audios, accountId, isPtt);
+      } catch (error) {
+        if (error instanceof Error) {
+          if (error.message === 'AUDIO_SIZE_LIMIT_EXCEEDED') {
+            throw new Error(t('audio_size_exceeded'));
+          }
         }
-      }
 
-      throw error;
+        throw error;
+      }
     }
 
     if (validAudios.length === 0) {
@@ -1566,21 +1669,21 @@ export class ChatMessageCreatorUseCase {
     } = options;
 
     if (type === EMessageType.document) {
-      if (documents.length === 0) {
+      if (documents.length === 0 && !options.isQuickMessage) {
         throw new Error(t('documents_required'));
       }
       return this.processDocumentMessages(documents, options);
     }
 
     if (type === EMessageType.video) {
-      if (videos.length === 0) {
+      if (videos.length === 0 && !options.isQuickMessage) {
         throw new Error(t('videos_required'));
       }
       return this.processVideoMessages(videos, videoDuration, options);
     }
 
     if (type === EMessageType.audio) {
-      if (audios.length === 0) {
+      if (audios.length === 0 && !options.isQuickMessage) {
         throw new Error(t('audio_required'));
       }
       return this.processAudioMessages(
@@ -1631,6 +1734,26 @@ export class ChatMessageCreatorUseCase {
     );
     const locationName = this.normalizeLocationField(body.location_name);
     const locationAddress = this.normalizeLocationField(body.location_address);
+    const isQuickMessage = this.normalizeBooleanField(body.is_quick_message);
+    const quickMessageUrlRaw = body.quick_message_url;
+    const quickMessageUrl =
+      quickMessageUrlRaw === null || quickMessageUrlRaw === undefined
+        ? null
+        : this.normalizeMessage(quickMessageUrlRaw);
+    const quickMessageMimetypeRaw = body.quick_message_mimetype;
+    const quickMessageMimetype =
+      quickMessageMimetypeRaw === null || quickMessageMimetypeRaw === undefined
+        ? null
+        : this.normalizeMessage(quickMessageMimetypeRaw);
+    const quickMessageDuration = this.normalizeDurationField(
+      body.quick_message_duration
+    );
+    const quickMessageWidth = this.normalizeDurationField(
+      body.quick_message_width
+    );
+    const quickMessageHeight = this.normalizeDurationField(
+      body.quick_message_height
+    );
 
     const actionResult = await this.processActionMessages(
       type,
@@ -1661,6 +1784,12 @@ export class ChatMessageCreatorUseCase {
       audioDuration,
       audioViewOnce,
       audioPtt,
+      isQuickMessage,
+      quickMessageUrl,
+      quickMessageMimetype,
+      quickMessageDuration,
+      quickMessageWidth,
+      quickMessageHeight,
     });
     if (mediaResult !== null) {
       return mediaResult;
@@ -1714,7 +1843,10 @@ export class ChatMessageCreatorUseCase {
       });
     }
 
-    if (images.length > 0) {
+    if (
+      images.length > 0 ||
+      (isQuickMessage && quickMessageUrl && type === EMessageType.image)
+    ) {
       return this.processImageMessages(images, {
         chat,
         chatId: params.chat_id,
@@ -1724,6 +1856,11 @@ export class ChatMessageCreatorUseCase {
         messageQuotedId,
         t,
         hash,
+        isQuickMessage,
+        quickMessageUrl,
+        quickMessageMimetype,
+        quickMessageWidth,
+        quickMessageHeight,
       });
     }
 
