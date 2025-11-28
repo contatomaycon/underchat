@@ -20,7 +20,7 @@ export class MessageTemplateCreatorUseCase {
     file: UploadFileRequest,
     t: TFunction<'translation', undefined>
   ): Promise<void> {
-    const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
+    const MAX_ATTACHMENT_SIZE = 16 * 1024 * 1024;
     const ALLOWED_ATTACHMENT_EXTENSIONS = [
       'jpg',
       'jpeg',

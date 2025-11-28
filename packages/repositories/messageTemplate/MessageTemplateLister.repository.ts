@@ -142,6 +142,7 @@ export class MessageTemplateListerRepository {
       command: message.command,
       message: message.message,
       attachment_url: message.attachment_url ?? null,
+      type: message.type,
       created_at: message.created_at ? message.created_at : null,
     })) as ListMessageTemplateResponse[];
   };

@@ -84,10 +84,11 @@ const itemsStatus = ref([
 const selectedType = ref<EMessageType>(EMessageType.text);
 const message = ref<string | null>(null);
 const command = ref<string | null>(null);
-const message_status_id = ref<string | null>(null);
+const message_status_id = ref<string | null>(EMessageStatus.active);
 const attachmentFile = ref<File | null>(null);
 const filePreview = ref<FilePreview | null>(null);
 const fileInputKey = ref(0);
+const fileSizeError = ref<string | null>(null);
 const previewDialog = ref<{
   open: boolean;
   src: string | null;
@@ -105,6 +106,7 @@ const isAudioPlaying = ref(false);
 const audioProgress = ref(0);
 const audioDuration = ref(0);
 const audioCurrentTime = ref(0);
+const audioWaveformBars = ref<number[]>([]);
 
 const showTextInput = computed(() => {
   return selectedType.value === EMessageType.text;
@@ -161,6 +163,8 @@ function isAllowedFile(file: File): boolean {
 
 const onFileChange = (files: File[] | File | null) => {
   const file = Array.isArray(files) ? (files?.[0] ?? null) : files;
+  fileSizeError.value = null;
+
   if (!file) {
     attachmentFile.value = null;
     filePreview.value = null;
@@ -174,8 +178,9 @@ const onFileChange = (files: File[] | File | null) => {
     return;
   }
 
-  if (file.size > 10 * 1024 * 1024) {
-    console.warn(t('file_too_large'));
+  const MAX_FILE_SIZE = 16 * 1024 * 1024;
+  if (file.size > MAX_FILE_SIZE) {
+    fileSizeError.value = t('file_too_large');
     attachmentFile.value = null;
     filePreview.value = null;
     return;
@@ -200,6 +205,10 @@ const openPreview = (src: string, caption?: string, type?: EMessageType) => {
   };
 };
 
+const createDefaultWaveform = (): number[] => {
+  return new Array(64).fill(0.3);
+};
+
 const closePreview = () => {
   if (audioPreviewRef.value) {
     audioPreviewRef.value.pause();
@@ -209,6 +218,7 @@ const closePreview = () => {
   audioProgress.value = 0;
   audioDuration.value = 0;
   audioCurrentTime.value = 0;
+  audioWaveformBars.value = [];
   previewDialog.value = {
     open: false,
     src: null,
@@ -222,41 +232,69 @@ const toggleAudioPreview = () => {
 
   if (isAudioPlaying.value) {
     audioPreviewRef.value.pause();
-  } else {
-    audioPreviewRef.value.play();
+    return;
   }
+
+  audioPreviewRef.value.play().catch(() => {
+    isAudioPlaying.value = false;
+  });
 };
 
 const updateAudioProgress = () => {
   if (!audioPreviewRef.value) return;
   audioCurrentTime.value = audioPreviewRef.value.currentTime;
-  audioProgress.value =
-    (audioCurrentTime.value / audioDuration.value) * 100 || 0;
+  if (audioDuration.value > 0) {
+    audioProgress.value =
+      (audioPreviewRef.value.currentTime / audioDuration.value) * 100;
+  }
 };
 
 const updateAudioDuration = () => {
   if (!audioPreviewRef.value) return;
-  audioDuration.value = audioPreviewRef.value.duration || 0;
+  audioDuration.value = audioPreviewRef.value.duration;
+  if (!audioWaveformBars.value.length) {
+    audioWaveformBars.value = createDefaultWaveform();
+  }
+};
+
+const formatAudioTime = (seconds: number): string => {
+  if (!seconds || Number.isNaN(seconds)) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
 const audioTimeDisplay = computed(() => {
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-  return `${formatTime(audioCurrentTime.value)} / ${formatTime(audioDuration.value)}`;
+  if (isAudioPlaying.value) {
+    return `${formatAudioTime(audioCurrentTime.value)} / ${formatAudioTime(
+      audioDuration.value
+    )}`;
+  }
+  return formatAudioTime(audioDuration.value);
 });
+
+const openCurrentPreview = () => {
+  if (!filePreview.value) return;
+
+  openPreview(
+    filePreview.value.src,
+    message.value || undefined,
+    selectedType.value
+  );
+};
 
 const addMessageTemplate = async () => {
   const validateForm = await refFormAddMessageTemplate?.value?.validate();
   if (!validateForm?.valid) return;
 
-  if (!message.value || !message_status_id.value || !command.value) {
+  if (!message_status_id.value || !command.value) {
     return;
   }
 
-  if (selectedType.value === EMessageType.text && !message.value.trim()) {
+  if (
+    selectedType.value === EMessageType.text &&
+    (!message.value || !message.value.trim())
+  ) {
     return;
   }
 
@@ -298,9 +336,10 @@ const noSlashRule = (value: string) => {
 const resetForm = () => {
   selectedType.value = EMessageType.text;
   message.value = null;
-  message_status_id.value = null;
+  message_status_id.value = EMessageStatus.active;
   command.value = null;
   attachmentFile.value = null;
+  fileSizeError.value = null;
   if (filePreview.value?.src) {
     URL.revokeObjectURL(filePreview.value.src);
   }
@@ -311,6 +350,7 @@ const resetForm = () => {
 
 watch(selectedType, () => {
   attachmentFile.value = null;
+  fileSizeError.value = null;
   if (filePreview.value?.src) {
     URL.revokeObjectURL(filePreview.value.src);
   }
@@ -374,7 +414,11 @@ onBeforeUnmount(() => {
                 id="message-textarea"
                 v-model="message"
                 :placeholder="$t('message')"
-                :rules="[requiredValidator(message, $t('message_required'))]"
+                :rules="
+                  selectedType === EMessageType.text
+                    ? [requiredValidator(message, $t('message_required'))]
+                    : []
+                "
                 rows="4"
               />
             </VCol>
@@ -400,7 +444,16 @@ onBeforeUnmount(() => {
                     <VIcon icon="tabler-upload" />
                   </template>
                 </VFileInput>
-                <small class="text-caption text-medium-emphasis mt-1 d-block">
+                <small
+                  v-if="fileSizeError"
+                  class="text-caption text-error mt-1 d-block"
+                >
+                  {{ fileSizeError }}
+                </small>
+                <small
+                  v-else
+                  class="text-caption text-medium-emphasis mt-1 d-block"
+                >
                   <template v-if="selectedType === EMessageType.image">
                     {{ $t('msg_image_pdf_or_audio') }}
                   </template>
@@ -420,7 +473,7 @@ onBeforeUnmount(() => {
                   id="message-caption"
                   v-model="message"
                   :placeholder="$t('message')"
-                  :rules="[requiredValidator(message, $t('message_required'))]"
+                  :rules="[]"
                   rows="3"
                 />
               </VCol>
@@ -429,7 +482,11 @@ onBeforeUnmount(() => {
                 <p class="text-caption text-medium-emphasis mb-1">
                   {{ $t('preview') }}:
                 </p>
-                <VCard class="pa-1" style="max-width: 200px">
+                <VCard
+                  class="pa-1 cursor-pointer"
+                  style="max-width: 200px"
+                  @click="openCurrentPreview"
+                >
                   <VImg
                     v-if="selectedType === EMessageType.image"
                     :src="filePreview.src"
@@ -600,6 +657,28 @@ onBeforeUnmount(() => {
           class="d-flex flex-column align-center pa-6"
         >
           <div class="audio-preview-container w-100">
+            <div class="audio-waveform-container mb-4">
+              <div class="audio-waveform">
+                <div
+                  v-for="(bar, index) in audioWaveformBars"
+                  :key="index"
+                  class="audio-waveform-bar"
+                  :class="{
+                    'audio-waveform-bar--active':
+                      audioProgress > (index / audioWaveformBars.length) * 100,
+                  }"
+                  :style="{
+                    height: `${Math.max(10, bar * 100)}%`,
+                  }"
+                ></div>
+              </div>
+              <div
+                class="audio-progress-indicator"
+                :style="{
+                  left: `${audioProgress}%`,
+                }"
+              ></div>
+            </div>
             <div class="d-flex align-center justify-center gap-4 w-100">
               <VBtn
                 :icon="
@@ -644,6 +723,56 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .audio-preview-container {
-  min-height: 120px;
+  width: 100%;
+  max-width: 500px;
+}
+
+.audio-waveform-container {
+  position: relative;
+  width: 100%;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  background: rgba(var(--v-theme-surface-variant), 0.1);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.audio-waveform {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 12px;
+  z-index: 1;
+  height: 100%;
+  width: 100%;
+}
+
+.audio-waveform-bar {
+  flex: 1;
+  min-width: 3px;
+  max-width: 4px;
+  background: rgba(var(--v-theme-primary), 0.4);
+  border-radius: 2px;
+  transition: background 0.2s ease;
+}
+
+.audio-waveform-bar--active {
+  background: rgba(var(--v-theme-primary), 0.8);
+}
+
+.audio-progress-indicator {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(var(--v-theme-primary), 1);
+  z-index: 2;
+  pointer-events: none;
+  transform: translateX(-50%);
 }
 </style>

@@ -49,6 +49,13 @@ export class MessageTemplateViewerRepository {
       return null;
     }
 
-    return result[0] as ViewMessageTemplateResponse;
+    const row = result[0] as ViewMessageTemplateResponse & {
+      type?: string | null;
+    };
+
+    return {
+      ...row,
+      type: row.type ?? 'text',
+    } as ViewMessageTemplateResponse;
   };
 }
