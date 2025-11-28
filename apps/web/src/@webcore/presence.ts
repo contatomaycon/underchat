@@ -113,7 +113,15 @@ const stopHeartbeatLoop = (): void => {
   heartbeatTimer = null;
 };
 
-const scheduleHeartbeatLoop = (mode: PresenceMode): void => {
+async function applyMode(mode: PresenceMode, force = false): Promise<void> {
+  const sameMode = currentMode === mode;
+  currentMode = mode;
+
+  if (!sameMode || force) {
+    await sendPresence(mode, false).catch(() => {});
+    updateLocalPresenceStatus(mode);
+  }
+
   stopHeartbeatLoop();
 
   if (mode === EChatUserStatus.offline) {
@@ -122,41 +130,24 @@ const scheduleHeartbeatLoop = (mode: PresenceMode): void => {
 
   const interval = HEARTBEAT_INTERVALS[mode] ?? 60000;
   heartbeatTimer = globalThis.setInterval(() => {
-    void handleHeartbeatTick();
+    void (async () => {
+      if (!isLoggedIn()) {
+        stopHeartbeatLoop();
+        currentMode = null;
+        return;
+      }
+
+      const targetMode = resolveTargetMode();
+
+      if (currentMode !== targetMode) {
+        await applyMode(targetMode, true);
+        return;
+      }
+
+      await sendPresence(targetMode, true).catch(() => {});
+    })();
   }, interval);
-};
-
-const applyMode = async (
-  mode: PresenceMode,
-  forcePost = false
-): Promise<void> => {
-  const sameMode = currentMode === mode;
-  currentMode = mode;
-
-  if (!sameMode || forcePost) {
-    await sendPresence(mode, false).catch(() => {});
-    updateLocalPresenceStatus(mode);
-  }
-
-  scheduleHeartbeatLoop(mode);
-};
-
-const handleHeartbeatTick = async (): Promise<void> => {
-  if (!isLoggedIn()) {
-    stopHeartbeatLoop();
-    currentMode = null;
-    return;
-  }
-
-  const targetMode = resolveTargetMode();
-
-  if (currentMode !== targetMode) {
-    await applyMode(targetMode, true);
-    return;
-  }
-
-  await sendPresence(targetMode, true).catch(() => {});
-};
+}
 
 export const presenceOnline = async (): Promise<void> => {
   await applyMode(EChatUserStatus.online, true);
