@@ -16,24 +16,43 @@ export class MessageTemplateUpdaterRepository {
   ): Partial<typeof messageTemplate.$inferInsert> {
     const inputUpdate: Partial<typeof messageTemplate.$inferInsert> = {};
 
-    if (input?.command) {
+    if (input?.command !== undefined && input.command !== null) {
       inputUpdate.command = input.command;
     }
 
-    if (input?.message) {
+    if (input?.message !== undefined && input.message !== null) {
       inputUpdate.message = input.message;
     }
 
-    if (input?.message_status_id) {
+    if (
+      input?.message_status_id !== undefined &&
+      input.message_status_id !== null
+    ) {
       inputUpdate.message_status_id = input.message_status_id;
     }
 
-    if (input?.attachment_url) {
-      inputUpdate.attachment_url = input.attachment_url;
+    if (input?.type !== undefined && input.type !== null) {
+      inputUpdate.type = input.type;
     }
 
-    if (input?.type) {
-      inputUpdate.type = input.type;
+    if (input?.attachment_url !== undefined) {
+      inputUpdate.attachment_url = input.attachment_url ?? undefined;
+    }
+
+    if (input?.mimetype !== undefined) {
+      inputUpdate.mimetype = input.mimetype ?? undefined;
+    }
+
+    if (input?.duration !== undefined) {
+      inputUpdate.duration = input.duration ?? undefined;
+    }
+
+    if (input?.width !== undefined) {
+      inputUpdate.width = input.width ?? undefined;
+    }
+
+    if (input?.height !== undefined) {
+      inputUpdate.height = input.height ?? undefined;
     }
 
     return inputUpdate;

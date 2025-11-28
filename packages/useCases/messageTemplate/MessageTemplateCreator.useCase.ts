@@ -4,6 +4,7 @@ import { AccountService } from '@core/services/account.service';
 import { CreateMessageTemplateRequest } from '@core/schema/messageTemplate/createMessageTemplate/request.schema';
 import { MessageTemplateService } from '@core/services/messageTemplate.service';
 import { StorageService } from '@core/services/storage.service';
+import { ConverterService } from '@core/services/converter';
 import { ICreateMessageTemplate } from '@core/interfaces/repositories/messageTemplate/ICreateMessageTemplate';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { UploadFileResponse } from '@core/schema/upload/response.schema';
@@ -44,7 +45,8 @@ export class MessageTemplateCreatorUseCase {
   constructor(
     private readonly messageTemplateService: MessageTemplateService,
     private readonly accountService: AccountService,
-    private readonly storageService: StorageService
+    private readonly storageService: StorageService,
+    private readonly converterService: ConverterService
   ) {}
 
   private async validateAccountExists(
@@ -147,17 +149,93 @@ export class MessageTemplateCreatorUseCase {
     file: UploadFileRequest,
     messageType: EMessageType,
     accountId: string
-  ): Promise<UploadFileResponse | null> {
+  ): Promise<
+    UploadFileResponse & {
+      mimetype?: string | null;
+      duration?: number | null;
+      width?: number | null;
+      height?: number | null;
+    }
+  > {
     if (messageType === EMessageType.image) {
-      return await this.storageService.uploadImage(file, accountId);
+      const result = await this.storageService.uploadImage(file, accountId);
+      if (!result) {
+        return null as any;
+      }
+      return {
+        ...result,
+        mimetype: result.mimetype ?? null,
+        duration: null,
+        width: result.width ?? null,
+        height: result.height ?? null,
+      };
     }
 
     if (messageType === EMessageType.video) {
-      return await this.storageService.uploadVideo(file, accountId);
+      const originalBuffer = await file.toBuffer();
+      const originalMimetype = file.mimetype || null;
+
+      const converted = await this.converterService.convertVideo(
+        originalBuffer,
+        originalMimetype
+      );
+
+      const filename = file.filename.replace(/\.[^.]+$/, '') || 'video';
+      const newFilename = `${filename}.${converted.extension}`;
+
+      const uploadResult = await this.storageService.uploadVideoFromBuffer(
+        converted.buffer,
+        newFilename,
+        converted.mimetype,
+        accountId,
+        converted.width,
+        converted.height
+      );
+
+      if (!uploadResult) {
+        return null as any;
+      }
+
+      return {
+        ...uploadResult,
+        mimetype: converted.mimetype,
+        duration: converted.duration ?? null,
+        width: converted.width ?? null,
+        height: converted.height ?? null,
+      };
     }
 
     if (messageType === EMessageType.audio) {
-      return await this.storageService.uploadAudio(file, accountId);
+      const originalBuffer = await file.toBuffer();
+      const originalMimetype = file.mimetype || null;
+
+      const converted = await this.converterService.convertAudio(
+        originalBuffer,
+        originalMimetype,
+        true
+      );
+
+      const filename = file.filename.replace(/\.[^.]+$/, '') || 'audio';
+      const newFilename = `${filename}.${converted.extension}`;
+
+      const uploadResult = await this.storageService.uploadAudioFromBuffer(
+        converted.buffer,
+        newFilename,
+        converted.mimetype,
+        accountId
+      );
+
+      if (!uploadResult) {
+        return null as any;
+      }
+
+      return {
+        ...uploadResult,
+        mimetype: converted.mimetype,
+        duration: converted.duration ?? null,
+        width: null,
+        height: null,
+      };
     }
 
     throw new Error('Invalid message type for attachment upload');
@@ -176,7 +254,19 @@ export class MessageTemplateCreatorUseCase {
       input.attachment_url?.filename
     );
 
-    let attachmentUrl: UploadFileResponse | null = null;
+    let attachmentUrl:
+      | (UploadFileResponse & {
+          mimetype?: string | null;
+          duration?: number | null;
+          width?: number | null;
+          height?: number | null;
+        })
+      | null = null;
+
+    let mimetype: string | null = null;
+    let duration: number | null = null;
+    let width: number | null = null;
+    let height: number | null = null;
 
     if (input.attachment_url?.filename) {
       await this.validateAttachment(input.attachment_url, t);
@@ -186,6 +276,13 @@ export class MessageTemplateCreatorUseCase {
         messageType,
         accountId
       );
+
+      if (attachmentUrl) {
+        mimetype = attachmentUrl.mimetype ?? null;
+        duration = attachmentUrl.duration ?? null;
+        width = attachmentUrl.width ?? null;
+        height = attachmentUrl.height ?? null;
+      }
     }
 
     const inputWithAttachment: ICreateMessageTemplate = {
@@ -195,6 +292,10 @@ export class MessageTemplateCreatorUseCase {
       attachment_url: attachmentUrl ? attachmentUrl.url : null,
       message_status_id: input.message_status_id.value,
       type: messageType,
+      mimetype,
+      duration,
+      width,
+      height,
     };
 
     const createMessageTemplate =

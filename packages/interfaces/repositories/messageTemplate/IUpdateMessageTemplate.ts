@@ -5,4 +5,8 @@ export interface IUpdateMessageTemplate {
   attachment_url?: string | null;
   message_status_id?: string | null;
   type?: string | null;
+  mimetype?: string | null;
+  duration?: number | null;
+  width?: number | null;
+  height?: number | null;
 }

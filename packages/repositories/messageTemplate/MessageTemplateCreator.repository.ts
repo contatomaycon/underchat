@@ -26,6 +26,10 @@ export class MessageTemplateCreatorRepository {
         message: input.message,
         attachment_url: input.attachment_url,
         type: input.type,
+        mimetype: input.mimetype ?? null,
+        duration: input.duration ?? null,
+        width: input.width ?? null,
+        height: input.height ?? null,
       })
       .execute();
 
