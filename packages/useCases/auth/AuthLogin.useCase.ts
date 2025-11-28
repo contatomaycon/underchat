@@ -119,8 +119,10 @@ export class AuthLoginUseCase {
       this.permissionService.viewPermissionByUserId(result.user_id),
       this.accountService.viewAccountInfoByAccountId(result.account_id),
       this.userService.listUserSectors(result.account_id, result.user_id),
-      this.presenceService.setUserAway(result.user_id).then(() => undefined),
     ]);
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await this.presenceService.setUserAway(result.user_id);
 
     return {
       user: result,
