@@ -9,6 +9,7 @@ let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let awayHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let busyHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let listenersBound = false;
+let lastHandledPath: string | null = null;
 
 const updateLocalPresenceStatus = (status: EChatUserStatus): void => {
   const chatStore = useChatStore();
@@ -142,8 +143,17 @@ const handleRoutePresence = (path: string): void => {
     stopHeartbeat();
     stopAwayHeartbeat();
     stopBusyHeartbeat();
+    lastHandledPath = null;
     return;
   }
+
+  const normalizedPath = path || router.currentRoute.value?.path || '';
+
+  if (lastHandledPath === normalizedPath) {
+    return;
+  }
+
+  lastHandledPath = normalizedPath;
 
   if (isManualBusyStatus()) {
     stopHeartbeat();
@@ -155,7 +165,7 @@ const handleRoutePresence = (path: string): void => {
     return;
   }
 
-  if (path.startsWith('/chat')) {
+  if (normalizedPath.startsWith('/chat')) {
     stopAwayHeartbeat();
     stopBusyHeartbeat();
 
@@ -192,4 +202,7 @@ const bindPresenceListeners = (): void => {
 };
 
 bindPresenceListeners();
-handleRoutePresence(router.currentRoute.value?.path ?? '');
+
+router.isReady().then(() => {
+  handleRoutePresence(router.currentRoute.value?.path ?? '');
+});
