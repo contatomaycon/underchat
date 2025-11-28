@@ -11,37 +11,42 @@ import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { AuthTokenResponse } from '@core/schema/centrifugo/token/response.schema';
 
 let centrifugeClient: Centrifuge | null = null;
+let tokenGenerationPromise: Promise<AuthTokenResponse> | null = null;
 
 const generateTokenAndUrl = async (): Promise<AuthTokenResponse> => {
-  const response = await axios.post<IApiResponse<AuthTokenResponse>>(
-    `/centrifugo/auth/token`
-  );
-
-  const data = response?.data;
-
-  if (!data?.status) {
-    throw new Error(data?.message ?? 'Failed to generate Centrifugo token');
+  if (tokenGenerationPromise) {
+    return tokenGenerationPromise;
   }
 
-  return data.data;
+  tokenGenerationPromise = (async () => {
+    try {
+      const response = await axios.post<IApiResponse<AuthTokenResponse>>(
+        `/centrifugo/auth/token`
+      );
+
+      const data = response?.data;
+
+      if (!data?.status) {
+        throw new Error(data?.message ?? 'Failed to generate Centrifugo token');
+      }
+
+      return data.data;
+    } finally {
+      tokenGenerationPromise = null;
+    }
+  })();
+
+  return tokenGenerationPromise;
 };
 
 const generateToken = async (): Promise<string> => {
-  const response = await axios.post<IApiResponse<AuthTokenResponse>>(
-    `/centrifugo/auth/token`
-  );
+  const tokenData = await generateTokenAndUrl();
 
-  const data = response?.data;
-
-  if (!data?.status) {
-    throw new Error(data?.message ?? 'Failed to generate Centrifugo token');
-  }
-
-  if (!data.data?.token) {
+  if (!tokenData?.token) {
     throw new Error('Token is not available in the response');
   }
 
-  return data.data.token;
+  return tokenData.token;
 };
 
 const waitForConnected = (client: Centrifuge): Promise<void> => {
