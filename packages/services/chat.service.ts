@@ -9,6 +9,9 @@ import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 import { WorkerConfigForChatViewerRepository } from '@core/repositories/chat/WorkerConfigForChatViewer.repository';
 import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerConfigForChat/response.schema';
+import { ChatQuickMessageTemplatesListerRepository } from '@core/repositories/chat/ChatQuickMessageTemplatesLister.repository';
+import { ListQuickMessageTemplatesResponse } from '@core/schema/chat/listQuickMessageTemplates/response.schema';
+import { ListQuickMessageTemplatesRequest } from '@core/schema/chat/listQuickMessageTemplates/request.schema';
 
 type ElasticHit<T> = {
   _source?: T;
@@ -18,7 +21,8 @@ type ElasticHit<T> = {
 export class ChatService {
   constructor(
     private readonly elasticDatabaseService: ElasticDatabaseService,
-    private readonly workerConfigForChatViewerRepository: WorkerConfigForChatViewerRepository
+    private readonly workerConfigForChatViewerRepository: WorkerConfigForChatViewerRepository,
+    private readonly chatQuickMessageTemplatesListerRepository: ChatQuickMessageTemplatesListerRepository
   ) {}
 
   saveMessageChat = async (messageChat: IChatMessage): Promise<boolean> => {
@@ -662,6 +666,16 @@ export class ChatService {
   ): Promise<ViewWorkerConfigForChatResponse> => {
     return this.workerConfigForChatViewerRepository.viewWorkerConfigForChatByWorkerId(
       workerId
+    );
+  };
+
+  listQuickMessageTemplates = async (
+    query: ListQuickMessageTemplatesRequest,
+    accountId: string
+  ): Promise<ListQuickMessageTemplatesResponse[]> => {
+    return this.chatQuickMessageTemplatesListerRepository.listQuickMessageTemplates(
+      query,
+      accountId
     );
   };
 }

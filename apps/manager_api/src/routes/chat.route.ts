@@ -30,6 +30,7 @@ import { createChatContactSchema } from '@core/schema/chat/createContact';
 import { updateChatContactSchema } from '@core/schema/chat/updateContact';
 import { deleteChatContactPhotoSchema } from '@core/schema/chat/deleteContactPhoto';
 import { validateChatContactSchema } from '@core/schema/chat/validateContact';
+import { listQuickMessageTemplatesSchema } from '@core/schema/chat/listQuickMessageTemplates';
 
 export default function chatRoutes(server: FastifyInstance) {
   const chatController = container.resolve(ChatController);
@@ -280,6 +281,15 @@ export default function chatRoutes(server: FastifyInstance) {
   server.post('/chat/contacts/:contact_id/validate', {
     schema: validateChatContactSchema,
     handler: chatController.validateContact,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+    ],
+  });
+
+  server.get('/chat/quick-message-templates', {
+    schema: listQuickMessageTemplatesSchema,
+    handler: chatController.listQuickMessageTemplates,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),

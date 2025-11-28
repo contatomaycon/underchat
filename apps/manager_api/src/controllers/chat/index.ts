@@ -27,6 +27,7 @@ import { createContact } from './methods/createContact';
 import { updateContact } from './methods/updateContact';
 import { deleteContactPhoto } from './methods/deleteContactPhoto';
 import { validateContact } from './methods/validateContact';
+import { listQuickMessageTemplates } from './methods/listQuickMessageTemplates';
 
 @injectable()
 class ChatController {
@@ -58,6 +59,7 @@ class ChatController {
   public updateContact = updateContact;
   public deleteContactPhoto = deleteContactPhoto;
   public validateContact = validateContact;
+  public listQuickMessageTemplates = listQuickMessageTemplates;
 }
 
 export default ChatController;

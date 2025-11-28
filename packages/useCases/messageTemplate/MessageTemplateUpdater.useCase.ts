@@ -89,10 +89,10 @@ export class MessageTemplateUpdaterUseCase {
       const messageType = body.type?.value || 'text';
 
       if (messageType === 'image') {
-        attachmentUrl = await this.storageService.uploadImage(
-          body.attachment_url,
-          accountId
-        );
+      attachmentUrl = await this.storageService.uploadImage(
+        body.attachment_url,
+        accountId
+      );
       } else if (messageType === 'video') {
         attachmentUrl = await this.storageService.uploadVideo(
           body.attachment_url,

@@ -38,6 +38,11 @@ import { ViewChatContactResponse } from '@core/schema/chat/viewContact/response.
 import { ViewChatContactEmailResponse } from '@core/schema/chat/viewContactEmail/response.schema';
 import { ViewChatContactPhoneResponse } from '@core/schema/chat/viewContactPhone/response.schema';
 import { ListChatLabelTemplatesResponse } from '@core/schema/chat/listLabelTemplates/response.schema';
+import {
+  ListQuickMessageTemplatesFinalResponse,
+  ListQuickMessageTemplatesResponse,
+} from '@core/schema/chat/listQuickMessageTemplates/response.schema';
+import { ListQuickMessageTemplatesRequest } from '@core/schema/chat/listQuickMessageTemplates/request.schema';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import {
   EditContactParamsRequest,
@@ -1477,6 +1482,36 @@ export const useChatStore = defineStore('chat', {
 
         return data.data;
       } catch {
+        return [];
+      }
+    },
+
+    async listQuickMessageTemplates(
+      command?: string | null
+    ): Promise<ListQuickMessageTemplatesResponse[]> {
+      try {
+        const request: ListQuickMessageTemplatesRequest = {
+          command: command || null,
+        };
+
+        const response = await axios.get<
+          IApiResponse<ListQuickMessageTemplatesFinalResponse>
+        >(`/chat/quick-message-templates`, {
+          params: request,
+        });
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return [];
+        }
+
+        return data.data.results;
+      } catch (error) {
+        if (error instanceof AxiosError) {
+          console.error('Error fetching quick message templates:', error);
+        }
+
         return [];
       }
     },

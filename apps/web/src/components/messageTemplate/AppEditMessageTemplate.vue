@@ -392,12 +392,12 @@ watch(
       resetForm();
       const messageTemplate =
         await messageTemplateStore.getMessageTemplateById(id);
-      if (messageTemplate) {
-        message.value = messageTemplate.message;
-        command.value = messageTemplate.command;
-        message_status_id.value =
-          messageTemplate.message_status?.message_status_id ?? null;
-        existingAttachmentUrl.value = messageTemplate?.attachment_url ?? null;
+  if (messageTemplate) {
+    message.value = messageTemplate.message;
+    command.value = messageTemplate.command;
+    message_status_id.value =
+      messageTemplate.message_status?.message_status_id ?? null;
+    existingAttachmentUrl.value = messageTemplate?.attachment_url ?? null;
         selectedType.value =
           (messageTemplate.type as EMessageType) || EMessageType.text;
       }
@@ -463,37 +463,37 @@ onBeforeUnmount(() => {
             </VCol>
 
             <template v-if="showFileInput">
-              <VCol cols="12">
-                <VLabel class="text-body-2 mb-1">{{ $t('file') + ':' }}</VLabel>
-                <VFileInput
+            <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('file') + ':' }}</VLabel>
+              <VFileInput
                   :key="fileInputKey"
-                  variant="outlined"
-                  density="comfortable"
-                  :placeholder="$t('select_file')"
+                variant="outlined"
+                density="comfortable"
+                :placeholder="$t('select_file')"
                   :accept="acceptedFileTypes"
-                  show-size
+                show-size
                   :chips="!!attachmentFile"
-                  :clearable="true"
-                  hide-details="auto"
-                  :prepend-icon="''"
-                  @update:model-value="onFileChange"
-                  class="w-100"
-                >
-                  <template #prepend-inner>
-                    <VIcon icon="tabler-upload" />
-                  </template>
-                </VFileInput>
+                :clearable="true"
+                hide-details="auto"
+                :prepend-icon="''"
+                @update:model-value="onFileChange"
+                class="w-100"
+              >
+                <template #prepend-inner>
+                  <VIcon icon="tabler-upload" />
+                </template>
+              </VFileInput>
                 <small
                   v-if="fileSizeError"
                   class="text-caption text-error mt-1 d-block"
                 >
                   {{ fileSizeError }}
                 </small>
-                <div v-if="existingAttachmentUrl && !hasNewFile" class="mt-2">
-                  <VChip
-                    size="small"
-                    variant="tonal"
-                    color="primary"
+              <div v-if="existingAttachmentUrl && !hasNewFile" class="mt-2">
+                <VChip
+                  size="small"
+                  variant="tonal"
+                  color="primary"
                     class="cursor-pointer"
                     @click="
                       openPreview(
@@ -502,17 +502,17 @@ onBeforeUnmount(() => {
                         selectedType
                       )
                     "
-                  >
-                    <VIcon start icon="tabler-paperclip" class="mr-1" />
+                >
+                  <VIcon start icon="tabler-paperclip" class="mr-1" />
                     {{ $t('click_to_preview') }}
-                  </VChip>
-                </div>
+                </VChip>
+              </div>
                 <small
                   v-if="!fileSizeError"
                   class="text-caption text-medium-emphasis mt-1 d-block"
                 >
                   <template v-if="selectedType === EMessageType.image">
-                    {{ $t('msg_image_pdf_or_audio') }}
+                {{ $t('msg_image_pdf_or_audio') }}
                   </template>
                   <template v-else-if="selectedType === EMessageType.video">
                     {{ $t('msg_video_file') }}
@@ -520,7 +520,7 @@ onBeforeUnmount(() => {
                   <template v-else-if="selectedType === EMessageType.audio">
                     {{ $t('msg_audio_file') }}
                   </template>
-                </small>
+              </small>
               </VCol>
               <VCol cols="12">
                 <label class="text-body-2 mb-1" for="message-caption">

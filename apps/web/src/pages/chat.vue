@@ -6,6 +6,7 @@ import { themes } from '@/plugins/vuetify/theme';
 import ChatActiveChatUserProfileSidebarContent from '@/components/chat/ChatActiveChatUserProfileSidebarContent.vue';
 import ChatLeftSidebarContent from '@/components/chat/ChatLeftSidebarContent.vue';
 import ChatLog from '@/components/chat/ChatLog.vue';
+import ChatQuickMessagePreview from '@/components/chat/ChatQuickMessagePreview.vue';
 import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSidebarContent.vue';
 import ChatSearchSidebarContent from '@/components/chat/ChatSearchSidebarContent.vue';
 import AppContactPicker from '@/components/chat/AppContactPicker.vue';
@@ -62,6 +63,7 @@ import data from 'emoji-mart-vue-fast/data/all.json';
 import 'emoji-mart-vue-fast/css/emoji-mart.css';
 import { useI18n } from 'vue-i18n';
 import { MglMap, MglMarker } from 'vue-maplibre-gl';
+import { formatDate } from '@/@webcore/utils/formatters';
 
 const emojiIndex = new EmojiIndex(data);
 const { t } = useI18n();
@@ -100,6 +102,15 @@ const chatLogPS = ref();
 const resizeHandler = ref<(() => void) | null>(null);
 const q = ref('');
 const msg = ref('');
+const quickMessageTemplates = ref<
+  import('@core/schema/chat/listQuickMessageTemplates/response.schema').ListQuickMessageTemplatesResponse[]
+>([]);
+const showQuickMessageList = ref(false);
+const quickMessageSearch = ref('');
+const selectedQuickMessage = ref<
+  | import('@core/schema/chat/listQuickMessageTemplates/response.schema').ListQuickMessageTemplatesResponse
+  | null
+>(null);
 const isUserProfileSidebarOpen = ref(false);
 const isUpdatingUserProfileStatus = ref(false);
 const isActiveChatUserProfileSidebarOpen = ref(false);
@@ -3352,6 +3363,82 @@ watch(
   { immediate: true }
 );
 
+watch(msg, async (val) => {
+  if (typeof val === 'string' && val.startsWith('/')) {
+    const searchTerm = val.slice(1).trim();
+    quickMessageSearch.value = searchTerm;
+    showQuickMessageList.value = true;
+
+    const templates = await chatStore.listQuickMessageTemplates(
+      searchTerm || null
+    );
+    quickMessageTemplates.value = templates;
+  } else {
+    showQuickMessageList.value = false;
+    quickMessageTemplates.value = [];
+    quickMessageSearch.value = '';
+  }
+});
+
+const selectQuickMessage = (
+  template: import('@core/schema/chat/listQuickMessageTemplates/response.schema').ListQuickMessageTemplatesResponse
+) => {
+  selectedQuickMessage.value = template;
+  showQuickMessageList.value = false;
+  msg.value = '';
+};
+
+const sendQuickMessage = async () => {
+  if (!selectedQuickMessage.value) return;
+  if (!hasActiveChat()) return;
+  if (isQueueStatus.value) return;
+
+  const template = selectedQuickMessage.value;
+
+  if (template.type === 'text') {
+    msg.value = template.message;
+    await nextTick();
+    onSendText();
+  } else if (template.type === 'image' && template.attachment_url) {
+    const photoPreview: ISelectedPhotoPreview = {
+      file: new File([], 'image.jpg', { type: 'image/jpeg' }),
+      preview: template.attachment_url,
+    };
+    await sendImageMessage([photoPreview], template.message || null, null);
+    finalizeSend();
+  } else if (template.type === 'video' && template.attachment_url) {
+    const videoPreview: ISelectedVideoPreview = {
+      file: new File([], 'video.mp4', { type: 'video/mp4' }),
+      preview: template.attachment_url,
+      name: 'video.mp4',
+      size: 0,
+      type: 'video/mp4',
+      duration: null,
+    };
+    await sendVideoMessage([videoPreview], template.message || null, null);
+    finalizeSend();
+  } else if (template.type === 'audio' && template.attachment_url) {
+    const audioPreview: ISelectedAudioPreview = {
+      file: new File([], 'audio.mp3', { type: 'audio/mpeg' }),
+      preview: template.attachment_url,
+      name: 'audio.mp3',
+      size: 0,
+      type: 'audio/mpeg',
+      duration: null,
+    };
+    await sendAudioFilesMessage([audioPreview], template.message || null, null);
+    finalizeSend();
+  }
+
+  selectedQuickMessage.value = null;
+  showQuickMessageList.value = false;
+};
+
+const cancelQuickMessage = () => {
+  selectedQuickMessage.value = null;
+  showQuickMessageList.value = false;
+};
+
 let previousLoadingState = false;
 let previousActiveChatId: string | undefined = undefined;
 watch(
@@ -4826,142 +4913,221 @@ onBeforeUnmount(() => {
             </VBtn>
           </div>
 
-          <VTextarea
-            v-if="!isRecordingAudio"
-            ref="composerRef"
-            :key="contact_id"
-            v-model="msg"
-            variant="solo"
-            density="comfortable"
-            class="chat-message-input whats-composer"
-            :placeholder="$t('write_your_message')"
-            :auto-grow="true"
-            rows="1"
-            :max-rows="8"
-            :disabled="isQueueStatus"
-            @keydown.enter.exact.prevent="onSendText"
+          <VCard
+            v-if="
+              showQuickMessageList &&
+              quickMessageTemplates.length > 0 &&
+              !selectedQuickMessage
+            "
+            class="quick-message-list mb-2"
+            style="max-height: 300px; overflow-y: auto"
           >
-            <template #prepend-inner>
-              <VMenu
-                offset="8"
-                :close-on-content-click="true"
-                location="top start"
+            <VList density="compact">
+              <VListItem
+                v-for="template in quickMessageTemplates"
+                :key="template.message_template_id"
+                @click="selectQuickMessage(template)"
+                class="cursor-pointer"
               >
-                <template #activator="{ props }">
-                  <IconBtn
-                    v-bind="props"
-                    class="composer-btn"
-                    aria-label="Anexar"
-                  >
-                    <VIcon size="22">tabler-plus</VIcon>
-                  </IconBtn>
-                </template>
+                <VListItemTitle>
+                  <span class="font-weight-bold">/{{ template.command }}</span>
+                  <span class="text-caption text-medium-emphasis ml-2">
+                    {{ template.message.substring(0, 50)
+                    }}{{ template.message.length > 50 ? '...' : '' }}
+                  </span>
+                </VListItemTitle>
+              </VListItem>
+            </VList>
+          </VCard>
 
-                <VList
-                  density="comfortable"
-                  min-width="220"
-                  class="attach-menu"
+          <div
+            v-if="selectedQuickMessage"
+            class="quick-message-preview mb-2 position-relative"
+            @click.self="cancelQuickMessage"
+          >
+            <VCard class="position-relative">
+              <VBtn
+                icon
+                size="small"
+                variant="text"
+                class="position-absolute"
+                style="top: 8px; right: 8px; z-index: 10"
+                @click.stop="cancelQuickMessage"
+              >
+                <VIcon size="20">tabler-x</VIcon>
+              </VBtn>
+              <VCardText>
+                <ChatQuickMessagePreview
+                  :template="selectedQuickMessage"
+                  @send="sendQuickMessage"
+                />
+              </VCardText>
+            </VCard>
+          </div>
+
+          <div class="position-relative">
+            <VTextarea
+              v-if="!isRecordingAudio"
+              ref="composerRef"
+              :key="contact_id"
+              v-model="msg"
+              variant="solo"
+              density="comfortable"
+              class="chat-message-input whats-composer"
+              :placeholder="$t('write_your_message')"
+              :auto-grow="true"
+              rows="1"
+              :max-rows="8"
+              :disabled="isQueueStatus || !!selectedQuickMessage"
+              @keydown.enter.exact.prevent="onSendText"
+            >
+              <template #prepend-inner>
+                <VMenu
+                  offset="8"
+                  :close-on-content-click="true"
+                  location="top start"
+                  :disabled="!!selectedQuickMessage"
                 >
-                  <VListItem @click="openAttach('document')">
-                    <template #prepend
-                      ><VIcon size="20">tabler-file</VIcon></template
+                  <template #activator="{ props }">
+                    <IconBtn
+                      v-bind="props"
+                      class="composer-btn"
+                      aria-label="Anexar"
+                      :disabled="!!selectedQuickMessage"
                     >
-                    <VListItemTitle>Documentos</VListItemTitle>
-                  </VListItem>
-                  <VListItem @click="openAttach('photo')">
-                    <template #prepend
-                      ><VIcon size="20">tabler-photo</VIcon></template
-                    >
-                    <VListItemTitle>Fotos</VListItemTitle>
-                  </VListItem>
-                  <VListItem @click="openAttach('video')">
-                    <template #prepend
-                      ><VIcon size="20">tabler-video</VIcon></template
-                    >
-                    <VListItemTitle>Vídeos</VListItemTitle>
-                  </VListItem>
-                  <VListItem @click="openAttach('audio')">
-                    <template #prepend
-                      ><VIcon size="20">tabler-headphones</VIcon></template
-                    >
-                    <VListItemTitle>Áudio</VListItemTitle>
-                  </VListItem>
-                  <VListItem @click="openAttach('contact')">
-                    <template #prepend
-                      ><VIcon size="20">tabler-user</VIcon></template
-                    >
-                    <VListItemTitle>Contato</VListItemTitle>
-                  </VListItem>
-                  <VListItem @click="openAttach('location')">
-                    <template #prepend
-                      ><VIcon size="20">tabler-map-pin</VIcon></template
-                    >
-                    <VListItemTitle>Localização</VListItemTitle>
-                  </VListItem>
-                  <VListItem @click="openAttach('annotation')">
-                    <template #prepend
-                      ><VIcon size="20">tabler-note</VIcon></template
-                    >
-                    <VListItemTitle>{{ t('annotation') }}</VListItemTitle>
-                  </VListItem>
-                </VList>
-              </VMenu>
+                      <VIcon size="22">tabler-plus</VIcon>
+                    </IconBtn>
+                  </template>
 
-              <VMenu
-                v-model="isEmojiOpen"
-                location="top start"
-                :close-on-content-click="false"
-                offset="8"
-              >
-                <template #activator="{ props }">
-                  <IconBtn
-                    v-bind="props"
-                    class="composer-btn"
-                    aria-label="Emoji"
+                  <VList
+                    density="comfortable"
+                    min-width="220"
+                    class="attach-menu"
                   >
-                    <VIcon size="22">tabler-mood-smile</VIcon>
-                  </IconBtn>
-                </template>
+                    <VListItem @click="openAttach('document')">
+                      <template #prepend
+                        ><VIcon size="20">tabler-file</VIcon></template
+                      >
+                      <VListItemTitle>Documentos</VListItemTitle>
+                    </VListItem>
+                    <VListItem @click="openAttach('photo')">
+                      <template #prepend
+                        ><VIcon size="20">tabler-photo</VIcon></template
+                      >
+                      <VListItemTitle>Fotos</VListItemTitle>
+                    </VListItem>
+                    <VListItem @click="openAttach('video')">
+                      <template #prepend
+                        ><VIcon size="20">tabler-video</VIcon></template
+                      >
+                      <VListItemTitle>Vídeos</VListItemTitle>
+                    </VListItem>
+                    <VListItem @click="openAttach('audio')">
+                      <template #prepend
+                        ><VIcon size="20">tabler-headphones</VIcon></template
+                      >
+                      <VListItemTitle>Áudio</VListItemTitle>
+                    </VListItem>
+                    <VListItem @click="openAttach('contact')">
+                      <template #prepend
+                        ><VIcon size="20">tabler-user</VIcon></template
+                      >
+                      <VListItemTitle>Contato</VListItemTitle>
+                    </VListItem>
+                    <VListItem @click="openAttach('location')">
+                      <template #prepend
+                        ><VIcon size="20">tabler-map-pin</VIcon></template
+                      >
+                      <VListItemTitle>Localização</VListItemTitle>
+                    </VListItem>
+                    <VListItem @click="openAttach('annotation')">
+                      <template #prepend
+                        ><VIcon size="20">tabler-note</VIcon></template
+                      >
+                      <VListItemTitle>{{ t('annotation') }}</VListItemTitle>
+                    </VListItem>
+                  </VList>
+                </VMenu>
 
-                <div class="emoji-picker-wrap">
-                  <Picker
-                    :data="emojiIndex"
-                    :per-line="8"
-                    :show-preview="false"
-                    :show-search="true"
-                    :show-skin-tones="false"
-                    @select="onEmojiSelect"
-                  />
+                <VMenu
+                  v-model="isEmojiOpen"
+                  location="top start"
+                  :close-on-content-click="false"
+                  offset="8"
+                  :disabled="!!selectedQuickMessage"
+                >
+                  <template #activator="{ props }">
+                    <IconBtn
+                      v-bind="props"
+                      class="composer-btn"
+                      aria-label="Emoji"
+                      :disabled="!!selectedQuickMessage"
+                    >
+                      <VIcon size="22">tabler-mood-smile</VIcon>
+                    </IconBtn>
+                  </template>
+
+                  <div class="emoji-picker-wrap">
+                    <Picker
+                      :data="emojiIndex"
+                      :per-line="8"
+                      :show-preview="false"
+                      :show-search="true"
+                      :show-skin-tones="false"
+                      @select="onEmojiSelect"
+                    />
+                  </div>
+                </VMenu>
+              </template>
+
+              <template #append-inner>
+                <div class="d-flex align-center gap-1">
+                  <IconBtn
+                    v-if="!hasAttachmentsOrContent && !selectedQuickMessage"
+                    class="composer-btn mic-btn"
+                    aria-label="Gravar áudio"
+                    @click="onRecordAudio"
+                  >
+                    <VIcon size="22">tabler-microphone</VIcon>
+                  </IconBtn>
+
+                  <VBtn
+                    v-if="hasAttachmentsOrContent && !selectedQuickMessage"
+                    class="send-btn"
+                    icon
+                    color="success"
+                    variant="flat"
+                    rounded="pill"
+                    aria-label="Enviar mensagem"
+                    :disabled="!hasActiveChat() || isQueueStatus"
+                    @click="onSendText"
+                  >
+                    <VIcon size="22">tabler-send</VIcon>
+                  </VBtn>
                 </div>
-              </VMenu>
-            </template>
+              </template>
+            </VTextarea>
 
-            <template #append-inner>
-              <div class="d-flex align-center gap-1">
-                <IconBtn
-                  v-if="!hasAttachmentsOrContent"
-                  class="composer-btn mic-btn"
-                  aria-label="Gravar áudio"
-                  @click="onRecordAudio"
-                >
-                  <VIcon size="22">tabler-microphone</VIcon>
-                </IconBtn>
-
-                <VBtn
-                  v-if="hasAttachmentsOrContent"
-                  class="send-btn"
-                  icon
-                  color="success"
-                  variant="flat"
-                  rounded="pill"
-                  aria-label="Enviar mensagem"
-                  @click="onSendText"
-                >
-                  <VIcon size="22">tabler-send</VIcon>
-                </VBtn>
-              </div>
-            </template>
-          </VTextarea>
+            <VBtn
+              v-if="selectedQuickMessage"
+              class="send-btn"
+              icon
+              color="success"
+              variant="flat"
+              rounded="pill"
+              aria-label="Enviar mensagem"
+              style="
+                position: absolute;
+                right: 12px;
+                top: 50%;
+                transform: translateY(-50%);
+                z-index: 10;
+              "
+              @click="sendQuickMessage"
+            >
+              <VIcon size="22">tabler-send</VIcon>
+            </VBtn>
+          </div>
 
           <input
             ref="fileDocRef"
