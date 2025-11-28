@@ -29,8 +29,26 @@ export class PresenceService {
     return `${this.keyPrefix}${userId}`;
   }
 
-  private async refreshPresenceKey(userId: string): Promise<void> {
-    await this.redis.set(this.getKey(userId), '1', 'EX', this.ttlSeconds);
+  private async refreshPresenceKey(
+    userId: string,
+    status: EChatUserStatus
+  ): Promise<void> {
+    await this.redis.set(this.getKey(userId), status, 'EX', this.ttlSeconds);
+  }
+
+  private parseStatusFromCache(value: string | null): EChatUserStatus | null {
+    if (!value) return null;
+
+    if (
+      value === EChatUserStatus.online ||
+      value === EChatUserStatus.away ||
+      value === EChatUserStatus.busy ||
+      value === EChatUserStatus.do_not_disturb
+    ) {
+      return value;
+    }
+
+    return null;
   }
 
   private getActiveStatuses(): EChatUserStatus[] {
@@ -83,7 +101,7 @@ export class PresenceService {
   }
 
   async setUserOnline(userId: string): Promise<void> {
-    await this.refreshPresenceKey(userId);
+    await this.refreshPresenceKey(userId, EChatUserStatus.online);
 
     const newStatus = EChatUserStatus.online;
     const cachedStatus = this.statusCache.get(userId);
@@ -117,8 +135,6 @@ export class PresenceService {
   }
 
   async heartbeat(userId: string): Promise<void> {
-    await this.refreshPresenceKey(userId);
-
     const cachedStatus = this.statusCache.get(userId);
     const currentStatus =
       cachedStatus ?? (await this.chatUserViewer.findStatusByUserId(userId));
@@ -127,12 +143,14 @@ export class PresenceService {
       currentStatus === EChatUserStatus.busy ||
       currentStatus === EChatUserStatus.do_not_disturb
     ) {
+      await this.refreshPresenceKey(userId, currentStatus);
       this.statusCache.set(userId, currentStatus);
       await this.publishUserStatus(userId, currentStatus);
       return;
     }
 
     const newStatus = EChatUserStatus.online;
+    await this.refreshPresenceKey(userId, newStatus);
 
     if (currentStatus === newStatus) {
       this.statusCache.set(userId, newStatus);
@@ -195,7 +213,7 @@ export class PresenceService {
   }
 
   async setUserAway(userId: string): Promise<void> {
-    await this.refreshPresenceKey(userId);
+    await this.refreshPresenceKey(userId, EChatUserStatus.away);
 
     const newStatus = EChatUserStatus.away;
     const cachedStatus = this.statusCache.get(userId);
@@ -230,9 +248,9 @@ export class PresenceService {
 
   async isUserOnline(userId: string): Promise<boolean> {
     const key = this.getKey(userId);
-    const exists = await this.redis.exists(key);
+    const value = await this.redis.get(key);
 
-    return exists === 1;
+    return this.parseStatusFromCache(value) !== null;
   }
 
   async forceOffline(userId: string): Promise<void> {
@@ -243,10 +261,9 @@ export class PresenceService {
   }
 
   async syncStatusFromRedis(userId: string): Promise<void> {
-    const isOnline = await this.isUserOnline(userId);
-    const targetStatus = isOnline
-      ? EChatUserStatus.online
-      : EChatUserStatus.offline;
+    const cachedValue = await this.redis.get(this.getKey(userId));
+    const cachedPresence = this.parseStatusFromCache(cachedValue);
+    const targetStatus = cachedPresence ?? EChatUserStatus.offline;
 
     const cachedStatus = this.statusCache.get(userId);
     if (cachedStatus === targetStatus) {

@@ -4,6 +4,7 @@ import { useChatStore } from '@webcore/stores/chat';
 import { useUsersStore } from '@webcore/stores/user';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
+import { refreshPresenceForCurrentRoute } from './presence';
 
 let initializedAccountId: string | null = null;
 
@@ -59,9 +60,14 @@ export const initUserPresenceSubscription = async (
 
   const handleUserPresenceEvent = (data: any): void => {
     const status = data.status as EChatUserStatus;
+    const previousCurrentUserStatus = chatStore.user?.chat_user?.status;
 
     if (data.user_id === chatStore.user?.user_id) {
       updateCurrentUserStatus(status);
+
+      if (previousCurrentUserStatus !== status) {
+        refreshPresenceForCurrentRoute();
+      }
     }
 
     updateUserInList(data.user_id, status);

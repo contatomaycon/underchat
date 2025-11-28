@@ -2,10 +2,39 @@ import axios from '@webcore/axios';
 import { router } from '@/plugins/1.router';
 import { isLoggedIn, getUser } from './localStorage/user';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
+import { useChatStore } from '@/@webcore/stores/chat';
+import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
 
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let awayHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let busyHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+let listenersBound = false;
+
+const updateLocalPresenceStatus = (status: EChatUserStatus): void => {
+  const chatStore = useChatStore();
+  const currentUser = chatStore.user;
+
+  if (!currentUser) return;
+
+  const updatedChatUser = currentUser.chat_user
+    ? {
+        ...currentUser.chat_user,
+        status,
+      }
+    : ({
+        status,
+        notifications: true,
+        about: '',
+        chat_user_id: '',
+      } as AuthUserResponse['chat_user']);
+
+  chatStore.user = {
+    ...currentUser,
+    chat_user: updatedChatUser,
+  };
+
+  chatStore.updateChatUserImmediate();
+};
 
 const isManualBusyStatus = (): boolean => {
   const user = getUser();
@@ -89,6 +118,7 @@ const stopBusyHeartbeat = (): void => {
 
 export const presenceOnline = async (): Promise<void> => {
   await axios.post('/presence/online', {});
+  updateLocalPresenceStatus(EChatUserStatus.online);
 
   startHeartbeat();
 };
@@ -99,10 +129,12 @@ export const presenceOffline = async (): Promise<void> => {
   stopBusyHeartbeat();
 
   await axios.post('/presence/offline', {});
+  updateLocalPresenceStatus(EChatUserStatus.offline);
 };
 
 export const presenceAway = async (): Promise<void> => {
   await axios.post('/presence/away', {});
+  updateLocalPresenceStatus(EChatUserStatus.away);
 };
 
 const handleRoutePresence = (path: string): void => {
@@ -142,8 +174,22 @@ export const refreshPresenceForCurrentRoute = (): void => {
   handleRoutePresence(router.currentRoute.value?.path ?? '');
 };
 
-router.afterEach((to) => {
-  handleRoutePresence(to.path ?? '');
-});
+const bindPresenceListeners = (): void => {
+  if (listenersBound) return;
 
+  listenersBound = true;
+
+  router.afterEach((to) => {
+    handleRoutePresence(to.path ?? '');
+  });
+
+  window.addEventListener('focus', refreshPresenceForCurrentRoute);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      refreshPresenceForCurrentRoute();
+    }
+  });
+};
+
+bindPresenceListeners();
 handleRoutePresence(router.currentRoute.value?.path ?? '');
