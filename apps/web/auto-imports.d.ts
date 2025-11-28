@@ -448,7 +448,6 @@ declare module 'vue' {
     readonly getCurrentInstance: UnwrapRef<typeof import('vue')['getCurrentInstance']>
     readonly getCurrentScope: UnwrapRef<typeof import('vue')['getCurrentScope']>
     readonly getCurrentWatcher: UnwrapRef<typeof import('vue')['getCurrentWatcher']>
-    readonly getOfflineColor: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['getOfflineColor']>
     readonly getOfflineColorDark: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['getOfflineColorDark']>
     readonly getOfflineColorLight: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['getOfflineColorLight']>
     readonly h: UnwrapRef<typeof import('vue')['h']>

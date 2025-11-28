@@ -247,6 +247,6 @@ const bindPresenceListeners = (): void => {
 
 bindPresenceListeners();
 
-router.isReady().then(() => {
-  refreshPresenceForCurrentRoute();
-});
+await router.isReady();
+
+refreshPresenceForCurrentRoute();

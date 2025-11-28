@@ -5,7 +5,7 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
-import { DataTableHeader } from 'vuetify';
+import { DataTableHeader, useTheme } from 'vuetify';
 import { EUserPermissions } from '@core/common/enums/EPermissions/user';
 import { ERolePermissions } from '@core/common/enums/EPermissions/role';
 import { useUsersStore } from '@/@webcore/stores/user';
@@ -16,7 +16,6 @@ import { resolveAvatarBadgeVariant } from '@webcore/utils/formatters';
 import { getAdministrator, getUser } from '@/@webcore/localStorage/user';
 import { can } from '@/@layouts/plugins/casl';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
-import { useTheme } from 'vuetify';
 
 definePage({
   meta: {
