@@ -90,3 +90,11 @@ export function formatDateToMonthShort(
 
 export const prefixWithPlus = (value: number) =>
   value > 0 ? `+${value}` : `${value}`;
+
+export const getOfflineColorDark = (): string => {
+  return '#9e9e9e';
+};
+
+export const getOfflineColorLight = (): string => {
+  return '#757575';
+};

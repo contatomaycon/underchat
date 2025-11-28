@@ -47,6 +47,11 @@ export const useAuthStore = defineStore('auth', {
       const url = import.meta.env.VITE_BACKEND_URL;
 
       if (!url) {
+        this.showSnackbar(
+          this.i18n.global.t('backend_url_not_configured') ||
+            'Backend URL não configurada. Verifique o arquivo .env',
+          EColor.error
+        );
         return false;
       }
 

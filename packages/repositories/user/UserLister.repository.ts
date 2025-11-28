@@ -61,6 +61,15 @@ export class UserListerRepository {
               .where(ilike(userDocument.document_partial, `%${searchTerm}%`))
           )
         : undefined,
+      searchTerm
+        ? inArray(
+            user.account_id,
+            this.db
+              .select({ account_id: account.account_id })
+              .from(account)
+              .where(ilike(account.name, `%${searchTerm}%`))
+          )
+        : undefined,
       searchHashes ? eq(user.email_c, searchHashes) : undefined,
       searchHashes
         ? inArray(
@@ -97,25 +106,7 @@ export class UserListerRepository {
     query: ListUserRequest
   ): SQL<unknown> | undefined {
     if (query.user_status) {
-      return inArray(
-        user.user_status_id,
-        this.db
-          .select({
-            user_status_id: userStatus.user_status_id,
-          })
-          .from(user)
-          .innerJoin(
-            userStatus,
-            eq(userStatus.user_status_id, user.user_status_id)
-          )
-          .where(
-            and(
-              eq(user.user_status_id, userStatus.user_status_id),
-              eq(user.account_id, accountId),
-              eq(userStatus.user_status_id, query.user_status)
-            )
-          )
-      );
+      return eq(user.user_status_id, query.user_status);
     }
 
     return undefined;
