@@ -12,3 +12,4 @@ export * from './chat';
 export * from './message';
 export * from './label';
 export * from './contact';
+export * from './expenditure';

@@ -11,11 +11,14 @@ import { PlanItemCreatorRepository } from '@core/repositories/plan/PlanItemCreat
 import { PlanItemDeleterRepository } from '@core/repositories/plan/PlanItemDeleter.repository';
 import { PlanItemsListerRepository } from '@core/repositories/plan/PlanItemsLister.repository';
 import { PlanProductAllListerRepository } from '@core/repositories/plan/PlanProductAllLister.repository';
+import { PlanSalesListerRepository } from '@core/repositories/plan/PlanSalesLister.repository';
 import { CreatePlanRequest } from '@core/schema/plan/createPlan/request.schema';
 import { UpdatePlanRequest } from '@core/schema/plan/updatePlan/request.schema';
 import { CreatePlanItemRequest } from '@core/schema/plan/createPlanItem/request.schema';
 import { ListPlanItemResponse } from '@core/schema/plan/listPlanItems/response.schema';
 import { ListPlanProductAllResponse } from '@core/schema/plan/listPlanProductAll/response.schema';
+import { ListPlanSalesRequest } from '@core/schema/plan/listPlanSales/request.schema';
+import { ListPlanSalesResponse } from '@core/schema/plan/listPlanSales/response.schema';
 
 @injectable()
 export class PlanService {
@@ -28,7 +31,8 @@ export class PlanService {
     private readonly planItemCreatorRepository: PlanItemCreatorRepository,
     private readonly planItemDeleterRepository: PlanItemDeleterRepository,
     private readonly planItemsListerRepository: PlanItemsListerRepository,
-    private readonly planProductAllListerRepository: PlanProductAllListerRepository
+    private readonly planProductAllListerRepository: PlanProductAllListerRepository,
+    private readonly planSalesListerRepository: PlanSalesListerRepository
   ) {}
 
   listPlans = async (
@@ -79,5 +83,11 @@ export class PlanService {
 
   listPlanProductAll = async (): Promise<ListPlanProductAllResponse[]> => {
     return this.planProductAllListerRepository.listPlanProductAll();
+  };
+
+  listPlanSales = async (
+    query: ListPlanSalesRequest
+  ): Promise<ListPlanSalesResponse[]> => {
+    return this.planSalesListerRepository.listPlanSales(query);
   };
 }

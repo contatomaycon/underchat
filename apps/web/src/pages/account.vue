@@ -75,6 +75,22 @@ const formatCurrency = (value?: number) => {
   }).format(value ?? 0);
 };
 
+const resolveStatusText = (statusId?: string | null) => {
+  if (!statusId) {
+    return '-';
+  }
+
+  if (statusId === EAccountStatus.active) {
+    return t('active');
+  } else if (statusId === EAccountStatus.inactive) {
+    return t('inactive');
+  } else if (statusId === EAccountStatus.blocked) {
+    return t('blocked');
+  }
+
+  return '-';
+};
+
 const resolvePlanVariant = (planName?: string | null) => {
   if (!planName) {
     return { color: EColor.primary, text: t('unknown') };
@@ -264,7 +280,7 @@ watch(
         </template>
 
         <template #item.account_status="{ item }">
-          {{ item.account_status?.name }}
+          {{ resolveStatusText(item.account_status?.account_status_id) }}
         </template>
 
         <template #item.plan="{ item }">
