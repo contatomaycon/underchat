@@ -350,7 +350,27 @@ watch(
         </template>
 
         <template #item.status="{ item }">
-          {{ item.user_status?.name }}
+          <VChip
+            v-if="item.user_status"
+            :color="
+              item.user_status.user_status_id === EUserStatus.active
+                ? 'success'
+                : item.user_status.user_status_id === EUserStatus.blocked
+                  ? 'error'
+                  : 'warning'
+            "
+            size="small"
+            variant="tonal"
+          >
+            {{
+              item.user_status.user_status_id === EUserStatus.active
+                ? $t('active')
+                : item.user_status.user_status_id === EUserStatus.blocked
+                  ? $t('blocked')
+                  : $t('inactive')
+            }}
+          </VChip>
+          <span v-else class="text-medium-emphasis">-</span>
         </template>
 
         <template #item.phone_partial="{ item }">

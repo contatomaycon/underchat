@@ -262,7 +262,23 @@ watch(
         </template>
 
         <template #item.status="{ item }">
-          {{ item.sector_status?.name }}
+          <VChip
+            v-if="item.sector_status"
+            :color="
+              item.sector_status.id === ESectorStatus.active
+                ? 'success'
+                : 'error'
+            "
+            size="small"
+            variant="tonal"
+          >
+            {{
+              item.sector_status.id === ESectorStatus.active
+                ? $t('active')
+                : $t('inactive')
+            }}
+          </VChip>
+          <span v-else class="text-medium-emphasis">-</span>
         </template>
 
         <template #item.account="{ item }">

@@ -280,7 +280,29 @@ watch(
         </template>
 
         <template #item.account_status="{ item }">
-          {{ resolveStatusText(item.account_status?.account_status_id) }}
+          <VChip
+            v-if="item.account_status"
+            :color="
+              item.account_status.account_status_id === EAccountStatus.active
+                ? 'success'
+                : item.account_status.account_status_id ===
+                    EAccountStatus.blocked
+                  ? 'error'
+                  : 'warning'
+            "
+            size="small"
+            variant="tonal"
+          >
+            {{
+              item.account_status.account_status_id === EAccountStatus.active
+                ? $t('active')
+                : item.account_status.account_status_id ===
+                    EAccountStatus.blocked
+                  ? $t('blocked')
+                  : $t('inactive')
+            }}
+          </VChip>
+          <span v-else class="text-medium-emphasis">-</span>
         </template>
 
         <template #item.plan="{ item }">

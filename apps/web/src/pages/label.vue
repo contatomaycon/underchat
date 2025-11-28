@@ -253,7 +253,23 @@ watch(
         </template>
 
         <template #item.label_status="{ item }">
-          {{ item.label_status?.name }}
+          <VChip
+            v-if="item.label_status"
+            :color="
+              item.label_status.label_status_id === ELabelStatus.active
+                ? 'success'
+                : 'error'
+            "
+            size="small"
+            variant="tonal"
+          >
+            {{
+              item.label_status.label_status_id === ELabelStatus.active
+                ? $t('active')
+                : $t('inactive')
+            }}
+          </VChip>
+          <span v-else class="text-medium-emphasis">-</span>
         </template>
 
         <template #item.created_at="{ item }">
