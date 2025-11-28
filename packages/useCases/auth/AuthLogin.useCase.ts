@@ -68,11 +68,11 @@ export class AuthLoginUseCase {
     }
   }
 
-  private async handleDuplicateLogin(userId: string): Promise<void> {
+  private async handleDuplicateLogin(userId: string): Promise<boolean> {
     const isAlreadyLoggedIn = await this.presenceService.isUserLoggedIn(userId);
 
     if (!isAlreadyLoggedIn) {
-      return;
+      return false;
     }
 
     const [accountId] = await Promise.all([
@@ -83,6 +83,8 @@ export class AuthLoginUseCase {
     if (accountId) {
       await this.notifyPreviousSession(userId, accountId);
     }
+
+    return true;
   }
 
   async execute(
@@ -100,7 +102,7 @@ export class AuthLoginUseCase {
       throw new Error(t('login_invalid'));
     }
 
-    await this.handleDuplicateLogin(result.user_id);
+    const hadDuplicateLogin = await this.handleDuplicateLogin(result.user_id);
 
     const token = await reply.jwtSign(
       {
@@ -121,7 +123,10 @@ export class AuthLoginUseCase {
       this.userService.listUserSectors(result.account_id, result.user_id),
     ]);
 
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    if (hadDuplicateLogin) {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+
     await this.presenceService.setUserAway(result.user_id);
 
     return {
