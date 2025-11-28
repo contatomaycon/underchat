@@ -4,22 +4,11 @@ import {
   plan,
   planCrossSellAccount,
   planCrossSell,
-  planProduct,
-  planProductDescription,
   expenditure,
 } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import {
-  and,
-  isNull,
-  gte,
-  lte,
-  sql,
-  SQLWrapper,
-  inArray,
-  eq,
-} from 'drizzle-orm';
+import { and, isNull, gte, lte, SQLWrapper, inArray, eq } from 'drizzle-orm';
 import { ListFinancialReportRequest } from '@core/schema/financialReport/listFinancialReport/request.schema';
 import {
   ListFinancialReportResponse,
@@ -63,6 +52,213 @@ export class FinancialReportListerRepository {
     }
 
     return filters;
+  };
+
+  private readonly processPlanSaleByPeriod = (
+    planSale: { price: string; created_at: string | null },
+    period: 'monthly' | 'annual' | 'daily',
+    incomeByMonth: Map<string, number>,
+    incomeByYear: Map<string, number>,
+    incomeByDay: Map<string, number>
+  ): number => {
+    const planPrice = Number(planSale.price);
+
+    if (!planSale.created_at) {
+      return planPrice;
+    }
+
+    const date = new Date(planSale.created_at);
+
+    if (period === 'monthly') {
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      incomeByMonth.set(
+        monthKey,
+        (incomeByMonth.get(monthKey) || 0) + planPrice
+      );
+    } else if (period === 'annual') {
+      const yearKey = date.getFullYear().toString();
+      incomeByYear.set(yearKey, (incomeByYear.get(yearKey) || 0) + planPrice);
+    } else if (period === 'daily') {
+      const year = date.getUTCFullYear();
+      const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(date.getUTCDate()).padStart(2, '0');
+      const dayKey = `${year}-${month}-${day}`;
+      incomeByDay.set(dayKey, (incomeByDay.get(dayKey) || 0) + planPrice);
+    }
+
+    return planPrice;
+  };
+
+  private readonly formatMonthlyDetails = (
+    monthMap: Map<string, number>
+  ): MonthlyDetail[] => {
+    const monthNames = [
+      'Janeiro',
+      'Fevereiro',
+      'Março',
+      'Abril',
+      'Maio',
+      'Junho',
+      'Julho',
+      'Agosto',
+      'Setembro',
+      'Outubro',
+      'Novembro',
+      'Dezembro',
+    ];
+
+    return Array.from(monthMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([monthKey, income]) => {
+        const [year, month] = monthKey.split('-');
+        return {
+          month: `${monthNames[Number.parseInt(month, 10) - 1]} ${year}`,
+          income: income.toString(),
+          outgoing: '0',
+          net: income.toString(),
+        };
+      });
+  };
+
+  private readonly formatYearlyDetails = (
+    yearMap: Map<string, number>
+  ): MonthlyDetail[] => {
+    return Array.from(yearMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([yearKey, income]) => {
+        return {
+          month: yearKey,
+          income: income.toString(),
+          outgoing: '0',
+          net: income.toString(),
+        };
+      });
+  };
+
+  private readonly formatDailyDetails = (
+    dayMap: Map<string, number>
+  ): DailyDetail[] => {
+    return Array.from(dayMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([dayKey, income]) => {
+        const [year, month, day] = dayKey.split('-');
+        const date = new Date(
+          Number.parseInt(year, 10),
+          Number.parseInt(month, 10) - 1,
+          Number.parseInt(day, 10)
+        );
+        return {
+          date: date.toLocaleDateString('pt-BR'),
+          income: income.toString(),
+          outgoing: '0',
+          net: income.toString(),
+        };
+      });
+  };
+
+  private readonly processExpenditureByPeriod = (
+    exp: { price: string; created_at: string | null },
+    period: 'monthly' | 'annual' | 'daily',
+    expenditureByMonth: Map<string, number>,
+    expenditureByYear: Map<string, number>,
+    expenditureByDay: Map<string, number>
+  ): number => {
+    const price = Number(exp.price);
+
+    if (!exp.created_at) {
+      return price;
+    }
+
+    const date = new Date(exp.created_at);
+
+    if (period === 'monthly') {
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      expenditureByMonth.set(
+        monthKey,
+        (expenditureByMonth.get(monthKey) || 0) + price
+      );
+    } else if (period === 'annual') {
+      const yearKey = date.getFullYear().toString();
+      expenditureByYear.set(
+        yearKey,
+        (expenditureByYear.get(yearKey) || 0) + price
+      );
+    } else if (period === 'daily') {
+      const year = date.getUTCFullYear();
+      const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(date.getUTCDate()).padStart(2, '0');
+      const dayKey = `${year}-${month}-${day}`;
+      expenditureByDay.set(dayKey, (expenditureByDay.get(dayKey) || 0) + price);
+    }
+
+    return price;
+  };
+
+  private readonly formatExpenditureMonthlyDetails = (
+    monthMap: Map<string, number>
+  ): MonthlyDetail[] => {
+    const monthNames = [
+      'Janeiro',
+      'Fevereiro',
+      'Março',
+      'Abril',
+      'Maio',
+      'Junho',
+      'Julho',
+      'Agosto',
+      'Setembro',
+      'Outubro',
+      'Novembro',
+      'Dezembro',
+    ];
+
+    return Array.from(monthMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([monthKey, outgoing]) => {
+        const [year, month] = monthKey.split('-');
+        return {
+          month: `${monthNames[Number.parseInt(month, 10) - 1]} ${year}`,
+          income: '0',
+          outgoing: outgoing.toString(),
+          net: (-outgoing).toString(),
+        };
+      });
+  };
+
+  private readonly formatExpenditureYearlyDetails = (
+    yearMap: Map<string, number>
+  ): MonthlyDetail[] => {
+    return Array.from(yearMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([yearKey, outgoing]) => {
+        return {
+          month: yearKey,
+          income: '0',
+          outgoing: outgoing.toString(),
+          net: (-outgoing).toString(),
+        };
+      });
+  };
+
+  private readonly formatExpenditureDailyDetails = (
+    dayMap: Map<string, number>
+  ): DailyDetail[] => {
+    return Array.from(dayMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([dayKey, outgoing]) => {
+        const [year, month, day] = dayKey.split('-');
+        const date = new Date(
+          Number.parseInt(year, 10),
+          Number.parseInt(month, 10) - 1,
+          Number.parseInt(day, 10)
+        );
+        return {
+          date: date.toLocaleDateString('pt-BR'),
+          income: '0',
+          outgoing: outgoing.toString(),
+          net: (-outgoing).toString(),
+        };
+      });
   };
 
   private readonly getIncomeData = async (
@@ -143,127 +339,38 @@ export class FinancialReportListerRepository {
     const incomeByYear = new Map<string, number>();
 
     for (const planSale of planSalesResult) {
-      const planPrice = Number(planSale.price);
-      totalIncome += planPrice;
-
-      if (query.period === 'monthly' && planSale.created_at) {
-        const date = new Date(planSale.created_at);
-        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        incomeByMonth.set(
-          monthKey,
-          (incomeByMonth.get(monthKey) || 0) + planPrice
-        );
-      }
-
-      if (query.period === 'annual' && planSale.created_at) {
-        const date = new Date(planSale.created_at);
-        const yearKey = date.getFullYear().toString();
-        incomeByYear.set(yearKey, (incomeByYear.get(yearKey) || 0) + planPrice);
-      }
-
-      if (query.period === 'daily' && planSale.created_at) {
-        const date = new Date(planSale.created_at);
-        const year = date.getUTCFullYear();
-        const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-        const day = String(date.getUTCDate()).padStart(2, '0');
-        const dayKey = `${year}-${month}-${day}`;
-        incomeByDay.set(dayKey, (incomeByDay.get(dayKey) || 0) + planPrice);
-      }
+      totalIncome += this.processPlanSaleByPeriod(
+        planSale,
+        query.period,
+        incomeByMonth,
+        incomeByYear,
+        incomeByDay
+      );
     }
 
     for (const crossSell of crossSellsResult) {
-      const addonPrice = Number(crossSell.price);
-      totalIncome += addonPrice;
-
-      if (query.period === 'monthly' && crossSell.created_at) {
-        const date = new Date(crossSell.created_at);
-        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        incomeByMonth.set(
-          monthKey,
-          (incomeByMonth.get(monthKey) || 0) + addonPrice
-        );
-      }
-
-      if (query.period === 'annual' && crossSell.created_at) {
-        const date = new Date(crossSell.created_at);
-        const yearKey = date.getFullYear().toString();
-        incomeByYear.set(
-          yearKey,
-          (incomeByYear.get(yearKey) || 0) + addonPrice
-        );
-      }
-
-      if (query.period === 'daily' && crossSell.created_at) {
-        const date = new Date(crossSell.created_at);
-        const year = date.getUTCFullYear();
-        const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-        const day = String(date.getUTCDate()).padStart(2, '0');
-        const dayKey = `${year}-${month}-${day}`;
-        incomeByDay.set(dayKey, (incomeByDay.get(dayKey) || 0) + addonPrice);
-      }
+      totalIncome += this.processPlanSaleByPeriod(
+        crossSell,
+        query.period,
+        incomeByMonth,
+        incomeByYear,
+        incomeByDay
+      );
     }
 
     const byMonth: MonthlyDetail[] | undefined =
       query.period === 'monthly'
-        ? Array.from(incomeByMonth.entries())
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([monthKey, income]) => {
-              const [year, month] = monthKey.split('-');
-              const monthNames = [
-                'Janeiro',
-                'Fevereiro',
-                'Março',
-                'Abril',
-                'Maio',
-                'Junho',
-                'Julho',
-                'Agosto',
-                'Setembro',
-                'Outubro',
-                'Novembro',
-                'Dezembro',
-              ];
-              return {
-                month: `${monthNames[parseInt(month) - 1]} ${year}`,
-                income: income.toString(),
-                outgoing: '0',
-                net: income.toString(),
-              };
-            })
+        ? this.formatMonthlyDetails(incomeByMonth)
         : undefined;
 
     const byYear: MonthlyDetail[] | undefined =
       query.period === 'annual'
-        ? Array.from(incomeByYear.entries())
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([yearKey, income]) => {
-              return {
-                month: yearKey,
-                income: income.toString(),
-                outgoing: '0',
-                net: income.toString(),
-              };
-            })
+        ? this.formatYearlyDetails(incomeByYear)
         : undefined;
 
     const byDay: DailyDetail[] | undefined =
       query.period === 'daily'
-        ? Array.from(incomeByDay.entries())
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([dayKey, income]) => {
-              const [year, month, day] = dayKey.split('-');
-              const date = new Date(
-                parseInt(year),
-                parseInt(month) - 1,
-                parseInt(day)
-              );
-              return {
-                date: date.toLocaleDateString('pt-BR'),
-                income: income.toString(),
-                outgoing: '0',
-                net: income.toString(),
-              };
-            })
+        ? this.formatDailyDetails(incomeByDay)
         : undefined;
 
     return {
@@ -308,101 +415,28 @@ export class FinancialReportListerRepository {
     const expenditureByYear = new Map<string, number>();
 
     for (const exp of expendituresResult) {
-      const price = Number(exp.price);
-      totalExpenditure += price;
-
-      if (query.period === 'monthly' && exp.created_at) {
-        const date = new Date(exp.created_at);
-        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        expenditureByMonth.set(
-          monthKey,
-          (expenditureByMonth.get(monthKey) || 0) + price
-        );
-      }
-
-      if (query.period === 'annual' && exp.created_at) {
-        const date = new Date(exp.created_at);
-        const yearKey = date.getFullYear().toString();
-        expenditureByYear.set(
-          yearKey,
-          (expenditureByYear.get(yearKey) || 0) + price
-        );
-      }
-
-      if (query.period === 'daily' && exp.created_at) {
-        const date = new Date(exp.created_at);
-        const year = date.getUTCFullYear();
-        const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-        const day = String(date.getUTCDate()).padStart(2, '0');
-        const dayKey = `${year}-${month}-${day}`;
-        expenditureByDay.set(
-          dayKey,
-          (expenditureByDay.get(dayKey) || 0) + price
-        );
-      }
+      totalExpenditure += this.processExpenditureByPeriod(
+        exp,
+        query.period,
+        expenditureByMonth,
+        expenditureByYear,
+        expenditureByDay
+      );
     }
 
     const byMonth: MonthlyDetail[] | undefined =
       query.period === 'monthly'
-        ? Array.from(expenditureByMonth.entries())
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([monthKey, outgoing]) => {
-              const [year, month] = monthKey.split('-');
-              const monthNames = [
-                'Janeiro',
-                'Fevereiro',
-                'Março',
-                'Abril',
-                'Maio',
-                'Junho',
-                'Julho',
-                'Agosto',
-                'Setembro',
-                'Outubro',
-                'Novembro',
-                'Dezembro',
-              ];
-              return {
-                month: `${monthNames[parseInt(month) - 1]} ${year}`,
-                income: '0',
-                outgoing: outgoing.toString(),
-                net: (-outgoing).toString(),
-              };
-            })
+        ? this.formatExpenditureMonthlyDetails(expenditureByMonth)
         : undefined;
 
     const byYear: MonthlyDetail[] | undefined =
       query.period === 'annual'
-        ? Array.from(expenditureByYear.entries())
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([yearKey, outgoing]) => {
-              return {
-                month: yearKey,
-                income: '0',
-                outgoing: outgoing.toString(),
-                net: (-outgoing).toString(),
-              };
-            })
+        ? this.formatExpenditureYearlyDetails(expenditureByYear)
         : undefined;
 
     const byDay: DailyDetail[] | undefined =
       query.period === 'daily'
-        ? Array.from(expenditureByDay.entries())
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([dayKey, outgoing]) => {
-              const [year, month, day] = dayKey.split('-');
-              const date = new Date(
-                parseInt(year),
-                parseInt(month) - 1,
-                parseInt(day)
-              );
-              return {
-                date: date.toLocaleDateString('pt-BR'),
-                income: '0',
-                outgoing: outgoing.toString(),
-                net: (-outgoing).toString(),
-              };
-            })
+        ? this.formatExpenditureDailyDetails(expenditureByDay)
         : undefined;
 
     return {
@@ -411,6 +445,137 @@ export class FinancialReportListerRepository {
       byDay,
       byYear,
     };
+  };
+
+  private readonly combineMonthlyData = (
+    incomeData: MonthlyDetail[] | undefined,
+    expenditureData: MonthlyDetail[] | undefined
+  ): MonthlyDetail[] => {
+    const monthMap = new Map<string, MonthlyDetail>();
+
+    if (incomeData) {
+      for (const item of incomeData) {
+        monthMap.set(item.month, {
+          month: item.month,
+          income: item.income,
+          outgoing: '0',
+          net: item.income,
+        });
+      }
+    }
+
+    if (expenditureData) {
+      for (const item of expenditureData) {
+        const existing = monthMap.get(item.month);
+        if (existing) {
+          existing.outgoing = item.outgoing;
+          existing.net = (
+            Number(existing.income) - Number(item.outgoing)
+          ).toString();
+        } else {
+          monthMap.set(item.month, item);
+        }
+      }
+    }
+
+    return Array.from(monthMap.values()).sort((a, b) => {
+      const [monthA, yearA] = a.month.split(' ');
+      const [monthB, yearB] = b.month.split(' ');
+      const monthNames = [
+        'Janeiro',
+        'Fevereiro',
+        'Março',
+        'Abril',
+        'Maio',
+        'Junho',
+        'Julho',
+        'Agosto',
+        'Setembro',
+        'Outubro',
+        'Novembro',
+        'Dezembro',
+      ];
+      const monthIndexA = monthNames.indexOf(monthA);
+      const monthIndexB = monthNames.indexOf(monthB);
+      if (yearA !== yearB) {
+        return yearA.localeCompare(yearB);
+      }
+      return monthIndexA - monthIndexB;
+    });
+  };
+
+  private readonly combineYearlyData = (
+    incomeData: MonthlyDetail[] | undefined,
+    expenditureData: MonthlyDetail[] | undefined
+  ): MonthlyDetail[] => {
+    const yearMap = new Map<string, MonthlyDetail>();
+
+    if (incomeData) {
+      for (const item of incomeData) {
+        yearMap.set(item.month, {
+          month: item.month,
+          income: item.income,
+          outgoing: '0',
+          net: item.income,
+        });
+      }
+    }
+
+    if (expenditureData) {
+      for (const item of expenditureData) {
+        const existing = yearMap.get(item.month);
+        if (existing) {
+          existing.outgoing = item.outgoing;
+          existing.net = (
+            Number(existing.income) - Number(item.outgoing)
+          ).toString();
+        } else {
+          yearMap.set(item.month, item);
+        }
+      }
+    }
+
+    return Array.from(yearMap.values()).sort((a, b) => {
+      return a.month.localeCompare(b.month);
+    });
+  };
+
+  private readonly combineDailyData = (
+    incomeData: DailyDetail[] | undefined,
+    expenditureData: DailyDetail[] | undefined
+  ): DailyDetail[] => {
+    const dayMap = new Map<string, DailyDetail>();
+
+    if (incomeData) {
+      for (const item of incomeData) {
+        dayMap.set(item.date, {
+          date: item.date,
+          income: item.income,
+          outgoing: '0',
+          net: item.income,
+        });
+      }
+    }
+
+    if (expenditureData) {
+      for (const item of expenditureData) {
+        const existing = dayMap.get(item.date);
+        if (existing) {
+          existing.outgoing = item.outgoing;
+          existing.net = (
+            Number(existing.income) - Number(item.outgoing)
+          ).toString();
+        } else {
+          dayMap.set(item.date, item);
+        }
+      }
+    }
+
+    return Array.from(dayMap.values()).sort((a, b) => {
+      const dateA = new Date(a.date.split('/').reverse().join('-'));
+      const dateB = new Date(b.date.split('/').reverse().join('-'));
+      return dateA.getTime() - dateB.getTime();
+    });
   };
 
   listFinancialReport = async (
@@ -427,126 +592,23 @@ export class FinancialReportListerRepository {
 
     let monthlyDetails: MonthlyDetail[] | undefined = undefined;
     if (query.period === 'monthly') {
-      const monthMap = new Map<string, MonthlyDetail>();
-
-      if (incomeData.byMonth) {
-        for (const item of incomeData.byMonth) {
-          monthMap.set(item.month, {
-            month: item.month,
-            income: item.income,
-            outgoing: '0',
-            net: item.income,
-          });
-        }
-      }
-
-      if (expenditureData.byMonth) {
-        for (const item of expenditureData.byMonth) {
-          const existing = monthMap.get(item.month);
-          if (existing) {
-            existing.outgoing = item.outgoing;
-            existing.net = (
-              Number(existing.income) - Number(item.outgoing)
-            ).toString();
-          } else {
-            monthMap.set(item.month, item);
-          }
-        }
-      }
-
-      monthlyDetails = Array.from(monthMap.values()).sort((a, b) => {
-        const [monthA, yearA] = a.month.split(' ');
-        const [monthB, yearB] = b.month.split(' ');
-        const monthNames = [
-          'Janeiro',
-          'Fevereiro',
-          'Março',
-          'Abril',
-          'Maio',
-          'Junho',
-          'Julho',
-          'Agosto',
-          'Setembro',
-          'Outubro',
-          'Novembro',
-          'Dezembro',
-        ];
-        const monthIndexA = monthNames.indexOf(monthA);
-        const monthIndexB = monthNames.indexOf(monthB);
-        if (yearA !== yearB) {
-          return yearA.localeCompare(yearB);
-        }
-        return monthIndexA - monthIndexB;
-      });
-    }
-
-    if (query.period === 'annual') {
-      const yearMap = new Map<string, MonthlyDetail>();
-
-      if (incomeData.byYear) {
-        for (const item of incomeData.byYear) {
-          yearMap.set(item.month, {
-            month: item.month,
-            income: item.income,
-            outgoing: '0',
-            net: item.income,
-          });
-        }
-      }
-
-      if (expenditureData.byYear) {
-        for (const item of expenditureData.byYear) {
-          const existing = yearMap.get(item.month);
-          if (existing) {
-            existing.outgoing = item.outgoing;
-            existing.net = (
-              Number(existing.income) - Number(item.outgoing)
-            ).toString();
-          } else {
-            yearMap.set(item.month, item);
-          }
-        }
-      }
-
-      monthlyDetails = Array.from(yearMap.values()).sort((a, b) => {
-        return a.month.localeCompare(b.month);
-      });
+      monthlyDetails = this.combineMonthlyData(
+        incomeData.byMonth,
+        expenditureData.byMonth
+      );
+    } else if (query.period === 'annual') {
+      monthlyDetails = this.combineYearlyData(
+        incomeData.byYear,
+        expenditureData.byYear
+      );
     }
 
     let dailyDetails: DailyDetail[] | undefined = undefined;
     if (query.period === 'daily') {
-      const dayMap = new Map<string, DailyDetail>();
-
-      if (incomeData.byDay) {
-        for (const item of incomeData.byDay) {
-          dayMap.set(item.date, {
-            date: item.date,
-            income: item.income,
-            outgoing: '0',
-            net: item.income,
-          });
-        }
-      }
-
-      if (expenditureData.byDay) {
-        for (const item of expenditureData.byDay) {
-          const existing = dayMap.get(item.date);
-          if (existing) {
-            existing.outgoing = item.outgoing;
-            existing.net = (
-              Number(existing.income) - Number(item.outgoing)
-            ).toString();
-          } else {
-            dayMap.set(item.date, item);
-          }
-        }
-      }
-
-      dailyDetails = Array.from(dayMap.values()).sort((a, b) => {
-        const dateA = new Date(a.date.split('/').reverse().join('-'));
-        const dateB = new Date(b.date.split('/').reverse().join('-'));
-        return dateA.getTime() - dateB.getTime();
-      });
+      dailyDetails = this.combineDailyData(
+        incomeData.byDay,
+        expenditureData.byDay
+      );
     }
 
     return {

@@ -37,6 +37,27 @@ const years = computed(() => {
   return yearsList;
 });
 
+const parseDateString = (dateStr: string): Date | null => {
+  if (!dateStr.includes('/')) {
+    return new Date(dateStr);
+  }
+
+  const parts = dateStr.split('/');
+  if (parts.length !== 3) {
+    return new Date(dateStr);
+  }
+
+  const day = Number.parseInt(parts[0], 10);
+  const month = Number.parseInt(parts[1], 10);
+  const year = Number.parseInt(parts[2], 10);
+
+  if (Number.isNaN(day) || Number.isNaN(month) || Number.isNaN(year)) {
+    return new Date(dateStr);
+  }
+
+  return new Date(year, month - 1, day);
+};
+
 const formatDateForApi = (
   date: string | Date | null,
   isEndDate = false
@@ -47,26 +68,10 @@ const formatDateForApi = (
 
   if (date instanceof Date) {
     d = new Date(date);
-  } else if (typeof date === 'string') {
-    if (date.includes('/')) {
-      const parts = date.split('/');
-      if (parts.length === 3) {
-        const day = parseInt(parts[0], 10);
-        const month = parseInt(parts[1], 10);
-        const year = parseInt(parts[2], 10);
-        if (!Number.isNaN(day) && !Number.isNaN(month) && !Number.isNaN(year)) {
-          d = new Date(year, month - 1, day);
-        } else {
-          d = new Date(date);
-        }
-      } else {
-        d = new Date(date);
-      }
-    } else {
-      d = new Date(date);
-    }
   } else {
-    d = new Date(date);
+    const parsed = parseDateString(date);
+    if (!parsed) return null;
+    d = parsed;
   }
 
   if (Number.isNaN(d.getTime())) return null;
