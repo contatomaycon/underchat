@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { computed } from 'vue';
+import { computed, ref, onUnmounted } from 'vue';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { formatDate } from '@/@webcore/utils/formatters';
 import { EMessageType } from '@core/common/enums/EMessageType';
@@ -14,6 +14,77 @@ const emit = defineEmits<{
 }>();
 
 const chatStore = useChatStore();
+
+const viewerOpen = ref(false);
+const viewerKind = ref<'image' | 'video'>('image');
+const viewerSrc = ref('');
+const viewerCaption = ref('');
+
+const audioPlayer = ref<HTMLAudioElement | null>(null);
+const isAudioPlaying = ref(false);
+const audioCurrentTime = ref(0);
+const audioDuration = ref(0);
+
+const openImage = () => {
+  if (!props.template.attachment_url) return;
+  viewerKind.value = 'image';
+  viewerSrc.value = props.template.attachment_url;
+  viewerCaption.value = props.template.message || '';
+  viewerOpen.value = true;
+};
+
+const openVideo = () => {
+  if (!props.template.attachment_url) return;
+  viewerKind.value = 'video';
+  viewerSrc.value = props.template.attachment_url;
+  viewerCaption.value = props.template.message || '';
+  viewerOpen.value = true;
+};
+
+const toggleAudioPlay = () => {
+  if (!props.template.attachment_url) return;
+
+  if (!audioPlayer.value) {
+    audioPlayer.value = new Audio(props.template.attachment_url);
+    audioPlayer.value.preload = 'metadata';
+
+    audioPlayer.value.addEventListener('loadedmetadata', () => {
+      audioDuration.value = audioPlayer.value?.duration || 0;
+    });
+
+    audioPlayer.value.addEventListener('timeupdate', () => {
+      audioCurrentTime.value = audioPlayer.value?.currentTime || 0;
+    });
+
+    audioPlayer.value.addEventListener('play', () => {
+      isAudioPlaying.value = true;
+    });
+
+    audioPlayer.value.addEventListener('pause', () => {
+      isAudioPlaying.value = false;
+    });
+
+    audioPlayer.value.addEventListener('ended', () => {
+      isAudioPlaying.value = false;
+      audioCurrentTime.value = 0;
+    });
+  }
+
+  if (isAudioPlaying.value) {
+    audioPlayer.value.pause();
+  } else {
+    audioPlayer.value.play().catch(() => {
+      isAudioPlaying.value = false;
+    });
+  }
+};
+
+onUnmounted(() => {
+  if (audioPlayer.value) {
+    audioPlayer.value.pause();
+    audioPlayer.value = null;
+  }
+});
 
 const formatWhatsAppText = (text: string): string => {
   if (!text) return '';
@@ -91,6 +162,7 @@ const hasPhoto = computed(() => {
             <div
               v-if="template.type === 'image' && template.attachment_url"
               class="image-bubble image-bubble--right"
+              @click="openImage"
             >
               <VImg
                 :src="template.attachment_url"
@@ -112,6 +184,7 @@ const hasPhoto = computed(() => {
             <div
               v-if="template.type === 'video' && template.attachment_url"
               class="video-bubble video-bubble--right"
+              @click="openVideo"
             >
               <div class="video-thumb-wrapper">
                 <video
@@ -148,9 +221,11 @@ const hasPhoto = computed(() => {
                   size="36"
                   variant="text"
                   class="audio-play-btn"
-                  disabled
+                  @click="toggleAudioPlay"
                 >
-                  <VIcon size="18">tabler-player-play</VIcon>
+                  <VIcon size="18">
+                    {{ isAudioPlaying ? 'tabler-player-pause' : 'tabler-player-play' }}
+                  </VIcon>
                 </VBtn>
                 <div class="audio-waveform-container">
                   <div class="audio-waveform-placeholder">
@@ -190,6 +265,53 @@ const hasPhoto = computed(() => {
       </div>
     </div>
   </div>
+
+  <VDialog
+    v-model="viewerOpen"
+    fullscreen
+    scrim="rgba(0,0,0,.9)"
+    :scrollable="false"
+  >
+    <div class="viewer-wrap" @click="viewerOpen = false">
+      <div class="viewer-box" @click.stop>
+        <div class="viewer-media-container">
+          <img
+            v-if="viewerKind === 'image'"
+            :src="viewerSrc"
+            alt=""
+            class="viewer-img"
+            loading="eager"
+            decoding="async"
+          />
+          <video
+            v-if="viewerKind === 'video'"
+            :src="viewerSrc"
+            class="viewer-video"
+            controls
+            playsinline
+          >
+            <track kind="captions" />
+          </video>
+
+          <div class="viewer-actions">
+            <VBtn
+              class="viewer-close"
+              icon
+              size="36"
+              variant="text"
+              @click="viewerOpen = false"
+            >
+              <VIcon size="20">tabler-x</VIcon>
+            </VBtn>
+          </div>
+        </div>
+
+        <div v-if="viewerCaption" class="viewer-caption">
+          {{ viewerCaption }}
+        </div>
+      </div>
+    </div>
+  </VDialog>
 </template>
 
 <style lang="scss" scoped>
@@ -418,5 +540,78 @@ const hasPhoto = computed(() => {
       line-height: 1;
     }
   }
+}
+
+.viewer-wrap {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  padding: 16px;
+  overflow: hidden;
+}
+
+.viewer-box {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  max-width: 90vw;
+  max-height: 90vh;
+}
+
+.viewer-media-container {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.viewer-img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 90vw;
+  max-height: 85vh;
+  object-fit: contain;
+  border-radius: 12px;
+}
+
+.viewer-video {
+  display: block;
+  max-width: 90vw;
+  max-height: 85vh;
+  border-radius: 12px;
+  background: #000;
+}
+
+.viewer-actions {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 10;
+}
+
+.viewer-close {
+  color: white !important;
+  background: rgba(0, 0, 0, 0.5) !important;
+  border-radius: 50%;
+  min-width: 36px;
+  height: 36px;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.7) !important;
+  }
+}
+
+.viewer-caption {
+  color: white;
+  text-align: center;
+  margin: 12px;
 }
 </style>

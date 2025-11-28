@@ -5118,7 +5118,7 @@ onBeforeUnmount(() => {
               aria-label="Enviar mensagem"
               style="
                 position: absolute;
-                right: 12px;
+                right: 8px;
                 top: 50%;
                 transform: translateY(-50%);
                 z-index: 10;
