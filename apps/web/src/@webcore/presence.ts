@@ -4,6 +4,7 @@ import { isLoggedIn, getToken } from './localStorage/user';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
+import { ELanguage } from '@core/common/enums/ELanguage';
 
 type PresenceMode = EChatUserStatus;
 
@@ -235,6 +236,7 @@ const bindPresenceListeners = (): void => {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,
+        'Accept-Language': ELanguage.pt,
       },
       keepalive: true,
     }).catch(() => {});
