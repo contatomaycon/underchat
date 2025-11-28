@@ -30,6 +30,8 @@
   "presence_heartbeat_success": "Presence heartbeat renewed successfully!",
   "presence_offline_success": "Presence set to offline successfully!",
   "presence_away_success": "Presence set to away successfully!",
+  "presence_busy_success": "Presence set to busy successfully!",
+  "presence_do_not_disturb_success": "Presence set to do not disturb successfully!",
   "server_logs_install_not_found": "Server logs not found!",
   "server_logs_install_success": "Server logs retrieved successfully!",
   "server_reinstall_successfully": "Server reinstalled successfully!",

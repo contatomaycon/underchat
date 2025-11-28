@@ -246,6 +246,74 @@ export class PresenceService {
     await this.publishUserStatus(userId, newStatus);
   }
 
+  async setUserBusy(userId: string): Promise<void> {
+    await this.refreshPresenceKey(userId, EChatUserStatus.busy);
+
+    const newStatus = EChatUserStatus.busy;
+    const cachedStatus = this.statusCache.get(userId);
+
+    const currentStatus =
+      cachedStatus ?? (await this.chatUserViewer.findStatusByUserId(userId));
+
+    if (currentStatus === newStatus) {
+      this.statusCache.set(userId, newStatus);
+      await this.publishUserStatus(userId, newStatus);
+      return;
+    }
+
+    if (currentStatus === null) {
+      await this.ensureChatUserRow(userId, newStatus);
+      this.statusCache.set(userId, newStatus);
+      await this.publishUserStatus(userId, newStatus);
+      return;
+    }
+
+    const updated = await this.chatUserUpdater.updateStatusIfChanged(
+      userId,
+      newStatus
+    );
+
+    if (updated) {
+      this.statusCache.set(userId, newStatus);
+    }
+
+    await this.publishUserStatus(userId, newStatus);
+  }
+
+  async setUserDoNotDisturb(userId: string): Promise<void> {
+    await this.refreshPresenceKey(userId, EChatUserStatus.do_not_disturb);
+
+    const newStatus = EChatUserStatus.do_not_disturb;
+    const cachedStatus = this.statusCache.get(userId);
+
+    const currentStatus =
+      cachedStatus ?? (await this.chatUserViewer.findStatusByUserId(userId));
+
+    if (currentStatus === newStatus) {
+      this.statusCache.set(userId, newStatus);
+      await this.publishUserStatus(userId, newStatus);
+      return;
+    }
+
+    if (currentStatus === null) {
+      await this.ensureChatUserRow(userId, newStatus);
+      this.statusCache.set(userId, newStatus);
+      await this.publishUserStatus(userId, newStatus);
+      return;
+    }
+
+    const updated = await this.chatUserUpdater.updateStatusIfChanged(
+      userId,
+      newStatus
+    );
+
+    if (updated) {
+      this.statusCache.set(userId, newStatus);
+    }
+
+    await this.publishUserStatus(userId, newStatus);
+  }
+
   async isUserOnline(userId: string): Promise<boolean> {
     const key = this.getKey(userId);
     const value = await this.redis.get(key);

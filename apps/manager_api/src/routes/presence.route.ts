@@ -6,6 +6,8 @@ import {
   presenceHeartbeatSchema,
   presenceOfflineSchema,
   presenceAwaySchema,
+  presenceBusySchema,
+  presenceDoNotDisturbSchema,
 } from '@core/schema/presence';
 
 export default function presenceRoutes(server: FastifyInstance) {
@@ -32,6 +34,18 @@ export default function presenceRoutes(server: FastifyInstance) {
   server.post('/presence/away', {
     schema: presenceAwaySchema,
     handler: presenceController.setAway,
+    preHandler: [(request, reply) => server.authenticateJwt(request, reply)],
+  });
+
+  server.post('/presence/busy', {
+    schema: presenceBusySchema,
+    handler: presenceController.setBusy,
+    preHandler: [(request, reply) => server.authenticateJwt(request, reply)],
+  });
+
+  server.post('/presence/do-not-disturb', {
+    schema: presenceDoNotDisturbSchema,
+    handler: presenceController.setDoNotDisturb,
     preHandler: [(request, reply) => server.authenticateJwt(request, reply)],
   });
 }

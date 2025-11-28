@@ -5,7 +5,7 @@ import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { VForm } from 'vuetify/components';
 import { EColor } from '@core/common/enums/EColor';
-import { refreshPresenceForCurrentRoute } from '@/@webcore/presence';
+import { refreshUpdateProfileSidebarContent } from '@/@webcore/presence';
 import { useTheme } from 'vuetify';
 
 defineEmits<{
@@ -34,7 +34,9 @@ const updateProfileSidebarContent = async () => {
   chatStore.updateChatUserImmediate();
   await updateChatUser();
 
-  refreshPresenceForCurrentRoute();
+  refreshUpdateProfileSidebarContent(
+    chatStore.user?.chat_user?.status as EChatUserStatus
+  );
 };
 
 const isPhotoModalOpen = ref(false);

@@ -30,6 +30,8 @@
   "presence_heartbeat_success": "¡Presencia renovada con éxito!",
   "presence_offline_success": "¡Presencia marcada como desconectada con éxito!",
   "presence_away_success": "¡Presencia marcada como ausente con éxito!",
+  "presence_busy_success": "¡Presencia marcada como ocupado con éxito!",
+  "presence_do_not_disturb_success": "¡Presencia marcada como no molestar con éxito!",
   "server_logs_install_not_found": "¡Registros del servidor no encontrados!",
   "server_logs_install_success": "¡Registros del servidor obtenidos con éxito!",
   "server_reinstall_successfully": "¡Servidor reinstalado con éxito!",
