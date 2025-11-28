@@ -73,11 +73,43 @@ export const initUserPresenceSubscription = async (
     updateUserInList(data.user_id, status);
   };
 
+  const handleForceLogoutEvent = async (data: {
+    event: string;
+    user_id: string;
+  }): Promise<void> => {
+    if (data.user_id !== chatStore.user?.user_id) return;
+
+    const { router } = await import('@/plugins/1.router');
+    const { useAuthStore } = await import('@webcore/stores/auth');
+    const { removeUserData } = await import('./localStorage/user');
+    const { presenceOffline } = await import('./presence');
+    const { getI18n } = await import('@/plugins/i18n');
+    const { EColor } = await import('@core/common/enums/EColor');
+
+    const authStore = useAuthStore();
+    const i18n = getI18n();
+
+    await presenceOffline().catch(() => {});
+
+    authStore.showSnackbar(i18n.global.t('session_ended'), EColor.warning);
+
+    chatStore.clearUser();
+    removeUserData();
+
+    setTimeout(() => {
+      router.replace({ name: 'login' }).catch(() => {});
+    }, 2000);
+  };
+
   await onMessage(channel, (data: any) => {
     if (!data || typeof data !== 'object') return;
 
     if ('event' in data && data.event === 'user_presence') {
       handleUserPresenceEvent(data);
+    }
+
+    if ('event' in data && data.event === 'force_logout') {
+      handleForceLogoutEvent(data).catch(() => {});
     }
   });
 };

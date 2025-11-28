@@ -102,7 +102,7 @@ const sendPresence = async (
 ): Promise<void> => {
   const endpoint = getEndpointForMode(mode, asHeartbeat);
 
-  await axios.post(endpoint, {});
+  await axios.get(endpoint);
 };
 
 const stopHeartbeatLoop = (): void => {
@@ -227,22 +227,11 @@ const bindPresenceListeners = (): void => {
 
     const url = `${import.meta.env.VITE_BACKEND_URL}/v1/presence/offline`;
 
-    if (globalThis.navigator?.sendBeacon) {
-      const headers = {
-        type: 'application/json',
-      };
-      const body = new Blob([JSON.stringify({})], headers);
-      globalThis.navigator.sendBeacon(url, body);
-      return;
-    }
-
     fetch(url, {
-      method: 'POST',
+      method: 'GET',
       headers: {
-        'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: '{}',
       keepalive: true,
     }).catch(() => {});
   };

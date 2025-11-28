@@ -13,37 +13,37 @@ import {
 export default function presenceRoutes(server: FastifyInstance) {
   const presenceController = container.resolve(PresenceController);
 
-  server.post('/presence/online', {
+  server.get('/presence/online', {
     schema: presenceOnlineSchema,
     handler: presenceController.setOnline,
     preHandler: [(request, reply) => server.authenticateJwt(request, reply)],
   });
 
-  server.post('/presence/heartbeat', {
+  server.get('/presence/heartbeat', {
     schema: presenceHeartbeatSchema,
     handler: presenceController.heartbeat,
     preHandler: [(request, reply) => server.authenticateJwt(request, reply)],
   });
 
-  server.post('/presence/offline', {
+  server.get('/presence/offline', {
     schema: presenceOfflineSchema,
     handler: presenceController.setOffline,
     preHandler: [(request, reply) => server.authenticateJwt(request, reply)],
   });
 
-  server.post('/presence/away', {
+  server.get('/presence/away', {
     schema: presenceAwaySchema,
     handler: presenceController.setAway,
     preHandler: [(request, reply) => server.authenticateJwt(request, reply)],
   });
 
-  server.post('/presence/busy', {
+  server.get('/presence/busy', {
     schema: presenceBusySchema,
     handler: presenceController.setBusy,
     preHandler: [(request, reply) => server.authenticateJwt(request, reply)],
   });
 
-  server.post('/presence/do-not-disturb', {
+  server.get('/presence/do-not-disturb', {
     schema: presenceDoNotDisturbSchema,
     handler: presenceController.setDoNotDisturb,
     preHandler: [(request, reply) => server.authenticateJwt(request, reply)],

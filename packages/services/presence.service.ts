@@ -29,6 +29,13 @@ export class PresenceService {
     return `${this.keyPrefix}${userId}`;
   }
 
+  async isUserLoggedIn(userId: string): Promise<boolean> {
+    const key = this.getKey(userId);
+    const exists = await this.redis.exists(key);
+
+    return exists === 1;
+  }
+
   private async refreshPresenceKey(
     userId: string,
     status: EChatUserStatus
