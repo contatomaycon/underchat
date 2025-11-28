@@ -1,10 +1,10 @@
-import axios from '@webcore/axios';
 import { router } from '@/plugins/1.router';
-import { isLoggedIn, getToken } from './localStorage/user';
+import { isLoggedIn } from './localStorage/user';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
-import { ELanguage } from '@core/common/enums/ELanguage';
+import { IPresenceMessage } from '@core/common/interfaces/IPresenceMessage';
+import { publish } from '@webcore/centrifugo';
 
 type PresenceMode = EChatUserStatus;
 
@@ -74,36 +74,28 @@ const resolveTargetMode = (): PresenceMode => {
   return EChatUserStatus.away;
 };
 
-const getEndpointForMode = (
-  mode: PresenceMode,
-  asHeartbeat: boolean
-): string => {
-  if (mode === EChatUserStatus.online) {
-    return asHeartbeat ? '/presence/heartbeat' : '/presence/online';
-  }
-
-  if (mode === EChatUserStatus.away) {
-    return '/presence/away';
-  }
-
-  if (mode === EChatUserStatus.busy) {
-    return '/presence/busy';
-  }
-
-  if (mode === EChatUserStatus.do_not_disturb) {
-    return '/presence/do-not-disturb';
-  }
-
-  return '/presence/offline';
-};
-
 const sendPresence = async (
   mode: PresenceMode,
   asHeartbeat = false
 ): Promise<void> => {
-  const endpoint = getEndpointForMode(mode, asHeartbeat);
+  const userId = chatStore.user?.user_id;
 
-  await axios.get(endpoint);
+  if (!userId) {
+    console.warn('Cannot send presence: user_id not available');
+    return;
+  }
+
+  const channel = 'presence:updates';
+  const message: IPresenceMessage = {
+    event: 'presence_update',
+    user_id: userId,
+    status: mode,
+    is_heartbeat: asHeartbeat,
+  };
+
+  await publish(channel, message).catch((error) => {
+    console.error('Failed to send presence via Centrifugo', error);
+  });
 };
 
 const stopHeartbeatLoop = (): void => {
@@ -214,19 +206,18 @@ const bindPresenceListeners = (): void => {
   const sendOfflineOnUnload = (): void => {
     if (!isLoggedIn()) return;
 
-    const token = getToken();
-    if (!token) return;
+    const userId = chatStore.user?.user_id;
+    if (!userId) return;
 
-    const url = `${import.meta.env.VITE_BACKEND_URL}/v1/presence/offline`;
+    const channel = 'presence:updates';
+    const message: IPresenceMessage = {
+      event: 'presence_update',
+      user_id: userId,
+      status: EChatUserStatus.offline,
+      is_heartbeat: false,
+    };
 
-    fetch(url, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Accept-Language': ELanguage.pt,
-      },
-      keepalive: true,
-    }).catch(() => {});
+    void publish(channel, message).catch(() => {});
   };
 
   globalThis.addEventListener('beforeunload', sendOfflineOnUnload);
