@@ -62,9 +62,9 @@ export class MessageStatusService {
   private hasPatch(patch: MessageSummaryPatch): boolean {
     return Boolean(
       patch &&
-        (patch.is_sent !== undefined ||
-          patch.is_delivered !== undefined ||
-          patch.is_seen !== undefined)
+      (patch.is_sent !== undefined ||
+        patch.is_delivered !== undefined ||
+        patch.is_seen !== undefined)
     );
   }
 
