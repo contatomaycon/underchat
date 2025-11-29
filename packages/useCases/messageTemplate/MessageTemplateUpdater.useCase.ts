@@ -64,139 +64,17 @@ export class MessageTemplateUpdaterUseCase {
     body: UpdateMessageTemplateRequest,
     accountId: string
   ): Promise<boolean> {
-    const messageTemplateExists =
-      await this.messageTemplateService.existsMessageTemplateById(
-        messageTemplateId
-      );
+    await this.ensureMessageTemplateExists(t, messageTemplateId);
+    await this.ensureMessageStatusIsValid(t, body);
 
-    if (!messageTemplateExists) {
-      throw new Error(t('message_template_not_found'));
-    }
+    const attachment = await this.processAttachmentIfPresent(
+      t,
+      body,
+      accountId
+    );
 
-    if (body.message_status_id?.value) {
-      const messageStatusExists =
-        await this.messageTemplateService.existsMessageStatusById(
-          body.message_status_id.value
-        );
-
-      if (!messageStatusExists) {
-        throw new Error(t('message_status_not_found'));
-      }
-    }
-
-    let attachmentUrl:
-      | (UploadFileResponse & {
-          mimetype?: string | null;
-          duration?: number | null;
-          width?: number | null;
-          height?: number | null;
-        })
-      | null = null;
-
-    let mimetype: string | null | undefined = undefined;
-    let duration: number | null | undefined = undefined;
-    let width: number | null | undefined = undefined;
-    let height: number | null | undefined = undefined;
-
-    if (body.attachment_url?.filename) {
-      await this.validateAttachment(body.attachment_url, t);
-
-      const messageType = (body.type?.value || 'text') as EMessageType;
-
-      if (messageType === EMessageType.image) {
-        const result = await this.storageService.uploadImage(
-          body.attachment_url,
-          accountId
-        );
-        if (result) {
-          attachmentUrl = {
-            ...result,
-            mimetype: result.mimetype ?? null,
-            duration: null,
-            width: result.width ?? null,
-            height: result.height ?? null,
-          };
-        }
-      } else if (messageType === EMessageType.video) {
-        const originalBuffer = await body.attachment_url.toBuffer();
-        const originalMimetype = body.attachment_url.mimetype || null;
-
-        const converted = await this.converterService.convertVideo(
-          originalBuffer,
-          originalMimetype
-        );
-
-        const filename =
-          body.attachment_url.filename.replace(/\.[^.]+$/, '') || 'video';
-        const newFilename = `${filename}.${converted.extension}`;
-
-        const uploadResult = await this.storageService.uploadVideoFromBuffer(
-          converted.buffer,
-          newFilename,
-          converted.mimetype,
-          accountId,
-          converted.width,
-          converted.height
-        );
-
-        if (uploadResult) {
-          attachmentUrl = {
-            ...uploadResult,
-            mimetype: converted.mimetype,
-            duration: converted.duration ?? null,
-            width: converted.width ?? null,
-            height: converted.height ?? null,
-          };
-        }
-      } else if (messageType === EMessageType.audio) {
-        const originalBuffer = await body.attachment_url.toBuffer();
-        const originalMimetype = body.attachment_url.mimetype || null;
-
-        const converted = await this.converterService.convertAudio(
-          originalBuffer,
-          originalMimetype,
-          true
-        );
-
-        const filename =
-          body.attachment_url.filename.replace(/\.[^.]+$/, '') || 'audio';
-        const newFilename = `${filename}.${converted.extension}`;
-
-        const uploadResult = await this.storageService.uploadAudioFromBuffer(
-          converted.buffer,
-          newFilename,
-          converted.mimetype,
-          accountId
-        );
-
-        if (uploadResult) {
-          attachmentUrl = {
-            ...uploadResult,
-            mimetype: converted.mimetype,
-            duration: converted.duration ?? null,
-            width: null,
-            height: null,
-          };
-        }
-      }
-    }
-
-    let resolvedAttachmentUrl: string | null | undefined;
-    if (attachmentUrl) {
-      resolvedAttachmentUrl = attachmentUrl.url;
-      mimetype = attachmentUrl.mimetype ?? null;
-      duration = attachmentUrl.duration ?? null;
-      width = attachmentUrl.width ?? null;
-      height = attachmentUrl.height ?? null;
-    } else if (body.attachment_url) {
-      resolvedAttachmentUrl = null;
-      mimetype = null;
-      duration = null;
-      width = null;
-      height = null;
-    } else {
-      resolvedAttachmentUrl = undefined;
-    }
+    const { resolvedAttachmentUrl, mimetype, duration, width, height } =
+      this.resolveAttachmentMetadata(attachment, body);
 
     const inputWithAttachment: IUpdateMessageTemplate = {
       message_template_id: messageTemplateId,
@@ -221,5 +99,231 @@ export class MessageTemplateUpdaterUseCase {
     }
 
     return messageTemplateUpdater;
+  }
+
+  private async ensureMessageTemplateExists(
+    t: TFunction<'translation', undefined>,
+    messageTemplateId: string
+  ): Promise<void> {
+    const messageTemplateExists =
+      await this.messageTemplateService.existsMessageTemplateById(
+        messageTemplateId
+      );
+
+    if (!messageTemplateExists) {
+      throw new Error(t('message_template_not_found'));
+    }
+  }
+
+  private async ensureMessageStatusIsValid(
+    t: TFunction<'translation', undefined>,
+    body: UpdateMessageTemplateRequest
+  ): Promise<void> {
+    const messageStatusId = body.message_status_id?.value;
+    if (!messageStatusId) return;
+
+    const messageStatusExists =
+      await this.messageTemplateService.existsMessageStatusById(
+        messageStatusId
+      );
+
+    if (!messageStatusExists) {
+      throw new Error(t('message_status_not_found'));
+    }
+  }
+
+  private async processAttachmentIfPresent(
+    t: TFunction<'translation', undefined>,
+    body: UpdateMessageTemplateRequest,
+    accountId: string
+  ): Promise<
+    | (UploadFileResponse & {
+        mimetype?: string | null;
+        duration?: number | null;
+        width?: number | null;
+        height?: number | null;
+      })
+    | null
+  > {
+    const file = body.attachment_url;
+    if (!file?.filename) return null;
+
+    await this.validateAttachment(file, t);
+    const messageType = (body.type?.value || 'text') as EMessageType;
+
+    if (messageType === EMessageType.image) {
+      return this.uploadImageAttachment(file, accountId);
+    }
+
+    if (messageType === EMessageType.video) {
+      return this.uploadVideoAttachment(file, accountId);
+    }
+
+    if (messageType === EMessageType.audio) {
+      return this.uploadAudioAttachment(file, accountId);
+    }
+
+    return null;
+  }
+
+  private async uploadImageAttachment(
+    file: UploadFileRequest,
+    accountId: string
+  ): Promise<
+    | (UploadFileResponse & {
+        mimetype?: string | null;
+        duration?: number | null;
+        width?: number | null;
+        height?: number | null;
+      })
+    | null
+  > {
+    const result = await this.storageService.uploadImage(file, accountId);
+    if (!result) {
+      return null;
+    }
+
+    return {
+      ...result,
+      mimetype: result.mimetype ?? null,
+      duration: null,
+      width: result.width ?? null,
+      height: result.height ?? null,
+    };
+  }
+
+  private async uploadVideoAttachment(
+    file: UploadFileRequest,
+    accountId: string
+  ): Promise<
+    | (UploadFileResponse & {
+        mimetype?: string | null;
+        duration?: number | null;
+        width?: number | null;
+        height?: number | null;
+      })
+    | null
+  > {
+    const originalBuffer = await file.toBuffer();
+    const originalMimetype = file.mimetype || null;
+
+    const converted = await this.converterService.convertVideo(
+      originalBuffer,
+      originalMimetype
+    );
+
+    const filename = file.filename.replace(/\.[^.]+$/, '') || 'video';
+    const newFilename = `${filename}.${converted.extension}`;
+
+    const uploadResult = await this.storageService.uploadVideoFromBuffer(
+      converted.buffer,
+      newFilename,
+      converted.mimetype,
+      accountId,
+      converted.width,
+      converted.height
+    );
+
+    if (!uploadResult) {
+      return null;
+    }
+
+    return {
+      ...uploadResult,
+      mimetype: converted.mimetype,
+      duration: converted.duration ?? null,
+      width: converted.width ?? null,
+      height: converted.height ?? null,
+    };
+  }
+
+  private async uploadAudioAttachment(
+    file: UploadFileRequest,
+    accountId: string
+  ): Promise<
+    | (UploadFileResponse & {
+        mimetype?: string | null;
+        duration?: number | null;
+        width?: number | null;
+        height?: number | null;
+      })
+    | null
+  > {
+    const originalBuffer = await file.toBuffer();
+    const originalMimetype = file.mimetype || null;
+
+    const converted = await this.converterService.convertAudio(
+      originalBuffer,
+      originalMimetype,
+      true
+    );
+
+    const filename = file.filename.replace(/\.[^.]+$/, '') || 'audio';
+    const newFilename = `${filename}.${converted.extension}`;
+
+    const uploadResult = await this.storageService.uploadAudioFromBuffer(
+      converted.buffer,
+      newFilename,
+      converted.mimetype,
+      accountId
+    );
+
+    if (!uploadResult) {
+      return null;
+    }
+
+    return {
+      ...uploadResult,
+      mimetype: converted.mimetype,
+      duration: converted.duration ?? null,
+      width: null,
+      height: null,
+    };
+  }
+
+  private resolveAttachmentMetadata(
+    attachment:
+      | (UploadFileResponse & {
+          mimetype?: string | null;
+          duration?: number | null;
+          width?: number | null;
+          height?: number | null;
+        })
+      | null,
+    body: UpdateMessageTemplateRequest
+  ): {
+    resolvedAttachmentUrl: string | null | undefined;
+    mimetype: string | null | undefined;
+    duration: number | null | undefined;
+    width: number | null | undefined;
+    height: number | null | undefined;
+  } {
+    if (attachment) {
+      return {
+        resolvedAttachmentUrl: attachment.url,
+        mimetype: attachment.mimetype ?? null,
+        duration: attachment.duration ?? null,
+        width: attachment.width ?? null,
+        height: attachment.height ?? null,
+      };
+    }
+
+    if (body.attachment_url) {
+      return {
+        resolvedAttachmentUrl: null,
+        mimetype: null,
+        duration: null,
+        width: null,
+        height: null,
+      };
+    }
+
+    return {
+      resolvedAttachmentUrl: undefined,
+      mimetype: undefined,
+      duration: undefined,
+      width: undefined,
+      height: undefined,
+    };
   }
 }

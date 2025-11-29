@@ -226,9 +226,12 @@ const bindPresenceListeners = (): void => {
 bindPresenceListeners();
 
 const isReady = async (): Promise<void> => {
-  await router.isReady();
-
-  refreshPresenceForCurrentRoute();
+  try {
+    await router.isReady();
+    refreshPresenceForCurrentRoute();
+  } catch (error) {
+    console.error('Failed to initialize presence router readiness', error);
+  }
 };
 
-isReady().catch(() => {});
+void isReady();

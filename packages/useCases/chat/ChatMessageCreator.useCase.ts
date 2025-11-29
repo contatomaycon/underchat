@@ -956,25 +956,68 @@ export class ChatMessageCreatorUseCase {
     images: UploadFileRequest[],
     params: IProcessMediaMessagesParams
   ): Promise<boolean> {
-    const {
+    const { chat, chatId, accountId, type, message, messageQuotedId, t, hash } =
+      params;
+
+    const validImages = await this.getValidImages(images, params);
+    if (validImages.length === 0) {
+      return false;
+    }
+
+    const quotedMessage = await this.getQuotedMessageOrThrow(
+      accountId,
+      chatId,
+      messageQuotedId,
+      t
+    );
+    const quotedId = messageQuotedId ?? null;
+
+    const normalizedHash = hash ?? null;
+
+    if (validImages.length === 1) {
+      await this.publishSingleImageMessage(
+        validImages[0],
+        chat,
+        chatId,
+        type,
+        message,
+        quotedId,
+        quotedMessage,
+        normalizedHash
+      );
+      return true;
+    }
+
+    await this.publishMultipleImageMessages(
+      validImages,
       chat,
       chatId,
-      accountId,
       type,
       message,
-      messageQuotedId,
+      quotedId,
+      quotedMessage,
+      normalizedHash
+    );
+
+    return true;
+  }
+
+  private async getValidImages(
+    images: UploadFileRequest[],
+    params: IProcessMediaMessagesParams
+  ): Promise<UploadFileResponse[]> {
+    const {
+      accountId,
       t,
-      hash,
       isQuickMessage,
       quickMessageUrl,
       quickMessageMimetype,
       quickMessageWidth,
       quickMessageHeight,
     } = params;
-    let validImages: UploadFileResponse[];
 
     if (isQuickMessage && quickMessageUrl) {
-      validImages = [
+      return [
         {
           url: quickMessageUrl,
           name: `image.${quickMessageMimetype?.split('/')[1] || 'jpg'}`,
@@ -985,59 +1028,81 @@ export class ChatMessageCreatorUseCase {
           height: quickMessageHeight || null,
         },
       ];
-    } else {
-      try {
-        validImages = await this.uploadImages(images, accountId);
-      } catch (error) {
-        if (error instanceof Error) {
-          if (error.message === 'IMAGE_SIZE_LIMIT_EXCEEDED') {
-            throw new Error(t('image_size_exceeded'));
-          }
-          if (error.message === 'INVALID_IMAGE_FORMAT') {
-            throw new Error(t('invalid_image_format'));
-          }
+    }
+
+    try {
+      return await this.uploadImages(images, accountId);
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.message === 'IMAGE_SIZE_LIMIT_EXCEEDED') {
+          throw new Error(t('image_size_exceeded'));
         }
-
-        throw error;
+        if (error.message === 'INVALID_IMAGE_FORMAT') {
+          throw new Error(t('invalid_image_format'));
+        }
       }
+
+      throw error;
+    }
+  }
+
+  private async getQuotedMessageOrThrow(
+    accountId: string,
+    chatId: string,
+    messageQuotedId: string | null | undefined,
+    t: TFunction<'translation', undefined>
+  ): Promise<IQuotedMessage | null> {
+    if (!messageQuotedId) {
+      return null;
     }
 
-    if (validImages.length === 0) {
-      return false;
+    const quotedMessage = await this.getQuotedMessage(
+      accountId,
+      chatId,
+      messageQuotedId
+    );
+
+    if (!quotedMessage) {
+      throw new Error(t('message_quoted_not_found'));
     }
 
-    let quotedMessage: IQuotedMessage | null = null;
-    if (messageQuotedId) {
-      quotedMessage = await this.getQuotedMessage(
-        accountId,
-        chatId,
-        messageQuotedId
-      );
+    return quotedMessage;
+  }
 
-      if (!quotedMessage) {
-        throw new Error(t('message_quoted_not_found'));
-      }
-    }
+  private async publishSingleImageMessage(
+    imageData: UploadFileResponse,
+    chat: IChat,
+    chatId: string,
+    type: EMessageType,
+    message: string | null,
+    messageQuotedId: string | null,
+    quotedMessage: IQuotedMessage | null,
+    hash: string | null
+  ): Promise<void> {
+    const imageMessage = this.createImageMessage({
+      chat,
+      chatId,
+      type,
+      message,
+      imageData,
+      messageQuotedId,
+      quotedMessage,
+      hash,
+    });
 
-    const quotedId = messageQuotedId ?? null;
+    await this.publishMessage(imageMessage);
+  }
 
-    if (validImages.length === 1) {
-      const imageMessage = this.createImageMessage({
-        chat,
-        chatId,
-        type,
-        message,
-        imageData: validImages[0],
-        messageQuotedId: quotedId,
-        quotedMessage,
-        hash,
-      });
-
-      await this.publishMessage(imageMessage);
-
-      return true;
-    }
-
+  private async publishMultipleImageMessages(
+    validImages: UploadFileResponse[],
+    chat: IChat,
+    chatId: string,
+    type: EMessageType,
+    message: string | null,
+    messageQuotedId: string | null,
+    quotedMessage: IQuotedMessage | null,
+    hash: string | null
+  ): Promise<void> {
     const publishTasks = validImages.map((imageData) => {
       const imageMessage = this.createImageMessage({
         chat,
@@ -1045,7 +1110,7 @@ export class ChatMessageCreatorUseCase {
         type,
         message,
         imageData,
-        messageQuotedId: quotedId,
+        messageQuotedId,
         quotedMessage,
         hash,
       });
@@ -1054,8 +1119,6 @@ export class ChatMessageCreatorUseCase {
     });
 
     await Promise.all(publishTasks);
-
-    return true;
   }
 
   private async processVideoMessages(
@@ -1063,83 +1126,31 @@ export class ChatMessageCreatorUseCase {
     videoDuration: number | null,
     params: IProcessMediaMessagesParams
   ): Promise<boolean> {
-    const {
-      chat,
-      chatId,
-      accountId,
-      type,
-      message,
-      messageQuotedId,
-      t,
-      hash,
-      isQuickMessage,
-      quickMessageUrl,
-      quickMessageMimetype,
-      quickMessageDuration,
-      quickMessageWidth,
-      quickMessageHeight,
-    } = params;
-    let validVideos: UploadFileResponse[];
+    const { chat, chatId, accountId, type, message, messageQuotedId, t, hash } =
+      params;
 
-    if (isQuickMessage && quickMessageUrl) {
-      const finalDuration = videoDuration ?? quickMessageDuration ?? null;
-      validVideos = [
-        {
-          url: quickMessageUrl,
-          name: `video.${quickMessageMimetype?.split('/')[1] || 'mp4'}`,
-          mimetype: quickMessageMimetype || 'video/mp4',
-          size: 0,
-          extension: quickMessageMimetype?.split('/')[1] || 'mp4',
-          width: quickMessageWidth || null,
-          height: quickMessageHeight || null,
-        } as UploadFileResponse & { duration?: number },
-      ];
-      if (finalDuration !== null && validVideos[0]) {
-        (
-          validVideos[0] as UploadFileResponse & { duration?: number }
-        ).duration = finalDuration;
-      }
-    } else {
-      try {
-        validVideos = await this.uploadVideos(videos, accountId);
-      } catch (error) {
-        if (error instanceof Error) {
-          if (error.message === 'VIDEO_SIZE_LIMIT_EXCEEDED') {
-            throw new Error(t('video_size_exceeded'));
-          }
-          if (error.message === 'INVALID_VIDEO_FORMAT') {
-            throw new Error(t('invalid_video_format'));
-          }
-        }
-
-        throw error;
-      }
-    }
-
+    const validVideos = await this.getValidVideos(
+      videos,
+      videoDuration,
+      params
+    );
     if (validVideos.length === 0) {
       return false;
     }
 
-    let quotedMessage: IQuotedMessage | null = null;
-    if (messageQuotedId) {
-      quotedMessage = await this.getQuotedMessage(
-        accountId,
-        chatId,
-        messageQuotedId
-      );
-
-      if (!quotedMessage) {
-        throw new Error(t('message_quoted_not_found'));
-      }
-    }
-
+    const quotedMessage = await this.getQuotedMessageOrThrow(
+      accountId,
+      chatId,
+      messageQuotedId,
+      t
+    );
     const quotedId = messageQuotedId ?? null;
-    const finalVideoDuration =
-      videoDuration ??
-      (isQuickMessage ? quickMessageDuration : null) ??
-      (validVideos[0] as UploadFileResponse & { duration?: number })
-        ?.duration ??
-      null;
+    const normalizedHash = hash ?? null;
+    const finalVideoDuration = this.getFinalVideoDuration(
+      videoDuration,
+      params,
+      validVideos[0] as UploadFileResponse & { duration?: number }
+    );
 
     if (validVideos.length === 1) {
       const videoMessage = this.createVideoMessage(
@@ -1153,7 +1164,7 @@ export class ChatMessageCreatorUseCase {
           quotedMessage,
           videoDuration: finalVideoDuration,
         },
-        hash
+        normalizedHash
       );
 
       await this.publishMessage(videoMessage);
@@ -1165,11 +1176,11 @@ export class ChatMessageCreatorUseCase {
       const videoDataWithDuration = videoData as UploadFileResponse & {
         duration?: number;
       };
-      const finalDuration =
-        videoDuration ??
-        (isQuickMessage ? quickMessageDuration : null) ??
-        videoDataWithDuration.duration ??
-        null;
+      const finalDuration = this.getFinalVideoDuration(
+        videoDuration,
+        params,
+        videoDataWithDuration
+      );
       const videoMessage = this.createVideoMessage(
         {
           chat,
@@ -1181,7 +1192,7 @@ export class ChatMessageCreatorUseCase {
           quotedMessage,
           videoDuration: finalDuration,
         },
-        hash
+        normalizedHash
       );
 
       return this.publishMessage(videoMessage);
@@ -1192,6 +1203,72 @@ export class ChatMessageCreatorUseCase {
     return true;
   }
 
+  private async getValidVideos(
+    videos: UploadFileRequest[],
+    videoDuration: number | null,
+    params: IProcessMediaMessagesParams
+  ): Promise<UploadFileResponse[]> {
+    const {
+      accountId,
+      t,
+      isQuickMessage,
+      quickMessageUrl,
+      quickMessageMimetype,
+      quickMessageDuration,
+      quickMessageWidth,
+      quickMessageHeight,
+    } = params;
+
+    if (isQuickMessage && quickMessageUrl) {
+      const finalDuration = videoDuration ?? quickMessageDuration ?? null;
+      const quickVideo: UploadFileResponse & { duration?: number } = {
+        url: quickMessageUrl,
+        name: `video.${quickMessageMimetype?.split('/')[1] || 'mp4'}`,
+        mimetype: quickMessageMimetype || 'video/mp4',
+        size: 0,
+        extension: quickMessageMimetype?.split('/')[1] || 'mp4',
+        width: quickMessageWidth || null,
+        height: quickMessageHeight || null,
+      };
+
+      if (finalDuration !== null) {
+        quickVideo.duration = finalDuration;
+      }
+
+      return [quickVideo];
+    }
+
+    try {
+      return await this.uploadVideos(videos, accountId);
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.message === 'VIDEO_SIZE_LIMIT_EXCEEDED') {
+          throw new Error(t('video_size_exceeded'));
+        }
+        if (error.message === 'INVALID_VIDEO_FORMAT') {
+          throw new Error(t('invalid_video_format'));
+        }
+      }
+
+      throw error;
+    }
+  }
+
+  private getFinalVideoDuration(
+    videoDuration: number | null,
+    params: IProcessMediaMessagesParams,
+    videoData: UploadFileResponse & { duration?: number }
+  ): number | null {
+    const { isQuickMessage, quickMessageDuration } = params;
+
+    return (
+      videoDuration ??
+      (isQuickMessage ? quickMessageDuration : null) ??
+      videoData.duration ??
+      null
+    );
+  }
+
   private async processAudioMessages(
     audios: UploadFileRequest[],
     audioDuration: number | null,
@@ -1199,71 +1276,34 @@ export class ChatMessageCreatorUseCase {
     isPtt: boolean,
     params: IProcessMediaMessagesParams
   ): Promise<boolean> {
-    const {
-      chat,
-      chatId,
-      accountId,
-      type,
-      message,
-      messageQuotedId,
-      t,
-      hash,
-      isQuickMessage,
-      quickMessageUrl,
-      quickMessageMimetype,
-      quickMessageDuration,
-    } = params;
-    let validAudios: Array<
-      UploadFileResponse & { duration?: number; waveform?: string }
-    >;
+    const { chat, chatId, accountId, type, message, messageQuotedId, t, hash } =
+      params;
 
-    if (isQuickMessage && quickMessageUrl) {
-      const finalDuration = audioDuration ?? quickMessageDuration ?? null;
-      validAudios = [
-        {
-          url: quickMessageUrl,
-          name: `audio.${quickMessageMimetype?.split('/')[1] || 'mp3'}`,
-          mimetype: quickMessageMimetype || 'audio/mpeg',
-          size: 0,
-          extension: quickMessageMimetype?.split('/')[1] || 'mp3',
-          duration: finalDuration ?? undefined,
-        },
-      ];
-    } else {
-      try {
-        validAudios = await this.uploadAudios(audios, accountId, isPtt);
-      } catch (error) {
-        if (error instanceof Error) {
-          if (error.message === 'AUDIO_SIZE_LIMIT_EXCEEDED') {
-            throw new Error(t('audio_size_exceeded'));
-          }
-        }
-
-        throw error;
-      }
-    }
+    const validAudios = await this.getValidAudios(
+      audios,
+      audioDuration,
+      isPtt,
+      params
+    );
 
     if (validAudios.length === 0) {
       return false;
     }
 
-    let quotedMessage: IQuotedMessage | null = null;
-    if (messageQuotedId) {
-      quotedMessage = await this.getQuotedMessage(
-        accountId,
-        chatId,
-        messageQuotedId
-      );
-
-      if (!quotedMessage) {
-        throw new Error(t('message_quoted_not_found'));
-      }
-    }
-
+    const quotedMessage = await this.getQuotedMessageOrThrow(
+      accountId,
+      chatId,
+      messageQuotedId,
+      t
+    );
     const quotedId = messageQuotedId ?? null;
+    const normalizedHash = hash ?? null;
 
     if (validAudios.length === 1) {
-      const finalDuration = audioDuration ?? validAudios[0].duration ?? null;
+      const finalDuration = this.getFinalAudioDuration(
+        audioDuration,
+        validAudios[0]
+      );
       const audioMessage = this.createAudioMessage(
         {
           chat,
@@ -1277,7 +1317,7 @@ export class ChatMessageCreatorUseCase {
           isViewOnce,
           isPtt,
         },
-        hash
+        normalizedHash
       );
 
       await this.publishMessage(audioMessage);
@@ -1286,7 +1326,10 @@ export class ChatMessageCreatorUseCase {
     }
 
     const publishTasks = validAudios.map((audioData) => {
-      const finalDuration = audioDuration ?? audioData.duration ?? null;
+      const finalDuration = this.getFinalAudioDuration(
+        audioDuration,
+        audioData
+      );
       const audioMessage = this.createAudioMessage(
         {
           chat,
@@ -1300,7 +1343,7 @@ export class ChatMessageCreatorUseCase {
           isViewOnce,
           isPtt,
         },
-        hash
+        normalizedHash
       );
 
       return this.publishMessage(audioMessage);
@@ -1309,6 +1352,57 @@ export class ChatMessageCreatorUseCase {
     await Promise.all(publishTasks);
 
     return true;
+  }
+
+  private async getValidAudios(
+    audios: UploadFileRequest[],
+    audioDuration: number | null,
+    isPtt: boolean,
+    params: IProcessMediaMessagesParams
+  ): Promise<
+    Array<UploadFileResponse & { duration?: number; waveform?: string }>
+  > {
+    const {
+      accountId,
+      t,
+      isQuickMessage,
+      quickMessageUrl,
+      quickMessageMimetype,
+      quickMessageDuration,
+    } = params;
+
+    if (isQuickMessage && quickMessageUrl) {
+      const finalDuration = audioDuration ?? quickMessageDuration ?? null;
+      return [
+        {
+          url: quickMessageUrl,
+          name: `audio.${quickMessageMimetype?.split('/')[1] || 'mp3'}`,
+          mimetype: quickMessageMimetype || 'audio/mpeg',
+          size: 0,
+          extension: quickMessageMimetype?.split('/')[1] || 'mp3',
+          duration: finalDuration ?? undefined,
+        },
+      ];
+    }
+
+    try {
+      return await this.uploadAudios(audios, accountId, isPtt);
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.message === 'AUDIO_SIZE_LIMIT_EXCEEDED') {
+          throw new Error(t('audio_size_exceeded'));
+        }
+      }
+
+      throw error;
+    }
+  }
+
+  private getFinalAudioDuration(
+    audioDuration: number | null,
+    audioData: UploadFileResponse & { duration?: number }
+  ): number | null {
+    return audioDuration ?? audioData.duration ?? null;
   }
 
   private async processDocumentMessages(
@@ -1713,47 +1807,21 @@ export class ChatMessageCreatorUseCase {
       throw new Error(t('chat_not_found'));
     }
 
-    const quickMessageTemplateIdRaw = body.quick_message_template_id;
-    const quickMessageTemplateId =
-      quickMessageTemplateIdRaw === null ||
-      quickMessageTemplateIdRaw === undefined
-        ? null
-        : typeof quickMessageTemplateIdRaw === 'string'
-          ? quickMessageTemplateIdRaw
-          : quickMessageTemplateIdRaw.value || null;
-
-    let templateType: EMessageType | null = null;
-    let templateMessage: string | null = null;
-    let isQuickMessage = false;
-    let quickMessageUrl: string | null = null;
-    let quickMessageMimetype: string | null = null;
-    let quickMessageDuration: number | null = null;
-    let quickMessageWidth: number | null = null;
-    let quickMessageHeight: number | null = null;
-
-    if (quickMessageTemplateId) {
-      const template =
-        await this.messageTemplateService.viewMessageTemplateById(
-          quickMessageTemplateId
-        );
-
-      if (!template) {
-        throw new Error(t('message_template_not_found'));
-      }
-
-      if (template.account.account_id !== accountId) {
-        throw new Error(t('message_template_not_found'));
-      }
-
-      templateType = template.type as EMessageType;
-      templateMessage = template.message || null;
-      isQuickMessage = true;
-      quickMessageUrl = template.attachment_url || null;
-      quickMessageMimetype = template.mimetype || null;
-      quickMessageDuration = template.duration || null;
-      quickMessageWidth = template.width || null;
-      quickMessageHeight = template.height || null;
-    }
+    const quickTemplateData = await this.resolveQuickMessageTemplate(
+      t,
+      accountId,
+      body
+    );
+    const {
+      templateType,
+      templateMessage,
+      isQuickMessage,
+      quickMessageUrl,
+      quickMessageMimetype,
+      quickMessageDuration,
+      quickMessageWidth,
+      quickMessageHeight,
+    } = quickTemplateData;
 
     const type = templateType || this.normalizeType(body.type);
 
@@ -1824,18 +1892,143 @@ export class ChatMessageCreatorUseCase {
       return mediaResult;
     }
 
+    return this.processContentMessages({
+      chat,
+      chatId: params.chat_id,
+      accountId,
+      type,
+      message,
+      messageQuotedId,
+      contacts: contacts as string[],
+      images,
+      locationLatitude,
+      locationLongitude,
+      locationName,
+      locationAddress,
+      isQuickMessage,
+      quickMessageUrl,
+      quickMessageMimetype,
+      quickMessageWidth,
+      quickMessageHeight,
+      linkPreview: body.link_preview,
+      t,
+      hash,
+    });
+  }
+
+  private async resolveQuickMessageTemplate(
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    body: CreateMessageChatsBody
+  ): Promise<{
+    templateType: EMessageType | null;
+    templateMessage: string | null;
+    isQuickMessage: boolean;
+    quickMessageUrl: string | null;
+    quickMessageMimetype: string | null;
+    quickMessageDuration: number | null;
+    quickMessageWidth: number | null;
+    quickMessageHeight: number | null;
+  }> {
+    const quickMessageTemplateIdRaw = body.quick_message_template_id;
+    let quickMessageTemplateId: string | null = null;
+
+    if (typeof quickMessageTemplateIdRaw === 'string') {
+      quickMessageTemplateId = quickMessageTemplateIdRaw;
+    } else if (
+      quickMessageTemplateIdRaw &&
+      typeof quickMessageTemplateIdRaw === 'object' &&
+      'value' in quickMessageTemplateIdRaw
+    ) {
+      quickMessageTemplateId = quickMessageTemplateIdRaw.value || null;
+    }
+
+    if (!quickMessageTemplateId) {
+      return {
+        templateType: null,
+        templateMessage: null,
+        isQuickMessage: false,
+        quickMessageUrl: null,
+        quickMessageMimetype: null,
+        quickMessageDuration: null,
+        quickMessageWidth: null,
+        quickMessageHeight: null,
+      };
+    }
+
+    const template = await this.messageTemplateService.viewMessageTemplateById(
+      quickMessageTemplateId
+    );
+
+    if (!template || template.account.account_id !== accountId) {
+      throw new Error(t('message_template_not_found'));
+    }
+
+    return {
+      templateType: template.type as EMessageType,
+      templateMessage: template.message || null,
+      isQuickMessage: true,
+      quickMessageUrl: template.attachment_url || null,
+      quickMessageMimetype: template.mimetype || null,
+      quickMessageDuration: template.duration || null,
+      quickMessageWidth: template.width || null,
+      quickMessageHeight: template.height || null,
+    };
+  }
+
+  private async processContentMessages(options: {
+    chat: IChat;
+    chatId: string;
+    accountId: string;
+    type: EMessageType;
+    message: string | null;
+    messageQuotedId: string | null;
+    contacts: string[];
+    images: UploadFileRequest[];
+    locationLatitude: number | null;
+    locationLongitude: number | null;
+    locationName: string | null;
+    locationAddress: string | null;
+    isQuickMessage: boolean;
+    quickMessageUrl: string | null;
+    quickMessageMimetype: string | null;
+    quickMessageWidth: number | null;
+    quickMessageHeight: number | null;
+    linkPreview: CreateMessageChatsBody['link_preview'];
+    t: TFunction<'translation', undefined>;
+    hash: string | null;
+  }): Promise<boolean> {
+    const {
+      chat,
+      chatId,
+      accountId,
+      type,
+      message,
+      messageQuotedId,
+      contacts,
+      images,
+      locationLatitude,
+      locationLongitude,
+      locationName,
+      locationAddress,
+      isQuickMessage,
+      quickMessageUrl,
+      quickMessageMimetype,
+      quickMessageWidth,
+      quickMessageHeight,
+      linkPreview,
+      t,
+      hash,
+    } = options;
+
     if (contacts.length > 0) {
       const quotedMessage = messageQuotedId
-        ? await this.getQuotedMessage(
-            accountId,
-            params.chat_id,
-            messageQuotedId
-          )
+        ? await this.getQuotedMessage(accountId, chatId, messageQuotedId)
         : null;
 
       return this.processContactMessages(contacts, {
         chat,
-        chatId: params.chat_id,
+        chatId,
         type: EMessageType.contact_card,
         message,
         messageQuotedId,
@@ -1850,16 +2043,12 @@ export class ChatMessageCreatorUseCase {
       locationLongitude !== null
     ) {
       const quotedMessage = messageQuotedId
-        ? await this.getQuotedMessage(
-            accountId,
-            params.chat_id,
-            messageQuotedId
-          )
+        ? await this.getQuotedMessage(accountId, chatId, messageQuotedId)
         : null;
 
       return this.processLocationMessage({
         chat,
-        chatId: params.chat_id,
+        chatId,
         type: EMessageType.location,
         message,
         messageQuotedId,
@@ -1878,7 +2067,7 @@ export class ChatMessageCreatorUseCase {
     ) {
       return this.processImageMessages(images, {
         chat,
-        chatId: params.chat_id,
+        chatId,
         accountId,
         type,
         message,
@@ -1895,12 +2084,12 @@ export class ChatMessageCreatorUseCase {
 
     return this.processTextMessage({
       chat,
-      chatId: params.chat_id,
+      chatId,
       accountId,
       type,
       message,
       messageQuotedId,
-      linkPreview: body.link_preview,
+      linkPreview,
       t,
       hash,
     });

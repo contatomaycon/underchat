@@ -1973,7 +1973,12 @@ export const useChatStore = defineStore('chat', {
         }
 
         return data.data;
-      } catch (error) {
+      } catch {
+        this.showSnackbar(
+          this.i18n.global.t('label_template_all_list_error'),
+          EColor.error
+        );
+
         return null;
       }
     },

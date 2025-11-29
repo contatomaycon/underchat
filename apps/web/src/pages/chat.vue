@@ -63,7 +63,6 @@ import data from 'emoji-mart-vue-fast/data/all.json';
 import 'emoji-mart-vue-fast/css/emoji-mart.css';
 import { useI18n } from 'vue-i18n';
 import { MglMap, MglMarker } from 'vue-maplibre-gl';
-import { formatDate } from '@/@webcore/utils/formatters';
 
 const emojiIndex = new EmojiIndex(data);
 const { t } = useI18n();
@@ -3579,10 +3578,10 @@ const sendQuickMessage = async () => {
     });
   }
 
-  if (!success) {
-    markUploadError(hash);
-  } else {
+  if (success) {
     finalizeSend();
+  } else {
+    markUploadError(hash);
   }
 };
 
@@ -5672,9 +5671,9 @@ onBeforeUnmount(() => {
           </VCol>
 
           <VCol cols="12" md="6">
-            <label class="text-body-2 mb-1">
+            <span class="text-body-2 mb-1 d-inline-block">
               {{ $t('label') + ':' }}
-            </label>
+            </span>
             <div
               v-if="selectedContactDetails.label_template"
               class="d-flex align-center mt-1"
@@ -5696,12 +5695,7 @@ onBeforeUnmount(() => {
                 }}
               </span>
             </div>
-            <div
-              v-else
-              class="text-body-2 text-medium-emphasis mt-1"
-            >
-              -
-            </div>
+            <div v-else class="text-body-2 text-medium-emphasis mt-1">-</div>
           </VCol>
         </VRow>
         <VRow>
@@ -6900,13 +6894,6 @@ $chat-app-header-height: 76px;
   border-bottom: 0.5px solid;
   border-left: none;
   border-radius: 0 4px 4px 0;
-}
-
-.label-color-circle {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  flex-shrink: 0;
 }
 
 .audio-modal-progress-bar {

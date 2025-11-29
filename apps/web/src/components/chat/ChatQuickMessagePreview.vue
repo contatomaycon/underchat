@@ -2,7 +2,6 @@
 import { computed, ref, onUnmounted } from 'vue';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { formatDate } from '@/@webcore/utils/formatters';
-import { EMessageType } from '@core/common/enums/EMessageType';
 import type { ListQuickMessageTemplatesResponse } from '@core/schema/chat/listQuickMessageTemplates/response.schema';
 
 const props = defineProps<{
@@ -224,7 +223,11 @@ const hasPhoto = computed(() => {
                   @click="toggleAudioPlay"
                 >
                   <VIcon size="18">
-                    {{ isAudioPlaying ? 'tabler-player-pause' : 'tabler-player-play' }}
+                    {{
+                      isAudioPlaying
+                        ? 'tabler-player-pause'
+                        : 'tabler-player-play'
+                    }}
                   </VIcon>
                 </VBtn>
                 <div class="audio-waveform-container">
