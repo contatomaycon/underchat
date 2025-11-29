@@ -691,6 +691,7 @@ const loadTransferUsers = async () => {
     transferUsers.value = users.map((user) => ({
       value: user.id,
       title: user.name,
+      photo: user.photo || null,
       status: user.status || null,
     }));
   } catch (error) {
@@ -726,6 +727,7 @@ const loadTransferSectorUsers = async (sectorId: string) => {
     transferSectorUsers.value = users.map((user) => ({
       value: user.id,
       title: user.name,
+      photo: user.photo || null,
       status: user.status,
     }));
   } catch (error) {
@@ -5496,6 +5498,20 @@ onBeforeUnmount(() => {
                         "
                         :active="selectedTransferUser === item.value"
                       >
+                        <template #prepend>
+                          <VAvatar
+                            size="32"
+                            :variant="!item.photo ? 'tonal' : undefined"
+                            color="primary"
+                          >
+                            <VImg
+                              v-if="item.photo"
+                              :src="item.photo"
+                              :alt="item.title"
+                            />
+                            <VIcon v-else icon="tabler-user" size="18" />
+                          </VAvatar>
+                        </template>
                         <VListItemTitle>
                           <template
                             v-if="
@@ -5653,6 +5669,20 @@ onBeforeUnmount(() => {
                           "
                           :active="selectedTransferSectorUser === item.value"
                         >
+                          <template #prepend>
+                            <VAvatar
+                              size="32"
+                              :variant="!item.photo ? 'tonal' : undefined"
+                              color="primary"
+                            >
+                              <VImg
+                                v-if="item.photo"
+                                :src="item.photo"
+                                :alt="item.title"
+                              />
+                              <VIcon v-else icon="tabler-user" size="18" />
+                            </VAvatar>
+                          </template>
                           <VListItemTitle>
                             <template
                               v-if="
