@@ -89,6 +89,7 @@ const attachmentFile = ref<File | null>(null);
 const filePreview = ref<FilePreview | null>(null);
 const fileInputKey = ref(0);
 const fileSizeError = ref<string | null>(null);
+const isLoading = ref(false);
 const previewDialog = ref<{
   open: boolean;
   src: string | null;
@@ -302,20 +303,26 @@ const addMessageTemplate = async () => {
     return;
   }
 
-  const form = new FormData();
-  form.append('message', message.value ?? '');
-  form.append('command', command.value ?? '');
-  form.append('message_status_id', message_status_id.value ?? '');
-  form.append('type', selectedType.value);
-  if (attachmentFile.value) {
-    form.append('attachment_url', attachmentFile.value);
-  }
+  isLoading.value = true;
 
-  const result = await messageTemplateStore.addMessageTemplate(form as any);
+  try {
+    const form = new FormData();
+    form.append('message', message.value ?? '');
+    form.append('command', command.value ?? '');
+    form.append('message_status_id', message_status_id.value ?? '');
+    form.append('type', selectedType.value);
+    if (attachmentFile.value) {
+      form.append('attachment_url', attachmentFile.value);
+    }
 
-  if (result) {
-    isVisible.value = false;
-    await messageTemplateStore.listMessageTemplate();
+    const result = await messageTemplateStore.addMessageTemplate(form as any);
+
+    if (result) {
+      isVisible.value = false;
+      await messageTemplateStore.listMessageTemplate();
+    }
+  } finally {
+    isLoading.value = false;
   }
 };
 
@@ -377,17 +384,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <VDialog v-model="isVisible" max-width="600">
-    <DialogCloseBtn @click="isVisible = false" />
-
-    <template v-if="messageTemplateStore.loading">
-      <VOverlay
-        :model-value="messageTemplateStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
+  <VDialog v-model="isVisible" max-width="600" :persistent="isLoading">
+    <DialogCloseBtn :disabled="isLoading" @click="isVisible = false" />
 
     <VForm ref="refFormAddMessageTemplate" @submit.prevent>
       <VCard :title="$t('add_message_template')">
@@ -621,10 +619,17 @@ onBeforeUnmount(() => {
         </VCardText>
 
         <VCardText class="d-flex justify-end flex-wrap gap-3">
-          <VBtn variant="tonal" color="secondary" @click="isVisible = false">
+          <VBtn
+            variant="tonal"
+            color="secondary"
+            :disabled="isLoading"
+            @click="isVisible = false"
+          >
             {{ $t('cancel') }}
           </VBtn>
-          <VBtn @click="addMessageTemplate"> {{ $t('add') }} </VBtn>
+          <VBtn :loading="isLoading" @click="addMessageTemplate">
+            {{ $t('add') }}
+          </VBtn>
         </VCardText>
       </VCard>
     </VForm>

@@ -94,6 +94,7 @@ const existingAttachmentUrl = ref<string | null>(null);
 const hasNewFile = ref(false);
 const fileInputKey = ref(0);
 const fileSizeError = ref<string | null>(null);
+const isLoading = ref(false);
 const previewDialog = ref<{
   open: boolean;
   src: string | null;
@@ -304,9 +305,6 @@ const updateMessageTemplate = async () => {
     return;
   }
 
-  // Para tipos imagem/vídeo/áudio o anexo é obrigatório:
-  // - Se há novo arquivo, ele precisa estar válido (attachmentFile + preview)
-  // - Se não há novo arquivo, precisa existir um anexo já salvo (existingAttachmentUrl)
   if (showFileInput.value) {
     const hasExisting = !!existingAttachmentUrl.value;
     const hasNewValidFile =
@@ -317,27 +315,33 @@ const updateMessageTemplate = async () => {
     }
   }
 
-  const payload: EditMessageTemplateParamsRequest = {
-    message_template_id: messageTemplateId.value,
-  };
+  isLoading.value = true;
 
-  const form = new FormData();
-  form.append('message', message.value ?? '');
-  form.append('command', command.value ?? '');
-  form.append('message_status_id', message_status_id.value ?? '');
-  form.append('type', selectedType.value);
-  if (attachmentFile.value && hasNewFile.value) {
-    form.append('attachment_url', attachmentFile.value);
-  }
+  try {
+    const payload: EditMessageTemplateParamsRequest = {
+      message_template_id: messageTemplateId.value,
+    };
 
-  const result = await messageTemplateStore.updateMessageTemplate(
-    payload,
-    form as any
-  );
+    const form = new FormData();
+    form.append('message', message.value ?? '');
+    form.append('command', command.value ?? '');
+    form.append('message_status_id', message_status_id.value ?? '');
+    form.append('type', selectedType.value);
+    if (attachmentFile.value && hasNewFile.value) {
+      form.append('attachment_url', attachmentFile.value);
+    }
 
-  if (result) {
-    isVisible.value = false;
-    await messageTemplateStore.listMessageTemplate();
+    const result = await messageTemplateStore.updateMessageTemplate(
+      payload,
+      form as any
+    );
+
+    if (result) {
+      isVisible.value = false;
+      await messageTemplateStore.listMessageTemplate();
+    }
+  } finally {
+    isLoading.value = false;
   }
 };
 
@@ -392,12 +396,12 @@ watch(
       resetForm();
       const messageTemplate =
         await messageTemplateStore.getMessageTemplateById(id);
-  if (messageTemplate) {
-    message.value = messageTemplate.message;
-    command.value = messageTemplate.command;
-    message_status_id.value =
-      messageTemplate.message_status?.message_status_id ?? null;
-    existingAttachmentUrl.value = messageTemplate?.attachment_url ?? null;
+      if (messageTemplate) {
+        message.value = messageTemplate.message;
+        command.value = messageTemplate.command;
+        message_status_id.value =
+          messageTemplate.message_status?.message_status_id ?? null;
+        existingAttachmentUrl.value = messageTemplate?.attachment_url ?? null;
         selectedType.value =
           (messageTemplate.type as EMessageType) || EMessageType.text;
       }
@@ -416,17 +420,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <VDialog v-model="isVisible" max-width="600">
-    <DialogCloseBtn @click="isVisible = false" />
-
-    <template v-if="messageTemplateStore.loading">
-      <VOverlay
-        :model-value="messageTemplateStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
+  <VDialog v-model="isVisible" max-width="600" :persistent="isLoading">
+    <DialogCloseBtn :disabled="isLoading" @click="isVisible = false" />
 
     <VForm ref="refFormEditMessageTemplate" @submit.prevent>
       <VCard :title="$t('edit_message_template')">
@@ -463,37 +458,37 @@ onBeforeUnmount(() => {
             </VCol>
 
             <template v-if="showFileInput">
-            <VCol cols="12">
-              <VLabel class="text-body-2 mb-1">{{ $t('file') + ':' }}</VLabel>
-              <VFileInput
+              <VCol cols="12">
+                <VLabel class="text-body-2 mb-1">{{ $t('file') + ':' }}</VLabel>
+                <VFileInput
                   :key="fileInputKey"
-                variant="outlined"
-                density="comfortable"
-                :placeholder="$t('select_file')"
+                  variant="outlined"
+                  density="comfortable"
+                  :placeholder="$t('select_file')"
                   :accept="acceptedFileTypes"
-                show-size
+                  show-size
                   :chips="!!attachmentFile"
-                :clearable="true"
-                hide-details="auto"
-                :prepend-icon="''"
-                @update:model-value="onFileChange"
-                class="w-100"
-              >
-                <template #prepend-inner>
-                  <VIcon icon="tabler-upload" />
-                </template>
-              </VFileInput>
+                  :clearable="true"
+                  hide-details="auto"
+                  :prepend-icon="''"
+                  @update:model-value="onFileChange"
+                  class="w-100"
+                >
+                  <template #prepend-inner>
+                    <VIcon icon="tabler-upload" />
+                  </template>
+                </VFileInput>
                 <small
                   v-if="fileSizeError"
                   class="text-caption text-error mt-1 d-block"
                 >
                   {{ fileSizeError }}
                 </small>
-              <div v-if="existingAttachmentUrl && !hasNewFile" class="mt-2">
-                <VChip
-                  size="small"
-                  variant="tonal"
-                  color="primary"
+                <div v-if="existingAttachmentUrl && !hasNewFile" class="mt-2">
+                  <VChip
+                    size="small"
+                    variant="tonal"
+                    color="primary"
                     class="cursor-pointer"
                     @click="
                       openPreview(
@@ -502,17 +497,17 @@ onBeforeUnmount(() => {
                         selectedType
                       )
                     "
-                >
-                  <VIcon start icon="tabler-paperclip" class="mr-1" />
+                  >
+                    <VIcon start icon="tabler-paperclip" class="mr-1" />
                     {{ $t('click_to_preview') }}
-                </VChip>
-              </div>
+                  </VChip>
+                </div>
                 <small
                   v-if="!fileSizeError"
                   class="text-caption text-medium-emphasis mt-1 d-block"
                 >
                   <template v-if="selectedType === EMessageType.image">
-                {{ $t('msg_image_pdf_or_audio') }}
+                    {{ $t('msg_image_pdf_or_audio') }}
                   </template>
                   <template v-else-if="selectedType === EMessageType.video">
                     {{ $t('msg_video_file') }}
@@ -520,7 +515,7 @@ onBeforeUnmount(() => {
                   <template v-else-if="selectedType === EMessageType.audio">
                     {{ $t('msg_audio_file') }}
                   </template>
-              </small>
+                </small>
               </VCol>
               <VCol cols="12">
                 <label class="text-body-2 mb-1" for="message-caption">
@@ -678,10 +673,17 @@ onBeforeUnmount(() => {
         </VCardText>
 
         <VCardText class="d-flex justify-end flex-wrap gap-3">
-          <VBtn variant="tonal" color="secondary" @click="isVisible = false">
+          <VBtn
+            variant="tonal"
+            color="secondary"
+            :disabled="isLoading"
+            @click="isVisible = false"
+          >
             {{ $t('cancel') }}
           </VBtn>
-          <VBtn @click="updateMessageTemplate"> {{ $t('save') }} </VBtn>
+          <VBtn :loading="isLoading" @click="updateMessageTemplate">
+            {{ $t('save') }}
+          </VBtn>
         </VCardText>
       </VCard>
     </VForm>
