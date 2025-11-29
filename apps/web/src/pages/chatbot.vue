@@ -3,18 +3,19 @@ import { ref } from 'vue';
 import { VueFlow } from '@vue-flow/core';
 import type { Node, Edge, Connection, NodeChange } from '@vue-flow/core';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
-import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { EChatboxPermissions } from '@core/common/enums/EPermissions/chatbox';
 import ChatbotMenuNode from '@/components/chatbot/ChatbotMenuNode.vue';
 import ChatbotStartNode from '@/components/chatbot/ChatbotStartNode.vue';
 import ChatbotSatisfactionNode from '@/components/chatbot/ChatbotSatisfactionNode.vue';
+import ChatbotRedirectNode from '@/components/chatbot/ChatbotRedirectNode.vue';
 
 definePage({
   meta: {
     permissions: [
       EGeneralPermissions.full_access,
       EGeneralPermissions.full_access_group,
-      EChatPermissions.chat_group,
-      EChatPermissions.chat_access,
+      EChatboxPermissions.chatbox_group,
+      EChatboxPermissions.chatbox_access,
     ],
   },
 });
@@ -23,6 +24,7 @@ const nodeTypes = {
   menu: ChatbotMenuNode,
   start: ChatbotStartNode,
   satisfaction: ChatbotSatisfactionNode,
+  redirect: ChatbotRedirectNode,
 };
 
 const initialNodes: Node[] = [
@@ -84,6 +86,25 @@ const addSatisfactionNode = () => {
       title: '',
       message: '',
       options: [],
+      onRemove: () => removeNode(newNode.id),
+    },
+  };
+  nodes.value.push(newNode);
+};
+
+const addRedirectNode = () => {
+  const newNode: Node = {
+    id: `redirect-${nodeIdCounter++}`,
+    type: 'redirect',
+    position: {
+      x: Math.random() * 400 + 100,
+      y: Math.random() * 300 + 100,
+    },
+    data: {
+      redirectType: null,
+      selectedUser: null,
+      selectedSector: null,
+      selectedSectorUser: null,
       onRemove: () => removeNode(newNode.id),
     },
   };
@@ -160,6 +181,12 @@ const onNodesChange = (changes: NodeChange[]) => {
             <VBtn color="warning" @click="addSatisfactionNode">
               <VIcon icon="tabler-star" class="me-2" />
               Satisfação
+            </VBtn>
+            <VDivider class="my-2" />
+            <div class="text-caption text-medium-emphasis mb-2">Ações</div>
+            <VBtn color="info" @click="addRedirectNode">
+              <VIcon icon="tabler-arrow-forward" class="me-2" />
+              Redirecionar Atendimento
             </VBtn>
           </div>
           <div class="vertical-divider" />

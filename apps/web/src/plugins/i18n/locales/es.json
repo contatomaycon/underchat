@@ -1104,5 +1104,8 @@
     "simultaneous_attendance_limit_reached": "Ha alcanzado el límite de atenciones simultáneas permitidas para este canal. Límite: {limit} atención(es).",
     "simultaneous_attendance_limit_reached_title": "Límite de atenciones alcanzado",
     "simultaneous_attendance_limit_message": "Puede atender hasta {limit} atención(es) simultánea(s). Su límite ha sido alcanzado.",
-    "attendance_only_online_required": "Necesita estar en línea para atender este chat."
+    "attendance_only_online_required": "Necesita estar en línea para atender este chat.",
+    "error_loading_chatbox_users": "Ocurrió un error al cargar los usuarios del chatbox. Por favor, inténtalo de nuevo.",
+    "error_loading_chatbox_sectors": "Ocurrió un error al cargar los sectores del chatbox. Por favor, inténtalo de nuevo.",
+    "error_loading_chatbox_sector_users": "Ocurrió un error al cargar los usuarios del sector del chatbox. Por favor, inténtalo de nuevo."
 }

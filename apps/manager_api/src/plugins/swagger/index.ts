@@ -111,6 +111,10 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
           description:
             'End-points relacionados à atribuições de grupos de contatos',
         },
+        {
+          name: ETagSwagger.chatbox,
+          description: 'End-points relacionados à chatbox',
+        },
       ],
     },
   });
