@@ -48,7 +48,7 @@ const updateNodeData = () => {
 
 const addOption = () => {
   const newOption: MenuOption = {
-    id: `option-${Date.now()}-${Math.random()}`,
+    id: `option-${crypto.randomUUID()}`,
     text: '',
   };
   menuData.value.options.push(newOption);
@@ -344,13 +344,7 @@ watch(
   display: flex;
   align-items: center;
   padding: 4px;
-}
-
-.option-drag-handle {
   cursor: grab;
-  display: flex;
-  align-items: center;
-  padding: 4px;
 }
 
 .option-drag-handle:active {

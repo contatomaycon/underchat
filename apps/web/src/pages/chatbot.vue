@@ -49,6 +49,13 @@ const edges = ref<Edge[]>(initialEdges);
 
 let nodeIdCounter = 2;
 
+// Função auxiliar para gerar números aleatórios criptograficamente seguros
+const getSecureRandom = (max: number, min = 0): number => {
+  const array = new Uint32Array(1);
+  crypto.getRandomValues(array);
+  return (array[0] / (0xffffffff + 1)) * (max - min) + min;
+};
+
 const removeNode = (nodeId: string) => {
   const nodeIndex = nodes.value.findIndex((n) => n.id === nodeId);
   if (nodeIndex > -1) {
@@ -65,8 +72,8 @@ const addMenuNode = () => {
     id: `menu-${nodeIdCounter++}`,
     type: 'menu',
     position: {
-      x: Math.random() * 400 + 100,
-      y: Math.random() * 300 + 100,
+      x: getSecureRandom(400) + 100,
+      y: getSecureRandom(300) + 100,
     },
     data: {
       title: '',
@@ -83,8 +90,8 @@ const addSatisfactionNode = () => {
     id: `satisfaction-${nodeIdCounter++}`,
     type: 'satisfaction',
     position: {
-      x: Math.random() * 400 + 100,
-      y: Math.random() * 300 + 100,
+      x: getSecureRandom(400) + 100,
+      y: getSecureRandom(300) + 100,
     },
     data: {
       title: '',
@@ -101,8 +108,8 @@ const addRedirectNode = () => {
     id: `redirect-${nodeIdCounter++}`,
     type: 'redirect',
     position: {
-      x: Math.random() * 400 + 100,
-      y: Math.random() * 300 + 100,
+      x: getSecureRandom(400) + 100,
+      y: getSecureRandom(300) + 100,
     },
     data: {
       redirectType: null,
@@ -120,8 +127,8 @@ const addFinishNode = () => {
     id: `finish-${nodeIdCounter++}`,
     type: 'finish',
     position: {
-      x: Math.random() * 400 + 100,
-      y: Math.random() * 300 + 100,
+      x: getSecureRandom(400) + 100,
+      y: getSecureRandom(300) + 100,
     },
     data: {
       onRemove: () => removeNode(newNode.id),
@@ -135,8 +142,8 @@ const addTagNode = () => {
     id: `tag-${nodeIdCounter++}`,
     type: 'tag',
     position: {
-      x: Math.random() * 400 + 100,
-      y: Math.random() * 300 + 100,
+      x: getSecureRandom(400) + 100,
+      y: getSecureRandom(300) + 100,
     },
     data: {
       tagType: null,
@@ -169,14 +176,14 @@ const onConnect = (connection: Connection) => {
 };
 
 const onNodesChange = (changes: NodeChange[]) => {
-  changes.forEach((change) => {
+  for (const change of changes) {
     if (
       change.type === 'position' &&
       change.dragging === false &&
       change.position
     ) {
       const draggedNode = nodes.value.find((n) => n.id === change.id);
-      if (!draggedNode) return;
+      if (!draggedNode) continue;
 
       const otherNodes = nodes.value.filter((n) => n.id !== draggedNode.id);
       for (const otherNode of otherNodes) {
@@ -200,7 +207,7 @@ const onNodesChange = (changes: NodeChange[]) => {
         }
       }
     }
-  });
+  }
 };
 </script>
 
