@@ -15,9 +15,9 @@ import { EColor } from '@core/common/enums/EColor';
 
 const chatStore = useChatStore();
 const { items: countryCodes } = useCountryCodes();
-const labelTemplates = ref<Array<{ label_template_id: string; label: string }>>(
-  []
-);
+const labelTemplates = ref<
+  Array<{ label_template_id: string; label: string; color?: string }>
+>([]);
 
 const { t } = useI18n();
 
@@ -1273,6 +1273,7 @@ onMounted(() => {
 
           <VCol cols="12" md="6">
             <AppSelect
+              class="label-select"
               v-model="label_template_id"
               :items="itemsLabel"
               item-title="title"
@@ -1292,13 +1293,13 @@ onMounted(() => {
                 </VListItem>
               </template>
               <template #selection="{ item }">
-                <div v-if="item.raw" class="d-flex align-center">
+                <div v-if="item.raw" class="d-flex align-center gap-2">
                   <div
                     v-if="item.raw.color"
                     class="label-color-circle"
                     :style="{ backgroundColor: item.raw.color }"
                   />
-                  <span class="ms-2">{{ item.raw.title }}</span>
+                  <span>{{ item.raw.title }}</span>
                 </div>
               </template>
             </AppSelect>
@@ -1499,5 +1500,12 @@ onMounted(() => {
   bottom: -6px;
   right: -6px;
   cursor: nwse-resize;
+}
+
+.label-color-circle {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 </style>

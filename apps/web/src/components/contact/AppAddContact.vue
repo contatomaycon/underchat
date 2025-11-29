@@ -98,6 +98,7 @@ const itemsLabel = computed(() =>
   (labelTemplateStore.listAll ?? []).map((item) => ({
     value: item.label_template_id,
     title: item.label,
+    color: item.color,
   }))
 );
 
@@ -974,13 +975,36 @@ watch(
 
             <VCol cols="12" md="6">
               <AppSelect
+                class="label-select"
                 v-model="label_template_id"
                 :items="itemsLabel"
                 item-title="title"
                 item-value="value"
                 :label="$t('label') + ':'"
                 :placeholder="$t('select_label')"
-              />
+              >
+                <template #item="{ props, item }">
+                  <VListItem v-bind="props">
+                    <template #prepend>
+                      <div
+                        v-if="item.raw.color"
+                        class="label-color-circle"
+                        :style="{ backgroundColor: item.raw.color }"
+                      />
+                    </template>
+                  </VListItem>
+                </template>
+                <template #selection="{ item }">
+                  <div v-if="item.raw" class="d-flex align-center gap-2">
+                    <div
+                      v-if="item.raw.color"
+                      class="label-color-circle"
+                      :style="{ backgroundColor: item.raw.color }"
+                    />
+                    <span>{{ item.raw.title }}</span>
+                  </div>
+                </template>
+              </AppSelect>
             </VCol>
           </VRow>
           <VRow>
