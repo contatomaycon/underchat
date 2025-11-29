@@ -6,6 +6,7 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import ChatbotMenuNode from '@/components/chatbot/ChatbotMenuNode.vue';
 import ChatbotStartNode from '@/components/chatbot/ChatbotStartNode.vue';
+import ChatbotSatisfactionNode from '@/components/chatbot/ChatbotSatisfactionNode.vue';
 
 definePage({
   meta: {
@@ -21,6 +22,7 @@ definePage({
 const nodeTypes = {
   menu: ChatbotMenuNode,
   start: ChatbotStartNode,
+  satisfaction: ChatbotSatisfactionNode,
 };
 
 const initialNodes: Node[] = [
@@ -56,6 +58,24 @@ const addMenuNode = () => {
   const newNode: Node = {
     id: `menu-${nodeIdCounter++}`,
     type: 'menu',
+    position: {
+      x: Math.random() * 400 + 100,
+      y: Math.random() * 300 + 100,
+    },
+    data: {
+      title: '',
+      message: '',
+      options: [],
+      onRemove: () => removeNode(newNode.id),
+    },
+  };
+  nodes.value.push(newNode);
+};
+
+const addSatisfactionNode = () => {
+  const newNode: Node = {
+    id: `satisfaction-${nodeIdCounter++}`,
+    type: 'satisfaction',
     position: {
       x: Math.random() * 400 + 100,
       y: Math.random() * 300 + 100,
@@ -136,6 +156,10 @@ const onNodesChange = (changes: NodeChange[]) => {
             <VBtn color="primary" @click="addMenuNode">
               <VIcon icon="tabler-menu-2" class="me-2" />
               Menu
+            </VBtn>
+            <VBtn color="warning" @click="addSatisfactionNode">
+              <VIcon icon="tabler-star" class="me-2" />
+              Satisfação
             </VBtn>
           </div>
           <div class="vertical-divider" />
