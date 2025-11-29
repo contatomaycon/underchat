@@ -9,6 +9,7 @@ import ChatbotStartNode from '@/components/chatbot/ChatbotStartNode.vue';
 import ChatbotSatisfactionNode from '@/components/chatbot/ChatbotSatisfactionNode.vue';
 import ChatbotRedirectNode from '@/components/chatbot/ChatbotRedirectNode.vue';
 import ChatbotFinishNode from '@/components/chatbot/ChatbotFinishNode.vue';
+import ChatbotTagNode from '@/components/chatbot/ChatbotTagNode.vue';
 
 definePage({
   meta: {
@@ -27,6 +28,7 @@ const nodeTypes = {
   satisfaction: ChatbotSatisfactionNode,
   redirect: ChatbotRedirectNode,
   finish: ChatbotFinishNode,
+  tag: ChatbotTagNode,
 };
 
 const initialNodes: Node[] = [
@@ -128,6 +130,23 @@ const addFinishNode = () => {
   nodes.value.push(newNode);
 };
 
+const addTagNode = () => {
+  const newNode: Node = {
+    id: `tag-${nodeIdCounter++}`,
+    type: 'tag',
+    position: {
+      x: Math.random() * 400 + 100,
+      y: Math.random() * 300 + 100,
+    },
+    data: {
+      tagType: null,
+      selectedTag: null,
+      onRemove: () => removeNode(newNode.id),
+    },
+  };
+  nodes.value.push(newNode);
+};
+
 const onConnect = (connection: Connection) => {
   const existingEdge = edges.value.find(
     (e) => e.source === connection.source && e.target === connection.target
@@ -208,6 +227,10 @@ const onNodesChange = (changes: NodeChange[]) => {
             <VBtn color="error" @click="addFinishNode">
               <VIcon icon="tabler-circle-check" class="me-2" />
               Finalizar
+            </VBtn>
+            <VBtn color="secondary" @click="addTagNode">
+              <VIcon icon="tabler-tag" class="me-2" />
+              Etiqueta
             </VBtn>
           </div>
           <div class="vertical-divider" />

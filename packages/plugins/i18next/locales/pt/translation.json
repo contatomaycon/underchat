@@ -396,6 +396,8 @@
   "chatbox_users_listed_successfully": "Usuários do chatbox listados com sucesso!",
   "chatbox_sectors_listed_successfully": "Setores do chatbox listados com sucesso!",
   "chatbox_sector_users_listed_successfully": "Usuários do setor do chatbox listados com sucesso!",
+  "chatbox_chat_tags_listed_successfully": "Etiquetas de chat do chatbox listadas com sucesso!",
+  "chatbox_contact_tags_listed_successfully": "Etiquetas de contato do chatbox listadas com sucesso!",
   "simultaneous_attendance_view_success": "Quantidade de atendimentos simultâneos obtida com sucesso!",
   "simultaneous_attendance_update_success": "Quantidade de atendimentos simultâneos atualizada com sucesso!",
   "simultaneous_attendance_limit_reached": "Você já atingiu o limite de atendimentos simultâneos permitidos para este canal. Limite: {{limit}} atendimento(s).",

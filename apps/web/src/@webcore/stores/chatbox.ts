@@ -7,6 +7,7 @@ import axios from '@webcore/axios';
 import { ChatboxUserResponse } from '@core/schema/chatbox/listUsers/response.schema';
 import { ChatboxSectorResponse } from '@core/schema/chatbox/listSectors/response.schema';
 import { ChatboxSectorUserResponse } from '@core/schema/chatbox/listSectorUsers/response.schema';
+import { ChatboxChatTagResponse } from '@core/schema/chatbox/listChatTags/response.schema';
 
 export const useChatboxStore = defineStore('chatbox', {
   state: () => ({
@@ -93,6 +94,29 @@ export const useChatboxStore = defineStore('chatbox', {
         const errorMessage =
           this.i18n.global.t('error_loading_chatbox_sector_users') ||
           'Erro ao carregar usuários do setor do chatbox';
+        this.showSnackbar(errorMessage, EColor.error);
+        return [];
+      }
+    },
+
+    async listChatboxTags(): Promise<ChatboxChatTagResponse[]> {
+      try {
+        const response =
+          await axios.get<IApiResponse<ChatboxChatTagResponse[]>>(
+            '/chatbox/tags'
+          );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return [];
+        }
+
+        return data.data;
+      } catch {
+        const errorMessage =
+          this.i18n.global.t('error_loading_chatbox_tags') ||
+          'Erro ao carregar etiquetas do chatbox';
         this.showSnackbar(errorMessage, EColor.error);
         return [];
       }

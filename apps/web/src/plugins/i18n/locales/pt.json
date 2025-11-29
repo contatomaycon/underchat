@@ -1118,5 +1118,18 @@
     "attendance_only_online_required": "Você precisa estar com status online para atender este chat.",
     "error_loading_chatbox_users": "Erro ao carregar usuários do chatbox. Por favor, tente novamente.",
     "error_loading_chatbox_sectors": "Erro ao carregar setores do chatbox. Por favor, tente novamente.",
-    "error_loading_chatbox_sector_users": "Erro ao carregar usuários do setor do chatbox. Por favor, tente novamente."
+    "error_loading_chatbox_sector_users": "Erro ao carregar usuários do setor do chatbox. Por favor, tente novamente.",
+    "error_loading_chatbox_chat_tags": "Erro ao carregar etiquetas de chat do chatbox. Por favor, tente novamente.",
+    "error_loading_chatbox_contact_tags": "Erro ao carregar etiquetas de contato do chatbox. Por favor, tente novamente.",
+    "error_loading_chatbox_tags": "Erro ao carregar etiquetas do chatbox. Por favor, tente novamente.",
+    "chatbot_tag_node_title": "Etiqueta",
+    "chatbot_tag_type_label": "Tipo:",
+    "chatbot_tag_type_chat": "Chat",
+    "chatbot_tag_type_contact": "Contato",
+    "chatbot_tag_type_required": "Tipo é obrigatório",
+    "chatbot_tag_label": "Etiqueta:",
+    "chatbot_tag_required": "Etiqueta é obrigatória",
+    "chatbot_tag_search_placeholder": "Buscar...",
+    "chatbot_tag_search_label_placeholder": "Buscar etiqueta...",
+    "chatbot_tag_no_results": "Nenhum resultado encontrado"
 }
