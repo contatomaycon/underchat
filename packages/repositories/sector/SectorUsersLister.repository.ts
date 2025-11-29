@@ -29,6 +29,7 @@ export class SectorUsersListerRepository {
         user_info: {
           name: userInfo.name,
           last_name: userInfo.last_name,
+          photo: userInfo.photo,
         },
         chat_user: {
           status: chatUser.status,
@@ -64,6 +65,7 @@ export class SectorUsersListerRepository {
         user.email_partial,
         userInfo.name,
         userInfo.last_name,
+        userInfo.photo,
         chatUser.status
       )
       .execute();

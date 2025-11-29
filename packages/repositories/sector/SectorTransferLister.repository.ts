@@ -23,6 +23,7 @@ export class SectorTransferListerRepository {
       .select({
         sector_id: sector.sector_id,
         name: sector.name,
+        color: sector.color,
       })
       .from(sector)
       .where(and(accountCondition, isNull(sector.deleted_at)))
@@ -36,6 +37,7 @@ export class SectorTransferListerRepository {
     return result.map((sector) => ({
       id: sector.sector_id,
       name: sector.name,
+      color: sector.color || null,
     }));
   };
 }

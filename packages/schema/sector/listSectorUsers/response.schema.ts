@@ -8,6 +8,7 @@ export const listSectorUsersResponseSchema = Type.Object({
     Type.Object({
       name: Type.Optional(Type.String()),
       last_name: Type.Optional(Type.String()),
+      photo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     })
   ),
   chat_user: Type.Optional(

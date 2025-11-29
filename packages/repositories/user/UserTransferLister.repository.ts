@@ -20,6 +20,7 @@ export class UserTransferListerRepository {
         id: user.user_id,
         name: userInfo.name,
         email_partial: user.email_partial,
+        photo: userInfo.photo,
         status: chatUser.status,
       })
       .from(user)
@@ -43,6 +44,7 @@ export class UserTransferListerRepository {
     return result.map((user) => ({
       id: user.id,
       name: user.name || user.email_partial || '',
+      photo: user.photo || null,
       status: user.status || null,
     }));
   };

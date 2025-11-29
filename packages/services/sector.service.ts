@@ -208,6 +208,7 @@ export class SectorService {
     return result.map((user) => ({
       id: user.user_id,
       name: user.user_info?.name || user.email_partial || '',
+      photo: user.user_info?.photo || null,
       status: user.chat_user?.status || null,
     }));
   };

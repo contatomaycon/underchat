@@ -3,6 +3,7 @@ import { Static, Type } from '@sinclair/typebox';
 export const transferSectorResponseSchema = Type.Object({
   id: Type.String(),
   name: Type.String(),
+  color: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export type TransferSectorResponse = Static<

@@ -691,6 +691,7 @@ const loadTransferUsers = async () => {
     transferUsers.value = users.map((user) => ({
       value: user.id,
       title: user.name,
+      photo: user.photo || null,
       status: user.status || null,
     }));
   } catch (error) {
@@ -709,6 +710,7 @@ const loadTransferSectors = async () => {
     transferSectors.value = sectors.map((sector) => ({
       value: sector.id,
       title: sector.name,
+      color: sector.color || null,
     }));
   } catch (error) {
     console.error('Error loading transfer sectors:', error);
@@ -726,6 +728,7 @@ const loadTransferSectorUsers = async (sectorId: string) => {
     transferSectorUsers.value = users.map((user) => ({
       value: user.id,
       title: user.name,
+      photo: user.photo || null,
       status: user.status,
     }));
   } catch (error) {
@@ -5496,6 +5499,20 @@ onBeforeUnmount(() => {
                         "
                         :active="selectedTransferUser === item.value"
                       >
+                        <template #prepend>
+                          <VAvatar
+                            size="32"
+                            :variant="!item.photo ? 'tonal' : undefined"
+                            color="primary"
+                          >
+                            <VImg
+                              v-if="item.photo"
+                              :src="item.photo"
+                              :alt="item.title"
+                            />
+                            <VIcon v-else icon="tabler-user" size="18" />
+                          </VAvatar>
+                        </template>
                         <VListItemTitle>
                           <template
                             v-if="
@@ -5589,6 +5606,14 @@ onBeforeUnmount(() => {
                           "
                           :active="selectedTransferSector === item.value"
                         >
+                          <template #prepend>
+                            <VAvatar
+                              size="24"
+                              :style="{
+                                backgroundColor: item.color || '#1976D2',
+                              }"
+                            />
+                          </template>
                           <VListItemTitle>{{ item.title }}</VListItemTitle>
                         </VListItem>
                       </template>
@@ -5653,6 +5678,20 @@ onBeforeUnmount(() => {
                           "
                           :active="selectedTransferSectorUser === item.value"
                         >
+                          <template #prepend>
+                            <VAvatar
+                              size="32"
+                              :variant="!item.photo ? 'tonal' : undefined"
+                              color="primary"
+                            >
+                              <VImg
+                                v-if="item.photo"
+                                :src="item.photo"
+                                :alt="item.title"
+                              />
+                              <VIcon v-else icon="tabler-user" size="18" />
+                            </VAvatar>
+                          </template>
                           <VListItemTitle>
                             <template
                               v-if="
