@@ -30,6 +30,7 @@ const initialNodes: Node[] = [
     label: 'Início',
     position: { x: 250, y: 5 },
     draggable: false,
+    data: {},
   },
 ];
 
@@ -41,13 +42,11 @@ const edges = ref<Edge[]>(initialEdges);
 let nodeIdCounter = 2;
 
 const removeNode = (nodeId: string) => {
-  // Remove o nó
   const nodeIndex = nodes.value.findIndex((n) => n.id === nodeId);
   if (nodeIndex > -1) {
     nodes.value.splice(nodeIndex, 1);
   }
 
-  // Remove todas as edges conectadas a este nó
   edges.value = edges.value.filter(
     (e) => e.source !== nodeId && e.target !== nodeId
   );
@@ -72,7 +71,6 @@ const addMenuNode = () => {
 };
 
 const onConnect = (connection: Connection) => {
-  // Evita conexões duplicadas
   const existingEdge = edges.value.find(
     (e) => e.source === connection.source && e.target === connection.target
   );
@@ -85,7 +83,7 @@ const onConnect = (connection: Connection) => {
     markerEnd: {
       type: 'arrowclosed',
       color: '#1a192b',
-    },
+    } as any,
     style: {
       stroke: '#1a192b',
       strokeWidth: 2,
@@ -95,11 +93,14 @@ const onConnect = (connection: Connection) => {
 
 const onNodesChange = (changes: NodeChange[]) => {
   changes.forEach((change) => {
-    if (change.type === 'position' && change.dragging === false && change.position) {
+    if (
+      change.type === 'position' &&
+      change.dragging === false &&
+      change.position
+    ) {
       const draggedNode = nodes.value.find((n) => n.id === change.id);
       if (!draggedNode) return;
 
-      // Verifica se o nó arrastado está próximo de outro nó (dentro de 80px)
       const otherNodes = nodes.value.filter((n) => n.id !== draggedNode.id);
       for (const otherNode of otherNodes) {
         const distance = Math.sqrt(
@@ -107,7 +108,6 @@ const onNodesChange = (changes: NodeChange[]) => {
             Math.pow(draggedNode.position.y - otherNode.position.y, 2)
         );
 
-        // Se a distância for menor que 80px, cria uma conexão
         if (distance < 80) {
           const existingEdge = edges.value.find(
             (e) => e.source === draggedNode.id && e.target === otherNode.id
@@ -149,7 +149,7 @@ const onNodesChange = (changes: NodeChange[]) => {
               :default-viewport="{ zoom: 1 }"
               :connection-line-style="{ stroke: '#1a192b', strokeWidth: 2 }"
               :default-edge-options="{
-                markerEnd: { type: 'arrowclosed', color: '#1a192b' },
+                markerEnd: { type: 'arrowclosed', color: '#1a192b' } as any,
                 style: { stroke: '#1a192b', strokeWidth: 2 },
               }"
               :connection-radius="20"

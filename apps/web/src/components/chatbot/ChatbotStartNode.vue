@@ -7,10 +7,7 @@ const props = defineProps<NodeProps>();
 
 <template>
   <div class="chatbot-start-node">
-    <Handle type="source" :position="Position.Top" />
-    <Handle type="source" :position="Position.Right" />
     <Handle type="source" :position="Position.Bottom" />
-    <Handle type="source" :position="Position.Left" />
     <VCard class="start-card" elevation="2">
       <VCardText class="d-flex flex-column align-center justify-center pa-3">
         <VAvatar

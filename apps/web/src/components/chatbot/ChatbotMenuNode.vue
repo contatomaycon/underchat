@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, nextTick } from 'vue';
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position } from '@vue-flow/core';
+import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
+import data from 'emoji-mart-vue-fast/data/all.json';
+import 'emoji-mart-vue-fast/css/emoji-mart.css';
 
 interface MenuOption {
   id: string;
@@ -27,6 +30,9 @@ const getInitialData = (): MenuData => {
 };
 
 const menuData = ref<MenuData>(getInitialData());
+const emojiIndex = new EmojiIndex(data);
+const emojiPickerOpen = ref<Record<string, boolean>>({});
+const messageEmojiPickerOpen = ref(false);
 
 const messageLength = computed(() => menuData.value.message.length);
 const maxMessageLength = 500;
@@ -59,6 +65,55 @@ const updateOption = (index: number, text: string) => {
   updateNodeData();
 };
 
+const onEmojiSelect = (
+  emoji: { native?: string; colons?: string },
+  optionId: string
+) => {
+  const index = menuData.value.options.findIndex((opt) => opt.id === optionId);
+  if (index > -1) {
+    const emojiText = emoji.native || emoji.colons || '';
+    const currentText = menuData.value.options[index].text || '';
+    menuData.value.options[index].text = currentText + emojiText;
+    updateNodeData();
+    emojiPickerOpen.value[optionId] = false;
+
+    nextTick(() => {
+      const textFieldElement = document.querySelector(
+        `#option-input-${optionId}`
+      );
+      if (textFieldElement) {
+        const inputElement = textFieldElement.querySelector(
+          'input'
+        ) as HTMLInputElement;
+        if (inputElement) {
+          inputElement.focus();
+          const newLength = menuData.value.options[index].text.length;
+          inputElement.setSelectionRange(newLength, newLength);
+        }
+      }
+    });
+  }
+};
+
+const onMessageEmojiSelect = (emoji: { native?: string; colons?: string }) => {
+  const emojiText = emoji.native || emoji.colons || '';
+  const currentMessage = menuData.value.message || '';
+  menuData.value.message = currentMessage + emojiText;
+  updateNodeData();
+  messageEmojiPickerOpen.value = false;
+
+  nextTick(() => {
+    const textareaElement = document.querySelector(
+      '#message-textarea'
+    ) as HTMLTextAreaElement;
+    if (textareaElement) {
+      textareaElement.focus();
+      const newLength = menuData.value.message.length;
+      textareaElement.setSelectionRange(newLength, newLength);
+    }
+  });
+};
+
 const handleRemove = () => {
   const data = props.data as MenuData;
   if (data?.onRemove) {
@@ -81,13 +136,11 @@ watch(
     <Handle type="target" :position="Position.Right" />
     <Handle type="target" :position="Position.Bottom" />
     <Handle type="target" :position="Position.Left" />
-    <Handle type="source" :position="Position.Top" />
-    <Handle type="source" :position="Position.Right" />
-    <Handle type="source" :position="Position.Bottom" />
-    <Handle type="source" :position="Position.Left" />
 
     <VCard class="menu-card" elevation="2">
-      <VCardTitle class="d-flex align-center justify-space-between pa-2">
+      <VCardTitle
+        class="d-flex align-center justify-space-between pa-2 node-drag-handle"
+      >
         <div class="d-flex align-center ga-2">
           <VIcon icon="tabler-menu-2" color="primary" size="20" />
           <span class="text-sm font-weight-medium">Menu</span>
@@ -98,12 +151,11 @@ watch(
           size="18"
           color="error"
           class="cursor-pointer"
-          @click="handleRemove"
+          @click.stop="handleRemove"
         />
       </VCardTitle>
 
       <VCardText class="pa-3">
-        <!-- Título do Menu -->
         <VTextField
           v-model="menuData.title"
           placeholder="Defina o título do menu"
@@ -114,26 +166,58 @@ watch(
           hide-details
         />
 
-        <!-- Mensagem -->
-        <VTextarea
-          v-model="menuData.message"
-          placeholder="Informe a mensagem a ser enviada"
-          variant="outlined"
-          density="compact"
-          rows="3"
-          :counter="maxMessageLength"
-          :maxlength="maxMessageLength"
-          class="mb-3"
-          hide-details="auto"
-        >
-          <template #append>
+        <div class="mb-3 message-textarea-wrapper">
+          <VTextarea
+            id="message-textarea"
+            v-model="menuData.message"
+            placeholder="Informe a mensagem a ser enviada"
+            variant="outlined"
+            density="compact"
+            rows="3"
+            :counter="maxMessageLength"
+            :maxlength="maxMessageLength"
+            hide-details
+          />
+          <div
+            class="d-flex align-center justify-space-between message-counter-row"
+          >
             <span class="text-caption text-medium-emphasis">
               {{ messageLength }}/{{ maxMessageLength }}
             </span>
-          </template>
-        </VTextarea>
+            <VMenu
+              v-model="messageEmojiPickerOpen"
+              location="top start"
+              :close-on-content-click="false"
+              offset="8"
+            >
+              <template #activator="{ props: menuProps }">
+                <VBtn
+                  v-bind="menuProps"
+                  icon
+                  size="small"
+                  variant="text"
+                  class="message-emoji-btn"
+                >
+                  <VIcon size="18" color="primary">tabler-mood-smile</VIcon>
+                </VBtn>
+              </template>
+              <div class="emoji-picker-wrap">
+                <Picker
+                  :data="emojiIndex"
+                  :per-line="8"
+                  :show-preview="false"
+                  :show-search="true"
+                  :show-skin-tones="false"
+                  @select="
+                    (emoji: { native?: string; colons?: string }) =>
+                      onMessageEmojiSelect(emoji)
+                  "
+                />
+              </div>
+            </VMenu>
+          </div>
+        </div>
 
-        <!-- Botão Adicionar Opção -->
         <VBtn
           variant="outlined"
           color="primary"
@@ -145,7 +229,6 @@ watch(
           Adicionar Opção
         </VBtn>
 
-        <!-- Lista de Opções -->
         <div v-if="menuData.options.length > 0" class="options-list">
           <div
             v-for="(option, index) in menuData.options"
@@ -157,7 +240,39 @@ watch(
                 {{ index + 1 }}
               </div>
             </div>
+            <VMenu
+              v-model="emojiPickerOpen[option.id]"
+              location="top start"
+              :close-on-content-click="false"
+              offset="8"
+            >
+              <template #activator="{ props: menuProps }">
+                <VBtn
+                  v-bind="menuProps"
+                  icon
+                  size="small"
+                  variant="text"
+                  class="option-emoji-btn"
+                >
+                  <VIcon size="18" color="primary">tabler-mood-smile</VIcon>
+                </VBtn>
+              </template>
+              <div class="emoji-picker-wrap">
+                <Picker
+                  :data="emojiIndex"
+                  :per-line="8"
+                  :show-preview="false"
+                  :show-search="true"
+                  :show-skin-tones="false"
+                  @select="
+                    (emoji: { native?: string; colons?: string }) =>
+                      onEmojiSelect(emoji, option.id)
+                  "
+                />
+              </div>
+            </VMenu>
             <VTextField
+              :id="`option-input-${option.id}`"
               :model-value="option.text"
               @update:model-value="updateOption(index, $event)"
               placeholder="Digite uma opção"
@@ -165,6 +280,12 @@ watch(
               density="compact"
               class="option-text-field"
               hide-details
+            />
+            <Handle
+              :id="`option-${option.id}-source`"
+              type="source"
+              :position="Position.Right"
+              class="option-handle"
             />
             <div class="option-drag-handle">
               <VIcon icon="tabler-grip-vertical" size="18" color="primary" />
@@ -192,6 +313,7 @@ watch(
   flex-direction: row;
   gap: 8px;
   margin-bottom: 8px;
+  position: relative;
 }
 
 .option-number-wrapper {
@@ -238,7 +360,62 @@ watch(
   cursor: grabbing;
 }
 
+.option-emoji-btn {
+  flex-shrink: 0;
+  min-width: 32px;
+  width: 32px;
+  height: 32px;
+}
+
+.option-handle {
+  position: absolute;
+  right: -12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+}
+
+.option-emoji {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.message-emoji-btn {
+  flex-shrink: 0;
+  min-width: 32px;
+  width: 32px;
+  height: 32px;
+}
+
+.emoji-picker-wrap {
+  max-width: 352px;
+  max-height: 435px;
+  overflow: hidden;
+}
+
 .cursor-pointer {
   cursor: pointer;
+}
+
+.node-drag-handle {
+  cursor: grab;
+  user-select: none;
+}
+
+.node-drag-handle:active {
+  cursor: grabbing;
+}
+
+.message-textarea-wrapper {
+  :deep(.v-input__details) {
+    display: none;
+    margin: 0;
+    padding: 0;
+    min-height: 0;
+  }
+}
+
+.message-counter-row {
+  margin-top: 4px;
 }
 </style>
