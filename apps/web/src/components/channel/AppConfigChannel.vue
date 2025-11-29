@@ -1901,10 +1901,10 @@ onMounted(async () => {
 </script>
 
 <template>
-  <VDialog v-model="isVisible" max-width="960">
-    <DialogCloseBtn @click="isVisible = false" />
+  <VDialog v-model="isVisible" max-width="960" :persistent="isSavingProfileStatus">
+    <DialogCloseBtn :disabled="isSavingProfileStatus" @click="isVisible = false" />
 
-    <template v-if="channelStore.loading">
+    <template v-if="channelStore.loading && !isSavingProfileStatus">
       <VOverlay
         :model-value="channelStore.loading"
         class="align-center justify-center"
@@ -1916,7 +1916,7 @@ onMounted(async () => {
     <VCard>
       <VCardTitle class="d-flex justify-space-between align-center">
         <span>{{ $t('configurations') }}</span>
-        <DialogCloseBtn class="d-none d-sm-flex" @click="isVisible = false" />
+        <DialogCloseBtn class="d-none d-sm-flex" :disabled="isSavingProfileStatus" @click="isVisible = false" />
       </VCardTitle>
 
       <VTabs v-model="currentTab" grow>

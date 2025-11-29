@@ -1,5 +1,6 @@
 import {
   boolean,
+  integer,
   pgTable,
   timestamp,
   uuid,
@@ -20,6 +21,10 @@ export const workerProfileStatus = pgTable('worker_profile_status', {
   value: varchar({ length: 500 }).notNull(),
   is_permanent: boolean().default(false),
   external_id: varchar({ length: 500 }),
+  mimetype: varchar({ length: 100 }),
+  duration: integer(),
+  width: integer(),
+  height: integer(),
   created_at: timestamp('created_at', {
     mode: 'string',
     withTimezone: true,

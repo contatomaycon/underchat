@@ -34,6 +34,10 @@ export class WorkerProfileStatusCreatorRepository {
         worker_profile_status_type_id: input.worker_profile_status_type_id,
         value: input.value,
         is_permanent: input.is_permanent,
+        mimetype: input.mimetype ?? null,
+        duration: input.duration ?? null,
+        width: input.width ?? null,
+        height: input.height ?? null,
       })
       .execute();
 
