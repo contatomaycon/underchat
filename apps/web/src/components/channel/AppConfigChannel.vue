@@ -418,7 +418,10 @@ const loadWorkerConfig = async (force = false) => {
 
   try {
     isLoadingWorkerConfig.value = true;
-    const result = await channelStore.fetchWorkerConfig(channelId.value);
+    const result = await channelStore.fetchWorkerConfig(
+      channelId.value,
+      force
+    );
 
     applyWorkerConfig(result);
     workerConfigLoadedFor.value = channelId.value;

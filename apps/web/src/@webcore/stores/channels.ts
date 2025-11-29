@@ -752,11 +752,12 @@ export const useChannelsStore = defineStore('channels', {
     },
 
     async fetchWorkerConfig(
-      workerId: string
+      workerId: string,
+      forceRefresh = false
     ): Promise<ViewWorkerConfigResponse | null> {
       if (!workerId) return null;
 
-      if (this.workerConfigCache[workerId] !== undefined) {
+      if (!forceRefresh && this.workerConfigCache[workerId] !== undefined) {
         return this.workerConfigCache[workerId];
       }
 
@@ -860,6 +861,9 @@ export const useChannelsStore = defineStore('channels', {
           this.i18n.global.t('channel_general_config_save_success'),
           EColor.success
         );
+
+        this.workerConfigCache[workerId] = data.data ?? null;
+        delete this.workerConfigForChatCache[workerId];
 
         return data.data;
       } catch (error) {
