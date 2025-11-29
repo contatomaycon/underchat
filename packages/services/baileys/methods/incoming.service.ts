@@ -3,6 +3,7 @@ import {
   AnyMessageContent,
   MessageUserReceiptUpdate,
   proto,
+  WACallEvent,
   WAMessage,
   WAMessageKey,
   WAMessageUpdate,
@@ -27,6 +28,8 @@ import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { IChatTyping } from '@core/common/interfaces/IChatTyping';
 import { MessageSummaryPatch } from '@core/services/messageStatus.service';
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
+import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
+import { EMessageType } from '@core/common/enums/EMessageType';
 
 @singleton()
 export class BaileysIncomingMessageService {
@@ -181,6 +184,67 @@ export class BaileysIncomingMessageService {
     socket.ev.on('messaging-history.set', (data) => {
       console.log('data:', data);
     });
+
+    socket.ev.on('call', async (callEvents: WACallEvent[]) => {
+      console.log('callEvents:');
+      console.dir(callEvents, { depth: null, colors: true });
+
+      if (!callEvents) return;
+
+      const eventsArray = Array.isArray(callEvents) ? callEvents : [callEvents];
+
+      for (const callEvent of eventsArray) {
+        if (!callEvent) {
+          continue;
+        }
+
+        const callStatus = callEvent.status;
+        if (callStatus !== 'offer') {
+          continue;
+        }
+
+        const jid = callEvent.remoteJid || callEvent.from;
+        const jidAlt = callEvent.remoteJidAlt || null;
+
+        if (!jid) {
+          continue;
+        }
+
+        const phone = getPhoneFromJid(jid, jidAlt);
+
+        if (!phone) {
+          continue;
+        }
+
+        const jidToUse =
+          jidAlt && jidAlt.endsWith('@s.whatsapp.net') ? jidAlt : jid;
+        let senderPic: string | undefined;
+        try {
+          senderPic = await socket.profilePictureUrl(jidToUse, 'image');
+        } catch {
+          senderPic = undefined;
+        }
+
+        const callUpsert: IUpsertMessage = {
+          worker_id: baileysEnvironment.baileysWorkerId,
+          account_id: baileysEnvironment.baileysAccountId,
+          type: EMessageType.system,
+          message: {} as WAMessage,
+          photo: senderPic || null,
+          has_quoted: false,
+          is_call_event: true,
+          call_phone: phone,
+          call_jid: jid,
+          call_jid_alt: jidAlt,
+          call_name: callEvent.pushName || null,
+        };
+
+        await this.streamProducerService.send(
+          this.kafkaServiceQueueService.upsertMessage(),
+          callUpsert
+        );
+      }
+    });
   }
 
   private async handleMessagesUpdate(events: WAMessageUpdate[]) {
@@ -285,6 +349,7 @@ export class BaileysIncomingMessageService {
       this.currentSocket.ev.removeAllListeners('message-receipt.update');
       this.currentSocket.ev.removeAllListeners('presence.update');
       this.currentSocket.ev.removeAllListeners('messaging-history.set');
+      this.currentSocket.ev.removeAllListeners('call');
     } catch {}
     this.currentSocket = undefined;
   }
