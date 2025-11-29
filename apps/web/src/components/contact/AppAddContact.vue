@@ -15,6 +15,9 @@ const contactStore = useContactStore();
 const labelTemplateStore = useLabelTemplateStore();
 const chatStore = useChatStore();
 const { items: countryCodes } = useCountryCodes();
+const labelTemplates = ref<
+  Array<{ label_template_id: string; label: string; color?: string }>
+>([]);
 
 const { t } = useI18n();
 
@@ -95,7 +98,7 @@ const canAccessLabelTemplate = computed(() => {
 });
 
 const itemsLabel = computed(() =>
-  (labelTemplateStore.listAll ?? []).map((item) => ({
+  labelTemplates.value.map((item) => ({
     value: item.label_template_id,
     title: item.label,
     color: item.color,
@@ -781,16 +784,36 @@ const cancelCrop = () => {
   photoPreview.value = null;
 };
 
+const loadLabelTemplates = async () => {
+  let templates:
+    | Array<{ label_template_id: string; label: string; color?: string }>
+    | null = null;
+
+  if (canAccessLabelTemplate.value) {
+    templates = await labelTemplateStore.listLabelTemplateAll();
+  }
+
+  if (!templates || templates.length === 0) {
+    templates = await chatStore.listChatLabelTemplates();
+  }
+
+  labelTemplates.value =
+    templates?.map((lt) => ({
+      label_template_id: lt.label_template_id,
+      label: lt.label,
+      color: lt.color || 'rgb(var(--v-theme-primary))',
+    })) ?? [];
+};
+
 onMounted(async () => {
   resetForm();
-  if (canAccessLabelTemplate.value) {
-    await labelTemplateStore.listLabelTemplateAll();
-  }
+  await loadLabelTemplates();
 });
 
 watch(isVisible, (visible) => {
   if (visible) {
     resetForm();
+    loadLabelTemplates();
   }
 });
 
@@ -987,9 +1010,14 @@ watch(
                   <VListItem v-bind="props">
                     <template #prepend>
                       <div
-                        v-if="item.raw.color"
                         class="label-color-circle"
-                        :style="{ backgroundColor: item.raw.color }"
+                        :style="{
+                          backgroundColor: item.raw.color,
+                          width: '16px',
+                          height: '16px',
+                          borderRadius: '50%',
+                          marginRight: '8px',
+                        }"
                       />
                     </template>
                   </VListItem>
@@ -997,9 +1025,12 @@ watch(
                 <template #selection="{ item }">
                   <div v-if="item.raw" class="d-flex align-center gap-2">
                     <div
-                      v-if="item.raw.color"
                       class="label-color-circle"
-                      :style="{ backgroundColor: item.raw.color }"
+                      :style="{
+                        backgroundColor: item.raw.color,
+                        width: '16px',
+                        height: '16px',
+                      }"
                     />
                     <span>{{ item.raw.title }}</span>
                   </div>
