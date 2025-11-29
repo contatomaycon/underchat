@@ -56,6 +56,7 @@ import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
 import { ContactService } from '@core/services/contact.service';
 import { AutomaticAttendanceService } from '@core/services/automaticAttendance.service';
 import { TFunction } from 'i18next';
+import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -1090,6 +1091,87 @@ export class MessageUpsertConsume {
     };
   }
 
+  private async ensureContactForChat(
+    inputChatMessage: IChat,
+    data: IUpsertMessage,
+    phoneAndDdi: { phone: string; phone_ddi: string | null },
+    phone: string,
+    name: string | null
+  ): Promise<void> {
+    const existingContact = await this.contactService.getContactByPhone(
+      data.account_id,
+      phoneAndDdi.phone,
+      phoneAndDdi.phone_ddi
+    );
+
+    if (existingContact) {
+      inputChatMessage.contact = {
+        id: existingContact.contact_id,
+        name: existingContact.name,
+        phone: existingContact.phone_partial ?? phone,
+        phone_ddi: existingContact.phone_ddi ?? phoneAndDdi.phone_ddi,
+        photo: existingContact.photo ?? null,
+      };
+      return;
+    }
+
+    const shouldAutoSave = await this.shouldAutoSaveContact(data.worker_id);
+    if (!shouldAutoSave) {
+      return;
+    }
+
+    const createdContact = await this.createContactAutomatically(
+      data,
+      phoneAndDdi,
+      name || phone
+    );
+
+    if (createdContact) {
+      inputChatMessage.contact = {
+        id: createdContact.contact_id,
+        name: createdContact.name,
+        phone: createdContact.phone_partial ?? phone,
+        phone_ddi: createdContact.phone_ddi ?? phoneAndDdi.phone_ddi,
+        photo: createdContact.photo ?? null,
+      };
+    }
+  }
+
+  private async shouldAutoSaveContact(workerId: string): Promise<boolean> {
+    const workerConfig =
+      await this.workerService.viewWorkerConfigFieldsByWorkerId(workerId);
+
+    return Boolean(workerConfig?.auto_save_contacts);
+  }
+
+  private async createContactAutomatically(
+    data: IUpsertMessage,
+    phoneAndDdi: { phone: string; phone_ddi: string | null },
+    contactName: string
+  ): Promise<ViewContactResponse | null> {
+    const contactToCreate = {
+      name: contactName,
+      phone: phoneAndDdi.phone,
+      phone_ddi: phoneAndDdi.phone_ddi ?? '55',
+    };
+
+    const contactId = await this.contactService.createContact(
+      contactToCreate,
+      data.account_id,
+      true
+    );
+
+    if (!contactId) {
+      return null;
+    }
+
+    return this.contactService.getContactByPhone(
+      data.account_id,
+      phoneAndDdi.phone,
+      phoneAndDdi.phone_ddi
+    );
+  }
+
   private async createChatMessage(
     getChat: IChat,
     data: IUpsertMessage
@@ -1404,21 +1486,13 @@ export class MessageUpsertConsume {
     const phoneAndDdi = extractPhoneAndDdi(phoneWithPlus);
 
     if (phoneAndDdi) {
-      const existingContact = await this.contactService.getContactByPhone(
-        data.account_id,
-        phoneAndDdi.phone,
-        phoneAndDdi.phone_ddi
+      await this.ensureContactForChat(
+        inputChatMessage,
+        data,
+        phoneAndDdi,
+        phone,
+        name
       );
-
-      if (existingContact) {
-        inputChatMessage.contact = {
-          id: existingContact.contact_id,
-          name: existingContact.name,
-          phone: existingContact.phone_partial ?? phone,
-          phone_ddi: existingContact.phone_ddi ?? phoneAndDdi.phone_ddi,
-          photo: existingContact.photo ?? null,
-        };
-      }
     }
 
     if (data.photo) {
