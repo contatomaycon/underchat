@@ -542,6 +542,8 @@
     "chat_original_message": "Mensaje original",
     "chat_edited_version": "Versión editada",
     "chat_edit_error": "Error al editar el mensaje. Por favor, inténtalo de nuevo.",
+    "chat_label_update_success": "¡Etiqueta del chat actualizada con éxito!",
+    "chat_label_update_error": "Error al actualizar la etiqueta del chat. Por favor, intente nuevamente.",
     "documents_selected": "Documentos seleccionados",
     "max_documents_selected": "Ya seleccionaste el número máximo de 10 documentos.",
     "can_select_more_documents": "Puedes seleccionar hasta {count} documento(s).",
