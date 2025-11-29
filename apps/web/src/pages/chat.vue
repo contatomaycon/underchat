@@ -3396,31 +3396,14 @@ const createQuickMessageFormData = (
 ): FormData => {
   const formData = new FormData();
   formData.append('type', type);
-  formData.append('is_quick_message', 'true');
   formData.append('hash', hash);
 
   if (messageValue) {
     formData.append('message', messageValue);
   }
 
-  if (template?.attachment_url) {
-    formData.append('quick_message_url', template.attachment_url);
-  }
-
-  if (template?.mimetype) {
-    formData.append('quick_message_mimetype', template.mimetype);
-  }
-
-  if (template?.duration !== null && template?.duration !== undefined) {
-    formData.append('quick_message_duration', template.duration.toString());
-  }
-
-  if (template?.width !== null && template?.width !== undefined) {
-    formData.append('quick_message_width', template.width.toString());
-  }
-
-  if (template?.height !== null && template?.height !== undefined) {
-    formData.append('quick_message_height', template.height.toString());
+  if (template?.message_template_id) {
+    formData.append('quick_message_template_id', template.message_template_id);
   }
 
   return formData;

@@ -29,6 +29,10 @@ export class MessageTemplateViewerRepository {
         command: messageTemplate.command,
         message: messageTemplate.message,
         type: messageTemplate.type,
+        mimetype: messageTemplate.mimetype,
+        duration: messageTemplate.duration,
+        width: messageTemplate.width,
+        height: messageTemplate.height,
         created_at: messageTemplate.created_at,
       })
       .from(messageTemplate)

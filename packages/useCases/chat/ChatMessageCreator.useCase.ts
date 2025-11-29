@@ -43,6 +43,7 @@ import {
   chatQueueAccountCentrifugo,
 } from '@core/common/functions/centrifugoQueue';
 import { WorkerService } from '@core/services/worker.service';
+import { MessageTemplateService } from '@core/services/messageTemplate.service';
 
 @injectable()
 export class ChatMessageCreatorUseCase {
@@ -57,7 +58,8 @@ export class ChatMessageCreatorUseCase {
     private readonly converterService: ConverterService,
     private readonly contactService: ContactService,
     private readonly contactViewerRepository: ContactViewerRepository,
-    private readonly workerService: WorkerService
+    private readonly workerService: WorkerService,
+    private readonly messageTemplateService: MessageTemplateService
   ) {}
 
   private async getChat(
@@ -1711,8 +1713,55 @@ export class ChatMessageCreatorUseCase {
       throw new Error(t('chat_not_found'));
     }
 
-    const type = this.normalizeType(body.type);
-    const message = this.normalizeMessage(body.message);
+    const quickMessageTemplateIdRaw = body.quick_message_template_id;
+    const quickMessageTemplateId =
+      quickMessageTemplateIdRaw === null ||
+      quickMessageTemplateIdRaw === undefined
+        ? null
+        : typeof quickMessageTemplateIdRaw === 'string'
+          ? quickMessageTemplateIdRaw
+          : quickMessageTemplateIdRaw.value || null;
+
+    let templateType: EMessageType | null = null;
+    let templateMessage: string | null = null;
+    let isQuickMessage = false;
+    let quickMessageUrl: string | null = null;
+    let quickMessageMimetype: string | null = null;
+    let quickMessageDuration: number | null = null;
+    let quickMessageWidth: number | null = null;
+    let quickMessageHeight: number | null = null;
+
+    if (quickMessageTemplateId) {
+      const template =
+        await this.messageTemplateService.viewMessageTemplateById(
+          quickMessageTemplateId
+        );
+
+      if (!template) {
+        throw new Error(t('message_template_not_found'));
+      }
+
+      if (template.account.account_id !== accountId) {
+        throw new Error(t('message_template_not_found'));
+      }
+
+      templateType = template.type as EMessageType;
+      templateMessage = template.message || null;
+      isQuickMessage = true;
+      quickMessageUrl = template.attachment_url || null;
+      quickMessageMimetype = template.mimetype || null;
+      quickMessageDuration = template.duration || null;
+      quickMessageWidth = template.width || null;
+      quickMessageHeight = template.height || null;
+    }
+
+    const type = templateType || this.normalizeType(body.type);
+
+    if (templateType && templateType !== this.normalizeType(body.type)) {
+      throw new Error(t('message_template_type_mismatch'));
+    }
+
+    const message = this.normalizeMessage(templateMessage || body.message);
     const images = this.normalizeImagesArray(body.images);
     const documents = this.normalizeDocumentsArray(body.documents);
     const videos = this.normalizeVideosArray(body.videos);
@@ -1734,26 +1783,6 @@ export class ChatMessageCreatorUseCase {
     );
     const locationName = this.normalizeLocationField(body.location_name);
     const locationAddress = this.normalizeLocationField(body.location_address);
-    const isQuickMessage = this.normalizeBooleanField(body.is_quick_message);
-    const quickMessageUrlRaw = body.quick_message_url;
-    const quickMessageUrl =
-      quickMessageUrlRaw === null || quickMessageUrlRaw === undefined
-        ? null
-        : this.normalizeMessage(quickMessageUrlRaw);
-    const quickMessageMimetypeRaw = body.quick_message_mimetype;
-    const quickMessageMimetype =
-      quickMessageMimetypeRaw === null || quickMessageMimetypeRaw === undefined
-        ? null
-        : this.normalizeMessage(quickMessageMimetypeRaw);
-    const quickMessageDuration = this.normalizeDurationField(
-      body.quick_message_duration
-    );
-    const quickMessageWidth = this.normalizeDurationField(
-      body.quick_message_width
-    );
-    const quickMessageHeight = this.normalizeDurationField(
-      body.quick_message_height
-    );
 
     const actionResult = await this.processActionMessages(
       type,

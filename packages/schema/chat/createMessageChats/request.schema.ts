@@ -156,60 +156,12 @@ export const createMessageChatsBodySchema = Type.Object({
       }),
     ])
   ),
-  is_quick_message: Type.Optional(
+  quick_message_template_id: Type.Optional(
     Type.Union([
-      Type.Boolean(),
-      Type.String(),
-      Type.Object({
-        value: Type.String(),
-      }),
-    ])
-  ),
-  quick_message_url: Type.Optional(
-    Type.Union([
-      Type.String(),
+      Type.String({ format: 'uuid' }),
       Type.Null(),
       Type.Object({
-        value: Type.String(),
-      }),
-    ])
-  ),
-  quick_message_mimetype: Type.Optional(
-    Type.Union([
-      Type.String(),
-      Type.Null(),
-      Type.Object({
-        value: Type.String(),
-      }),
-    ])
-  ),
-  quick_message_duration: Type.Optional(
-    Type.Union([
-      Type.Number(),
-      Type.String(),
-      Type.Null(),
-      Type.Object({
-        value: Type.String(),
-      }),
-    ])
-  ),
-  quick_message_width: Type.Optional(
-    Type.Union([
-      Type.Number(),
-      Type.String(),
-      Type.Null(),
-      Type.Object({
-        value: Type.String(),
-      }),
-    ])
-  ),
-  quick_message_height: Type.Optional(
-    Type.Union([
-      Type.Number(),
-      Type.String(),
-      Type.Null(),
-      Type.Object({
-        value: Type.String(),
+        value: Type.String({ format: 'uuid' }),
       }),
     ])
   ),
