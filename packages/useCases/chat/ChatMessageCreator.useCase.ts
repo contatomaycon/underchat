@@ -35,6 +35,7 @@ import { IProcessMediaMessagesOptions } from '@core/common/interfaces/IProcessMe
 import { IProcessTextMessageParams } from '@core/common/interfaces/IProcessTextMessageParams';
 import { IUploadFileInput } from '@core/common/interfaces/IUploadFileInput';
 import { ICreateContactMessageParams } from '@core/common/interfaces/ICreateContactMessageParams';
+import { IPublishImageMessageParams } from '@core/common/interfaces/IPublishImageMessageParams';
 import { ContactService } from '@core/services/contact.service';
 import { ContactViewerRepository } from '@core/repositories/contact/ContactViewer.repository';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
@@ -974,30 +975,22 @@ export class ChatMessageCreatorUseCase {
 
     const normalizedHash = hash ?? null;
 
-    if (validImages.length === 1) {
-      await this.publishSingleImageMessage(
-        validImages[0],
-        chat,
-        chatId,
-        type,
-        message,
-        quotedId,
-        quotedMessage,
-        normalizedHash
-      );
-      return true;
-    }
-
-    await this.publishMultipleImageMessages(
-      validImages,
+    const publishParams: IPublishImageMessageParams = {
       chat,
       chatId,
       type,
       message,
-      quotedId,
+      messageQuotedId: quotedId,
       quotedMessage,
-      normalizedHash
-    );
+      hash: normalizedHash,
+    };
+
+    if (validImages.length === 1) {
+      await this.publishSingleImageMessage(validImages[0], publishParams);
+      return true;
+    }
+
+    await this.publishMultipleImageMessages(validImages, publishParams);
 
     return true;
   }
@@ -1071,23 +1064,17 @@ export class ChatMessageCreatorUseCase {
 
   private async publishSingleImageMessage(
     imageData: UploadFileResponse,
-    chat: IChat,
-    chatId: string,
-    type: EMessageType,
-    message: string | null,
-    messageQuotedId: string | null,
-    quotedMessage: IQuotedMessage | null,
-    hash: string | null
+    params: IPublishImageMessageParams
   ): Promise<void> {
     const imageMessage = this.createImageMessage({
-      chat,
-      chatId,
-      type,
-      message,
+      chat: params.chat,
+      chatId: params.chatId,
+      type: params.type,
+      message: params.message,
       imageData,
-      messageQuotedId,
-      quotedMessage,
-      hash,
+      messageQuotedId: params.messageQuotedId,
+      quotedMessage: params.quotedMessage,
+      hash: params.hash,
     });
 
     await this.publishMessage(imageMessage);
@@ -1095,24 +1082,18 @@ export class ChatMessageCreatorUseCase {
 
   private async publishMultipleImageMessages(
     validImages: UploadFileResponse[],
-    chat: IChat,
-    chatId: string,
-    type: EMessageType,
-    message: string | null,
-    messageQuotedId: string | null,
-    quotedMessage: IQuotedMessage | null,
-    hash: string | null
+    params: IPublishImageMessageParams
   ): Promise<void> {
     const publishTasks = validImages.map((imageData) => {
       const imageMessage = this.createImageMessage({
-        chat,
-        chatId,
-        type,
-        message,
+        chat: params.chat,
+        chatId: params.chatId,
+        type: params.type,
+        message: params.message,
         imageData,
-        messageQuotedId,
-        quotedMessage,
-        hash,
+        messageQuotedId: params.messageQuotedId,
+        quotedMessage: params.quotedMessage,
+        hash: params.hash,
       });
 
       return this.publishMessage(imageMessage);
@@ -1899,7 +1880,7 @@ export class ChatMessageCreatorUseCase {
       type,
       message,
       messageQuotedId,
-      contacts: contacts as string[],
+      contacts,
       images,
       locationLatitude,
       locationLongitude,
