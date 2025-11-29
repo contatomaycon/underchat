@@ -594,6 +594,33 @@ const selectedLabelTemplateId = ref<string | null>(null);
 const isLoadingLabels = ref(false);
 const isSavingLabel = ref(false);
 
+const activeContactLabelTemplate = ref<{ label: string; color: string } | null>(
+  null
+);
+
+watch(
+  () => chatStore.activeChat?.contact?.id,
+  async (contactId) => {
+    if (!contactId) {
+      activeContactLabelTemplate.value = null;
+      return;
+    }
+
+    const contact = await chatStore.getChatContactById(contactId);
+
+    if (contact?.label_template) {
+      activeContactLabelTemplate.value = {
+        label: contact.label_template.label,
+        color: contact.label_template.color,
+      };
+      return;
+    }
+
+    activeContactLabelTemplate.value = null;
+  },
+  { immediate: true }
+);
+
 const filteredTransferUsers = computed(() => {
   if (!transferUserSearch.value) {
     return transferUsers.value;
@@ -4422,6 +4449,20 @@ onBeforeUnmount(() => {
                 >
                   {{ $t('contact_label') }}
                 </VChip>
+                <VChip
+                  v-if="activeContactLabelTemplate"
+                  size="x-small"
+                  variant="outlined"
+                  :color="activeContactLabelTemplate.color"
+                  class="contact-label"
+                  :title="activeContactLabelTemplate.label"
+                >
+                  {{
+                    activeContactLabelTemplate.label.length > 15
+                      ? `${activeContactLabelTemplate.label.slice(0, 15)}…`
+                      : activeContactLabelTemplate.label
+                  }}
+                </VChip>
               </div>
               <p class="text-truncate mb-0 text-body-2">
                 {{
@@ -4456,8 +4497,15 @@ onBeforeUnmount(() => {
                   :color="chatStore.activeChat.label.color"
                 />
               </IconBtn>
-              <span class="text-body-2 text-medium-emphasis">
-                {{ chatStore.activeChat.label.label }}
+              <span
+                class="text-body-2 text-medium-emphasis"
+                :title="chatStore.activeChat.label.label"
+              >
+                {{
+                  chatStore.activeChat.label.label.length > 15
+                    ? `${chatStore.activeChat.label.label.slice(0, 15)}…`
+                    : chatStore.activeChat.label.label
+                }}
               </span>
             </div>
             <IconBtn
