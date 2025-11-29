@@ -175,38 +175,57 @@ const onConnect = (connection: Connection) => {
   });
 };
 
+const calculateDistance = (node1: Node, node2: Node): number => {
+  return Math.sqrt(
+    Math.pow(node1.position.x - node2.position.x, 2) +
+      Math.pow(node1.position.y - node2.position.y, 2)
+  );
+};
+
+const hasExistingEdge = (sourceId: string, targetId: string): boolean => {
+  return edges.value.some(
+    (e) => e.source === sourceId && e.target === targetId
+  );
+};
+
+const tryAutoConnectNode = (draggedNode: Node): void => {
+  const otherNodes = nodes.value.filter((n) => n.id !== draggedNode.id);
+  const connectionThreshold = 80;
+
+  for (const otherNode of otherNodes) {
+    const distance = calculateDistance(draggedNode, otherNode);
+
+    if (distance < connectionThreshold) {
+      if (!hasExistingEdge(draggedNode.id, otherNode.id)) {
+        onConnect({
+          source: draggedNode.id,
+          target: otherNode.id,
+        });
+      }
+      break;
+    }
+  }
+};
+
+const isPositionChange = (
+  change: NodeChange
+): change is NodeChange & { type: 'position'; id: string } => {
+  return (
+    change.type === 'position' &&
+    change.dragging === false &&
+    change.position !== undefined &&
+    'id' in change
+  );
+};
+
 const onNodesChange = (changes: NodeChange[]) => {
   for (const change of changes) {
-    if (
-      change.type === 'position' &&
-      change.dragging === false &&
-      change.position
-    ) {
-      const draggedNode = nodes.value.find((n) => n.id === change.id);
-      if (!draggedNode) continue;
+    if (!isPositionChange(change)) continue;
 
-      const otherNodes = nodes.value.filter((n) => n.id !== draggedNode.id);
-      for (const otherNode of otherNodes) {
-        const distance = Math.sqrt(
-          Math.pow(draggedNode.position.x - otherNode.position.x, 2) +
-            Math.pow(draggedNode.position.y - otherNode.position.y, 2)
-        );
+    const draggedNode = nodes.value.find((n) => n.id === change.id);
+    if (!draggedNode) continue;
 
-        if (distance < 80) {
-          const existingEdge = edges.value.find(
-            (e) => e.source === draggedNode.id && e.target === otherNode.id
-          );
-          if (!existingEdge) {
-            const connection: Connection = {
-              source: draggedNode.id,
-              target: otherNode.id,
-            };
-            onConnect(connection);
-          }
-          break;
-        }
-      }
-    }
+    tryAutoConnectNode(draggedNode);
   }
 };
 </script>
