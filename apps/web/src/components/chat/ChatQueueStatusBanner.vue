@@ -1,8 +1,6 @@
 <script lang="ts" setup>
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { EChatStatus } from '@core/common/enums/EChatStatus';
-import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerConfigForChat/response.schema';
 
 const { t } = useI18n();

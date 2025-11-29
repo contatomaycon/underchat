@@ -68,7 +68,6 @@ import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
 import data from 'emoji-mart-vue-fast/data/all.json';
 import 'emoji-mart-vue-fast/css/emoji-mart.css';
 import { useI18n } from 'vue-i18n';
-import { MglMap, MglMarker } from 'vue-maplibre-gl';
 
 const emojiIndex = new EmojiIndex(data);
 const { t } = useI18n();
