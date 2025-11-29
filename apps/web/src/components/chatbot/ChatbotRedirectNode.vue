@@ -94,6 +94,7 @@ const loadUsers = async () => {
     users.value = usersList.map((user) => ({
       value: user.id,
       title: user.name,
+      photo: user.photo || null,
       status: user.status || null,
     }));
   } catch (error) {
@@ -128,6 +129,7 @@ const loadSectorUsers = async (sectorId: string) => {
     sectorUsers.value = usersList.map((user) => ({
       value: user.id,
       title: user.name,
+      photo: user.photo || null,
       status: user.status,
     }));
   } catch (error) {
@@ -287,12 +289,21 @@ const handleRemove = () => {
                   "
                 >
                   <template #prepend>
-                    <VAvatar size="32" color="primary" variant="tonal">
-                      <VIcon icon="tabler-user" size="18" />
+                    <VAvatar
+                      size="32"
+                      :variant="!user.photo ? 'tonal' : undefined"
+                      color="primary"
+                    >
+                      <VImg
+                        v-if="user.photo"
+                        :src="user.photo"
+                        :alt="user.title"
+                      />
+                      <VIcon v-else icon="tabler-user" size="18" />
                     </VAvatar>
                   </template>
                   <VListItemTitle>{{ user.title }}</VListItemTitle>
-                  <template #append v-if="user.status?.id === 'online'">
+                  <template #append v-if="user.status === 'online'">
                     <VChip size="small" color="success" variant="tonal">
                       Online
                     </VChip>
@@ -421,12 +432,21 @@ const handleRemove = () => {
                   "
                 >
                   <template #prepend>
-                    <VAvatar size="32" color="primary" variant="tonal">
-                      <VIcon icon="tabler-user" size="18" />
+                    <VAvatar
+                      size="32"
+                      :variant="!user.photo ? 'tonal' : undefined"
+                      color="primary"
+                    >
+                      <VImg
+                        v-if="user.photo"
+                        :src="user.photo"
+                        :alt="user.title"
+                      />
+                      <VIcon v-else icon="tabler-user" size="18" />
                     </VAvatar>
                   </template>
                   <VListItemTitle>{{ user.title }}</VListItemTitle>
-                  <template #append v-if="user.status?.id === 'online'">
+                  <template #append v-if="user.status === 'online'">
                     <VChip size="small" color="success" variant="tonal">
                       Online
                     </VChip>
