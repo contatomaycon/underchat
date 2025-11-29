@@ -5672,11 +5672,36 @@ onBeforeUnmount(() => {
           </VCol>
 
           <VCol cols="12" md="6">
-            <AppTextField
-              :model-value="selectedContactDetails.label_template?.label || ''"
-              :label="$t('label') + ':'"
-              readonly
-            />
+            <label class="text-body-2 mb-1">
+              {{ $t('label') + ':' }}
+            </label>
+            <div
+              v-if="selectedContactDetails.label_template"
+              class="d-flex align-center mt-1"
+            >
+              <div
+                class="label-color-circle"
+                :style="{
+                  backgroundColor: selectedContactDetails.label_template.color,
+                }"
+              />
+              <span
+                class="ms-2 text-body-2 text-medium-emphasis"
+                :title="selectedContactDetails.label_template.label"
+              >
+                {{
+                  selectedContactDetails.label_template.label.length > 15
+                    ? `${selectedContactDetails.label_template.label.slice(0, 15)}…`
+                    : selectedContactDetails.label_template.label
+                }}
+              </span>
+            </div>
+            <div
+              v-else
+              class="text-body-2 text-medium-emphasis mt-1"
+            >
+              -
+            </div>
           </VCol>
         </VRow>
         <VRow>

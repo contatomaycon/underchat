@@ -171,6 +171,7 @@ const itemsLabel = computed(() =>
   labelTemplates.value.map((item) => ({
     value: item.label_template_id,
     title: item.label,
+    color: item.color,
   }))
 );
 
@@ -1035,6 +1036,7 @@ const loadLabelTemplates = async () => {
     labelTemplates.value = templates.map((lt) => ({
       label_template_id: lt.label_template_id,
       label: lt.label,
+      color: lt.color,
     }));
   }
 };
@@ -1277,7 +1279,29 @@ onMounted(() => {
               item-value="value"
               :label="$t('label') + ':'"
               :placeholder="$t('select_label')"
-            />
+            >
+              <template #item="{ props, item }">
+                <VListItem v-bind="props">
+                  <template #prepend>
+                    <div
+                      v-if="item.raw.color"
+                      class="label-color-circle"
+                      :style="{ backgroundColor: item.raw.color }"
+                    />
+                  </template>
+                </VListItem>
+              </template>
+              <template #selection="{ item }">
+                <div v-if="item.raw" class="d-flex align-center">
+                  <div
+                    v-if="item.raw.color"
+                    class="label-color-circle"
+                    :style="{ backgroundColor: item.raw.color }"
+                  />
+                  <span class="ms-2">{{ item.raw.title }}</span>
+                </div>
+              </template>
+            </AppSelect>
           </VCol>
         </VRow>
         <VRow>
