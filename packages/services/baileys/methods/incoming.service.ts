@@ -186,9 +186,6 @@ export class BaileysIncomingMessageService {
     });
 
     socket.ev.on('call', async (callEvents: WACallEvent[]) => {
-      console.log('callEvents:');
-      console.dir(callEvents, { depth: null, colors: true });
-
       if (!callEvents) return;
 
       const eventsArray = Array.isArray(callEvents) ? callEvents : [callEvents];
