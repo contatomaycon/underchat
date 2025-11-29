@@ -31,6 +31,7 @@ import { updateChatContactSchema } from '@core/schema/chat/updateContact';
 import { deleteChatContactPhotoSchema } from '@core/schema/chat/deleteContactPhoto';
 import { validateChatContactSchema } from '@core/schema/chat/validateContact';
 import { listQuickMessageTemplatesSchema } from '@core/schema/chat/listQuickMessageTemplates';
+import { updateChatLabelSchema } from '@core/schema/chat/updateChatLabel';
 
 export default function chatRoutes(server: FastifyInstance) {
   const chatController = container.resolve(ChatController);
@@ -290,6 +291,15 @@ export default function chatRoutes(server: FastifyInstance) {
   server.get('/chat/quick-message-templates', {
     schema: listQuickMessageTemplatesSchema,
     handler: chatController.listQuickMessageTemplates,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+    ],
+  });
+
+  server.patch('/chat/:chat_id/label', {
+    schema: updateChatLabelSchema,
+    handler: chatController.updateChatLabel,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),

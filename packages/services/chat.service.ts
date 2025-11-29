@@ -170,6 +170,25 @@ export class ChatService {
     );
   };
 
+  updateChatLabel = async (
+    chatId: string,
+    label?: IChat['label'] | null
+  ): Promise<boolean> => {
+    const updateData: {
+      label?: IChat['label'] | null;
+    } = {};
+
+    if (label !== undefined) {
+      updateData.label = label;
+    }
+
+    return this.elasticDatabaseService.update(
+      EElasticIndex.chat,
+      updateData,
+      chatId
+    );
+  };
+
   updateChatProtocol = async (
     chatId: string,
     protocolType: 'protocol_ura' | 'protocol_start' | 'protocol_transfer',

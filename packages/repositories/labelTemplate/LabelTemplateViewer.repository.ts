@@ -12,8 +12,18 @@ export class LabelTemplateViewerRepository {
   ) {}
 
   viewLabelTemplateById = async (
-    labelTemplateId: string
+    labelTemplateId: string,
+    accountId?: string
   ): Promise<ViewLabelTemplateResponse | null> => {
+    const conditions = [
+      eq(labelTemplate.label_template_id, labelTemplateId),
+      isNull(labelTemplate.deleted_at),
+    ];
+
+    if (accountId) {
+      conditions.push(eq(labelTemplate.account_id, accountId));
+    }
+
     const result = await this.db
       .select({
         label_template_id: labelTemplate.label_template_id,
@@ -35,12 +45,7 @@ export class LabelTemplateViewerRepository {
         labelStatus,
         eq(labelTemplate.label_status_id, labelStatus.label_status_id)
       )
-      .where(
-        and(
-          eq(labelTemplate.label_template_id, labelTemplateId),
-          isNull(labelTemplate.deleted_at)
-        )
-      )
+      .where(and(...conditions))
       .execute();
 
     if (!result.length) {

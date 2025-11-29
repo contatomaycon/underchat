@@ -323,6 +323,8 @@
   "chat_status_update_success": "Status do chat atualizado com sucesso!",
   "chat_status_update_not_found": "Chat não encontrado para atualização de status!",
   "chat_status_update_failed": "Erro ao atualizar o status do chat!",
+  "chat_label_update_success": "Etiqueta do chat atualizada com sucesso!",
+  "chat_label_update_failed": "Erro ao atualizar a etiqueta do chat!",
   "chat_summary_clear_success": "Summary do chat limpo com sucesso!",
   "chat_summary_clear_failed": "Erro ao limpar o summary do chat!",
   "role_does_not_belong_to_user_account": "O cargo não pertence à conta do usuário!",

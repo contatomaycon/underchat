@@ -234,6 +234,7 @@ export const useChatStore = defineStore('chat', {
         date: chat.date,
         started_at: chat.started_at,
         closed_at: chat.closed_at,
+        label: chat.label,
       };
 
       const isActiveChat = this.activeChat?.chat_id === chat.chat_id;
@@ -300,6 +301,7 @@ export const useChatStore = defineStore('chat', {
         status: input.status,
         date: input.date,
         started_at: input.started_at,
+        label: input.label,
         closed_at: input.closed_at,
       };
     },
@@ -696,6 +698,7 @@ export const useChatStore = defineStore('chat', {
               user: data.data.user,
               started_at: data.data.started_at,
               closed_at: data.data.closed_at,
+              label: data.data.label,
             };
           }
         }
@@ -1169,6 +1172,7 @@ export const useChatStore = defineStore('chat', {
         phone: chat.phone,
         status: chat.status,
         date: chat.date,
+        label: chat.label,
       };
     },
 
@@ -1951,6 +1955,96 @@ export const useChatStore = defineStore('chat', {
         }
         this.showSnackbar(errorMessage, EColor.error);
         return null;
+      }
+    },
+
+    async listLabelTemplates(): Promise<
+      ListChatLabelTemplatesResponse[] | null
+    > {
+      try {
+        const response = await axios.get<
+          IApiResponse<ListChatLabelTemplatesResponse[]>
+        >('/chat/label-templates');
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        return null;
+      }
+    },
+
+    async updateChatLabel(
+      chatId: string,
+      labelTemplateId?: string | null
+    ): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<IApiResponse<{ success: boolean }>>(
+          `/chat/${chatId}/label`,
+          {
+            label_template_id: labelTemplateId || null,
+          }
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const errorMessage =
+            data?.message || this.i18n.global.t('chat_label_update_error');
+          this.showSnackbar(errorMessage, EColor.error);
+
+          return false;
+        }
+
+        if (this.activeChat?.chat_id === chatId) {
+          let label: ListChatsResult['label'] = null;
+
+          if (labelTemplateId) {
+            const labels = await this.listLabelTemplates();
+            const labelTemplate = labels?.find(
+              (l) => l.label_template_id === labelTemplateId
+            );
+
+            if (labelTemplate) {
+              label = {
+                label_template_id: labelTemplate.label_template_id,
+                label: labelTemplate.label,
+                color: labelTemplate.color,
+              };
+            }
+          }
+
+          this.activeChat = {
+            ...this.activeChat,
+            label,
+          } as ListChatsResult;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('chat_label_update_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        this.loading = false;
+
+        let errorMessage = this.i18n.global.t('chat_label_update_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return false;
       }
     },
   },

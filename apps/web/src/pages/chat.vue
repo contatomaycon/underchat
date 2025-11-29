@@ -586,6 +586,14 @@ const isTransferSectorUserMenuOpen = ref(false);
 const transferAnnotationText = ref('');
 const isTransferAnnotationEmojiOpen = ref(false);
 
+const isLabelModalOpen = ref(false);
+const labelTemplates = ref<
+  Array<{ label_template_id: string; label: string; color: string }>
+>([]);
+const selectedLabelTemplateId = ref<string | null>(null);
+const isLoadingLabels = ref(false);
+const isSavingLabel = ref(false);
+
 const filteredTransferUsers = computed(() => {
   if (!transferUserSearch.value) {
     return transferUsers.value;
@@ -792,6 +800,61 @@ const isInChatStatus = computed(
 const canTransfer = computed(() => {
   return true;
 });
+
+const openLabelModal = async () => {
+  isLabelModalOpen.value = true;
+  isLoadingLabels.value = true;
+
+  const labels = await chatStore.listLabelTemplates();
+
+  if (labels) {
+    labelTemplates.value = labels;
+  }
+
+  selectedLabelTemplateId.value =
+    chatStore.activeChat?.label?.label_template_id || null;
+  isLoadingLabels.value = false;
+};
+
+const closeLabelModal = () => {
+  if (isSavingLabel.value) return;
+  isLabelModalOpen.value = false;
+  selectedLabelTemplateId.value = null;
+};
+
+const saveLabel = async () => {
+  if (!chatStore.activeChat?.chat_id) return;
+
+  isSavingLabel.value = true;
+
+  const success = await chatStore.updateChatLabel(
+    chatStore.activeChat.chat_id,
+    selectedLabelTemplateId.value || null
+  );
+
+  if (success) {
+    isLabelModalOpen.value = false;
+  }
+
+  isSavingLabel.value = false;
+};
+
+const removeLabel = async () => {
+  if (!chatStore.activeChat?.chat_id) return;
+
+  isSavingLabel.value = true;
+
+  const success = await chatStore.updateChatLabel(
+    chatStore.activeChat.chat_id,
+    null
+  );
+
+  if (success) {
+    isLabelModalOpen.value = false;
+  }
+
+  isSavingLabel.value = false;
+};
 
 const hasAttachmentsOrContent = computed(
   () =>
@@ -4376,6 +4439,35 @@ onBeforeUnmount(() => {
           <VSpacer />
 
           <div class="d-sm-flex align-center d-none text-medium-emphasis">
+            <div
+              v-if="isInChatStatus && chatStore.activeChat?.label"
+              class="d-flex align-center label-container me-2"
+              :style="{
+                gap: '4px',
+                borderColor: `${chatStore.activeChat.label.color}40`,
+              }"
+            >
+              <IconBtn
+                @click="openLabelModal"
+                :title="chatStore.activeChat.label.label"
+              >
+                <VIcon
+                  icon="tabler-tag"
+                  :color="chatStore.activeChat.label.color"
+                />
+              </IconBtn>
+              <span class="text-body-2 text-medium-emphasis">
+                {{ chatStore.activeChat.label.label }}
+              </span>
+            </div>
+            <IconBtn
+              v-else-if="isInChatStatus"
+              class="me-1"
+              @click="openLabelModal"
+              :title="t('label')"
+            >
+              <VIcon icon="tabler-tag" />
+            </IconBtn>
             <IconBtn
               v-if="isInChatStatus && canTransfer"
               @click="isTransferModalOpen = true"
@@ -5574,6 +5666,87 @@ onBeforeUnmount(() => {
     :contact-id="editContactId"
   />
 
+  <VDialog
+    v-model="isLabelModalOpen"
+    max-width="500"
+    :persistent="isSavingLabel"
+  >
+    <DialogCloseBtn :disabled="isSavingLabel" @click="closeLabelModal" />
+
+    <VCard :title="t('label')">
+      <VCardText>
+        <VProgressLinear
+          v-if="isLoadingLabels"
+          indeterminate
+          color="primary"
+          class="mb-4"
+        />
+
+        <VSelect
+          v-else
+          v-model="selectedLabelTemplateId"
+          :items="labelTemplates"
+          item-title="label"
+          item-value="label_template_id"
+          :label="t('label')"
+          :placeholder="t('select_label')"
+          clearable
+          class="label-select"
+        >
+          <template #item="{ props, item }">
+            <VListItem v-bind="props">
+              <template #prepend>
+                <div
+                  class="label-color-circle"
+                  :style="{ backgroundColor: item.raw.color }"
+                />
+              </template>
+            </VListItem>
+          </template>
+          <template #selection="{ item }">
+            <div v-if="item.raw" class="d-flex align-center">
+              <div
+                class="label-color-circle"
+                :style="{ backgroundColor: item.raw.color }"
+              />
+              <span class="ms-2">{{ item.raw.label }}</span>
+            </div>
+          </template>
+        </VSelect>
+      </VCardText>
+
+      <VCardText class="d-flex justify-space-between flex-wrap gap-3">
+        <VBtn
+          v-if="chatStore.activeChat?.label"
+          variant="tonal"
+          color="error"
+          :loading="isSavingLabel"
+          :disabled="isSavingLabel"
+          @click="removeLabel"
+        >
+          {{ t('remove') }}
+        </VBtn>
+        <VSpacer />
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          :disabled="isSavingLabel"
+          @click="closeLabelModal"
+        >
+          {{ t('cancel') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          :loading="isSavingLabel"
+          :disabled="isSavingLabel"
+          @click="saveLabel"
+        >
+          {{ t('save') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
   <VSnackbar
     v-model="chatStore.snackbar.status"
     transition="scroll-y-reverse-transition"
@@ -6608,6 +6781,59 @@ $chat-app-header-height: 76px;
   border-radius: 2px;
   overflow: hidden;
   cursor: pointer;
+}
+
+.label-select {
+  .v-field__input {
+    > .v-select__selection {
+      margin: 0;
+      display: flex;
+      align-items: center;
+
+      > span:not(.label-color-circle):not(:has(.label-color-circle)),
+      > .v-select__selection-text {
+        display: none !important;
+      }
+    }
+  }
+
+  .v-select__selection {
+    .v-select__selection-text {
+      display: none !important;
+    }
+
+    > span:not(:has(.label-color-circle)):not(.label-color-circle) {
+      display: none !important;
+    }
+  }
+
+  .v-list-item__prepend {
+    margin-inline-end: 12px;
+  }
+}
+
+.label-color-circle {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-inline-end: 8px;
+}
+
+.label-container {
+  padding: 0px 6px 0px 4px;
+  border-top: 0.5px solid;
+  border-right: 0.5px solid;
+  border-bottom: 0.5px solid;
+  border-left: none;
+  border-radius: 0 4px 4px 0;
+}
+
+.label-color-circle {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .audio-modal-progress-bar {

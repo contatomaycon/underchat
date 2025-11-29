@@ -137,6 +137,20 @@ export const chatMappings = () => {
         protocol_transfer: {
           type: 'keyword',
         },
+        label: {
+          type: 'nested',
+          properties: {
+            label_template_id: {
+              type: 'keyword',
+            },
+            label: {
+              type: 'text',
+            },
+            color: {
+              type: 'keyword',
+            },
+          },
+        },
       },
     },
   };
