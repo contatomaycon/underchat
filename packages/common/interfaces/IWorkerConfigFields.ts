@@ -6,5 +6,7 @@ export interface IWorkerConfigFields {
   generate_protocol_at_ura: string | null;
   generate_protocol_at_start: string | null;
   generate_protocol_at_transfer: string | null;
+  show_message_on_call: string | null;
+  auto_save_contacts: boolean | null;
   simultaneous_attendance: number | null;
 }

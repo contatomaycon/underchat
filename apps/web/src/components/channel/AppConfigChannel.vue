@@ -194,6 +194,8 @@ type WorkerConfigForm = {
   generate_protocol_at_ura: boolean;
   generate_protocol_at_start: boolean;
   generate_protocol_at_transfer: boolean;
+  show_message_on_call: boolean;
+  auto_save_contacts: boolean;
 };
 
 const createDefaultWorkerConfig = (): WorkerConfigForm => ({
@@ -205,6 +207,8 @@ const createDefaultWorkerConfig = (): WorkerConfigForm => ({
   generate_protocol_at_ura: false,
   generate_protocol_at_start: false,
   generate_protocol_at_transfer: false,
+  show_message_on_call: false,
+  auto_save_contacts: false,
 });
 
 const workerConfigForm = reactive<WorkerConfigForm>(
@@ -226,6 +230,9 @@ const simultaneousAttendance = ref<number | null>(null);
 const simultaneousAttendanceModalOpen = ref(false);
 const isSavingSimultaneousAttendance = ref(false);
 const simultaneousAttendanceInput = ref<string>('');
+const showMessageOnCallText = ref<string>('');
+const showMessageOnCallModalOpen = ref(false);
+const isSavingShowMessageOnCall = ref(false);
 
 const statusTypeOptions = computed(() => [
   {
@@ -402,6 +409,8 @@ const applyWorkerConfig = (config?: ViewWorkerConfigResponse | null) => {
     nextState.generate_protocol_at_transfer = Boolean(
       config.generate_protocol_at_transfer
     );
+    nextState.show_message_on_call = Boolean(config.show_message_on_call);
+    nextState.auto_save_contacts = config.auto_save_contacts;
   }
 
   Object.assign(workerConfigForm, nextState);
@@ -418,10 +427,7 @@ const loadWorkerConfig = async (force = false) => {
 
   try {
     isLoadingWorkerConfig.value = true;
-    const result = await channelStore.fetchWorkerConfig(
-      channelId.value,
-      force
-    );
+    const result = await channelStore.fetchWorkerConfig(channelId.value, force);
 
     applyWorkerConfig(result);
     workerConfigLoadedFor.value = channelId.value;
@@ -431,11 +437,13 @@ const loadWorkerConfig = async (force = false) => {
       protocolStartText,
       protocolUraText,
       simultaneousAttendanceValue,
+      showMessageOnCallValue,
     ] = await Promise.all([
       channelStore.fetchTransferProtocolText(channelId.value),
       channelStore.fetchStartProtocolText(channelId.value),
       channelStore.fetchUraProtocolText(channelId.value),
       channelStore.fetchSimultaneousAttendance(channelId.value),
+      channelStore.fetchShowMessageOnCall(channelId.value),
     ]);
 
     const hasTransferProtocolText =
@@ -463,6 +471,14 @@ const loadWorkerConfig = async (force = false) => {
     simultaneousAttendanceInput.value = hasSimultaneousAttendance
       ? simultaneousAttendanceValue.toString()
       : '';
+
+    const hasShowMessageOnCall =
+      showMessageOnCallValue !== null &&
+      showMessageOnCallValue.trim().length > 0;
+    showMessageOnCallText.value = hasShowMessageOnCall
+      ? showMessageOnCallValue
+      : '';
+    workerConfigForm.show_message_on_call = hasShowMessageOnCall;
   } finally {
     isLoadingWorkerConfig.value = false;
   }
@@ -713,6 +729,56 @@ const deleteSimultaneousAttendance = async () => {
   }
 };
 
+const openShowMessageOnCallModal = async () => {
+  if (!channelId.value) return;
+
+  const messageText = await channelStore.fetchShowMessageOnCall(
+    channelId.value
+  );
+  showMessageOnCallText.value = messageText || '';
+  showMessageOnCallModalOpen.value = true;
+};
+
+const closeShowMessageOnCallModal = () => {
+  showMessageOnCallModalOpen.value = false;
+};
+
+const saveShowMessageOnCallText = async () => {
+  if (!channelId.value) return;
+
+  try {
+    isSavingShowMessageOnCall.value = true;
+    const text = showMessageOnCallText.value.trim() || null;
+    const result = await channelStore.updateShowMessageOnCall(
+      channelId.value,
+      text
+    );
+
+    const hasText = result !== null && result.trim().length > 0;
+    workerConfigForm.show_message_on_call = hasText;
+    showMessageOnCallText.value = result || '';
+
+    closeShowMessageOnCallModal();
+  } finally {
+    isSavingShowMessageOnCall.value = false;
+  }
+};
+
+const deleteShowMessageOnCallText = async () => {
+  if (!channelId.value) return;
+
+  try {
+    isSavingShowMessageOnCall.value = true;
+    await channelStore.updateShowMessageOnCall(channelId.value, null);
+
+    workerConfigForm.show_message_on_call = false;
+    showMessageOnCallText.value = '';
+    closeShowMessageOnCallModal();
+  } finally {
+    isSavingShowMessageOnCall.value = false;
+  }
+};
+
 const workerConfigOptions = computed(() => [
   {
     key: 'is_automatic_attendance' as WorkerConfigField,
@@ -761,6 +827,16 @@ const workerConfigOptions = computed(() => [
     description: t(
       'channel_general_config_generate_protocol_transfer_description'
     ),
+  },
+  {
+    key: 'show_message_on_call' as WorkerConfigField,
+    title: t('channel_general_config_show_message_on_call_title'),
+    description: t('channel_general_config_show_message_on_call_description'),
+  },
+  {
+    key: 'auto_save_contacts' as WorkerConfigField,
+    title: t('channel_general_config_auto_save_contacts_title'),
+    description: t('channel_general_config_auto_save_contacts_description'),
   },
 ]);
 
@@ -1904,8 +1980,15 @@ onMounted(async () => {
 </script>
 
 <template>
-  <VDialog v-model="isVisible" max-width="960" :persistent="isSavingProfileStatus">
-    <DialogCloseBtn :disabled="isSavingProfileStatus" @click="isVisible = false" />
+  <VDialog
+    v-model="isVisible"
+    max-width="960"
+    :persistent="isSavingProfileStatus"
+  >
+    <DialogCloseBtn
+      :disabled="isSavingProfileStatus"
+      @click="isVisible = false"
+    />
 
     <template v-if="channelStore.loading && !isSavingProfileStatus">
       <VOverlay
@@ -1919,7 +2002,11 @@ onMounted(async () => {
     <VCard>
       <VCardTitle class="d-flex justify-space-between align-center">
         <span>{{ $t('configurations') }}</span>
-        <DialogCloseBtn class="d-none d-sm-flex" :disabled="isSavingProfileStatus" @click="isVisible = false" />
+        <DialogCloseBtn
+          class="d-none d-sm-flex"
+          :disabled="isSavingProfileStatus"
+          @click="isVisible = false"
+        />
       </VCardTitle>
 
       <VTabs v-model="currentTab" grow>
@@ -1971,7 +2058,8 @@ onMounted(async () => {
                           option.key !== 'generate_protocol_at_transfer' &&
                           option.key !== 'generate_protocol_at_start' &&
                           option.key !== 'generate_protocol_at_ura' &&
-                          option.key !== 'simultaneous_attendance'
+                          option.key !== 'simultaneous_attendance' &&
+                          option.key !== 'show_message_on_call'
                         "
                         :model-value="workerConfigForm[option.key]"
                         :label="option.title"
@@ -2025,6 +2113,17 @@ onMounted(async () => {
                           isSavingWorkerConfig || isSavingSimultaneousAttendance
                         "
                         @click.stop.prevent="openSimultaneousAttendanceModal"
+                      />
+                      <VCheckbox
+                        v-else-if="option.key === 'show_message_on_call'"
+                        :model-value="workerConfigForm[option.key]"
+                        :label="option.title"
+                        color="primary"
+                        hide-details
+                        :disabled="
+                          isSavingWorkerConfig || isSavingShowMessageOnCall
+                        "
+                        @click.stop.prevent="openShowMessageOnCallModal"
                       />
                       <p class="text-body-2 text-medium-emphasis mb-0">
                         {{ option.description }}
@@ -3025,6 +3124,60 @@ onMounted(async () => {
             Number.parseInt(simultaneousAttendanceInput, 10) < 1
           "
           @click="saveSimultaneousAttendance"
+        >
+          {{ $t('save') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog v-model="showMessageOnCallModalOpen" max-width="600" persistent>
+    <VCard>
+      <VCardTitle class="d-flex justify-space-between align-center">
+        <span>{{
+          $t('channel_general_config_show_message_on_call_title')
+        }}</span>
+        <IconBtn @click="closeShowMessageOnCallModal">
+          <VIcon icon="tabler-x" />
+        </IconBtn>
+      </VCardTitle>
+      <VCardText>
+        <VTextarea
+          v-model="showMessageOnCallText"
+          :label="$t('show_message_on_call_text_label')"
+          :placeholder="$t('show_message_on_call_text_placeholder')"
+          :maxlength="2000"
+          rows="8"
+          counter
+          auto-grow
+        />
+        <div class="text-caption text-medium-emphasis mt-2">
+          {{ $t('show_message_on_call_text_hint') }}
+        </div>
+      </VCardText>
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          :disabled="isSavingShowMessageOnCall"
+          @click="closeShowMessageOnCallModal"
+        >
+          {{ $t('close') }}
+        </VBtn>
+        <VBtn
+          color="error"
+          variant="tonal"
+          :loading="isSavingShowMessageOnCall"
+          :disabled="isSavingShowMessageOnCall"
+          @click="deleteShowMessageOnCallText"
+        >
+          {{ $t('delete') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          :loading="isSavingShowMessageOnCall"
+          :disabled="isSavingShowMessageOnCall"
+          @click="saveShowMessageOnCallText"
         >
           {{ $t('save') }}
         </VBtn>

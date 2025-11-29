@@ -40,12 +40,12 @@ WORKDIR /app
 
 COPY --from=pruned /app/out/json/ .
 COPY --from=pruned /app/infra/ssh/docker_key /tmp/docker_key
+COPY --from=pruned /app/infra/ssh/known_hosts /tmp/known_hosts
 
 RUN mkdir -p ~/.ssh && \
     cp /tmp/docker_key ~/.ssh/id_rsa && \
     chmod 600 ~/.ssh/id_rsa && \
-    ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null || true && \
-    ssh-keyscan gitlab.com >> ~/.ssh/known_hosts 2>/dev/null || true && \
+    cp /tmp/known_hosts ~/.ssh/known_hosts && \
     chmod 644 ~/.ssh/known_hosts && \
     eval "$(ssh-agent -s)" > /dev/null && \
     ssh-add ~/.ssh/id_rsa 2>/dev/null || true && \

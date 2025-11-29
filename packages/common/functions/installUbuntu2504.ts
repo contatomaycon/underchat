@@ -24,6 +24,19 @@ export async function installUbuntu2504(
       .join(String.raw`\n`);
   } catch {}
 
+  const patchKnownHosts = path.join(
+    __dirname,
+    '../../../infra/ssh/known_hosts'
+  );
+  let knownHostsContent = '';
+  try {
+    knownHostsContent = await fs.readFile(patchKnownHosts, 'utf-8');
+    knownHostsContent = knownHostsContent
+      .split('\n')
+      .map((line) => line.replaceAll(/(["`\\$])/g, String.raw`\$1`))
+      .join(String.raw`\n`);
+  } catch {}
+
   return [
     'dpkg --configure -a',
     'apt-get update',
@@ -91,16 +104,19 @@ export async function installUbuntu2504(
       hash -r"`,
 
     sshKeyContent
-      ? `bash -c "mkdir -p ~/.ssh && \
+      ? (() => {
+          const knownHostsCmd = knownHostsContent
+            ? `printf '%b' '${knownHostsContent}' > ~/.ssh/known_hosts && `
+            : '';
+          return `bash -c "mkdir -p ~/.ssh && \
           printf '%b' '${sshKeyContent}' > ~/.ssh/id_rsa && \
           chmod 600 ~/.ssh/id_rsa && \
-          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null || true && \
-          ssh-keyscan gitlab.com >> ~/.ssh/known_hosts 2>/dev/null || true && \
-          chmod 644 ~/.ssh/known_hosts && \
+          ${knownHostsCmd}chmod 644 ~/.ssh/known_hosts && \
           eval \\$(ssh-agent -s) > /dev/null && \
           ssh-add ~/.ssh/id_rsa 2>/dev/null || true && \
           git config --global url.\\"git@github.com:\\".insteadOf \\"https://github.com/\\" || true && \
-          git config --global url.\\"git@gitlab.com:\\".insteadOf \\"https://gitlab.com/\\" || true"`
+          git config --global url.\\"git@gitlab.com:\\".insteadOf \\"https://gitlab.com/\\" || true"`;
+        })()
       : 'echo "SSH key not found, skipping SSH configuration"',
 
     `bash -c "mkdir -p /home/app && \

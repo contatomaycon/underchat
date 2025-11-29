@@ -103,6 +103,10 @@ export class WorkerConfigUpserterRepository {
         input.allow_attendance_only_online;
     }
 
+    if (input.auto_save_contacts !== undefined) {
+      updateData.auto_save_contacts = input.auto_save_contacts;
+    }
+
     return updateData;
   }
 
@@ -147,6 +151,7 @@ export class WorkerConfigUpserterRepository {
         show_worker_name: input.show_worker_name ?? false,
         allow_attendance_only_online:
           input.allow_attendance_only_online ?? false,
+        auto_save_contacts: input.auto_save_contacts ?? false,
       })
       .execute();
   }
@@ -208,6 +213,7 @@ export class WorkerConfigUpserterRepository {
         show_attendee_name: false,
         show_worker_name: false,
         allow_attendance_only_online: false,
+        auto_save_contacts: false,
         generate_protocol_at_transfer: text || null,
       })
       .execute();
@@ -286,6 +292,7 @@ export class WorkerConfigUpserterRepository {
         show_attendee_name: false,
         show_worker_name: false,
         allow_attendance_only_online: false,
+        auto_save_contacts: false,
         generate_protocol_at_start: text || null,
       })
       .execute();
@@ -361,6 +368,7 @@ export class WorkerConfigUpserterRepository {
         show_attendee_name: false,
         show_worker_name: false,
         allow_attendance_only_online: false,
+        auto_save_contacts: false,
         generate_protocol_at_ura: text || null,
       })
       .execute();
@@ -436,6 +444,7 @@ export class WorkerConfigUpserterRepository {
         show_attendee_name: false,
         show_worker_name: false,
         allow_attendance_only_online: false,
+        auto_save_contacts: false,
         simultaneous_attendance: quantity || null,
       })
       .execute();
@@ -454,5 +463,81 @@ export class WorkerConfigUpserterRepository {
       .execute();
 
     return result[0]?.simultaneous_attendance || null;
+  }
+
+  updateShowMessageOnCall = async (
+    workerId: string,
+    text: string | null
+  ): Promise<string | null> => {
+    await this.db.transaction(async (tx) => {
+      await this.ensureSingleConfigPerWorker(tx, workerId);
+
+      const existingConfig = await this.findExistingConfigTx(tx, workerId);
+
+      if (existingConfig) {
+        await this.updateShowMessageOnCallTx(tx, workerId, text);
+        return;
+      }
+
+      await this.createShowMessageOnCallTx(tx, workerId, text);
+    });
+
+    return this.getShowMessageOnCall(workerId);
+  };
+
+  private async updateShowMessageOnCallTx(
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
+    workerId: string,
+    text: string | null
+  ): Promise<void> {
+    await tx
+      .update(workerConfig)
+      .set({
+        show_message_on_call: text || null,
+        updated_at: new Date().toISOString(),
+      })
+      .where(eq(workerConfig.worker_id, workerId))
+      .execute();
+  }
+
+  private async createShowMessageOnCallTx(
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
+    workerId: string,
+    text: string | null
+  ): Promise<void> {
+    await tx
+      .insert(workerConfig)
+      .values({
+        worker_config_id: uuidv7(),
+        worker_id: workerId,
+        is_automatic_attendance: false,
+        show_attendee_name: false,
+        show_worker_name: false,
+        allow_attendance_only_online: false,
+        auto_save_contacts: false,
+        show_message_on_call: text || null,
+      })
+      .execute();
+  }
+
+  private async getShowMessageOnCall(workerId: string): Promise<string | null> {
+    const result = await this.db
+      .select({
+        show_message_on_call: workerConfig.show_message_on_call,
+      })
+      .from(workerConfig)
+      .where(eq(workerConfig.worker_id, workerId))
+      .limit(1)
+      .execute();
+
+    return result[0]?.show_message_on_call || null;
   }
 }

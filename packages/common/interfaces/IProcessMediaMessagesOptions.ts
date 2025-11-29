@@ -1,8 +1,7 @@
 import { IProcessMediaMessagesParams } from './IProcessMediaMessagesParams';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 
-export interface IProcessMediaMessagesOptions
-  extends IProcessMediaMessagesParams {
+export interface IProcessMediaMessagesOptions extends IProcessMediaMessagesParams {
   documents: UploadFileRequest[];
   videos: UploadFileRequest[];
   videoDuration: number | null;
