@@ -92,6 +92,7 @@ export class MessageTemplateListerRepository {
         message_template_id: messageTemplate.message_template_id,
         message: messageTemplate.message,
         command: messageTemplate.command,
+        type: messageTemplate.type,
         account: {
           account_id: account.account_id,
           name: account.name,
@@ -141,6 +142,7 @@ export class MessageTemplateListerRepository {
       command: message.command,
       message: message.message,
       attachment_url: message.attachment_url ?? null,
+      type: message.type,
       created_at: message.created_at ? message.created_at : null,
     })) as ListMessageTemplateResponse[];
   };

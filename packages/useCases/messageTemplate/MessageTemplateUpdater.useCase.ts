@@ -4,21 +4,24 @@ import { MessageTemplateService } from '@core/services/messageTemplate.service';
 import { UpdateMessageTemplateRequest } from '@core/schema/messageTemplate/editMessageTemplate/request.schema';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { StorageService } from '@core/services/storage.service';
+import { ConverterService } from '@core/services/converter';
 import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { IUpdateMessageTemplate } from '@core/interfaces/repositories/messageTemplate/IUpdateMessageTemplate';
+import { EMessageType } from '@core/common/enums/EMessageType';
 
 @injectable()
 export class MessageTemplateUpdaterUseCase {
   constructor(
     private readonly messageTemplateService: MessageTemplateService,
-    private readonly storageService: StorageService
+    private readonly storageService: StorageService,
+    private readonly converterService: ConverterService
   ) {}
 
   private async validateAttachment(
     file: UploadFileRequest,
     t: TFunction<'translation', undefined>
   ): Promise<void> {
-    const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
+    const MAX_ATTACHMENT_SIZE = 16 * 1024 * 1024;
     const ALLOWED_ATTACHMENT_EXTENSIONS = [
       'jpg',
       'jpeg',
@@ -33,6 +36,8 @@ export class MessageTemplateUpdaterUseCase {
       'aac',
       'flac',
       'opus',
+      'mp4',
+      'webm',
     ];
 
     const buffer = await file.toBuffer();
@@ -59,43 +64,29 @@ export class MessageTemplateUpdaterUseCase {
     body: UpdateMessageTemplateRequest,
     accountId: string
   ): Promise<boolean> {
-    const messageTemplateExists =
-      await this.messageTemplateService.existsMessageTemplateById(
-        messageTemplateId
-      );
+    await this.ensureMessageTemplateExists(t, messageTemplateId);
+    await this.ensureMessageStatusIsValid(t, body);
 
-    if (!messageTemplateExists) {
-      throw new Error(t('message_template_not_found'));
-    }
+    const attachment = await this.processAttachmentIfPresent(
+      t,
+      body,
+      accountId
+    );
 
-    if (body.message_status_id?.value) {
-      const messageStatusExists =
-        await this.messageTemplateService.existsMessageStatusById(
-          body.message_status_id.value
-        );
-
-      if (!messageStatusExists) {
-        throw new Error(t('message_status_not_found'));
-      }
-    }
-
-    let attachmentUrl: UploadFileResponse | null = null;
-
-    if (body.attachment_url?.filename) {
-      await this.validateAttachment(body.attachment_url, t);
-
-      attachmentUrl = await this.storageService.uploadImage(
-        body.attachment_url,
-        accountId
-      );
-    }
+    const { resolvedAttachmentUrl, mimetype, duration, width, height } =
+      this.resolveAttachmentMetadata(attachment, body);
 
     const inputWithAttachment: IUpdateMessageTemplate = {
       message_template_id: messageTemplateId,
-      message: body.message.value,
-      command: body.command.value,
-      attachment_url: attachmentUrl ? attachmentUrl.url : null,
-      message_status_id: body.message_status_id.value,
+      message: body.message?.value,
+      command: body.command?.value,
+      attachment_url: resolvedAttachmentUrl,
+      message_status_id: body.message_status_id?.value,
+      type: body.type?.value,
+      mimetype,
+      duration,
+      width,
+      height,
     };
 
     const messageTemplateUpdater =
@@ -108,5 +99,231 @@ export class MessageTemplateUpdaterUseCase {
     }
 
     return messageTemplateUpdater;
+  }
+
+  private async ensureMessageTemplateExists(
+    t: TFunction<'translation', undefined>,
+    messageTemplateId: string
+  ): Promise<void> {
+    const messageTemplateExists =
+      await this.messageTemplateService.existsMessageTemplateById(
+        messageTemplateId
+      );
+
+    if (!messageTemplateExists) {
+      throw new Error(t('message_template_not_found'));
+    }
+  }
+
+  private async ensureMessageStatusIsValid(
+    t: TFunction<'translation', undefined>,
+    body: UpdateMessageTemplateRequest
+  ): Promise<void> {
+    const messageStatusId = body.message_status_id?.value;
+    if (!messageStatusId) return;
+
+    const messageStatusExists =
+      await this.messageTemplateService.existsMessageStatusById(
+        messageStatusId
+      );
+
+    if (!messageStatusExists) {
+      throw new Error(t('message_status_not_found'));
+    }
+  }
+
+  private async processAttachmentIfPresent(
+    t: TFunction<'translation', undefined>,
+    body: UpdateMessageTemplateRequest,
+    accountId: string
+  ): Promise<
+    | (UploadFileResponse & {
+        mimetype?: string | null;
+        duration?: number | null;
+        width?: number | null;
+        height?: number | null;
+      })
+    | null
+  > {
+    const file = body.attachment_url;
+    if (!file?.filename) return null;
+
+    await this.validateAttachment(file, t);
+    const messageType = (body.type?.value || 'text') as EMessageType;
+
+    if (messageType === EMessageType.image) {
+      return this.uploadImageAttachment(file, accountId);
+    }
+
+    if (messageType === EMessageType.video) {
+      return this.uploadVideoAttachment(file, accountId);
+    }
+
+    if (messageType === EMessageType.audio) {
+      return this.uploadAudioAttachment(file, accountId);
+    }
+
+    return null;
+  }
+
+  private async uploadImageAttachment(
+    file: UploadFileRequest,
+    accountId: string
+  ): Promise<
+    | (UploadFileResponse & {
+        mimetype?: string | null;
+        duration?: number | null;
+        width?: number | null;
+        height?: number | null;
+      })
+    | null
+  > {
+    const result = await this.storageService.uploadImage(file, accountId);
+    if (!result) {
+      return null;
+    }
+
+    return {
+      ...result,
+      mimetype: result.mimetype ?? null,
+      duration: null,
+      width: result.width ?? null,
+      height: result.height ?? null,
+    };
+  }
+
+  private async uploadVideoAttachment(
+    file: UploadFileRequest,
+    accountId: string
+  ): Promise<
+    | (UploadFileResponse & {
+        mimetype?: string | null;
+        duration?: number | null;
+        width?: number | null;
+        height?: number | null;
+      })
+    | null
+  > {
+    const originalBuffer = await file.toBuffer();
+    const originalMimetype = file.mimetype || null;
+
+    const converted = await this.converterService.convertVideo(
+      originalBuffer,
+      originalMimetype
+    );
+
+    const filename = file.filename.replace(/\.[^.]+$/, '') || 'video';
+    const newFilename = `${filename}.${converted.extension}`;
+
+    const uploadResult = await this.storageService.uploadVideoFromBuffer(
+      converted.buffer,
+      newFilename,
+      converted.mimetype,
+      accountId,
+      converted.width,
+      converted.height
+    );
+
+    if (!uploadResult) {
+      return null;
+    }
+
+    return {
+      ...uploadResult,
+      mimetype: converted.mimetype,
+      duration: converted.duration ?? null,
+      width: converted.width ?? null,
+      height: converted.height ?? null,
+    };
+  }
+
+  private async uploadAudioAttachment(
+    file: UploadFileRequest,
+    accountId: string
+  ): Promise<
+    | (UploadFileResponse & {
+        mimetype?: string | null;
+        duration?: number | null;
+        width?: number | null;
+        height?: number | null;
+      })
+    | null
+  > {
+    const originalBuffer = await file.toBuffer();
+    const originalMimetype = file.mimetype || null;
+
+    const converted = await this.converterService.convertAudio(
+      originalBuffer,
+      originalMimetype,
+      true
+    );
+
+    const filename = file.filename.replace(/\.[^.]+$/, '') || 'audio';
+    const newFilename = `${filename}.${converted.extension}`;
+
+    const uploadResult = await this.storageService.uploadAudioFromBuffer(
+      converted.buffer,
+      newFilename,
+      converted.mimetype,
+      accountId
+    );
+
+    if (!uploadResult) {
+      return null;
+    }
+
+    return {
+      ...uploadResult,
+      mimetype: converted.mimetype,
+      duration: converted.duration ?? null,
+      width: null,
+      height: null,
+    };
+  }
+
+  private resolveAttachmentMetadata(
+    attachment:
+      | (UploadFileResponse & {
+          mimetype?: string | null;
+          duration?: number | null;
+          width?: number | null;
+          height?: number | null;
+        })
+      | null,
+    body: UpdateMessageTemplateRequest
+  ): {
+    resolvedAttachmentUrl: string | null | undefined;
+    mimetype: string | null | undefined;
+    duration: number | null | undefined;
+    width: number | null | undefined;
+    height: number | null | undefined;
+  } {
+    if (attachment) {
+      return {
+        resolvedAttachmentUrl: attachment.url,
+        mimetype: attachment.mimetype ?? null,
+        duration: attachment.duration ?? null,
+        width: attachment.width ?? null,
+        height: attachment.height ?? null,
+      };
+    }
+
+    if (body.attachment_url) {
+      return {
+        resolvedAttachmentUrl: null,
+        mimetype: null,
+        duration: null,
+        width: null,
+        height: null,
+      };
+    }
+
+    return {
+      resolvedAttachmentUrl: undefined,
+      mimetype: undefined,
+      duration: undefined,
+      width: undefined,
+      height: undefined,
+    };
   }
 }

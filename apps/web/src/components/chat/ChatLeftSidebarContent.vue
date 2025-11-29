@@ -1,32 +1,28 @@
 <script lang="ts" setup>
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import ChatQueue from './ChatQueue.vue';
-import AppAddContact from '@/components/contact/AppAddContact.vue';
-import AppEditContact from '@/components/contact/AppEditContact.vue';
+import AppAddContactChat from '@/components/chat/AppAddContactChat.vue';
+import AppEditContactChat from '@/components/chat/AppEditContactChat.vue';
 import { useChatStore } from '@/@webcore/stores/chat';
-import { useContactStore } from '@/@webcore/stores/contact';
 import { useChannelsStore } from '@/@webcore/stores/channels';
-import { useSectorsStore } from '@/@webcore/stores/sector';
+import { ListChatContactsResponse } from '@core/schema/chat/listContacts/response.schema';
 import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { SearchChatsQuery } from '@core/schema/chat/searchChats/request.schema';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
+import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerConfigForChat/response.schema';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
-import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 import { can } from '@layouts/plugins/casl';
 import { refDebounced } from '@vueuse/core';
-import { ListContactResponse } from '@core/schema/contact/listContact/response.schema';
-import axios from '@webcore/axios';
-import { IApiResponse } from '@core/common/interfaces/IApiResponse';
-import { IChat } from '@core/common/interfaces/IChat';
 import { EColor } from '@core/common/enums/EColor';
 import VDialogHandler from '@/components/VDialogHandler.vue';
-import { ListWorkerResponse } from '@core/schema/worker/listWorker/response.schema';
-import { ListSectorResponse } from '@core/schema/sector/listSector/response.schema';
-import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
-import { ESectorStatus } from '@core/common/enums/ESectorStatus';
+import { useTheme } from 'vuetify';
+import {
+  TransferWorker,
+  TransferSector,
+} from '@core/schema/chat/listTransferOptions/response.schema';
 
 const emit = defineEmits<{
   (e: 'openChat', id: ListChatsResult['chat_id']): void;
@@ -41,9 +37,8 @@ const props = defineProps<{
 }>();
 
 const chatStore = useChatStore();
-const contactStore = useContactStore();
 const channelsStore = useChannelsStore();
-const sectorsStore = useSectorsStore();
+const { global } = useTheme();
 
 const currentPageQueue = ref(1);
 const perPageQueue = ref(10);
@@ -70,7 +65,8 @@ const isLoadingMoreContacts = ref(false);
 const contactScrollContainer = ref<InstanceType<
   typeof PerfectScrollbar
 > | null>(null);
-const accumulatedContacts = ref<ListContactResponse[]>([]);
+const accumulatedContacts = ref<ListChatContactsResponse[]>([]);
+const contactsTotalPages = ref(1);
 const isValidateContactDialogOpen = ref(false);
 const contactToValidate = ref<string | null>(null);
 const isEditContactModalOpen = ref(false);
@@ -79,11 +75,12 @@ const hoveredContactId = ref<string | null>(null);
 const editingContactId = ref<string | null>(null);
 const validatingContactId = ref<string | null>(null);
 const isSelectChannelSectorModalOpen = ref(false);
-const selectedContactForChat = ref<ListContactResponse | null>(null);
+const selectedContactForChat = ref<ListChatContactsResponse | null>(null);
 const selectedWorkerId = ref<string | null>(null);
 const selectedSectorId = ref<string | null>(null);
-const availableWorkers = ref<ListWorkerResponse[]>([]);
-const availableSectors = ref<ListSectorResponse[]>([]);
+const availableWorkers = ref<TransferWorker[]>([]);
+const availableSectors = ref<TransferSector[]>([]);
+const workerConfigForChat = ref<ViewWorkerConfigForChatResponse | null>(null);
 
 type FilterType = 'new' | 'all' | 'in_chat' | 'queue' | 'chatbot';
 
@@ -120,21 +117,6 @@ const queueSelectionPermissions = [
 ];
 
 const canSelectAnyQueueChat = computed(() => can(queueSelectionPermissions));
-
-const canAccessContacts = computed(() => {
-  const permissions = [
-    EGeneralPermissions.full_access,
-    EGeneralPermissions.full_access_group,
-    EContactPermissions.contact_group,
-    EContactPermissions.contact_view,
-  ];
-  return can(permissions);
-});
-
-const modelSearch = computed({
-  get: () => props.search,
-  set: (value: string) => emit('update:search', value),
-});
 
 const isQueueChatSelectable = (index: number): boolean => {
   if (canSelectAnyQueueChat.value) {
@@ -210,17 +192,16 @@ const loadChatsByFilter = async () => {
 };
 
 const loadContacts = async (append = false) => {
-  if (isLoadingMoreContacts.value || contactStore.loading) return;
+  if (isLoadingMoreContacts.value) return;
 
   isLoadingMoreContacts.value = true;
 
   try {
-    const result = await contactStore.listContact({
-      page: currentPageContacts.value,
-      per_page: perPageContacts.value,
-      sort_by: [],
-      search: debouncedContactSearch.value || undefined,
-    });
+    const result = await chatStore.listChatContacts(
+      currentPageContacts.value,
+      perPageContacts.value,
+      debouncedContactSearch.value || undefined
+    );
 
     if (result) {
       if (append) {
@@ -228,6 +209,7 @@ const loadContacts = async (append = false) => {
       } else {
         accumulatedContacts.value = [...result.results];
       }
+      contactsTotalPages.value = result.pagings.total_pages;
     }
   } finally {
     isLoadingMoreContacts.value = false;
@@ -235,8 +217,7 @@ const loadContacts = async (append = false) => {
 };
 
 const hasMoreContacts = computed(() => {
-  const pagings = contactStore.pagings;
-  return currentPageContacts.value < pagings.total_pages;
+  return currentPageContacts.value < contactsTotalPages.value;
 });
 
 const handleContactScroll = (e: Event) => {
@@ -252,8 +233,7 @@ const handleContactScroll = (e: Event) => {
   if (
     scrollTop + clientHeight >= scrollHeight - threshold &&
     hasMoreContacts.value &&
-    !isLoadingMoreContacts.value &&
-    !contactStore.loading
+    !isLoadingMoreContacts.value
   ) {
     currentPageContacts.value += 1;
     loadContacts(true);
@@ -283,7 +263,7 @@ const handleCancelValidateContact = () => {
 const confirmValidateContact = async () => {
   if (!contactToValidate.value) return;
 
-  const result = await contactStore.validateContact(contactToValidate.value);
+  const result = await chatStore.validateChatContact(contactToValidate.value);
 
   if (result) {
     const contactIndex = accumulatedContacts.value.findIndex(
@@ -383,51 +363,66 @@ watch(
   }
 );
 
-watch(canAccessContacts, (hasAccess) => {
-  if (!hasAccess && activeFilter.value === 'new') {
-    activeFilter.value = 'all';
-    expandedFilter.value = 'all';
-    loadChatsByFilter();
+watch(
+  () => false,
+  (hasAccess) => {
+    if (!hasAccess && activeFilter.value === 'new') {
+      activeFilter.value = 'all';
+      expandedFilter.value = 'all';
+      loadChatsByFilter();
+    }
   }
+);
+
+const loadTransferOptions = async () => {
+  if (!chatStore.user?.account_id) return;
+
+  try {
+    const result = await chatStore.listTransferOptions();
+    if (result) {
+      availableWorkers.value = result.workers;
+      availableSectors.value = result.sectors;
+    }
+  } catch (error) {
+    console.error('Error loading transfer options:', error);
+  }
+};
+
+const loadWorkerConfigForSelectedWorker = async () => {
+  if (!selectedWorkerId.value) {
+    workerConfigForChat.value = null;
+    return;
+  }
+
+  try {
+    const config = await channelsStore.fetchWorkerConfigForChat(
+      selectedWorkerId.value
+    );
+    workerConfigForChat.value = config;
+  } catch (error) {
+    console.error('Error loading worker config:', error);
+    workerConfigForChat.value = null;
+  }
+};
+
+watch(selectedWorkerId, () => {
+  void loadWorkerConfigForSelectedWorker();
 });
 
-const loadActiveWorkers = async () => {
-  if (!chatStore.user?.account_id) return;
+const userStatus = computed(
+  () =>
+    (chatStore.user?.chat_user?.status as EChatUserStatus | undefined) ||
+    EChatUserStatus.offline
+);
 
-  const result = await channelsStore.listChannels({
-    page: 1,
-    per_page: 100,
-    sort_by: [],
-    status: EWorkerStatus.online,
-  });
+const cannotOpenConversation = computed(() => {
+  if (!workerConfigForChat.value?.allow_attendance_only_online) return false;
+  return userStatus.value !== EChatUserStatus.online;
+});
 
-  if (result) {
-    availableWorkers.value = result.results.filter(
-      (worker) => worker.status?.id === EWorkerStatus.online
-    );
-  }
-};
-
-const loadActiveSectors = async () => {
-  if (!chatStore.user?.account_id) return;
-
-  const result = await sectorsStore.listSectors({
-    page: 1,
-    per_page: 100,
-    sort_by: [],
-    sector_status: ESectorStatus.active,
-  });
-
-  if (result) {
-    availableSectors.value = result.results.filter(
-      (sector) => sector.sector_status?.id === ESectorStatus.active
-    );
-  }
-};
-
-const handleContactClick = async (contact: ListContactResponse) => {
+const handleContactClick = async (contact: ListChatContactsResponse) => {
   if (!contact.phone_partial) {
-    contactStore.showSnackbar(
+    chatStore.showSnackbar(
       chatStore.i18n.global.t('contact_phone_required'),
       EColor.warning
     );
@@ -435,7 +430,7 @@ const handleContactClick = async (contact: ListContactResponse) => {
   }
 
   if (!contact.is_valided) {
-    contactStore.showSnackbar(
+    chatStore.showSnackbar(
       chatStore.i18n.global.t('contact_must_be_validated'),
       EColor.warning
     );
@@ -446,7 +441,7 @@ const handleContactClick = async (contact: ListContactResponse) => {
   selectedWorkerId.value = null;
   selectedSectorId.value = null;
 
-  await Promise.all([loadActiveWorkers(), loadActiveSectors()]);
+  await loadTransferOptions();
 
   isSelectChannelSectorModalOpen.value = true;
 };
@@ -469,34 +464,13 @@ const handleOpenConversation = async () => {
   }
 
   try {
-    chatStore.loading = true;
-
-    const requestBody: {
-      contact_id: string;
-      worker_id: string;
-      sector_id?: string;
-    } = {
-      contact_id: selectedContactForChat.value.contact_id,
-      worker_id: selectedWorkerId.value,
-    };
-
-    if (selectedSectorId.value) {
-      requestBody.sector_id = selectedSectorId.value;
-    }
-
-    const response = await axios.post<IApiResponse<IChat>>(
-      '/chat/start-with-contact',
-      requestBody
+    const chat = await chatStore.startChatWithContact(
+      selectedContactForChat.value.contact_id,
+      selectedWorkerId.value,
+      selectedSectorId.value
     );
 
-    chatStore.loading = false;
-
-    const data = response?.data;
-
-    if (!data?.status || !data?.data) {
-      const errorMessage =
-        data?.message || chatStore.i18n.global.t('chat_creation_error');
-      chatStore.showSnackbar(errorMessage, EColor.error);
+    if (!chat) {
       return;
     }
 
@@ -509,13 +483,9 @@ const handleOpenConversation = async () => {
     expandedFilter.value = 'in_chat';
     await loadChatsByFilter();
 
-    emit('openChat', data.data.chat_id);
+    emit('openChat', chat.chat_id);
   } catch (error: any) {
-    chatStore.loading = false;
-    const errorMessage =
-      error?.response?.data?.message ||
-      chatStore.i18n.global.t('chat_creation_error');
-    chatStore.showSnackbar(errorMessage, EColor.error);
+    console.error('Error starting chat with contact:', error);
   }
 };
 
@@ -541,7 +511,8 @@ onMounted(async () => {
       bordered
       :color="
         resolveAvatarBadgeVariant(
-          chatStore.user?.chat_user?.status as EChatUserStatus
+          chatStore.user?.chat_user?.status as EChatUserStatus,
+          global.name.value === 'dark'
         )
       "
       class="cursor-pointer"
@@ -585,7 +556,7 @@ onMounted(async () => {
 
   <div class="chat-filter-options px-3 py-3">
     <div class="d-flex gap-2 flex-wrap">
-      <div v-if="canAccessContacts" class="chat-filter-item flex-grow-1">
+      <div class="chat-filter-item flex-grow-1">
         <VBtn
           :variant="activeFilter === 'new' ? 'flat' : 'text'"
           :color="activeFilter === 'new' ? 'primary' : undefined"
@@ -811,7 +782,7 @@ onMounted(async () => {
         <li
           v-if="
             !accumulatedContacts.length &&
-            !contactStore.loading &&
+            !chatStore.loading &&
             !isLoadingMoreContacts
           "
           class="no-chat-items-text text-disabled"
@@ -820,7 +791,7 @@ onMounted(async () => {
         </li>
 
         <li
-          v-if="contactStore.loading || isLoadingMoreContacts"
+          v-if="chatStore.loading || isLoadingMoreContacts"
           class="d-flex justify-center pa-4"
         >
           <VProgressCircular indeterminate color="primary" size="32" />
@@ -880,12 +851,12 @@ onMounted(async () => {
     </ul>
   </PerfectScrollbar>
 
-  <AppAddContact
+  <AppAddContactChat
     v-model="isAddContactModalOpen"
     @update:model-value="handleAddContactModalClose"
   />
 
-  <AppEditContact
+  <AppEditContactChat
     v-model="isEditContactModalOpen"
     :contact-id="editContactId"
     @update:model-value="handleEditContactModalClose"
@@ -939,7 +910,9 @@ onMounted(async () => {
             >
               <VIcon size="16" class="me-1">tabler-device-mobile</VIcon>
               {{
-                availableWorkers.find((w) => w.id === selectedWorkerId)?.name
+                availableWorkers.find(
+                  (w: TransferWorker) => w.id === selectedWorkerId
+                )?.name
               }}
               <span
                 v-if="
@@ -978,6 +951,19 @@ onMounted(async () => {
             </template>
           </VSelect>
         </div>
+
+        <VAlert
+          v-if="
+            workerConfigForChat?.allow_attendance_only_online &&
+            cannotOpenConversation
+          "
+          type="warning"
+          variant="tonal"
+          density="compact"
+          class="mt-4"
+        >
+          {{ $t('attendance_only_online_required') }}
+        </VAlert>
       </VCardText>
 
       <VDivider />
@@ -991,7 +977,9 @@ onMounted(async () => {
           {{ $t('cancel') }}
         </VBtn>
         <VBtn
-          :disabled="!selectedWorkerId || chatStore.loading"
+          :disabled="
+            !selectedWorkerId || chatStore.loading || cannotOpenConversation
+          "
           :loading="chatStore.loading"
           @click="handleOpenConversation"
         >
@@ -1004,12 +992,12 @@ onMounted(async () => {
 
 <style lang="scss">
 .chat-list {
-  --chat-content-spacing-x: 16px;
+  --chat-content-spacing-x: 0px;
 
   padding-block-end: 0.75rem;
 
   .chat-header {
-    margin-block: 0.5rem 0.25rem;
+    margin-block: 0.5rem 0.75rem;
   }
 
   .chat-header,

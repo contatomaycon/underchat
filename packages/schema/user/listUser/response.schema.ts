@@ -1,5 +1,6 @@
 import { pagingResponseSchema } from '@core/schema/common/pagingResponseSchema';
 import { Static, Type } from '@sinclair/typebox';
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 
 const userStatusSchema = Type.Object({
   user_status_id: Type.String({ format: 'uuid' }),
@@ -19,6 +20,11 @@ const userInfoSchema = Type.Object({
   last_name: Type.Union([Type.String(), Type.Null()]),
   birth_date: Type.Union([Type.String(), Type.Null()]),
   photo: Type.Union([Type.String(), Type.Null()]),
+});
+
+const chatUserSchema = Type.Object({
+  chat_user_id: Type.String({ format: 'uuid' }),
+  status: Type.String({ enum: Object.values(EChatUserStatus) }),
 });
 
 const documentTypeSchema = Type.Object({
@@ -59,6 +65,7 @@ export const listUserResponseSchema = Type.Object({
   user_info: Type.Optional(Type.Union([userInfoSchema, Type.Null()])),
   user_document: Type.Optional(Type.Union([userDocumentSchema, Type.Null()])),
   user_address: Type.Optional(Type.Union([userAddressSchema, Type.Null()])),
+  chat_user: Type.Optional(Type.Union([chatUserSchema, Type.Null()])),
   created_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 

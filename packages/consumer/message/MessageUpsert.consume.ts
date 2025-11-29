@@ -54,11 +54,14 @@ import {
 import { EncryptService } from '@core/services/encrypt.service';
 import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
 import { ContactService } from '@core/services/contact.service';
+import { AutomaticAttendanceService } from '@core/services/automaticAttendance.service';
+import { TFunction } from 'i18next';
 
 @singleton()
 export class MessageUpsertConsume {
   private consumer: Consumer | null = null;
   private processingChain: Promise<void> = Promise.resolve();
+  private readonly t: TFunction<'translation', undefined> | null = null;
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
@@ -72,7 +75,8 @@ export class MessageUpsertConsume {
     private readonly storageService: StorageService,
     private readonly streamProducerService: StreamProducerService,
     private readonly encryptService: EncryptService,
-    private readonly contactService: ContactService
+    private readonly contactService: ContactService,
+    private readonly automaticAttendanceService: AutomaticAttendanceService
   ) {}
 
   private get consumerOrThrow(): Consumer {
@@ -1344,7 +1348,10 @@ export class MessageUpsertConsume {
     return content;
   }
 
-  private async createChat(data: IUpsertMessage): Promise<IChat> {
+  private async createChat(
+    t: TFunction<'translation', undefined>,
+    data: IUpsertMessage
+  ): Promise<IChat> {
     const [viewAccountName, viewWorkerNameAndId] = await Promise.all([
       this.accountService.viewAccountName(data.account_id),
       this.workerService.viewWorkerNameAndId(data.account_id, data.worker_id),
@@ -1431,6 +1438,11 @@ export class MessageUpsertConsume {
       throw new Error('Failed to create chat');
     }
 
+    await this.automaticAttendanceService.handleAutomaticAttendanceForNewChat(
+      t,
+      inputChatMessage
+    );
+
     return inputChatMessage;
   }
 
@@ -1458,6 +1470,7 @@ export class MessageUpsertConsume {
   }
 
   private async createOrUpdateChat(
+    t: TFunction<'translation', undefined>,
     data: IUpsertMessage,
     phone: string,
     jid?: string | null,
@@ -1472,13 +1485,25 @@ export class MessageUpsertConsume {
     );
 
     if (!getChat) {
-      const createChat = await this.createChat(data);
+      const createChat = await this.createChat(t, data);
       if (!createChat) {
         throw new Error('Failed to create chat');
       }
 
       await this.createChatMessage(createChat, data);
-      await this.centrifugoChatQueuePublish(createChat);
+
+      const updatedChat = await this.chatService.findChatByChatId(
+        data.account_id,
+        createChat.chat_id
+      );
+
+      if (updatedChat) {
+        if (updatedChat.status === EChatStatus.queue) {
+          await this.centrifugoChatQueuePublish(updatedChat);
+        }
+      } else {
+        await this.centrifugoChatQueuePublish(createChat);
+      }
 
       return;
     }
@@ -1486,7 +1511,7 @@ export class MessageUpsertConsume {
     await this.createChatMessage(getChat, data);
   }
 
-  public async execute(): Promise<void> {
+  public async execute(t: TFunction<'translation', undefined>): Promise<void> {
     if (this.consumer) return;
 
     this.consumer = createConsumer(
@@ -1541,7 +1566,7 @@ export class MessageUpsertConsume {
             if (!phone) {
               throw new Error('Received message without valid phone');
             }
-            await this.createOrUpdateChat(data, phone, jid, jidAlt);
+            await this.createOrUpdateChat(t, data, phone, jid, jidAlt);
           } catch {
             await this.commitNext(topic, partition, message.offset);
           } finally {

@@ -33,6 +33,8 @@ import { updateStartProtocolTextSchema } from '@core/schema/worker/updateStartPr
 import { viewStartProtocolTextSchema } from '@core/schema/worker/viewStartProtocolText';
 import { updateUraProtocolTextSchema } from '@core/schema/worker/updateUraProtocolText';
 import { viewUraProtocolTextSchema } from '@core/schema/worker/viewUraProtocolText';
+import { updateSimultaneousAttendanceSchema } from '@core/schema/worker/updateSimultaneousAttendance';
+import { viewSimultaneousAttendanceSchema } from '@core/schema/worker/viewSimultaneousAttendance';
 
 export default function workerRoutes(server: FastifyInstance) {
   const workerController = container.resolve(WorkerController);
@@ -229,6 +231,24 @@ export default function workerRoutes(server: FastifyInstance) {
   server.patch('/worker/:worker_id/config/ura-protocol', {
     schema: updateUraProtocolTextSchema,
     handler: workerController.updateUraProtocolText,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerEditPermissions),
+    ],
+  });
+
+  server.get('/worker/:worker_id/config/simultaneous-attendance', {
+    schema: viewSimultaneousAttendanceSchema,
+    handler: workerController.viewSimultaneousAttendance,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerViewPermissions),
+    ],
+  });
+
+  server.patch('/worker/:worker_id/config/simultaneous-attendance', {
+    schema: updateSimultaneousAttendanceSchema,
+    handler: workerController.updateSimultaneousAttendance,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerEditPermissions),

@@ -5,23 +5,32 @@ import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { VForm } from 'vuetify/components';
 import { EColor } from '@core/common/enums/EColor';
+import {
+  refreshUpdateProfileSidebarContent,
+  presenceOnline,
+  presenceBusy,
+  presenceDoNotDisturb,
+  presenceAway,
+} from '@/@webcore/presence';
+import { useTheme } from 'vuetify';
 
-defineEmits<{
+const emit = defineEmits<{
   close: [];
+  'update:is-updating': [value: boolean];
 }>();
 
 const chatStore = useChatStore();
 const profileStore = useProfileStore();
 const { t } = useI18n();
+const { global } = useTheme();
 
 const refFormProfileSidebarContent = ref<VForm>();
+const isUpdatingStatus = ref(false);
 
 const userStatusRadioOptions = [
   { title: t('online'), value: 'online', color: 'success' },
   { title: t('busy'), value: 'busy', color: 'error' },
-  { title: t('away'), value: 'away', color: 'warning' },
-  { title: t('offline'), value: 'offline', color: 'secondary' },
-  { title: t('do_not_disturb'), value: 'do_not_disturb', color: 'error' },
+  { title: t('do_not_disturb'), value: 'do_not_disturb', color: 'warning' },
 ];
 
 const updateChatUser = useDebounceFn(chatStore.updateChatUserDebounce, 1000);
@@ -32,6 +41,42 @@ const updateProfileSidebarContent = async () => {
 
   chatStore.updateChatUserImmediate();
   await updateChatUser();
+
+  refreshUpdateProfileSidebarContent(
+    chatStore.user?.chat_user?.status as EChatUserStatus
+  );
+};
+
+const updateStatus = async () => {
+  const validateForm = await refFormProfileSidebarContent?.value?.validate();
+  if (!validateForm?.valid) return;
+
+  isUpdatingStatus.value = true;
+  emit('update:is-updating', true);
+
+  try {
+    chatStore.updateChatUserImmediate();
+    await updateChatUser();
+
+    const currentStatus = chatStore.user?.chat_user?.status as EChatUserStatus;
+
+    if (currentStatus === EChatUserStatus.online) {
+      await presenceOnline();
+    } else if (currentStatus === EChatUserStatus.do_not_disturb) {
+      await presenceDoNotDisturb();
+    } else if (currentStatus === EChatUserStatus.busy) {
+      await presenceBusy();
+    } else {
+      await presenceAway();
+    }
+
+    emit('close');
+  } catch (error) {
+    console.error('Failed to update status', error);
+  } finally {
+    isUpdatingStatus.value = false;
+    emit('update:is-updating', false);
+  }
 };
 
 const isPhotoModalOpen = ref(false);
@@ -626,7 +671,8 @@ const removePhoto = async () => {
           bordered
           :color="
             resolveAvatarBadgeVariant(
-              chatStore.user?.chat_user?.status as EChatUserStatus
+              chatStore.user?.chat_user?.status as EChatUserStatus,
+              global.name.value === 'dark'
             )
           "
           class="chat-user-profile-badge"
@@ -694,7 +740,8 @@ const removePhoto = async () => {
           <div class="text-base text-disabled">{{ $t('status_chat') }}</div>
           <VRadioGroup
             v-model="chatStore.user.chat_user.status"
-            @update:model-value="updateProfileSidebarContent"
+            @update:model-value="updateStatus"
+            :disabled="isUpdatingStatus"
             class="mt-1"
           >
             <VRadio
@@ -705,8 +752,15 @@ const removePhoto = async () => {
               :label="radioOption.title"
               :value="radioOption.value"
               :color="radioOption.color"
+              :disabled="isUpdatingStatus"
             />
           </VRadioGroup>
+          <VProgressLinear
+            v-if="isUpdatingStatus"
+            indeterminate
+            color="primary"
+            class="mt-2"
+          />
         </div>
 
         <div class="text-medium-emphasis chat-settings-section">

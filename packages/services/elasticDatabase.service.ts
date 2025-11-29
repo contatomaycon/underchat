@@ -85,6 +85,44 @@ export class ElasticDatabaseService {
     }
   };
 
+  updateArrayField = async (
+    index: string,
+    id: string,
+    field: string,
+    value: string
+  ): Promise<boolean> => {
+    try {
+      const result = await this.client.update({
+        index,
+        id,
+        script: {
+          source: `
+            if (ctx._source.${field} == null) {
+              ctx._source.${field} = [params.value];
+            } else {
+              ctx._source.${field}.add(params.value);
+            }
+          `,
+          params: {
+            value,
+          },
+        },
+        upsert: {
+          [field]: [value],
+        },
+        refresh: 'wait_for',
+      });
+
+      return (
+        result.result === 'updated' ||
+        result.result === 'created' ||
+        result.result === 'noop'
+      );
+    } catch (error) {
+      throw new Error(`Failed to update array field: ${error}`);
+    }
+  };
+
   bulkUpdate = async <T extends object>(
     index: string,
     documents: T[],

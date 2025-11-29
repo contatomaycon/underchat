@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { removeUserData } from '@/@webcore/localStorage/user';
+import { presenceOffline } from '@/@webcore/presence';
+import { initUserPresenceSubscription } from '@/@webcore/presenceCentrifugo';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useProfileStore } from '@/@webcore/stores/profile';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { EColor } from '@core/common/enums/EColor';
+import { useTheme } from 'vuetify';
 
 const router = useRouter();
 const chatStore = useChatStore();
 const profileStore = useProfileStore();
 const { t } = useI18n();
+const { global } = useTheme();
 
 const isPhotoModalOpen = ref(false);
 const isCropModalOpen = ref(false);
@@ -582,6 +586,8 @@ const removePhoto = async () => {
 };
 
 const logout = async () => {
+  await presenceOffline().catch(() => {});
+
   chatStore.clearUser();
   const result = removeUserData();
 
@@ -593,6 +599,12 @@ const logout = async () => {
     });
   }
 };
+
+onMounted(() => {
+  if (chatStore.user?.account_id) {
+    initUserPresenceSubscription(chatStore.user.account_id).catch(() => {});
+  }
+});
 </script>
 
 <template>
@@ -604,7 +616,8 @@ const logout = async () => {
     bordered
     :color="
       resolveAvatarBadgeVariant(
-        chatStore.user?.chat_user?.status as EChatUserStatus
+        chatStore.user?.chat_user?.status as EChatUserStatus,
+        global.name.value === 'dark'
       )
     "
   >

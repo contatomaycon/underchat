@@ -37,6 +37,12 @@ export const contactSchema = Type.Object({
   photo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
+export const labelSchema = Type.Object({
+  label_template_id: Type.String(),
+  label: Type.String(),
+  color: Type.String(),
+});
+
 export const listChatsResultSchema = Type.Object({
   chat_id: Type.String(),
   summary: Type.Optional(Type.Union([summarySchema, Type.Null()])),
@@ -52,6 +58,16 @@ export const listChatsResultSchema = Type.Object({
   date: Type.String(),
   started_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   closed_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  protocol_ura: Type.Optional(
+    Type.Union([Type.Array(Type.String()), Type.Null()])
+  ),
+  protocol_start: Type.Optional(
+    Type.Union([Type.Array(Type.String()), Type.Null()])
+  ),
+  protocol_transfer: Type.Optional(
+    Type.Union([Type.Array(Type.String()), Type.Null()])
+  ),
+  label: Type.Optional(Type.Union([labelSchema, Type.Null()])),
 });
 
 export const listChatsResponseSchema = Type.Object({

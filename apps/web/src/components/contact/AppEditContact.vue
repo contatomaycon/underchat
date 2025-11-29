@@ -18,6 +18,9 @@ const contactStore = useContactStore();
 const labelTemplateStore = useLabelTemplateStore();
 const chatStore = useChatStore();
 const { items: countryCodes } = useCountryCodes();
+const labelTemplates = ref<
+  Array<{ label_template_id: string; label: string; color?: string }>
+>([]);
 
 const { t } = useI18n();
 
@@ -170,9 +173,10 @@ const canAccessLabelTemplate = computed(() => {
 });
 
 const itemsLabel = computed(() =>
-  (labelTemplateStore.listAll ?? []).map((item) => ({
+  labelTemplates.value.map((item) => ({
     value: item.label_template_id,
     title: item.label,
+    color: item.color,
   }))
 );
 
@@ -939,16 +943,36 @@ const handleRemovePhotoConfirm = async () => {
   }
 };
 
+const loadLabelTemplates = async () => {
+  let templates:
+    | Array<{ label_template_id: string; label: string; color?: string }>
+    | null = null;
+
+  if (canAccessLabelTemplate.value) {
+    templates = await labelTemplateStore.listLabelTemplateAll();
+  }
+
+  if (!templates || templates.length === 0) {
+    templates = await chatStore.listChatLabelTemplates();
+  }
+
+  labelTemplates.value =
+    templates?.map((lt) => ({
+      label_template_id: lt.label_template_id,
+      label: lt.label,
+      color: lt.color || 'rgb(var(--v-theme-primary))',
+    })) ?? [];
+};
+
 watch([contactId, isVisible], async ([newContactId, newIsVisible]) => {
   if (newIsVisible && newContactId) {
+    await loadLabelTemplates();
     await loadContactData();
   }
 });
 
 onMounted(async () => {
-  if (canAccessLabelTemplate.value) {
-    await labelTemplateStore.listLabelTemplateAll();
-  }
+  await loadLabelTemplates();
   if (contactId.value && isVisible.value) {
     await loadContactData();
   }
@@ -1156,13 +1180,44 @@ onMounted(async () => {
 
             <VCol cols="12" md="6">
               <AppSelect
+                class="label-select"
                 v-model="label_template_id"
                 :items="itemsLabel"
                 item-title="title"
                 item-value="value"
                 :label="$t('label') + ':'"
                 :placeholder="$t('select_label')"
-              />
+              >
+                <template #item="{ props, item }">
+                  <VListItem v-bind="props">
+                    <template #prepend>
+                      <div
+                        class="label-color-circle"
+                        :style="{
+                          backgroundColor: item.raw.color,
+                          width: '16px',
+                          height: '16px',
+                          borderRadius: '50%',
+                          marginRight: '8px',
+                        }"
+                      />
+                    </template>
+                  </VListItem>
+                </template>
+                <template #selection="{ item }">
+                  <div v-if="item.raw" class="d-flex align-center gap-2">
+                    <div
+                      class="label-color-circle"
+                      :style="{
+                        backgroundColor: item.raw.color,
+                        width: '16px',
+                        height: '16px',
+                      }"
+                    />
+                    <span>{{ item.raw.title }}</span>
+                  </div>
+                </template>
+              </AppSelect>
             </VCol>
           </VRow>
           <VRow>

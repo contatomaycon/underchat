@@ -1,9 +1,7 @@
 <script lang="ts" setup>
-import { nextTick, computed } from 'vue';
+import { nextTick, computed, watch } from 'vue';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { useChatStore } from '@/@webcore/stores/chat';
-import { useContactStore } from '@/@webcore/stores/contact';
-import { useLabelTemplateStore } from '@/@webcore/stores/labelTemplate';
 import { VForm } from 'vuetify/components/VForm';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import {
@@ -14,16 +12,18 @@ import { useCountryCodes } from '@/composables/useCountryCodes';
 import { requiredValidator } from '@/@webcore/utils/validators';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import { EColor } from '@core/common/enums/EColor';
-import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
-import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
-import { can } from '@layouts/plugins/casl';
 
 const chatStore = useChatStore();
-const contactStore = useContactStore();
-const labelTemplateStore = useLabelTemplateStore();
 const { items: countryCodes } = useCountryCodes();
+const labelTemplates = ref<
+  Array<{ label_template_id: string; label: string; color?: string }>
+>([]);
 
 const { t } = useI18n();
+
+const props = defineProps<{
+  isOpen?: boolean;
+}>();
 
 const emit = defineEmits<{
   close: [];
@@ -59,16 +59,6 @@ const isPhoneDecrypted = ref(false);
 const isLoadingPhone = ref(false);
 const isEmailDecrypted = ref(false);
 const isLoadingEmail = ref(false);
-
-const canAccessLabelTemplate = computed(() => {
-  const permissions = [
-    EGeneralPermissions.full_access,
-    EGeneralPermissions.full_access_group,
-    ELabelTemplatePermissions.label_template_group,
-    ELabelTemplatePermissions.label_view,
-  ];
-  return can(permissions);
-});
 
 const photoFile = ref<File | null>(null);
 const photoPreview = ref<string | null>(null);
@@ -178,9 +168,10 @@ const emailValidator = (v: string | null | undefined) => {
 };
 
 const itemsLabel = computed(() =>
-  (labelTemplateStore.listAll ?? []).map((item) => ({
+  labelTemplates.value.map((item) => ({
     value: item.label_template_id,
     title: item.label,
+    color: item.color,
   }))
 );
 
@@ -210,7 +201,7 @@ const togglePhoneVisibility = async () => {
   }
 
   isLoadingPhone.value = true;
-  const decryptedPhone = await contactStore.getContactPhoneDecrypted(
+  const decryptedPhone = await chatStore.getChatContactPhoneDecrypted(
     contactId.value
   );
   isLoadingPhone.value = false;
@@ -231,7 +222,7 @@ const toggleEmailVisibility = async () => {
   }
 
   isLoadingEmail.value = true;
-  const decryptedEmail = await contactStore.getContactEmailDecrypted(
+  const decryptedEmail = await chatStore.getChatContactEmailDecrypted(
     contactId.value
   );
   isLoadingEmail.value = false;
@@ -298,7 +289,7 @@ const determinePhoneToSave = (): string | null | undefined => {
 const loadContactData = async () => {
   if (!contactId.value) return;
 
-  const contact = await contactStore.getContactById(contactId.value);
+  const contact = await chatStore.getChatContactById(contactId.value);
   if (contact) {
     label_template_id.value = contact.label_template?.label_template_id ?? null;
     name.value = contact.name;
@@ -423,7 +414,7 @@ const addContact = async () => {
     chat_id: chatStore.activeChat?.chat_id ?? undefined,
   };
 
-  const result = await contactStore.addContact(payload, photoFile.value);
+  const result = await chatStore.createChatContact(payload, photoFile.value);
 
   if (result) {
     await nextTick();
@@ -466,7 +457,7 @@ const updateContact = async () => {
     chat_id: chatStore.activeChat?.chat_id ?? undefined,
   };
 
-  const result = await contactStore.updateContact(
+  const result = await chatStore.updateChatContact(
     payload,
     body,
     photoFile.value
@@ -1039,11 +1030,32 @@ const cancelCrop = () => {
   photoPreview.value = null;
 };
 
-onMounted(async () => {
-  if (canAccessLabelTemplate.value) {
-    await labelTemplateStore.listLabelTemplateAll();
+const loadLabelTemplates = async () => {
+  if (labelTemplates.value.length === 0) {
+    const templates = await chatStore.listChatLabelTemplates();
+    labelTemplates.value = templates.map((lt) => ({
+      label_template_id: lt.label_template_id,
+      label: lt.label,
+      color: lt.color,
+    }));
   }
-  loadChatData();
+};
+
+watch(
+  () => props.isOpen,
+  async (isOpen) => {
+    if (isOpen) {
+      await loadLabelTemplates();
+      loadChatData();
+    }
+  }
+);
+
+onMounted(() => {
+  if (props.isOpen) {
+    loadLabelTemplates();
+    loadChatData();
+  }
 });
 </script>
 
@@ -1261,13 +1273,36 @@ onMounted(async () => {
 
           <VCol cols="12" md="6">
             <AppSelect
+              class="label-select"
               v-model="label_template_id"
               :items="itemsLabel"
               item-title="title"
               item-value="value"
               :label="$t('label') + ':'"
               :placeholder="$t('select_label')"
-            />
+            >
+              <template #item="{ props, item }">
+                <VListItem v-bind="props">
+                  <template #prepend>
+                    <div
+                      v-if="item.raw.color"
+                      class="label-color-circle"
+                      :style="{ backgroundColor: item.raw.color }"
+                    />
+                  </template>
+                </VListItem>
+              </template>
+              <template #selection="{ item }">
+                <div v-if="item.raw" class="d-flex align-center gap-2">
+                  <div
+                    v-if="item.raw.color"
+                    class="label-color-circle"
+                    :style="{ backgroundColor: item.raw.color }"
+                  />
+                  <span>{{ item.raw.title }}</span>
+                </div>
+              </template>
+            </AppSelect>
           </VCol>
         </VRow>
         <VRow>
@@ -1283,12 +1318,12 @@ onMounted(async () => {
           <VBtn
             variant="tonal"
             color="secondary"
-            :disabled="contactStore.loading"
+            :disabled="chatStore.loading"
             @click="$emit('close')"
           >
             {{ $t('cancel') }}
           </VBtn>
-          <VBtn :loading="contactStore.loading" @click="saveContact">
+          <VBtn :loading="chatStore.loading" @click="saveContact">
             {{ isContact ? $t('save') : $t('add') }}
           </VBtn>
         </VCardText>
@@ -1465,5 +1500,12 @@ onMounted(async () => {
   bottom: -6px;
   right: -6px;
   cursor: nwse-resize;
+}
+
+.label-color-circle {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 </style>

@@ -3,4 +3,5 @@ export enum EChatStatus {
   queue = 'queue',
   in_chat = 'in_chat',
   closed = 'closed',
+  transmission = 'transmission',
 }

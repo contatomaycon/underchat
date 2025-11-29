@@ -23,6 +23,7 @@ export const updateChatStatus = async (
       t,
       tokenJwtData.account_id,
       tokenJwtData.user_id,
+      tokenJwtData.sectors,
       request.params,
       request.body
     );

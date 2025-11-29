@@ -7,7 +7,7 @@ export default fp(
   async (fastify: FastifyInstance) => {
     const messageUpsertConsume = container.resolve(MessageUpsertConsume);
 
-    messageUpsertConsume.execute().catch((error) => {
+    messageUpsertConsume.execute(fastify.i18n).catch((error) => {
       throw error;
     });
 

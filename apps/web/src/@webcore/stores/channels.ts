@@ -26,6 +26,7 @@ import { WorkerProfileInfo } from '@core/schema/worker/uploadProfileInfo/respons
 import { WorkerConfig } from '@core/schema/worker/updateWorkerConfig/response.schema';
 import { ViewWorkerConfigResponse } from '@core/schema/worker/viewWorkerConfig/response.schema';
 import { UpdateWorkerConfigRequest } from '@core/schema/worker/updateWorkerConfig/request.schema';
+import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerConfigForChat/response.schema';
 
 export const useChannelsStore = defineStore('channels', {
   state: () => ({
@@ -44,6 +45,11 @@ export const useChannelsStore = defineStore('channels', {
       count: 0 as number,
       total: 0 as number,
     } as PagingResponseSchema,
+    workerConfigCache: {} as Record<string, ViewWorkerConfigResponse | null>,
+    workerConfigForChatCache: {} as Record<
+      string,
+      ViewWorkerConfigForChatResponse | null
+    >,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -746,9 +752,14 @@ export const useChannelsStore = defineStore('channels', {
     },
 
     async fetchWorkerConfig(
-      workerId: string
-    ): Promise<ViewWorkerConfigResponse> {
+      workerId: string,
+      forceRefresh = false
+    ): Promise<ViewWorkerConfigResponse | null> {
       if (!workerId) return null;
+
+      if (!forceRefresh && this.workerConfigCache[workerId] !== undefined) {
+        return this.workerConfigCache[workerId];
+      }
 
       try {
         const response = await axios.get<
@@ -763,10 +774,12 @@ export const useChannelsStore = defineStore('channels', {
             this.i18n.global.t('channel_general_config_load_error');
           this.showSnackbar(message, EColor.error);
 
+          this.workerConfigCache[workerId] = null;
           return null;
         }
 
-        return data.data ?? null;
+        this.workerConfigCache[workerId] = data.data ?? null;
+        return this.workerConfigCache[workerId];
       } catch (error) {
         let message = this.i18n.global.t('channel_general_config_load_error');
         if (error instanceof AxiosError) {
@@ -775,6 +788,48 @@ export const useChannelsStore = defineStore('channels', {
 
         this.showSnackbar(message, EColor.error);
 
+        this.workerConfigCache[workerId] = null;
+        return null;
+      }
+    },
+
+    async fetchWorkerConfigForChat(
+      workerId: string
+    ): Promise<ViewWorkerConfigForChatResponse | null> {
+      if (!workerId) return null;
+
+      if (this.workerConfigForChatCache[workerId] !== undefined) {
+        return this.workerConfigForChatCache[workerId];
+      }
+
+      try {
+        const response = await axios.get<
+          IApiResponse<ViewWorkerConfigForChatResponse>
+        >(`/chat/worker/${workerId}/config`);
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('channel_general_config_load_error');
+          this.showSnackbar(message, EColor.error);
+
+          this.workerConfigForChatCache[workerId] = null;
+          return null;
+        }
+
+        this.workerConfigForChatCache[workerId] = data.data ?? null;
+        return this.workerConfigForChatCache[workerId];
+      } catch (error) {
+        let message = this.i18n.global.t('channel_general_config_load_error');
+        if (error instanceof AxiosError) {
+          message = error?.response?.data?.message ?? message;
+        }
+
+        this.showSnackbar(message, EColor.error);
+
+        this.workerConfigForChatCache[workerId] = null;
         return null;
       }
     },
@@ -806,6 +861,9 @@ export const useChannelsStore = defineStore('channels', {
           this.i18n.global.t('channel_general_config_save_success'),
           EColor.success
         );
+
+        this.workerConfigCache[workerId] = data.data ?? null;
+        delete this.workerConfigForChatCache[workerId];
 
         return data.data;
       } catch (error) {
@@ -1043,6 +1101,75 @@ export const useChannelsStore = defineStore('channels', {
         this.showSnackbar(message, EColor.error);
 
         return false;
+      }
+    },
+
+    async fetchSimultaneousAttendance(
+      workerId: string
+    ): Promise<number | null> {
+      if (!workerId) return null;
+
+      try {
+        const response = await axios.get<
+          IApiResponse<{ simultaneous_attendance: number | null }>
+        >(`/worker/${workerId}/config/simultaneous-attendance`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data.simultaneous_attendance;
+      } catch {
+        return null;
+      }
+    },
+
+    async updateSimultaneousAttendance(
+      workerId: string,
+      quantity: number | null
+    ): Promise<number | null> {
+      if (!workerId) return null;
+
+      try {
+        const body: { quantity?: number } = {};
+        if (quantity !== null) {
+          body.quantity = quantity;
+        }
+
+        const response = await axios.patch<
+          IApiResponse<{ simultaneous_attendance: number | null }>
+        >(`/worker/${workerId}/config/simultaneous-attendance`, body);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('simultaneous_attendance_update_error');
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('simultaneous_attendance_update_success'),
+          EColor.success
+        );
+
+        return data.data.simultaneous_attendance;
+      } catch (error) {
+        let message = this.i18n.global.t(
+          'simultaneous_attendance_update_error'
+        );
+        if (error instanceof AxiosError) {
+          message = error?.response?.data?.message ?? message;
+        }
+
+        this.showSnackbar(message, EColor.error);
+
+        return null;
       }
     },
 

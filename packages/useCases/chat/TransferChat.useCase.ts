@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ChatService } from '@core/services/chat.service';
 import { UserService } from '@core/services/user.service';
@@ -19,6 +19,10 @@ import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
 import { WorkerService } from '@core/services/worker.service';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
+import { AutomaticAttendanceService } from '@core/services/automaticAttendance.service';
+import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
+import Redis from 'ioredis';
 
 @injectable()
 export class TransferChatUseCase {
@@ -28,7 +32,10 @@ export class TransferChatUseCase {
     private readonly sectorService: SectorService,
     private readonly chatMessageCreatorUseCase: ChatMessageCreatorUseCase,
     private readonly centrifugoService: CentrifugoService,
-    private readonly workerService: WorkerService
+    private readonly workerService: WorkerService,
+    private readonly automaticAttendanceService: AutomaticAttendanceService,
+    private readonly chatUserViewerRepository: ChatUserViewerRepository,
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   private async loadUserAndSector(
@@ -131,8 +138,9 @@ export class TransferChatUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     chatId: string,
-    protocolText: string
-  ): Promise<void> {
+    protocolText: string,
+    protocolType: 'protocol_ura' | 'protocol_start' | 'protocol_transfer'
+  ): Promise<string> {
     const protocol = generateProtocol();
     const message = protocolText.replaceAll(
       /\{\{\s*protocolo\s*\}\}/gi,
@@ -144,14 +152,109 @@ export class TransferChatUseCase {
       message,
     };
 
-    await this.chatMessageCreatorUseCase.execute(
-      t,
-      accountId,
-      {
-        chat_id: chatId,
-      },
-      protocolMessageBody
-    );
+    await Promise.all([
+      this.chatMessageCreatorUseCase.execute(
+        t,
+        accountId,
+        {
+          chat_id: chatId,
+        },
+        protocolMessageBody
+      ),
+      this.chatService.updateChatProtocol(chatId, protocolType, protocol),
+    ]);
+
+    return protocol;
+  }
+
+  private async invalidateChatCache(chat: IChat): Promise<void> {
+    const cacheKey = `underchat:chat:${chat.account.id}:${chat.worker.id}:${chat.phone}`;
+    const cacheKeyChat = `chat:${chat.account.id}:${chat.chat_id}`;
+    await Promise.all([this.redis.del(cacheKey), this.redis.del(cacheKeyChat)]);
+  }
+
+  private async validateTransferTarget(
+    t: TFunction<'translation', undefined>,
+    workerConfigFields: Awaited<
+      ReturnType<WorkerService['viewWorkerConfigFieldsByWorkerId']>
+    > | null,
+    body: TransferChatBody
+  ): Promise<void> {
+    if (workerConfigFields?.allow_attendance_only_online && body.user_id) {
+      const targetUserStatus =
+        await this.chatUserViewerRepository.findStatusByUserId(body.user_id);
+
+      if (targetUserStatus !== EChatUserStatus.online) {
+        throw new Error(t('user_unavailable_for_transfer'));
+      }
+    }
+  }
+
+  private buildUpdatedChatForTransfer(
+    chat: IChat,
+    user: IChat['user'] | null | undefined,
+    sector: IChat['sector'] | null | undefined,
+    shouldClearUser: boolean,
+    shouldClearSector: boolean
+  ): IChat {
+    return {
+      ...chat,
+      status: EChatStatus.queue,
+      user: shouldClearUser ? null : (user ?? chat.user),
+      sector: shouldClearSector ? null : (sector ?? chat.sector),
+    };
+  }
+
+  private async buildChatWithProtocol(
+    updatedChat: IChat,
+    workerConfigFields: Awaited<
+      ReturnType<WorkerService['viewWorkerConfigFieldsByWorkerId']>
+    > | null,
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    chatId: string
+  ): Promise<IChat> {
+    let protocol: string | null = null;
+    if (workerConfigFields?.generate_protocol_at_transfer) {
+      protocol = await this.sendProtocolMessage(
+        t,
+        accountId,
+        chatId,
+        workerConfigFields.generate_protocol_at_transfer,
+        'protocol_transfer'
+      );
+    }
+
+    const existingProtocols = updatedChat.protocol_transfer ?? [];
+    let protocolTransfer: string[] | null = null;
+    if (protocol) {
+      protocolTransfer = [...existingProtocols, protocol];
+    } else if (existingProtocols.length > 0) {
+      protocolTransfer = existingProtocols;
+    }
+
+    return {
+      ...updatedChat,
+      protocol_transfer: protocolTransfer,
+    };
+  }
+
+  private async publishChatUpdate(
+    chatWithProtocol: IChat,
+    accountId: string
+  ): Promise<void> {
+    const channelAccountId = chatWithProtocol.account?.id ?? accountId;
+
+    await Promise.all([
+      this.centrifugoService.publishSub(
+        chatAccountCentrifugo(channelAccountId),
+        chatWithProtocol
+      ),
+      this.centrifugoService.publishSub(
+        chatQueueAccountCentrifugo(channelAccountId),
+        chatWithProtocol
+      ),
+    ]);
   }
 
   async execute(
@@ -159,7 +262,9 @@ export class TransferChatUseCase {
     accountId: string,
     isAdministrator: boolean,
     params: TransferChatParams,
-    body: TransferChatBody
+    body: TransferChatBody,
+    userId: string,
+    userSectors: string[]
   ): Promise<{ chat_id: string; status: boolean }> {
     const chat = await this.chatService.findChatByChatId(
       accountId,
@@ -182,18 +287,28 @@ export class TransferChatUseCase {
     let user = this.buildUserFromData(body, userData);
     let sector = this.buildSectorFromData(body, sectorData);
 
-    if (body.sector_id && !body.user_id) {
+    const shouldClearUser = !!(body.sector_id && !body.user_id);
+    const shouldClearSector = !!(body.user_id && !body.sector_id);
+
+    if (shouldClearUser) {
       user = null;
+    }
+
+    if (shouldClearSector) {
+      sector = null;
     }
 
     this.validateUserAndSector(t, body, user, sector);
 
-    const updatedChat: IChat = {
-      ...chat,
-      status: EChatStatus.queue,
-      user: user ?? chat.user,
-      sector: sector ?? chat.sector,
-    };
+    await this.validateTransferTarget(t, workerConfigFields, body);
+
+    const updatedChat = this.buildUpdatedChatForTransfer(
+      chat,
+      user,
+      sector,
+      shouldClearUser,
+      shouldClearSector
+    );
 
     const saved = await this.chatService.saveChat(updatedChat);
 
@@ -201,18 +316,17 @@ export class TransferChatUseCase {
       throw new Error(t('chat_transfer_failed'));
     }
 
-    const channelAccountId = updatedChat.account?.id ?? accountId;
+    await this.invalidateChatCache(updatedChat);
 
-    await Promise.all([
-      this.centrifugoService.publishSub(
-        chatAccountCentrifugo(channelAccountId),
-        updatedChat
-      ),
-      this.centrifugoService.publishSub(
-        chatQueueAccountCentrifugo(channelAccountId),
-        updatedChat
-      ),
-    ]);
+    const chatWithProtocol = await this.buildChatWithProtocol(
+      updatedChat,
+      workerConfigFields,
+      t,
+      accountId,
+      params.chat_id
+    );
+
+    await this.publishChatUpdate(chatWithProtocol, accountId);
 
     if (body.annotation?.trim()) {
       await this.sendAnnotationMessage(
@@ -223,14 +337,14 @@ export class TransferChatUseCase {
       );
     }
 
-    if (workerConfigFields?.generate_protocol_at_transfer) {
-      await this.sendProtocolMessage(
-        t,
-        accountId,
-        params.chat_id,
-        workerConfigFields.generate_protocol_at_transfer
-      );
-    }
+    await this.automaticAttendanceService.handleAutomaticAttendance(
+      t,
+      accountId,
+      chat.worker.id,
+      userId,
+      userSectors,
+      params.chat_id
+    );
 
     return {
       chat_id: params.chat_id,

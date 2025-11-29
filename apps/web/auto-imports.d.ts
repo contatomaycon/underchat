@@ -57,6 +57,7 @@ declare global {
   const getCurrentInstance: typeof import('vue').getCurrentInstance
   const getCurrentScope: typeof import('vue').getCurrentScope
   const getCurrentWatcher: typeof import('vue').getCurrentWatcher
+  const getOfflineColor: typeof import('./src/@webcore/utils/formatters').getOfflineColor
   const getOfflineColorDark: typeof import('./src/@webcore/utils/formatters').getOfflineColorDark
   const getOfflineColorLight: typeof import('./src/@webcore/utils/formatters').getOfflineColorLight
   const h: typeof import('vue').h
@@ -143,7 +144,7 @@ declare global {
   const resolveAvatarBadgeVariant: typeof import('./src/@webcore/utils/formatters').resolveAvatarBadgeVariant
   const resolveComponent: typeof import('vue').resolveComponent
   const resolveRef: typeof import('@vueuse/core').resolveRef
-  const resolveUnref: typeof import('@vueuse/core')['resolveUnref']
+  const resolveUnref: (typeof import('@vueuse/core'))['resolveUnref']
   const resolveVuetifyTheme: typeof import('./src/@webcore/utils/vuetify').resolveVuetifyTheme
   const rgbaToHex: typeof import('./src/@webcore/utils/colorConverter').rgbaToHex
   const setActivePinia: typeof import('pinia').setActivePinia

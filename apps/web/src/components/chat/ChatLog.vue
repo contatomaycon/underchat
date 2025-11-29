@@ -31,14 +31,11 @@ import { MglMap, MglMarker } from 'vue-maplibre-gl';
 import { can } from '@layouts/plugins/casl';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
-import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
-import { useContactStore } from '@/@webcore/stores/contact';
 
 const { t } = useI18n();
 const chatStore = useChatStore();
-const contactStore = useContactStore();
 const { activeChat } = storeToRefs(chatStore);
 const chatLogContainer = ref<HTMLElement | null>(null);
 
@@ -115,15 +112,16 @@ const audioWaveforms = reactive<Record<string, number[]>>({});
 
 type FeedbackIcon = { icon: string; color?: string };
 
-const canViewChatContent = computed(() => {
+const canViewChatContent = () => {
   const permissions = [
     EGeneralPermissions.full_access,
     EGeneralPermissions.full_access_group,
     EChatPermissions.chat_group,
     EChatPermissions.preview_chat,
   ];
+
   return can(permissions);
-});
+};
 
 const shouldBlurMessageContent = computed(() => {
   if (!activeChat.value) {
@@ -133,7 +131,7 @@ const shouldBlurMessageContent = computed(() => {
   const chatStatus = activeChat.value.status;
   const isQueueOrUra =
     chatStatus === EChatStatus.queue || chatStatus === EChatStatus.ura;
-  return isQueueOrUra && !canViewChatContent.value;
+  return isQueueOrUra && !canViewChatContent();
 });
 
 const resolveFeedbackIcon = (message: ListMessageResult): FeedbackIcon => {
@@ -202,17 +200,7 @@ const resolvePreviewUrl = (lp?: LinkPreview): string =>
 
 const isDeleted = (m: ListMessageResult): boolean => m.deleted === true;
 
-const permissionsCreateContact = [
-  EGeneralPermissions.full_access,
-  EGeneralPermissions.full_access_group,
-  EContactPermissions.contact_group,
-  EContactPermissions.contact_create,
-];
-
-const canCreateContact = computed(() => can(permissionsCreateContact));
-
 const handleContactClick = async (message: ListMessageResult) => {
-  if (!canCreateContact.value) return;
   if (!message.content?.contact) return;
 
   const contact = message.content.contact;
@@ -2668,8 +2656,7 @@ onUnmounted(() => {
                     <div
                       class="contact-item d-flex align-center gap-3 pa-3"
                       :class="{
-                        'contact-item--clickable':
-                          canCreateContact && !item.message.deleted,
+                        'contact-item--clickable': !item.message.deleted,
                       }"
                       :style="{
                         backgroundColor: isTypeUser(item.message)

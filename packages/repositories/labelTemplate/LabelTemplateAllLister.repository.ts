@@ -18,6 +18,7 @@ export class LabelTemplateAllListerRepository {
       .select({
         label_template_id: labelTemplate.label_template_id,
         label: labelTemplate.label,
+        color: labelTemplate.color,
       })
       .from(labelTemplate)
       .where(

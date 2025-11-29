@@ -156,6 +156,15 @@ export const createMessageChatsBodySchema = Type.Object({
       }),
     ])
   ),
+  quick_message_template_id: Type.Optional(
+    Type.Union([
+      Type.String({ format: 'uuid' }),
+      Type.Null(),
+      Type.Object({
+        value: Type.String({ format: 'uuid' }),
+      }),
+    ])
+  ),
 });
 
 export type CreateMessageChatsParams = Static<

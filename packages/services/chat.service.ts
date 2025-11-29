@@ -7,6 +7,11 @@ import { IChat } from '@core/common/interfaces/IChat';
 import { chatMappings } from '@core/mappings/chat.mappings';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
+import { WorkerConfigForChatViewerRepository } from '@core/repositories/chat/WorkerConfigForChatViewer.repository';
+import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerConfigForChat/response.schema';
+import { ChatQuickMessageTemplatesListerRepository } from '@core/repositories/chat/ChatQuickMessageTemplatesLister.repository';
+import { ListQuickMessageTemplatesResponse } from '@core/schema/chat/listQuickMessageTemplates/response.schema';
+import { ListQuickMessageTemplatesRequest } from '@core/schema/chat/listQuickMessageTemplates/request.schema';
 
 type ElasticHit<T> = {
   _source?: T;
@@ -15,7 +20,9 @@ type ElasticHit<T> = {
 @injectable()
 export class ChatService {
   constructor(
-    private readonly elasticDatabaseService: ElasticDatabaseService
+    private readonly elasticDatabaseService: ElasticDatabaseService,
+    private readonly workerConfigForChatViewerRepository: WorkerConfigForChatViewerRepository,
+    private readonly chatQuickMessageTemplatesListerRepository: ChatQuickMessageTemplatesListerRepository
   ) {}
 
   saveMessageChat = async (messageChat: IChatMessage): Promise<boolean> => {
@@ -163,6 +170,192 @@ export class ChatService {
     );
   };
 
+  updateChatLabel = async (
+    chatId: string,
+    label?: IChat['label'] | null
+  ): Promise<boolean> => {
+    const updateData: {
+      label?: IChat['label'] | null;
+    } = {};
+
+    if (label !== undefined) {
+      updateData.label = label;
+    }
+
+    return this.elasticDatabaseService.update(
+      EElasticIndex.chat,
+      updateData,
+      chatId
+    );
+  };
+
+  updateChatProtocol = async (
+    chatId: string,
+    protocolType: 'protocol_ura' | 'protocol_start' | 'protocol_transfer',
+    protocol: string
+  ): Promise<boolean> => {
+    return this.elasticDatabaseService.updateArrayField(
+      EElasticIndex.chat,
+      chatId,
+      protocolType,
+      protocol
+    );
+  };
+
+  countInChatChatsByUserId = async (
+    accountId: string,
+    workerId: string,
+    userId: string
+  ): Promise<number> => {
+    const startOfToday = new Date();
+    startOfToday.setUTCHours(0, 0, 0, 0);
+    const startOfTodayIso = startOfToday.toISOString();
+
+    const queryElastic = {
+      size: 0,
+      query: {
+        bool: {
+          must: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: {
+                    'account.id': accountId,
+                  },
+                },
+              },
+            },
+            {
+              nested: {
+                path: 'worker',
+                query: {
+                  term: {
+                    'worker.id': workerId,
+                  },
+                },
+              },
+            },
+            {
+              nested: {
+                path: 'user',
+                query: {
+                  term: {
+                    'user.id': userId,
+                  },
+                },
+              },
+            },
+            {
+              term: {
+                status: EChatStatus.in_chat,
+              },
+            },
+            {
+              range: {
+                started_at: {
+                  gte: startOfTodayIso,
+                },
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select<IChat>(
+      EElasticIndex.chat,
+      queryElastic
+    );
+
+    const total = result?.hits?.total;
+    if (typeof total === 'number') {
+      return total;
+    }
+
+    return total?.value ?? 0;
+  };
+
+  countQueueChatsByUserId = async (
+    accountId: string,
+    workerId: string,
+    userId: string
+  ): Promise<number> => {
+    const queryElastic = {
+      size: 0,
+      query: {
+        bool: {
+          must: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: {
+                    'account.id': accountId,
+                  },
+                },
+              },
+            },
+            {
+              nested: {
+                path: 'worker',
+                query: {
+                  term: {
+                    'worker.id': workerId,
+                  },
+                },
+              },
+            },
+            {
+              nested: {
+                path: 'user',
+                query: {
+                  term: {
+                    'user.id': userId,
+                  },
+                },
+              },
+            },
+            {
+              term: {
+                status: EChatStatus.queue,
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select<IChat>(
+      EElasticIndex.chat,
+      queryElastic
+    );
+
+    const total = result?.hits?.total;
+    if (typeof total === 'number') {
+      return total;
+    }
+
+    return total?.value ?? 0;
+  };
+
+  countTotalChatsByUserId = async (
+    accountId: string,
+    workerId: string,
+    userId: string
+  ): Promise<{ inChat: number; queue: number; total: number }> => {
+    const [inChat, queue] = await Promise.all([
+      this.countInChatChatsByUserId(accountId, workerId, userId),
+      this.countQueueChatsByUserId(accountId, workerId, userId),
+    ]);
+
+    return {
+      inChat,
+      queue,
+      total: inChat + queue,
+    };
+  };
+
   updateChatSummary = async (
     chatId: string,
     summary: IChat['summary']
@@ -291,6 +484,100 @@ export class ChatService {
     );
   };
 
+  findQueueChatsByWorkerId = async (
+    accountId: string,
+    workerId: string,
+    userId?: string,
+    excludeChatId?: string
+  ): Promise<IChat[]> => {
+    const filterClauses: any[] = [
+      {
+        nested: {
+          path: 'account',
+          query: {
+            term: {
+              'account.id': accountId,
+            },
+          },
+        },
+      },
+      {
+        nested: {
+          path: 'worker',
+          query: {
+            term: {
+              'worker.id': workerId,
+            },
+          },
+        },
+      },
+      {
+        term: {
+          status: EChatStatus.queue,
+        },
+      },
+    ];
+
+    if (excludeChatId) {
+      filterClauses.push({
+        bool: {
+          must_not: {
+            term: {
+              chat_id: excludeChatId,
+            },
+          },
+        },
+      });
+    }
+
+    const queryElastic: any = {
+      size: 100,
+      _source: true,
+      query: {
+        bool: {
+          filter: filterClauses,
+        },
+      },
+      sort: [
+        {
+          date: {
+            order: 'asc',
+          },
+        },
+      ],
+    };
+
+    const result = await this.elasticDatabaseService.select<IChat>(
+      EElasticIndex.chat,
+      queryElastic
+    );
+
+    if (!result) {
+      return [];
+    }
+
+    const hits = result?.hits?.hits ?? [];
+
+    const chats = hits
+      .map((hit: ElasticHit<IChat>) => {
+        const chat = hit._source;
+        if (chat && Array.isArray(chat.summary)) {
+          chat.summary = chat.summary[0] as IChat['summary'];
+        }
+        return chat;
+      })
+      .filter((chat): chat is IChat => chat !== undefined);
+
+    if (userId && chats.length > 0) {
+      const userChats = chats.filter((chat) => chat.user?.id === userId);
+      const otherChats = chats.filter((chat) => chat.user?.id !== userId);
+
+      return [...userChats, ...otherChats];
+    }
+
+    return chats;
+  };
+
   findChatsByContactId = async (
     accountId: string,
     contactId: string
@@ -390,6 +677,24 @@ export class ChatService {
       EElasticIndex.message,
       { content },
       messageId
+    );
+  };
+
+  viewWorkerConfigForChat = async (
+    workerId: string
+  ): Promise<ViewWorkerConfigForChatResponse> => {
+    return this.workerConfigForChatViewerRepository.viewWorkerConfigForChatByWorkerId(
+      workerId
+    );
+  };
+
+  listQuickMessageTemplates = async (
+    query: ListQuickMessageTemplatesRequest,
+    accountId: string
+  ): Promise<ListQuickMessageTemplatesResponse[]> => {
+    return this.chatQuickMessageTemplatesListerRepository.listQuickMessageTemplates(
+      query,
+      accountId
     );
   };
 }

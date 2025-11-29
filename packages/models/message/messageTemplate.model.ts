@@ -1,4 +1,11 @@
-import { pgTable, uuid, timestamp, varchar, text } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  uuid,
+  timestamp,
+  varchar,
+  text,
+  integer,
+} from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { messageStatus, account } from '@core/models';
 
@@ -13,6 +20,11 @@ export const messageTemplate = pgTable('message_template', {
   command: varchar({ length: 100 }).notNull(),
   message: text().notNull(),
   attachment_url: varchar({ length: 500 }),
+  type: varchar({ length: 50 }).notNull().default('text'),
+  mimetype: varchar({ length: 100 }),
+  duration: integer(),
+  width: integer(),
+  height: integer(),
   created_at: timestamp({
     mode: 'string',
     withTimezone: true,

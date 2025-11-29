@@ -28,6 +28,11 @@ export class MessageTemplateViewerRepository {
         attachment_url: messageTemplate.attachment_url,
         command: messageTemplate.command,
         message: messageTemplate.message,
+        type: messageTemplate.type,
+        mimetype: messageTemplate.mimetype,
+        duration: messageTemplate.duration,
+        width: messageTemplate.width,
+        height: messageTemplate.height,
         created_at: messageTemplate.created_at,
       })
       .from(messageTemplate)
@@ -48,6 +53,13 @@ export class MessageTemplateViewerRepository {
       return null;
     }
 
-    return result[0] as ViewMessageTemplateResponse;
+    const row = result[0] as ViewMessageTemplateResponse & {
+      type?: string | null;
+    };
+
+    return {
+      ...row,
+      type: row.type ?? 'text',
+    } as ViewMessageTemplateResponse;
   };
 }

@@ -128,6 +128,29 @@ export const chatMappings = () => {
         closed_at: {
           type: 'date',
         },
+        protocol_ura: {
+          type: 'keyword',
+        },
+        protocol_start: {
+          type: 'keyword',
+        },
+        protocol_transfer: {
+          type: 'keyword',
+        },
+        label: {
+          type: 'nested',
+          properties: {
+            label_template_id: {
+              type: 'keyword',
+            },
+            label: {
+              type: 'text',
+            },
+            color: {
+              type: 'keyword',
+            },
+          },
+        },
       },
     },
   };

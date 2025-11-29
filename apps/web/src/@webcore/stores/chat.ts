@@ -33,6 +33,27 @@ import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { SearchMessagesResponse } from '@core/schema/chat/searchMessages/response.schema';
+import { ListChatContactsFinalResponse } from '@core/schema/chat/listContacts/response.schema';
+import { ViewChatContactResponse } from '@core/schema/chat/viewContact/response.schema';
+import { ViewChatContactEmailResponse } from '@core/schema/chat/viewContactEmail/response.schema';
+import { ViewChatContactPhoneResponse } from '@core/schema/chat/viewContactPhone/response.schema';
+import { ListChatLabelTemplatesResponse } from '@core/schema/chat/listLabelTemplates/response.schema';
+import {
+  ListQuickMessageTemplatesFinalResponse,
+  ListQuickMessageTemplatesResponse,
+} from '@core/schema/chat/listQuickMessageTemplates/response.schema';
+import { ListQuickMessageTemplatesRequest } from '@core/schema/chat/listQuickMessageTemplates/request.schema';
+import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
+import {
+  EditContactParamsRequest,
+  UpdateContactRequest,
+} from '@core/schema/contact/editContact/request.schema';
+import { TransferUserResponse } from '@core/schema/chat/listTransferUsers/response.schema';
+import { TransferSectorResponse } from '@core/schema/chat/listTransferSectors/response.schema';
+import { TransferSectorUserResponse } from '@core/schema/chat/listTransferSectorUsers/response.schema';
+import { ListTransferOptionsResponse } from '@core/schema/chat/listTransferOptions/response.schema';
+
+type FieldValue = string | { value: string } | null;
 
 type LocalMessageState = {
   status: 'uploading' | 'error';
@@ -213,6 +234,7 @@ export const useChatStore = defineStore('chat', {
         date: chat.date,
         started_at: chat.started_at,
         closed_at: chat.closed_at,
+        label: chat.label,
       };
 
       const isActiveChat = this.activeChat?.chat_id === chat.chat_id;
@@ -279,6 +301,7 @@ export const useChatStore = defineStore('chat', {
         status: input.status,
         date: input.date,
         started_at: input.started_at,
+        label: input.label,
         closed_at: input.closed_at,
       };
     },
@@ -675,15 +698,20 @@ export const useChatStore = defineStore('chat', {
               user: data.data.user,
               started_at: data.data.started_at,
               closed_at: data.data.closed_at,
+              label: data.data.label,
             };
           }
         }
 
         return true;
-      } catch {
+      } catch (error) {
         this.loading = false;
 
-        const errorMessage = this.i18n.global.t('chat_status_update_error');
+        let errorMessage = this.i18n.global.t('chat_status_update_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
         this.showSnackbar(errorMessage, EColor.error);
 
         return false;
@@ -1144,6 +1172,7 @@ export const useChatStore = defineStore('chat', {
         phone: chat.phone,
         status: chat.status,
         date: chat.date,
+        label: chat.label,
       };
     },
 
@@ -1352,6 +1381,675 @@ export const useChatStore = defineStore('chat', {
           results: [],
           pagings,
         };
+      }
+    },
+
+    async listChatContacts(
+      page: number = 1,
+      perPage: number = 50,
+      search?: string
+    ): Promise<ListChatContactsFinalResponse | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ListChatContactsFinalResponse>
+        >('/chat/contacts', {
+          params: {
+            current_page: page,
+            per_page: perPage,
+            search,
+          },
+        });
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        return null;
+      }
+    },
+
+    async getChatContactById(
+      contactId: string
+    ): Promise<ViewChatContactResponse | null> {
+      try {
+        const response = await axios.get<IApiResponse<ViewChatContactResponse>>(
+          `/chat/contacts/${contactId}`
+        );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        return null;
+      }
+    },
+
+    async getChatContactEmailDecrypted(
+      contactId: string
+    ): Promise<string | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ViewChatContactEmailResponse>
+        >(`/chat/contacts/${contactId}/email`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data.email;
+      } catch {
+        return null;
+      }
+    },
+
+    async getChatContactPhoneDecrypted(
+      contactId: string
+    ): Promise<string | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ViewChatContactPhoneResponse>
+        >(`/chat/contacts/${contactId}/phone`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data.phone;
+      } catch {
+        return null;
+      }
+    },
+
+    async listChatLabelTemplates(): Promise<ListChatLabelTemplatesResponse[]> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ListChatLabelTemplatesResponse[]>
+        >('/chat/label-templates');
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return [];
+        }
+
+        return data.data;
+      } catch {
+        return [];
+      }
+    },
+
+    async listQuickMessageTemplates(
+      command?: string | null
+    ): Promise<ListQuickMessageTemplatesResponse[]> {
+      try {
+        const request: ListQuickMessageTemplatesRequest = {
+          command: command || null,
+        };
+
+        const response = await axios.get<
+          IApiResponse<ListQuickMessageTemplatesFinalResponse>
+        >(`/chat/quick-message-templates`, {
+          params: request,
+        });
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return [];
+        }
+
+        return data.data.results;
+      } catch (error) {
+        if (error instanceof AxiosError) {
+          console.error('Error fetching quick message templates:', error);
+        }
+
+        return [];
+      }
+    },
+
+    extractFieldValue(field: FieldValue | undefined): string {
+      if (field === null || field === undefined) {
+        return '';
+      }
+
+      if (typeof field === 'object' && 'value' in field) {
+        return field.value ?? '';
+      }
+
+      if (typeof field === 'string') {
+        return field;
+      }
+
+      return '';
+    },
+
+    async createChatContact(
+      payload: CreateContactRequest,
+      photoFile?: File | null
+    ): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const formData = new FormData();
+        const labelTemplateId = this.extractFieldValue(
+          payload.label_template_id as FieldValue
+        );
+        if (labelTemplateId) {
+          formData.append('label_template_id', labelTemplateId);
+        }
+        formData.append(
+          'name',
+          this.extractFieldValue(payload.name as string | { value: string })
+        );
+        const lastName = this.extractFieldValue(
+          payload.last_name as FieldValue
+        );
+        if (lastName) {
+          formData.append('last_name', lastName);
+        }
+        const email = this.extractFieldValue(payload.email as FieldValue);
+        if (email) {
+          formData.append('email', email);
+        }
+        formData.append(
+          'phone_ddi',
+          this.extractFieldValue(
+            payload.phone_ddi as string | { value: string }
+          )
+        );
+        formData.append(
+          'phone',
+          this.extractFieldValue(payload.phone as string | { value: string })
+        );
+        const nickname = this.extractFieldValue(payload.nickname as FieldValue);
+        if (nickname) {
+          formData.append('nickname', nickname);
+        }
+        const birthday = this.extractFieldValue(payload.birthday as FieldValue);
+        if (birthday) {
+          formData.append('birthday', birthday);
+        }
+        const notes = this.extractFieldValue(payload.notes as FieldValue);
+        if (notes) {
+          formData.append('notes', notes);
+        }
+        const imageUrl = this.extractFieldValue(
+          payload.image_url as FieldValue
+        );
+        if (imageUrl) {
+          formData.append('image_url', imageUrl);
+        } else if (photoFile) {
+          formData.append('photo', photoFile);
+        }
+
+        const response = await axios.post<IApiResponse<boolean>>(
+          `/chat/contacts`,
+          formData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+            },
+          }
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('contact_add_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('contact_add_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('contact_add_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async updateChatContact(
+      payload: EditContactParamsRequest,
+      body: UpdateContactRequest,
+      photoFile?: File | null
+    ): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const formData = new FormData();
+        const labelTemplateId = this.extractFieldValue(
+          body.label_template_id as FieldValue
+        );
+        if (labelTemplateId) {
+          formData.append('label_template_id', labelTemplateId);
+        }
+        const name = this.extractFieldValue(body.name as FieldValue);
+        if (name) {
+          formData.append('name', name);
+        }
+        const lastName = this.extractFieldValue(body.last_name as FieldValue);
+        if (lastName) {
+          formData.append('last_name', lastName);
+        }
+        const email = this.extractFieldValue(body.email as FieldValue);
+        if (email) {
+          formData.append('email', email);
+        }
+        const phoneDdi = this.extractFieldValue(body.phone_ddi as FieldValue);
+        if (phoneDdi) {
+          formData.append('phone_ddi', phoneDdi);
+        }
+        const phone = this.extractFieldValue(body.phone as FieldValue);
+        if (phone) {
+          formData.append('phone', phone);
+        }
+        const nickname = this.extractFieldValue(body.nickname as FieldValue);
+        if (nickname) {
+          formData.append('nickname', nickname);
+        }
+        const birthday = this.extractFieldValue(body.birthday as FieldValue);
+        if (birthday) {
+          formData.append('birthday', birthday);
+        }
+        const notes = this.extractFieldValue(body.notes as FieldValue);
+        if (notes) {
+          formData.append('notes', notes);
+        }
+        const imageUrl = this.extractFieldValue(body.image_url as FieldValue);
+        if (imageUrl) {
+          formData.append('image_url', imageUrl);
+        } else if (photoFile) {
+          formData.append('photo', photoFile);
+        }
+
+        const response = await axios.patch<IApiResponse<boolean>>(
+          `/chat/contacts/${payload.contact_id}`,
+          formData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+            },
+          }
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('contact_edit_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('contact_edit_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('contact_edit_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async deleteChatContactPhoto(contactId: string): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.delete<IApiResponse<boolean>>(
+          `/chat/contacts/${contactId}/photo`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('contact_photo_delete_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('contact_photo_deleted_successfully'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('contact_photo_delete_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async validateChatContact(contactId: string): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<boolean>>(
+          `/chat/contacts/${contactId}/validate`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('contact_validation_failed');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('contact_validation_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('contact_validation_failed');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async listTransferUsers(): Promise<TransferUserResponse[]> {
+      try {
+        const response = await axios.get<IApiResponse<TransferUserResponse[]>>(
+          '/chat/transfer/users'
+        );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return [];
+        }
+
+        return data.data;
+      } catch {
+        const errorMessage = this.i18n.global.t('error_loading_transfer_users');
+        this.showSnackbar(errorMessage, EColor.error);
+        return [];
+      }
+    },
+
+    async listTransferSectors(): Promise<TransferSectorResponse[]> {
+      try {
+        const response = await axios.get<
+          IApiResponse<TransferSectorResponse[]>
+        >('/chat/transfer/sectors');
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return [];
+        }
+
+        return data.data;
+      } catch {
+        const errorMessage = this.i18n.global.t(
+          'error_loading_transfer_sectors'
+        );
+        this.showSnackbar(errorMessage, EColor.error);
+        return [];
+      }
+    },
+
+    async listTransferSectorUsers(
+      sectorId: string
+    ): Promise<TransferSectorUserResponse[]> {
+      try {
+        const response = await axios.get<
+          IApiResponse<TransferSectorUserResponse[]>
+        >(`/chat/transfer/sectors/${sectorId}/users`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return [];
+        }
+
+        return data.data;
+      } catch {
+        const errorMessage =
+          this.i18n.global.t('transfer_sector_users_error') ||
+          'Erro ao carregar usuários do setor';
+        this.showSnackbar(errorMessage, EColor.error);
+        return [];
+      }
+    },
+
+    async listTransferOptions(): Promise<ListTransferOptionsResponse | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ListTransferOptionsResponse>
+        >('/chat/transfer-options');
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const errorMessage = this.i18n.global.t(
+            'error_loading_transfer_options'
+          );
+          this.showSnackbar(errorMessage, EColor.error);
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        const errorMessage = this.i18n.global.t(
+          'error_loading_transfer_options'
+        );
+        this.showSnackbar(errorMessage, EColor.error);
+        return null;
+      }
+    },
+
+    async startChatWithContact(
+      contactId: string,
+      workerId: string,
+      sectorId?: string | null
+    ): Promise<IChat | null> {
+      try {
+        this.loading = true;
+
+        const requestBody: {
+          contact_id: string;
+          worker_id: string;
+          sector_id?: string;
+        } = {
+          contact_id: contactId,
+          worker_id: workerId,
+        };
+
+        if (sectorId) {
+          requestBody.sector_id = sectorId;
+        }
+
+        const response = await axios.post<IApiResponse<IChat>>(
+          '/chat/start-with-contact',
+          requestBody
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const errorMessage =
+            data?.message || this.i18n.global.t('chat_creation_error');
+          this.showSnackbar(errorMessage, EColor.error);
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t('chat_creation_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+        this.showSnackbar(errorMessage, EColor.error);
+        return null;
+      }
+    },
+
+    async listLabelTemplates(): Promise<
+      ListChatLabelTemplatesResponse[] | null
+    > {
+      try {
+        const response = await axios.get<
+          IApiResponse<ListChatLabelTemplatesResponse[]>
+        >('/chat/label-templates');
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        this.showSnackbar(
+          this.i18n.global.t('label_template_all_list_error'),
+          EColor.error
+        );
+
+        return null;
+      }
+    },
+
+    async updateChatLabel(
+      chatId: string,
+      labelTemplateId?: string | null
+    ): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<IApiResponse<{ success: boolean }>>(
+          `/chat/${chatId}/label`,
+          {
+            label_template_id: labelTemplateId || null,
+          }
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const errorMessage =
+            data?.message || this.i18n.global.t('chat_label_update_error');
+          this.showSnackbar(errorMessage, EColor.error);
+
+          return false;
+        }
+
+        if (this.activeChat?.chat_id === chatId) {
+          let label: ListChatsResult['label'] = null;
+
+          if (labelTemplateId) {
+            const labels = await this.listLabelTemplates();
+            const labelTemplate = labels?.find(
+              (l) => l.label_template_id === labelTemplateId
+            );
+
+            if (labelTemplate) {
+              label = {
+                label_template_id: labelTemplate.label_template_id,
+                label: labelTemplate.label,
+                color: labelTemplate.color,
+              };
+            }
+          }
+
+          this.activeChat = {
+            ...this.activeChat,
+            label,
+          } as ListChatsResult;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('chat_label_update_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        this.loading = false;
+
+        let errorMessage = this.i18n.global.t('chat_label_update_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return false;
       }
     },
   },

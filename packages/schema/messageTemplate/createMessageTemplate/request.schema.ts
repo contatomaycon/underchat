@@ -14,6 +14,9 @@ export const createMessageTemplateRequestSchema = Type.Object({
   message_status_id: Type.Object({
     value: Type.String({ format: 'uuid' }),
   }),
+  type: Type.Object({
+    value: Type.String(),
+  }),
 });
 
 export type CreateMessageTemplateRequest = Static<

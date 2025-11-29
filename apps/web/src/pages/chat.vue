@@ -6,28 +6,30 @@ import { themes } from '@/plugins/vuetify/theme';
 import ChatActiveChatUserProfileSidebarContent from '@/components/chat/ChatActiveChatUserProfileSidebarContent.vue';
 import ChatLeftSidebarContent from '@/components/chat/ChatLeftSidebarContent.vue';
 import ChatLog from '@/components/chat/ChatLog.vue';
+import ChatQuickMessagePreview from '@/components/chat/ChatQuickMessagePreview.vue';
 import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSidebarContent.vue';
 import ChatSearchSidebarContent from '@/components/chat/ChatSearchSidebarContent.vue';
 import AppContactPicker from '@/components/chat/AppContactPicker.vue';
-import AppAddContact from '@/components/contact/AppAddContact.vue';
-import AppEditContact from '@/components/contact/AppEditContact.vue';
+import AppAddContactChat from '@/components/chat/AppAddContactChat.vue';
+import AppEditContactChat from '@/components/chat/AppEditContactChat.vue';
+import ChatLocationPicker from '@/components/chat/ChatLocationPicker.vue';
+import ChatContactViewModal from '@/components/chat/ChatContactViewModal.vue';
+import ChatLabelModal from '@/components/chat/ChatLabelModal.vue';
+import ChatLinkPreview from '@/components/chat/ChatLinkPreview.vue';
+import ChatQueueStatusBanner from '@/components/chat/ChatQueueStatusBanner.vue';
+import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
 import VDialogHandler from '@/components/VDialogHandler.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
-import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
-import { EUserPermissions } from '@core/common/enums/EPermissions/user';
-import { ESectorPermissions } from '@core/common/enums/EPermissions/sector';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { getPermissions, getSectors } from '@/@webcore/localStorage/user';
-import { can } from '@layouts/plugins/casl';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
-import { useContactStore } from '@/@webcore/stores/contact';
-import { useUsersStore } from '@/@webcore/stores/user';
-import { useSectorsStore } from '@/@webcore/stores/sector';
+import { useChannelsStore } from '@/@webcore/stores/channels';
+import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerConfigForChat/response.schema';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
-import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
+import { ViewChatContactResponse } from '@core/schema/chat/viewContact/response.schema';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
 import {
@@ -44,6 +46,7 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { EColor } from '@core/common/enums/EColor';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import {
   IChatMessage,
   IQuotedMessage,
@@ -65,7 +68,6 @@ import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
 import data from 'emoji-mart-vue-fast/data/all.json';
 import 'emoji-mart-vue-fast/css/emoji-mart.css';
 import { useI18n } from 'vue-i18n';
-import { MglMap, MglMarker } from 'vue-maplibre-gl';
 
 const emojiIndex = new EmojiIndex(data);
 const { t } = useI18n();
@@ -88,10 +90,9 @@ definePage({
 });
 
 const chatStore = useChatStore();
-const contactStore = useContactStore();
+const channelStore = useChannelsStore();
 useSnackbarCleanup(chatStore);
-useSnackbarCleanup(contactStore);
-const { name } = useTheme();
+const { name, global } = useTheme();
 const vuetifyDisplays = useDisplay();
 
 const contact_id = ref('contact-id');
@@ -105,7 +106,17 @@ const chatLogPS = ref();
 const resizeHandler = ref<(() => void) | null>(null);
 const q = ref('');
 const msg = ref('');
+const quickMessageTemplates = ref<
+  import('@core/schema/chat/listQuickMessageTemplates/response.schema').ListQuickMessageTemplatesResponse[]
+>([]);
+const showQuickMessageList = ref(false);
+const quickMessageSearch = ref('');
+const selectedQuickMessage = ref<
+  | import('@core/schema/chat/listQuickMessageTemplates/response.schema').ListQuickMessageTemplatesResponse
+  | null
+>(null);
 const isUserProfileSidebarOpen = ref(false);
+const isUpdatingUserProfileStatus = ref(false);
 const isActiveChatUserProfileSidebarOpen = ref(false);
 const isSearchSidebarOpen = ref(false);
 const linkPreview = ref<ViewLinkPreviewResponse | null>(null);
@@ -122,7 +133,7 @@ const isAnnotationModalOpen = ref(false);
 const annotationText = ref('');
 const isAnnotationEmojiOpen = ref(false);
 const isContactViewModalOpen = ref(false);
-const selectedContactDetails = ref<ViewContactResponse | null>(null);
+const selectedContactDetails = ref<ViewChatContactResponse | null>(null);
 const isAddContactModalOpen = ref(false);
 const addContactInitialData = ref<Partial<CreateContactRequest> | null>(null);
 const isEditContactModalOpen = ref(false);
@@ -457,13 +468,87 @@ const isQueueStatus = computed(
   () => chatStore.activeChat?.status === EChatStatus.queue
 );
 
+const workerConfigForChat = ref<ViewWorkerConfigForChatResponse>(null);
+
+const getStatusColor = (status: EChatUserStatus): string => {
+  const isDark = global.name.value === 'dark';
+
+  const colorMap: Record<EChatUserStatus, string> = {
+    [EChatUserStatus.online]: '#4caf50',
+    [EChatUserStatus.busy]: '#f44336',
+    [EChatUserStatus.away]: '#ff9800',
+    [EChatUserStatus.offline]: isDark ? '#9e9e9e' : '#757575',
+    [EChatUserStatus.do_not_disturb]: '#ff9800',
+  };
+  return colorMap[status] || (isDark ? '#9e9e9e' : '#757575');
+};
+
+const userStatus = computed(
+  () =>
+    (chatStore.user?.chat_user?.status as EChatUserStatus | undefined) ||
+    EChatUserStatus.offline
+);
+
+const cannotAttendDueToStatus = computed(() => {
+  if (!isQueueStatus.value) return false;
+  if (!workerConfigForChat.value?.allow_attendance_only_online) return false;
+  return userStatus.value !== EChatUserStatus.online;
+});
+
+const cannotAttendDueToLimit = computed(() => {
+  if (!isQueueStatus.value) return false;
+  if (cannotAttendDueToStatus.value) return false; // Prioriza mensagem de status
+  if (!workerConfigForChat.value?.simultaneous_attendance) return false;
+  if (!chatStore.activeChat?.worker?.id || !chatStore.user?.user_id)
+    return false;
+
+  const limit = workerConfigForChat.value.simultaneous_attendance;
+  const currentInChatCount = chatStore.listInChat.filter(
+    (chat) =>
+      chat.user?.id === chatStore.user?.user_id &&
+      chat.worker?.id === chatStore.activeChat?.worker?.id
+  ).length;
+
+  return currentInChatCount >= limit;
+});
+
+const canAttendChat = computed(() => {
+  if (!isQueueStatus.value) return false;
+  if (cannotAttendDueToStatus.value) return false;
+  if (cannotAttendDueToLimit.value) return false;
+  return true;
+});
+
+const loadWorkerConfigForChat = async () => {
+  const workerId = chatStore.activeChat?.worker?.id;
+  if (!workerId) {
+    workerConfigForChat.value = null;
+    return;
+  }
+
+  const config = await channelStore.fetchWorkerConfigForChat(workerId);
+  workerConfigForChat.value = config;
+};
+
+watch(
+  () => chatStore.activeChat?.worker?.id,
+  () => {
+    void loadWorkerConfigForChat();
+  },
+  { immediate: true }
+);
+
 const handleAttendChat = async () => {
   if (!chatStore.activeChat?.chat_id) return;
 
-  await chatStore.updateChatStatus(
+  const success = await chatStore.updateChatStatus(
     chatStore.activeChat.chat_id,
     EChatStatus.in_chat
   );
+
+  if (success) {
+    chatStore.showSnackbar(t('chat_attended_successfully'), EColor.success);
+  }
 };
 
 const isCloseServiceDialogOpen = ref(false);
@@ -475,23 +560,15 @@ const handleCloseService = () => {
 const confirmCloseService = async () => {
   if (!chatStore.activeChat?.chat_id) return;
 
-  const success = await chatStore.updateChatStatus(
+  await chatStore.updateChatStatus(
     chatStore.activeChat.chat_id,
     EChatStatus.closed
   );
-
-  if (success) {
-    chatStore.showSnackbar(t('chat_closed_successfully'), EColor.success);
-  }
 };
 
 const handleActiveChatHeaderClick = () => {
-  if (!canAccessContacts.value) return;
   isActiveChatUserProfileSidebarOpen.value = true;
 };
-
-const userStore = useUsersStore();
-const sectorsStore = useSectorsStore();
 
 const isTransferModalOpen = ref(false);
 const transferType = ref<'user' | 'sector'>('user');
@@ -512,6 +589,41 @@ const isTransferSectorMenuOpen = ref(false);
 const isTransferSectorUserMenuOpen = ref(false);
 const transferAnnotationText = ref('');
 const isTransferAnnotationEmojiOpen = ref(false);
+
+const isLabelModalOpen = ref(false);
+const labelTemplates = ref<
+  Array<{ label_template_id: string; label: string; color: string }>
+>([]);
+const selectedLabelTemplateId = ref<string | null>(null);
+const isLoadingLabels = ref(false);
+const isSavingLabel = ref(false);
+
+const activeContactLabelTemplate = ref<{ label: string; color: string } | null>(
+  null
+);
+
+watch(
+  () => chatStore.activeChat?.contact?.id,
+  async (contactId) => {
+    if (!contactId) {
+      activeContactLabelTemplate.value = null;
+      return;
+    }
+
+    const contact = await chatStore.getChatContactById(contactId);
+
+    if (contact?.label_template) {
+      activeContactLabelTemplate.value = {
+        label: contact.label_template.label,
+        color: contact.label_template.color,
+      };
+      return;
+    }
+
+    activeContactLabelTemplate.value = null;
+  },
+  { immediate: true }
+);
 
 const filteredTransferUsers = computed(() => {
   if (!transferUserSearch.value) {
@@ -575,31 +687,14 @@ const loadTransferUsers = async () => {
 
   isLoadingTransferUsers.value = true;
   try {
-    const result = await userStore.listUsers({
-      page: 1,
-      per_page: 100,
-      search: null,
-      sort_by: [],
-    });
-
-    if (result) {
-      transferUsers.value = result.results.map((user) => {
-        let title = '';
-        if (user.user_info?.name) {
-          const fullName = user.user_info.name;
-          const lastName = user.user_info.last_name
-            ? ` ${user.user_info.last_name}`
-            : '';
-          title = `${fullName}${lastName}`;
-        } else {
-          title = user.email_partial || '';
-        }
-        return {
-          value: user.user_id,
-          title: title,
-        };
-      });
-    }
+    const users = await chatStore.listTransferUsers();
+    transferUsers.value = users.map((user) => ({
+      value: user.id,
+      title: user.name,
+      status: user.status || null,
+    }));
+  } catch (error) {
+    console.error('Error loading transfer users:', error);
   } finally {
     isLoadingTransferUsers.value = false;
   }
@@ -610,19 +705,13 @@ const loadTransferSectors = async () => {
 
   isLoadingTransferSectors.value = true;
   try {
-    const result = await sectorsStore.listSectors({
-      page: 1,
-      per_page: 100,
-      search: null,
-      sort_by: [],
-    });
-
-    if (result) {
-      transferSectors.value = result.results.map((sector) => ({
-        value: sector.sector_id,
-        title: sector.name,
-      }));
-    }
+    const sectors = await chatStore.listTransferSectors();
+    transferSectors.value = sectors.map((sector) => ({
+      value: sector.id,
+      title: sector.name,
+    }));
+  } catch (error) {
+    console.error('Error loading transfer sectors:', error);
   } finally {
     isLoadingTransferSectors.value = false;
   }
@@ -633,36 +722,15 @@ const loadTransferSectorUsers = async (sectorId: string) => {
 
   isLoadingTransferSectorUsers.value = true;
   try {
-    const users = await sectorsStore.listSectorUsers(sectorId);
-
-    if (users && users.length > 0) {
-      transferSectorUsers.value = users
-        .map((user: any) => {
-          const name = user.user_info?.name || '';
-          const lastName = user.user_info?.last_name || '';
-          const fullName =
-            name && lastName ? `${name} ${lastName}` : name || lastName;
-          const title = fullName || user.email_partial || '';
-
-          return {
-            value: user.user_id,
-            title: title,
-          };
-        })
-        .filter(
-          (item: { value: string; title: string }) => item.value && item.title
-        );
-    } else {
-      transferSectorUsers.value = [];
-    }
+    const users = await chatStore.listTransferSectorUsers(sectorId);
+    transferSectorUsers.value = users.map((user) => ({
+      value: user.id,
+      title: user.name,
+      status: user.status,
+    }));
   } catch (error) {
     transferSectorUsers.value = [];
-    const errorMessage =
-      error instanceof Error
-        ? error.message
-        : chatStore.i18n.global.t('transfer_sector_users_error') ||
-          'Erro ao carregar usuários do setor';
-    chatStore.showSnackbar(errorMessage, EColor.error);
+    console.error('Error loading transfer sector users:', error);
   } finally {
     isLoadingTransferSectorUsers.value = false;
   }
@@ -696,15 +764,12 @@ watch(selectedTransferSector, (sectorId) => {
   }
 });
 
-watch(isTransferModalOpen, (isOpen) => {
+watch(isTransferModalOpen, async (isOpen) => {
   if (isOpen) {
+    await loadWorkerConfigForChat();
     nextTick(() => {
       try {
-        if (canAccessUsers.value) {
-          transferType.value = 'user';
-        } else if (canAccessSectors.value) {
-          transferType.value = 'sector';
-        }
+        transferType.value = 'user';
         selectedTransferUser.value = null;
         selectedTransferSector.value = null;
         selectedTransferSectorUser.value = null;
@@ -716,12 +781,8 @@ watch(isTransferModalOpen, (isOpen) => {
         isTransferSectorMenuOpen.value = false;
         isTransferSectorUserMenuOpen.value = false;
         isTransferAnnotationEmojiOpen.value = false;
-        if (canAccessUsers.value) {
-          loadTransferUsers();
-        }
-        if (canAccessSectors.value) {
-          loadTransferSectors();
-        }
+        loadTransferUsers();
+        loadTransferSectors();
       } catch {}
     });
   } else {
@@ -767,51 +828,64 @@ const isInChatStatus = computed(
   () => chatStore.activeChat?.status === EChatStatus.in_chat
 );
 
-const canAccessContacts = computed(() => {
-  const permissions = [
-    EGeneralPermissions.full_access,
-    EGeneralPermissions.full_access_group,
-    EContactPermissions.contact_group,
-    EContactPermissions.contact_view,
-  ];
-  return can(permissions);
-});
-
-const canAccessUsers = computed(() => {
-  try {
-    const permissions = [
-      EGeneralPermissions.full_access,
-      EGeneralPermissions.full_access_group,
-      EUserPermissions.user_group,
-      EUserPermissions.user_view,
-    ];
-    return can(permissions);
-  } catch {
-    return false;
-  }
-});
-
-const canAccessSectors = computed(() => {
-  try {
-    const permissions = [
-      EGeneralPermissions.full_access,
-      EGeneralPermissions.full_access_group,
-      ESectorPermissions.sector_group,
-      ESectorPermissions.sector_view,
-    ];
-    return can(permissions);
-  } catch {
-    return false;
-  }
-});
-
 const canTransfer = computed(() => {
-  try {
-    return canAccessUsers.value || canAccessSectors.value;
-  } catch {
-    return false;
-  }
+  return true;
 });
+
+const openLabelModal = async () => {
+  isLabelModalOpen.value = true;
+  isLoadingLabels.value = true;
+
+  const labels = await chatStore.listLabelTemplates();
+
+  if (labels) {
+    labelTemplates.value = labels;
+  }
+
+  selectedLabelTemplateId.value =
+    chatStore.activeChat?.label?.label_template_id || null;
+  isLoadingLabels.value = false;
+};
+
+const closeLabelModal = () => {
+  if (isSavingLabel.value) return;
+  isLabelModalOpen.value = false;
+  selectedLabelTemplateId.value = null;
+};
+
+const saveLabel = async () => {
+  if (!chatStore.activeChat?.chat_id) return;
+
+  isSavingLabel.value = true;
+
+  const success = await chatStore.updateChatLabel(
+    chatStore.activeChat.chat_id,
+    selectedLabelTemplateId.value || null
+  );
+
+  if (success) {
+    isLabelModalOpen.value = false;
+  }
+
+  isSavingLabel.value = false;
+};
+
+const removeLabel = async () => {
+  if (!chatStore.activeChat?.chat_id) return;
+
+  isSavingLabel.value = true;
+
+  const success = await chatStore.updateChatLabel(
+    chatStore.activeChat.chat_id,
+    null
+  );
+
+  if (success) {
+    isLabelModalOpen.value = false;
+  }
+
+  isSavingLabel.value = false;
+};
 
 const hasAttachmentsOrContent = computed(
   () =>
@@ -820,7 +894,7 @@ const hasAttachmentsOrContent = computed(
     selectedDocuments.value.length > 0 ||
     selectedVideos.value.length > 0 ||
     selectedAudios.value.length > 0 ||
-    (canAccessContacts.value && selectedContacts.value.length > 0) ||
+    selectedContacts.value.length > 0 ||
     isRecordingAudio.value
 );
 
@@ -2101,9 +2175,7 @@ const openAttach = (
       fileAudioRef.value?.click();
       break;
     case 'contact':
-      if (canAccessContacts.value) {
-        isContactPickerOpen.value = true;
-      }
+      isContactPickerOpen.value = true;
       break;
     case 'location':
       isLocationPickerOpen.value = true;
@@ -3045,7 +3117,7 @@ const toggleViewEmailVisibility = async () => {
   }
 
   isLoadingViewEmail.value = true;
-  const decryptedEmail = await contactStore.getContactEmailDecrypted(
+  const decryptedEmail = await chatStore.getChatContactEmailDecrypted(
     selectedContactDetails.value.contact_id
   );
   isLoadingViewEmail.value = false;
@@ -3072,7 +3144,7 @@ const toggleViewPhoneVisibility = async () => {
   }
 
   isLoadingViewPhone.value = true;
-  const decryptedPhone = await contactStore.getContactPhoneDecrypted(
+  const decryptedPhone = await chatStore.getChatContactPhoneDecrypted(
     selectedContactDetails.value.contact_id
   );
   isLoadingViewPhone.value = false;
@@ -3084,7 +3156,7 @@ const toggleViewPhoneVisibility = async () => {
 };
 
 const viewContact = async (contactId: string) => {
-  const contact = await contactStore.getContactById(contactId);
+  const contact = await chatStore.getChatContactById(contactId);
   if (contact) {
     selectedContactDetails.value = contact;
     viewContactEmailPartial.value = contact.email_partial ?? null;
@@ -3384,6 +3456,144 @@ watch(
   },
   { immediate: true }
 );
+
+watch(msg, async (val) => {
+  if (typeof val === 'string' && val.startsWith('/')) {
+    const searchTerm = val.slice(1).trim();
+    quickMessageSearch.value = searchTerm;
+    showQuickMessageList.value = true;
+
+    const templates = await chatStore.listQuickMessageTemplates(
+      searchTerm || null
+    );
+    quickMessageTemplates.value = templates;
+  } else {
+    showQuickMessageList.value = false;
+    quickMessageTemplates.value = [];
+    quickMessageSearch.value = '';
+  }
+});
+
+const selectQuickMessage = (
+  template: import('@core/schema/chat/listQuickMessageTemplates/response.schema').ListQuickMessageTemplatesResponse
+) => {
+  selectedQuickMessage.value = template;
+  showQuickMessageList.value = false;
+  msg.value = '';
+};
+
+const createQuickMessageFormData = (
+  type: string,
+  messageValue: string | null,
+  hash: string,
+  template: typeof selectedQuickMessage.value
+): FormData => {
+  const formData = new FormData();
+  formData.append('type', type);
+  formData.append('hash', hash);
+
+  if (messageValue) {
+    formData.append('message', messageValue);
+  }
+
+  if (template?.message_template_id) {
+    formData.append('quick_message_template_id', template.message_template_id);
+  }
+
+  return formData;
+};
+
+const sendQuickMessage = async () => {
+  if (!selectedQuickMessage.value) return;
+  if (!hasActiveChat()) return;
+  if (isQueueStatus.value) return;
+
+  const template = selectedQuickMessage.value;
+
+  selectedQuickMessage.value = null;
+  showQuickMessageList.value = false;
+
+  if (template.type === 'text') {
+    msg.value = template.message;
+    await nextTick();
+    onSendText();
+    return;
+  }
+
+  if (!template.attachment_url) {
+    return;
+  }
+
+  const hash = createMessageHash();
+  const messageValue = template.message || null;
+
+  const content: ContentMessageChat = {
+    type: template.type as EMessageType,
+    message: messageValue,
+    [template.type]: {
+      url: template.attachment_url,
+      caption: messageValue,
+      mimetype: template.mimetype || null,
+      ...(template.type === 'video' && {
+        duration: template.duration ?? null,
+        width: template.width ?? null,
+        height: template.height ?? null,
+      }),
+      ...(template.type === 'audio' && {
+        duration: template.duration ?? null,
+      }),
+      ...(template.type === 'image' && {
+        width: template.width ?? null,
+        height: template.height ?? null,
+      }),
+    },
+  };
+
+  await registerLocalMessage(content, hash);
+
+  const formData = createQuickMessageFormData(
+    template.type,
+    messageValue,
+    hash,
+    template
+  );
+
+  let success = false;
+
+  if (template.type === 'image') {
+    success = await chatStore.createMessageWithImages(formData, {
+      skipLoading: true,
+      onUploadProgress: (progress) => {
+        markUploadProgress(hash, progress);
+      },
+    });
+  } else if (template.type === 'video') {
+    success = await chatStore.createMessageWithVideos(formData, {
+      skipLoading: true,
+      onUploadProgress: (progress) => {
+        markUploadProgress(hash, progress);
+      },
+    });
+  } else if (template.type === 'audio') {
+    success = await chatStore.createMessageWithAudios(formData, {
+      skipLoading: true,
+      onUploadProgress: (progress) => {
+        markUploadProgress(hash, progress);
+      },
+    });
+  }
+
+  if (success) {
+    finalizeSend();
+  } else {
+    markUploadError(hash);
+  }
+};
+
+const cancelQuickMessage = () => {
+  selectedQuickMessage.value = null;
+  showQuickMessageList.value = false;
+};
 
 let previousLoadingState = false;
 let previousActiveChatId: string | undefined = undefined;
@@ -3881,6 +4091,26 @@ onMounted(async () => {
         return true;
       }
 
+      const chatExistsInList =
+        chatStore.listQueue.some((c) => c.chat_id === chat.chat_id) ||
+        chatStore.listInChat.some((c) => c.chat_id === chat.chat_id);
+
+      if (chatExistsInList) {
+        return true;
+      }
+
+      if (chat.user?.id === chatStore.user?.user_id) {
+        return true;
+      }
+
+      if (
+        chat.status === EChatStatus.queue &&
+        !chat.sector?.id &&
+        !chat.user?.id
+      ) {
+        return true;
+      }
+
       if (userSectors.length === 0) {
         return !chat.sector?.id;
       }
@@ -3892,43 +4122,80 @@ onMounted(async () => {
       return userSectors.includes(chat.sector.id);
     };
 
+    const handleMessageEvent = (messageData: IChatMessage): void => {
+      if (chatStore.activeChat?.chat_id !== messageData.chat_id) {
+        return;
+      }
+
+      handleTypingEvent(messageData);
+
+      const changeType = chatStore.addMessageActiveChat(messageData);
+
+      if (changeType === 'created') {
+        nextTick(async () => {
+          await scrollToBottomInChatLog();
+        });
+        globalThis.dispatchEvent(new CustomEvent('focus-composer'));
+      }
+    };
+
+    const handleActiveChatSwitch = async (chatData: IChat): Promise<void> => {
+      const previousActiveChatId = chatStore.activeChat?.chat_id;
+
+      if (previousActiveChatId !== chatData.chat_id) {
+        chatStore.listMessages = [];
+        chatStore.currentPage = 1;
+        chatStore.totalPages = 1;
+        currentPage.value = 1;
+      }
+
+      chatStore.setActiveChat(chatData.chat_id);
+
+      if (chatStore.activeChat?.chat_id === chatData.chat_id) {
+        const requestQueue: ListMessageChatsQuery = {
+          current_page: 1,
+          per_page: perPage.value,
+        };
+        await chatStore.getChatById(requestQueue);
+
+        await nextTick();
+        requestAnimationFrame(() => {
+          scrollToBottomInChatLog();
+        });
+      }
+    };
+
+    const handleChatUpdateEvent = async (chatData: IChat): Promise<void> => {
+      if (!canReceiveChatNotification(chatData)) {
+        return;
+      }
+
+      chatStore.addChat(chatData);
+
+      const isActiveChatForUser =
+        (chatData as any)._active &&
+        chatData.user?.id === chatStore.user?.user_id;
+
+      if (isActiveChatForUser) {
+        await handleActiveChatSwitch(chatData);
+      }
+    };
+
     await onMessage(
       chatAccountCentrifugo(accountId),
-      (data: IChatMessage | IChatTyping | IChat) => {
+      async (data: IChatMessage | IChatTyping | IChat | any) => {
         if ('type' in data && data.type === 'typing') {
           handleTypingEvent(data as IChatTyping);
           return;
         }
 
         if ('message_id' in data) {
-          const messageData = data as IChatMessage;
-
-          if (chatStore.activeChat?.chat_id !== messageData.chat_id) {
-            return;
-          }
-
-          handleTypingEvent(messageData);
-
-          const changeType = chatStore.addMessageActiveChat(messageData);
-
-          if (changeType === 'created') {
-            nextTick(async () => {
-              await scrollToBottomInChatLog();
-            });
-            globalThis.dispatchEvent(new CustomEvent('focus-composer'));
-          }
-
+          handleMessageEvent(data as IChatMessage);
           return;
         }
 
         if ('chat_id' in data && !('message_id' in data)) {
-          const chatData = data as IChat;
-
-          if (!canReceiveChatNotification(chatData)) {
-            return;
-          }
-
-          chatStore.addChat(chatData);
+          await handleChatUpdateEvent(data as IChat);
         }
       }
     );
@@ -4049,14 +4316,15 @@ onBeforeUnmount(() => {
       class="user-profile-sidebar"
       location="start"
       width="370"
+      :persistent="isUpdatingUserProfileStatus"
     >
       <ChatUserProfileSidebarContent
         @close="isUserProfileSidebarOpen = false"
+        @update:is-updating="isUpdatingUserProfileStatus = $event"
       />
     </VNavigationDrawer>
 
     <VNavigationDrawer
-      v-if="canAccessContacts"
       v-model="isActiveChatUserProfileSidebarOpen"
       data-allow-mismatch
       width="374"
@@ -4067,6 +4335,7 @@ onBeforeUnmount(() => {
       class="active-chat-user-profile-sidebar"
     >
       <ChatActiveChatUserProfileSidebarContent
+        :is-open="isActiveChatUserProfileSidebarOpen"
         @close="isActiveChatUserProfileSidebarOpen = false"
       />
     </VNavigationDrawer>
@@ -4125,10 +4394,7 @@ onBeforeUnmount(() => {
           </IconBtn>
 
           <div
-            :class="[
-              'd-flex align-center',
-              { 'cursor-pointer': canAccessContacts },
-            ]"
+            class="d-flex align-center cursor-pointer"
             @click="handleActiveChatHeaderClick"
           >
             <VAvatar
@@ -4187,6 +4453,20 @@ onBeforeUnmount(() => {
                 >
                   {{ $t('contact_label') }}
                 </VChip>
+                <VChip
+                  v-if="activeContactLabelTemplate"
+                  size="x-small"
+                  variant="outlined"
+                  :color="activeContactLabelTemplate.color"
+                  class="contact-label"
+                  :title="activeContactLabelTemplate.label"
+                >
+                  {{
+                    activeContactLabelTemplate.label.length > 15
+                      ? `${activeContactLabelTemplate.label.slice(0, 15)}…`
+                      : activeContactLabelTemplate.label
+                  }}
+                </VChip>
               </div>
               <p class="text-truncate mb-0 text-body-2">
                 {{
@@ -4204,6 +4484,42 @@ onBeforeUnmount(() => {
           <VSpacer />
 
           <div class="d-sm-flex align-center d-none text-medium-emphasis">
+            <div
+              v-if="isInChatStatus && chatStore.activeChat?.label"
+              class="d-flex align-center label-container me-2"
+              :style="{
+                gap: '4px',
+                borderColor: `${chatStore.activeChat.label.color}40`,
+              }"
+            >
+              <IconBtn
+                @click="openLabelModal"
+                :title="chatStore.activeChat.label.label"
+              >
+                <VIcon
+                  icon="tabler-tag"
+                  :color="chatStore.activeChat.label.color"
+                />
+              </IconBtn>
+              <span
+                class="text-body-2 text-medium-emphasis"
+                :title="chatStore.activeChat.label.label"
+              >
+                {{
+                  chatStore.activeChat.label.label.length > 15
+                    ? `${chatStore.activeChat.label.label.slice(0, 15)}…`
+                    : chatStore.activeChat.label.label
+                }}
+              </span>
+            </div>
+            <IconBtn
+              v-else-if="isInChatStatus"
+              class="me-1"
+              @click="openLabelModal"
+              :title="t('label')"
+            >
+              <VIcon icon="tabler-tag" />
+            </IconBtn>
             <IconBtn
               v-if="isInChatStatus && canTransfer"
               @click="isTransferModalOpen = true"
@@ -4249,50 +4565,7 @@ onBeforeUnmount(() => {
           <ChatLog :key="chatStore.activeChat?.chat_id || 'no-chat'" />
         </PerfectScrollbar>
 
-        <Transition name="fade">
-          <div v-if="linkPreview" class="mx-5 mt-3">
-            <VCard class="link-preview-card">
-              <VBtn
-                class="link-preview-close"
-                icon
-                size="24"
-                variant="text"
-                @click="linkPreview = null"
-              >
-                <VIcon size="18" icon="tabler-x" />
-              </VBtn>
-              <div class="d-flex gap-3">
-                <VAvatar size="56" :rounded="8" variant="tonal">
-                  <VImg v-if="previewImage" :src="previewImage" />
-                </VAvatar>
-                <div class="flex-grow-1 overflow-hidden">
-                  <div class="text-caption text-medium-emphasis">
-                    {{ previewDomain }}
-                  </div>
-                  <div class="text-subtitle-1 font-weight-medium text-truncate">
-                    {{ linkPreview?.title }}
-                  </div>
-                  <div
-                    class="text-body-2 text-medium-emphasis two-line-ellipsis"
-                  >
-                    {{ linkPreview?.description }}
-                  </div>
-                  <div class="mt-2">
-                    <a
-                      v-if="previewHref"
-                      :href="previewHref"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      class="text-primary text-body-2"
-                    >
-                      {{ previewHref }}
-                    </a>
-                  </div>
-                </div>
-              </div>
-            </VCard>
-          </div>
-        </Transition>
+        <ChatLinkPreview :preview="linkPreview" @close="linkPreview = null" />
 
         <VForm
           class="chat-log-message-form mb-5 mx-5"
@@ -4557,7 +4830,7 @@ onBeforeUnmount(() => {
 
           <Transition name="fade">
             <div
-              v-if="canAccessContacts && selectedContacts.length > 0"
+              v-if="selectedContacts.length > 0"
               class="composer-attachment mt-3"
             >
               <VCard class="composer-attachment-card">
@@ -4760,167 +5033,231 @@ onBeforeUnmount(() => {
             </VBtn>
           </div>
 
-          <div
-            v-if="isQueueStatus"
-            class="d-flex align-center justify-space-between pa-4 bg-surface rounded mb-2"
+          <ChatQueueStatusBanner
+            :is-queue-status="isQueueStatus"
+            :can-attend-chat="canAttendChat"
+            :cannot-attend-due-to-status="cannotAttendDueToStatus"
+            :cannot-attend-due-to-limit="cannotAttendDueToLimit"
+            :worker-config-for-chat="workerConfigForChat"
+            :loading="chatStore.loading"
+            @attend="handleAttendChat"
+          />
+
+          <VCard
+            v-if="
+              showQuickMessageList &&
+              quickMessageTemplates.length > 0 &&
+              !selectedQuickMessage
+            "
+            class="quick-message-list mb-2"
+            style="max-height: 300px; overflow-y: auto"
           >
-            <span class="text-body-2 text-medium-emphasis">
-              {{
-                t(
-                  'chat_queue_message',
-                  'Para iniciar o atendimento clique em atender'
-                )
-              }}
-            </span>
-            <VBtn
-              color="primary"
-              size="small"
-              @click="handleAttendChat"
-              :loading="chatStore.loading"
-            >
-              {{ t('attend', 'Atender') }}
-            </VBtn>
+            <VList density="compact">
+              <VListItem
+                v-for="template in quickMessageTemplates"
+                :key="template.message_template_id"
+                @click="selectQuickMessage(template)"
+                class="cursor-pointer"
+              >
+                <VListItemTitle>
+                  <span class="font-weight-bold">/{{ template.command }}</span>
+                  <span class="text-caption text-medium-emphasis ml-2">
+                    {{ template.message.substring(0, 50)
+                    }}{{ template.message.length > 50 ? '...' : '' }}
+                  </span>
+                </VListItemTitle>
+              </VListItem>
+            </VList>
+          </VCard>
+
+          <div
+            v-if="selectedQuickMessage"
+            class="quick-message-preview mb-2 position-relative"
+            @click.self="cancelQuickMessage"
+          >
+            <VCard class="position-relative">
+              <VBtn
+                icon
+                size="small"
+                variant="text"
+                class="position-absolute"
+                style="top: 8px; right: 8px; z-index: 10"
+                @click.stop="cancelQuickMessage"
+              >
+                <VIcon size="20">tabler-x</VIcon>
+              </VBtn>
+              <VCardText>
+                <ChatQuickMessagePreview
+                  :template="selectedQuickMessage"
+                  @send="sendQuickMessage"
+                />
+              </VCardText>
+            </VCard>
           </div>
 
-          <VTextarea
-            v-if="!isRecordingAudio"
-            ref="composerRef"
-            :key="contact_id"
-            v-model="msg"
-            variant="solo"
-            density="comfortable"
-            class="chat-message-input whats-composer"
-            :placeholder="$t('write_your_message')"
-            :auto-grow="true"
-            rows="1"
-            :max-rows="8"
-            :disabled="isQueueStatus"
-            @keydown.enter.exact.prevent="onSendText"
-          >
-            <template #prepend-inner>
-              <VMenu
-                offset="8"
-                :close-on-content-click="true"
-                location="top start"
-              >
-                <template #activator="{ props }">
-                  <IconBtn
-                    v-bind="props"
-                    class="composer-btn"
-                    aria-label="Anexar"
-                  >
-                    <VIcon size="22">tabler-plus</VIcon>
-                  </IconBtn>
-                </template>
-
-                <VList
-                  density="comfortable"
-                  min-width="220"
-                  class="attach-menu"
+          <div class="position-relative">
+            <VTextarea
+              v-if="!isRecordingAudio"
+              ref="composerRef"
+              :key="contact_id"
+              v-model="msg"
+              variant="solo"
+              density="comfortable"
+              class="chat-message-input whats-composer"
+              :placeholder="$t('write_your_message')"
+              :auto-grow="true"
+              rows="1"
+              :max-rows="8"
+              :disabled="isQueueStatus || !!selectedQuickMessage"
+              @keydown.enter.exact.prevent="onSendText"
+            >
+              <template #prepend-inner>
+                <VMenu
+                  offset="8"
+                  :close-on-content-click="true"
+                  location="top start"
+                  :disabled="!!selectedQuickMessage"
                 >
-                  <VListItem @click="openAttach('document')">
-                    <template #prepend
-                      ><VIcon size="20">tabler-file</VIcon></template
+                  <template #activator="{ props }">
+                    <IconBtn
+                      v-bind="props"
+                      class="composer-btn"
+                      aria-label="Anexar"
+                      :disabled="!!selectedQuickMessage"
                     >
-                    <VListItemTitle>Documentos</VListItemTitle>
-                  </VListItem>
-                  <VListItem @click="openAttach('photo')">
-                    <template #prepend
-                      ><VIcon size="20">tabler-photo</VIcon></template
-                    >
-                    <VListItemTitle>Fotos</VListItemTitle>
-                  </VListItem>
-                  <VListItem @click="openAttach('video')">
-                    <template #prepend
-                      ><VIcon size="20">tabler-video</VIcon></template
-                    >
-                    <VListItemTitle>Vídeos</VListItemTitle>
-                  </VListItem>
-                  <VListItem @click="openAttach('audio')">
-                    <template #prepend
-                      ><VIcon size="20">tabler-headphones</VIcon></template
-                    >
-                    <VListItemTitle>Áudio</VListItemTitle>
-                  </VListItem>
-                  <VListItem
-                    v-if="canAccessContacts"
-                    @click="openAttach('contact')"
-                  >
-                    <template #prepend
-                      ><VIcon size="20">tabler-user</VIcon></template
-                    >
-                    <VListItemTitle>Contato</VListItemTitle>
-                  </VListItem>
-                  <VListItem @click="openAttach('location')">
-                    <template #prepend
-                      ><VIcon size="20">tabler-map-pin</VIcon></template
-                    >
-                    <VListItemTitle>Localização</VListItemTitle>
-                  </VListItem>
-                  <VListItem @click="openAttach('annotation')">
-                    <template #prepend
-                      ><VIcon size="20">tabler-note</VIcon></template
-                    >
-                    <VListItemTitle>{{ t('annotation') }}</VListItemTitle>
-                  </VListItem>
-                </VList>
-              </VMenu>
+                      <VIcon size="22">tabler-plus</VIcon>
+                    </IconBtn>
+                  </template>
 
-              <VMenu
-                v-model="isEmojiOpen"
-                location="top start"
-                :close-on-content-click="false"
-                offset="8"
-              >
-                <template #activator="{ props }">
+                  <VList
+                    density="comfortable"
+                    min-width="220"
+                    class="attach-menu"
+                  >
+                    <VListItem @click="openAttach('document')">
+                      <template #prepend
+                        ><VIcon size="20">tabler-file</VIcon></template
+                      >
+                      <VListItemTitle>Documentos</VListItemTitle>
+                    </VListItem>
+                    <VListItem @click="openAttach('photo')">
+                      <template #prepend
+                        ><VIcon size="20">tabler-photo</VIcon></template
+                      >
+                      <VListItemTitle>Fotos</VListItemTitle>
+                    </VListItem>
+                    <VListItem @click="openAttach('video')">
+                      <template #prepend
+                        ><VIcon size="20">tabler-video</VIcon></template
+                      >
+                      <VListItemTitle>Vídeos</VListItemTitle>
+                    </VListItem>
+                    <VListItem @click="openAttach('audio')">
+                      <template #prepend
+                        ><VIcon size="20">tabler-headphones</VIcon></template
+                      >
+                      <VListItemTitle>Áudio</VListItemTitle>
+                    </VListItem>
+                    <VListItem @click="openAttach('contact')">
+                      <template #prepend
+                        ><VIcon size="20">tabler-user</VIcon></template
+                      >
+                      <VListItemTitle>Contato</VListItemTitle>
+                    </VListItem>
+                    <VListItem @click="openAttach('location')">
+                      <template #prepend
+                        ><VIcon size="20">tabler-map-pin</VIcon></template
+                      >
+                      <VListItemTitle>Localização</VListItemTitle>
+                    </VListItem>
+                    <VListItem @click="openAttach('annotation')">
+                      <template #prepend
+                        ><VIcon size="20">tabler-note</VIcon></template
+                      >
+                      <VListItemTitle>{{ t('annotation') }}</VListItemTitle>
+                    </VListItem>
+                  </VList>
+                </VMenu>
+
+                <VMenu
+                  v-model="isEmojiOpen"
+                  location="top start"
+                  :close-on-content-click="false"
+                  offset="8"
+                  :disabled="!!selectedQuickMessage"
+                >
+                  <template #activator="{ props }">
+                    <IconBtn
+                      v-bind="props"
+                      class="composer-btn"
+                      aria-label="Emoji"
+                      :disabled="!!selectedQuickMessage"
+                    >
+                      <VIcon size="22">tabler-mood-smile</VIcon>
+                    </IconBtn>
+                  </template>
+
+                  <div class="emoji-picker-wrap">
+                    <Picker
+                      :data="emojiIndex"
+                      :per-line="8"
+                      :show-preview="false"
+                      :show-search="true"
+                      :show-skin-tones="false"
+                      @select="onEmojiSelect"
+                    />
+                  </div>
+                </VMenu>
+              </template>
+
+              <template #append-inner>
+                <div class="d-flex align-center gap-1">
                   <IconBtn
-                    v-bind="props"
-                    class="composer-btn"
-                    aria-label="Emoji"
+                    v-if="!hasAttachmentsOrContent && !selectedQuickMessage"
+                    class="composer-btn mic-btn"
+                    aria-label="Gravar áudio"
+                    @click="onRecordAudio"
                   >
-                    <VIcon size="22">tabler-mood-smile</VIcon>
+                    <VIcon size="22">tabler-microphone</VIcon>
                   </IconBtn>
-                </template>
 
-                <div class="emoji-picker-wrap">
-                  <Picker
-                    :data="emojiIndex"
-                    :per-line="8"
-                    :show-preview="false"
-                    :show-search="true"
-                    :show-skin-tones="false"
-                    @select="onEmojiSelect"
-                  />
+                  <VBtn
+                    v-if="hasAttachmentsOrContent && !selectedQuickMessage"
+                    class="send-btn"
+                    icon
+                    color="success"
+                    variant="flat"
+                    rounded="pill"
+                    aria-label="Enviar mensagem"
+                    :disabled="!hasActiveChat() || isQueueStatus"
+                    @click="onSendText"
+                  >
+                    <VIcon size="22">tabler-send</VIcon>
+                  </VBtn>
                 </div>
-              </VMenu>
-            </template>
+              </template>
+            </VTextarea>
 
-            <template #append-inner>
-              <div class="d-flex align-center gap-1">
-                <IconBtn
-                  v-if="!hasAttachmentsOrContent"
-                  class="composer-btn mic-btn"
-                  aria-label="Gravar áudio"
-                  @click="onRecordAudio"
-                >
-                  <VIcon size="22">tabler-microphone</VIcon>
-                </IconBtn>
-
-                <VBtn
-                  v-if="hasAttachmentsOrContent"
-                  class="send-btn"
-                  icon
-                  color="success"
-                  variant="flat"
-                  rounded="pill"
-                  aria-label="Enviar mensagem"
-                  @click="onSendText"
-                >
-                  <VIcon size="22">tabler-send</VIcon>
-                </VBtn>
-              </div>
-            </template>
-          </VTextarea>
+            <VBtn
+              v-if="selectedQuickMessage"
+              class="send-btn"
+              icon
+              color="success"
+              variant="flat"
+              rounded="pill"
+              aria-label="Enviar mensagem"
+              style="
+                position: absolute;
+                right: 8px;
+                top: 50%;
+                transform: translateY(-50%);
+                z-index: 10;
+              "
+              @click="sendQuickMessage"
+            >
+              <VIcon size="22">tabler-send</VIcon>
+            </VBtn>
+          </div>
 
           <input
             ref="fileDocRef"
@@ -4982,342 +5319,38 @@ onBeforeUnmount(() => {
   </VLayout>
 
   <AppContactPicker
-    v-if="canAccessContacts"
     v-model="isContactPickerOpen"
     :existing-contacts="selectedContacts"
     @select="onContactsSelected"
   />
 
-  <VDialog v-model="isLocationPickerOpen" max-width="800" :scrollable="false">
-    <VCard>
-      <VCardTitle class="d-flex align-center justify-space-between">
-        <span>{{ t('location_label', 'Localização') }}</span>
-        <VBtn
-          icon
-          variant="text"
-          size="small"
-          @click="isLocationPickerOpen = false"
-        >
-          <VIcon>tabler-x</VIcon>
-        </VBtn>
-      </VCardTitle>
-      <VCardText>
-        <VTabs v-model="locationPickerMode" class="mb-4">
-          <VTab value="current">
-            <VIcon start>tabler-current-location</VIcon>
-            Localização Atual
-          </VTab>
-          <VTab value="map">
-            <VIcon start>tabler-map</VIcon>
-            Escolher no Mapa
-          </VTab>
-          <VTab value="manual">
-            <VIcon start>tabler-keyboard</VIcon>
-            Digitar Coordenadas
-          </VTab>
-        </VTabs>
+  <ChatLocationPicker
+    v-model="isLocationPickerOpen"
+    @confirm="
+      (location) => {
+        selectedLocation = location;
+        sendLocationMessage();
+        finalizeSend();
+      }
+    "
+  />
 
-        <VWindow v-model="locationPickerMode">
-          <VWindowItem value="current">
-            <div class="d-flex flex-column align-center pa-4">
-              <VIcon size="48" color="primary" class="mb-4">
-                tabler-current-location
-              </VIcon>
-              <VBtn
-                color="primary"
-                @click="useCurrentLocation"
-                :loading="
-                  locationPickerMode === 'current' && !locationPickerLatitude
-                "
-              >
-                Usar Localização Atual
-              </VBtn>
-              <p class="text-caption text-center mt-4">
-                Clique no botão para obter sua localização atual
-              </p>
-            </div>
-          </VWindowItem>
-
-          <VWindowItem value="map">
-            <div class="location-picker-map-container">
-              <MglMap
-                ref="locationMapRef"
-                :map-style="mapStyle"
-                :center="locationMapCenter"
-                :zoom="15"
-                width="100%"
-                height="400px"
-                @map:click="onLocationMapClick"
-                @map:load="onLocationMapLoad"
-              >
-                <MglMarker
-                  v-if="locationPickerLatitude && locationPickerLongitude"
-                  :coordinates="locationMarkerPosition"
-                  color="#ef4444"
-                />
-              </MglMap>
-            </div>
-            <VRow class="mt-4">
-              <VCol cols="12">
-                <AppTextField
-                  v-model="locationPickerName"
-                  label="Nome (opcional)"
-                  placeholder="Ex: Minha Casa"
-                />
-              </VCol>
-              <VCol cols="12">
-                <AppTextField
-                  v-model="locationPickerAddress"
-                  label="Endereço (opcional)"
-                  placeholder="Ex: Rua Exemplo, 123"
-                />
-              </VCol>
-            </VRow>
-          </VWindowItem>
-
-          <VWindowItem value="manual">
-            <VRow>
-              <VCol cols="12" md="6">
-                <AppTextField
-                  v-model="locationInputLatitude"
-                  label="Latitude"
-                  placeholder="Ex: -15.459175"
-                  type="number"
-                  step="any"
-                />
-              </VCol>
-              <VCol cols="12" md="6">
-                <AppTextField
-                  v-model="locationInputLongitude"
-                  label="Longitude"
-                  placeholder="Ex: -47.602219"
-                  type="number"
-                  step="any"
-                />
-              </VCol>
-              <VCol cols="12">
-                <VBtn
-                  color="primary"
-                  block
-                  @click="useManualCoordinates"
-                  :disabled="!locationInputLatitude || !locationInputLongitude"
-                >
-                  Aplicar Coordenadas
-                </VBtn>
-              </VCol>
-            </VRow>
-            <VRow
-              v-if="locationPickerLatitude && locationPickerLongitude"
-              class="mt-4"
-            >
-              <VCol cols="12">
-                <AppTextField
-                  v-model="locationPickerName"
-                  label="Nome (opcional)"
-                  placeholder="Ex: Minha Casa"
-                />
-              </VCol>
-              <VCol cols="12">
-                <AppTextField
-                  v-model="locationPickerAddress"
-                  label="Endereço (opcional)"
-                  placeholder="Ex: Rua Exemplo, 123"
-                />
-              </VCol>
-            </VRow>
-          </VWindowItem>
-        </VWindow>
-      </VCardText>
-      <VCardText class="d-flex justify-end flex-wrap gap-3">
-        <VBtn
-          variant="tonal"
-          color="secondary"
-          @click="isLocationPickerOpen = false"
-        >
-          {{ t('cancel', 'Cancelar') }}
-        </VBtn>
-        <VBtn
-          color="primary"
-          @click="confirmLocation"
-          :disabled="!locationPickerLatitude || !locationPickerLongitude"
-        >
-          {{ t('send', 'Enviar Localização') }}
-        </VBtn>
-      </VCardText>
-    </VCard>
-  </VDialog>
-
-  <VDialog
-    v-if="canAccessContacts"
+  <ChatContactViewModal
     v-model="isContactViewModalOpen"
-    max-width="600"
-  >
-    <DialogCloseBtn @click="isContactViewModalOpen = false" />
+    :contact="selectedContactDetails"
+  />
 
-    <template v-if="contactStore.loading">
-      <VOverlay
-        :model-value="contactStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
-
-    <VCard :title="$t('view_contact')" v-if="selectedContactDetails">
-      <VCardText>
-        <VRow>
-          <VCol cols="12" class="d-flex justify-center mb-4">
-            <VAvatar size="120">
-              <VImg
-                v-if="selectedContactDetails.photo"
-                :src="selectedContactDetails.photo"
-                :alt="selectedContactDetails.name"
-              />
-              <VImg
-                v-else
-                :src="'/images/svg/avatar-default.svg'"
-                :alt="selectedContactDetails.name"
-              />
-            </VAvatar>
-          </VCol>
-        </VRow>
-        <VRow>
-          <VCol cols="12" md="6">
-            <AppTextField
-              :model-value="selectedContactDetails.name"
-              :label="$t('name') + ':'"
-              readonly
-            />
-          </VCol>
-
-          <VCol cols="12" md="6">
-            <AppTextField
-              :model-value="selectedContactDetails.last_name || ''"
-              :label="$t('last_name') + ':'"
-              readonly
-            />
-          </VCol>
-        </VRow>
-        <VRow>
-          <VCol cols="12" md="6">
-            <AppTextField
-              :model-value="selectedContactDetails.nickname || ''"
-              :label="$t('nickname') + ':'"
-              readonly
-            />
-          </VCol>
-
-          <VCol cols="12" md="6">
-            <AppTextField
-              :model-value="viewContactEmailFormatted"
-              type="email"
-              :label="$t('email') + ':'"
-              readonly
-            >
-              <template #append-inner>
-                <VIcon
-                  :icon="isViewEmailDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
-                  class="cursor-pointer"
-                  :class="{ 'opacity-50': isLoadingViewEmail }"
-                  @click="toggleViewEmailVisibility"
-                />
-              </template>
-            </AppTextField>
-          </VCol>
-        </VRow>
-        <VRow>
-          <VCol cols="12" md="6">
-            <AppTextField
-              :model-value="selectedContactDetails.phone_ddi || ''"
-              :label="$t('phone_ddi') + ':'"
-              readonly
-            />
-          </VCol>
-
-          <VCol cols="12" md="6">
-            <AppTextField
-              :model-value="viewContactPhoneFormatted"
-              type="tel"
-              :label="$t('phone') + ':'"
-              readonly
-            >
-              <template #append-inner>
-                <VIcon
-                  :icon="isViewPhoneDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
-                  class="cursor-pointer"
-                  :class="{ 'opacity-50': isLoadingViewPhone }"
-                  @click="toggleViewPhoneVisibility"
-                />
-              </template>
-            </AppTextField>
-          </VCol>
-        </VRow>
-        <VRow>
-          <VCol cols="12" md="6">
-            <AppTextField
-              :model-value="
-                selectedContactDetails.birthday
-                  ? new Date(
-                      selectedContactDetails.birthday + 'T00:00:00'
-                    ).toLocaleDateString('pt-BR')
-                  : ''
-              "
-              :label="$t('birthday') + ':'"
-              readonly
-            />
-          </VCol>
-
-          <VCol cols="12" md="6">
-            <AppTextField
-              :model-value="selectedContactDetails.label_template?.label || ''"
-              :label="$t('label') + ':'"
-              readonly
-            />
-          </VCol>
-        </VRow>
-        <VRow>
-          <VCol cols="12">
-            <label class="text-body-2 mb-1" for="notes-textarea">
-              {{ $t('notes') }}:
-            </label>
-            <VTextarea
-              :model-value="selectedContactDetails.notes || ''"
-              readonly
-            />
-          </VCol>
-        </VRow>
-      </VCardText>
-
-      <VCardText class="d-flex justify-end flex-wrap gap-3">
-        <VBtn
-          variant="tonal"
-          color="secondary"
-          @click="isContactViewModalOpen = false"
-        >
-          {{ $t('close') }}
-        </VBtn>
-      </VCardText>
-    </VCard>
-  </VDialog>
-
-  <AppAddContact
+  <AppAddContactChat
     v-model="isAddContactModalOpen"
     :initial-data="addContactInitialData"
   />
 
-  <AppEditContact
+  <AppEditContactChat
     v-model="isEditContactModalOpen"
     :contact-id="editContactId"
   />
 
-  <VSnackbar
-    v-model="contactStore.snackbar.status"
-    transition="scroll-y-reverse-transition"
-    location="top end"
-    :color="contactStore.snackbar.color"
-  >
-    {{ contactStore.snackbar.message }}
-  </VSnackbar>
+  <ChatLabelModal v-model="isLabelModalOpen" />
 
   <VSnackbar
     v-model="chatStore.snackbar.status"
@@ -5328,62 +5361,14 @@ onBeforeUnmount(() => {
     {{ chatStore.snackbar.message }}
   </VSnackbar>
 
-  <VDialog
+  <ChatMediaViewer
     v-model="viewerOpen"
-    fullscreen
-    scrim="rgba(0,0,0,.9)"
-    :scrollable="false"
-  >
-    <div class="viewer-wrap" @click="viewerOpen = false">
-      <div class="viewer-box" @click.stop>
-        <div class="viewer-media-container">
-          <img
-            v-if="viewerKind === 'image'"
-            :src="viewerSrc"
-            alt=""
-            class="viewer-img"
-            loading="eager"
-            decoding="async"
-          />
-          <video
-            v-if="viewerKind === 'video'"
-            :src="viewerSrc"
-            class="viewer-video"
-            controls
-            playsinline
-          >
-            <track kind="captions" />
-          </video>
-
-          <div class="viewer-actions">
-            <VBtn
-              v-if="viewerSrc"
-              class="viewer-download"
-              icon
-              size="36"
-              variant="text"
-              @click.stop="downloadViewerMedia"
-            >
-              <VIcon size="20">tabler-download</VIcon>
-            </VBtn>
-            <VBtn
-              class="viewer-close"
-              icon
-              size="36"
-              variant="text"
-              @click="viewerOpen = false"
-            >
-              <VIcon size="20">tabler-x</VIcon>
-            </VBtn>
-          </div>
-        </div>
-
-        <div v-if="viewerCaption" class="viewer-caption">
-          {{ viewerCaption }}
-        </div>
-      </div>
-    </div>
-  </VDialog>
+    :src="viewerSrc"
+    :caption="viewerCaption"
+    :download-name="viewerDownloadName"
+    :kind="viewerKind"
+    @download="downloadViewerMedia"
+  />
 
   <VDialog
     v-model="audioModalOpen"
@@ -5458,18 +5443,14 @@ onBeforeUnmount(() => {
             <AppSelect
               v-model="transferType"
               :items="[
-                ...(canAccessUsers
-                  ? [{ value: 'user', title: $t('user') }]
-                  : []),
-                ...(canAccessSectors
-                  ? [{ value: 'sector', title: $t('sector') }]
-                  : []),
+                { value: 'user', title: $t('user') },
+                { value: 'sector', title: $t('sector') },
               ]"
               :label="$t('transfer_to') + ':'"
             />
           </VCol>
 
-          <VCol v-if="transferType === 'user' && canAccessUsers" cols="12">
+          <VCol v-if="transferType === 'user'" cols="12">
             <div>
               <VLabel class="mb-1 text-body-2">{{ $t('user') }}:</VLabel>
               <VMenu v-model="isTransferUserMenuOpen">
@@ -5515,10 +5496,40 @@ onBeforeUnmount(() => {
                         "
                         :active="selectedTransferUser === item.value"
                       >
-                        <VListItemTitle>{{ item.title }}</VListItemTitle>
+                        <VListItemTitle>
+                          <template
+                            v-if="
+                              workerConfigForChat?.allow_attendance_only_online &&
+                              item.status
+                            "
+                          >
+                            <div class="d-flex align-center gap-2">
+                              <span
+                                class="v-badge v-badge--dot v-badge--inline"
+                                :style="{
+                                  backgroundColor: getStatusColor(
+                                    (item.status as EChatUserStatus) ||
+                                      EChatUserStatus.offline
+                                  ),
+                                }"
+                                style="
+                                  width: 8px;
+                                  height: 8px;
+                                  border-radius: 50%;
+                                  display: inline-block;
+                                  margin-right: 8px;
+                                "
+                              ></span>
+                              <span>{{ item.title }}</span>
+                            </div>
+                          </template>
+                          <template v-else>
+                            {{ item.title }}
+                          </template>
+                        </VListItemTitle>
                       </VListItem>
                     </template>
-                    <VListItem v-else-if="transferUserSearch" disabled>
+                    <VListItem v-else-if="!isLoadingTransferUsers" disabled>
                       <VListItemTitle
                         class="text-center text-body-2 text-medium-emphasis"
                       >
@@ -5531,7 +5542,7 @@ onBeforeUnmount(() => {
             </div>
           </VCol>
 
-          <template v-if="transferType === 'sector' && canAccessSectors">
+          <template v-if="transferType === 'sector'">
             <VCol cols="12">
               <div>
                 <VLabel class="mb-1 text-body-2">{{ $t('sector') }}:</VLabel>
@@ -5581,7 +5592,7 @@ onBeforeUnmount(() => {
                           <VListItemTitle>{{ item.title }}</VListItemTitle>
                         </VListItem>
                       </template>
-                      <VListItem v-else-if="transferSectorSearch" disabled>
+                      <VListItem v-else-if="!isLoadingTransferSectors" disabled>
                         <VListItemTitle
                           class="text-center text-body-2 text-medium-emphasis"
                         >
@@ -5594,7 +5605,7 @@ onBeforeUnmount(() => {
               </div>
             </VCol>
 
-            <VCol v-if="selectedTransferSector && canAccessUsers" cols="12">
+            <VCol v-if="selectedTransferSector" cols="12">
               <div>
                 <VLabel class="mb-1 text-body-2"
                   >{{ $t('user') }} ({{ $t('sector') }}):</VLabel
@@ -5642,10 +5653,43 @@ onBeforeUnmount(() => {
                           "
                           :active="selectedTransferSectorUser === item.value"
                         >
-                          <VListItemTitle>{{ item.title }}</VListItemTitle>
+                          <VListItemTitle>
+                            <template
+                              v-if="
+                                workerConfigForChat?.allow_attendance_only_online &&
+                                item.status
+                              "
+                            >
+                              <div class="d-flex align-center gap-2">
+                                <span
+                                  class="v-badge v-badge--dot v-badge--inline"
+                                  :style="{
+                                    backgroundColor: getStatusColor(
+                                      (item.status as EChatUserStatus) ||
+                                        EChatUserStatus.offline
+                                    ),
+                                  }"
+                                  style="
+                                    width: 8px;
+                                    height: 8px;
+                                    border-radius: 50%;
+                                    display: inline-block;
+                                    margin-right: 8px;
+                                  "
+                                ></span>
+                                <span>{{ item.title }}</span>
+                              </div>
+                            </template>
+                            <template v-else>
+                              {{ item.title }}
+                            </template>
+                          </VListItemTitle>
                         </VListItem>
                       </template>
-                      <VListItem v-else-if="transferSectorUserSearch" disabled>
+                      <VListItem
+                        v-else-if="!isLoadingTransferSectorUsers"
+                        disabled
+                      >
                         <VListItemTitle
                           class="text-center text-body-2 text-medium-emphasis"
                         >
@@ -6294,6 +6338,52 @@ $chat-app-header-height: 76px;
   border-radius: 2px;
   overflow: hidden;
   cursor: pointer;
+}
+
+.label-select {
+  .v-field__input {
+    > .v-select__selection {
+      margin: 0;
+      display: flex;
+      align-items: center;
+
+      > span:not(.label-color-circle):not(:has(.label-color-circle)),
+      > .v-select__selection-text {
+        display: none !important;
+      }
+    }
+  }
+
+  .v-select__selection {
+    .v-select__selection-text {
+      display: none !important;
+    }
+
+    > span:not(:has(.label-color-circle)):not(.label-color-circle) {
+      display: none !important;
+    }
+  }
+
+  .v-list-item__prepend {
+    margin-inline-end: 12px;
+  }
+}
+
+.label-color-circle {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-inline-end: 8px;
+}
+
+.label-container {
+  padding: 0px 6px 0px 4px;
+  border-top: 0.5px solid;
+  border-right: 0.5px solid;
+  border-bottom: 0.5px solid;
+  border-left: none;
+  border-radius: 0 4px 4px 0;
 }
 
 .audio-modal-progress-bar {

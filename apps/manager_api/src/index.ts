@@ -16,6 +16,8 @@ import loggerServicePlugin from '@core/plugins/logger';
 import centrifugoPlugin from '@core/plugins/centrifugo';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 import redisPlugin from '@core/plugins/redis';
+import presenceMonitorPlugin from '@/plugins/presenceMonitor';
+import presenceCentrifugoPlugin from '@/plugins/presenceCentrifugo';
 import multipartFile from '@fastify/multipart';
 import { generalEnvironment } from '@core/config/environments';
 import fastifyQs from 'fastify-qs';
@@ -40,6 +42,8 @@ server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
 });
 server.register(safePlugin(dbConnector, 'database'));
 server.register(safePlugin(redisPlugin, 'redis'));
+server.register(safePlugin(presenceMonitorPlugin, 'presenceMonitor'));
+server.register(safePlugin(presenceCentrifugoPlugin, 'presenceCentrifugo'));
 server.register(safePlugin(authenticateJwt, 'authenticateJwt'));
 server.register(safePlugin(i18nextPlugin, 'i18next'));
 server.register(safePlugin(jwtPlugin, 'jwt'));

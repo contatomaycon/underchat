@@ -22,6 +22,10 @@ export class WorkerProfileStatusListerRepository {
           workerProfileStatus.worker_profile_status_type_id,
         value: workerProfileStatus.value,
         is_permanent: workerProfileStatus.is_permanent,
+        mimetype: workerProfileStatus.mimetype,
+        duration: workerProfileStatus.duration,
+        width: workerProfileStatus.width,
+        height: workerProfileStatus.height,
         created_at: workerProfileStatus.created_at,
       })
       .from(workerProfileStatus)

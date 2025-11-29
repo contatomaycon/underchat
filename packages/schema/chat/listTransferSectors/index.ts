@@ -1,10 +1,10 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { createChatRequestSchema } from './request.schema';
+import { listTransferSectorsResponseSchema } from './response.schema';
 
-export const createChatSchema = {
-  description: 'Adiciona um novo chat',
+export const listTransferSectorsSchema = {
+  description: 'Listar setores para transferência de chat',
   tags: [ETagSwagger.chat],
   produces: ['application/json'],
   security: [
@@ -21,14 +21,13 @@ export const createChatSchema = {
       })
     ),
   }),
-  body: createChatRequestSchema,
   response: {
     200: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: Type.Null(),
+        data: listTransferSectorsResponseSchema,
       },
       { description: 'Successful' }
     ),

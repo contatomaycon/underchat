@@ -20,6 +20,11 @@ import { TFunction } from 'i18next';
 import { SectorByIdExistsRepository } from '@core/repositories/sector/SectorByIdExists.repository';
 import { SectorUsersListerRepository } from '@core/repositories/sector/SectorUsersLister.repository';
 import { ListSectorUsersResponse } from '@core/schema/sector/listSectorUsers/response.schema';
+import { SectorAllListerRepository } from '@core/repositories/sector/SectorAllLister.repository';
+import { SectorTransferListerRepository } from '@core/repositories/sector/SectorTransferLister.repository';
+import { TransferSector } from '@core/schema/chat/listTransferOptions/response.schema';
+import { TransferSectorResponse } from '@core/schema/chat/listTransferSectors/response.schema';
+import { TransferSectorUserResponse } from '@core/schema/chat/listTransferSectorUsers/response.schema';
 
 @injectable()
 export class SectorService {
@@ -35,7 +40,9 @@ export class SectorService {
     private readonly sectorRoleListerRepository: SectorRoleListerRepository,
     private readonly sectorRoleTransactionCreatorRepository: SectorRoleTransactionCreatorRepository,
     private readonly sectorByIdExistsRepository: SectorByIdExistsRepository,
-    private readonly sectorUsersListerRepository: SectorUsersListerRepository
+    private readonly sectorUsersListerRepository: SectorUsersListerRepository,
+    private readonly sectorAllListerRepository: SectorAllListerRepository,
+    private readonly sectorTransferListerRepository: SectorTransferListerRepository
   ) {}
 
   existsSectorById = async (
@@ -163,5 +170,45 @@ export class SectorService {
       accountId,
       sectorId
     );
+  };
+
+  listAllSectors = async (
+    accountId: string,
+    isAdministrator: boolean
+  ): Promise<TransferSector[]> => {
+    return this.sectorAllListerRepository.listAllSectors(
+      accountId,
+      isAdministrator
+    );
+  };
+
+  listSectorsForTransfer = async (
+    accountId: string,
+    isAdministrator: boolean
+  ): Promise<TransferSectorResponse[]> => {
+    return this.sectorTransferListerRepository.listSectorsForTransfer(
+      accountId,
+      isAdministrator
+    );
+  };
+
+  listSectorUsersForTransfer = async (
+    accountId: string,
+    sectorId: string
+  ): Promise<TransferSectorUserResponse[]> => {
+    const result = await this.sectorUsersListerRepository.listSectorUsers(
+      accountId,
+      sectorId
+    );
+
+    if (!result || result.length === 0) {
+      return [];
+    }
+
+    return result.map((user) => ({
+      id: user.user_id,
+      name: user.user_info?.name || user.email_partial || '',
+      status: user.chat_user?.status || null,
+    }));
   };
 }

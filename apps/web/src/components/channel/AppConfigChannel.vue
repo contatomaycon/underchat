@@ -189,6 +189,8 @@ type WorkerConfigForm = {
   is_automatic_attendance: boolean;
   show_attendee_name: boolean;
   show_worker_name: boolean;
+  allow_attendance_only_online: boolean;
+  simultaneous_attendance: boolean;
   generate_protocol_at_ura: boolean;
   generate_protocol_at_start: boolean;
   generate_protocol_at_transfer: boolean;
@@ -198,6 +200,8 @@ const createDefaultWorkerConfig = (): WorkerConfigForm => ({
   is_automatic_attendance: false,
   show_attendee_name: false,
   show_worker_name: false,
+  allow_attendance_only_online: false,
+  simultaneous_attendance: false,
   generate_protocol_at_ura: false,
   generate_protocol_at_start: false,
   generate_protocol_at_transfer: false,
@@ -218,6 +222,10 @@ const isSavingStartProtocol = ref(false);
 const uraProtocolText = ref<string>('');
 const uraProtocolModalOpen = ref(false);
 const isSavingUraProtocol = ref(false);
+const simultaneousAttendance = ref<number | null>(null);
+const simultaneousAttendanceModalOpen = ref(false);
+const isSavingSimultaneousAttendance = ref(false);
+const simultaneousAttendanceInput = ref<string>('');
 
 const statusTypeOptions = computed(() => [
   {
@@ -382,6 +390,9 @@ const applyWorkerConfig = (config?: ViewWorkerConfigResponse | null) => {
     nextState.is_automatic_attendance = config.is_automatic_attendance;
     nextState.show_attendee_name = config.show_attendee_name;
     nextState.show_worker_name = config.show_worker_name;
+    nextState.allow_attendance_only_online =
+      config.allow_attendance_only_online;
+    nextState.simultaneous_attendance = Boolean(config.simultaneous_attendance);
     nextState.generate_protocol_at_ura = Boolean(
       config.generate_protocol_at_ura
     );
@@ -407,17 +418,25 @@ const loadWorkerConfig = async (force = false) => {
 
   try {
     isLoadingWorkerConfig.value = true;
-    const result = await channelStore.fetchWorkerConfig(channelId.value);
+    const result = await channelStore.fetchWorkerConfig(
+      channelId.value,
+      force
+    );
 
     applyWorkerConfig(result);
     workerConfigLoadedFor.value = channelId.value;
 
-    const [protocolTransferText, protocolStartText, protocolUraText] =
-      await Promise.all([
-        channelStore.fetchTransferProtocolText(channelId.value),
-        channelStore.fetchStartProtocolText(channelId.value),
-        channelStore.fetchUraProtocolText(channelId.value),
-      ]);
+    const [
+      protocolTransferText,
+      protocolStartText,
+      protocolUraText,
+      simultaneousAttendanceValue,
+    ] = await Promise.all([
+      channelStore.fetchTransferProtocolText(channelId.value),
+      channelStore.fetchStartProtocolText(channelId.value),
+      channelStore.fetchUraProtocolText(channelId.value),
+      channelStore.fetchSimultaneousAttendance(channelId.value),
+    ]);
 
     const hasTransferProtocolText =
       protocolTransferText !== null && protocolTransferText.trim().length > 0;
@@ -425,6 +444,8 @@ const loadWorkerConfig = async (force = false) => {
       protocolStartText !== null && protocolStartText.trim().length > 0;
     const hasUraProtocolText =
       protocolUraText !== null && protocolUraText.trim().length > 0;
+    const hasSimultaneousAttendance =
+      simultaneousAttendanceValue !== null && simultaneousAttendanceValue > 0;
 
     transferProtocolText.value = hasTransferProtocolText
       ? protocolTransferText
@@ -436,6 +457,12 @@ const loadWorkerConfig = async (force = false) => {
 
     uraProtocolText.value = hasUraProtocolText ? protocolUraText : '';
     workerConfigForm.generate_protocol_at_ura = hasUraProtocolText;
+
+    simultaneousAttendance.value = simultaneousAttendanceValue;
+    workerConfigForm.simultaneous_attendance = hasSimultaneousAttendance;
+    simultaneousAttendanceInput.value = hasSimultaneousAttendance
+      ? simultaneousAttendanceValue.toString()
+      : '';
   } finally {
     isLoadingWorkerConfig.value = false;
   }
@@ -621,6 +648,71 @@ const deleteUraProtocolText = async () => {
   }
 };
 
+const openSimultaneousAttendanceModal = async () => {
+  if (!channelId.value) return;
+
+  const quantity = await channelStore.fetchSimultaneousAttendance(
+    channelId.value
+  );
+  simultaneousAttendance.value = quantity;
+  simultaneousAttendanceInput.value = quantity ? quantity.toString() : '';
+  simultaneousAttendanceModalOpen.value = true;
+};
+
+const closeSimultaneousAttendanceModal = () => {
+  simultaneousAttendanceModalOpen.value = false;
+  simultaneousAttendanceInput.value = simultaneousAttendance.value
+    ? simultaneousAttendance.value.toString()
+    : '';
+};
+
+const saveSimultaneousAttendance = async () => {
+  if (!channelId.value) return;
+
+  const quantityValue = simultaneousAttendanceInput.value.trim();
+  if (!quantityValue) {
+    return;
+  }
+
+  const quantity = Number.parseInt(quantityValue, 10);
+  if (Number.isNaN(quantity) || quantity < 1) {
+    return;
+  }
+
+  try {
+    isSavingSimultaneousAttendance.value = true;
+    const result = await channelStore.updateSimultaneousAttendance(
+      channelId.value,
+      quantity
+    );
+
+    const hasQuantity = result !== null && result > 0;
+    workerConfigForm.simultaneous_attendance = hasQuantity;
+    simultaneousAttendance.value = result;
+    simultaneousAttendanceInput.value = result ? result.toString() : '';
+
+    closeSimultaneousAttendanceModal();
+  } finally {
+    isSavingSimultaneousAttendance.value = false;
+  }
+};
+
+const deleteSimultaneousAttendance = async () => {
+  if (!channelId.value) return;
+
+  try {
+    isSavingSimultaneousAttendance.value = true;
+    await channelStore.updateSimultaneousAttendance(channelId.value, null);
+
+    workerConfigForm.simultaneous_attendance = false;
+    simultaneousAttendance.value = null;
+    simultaneousAttendanceInput.value = '';
+    closeSimultaneousAttendanceModal();
+  } finally {
+    isSavingSimultaneousAttendance.value = false;
+  }
+};
+
 const workerConfigOptions = computed(() => [
   {
     key: 'is_automatic_attendance' as WorkerConfigField,
@@ -636,6 +728,20 @@ const workerConfigOptions = computed(() => [
     key: 'show_worker_name' as WorkerConfigField,
     title: t('channel_general_config_show_worker_name_title'),
     description: t('channel_general_config_show_worker_name_description'),
+  },
+  {
+    key: 'allow_attendance_only_online' as WorkerConfigField,
+    title: t('channel_general_config_allow_attendance_only_online_title'),
+    description: t(
+      'channel_general_config_allow_attendance_only_online_description'
+    ),
+  },
+  {
+    key: 'simultaneous_attendance' as WorkerConfigField,
+    title: t('channel_general_config_simultaneous_attendance_title'),
+    description: t(
+      'channel_general_config_simultaneous_attendance_description'
+    ),
   },
   {
     key: 'generate_protocol_at_ura' as WorkerConfigField,
@@ -1798,10 +1904,10 @@ onMounted(async () => {
 </script>
 
 <template>
-  <VDialog v-model="isVisible" max-width="960">
-    <DialogCloseBtn @click="isVisible = false" />
+  <VDialog v-model="isVisible" max-width="960" :persistent="isSavingProfileStatus">
+    <DialogCloseBtn :disabled="isSavingProfileStatus" @click="isVisible = false" />
 
-    <template v-if="channelStore.loading">
+    <template v-if="channelStore.loading && !isSavingProfileStatus">
       <VOverlay
         :model-value="channelStore.loading"
         class="align-center justify-center"
@@ -1813,7 +1919,7 @@ onMounted(async () => {
     <VCard>
       <VCardTitle class="d-flex justify-space-between align-center">
         <span>{{ $t('configurations') }}</span>
-        <DialogCloseBtn class="d-none d-sm-flex" @click="isVisible = false" />
+        <DialogCloseBtn class="d-none d-sm-flex" :disabled="isSavingProfileStatus" @click="isVisible = false" />
       </VCardTitle>
 
       <VTabs v-model="currentTab" grow>
@@ -1864,7 +1970,8 @@ onMounted(async () => {
                         v-if="
                           option.key !== 'generate_protocol_at_transfer' &&
                           option.key !== 'generate_protocol_at_start' &&
-                          option.key !== 'generate_protocol_at_ura'
+                          option.key !== 'generate_protocol_at_ura' &&
+                          option.key !== 'simultaneous_attendance'
                         "
                         :model-value="workerConfigForm[option.key]"
                         :label="option.title"
@@ -1907,6 +2014,17 @@ onMounted(async () => {
                         hide-details
                         :disabled="isSavingWorkerConfig || isSavingUraProtocol"
                         @click.stop.prevent="openUraProtocolModal"
+                      />
+                      <VCheckbox
+                        v-else-if="option.key === 'simultaneous_attendance'"
+                        :model-value="workerConfigForm[option.key]"
+                        :label="option.title"
+                        color="primary"
+                        hide-details
+                        :disabled="
+                          isSavingWorkerConfig || isSavingSimultaneousAttendance
+                        "
+                        @click.stop.prevent="openSimultaneousAttendanceModal"
                       />
                       <p class="text-body-2 text-medium-emphasis mb-0">
                         {{ option.description }}
@@ -2840,6 +2958,73 @@ onMounted(async () => {
           :loading="isSavingUraProtocol"
           :disabled="isSavingUraProtocol"
           @click="saveUraProtocolText"
+        >
+          {{ $t('save') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog v-model="simultaneousAttendanceModalOpen" max-width="500" persistent>
+    <VCard>
+      <VCardTitle class="d-flex justify-space-between align-center">
+        <span>{{
+          $t('channel_general_config_simultaneous_attendance_title')
+        }}</span>
+        <IconBtn @click="closeSimultaneousAttendanceModal">
+          <VIcon icon="tabler-x" />
+        </IconBtn>
+      </VCardTitle>
+      <VCardText>
+        <VTextField
+          v-model="simultaneousAttendanceInput"
+          :label="$t('simultaneous_attendance_quantity_label')"
+          :placeholder="$t('simultaneous_attendance_quantity_placeholder')"
+          type="number"
+          min="1"
+          :rules="[
+            (v) => {
+              if (!v || v.trim() === '') return true;
+              const num = Number.parseInt(v, 10);
+              if (Number.isNaN(num) || num < 1) {
+                return $t('simultaneous_attendance_invalid_number');
+              }
+              return true;
+            },
+          ]"
+        />
+        <div class="text-caption text-medium-emphasis mt-2">
+          {{ $t('simultaneous_attendance_description') }}
+        </div>
+      </VCardText>
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          :disabled="isSavingSimultaneousAttendance"
+          @click="closeSimultaneousAttendanceModal"
+        >
+          {{ $t('cancel') }}
+        </VBtn>
+        <VBtn
+          v-if="simultaneousAttendance !== null && simultaneousAttendance > 0"
+          color="error"
+          variant="tonal"
+          :loading="isSavingSimultaneousAttendance"
+          :disabled="isSavingSimultaneousAttendance"
+          @click="deleteSimultaneousAttendance"
+        >
+          {{ $t('delete') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          :loading="isSavingSimultaneousAttendance"
+          :disabled="
+            isSavingSimultaneousAttendance ||
+            !simultaneousAttendanceInput.trim() ||
+            Number.parseInt(simultaneousAttendanceInput, 10) < 1
+          "
+          @click="saveSimultaneousAttendance"
         >
           {{ $t('save') }}
         </VBtn>

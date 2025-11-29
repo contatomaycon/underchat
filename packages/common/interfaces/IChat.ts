@@ -35,6 +35,12 @@ interface IContact {
   photo?: string | null;
 }
 
+interface ILabel {
+  label_template_id: string;
+  label: string;
+  color: string;
+}
+
 interface IMessageKey {
   remote_jid?: string | null;
   remote_jid_alt?: string | null;
@@ -56,4 +62,8 @@ export interface IChat {
   date: string;
   started_at?: string | null;
   closed_at?: string | null;
+  protocol_ura?: string[] | null;
+  protocol_start?: string[] | null;
+  protocol_transfer?: string[] | null;
+  label?: ILabel | null;
 }

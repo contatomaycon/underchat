@@ -12,6 +12,7 @@ import { ProfileStatus } from '@core/schema/worker/listProfileStatus/response.sc
 import { WorkerProfileStatus } from '@core/schema/worker/uploadProfileStatus/response.schema';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { StorageService } from '@core/services/storage.service';
+import { ConverterService } from '@core/services/converter';
 import { EWorkerProfileStatusType } from '@core/common/enums/EWorkerProfileStatusType';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
@@ -46,6 +47,7 @@ export class WorkerProfileStatusService {
     private readonly workerProfileStatusPermanentRenewalListerRepository: WorkerProfileStatusPermanentRenewalListerRepository,
     private readonly workerProfileStatusUpdatedAtUpdaterRepository: WorkerProfileStatusUpdatedAtUpdaterRepository,
     private readonly storageService: StorageService,
+    private readonly converterService: ConverterService,
     private readonly streamProducerService: StreamProducerService,
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     private readonly contactService: ContactService
@@ -105,15 +107,71 @@ export class WorkerProfileStatusService {
     const photosArray = Array.isArray(photos) ? photos : [photos];
     const uploadPromises = photosArray.map(async (photo) => {
       let uploadResult;
+      let mimetype: string | null = null;
+      let duration: number | null = null;
+      let width: number | null = null;
+      let height: number | null = null;
 
       if (typeId === EWorkerProfileStatusType.image) {
         uploadResult = await this.storageService.uploadImage(photo, accountId);
+        if (uploadResult) {
+          mimetype = uploadResult.mimetype ?? null;
+        }
       }
+
       if (typeId === EWorkerProfileStatusType.video) {
-        uploadResult = await this.storageService.uploadVideo(photo, accountId);
+        const originalBuffer = await photo.toBuffer();
+        const originalMimetype = photo.mimetype || null;
+
+        const converted = await this.converterService.convertVideo(
+          originalBuffer,
+          originalMimetype
+        );
+
+        const filename = photo.filename.replace(/\.[^.]+$/, '') || 'video';
+        const newFilename = `${filename}.${converted.extension}`;
+
+        uploadResult = await this.storageService.uploadVideoFromBuffer(
+          converted.buffer,
+          newFilename,
+          converted.mimetype,
+          accountId,
+          converted.width,
+          converted.height
+        );
+
+        if (uploadResult) {
+          mimetype = converted.mimetype;
+          duration = converted.duration ?? null;
+          width = converted.width ?? null;
+          height = converted.height ?? null;
+        }
       }
+
       if (typeId === EWorkerProfileStatusType.audio) {
-        uploadResult = await this.storageService.uploadAudio(photo, accountId);
+        const originalBuffer = await photo.toBuffer();
+        const originalMimetype = photo.mimetype || null;
+
+        const converted = await this.converterService.convertAudio(
+          originalBuffer,
+          originalMimetype,
+          true
+        );
+
+        const filename = photo.filename.replace(/\.[^.]+$/, '') || 'audio';
+        const newFilename = `${filename}.${converted.extension}`;
+
+        uploadResult = await this.storageService.uploadAudioFromBuffer(
+          converted.buffer,
+          newFilename,
+          converted.mimetype,
+          accountId
+        );
+
+        if (uploadResult) {
+          mimetype = converted.mimetype;
+          duration = converted.duration ?? null;
+        }
       }
 
       if (!uploadResult) {
@@ -143,6 +201,10 @@ export class WorkerProfileStatusService {
             worker_profile_status_type_id: typeId,
             value,
             is_permanent: isPermanent,
+            mimetype,
+            duration,
+            width,
+            height,
           },
           visibilityData
         );
@@ -153,6 +215,10 @@ export class WorkerProfileStatusService {
         worker_profile_status_type_id: typeId,
         value,
         is_permanent: isPermanent,
+        mimetype,
+        duration,
+        width,
+        height,
       } as WorkerProfileStatus;
 
       await this.sendStatusToKafka(statusResult, accountId);

@@ -91,8 +91,10 @@ export class ChatListerUseCase {
     }
 
     if (!this.canListAllChatsWithoutSectorLimit(actions)) {
+      const sectorFilterClauses: IElasticsearchBoolClause[] = [];
+
       if (userSectors.length > 0) {
-        filterClauses.push({
+        sectorFilterClauses.push({
           nested: {
             path: 'sector',
             query: {
@@ -104,7 +106,7 @@ export class ChatListerUseCase {
         } as unknown as IElasticsearchBoolClause);
       }
       if (userSectors.length === 0) {
-        filterClauses.push({
+        sectorFilterClauses.push({
           bool: {
             must_not: {
               exists: {
@@ -114,6 +116,54 @@ export class ChatListerUseCase {
           },
         } as unknown as IElasticsearchBoolClause);
       }
+
+      const shouldClauses: IElasticsearchBoolClause[] = [
+        {
+          nested: {
+            path: 'user',
+            query: {
+              term: {
+                'user.id': userId,
+              },
+            },
+          },
+        },
+        ...sectorFilterClauses,
+      ];
+
+      if (query.status === EChatStatus.queue) {
+        shouldClauses.push({
+          bool: {
+            must: [
+              {
+                bool: {
+                  must_not: {
+                    exists: {
+                      field: 'sector',
+                    },
+                  },
+                },
+              },
+              {
+                bool: {
+                  must_not: {
+                    exists: {
+                      field: 'user',
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        } as unknown as IElasticsearchBoolClause);
+      }
+
+      filterClauses.push({
+        bool: {
+          should: shouldClauses,
+          minimum_should_match: 1,
+        },
+      } as unknown as IElasticsearchBoolClause);
     }
 
     const queryElastic = {

@@ -34,10 +34,17 @@ import { UserAccountViewerRepository } from '@core/repositories/user/UserAccount
 import { UserEmailViewerExistsRepository } from '@core/repositories/user/UserEmailViewerExists.repository';
 import { UserTotalViewerRepository } from '@core/repositories/user/UserTotalViewer.repository';
 import { UserSectorsListerRepository } from '@core/repositories/user/UserSectorsLister.repository';
+import { UserOnlineListerRepository } from '@core/repositories/user/UserOnlineLister.repository';
+import { UserTransferListerRepository } from '@core/repositories/user/UserTransferLister.repository';
 import { EncryptService } from './encrypt.service';
 import { IUserSensitiveDataDecrypted } from '@core/common/interfaces/IUserSensitiveDataDecrypted';
 import { StorageService } from '@core/services/storage.service';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
+import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
+import { EElasticIndex } from '@core/common/enums/EElasticIndex';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { IChat } from '@core/common/interfaces/IChat';
+import { TransferUserResponse } from '@core/schema/chat/listTransferUsers/response.schema';
 
 @injectable()
 export class UserService {
@@ -68,7 +75,10 @@ export class UserService {
     private readonly userEmailViewerExistsRepository: UserEmailViewerExistsRepository,
     private readonly userTotalViewerRepository: UserTotalViewerRepository,
     private readonly userSectorsListerRepository: UserSectorsListerRepository,
-    private readonly storageService: StorageService
+    private readonly userOnlineListerRepository: UserOnlineListerRepository,
+    private readonly userTransferListerRepository: UserTransferListerRepository,
+    private readonly storageService: StorageService,
+    private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 
   listUsers = async (
@@ -224,6 +234,141 @@ export class UserService {
     userId: string
   ): Promise<IViewUserNamePhoto | null> => {
     return this.userNamePhotoViewerRepository.viewUserNamePhoto(userId);
+  };
+
+  listOnlineUsersByAccount = async (
+    accountId: string
+  ): Promise<IViewUserNamePhoto[]> => {
+    return this.userOnlineListerRepository.listOnlineUsersByAccount(accountId);
+  };
+
+  getAvailableUserWithLeastChats = async (
+    accountId: string
+  ): Promise<IViewUserNamePhoto | null> => {
+    const onlineUsers = await this.listOnlineUsersByAccount(accountId);
+
+    if (onlineUsers.length === 0) {
+      return null;
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayISO = today.toISOString();
+
+    const userChatCounts = await Promise.all(
+      onlineUsers.map(async (user) => {
+        const inChatQuery: any = {
+          size: 0,
+          query: {
+            bool: {
+              must: [
+                {
+                  nested: {
+                    path: 'account',
+                    query: {
+                      term: {
+                        'account.id': accountId,
+                      },
+                    },
+                  },
+                },
+                {
+                  nested: {
+                    path: 'user',
+                    query: {
+                      term: {
+                        'user.id': user.id,
+                      },
+                    },
+                  },
+                },
+              ],
+              filter: [
+                {
+                  term: {
+                    status: EChatStatus.in_chat,
+                  },
+                },
+              ],
+            },
+          },
+        };
+
+        const inChatResult = await this.elasticDatabaseService.select<IChat>(
+          EElasticIndex.chat,
+          inChatQuery
+        );
+        const inChatCount =
+          (inChatResult?.hits?.total as { value: number })?.value ?? 0;
+
+        if (inChatCount > 0) {
+          return { user, inChatCount, closedTodayCount: Infinity };
+        }
+
+        const closedTodayQuery: any = {
+          size: 0,
+          query: {
+            bool: {
+              must: [
+                {
+                  nested: {
+                    path: 'account',
+                    query: {
+                      term: {
+                        'account.id': accountId,
+                      },
+                    },
+                  },
+                },
+                {
+                  nested: {
+                    path: 'user',
+                    query: {
+                      term: {
+                        'user.id': user.id,
+                      },
+                    },
+                  },
+                },
+              ],
+              filter: [
+                {
+                  term: {
+                    status: EChatStatus.closed,
+                  },
+                },
+                {
+                  range: {
+                    closed_at: {
+                      gte: todayISO,
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        };
+
+        const closedTodayResult =
+          await this.elasticDatabaseService.select<IChat>(
+            EElasticIndex.chat,
+            closedTodayQuery
+          );
+        const closedTodayCount =
+          (closedTodayResult?.hits?.total as { value: number })?.value ?? 0;
+
+        return { user, inChatCount, closedTodayCount };
+      })
+    );
+
+    const availableUsers = userChatCounts.filter((uc) => uc.inChatCount === 0);
+    if (availableUsers.length === 0) {
+      return null;
+    }
+
+    availableUsers.sort((a, b) => a.closedTodayCount - b.closedTodayCount);
+
+    return availableUsers[0].user;
   };
 
   existsUserByEmail = async (
@@ -517,5 +662,15 @@ export class UserService {
     }
 
     return updateData.photo ?? null;
+  };
+
+  listUsersForTransfer = async (
+    accountId: string,
+    excludeUserId: string
+  ): Promise<TransferUserResponse[]> => {
+    return this.userTransferListerRepository.listUsersForTransfer(
+      accountId,
+      excludeUserId
+    );
   };
 }

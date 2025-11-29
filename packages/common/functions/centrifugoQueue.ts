@@ -17,3 +17,7 @@ export function statusServerCentrifugoQueue(): string {
 export function serverSshCentrifugoQueue(): string {
   return 'server_ssh';
 }
+
+export function presenceUserCentrifugo(userId: string): string {
+  return `presence:user#${userId}`;
+}

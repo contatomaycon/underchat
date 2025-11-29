@@ -2,8 +2,9 @@ import * as schema from '@core/models';
 import { chatUser } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { ListChatsUserResponse } from '@core/schema/chat/listChatsUser/response.schema';
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 
 @injectable()
 export class ChatUserViewerRepository {
@@ -30,5 +31,39 @@ export class ChatUserViewerRepository {
     }
 
     return result[0] as ListChatsUserResponse;
+  };
+
+  findStatusByUserId = async (
+    userId: string
+  ): Promise<EChatUserStatus | null> => {
+    const result = await this.db
+      .select({
+        status: chatUser.status,
+      })
+      .from(chatUser)
+      .where(and(eq(chatUser.user_id, userId)))
+      .execute();
+
+    if (!result?.length || !result[0]?.status) {
+      return null;
+    }
+
+    return result[0].status as EChatUserStatus;
+  };
+
+  listUserIdsByStatuses = async (
+    statuses: EChatUserStatus[]
+  ): Promise<string[]> => {
+    if (!statuses.length) {
+      return [];
+    }
+
+    const result = await this.db
+      .select({ user_id: chatUser.user_id })
+      .from(chatUser)
+      .where(inArray(chatUser.status, statuses))
+      .execute();
+
+    return result.map((row) => row.user_id);
   };
 }

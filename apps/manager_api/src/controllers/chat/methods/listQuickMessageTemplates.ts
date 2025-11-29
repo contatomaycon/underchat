@@ -2,24 +2,30 @@ import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { ChatUserViewerUseCase } from '@core/useCases/chat/ChatUserViewer.useCase';
+import { ListQuickMessageTemplatesRequest } from '@core/schema/chat/listQuickMessageTemplates/request.schema';
+import { ChatQuickMessageTemplatesListerUseCase } from '@core/useCases/chat/ChatQuickMessageTemplatesLister.useCase';
 
-export const listChatsUser = async (
-  request: FastifyRequest,
+export const listQuickMessageTemplates = async (
+  request: FastifyRequest<{
+    Querystring: ListQuickMessageTemplatesRequest;
+  }>,
   reply: FastifyReply
 ) => {
-  const chatUserViewerUseCase = container.resolve(ChatUserViewerUseCase);
+  const chatQuickMessageTemplatesListerUseCase = container.resolve(
+    ChatQuickMessageTemplatesListerUseCase
+  );
   const { t, tokenJwtData } = request;
 
   try {
-    const response = await chatUserViewerUseCase.execute(
+    const response = await chatQuickMessageTemplatesListerUseCase.execute(
       t,
-      tokenJwtData.user_id
+      request.query,
+      tokenJwtData.account_id
     );
 
     if (response) {
       return sendResponse(reply, {
-        message: t('chat_list_user_success'),
+        message: t('message_template_list_successfully'),
         httpStatusCode: EHTTPStatusCode.ok,
         data: response,
       });
@@ -28,7 +34,7 @@ export const listChatsUser = async (
     request.server.logger.info(response, request.id);
 
     return sendResponse(reply, {
-      message: t('chat_list_user_not_found'),
+      message: t('message_template_list_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {

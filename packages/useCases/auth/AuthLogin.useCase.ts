@@ -1,5 +1,5 @@
 import { AuthService } from '@core/services/auth.service';
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { AuthLoginResponse } from '@core/schema/auth/login/response.schema';
 import { AuthLoginRequest } from '@core/schema/auth/login/request.schema';
 import { FastifyReply } from 'fastify';
@@ -9,6 +9,11 @@ import { generalEnvironment } from '@core/config/environments';
 import { PermissionService } from '@core/services/permission.service';
 import { AccountService } from '@core/services/account.service';
 import { UserService } from '@core/services/user.service';
+import { PresenceService } from '@core/services/presence.service';
+import { CentrifugoService } from '@core/services/centrifugo.service';
+import { UserAccountViewerRepository } from '@core/repositories/user/UserAccountViewer.repository';
+import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
+import Redis from 'ioredis';
 
 @injectable()
 export class AuthLoginUseCase {
@@ -16,8 +21,71 @@ export class AuthLoginUseCase {
     private readonly authService: AuthService,
     private readonly permissionService: PermissionService,
     private readonly accountService: AccountService,
-    private readonly userService: UserService
+    private readonly userService: UserService,
+    @inject('Redis') private readonly redis: Redis,
+    private readonly presenceService: PresenceService,
+    private readonly centrifugoService: CentrifugoService,
+    private readonly userAccountViewerRepository: UserAccountViewerRepository
   ) {}
+
+  private async invalidateUserJwtCache(userId: string): Promise<void> {
+    const pattern = `jwtCache:${userId}*`;
+    const stream = this.redis.scanStream({
+      match: pattern,
+      count: 100,
+    });
+
+    const keysToDelete: string[] = [];
+
+    stream.on('data', (keys: string[]) => {
+      keysToDelete.push(...keys);
+    });
+
+    await new Promise<void>((resolve) => {
+      stream.on('end', () => {
+        resolve();
+      });
+    });
+
+    if (keysToDelete.length > 0) {
+      await this.redis.del(...keysToDelete);
+    }
+  }
+
+  private async notifyPreviousSession(
+    userId: string,
+    accountId: string
+  ): Promise<void> {
+    try {
+      const channel = chatAccountCentrifugo(accountId);
+
+      await this.centrifugoService.publishSub(channel, {
+        event: 'force_logout',
+        user_id: userId,
+      });
+    } catch (error) {
+      console.error('Failed to notify previous session', error);
+    }
+  }
+
+  private async handleDuplicateLogin(userId: string): Promise<boolean> {
+    const isAlreadyLoggedIn = await this.presenceService.isUserLoggedIn(userId);
+
+    if (!isAlreadyLoggedIn) {
+      return false;
+    }
+
+    const [accountId] = await Promise.all([
+      this.userAccountViewerRepository.getUserAccountId(userId),
+      this.invalidateUserJwtCache(userId),
+    ]);
+
+    if (accountId) {
+      await this.notifyPreviousSession(userId, accountId);
+    }
+
+    return true;
+  }
 
   async execute(
     t: TFunction<'translation', undefined>,
@@ -33,6 +101,8 @@ export class AuthLoginUseCase {
     if (!result) {
       throw new Error(t('login_invalid'));
     }
+
+    const hadDuplicateLogin = await this.handleDuplicateLogin(result.user_id);
 
     const token = await reply.jwtSign(
       {
@@ -52,6 +122,12 @@ export class AuthLoginUseCase {
       this.accountService.viewAccountInfoByAccountId(result.account_id),
       this.userService.listUserSectors(result.account_id, result.user_id),
     ]);
+
+    if (hadDuplicateLogin) {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+
+    await this.presenceService.setUserAway(result.user_id);
 
     return {
       user: result,

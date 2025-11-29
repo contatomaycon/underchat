@@ -21,6 +21,8 @@ import { updateStartProtocolText } from './methods/updateStartProtocolText';
 import { viewStartProtocolText } from './methods/viewStartProtocolText';
 import { updateUraProtocolText } from './methods/updateUraProtocolText';
 import { viewUraProtocolText } from './methods/viewUraProtocolText';
+import { updateSimultaneousAttendance } from './methods/updateSimultaneousAttendance';
+import { viewSimultaneousAttendance } from './methods/viewSimultaneousAttendance';
 
 @injectable()
 class WorkerController {
@@ -46,6 +48,8 @@ class WorkerController {
   public viewStartProtocolText = viewStartProtocolText;
   public updateUraProtocolText = updateUraProtocolText;
   public viewUraProtocolText = viewUraProtocolText;
+  public updateSimultaneousAttendance = updateSimultaneousAttendance;
+  public viewSimultaneousAttendance = viewSimultaneousAttendance;
 }
 
 export default WorkerController;

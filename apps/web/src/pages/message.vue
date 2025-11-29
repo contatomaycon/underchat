@@ -11,6 +11,7 @@ import { EMessageTemplatePermissions } from '@core/common/enums/EPermissions/mes
 import { useMessageTemplateStore } from '@/@webcore/stores/messageTemplate';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { EMessageStatus } from '@core/common/enums/EMessageStatus';
+import { EMessageType } from '@core/common/enums/EMessageType';
 import { ListMessageTemplateResponse } from '@core/schema/messageTemplate/listMessageTemplate/response.schema';
 
 definePage({
@@ -90,7 +91,16 @@ function getExtFromUrl(url: string | null | undefined): string {
   }
 }
 
-function getAttachmentIcon(url: string | null | undefined): string {
+function getAttachmentIcon(
+  url: string | null | undefined,
+  type?: string
+): string {
+  // Se o tipo estiver disponível, use-o diretamente
+  if (type === EMessageType.image) return 'tabler-photo';
+  if (type === EMessageType.video) return 'tabler-video';
+  if (type === EMessageType.audio) return 'tabler-music';
+
+  // Fallback: usa a extensão do arquivo
   const ext = getExtFromUrl(url);
 
   if (imageExts.has(ext)) return 'tabler-photo';
@@ -103,6 +113,120 @@ function getAttachmentIcon(url: string | null | undefined): string {
 function openAttachment(url: string | null | undefined) {
   if (!url) return;
   window.open(url, '_blank');
+}
+
+type AttachmentPreviewType = 'image' | 'video' | 'audio';
+
+const attachmentPreviewDialog = ref<{
+  open: boolean;
+  src: string | null;
+  type: AttachmentPreviewType | null;
+}>({
+  open: false,
+  src: null,
+  type: null,
+});
+
+const audioPreviewRef = ref<HTMLAudioElement | null>(null);
+const isAudioPlaying = ref(false);
+const audioProgress = ref(0);
+const audioDuration = ref(0);
+const audioCurrentTime = ref(0);
+const audioWaveformBars = ref<number[]>([]);
+
+const closeAttachmentPreview = () => {
+  if (audioPreviewRef.value) {
+    audioPreviewRef.value.pause();
+    audioPreviewRef.value.currentTime = 0;
+  }
+  isAudioPlaying.value = false;
+  audioProgress.value = 0;
+  audioDuration.value = 0;
+  audioCurrentTime.value = 0;
+  audioWaveformBars.value = [];
+  attachmentPreviewDialog.value = {
+    open: false,
+    src: null,
+    type: null,
+  };
+};
+
+const createDefaultWaveform = (): number[] => {
+  return new Array(64).fill(0.3);
+};
+
+const toggleAudioPreview = () => {
+  if (!audioPreviewRef.value) return;
+
+  if (isAudioPlaying.value) {
+    audioPreviewRef.value.pause();
+    return;
+  }
+
+  audioPreviewRef.value.play().catch(() => {
+    isAudioPlaying.value = false;
+  });
+};
+
+const updateAudioProgress = () => {
+  if (!audioPreviewRef.value) return;
+  audioCurrentTime.value = audioPreviewRef.value.currentTime;
+  if (audioDuration.value > 0) {
+    audioProgress.value =
+      (audioPreviewRef.value.currentTime / audioDuration.value) * 100;
+  }
+};
+
+const updateAudioDuration = () => {
+  if (!audioPreviewRef.value) return;
+  audioDuration.value = audioPreviewRef.value.duration;
+  if (!audioWaveformBars.value.length) {
+    audioWaveformBars.value = createDefaultWaveform();
+  }
+};
+
+const formatAudioTime = (seconds: number): string => {
+  if (!seconds || Number.isNaN(seconds)) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
+const audioTimeDisplay = computed(() => {
+  if (isAudioPlaying.value) {
+    return `${formatAudioTime(audioCurrentTime.value)} / ${formatAudioTime(
+      audioDuration.value
+    )}`;
+  }
+  return formatAudioTime(audioDuration.value);
+});
+
+function openAttachmentPreview(item: ListMessageTemplateResponse) {
+  const url = item.attachment_url;
+  if (!url) return;
+
+  let type: AttachmentPreviewType | null = null;
+
+  if (item.type === EMessageType.image) type = 'image';
+  else if (item.type === EMessageType.video) type = 'video';
+  else if (item.type === EMessageType.audio) type = 'audio';
+
+  if (!type) {
+    const ext = getExtFromUrl(url);
+    if (imageExts.has(ext)) type = 'image';
+    else if (audioExts.has(ext)) type = 'audio';
+  }
+
+  if (!type) {
+    openAttachment(url);
+    return;
+  }
+
+  attachmentPreviewDialog.value = {
+    open: true,
+    src: url,
+    type,
+  };
 }
 
 const isDialogDeleterShow = ref(false);
@@ -260,20 +384,36 @@ watch(
         </template>
 
         <template #item.message_status="{ item }">
-          {{ item.message_status?.name }}
+          <VChip
+            v-if="item.message_status"
+            :color="
+              item.message_status.message_status_id === EMessageStatus.active
+                ? 'success'
+                : 'error'
+            "
+            size="small"
+            variant="tonal"
+          >
+            {{
+              item.message_status.message_status_id === EMessageStatus.active
+                ? $t('active')
+                : $t('inactive')
+            }}
+          </VChip>
+          <span v-else class="text-medium-emphasis">-</span>
         </template>
 
         <template #item.attachment_url="{ item }">
           <div v-if="item.attachment_url" class="d-flex align-center">
-            <IconBtn @click="openAttachment(item.attachment_url)">
+            <IconBtn @click="openAttachmentPreview(item)">
               <VTooltip
                 location="top"
                 transition="scale-transition"
                 activator="parent"
               >
-                <span>{{ item.attachment_url }}</span>
+                <span>{{ $t('click_to_preview') }}</span>
               </VTooltip>
-              <VIcon :icon="getAttachmentIcon(item.attachment_url)" />
+              <VIcon :icon="getAttachmentIcon(item.attachment_url, item.type)" />
             </IconBtn>
           </div>
           <span v-else class="text-medium-emphasis">-</span>
@@ -332,6 +472,105 @@ watch(
         </template>
       </VDataTableServer>
 
+      <VDialog v-model="attachmentPreviewDialog.open" max-width="800">
+        <DialogCloseBtn @click="closeAttachmentPreview" />
+        <VCard :title="$t('preview')">
+          <VCardText>
+            <VImg
+              v-if="
+                attachmentPreviewDialog.src &&
+                attachmentPreviewDialog.type === 'image'
+              "
+              :src="attachmentPreviewDialog.src"
+              max-height="420"
+              class="rounded"
+              contain
+            />
+            <video
+              v-if="
+                attachmentPreviewDialog.src &&
+                attachmentPreviewDialog.type === 'video'
+              "
+              :src="attachmentPreviewDialog.src"
+              max-height="600"
+              class="rounded"
+              style="width: 100%"
+              controls
+            >
+              <track kind="captions" />
+            </video>
+            <div
+              v-if="
+                attachmentPreviewDialog.src &&
+                attachmentPreviewDialog.type === 'audio'
+              "
+              class="d-flex flex-column align-center pa-6"
+            >
+              <div class="audio-preview-container w-100">
+                <div class="audio-waveform-container mb-4">
+                  <div class="audio-waveform">
+                    <div
+                      v-for="(bar, index) in audioWaveformBars"
+                      :key="index"
+                      class="audio-waveform-bar"
+                      :class="{
+                        'audio-waveform-bar--active':
+                          audioProgress > (index / audioWaveformBars.length) * 100,
+                      }"
+                      :style="{
+                        height: `${Math.max(10, bar * 100)}%`,
+                      }"
+                    ></div>
+                  </div>
+                  <div
+                    class="audio-progress-indicator"
+                    :style="{
+                      left: `${audioProgress}%`,
+                    }"
+                  ></div>
+                </div>
+                <div class="d-flex align-center justify-center gap-4 w-100">
+                  <VBtn
+                    :icon="
+                      isAudioPlaying ? 'tabler-player-pause' : 'tabler-player-play'
+                    "
+                    variant="flat"
+                    color="primary"
+                    size="large"
+                    @click="toggleAudioPreview"
+                  />
+                  <div class="flex-grow-1">
+                    <audio
+                      ref="audioPreviewRef"
+                      :src="attachmentPreviewDialog.src || undefined"
+                      @timeupdate="updateAudioProgress"
+                      @loadedmetadata="updateAudioDuration"
+                      @play="isAudioPlaying = true"
+                      @pause="isAudioPlaying = false"
+                      @ended="isAudioPlaying = false"
+                    >
+                      <track kind="captions" />
+                    </audio>
+                    <div class="text-caption text-center">
+                      {{ audioTimeDisplay }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </VCardText>
+          <VCardText class="d-flex justify-end">
+            <VBtn
+              variant="tonal"
+              color="secondary"
+              @click="closeAttachmentPreview"
+            >
+              {{ $t('cancel') }}
+            </VBtn>
+          </VCardText>
+        </VCard>
+      </VDialog>
+
       <VDialogHandler
         v-if="isDialogDeleterShow"
         v-model="isDialogDeleterShow"
@@ -370,5 +609,59 @@ watch(
 
 .invoice-list-filter {
   inline-size: 20rem;
+}
+
+.audio-preview-container {
+  width: 100%;
+  max-width: 500px;
+}
+
+.audio-waveform-container {
+  position: relative;
+  width: 100%;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  background: rgba(var(--v-theme-surface-variant), 0.1);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.audio-waveform {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 12px;
+  z-index: 1;
+  height: 100%;
+  width: 100%;
+}
+
+.audio-waveform-bar {
+  flex: 1;
+  min-width: 3px;
+  max-width: 4px;
+  background: rgba(var(--v-theme-primary), 0.4);
+  border-radius: 2px;
+  transition: background 0.2s ease;
+}
+
+.audio-waveform-bar--active {
+  background: rgba(var(--v-theme-primary), 0.8);
+}
+
+.audio-progress-indicator {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(var(--v-theme-primary), 1);
+  z-index: 2;
+  pointer-events: none;
+  transform: translateX(-50%);
 }
 </style>

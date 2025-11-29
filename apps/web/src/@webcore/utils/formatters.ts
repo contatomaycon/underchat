@@ -8,12 +8,25 @@ export const avatarText = (value?: string | null): string => {
   return (words[0].charAt(0) + words[1].charAt(0)).toUpperCase();
 };
 
-export const resolveAvatarBadgeVariant = (status: EChatUserStatus) => {
+export const getOfflineColorDark = (): string => {
+  return '#9e9e9e';
+};
+
+export const getOfflineColorLight = (): string => {
+  return '#757575';
+};
+
+export const resolveAvatarBadgeVariant = (
+  status: EChatUserStatus,
+  isDark?: boolean
+) => {
   if (status === EChatUserStatus.online) return 'success';
   if (status === EChatUserStatus.busy) return 'error';
   if (status === EChatUserStatus.away) return 'warning';
-  if (status === EChatUserStatus.offline) return 'secondary';
-  if (status === EChatUserStatus.do_not_disturb) return 'error';
+  if (status === EChatUserStatus.offline) {
+    return isDark ? getOfflineColorDark() : getOfflineColorLight();
+  }
+  if (status === EChatUserStatus.do_not_disturb) return 'warning';
   return 'secondary';
 };
 
@@ -81,11 +94,3 @@ export function formatDateToMonthShort(
 
 export const prefixWithPlus = (value: number) =>
   value > 0 ? `+${value}` : `${value}`;
-
-export const getOfflineColorDark = (): string => {
-  return '#9e9e9e';
-};
-
-export const getOfflineColorLight = (): string => {
-  return '#757575';
-};
