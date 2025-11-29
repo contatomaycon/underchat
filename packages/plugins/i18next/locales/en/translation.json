@@ -397,5 +397,8 @@
   "simultaneous_attendance_update_success": "Number of simultaneous attendances updated successfully!",
   "simultaneous_attendance_limit_reached": "You have reached the limit of simultaneous attendances allowed for this channel. Limit: {{limit}} attendance(s).",
   "attendance_only_online_allowed": "You cannot attend while not having online status.",
-  "user_unavailable_for_transfer": "This user is currently unavailable."
+  "user_unavailable_for_transfer": "This user is currently unavailable.",
+  "show_message_on_call_update_success": "Call message updated successfully!",
+  "show_message_on_call_update_error": "Error updating call message!",
+  "show_message_on_call_view_success": "Call message retrieved successfully!"
 }

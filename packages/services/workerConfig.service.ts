@@ -68,6 +68,8 @@ export class WorkerConfigService {
       generate_protocol_at_ura: result.generate_protocol_at_ura,
       generate_protocol_at_start: result.generate_protocol_at_start,
       generate_protocol_at_transfer: result.generate_protocol_at_transfer,
+      show_message_on_call: result.show_message_on_call,
+      auto_save_contacts: result.auto_save_contacts ?? false,
       created_at: result.created_at ?? null,
       updated_at: result.updated_at ?? null,
     };
@@ -180,6 +182,34 @@ export class WorkerConfigService {
     }
 
     return result.simultaneous_attendance || null;
+  }
+
+  async updateShowMessageOnCall(
+    workerId: string,
+    text: string | null
+  ): Promise<string | null> {
+    const [result] = await Promise.all([
+      this.workerConfigUpserterRepository.updateShowMessageOnCall(
+        workerId,
+        text
+      ),
+      this.invalidateWorkerConfigCache(workerId),
+    ]);
+
+    return result;
+  }
+
+  async viewShowMessageOnCall(workerId: string): Promise<string | null> {
+    const result =
+      await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
+        workerId
+      );
+
+    if (!result) {
+      return null;
+    }
+
+    return result.show_message_on_call || null;
   }
 
   private async invalidateWorkerConfigCache(workerId: string): Promise<void> {

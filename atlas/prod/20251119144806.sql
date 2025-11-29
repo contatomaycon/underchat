@@ -9,6 +9,8 @@ CREATE TABLE "worker_config" (
   "generate_protocol_at_ura" character varying(2000) NULL,
   "generate_protocol_at_start" character varying(2000) NULL,
   "generate_protocol_at_transfer" character varying(2000) NULL,
+  "show_message_on_call" character varying(2000) NULL,
+  "auto_save_contacts" boolean NULL DEFAULT false,
   "simultaneous_attendance" integer NULL,
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),

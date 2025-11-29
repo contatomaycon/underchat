@@ -397,5 +397,8 @@
   "simultaneous_attendance_update_success": "¡Cantidad de atenciones simultáneas actualizada con éxito!",
   "simultaneous_attendance_limit_reached": "Ha alcanzado el límite de atenciones simultáneas permitidas para este canal. Límite: {{limit}} atención(es).",
   "attendance_only_online_allowed": "No puede atender mientras no tenga estado en línea.",
-  "user_unavailable_for_transfer": "Este usuario se encuentra indisponible en este momento."
+  "user_unavailable_for_transfer": "Este usuario se encuentra indisponible en este momento.",
+  "show_message_on_call_update_success": "¡Mensaje para llamada actualizado con éxito!",
+  "show_message_on_call_update_error": "¡Error al actualizar el mensaje para llamada!",
+  "show_message_on_call_view_success": "¡Mensaje para llamada obtenido con éxito!"
 }

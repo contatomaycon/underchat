@@ -23,6 +23,8 @@ import { updateUraProtocolText } from './methods/updateUraProtocolText';
 import { viewUraProtocolText } from './methods/viewUraProtocolText';
 import { updateSimultaneousAttendance } from './methods/updateSimultaneousAttendance';
 import { viewSimultaneousAttendance } from './methods/viewSimultaneousAttendance';
+import { updateShowMessageOnCall } from './methods/updateShowMessageOnCall';
+import { viewShowMessageOnCall } from './methods/viewShowMessageOnCall';
 
 @injectable()
 class WorkerController {
@@ -50,6 +52,8 @@ class WorkerController {
   public viewUraProtocolText = viewUraProtocolText;
   public updateSimultaneousAttendance = updateSimultaneousAttendance;
   public viewSimultaneousAttendance = viewSimultaneousAttendance;
+  public updateShowMessageOnCall = updateShowMessageOnCall;
+  public viewShowMessageOnCall = viewShowMessageOnCall;
 }
 
 export default WorkerController;

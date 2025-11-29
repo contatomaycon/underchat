@@ -24,6 +24,8 @@ export class WorkerConfigFieldsViewerRepository {
         generate_protocol_at_start: workerConfig.generate_protocol_at_start,
         generate_protocol_at_transfer:
           workerConfig.generate_protocol_at_transfer,
+        show_message_on_call: workerConfig.show_message_on_call,
+        auto_save_contacts: workerConfig.auto_save_contacts,
         simultaneous_attendance: workerConfig.simultaneous_attendance,
       })
       .from(workerConfig)
