@@ -90,6 +90,7 @@
     "web_port_required": "Porta Web é obrigatória",
     "channels": "Canais",
     "channel": "Canal",
+    "chatbot": "ChatBot",
     "configurations": "Configurações",
     "general_settings": "Configurações Gerais",
     "profile_status_tab": "Status do Perfil",

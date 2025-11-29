@@ -58,6 +58,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'chatbot': RouteRecordInfo<
+      'chatbot',
+      '/chatbot',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     'contact': RouteRecordInfo<
       'contact',
       '/contact',
@@ -224,6 +231,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/chat.vue': {
       routes:
         | 'chat'
+      views:
+        | never
+    }
+    'src/pages/chatbot.vue': {
+      routes:
+        | 'chatbot'
       views:
         | never
     }

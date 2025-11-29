@@ -87,6 +87,7 @@
     "web_domain_required": "Web Domain is required",
     "web_port_required": "Web Port is required",
     "channels": "Channels",
+    "chatbot": "ChatBot",
     "channel": "Channel",
     "configurations": "Configurations",
     "general_settings": "General Settings",

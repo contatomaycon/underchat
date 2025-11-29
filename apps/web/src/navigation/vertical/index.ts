@@ -53,6 +53,17 @@ export default [
     ],
   },
   {
+    title: 'chatbot',
+    to: { name: 'chatbot' as keyof RouteNamedMap },
+    icon: { icon: 'tabler-robot' },
+    permissions: [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.chat_group,
+      EChatPermissions.chat_access,
+    ],
+  },
+  {
     title: 'utilities',
     icon: { icon: 'tabler-tool' },
     children: [

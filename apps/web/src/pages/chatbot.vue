@@ -1,0 +1,203 @@
+<script setup lang="ts">
+import { ref } from 'vue';
+import { VueFlow } from '@vue-flow/core';
+import type { Node, Edge, Connection, NodeChange } from '@vue-flow/core';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import ChatbotMenuNode from '@/components/chatbot/ChatbotMenuNode.vue';
+import ChatbotStartNode from '@/components/chatbot/ChatbotStartNode.vue';
+
+definePage({
+  meta: {
+    permissions: [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.chat_group,
+      EChatPermissions.chat_access,
+    ],
+  },
+});
+
+const nodeTypes = {
+  menu: ChatbotMenuNode,
+  start: ChatbotStartNode,
+};
+
+const initialNodes: Node[] = [
+  {
+    id: '1',
+    type: 'start',
+    label: 'Início',
+    position: { x: 250, y: 5 },
+    draggable: false,
+  },
+];
+
+const initialEdges: Edge[] = [];
+
+const nodes = ref<Node[]>(initialNodes);
+const edges = ref<Edge[]>(initialEdges);
+
+let nodeIdCounter = 2;
+
+const removeNode = (nodeId: string) => {
+  // Remove o nó
+  const nodeIndex = nodes.value.findIndex((n) => n.id === nodeId);
+  if (nodeIndex > -1) {
+    nodes.value.splice(nodeIndex, 1);
+  }
+
+  // Remove todas as edges conectadas a este nó
+  edges.value = edges.value.filter(
+    (e) => e.source !== nodeId && e.target !== nodeId
+  );
+};
+
+const addMenuNode = () => {
+  const newNode: Node = {
+    id: `menu-${nodeIdCounter++}`,
+    type: 'menu',
+    position: {
+      x: Math.random() * 400 + 100,
+      y: Math.random() * 300 + 100,
+    },
+    data: {
+      title: '',
+      message: '',
+      options: [],
+      onRemove: () => removeNode(newNode.id),
+    },
+  };
+  nodes.value.push(newNode);
+};
+
+const onConnect = (connection: Connection) => {
+  // Evita conexões duplicadas
+  const existingEdge = edges.value.find(
+    (e) => e.source === connection.source && e.target === connection.target
+  );
+  if (existingEdge) return;
+
+  edges.value.push({
+    id: `e${connection.source}-${connection.target}-${Date.now()}`,
+    source: connection.source!,
+    target: connection.target!,
+    markerEnd: {
+      type: 'arrowclosed',
+      color: '#1a192b',
+    },
+    style: {
+      stroke: '#1a192b',
+      strokeWidth: 2,
+    },
+  });
+};
+
+const onNodesChange = (changes: NodeChange[]) => {
+  changes.forEach((change) => {
+    if (change.type === 'position' && change.dragging === false && change.position) {
+      const draggedNode = nodes.value.find((n) => n.id === change.id);
+      if (!draggedNode) return;
+
+      // Verifica se o nó arrastado está próximo de outro nó (dentro de 80px)
+      const otherNodes = nodes.value.filter((n) => n.id !== draggedNode.id);
+      for (const otherNode of otherNodes) {
+        const distance = Math.sqrt(
+          Math.pow(draggedNode.position.x - otherNode.position.x, 2) +
+            Math.pow(draggedNode.position.y - otherNode.position.y, 2)
+        );
+
+        // Se a distância for menor que 80px, cria uma conexão
+        if (distance < 80) {
+          const existingEdge = edges.value.find(
+            (e) => e.source === draggedNode.id && e.target === otherNode.id
+          );
+          if (!existingEdge) {
+            const connection: Connection = {
+              source: draggedNode.id,
+              target: otherNode.id,
+            };
+            onConnect(connection);
+          }
+          break;
+        }
+      }
+    }
+  });
+};
+</script>
+
+<template>
+  <div>
+    <VCard title="ChatBot Flow">
+      <VCardText>
+        <div class="flow-layout">
+          <div class="node-menu">
+            <VBtn color="primary" @click="addMenuNode">
+              <VIcon icon="tabler-menu-2" class="me-2" />
+              Menu
+            </VBtn>
+          </div>
+          <div class="vertical-divider" />
+          <div class="flow-area">
+            <VueFlow
+              v-model:nodes="nodes"
+              v-model:edges="edges"
+              :node-types="nodeTypes"
+              :min-zoom="0.2"
+              :max-zoom="4"
+              :default-viewport="{ zoom: 1 }"
+              :connection-line-style="{ stroke: '#1a192b', strokeWidth: 2 }"
+              :default-edge-options="{
+                markerEnd: { type: 'arrowclosed', color: '#1a192b' },
+                style: { stroke: '#1a192b', strokeWidth: 2 },
+              }"
+              :connection-radius="20"
+              @connect="onConnect"
+              @nodes-change="onNodesChange"
+            />
+          </div>
+        </div>
+      </VCardText>
+    </VCard>
+  </div>
+</template>
+
+<style scoped>
+:deep(.vue-flow__node-default) {
+  padding: 10px;
+  background: white;
+  border: 1px solid #1a192b;
+  border-radius: 3px;
+  min-width: 150px;
+  text-align: center;
+  font-size: 12px;
+}
+
+.flow-layout {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  height: 600px;
+}
+
+.node-menu {
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 4px;
+  padding-right: 12px;
+}
+
+.vertical-divider {
+  width: 1px;
+  background-color: #e0e0e0;
+  align-self: stretch;
+}
+
+.flow-area {
+  flex: 1;
+  height: 100%;
+}
+</style>
