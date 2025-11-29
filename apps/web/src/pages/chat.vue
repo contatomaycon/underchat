@@ -12,6 +12,12 @@ import ChatSearchSidebarContent from '@/components/chat/ChatSearchSidebarContent
 import AppContactPicker from '@/components/chat/AppContactPicker.vue';
 import AppAddContactChat from '@/components/chat/AppAddContactChat.vue';
 import AppEditContactChat from '@/components/chat/AppEditContactChat.vue';
+import ChatLocationPicker from '@/components/chat/ChatLocationPicker.vue';
+import ChatContactViewModal from '@/components/chat/ChatContactViewModal.vue';
+import ChatLabelModal from '@/components/chat/ChatLabelModal.vue';
+import ChatLinkPreview from '@/components/chat/ChatLinkPreview.vue';
+import ChatQueueStatusBanner from '@/components/chat/ChatQueueStatusBanner.vue';
+import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
 import VDialogHandler from '@/components/VDialogHandler.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
@@ -4560,50 +4566,7 @@ onBeforeUnmount(() => {
           <ChatLog :key="chatStore.activeChat?.chat_id || 'no-chat'" />
         </PerfectScrollbar>
 
-        <Transition name="fade">
-          <div v-if="linkPreview" class="mx-5 mt-3">
-            <VCard class="link-preview-card">
-              <VBtn
-                class="link-preview-close"
-                icon
-                size="24"
-                variant="text"
-                @click="linkPreview = null"
-              >
-                <VIcon size="18" icon="tabler-x" />
-              </VBtn>
-              <div class="d-flex gap-3">
-                <VAvatar size="56" :rounded="8" variant="tonal">
-                  <VImg v-if="previewImage" :src="previewImage" />
-                </VAvatar>
-                <div class="flex-grow-1 overflow-hidden">
-                  <div class="text-caption text-medium-emphasis">
-                    {{ previewDomain }}
-                  </div>
-                  <div class="text-subtitle-1 font-weight-medium text-truncate">
-                    {{ linkPreview?.title }}
-                  </div>
-                  <div
-                    class="text-body-2 text-medium-emphasis two-line-ellipsis"
-                  >
-                    {{ linkPreview?.description }}
-                  </div>
-                  <div class="mt-2">
-                    <a
-                      v-if="previewHref"
-                      :href="previewHref"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      class="text-primary text-body-2"
-                    >
-                      {{ previewHref }}
-                    </a>
-                  </div>
-                </div>
-              </div>
-            </VCard>
-          </div>
-        </Transition>
+        <ChatLinkPreview :preview="linkPreview" @close="linkPreview = null" />
 
         <VForm
           class="chat-log-message-form mb-5 mx-5"
@@ -5071,48 +5034,15 @@ onBeforeUnmount(() => {
             </VBtn>
           </div>
 
-          <div
-            v-if="isQueueStatus"
-            class="d-flex align-center justify-space-between pa-4 bg-surface rounded mb-2"
-          >
-            <span class="text-body-2 text-medium-emphasis">
-              <template v-if="canAttendChat">
-                {{
-                  t(
-                    'chat_queue_message',
-                    'Para iniciar o atendimento clique em atender'
-                  )
-                }}
-              </template>
-              <template v-else-if="cannotAttendDueToStatus">
-                {{ t('attendance_only_online_required') }}
-              </template>
-              <template v-else-if="cannotAttendDueToLimit">
-                {{
-                  t('simultaneous_attendance_limit_message', {
-                    limit: workerConfigForChat?.simultaneous_attendance,
-                  })
-                }}
-              </template>
-              <template v-else>
-                {{
-                  t(
-                    'chat_queue_message',
-                    'Para iniciar o atendimento clique em atender'
-                  )
-                }}
-              </template>
-            </span>
-            <VBtn
-              v-if="canAttendChat"
-              color="primary"
-              size="small"
-              @click="handleAttendChat"
-              :loading="chatStore.loading"
-            >
-              {{ t('attend', 'Atender') }}
-            </VBtn>
-          </div>
+          <ChatQueueStatusBanner
+            :is-queue-status="isQueueStatus"
+            :can-attend-chat="canAttendChat"
+            :cannot-attend-due-to-status="cannotAttendDueToStatus"
+            :cannot-attend-due-to-limit="cannotAttendDueToLimit"
+            :worker-config-for-chat="workerConfigForChat"
+            :loading="chatStore.loading"
+            @attend="handleAttendChat"
+          />
 
           <VCard
             v-if="
@@ -5395,333 +5325,21 @@ onBeforeUnmount(() => {
     @select="onContactsSelected"
   />
 
-  <VDialog v-model="isLocationPickerOpen" max-width="800" :scrollable="false">
-    <VCard>
-      <VCardTitle class="d-flex align-center justify-space-between">
-        <span>{{ t('location_label', 'Localização') }}</span>
-        <VBtn
-          icon
-          variant="text"
-          size="small"
-          @click="isLocationPickerOpen = false"
-        >
-          <VIcon>tabler-x</VIcon>
-        </VBtn>
-      </VCardTitle>
-      <VCardText>
-        <VTabs v-model="locationPickerMode" class="mb-4">
-          <VTab value="current">
-            <VIcon start>tabler-current-location</VIcon>
-            Localização Atual
-          </VTab>
-          <VTab value="map">
-            <VIcon start>tabler-map</VIcon>
-            Escolher no Mapa
-          </VTab>
-          <VTab value="manual">
-            <VIcon start>tabler-keyboard</VIcon>
-            Digitar Coordenadas
-          </VTab>
-        </VTabs>
+  <ChatLocationPicker
+    v-model="isLocationPickerOpen"
+    @confirm="
+      (location) => {
+        selectedLocation = location;
+        sendLocationMessage();
+        finalizeSend();
+      }
+    "
+  />
 
-        <VWindow v-model="locationPickerMode">
-          <VWindowItem value="current">
-            <div class="d-flex flex-column align-center pa-4">
-              <VIcon size="48" color="primary" class="mb-4">
-                tabler-current-location
-              </VIcon>
-              <VBtn
-                color="primary"
-                @click="useCurrentLocation"
-                :loading="
-                  locationPickerMode === 'current' && !locationPickerLatitude
-                "
-              >
-                Usar Localização Atual
-              </VBtn>
-              <p class="text-caption text-center mt-4">
-                Clique no botão para obter sua localização atual
-              </p>
-            </div>
-          </VWindowItem>
-
-          <VWindowItem value="map">
-            <div class="location-picker-map-container">
-              <MglMap
-                ref="locationMapRef"
-                :map-style="mapStyle"
-                :center="locationMapCenter"
-                :zoom="15"
-                width="100%"
-                height="400px"
-                @map:click="onLocationMapClick"
-                @map:load="onLocationMapLoad"
-              >
-                <MglMarker
-                  v-if="locationPickerLatitude && locationPickerLongitude"
-                  :coordinates="locationMarkerPosition"
-                  color="#ef4444"
-                />
-              </MglMap>
-            </div>
-            <VRow class="mt-4">
-              <VCol cols="12">
-                <AppTextField
-                  v-model="locationPickerName"
-                  label="Nome (opcional)"
-                  placeholder="Ex: Minha Casa"
-                />
-              </VCol>
-              <VCol cols="12">
-                <AppTextField
-                  v-model="locationPickerAddress"
-                  label="Endereço (opcional)"
-                  placeholder="Ex: Rua Exemplo, 123"
-                />
-              </VCol>
-            </VRow>
-          </VWindowItem>
-
-          <VWindowItem value="manual">
-            <VRow>
-              <VCol cols="12" md="6">
-                <AppTextField
-                  v-model="locationInputLatitude"
-                  label="Latitude"
-                  placeholder="Ex: -15.459175"
-                  type="number"
-                  step="any"
-                />
-              </VCol>
-              <VCol cols="12" md="6">
-                <AppTextField
-                  v-model="locationInputLongitude"
-                  label="Longitude"
-                  placeholder="Ex: -47.602219"
-                  type="number"
-                  step="any"
-                />
-              </VCol>
-              <VCol cols="12">
-                <VBtn
-                  color="primary"
-                  block
-                  @click="useManualCoordinates"
-                  :disabled="!locationInputLatitude || !locationInputLongitude"
-                >
-                  Aplicar Coordenadas
-                </VBtn>
-              </VCol>
-            </VRow>
-            <VRow
-              v-if="locationPickerLatitude && locationPickerLongitude"
-              class="mt-4"
-            >
-              <VCol cols="12">
-                <AppTextField
-                  v-model="locationPickerName"
-                  label="Nome (opcional)"
-                  placeholder="Ex: Minha Casa"
-                />
-              </VCol>
-              <VCol cols="12">
-                <AppTextField
-                  v-model="locationPickerAddress"
-                  label="Endereço (opcional)"
-                  placeholder="Ex: Rua Exemplo, 123"
-                />
-              </VCol>
-            </VRow>
-          </VWindowItem>
-        </VWindow>
-      </VCardText>
-      <VCardText class="d-flex justify-end flex-wrap gap-3">
-        <VBtn
-          variant="tonal"
-          color="secondary"
-          @click="isLocationPickerOpen = false"
-        >
-          {{ t('cancel', 'Cancelar') }}
-        </VBtn>
-        <VBtn
-          color="primary"
-          @click="confirmLocation"
-          :disabled="!locationPickerLatitude || !locationPickerLongitude"
-        >
-          {{ t('send', 'Enviar Localização') }}
-        </VBtn>
-      </VCardText>
-    </VCard>
-  </VDialog>
-
-  <VDialog v-model="isContactViewModalOpen" max-width="600">
-    <DialogCloseBtn @click="isContactViewModalOpen = false" />
-
-    <template v-if="chatStore.loading">
-      <VOverlay
-        :model-value="chatStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
-
-    <VCard :title="$t('view_contact')" v-if="selectedContactDetails">
-      <VCardText>
-        <VRow>
-          <VCol cols="12" class="d-flex justify-center mb-4">
-            <VAvatar size="120">
-              <VImg
-                v-if="selectedContactDetails.photo"
-                :src="selectedContactDetails.photo"
-                :alt="selectedContactDetails.name"
-              />
-              <VImg
-                v-else
-                :src="'/images/svg/avatar-default.svg'"
-                :alt="selectedContactDetails.name"
-              />
-            </VAvatar>
-          </VCol>
-        </VRow>
-        <VRow>
-          <VCol cols="12" md="6">
-            <AppTextField
-              :model-value="selectedContactDetails.name"
-              :label="$t('name') + ':'"
-              readonly
-            />
-          </VCol>
-
-          <VCol cols="12" md="6">
-            <AppTextField
-              :model-value="selectedContactDetails.last_name || ''"
-              :label="$t('last_name') + ':'"
-              readonly
-            />
-          </VCol>
-        </VRow>
-        <VRow>
-          <VCol cols="12" md="6">
-            <AppTextField
-              :model-value="selectedContactDetails.nickname || ''"
-              :label="$t('nickname') + ':'"
-              readonly
-            />
-          </VCol>
-
-          <VCol cols="12" md="6">
-            <AppTextField
-              :model-value="viewContactEmailFormatted"
-              type="email"
-              :label="$t('email') + ':'"
-              readonly
-            >
-              <template #append-inner>
-                <VIcon
-                  :icon="isViewEmailDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
-                  class="cursor-pointer"
-                  :class="{ 'opacity-50': isLoadingViewEmail }"
-                  @click="toggleViewEmailVisibility"
-                />
-              </template>
-            </AppTextField>
-          </VCol>
-        </VRow>
-        <VRow>
-          <VCol cols="12" md="6">
-            <AppTextField
-              :model-value="selectedContactDetails.phone_ddi || ''"
-              :label="$t('phone_ddi') + ':'"
-              readonly
-            />
-          </VCol>
-
-          <VCol cols="12" md="6">
-            <AppTextField
-              :model-value="viewContactPhoneFormatted"
-              type="tel"
-              :label="$t('phone') + ':'"
-              readonly
-            >
-              <template #append-inner>
-                <VIcon
-                  :icon="isViewPhoneDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
-                  class="cursor-pointer"
-                  :class="{ 'opacity-50': isLoadingViewPhone }"
-                  @click="toggleViewPhoneVisibility"
-                />
-              </template>
-            </AppTextField>
-          </VCol>
-        </VRow>
-        <VRow>
-          <VCol cols="12" md="6">
-            <AppTextField
-              :model-value="
-                selectedContactDetails.birthday
-                  ? new Date(
-                      selectedContactDetails.birthday + 'T00:00:00'
-                    ).toLocaleDateString('pt-BR')
-                  : ''
-              "
-              :label="$t('birthday') + ':'"
-              readonly
-            />
-          </VCol>
-
-          <VCol cols="12" md="6">
-            <span class="text-body-2 mb-1 d-inline-block">
-              {{ $t('label') + ':' }}
-            </span>
-            <div
-              v-if="selectedContactDetails.label_template"
-              class="d-flex align-center mt-1"
-            >
-              <div
-                class="label-color-circle"
-                :style="{
-                  backgroundColor: selectedContactDetails.label_template.color,
-                }"
-              />
-              <span
-                class="ms-2 text-body-2 text-medium-emphasis"
-                :title="selectedContactDetails.label_template.label"
-              >
-                {{
-                  selectedContactDetails.label_template.label.length > 15
-                    ? `${selectedContactDetails.label_template.label.slice(0, 15)}…`
-                    : selectedContactDetails.label_template.label
-                }}
-              </span>
-            </div>
-            <div v-else class="text-body-2 text-medium-emphasis mt-1">-</div>
-          </VCol>
-        </VRow>
-        <VRow>
-          <VCol cols="12">
-            <label class="text-body-2 mb-1" for="notes-textarea">
-              {{ $t('notes') }}:
-            </label>
-            <VTextarea
-              :model-value="selectedContactDetails.notes || ''"
-              readonly
-            />
-          </VCol>
-        </VRow>
-      </VCardText>
-
-      <VCardText class="d-flex justify-end flex-wrap gap-3">
-        <VBtn
-          variant="tonal"
-          color="secondary"
-          @click="isContactViewModalOpen = false"
-        >
-          {{ $t('close') }}
-        </VBtn>
-      </VCardText>
-    </VCard>
-  </VDialog>
+  <ChatContactViewModal
+    v-model="isContactViewModalOpen"
+    :contact="selectedContactDetails"
+  />
 
   <AppAddContactChat
     v-model="isAddContactModalOpen"
@@ -5733,86 +5351,7 @@ onBeforeUnmount(() => {
     :contact-id="editContactId"
   />
 
-  <VDialog
-    v-model="isLabelModalOpen"
-    max-width="500"
-    :persistent="isSavingLabel"
-  >
-    <DialogCloseBtn :disabled="isSavingLabel" @click="closeLabelModal" />
-
-    <VCard :title="t('label')">
-      <VCardText>
-        <VProgressLinear
-          v-if="isLoadingLabels"
-          indeterminate
-          color="primary"
-          class="mb-4"
-        />
-
-        <VSelect
-          v-else
-          v-model="selectedLabelTemplateId"
-          :items="labelTemplates"
-          item-title="label"
-          item-value="label_template_id"
-          :label="t('label')"
-          :placeholder="t('select_label')"
-          clearable
-          class="label-select"
-        >
-          <template #item="{ props, item }">
-            <VListItem v-bind="props">
-              <template #prepend>
-                <div
-                  class="label-color-circle"
-                  :style="{ backgroundColor: item.raw.color }"
-                />
-              </template>
-            </VListItem>
-          </template>
-          <template #selection="{ item }">
-            <div v-if="item.raw" class="d-flex align-center">
-              <div
-                class="label-color-circle"
-                :style="{ backgroundColor: item.raw.color }"
-              />
-              <span class="ms-2">{{ item.raw.label }}</span>
-            </div>
-          </template>
-        </VSelect>
-      </VCardText>
-
-      <VCardText class="d-flex justify-space-between flex-wrap gap-3">
-        <VBtn
-          v-if="chatStore.activeChat?.label"
-          variant="tonal"
-          color="error"
-          :loading="isSavingLabel"
-          :disabled="isSavingLabel"
-          @click="removeLabel"
-        >
-          {{ t('remove') }}
-        </VBtn>
-        <VSpacer />
-        <VBtn
-          variant="tonal"
-          color="secondary"
-          :disabled="isSavingLabel"
-          @click="closeLabelModal"
-        >
-          {{ t('cancel') }}
-        </VBtn>
-        <VBtn
-          color="primary"
-          :loading="isSavingLabel"
-          :disabled="isSavingLabel"
-          @click="saveLabel"
-        >
-          {{ t('save') }}
-        </VBtn>
-      </VCardText>
-    </VCard>
-  </VDialog>
+  <ChatLabelModal v-model="isLabelModalOpen" />
 
   <VSnackbar
     v-model="chatStore.snackbar.status"
@@ -5823,62 +5362,14 @@ onBeforeUnmount(() => {
     {{ chatStore.snackbar.message }}
   </VSnackbar>
 
-  <VDialog
+  <ChatMediaViewer
     v-model="viewerOpen"
-    fullscreen
-    scrim="rgba(0,0,0,.9)"
-    :scrollable="false"
-  >
-    <div class="viewer-wrap" @click="viewerOpen = false">
-      <div class="viewer-box" @click.stop>
-        <div class="viewer-media-container">
-          <img
-            v-if="viewerKind === 'image'"
-            :src="viewerSrc"
-            alt=""
-            class="viewer-img"
-            loading="eager"
-            decoding="async"
-          />
-          <video
-            v-if="viewerKind === 'video'"
-            :src="viewerSrc"
-            class="viewer-video"
-            controls
-            playsinline
-          >
-            <track kind="captions" />
-          </video>
-
-          <div class="viewer-actions">
-            <VBtn
-              v-if="viewerSrc"
-              class="viewer-download"
-              icon
-              size="36"
-              variant="text"
-              @click.stop="downloadViewerMedia"
-            >
-              <VIcon size="20">tabler-download</VIcon>
-            </VBtn>
-            <VBtn
-              class="viewer-close"
-              icon
-              size="36"
-              variant="text"
-              @click="viewerOpen = false"
-            >
-              <VIcon size="20">tabler-x</VIcon>
-            </VBtn>
-          </div>
-        </div>
-
-        <div v-if="viewerCaption" class="viewer-caption">
-          {{ viewerCaption }}
-        </div>
-      </div>
-    </div>
-  </VDialog>
+    :src="viewerSrc"
+    :caption="viewerCaption"
+    :download-name="viewerDownloadName"
+    :kind="viewerKind"
+    @download="downloadViewerMedia"
+  />
 
   <VDialog
     v-model="audioModalOpen"
