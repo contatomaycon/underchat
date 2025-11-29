@@ -133,9 +133,6 @@ watch(
 <template>
   <div class="chatbot-menu-node">
     <Handle type="target" :position="Position.Top" />
-    <Handle type="target" :position="Position.Right" />
-    <Handle type="target" :position="Position.Bottom" />
-    <Handle type="target" :position="Position.Left" />
 
     <VCard class="menu-card" elevation="2">
       <VCardTitle
