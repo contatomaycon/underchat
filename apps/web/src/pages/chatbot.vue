@@ -8,6 +8,7 @@ import ChatbotMenuNode from '@/components/chatbot/ChatbotMenuNode.vue';
 import ChatbotStartNode from '@/components/chatbot/ChatbotStartNode.vue';
 import ChatbotSatisfactionNode from '@/components/chatbot/ChatbotSatisfactionNode.vue';
 import ChatbotRedirectNode from '@/components/chatbot/ChatbotRedirectNode.vue';
+import ChatbotFinishNode from '@/components/chatbot/ChatbotFinishNode.vue';
 
 definePage({
   meta: {
@@ -25,6 +26,7 @@ const nodeTypes = {
   start: ChatbotStartNode,
   satisfaction: ChatbotSatisfactionNode,
   redirect: ChatbotRedirectNode,
+  finish: ChatbotFinishNode,
 };
 
 const initialNodes: Node[] = [
@@ -111,6 +113,21 @@ const addRedirectNode = () => {
   nodes.value.push(newNode);
 };
 
+const addFinishNode = () => {
+  const newNode: Node = {
+    id: `finish-${nodeIdCounter++}`,
+    type: 'finish',
+    position: {
+      x: Math.random() * 400 + 100,
+      y: Math.random() * 300 + 100,
+    },
+    data: {
+      onRemove: () => removeNode(newNode.id),
+    },
+  };
+  nodes.value.push(newNode);
+};
+
 const onConnect = (connection: Connection) => {
   const existingEdge = edges.value.find(
     (e) => e.source === connection.source && e.target === connection.target
@@ -187,6 +204,10 @@ const onNodesChange = (changes: NodeChange[]) => {
             <VBtn color="info" @click="addRedirectNode">
               <VIcon icon="tabler-arrow-forward" class="me-2" />
               Redirecionar
+            </VBtn>
+            <VBtn color="error" @click="addFinishNode">
+              <VIcon icon="tabler-circle-check" class="me-2" />
+              Finalizar
             </VBtn>
           </div>
           <div class="vertical-divider" />
