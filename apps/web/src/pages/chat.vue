@@ -710,6 +710,7 @@ const loadTransferSectors = async () => {
     transferSectors.value = sectors.map((sector) => ({
       value: sector.id,
       title: sector.name,
+      color: sector.color || null,
     }));
   } catch (error) {
     console.error('Error loading transfer sectors:', error);
@@ -5605,6 +5606,14 @@ onBeforeUnmount(() => {
                           "
                           :active="selectedTransferSector === item.value"
                         >
+                          <template #prepend>
+                            <VAvatar
+                              size="24"
+                              :style="{
+                                backgroundColor: item.color || '#1976D2',
+                              }"
+                            />
+                          </template>
                           <VListItemTitle>{{ item.title }}</VListItemTitle>
                         </VListItem>
                       </template>

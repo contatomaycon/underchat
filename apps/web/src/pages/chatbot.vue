@@ -186,7 +186,7 @@ const onNodesChange = (changes: NodeChange[]) => {
             <div class="text-caption text-medium-emphasis mb-2">Ações</div>
             <VBtn color="info" @click="addRedirectNode">
               <VIcon icon="tabler-arrow-forward" class="me-2" />
-              Redirecionar Atendimento
+              Redirecionar
             </VBtn>
           </div>
           <div class="vertical-divider" />

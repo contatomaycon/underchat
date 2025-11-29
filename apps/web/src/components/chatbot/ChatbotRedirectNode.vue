@@ -114,6 +114,7 @@ const loadSectors = async () => {
     sectors.value = sectorsList.map((sector) => ({
       value: sector.id,
       title: sector.name,
+      color: sector.color || null,
     }));
   } catch (error) {
     console.error('Error loading sectors:', error);
@@ -220,9 +221,7 @@ const handleRemove = () => {
       >
         <div class="d-flex align-center ga-2">
           <VIcon icon="tabler-arrow-forward" color="info" size="20" />
-          <span class="text-sm font-weight-medium"
-            >Redirecionar Atendimento</span
-          >
+          <span class="text-sm font-weight-medium">Redirecionar</span>
         </div>
         <VIcon
           v-if="(props.data as RedirectData)?.onRemove"
@@ -365,7 +364,12 @@ const handleRemove = () => {
                   "
                 >
                   <template #prepend>
-                    <VIcon icon="tabler-building" size="18" />
+                    <VAvatar
+                      size="24"
+                      :style="{
+                        backgroundColor: sector.color || '#1976D2',
+                      }"
+                    />
                   </template>
                   <VListItemTitle>{{ sector.title }}</VListItemTitle>
                 </VListItem>
