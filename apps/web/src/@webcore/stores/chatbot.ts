@@ -8,6 +8,8 @@ import { AxiosError } from 'axios';
 import { ListChatbotResponse } from '@core/schema/chatbot/listChatbot/response.schema';
 import { CreateChatbotRequest } from '@core/schema/chatbot/createChatbot/request.schema';
 import { CreateChatbotResponse } from '@core/schema/chatbot/createChatbot/response.schema';
+import { UpdateChatbotRequest } from '@core/schema/chatbot/updateChatbot/request.schema';
+import { UpdateChatbotResponse } from '@core/schema/chatbot/updateChatbot/response.schema';
 import { ChatbotUserResponse } from '@core/schema/chatbot/listUsers/response.schema';
 import { ChatbotSectorResponse } from '@core/schema/chatbot/listSectors/response.schema';
 import { ChatbotSectorUserResponse } from '@core/schema/chatbot/listSectorUsers/response.schema';
@@ -99,6 +101,45 @@ export const useChatbotStore = defineStore('chatbot', {
         return data.data;
       } catch (error) {
         let errorMessage = this.i18n.global.t('chatbot_creator_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+
+    async updateChatbot(
+      chatbotId: string,
+      input: UpdateChatbotRequest
+    ): Promise<UpdateChatbotResponse | null> {
+      try {
+        const response = await axios.put<IApiResponse<UpdateChatbotResponse>>(
+          `/chatbot/${chatbotId}`,
+          input
+        );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('chatbot_update_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        const successMessage =
+          this.i18n.global.t('chatbot_update_success') ||
+          'Chatbot atualizado com sucesso';
+        this.showSnackbar(successMessage, EColor.success);
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('chatbot_update_error');
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }

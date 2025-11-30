@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { chatbot } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, count, eq, isNull } from 'drizzle-orm';
+import { and, count, eq, ne } from 'drizzle-orm';
 
 @injectable()
 export class ChatbotNameExistsRepository {
@@ -12,14 +12,24 @@ export class ChatbotNameExistsRepository {
 
   existsChatbotByName = async (
     name: string,
-    accountId: string
+    accountId: string,
+    excludeChatbotId?: string
   ): Promise<boolean> => {
+    const conditions = [
+      eq(chatbot.name, name),
+      eq(chatbot.account_id, accountId),
+    ];
+
+    if (excludeChatbotId) {
+      conditions.push(ne(chatbot.chatbot_id, excludeChatbotId));
+    }
+
     const result = await this.db
       .select({
         total: count(),
       })
       .from(chatbot)
-      .where(and(eq(chatbot.name, name), eq(chatbot.account_id, accountId)))
+      .where(and(...conditions))
       .execute();
 
     if (!result.length) {

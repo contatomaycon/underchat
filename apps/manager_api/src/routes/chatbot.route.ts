@@ -4,6 +4,7 @@ import ChatbotController from '@/controllers/chatbot';
 import { chatbotPermissions } from '@/permissions/chatbot.permissions';
 import { createChatbotSchema } from '@core/schema/chatbot/createChatbot';
 import { listChatbotSchema } from '@core/schema/chatbot/listChatbot';
+import { updateChatbotSchema } from '@core/schema/chatbot/updateChatbot';
 import { listChatbotUsersSchema } from '@core/schema/chatbot/listUsers';
 import { listChatbotSectorsSchema } from '@core/schema/chatbot/listSectors';
 import { listChatbotSectorUsersSchema } from '@core/schema/chatbot/listSectorUsers';
@@ -24,6 +25,15 @@ export default function chatbotRoutes(server: FastifyInstance) {
   server.get('/chatbot', {
     schema: listChatbotSchema,
     handler: chatbotController.listChatbot,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatbotPermissions),
+    ],
+  });
+
+  server.put('/chatbot/:chatbot_id', {
+    schema: updateChatbotSchema,
+    handler: chatbotController.updateChatbot,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatbotPermissions),

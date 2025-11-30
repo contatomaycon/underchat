@@ -44,6 +44,7 @@
     "all": "Todos",
     "confirm": "Confirmar",
     "cancel": "Cancelar",
+    "edit": "Editar",
     "delete_server": "Excluir servidor?",
     "delete_server_confirmation": "Você tem certeza que deseja excluir este servidor?",
     "server_delete_error": "Ocorreu um erro ao excluir o servidor. Por favor, tente novamente.",

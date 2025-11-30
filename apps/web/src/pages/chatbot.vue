@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { DataTableHeader } from 'vuetify';
@@ -9,7 +9,8 @@ import { useChatbotStore } from '@/@webcore/stores/chatbot';
 import { ListChatbotResponse } from '@core/schema/chatbot/listChatbot/response.schema';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { useRouter } from 'vue-router';
-import { requiredValidator } from '@/@webcore/utils/validators';
+import AppAddChatbot from '@/components/chatbot/AppAddChatbot.vue';
+import AppEditChatbot from '@/components/chatbot/AppEditChatbot.vue';
 
 definePage({
   meta: {
@@ -34,27 +35,12 @@ const headers: DataTableHeader<ListChatbotResponse>[] = [
 ];
 
 const isAddModalOpen = ref(false);
-const chatbotName = ref('');
-const isCreating = ref(false);
-const refForm = ref();
-
-const nameRules = computed(() => [
-  requiredValidator(chatbotName.value, t('name_required')),
-  () => {
-    const nameExists = chatbotStore.list.some(
-      (chatbot) =>
-        chatbot.name.toLowerCase().trim() ===
-        chatbotName.value.toLowerCase().trim()
-    );
-    if (nameExists) {
-      return t('chatbot_name_already_exists');
-    }
-    return true;
-  },
-]);
+const isEditModalOpen = ref(false);
+const editingChatbotId = ref<string | null>(null);
 
 const editChatbot = (id: string) => {
-  // Por enquanto não faz nada
+  editingChatbotId.value = id;
+  isEditModalOpen.value = true;
 };
 
 const deleteChatbot = (id: string) => {
@@ -63,32 +49,15 @@ const deleteChatbot = (id: string) => {
 
 const openAddModal = () => {
   isAddModalOpen.value = true;
-  chatbotName.value = '';
 };
 
-const closeAddModal = () => {
-  isAddModalOpen.value = false;
-  chatbotName.value = '';
-  refForm.value?.resetValidation();
+const handleCreated = async () => {
+  await chatbotStore.listChatbots();
 };
 
-const handleCreateChatbot = async () => {
-  const { valid } = await refForm.value?.validate();
-  if (!valid) return;
-
-  isCreating.value = true;
-  try {
-    const result = await chatbotStore.createChatbot({
-      name: chatbotName.value.trim(),
-    });
-
-    if (result) {
-      closeAddModal();
-      await chatbotStore.listChatbots();
-    }
-  } finally {
-    isCreating.value = false;
-  }
+const handleUpdated = async () => {
+  editingChatbotId.value = null;
+  await chatbotStore.listChatbots();
 };
 
 onMounted(async () => {
@@ -125,25 +94,34 @@ onMounted(async () => {
           </template>
 
           <template #item.actions="{ item }">
-            <div class="d-flex gap-2">
-              <VBtn
-                icon
-                size="small"
-                variant="text"
-                color="primary"
-                @click="editChatbot(item.chatbot_id)"
-              >
-                <VIcon icon="tabler-edit" size="20" />
-              </VBtn>
-              <VBtn
-                icon
-                size="small"
-                variant="text"
-                color="error"
-                @click="deleteChatbot(item.chatbot_id)"
-              >
-                <VIcon icon="tabler-trash" size="20" />
-              </VBtn>
+            <div class="d-flex gap-1">
+              <IconBtn>
+                <VTooltip
+                  location="top"
+                  transition="scale-transition"
+                  activator="parent"
+                >
+                  <span>{{ $t('edit') }} {{ $t('chatbot') }}</span>
+                </VTooltip>
+                <VIcon
+                  icon="tabler-edit"
+                  @click="editChatbot(item.chatbot_id)"
+                />
+              </IconBtn>
+
+              <IconBtn>
+                <VTooltip
+                  location="top"
+                  transition="scale-transition"
+                  activator="parent"
+                >
+                  <span>{{ $t('delete') }} {{ $t('chatbot') }}</span>
+                </VTooltip>
+                <VIcon
+                  icon="tabler-trash"
+                  @click="deleteChatbot(item.chatbot_id)"
+                />
+              </IconBtn>
             </div>
           </template>
 
@@ -154,51 +132,12 @@ onMounted(async () => {
       </VCardText>
     </VCard>
 
-    <VDialog v-model="isAddModalOpen" max-width="500" persistent>
-      <VCard>
-        <VCardTitle class="d-flex align-center justify-space-between pa-4">
-          <span>{{ $t('add') }} {{ $t('chatbot') }}</span>
-          <VBtn
-            icon
-            size="small"
-            variant="text"
-            @click="closeAddModal"
-            :disabled="isCreating"
-          >
-            <VIcon icon="tabler-x" />
-          </VBtn>
-        </VCardTitle>
-        <VDivider />
-        <VCardText class="pa-4">
-          <VForm ref="refForm" @submit.prevent="handleCreateChatbot">
-            <VTextField
-              v-model="chatbotName"
-              :label="$t('name')"
-              :placeholder="$t('chatbot_name_placeholder')"
-              :rules="nameRules"
-              :disabled="isCreating"
-              autofocus
-            />
-          </VForm>
-        </VCardText>
-        <VCardText class="d-flex justify-end flex-wrap gap-3">
-          <VBtn
-            variant="tonal"
-            color="secondary"
-            @click="closeAddModal"
-            :disabled="isCreating"
-          >
-            {{ $t('cancel') }}
-          </VBtn>
-          <VBtn
-            color="primary"
-            :loading="isCreating"
-            @click="handleCreateChatbot"
-          >
-            {{ $t('add') }}
-          </VBtn>
-        </VCardText>
-      </VCard>
-    </VDialog>
+    <AppAddChatbot v-model="isAddModalOpen" @created="handleCreated" />
+
+    <AppEditChatbot
+      v-model="isEditModalOpen"
+      :chatbot-id="editingChatbotId"
+      @updated="handleUpdated"
+    />
   </div>
 </template>

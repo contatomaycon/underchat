@@ -1,10 +1,13 @@
 import { injectable } from 'tsyringe';
 import { ChatbotCreatorRepository } from '@core/repositories/chatbot/ChatbotCreator.repository';
 import { ChatbotListerRepository } from '@core/repositories/chatbot/ChatbotLister.repository';
+import { ChatbotUpdaterRepository } from '@core/repositories/chatbot/ChatbotUpdater.repository';
 import { ChatbotNameExistsRepository } from '@core/repositories/chatbot/ChatbotNameExists.repository';
 import { ChatbotChatTagsListerRepository } from '@core/repositories/labelTemplate/ChatbotChatTagsLister.repository';
 import { CreateChatbotRequest } from '@core/schema/chatbot/createChatbot/request.schema';
 import { CreateChatbotResponse } from '@core/schema/chatbot/createChatbot/response.schema';
+import { UpdateChatbotRequest } from '@core/schema/chatbot/updateChatbot/request.schema';
+import { UpdateChatbotResponse } from '@core/schema/chatbot/updateChatbot/response.schema';
 import { ListChatbotResponse } from '@core/schema/chatbot/listChatbot/response.schema';
 import { ChatbotChatTagResponse } from '@core/schema/chatbot/listChatTags/response.schema';
 import { UserService } from '@core/services/user.service';
@@ -18,6 +21,7 @@ export class ChatbotService {
   constructor(
     private readonly chatbotCreatorRepository: ChatbotCreatorRepository,
     private readonly chatbotListerRepository: ChatbotListerRepository,
+    private readonly chatbotUpdaterRepository: ChatbotUpdaterRepository,
     private readonly chatbotNameExistsRepository: ChatbotNameExistsRepository,
     private readonly chatbotChatTagsListerRepository: ChatbotChatTagsListerRepository,
     private readonly userService: UserService,
@@ -26,11 +30,13 @@ export class ChatbotService {
 
   existsChatbotByName = async (
     name: string,
-    accountId: string
+    accountId: string,
+    excludeChatbotId?: string
   ): Promise<boolean> => {
     return this.chatbotNameExistsRepository.existsChatbotByName(
       name,
-      accountId
+      accountId,
+      excludeChatbotId
     );
   };
 
@@ -39,6 +45,13 @@ export class ChatbotService {
     accountId: string
   ): Promise<CreateChatbotResponse | null> => {
     return this.chatbotCreatorRepository.createChatbot(input, accountId);
+  };
+
+  updateChatbot = async (
+    chatbotId: string,
+    input: UpdateChatbotRequest
+  ): Promise<UpdateChatbotResponse | null> => {
+    return this.chatbotUpdaterRepository.updateChatbot(chatbotId, input);
   };
 
   listChatbots = async (accountId: string): Promise<ListChatbotResponse[]> => {
