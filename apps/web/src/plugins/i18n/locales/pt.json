@@ -1191,5 +1191,11 @@
     "chatbot_redirect_to": "Redirecionar para:",
     "chatbot_redirect_user": "Usuário",
     "chatbot_redirect_sector": "Setor",
-    "chatbot_options": "Opções"
+    "chatbot_options": "Opções",
+    "chatbot_actions": "Ações",
+    "chatbot_actions_type": "Tipo",
+    "chatbot_actions_type_inactivity_alert": "Alerta de inatividade",
+    "chatbot_actions_alert_quantity": "Quantidade de alerta",
+    "chatbot_actions_continue": "Continuar",
+    "chatbot_actions_alert_exhausted": "Esgotado o alerta"
 }

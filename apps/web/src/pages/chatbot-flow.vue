@@ -12,6 +12,7 @@ import ChatbotFinishNode from '@/components/chatbot/ChatbotFinishNode.vue';
 import ChatbotTagNode from '@/components/chatbot/ChatbotTagNode.vue';
 import ChatbotMessageNode from '@/components/chatbot/ChatbotMessageNode.vue';
 import ChatbotDataNode from '@/components/chatbot/ChatbotDataNode.vue';
+import ChatbotActionsNode from '@/components/chatbot/ChatbotActionsNode.vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 
@@ -35,6 +36,7 @@ const nodeTypes = {
   tag: markRaw(ChatbotTagNode),
   message: markRaw(ChatbotMessageNode),
   data: markRaw(ChatbotDataNode),
+  actions: markRaw(ChatbotActionsNode),
 };
 
 const { t } = useI18n();
@@ -202,6 +204,23 @@ const addDataNode = () => {
   nodes.value.push(newNode);
 };
 
+const addActionsNode = () => {
+  const newNode: Node = {
+    id: `actions-${nodeIdCounter++}`,
+    type: 'actions',
+    position: {
+      x: getSecureRandom(400) + 100,
+      y: getSecureRandom(300) + 100,
+    },
+    data: {
+      actionType: null,
+      alertQuantity: '',
+      onRemove: () => removeNode(newNode.id),
+    },
+  };
+  nodes.value.push(newNode);
+};
+
 const onConnect = (connection: Connection) => {
   const existingEdge = edges.value.find(
     (e) => e.source === connection.source && e.target === connection.target
@@ -329,6 +348,10 @@ const handleCancel = () => {
             <VBtn color="info" @click="addDataNode">
               <VIcon icon="tabler-database" class="me-2" />
               {{ t('chatbot_data') }}
+            </VBtn>
+            <VBtn color="warning" @click="addActionsNode">
+              <VIcon icon="tabler-settings" class="me-2" />
+              {{ t('chatbot_actions') }}
             </VBtn>
           </div>
           <div class="vertical-divider" />
