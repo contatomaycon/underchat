@@ -402,6 +402,7 @@
   "chatbot_creator_error": "An error occurred while creating the chatbot. Please try again.",
   "chatbot_creator_success": "Chatbot created successfully!",
   "chatbot_list_successfully": "Chatbots listed successfully!",
+  "chatbot_name_already_exists": "A chatbot with this name already exists for this account.",
   "simultaneous_attendance_view_success": "Number of simultaneous attendances retrieved successfully!",
   "simultaneous_attendance_update_success": "Number of simultaneous attendances updated successfully!",
   "simultaneous_attendance_limit_reached": "You have reached the limit of simultaneous attendances allowed for this channel. Limit: {{limit}} attendance(s).",

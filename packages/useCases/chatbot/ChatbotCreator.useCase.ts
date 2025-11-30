@@ -14,12 +14,21 @@ export class ChatbotCreatorUseCase {
 
   async validate(
     t: TFunction<'translation', undefined>,
+    input: CreateChatbotRequest,
     accountId: string
   ): Promise<void> {
     const accountExists =
       await this.accountService.existsAccountById(accountId);
     if (!accountExists) {
       throw new Error(t('account_not_found'));
+    }
+
+    const nameExists = await this.chatbotService.existsChatbotByName(
+      input.name,
+      accountId
+    );
+    if (nameExists) {
+      throw new Error(t('chatbot_name_already_exists'));
     }
   }
 
@@ -28,7 +37,7 @@ export class ChatbotCreatorUseCase {
     input: CreateChatbotRequest,
     accountId: string
   ): Promise<CreateChatbotResponse | null> {
-    await this.validate(t, accountId);
+    await this.validate(t, input, accountId);
 
     const chatbotCreator = await this.chatbotService.createChatbot(
       input,

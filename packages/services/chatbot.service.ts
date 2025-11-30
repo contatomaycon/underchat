@@ -1,6 +1,7 @@
 import { injectable } from 'tsyringe';
 import { ChatbotCreatorRepository } from '@core/repositories/chatbot/ChatbotCreator.repository';
 import { ChatbotListerRepository } from '@core/repositories/chatbot/ChatbotLister.repository';
+import { ChatbotNameExistsRepository } from '@core/repositories/chatbot/ChatbotNameExists.repository';
 import { ChatbotChatTagsListerRepository } from '@core/repositories/labelTemplate/ChatbotChatTagsLister.repository';
 import { CreateChatbotRequest } from '@core/schema/chatbot/createChatbot/request.schema';
 import { CreateChatbotResponse } from '@core/schema/chatbot/createChatbot/response.schema';
@@ -17,10 +18,21 @@ export class ChatbotService {
   constructor(
     private readonly chatbotCreatorRepository: ChatbotCreatorRepository,
     private readonly chatbotListerRepository: ChatbotListerRepository,
+    private readonly chatbotNameExistsRepository: ChatbotNameExistsRepository,
     private readonly chatbotChatTagsListerRepository: ChatbotChatTagsListerRepository,
     private readonly userService: UserService,
     private readonly sectorService: SectorService
   ) {}
+
+  existsChatbotByName = async (
+    name: string,
+    accountId: string
+  ): Promise<boolean> => {
+    return this.chatbotNameExistsRepository.existsChatbotByName(
+      name,
+      accountId
+    );
+  };
 
   createChatbot = async (
     input: CreateChatbotRequest,

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { DataTableHeader } from 'vuetify';
@@ -9,6 +9,7 @@ import { useChatbotStore } from '@/@webcore/stores/chatbot';
 import { ListChatbotResponse } from '@core/schema/chatbot/listChatbot/response.schema';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { useRouter } from 'vue-router';
+import { requiredValidator } from '@/@webcore/utils/validators';
 
 definePage({
   meta: {
@@ -32,6 +33,26 @@ const headers: DataTableHeader<ListChatbotResponse>[] = [
   { title: t('actions'), key: 'actions', sortable: false },
 ];
 
+const isAddModalOpen = ref(false);
+const chatbotName = ref('');
+const isCreating = ref(false);
+const refForm = ref();
+
+const nameRules = computed(() => [
+  requiredValidator(chatbotName.value, t('name_required')),
+  () => {
+    const nameExists = chatbotStore.list.some(
+      (chatbot) =>
+        chatbot.name.toLowerCase().trim() ===
+        chatbotName.value.toLowerCase().trim()
+    );
+    if (nameExists) {
+      return t('chatbot_name_already_exists');
+    }
+    return true;
+  },
+]);
+
 const editChatbot = (id: string) => {
   // Por enquanto não faz nada
 };
@@ -40,8 +61,34 @@ const deleteChatbot = (id: string) => {
   // Por enquanto não faz nada
 };
 
-const addChatbot = () => {
-  router.push('/chatbot-flow');
+const openAddModal = () => {
+  isAddModalOpen.value = true;
+  chatbotName.value = '';
+};
+
+const closeAddModal = () => {
+  isAddModalOpen.value = false;
+  chatbotName.value = '';
+  refForm.value?.resetValidation();
+};
+
+const handleCreateChatbot = async () => {
+  const { valid } = await refForm.value?.validate();
+  if (!valid) return;
+
+  isCreating.value = true;
+  try {
+    const result = await chatbotStore.createChatbot({
+      name: chatbotName.value.trim(),
+    });
+
+    if (result) {
+      closeAddModal();
+      await chatbotStore.listChatbots();
+    }
+  } finally {
+    isCreating.value = false;
+  }
 };
 
 onMounted(async () => {
@@ -54,7 +101,11 @@ onMounted(async () => {
     <VCard :title="$t('chatbots')" no-padding>
       <VCardText>
         <div class="d-flex justify-space-between flex-wrap gap-4 mb-4">
-          <VBtn prepend-icon="tabler-plus" color="primary" @click="addChatbot">
+          <VBtn
+            prepend-icon="tabler-plus"
+            color="primary"
+            @click="openAddModal"
+          >
             {{ $t('add') }}
           </VBtn>
         </div>
@@ -102,5 +153,52 @@ onMounted(async () => {
         </VDataTable>
       </VCardText>
     </VCard>
+
+    <VDialog v-model="isAddModalOpen" max-width="500" persistent>
+      <VCard>
+        <VCardTitle class="d-flex align-center justify-space-between pa-4">
+          <span>{{ $t('add') }} {{ $t('chatbot') }}</span>
+          <VBtn
+            icon
+            size="small"
+            variant="text"
+            @click="closeAddModal"
+            :disabled="isCreating"
+          >
+            <VIcon icon="tabler-x" />
+          </VBtn>
+        </VCardTitle>
+        <VDivider />
+        <VCardText class="pa-4">
+          <VForm ref="refForm" @submit.prevent="handleCreateChatbot">
+            <VTextField
+              v-model="chatbotName"
+              :label="$t('name')"
+              :placeholder="$t('chatbot_name_placeholder')"
+              :rules="nameRules"
+              :disabled="isCreating"
+              autofocus
+            />
+          </VForm>
+        </VCardText>
+        <VCardText class="d-flex justify-end flex-wrap gap-3">
+          <VBtn
+            variant="tonal"
+            color="secondary"
+            @click="closeAddModal"
+            :disabled="isCreating"
+          >
+            {{ $t('cancel') }}
+          </VBtn>
+          <VBtn
+            color="primary"
+            :loading="isCreating"
+            @click="handleCreateChatbot"
+          >
+            {{ $t('add') }}
+          </VBtn>
+        </VCardText>
+      </VCard>
+    </VDialog>
   </div>
 </template>

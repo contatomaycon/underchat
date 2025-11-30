@@ -75,14 +75,10 @@ export const useChatbotStore = defineStore('chatbot', {
       input: CreateChatbotRequest
     ): Promise<CreateChatbotResponse | null> {
       try {
-        this.loading = true;
-
         const response = await axios.post<IApiResponse<CreateChatbotResponse>>(
           '/chatbot',
           input
         );
-
-        this.loading = false;
 
         const data = response?.data;
 
@@ -108,8 +104,6 @@ export const useChatbotStore = defineStore('chatbot', {
         }
 
         this.showSnackbar(errorMessage, EColor.error);
-
-        this.loading = false;
 
         return null;
       }

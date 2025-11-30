@@ -1147,5 +1147,6 @@
     "chatbot_satisfaction": "Satisfaction",
     "chatbot_satisfaction_title_placeholder": "Define the satisfaction title",
     "chatbot_start": "Start",
-    "chatbot_finish": "Finish"
+    "chatbot_finish": "Finish",
+    "chatbot_name_placeholder": "Enter the chatbot name"
 }
