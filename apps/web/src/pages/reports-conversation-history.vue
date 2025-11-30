@@ -305,14 +305,13 @@ const openConversationModal = async (item: ReportConversationHistoryResult) => {
   }
 };
 
-
 const getMessageText = (message: ListMessageResult): string => {
   if (!message.content) return '';
   let text = message.content.message || '';
-  
+
   const namePrefixRegex = /^\*[^*]+\*:\n\n/;
   text = text.replace(namePrefixRegex, '');
-  
+
   return text;
 };
 
@@ -343,7 +342,7 @@ const resolvePhoto = (message: ListMessageResult): string => {
 
 const isPhotoExist = (message: ListMessageResult): boolean => {
   const photo = resolvePhoto(message);
-  return photo && photo !== '/images/svg/avatar-default.svg';
+  return Boolean(photo && photo !== '/images/svg/avatar-default.svg');
 };
 
 const formatWhatsAppText = (text: string): string => {
@@ -487,7 +486,11 @@ watch(searchBy, () => {
 });
 
 const getProtocolsList = (item: ReportConversationHistoryResult): string[] => {
-  if (item.protocols && Array.isArray(item.protocols) && item.protocols.length > 0) {
+  if (
+    item.protocols &&
+    Array.isArray(item.protocols) &&
+    item.protocols.length > 0
+  ) {
     return item.protocols;
   }
   if (item.protocol) {
@@ -555,6 +558,11 @@ const copyToClipboard = async (text: string) => {
     reportConversationHistoryStore.showSnackbar(errorMessage, EColor.error);
   }
 };
+
+const openDocument = (url: string | null | undefined) => {
+  if (!url) return;
+  window.open(url, '_blank');
+};
 </script>
 
 <template>
@@ -564,7 +572,7 @@ const copyToClipboard = async (text: string) => {
         <!-- Filtros de Pesquisa -->
         <div class="d-flex flex-column gap-4 mb-6">
           <div>
-            <VLabel class="mb-2">{{ $t('search_history_by') }}:</VLabel>
+            <VLabel class="mb-2">{{ $t('search_history_by') }}</VLabel>
             <VRadioGroup v-model="searchBy" inline>
               <VRadio
                 v-for="option in searchByOptions"
@@ -777,10 +785,7 @@ const copyToClipboard = async (text: string) => {
             background-color: rgb(var(--v-theme-background));
           "
         >
-          <div
-            class="chat-log pa-4"
-            style="min-height: 100%"
-          >
+          <div class="chat-log pa-4" style="min-height: 100%">
             <div
               v-if="loadingMessages"
               class="d-flex justify-center align-center"
@@ -868,7 +873,9 @@ const copyToClipboard = async (text: string) => {
                     :class="!isTypeUser(item.message) ? 'ms-4' : 'me-4'"
                   >
                     <VTooltip
-                      v-if="!isTypeUser(item.message) && item.message.user?.name"
+                      v-if="
+                        !isTypeUser(item.message) && item.message.user?.name
+                      "
                       location="top"
                       :text="item.message.user.name"
                     >
@@ -876,14 +883,18 @@ const copyToClipboard = async (text: string) => {
                         <VAvatar
                           v-bind="props"
                           size="32"
-                          :variant="!isPhotoExist(item.message) ? 'tonal' : undefined"
+                          :variant="
+                            !isPhotoExist(item.message) ? 'tonal' : undefined
+                          "
                         >
                           <VImg :src="resolvePhoto(item.message)" />
                         </VAvatar>
                       </template>
                     </VTooltip>
                     <VTooltip
-                      v-else-if="isTypeUser(item.message) && getSenderName(item.message)"
+                      v-else-if="
+                        isTypeUser(item.message) && getSenderName(item.message)
+                      "
                       location="top"
                       :text="getSenderName(item.message)"
                     >
@@ -891,7 +902,9 @@ const copyToClipboard = async (text: string) => {
                         <VAvatar
                           v-bind="props"
                           size="32"
-                          :variant="!isPhotoExist(item.message) ? 'tonal' : undefined"
+                          :variant="
+                            !isPhotoExist(item.message) ? 'tonal' : undefined
+                          "
                         >
                           <VImg :src="resolvePhoto(item.message)" />
                         </VAvatar>
@@ -900,7 +913,9 @@ const copyToClipboard = async (text: string) => {
                     <VAvatar
                       v-else
                       size="32"
-                      :variant="!isPhotoExist(item.message) ? 'tonal' : undefined"
+                      :variant="
+                        !isPhotoExist(item.message) ? 'tonal' : undefined
+                      "
                     >
                       <VImg :src="resolvePhoto(item.message)" />
                     </VAvatar>
@@ -935,9 +950,11 @@ const copyToClipboard = async (text: string) => {
                         "
                         :style="{
                           backgroundColor:
-                            item.message.content?.type === EMessageType.annotation
+                            item.message.content?.type ===
+                            EMessageType.annotation
                               ? 'rgb(255, 243, 205)'
-                              : item.message.content?.type === EMessageType.system
+                              : item.message.content?.type ===
+                                  EMessageType.system
                                 ? 'rgb(227, 242, 253)'
                                 : isTypeUser(item.message)
                                   ? 'rgb(var(--v-theme-surface))'
@@ -946,7 +963,9 @@ const copyToClipboard = async (text: string) => {
                       >
                         <!-- Nome do remetente -->
                         <div
-                          v-if="item.message.content?.type !== EMessageType.system"
+                          v-if="
+                            item.message.content?.type !== EMessageType.system
+                          "
                           class="text-caption font-weight-medium mb-2"
                           :style="{
                             opacity: 0.8,
@@ -973,7 +992,9 @@ const copyToClipboard = async (text: string) => {
                           class="mb-3"
                           @click="
                             () =>
-                              openImageViewer(item.message!.content!.image!.url!)
+                              openImageViewer(
+                                item.message!.content!.image!.url!
+                              )
                           "
                         >
                           <VImg
@@ -1062,7 +1083,8 @@ const copyToClipboard = async (text: string) => {
                         <!-- Sticker -->
                         <div
                           v-else-if="
-                            item.message.content?.type === EMessageType.sticker &&
+                            item.message.content?.type ===
+                              EMessageType.sticker &&
                             item.message.content?.sticker?.url
                           "
                           class="mb-3"
@@ -1108,11 +1130,7 @@ const copyToClipboard = async (text: string) => {
                             size="small"
                             variant="text"
                             @click="
-                              () =>
-                                window.open(
-                                  item.message!.content!.document!.url!,
-                                  '_blank'
-                                )
+                              openDocument(item.message?.content?.document?.url)
                             "
                           >
                             <VIcon>tabler-download</VIcon>
@@ -1127,7 +1145,8 @@ const copyToClipboard = async (text: string) => {
                           <div class="text-body-2 font-weight-medium">
                             📍
                             {{
-                              item.message.content.location.name || t('location')
+                              item.message.content.location.name ||
+                              t('location')
                             }}
                           </div>
                           <div
@@ -1162,8 +1181,10 @@ const copyToClipboard = async (text: string) => {
                             item.message.content?.type !== EMessageType.image &&
                             item.message.content?.type !== EMessageType.video &&
                             item.message.content?.type !== EMessageType.audio &&
-                            item.message.content?.type !== EMessageType.sticker &&
-                            item.message.content?.type !== EMessageType.document &&
+                            item.message.content?.type !==
+                              EMessageType.sticker &&
+                            item.message.content?.type !==
+                              EMessageType.document &&
                             item.message.content?.type !==
                               EMessageType.contact_card
                           "
@@ -1238,7 +1259,10 @@ const copyToClipboard = async (text: string) => {
         <VCardTitle class="d-flex justify-space-between align-center">
           <div>
             <div class="text-h6">{{ t('protocols') }}</div>
-            <div v-if="selectedClientForProtocols" class="text-caption text-medium-emphasis">
+            <div
+              v-if="selectedClientForProtocols"
+              class="text-caption text-medium-emphasis"
+            >
               {{ selectedClientForProtocols }}
             </div>
           </div>
@@ -1292,21 +1316,38 @@ const copyToClipboard = async (text: string) => {
         </VCardText>
         <VDivider />
         <VCardText class="pt-2">
-          <div class="text-caption text-medium-emphasis d-flex flex-column gap-1">
+          <div
+            class="text-caption text-medium-emphasis d-flex flex-column gap-1"
+          >
             <div class="d-flex align-center gap-2">
-              <VChip size="x-small" color="info" variant="tonal" class="font-weight-medium">
+              <VChip
+                size="x-small"
+                color="info"
+                variant="tonal"
+                class="font-weight-medium"
+              >
                 T
               </VChip>
               <span> - {{ t('protocol_type_transfer') }}</span>
             </div>
             <div class="d-flex align-center gap-2">
-              <VChip size="x-small" color="warning" variant="tonal" class="font-weight-medium">
+              <VChip
+                size="x-small"
+                color="warning"
+                variant="tonal"
+                class="font-weight-medium"
+              >
                 U
               </VChip>
               <span> - {{ t('protocol_type_ura') }}</span>
             </div>
             <div class="d-flex align-center gap-2">
-              <VChip size="x-small" color="success" variant="tonal" class="font-weight-medium">
+              <VChip
+                size="x-small"
+                color="success"
+                variant="tonal"
+                class="font-weight-medium"
+              >
                 A
               </VChip>
               <span> - {{ t('protocol_type_attendance') }}</span>
