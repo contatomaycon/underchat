@@ -90,30 +90,30 @@ const audioWaveformBars = ref<number[]>([]);
 const messageTypeOptions = computed(() => [
   {
     value: EMessageType.text,
-    title: 'Texto',
+    title: t('message_type_text'),
   },
   {
     value: EMessageType.image,
-    title: 'Imagem',
+    title: t('message_type_image'),
   },
   {
     value: EMessageType.audio,
-    title: 'Áudio',
+    title: t('message_type_audio'),
   },
   {
     value: EMessageType.video,
-    title: 'Vídeo',
+    title: t('message_type_video'),
   },
 ]);
 
 const continueOptions = computed(() => [
   {
     value: 'automatic',
-    title: 'Automaticamente',
+    title: t('chatbot_message_continue_automatic'),
   },
   {
     value: 'after_response',
-    title: 'Após resposta',
+    title: t('chatbot_message_continue_after_response'),
   },
 ]);
 
@@ -203,7 +203,7 @@ const onFileChange = (event: Event) => {
   const file = files[0];
 
   if (!isAllowedFile(file)) {
-    fileSizeError.value = 'Formato de arquivo não permitido';
+    fileSizeError.value = t('chatbot_message_invalid_file_format');
     messageData.value.attachmentFile = null;
     filePreview.value = null;
     if (fileInputRef.value) {
@@ -213,7 +213,7 @@ const onFileChange = (event: Event) => {
   }
 
   if (file.size > MAX_FILE_SIZE) {
-    fileSizeError.value = 'Arquivo muito grande. Tamanho máximo: 16MB';
+    fileSizeError.value = t('chatbot_message_file_too_large');
     messageData.value.attachmentFile = null;
     filePreview.value = null;
     if (fileInputRef.value) {
@@ -369,7 +369,9 @@ watch(
       >
         <div class="d-flex align-center ga-2">
           <VIcon icon="tabler-message" color="success" size="20" />
-          <span class="text-sm font-weight-medium">Mensagem</span>
+          <span class="text-sm font-weight-medium">{{
+            t('chatbot_message')
+          }}</span>
         </div>
         <VIcon
           v-if="(props.data as MessageData)?.onRemove"
@@ -385,7 +387,7 @@ watch(
         <VSelect
           v-model="messageData.messageType"
           :items="messageTypeOptions"
-          label="Tipo de Mensagem"
+          :label="t('chatbot_message_type')"
           variant="outlined"
           density="compact"
           class="mb-3"
@@ -393,7 +395,9 @@ watch(
         />
 
         <div v-if="showAttachment" class="mb-3">
-          <VLabel class="mb-1 text-body-2">Anexar Arquivo</VLabel>
+          <VLabel class="mb-1 text-body-2">{{
+            t('chatbot_message_attach_file')
+          }}</VLabel>
           <input
             ref="fileInputRef"
             type="file"
@@ -409,7 +413,7 @@ watch(
               @click="fileInputRef?.click()"
             >
               <VIcon icon="tabler-paperclip" size="18" class="me-1" />
-              Anexar
+              {{ t('chatbot_message_attach') }}
             </VBtn>
           </div>
           <div v-else class="d-flex flex-column ga-2">
@@ -503,7 +507,7 @@ watch(
                     class="text-caption text-medium-emphasis"
                     style="font-size: 0.7rem"
                   >
-                    Clique para visualizar
+                    {{ t('chatbot_message_click_to_preview') }}
                   </div>
                 </div>
                 <VIcon icon="tabler-player-play-filled" size="20" />
@@ -520,8 +524,8 @@ watch(
             v-model="messageData.text"
             :placeholder="
               messageData.messageType === EMessageType.text
-                ? 'Digite o texto da mensagem'
-                : 'Digite a legenda (opcional)'
+                ? t('chatbot_message_text_placeholder')
+                : t('chatbot_message_caption_placeholder')
             "
             variant="outlined"
             density="compact"
@@ -535,7 +539,7 @@ watch(
         <VSelect
           v-model="messageData.continueType"
           :items="continueOptions"
-          label="Continuar"
+          :label="t('chatbot_message_continue')"
           variant="outlined"
           density="compact"
           hide-details

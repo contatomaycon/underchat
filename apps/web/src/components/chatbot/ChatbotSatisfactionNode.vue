@@ -5,6 +5,7 @@ import { Handle, Position } from '@vue-flow/core';
 import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
 import data from 'emoji-mart-vue-fast/data/all.json';
 import 'emoji-mart-vue-fast/css/emoji-mart.css';
+import { useI18n } from 'vue-i18n';
 
 interface SatisfactionOption {
   id: string;
@@ -19,6 +20,7 @@ interface SatisfactionData {
 }
 
 const props = defineProps<NodeProps>();
+const { t } = useI18n();
 
 const getInitialData = (): SatisfactionData => {
   const data = props.data as SatisfactionData | undefined;
@@ -69,7 +71,9 @@ const onEmojiSelect = (
   emoji: { native?: string; colons?: string },
   optionId: string
 ) => {
-  const index = satisfactionData.value.options.findIndex((opt) => opt.id === optionId);
+  const index = satisfactionData.value.options.findIndex(
+    (opt) => opt.id === optionId
+  );
   if (index > -1) {
     const emojiText = emoji.native || emoji.colons || '';
     const currentText = satisfactionData.value.options[index].text || '';
@@ -140,7 +144,9 @@ watch(
       >
         <div class="d-flex align-center ga-2">
           <VIcon icon="tabler-star" color="primary" size="20" />
-          <span class="text-sm font-weight-medium">Satisfação</span>
+          <span class="text-sm font-weight-medium">{{
+            t('chatbot_satisfaction')
+          }}</span>
         </div>
         <VIcon
           v-if="(props.data as SatisfactionData)?.onRemove"
@@ -155,7 +161,7 @@ watch(
       <VCardText class="pa-3">
         <VTextField
           v-model="satisfactionData.title"
-          placeholder="Defina o título da satisfação"
+          :placeholder="t('chatbot_satisfaction_title_placeholder')"
           prepend-inner-icon="tabler-message-circle"
           variant="outlined"
           density="compact"
@@ -167,7 +173,7 @@ watch(
           <VTextarea
             id="message-textarea"
             v-model="satisfactionData.message"
-            placeholder="Informe a mensagem a ser enviada"
+            :placeholder="t('chatbot_message_placeholder')"
             variant="outlined"
             density="compact"
             rows="3"
@@ -223,7 +229,7 @@ watch(
           @click="addOption"
         >
           <VIcon icon="tabler-plus" size="18" class="me-1" />
-          Adicionar Opção
+          {{ t('chatbot_add_option') }}
         </VBtn>
 
         <div v-if="satisfactionData.options.length > 0" class="options-list">
@@ -272,7 +278,7 @@ watch(
               :id="`option-input-${option.id}`"
               :model-value="option.text"
               @update:model-value="updateOption(index, $event)"
-              placeholder="Digite uma opção"
+              :placeholder="t('chatbot_option_placeholder')"
               variant="outlined"
               density="compact"
               class="option-text-field"
@@ -410,4 +416,3 @@ watch(
   margin-top: 4px;
 }
 </style>
-

@@ -4,6 +4,7 @@ import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position } from '@vue-flow/core';
 import { useChatbotStore } from '@/@webcore/stores/chatbot';
 import { getUser } from '@/@webcore/localStorage/user';
+import { useI18n } from 'vue-i18n';
 
 interface RedirectData {
   redirectType: 'user' | 'sector' | null;
@@ -15,6 +16,7 @@ interface RedirectData {
 
 const props = defineProps<NodeProps>();
 const chatbotStore = useChatbotStore();
+const { t } = useI18n();
 
 const getInitialData = (): RedirectData => {
   const data = props.data as RedirectData | undefined;
@@ -221,7 +223,9 @@ const handleRemove = () => {
       >
         <div class="d-flex align-center ga-2">
           <VIcon icon="tabler-arrow-forward" color="info" size="20" />
-          <span class="text-sm font-weight-medium">Redirecionar</span>
+          <span class="text-sm font-weight-medium">{{
+            t('chatbot_redirect')
+          }}</span>
         </div>
         <VIcon
           v-if="(props.data as RedirectData)?.onRemove"
@@ -237,10 +241,10 @@ const handleRemove = () => {
         <VSelect
           v-model="redirectData.redirectType"
           :items="[
-            { value: 'user', title: 'Usuário' },
-            { value: 'sector', title: 'Setor' },
+            { value: 'user', title: t('chatbot_redirect_user') },
+            { value: 'sector', title: t('chatbot_redirect_sector') },
           ]"
-          label="Redirecionar para:"
+          :label="t('chatbot_redirect_to')"
           variant="outlined"
           density="compact"
           class="mb-3"
@@ -248,7 +252,9 @@ const handleRemove = () => {
         />
 
         <div v-if="redirectData.redirectType === 'user'" class="mb-3">
-          <VLabel class="mb-1 text-body-2">Usuário:</VLabel>
+          <VLabel class="mb-1 text-body-2">{{
+            t('chatbot_user_label')
+          }}</VLabel>
           <VMenu v-model="isUserMenuOpen">
             <template #activator="{ props: menuProps }">
               <VTextField
@@ -257,7 +263,7 @@ const handleRemove = () => {
                   users.find((u) => u.value === redirectData.selectedUser)
                     ?.title || ''
                 "
-                placeholder="Buscar..."
+                :placeholder="t('chatbot_search')"
                 variant="outlined"
                 readonly
                 append-inner-icon="tabler-chevron-down"
@@ -269,7 +275,7 @@ const handleRemove = () => {
               <VCardText>
                 <VTextField
                   v-model="userSearch"
-                  placeholder="Buscar usuário..."
+                  :placeholder="t('chatbot_search_user')"
                   variant="outlined"
                   density="compact"
                   prepend-inner-icon="tabler-search"
@@ -304,7 +310,7 @@ const handleRemove = () => {
                   <VListItemTitle>{{ user.title }}</VListItemTitle>
                   <template #append v-if="user.status === 'online'">
                     <VChip size="small" color="success" variant="tonal">
-                      Online
+                      {{ t('chatbot_online') }}
                     </VChip>
                   </template>
                 </VListItem>
@@ -315,7 +321,7 @@ const handleRemove = () => {
                   <VListItemTitle
                     class="text-center text-body-2 text-medium-emphasis"
                   >
-                    Nenhum resultado encontrado
+                    {{ t('chatbot_no_results_found') }}
                   </VListItemTitle>
                 </VListItem>
               </VList>
@@ -324,7 +330,9 @@ const handleRemove = () => {
         </div>
 
         <div v-if="redirectData.redirectType === 'sector'" class="mb-3">
-          <VLabel class="mb-1 text-body-2">Setor:</VLabel>
+          <VLabel class="mb-1 text-body-2">{{
+            t('chatbot_sector_label')
+          }}</VLabel>
           <VMenu v-model="isSectorMenuOpen">
             <template #activator="{ props: menuProps }">
               <VTextField
@@ -333,7 +341,7 @@ const handleRemove = () => {
                   sectors.find((s) => s.value === redirectData.selectedSector)
                     ?.title || ''
                 "
-                placeholder="Buscar..."
+                :placeholder="t('chatbot_search')"
                 variant="outlined"
                 readonly
                 append-inner-icon="tabler-chevron-down"
@@ -345,7 +353,7 @@ const handleRemove = () => {
               <VCardText>
                 <VTextField
                   v-model="sectorSearch"
-                  placeholder="Buscar setor..."
+                  :placeholder="t('chatbot_search_sector')"
                   variant="outlined"
                   density="compact"
                   prepend-inner-icon="tabler-search"
@@ -380,7 +388,7 @@ const handleRemove = () => {
                   <VListItemTitle
                     class="text-center text-body-2 text-medium-emphasis"
                   >
-                    Nenhum resultado encontrado
+                    {{ t('chatbot_no_results_found') }}
                   </VListItemTitle>
                 </VListItem>
               </VList>
@@ -395,7 +403,9 @@ const handleRemove = () => {
           "
           class="mb-3"
         >
-          <VLabel class="mb-1 text-body-2">Usuário (Setor):</VLabel>
+          <VLabel class="mb-1 text-body-2">{{
+            t('chatbot_sector_user_label')
+          }}</VLabel>
           <VMenu v-model="isSectorUserMenuOpen">
             <template #activator="{ props: menuProps }">
               <VTextField
@@ -405,7 +415,7 @@ const handleRemove = () => {
                     (u) => u.value === redirectData.selectedSectorUser
                   )?.title || ''
                 "
-                placeholder="Buscar... (opcional)"
+                :placeholder="t('chatbot_search_optional')"
                 variant="outlined"
                 readonly
                 append-inner-icon="tabler-chevron-down"
@@ -417,7 +427,7 @@ const handleRemove = () => {
               <VCardText>
                 <VTextField
                   v-model="sectorUserSearch"
-                  placeholder="Buscar usuário..."
+                  :placeholder="t('chatbot_search_user')"
                   variant="outlined"
                   density="compact"
                   prepend-inner-icon="tabler-search"
@@ -452,7 +462,7 @@ const handleRemove = () => {
                   <VListItemTitle>{{ user.title }}</VListItemTitle>
                   <template #append v-if="user.status === 'online'">
                     <VChip size="small" color="success" variant="tonal">
-                      Online
+                      {{ t('chatbot_online') }}
                     </VChip>
                   </template>
                 </VListItem>
@@ -465,7 +475,7 @@ const handleRemove = () => {
                   <VListItemTitle
                     class="text-center text-body-2 text-medium-emphasis"
                   >
-                    Nenhum resultado encontrado
+                    {{ t('chatbot_no_results_found') }}
                   </VListItemTitle>
                 </VListItem>
               </VList>

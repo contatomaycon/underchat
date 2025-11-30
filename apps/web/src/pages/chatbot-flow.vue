@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, markRaw } from 'vue';
 import { VueFlow } from '@vue-flow/core';
 import type { Node, Edge, Connection, NodeChange } from '@vue-flow/core';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
@@ -11,6 +11,7 @@ import ChatbotRedirectNode from '@/components/chatbot/ChatbotRedirectNode.vue';
 import ChatbotFinishNode from '@/components/chatbot/ChatbotFinishNode.vue';
 import ChatbotTagNode from '@/components/chatbot/ChatbotTagNode.vue';
 import ChatbotMessageNode from '@/components/chatbot/ChatbotMessageNode.vue';
+import ChatbotDataNode from '@/components/chatbot/ChatbotDataNode.vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 
@@ -26,20 +27,24 @@ definePage({
 });
 
 const nodeTypes = {
-  menu: ChatbotMenuNode,
-  start: ChatbotStartNode,
-  satisfaction: ChatbotSatisfactionNode,
-  redirect: ChatbotRedirectNode,
-  finish: ChatbotFinishNode,
-  tag: ChatbotTagNode,
-  message: ChatbotMessageNode,
+  menu: markRaw(ChatbotMenuNode),
+  start: markRaw(ChatbotStartNode),
+  satisfaction: markRaw(ChatbotSatisfactionNode),
+  redirect: markRaw(ChatbotRedirectNode),
+  finish: markRaw(ChatbotFinishNode),
+  tag: markRaw(ChatbotTagNode),
+  message: markRaw(ChatbotMessageNode),
+  data: markRaw(ChatbotDataNode),
 };
+
+const { t } = useI18n();
+const router = useRouter();
 
 const initialNodes: Node[] = [
   {
     id: '1',
     type: 'start',
-    label: 'Início',
+    label: t('chatbot_start'),
     position: { x: 250, y: 5 },
     draggable: false,
     data: {},
@@ -50,8 +55,6 @@ const initialEdges: Edge[] = [];
 
 const nodes = ref<Node[]>(initialNodes);
 const edges = ref<Edge[]>(initialEdges);
-const { t } = useI18n();
-const router = useRouter();
 
 let nodeIdCounter = 2;
 
@@ -178,6 +181,27 @@ const addMessageNode = () => {
   nodes.value.push(newNode);
 };
 
+const addDataNode = () => {
+  const newNode: Node = {
+    id: `data-${nodeIdCounter++}`,
+    type: 'data',
+    position: {
+      x: getSecureRandom(400) + 100,
+      y: getSecureRandom(300) + 100,
+    },
+    data: {
+      dataType: null,
+      firstName: '',
+      lastName: '',
+      email: '',
+      cpf: '',
+      cnpj: '',
+      onRemove: () => removeNode(newNode.id),
+    },
+  };
+  nodes.value.push(newNode);
+};
+
 const onConnect = (connection: Connection) => {
   const existingEdge = edges.value.find(
     (e) => e.source === connection.source && e.target === connection.target
@@ -268,37 +292,43 @@ const handleCancel = () => {
       <VCardText>
         <div class="actions-row">
           <VBtn variant="tonal" color="secondary" @click="handleCancel">
-            Cancelar
+            {{ t('cancel') }}
           </VBtn>
-          <VBtn color="primary" @click="handleSave"> Salvar </VBtn>
+          <VBtn color="primary" @click="handleSave"> {{ t('save') }} </VBtn>
         </div>
         <div class="flow-layout">
           <div class="node-menu">
             <VBtn color="primary" @click="addMenuNode">
               <VIcon icon="tabler-menu-2" class="me-2" />
-              Menu
+              {{ t('chatbot_menu') }}
             </VBtn>
             <VBtn color="warning" @click="addSatisfactionNode">
               <VIcon icon="tabler-star" class="me-2" />
-              Satisfação
+              {{ t('chatbot_satisfaction') }}
             </VBtn>
             <VDivider class="my-2" />
-            <div class="text-caption text-medium-emphasis mb-2">Ações</div>
+            <div class="text-caption text-medium-emphasis mb-2">
+              {{ t('chatbot_options') }}
+            </div>
             <VBtn color="info" @click="addRedirectNode">
               <VIcon icon="tabler-arrow-forward" class="me-2" />
-              Redirecionar
+              {{ t('chatbot_redirect') }}
             </VBtn>
             <VBtn color="error" @click="addFinishNode">
               <VIcon icon="tabler-circle-check" class="me-2" />
-              Finalizar
+              {{ t('chatbot_finish') }}
             </VBtn>
             <VBtn color="secondary" @click="addTagNode">
               <VIcon icon="tabler-tag" class="me-2" />
-              Etiqueta
+              {{ t('chatbot_tag_node_title') }}
             </VBtn>
             <VBtn color="success" @click="addMessageNode">
               <VIcon icon="tabler-message" class="me-2" />
-              Mensagem
+              {{ t('chatbot_message') }}
+            </VBtn>
+            <VBtn color="info" @click="addDataNode">
+              <VIcon icon="tabler-database" class="me-2" />
+              {{ t('chatbot_data') }}
             </VBtn>
           </div>
           <div class="vertical-divider" />
