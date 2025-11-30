@@ -167,14 +167,13 @@ export class ReportConversationHistoryListerUseCase {
     };
   }
 
-  private mapChatToResult(chat: any): ReportConversationHistoryResult {
-    const user = Array.isArray(chat.user) ? chat.user[0] : chat.user;
-    const sector = Array.isArray(chat.sector) ? chat.sector[0] : chat.sector;
-    const worker = Array.isArray(chat.worker) ? chat.worker[0] : chat.worker;
-    const contact = Array.isArray(chat.contact)
-      ? chat.contact[0]
-      : chat.contact;
+  private normalizeNestedField<T>(field: T | T[]): T | undefined {
+    return Array.isArray(field) ? field[0] : field;
+  }
 
+  private collectProtocols(
+    chat: any
+  ): Array<{ protocol: string; type: 'A' | 'U' | 'T' }> {
     const allProtocols: Array<{ protocol: string; type: 'A' | 'U' | 'T' }> = [];
 
     if (Array.isArray(chat.protocol_start) && chat.protocol_start.length > 0) {
@@ -196,6 +195,12 @@ export class ReportConversationHistoryListerUseCase {
       }
     }
 
+    return allProtocols;
+  }
+
+  private getUniqueProtocols(
+    allProtocols: Array<{ protocol: string; type: 'A' | 'U' | 'T' }>
+  ): Array<{ protocol: string; type: 'A' | 'U' | 'T' }> {
     const uniqueProtocolsMap = new Map<string, 'A' | 'U' | 'T'>();
     for (const item of allProtocols) {
       if (!uniqueProtocolsMap.has(item.protocol)) {
@@ -203,17 +208,31 @@ export class ReportConversationHistoryListerUseCase {
       }
     }
 
-    const protocolsWithType = Array.from(uniqueProtocolsMap.entries()).map(
-      ([protocol, type]) => ({ protocol, type })
-    );
+    return Array.from(uniqueProtocolsMap.entries()).map(([protocol, type]) => ({
+      protocol,
+      type,
+    }));
+  }
 
-    const uniqueProtocols = protocolsWithType.map((p) => p.protocol);
-
-    const protocol =
+  private getFirstProtocol(chat: any): string | null {
+    return (
       chat.protocol_start?.[0] ||
       chat.protocol_ura?.[0] ||
       chat.protocol_transfer?.[0] ||
-      null;
+      null
+    );
+  }
+
+  private mapChatToResult(chat: any): ReportConversationHistoryResult {
+    const user = this.normalizeNestedField(chat.user);
+    const sector = this.normalizeNestedField(chat.sector);
+    const worker = this.normalizeNestedField(chat.worker);
+    const contact = this.normalizeNestedField(chat.contact);
+
+    const allProtocols = this.collectProtocols(chat);
+    const protocolsWithType = this.getUniqueProtocols(allProtocols);
+    const uniqueProtocols = protocolsWithType.map((p) => p.protocol);
+    const protocol = this.getFirstProtocol(chat);
 
     if (protocolsWithType.length === 0 && protocol) {
       protocolsWithType.push({ protocol, type: 'A' });
