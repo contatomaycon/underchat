@@ -1196,6 +1196,7 @@
     "chatbot_actions_type": "Tipo",
     "chatbot_actions_type_inactivity_alert": "Alerta de inatividade",
     "chatbot_actions_alert_quantity": "Quantidade de alerta",
+    "chatbot_actions_alert_time": "Tempo de alerta (minutos)",
     "chatbot_actions_continue": "Continuar",
     "chatbot_actions_alert_exhausted": "Esgotado o alerta"
 }

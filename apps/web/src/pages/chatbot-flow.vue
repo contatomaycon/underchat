@@ -215,6 +215,7 @@ const addActionsNode = () => {
     data: {
       actionType: null,
       alertQuantity: '',
+      alertTime: '',
       onRemove: () => removeNode(newNode.id),
     },
   };

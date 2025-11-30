@@ -9,6 +9,7 @@ type ActionType = 'inactivity_alert' | null;
 interface ActionsNodeData {
   actionType: ActionType;
   alertQuantity: string;
+  alertTime: string;
   onRemove?: () => void;
 }
 
@@ -20,6 +21,7 @@ const getInitialData = (): ActionsNodeData => {
   return {
     actionType: data?.actionType || null,
     alertQuantity: data?.alertQuantity || '',
+    alertTime: data?.alertTime || '',
   };
 };
 
@@ -47,6 +49,15 @@ const alertQuantity = computed({
   },
 });
 
+const alertTime = computed({
+  get: () => actionsNodeData.value.alertTime,
+  set: (value: string) => {
+    const numericValue = onlyDigits(value);
+    actionsNodeData.value.alertTime = numericValue;
+    updateNodeData();
+  },
+});
+
 const onKeyPress = (event: KeyboardEvent) => {
   const char = event.key;
   if (
@@ -69,6 +80,7 @@ const updateNodeData = () => {
     const data = props.data as ActionsNodeData;
     data.actionType = actionsNodeData.value.actionType;
     data.alertQuantity = actionsNodeData.value.alertQuantity;
+    data.alertTime = actionsNodeData.value.alertTime;
   }
 };
 
@@ -77,6 +89,7 @@ watch(
   (newType) => {
     if (newType !== 'inactivity_alert') {
       actionsNodeData.value.alertQuantity = '';
+      actionsNodeData.value.alertTime = '';
     }
     updateNodeData();
   }
@@ -148,6 +161,26 @@ const handleRemove = () => {
               }
             "
             :label="t('chatbot_actions_alert_quantity')"
+            variant="outlined"
+            density="compact"
+            class="mb-3"
+            hide-details
+            inputmode="numeric"
+            type="text"
+          />
+          <VTextField
+            v-model="alertTime"
+            @keydown="onKeyPress"
+            @paste.prevent="
+              (e: ClipboardEvent) => {
+                const pastedText = e.clipboardData?.getData('text') || '';
+                const numericValue = onlyDigits(pastedText);
+                if (numericValue) {
+                  alertTime = numericValue;
+                }
+              }
+            "
+            :label="t('chatbot_actions_alert_time')"
             variant="outlined"
             density="compact"
             class="mb-3"
