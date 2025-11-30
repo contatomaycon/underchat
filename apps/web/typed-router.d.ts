@@ -142,6 +142,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'reports-conversation-history': RouteRecordInfo<
+      'reports-conversation-history',
+      '/reports-conversation-history',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     'reports-financial': RouteRecordInfo<
       'reports-financial',
       '/reports-financial',
@@ -303,6 +310,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/reports-clients.vue': {
       routes:
         | 'reports-clients'
+      views:
+        | never
+    }
+    'src/pages/reports-conversation-history.vue': {
+      routes:
+        | 'reports-conversation-history'
       views:
         | never
     }

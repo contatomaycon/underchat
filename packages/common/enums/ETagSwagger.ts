@@ -23,4 +23,5 @@ export enum ETagSwagger {
   permission = 'Permissões',
   expenditure = 'Despesas',
   financial = 'Financeiro',
+  reportConversationHistory = 'Histórico de Conversas',
 }

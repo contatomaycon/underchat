@@ -15,6 +15,7 @@ import { EChatboxPermissions } from '@core/common/enums/EPermissions/chatbox';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { EFinancialPermissions } from '@core/common/enums/EPermissions/financial';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { EReportConversationHistoryPermissions } from '@core/common/enums/EPermissions/reportConversationHistory';
 
 export default [
   {
@@ -256,6 +257,17 @@ export default [
           EGeneralPermissions.full_access_group,
           EFinancialPermissions.financial_group,
           EFinancialPermissions.financial_view,
+        ],
+      },
+      {
+        title: 'conversation_history',
+        to: { name: 'reports-conversation-history' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-message' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EReportConversationHistoryPermissions.report_conversation_history_group,
+          EReportConversationHistoryPermissions.report_conversation_history_view,
         ],
       },
     ],
