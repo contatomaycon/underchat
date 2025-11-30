@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position } from '@vue-flow/core';
 import { useChatbotStore } from '@/@webcore/stores/chatbot';
@@ -40,6 +40,11 @@ const filteredTags = computed(() => {
   return tags.value.filter((tag) => tag?.title?.toLowerCase().includes(query));
 });
 
+const selectedTagTitle = computed(() => {
+  const current = tags.value.find((t) => t.value === tagData.value.selectedTag);
+  return current?.title || '';
+});
+
 const updateNodeData = () => {
   if (props.data) {
     const data = props.data as TagData;
@@ -49,6 +54,8 @@ const updateNodeData = () => {
 };
 
 const loadTags = async () => {
+  if (isLoadingTags.value) return;
+
   isLoadingTags.value = true;
   try {
     const tagsList = await chatbotStore.listChatbotTags();
@@ -58,6 +65,17 @@ const loadTags = async () => {
       title: tag.label,
       color: tag.color || null,
     }));
+
+    if (
+      tagData.value.selectedTag &&
+      !tags.value.some((t) => t.value === tagData.value.selectedTag)
+    ) {
+      tags.value.unshift({
+        value: tagData.value.selectedTag,
+        title: tagData.value.selectedTag,
+        color: null,
+      });
+    }
   } catch (error) {
     console.error('Error loading tags:', error);
     tags.value = [];
@@ -65,6 +83,12 @@ const loadTags = async () => {
     isLoadingTags.value = false;
   }
 };
+
+onMounted(() => {
+  if (tagData.value.tagType) {
+    loadTags();
+  }
+});
 
 watch(isTagMenuOpen, (isOpen) => {
   if (isOpen) {
@@ -82,6 +106,8 @@ watch(
       tags.value = [];
       tagSearch.value = '';
       isTagMenuOpen.value = false;
+    } else if (tags.value.length === 0) {
+      loadTags();
     }
     updateNodeData();
   }
@@ -152,9 +178,7 @@ const handleRemove = () => {
             <template #activator="{ props: menuProps }">
               <VTextField
                 v-bind="menuProps"
-                :model-value="
-                  tags.find((t) => t.value === tagData.selectedTag)?.title || ''
-                "
+                :model-value="selectedTagTitle"
                 :placeholder="t('chatbot_tag_search_placeholder')"
                 variant="outlined"
                 readonly
