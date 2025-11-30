@@ -105,8 +105,8 @@ const handleRemove = () => {
 
 <template>
   <div class="chatbot-tag-node">
-    <Handle type="target" :position="Position.Top" />
-    <Handle type="source" :position="Position.Bottom" />
+    <Handle type="target" :position="Position.Top" class="handle-target" />
+    <Handle type="source" :position="Position.Bottom" class="handle-source" />
 
     <VCard class="tag-card" elevation="2">
       <VCardTitle

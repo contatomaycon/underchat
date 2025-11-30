@@ -80,7 +80,7 @@ const handleRemove = () => {
 
 <template>
   <div class="chatbot-actions-node">
-    <Handle type="target" :position="Position.Top" />
+    <Handle type="target" :position="Position.Top" class="handle-target" />
 
     <VCard class="actions-card" elevation="2">
       <VCardTitle
@@ -136,7 +136,7 @@ const handleRemove = () => {
               id="continue"
               type="source"
               :position="Position.Right"
-              class="action-handle"
+              class="action-handle handle-source"
             />
           </div>
           <div class="action-output-item">
@@ -147,7 +147,7 @@ const handleRemove = () => {
               id="exhausted"
               type="source"
               :position="Position.Right"
-              class="action-handle"
+              class="action-handle handle-source"
             />
           </div>
         </div>

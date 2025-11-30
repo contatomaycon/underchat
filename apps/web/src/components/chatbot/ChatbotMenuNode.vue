@@ -134,7 +134,7 @@ watch(
 
 <template>
   <div class="chatbot-menu-node">
-    <Handle type="target" :position="Position.Top" />
+    <Handle type="target" :position="Position.Top" class="handle-target" />
 
     <VCard class="menu-card" elevation="2">
       <VCardTitle
@@ -286,7 +286,7 @@ watch(
               :id="`option-${option.id}-source`"
               type="source"
               :position="Position.Right"
-              class="option-handle"
+              class="option-handle handle-source"
             />
             <div class="option-drag-handle">
               <VIcon icon="tabler-grip-vertical" size="18" color="primary" />

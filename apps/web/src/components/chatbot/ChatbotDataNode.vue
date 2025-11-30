@@ -232,8 +232,8 @@ watch(
 
 <template>
   <div class="chatbot-data-node">
-    <Handle type="target" :position="Position.Top" />
-    <Handle type="source" :position="Position.Bottom" />
+    <Handle type="target" :position="Position.Top" class="handle-target" />
+    <Handle type="source" :position="Position.Bottom" class="handle-source" />
 
     <VCard class="data-card" elevation="2">
       <VCardTitle

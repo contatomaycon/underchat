@@ -390,6 +390,28 @@ const handleCancel = () => {
   font-size: 12px;
 }
 
+:deep(.vue-flow__handle) {
+  width: 16px;
+  height: 16px;
+  border: 3px solid white;
+  border-radius: 50%;
+  background-color: #b1b1b7;
+}
+
+:deep(.vue-flow__handle.connectable) {
+  cursor: crosshair;
+}
+
+:deep(.handle-target),
+:deep(.vue-flow__handle.handle-target) {
+  background-color: #4caf50 !important;
+}
+
+:deep(.handle-source),
+:deep(.vue-flow__handle.handle-source) {
+  background-color: #f44336 !important;
+}
+
 .flow-layout {
   display: flex;
   gap: 16px;

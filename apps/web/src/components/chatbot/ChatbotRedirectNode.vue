@@ -215,7 +215,7 @@ const handleRemove = () => {
 
 <template>
   <div class="chatbot-redirect-node">
-    <Handle type="target" :position="Position.Top" />
+    <Handle type="target" :position="Position.Top" class="handle-target" />
 
     <VCard class="redirect-card" elevation="2">
       <VCardTitle
