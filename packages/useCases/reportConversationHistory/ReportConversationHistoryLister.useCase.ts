@@ -118,7 +118,7 @@ export class ReportConversationHistoryListerUseCase {
     if (query.phone) {
       filterClauses.push({
         term: {
-          phone: query.phone.replace(/\D/g, ''),
+          phone: query.phone.replaceAll(/\D/g, ''),
         },
       } as IElasticsearchBoolClause);
     }
@@ -178,30 +178,30 @@ export class ReportConversationHistoryListerUseCase {
     const allProtocols: Array<{ protocol: string; type: 'A' | 'U' | 'T' }> = [];
 
     if (Array.isArray(chat.protocol_start) && chat.protocol_start.length > 0) {
-      chat.protocol_start.forEach((p: string) => {
+      for (const p of chat.protocol_start) {
         allProtocols.push({ protocol: p, type: 'A' });
-      });
+      }
     }
     if (Array.isArray(chat.protocol_ura) && chat.protocol_ura.length > 0) {
-      chat.protocol_ura.forEach((p: string) => {
+      for (const p of chat.protocol_ura) {
         allProtocols.push({ protocol: p, type: 'U' });
-      });
+      }
     }
     if (
       Array.isArray(chat.protocol_transfer) &&
       chat.protocol_transfer.length > 0
     ) {
-      chat.protocol_transfer.forEach((p: string) => {
+      for (const p of chat.protocol_transfer) {
         allProtocols.push({ protocol: p, type: 'T' });
-      });
+      }
     }
 
     const uniqueProtocolsMap = new Map<string, 'A' | 'U' | 'T'>();
-    allProtocols.forEach((item) => {
+    for (const item of allProtocols) {
       if (!uniqueProtocolsMap.has(item.protocol)) {
         uniqueProtocolsMap.set(item.protocol, item.type);
       }
-    });
+    }
 
     const protocolsWithType = Array.from(uniqueProtocolsMap.entries()).map(
       ([protocol, type]) => ({ protocol, type })

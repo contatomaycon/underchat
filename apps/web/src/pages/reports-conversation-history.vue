@@ -17,13 +17,20 @@ import { ReportConversationHistoryResult } from '@core/schema/reportConversation
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import axios from '@webcore/axios';
 import { IApiResponse } from '@core/common/interfaces/IApiResponse';
-import { ListMessageResponse } from '@core/schema/chat/listMessageChats/response.schema';
+import {
+  ListMessageResponse,
+  ListMessageResult,
+} from '@core/schema/chat/listMessageChats/response.schema';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
-import { ListMessageResult } from '@core/schema/chat/listMessageChats/response.schema';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { isTypeUser } from '@core/common/functions/isTypeUser';
 import { EColor } from '@core/common/enums/EColor';
 import { refDebounced } from '@vueuse/core';
+
+type ProtocolWithType = {
+  protocol: string;
+  type: 'T' | 'U' | 'A';
+};
 
 definePage({
   meta: {
@@ -51,7 +58,7 @@ const conversationMessages = ref<ListMessageResult[]>([]);
 const loadingMessages = ref(false);
 const isProtocolsDialogOpen = ref(false);
 const selectedProtocols = ref<string[]>([]);
-const selectedProtocolsWithType = ref<Array<{ protocol: string; type: 'T' | 'U' | 'A' }>>([]);
+const selectedProtocolsWithType = ref<ProtocolWithType[]>([]);
 const selectedClientForProtocols = ref<string>('');
 const selectedChatInfo = ref<ReportConversationHistoryResult | null>(null);
 const imageViewerOpen = ref(false);
@@ -154,7 +161,7 @@ const sectors = ref<Array<{ id: string | null; text: string }>>([]);
 const operators = ref<Array<{ id: string | null; text: string }>>([]);
 
 onMounted(async () => {
-  const [sectorsResponse, allUsers] = await Promise.all([
+  const [, allUsers] = await Promise.all([
     sectorsStore.listSectors({ per_page: 200, page: 1, sort_by: [] }),
     usersStore.listAllUsers(),
   ]);
@@ -175,9 +182,15 @@ onMounted(async () => {
         return user?.user_id && name;
       })
       .map((user) => {
-        const fullName = user.first_name
-          ? `${user.first_name}${user.last_name ? ` ${user.last_name}` : ''}`
-          : user.last_name || '';
+        let fullName = '';
+        if (user.first_name) {
+          fullName = user.first_name;
+          if (user.last_name) {
+            fullName = `${fullName} ${user.last_name}`;
+          }
+        } else {
+          fullName = user.last_name || '';
+        }
         return {
           id: String(user.user_id),
           text: String(fullName),
@@ -485,7 +498,7 @@ const getProtocolsList = (item: ReportConversationHistoryResult): string[] => {
 
 const getProtocolsWithTypeList = (
   item: ReportConversationHistoryResult
-): Array<{ protocol: string; type: 'T' | 'U' | 'A' }> => {
+): ProtocolWithType[] => {
   if (
     item.protocolsWithType &&
     Array.isArray(item.protocolsWithType) &&
@@ -532,15 +545,14 @@ const getProtocolTypeColor = (type: 'T' | 'U' | 'A'): string => {
 const copyToClipboard = async (text: string) => {
   try {
     await navigator.clipboard.writeText(text);
-      reportConversationHistoryStore.showSnackbar(
-        t('protocol_copied'),
-        EColor.success
-      );
-    } catch (error) {
-      reportConversationHistoryStore.showSnackbar(
-      t('error_copying_protocol'),
-      EColor.error
+    reportConversationHistoryStore.showSnackbar(
+      t('protocol_copied'),
+      EColor.success
     );
+  } catch (error: unknown) {
+    const errorMessage =
+      error instanceof Error ? error.message : t('error_copying_protocol');
+    reportConversationHistoryStore.showSnackbar(errorMessage, EColor.error);
   }
 };
 </script>
