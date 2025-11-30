@@ -11,7 +11,7 @@ import { EAccountPermissions } from '@core/common/enums/EPermissions/account';
 import { EMessageTemplatePermissions } from '@core/common/enums/EPermissions/messageTemplate';
 import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
-import { EChatboxPermissions } from '@core/common/enums/EPermissions/chatbox';
+import { EChatbotPermissions } from '@core/common/enums/EPermissions/chatbot';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { EFinancialPermissions } from '@core/common/enums/EPermissions/financial';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
@@ -60,8 +60,8 @@ export default [
     permissions: [
       EGeneralPermissions.full_access,
       EGeneralPermissions.full_access_group,
-      EChatboxPermissions.chatbox_group,
-      EChatboxPermissions.chatbox_access,
+      EChatbotPermissions.chatbot_group,
+      EChatbotPermissions.chatbot_access,
     ],
   },
   {

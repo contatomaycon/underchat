@@ -7,7 +7,7 @@ import { EHomePermissions } from './home';
 import { EWorkerPermissions } from './worker';
 import { ERolePermissions } from './role';
 import { EChatPermissions } from './chat';
-import { EChatboxPermissions } from './chatbox';
+import { EChatbotPermissions } from './chatbot';
 import { ESectorPermissions } from './sector';
 import { EZipcodePermissions } from './zipcode';
 import { EAccountPermissions } from './account';
@@ -30,7 +30,7 @@ export type EPermissionsRoles =
   | EWorkerPermissions
   | ERolePermissions
   | EChatPermissions
-  | EChatboxPermissions
+  | EChatbotPermissions
   | ESectorPermissions
   | EZipcodePermissions
   | EAccountPermissions

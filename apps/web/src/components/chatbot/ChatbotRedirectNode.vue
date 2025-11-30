@@ -2,7 +2,7 @@
 import { ref, computed, watch } from 'vue';
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position } from '@vue-flow/core';
-import { useChatboxStore } from '@/@webcore/stores/chatbox';
+import { useChatbotStore } from '@/@webcore/stores/chatbot';
 import { getUser } from '@/@webcore/localStorage/user';
 
 interface RedirectData {
@@ -14,7 +14,7 @@ interface RedirectData {
 }
 
 const props = defineProps<NodeProps>();
-const chatboxStore = useChatboxStore();
+const chatbotStore = useChatbotStore();
 
 const getInitialData = (): RedirectData => {
   const data = props.data as RedirectData | undefined;
@@ -90,7 +90,7 @@ const loadUsers = async () => {
 
   isLoadingUsers.value = true;
   try {
-    const usersList = await chatboxStore.listChatboxUsers();
+    const usersList = await chatbotStore.listChatbotUsers();
     users.value = usersList.map((user) => ({
       value: user.id,
       title: user.name,
@@ -110,7 +110,7 @@ const loadSectors = async () => {
 
   isLoadingSectors.value = true;
   try {
-    const sectorsList = await chatboxStore.listChatboxSectors();
+    const sectorsList = await chatbotStore.listChatbotSectors();
     sectors.value = sectorsList.map((sector) => ({
       value: sector.id,
       title: sector.name,
@@ -126,7 +126,7 @@ const loadSectors = async () => {
 const loadSectorUsers = async (sectorId: string) => {
   isLoadingSectorUsers.value = true;
   try {
-    const usersList = await chatboxStore.listChatboxSectorUsers(sectorId);
+    const usersList = await chatbotStore.listChatbotSectorUsers(sectorId);
     sectorUsers.value = usersList.map((user) => ({
       value: user.id,
       title: user.name,

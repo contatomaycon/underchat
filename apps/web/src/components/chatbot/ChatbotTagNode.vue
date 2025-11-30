@@ -2,7 +2,7 @@
 import { ref, computed, watch } from 'vue';
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position } from '@vue-flow/core';
-import { useChatboxStore } from '@/@webcore/stores/chatbox';
+import { useChatbotStore } from '@/@webcore/stores/chatbot';
 import { useI18n } from 'vue-i18n';
 
 interface TagData {
@@ -12,7 +12,7 @@ interface TagData {
 }
 
 const props = defineProps<NodeProps>();
-const chatboxStore = useChatboxStore();
+const chatbotStore = useChatbotStore();
 const { t } = useI18n();
 
 const getInitialData = (): TagData => {
@@ -51,7 +51,7 @@ const updateNodeData = () => {
 const loadTags = async () => {
   isLoadingTags.value = true;
   try {
-    const tagsList = await chatboxStore.listChatboxTags();
+    const tagsList = await chatbotStore.listChatbotTags();
 
     tags.value = tagsList.map((tag) => ({
       value: tag.label_template_id,
