@@ -10,6 +10,11 @@ import { setPaginationData } from '@core/common/functions/createPaginationData';
 import { IElasticsearchBoolClause } from '@core/common/interfaces/IElasticsearchQuery';
 import { IChat } from '@core/common/interfaces/IChat';
 
+type ProtocolWithType = {
+  protocol: string;
+  type: 'A' | 'U' | 'T';
+};
+
 @injectable()
 export class ReportConversationHistoryListerUseCase {
   constructor(
@@ -171,10 +176,8 @@ export class ReportConversationHistoryListerUseCase {
     return Array.isArray(field) ? field[0] : field;
   }
 
-  private collectProtocols(
-    chat: any
-  ): Array<{ protocol: string; type: 'A' | 'U' | 'T' }> {
-    const allProtocols: Array<{ protocol: string; type: 'A' | 'U' | 'T' }> = [];
+  private collectProtocols(chat: any): ProtocolWithType[] {
+    const allProtocols: ProtocolWithType[] = [];
 
     if (Array.isArray(chat.protocol_start) && chat.protocol_start.length > 0) {
       for (const p of chat.protocol_start) {
@@ -199,8 +202,8 @@ export class ReportConversationHistoryListerUseCase {
   }
 
   private getUniqueProtocols(
-    allProtocols: Array<{ protocol: string; type: 'A' | 'U' | 'T' }>
-  ): Array<{ protocol: string; type: 'A' | 'U' | 'T' }> {
+    allProtocols: ProtocolWithType[]
+  ): ProtocolWithType[] {
     const uniqueProtocolsMap = new Map<string, 'A' | 'U' | 'T'>();
     for (const item of allProtocols) {
       if (!uniqueProtocolsMap.has(item.protocol)) {
