@@ -9,6 +9,7 @@ export * from './worker';
 export * from './plan';
 export * from './sector';
 export * from './chat';
+export * from './chatbot';
 export * from './message';
 export * from './label';
 export * from './contact';
