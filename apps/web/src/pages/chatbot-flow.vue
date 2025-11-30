@@ -760,7 +760,7 @@ const handleCancel = () => {
             variant="outlined"
             class="mb-4"
           >
-            <VCardTitle class="text-body-1 pa-3">
+            <VCardTitle class="text-body-1 pa-3 font-weight-bold">
               {{ t('chatbot_inactivity_alert') }}
             </VCardTitle>
             <VCardSubtitle class="text-caption pa-3 pt-0 config-description">
@@ -1106,7 +1106,7 @@ const handleCancel = () => {
             variant="outlined"
             class="mb-4"
           >
-            <VCardTitle class="text-body-1 pa-3">
+            <VCardTitle class="text-body-1 pa-3 font-weight-bold">
               {{ t('chatbot_redirect_failed_attempts') }}
             </VCardTitle>
             <VCardSubtitle class="text-caption pa-3 pt-0 config-description">
