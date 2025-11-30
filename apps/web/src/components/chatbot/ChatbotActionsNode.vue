@@ -38,11 +38,30 @@ const showInactivityAlertFields = computed(
 
 const onlyDigits = (s: string) => s.replaceAll(/\D+/g, '');
 
-const onAlertQuantityInput = (event: Event) => {
-  const target = event.target as HTMLInputElement;
-  const value = onlyDigits(target.value);
-  actionsNodeData.value.alertQuantity = value;
-  updateNodeData();
+const alertQuantity = computed({
+  get: () => actionsNodeData.value.alertQuantity,
+  set: (value: string) => {
+    const numericValue = onlyDigits(value);
+    actionsNodeData.value.alertQuantity = numericValue;
+    updateNodeData();
+  },
+});
+
+const onKeyPress = (event: KeyboardEvent) => {
+  const char = event.key;
+  if (
+    !/[0-9]/.test(char) &&
+    ![
+      'Backspace',
+      'Delete',
+      'ArrowLeft',
+      'ArrowRight',
+      'Tab',
+      'Enter',
+    ].includes(char)
+  ) {
+    event.preventDefault();
+  }
 };
 
 const updateNodeData = () => {
@@ -117,8 +136,17 @@ const handleRemove = () => {
 
         <div v-if="showInactivityAlertFields">
           <VTextField
-            :model-value="actionsNodeData.alertQuantity"
-            @input="onAlertQuantityInput"
+            v-model="alertQuantity"
+            @keydown="onKeyPress"
+            @paste.prevent="
+              (e: ClipboardEvent) => {
+                const pastedText = e.clipboardData?.getData('text') || '';
+                const numericValue = onlyDigits(pastedText);
+                if (numericValue) {
+                  alertQuantity = numericValue;
+                }
+              }
+            "
             :label="t('chatbot_actions_alert_quantity')"
             variant="outlined"
             density="compact"
