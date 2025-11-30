@@ -15,6 +15,18 @@ import { SectorService } from '@core/services/sector.service';
 import { ListChatbotUsersResponse } from '@core/schema/chatbot/listUsers/response.schema';
 import { ListChatbotSectorsResponse } from '@core/schema/chatbot/listSectors/response.schema';
 import { ChatbotSectorUserResponse } from '@core/schema/chatbot/listSectorUsers/response.schema';
+import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
+import { EElasticIndex } from '@core/common/enums/EElasticIndex';
+import { chatbotFlowMappings } from '@core/mappings/chatbotFlow.mappings';
+import { SaveChatbotFlowRequest } from '@core/schema/chatbot/saveChatbotFlow/request.schema';
+import { ListChatbotFlowResponse } from '@core/schema/chatbot/listChatbotFlow/response.schema';
+import { SaveChatbotFlowConfigurationsRequest } from '@core/schema/chatbot/saveChatbotFlowConfigurations/request.schema';
+import { ListChatbotFlowConfigurationsResponse } from '@core/schema/chatbot/listChatbotFlowConfigurations/response.schema';
+import { v7 as uuidv7 } from 'uuid';
+
+type ElasticHit<T> = {
+  _source?: T;
+};
 
 @injectable()
 export class ChatbotService {
@@ -25,7 +37,8 @@ export class ChatbotService {
     private readonly chatbotNameExistsRepository: ChatbotNameExistsRepository,
     private readonly chatbotChatTagsListerRepository: ChatbotChatTagsListerRepository,
     private readonly userService: UserService,
-    private readonly sectorService: SectorService
+    private readonly sectorService: SectorService,
+    private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 
   existsChatbotByName = async (
@@ -86,5 +99,166 @@ export class ChatbotService {
     sectorId: string
   ): Promise<ChatbotSectorUserResponse[]> => {
     return this.sectorService.listSectorUsersForTransfer(accountId, sectorId);
+  };
+
+  saveChatbotFlow = async (
+    input: SaveChatbotFlowRequest,
+    accountId: string
+  ): Promise<string | null> => {
+    const mappings = chatbotFlowMappings();
+
+    const result = await this.elasticDatabaseService.indices(
+      EElasticIndex.chatbot_flow,
+      mappings
+    );
+
+    if (!result) {
+      return null;
+    }
+
+    const chatbotFlowId = uuidv7();
+    const now = new Date().toISOString();
+
+    const chatbotFlow = {
+      chatbot_flow_id: chatbotFlowId,
+      chatbot_id: input.chatbot_id,
+      account_id: accountId,
+      nodes: input.nodes,
+      edges: input.edges,
+      created_at: now,
+      updated_at: now,
+    };
+
+    const saved = await this.elasticDatabaseService.update(
+      EElasticIndex.chatbot_flow,
+      chatbotFlow,
+      chatbotFlowId
+    );
+
+    return saved ? chatbotFlowId : null;
+  };
+
+  findChatbotFlowByChatbotId = async (
+    accountId: string,
+    chatbotId: string
+  ): Promise<ListChatbotFlowResponse | null> => {
+    const queryElastic = {
+      size: 1,
+      _source: true,
+      query: {
+        bool: {
+          must: [
+            {
+              term: {
+                account_id: accountId,
+              },
+            },
+            {
+              term: {
+                chatbot_id: chatbotId,
+              },
+            },
+          ],
+        },
+      },
+      sort: [
+        {
+          created_at: {
+            order: 'desc',
+          },
+        },
+      ],
+    };
+
+    const result =
+      await this.elasticDatabaseService.select<ListChatbotFlowResponse>(
+        EElasticIndex.chatbot_flow,
+        queryElastic
+      );
+
+    const hit = result?.hits?.hits?.[0] as
+      | ElasticHit<ListChatbotFlowResponse>
+      | undefined;
+    return hit?._source ?? null;
+  };
+
+  saveChatbotFlowConfigurations = async (
+    input: SaveChatbotFlowConfigurationsRequest,
+    accountId: string
+  ): Promise<string | null> => {
+    const mappings = chatbotFlowMappings();
+
+    const result = await this.elasticDatabaseService.indices(
+      EElasticIndex.chatbot_flow_configurations,
+      mappings
+    );
+
+    if (!result) {
+      return null;
+    }
+
+    const chatbotConfigurationsId = uuidv7();
+    const now = new Date().toISOString();
+
+    const chatbotFlowConfigurations = {
+      chatbot_configurations_id: chatbotConfigurationsId,
+      chatbot_id: input.chatbot_id,
+      account_id: accountId,
+      configurations: input.configurations,
+      created_at: now,
+      updated_at: now,
+    };
+
+    const saved = await this.elasticDatabaseService.update(
+      EElasticIndex.chatbot_flow_configurations,
+      chatbotFlowConfigurations,
+      chatbotConfigurationsId
+    );
+
+    return saved ? chatbotConfigurationsId : null;
+  };
+
+  findChatbotFlowConfigurationsByChatbotId = async (
+    accountId: string,
+    chatbotId: string
+  ): Promise<ListChatbotFlowConfigurationsResponse | null> => {
+    const queryElastic = {
+      size: 1,
+      _source: true,
+      query: {
+        bool: {
+          must: [
+            {
+              term: {
+                account_id: accountId,
+              },
+            },
+            {
+              term: {
+                chatbot_id: chatbotId,
+              },
+            },
+          ],
+        },
+      },
+      sort: [
+        {
+          created_at: {
+            order: 'desc',
+          },
+        },
+      ],
+    };
+
+    const result =
+      await this.elasticDatabaseService.select<ListChatbotFlowConfigurationsResponse>(
+        EElasticIndex.chatbot_flow_configurations,
+        queryElastic
+      );
+
+    const hit = result?.hits?.hits?.[0] as
+      | ElasticHit<ListChatbotFlowConfigurationsResponse>
+      | undefined;
+    return hit?._source ?? null;
   };
 }

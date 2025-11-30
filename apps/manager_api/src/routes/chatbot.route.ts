@@ -9,6 +9,10 @@ import { listChatbotUsersSchema } from '@core/schema/chatbot/listUsers';
 import { listChatbotSectorsSchema } from '@core/schema/chatbot/listSectors';
 import { listChatbotSectorUsersSchema } from '@core/schema/chatbot/listSectorUsers';
 import { listChatbotChatTagsSchema } from '@core/schema/chatbot/listChatTags';
+import { saveChatbotFlowSchema } from '@core/schema/chatbot/saveChatbotFlow';
+import { listChatbotFlowSchema } from '@core/schema/chatbot/listChatbotFlow';
+import { saveChatbotFlowConfigurationsSchema } from '@core/schema/chatbot/saveChatbotFlowConfigurations';
+import { listChatbotFlowConfigurationsSchema } from '@core/schema/chatbot/listChatbotFlowConfigurations';
 
 export default function chatbotRoutes(server: FastifyInstance) {
   const chatbotController = container.resolve(ChatbotController);
@@ -70,6 +74,42 @@ export default function chatbotRoutes(server: FastifyInstance) {
   server.get('/chatbot/tags', {
     schema: listChatbotChatTagsSchema,
     handler: chatbotController.listChatTags,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatbotPermissions),
+    ],
+  });
+
+  server.post('/chatbot/flow', {
+    schema: saveChatbotFlowSchema,
+    handler: chatbotController.saveChatbotFlow,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatbotPermissions),
+    ],
+  });
+
+  server.get('/chatbot/flow', {
+    schema: listChatbotFlowSchema,
+    handler: chatbotController.listChatbotFlow,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatbotPermissions),
+    ],
+  });
+
+  server.post('/chatbot/flow/configurations', {
+    schema: saveChatbotFlowConfigurationsSchema,
+    handler: chatbotController.saveChatbotFlowConfigurations,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatbotPermissions),
+    ],
+  });
+
+  server.get('/chatbot/flow/configurations', {
+    schema: listChatbotFlowConfigurationsSchema,
+    handler: chatbotController.listChatbotFlowConfigurations,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatbotPermissions),

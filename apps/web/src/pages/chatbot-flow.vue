@@ -4,6 +4,7 @@ import { VueFlow } from '@vue-flow/core';
 import type { Node, Edge, Connection, NodeChange } from '@vue-flow/core';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatbotPermissions } from '@core/common/enums/EPermissions/chatbot';
+import { EColor } from '@core/common/enums/EColor';
 import ChatbotMenuNode from '@/components/chatbot/ChatbotMenuNode.vue';
 import ChatbotStartNode from '@/components/chatbot/ChatbotStartNode.vue';
 import ChatbotSatisfactionNode from '@/components/chatbot/ChatbotSatisfactionNode.vue';
@@ -13,10 +14,11 @@ import ChatbotTagNode from '@/components/chatbot/ChatbotTagNode.vue';
 import ChatbotMessageNode from '@/components/chatbot/ChatbotMessageNode.vue';
 import ChatbotDataNode from '@/components/chatbot/ChatbotDataNode.vue';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
 import { useChatbotStore } from '@/@webcore/stores/chatbot';
 import { getUser } from '@/@webcore/localStorage/user';
+import { onMounted } from 'vue';
 
 definePage({
   meta: {
@@ -42,7 +44,14 @@ const nodeTypes = {
 
 const { t } = useI18n();
 const router = useRouter();
+const route = useRoute();
 const chatbotStore = useChatbotStore();
+
+const chatbotId = computed(() => {
+  const params = route.params as Record<string, string | string[]>;
+  const id = (params['id'] || params['chatbot_id']) as string | undefined;
+  return id || null;
+});
 
 const isConfigModalOpen = ref(false);
 const inactivityAlertStatus = ref<'active' | 'inactive'>('inactive');
@@ -119,19 +128,27 @@ const showInactivityAlertActionFields = computed(
 );
 
 const showInactivityAlertRedirectFields = computed(
-  () => showInactivityAlertActionFields.value && inactivityAlertAction.value === 'redirect'
+  () =>
+    showInactivityAlertActionFields.value &&
+    inactivityAlertAction.value === 'redirect'
 );
 
 const showInactivityAlertUserField = computed(
-  () => showInactivityAlertRedirectFields.value && inactivityAlertRedirectType.value === 'user'
+  () =>
+    showInactivityAlertRedirectFields.value &&
+    inactivityAlertRedirectType.value === 'user'
 );
 
 const showInactivityAlertSectorField = computed(
-  () => showInactivityAlertRedirectFields.value && inactivityAlertRedirectType.value === 'sector'
+  () =>
+    showInactivityAlertRedirectFields.value &&
+    inactivityAlertRedirectType.value === 'sector'
 );
 
 const showInactivityAlertSectorUserField = computed(
-  () => showInactivityAlertSectorField.value && inactivityAlertSelectedSector.value !== null
+  () =>
+    showInactivityAlertSectorField.value &&
+    inactivityAlertSelectedSector.value !== null
 );
 
 const showRedirectFailedAttemptsFields = computed(
@@ -139,19 +156,27 @@ const showRedirectFailedAttemptsFields = computed(
 );
 
 const showRedirectFailedAttemptsRedirectFields = computed(
-  () => showRedirectFailedAttemptsFields.value && redirectFailedAttemptsRedirectType.value !== null
+  () =>
+    showRedirectFailedAttemptsFields.value &&
+    redirectFailedAttemptsRedirectType.value !== null
 );
 
 const showRedirectFailedAttemptsUserField = computed(
-  () => showRedirectFailedAttemptsRedirectFields.value && redirectFailedAttemptsRedirectType.value === 'user'
+  () =>
+    showRedirectFailedAttemptsRedirectFields.value &&
+    redirectFailedAttemptsRedirectType.value === 'user'
 );
 
 const showRedirectFailedAttemptsSectorField = computed(
-  () => showRedirectFailedAttemptsRedirectFields.value && redirectFailedAttemptsRedirectType.value === 'sector'
+  () =>
+    showRedirectFailedAttemptsRedirectFields.value &&
+    redirectFailedAttemptsRedirectType.value === 'sector'
 );
 
 const showRedirectFailedAttemptsSectorUserField = computed(
-  () => showRedirectFailedAttemptsSectorField.value && redirectFailedAttemptsSelectedSector.value !== null
+  () =>
+    showRedirectFailedAttemptsSectorField.value &&
+    redirectFailedAttemptsSelectedSector.value !== null
 );
 
 const filteredInactivityUsers = computed(() => {
@@ -175,7 +200,10 @@ const filteredInactivitySectors = computed(() => {
 });
 
 const filteredInactivitySectorUsers = computed(() => {
-  if (!inactivitySectorUsers.value || inactivitySectorUsers.value.length === 0) {
+  if (
+    !inactivitySectorUsers.value ||
+    inactivitySectorUsers.value.length === 0
+  ) {
     return [];
   }
   if (!inactivitySectorUserSearch.value) {
@@ -208,7 +236,10 @@ const filteredRedirectFailedAttemptsSectors = computed(() => {
 });
 
 const filteredRedirectFailedAttemptsSectorUsers = computed(() => {
-  if (!redirectFailedAttemptsSectorUsers.value || redirectFailedAttemptsSectorUsers.value.length === 0) {
+  if (
+    !redirectFailedAttemptsSectorUsers.value ||
+    redirectFailedAttemptsSectorUsers.value.length === 0
+  ) {
     return [];
   }
   if (!redirectFailedAttemptsSectorUserSearch.value) {
@@ -406,7 +437,9 @@ watch(isRedirectFailedAttemptsSectorMenuOpen, (isOpen) => {
 
 watch(isRedirectFailedAttemptsSectorUserMenuOpen, (isOpen) => {
   if (isOpen && redirectFailedAttemptsSelectedSector.value) {
-    loadRedirectFailedAttemptsSectorUsers(redirectFailedAttemptsSelectedSector.value);
+    loadRedirectFailedAttemptsSectorUsers(
+      redirectFailedAttemptsSelectedSector.value
+    );
   } else {
     redirectFailedAttemptsSectorUserSearch.value = '';
   }
@@ -425,8 +458,9 @@ watch(
   }
 );
 
-const openConfigModal = () => {
+const openConfigModal = async () => {
   isConfigModalOpen.value = true;
+  await loadChatbotFlowConfigurations();
 };
 
 const closeConfigModal = () => {
@@ -450,6 +484,72 @@ const nodes = ref<Node[]>(initialNodes);
 const edges = ref<Edge[]>(initialEdges);
 
 let nodeIdCounter = 2;
+const optionNodeTypes = ['menu', 'satisfaction'];
+
+const normalizeHandleId = (handle?: string | null): string | null => {
+  if (!handle) {
+    return null;
+  }
+
+  const normalized = handle
+    .toString()
+    .trim()
+    .replace(/^(option-)+/i, '')
+    .replace(/-source$/i, '');
+
+  return normalized || null;
+};
+
+const buildNormalizedOptionHandle = (
+  handle?: string | null
+): string | undefined => {
+  const normalized = normalizeHandleId(handle);
+  return normalized ? `option-${normalized}-source` : undefined;
+};
+
+const normalizeEdgeSourceHandle = (edge: Edge): string | undefined => {
+  const sourceNode = nodes.value.find((n) => n.id === edge.source);
+  const shouldNormalize =
+    sourceNode && optionNodeTypes.includes(sourceNode.type as string);
+
+  if (shouldNormalize) {
+    return (
+      buildNormalizedOptionHandle(
+        edge.sourceHandle ? String(edge.sourceHandle) : undefined
+      ) || undefined
+    );
+  }
+
+  return edge.sourceHandle ? String(edge.sourceHandle) : undefined;
+};
+
+const normalizeEdge = (edge: Edge): Edge => {
+  const normalizedSourceHandle = normalizeEdgeSourceHandle(edge);
+
+  return {
+    ...edge,
+    sourceHandle: normalizedSourceHandle,
+    targetHandle: edge.targetHandle ? String(edge.targetHandle) : undefined,
+  };
+};
+
+const normalizeConnectionSourceHandle = (
+  connection: Connection
+): string | undefined => {
+  const sourceNode = nodes.value.find((n) => n.id === connection.source);
+  const shouldNormalize =
+    sourceNode && optionNodeTypes.includes(sourceNode.type as string);
+
+  if (shouldNormalize) {
+    return (
+      buildNormalizedOptionHandle(
+        connection.sourceHandle ? String(connection.sourceHandle) : undefined
+      ) || undefined
+    );
+  }
+
+  return connection.sourceHandle ? String(connection.sourceHandle) : undefined;
+};
 
 const getSecureRandom = (max: number, min = 0): number => {
   const array = new Uint32Array(1);
@@ -596,15 +696,26 @@ const addDataNode = () => {
 };
 
 const onConnect = (connection: Connection) => {
+  const normalizedSourceHandle = normalizeConnectionSourceHandle(connection);
+  const normalizedTargetHandle = connection.targetHandle
+    ? String(connection.targetHandle)
+    : undefined;
+
   const existingEdge = edges.value.find(
-    (e) => e.source === connection.source && e.target === connection.target
+    (e) =>
+      e.source === connection.source &&
+      e.target === connection.target &&
+      e.sourceHandle === normalizedSourceHandle &&
+      e.targetHandle === normalizedTargetHandle
   );
   if (existingEdge) return;
 
-  edges.value.push({
-    id: `e${connection.source}-${connection.target}-${Date.now()}`,
+  const newEdge = normalizeEdge({
+    id: `e${connection.source}-${connection.target}-${normalizedSourceHandle || ''}-${normalizedTargetHandle || ''}-${Date.now()}`,
     source: connection.source!,
     target: connection.target!,
+    sourceHandle: normalizedSourceHandle,
+    targetHandle: normalizedTargetHandle,
     markerEnd: {
       type: 'arrowclosed',
       color: '#1a192b',
@@ -614,6 +725,8 @@ const onConnect = (connection: Connection) => {
       strokeWidth: 2,
     },
   });
+
+  edges.value.push(newEdge);
 };
 
 const calculateDistance = (node1: Node, node2: Node): number => {
@@ -670,13 +783,336 @@ const onNodesChange = (changes: NodeChange[]) => {
   }
 };
 
-const handleSave = () => {
-  // Por enquanto não faz nada
+const isLoadingFlow = ref(false);
+
+const prepareNodesForSave = (nodesToSave: Node[]) => {
+  return nodesToSave.map((node) => {
+    const nodeData = { ...node.data };
+    if (nodeData && 'attachmentFile' in nodeData) {
+      delete nodeData.attachmentFile;
+    }
+    if (nodeData && 'onRemove' in nodeData) {
+      delete nodeData.onRemove;
+    }
+    return {
+      id: node.id,
+      type: node.type || '',
+      position: {
+        x: node.position.x,
+        y: node.position.y,
+      },
+      data: nodeData,
+      label: typeof node.label === 'string' ? node.label : undefined,
+      draggable: node.draggable,
+    };
+  });
+};
+
+const handleSave = async () => {
+  if (!chatbotId.value) {
+    chatbotStore.showSnackbar(
+      t('chatbot_flow_validation_chatbot_id_required'),
+      EColor.error
+    );
+    return;
+  }
+
+  isLoadingFlow.value = true;
+
+  try {
+    const preparedNodes = prepareNodesForSave(nodes.value);
+
+    const preparedEdges = edges.value.map((edge) => {
+      const normalizedEdge = normalizeEdge(edge);
+      return {
+        id: normalizedEdge.id,
+        source: normalizedEdge.source,
+        target: normalizedEdge.target,
+        sourceHandle: normalizedEdge.sourceHandle || undefined,
+        targetHandle: normalizedEdge.targetHandle || undefined,
+      };
+    });
+
+    const result = await chatbotStore.saveChatbotFlow({
+      chatbot_id: chatbotId.value,
+      nodes: preparedNodes,
+      edges: preparedEdges,
+    });
+
+    if (result) {
+    }
+  } catch (error) {
+    console.error('Error saving flow:', error);
+  } finally {
+    isLoadingFlow.value = false;
+  }
+};
+
+const loadChatbotFlow = async () => {
+  if (!chatbotId.value) {
+    return;
+  }
+
+  isLoadingFlow.value = true;
+
+  try {
+    const flow = await chatbotStore.listChatbotFlow(chatbotId.value);
+
+    if (flow) {
+      if (flow.nodes && flow.nodes.length > 0) {
+        const loadedNodes = flow.nodes as Node[];
+
+        nodes.value = loadedNodes.map((node) => {
+          if (node.type !== 'start') {
+            node.draggable = true;
+            if (!node.data) {
+              node.data = {};
+            }
+            node.data.onRemove = () => removeNode(node.id);
+          } else {
+            node.draggable = false;
+            if (!node.data) {
+              node.data = {};
+            }
+          }
+          if (node.type === 'menu' && !node.data.options) {
+            node.data.options = [];
+          }
+          if (node.type === 'satisfaction' && !node.data.options) {
+            node.data.options = [];
+          }
+          if (node.type === 'redirect') {
+            if (node.data.redirectType === undefined)
+              node.data.redirectType = null;
+            if (node.data.selectedUser === undefined)
+              node.data.selectedUser = null;
+            if (node.data.selectedSector === undefined)
+              node.data.selectedSector = null;
+            if (node.data.selectedSectorUser === undefined)
+              node.data.selectedSectorUser = null;
+          }
+          if (node.type === 'tag') {
+            if (node.data.tagType === undefined) node.data.tagType = null;
+            if (node.data.selectedTag === undefined)
+              node.data.selectedTag = null;
+          }
+          if (node.type === 'message') {
+            if (node.data.messageType === undefined)
+              node.data.messageType = null;
+            if (node.data.text === undefined) node.data.text = '';
+            if (node.data.attachmentFile === undefined)
+              node.data.attachmentFile = null;
+            if (node.data.continueType === undefined)
+              node.data.continueType = null;
+          }
+          if (node.type === 'data') {
+            if (node.data.dataType === undefined) node.data.dataType = null;
+            if (node.data.firstName === undefined) node.data.firstName = '';
+            if (node.data.lastName === undefined) node.data.lastName = '';
+            if (node.data.email === undefined) node.data.email = '';
+            if (node.data.cpf === undefined) node.data.cpf = '';
+            if (node.data.cnpj === undefined) node.data.cnpj = '';
+          }
+
+          return node;
+        });
+
+        const maxId = loadedNodes.reduce((max, node) => {
+          const match = node.id.match(/\d+$/);
+          if (match) {
+            const num = parseInt(match[0], 10);
+            return Math.max(max, num);
+          }
+          return max;
+        }, 0);
+        nodeIdCounter = maxId + 1;
+      } else {
+        nodes.value = initialNodes;
+      }
+
+      if (flow.edges && flow.edges.length > 0) {
+        edges.value = (flow.edges as Edge[]).map((edge) => {
+          const baseEdge: Edge = {
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            sourceHandle: edge.sourceHandle
+              ? String(edge.sourceHandle)
+              : undefined,
+            targetHandle: edge.targetHandle
+              ? String(edge.targetHandle)
+              : undefined,
+            markerEnd:
+              edge.markerEnd ||
+              ({
+                type: 'arrowclosed',
+                color: '#1a192b',
+              } as any),
+            style: edge.style || {
+              stroke: '#1a192b',
+              strokeWidth: 2,
+            },
+          };
+
+          return normalizeEdge(baseEdge);
+        });
+      } else {
+        edges.value = [];
+      }
+    }
+  } catch (error) {
+    console.error('Error loading flow:', error);
+  } finally {
+    isLoadingFlow.value = false;
+  }
+};
+
+const loadChatbotFlowConfigurations = async () => {
+  if (!chatbotId.value) {
+    return;
+  }
+
+  try {
+    await loadInactivitySectors();
+    await loadInactivityUsers();
+    await loadRedirectFailedAttemptsSectors();
+    await loadRedirectFailedAttemptsUsers();
+
+    const configurations = await chatbotStore.listChatbotFlowConfigurations(
+      chatbotId.value
+    );
+
+    if (configurations && configurations.configurations) {
+      const configs = configurations.configurations;
+
+      if (configs.inactivity_alert) {
+        const config = configs.inactivity_alert;
+        inactivityAlertStatus.value =
+          (config.status as 'active' | 'inactive') || 'inactive';
+        if (config.quantity) {
+          inactivityAlertQuantity.value = config.quantity.toString();
+        }
+        if (config.time) {
+          inactivityAlertTime.value = config.time.toString();
+        }
+        if (config.action) {
+          inactivityAlertAction.value = config.action as 'redirect' | 'finish';
+        }
+        if (config.redirect_type) {
+          inactivityAlertRedirectType.value = config.redirect_type as
+            | 'user'
+            | 'sector';
+        }
+        if (config.selected_user) {
+          inactivityAlertSelectedUser.value = config.selected_user;
+        }
+        if (config.selected_sector) {
+          inactivityAlertSelectedSector.value = config.selected_sector;
+          await loadInactivitySectorUsers(config.selected_sector);
+        }
+        if (config.selected_sector_user) {
+          inactivityAlertSelectedSectorUser.value = config.selected_sector_user;
+        }
+      }
+
+      if (configs.redirect_failed_attempts) {
+        const config = configs.redirect_failed_attempts;
+        redirectFailedAttemptsStatus.value =
+          (config.status as 'active' | 'inactive') || 'inactive';
+        if (config.quantity) {
+          redirectFailedAttemptsQuantity.value = config.quantity.toString();
+        }
+        if (config.redirect_type) {
+          redirectFailedAttemptsRedirectType.value = config.redirect_type as
+            | 'user'
+            | 'sector';
+        }
+        if (config.selected_user) {
+          redirectFailedAttemptsSelectedUser.value = config.selected_user;
+        }
+        if (config.selected_sector) {
+          redirectFailedAttemptsSelectedSector.value = config.selected_sector;
+          await loadRedirectFailedAttemptsSectorUsers(config.selected_sector);
+        }
+        if (config.selected_sector_user) {
+          redirectFailedAttemptsSelectedSectorUser.value =
+            config.selected_sector_user;
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error loading configurations:', error);
+  }
+};
+
+const handleSaveConfigurations = async () => {
+  if (!chatbotId.value) {
+    chatbotStore.showSnackbar(
+      t('chatbot_flow_validation_chatbot_id_required'),
+      EColor.error
+    );
+    return;
+  }
+
+  try {
+    const configurations = {
+      inactivity_alert:
+        inactivityAlertStatus.value === 'active'
+          ? {
+              status: inactivityAlertStatus.value,
+              quantity: inactivityAlertQuantity.value
+                ? parseInt(inactivityAlertQuantity.value)
+                : undefined,
+              time: inactivityAlertTime.value
+                ? parseInt(inactivityAlertTime.value)
+                : undefined,
+              action: inactivityAlertAction.value || undefined,
+              redirect_type: inactivityAlertRedirectType.value || undefined,
+              selected_user: inactivityAlertSelectedUser.value || undefined,
+              selected_sector: inactivityAlertSelectedSector.value || undefined,
+              selected_sector_user:
+                inactivityAlertSelectedSectorUser.value || undefined,
+            }
+          : undefined,
+      redirect_failed_attempts:
+        redirectFailedAttemptsStatus.value === 'active'
+          ? {
+              status: redirectFailedAttemptsStatus.value,
+              quantity: redirectFailedAttemptsQuantity.value
+                ? parseInt(redirectFailedAttemptsQuantity.value)
+                : undefined,
+              redirect_type:
+                redirectFailedAttemptsRedirectType.value || undefined,
+              selected_user:
+                redirectFailedAttemptsSelectedUser.value || undefined,
+              selected_sector:
+                redirectFailedAttemptsSelectedSector.value || undefined,
+              selected_sector_user:
+                redirectFailedAttemptsSelectedSectorUser.value || undefined,
+            }
+          : undefined,
+    };
+
+    const result = await chatbotStore.saveChatbotFlowConfigurations({
+      chatbot_id: chatbotId.value,
+      configurations,
+    });
+
+    if (result) {
+      closeConfigModal();
+    }
+  } catch (error) {
+    console.error('Error saving configurations:', error);
+  }
 };
 
 const handleCancel = () => {
   router.push('/chatbot');
 };
+
+onMounted(() => {
+  loadChatbotFlow();
+});
 </script>
 
 <template>
@@ -687,7 +1123,14 @@ const handleCancel = () => {
           <VBtn variant="tonal" color="secondary" @click="handleCancel">
             {{ t('cancel') }}
           </VBtn>
-          <VBtn color="primary" @click="handleSave"> {{ t('save') }} </VBtn>
+          <VBtn
+            color="primary"
+            :loading="isLoadingFlow"
+            :disabled="!chatbotId"
+            @click="handleSave"
+          >
+            {{ t('save') }}
+          </VBtn>
         </div>
         <div class="flow-layout">
           <div class="node-menu">
@@ -756,10 +1199,7 @@ const handleCancel = () => {
 
       <VCard :title="t('chatbot_configurations')">
         <VCardText>
-          <VCard
-            variant="outlined"
-            class="mb-4"
-          >
+          <VCard variant="outlined" class="mb-4">
             <VCardTitle class="text-body-1 pa-3 font-weight-bold">
               {{ t('chatbot_inactivity_alert') }}
             </VCardTitle>
@@ -775,8 +1215,14 @@ const handleCancel = () => {
                 <VSelect
                   v-model="inactivityAlertStatus"
                   :items="[
-                    { value: 'active', title: t('chatbot_inactivity_alert_active') },
-                    { value: 'inactive', title: t('chatbot_inactivity_alert_inactive') },
+                    {
+                      value: 'active',
+                      title: t('chatbot_inactivity_alert_active'),
+                    },
+                    {
+                      value: 'inactive',
+                      title: t('chatbot_inactivity_alert_inactive'),
+                    },
                   ]"
                   item-title="title"
                   item-value="value"
@@ -796,7 +1242,8 @@ const handleCancel = () => {
                     @keydown="onKeyPress"
                     @paste.prevent="
                       (e: ClipboardEvent) => {
-                        const pastedText = e.clipboardData?.getData('text') || '';
+                        const pastedText =
+                          e.clipboardData?.getData('text') || '';
                         const numericValue = onlyDigits(pastedText);
                         if (numericValue) {
                           inactivityAlertQuantityComputed = numericValue;
@@ -820,7 +1267,8 @@ const handleCancel = () => {
                     @keydown="onKeyPress"
                     @paste.prevent="
                       (e: ClipboardEvent) => {
-                        const pastedText = e.clipboardData?.getData('text') || '';
+                        const pastedText =
+                          e.clipboardData?.getData('text') || '';
                         const numericValue = onlyDigits(pastedText);
                         if (numericValue) {
                           inactivityAlertTimeComputed = numericValue;
@@ -862,7 +1310,10 @@ const handleCancel = () => {
                       v-model="inactivityAlertRedirectType"
                       :items="[
                         { value: 'user', title: t('chatbot_redirect_user') },
-                        { value: 'sector', title: t('chatbot_redirect_sector') },
+                        {
+                          value: 'sector',
+                          title: t('chatbot_redirect_sector'),
+                        },
                       ]"
                       item-title="title"
                       item-value="value"
@@ -881,8 +1332,9 @@ const handleCancel = () => {
                         <VTextField
                           v-bind="menuProps"
                           :model-value="
-                            inactivityUsers.find((u) => u.value === inactivityAlertSelectedUser)
-                              ?.title || ''
+                            inactivityUsers.find(
+                              (u) => u.value === inactivityAlertSelectedUser
+                            )?.title || ''
                           "
                           :placeholder="t('chatbot_search')"
                           variant="outlined"
@@ -930,13 +1382,20 @@ const handleCancel = () => {
                             </template>
                             <VListItemTitle>{{ user.title }}</VListItemTitle>
                             <template #append v-if="user.status === 'online'">
-                              <VChip size="small" color="success" variant="tonal">
+                              <VChip
+                                size="small"
+                                color="success"
+                                variant="tonal"
+                              >
                                 {{ t('chatbot_online') }}
                               </VChip>
                             </template>
                           </VListItem>
                           <VListItem
-                            v-if="filteredInactivityUsers.length === 0 && !isLoadingInactivityUsers"
+                            v-if="
+                              filteredInactivityUsers.length === 0 &&
+                              !isLoadingInactivityUsers
+                            "
                             disabled
                           >
                             <VListItemTitle
@@ -959,8 +1418,9 @@ const handleCancel = () => {
                         <VTextField
                           v-bind="menuProps"
                           :model-value="
-                            inactivitySectors.find((s) => s.value === inactivityAlertSelectedSector)
-                              ?.title || ''
+                            inactivitySectors.find(
+                              (s) => s.value === inactivityAlertSelectedSector
+                            )?.title || ''
                           "
                           :placeholder="t('chatbot_search')"
                           variant="outlined"
@@ -1003,7 +1463,10 @@ const handleCancel = () => {
                             <VListItemTitle>{{ sector.title }}</VListItemTitle>
                           </VListItem>
                           <VListItem
-                            v-if="filteredInactivitySectors.length === 0 && !isLoadingInactivitySectors"
+                            v-if="
+                              filteredInactivitySectors.length === 0 &&
+                              !isLoadingInactivitySectors
+                            "
                             disabled
                           >
                             <VListItemTitle
@@ -1027,16 +1490,30 @@ const handleCancel = () => {
                           v-bind="menuProps"
                           :model-value="
                             inactivitySectorUsers.find(
-                              (u) => u.value === inactivityAlertSelectedSectorUser
+                              (u) =>
+                                u.value === inactivityAlertSelectedSectorUser
                             )?.title || ''
                           "
                           :placeholder="t('chatbot_search_optional')"
                           variant="outlined"
                           readonly
-                          append-inner-icon="tabler-chevron-down"
                           :loading="isLoadingInactivitySectorUsers"
                           density="compact"
-                        />
+                        >
+                          <template #append-inner>
+                            <VIcon
+                              v-if="inactivityAlertSelectedSectorUser"
+                              icon="tabler-x"
+                              size="20"
+                              class="cursor-pointer me-1"
+                              @click.stop="
+                                inactivityAlertSelectedSectorUser = null;
+                                isInactivitySectorUserMenuOpen = false;
+                              "
+                            />
+                            <VIcon icon="tabler-chevron-down" size="20" />
+                          </template>
+                        </VTextField>
                       </template>
                       <VCard>
                         <VCardText>
@@ -1076,14 +1553,19 @@ const handleCancel = () => {
                             </template>
                             <VListItemTitle>{{ user.title }}</VListItemTitle>
                             <template #append v-if="user.status === 'online'">
-                              <VChip size="small" color="success" variant="tonal">
+                              <VChip
+                                size="small"
+                                color="success"
+                                variant="tonal"
+                              >
                                 {{ t('chatbot_online') }}
                               </VChip>
                             </template>
                           </VListItem>
                           <VListItem
                             v-if="
-                              filteredInactivitySectorUsers.length === 0 && !isLoadingInactivitySectorUsers
+                              filteredInactivitySectorUsers.length === 0 &&
+                              !isLoadingInactivitySectorUsers
                             "
                             disabled
                           >
@@ -1102,10 +1584,7 @@ const handleCancel = () => {
             </VCardText>
           </VCard>
 
-          <VCard
-            variant="outlined"
-            class="mb-4"
-          >
+          <VCard variant="outlined" class="mb-4">
             <VCardTitle class="text-body-1 pa-3 font-weight-bold">
               {{ t('chatbot_redirect_failed_attempts') }}
             </VCardTitle>
@@ -1121,8 +1600,14 @@ const handleCancel = () => {
                 <VSelect
                   v-model="redirectFailedAttemptsStatus"
                   :items="[
-                    { value: 'active', title: t('chatbot_redirect_failed_attempts_active') },
-                    { value: 'inactive', title: t('chatbot_redirect_failed_attempts_inactive') },
+                    {
+                      value: 'active',
+                      title: t('chatbot_redirect_failed_attempts_active'),
+                    },
+                    {
+                      value: 'inactive',
+                      title: t('chatbot_redirect_failed_attempts_inactive'),
+                    },
                   ]"
                   item-title="title"
                   item-value="value"
@@ -1142,7 +1627,8 @@ const handleCancel = () => {
                     @keydown="onKeyPress"
                     @paste.prevent="
                       (e: ClipboardEvent) => {
-                        const pastedText = e.clipboardData?.getData('text') || '';
+                        const pastedText =
+                          e.clipboardData?.getData('text') || '';
                         const numericValue = onlyDigits(pastedText);
                         if (numericValue) {
                           redirectFailedAttemptsQuantityComputed = numericValue;
@@ -1184,8 +1670,10 @@ const handleCancel = () => {
                       <VTextField
                         v-bind="menuProps"
                         :model-value="
-                          redirectFailedAttemptsUsers.find((u) => u.value === redirectFailedAttemptsSelectedUser)
-                            ?.title || ''
+                          redirectFailedAttemptsUsers.find(
+                            (u) =>
+                              u.value === redirectFailedAttemptsSelectedUser
+                          )?.title || ''
                         "
                         :placeholder="t('chatbot_search')"
                         variant="outlined"
@@ -1239,7 +1727,10 @@ const handleCancel = () => {
                           </template>
                         </VListItem>
                         <VListItem
-                          v-if="filteredRedirectFailedAttemptsUsers.length === 0 && !isLoadingRedirectFailedAttemptsUsers"
+                          v-if="
+                            filteredRedirectFailedAttemptsUsers.length === 0 &&
+                            !isLoadingRedirectFailedAttemptsUsers
+                          "
                           disabled
                         >
                           <VListItemTitle
@@ -1262,8 +1753,10 @@ const handleCancel = () => {
                       <VTextField
                         v-bind="menuProps"
                         :model-value="
-                          redirectFailedAttemptsSectors.find((s) => s.value === redirectFailedAttemptsSelectedSector)
-                            ?.title || ''
+                          redirectFailedAttemptsSectors.find(
+                            (s) =>
+                              s.value === redirectFailedAttemptsSelectedSector
+                          )?.title || ''
                         "
                         :placeholder="t('chatbot_search')"
                         variant="outlined"
@@ -1306,7 +1799,10 @@ const handleCancel = () => {
                           <VListItemTitle>{{ sector.title }}</VListItemTitle>
                         </VListItem>
                         <VListItem
-                          v-if="filteredRedirectFailedAttemptsSectors.length === 0 && !isLoadingRedirectFailedAttemptsSectors"
+                          v-if="
+                            filteredRedirectFailedAttemptsSectors.length ===
+                              0 && !isLoadingRedirectFailedAttemptsSectors
+                          "
                           disabled
                         >
                           <VListItemTitle
@@ -1320,7 +1816,10 @@ const handleCancel = () => {
                   </VMenu>
                 </div>
 
-                <div v-if="showRedirectFailedAttemptsSectorUserField" class="mb-3">
+                <div
+                  v-if="showRedirectFailedAttemptsSectorUserField"
+                  class="mb-3"
+                >
                   <VLabel class="mb-1 text-body-2">{{
                     t('chatbot_sector_user_label')
                   }}</VLabel>
@@ -1330,16 +1829,31 @@ const handleCancel = () => {
                         v-bind="menuProps"
                         :model-value="
                           redirectFailedAttemptsSectorUsers.find(
-                            (u) => u.value === redirectFailedAttemptsSelectedSectorUser
+                            (u) =>
+                              u.value ===
+                              redirectFailedAttemptsSelectedSectorUser
                           )?.title || ''
                         "
                         :placeholder="t('chatbot_search_optional')"
                         variant="outlined"
                         readonly
-                        append-inner-icon="tabler-chevron-down"
                         :loading="isLoadingRedirectFailedAttemptsSectorUsers"
                         density="compact"
-                      />
+                      >
+                        <template #append-inner>
+                          <VIcon
+                            v-if="redirectFailedAttemptsSelectedSectorUser"
+                            icon="tabler-x"
+                            size="20"
+                            class="cursor-pointer me-1"
+                            @click.stop="
+                              redirectFailedAttemptsSelectedSectorUser = null;
+                              isRedirectFailedAttemptsSectorUserMenuOpen = false;
+                            "
+                          />
+                          <VIcon icon="tabler-chevron-down" size="20" />
+                        </template>
+                      </VTextField>
                     </template>
                     <VCard>
                       <VCardText>
@@ -1359,7 +1873,8 @@ const handleCancel = () => {
                           :key="user.value"
                           :value="user.value"
                           @click="
-                            redirectFailedAttemptsSelectedSectorUser = user.value;
+                            redirectFailedAttemptsSelectedSectorUser =
+                              user.value;
                             isRedirectFailedAttemptsSectorUserMenuOpen = false;
                           "
                         >
@@ -1386,7 +1901,8 @@ const handleCancel = () => {
                         </VListItem>
                         <VListItem
                           v-if="
-                            filteredRedirectFailedAttemptsSectorUsers.length === 0 && !isLoadingRedirectFailedAttemptsSectorUsers
+                            filteredRedirectFailedAttemptsSectorUsers.length ===
+                              0 && !isLoadingRedirectFailedAttemptsSectorUsers
                           "
                           disabled
                         >
@@ -1411,7 +1927,7 @@ const handleCancel = () => {
           <VBtn variant="tonal" color="secondary" @click="closeConfigModal">
             {{ t('cancel') }}
           </VBtn>
-          <VBtn color="primary" @click="closeConfigModal">
+          <VBtn color="primary" @click="handleSaveConfigurations">
             {{ t('save') }}
           </VBtn>
         </VCardText>
@@ -1497,5 +2013,9 @@ const handleCancel = () => {
 .max-height-300 {
   max-height: 300px;
   overflow-y: auto;
+}
+
+.cursor-pointer {
+  cursor: pointer;
 }
 </style>

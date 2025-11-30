@@ -14,6 +14,12 @@ import { ChatbotUserResponse } from '@core/schema/chatbot/listUsers/response.sch
 import { ChatbotSectorResponse } from '@core/schema/chatbot/listSectors/response.schema';
 import { ChatbotSectorUserResponse } from '@core/schema/chatbot/listSectorUsers/response.schema';
 import { ChatbotChatTagResponse } from '@core/schema/chatbot/listChatTags/response.schema';
+import { SaveChatbotFlowRequest } from '@core/schema/chatbot/saveChatbotFlow/request.schema';
+import { SaveChatbotFlowResponse } from '@core/schema/chatbot/saveChatbotFlow/response.schema';
+import { ListChatbotFlowResponse } from '@core/schema/chatbot/listChatbotFlow/response.schema';
+import { SaveChatbotFlowConfigurationsRequest } from '@core/schema/chatbot/saveChatbotFlowConfigurations/request.schema';
+import { SaveChatbotFlowConfigurationsResponse } from '@core/schema/chatbot/saveChatbotFlowConfigurations/response.schema';
+import { ListChatbotFlowConfigurationsResponse } from '@core/schema/chatbot/listChatbotFlowConfigurations/response.schema';
 
 export const useChatbotStore = defineStore('chatbot', {
   state: () => ({
@@ -32,215 +38,359 @@ export const useChatbotStore = defineStore('chatbot', {
       this.snackbar.color = color;
       this.snackbar.status = true;
     },
+
     hideSnackbar() {
       this.snackbar.status = false;
     },
 
-    async listChatbots(): Promise<ListChatbotResponse[] | null> {
+    _translateErrorMessage(backendMessage: string): string {
+      if (backendMessage.includes(';')) {
+        const messages = backendMessage
+          .split(';')
+          .map((msg: string) => msg.trim());
+        const translatedMessages = messages.map((msg: string) => {
+          const translation = this.i18n.global.t(msg);
+          return translation !== msg ? translation : msg;
+        });
+        return translatedMessages.join('; ');
+      }
+
+      const translation = this.i18n.global.t(backendMessage);
+      return translation !== backendMessage ? translation : backendMessage;
+    },
+
+    _getErrorMessage(error: unknown, defaultKey: string): string {
+      if (!(error instanceof AxiosError)) {
+        return this.i18n.global.t(defaultKey);
+      }
+
+      const backendMessage = error?.response?.data?.message;
+      if (!backendMessage) {
+        return this.i18n.global.t(defaultKey);
+      }
+
+      return this._translateErrorMessage(backendMessage);
+    },
+
+    async _handleGetRequest<T>(
+      url: string,
+      params?: Record<string, string>,
+      errorKey: string = 'request_error'
+    ): Promise<T | null> {
       try {
         this.loading = true;
 
-        const response =
-          await axios.get<IApiResponse<ListChatbotResponse[]>>('/chatbot');
+        const response = await axios.get<IApiResponse<T>>(url, { params });
 
         this.loading = false;
 
         const data = response?.data;
 
         if (!data?.status || !data?.data) {
-          const message =
-            data?.message ?? this.i18n.global.t('chatbot_list_error');
-
+          const message = data?.message ?? this.i18n.global.t(errorKey);
           this.showSnackbar(message, EColor.error);
-
           return null;
         }
 
-        this.list = data.data;
-
         return data.data;
       } catch (error) {
-        let errorMessage = this.i18n.global.t('chatbot_list_error');
-        if (error instanceof AxiosError) {
-          errorMessage = error?.response?.data?.message ?? errorMessage;
-        }
-
+        const errorMessage = this._getErrorMessage(error, errorKey);
         this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+        return null;
+      }
+    },
+
+    async _handleGetRequestSilent<T>(
+      url: string,
+      params?: Record<string, string>
+    ): Promise<T | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<IApiResponse<T>>(url, { params });
 
         this.loading = false;
 
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        this.loading = false;
         return null;
       }
+    },
+
+    async _handleGetRequestArray<T>(
+      url: string,
+      errorKey: string
+    ): Promise<T[]> {
+      try {
+        const response = await axios.get<IApiResponse<T[]>>(url);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return [];
+        }
+
+        return data.data;
+      } catch {
+        const errorMessage = this.i18n.global.t(errorKey);
+        this.showSnackbar(errorMessage, EColor.error);
+        return [];
+      }
+    },
+
+    async _handlePostRequest<TRequest, TResponse>(
+      url: string,
+      input: TRequest,
+      successKey: string,
+      errorKey: string
+    ): Promise<TResponse | null> {
+      try {
+        const response = await axios.post<IApiResponse<TResponse>>(url, input);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message = data?.message ?? this.i18n.global.t(errorKey);
+          this.showSnackbar(message, EColor.error);
+          return null;
+        }
+
+        const successMessage = this.i18n.global.t(successKey);
+        this.showSnackbar(successMessage, EColor.success);
+
+        return data.data;
+      } catch (error) {
+        const errorMessage = this._getErrorMessage(error, errorKey);
+        this.showSnackbar(errorMessage, EColor.error);
+        return null;
+      }
+    },
+
+    async _handlePutRequest<TRequest, TResponse>(
+      url: string,
+      input: TRequest,
+      successKey: string,
+      errorKey: string
+    ): Promise<TResponse | null> {
+      try {
+        const response = await axios.put<IApiResponse<TResponse>>(url, input);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message = data?.message ?? this.i18n.global.t(errorKey);
+          this.showSnackbar(message, EColor.error);
+          return null;
+        }
+
+        const successMessage = this.i18n.global.t(successKey);
+        this.showSnackbar(successMessage, EColor.success);
+
+        return data.data;
+      } catch (error) {
+        const errorMessage = this._getErrorMessage(error, errorKey);
+        this.showSnackbar(errorMessage, EColor.error);
+        return null;
+      }
+    },
+
+    async _handlePostRequestWithLoading<TRequest, TResponse>(
+      url: string,
+      input: TRequest,
+      successKey: string,
+      errorKey: string
+    ): Promise<TResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<TResponse>>(url, input);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message = data?.message ?? this.i18n.global.t(errorKey);
+          this.showSnackbar(message, EColor.error);
+          return null;
+        }
+
+        const successMessage = this.i18n.global.t(successKey);
+        this.showSnackbar(successMessage, EColor.success);
+
+        return data.data;
+      } catch (error) {
+        const errorMessage = this._getErrorMessage(error, errorKey);
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+        return null;
+      }
+    },
+
+    async _handlePostRequestWithComplexError<TRequest, TResponse>(
+      url: string,
+      input: TRequest,
+      successKey: string,
+      errorKey: string
+    ): Promise<TResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<TResponse>>(url, input);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message = data?.message ?? this.i18n.global.t(errorKey);
+          this.showSnackbar(message, EColor.error);
+          return null;
+        }
+
+        const successMessage = this.i18n.global.t(successKey);
+        this.showSnackbar(successMessage, EColor.success);
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(errorKey);
+        if (error instanceof AxiosError) {
+          const backendMessage = error?.response?.data?.message;
+          if (!backendMessage) {
+            this.showSnackbar(errorMessage, EColor.error);
+            this.loading = false;
+            return null;
+          }
+
+          errorMessage = this._translateErrorMessage(backendMessage);
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+        return null;
+      }
+    },
+
+    async listChatbots(): Promise<ListChatbotResponse[] | null> {
+      const result = await this._handleGetRequest<ListChatbotResponse[]>(
+        '/chatbot',
+        undefined,
+        'chatbot_list_error'
+      );
+
+      if (result) {
+        this.list = result;
+      }
+
+      return result;
     },
 
     async createChatbot(
       input: CreateChatbotRequest
     ): Promise<CreateChatbotResponse | null> {
-      try {
-        const response = await axios.post<IApiResponse<CreateChatbotResponse>>(
-          '/chatbot',
-          input
-        );
-
-        const data = response?.data;
-
-        if (!data?.status || !data?.data) {
-          const message =
-            data?.message ?? this.i18n.global.t('chatbot_creator_error');
-
-          this.showSnackbar(message, EColor.error);
-
-          return null;
-        }
-
-        const successMessage =
-          this.i18n.global.t('chatbot_creator_success') ||
-          'Chatbot criado com sucesso';
-        this.showSnackbar(successMessage, EColor.success);
-
-        return data.data;
-      } catch (error) {
-        let errorMessage = this.i18n.global.t('chatbot_creator_error');
-        if (error instanceof AxiosError) {
-          errorMessage = error?.response?.data?.message ?? errorMessage;
-        }
-
-        this.showSnackbar(errorMessage, EColor.error);
-
-        return null;
-      }
+      return this._handlePostRequest<
+        CreateChatbotRequest,
+        CreateChatbotResponse
+      >('/chatbot', input, 'chatbot_creator_success', 'chatbot_creator_error');
     },
 
     async updateChatbot(
       chatbotId: string,
       input: UpdateChatbotRequest
     ): Promise<UpdateChatbotResponse | null> {
-      try {
-        const response = await axios.put<IApiResponse<UpdateChatbotResponse>>(
-          `/chatbot/${chatbotId}`,
-          input
-        );
-
-        const data = response?.data;
-
-        if (!data?.status || !data?.data) {
-          const message =
-            data?.message ?? this.i18n.global.t('chatbot_update_error');
-
-          this.showSnackbar(message, EColor.error);
-
-          return null;
-        }
-
-        const successMessage =
-          this.i18n.global.t('chatbot_update_success') ||
-          'Chatbot atualizado com sucesso';
-        this.showSnackbar(successMessage, EColor.success);
-
-        return data.data;
-      } catch (error) {
-        let errorMessage = this.i18n.global.t('chatbot_update_error');
-        if (error instanceof AxiosError) {
-          errorMessage = error?.response?.data?.message ?? errorMessage;
-        }
-
-        this.showSnackbar(errorMessage, EColor.error);
-
-        return null;
-      }
+      return this._handlePutRequest<
+        UpdateChatbotRequest,
+        UpdateChatbotResponse
+      >(
+        `/chatbot/${chatbotId}`,
+        input,
+        'chatbot_update_success',
+        'chatbot_update_error'
+      );
     },
 
     async listChatbotUsers(): Promise<ChatbotUserResponse[]> {
-      try {
-        const response =
-          await axios.get<IApiResponse<ChatbotUserResponse[]>>(
-            '/chatbot/users'
-          );
-
-        const data = response?.data;
-
-        if (!data?.status || !data?.data) {
-          return [];
-        }
-
-        return data.data;
-      } catch {
-        const errorMessage =
-          this.i18n.global.t('error_loading_chatbot_users') ||
-          'Erro ao carregar usuários do chatbot';
-        this.showSnackbar(errorMessage, EColor.error);
-        return [];
-      }
+      return this._handleGetRequestArray<ChatbotUserResponse>(
+        '/chatbot/users',
+        'error_loading_chatbot_users'
+      );
     },
 
     async listChatbotSectors(): Promise<ChatbotSectorResponse[]> {
-      try {
-        const response =
-          await axios.get<IApiResponse<ChatbotSectorResponse[]>>(
-            '/chatbot/sectors'
-          );
-
-        const data = response?.data;
-
-        if (!data?.status || !data?.data) {
-          return [];
-        }
-
-        return data.data;
-      } catch {
-        const errorMessage =
-          this.i18n.global.t('error_loading_chatbot_sectors') ||
-          'Erro ao carregar setores do chatbot';
-        this.showSnackbar(errorMessage, EColor.error);
-        return [];
-      }
+      return this._handleGetRequestArray<ChatbotSectorResponse>(
+        '/chatbot/sectors',
+        'error_loading_chatbot_sectors'
+      );
     },
 
     async listChatbotSectorUsers(
       sectorId: string
     ): Promise<ChatbotSectorUserResponse[]> {
-      try {
-        const response = await axios.get<
-          IApiResponse<ChatbotSectorUserResponse[]>
-        >(`/chatbot/sectors/${sectorId}/users`);
-
-        const data = response?.data;
-
-        if (!data?.status || !data?.data) {
-          return [];
-        }
-
-        return data.data;
-      } catch {
-        const errorMessage =
-          this.i18n.global.t('error_loading_chatbot_sector_users') ||
-          'Erro ao carregar usuários do setor do chatbot';
-        this.showSnackbar(errorMessage, EColor.error);
-        return [];
-      }
+      return this._handleGetRequestArray<ChatbotSectorUserResponse>(
+        `/chatbot/sectors/${sectorId}/users`,
+        'error_loading_chatbot_sector_users'
+      );
     },
 
     async listChatbotTags(): Promise<ChatbotChatTagResponse[]> {
-      try {
-        const response =
-          await axios.get<IApiResponse<ChatbotChatTagResponse[]>>(
-            '/chatbot/tags'
-          );
+      return this._handleGetRequestArray<ChatbotChatTagResponse>(
+        '/chatbot/tags',
+        'error_loading_chatbot_tags'
+      );
+    },
 
-        const data = response?.data;
+    async saveChatbotFlow(
+      input: SaveChatbotFlowRequest
+    ): Promise<SaveChatbotFlowResponse | null> {
+      return this._handlePostRequestWithComplexError<
+        SaveChatbotFlowRequest,
+        SaveChatbotFlowResponse
+      >(
+        '/chatbot/flow',
+        input,
+        'chatbot_flow_save_success',
+        'chatbot_flow_save_error'
+      );
+    },
 
-        if (!data?.status || !data?.data) {
-          return [];
-        }
+    async listChatbotFlow(
+      chatbotId: string
+    ): Promise<ListChatbotFlowResponse | null> {
+      return this._handleGetRequestSilent<ListChatbotFlowResponse>(
+        '/chatbot/flow',
+        { chatbot_id: chatbotId }
+      );
+    },
 
-        return data.data;
-      } catch {
-        const errorMessage =
-          this.i18n.global.t('error_loading_chatbot_tags') ||
-          'Erro ao carregar etiquetas do chatbot';
-        this.showSnackbar(errorMessage, EColor.error);
-        return [];
-      }
+    async saveChatbotFlowConfigurations(
+      input: SaveChatbotFlowConfigurationsRequest
+    ): Promise<SaveChatbotFlowConfigurationsResponse | null> {
+      return this._handlePostRequestWithLoading<
+        SaveChatbotFlowConfigurationsRequest,
+        SaveChatbotFlowConfigurationsResponse
+      >(
+        '/chatbot/flow/configurations',
+        input,
+        'chatbot_flow_configurations_save_success',
+        'chatbot_flow_configurations_save_error'
+      );
+    },
+
+    async listChatbotFlowConfigurations(
+      chatbotId: string
+    ): Promise<ListChatbotFlowConfigurationsResponse | null> {
+      return this._handleGetRequestSilent<ListChatbotFlowConfigurationsResponse>(
+        '/chatbot/flow/configurations',
+        { chatbot_id: chatbotId }
+      );
     },
   },
 });

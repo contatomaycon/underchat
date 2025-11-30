@@ -39,6 +39,11 @@ const messageEmojiPickerOpen = ref(false);
 const messageLength = computed(() => satisfactionData.value.message.length);
 const maxMessageLength = 500;
 
+const buildOptionHandleId = (optionId: string) => {
+  const normalizedId = optionId.replace(/^(option-)+/i, '');
+  return `option-${normalizedId}-source`;
+};
+
 const updateNodeData = () => {
   if (props.data) {
     const data = props.data as SatisfactionData;
@@ -285,7 +290,7 @@ watch(
               hide-details
             />
             <Handle
-              :id="`option-${option.id}-source`"
+              :id="buildOptionHandleId(option.id)"
               type="source"
               :position="Position.Right"
               class="option-handle handle-source"
