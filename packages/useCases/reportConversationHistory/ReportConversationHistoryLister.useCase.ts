@@ -39,7 +39,6 @@ export class ReportConversationHistoryListerUseCase {
 
     const filterClauses: IElasticsearchBoolClause[] = [];
 
-    // Filtro por data
     if (query.start_date || query.end_date) {
       const dateRange: any = {};
       if (query.start_date) {
@@ -55,7 +54,6 @@ export class ReportConversationHistoryListerUseCase {
       } as unknown as IElasticsearchBoolClause);
     }
 
-    // Filtro por operador
     if (query.operator_id) {
       filterClauses.push({
         nested: {
@@ -69,7 +67,6 @@ export class ReportConversationHistoryListerUseCase {
       });
     }
 
-    // Filtro por fila (sector)
     if (query.queue_id) {
       filterClauses.push({
         nested: {
@@ -83,7 +80,6 @@ export class ReportConversationHistoryListerUseCase {
       });
     }
 
-    // Filtro por protocolo
     if (query.protocol) {
       filterClauses.push({
         bool: {
@@ -108,7 +104,6 @@ export class ReportConversationHistoryListerUseCase {
       } as unknown as IElasticsearchBoolClause);
     }
 
-    // Filtro por nome do cliente
     if (query.client_name) {
       filterClauses.push({
         match: {
@@ -120,7 +115,6 @@ export class ReportConversationHistoryListerUseCase {
       } as unknown as IElasticsearchBoolClause);
     }
 
-    // Filtro por telefone
     if (query.phone) {
       filterClauses.push({
         term: {
@@ -174,7 +168,6 @@ export class ReportConversationHistoryListerUseCase {
   }
 
   private mapChatToResult(chat: any): ReportConversationHistoryResult {
-    // Tratamento para campos nested que podem vir como array ou objeto
     const user = Array.isArray(chat.user) ? chat.user[0] : chat.user;
     const sector = Array.isArray(chat.sector) ? chat.sector[0] : chat.sector;
     const worker = Array.isArray(chat.worker) ? chat.worker[0] : chat.worker;
@@ -182,27 +175,27 @@ export class ReportConversationHistoryListerUseCase {
       ? chat.contact[0]
       : chat.contact;
 
-    // Coleta todos os protocolos de todas as fontes com seus tipos
     const allProtocols: Array<{ protocol: string; type: 'A' | 'U' | 'T' }> = [];
-    
-    // Adiciona protocolos de cada tipo (se existirem)
+
     if (Array.isArray(chat.protocol_start) && chat.protocol_start.length > 0) {
       chat.protocol_start.forEach((p: string) => {
-        allProtocols.push({ protocol: p, type: 'A' }); // A = Atendimento
+        allProtocols.push({ protocol: p, type: 'A' });
       });
     }
     if (Array.isArray(chat.protocol_ura) && chat.protocol_ura.length > 0) {
       chat.protocol_ura.forEach((p: string) => {
-        allProtocols.push({ protocol: p, type: 'U' }); // U = URA
+        allProtocols.push({ protocol: p, type: 'U' });
       });
     }
-    if (Array.isArray(chat.protocol_transfer) && chat.protocol_transfer.length > 0) {
+    if (
+      Array.isArray(chat.protocol_transfer) &&
+      chat.protocol_transfer.length > 0
+    ) {
       chat.protocol_transfer.forEach((p: string) => {
-        allProtocols.push({ protocol: p, type: 'T' }); // T = Transferência
+        allProtocols.push({ protocol: p, type: 'T' });
       });
     }
 
-    // Remove duplicatas mantendo a ordem (mesmo protocolo pode aparecer em tipos diferentes)
     const uniqueProtocolsMap = new Map<string, 'A' | 'U' | 'T'>();
     allProtocols.forEach((item) => {
       if (!uniqueProtocolsMap.has(item.protocol)) {
@@ -210,22 +203,18 @@ export class ReportConversationHistoryListerUseCase {
       }
     });
 
-    // Converte para array de objetos com tipo
     const protocolsWithType = Array.from(uniqueProtocolsMap.entries()).map(
       ([protocol, type]) => ({ protocol, type })
     );
 
-    // Array simples de protocolos (para compatibilidade)
     const uniqueProtocols = protocolsWithType.map((p) => p.protocol);
 
-    // Pega o primeiro protocolo disponível (protocol_start tem prioridade) para compatibilidade
     const protocol =
       chat.protocol_start?.[0] ||
       chat.protocol_ura?.[0] ||
       chat.protocol_transfer?.[0] ||
       null;
 
-    // Se não há protocolos coletados mas há um protocol único, adiciona ao array
     if (protocolsWithType.length === 0 && protocol) {
       protocolsWithType.push({ protocol, type: 'A' });
       uniqueProtocols.push(protocol);
@@ -235,7 +224,8 @@ export class ReportConversationHistoryListerUseCase {
       date: chat.date,
       protocol,
       protocols: uniqueProtocols.length > 0 ? uniqueProtocols : [],
-      protocolsWithType: protocolsWithType.length > 0 ? protocolsWithType : undefined,
+      protocolsWithType:
+        protocolsWithType.length > 0 ? protocolsWithType : undefined,
       client: chat.name || contact?.name || '-',
       phone: chat.phone,
       cpf_cnpj: null,
