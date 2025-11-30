@@ -10,6 +10,7 @@ import ChatbotSatisfactionNode from '@/components/chatbot/ChatbotSatisfactionNod
 import ChatbotRedirectNode from '@/components/chatbot/ChatbotRedirectNode.vue';
 import ChatbotFinishNode from '@/components/chatbot/ChatbotFinishNode.vue';
 import ChatbotTagNode from '@/components/chatbot/ChatbotTagNode.vue';
+import ChatbotMessageNode from '@/components/chatbot/ChatbotMessageNode.vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 
@@ -31,6 +32,7 @@ const nodeTypes = {
   redirect: ChatbotRedirectNode,
   finish: ChatbotFinishNode,
   tag: ChatbotTagNode,
+  message: ChatbotMessageNode,
 };
 
 const initialNodes: Node[] = [
@@ -157,6 +159,25 @@ const addTagNode = () => {
   nodes.value.push(newNode);
 };
 
+const addMessageNode = () => {
+  const newNode: Node = {
+    id: `message-${nodeIdCounter++}`,
+    type: 'message',
+    position: {
+      x: getSecureRandom(400) + 100,
+      y: getSecureRandom(300) + 100,
+    },
+    data: {
+      messageType: null,
+      text: '',
+      attachmentFile: null,
+      continueType: null,
+      onRemove: () => removeNode(newNode.id),
+    },
+  };
+  nodes.value.push(newNode);
+};
+
 const onConnect = (connection: Connection) => {
   const existingEdge = edges.value.find(
     (e) => e.source === connection.source && e.target === connection.target
@@ -249,9 +270,7 @@ const handleCancel = () => {
           <VBtn variant="tonal" color="secondary" @click="handleCancel">
             Cancelar
           </VBtn>
-          <VBtn color="primary" @click="handleSave">
-            Salvar
-          </VBtn>
+          <VBtn color="primary" @click="handleSave"> Salvar </VBtn>
         </div>
         <div class="flow-layout">
           <div class="node-menu">
@@ -276,6 +295,10 @@ const handleCancel = () => {
             <VBtn color="secondary" @click="addTagNode">
               <VIcon icon="tabler-tag" class="me-2" />
               Etiqueta
+            </VBtn>
+            <VBtn color="success" @click="addMessageNode">
+              <VIcon icon="tabler-message" class="me-2" />
+              Mensagem
             </VBtn>
           </div>
           <div class="vertical-divider" />
