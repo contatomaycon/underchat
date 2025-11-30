@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed, onMounted } from 'vue';
+import { useRoute } from 'vue-router';
 import { VueFlow } from '@vue-flow/core';
 import type { Node, Edge, Connection, NodeChange } from '@vue-flow/core';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
@@ -10,6 +11,7 @@ import ChatbotSatisfactionNode from '@/components/chatbot/ChatbotSatisfactionNod
 import ChatbotRedirectNode from '@/components/chatbot/ChatbotRedirectNode.vue';
 import ChatbotFinishNode from '@/components/chatbot/ChatbotFinishNode.vue';
 import ChatbotTagNode from '@/components/chatbot/ChatbotTagNode.vue';
+import { useChatbotStore } from '@/@webcore/stores/chatbot';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 
@@ -22,6 +24,24 @@ definePage({
       EChatbotPermissions.chatbot_access,
     ],
   },
+});
+
+const route = useRoute();
+const router = useRouter();
+const chatbotStore = useChatbotStore();
+const { t } = useI18n();
+
+const chatbotId = computed(() => route.params.id as string);
+const chatbotName = ref('');
+
+onMounted(async () => {
+  await chatbotStore.listChatbots();
+  const chatbot = chatbotStore.list.find(
+    (cb) => cb.chatbot_id === chatbotId.value
+  );
+  if (chatbot) {
+    chatbotName.value = chatbot.name;
+  }
 });
 
 const nodeTypes = {
@@ -48,8 +68,6 @@ const initialEdges: Edge[] = [];
 
 const nodes = ref<Node[]>(initialNodes);
 const edges = ref<Edge[]>(initialEdges);
-const { t } = useI18n();
-const router = useRouter();
 
 let nodeIdCounter = 2;
 
@@ -232,27 +250,19 @@ const onNodesChange = (changes: NodeChange[]) => {
   }
 };
 
-const handleSave = () => {
-  // Por enquanto não faz nada
-};
-
 const handleCancel = () => {
   router.push('/chatbot');
+};
+
+const handleSave = () => {
+  // Por enquanto não faz nada
 };
 </script>
 
 <template>
   <div>
-    <VCard :title="`${t('configurations')} ${t('chatbot')}`">
+    <VCard :title="`${t('configurations')} ${chatbotName ? `- ${chatbotName}` : t('chatbot')}`">
       <VCardText>
-        <div class="actions-row">
-          <VBtn variant="tonal" color="secondary" @click="handleCancel">
-            Cancelar
-          </VBtn>
-          <VBtn color="primary" @click="handleSave">
-            Salvar
-          </VBtn>
-        </div>
         <div class="flow-layout">
           <div class="node-menu">
             <VBtn color="primary" @click="addMenuNode">
@@ -299,6 +309,17 @@ const handleCancel = () => {
           </div>
         </div>
       </VCardText>
+
+      <VDivider />
+
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn variant="tonal" color="secondary" @click="handleCancel">
+          {{ t('cancel') }}
+        </VBtn>
+        <VBtn color="primary" @click="handleSave">
+          {{ t('save') }}
+        </VBtn>
+      </VCardText>
     </VCard>
   </div>
 </template>
@@ -340,11 +361,5 @@ const handleCancel = () => {
   flex: 1;
   height: 100%;
 }
-
-.actions-row {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-bottom: 16px;
-}
 </style>
+

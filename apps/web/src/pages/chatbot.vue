@@ -47,6 +47,10 @@ const deleteChatbot = (id: string) => {
   // Por enquanto não faz nada
 };
 
+const openConfigurations = (id: string) => {
+  router.push(`/chatbot-flow/${id}`);
+};
+
 const openAddModal = () => {
   isAddModalOpen.value = true;
 };
@@ -95,6 +99,20 @@ onMounted(async () => {
 
           <template #item.actions="{ item }">
             <div class="d-flex gap-1">
+              <IconBtn>
+                <VTooltip
+                  location="top"
+                  transition="scale-transition"
+                  activator="parent"
+                >
+                  <span>{{ $t('configurations') }}</span>
+                </VTooltip>
+                <VIcon
+                  icon="tabler-settings"
+                  @click="openConfigurations(item.chatbot_id)"
+                />
+              </IconBtn>
+
               <IconBtn>
                 <VTooltip
                   location="top"
