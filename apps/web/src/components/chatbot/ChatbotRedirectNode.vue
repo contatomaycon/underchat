@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position } from '@vue-flow/core';
 import { useChatbotStore } from '@/@webcore/stores/chatbot';
@@ -18,13 +18,19 @@ const props = defineProps<NodeProps>();
 const chatbotStore = useChatbotStore();
 const { t } = useI18n();
 
+const normalizeValue = (value?: string | null): string | null => {
+  if (!value) return null;
+  const trimmed = value.toString().trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
 const getInitialData = (): RedirectData => {
   const data = props.data as RedirectData | undefined;
   return {
     redirectType: data?.redirectType || null,
-    selectedUser: data?.selectedUser || null,
-    selectedSector: data?.selectedSector || null,
-    selectedSectorUser: data?.selectedSectorUser || null,
+    selectedUser: normalizeValue(data?.selectedUser),
+    selectedSector: normalizeValue(data?.selectedSector),
+    selectedSectorUser: normalizeValue(data?.selectedSectorUser),
   };
 };
 
@@ -42,6 +48,27 @@ const isLoadingSectorUsers = ref(false);
 const isUserMenuOpen = ref(false);
 const isSectorMenuOpen = ref(false);
 const isSectorUserMenuOpen = ref(false);
+
+const selectedUserTitle = computed(() => {
+  const current = users.value.find(
+    (u) => u.value === redirectData.value.selectedUser
+  );
+  return current?.title || '';
+});
+
+const selectedSectorTitle = computed(() => {
+  const current = sectors.value.find(
+    (s) => s.value === redirectData.value.selectedSector
+  );
+  return current?.title || '';
+});
+
+const selectedSectorUserTitle = computed(() => {
+  const current = sectorUsers.value.find(
+    (u) => u.value === redirectData.value.selectedSectorUser
+  );
+  return current?.title || '';
+});
 
 const filteredUsers = computed(() => {
   if (!userSearch.value) {
@@ -87,6 +114,8 @@ const updateNodeData = () => {
 };
 
 const loadUsers = async () => {
+  if (isLoadingUsers.value) return;
+
   const user = getUser();
   if (!user?.account_id) return;
 
@@ -99,6 +128,18 @@ const loadUsers = async () => {
       photo: user.photo || null,
       status: user.status || null,
     }));
+
+    if (
+      redirectData.value.selectedUser &&
+      !users.value.some((u) => u.value === redirectData.value.selectedUser)
+    ) {
+      users.value.unshift({
+        value: redirectData.value.selectedUser,
+        title: redirectData.value.selectedUser,
+        photo: null,
+        status: null,
+      });
+    }
   } catch (error) {
     console.error('Error loading users:', error);
   } finally {
@@ -107,6 +148,8 @@ const loadUsers = async () => {
 };
 
 const loadSectors = async () => {
+  if (isLoadingSectors.value) return;
+
   const user = getUser();
   if (!user?.account_id) return;
 
@@ -118,6 +161,17 @@ const loadSectors = async () => {
       title: sector.name,
       color: sector.color || null,
     }));
+
+    if (
+      redirectData.value.selectedSector &&
+      !sectors.value.some((s) => s.value === redirectData.value.selectedSector)
+    ) {
+      sectors.value.unshift({
+        value: redirectData.value.selectedSector,
+        title: redirectData.value.selectedSector,
+        color: null,
+      });
+    }
   } catch (error) {
     console.error('Error loading sectors:', error);
   } finally {
@@ -126,6 +180,8 @@ const loadSectors = async () => {
 };
 
 const loadSectorUsers = async (sectorId: string) => {
+  if (isLoadingSectorUsers.value) return;
+
   isLoadingSectorUsers.value = true;
   try {
     const usersList = await chatbotStore.listChatbotSectorUsers(sectorId);
@@ -135,6 +191,20 @@ const loadSectorUsers = async (sectorId: string) => {
       photo: user.photo || null,
       status: user.status,
     }));
+
+    if (
+      redirectData.value.selectedSectorUser &&
+      !sectorUsers.value.some(
+        (u) => u.value === redirectData.value.selectedSectorUser
+      )
+    ) {
+      sectorUsers.value.unshift({
+        value: redirectData.value.selectedSectorUser,
+        title: redirectData.value.selectedSectorUser,
+        photo: null,
+        status: null,
+      });
+    }
   } catch (error) {
     sectorUsers.value = [];
     console.error('Error loading sector users:', error);
@@ -211,6 +281,34 @@ const handleRemove = () => {
     data.onRemove();
   }
 };
+
+onMounted(() => {
+  if (redirectData.value.redirectType === 'user') {
+    loadUsers();
+  }
+
+  if (redirectData.value.redirectType === 'sector') {
+    loadSectors();
+
+    if (redirectData.value.selectedSector) {
+      loadSectorUsers(redirectData.value.selectedSector);
+
+      if (
+        redirectData.value.selectedSectorUser &&
+        !sectorUsers.value.some(
+          (u) => u.value === redirectData.value.selectedSectorUser
+        )
+      ) {
+        sectorUsers.value.unshift({
+          value: redirectData.value.selectedSectorUser,
+          title: redirectData.value.selectedSectorUser,
+          photo: null,
+          status: null,
+        });
+      }
+    }
+  }
+});
 </script>
 
 <template>
@@ -259,10 +357,7 @@ const handleRemove = () => {
             <template #activator="{ props: menuProps }">
               <VTextField
                 v-bind="menuProps"
-                :model-value="
-                  users.find((u) => u.value === redirectData.selectedUser)
-                    ?.title || ''
-                "
+                :model-value="selectedUserTitle"
                 :placeholder="t('chatbot_search')"
                 variant="outlined"
                 readonly
@@ -337,10 +432,7 @@ const handleRemove = () => {
             <template #activator="{ props: menuProps }">
               <VTextField
                 v-bind="menuProps"
-                :model-value="
-                  sectors.find((s) => s.value === redirectData.selectedSector)
-                    ?.title || ''
-                "
+                :model-value="selectedSectorTitle"
                 :placeholder="t('chatbot_search')"
                 variant="outlined"
                 readonly
@@ -410,15 +502,20 @@ const handleRemove = () => {
             <template #activator="{ props: menuProps }">
               <VTextField
                 v-bind="menuProps"
-                :model-value="
-                  sectorUsers.find(
-                    (u) => u.value === redirectData.selectedSectorUser
-                  )?.title || ''
-                "
+                :model-value="selectedSectorUserTitle"
                 :placeholder="t('chatbot_search_optional')"
                 variant="outlined"
                 readonly
-                append-inner-icon="tabler-chevron-down"
+                :append-inner-icon="
+                  redirectData.selectedSectorUser
+                    ? 'tabler-x'
+                    : 'tabler-chevron-down'
+                "
+                @click:append-inner="
+                  redirectData.selectedSectorUser
+                    ? (redirectData.selectedSectorUser = null)
+                    : undefined
+                "
                 :loading="isLoadingSectorUsers"
                 density="compact"
               />
