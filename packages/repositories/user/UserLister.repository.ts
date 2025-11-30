@@ -335,4 +335,56 @@ export class UserListerRepository {
 
     return result[0]?.count ?? 0;
   };
+
+  listAllUsers = async (
+    accountId: string
+  ): Promise<
+    Array<{
+      user_id: string;
+      first_name: string | null;
+      last_name: string | null;
+      account_id: string;
+      account_name: string;
+    }>
+  > => {
+    const result = await this.db.query.user.findMany({
+      where: and(eq(user.account_id, accountId), isNull(user.deleted_at)),
+      with: {
+        aac: {
+          columns: {
+            account_id: true,
+            name: true,
+          },
+        },
+        uui: {
+          columns: {
+            name: true,
+            last_name: true,
+          },
+        },
+      },
+      columns: {
+        user_id: true,
+      },
+    });
+
+    if (!result) {
+      return [];
+    }
+
+    // Ordenar por nome do usuário após buscar
+    const sortedResult = result.sort((a, b) => {
+      const nameA = a.uui?.name?.toLowerCase() || '';
+      const nameB = b.uui?.name?.toLowerCase() || '';
+      return nameA.localeCompare(nameB);
+    });
+
+    return sortedResult.map((user) => ({
+      user_id: user.user_id,
+      first_name: user.uui?.name || null,
+      last_name: user.uui?.last_name || null,
+      account_id: user.aac?.account_id || accountId,
+      account_name: user.aac?.name || '',
+    }));
+  };
 }
