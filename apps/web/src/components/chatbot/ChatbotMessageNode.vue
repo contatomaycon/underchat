@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position } from '@vue-flow/core';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { useI18n } from 'vue-i18n';
+import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
 
 interface MessageData {
   messageType:
@@ -50,7 +51,7 @@ const ACCEPTED_AUDIO_MIME_TYPES = [
   'audio/opus',
 ];
 
-const MAX_FILE_SIZE = 16 * 1024 * 1024; // 16MB
+const MAX_FILE_SIZE = 16 * 1024 * 1024;
 
 const getInitialData = (): MessageData => {
   const data = props.data as MessageData | undefined;
@@ -66,6 +67,25 @@ const messageData = ref<MessageData>(getInitialData());
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const filePreview = ref<string | null>(null);
 const fileSizeError = ref<string | null>(null);
+
+const previewDialog = ref<{
+  open: boolean;
+  src: string | null;
+  caption: string | null;
+  type: EMessageType | null;
+}>({
+  open: false,
+  src: null,
+  caption: null,
+  type: null,
+});
+
+const audioPreviewRef = ref<HTMLAudioElement | null>(null);
+const isAudioPlaying = ref(false);
+const audioProgress = ref(0);
+const audioDuration = ref(0);
+const audioCurrentTime = ref(0);
+const audioWaveformBars = ref<number[]>([]);
 
 const messageTypeOptions = computed(() => [
   {
@@ -220,6 +240,98 @@ const removeFile = () => {
   updateNodeData();
 };
 
+const openPreview = () => {
+  if (!filePreview.value || !messageData.value.messageType) return;
+  previewDialog.value = {
+    open: true,
+    src: filePreview.value,
+    caption: messageData.value.text || null,
+    type: messageData.value.messageType,
+  };
+  if (messageData.value.messageType === EMessageType.audio) {
+    nextTick(() => {
+      if (audioPreviewRef.value) {
+        audioPreviewRef.value.load();
+      }
+    });
+  }
+};
+
+const closePreview = () => {
+  if (audioPreviewRef.value) {
+    audioPreviewRef.value.pause();
+    audioPreviewRef.value.currentTime = 0;
+  }
+  isAudioPlaying.value = false;
+  audioProgress.value = 0;
+  audioDuration.value = 0;
+  audioCurrentTime.value = 0;
+  audioWaveformBars.value = [];
+  previewDialog.value = {
+    open: false,
+    src: null,
+    caption: null,
+    type: null,
+  };
+};
+
+const toggleAudioPreview = () => {
+  if (!audioPreviewRef.value) return;
+
+  if (isAudioPlaying.value) {
+    audioPreviewRef.value.pause();
+    return;
+  }
+
+  audioPreviewRef.value.play().catch(() => {
+    isAudioPlaying.value = false;
+  });
+};
+
+const updateAudioProgress = () => {
+  if (!audioPreviewRef.value) return;
+  audioCurrentTime.value = audioPreviewRef.value.currentTime;
+  if (audioDuration.value > 0) {
+    audioProgress.value =
+      (audioPreviewRef.value.currentTime / audioDuration.value) * 100;
+  }
+};
+
+const updateAudioDuration = () => {
+  if (!audioPreviewRef.value) return;
+  audioDuration.value = audioPreviewRef.value.duration;
+  if (!audioWaveformBars.value.length) {
+    audioWaveformBars.value = createDefaultWaveform();
+  }
+};
+
+const createDefaultWaveform = (): number[] => {
+  return new Array(64).fill(0.3);
+};
+
+const formatAudioTime = (seconds: number): string => {
+  if (!seconds || Number.isNaN(seconds)) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
+const audioTimeDisplay = computed(() => {
+  if (isAudioPlaying.value) {
+    return `${formatAudioTime(audioCurrentTime.value)} / ${formatAudioTime(
+      audioDuration.value
+    )}`;
+  }
+  return formatAudioTime(audioDuration.value);
+});
+
+onUnmounted(() => {
+  if (filePreview.value) {
+    URL.revokeObjectURL(filePreview.value);
+  }
+  closePreview();
+});
+
 const handleRemove = () => {
   const data = props.data as MessageData;
   if (data?.onRemove) {
@@ -229,8 +341,8 @@ const handleRemove = () => {
 
 watch(
   () => messageData.value.messageType,
-  (newType) => {
-    if (newType === EMessageType.text) {
+  (newType, oldType) => {
+    if (oldType !== undefined && oldType !== newType) {
       removeFile();
     }
     updateNodeData();
@@ -300,19 +412,103 @@ watch(
               Anexar
             </VBtn>
           </div>
-          <div v-else class="d-flex align-center ga-2">
-            <span class="text-body-2 text-truncate" style="flex: 1">
-              {{ messageData.attachmentFile?.name }}
-            </span>
-            <VBtn
-              icon
-              size="small"
-              variant="text"
-              color="error"
-              @click="removeFile"
+          <div v-else class="d-flex flex-column ga-2">
+            <div class="d-flex align-center ga-2">
+              <span class="text-body-2 text-truncate" style="flex: 1">
+                {{ messageData.attachmentFile?.name }}
+              </span>
+              <VBtn
+                icon
+                size="small"
+                variant="text"
+                color="error"
+                @click="removeFile"
+              >
+                <VIcon icon="tabler-x" size="18" />
+              </VBtn>
+            </div>
+            <VCard
+              v-if="filePreview"
+              class="pa-1 cursor-pointer"
+              style="max-width: 100px"
+              @click="openPreview"
             >
-              <VIcon icon="tabler-x" size="18" />
-            </VBtn>
+              <VImg
+                v-if="messageData.messageType === EMessageType.image"
+                :src="filePreview"
+                max-width="100"
+                max-height="75"
+                aspect-ratio="4/3"
+                cover
+                class="rounded cursor-pointer"
+                style="object-fit: cover"
+              />
+              <div
+                v-else-if="messageData.messageType === EMessageType.video"
+                class="position-relative rounded cursor-pointer"
+                style="
+                  width: 100px;
+                  height: 75px;
+                  background: rgba(var(--v-theme-surface-variant), 0.1);
+                "
+              >
+                <video
+                  :src="filePreview"
+                  class="rounded"
+                  preload="metadata"
+                  muted
+                  playsinline
+                  style="
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                    pointer-events: none;
+                  "
+                >
+                  <track kind="captions" />
+                </video>
+                <div
+                  class="position-absolute d-flex align-center justify-center"
+                  style="
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    z-index: 1;
+                    pointer-events: none;
+                  "
+                >
+                  <VIcon
+                    icon="tabler-player-play-filled"
+                    size="20"
+                    color="white"
+                    style="filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5))"
+                  />
+                </div>
+              </div>
+              <div
+                v-else-if="messageData.messageType === EMessageType.audio"
+                class="d-flex align-center gap-2 pa-2"
+                style="
+                  background: rgba(var(--v-theme-surface-variant), 0.1);
+                  border-radius: 8px;
+                  max-width: 100px;
+                "
+              >
+                <VIcon icon="tabler-music" size="24" />
+                <div class="flex-grow-1" style="min-width: 0">
+                  <div class="text-caption text-truncate">
+                    {{ messageData.attachmentFile?.name }}
+                  </div>
+                  <div
+                    class="text-caption text-medium-emphasis"
+                    style="font-size: 0.7rem"
+                  >
+                    Clique para visualizar
+                  </div>
+                </div>
+                <VIcon icon="tabler-player-play-filled" size="20" />
+              </div>
+            </VCard>
           </div>
           <div v-if="fileSizeError" class="text-caption text-error mt-1">
             {{ fileSizeError }}
@@ -334,11 +530,6 @@ watch(
             :maxlength="maxTextLength"
             hide-details="auto"
           />
-          <div class="d-flex justify-end mt-1">
-            <span class="text-caption text-medium-emphasis">
-              {{ textLength }}/{{ maxTextLength }}
-            </span>
-          </div>
         </div>
 
         <VSelect
@@ -351,6 +542,99 @@ watch(
         />
       </VCardText>
     </VCard>
+
+    <VDialog v-model="previewDialog.open" max-width="800">
+      <DialogCloseBtn @click="closePreview" />
+      <VCard :title="t('preview')">
+        <VCardText>
+          <VImg
+            v-if="
+              previewDialog.src && previewDialog.type === EMessageType.image
+            "
+            :src="previewDialog.src"
+            max-height="420"
+            class="rounded"
+            contain
+          />
+          <video
+            v-if="
+              previewDialog.src && previewDialog.type === EMessageType.video
+            "
+            :src="previewDialog.src"
+            max-height="600"
+            class="rounded"
+            style="width: 100%"
+            controls
+          >
+            <track kind="captions" />
+          </video>
+          <div
+            v-if="
+              previewDialog.src && previewDialog.type === EMessageType.audio
+            "
+            class="d-flex flex-column align-center pa-6"
+          >
+            <div class="audio-preview-container w-100">
+              <div class="audio-waveform-container mb-4">
+                <div class="audio-waveform">
+                  <div
+                    v-for="(bar, index) in audioWaveformBars"
+                    :key="index"
+                    class="audio-waveform-bar"
+                    :class="{
+                      'audio-waveform-bar--active':
+                        audioProgress >
+                        (index / audioWaveformBars.length) * 100,
+                    }"
+                    :style="{
+                      height: `${Math.max(10, bar * 100)}%`,
+                    }"
+                  ></div>
+                </div>
+                <div
+                  class="audio-progress-indicator"
+                  :style="{
+                    left: `${audioProgress}%`,
+                  }"
+                ></div>
+              </div>
+              <div class="d-flex align-center justify-center gap-4 w-100">
+                <VBtn
+                  :icon="
+                    isAudioPlaying
+                      ? 'tabler-player-pause'
+                      : 'tabler-player-play'
+                  "
+                  variant="flat"
+                  color="primary"
+                  size="large"
+                  @click="toggleAudioPreview"
+                />
+                <div class="flex-grow-1">
+                  <audio
+                    ref="audioPreviewRef"
+                    :src="previewDialog.src"
+                    @timeupdate="updateAudioProgress"
+                    @loadedmetadata="updateAudioDuration"
+                    @play="isAudioPlaying = true"
+                    @pause="isAudioPlaying = false"
+                    @ended="isAudioPlaying = false"
+                  />
+                  <div class="text-caption text-center">
+                    {{ audioTimeDisplay }}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-if="previewDialog.caption" class="mt-4 text-center">
+            <p class="text-body-2 text-medium-emphasis font-italic">
+              {{ previewDialog.caption }}
+            </p>
+          </div>
+        </VCardText>
+      </VCard>
+    </VDialog>
   </div>
 </template>
 
@@ -374,5 +658,49 @@ watch(
 
 .cursor-pointer {
   cursor: pointer;
+}
+
+.audio-preview-container {
+  max-width: 600px;
+}
+
+.audio-waveform-container {
+  position: relative;
+  width: 100%;
+  height: 80px;
+  background: rgba(var(--v-theme-surface-variant), 0.1);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.audio-waveform {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  height: 100%;
+  padding: 0 8px;
+}
+
+.audio-waveform-bar {
+  flex: 1;
+  background: rgba(var(--v-theme-primary), 0.3);
+  border-radius: 2px;
+  min-height: 10%;
+  transition: background 0.2s;
+}
+
+.audio-waveform-bar--active {
+  background: rgb(var(--v-theme-primary));
+}
+
+.audio-progress-indicator {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgb(var(--v-theme-primary));
+  pointer-events: none;
+  z-index: 1;
 }
 </style>
