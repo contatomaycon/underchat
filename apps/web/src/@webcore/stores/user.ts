@@ -26,6 +26,7 @@ import { ViewUserAddress1Response } from '@core/schema/user/viewUserAddress1/res
 import { ViewUserAddress2Response } from '@core/schema/user/viewUserAddress2/response.schema';
 import { AssignUserRoleRequest } from '@core/schema/user/assignUserRole/request.schema';
 import { ViewUserRoleResponse } from '@core/schema/user/viewUserRole/response.schema';
+import { ListAllUsersResponse } from '@core/schema/user/listAllUsers/response.schema';
 
 export const useUsersStore = defineStore('users', {
   state: () => ({
@@ -90,6 +91,41 @@ export const useUsersStore = defineStore('users', {
 
         this.list = data.data.results;
         this.pagings = data.data.pagings;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('user_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listAllUsers(): Promise<ListAllUsersResponse[] | null> {
+      try {
+        this.loading = true;
+
+        const response =
+          await axios.get<IApiResponse<ListAllUsersResponse[]>>('/user/all');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('user_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
 
         return data.data;
       } catch (error) {

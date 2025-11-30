@@ -108,13 +108,11 @@ const protocol = ref<string | null>(null);
 const clientName = ref<string | null>(null);
 const phoneRaw = ref<string | null>(null);
 
-// Função para formatar telefone enquanto digita
 const formatPhone = (value: string | null | undefined): string => {
   if (!value) return '';
 
   const numbers = value.replaceAll(/\D/g, '').slice(0, 13);
 
-  // Formato internacional: +55 (11) 99999-9999
   if (numbers.startsWith('55') && numbers.length > 2) {
     const ddd = numbers.slice(2, 4);
     const rest = numbers.slice(4);
@@ -131,7 +129,6 @@ const formatPhone = (value: string | null | undefined): string => {
     return `+55 (${ddd}) ${rest.slice(0, 5)}-${rest.slice(5, 9)}`;
   }
 
-  // Formato nacional: (11) 99999-9999
   if (numbers.length <= 2) {
     return numbers;
   }
@@ -144,16 +141,13 @@ const formatPhone = (value: string | null | undefined): string => {
   return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`;
 };
 
-// Telefone formatado para exibição
 const phoneFormatted = computed({
   get: () => formatPhone(phoneRaw.value),
   set: (value: string) => {
-    // Remove todos os caracteres não numéricos, mas mantém para armazenar apenas números
     phoneRaw.value = value.replaceAll(/\D/g, '') || null;
   },
 });
 
-// Telefone com debounce para busca (apenas números)
 const phoneDebounced = refDebounced(phoneRaw, 500);
 
 const sectors = ref<Array<{ id: string | null; text: string }>>([]);
@@ -218,7 +212,6 @@ const query = computed(() => {
     search_by: searchBy.value,
   };
 
-  // Aplicar filtros baseado no tipo de pesquisa selecionado
   switch (searchBy.value) {
     case 'date':
       baseQuery.start_date = formatDateForApi(startDate.value, false);
@@ -284,10 +277,8 @@ const openConversationModal = async (item: ReportConversationHistoryResult) => {
       conversationMessages.value = [...response.data.data.results].reverse();
     } else {
       conversationMessages.value = [];
-      console.warn('Nenhuma mensagem encontrada para o chat:', item.chat_id);
     }
   } catch (error: any) {
-    console.error('Erro ao carregar mensagens:', error);
     conversationMessages.value = [];
 
     const errorMessage =
@@ -306,8 +297,6 @@ const getMessageText = (message: ListMessageResult): string => {
   if (!message.content) return '';
   let text = message.content.message || '';
   
-  // Remove o prefixo do nome do operador/cliente que vem no formato "*Nome*:\n\n"
-  // Isso acontece quando show_attendee_name está habilitado no backend
   const namePrefixRegex = /^\*[^*]+\*:\n\n/;
   text = text.replace(namePrefixRegex, '');
   
@@ -315,7 +304,6 @@ const getMessageText = (message: ListMessageResult): string => {
 };
 
 const getSenderName = (message: ListMessageResult): string => {
-  // isTypeUser retorna true para cliente, false para operador
   if (isTypeUser(message)) {
     return selectedChatInfo.value?.client || t('client');
   } else {
@@ -326,21 +314,16 @@ const getSenderName = (message: ListMessageResult): string => {
 };
 
 const isOperatorMessage = (message: ListMessageResult): boolean => {
-  // Retorna true se for mensagem do operador (não é cliente)
   return !isTypeUser(message);
 };
 
 const resolvePhoto = (message: ListMessageResult): string => {
   if (isTypeUser(message)) {
-    // Para cliente, tentar usar foto do contato da mensagem ou do chat selecionado
     if (message.content?.contact?.photo) {
       return message.content.contact.photo;
     }
-    // Tentar usar foto do chat selecionado se disponível
-    // Note: selectedChatInfo pode não ter photo, mas vamos manter compatibilidade
     return '/images/svg/avatar-default.svg';
   }
-  // Para operador, usar foto do usuário
   if (message.user?.photo) return message.user.photo;
   return '/images/svg/avatar-default.svg';
 };
@@ -474,14 +457,12 @@ watch(
   { deep: true }
 );
 
-// Watch para buscar quando o telefone com debounce mudar
 watch(phoneDebounced, async () => {
   if (searchBy.value === 'phone') {
     await loadHistory();
   }
 });
 
-// Resetar filtros quando mudar o tipo de pesquisa
 watch(searchBy, () => {
   startDate.value = null;
   endDate.value = null;
@@ -493,11 +474,9 @@ watch(searchBy, () => {
 });
 
 const getProtocolsList = (item: ReportConversationHistoryResult): string[] => {
-  // Se houver array de protocolos e não estiver vazio, usa ele
   if (item.protocols && Array.isArray(item.protocols) && item.protocols.length > 0) {
     return item.protocols;
   }
-  // Caso contrário, cria array com o protocolo único se existir
   if (item.protocol) {
     return [item.protocol];
   }
@@ -507,7 +486,6 @@ const getProtocolsList = (item: ReportConversationHistoryResult): string[] => {
 const getProtocolsWithTypeList = (
   item: ReportConversationHistoryResult
 ): Array<{ protocol: string; type: 'T' | 'U' | 'A' }> => {
-  // Se houver array de protocolos com tipo, usa ele
   if (
     item.protocolsWithType &&
     Array.isArray(item.protocolsWithType) &&
@@ -515,7 +493,6 @@ const getProtocolsWithTypeList = (
   ) {
     return item.protocolsWithType;
   }
-  // Caso contrário, cria array com o protocolo único se existir (tipo padrão: A)
   if (item.protocol) {
     return [{ protocol: item.protocol, type: 'A' }];
   }
@@ -542,11 +519,11 @@ const getProtocolTypeLabel = (type: 'T' | 'U' | 'A'): string => {
 const getProtocolTypeColor = (type: 'T' | 'U' | 'A'): string => {
   switch (type) {
     case 'T':
-      return 'info'; // Azul para Transferência
+      return 'info';
     case 'U':
-      return 'warning'; // Laranja/Amarelo para URA
+      return 'warning';
     case 'A':
-      return 'success'; // Verde para Atendimento
+      return 'success';
     default:
       return 'primary';
   }
@@ -555,13 +532,12 @@ const getProtocolTypeColor = (type: 'T' | 'U' | 'A'): string => {
 const copyToClipboard = async (text: string) => {
   try {
     await navigator.clipboard.writeText(text);
-    reportConversationHistoryStore.showSnackbar(
-      t('protocol_copied'),
-      EColor.success
-    );
-  } catch (error) {
-    console.error('Erro ao copiar protocolo:', error);
-    reportConversationHistoryStore.showSnackbar(
+      reportConversationHistoryStore.showSnackbar(
+        t('protocol_copied'),
+        EColor.success
+      );
+    } catch (error) {
+      reportConversationHistoryStore.showSnackbar(
       t('error_copying_protocol'),
       EColor.error
     );

@@ -8,6 +8,7 @@ import {
   userViewPermissions,
 } from '@/permissions';
 import { listUserSchema } from '@core/schema/user/listUser';
+import { listAllUsersSchema } from '@core/schema/user/listAllUsers';
 import { deleteUserSchema } from '@core/schema/user/deleteUser';
 import { viewUserSchema } from '@core/schema/user/viewUser';
 import { viewUserPhoneSchema } from '@core/schema/user/viewUserPhone';
@@ -28,6 +29,15 @@ export default function userRoutes(server: FastifyInstance) {
   server.get('/user', {
     schema: listUserSchema,
     handler: userController.listUser,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userViewPermissions),
+    ],
+  });
+
+  server.get('/user/all', {
+    schema: listAllUsersSchema,
+    handler: userController.listAllUsers,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),

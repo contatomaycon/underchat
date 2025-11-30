@@ -207,6 +207,8 @@
   "expenditure_update_error": "Erro ao atualizar a despesa!",
   "financial_report_list_successfully": "Relatório financeiro obtido com sucesso!",
   "financial_report_list_not_found": "Nenhum dado encontrado para o relatório financeiro!",
+  "report_conversation_history_list_successfully": "Histórico de conversas obtido com sucesso!",
+  "report_conversation_history_list_not_found": "Nenhum dado encontrado para o histórico de conversas!",
   "plan_list_successfully": "Lista de planos obtida com sucesso!",
   "plan_list_not_found": "Nenhum plano encontrado!",
   "account_name_cannot_exceed_10_characters": "O nome da conta não pode exceder mais que 10 caracteres!",
