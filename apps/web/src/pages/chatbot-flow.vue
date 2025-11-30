@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, markRaw } from 'vue';
+import { ref, markRaw, computed } from 'vue';
 import { VueFlow } from '@vue-flow/core';
 import type { Node, Edge, Connection, NodeChange } from '@vue-flow/core';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
@@ -12,9 +12,11 @@ import ChatbotFinishNode from '@/components/chatbot/ChatbotFinishNode.vue';
 import ChatbotTagNode from '@/components/chatbot/ChatbotTagNode.vue';
 import ChatbotMessageNode from '@/components/chatbot/ChatbotMessageNode.vue';
 import ChatbotDataNode from '@/components/chatbot/ChatbotDataNode.vue';
-import ChatbotActionsNode from '@/components/chatbot/ChatbotActionsNode.vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
+import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
+import { useChatbotStore } from '@/@webcore/stores/chatbot';
+import { getUser } from '@/@webcore/localStorage/user';
 
 definePage({
   meta: {
@@ -36,11 +38,400 @@ const nodeTypes = {
   tag: markRaw(ChatbotTagNode),
   message: markRaw(ChatbotMessageNode),
   data: markRaw(ChatbotDataNode),
-  actions: markRaw(ChatbotActionsNode),
 };
 
 const { t } = useI18n();
 const router = useRouter();
+const chatbotStore = useChatbotStore();
+
+const isConfigModalOpen = ref(false);
+const inactivityAlertStatus = ref<'active' | 'inactive'>('inactive');
+const inactivityAlertQuantity = ref('');
+const inactivityAlertTime = ref('');
+const inactivityAlertAction = ref<'redirect' | 'finish' | null>(null);
+const inactivityAlertRedirectType = ref<'user' | 'sector' | null>(null);
+const inactivityAlertSelectedUser = ref<string | null>(null);
+const inactivityAlertSelectedSector = ref<string | null>(null);
+const inactivityAlertSelectedSectorUser = ref<string | null>(null);
+
+const redirectFailedAttemptsStatus = ref<'active' | 'inactive'>('inactive');
+const redirectFailedAttemptsQuantity = ref('');
+const redirectFailedAttemptsRedirectType = ref<'user' | 'sector' | null>(null);
+const redirectFailedAttemptsSelectedUser = ref<string | null>(null);
+const redirectFailedAttemptsSelectedSector = ref<string | null>(null);
+const redirectFailedAttemptsSelectedSectorUser = ref<string | null>(null);
+
+const inactivityUsers = ref<any[]>([]);
+const inactivitySectors = ref<any[]>([]);
+const inactivitySectorUsers = ref<any[]>([]);
+const inactivityUserSearch = ref('');
+const inactivitySectorSearch = ref('');
+const inactivitySectorUserSearch = ref('');
+const isLoadingInactivityUsers = ref(false);
+const isLoadingInactivitySectors = ref(false);
+const isLoadingInactivitySectorUsers = ref(false);
+const isInactivityUserMenuOpen = ref(false);
+const isInactivitySectorMenuOpen = ref(false);
+const isInactivitySectorUserMenuOpen = ref(false);
+
+const redirectFailedAttemptsUsers = ref<any[]>([]);
+const redirectFailedAttemptsSectors = ref<any[]>([]);
+const redirectFailedAttemptsSectorUsers = ref<any[]>([]);
+const redirectFailedAttemptsUserSearch = ref('');
+const redirectFailedAttemptsSectorSearch = ref('');
+const redirectFailedAttemptsSectorUserSearch = ref('');
+const isLoadingRedirectFailedAttemptsUsers = ref(false);
+const isLoadingRedirectFailedAttemptsSectors = ref(false);
+const isLoadingRedirectFailedAttemptsSectorUsers = ref(false);
+const isRedirectFailedAttemptsUserMenuOpen = ref(false);
+const isRedirectFailedAttemptsSectorMenuOpen = ref(false);
+const isRedirectFailedAttemptsSectorUserMenuOpen = ref(false);
+
+const onlyDigits = (s: string) => s.replaceAll(/\D+/g, '');
+
+const inactivityAlertQuantityComputed = computed({
+  get: () => inactivityAlertQuantity.value,
+  set: (value: string) => {
+    inactivityAlertQuantity.value = onlyDigits(value);
+  },
+});
+
+const inactivityAlertTimeComputed = computed({
+  get: () => inactivityAlertTime.value,
+  set: (value: string) => {
+    inactivityAlertTime.value = onlyDigits(value);
+  },
+});
+
+const redirectFailedAttemptsQuantityComputed = computed({
+  get: () => redirectFailedAttemptsQuantity.value,
+  set: (value: string) => {
+    redirectFailedAttemptsQuantity.value = onlyDigits(value);
+  },
+});
+
+const showInactivityAlertFields = computed(
+  () => inactivityAlertStatus.value === 'active'
+);
+
+const showInactivityAlertActionFields = computed(
+  () => showInactivityAlertFields.value && inactivityAlertAction.value !== null
+);
+
+const showInactivityAlertRedirectFields = computed(
+  () => showInactivityAlertActionFields.value && inactivityAlertAction.value === 'redirect'
+);
+
+const showInactivityAlertUserField = computed(
+  () => showInactivityAlertRedirectFields.value && inactivityAlertRedirectType.value === 'user'
+);
+
+const showInactivityAlertSectorField = computed(
+  () => showInactivityAlertRedirectFields.value && inactivityAlertRedirectType.value === 'sector'
+);
+
+const showInactivityAlertSectorUserField = computed(
+  () => showInactivityAlertSectorField.value && inactivityAlertSelectedSector.value !== null
+);
+
+const showRedirectFailedAttemptsFields = computed(
+  () => redirectFailedAttemptsStatus.value === 'active'
+);
+
+const showRedirectFailedAttemptsRedirectFields = computed(
+  () => showRedirectFailedAttemptsFields.value && redirectFailedAttemptsRedirectType.value !== null
+);
+
+const showRedirectFailedAttemptsUserField = computed(
+  () => showRedirectFailedAttemptsRedirectFields.value && redirectFailedAttemptsRedirectType.value === 'user'
+);
+
+const showRedirectFailedAttemptsSectorField = computed(
+  () => showRedirectFailedAttemptsRedirectFields.value && redirectFailedAttemptsRedirectType.value === 'sector'
+);
+
+const showRedirectFailedAttemptsSectorUserField = computed(
+  () => showRedirectFailedAttemptsSectorField.value && redirectFailedAttemptsSelectedSector.value !== null
+);
+
+const filteredInactivityUsers = computed(() => {
+  if (!inactivityUserSearch.value) {
+    return inactivityUsers.value;
+  }
+  const query = inactivityUserSearch.value.toLowerCase();
+  return inactivityUsers.value.filter((user) =>
+    user?.title?.toLowerCase().includes(query)
+  );
+});
+
+const filteredInactivitySectors = computed(() => {
+  if (!inactivitySectorSearch.value) {
+    return inactivitySectors.value;
+  }
+  const query = inactivitySectorSearch.value.toLowerCase();
+  return inactivitySectors.value.filter((sector) =>
+    sector.title.toLowerCase().includes(query)
+  );
+});
+
+const filteredInactivitySectorUsers = computed(() => {
+  if (!inactivitySectorUsers.value || inactivitySectorUsers.value.length === 0) {
+    return [];
+  }
+  if (!inactivitySectorUserSearch.value) {
+    return inactivitySectorUsers.value;
+  }
+  const query = inactivitySectorUserSearch.value.toLowerCase();
+  return inactivitySectorUsers.value.filter((user) =>
+    user?.title?.toLowerCase().includes(query)
+  );
+});
+
+const filteredRedirectFailedAttemptsUsers = computed(() => {
+  if (!redirectFailedAttemptsUserSearch.value) {
+    return redirectFailedAttemptsUsers.value;
+  }
+  const query = redirectFailedAttemptsUserSearch.value.toLowerCase();
+  return redirectFailedAttemptsUsers.value.filter((user) =>
+    user?.title?.toLowerCase().includes(query)
+  );
+});
+
+const filteredRedirectFailedAttemptsSectors = computed(() => {
+  if (!redirectFailedAttemptsSectorSearch.value) {
+    return redirectFailedAttemptsSectors.value;
+  }
+  const query = redirectFailedAttemptsSectorSearch.value.toLowerCase();
+  return redirectFailedAttemptsSectors.value.filter((sector) =>
+    sector.title.toLowerCase().includes(query)
+  );
+});
+
+const filteredRedirectFailedAttemptsSectorUsers = computed(() => {
+  if (!redirectFailedAttemptsSectorUsers.value || redirectFailedAttemptsSectorUsers.value.length === 0) {
+    return [];
+  }
+  if (!redirectFailedAttemptsSectorUserSearch.value) {
+    return redirectFailedAttemptsSectorUsers.value;
+  }
+  const query = redirectFailedAttemptsSectorUserSearch.value.toLowerCase();
+  return redirectFailedAttemptsSectorUsers.value.filter((user) =>
+    user?.title?.toLowerCase().includes(query)
+  );
+});
+
+const onKeyPress = (event: KeyboardEvent) => {
+  const char = event.key;
+  if (
+    !/[0-9]/.test(char) &&
+    ![
+      'Backspace',
+      'Delete',
+      'ArrowLeft',
+      'ArrowRight',
+      'Tab',
+      'Enter',
+    ].includes(char)
+  ) {
+    event.preventDefault();
+  }
+};
+
+const loadInactivityUsers = async () => {
+  const user = getUser();
+  if (!user?.account_id) return;
+
+  isLoadingInactivityUsers.value = true;
+  try {
+    const usersList = await chatbotStore.listChatbotUsers();
+    inactivityUsers.value = usersList.map((user) => ({
+      value: user.id,
+      title: user.name,
+      photo: user.photo || null,
+      status: user.status || null,
+    }));
+  } catch (error) {
+    console.error('Error loading users:', error);
+  } finally {
+    isLoadingInactivityUsers.value = false;
+  }
+};
+
+const loadInactivitySectors = async () => {
+  const user = getUser();
+  if (!user?.account_id) return;
+
+  isLoadingInactivitySectors.value = true;
+  try {
+    const sectorsList = await chatbotStore.listChatbotSectors();
+    inactivitySectors.value = sectorsList.map((sector) => ({
+      value: sector.id,
+      title: sector.name,
+      color: sector.color || null,
+    }));
+  } catch (error) {
+    console.error('Error loading sectors:', error);
+  } finally {
+    isLoadingInactivitySectors.value = false;
+  }
+};
+
+const loadInactivitySectorUsers = async (sectorId: string) => {
+  isLoadingInactivitySectorUsers.value = true;
+  try {
+    const usersList = await chatbotStore.listChatbotSectorUsers(sectorId);
+    inactivitySectorUsers.value = usersList.map((user) => ({
+      value: user.id,
+      title: user.name,
+      photo: user.photo || null,
+      status: user.status,
+    }));
+  } catch (error) {
+    inactivitySectorUsers.value = [];
+    console.error('Error loading sector users:', error);
+  } finally {
+    isLoadingInactivitySectorUsers.value = false;
+  }
+};
+
+const loadRedirectFailedAttemptsUsers = async () => {
+  const user = getUser();
+  if (!user?.account_id) return;
+
+  isLoadingRedirectFailedAttemptsUsers.value = true;
+  try {
+    const usersList = await chatbotStore.listChatbotUsers();
+    redirectFailedAttemptsUsers.value = usersList.map((user) => ({
+      value: user.id,
+      title: user.name,
+      photo: user.photo || null,
+      status: user.status || null,
+    }));
+  } catch (error) {
+    console.error('Error loading users:', error);
+  } finally {
+    isLoadingRedirectFailedAttemptsUsers.value = false;
+  }
+};
+
+const loadRedirectFailedAttemptsSectors = async () => {
+  const user = getUser();
+  if (!user?.account_id) return;
+
+  isLoadingRedirectFailedAttemptsSectors.value = true;
+  try {
+    const sectorsList = await chatbotStore.listChatbotSectors();
+    redirectFailedAttemptsSectors.value = sectorsList.map((sector) => ({
+      value: sector.id,
+      title: sector.name,
+      color: sector.color || null,
+    }));
+  } catch (error) {
+    console.error('Error loading sectors:', error);
+  } finally {
+    isLoadingRedirectFailedAttemptsSectors.value = false;
+  }
+};
+
+const loadRedirectFailedAttemptsSectorUsers = async (sectorId: string) => {
+  isLoadingRedirectFailedAttemptsSectorUsers.value = true;
+  try {
+    const usersList = await chatbotStore.listChatbotSectorUsers(sectorId);
+    redirectFailedAttemptsSectorUsers.value = usersList.map((user) => ({
+      value: user.id,
+      title: user.name,
+      photo: user.photo || null,
+      status: user.status,
+    }));
+  } catch (error) {
+    redirectFailedAttemptsSectorUsers.value = [];
+    console.error('Error loading sector users:', error);
+  } finally {
+    isLoadingRedirectFailedAttemptsSectorUsers.value = false;
+  }
+};
+
+watch(isInactivityUserMenuOpen, (isOpen) => {
+  if (isOpen) {
+    loadInactivityUsers();
+  } else {
+    inactivityUserSearch.value = '';
+  }
+});
+
+watch(isInactivitySectorMenuOpen, (isOpen) => {
+  if (isOpen) {
+    loadInactivitySectors();
+  } else {
+    inactivitySectorSearch.value = '';
+  }
+});
+
+watch(isInactivitySectorUserMenuOpen, (isOpen) => {
+  if (isOpen && inactivityAlertSelectedSector.value) {
+    loadInactivitySectorUsers(inactivityAlertSelectedSector.value);
+  } else {
+    inactivitySectorUserSearch.value = '';
+  }
+});
+
+watch(
+  () => inactivityAlertSelectedSector.value,
+  (newSectorId) => {
+    if (newSectorId) {
+      inactivityAlertSelectedSectorUser.value = null;
+      loadInactivitySectorUsers(newSectorId);
+    } else {
+      inactivitySectorUsers.value = [];
+      inactivityAlertSelectedSectorUser.value = null;
+    }
+  }
+);
+
+watch(isRedirectFailedAttemptsUserMenuOpen, (isOpen) => {
+  if (isOpen) {
+    loadRedirectFailedAttemptsUsers();
+  } else {
+    redirectFailedAttemptsUserSearch.value = '';
+  }
+});
+
+watch(isRedirectFailedAttemptsSectorMenuOpen, (isOpen) => {
+  if (isOpen) {
+    loadRedirectFailedAttemptsSectors();
+  } else {
+    redirectFailedAttemptsSectorSearch.value = '';
+  }
+});
+
+watch(isRedirectFailedAttemptsSectorUserMenuOpen, (isOpen) => {
+  if (isOpen && redirectFailedAttemptsSelectedSector.value) {
+    loadRedirectFailedAttemptsSectorUsers(redirectFailedAttemptsSelectedSector.value);
+  } else {
+    redirectFailedAttemptsSectorUserSearch.value = '';
+  }
+});
+
+watch(
+  () => redirectFailedAttemptsSelectedSector.value,
+  (newSectorId) => {
+    if (newSectorId) {
+      redirectFailedAttemptsSelectedSectorUser.value = null;
+      loadRedirectFailedAttemptsSectorUsers(newSectorId);
+    } else {
+      redirectFailedAttemptsSectorUsers.value = [];
+      redirectFailedAttemptsSelectedSectorUser.value = null;
+    }
+  }
+);
+
+const openConfigModal = () => {
+  isConfigModalOpen.value = true;
+};
+
+const closeConfigModal = () => {
+  isConfigModalOpen.value = false;
+};
 
 const initialNodes: Node[] = [
   {
@@ -204,24 +595,6 @@ const addDataNode = () => {
   nodes.value.push(newNode);
 };
 
-const addActionsNode = () => {
-  const newNode: Node = {
-    id: `actions-${nodeIdCounter++}`,
-    type: 'actions',
-    position: {
-      x: getSecureRandom(400) + 100,
-      y: getSecureRandom(300) + 100,
-    },
-    data: {
-      actionType: null,
-      alertQuantity: '',
-      alertTime: '',
-      onRemove: () => removeNode(newNode.id),
-    },
-  };
-  nodes.value.push(newNode);
-};
-
 const onConnect = (connection: Connection) => {
   const existingEdge = edges.value.find(
     (e) => e.source === connection.source && e.target === connection.target
@@ -318,6 +691,10 @@ const handleCancel = () => {
         </div>
         <div class="flow-layout">
           <div class="node-menu">
+            <VBtn color="secondary" @click="openConfigModal">
+              <VIcon icon="tabler-settings" class="me-2" />
+              {{ t('chatbot_configurations') }}
+            </VBtn>
             <VBtn color="primary" @click="addMenuNode">
               <VIcon icon="tabler-menu-2" class="me-2" />
               {{ t('chatbot_menu') }}
@@ -350,10 +727,6 @@ const handleCancel = () => {
               <VIcon icon="tabler-database" class="me-2" />
               {{ t('chatbot_data') }}
             </VBtn>
-            <VBtn color="warning" @click="addActionsNode">
-              <VIcon icon="tabler-settings" class="me-2" />
-              {{ t('chatbot_actions') }}
-            </VBtn>
           </div>
           <div class="vertical-divider" />
           <div class="flow-area">
@@ -377,6 +750,673 @@ const handleCancel = () => {
         </div>
       </VCardText>
     </VCard>
+
+    <VDialog v-model="isConfigModalOpen" max-width="600" persistent>
+      <DialogCloseBtn @click="closeConfigModal" />
+
+      <VCard :title="t('chatbot_configurations')">
+        <VCardText>
+          <VCard
+            variant="outlined"
+            class="mb-4"
+          >
+            <VCardTitle class="text-body-1 pa-3">
+              {{ t('chatbot_inactivity_alert') }}
+            </VCardTitle>
+            <VCardSubtitle class="text-caption pa-3 pt-0 config-description">
+              {{ t('chatbot_inactivity_alert_description') }}
+            </VCardSubtitle>
+            <VDivider />
+            <VCardText>
+              <div class="mb-3">
+                <VLabel class="mb-1 text-body-2">{{
+                  t('chatbot_inactivity_alert')
+                }}</VLabel>
+                <VSelect
+                  v-model="inactivityAlertStatus"
+                  :items="[
+                    { value: 'active', title: t('chatbot_inactivity_alert_active') },
+                    { value: 'inactive', title: t('chatbot_inactivity_alert_inactive') },
+                  ]"
+                  item-title="title"
+                  item-value="value"
+                  variant="outlined"
+                  density="compact"
+                  hide-details
+                />
+              </div>
+
+              <div v-if="showInactivityAlertFields">
+                <div class="mb-3">
+                  <VLabel class="mb-1 text-body-2">{{
+                    t('chatbot_inactivity_alert_quantity')
+                  }}</VLabel>
+                  <VTextField
+                    v-model="inactivityAlertQuantityComputed"
+                    @keydown="onKeyPress"
+                    @paste.prevent="
+                      (e: ClipboardEvent) => {
+                        const pastedText = e.clipboardData?.getData('text') || '';
+                        const numericValue = onlyDigits(pastedText);
+                        if (numericValue) {
+                          inactivityAlertQuantityComputed = numericValue;
+                        }
+                      }
+                    "
+                    variant="outlined"
+                    density="compact"
+                    hide-details
+                    inputmode="numeric"
+                    type="text"
+                  />
+                </div>
+
+                <div class="mb-3">
+                  <VLabel class="mb-1 text-body-2">{{
+                    t('chatbot_inactivity_alert_time')
+                  }}</VLabel>
+                  <VTextField
+                    v-model="inactivityAlertTimeComputed"
+                    @keydown="onKeyPress"
+                    @paste.prevent="
+                      (e: ClipboardEvent) => {
+                        const pastedText = e.clipboardData?.getData('text') || '';
+                        const numericValue = onlyDigits(pastedText);
+                        if (numericValue) {
+                          inactivityAlertTimeComputed = numericValue;
+                        }
+                      }
+                    "
+                    variant="outlined"
+                    density="compact"
+                    hide-details
+                    inputmode="numeric"
+                    type="text"
+                  />
+                </div>
+
+                <div class="mb-3">
+                  <VLabel class="mb-1 text-body-2">{{
+                    t('chatbot_action')
+                  }}</VLabel>
+                  <VSelect
+                    v-model="inactivityAlertAction"
+                    :items="[
+                      { value: 'redirect', title: t('chatbot_redirect') },
+                      { value: 'finish', title: t('chatbot_finish') },
+                    ]"
+                    item-title="title"
+                    item-value="value"
+                    variant="outlined"
+                    density="compact"
+                    hide-details
+                  />
+                </div>
+
+                <div v-if="showInactivityAlertRedirectFields">
+                  <div class="mb-3">
+                    <VLabel class="mb-1 text-body-2">{{
+                      t('chatbot_redirect_to')
+                    }}</VLabel>
+                    <VSelect
+                      v-model="inactivityAlertRedirectType"
+                      :items="[
+                        { value: 'user', title: t('chatbot_redirect_user') },
+                        { value: 'sector', title: t('chatbot_redirect_sector') },
+                      ]"
+                      item-title="title"
+                      item-value="value"
+                      variant="outlined"
+                      density="compact"
+                      hide-details
+                    />
+                  </div>
+
+                  <div v-if="showInactivityAlertUserField" class="mb-3">
+                    <VLabel class="mb-1 text-body-2">{{
+                      t('chatbot_user_label')
+                    }}</VLabel>
+                    <VMenu v-model="isInactivityUserMenuOpen">
+                      <template #activator="{ props: menuProps }">
+                        <VTextField
+                          v-bind="menuProps"
+                          :model-value="
+                            inactivityUsers.find((u) => u.value === inactivityAlertSelectedUser)
+                              ?.title || ''
+                          "
+                          :placeholder="t('chatbot_search')"
+                          variant="outlined"
+                          readonly
+                          append-inner-icon="tabler-chevron-down"
+                          :loading="isLoadingInactivityUsers"
+                          density="compact"
+                        />
+                      </template>
+                      <VCard>
+                        <VCardText>
+                          <VTextField
+                            v-model="inactivityUserSearch"
+                            :placeholder="t('chatbot_search_user')"
+                            variant="outlined"
+                            density="compact"
+                            prepend-inner-icon="tabler-search"
+                            hide-details
+                          />
+                        </VCardText>
+                        <VDivider />
+                        <VList density="compact" class="max-height-300">
+                          <VListItem
+                            v-for="user in filteredInactivityUsers"
+                            :key="user.value"
+                            :value="user.value"
+                            @click="
+                              inactivityAlertSelectedUser = user.value;
+                              isInactivityUserMenuOpen = false;
+                            "
+                          >
+                            <template #prepend>
+                              <VAvatar
+                                size="32"
+                                :variant="!user.photo ? 'tonal' : undefined"
+                                color="primary"
+                              >
+                                <VImg
+                                  v-if="user.photo"
+                                  :src="user.photo"
+                                  :alt="user.title"
+                                />
+                                <VIcon v-else icon="tabler-user" size="18" />
+                              </VAvatar>
+                            </template>
+                            <VListItemTitle>{{ user.title }}</VListItemTitle>
+                            <template #append v-if="user.status === 'online'">
+                              <VChip size="small" color="success" variant="tonal">
+                                {{ t('chatbot_online') }}
+                              </VChip>
+                            </template>
+                          </VListItem>
+                          <VListItem
+                            v-if="filteredInactivityUsers.length === 0 && !isLoadingInactivityUsers"
+                            disabled
+                          >
+                            <VListItemTitle
+                              class="text-center text-body-2 text-medium-emphasis"
+                            >
+                              {{ t('chatbot_no_results_found') }}
+                            </VListItemTitle>
+                          </VListItem>
+                        </VList>
+                      </VCard>
+                    </VMenu>
+                  </div>
+
+                  <div v-if="showInactivityAlertSectorField" class="mb-3">
+                    <VLabel class="mb-1 text-body-2">{{
+                      t('chatbot_sector_label')
+                    }}</VLabel>
+                    <VMenu v-model="isInactivitySectorMenuOpen">
+                      <template #activator="{ props: menuProps }">
+                        <VTextField
+                          v-bind="menuProps"
+                          :model-value="
+                            inactivitySectors.find((s) => s.value === inactivityAlertSelectedSector)
+                              ?.title || ''
+                          "
+                          :placeholder="t('chatbot_search')"
+                          variant="outlined"
+                          readonly
+                          append-inner-icon="tabler-chevron-down"
+                          :loading="isLoadingInactivitySectors"
+                          density="compact"
+                        />
+                      </template>
+                      <VCard>
+                        <VCardText>
+                          <VTextField
+                            v-model="inactivitySectorSearch"
+                            :placeholder="t('chatbot_search_sector')"
+                            variant="outlined"
+                            density="compact"
+                            prepend-inner-icon="tabler-search"
+                            hide-details
+                          />
+                        </VCardText>
+                        <VDivider />
+                        <VList density="compact" class="max-height-300">
+                          <VListItem
+                            v-for="sector in filteredInactivitySectors"
+                            :key="sector.value"
+                            :value="sector.value"
+                            @click="
+                              inactivityAlertSelectedSector = sector.value;
+                              isInactivitySectorMenuOpen = false;
+                            "
+                          >
+                            <template #prepend>
+                              <VAvatar
+                                size="24"
+                                :style="{
+                                  backgroundColor: sector.color || '#1976D2',
+                                }"
+                              />
+                            </template>
+                            <VListItemTitle>{{ sector.title }}</VListItemTitle>
+                          </VListItem>
+                          <VListItem
+                            v-if="filteredInactivitySectors.length === 0 && !isLoadingInactivitySectors"
+                            disabled
+                          >
+                            <VListItemTitle
+                              class="text-center text-body-2 text-medium-emphasis"
+                            >
+                              {{ t('chatbot_no_results_found') }}
+                            </VListItemTitle>
+                          </VListItem>
+                        </VList>
+                      </VCard>
+                    </VMenu>
+                  </div>
+
+                  <div v-if="showInactivityAlertSectorUserField" class="mb-3">
+                    <VLabel class="mb-1 text-body-2">{{
+                      t('chatbot_sector_user_label')
+                    }}</VLabel>
+                    <VMenu v-model="isInactivitySectorUserMenuOpen">
+                      <template #activator="{ props: menuProps }">
+                        <VTextField
+                          v-bind="menuProps"
+                          :model-value="
+                            inactivitySectorUsers.find(
+                              (u) => u.value === inactivityAlertSelectedSectorUser
+                            )?.title || ''
+                          "
+                          :placeholder="t('chatbot_search_optional')"
+                          variant="outlined"
+                          readonly
+                          append-inner-icon="tabler-chevron-down"
+                          :loading="isLoadingInactivitySectorUsers"
+                          density="compact"
+                        />
+                      </template>
+                      <VCard>
+                        <VCardText>
+                          <VTextField
+                            v-model="inactivitySectorUserSearch"
+                            :placeholder="t('chatbot_search_user')"
+                            variant="outlined"
+                            density="compact"
+                            prepend-inner-icon="tabler-search"
+                            hide-details
+                          />
+                        </VCardText>
+                        <VDivider />
+                        <VList density="compact" class="max-height-300">
+                          <VListItem
+                            v-for="user in filteredInactivitySectorUsers"
+                            :key="user.value"
+                            :value="user.value"
+                            @click="
+                              inactivityAlertSelectedSectorUser = user.value;
+                              isInactivitySectorUserMenuOpen = false;
+                            "
+                          >
+                            <template #prepend>
+                              <VAvatar
+                                size="32"
+                                :variant="!user.photo ? 'tonal' : undefined"
+                                color="primary"
+                              >
+                                <VImg
+                                  v-if="user.photo"
+                                  :src="user.photo"
+                                  :alt="user.title"
+                                />
+                                <VIcon v-else icon="tabler-user" size="18" />
+                              </VAvatar>
+                            </template>
+                            <VListItemTitle>{{ user.title }}</VListItemTitle>
+                            <template #append v-if="user.status === 'online'">
+                              <VChip size="small" color="success" variant="tonal">
+                                {{ t('chatbot_online') }}
+                              </VChip>
+                            </template>
+                          </VListItem>
+                          <VListItem
+                            v-if="
+                              filteredInactivitySectorUsers.length === 0 && !isLoadingInactivitySectorUsers
+                            "
+                            disabled
+                          >
+                            <VListItemTitle
+                              class="text-center text-body-2 text-medium-emphasis"
+                            >
+                              {{ t('chatbot_no_results_found') }}
+                            </VListItemTitle>
+                          </VListItem>
+                        </VList>
+                      </VCard>
+                    </VMenu>
+                  </div>
+                </div>
+              </div>
+            </VCardText>
+          </VCard>
+
+          <VCard
+            variant="outlined"
+            class="mb-4"
+          >
+            <VCardTitle class="text-body-1 pa-3">
+              {{ t('chatbot_redirect_failed_attempts') }}
+            </VCardTitle>
+            <VCardSubtitle class="text-caption pa-3 pt-0 config-description">
+              {{ t('chatbot_redirect_failed_attempts_description') }}
+            </VCardSubtitle>
+            <VDivider />
+            <VCardText>
+              <div class="mb-3">
+                <VLabel class="mb-1 text-body-2">{{
+                  t('chatbot_redirect_failed_attempts')
+                }}</VLabel>
+                <VSelect
+                  v-model="redirectFailedAttemptsStatus"
+                  :items="[
+                    { value: 'active', title: t('chatbot_redirect_failed_attempts_active') },
+                    { value: 'inactive', title: t('chatbot_redirect_failed_attempts_inactive') },
+                  ]"
+                  item-title="title"
+                  item-value="value"
+                  variant="outlined"
+                  density="compact"
+                  hide-details
+                />
+              </div>
+
+              <div v-if="showRedirectFailedAttemptsFields">
+                <div class="mb-3">
+                  <VLabel class="mb-1 text-body-2">{{
+                    t('chatbot_redirect_failed_attempts_quantity')
+                  }}</VLabel>
+                  <VTextField
+                    v-model="redirectFailedAttemptsQuantityComputed"
+                    @keydown="onKeyPress"
+                    @paste.prevent="
+                      (e: ClipboardEvent) => {
+                        const pastedText = e.clipboardData?.getData('text') || '';
+                        const numericValue = onlyDigits(pastedText);
+                        if (numericValue) {
+                          redirectFailedAttemptsQuantityComputed = numericValue;
+                        }
+                      }
+                    "
+                    variant="outlined"
+                    density="compact"
+                    hide-details
+                    inputmode="numeric"
+                    type="text"
+                  />
+                </div>
+
+                <div class="mb-3">
+                  <VLabel class="mb-1 text-body-2">{{
+                    t('chatbot_redirect_to')
+                  }}</VLabel>
+                  <VSelect
+                    v-model="redirectFailedAttemptsRedirectType"
+                    :items="[
+                      { value: 'user', title: t('chatbot_redirect_user') },
+                      { value: 'sector', title: t('chatbot_redirect_sector') },
+                    ]"
+                    item-title="title"
+                    item-value="value"
+                    variant="outlined"
+                    density="compact"
+                    hide-details
+                  />
+                </div>
+
+                <div v-if="showRedirectFailedAttemptsUserField" class="mb-3">
+                  <VLabel class="mb-1 text-body-2">{{
+                    t('chatbot_user_label')
+                  }}</VLabel>
+                  <VMenu v-model="isRedirectFailedAttemptsUserMenuOpen">
+                    <template #activator="{ props: menuProps }">
+                      <VTextField
+                        v-bind="menuProps"
+                        :model-value="
+                          redirectFailedAttemptsUsers.find((u) => u.value === redirectFailedAttemptsSelectedUser)
+                            ?.title || ''
+                        "
+                        :placeholder="t('chatbot_search')"
+                        variant="outlined"
+                        readonly
+                        append-inner-icon="tabler-chevron-down"
+                        :loading="isLoadingRedirectFailedAttemptsUsers"
+                        density="compact"
+                      />
+                    </template>
+                    <VCard>
+                      <VCardText>
+                        <VTextField
+                          v-model="redirectFailedAttemptsUserSearch"
+                          :placeholder="t('chatbot_search_user')"
+                          variant="outlined"
+                          density="compact"
+                          prepend-inner-icon="tabler-search"
+                          hide-details
+                        />
+                      </VCardText>
+                      <VDivider />
+                      <VList density="compact" class="max-height-300">
+                        <VListItem
+                          v-for="user in filteredRedirectFailedAttemptsUsers"
+                          :key="user.value"
+                          :value="user.value"
+                          @click="
+                            redirectFailedAttemptsSelectedUser = user.value;
+                            isRedirectFailedAttemptsUserMenuOpen = false;
+                          "
+                        >
+                          <template #prepend>
+                            <VAvatar
+                              size="32"
+                              :variant="!user.photo ? 'tonal' : undefined"
+                              color="primary"
+                            >
+                              <VImg
+                                v-if="user.photo"
+                                :src="user.photo"
+                                :alt="user.title"
+                              />
+                              <VIcon v-else icon="tabler-user" size="18" />
+                            </VAvatar>
+                          </template>
+                          <VListItemTitle>{{ user.title }}</VListItemTitle>
+                          <template #append v-if="user.status === 'online'">
+                            <VChip size="small" color="success" variant="tonal">
+                              {{ t('chatbot_online') }}
+                            </VChip>
+                          </template>
+                        </VListItem>
+                        <VListItem
+                          v-if="filteredRedirectFailedAttemptsUsers.length === 0 && !isLoadingRedirectFailedAttemptsUsers"
+                          disabled
+                        >
+                          <VListItemTitle
+                            class="text-center text-body-2 text-medium-emphasis"
+                          >
+                            {{ t('chatbot_no_results_found') }}
+                          </VListItemTitle>
+                        </VListItem>
+                      </VList>
+                    </VCard>
+                  </VMenu>
+                </div>
+
+                <div v-if="showRedirectFailedAttemptsSectorField" class="mb-3">
+                  <VLabel class="mb-1 text-body-2">{{
+                    t('chatbot_sector_label')
+                  }}</VLabel>
+                  <VMenu v-model="isRedirectFailedAttemptsSectorMenuOpen">
+                    <template #activator="{ props: menuProps }">
+                      <VTextField
+                        v-bind="menuProps"
+                        :model-value="
+                          redirectFailedAttemptsSectors.find((s) => s.value === redirectFailedAttemptsSelectedSector)
+                            ?.title || ''
+                        "
+                        :placeholder="t('chatbot_search')"
+                        variant="outlined"
+                        readonly
+                        append-inner-icon="tabler-chevron-down"
+                        :loading="isLoadingRedirectFailedAttemptsSectors"
+                        density="compact"
+                      />
+                    </template>
+                    <VCard>
+                      <VCardText>
+                        <VTextField
+                          v-model="redirectFailedAttemptsSectorSearch"
+                          :placeholder="t('chatbot_search_sector')"
+                          variant="outlined"
+                          density="compact"
+                          prepend-inner-icon="tabler-search"
+                          hide-details
+                        />
+                      </VCardText>
+                      <VDivider />
+                      <VList density="compact" class="max-height-300">
+                        <VListItem
+                          v-for="sector in filteredRedirectFailedAttemptsSectors"
+                          :key="sector.value"
+                          :value="sector.value"
+                          @click="
+                            redirectFailedAttemptsSelectedSector = sector.value;
+                            isRedirectFailedAttemptsSectorMenuOpen = false;
+                          "
+                        >
+                          <template #prepend>
+                            <VAvatar
+                              size="24"
+                              :style="{
+                                backgroundColor: sector.color || '#1976D2',
+                              }"
+                            />
+                          </template>
+                          <VListItemTitle>{{ sector.title }}</VListItemTitle>
+                        </VListItem>
+                        <VListItem
+                          v-if="filteredRedirectFailedAttemptsSectors.length === 0 && !isLoadingRedirectFailedAttemptsSectors"
+                          disabled
+                        >
+                          <VListItemTitle
+                            class="text-center text-body-2 text-medium-emphasis"
+                          >
+                            {{ t('chatbot_no_results_found') }}
+                          </VListItemTitle>
+                        </VListItem>
+                      </VList>
+                    </VCard>
+                  </VMenu>
+                </div>
+
+                <div v-if="showRedirectFailedAttemptsSectorUserField" class="mb-3">
+                  <VLabel class="mb-1 text-body-2">{{
+                    t('chatbot_sector_user_label')
+                  }}</VLabel>
+                  <VMenu v-model="isRedirectFailedAttemptsSectorUserMenuOpen">
+                    <template #activator="{ props: menuProps }">
+                      <VTextField
+                        v-bind="menuProps"
+                        :model-value="
+                          redirectFailedAttemptsSectorUsers.find(
+                            (u) => u.value === redirectFailedAttemptsSelectedSectorUser
+                          )?.title || ''
+                        "
+                        :placeholder="t('chatbot_search_optional')"
+                        variant="outlined"
+                        readonly
+                        append-inner-icon="tabler-chevron-down"
+                        :loading="isLoadingRedirectFailedAttemptsSectorUsers"
+                        density="compact"
+                      />
+                    </template>
+                    <VCard>
+                      <VCardText>
+                        <VTextField
+                          v-model="redirectFailedAttemptsSectorUserSearch"
+                          :placeholder="t('chatbot_search_user')"
+                          variant="outlined"
+                          density="compact"
+                          prepend-inner-icon="tabler-search"
+                          hide-details
+                        />
+                      </VCardText>
+                      <VDivider />
+                      <VList density="compact" class="max-height-300">
+                        <VListItem
+                          v-for="user in filteredRedirectFailedAttemptsSectorUsers"
+                          :key="user.value"
+                          :value="user.value"
+                          @click="
+                            redirectFailedAttemptsSelectedSectorUser = user.value;
+                            isRedirectFailedAttemptsSectorUserMenuOpen = false;
+                          "
+                        >
+                          <template #prepend>
+                            <VAvatar
+                              size="32"
+                              :variant="!user.photo ? 'tonal' : undefined"
+                              color="primary"
+                            >
+                              <VImg
+                                v-if="user.photo"
+                                :src="user.photo"
+                                :alt="user.title"
+                              />
+                              <VIcon v-else icon="tabler-user" size="18" />
+                            </VAvatar>
+                          </template>
+                          <VListItemTitle>{{ user.title }}</VListItemTitle>
+                          <template #append v-if="user.status === 'online'">
+                            <VChip size="small" color="success" variant="tonal">
+                              {{ t('chatbot_online') }}
+                            </VChip>
+                          </template>
+                        </VListItem>
+                        <VListItem
+                          v-if="
+                            filteredRedirectFailedAttemptsSectorUsers.length === 0 && !isLoadingRedirectFailedAttemptsSectorUsers
+                          "
+                          disabled
+                        >
+                          <VListItemTitle
+                            class="text-center text-body-2 text-medium-emphasis"
+                          >
+                            {{ t('chatbot_no_results_found') }}
+                          </VListItemTitle>
+                        </VListItem>
+                      </VList>
+                    </VCard>
+                  </VMenu>
+                </div>
+              </div>
+            </VCardText>
+          </VCard>
+        </VCardText>
+
+        <VDivider />
+
+        <VCardText class="d-flex justify-end flex-wrap gap-3">
+          <VBtn variant="tonal" color="secondary" @click="closeConfigModal">
+            {{ t('cancel') }}
+          </VBtn>
+          <VBtn color="primary" @click="closeConfigModal">
+            {{ t('save') }}
+          </VBtn>
+        </VCardText>
+      </VCard>
+    </VDialog>
   </div>
 </template>
 
@@ -445,5 +1485,17 @@ const handleCancel = () => {
   justify-content: flex-end;
   gap: 8px;
   margin-bottom: 16px;
+}
+
+.config-description {
+  white-space: normal;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  text-overflow: unset;
+}
+
+.max-height-300 {
+  max-height: 300px;
+  overflow-y: auto;
 }
 </style>
