@@ -57,8 +57,7 @@ import { ContactService } from '@core/services/contact.service';
 import { AutomaticAttendanceService } from '@core/services/automaticAttendance.service';
 import { TFunction } from 'i18next';
 import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
-import { ChatMessageCreatorUseCase } from '@core/useCases/chat/ChatMessageCreator.useCase';
-import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
+import { ChatMessageService } from '@core/services/chatMessage.service';
 import { ChatbotFlowRunnerService } from '@core/services/chatbotFlowRunner.service';
 import { WorkerConfigService } from '@core/services/workerConfig.service';
 
@@ -81,7 +80,7 @@ export class MessageUpsertConsume {
     private readonly encryptService: EncryptService,
     private readonly contactService: ContactService,
     private readonly automaticAttendanceService: AutomaticAttendanceService,
-    private readonly chatMessageCreatorUseCase: ChatMessageCreatorUseCase,
+    private readonly chatMessageService: ChatMessageService,
     private readonly workerConfigService: WorkerConfigService,
     private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService
   ) {}
@@ -1257,20 +1256,13 @@ export class MessageUpsertConsume {
       await this.updateChatPhotoIfNeeded(chat, data);
     }
 
-    const messageBody: CreateMessageChatsBody = {
+    await this.chatMessageService.sendMessage(t, {
+      chat,
+      accountId: data.account_id,
       type: EMessageType.system,
       message: workerConfig.show_message_on_call,
-    };
-
-    await this.chatMessageCreatorUseCase.execute(
-      t,
-      data.account_id,
-      {
-        chat_id: chat.chat_id,
-      },
-      messageBody,
-      ETypeUserChat.system
-    );
+      typeUser: ETypeUserChat.system,
+    });
   }
 
   private async createChatFromCallEvent(
@@ -1733,12 +1725,34 @@ export class MessageUpsertConsume {
     data: IUpsertMessage,
     chatbotId: string
   ) {
-    const createChat = await this.createChat(t, data, EChatStatus.ura);
-    if (!createChat) {
-      throw new Error('Failed to create chat');
+    const jid = remoteJid(data.message?.key);
+    const jidAlt = remoteJidAlt(data.message?.key);
+    if (!jid && !jidAlt) {
+      throw new Error('Received message without remoteJid');
     }
 
-    return this.chatbotFlowRunnerService.execute(t, createChat, chatbotId);
+    const phone = getPhoneFromJid(jid, jidAlt);
+    if (!phone) {
+      throw new Error('Failed to get phone from jid');
+    }
+
+    let chat = await this.getChat(
+      data.account_id,
+      data.worker_id,
+      phone,
+      jid,
+      jidAlt
+    );
+
+    if (!chat) {
+      chat = await this.createChat(t, data, EChatStatus.ura);
+
+      if (!chat) {
+        throw new Error('Failed to create chat');
+      }
+    }
+
+    return this.chatbotFlowRunnerService.execute(t, data, chat, chatbotId);
   }
 
   private async createOrUpdateChatQueue(
