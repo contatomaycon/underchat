@@ -24,6 +24,9 @@ async function i18nextPlugin(fastify: FastifyInstance) {
       interpolation: {
         escapeValue: false,
       },
+      returnNull: false,
+      returnEmptyString: false,
+      returnObjects: false,
     });
 
   await fastify.register(plugin, {

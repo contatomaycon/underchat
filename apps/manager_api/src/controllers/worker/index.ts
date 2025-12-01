@@ -25,6 +25,8 @@ import { updateSimultaneousAttendance } from './methods/updateSimultaneousAttend
 import { viewSimultaneousAttendance } from './methods/viewSimultaneousAttendance';
 import { updateShowMessageOnCall } from './methods/updateShowMessageOnCall';
 import { viewShowMessageOnCall } from './methods/viewShowMessageOnCall';
+import { updateChatbot } from './methods/updateChatbot';
+import { viewChatbot } from './methods/viewChatbot';
 
 @injectable()
 class WorkerController {
@@ -54,6 +56,8 @@ class WorkerController {
   public viewSimultaneousAttendance = viewSimultaneousAttendance;
   public updateShowMessageOnCall = updateShowMessageOnCall;
   public viewShowMessageOnCall = viewShowMessageOnCall;
+  public updateChatbot = updateChatbot;
+  public viewChatbot = viewChatbot;
 }
 
 export default WorkerController;

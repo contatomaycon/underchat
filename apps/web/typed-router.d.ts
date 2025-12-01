@@ -65,6 +65,20 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'chatbot-flow': RouteRecordInfo<
+      'chatbot-flow',
+      '/chatbot-flow',
+      Record<never, never>,
+      Record<never, never>,
+      | 'chatbot-flow-id'
+    >,
+    'chatbot-flow-id': RouteRecordInfo<
+      'chatbot-flow-id',
+      '/chatbot-flow/:id',
+      { id: ParamValue<true> },
+      { id: ParamValue<false> },
+      | never
+    >,
     'contact': RouteRecordInfo<
       'contact',
       '/contact',
@@ -244,6 +258,19 @@ declare module 'vue-router/auto-routes' {
     'src/pages/chatbot.vue': {
       routes:
         | 'chatbot'
+      views:
+        | never
+    }
+    'src/pages/chatbot-flow.vue': {
+      routes:
+        | 'chatbot-flow'
+        | 'chatbot-flow-id'
+      views:
+        | 'default'
+    }
+    'src/pages/chatbot-flow/[id].vue': {
+      routes:
+        | 'chatbot-flow-id'
       views:
         | never
     }

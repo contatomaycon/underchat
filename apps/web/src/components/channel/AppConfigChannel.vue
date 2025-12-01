@@ -2,6 +2,7 @@
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { useContactGroupStore } from '@/@webcore/stores/contactGroup';
 import { useContactStore } from '@/@webcore/stores/contact';
+import { useChatbotStore } from '@/@webcore/stores/chatbot';
 import { EColor } from '@core/common/enums/EColor';
 import { ProfileStatus } from '@core/schema/worker/listProfileStatus/response.schema';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
@@ -15,6 +16,7 @@ import { ViewWorkerConfigResponse } from '@core/schema/worker/viewWorkerConfig/r
 const channelStore = useChannelsStore();
 const contactGroupStore = useContactGroupStore();
 const contactStore = useContactStore();
+const chatbotStore = useChatbotStore();
 const { t } = useI18n();
 
 const props = defineProps<{
@@ -196,6 +198,7 @@ type WorkerConfigForm = {
   generate_protocol_at_transfer: boolean;
   show_message_on_call: boolean;
   auto_save_contacts: boolean;
+  chatbot: boolean;
 };
 
 const createDefaultWorkerConfig = (): WorkerConfigForm => ({
@@ -209,6 +212,7 @@ const createDefaultWorkerConfig = (): WorkerConfigForm => ({
   generate_protocol_at_transfer: false,
   show_message_on_call: false,
   auto_save_contacts: false,
+  chatbot: false,
 });
 
 const workerConfigForm = reactive<WorkerConfigForm>(
@@ -233,6 +237,10 @@ const simultaneousAttendanceInput = ref<string>('');
 const showMessageOnCallText = ref<string>('');
 const showMessageOnCallModalOpen = ref(false);
 const isSavingShowMessageOnCall = ref(false);
+const chatbotId = ref<string | null>(null);
+const chatbotModalOpen = ref(false);
+const isSavingChatbot = ref(false);
+const selectedChatbotId = ref<string | null>(null);
 
 const statusTypeOptions = computed(() => [
   {
@@ -438,12 +446,14 @@ const loadWorkerConfig = async (force = false) => {
       protocolUraText,
       simultaneousAttendanceValue,
       showMessageOnCallValue,
+      chatbotValue,
     ] = await Promise.all([
       channelStore.fetchTransferProtocolText(channelId.value),
       channelStore.fetchStartProtocolText(channelId.value),
       channelStore.fetchUraProtocolText(channelId.value),
       channelStore.fetchSimultaneousAttendance(channelId.value),
       channelStore.fetchShowMessageOnCall(channelId.value),
+      channelStore.fetchChatbot(channelId.value),
     ]);
 
     const hasTransferProtocolText =
@@ -479,6 +489,9 @@ const loadWorkerConfig = async (force = false) => {
       ? showMessageOnCallValue
       : '';
     workerConfigForm.show_message_on_call = hasShowMessageOnCall;
+
+    chatbotId.value = chatbotValue;
+    workerConfigForm.chatbot = chatbotValue !== null && chatbotValue !== '';
   } finally {
     isLoadingWorkerConfig.value = false;
   }
@@ -779,6 +792,57 @@ const deleteShowMessageOnCallText = async () => {
   }
 };
 
+const openChatbotModal = async () => {
+  if (!channelId.value) return;
+
+  await chatbotStore.listChatbots();
+  const currentChatbotId = await channelStore.fetchChatbot(channelId.value);
+  chatbotId.value = currentChatbotId;
+  selectedChatbotId.value = currentChatbotId;
+  chatbotModalOpen.value = true;
+};
+
+const closeChatbotModal = () => {
+  chatbotModalOpen.value = false;
+};
+
+const saveChatbot = async () => {
+  if (!channelId.value) return;
+
+  try {
+    isSavingChatbot.value = true;
+    const result = await channelStore.updateChatbot(
+      channelId.value,
+      selectedChatbotId.value
+    );
+
+    const hasChatbot = result !== null && result !== '';
+    workerConfigForm.chatbot = hasChatbot;
+    chatbotId.value = result;
+
+    closeChatbotModal();
+  } finally {
+    isSavingChatbot.value = false;
+  }
+};
+
+const deleteChatbot = async () => {
+  if (!channelId.value) return;
+
+  try {
+    isSavingChatbot.value = true;
+    await channelStore.updateChatbot(channelId.value, null);
+
+    workerConfigForm.chatbot = false;
+    chatbotId.value = null;
+    selectedChatbotId.value = null;
+
+    closeChatbotModal();
+  } finally {
+    isSavingChatbot.value = false;
+  }
+};
+
 const workerConfigOptions = computed(() => [
   {
     key: 'is_automatic_attendance' as WorkerConfigField,
@@ -837,6 +901,11 @@ const workerConfigOptions = computed(() => [
     key: 'auto_save_contacts' as WorkerConfigField,
     title: t('channel_general_config_auto_save_contacts_title'),
     description: t('channel_general_config_auto_save_contacts_description'),
+  },
+  {
+    key: 'chatbot' as WorkerConfigField,
+    title: t('channel_general_config_chatbot_title'),
+    description: t('channel_general_config_chatbot_description'),
   },
 ]);
 
@@ -2059,7 +2128,8 @@ onMounted(async () => {
                           option.key !== 'generate_protocol_at_start' &&
                           option.key !== 'generate_protocol_at_ura' &&
                           option.key !== 'simultaneous_attendance' &&
-                          option.key !== 'show_message_on_call'
+                          option.key !== 'show_message_on_call' &&
+                          option.key !== 'chatbot'
                         "
                         :model-value="workerConfigForm[option.key]"
                         :label="option.title"
@@ -2124,6 +2194,15 @@ onMounted(async () => {
                           isSavingWorkerConfig || isSavingShowMessageOnCall
                         "
                         @click.stop.prevent="openShowMessageOnCallModal"
+                      />
+                      <VCheckbox
+                        v-else-if="option.key === 'chatbot'"
+                        :model-value="workerConfigForm[option.key]"
+                        :label="option.title"
+                        color="primary"
+                        hide-details
+                        :disabled="isSavingWorkerConfig || isSavingChatbot"
+                        @click.stop.prevent="openChatbotModal"
                       />
                       <p class="text-body-2 text-medium-emphasis mb-0">
                         {{ option.description }}
@@ -3178,6 +3257,59 @@ onMounted(async () => {
           :loading="isSavingShowMessageOnCall"
           :disabled="isSavingShowMessageOnCall"
           @click="saveShowMessageOnCallText"
+        >
+          {{ $t('save') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog v-model="chatbotModalOpen" max-width="600" persistent>
+    <VCard>
+      <VCardTitle class="d-flex justify-space-between align-center">
+        <span>{{ $t('channel_general_config_chatbot_title') }}</span>
+        <IconBtn @click="closeChatbotModal">
+          <VIcon icon="tabler-x" />
+        </IconBtn>
+      </VCardTitle>
+      <VCardText>
+        <VSelect
+          v-model="selectedChatbotId"
+          :items="chatbotStore.list"
+          item-title="name"
+          item-value="chatbot_id"
+          :label="$t('chatbot_select_label')"
+          :placeholder="$t('chatbot_select_placeholder')"
+          clearable
+        />
+        <div class="text-caption text-medium-emphasis mt-2">
+          {{ $t('chatbot_select_hint') }}
+        </div>
+      </VCardText>
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          :disabled="isSavingChatbot"
+          @click="closeChatbotModal"
+        >
+          {{ $t('close') }}
+        </VBtn>
+        <VBtn
+          v-if="selectedChatbotId"
+          color="error"
+          variant="tonal"
+          :loading="isSavingChatbot"
+          :disabled="isSavingChatbot"
+          @click="deleteChatbot"
+        >
+          {{ $t('delete') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          :loading="isSavingChatbot"
+          :disabled="isSavingChatbot"
+          @click="saveChatbot"
         >
           {{ $t('save') }}
         </VBtn>

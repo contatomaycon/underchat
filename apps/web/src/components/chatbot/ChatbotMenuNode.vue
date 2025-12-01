@@ -5,6 +5,7 @@ import { Handle, Position } from '@vue-flow/core';
 import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
 import data from 'emoji-mart-vue-fast/data/all.json';
 import 'emoji-mart-vue-fast/css/emoji-mart.css';
+import { useI18n } from 'vue-i18n';
 
 interface MenuOption {
   id: string;
@@ -19,6 +20,7 @@ interface MenuData {
 }
 
 const props = defineProps<NodeProps>();
+const { t } = useI18n();
 
 const getInitialData = (): MenuData => {
   const data = props.data as MenuData | undefined;
@@ -37,6 +39,10 @@ const messageEmojiPickerOpen = ref(false);
 const messageLength = computed(() => menuData.value.message.length);
 const maxMessageLength = 500;
 
+const buildOptionHandleId = (optionId: string) => {
+  return `option-${optionId}-source`;
+};
+
 const updateNodeData = () => {
   if (props.data) {
     const data = props.data as MenuData;
@@ -48,7 +54,7 @@ const updateNodeData = () => {
 
 const addOption = () => {
   const newOption: MenuOption = {
-    id: `option-${crypto.randomUUID()}`,
+    id: crypto.randomUUID(),
     text: '',
   };
   menuData.value.options.push(newOption);
@@ -132,7 +138,7 @@ watch(
 
 <template>
   <div class="chatbot-menu-node">
-    <Handle type="target" :position="Position.Top" />
+    <Handle type="target" :position="Position.Top" class="handle-target" />
 
     <VCard class="menu-card" elevation="2">
       <VCardTitle
@@ -140,7 +146,9 @@ watch(
       >
         <div class="d-flex align-center ga-2">
           <VIcon icon="tabler-menu-2" color="primary" size="20" />
-          <span class="text-sm font-weight-medium">Menu</span>
+          <span class="text-sm font-weight-medium">{{
+            t('chatbot_menu')
+          }}</span>
         </div>
         <VIcon
           v-if="(props.data as MenuData)?.onRemove"
@@ -155,7 +163,7 @@ watch(
       <VCardText class="pa-3">
         <VTextField
           v-model="menuData.title"
-          placeholder="Defina o título do menu"
+          :placeholder="t('chatbot_menu_title_placeholder')"
           prepend-inner-icon="tabler-message-circle"
           variant="outlined"
           density="compact"
@@ -167,7 +175,7 @@ watch(
           <VTextarea
             id="message-textarea"
             v-model="menuData.message"
-            placeholder="Informe a mensagem a ser enviada"
+            :placeholder="t('chatbot_message_placeholder')"
             variant="outlined"
             density="compact"
             rows="3"
@@ -223,7 +231,7 @@ watch(
           @click="addOption"
         >
           <VIcon icon="tabler-plus" size="18" class="me-1" />
-          Adicionar Opção
+          {{ t('chatbot_add_option') }}
         </VBtn>
 
         <div v-if="menuData.options.length > 0" class="options-list">
@@ -272,17 +280,17 @@ watch(
               :id="`option-input-${option.id}`"
               :model-value="option.text"
               @update:model-value="updateOption(index, $event)"
-              placeholder="Digite uma opção"
+              :placeholder="t('chatbot_option_placeholder')"
               variant="outlined"
               density="compact"
               class="option-text-field"
               hide-details
             />
             <Handle
-              :id="`option-${option.id}-source`"
+              :id="buildOptionHandleId(option.id)"
               type="source"
               :position="Position.Right"
-              class="option-handle"
+              class="option-handle handle-source"
             />
             <div class="option-drag-handle">
               <VIcon icon="tabler-grip-vertical" size="18" color="primary" />

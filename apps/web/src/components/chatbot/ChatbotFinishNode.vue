@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position } from '@vue-flow/core';
+import { useI18n } from 'vue-i18n';
 
 interface FinishData {
   onRemove?: () => void;
 }
 
 const props = defineProps<NodeProps>();
+const { t } = useI18n();
 
 const handleRemove = () => {
   const data = props.data as FinishData;
@@ -18,7 +20,7 @@ const handleRemove = () => {
 
 <template>
   <div class="chatbot-finish-node">
-    <Handle type="target" :position="Position.Top" />
+    <Handle type="target" :position="Position.Top" class="handle-target" />
 
     <VCard class="finish-card" elevation="2">
       <VCardTitle
@@ -26,7 +28,9 @@ const handleRemove = () => {
       >
         <div class="d-flex align-center ga-2">
           <VIcon icon="tabler-circle-check" color="error" size="20" />
-          <span class="text-sm font-weight-medium">Finalizar</span>
+          <span class="text-sm font-weight-medium">{{
+            t('chatbot_finish')
+          }}</span>
         </div>
         <VIcon
           v-if="(props.data as FinishData)?.onRemove"
@@ -63,4 +67,3 @@ const handleRemove = () => {
   cursor: pointer;
 }
 </style>
-

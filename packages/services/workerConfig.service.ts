@@ -70,6 +70,7 @@ export class WorkerConfigService {
       generate_protocol_at_transfer: result.generate_protocol_at_transfer,
       show_message_on_call: result.show_message_on_call,
       auto_save_contacts: result.auto_save_contacts ?? false,
+      chatbot_id: result.chatbot_id ?? null,
       created_at: result.created_at ?? null,
       updated_at: result.updated_at ?? null,
     };
@@ -210,6 +211,31 @@ export class WorkerConfigService {
     }
 
     return result.show_message_on_call || null;
+  }
+
+  async updateChatbot(
+    workerId: string,
+    chatbotId: string | null
+  ): Promise<string | null> {
+    const [result] = await Promise.all([
+      this.workerConfigUpserterRepository.updateChatbot(workerId, chatbotId),
+      this.invalidateWorkerConfigCache(workerId),
+    ]);
+
+    return result;
+  }
+
+  async viewChatbot(workerId: string): Promise<string | null> {
+    const result =
+      await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
+        workerId
+      );
+
+    if (!result) {
+      return null;
+    }
+
+    return result.chatbot_id || null;
   }
 
   private async invalidateWorkerConfigCache(workerId: string): Promise<void> {

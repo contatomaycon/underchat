@@ -540,4 +540,80 @@ export class WorkerConfigUpserterRepository {
 
     return result[0]?.show_message_on_call || null;
   }
+
+  updateChatbot = async (
+    workerId: string,
+    chatbotId: string | null
+  ): Promise<string | null> => {
+    await this.db.transaction(async (tx) => {
+      await this.ensureSingleConfigPerWorker(tx, workerId);
+
+      const existingConfig = await this.findExistingConfigTx(tx, workerId);
+
+      if (existingConfig) {
+        await this.updateChatbotTx(tx, workerId, chatbotId);
+        return;
+      }
+
+      await this.createChatbotTx(tx, workerId, chatbotId);
+    });
+
+    return this.getChatbot(workerId);
+  };
+
+  private async updateChatbotTx(
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
+    workerId: string,
+    chatbotId: string | null
+  ): Promise<void> {
+    await tx
+      .update(workerConfig)
+      .set({
+        chatbot_id: chatbotId || null,
+        updated_at: new Date().toISOString(),
+      })
+      .where(eq(workerConfig.worker_id, workerId))
+      .execute();
+  }
+
+  private async createChatbotTx(
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
+    workerId: string,
+    chatbotId: string | null
+  ): Promise<void> {
+    await tx
+      .insert(workerConfig)
+      .values({
+        worker_config_id: uuidv7(),
+        worker_id: workerId,
+        is_automatic_attendance: false,
+        show_attendee_name: false,
+        show_worker_name: false,
+        allow_attendance_only_online: false,
+        auto_save_contacts: false,
+        chatbot_id: chatbotId || null,
+      })
+      .execute();
+  }
+
+  private async getChatbot(workerId: string): Promise<string | null> {
+    const result = await this.db
+      .select({
+        chatbot_id: workerConfig.chatbot_id,
+      })
+      .from(workerConfig)
+      .where(eq(workerConfig.worker_id, workerId))
+      .limit(1)
+      .execute();
+
+    return result[0]?.chatbot_id || null;
+  }
 }

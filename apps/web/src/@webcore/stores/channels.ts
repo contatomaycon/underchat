@@ -1064,6 +1064,67 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
+    async fetchChatbot(workerId: string): Promise<string | null> {
+      if (!workerId) return null;
+
+      try {
+        const response = await axios.get<
+          IApiResponse<{ chatbot_id: string | null }>
+        >(`/worker/${workerId}/config/chatbot`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data.chatbot_id;
+      } catch {
+        return null;
+      }
+    },
+
+    async updateChatbot(
+      workerId: string,
+      chatbotId: string | null
+    ): Promise<string | null> {
+      if (!workerId) return null;
+
+      try {
+        const response = await axios.patch<
+          IApiResponse<{ chatbot_id: string | null }>
+        >(`/worker/${workerId}/config/chatbot`, {
+          chatbot_id: chatbotId || null,
+        });
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('chatbot_update_error');
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('chatbot_update_success'),
+          EColor.success
+        );
+
+        return data.data.chatbot_id;
+      } catch (error) {
+        let message = this.i18n.global.t('chatbot_update_error');
+        if (error instanceof AxiosError) {
+          message = error?.response?.data?.message ?? message;
+        }
+
+        this.showSnackbar(message, EColor.error);
+
+        return null;
+      }
+    },
+
     async deleteProfileStatus(workerProfileStatusId: string): Promise<boolean> {
       try {
         this.loading = true;

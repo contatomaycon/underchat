@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position } from '@vue-flow/core';
+import { useI18n } from 'vue-i18n';
 
 const props = defineProps<NodeProps>();
+const { t } = useI18n();
 </script>
 
 <template>
   <div class="chatbot-start-node">
-    <Handle type="source" :position="Position.Bottom" />
+    <Handle type="source" :position="Position.Bottom" class="handle-source" />
     <VCard class="start-card" elevation="2">
       <VCardText class="d-flex flex-column align-center justify-center pa-3">
         <VAvatar
@@ -20,7 +22,7 @@ const props = defineProps<NodeProps>();
           <VIcon icon="tabler-flag" size="24" />
         </VAvatar>
         <span class="text-sm font-weight-medium">
-          {{ props.label || 'Início' }}
+          {{ props.label || t('chatbot_start') }}
         </span>
       </VCardText>
     </VCard>
