@@ -283,7 +283,7 @@ export class ChatbotFlowSaverUseCase {
     if (
       atIndex <= 0 ||
       atIndex === email.length - 1 ||
-      email.indexOf('@', atIndex + 1) !== -1
+      email.substring(atIndex + 1).includes('@')
     ) {
       errors.push(
         t('chatbot_flow_validation_email_invalid', {
@@ -316,7 +316,6 @@ export class ChatbotFlowSaverUseCase {
           nodeLabel: node.label || node.id,
         })
       );
-      return;
     }
   }
 
