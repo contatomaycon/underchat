@@ -132,9 +132,136 @@ export class ChatbotFlowRunnerService {
       chat: createChat,
       accountId: createChat.account.id,
       type: EMessageType.text,
-      message: 'Opção inválida',
+      message: t('chatbot_option_invalid'),
       typeUser: ETypeUserChat.bot,
     });
+  }
+
+  private async sendInvalidEmailMessage(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat
+  ): Promise<boolean> {
+    return this.chatMessageService.sendMessage(t, {
+      chat: createChat,
+      accountId: createChat.account.id,
+      type: EMessageType.text,
+      message: t('email_invalid'),
+      typeUser: ETypeUserChat.bot,
+    });
+  }
+
+  private async sendInvalidCpfMessage(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat
+  ): Promise<boolean> {
+    return this.chatMessageService.sendMessage(t, {
+      chat: createChat,
+      accountId: createChat.account.id,
+      type: EMessageType.text,
+      message: t('cpf_invalid'),
+      typeUser: ETypeUserChat.bot,
+    });
+  }
+
+  private async sendInvalidCnpjMessage(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat
+  ): Promise<boolean> {
+    return this.chatMessageService.sendMessage(t, {
+      chat: createChat,
+      accountId: createChat.account.id,
+      type: EMessageType.text,
+      message: t('cnpj_invalid'),
+      typeUser: ETypeUserChat.bot,
+    });
+  }
+
+  private onlyDigits(s: string): string {
+    return s.replaceAll(/\D+/g, '');
+  }
+
+  private isValidEmail(email: string): boolean {
+    const trimmed = email.trim();
+    if (!trimmed) return false;
+
+    const atIndex = trimmed.indexOf('@');
+    if (atIndex <= 0 || atIndex === trimmed.length - 1) return false;
+    if (trimmed.substring(atIndex + 1).includes('@')) return false;
+
+    const localPart = trimmed.substring(0, atIndex);
+    const domainPart = trimmed.substring(atIndex + 1);
+
+    if (localPart.length === 0 || localPart.includes(' ')) return false;
+
+    const dotIndex = domainPart.indexOf('.');
+    if (dotIndex <= 0 || dotIndex === domainPart.length - 1) return false;
+    if (domainPart.includes(' ')) return false;
+
+    return true;
+  }
+
+  private isValidCPF(cpf: string): boolean {
+    const digits = this.onlyDigits(cpf);
+
+    if (digits.length !== 11) return false;
+
+    if (/^(\d)\1{10}$/.test(digits)) return false;
+
+    let sum = 0;
+    for (let i = 0; i < 9; i++) {
+      sum += Number.parseInt(digits.charAt(i)) * (10 - i);
+    }
+    let remainder = (sum * 10) % 11;
+    if (remainder === 10 || remainder === 11) remainder = 0;
+    if (remainder !== Number.parseInt(digits.charAt(9))) return false;
+
+    sum = 0;
+    for (let i = 0; i < 10; i++) {
+      sum += Number.parseInt(digits.charAt(i)) * (11 - i);
+    }
+    remainder = (sum * 10) % 11;
+    if (remainder === 10 || remainder === 11) remainder = 0;
+    if (remainder !== Number.parseInt(digits.charAt(10))) return false;
+
+    return true;
+  }
+
+  private isValidCNPJ(cnpj: string): boolean {
+    const digits = this.onlyDigits(cnpj);
+
+    if (digits.length !== 14) return false;
+
+    if (/^(\d)\1{13}$/.test(digits)) return false;
+
+    let length = digits.length - 2;
+    let numbers = digits.substring(0, length);
+    const multipliers = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    let sum = 0;
+
+    for (let i = 0; i < length; i++) {
+      sum += Number.parseInt(numbers.charAt(i)) * multipliers[i];
+    }
+
+    let remainder = sum % 11;
+    let digit = remainder < 2 ? 0 : 11 - remainder;
+
+    if (digit !== Number.parseInt(digits.charAt(length))) return false;
+
+    length = length + 1;
+    numbers = digits.substring(0, length);
+    const multipliers2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    sum = 0;
+
+    for (let i = 0; i < length; i++) {
+      sum += Number.parseInt(numbers.charAt(i)) * multipliers2[i];
+    }
+
+    remainder = sum % 11;
+    digit = remainder < 2 ? 0 : 11 - remainder;
+
+    if (digit !== Number.parseInt(digits.charAt(length))) return false;
+
+    return true;
   }
 
   private async sendMessage(
@@ -241,7 +368,7 @@ export class ChatbotFlowRunnerService {
         chat: createChat,
         accountId: createChat.account.id,
         type: EMessageType.text,
-        message: 'Atendimento finalizado',
+        message: t('chatbot_service_finished'),
         typeUser: ETypeUserChat.bot,
       }),
       this.chatService.updateChatStatus(
@@ -323,6 +450,39 @@ export class ChatbotFlowRunnerService {
 
     if (nextFlowNode.type === 'redirect') {
       return this.processRedirectNode(t, createChat, chatbotFlow, nextFlowId);
+    }
+
+    if (nextFlowNode.type === 'data') {
+      const dataType = nextFlowNode.data?.dataType;
+      let questionText = '';
+
+      if (dataType === 'name') {
+        questionText = nextFlowNode.data?.firstName || '';
+      }
+
+      if (dataType === 'email') {
+        questionText = nextFlowNode.data?.email || '';
+      }
+
+      if (dataType === 'cpf') {
+        questionText = nextFlowNode.data?.cpf || '';
+      }
+
+      if (dataType === 'cnpj') {
+        questionText = nextFlowNode.data?.cnpj || '';
+      }
+
+      if (questionText) {
+        await this.chatMessageService.sendMessage(t, {
+          chat: createChat,
+          accountId: createChat.account.id,
+          type: EMessageType.text,
+          message: questionText,
+          typeUser: ETypeUserChat.bot,
+        });
+      }
+
+      return true;
     }
 
     if (nextFlowNode.type === 'finish') {
@@ -642,6 +802,80 @@ export class ChatbotFlowRunnerService {
     return this.processNextNode(t, updatedChat, chatbotFlow, nextFlowId);
   }
 
+  private async processDataNode(
+    t: TFunction<'translation', undefined>,
+    data: IUpsertMessage,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string
+  ): Promise<boolean> {
+    const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
+
+    if (!currentNode) {
+      throw new Error(t('chatbot_flow_node_not_found'));
+    }
+
+    const dataType = currentNode.data?.dataType;
+    const userText = this.getTextFromUpsertMessage(data)?.trim();
+
+    if (!userText) {
+      return false;
+    }
+
+    if (dataType === 'name') {
+      const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+      if (nextFlowId) {
+        await this.updateCache(createChat, nextFlowId);
+        return this.processNextNode(t, createChat, chatbotFlow, nextFlowId);
+      }
+      return true;
+    }
+
+    if (dataType === 'email') {
+      if (!this.isValidEmail(userText)) {
+        await this.sendInvalidEmailMessage(t, createChat);
+        return false;
+      }
+
+      const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+      if (nextFlowId) {
+        await this.updateCache(createChat, nextFlowId);
+        return this.processNextNode(t, createChat, chatbotFlow, nextFlowId);
+      }
+      return true;
+    }
+
+    if (dataType === 'cpf') {
+      if (!this.isValidCPF(userText)) {
+        await this.sendInvalidCpfMessage(t, createChat);
+        return false;
+      }
+
+      const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+      if (nextFlowId) {
+        await this.updateCache(createChat, nextFlowId);
+        return this.processNextNode(t, createChat, chatbotFlow, nextFlowId);
+      }
+      return true;
+    }
+
+    if (dataType === 'cnpj') {
+      if (!this.isValidCNPJ(userText)) {
+        await this.sendInvalidCnpjMessage(t, createChat);
+        return false;
+      }
+
+      const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+      if (nextFlowId) {
+        await this.updateCache(createChat, nextFlowId);
+        return this.processNextNode(t, createChat, chatbotFlow, nextFlowId);
+      }
+      return true;
+    }
+
+    return false;
+  }
+
   private async processMenuNode(
     t: TFunction<'translation', undefined>,
     data: IUpsertMessage,
@@ -716,9 +950,6 @@ export class ChatbotFlowRunnerService {
       throw new Error(t('chatbot_flow_node_not_found'));
     }
 
-    console.log('currentNode');
-    console.dir(currentNode, { depth: null });
-
     if (currentNode.type === 'start') {
       return this.processStartNode(t, createChat, chatbotFlow, currentFlowId);
     }
@@ -750,6 +981,16 @@ export class ChatbotFlowRunnerService {
     if (currentNode.type === 'redirect') {
       return this.processRedirectNode(
         t,
+        createChat,
+        chatbotFlow,
+        currentFlowId
+      );
+    }
+
+    if (currentNode.type === 'data') {
+      return this.processDataNode(
+        t,
+        data,
         createChat,
         chatbotFlow,
         currentFlowId
