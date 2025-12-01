@@ -598,6 +598,7 @@ export class ChatMessageCreatorUseCase {
       messageQuotedId,
       quotedMessage,
       hash,
+      typeUser,
     } = params;
     return {
       message_id: uuidv7(),
@@ -607,7 +608,7 @@ export class ChatMessageCreatorUseCase {
         remote_jid_alt: chat.message_key?.remote_jid_alt ?? null,
         is_view_once: false,
       },
-      type_user: ETypeUserChat.operator,
+      type_user: typeUser,
       account: chat.account,
       worker: chat.worker,
       user: chat.user,
@@ -653,6 +654,7 @@ export class ChatMessageCreatorUseCase {
       messageQuotedId,
       quotedMessage,
       videoDuration,
+      typeUser,
     } = params;
     return {
       message_id: uuidv7(),
@@ -662,7 +664,7 @@ export class ChatMessageCreatorUseCase {
         remote_jid_alt: chat.message_key?.remote_jid_alt ?? null,
         is_view_once: false,
       },
-      type_user: ETypeUserChat.operator,
+      type_user: typeUser,
       account: chat.account,
       worker: chat.worker,
       user: chat.user,
@@ -716,6 +718,7 @@ export class ChatMessageCreatorUseCase {
       duration,
       isViewOnce,
       isPtt,
+      typeUser,
     } = params;
     return {
       message_id: uuidv7(),
@@ -725,7 +728,7 @@ export class ChatMessageCreatorUseCase {
         remote_jid_alt: chat.message_key?.remote_jid_alt ?? null,
         is_view_once: isViewOnce,
       },
-      type_user: ETypeUserChat.operator,
+      type_user: typeUser,
       account: chat.account,
       worker: chat.worker,
       user: chat.user,
@@ -770,6 +773,7 @@ export class ChatMessageCreatorUseCase {
       messageQuotedId,
       quotedMessage,
       hash,
+      typeUser,
     } = params;
     return {
       message_id: uuidv7(),
@@ -779,7 +783,7 @@ export class ChatMessageCreatorUseCase {
         remote_jid_alt: chat.message_key?.remote_jid_alt ?? null,
         is_view_once: false,
       },
-      type_user: ETypeUserChat.operator,
+      type_user: typeUser,
       account: chat.account,
       worker: chat.worker,
       user: chat.user,
@@ -957,8 +961,17 @@ export class ChatMessageCreatorUseCase {
     images: UploadFileRequest[],
     params: IProcessMediaMessagesParams
   ): Promise<boolean> {
-    const { chat, chatId, accountId, type, message, messageQuotedId, t, hash } =
-      params;
+    const {
+      chat,
+      chatId,
+      accountId,
+      type,
+      message,
+      messageQuotedId,
+      t,
+      hash,
+      typeUser,
+    } = params;
 
     const validImages = await this.getValidImages(images, params);
     if (validImages.length === 0) {
@@ -983,6 +996,7 @@ export class ChatMessageCreatorUseCase {
       messageQuotedId: quotedId,
       quotedMessage,
       hash: normalizedHash,
+      typeUser,
     };
 
     if (validImages.length === 1) {
@@ -1075,6 +1089,7 @@ export class ChatMessageCreatorUseCase {
       messageQuotedId: params.messageQuotedId,
       quotedMessage: params.quotedMessage,
       hash: params.hash,
+      typeUser: params.typeUser,
     });
 
     await this.publishMessage(imageMessage);
@@ -1094,6 +1109,7 @@ export class ChatMessageCreatorUseCase {
         messageQuotedId: params.messageQuotedId,
         quotedMessage: params.quotedMessage,
         hash: params.hash,
+        typeUser: params.typeUser,
       });
 
       return this.publishMessage(imageMessage);
@@ -1107,8 +1123,17 @@ export class ChatMessageCreatorUseCase {
     videoDuration: number | null,
     params: IProcessMediaMessagesParams
   ): Promise<boolean> {
-    const { chat, chatId, accountId, type, message, messageQuotedId, t, hash } =
-      params;
+    const {
+      chat,
+      chatId,
+      accountId,
+      type,
+      message,
+      messageQuotedId,
+      t,
+      hash,
+      typeUser,
+    } = params;
 
     const validVideos = await this.getValidVideos(
       videos,
@@ -1144,6 +1169,7 @@ export class ChatMessageCreatorUseCase {
           messageQuotedId: quotedId,
           quotedMessage,
           videoDuration: finalVideoDuration,
+          typeUser,
         },
         normalizedHash
       );
@@ -1172,6 +1198,7 @@ export class ChatMessageCreatorUseCase {
           messageQuotedId: quotedId,
           quotedMessage,
           videoDuration: finalDuration,
+          typeUser,
         },
         normalizedHash
       );
@@ -1257,8 +1284,17 @@ export class ChatMessageCreatorUseCase {
     isPtt: boolean,
     params: IProcessMediaMessagesParams
   ): Promise<boolean> {
-    const { chat, chatId, accountId, type, message, messageQuotedId, t, hash } =
-      params;
+    const {
+      chat,
+      chatId,
+      accountId,
+      type,
+      message,
+      messageQuotedId,
+      t,
+      hash,
+      typeUser,
+    } = params;
 
     const validAudios = await this.getValidAudios(
       audios,
@@ -1297,6 +1333,7 @@ export class ChatMessageCreatorUseCase {
           duration: finalDuration,
           isViewOnce,
           isPtt,
+          typeUser,
         },
         normalizedHash
       );
@@ -1323,6 +1360,7 @@ export class ChatMessageCreatorUseCase {
           duration: finalDuration,
           isViewOnce,
           isPtt,
+          typeUser,
         },
         normalizedHash
       );
@@ -1390,8 +1428,17 @@ export class ChatMessageCreatorUseCase {
     documents: UploadFileRequest[],
     params: IProcessMediaMessagesParams
   ): Promise<boolean> {
-    const { chat, chatId, accountId, type, message, messageQuotedId, t, hash } =
-      params;
+    const {
+      chat,
+      chatId,
+      accountId,
+      type,
+      message,
+      messageQuotedId,
+      t,
+      hash,
+      typeUser,
+    } = params;
     let uploadedDocuments: Array<UploadFileResponse | null>;
     try {
       uploadedDocuments = await Promise.all(
@@ -1445,6 +1492,7 @@ export class ChatMessageCreatorUseCase {
         messageQuotedId: quotedId,
         quotedMessage,
         hash,
+        typeUser,
       });
 
       await this.publishMessage(documentMessage);
@@ -1462,6 +1510,7 @@ export class ChatMessageCreatorUseCase {
         messageQuotedId: quotedId,
         quotedMessage,
         hash,
+        typeUser,
       });
 
       return this.publishMessage(documentMessage);
@@ -1485,6 +1534,7 @@ export class ChatMessageCreatorUseCase {
       accountId,
       t,
       hash,
+      typeUser,
     } = params;
     let quotedMessage: IQuotedMessage | null = null;
 
@@ -1515,6 +1565,7 @@ export class ChatMessageCreatorUseCase {
       messageQuotedId: messageQuotedId ?? null,
       quotedMessage,
       hash,
+      typeUser,
     });
 
     return this.publishMessage(textMessage);
@@ -1532,6 +1583,7 @@ export class ChatMessageCreatorUseCase {
       messageQuotedId,
       quotedMessage,
       hash,
+      typeUser,
     } = params;
 
     if (contactIds.length === 0) return false;
@@ -1579,7 +1631,7 @@ export class ChatMessageCreatorUseCase {
           remote_jid_alt: chat.message_key?.remote_jid_alt ?? null,
           is_view_once: false,
         },
-        type_user: ETypeUserChat.operator,
+        type_user: typeUser,
         account: chat.account,
         worker: chat.worker,
         user: chat.user,
@@ -1633,6 +1685,7 @@ export class ChatMessageCreatorUseCase {
     longitude: number;
     name?: string | null;
     address?: string | null;
+    typeUser: ETypeUserChat;
   }): Promise<boolean> {
     const {
       chat,
@@ -1646,6 +1699,7 @@ export class ChatMessageCreatorUseCase {
       longitude,
       name,
       address,
+      typeUser,
     } = params;
 
     const messageHash = hash || uuidv7();
@@ -1657,7 +1711,7 @@ export class ChatMessageCreatorUseCase {
         remote_jid_alt: chat.message_key?.remote_jid_alt ?? null,
         is_view_once: false,
       },
-      type_user: ETypeUserChat.operator,
+      type_user: typeUser,
       account: chat.account,
       worker: chat.worker,
       user: chat.user,
@@ -1698,7 +1752,8 @@ export class ChatMessageCreatorUseCase {
     chatId: string,
     accountId: string,
     t: TFunction<'translation', undefined>,
-    hash: string | null
+    hash: string | null,
+    typeUser: ETypeUserChat
   ): Promise<boolean | null> {
     if (type === EMessageType.delete_message && body.delete_message_id) {
       return this.processDelete(
@@ -1707,7 +1762,8 @@ export class ChatMessageCreatorUseCase {
         accountId,
         body.delete_message_id,
         t,
-        hash
+        hash,
+        typeUser
       );
     }
 
@@ -1723,7 +1779,8 @@ export class ChatMessageCreatorUseCase {
         body.reaction_message_id,
         body.reaction_emoji,
         t,
-        hash
+        hash,
+        typeUser
       );
     }
 
@@ -1779,7 +1836,8 @@ export class ChatMessageCreatorUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     params: CreateMessageChatsParams,
-    body: CreateMessageChatsBody
+    body: CreateMessageChatsBody,
+    typeUser: ETypeUserChat
   ): Promise<boolean> {
     this.validate(t, body);
 
@@ -1840,7 +1898,8 @@ export class ChatMessageCreatorUseCase {
       params.chat_id,
       accountId,
       t,
-      hash
+      hash,
+      typeUser
     );
     if (actionResult !== null) {
       return actionResult;
@@ -1868,6 +1927,7 @@ export class ChatMessageCreatorUseCase {
       quickMessageDuration,
       quickMessageWidth,
       quickMessageHeight,
+      typeUser,
     });
     if (mediaResult !== null) {
       return mediaResult;
@@ -1894,6 +1954,7 @@ export class ChatMessageCreatorUseCase {
       linkPreview: body.link_preview,
       t,
       hash,
+      typeUser,
     });
   }
 
@@ -1978,6 +2039,7 @@ export class ChatMessageCreatorUseCase {
     linkPreview: CreateMessageChatsBody['link_preview'];
     t: TFunction<'translation', undefined>;
     hash: string | null;
+    typeUser: ETypeUserChat;
   }): Promise<boolean> {
     const {
       chat,
@@ -2000,6 +2062,7 @@ export class ChatMessageCreatorUseCase {
       linkPreview,
       t,
       hash,
+      typeUser,
     } = options;
 
     if (contacts.length > 0) {
@@ -2015,6 +2078,7 @@ export class ChatMessageCreatorUseCase {
         messageQuotedId,
         quotedMessage,
         hash,
+        typeUser,
       });
     }
 
@@ -2039,6 +2103,7 @@ export class ChatMessageCreatorUseCase {
         longitude: locationLongitude,
         name: locationName,
         address: locationAddress,
+        typeUser,
       });
     }
 
@@ -2060,6 +2125,7 @@ export class ChatMessageCreatorUseCase {
         quickMessageMimetype,
         quickMessageWidth,
         quickMessageHeight,
+        typeUser,
       });
     }
 
@@ -2073,6 +2139,7 @@ export class ChatMessageCreatorUseCase {
       linkPreview,
       t,
       hash,
+      typeUser,
     });
   }
 
@@ -2168,7 +2235,8 @@ export class ChatMessageCreatorUseCase {
     reactionMessageId: string,
     emoji: string,
     t: TFunction<'translation', undefined>,
-    hash: string | null
+    hash: string | null,
+    typeUser: ETypeUserChat
   ): Promise<boolean> {
     const targetMessage = await this.getMessage(accountId, reactionMessageId);
 
@@ -2197,7 +2265,8 @@ export class ChatMessageCreatorUseCase {
       chat,
       chatId,
       updatedMessage,
-      hash
+      hash,
+      typeUser
     );
 
     await Promise.all([
@@ -2215,7 +2284,8 @@ export class ChatMessageCreatorUseCase {
     chat: IChat,
     chatId: string,
     targetMessage: IChatMessage,
-    hash: string | null
+    hash: string | null,
+    typeUser: ETypeUserChat
   ): IChatMessage {
     return {
       message_id: uuidv7(),
@@ -2228,7 +2298,7 @@ export class ChatMessageCreatorUseCase {
         participant: targetMessage.message_key?.participant ?? null,
         is_view_once: false,
       },
-      type_user: ETypeUserChat.operator,
+      type_user: typeUser,
       account: chat.account,
       worker: chat.worker,
       user: chat.user,
@@ -2256,7 +2326,8 @@ export class ChatMessageCreatorUseCase {
     accountId: string,
     deleteMessageId: string,
     t: TFunction<'translation', undefined>,
-    hash: string | null
+    hash: string | null,
+    typeUser: ETypeUserChat
   ): Promise<boolean> {
     const targetMessage = await this.getMessage(accountId, deleteMessageId);
 
@@ -2277,7 +2348,8 @@ export class ChatMessageCreatorUseCase {
       chat,
       chatId,
       updatedMessage,
-      hash
+      hash,
+      typeUser
     );
 
     await Promise.all([
@@ -2336,7 +2408,8 @@ export class ChatMessageCreatorUseCase {
     chat: IChat,
     chatId: string,
     targetMessage: IChatMessage,
-    hash: string | null
+    hash: string | null,
+    typeUser: ETypeUserChat
   ): IChatMessage {
     return {
       message_id: uuidv7(),
@@ -2349,7 +2422,7 @@ export class ChatMessageCreatorUseCase {
         participant: targetMessage.message_key?.participant ?? null,
         is_view_once: false,
       },
-      type_user: ETypeUserChat.operator,
+      type_user: typeUser,
       account: chat.account,
       worker: chat.worker,
       user: chat.user,
@@ -2382,6 +2455,7 @@ export class ChatMessageCreatorUseCase {
       messageQuotedId,
       quotedMessage,
       hash,
+      typeUser,
     } = params;
     return {
       message_id: uuidv7(),
@@ -2391,7 +2465,7 @@ export class ChatMessageCreatorUseCase {
         remote_jid_alt: chat.message_key?.remote_jid_alt ?? null,
         is_view_once: false,
       },
-      type_user: ETypeUserChat.operator,
+      type_user: typeUser,
       account: chat.account,
       worker: chat.worker,
       user: chat.user,

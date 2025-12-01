@@ -23,6 +23,7 @@ import { AutomaticAttendanceService } from '@core/services/automaticAttendance.s
 import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import Redis from 'ioredis';
+import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 
 @injectable()
 export class TransferChatUseCase {
@@ -130,7 +131,8 @@ export class TransferChatUseCase {
       {
         chat_id: chatId,
       },
-      messageBody
+      messageBody,
+      ETypeUserChat.system
     );
   }
 
@@ -159,7 +161,8 @@ export class TransferChatUseCase {
         {
           chat_id: chatId,
         },
-        protocolMessageBody
+        protocolMessageBody,
+        ETypeUserChat.system
       ),
       this.chatService.updateChatProtocol(chatId, protocolType, protocol),
     ]);

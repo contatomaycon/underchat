@@ -11,6 +11,7 @@ import {
   CreateMessageChatsParams,
   CreateMessageChatsBody,
 } from '@core/schema/chat/createMessageChats/request.schema';
+import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 
 export const reactMessage = async (
   request: FastifyRequest<{
@@ -39,7 +40,8 @@ export const reactMessage = async (
       t,
       tokenJwtData.account_id,
       params,
-      body
+      body,
+      ETypeUserChat.operator
     );
 
     if (response) {

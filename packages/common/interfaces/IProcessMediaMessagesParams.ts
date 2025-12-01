@@ -1,6 +1,7 @@
 import { IChat } from './IChat';
 import { EMessageType } from '../enums/EMessageType';
 import { TFunction } from 'i18next';
+import { ETypeUserChat } from '../enums/ETypeUserChat';
 
 export interface IProcessMediaMessagesParams {
   chat: IChat;
@@ -17,4 +18,5 @@ export interface IProcessMediaMessagesParams {
   quickMessageDuration?: number | null;
   quickMessageWidth?: number | null;
   quickMessageHeight?: number | null;
+  typeUser: ETypeUserChat;
 }

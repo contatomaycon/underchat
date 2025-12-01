@@ -20,6 +20,7 @@ import { IViewUserNamePhoto } from '@core/common/interfaces/IViewUserNamePhoto';
 import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import Redis from 'ioredis';
+import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 
 @injectable()
 export class AutomaticAttendanceService {
@@ -60,7 +61,8 @@ export class AutomaticAttendanceService {
         {
           chat_id: chatId,
         },
-        protocolMessageBody
+        protocolMessageBody,
+        ETypeUserChat.system
       ),
       this.chatService.updateChatProtocol(chatId, protocolType, protocol),
     ]);

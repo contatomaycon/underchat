@@ -59,6 +59,8 @@ import { TFunction } from 'i18next';
 import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
 import { ChatMessageCreatorUseCase } from '@core/useCases/chat/ChatMessageCreator.useCase';
 import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
+import { ChatbotFlowRunnerService } from '@core/services/chatbotFlowRunner.service';
+import { WorkerConfigService } from '@core/services/workerConfig.service';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -79,7 +81,9 @@ export class MessageUpsertConsume {
     private readonly encryptService: EncryptService,
     private readonly contactService: ContactService,
     private readonly automaticAttendanceService: AutomaticAttendanceService,
-    private readonly chatMessageCreatorUseCase: ChatMessageCreatorUseCase
+    private readonly chatMessageCreatorUseCase: ChatMessageCreatorUseCase,
+    private readonly workerConfigService: WorkerConfigService,
+    private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService
   ) {}
 
   private get consumerOrThrow(): Consumer {
@@ -1264,7 +1268,8 @@ export class MessageUpsertConsume {
       {
         chat_id: chat.chat_id,
       },
-      messageBody
+      messageBody,
+      ETypeUserChat.system
     );
   }
 
@@ -1611,7 +1616,8 @@ export class MessageUpsertConsume {
 
   private async createChat(
     t: TFunction<'translation', undefined>,
-    data: IUpsertMessage
+    data: IUpsertMessage,
+    status: EChatStatus
   ): Promise<IChat> {
     const [viewAccountName, viewWorkerNameAndId] = await Promise.all([
       this.accountService.viewAccountName(data.account_id),
@@ -1652,7 +1658,7 @@ export class MessageUpsertConsume {
       worker: viewWorkerNameAndId,
       name,
       phone,
-      status: EChatStatus.queue,
+      status,
       date: messageDate,
       summary: {
         last_message: messageText,
@@ -1722,7 +1728,20 @@ export class MessageUpsertConsume {
     }
   }
 
-  private async createOrUpdateChat(
+  private async createOrUpdateChatBotFlow(
+    t: TFunction<'translation', undefined>,
+    data: IUpsertMessage,
+    chatbotId: string
+  ) {
+    const createChat = await this.createChat(t, data, EChatStatus.ura);
+    if (!createChat) {
+      throw new Error('Failed to create chat');
+    }
+
+    return this.chatbotFlowRunnerService.execute(t, createChat, chatbotId);
+  }
+
+  private async createOrUpdateChatQueue(
     t: TFunction<'translation', undefined>,
     data: IUpsertMessage,
     phone: string,
@@ -1738,7 +1757,7 @@ export class MessageUpsertConsume {
     );
 
     if (!getChat) {
-      const createChat = await this.createChat(t, data);
+      const createChat = await this.createChat(t, data, EChatStatus.queue);
       if (!createChat) {
         throw new Error('Failed to create chat');
       }
@@ -1762,6 +1781,26 @@ export class MessageUpsertConsume {
     }
 
     await this.createChatMessage(getChat, data);
+  }
+
+  private async createOrUpdateChat(
+    t: TFunction<'translation', undefined>,
+    data: IUpsertMessage,
+    phone: string,
+    jid?: string | null,
+    jidAlt?: string | null
+  ): Promise<void> {
+    const chatbotId = await this.workerConfigService.viewChatbot(
+      data.worker_id
+    );
+
+    if (chatbotId) {
+      await this.createOrUpdateChatBotFlow(t, data, chatbotId);
+
+      return;
+    }
+
+    await this.createOrUpdateChatQueue(t, data, phone, jid, jidAlt);
   }
 
   public async execute(t: TFunction<'translation', undefined>): Promise<void> {
