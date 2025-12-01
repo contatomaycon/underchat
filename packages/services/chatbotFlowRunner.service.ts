@@ -4,6 +4,11 @@ import { ChatbotService } from './chatbot.service';
 import { ChatService } from './chat.service';
 import { ChatMessageService } from './chatMessage.service';
 import { WorkerConfigService } from './workerConfig.service';
+import { ContactService } from './contact.service';
+import { LabelTemplateViewerRepository } from '@core/repositories/labelTemplate/LabelTemplateViewer.repository';
+import { CentrifugoService } from './centrifugo.service';
+import { UserService } from './user.service';
+import { SectorService } from './sector.service';
 import { IChat } from '@core/common/interfaces/IChat';
 import { TFunction } from 'i18next';
 import { ListChatbotFlowResponse } from '@core/schema/chatbot/listChatbotFlow/response.schema';
@@ -11,6 +16,10 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
+import {
+  chatAccountCentrifugo,
+  chatQueueAccountCentrifugo,
+} from '@core/common/functions/centrifugoQueue';
 
 @injectable()
 export class ChatbotFlowRunnerService {
@@ -19,7 +28,12 @@ export class ChatbotFlowRunnerService {
     private readonly chatbotService: ChatbotService,
     private readonly chatService: ChatService,
     private readonly chatMessageService: ChatMessageService,
-    private readonly workerConfigService: WorkerConfigService
+    private readonly workerConfigService: WorkerConfigService,
+    private readonly contactService: ContactService,
+    private readonly labelTemplateViewerRepository: LabelTemplateViewerRepository,
+    private readonly centrifugoService: CentrifugoService,
+    private readonly userService: UserService,
+    private readonly sectorService: SectorService
   ) {}
 
   private getChatbotFlowCacheKey(
@@ -303,6 +317,14 @@ export class ChatbotFlowRunnerService {
       return this.processMessageNode(t, createChat, nextFlowNode, chatbotFlow);
     }
 
+    if (nextFlowNode.type === 'tag') {
+      return this.processTagNode(t, createChat, chatbotFlow, nextFlowId);
+    }
+
+    if (nextFlowNode.type === 'redirect') {
+      return this.processRedirectNode(t, createChat, chatbotFlow, nextFlowId);
+    }
+
     if (nextFlowNode.type === 'finish') {
       await this.sendFinishMessage(t, createChat);
       return true;
@@ -321,10 +343,10 @@ export class ChatbotFlowRunnerService {
 
     if (continueType === 'automatic') {
       await this.sendMessage(t, createChat, node);
-      await this.updateCache(createChat, node.id);
 
       const nextFlowId = this.getNextFlowId(chatbotFlow, node.id);
       if (nextFlowId) {
+        await this.updateCache(createChat, nextFlowId);
         return this.processNextNode(t, createChat, chatbotFlow, nextFlowId);
       }
 
@@ -332,10 +354,13 @@ export class ChatbotFlowRunnerService {
     }
 
     if (continueType === 'after_response') {
-      await Promise.all([
-        this.sendMessage(t, createChat, node),
-        this.updateCache(createChat, node.id),
-      ]);
+      await this.sendMessage(t, createChat, node);
+
+      const nextFlowId = this.getNextFlowId(chatbotFlow, node.id);
+      if (nextFlowId) {
+        await this.updateCache(createChat, nextFlowId);
+      }
+
       return true;
     }
 
@@ -353,10 +378,10 @@ export class ChatbotFlowRunnerService {
 
     if (continueType === 'automatic') {
       await this.sendMessage(t, createChat, currentNode);
-      await this.updateCache(createChat, currentFlowId);
 
       const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
       if (nextFlowId) {
+        await this.updateCache(createChat, nextFlowId);
         return this.processNextNode(t, createChat, chatbotFlow, nextFlowId);
       }
 
@@ -364,10 +389,12 @@ export class ChatbotFlowRunnerService {
     }
 
     if (continueType === 'after_response') {
-      await Promise.all([
-        this.sendMessage(t, createChat, currentNode),
-        this.updateCache(createChat, currentFlowId),
-      ]);
+      await this.sendMessage(t, createChat, currentNode);
+
+      const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+      if (nextFlowId) {
+        await this.updateCache(createChat, nextFlowId);
+      }
 
       return true;
     }
@@ -377,6 +404,242 @@ export class ChatbotFlowRunnerService {
     }
 
     return false;
+  }
+
+  private async updateChatTag(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    labelTemplateId: string
+  ): Promise<void> {
+    const labelTemplate =
+      await this.labelTemplateViewerRepository.viewLabelTemplateById(
+        labelTemplateId,
+        createChat.account.id
+      );
+
+    if (!labelTemplate) {
+      throw new Error(t('label_template_not_found'));
+    }
+
+    const label = {
+      label_template_id: labelTemplate.label_template_id,
+      label: labelTemplate.label,
+      color: labelTemplate.color,
+    };
+
+    const updated = await this.chatService.updateChatLabel(
+      createChat.chat_id,
+      label
+    );
+
+    if (!updated) {
+      throw new Error(t('chat_label_update_failed'));
+    }
+
+    const updatedChat: IChat = {
+      ...createChat,
+      label,
+    };
+
+    await this.chatService.saveChat(updatedChat);
+
+    const channelAccountId = updatedChat.account?.id ?? createChat.account.id;
+
+    await Promise.all([
+      this.centrifugoService.publishSub(
+        chatAccountCentrifugo(channelAccountId),
+        updatedChat
+      ),
+      this.centrifugoService.publishSub(
+        chatQueueAccountCentrifugo(channelAccountId),
+        updatedChat
+      ),
+    ]);
+  }
+
+  private async updateContactTag(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    labelTemplateId: string
+  ): Promise<void> {
+    if (!createChat.contact?.id) {
+      throw new Error(t('contact_not_found'));
+    }
+
+    const contactExists = await this.contactService.existsContactById(
+      createChat.contact.id
+    );
+
+    if (!contactExists) {
+      throw new Error(t('contact_not_found'));
+    }
+
+    const updated = await this.contactService.updateContactById(
+      {
+        label_template_id: labelTemplateId,
+      },
+      createChat.contact.id,
+      createChat.account.id
+    );
+
+    if (!updated) {
+      throw new Error(t('contact_update_error'));
+    }
+  }
+
+  private async processTagNode(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string
+  ): Promise<boolean> {
+    const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
+
+    if (!currentNode) {
+      throw new Error(t('chatbot_flow_node_not_found'));
+    }
+
+    const tagType = currentNode.data?.tagType;
+    const selectedTag = currentNode.data?.selectedTag;
+
+    if (!selectedTag) {
+      throw new Error(t('tag_not_selected'));
+    }
+
+    if (tagType === 'chat') {
+      await this.updateChatTag(t, createChat, selectedTag);
+    }
+
+    if (tagType === 'contact') {
+      await this.updateContactTag(t, createChat, selectedTag);
+    }
+
+    const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+    if (!nextFlowId) {
+      return true;
+    }
+
+    return this.processNextNode(t, createChat, chatbotFlow, nextFlowId);
+  }
+
+  private async processRedirectNode(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string
+  ): Promise<boolean> {
+    const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
+
+    if (!currentNode) {
+      throw new Error(t('chatbot_flow_node_not_found'));
+    }
+
+    const redirectType = currentNode.data?.redirectType;
+    const selectedUser = currentNode.data?.selectedUser;
+    const selectedSector = currentNode.data?.selectedSector;
+    const selectedSectorUser = currentNode.data?.selectedSectorUser;
+
+    let user: IChat['user'] | null | undefined = undefined;
+    let sector: IChat['sector'] | null | undefined = undefined;
+
+    if (redirectType === 'user') {
+      if (!selectedUser) {
+        throw new Error(t('user_not_selected'));
+      }
+
+      const userData = await this.userService.viewUserNamePhoto(selectedUser);
+
+      if (!userData) {
+        throw new Error(t('user_not_found'));
+      }
+
+      user = {
+        id: userData.id,
+        name: userData.name,
+        photo: userData.photo ?? null,
+      };
+    }
+
+    if (redirectType === 'sector') {
+      if (!selectedSector) {
+        throw new Error(t('sector_not_selected'));
+      }
+
+      const sectorData = await this.sectorService.viewSectorById(
+        selectedSector,
+        createChat.account.id,
+        false
+      );
+
+      if (!sectorData) {
+        throw new Error(t('sector_not_found'));
+      }
+
+      sector = {
+        id: sectorData.sector_id,
+        name: sectorData.name,
+      };
+
+      if (selectedSectorUser) {
+        const sectorUserData =
+          await this.userService.viewUserNamePhoto(selectedSectorUser);
+
+        if (!sectorUserData) {
+          throw new Error(t('user_not_found'));
+        }
+
+        user = {
+          id: sectorUserData.id,
+          name: sectorUserData.name,
+          photo: sectorUserData.photo ?? null,
+        };
+      }
+    }
+
+    const updated = await this.chatService.updateChatUserAndSector(
+      createChat.chat_id,
+      user,
+      sector
+    );
+
+    if (!updated) {
+      throw new Error(t('chat_update_failed'));
+    }
+
+    await this.chatService.updateChatStatus(
+      createChat.chat_id,
+      EChatStatus.queue
+    );
+
+    const updatedChat: IChat = {
+      ...createChat,
+      user,
+      sector,
+      status: EChatStatus.queue,
+    };
+
+    await this.chatService.saveChat(updatedChat);
+
+    const channelAccountId = updatedChat.account?.id ?? createChat.account.id;
+
+    await Promise.all([
+      this.centrifugoService.publishSub(
+        chatAccountCentrifugo(channelAccountId),
+        updatedChat
+      ),
+      this.centrifugoService.publishSub(
+        chatQueueAccountCentrifugo(channelAccountId),
+        updatedChat
+      ),
+    ]);
+
+    const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+
+    if (!nextFlowId) {
+      return true;
+    }
+
+    return this.processNextNode(t, updatedChat, chatbotFlow, nextFlowId);
   }
 
   private async processMenuNode(
@@ -476,6 +739,19 @@ export class ChatbotFlowRunnerService {
         createChat,
         chatbotFlow,
         currentNode,
+        currentFlowId
+      );
+    }
+
+    if (currentNode.type === 'tag') {
+      return this.processTagNode(t, createChat, chatbotFlow, currentFlowId);
+    }
+
+    if (currentNode.type === 'redirect') {
+      return this.processRedirectNode(
+        t,
+        createChat,
+        chatbotFlow,
         currentFlowId
       );
     }

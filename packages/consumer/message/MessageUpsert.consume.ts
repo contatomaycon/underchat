@@ -115,6 +115,48 @@ export class MessageUpsertConsume {
     return promise;
   }
 
+  private async handleNewChatMessageAndPublish(
+    createChat: IChat,
+    data: IUpsertMessage
+  ): Promise<void> {
+    await this.createChatMessage(createChat, data);
+
+    const updatedChat = await this.chatService.findChatByChatId(
+      data.account_id,
+      createChat.chat_id
+    );
+
+    if (updatedChat && updatedChat.status === EChatStatus.queue) {
+      await this.centrifugoChatQueuePublish(updatedChat);
+      return;
+    }
+
+    if (!updatedChat) {
+      await this.centrifugoChatQueuePublish(createChat);
+    }
+  }
+
+  private async ensureChatAndHandleMessage(
+    t: TFunction<'translation', undefined>,
+    data: IUpsertMessage,
+    chat: IChat | null
+  ): Promise<IChat> {
+    if (chat) {
+      await this.createChatMessage(chat, data);
+
+      return chat;
+    }
+
+    const newChat = await this.createChat(t, data, EChatStatus.ura);
+    if (!newChat) {
+      throw new Error('Failed to create chat');
+    }
+
+    await this.handleNewChatMessageAndPublish(newChat, data);
+
+    return newChat;
+  }
+
   private async markIncomingMessageAsRead(
     accountId: string,
     workerId: string,
@@ -1736,7 +1778,7 @@ export class MessageUpsertConsume {
       throw new Error('Failed to get phone from jid');
     }
 
-    let chat = await this.getChat(
+    const existingChat = await this.getChat(
       data.account_id,
       data.worker_id,
       phone,
@@ -1744,13 +1786,7 @@ export class MessageUpsertConsume {
       jidAlt
     );
 
-    if (!chat) {
-      chat = await this.createChat(t, data, EChatStatus.ura);
-
-      if (!chat) {
-        throw new Error('Failed to create chat');
-      }
-    }
+    const chat = await this.ensureChatAndHandleMessage(t, data, existingChat);
 
     return this.chatbotFlowRunnerService.execute(t, data, chat, chatbotId);
   }
@@ -1776,22 +1812,7 @@ export class MessageUpsertConsume {
         throw new Error('Failed to create chat');
       }
 
-      await this.createChatMessage(createChat, data);
-
-      const updatedChat = await this.chatService.findChatByChatId(
-        data.account_id,
-        createChat.chat_id
-      );
-
-      if (updatedChat) {
-        if (updatedChat.status === EChatStatus.queue) {
-          await this.centrifugoChatQueuePublish(updatedChat);
-        }
-      } else {
-        await this.centrifugoChatQueuePublish(createChat);
-      }
-
-      return;
+      return this.handleNewChatMessageAndPublish(createChat, data);
     }
 
     await this.createChatMessage(getChat, data);
