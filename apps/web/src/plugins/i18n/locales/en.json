@@ -154,6 +154,8 @@
     "channel_general_config_show_message_on_call_description": "Automatically sends a message when the number receives a call.",
     "channel_general_config_auto_save_contacts_title": "Auto-save contacts",
     "channel_general_config_auto_save_contacts_description": "Automatically saves contacts that interact with the channel.",
+    "channel_general_config_chatbot_title": "Activate chatbot in channel",
+    "channel_general_config_chatbot_description": "Activates the selected chatbot for this channel.",
     "channel_general_config_save": "Save settings",
     "channel_general_config_load_error": "Unable to load the channel settings.",
     "channel_general_config_save_success": "Channel settings saved successfully!",
@@ -1235,5 +1237,12 @@
     "chatbot_flow_validation_failed_attempts_redirect_user_required": "User is required when redirect type is user",
     "chatbot_flow_validation_failed_attempts_redirect_sector_required": "Sector is required when redirect type is sector",
     "chatbot_action_redirect": "Redirect",
-    "chatbot_action_finish": "Finish"
+    "chatbot_action_finish": "Finish",
+    "chatbot_select_label": "Select chatbot",
+    "chatbot_select_placeholder": "No chatbot selected",
+    "chatbot_select_hint": "Select a chatbot to activate in the channel. You can remove the selection at any time.",
+    "chatbot_not_found": "Chatbot not found!",
+    "chatbot_view_success": "Chatbot retrieved successfully!",
+    "chatbot_update_success": "Chatbot updated successfully!",
+    "chatbot_update_error": "Error updating chatbot!"
 }

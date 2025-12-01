@@ -37,6 +37,8 @@ import { updateSimultaneousAttendanceSchema } from '@core/schema/worker/updateSi
 import { viewSimultaneousAttendanceSchema } from '@core/schema/worker/viewSimultaneousAttendance';
 import { updateShowMessageOnCallSchema } from '@core/schema/worker/updateShowMessageOnCall';
 import { viewShowMessageOnCallSchema } from '@core/schema/worker/viewShowMessageOnCall';
+import { updateChatbotSchema } from '@core/schema/worker/updateChatbot';
+import { viewChatbotSchema } from '@core/schema/worker/viewChatbot';
 
 export default function workerRoutes(server: FastifyInstance) {
   const workerController = container.resolve(WorkerController);
@@ -269,6 +271,24 @@ export default function workerRoutes(server: FastifyInstance) {
   server.patch('/worker/:worker_id/config/show-message-on-call', {
     schema: updateShowMessageOnCallSchema,
     handler: workerController.updateShowMessageOnCall,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerEditPermissions),
+    ],
+  });
+
+  server.get('/worker/:worker_id/config/chatbot', {
+    schema: viewChatbotSchema,
+    handler: workerController.viewChatbot,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerViewPermissions),
+    ],
+  });
+
+  server.patch('/worker/:worker_id/config/chatbot', {
+    schema: updateChatbotSchema,
+    handler: workerController.updateChatbot,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerEditPermissions),

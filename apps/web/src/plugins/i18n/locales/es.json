@@ -154,6 +154,8 @@
     "channel_general_config_show_message_on_call_description": "Envía un mensaje automáticamente cuando el número recibe una llamada.",
     "channel_general_config_auto_save_contacts_title": "Guardar contactos automáticamente",
     "channel_general_config_auto_save_contacts_description": "Guarda automáticamente los contactos que interactúan con el canal.",
+    "channel_general_config_chatbot_title": "Activar chatbot en el canal",
+    "channel_general_config_chatbot_description": "Activa el chatbot seleccionado para este canal.",
     "channel_general_config_save": "Guardar configuraciones",
     "channel_general_config_load_error": "No fue posible cargar las configuraciones del canal.",
     "channel_general_config_save_success": "¡Configuraciones del canal guardadas con éxito!",
@@ -1235,5 +1237,12 @@
     "chatbot_flow_validation_failed_attempts_redirect_user_required": "Usuario es obligatorio cuando el tipo de redirección es usuario",
     "chatbot_flow_validation_failed_attempts_redirect_sector_required": "Sector es obligatorio cuando el tipo de redirección es sector",
     "chatbot_action_redirect": "Redirigir",
-    "chatbot_action_finish": "Finalizar"
+    "chatbot_action_finish": "Finalizar",
+    "chatbot_select_label": "Seleccionar chatbot",
+    "chatbot_select_placeholder": "Ningún chatbot seleccionado",
+    "chatbot_select_hint": "Seleccione un chatbot para activar en el canal. Puede eliminar la selección en cualquier momento.",
+    "chatbot_not_found": "¡Chatbot no encontrado!",
+    "chatbot_view_success": "¡Chatbot obtenido con éxito!",
+    "chatbot_update_success": "¡Chatbot actualizado con éxito!",
+    "chatbot_update_error": "¡Error al actualizar el chatbot!"
 }
