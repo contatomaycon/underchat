@@ -918,12 +918,7 @@ const processMenuNodeData = (nodeData: any): void => {
 };
 
 const processSatisfactionNodeData = (nodeData: any): void => {
-  if (!nodeData.options) {
-    nodeData.options = [];
-  }
-  if (Array.isArray(nodeData.options)) {
-    nodeData.options = normalizeOptions(nodeData.options);
-  }
+  processMenuNodeData(nodeData);
 };
 
 const processRedirectNodeData = (nodeData: any): void => {

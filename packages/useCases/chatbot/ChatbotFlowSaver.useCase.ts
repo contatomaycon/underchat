@@ -12,6 +12,8 @@ import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { EMessageType } from '@core/common/enums/EMessageType';
 
+type MediaType = 'image' | 'video' | 'audio';
+
 @injectable()
 export class ChatbotFlowSaverUseCase {
   private readonly MAX_FILE_SIZE = 16 * 1024 * 1024;
@@ -667,11 +669,8 @@ export class ChatbotFlowSaverUseCase {
     fieldName: string,
     value: unknown,
     nodeId: string,
-    mediaType: 'image' | 'video' | 'audio',
-    mediaFiles: Map<
-      string,
-      { type: 'image' | 'video' | 'audio'; file: UploadFileRequest }
-    >
+    mediaType: MediaType,
+    mediaFiles: Map<string, { type: MediaType; file: UploadFileRequest }>
   ): void {
     if (!fieldName.startsWith(`${mediaType}_`)) {
       return;
@@ -685,13 +684,10 @@ export class ChatbotFlowSaverUseCase {
 
   private getMediaFilesByNodeId(
     input: SaveChatbotFlowRequest & Record<string, unknown>
-  ): Map<
-    string,
-    { type: 'image' | 'video' | 'audio'; file: UploadFileRequest }
-  > {
+  ): Map<string, { type: MediaType; file: UploadFileRequest }> {
     const mediaFiles = new Map<
       string,
-      { type: 'image' | 'video' | 'audio'; file: UploadFileRequest }
+      { type: MediaType; file: UploadFileRequest }
     >();
 
     for (const [fieldName, value] of Object.entries(input)) {
