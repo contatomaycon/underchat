@@ -1004,9 +1004,17 @@ const processLoadedNode = (node: Node): Node => {
 
 const calculateMaxNodeId = (loadedNodes: Node[]): number => {
   return loadedNodes.reduce((max, node) => {
-    const match = node.id.match(/\d+$/);
-    if (match) {
-      const num = Number.parseInt(match[0], 10);
+    let lastNumber = '';
+    for (let i = node.id.length - 1; i >= 0; i--) {
+      const char = node.id[i];
+      if (char >= '0' && char <= '9') {
+        lastNumber = char + lastNumber;
+      } else if (lastNumber) {
+        break;
+      }
+    }
+    if (lastNumber) {
+      const num = Number.parseInt(lastNumber, 10);
       return Math.max(max, num);
     }
     return max;

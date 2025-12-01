@@ -277,13 +277,46 @@ export class ChatbotFlowSaverUseCase {
       return;
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(data.email)) {
+    const email = data.email.trim();
+    const atIndex = email.indexOf('@');
+
+    if (
+      atIndex <= 0 ||
+      atIndex === email.length - 1 ||
+      email.indexOf('@', atIndex + 1) !== -1
+    ) {
       errors.push(
         t('chatbot_flow_validation_email_invalid', {
           nodeLabel: node.label || node.id,
         })
       );
+      return;
+    }
+
+    const localPart = email.substring(0, atIndex);
+    const domainPart = email.substring(atIndex + 1);
+
+    if (localPart.length === 0 || localPart.includes(' ')) {
+      errors.push(
+        t('chatbot_flow_validation_email_invalid', {
+          nodeLabel: node.label || node.id,
+        })
+      );
+      return;
+    }
+
+    const dotIndex = domainPart.indexOf('.');
+    if (
+      dotIndex <= 0 ||
+      dotIndex === domainPart.length - 1 ||
+      domainPart.includes(' ')
+    ) {
+      errors.push(
+        t('chatbot_flow_validation_email_invalid', {
+          nodeLabel: node.label || node.id,
+        })
+      );
+      return;
     }
   }
 
