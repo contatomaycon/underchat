@@ -56,6 +56,60 @@ export class ChatbotFlowRunnerService {
     return firstNonStartNode ? firstNonStartNode.id : null;
   }
 
+  private getFlowNodeById(
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string
+  ): ListChatbotFlowResponse['nodes'][number] | undefined {
+    return chatbotFlow.nodes.find((node) => node.id === currentFlowId);
+  }
+
+  private getNextFlowId(
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string
+  ): string | null {
+    const edge = chatbotFlow.edges.find(
+      (currentEdge) => currentEdge.source === currentFlowId
+    );
+
+    return edge?.target ?? null;
+  }
+
+  private getNextFlowIdByOption(
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    optionId: string
+  ): string | null {
+    const edge = chatbotFlow.edges.find(
+      (currentEdge) =>
+        currentEdge.source === currentFlowId &&
+        currentEdge.sourceHandle === `option-${optionId}-source`
+    );
+
+    return edge?.target ?? null;
+  }
+
+  private getTextFromUpsertMessage(data: IUpsertMessage): string | null {
+    const messageContent: any = data.message?.message;
+
+    if (!messageContent) {
+      return null;
+    }
+
+    if (messageContent.conversation) {
+      return messageContent.conversation as string;
+    }
+
+    if (messageContent.extendedTextMessage?.text) {
+      return messageContent.extendedTextMessage.text as string;
+    }
+
+    if (messageContent.imageMessage?.caption) {
+      return messageContent.imageMessage.caption as string;
+    }
+
+    return null;
+  }
+
   private async sendTextOptionInvalidMessage(
     t: TFunction<'translation', undefined>,
     createChat: IChat
@@ -143,7 +197,6 @@ export class ChatbotFlowRunnerService {
 
     const lines = options.map((option, index) => {
       const number = index + 1;
-
       return `*${number}.* ${option.text}`;
     });
 
@@ -162,30 +215,30 @@ export class ChatbotFlowRunnerService {
     t: TFunction<'translation', undefined>,
     createChat: IChat
   ): Promise<boolean> {
-    await this.chatMessageService.sendMessage(t, {
-      chat: createChat,
-      accountId: createChat.account.id,
-      type: EMessageType.text,
-      message: 'Atendimento finalizado',
-      typeUser: ETypeUserChat.bot,
-    });
-
     const closedAt = new Date().toISOString();
-    await this.chatService.updateChatStatus(
-      createChat.chat_id,
-      EChatStatus.closed,
-      null,
-      null,
-      closedAt
-    );
-
     const cacheKey = this.getChatbotFlowCacheKey(
       createChat.account.id,
       createChat.worker.id,
       createChat.chat_id
     );
 
-    await this.redis.del(cacheKey);
+    await Promise.all([
+      this.chatMessageService.sendMessage(t, {
+        chat: createChat,
+        accountId: createChat.account.id,
+        type: EMessageType.text,
+        message: 'Atendimento finalizado',
+        typeUser: ETypeUserChat.bot,
+      }),
+      this.chatService.updateChatStatus(
+        createChat.chat_id,
+        EChatStatus.closed,
+        null,
+        null,
+        closedAt
+      ),
+      this.redis.del(cacheKey),
+    ]);
 
     return true;
   }
@@ -216,61 +269,117 @@ export class ChatbotFlowRunnerService {
     return startNode.id;
   }
 
-  private getFlowNodeById(
-    chatbotFlow: ListChatbotFlowResponse,
-    currentFlowId: string
-  ): ListChatbotFlowResponse['nodes'][number] | undefined {
-    return chatbotFlow.nodes.find((node) => node.id === currentFlowId);
-  }
-
-  private getNextFlowId(
-    chatbotFlow: ListChatbotFlowResponse,
-    currentFlowId: string
-  ): string | null {
-    const edge = chatbotFlow.edges.find(
-      (currentEdge) => currentEdge.source === currentFlowId
+  private async updateCache(
+    createChat: IChat,
+    nextFlowId: string
+  ): Promise<void> {
+    const cacheKey = this.getChatbotFlowCacheKey(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id
     );
-
-    return edge?.target ?? null;
+    await this.redis.set(cacheKey, nextFlowId, 'EX', 1800);
   }
 
-  private getNextFlowIdByOption(
+  private async processNextNode(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
-    currentFlowId: string,
-    optionId: string
-  ): string | null {
-    const edge = chatbotFlow.edges.find(
-      (currentEdge) =>
-        currentEdge.source === currentFlowId &&
-        currentEdge.sourceHandle === `option-${optionId}-source`
-    );
+    nextFlowId: string
+  ): Promise<boolean> {
+    const nextFlowNode = this.getFlowNodeById(chatbotFlow, nextFlowId);
 
-    return edge?.target ?? null;
+    if (!nextFlowNode) {
+      return false;
+    }
+
+    await this.updateCache(createChat, nextFlowId);
+
+    if (nextFlowNode.type === 'menu') {
+      return this.sendBuildMenuMessage(t, createChat, nextFlowNode);
+    }
+
+    if (nextFlowNode.type === 'message') {
+      return this.processMessageNode(t, createChat, nextFlowNode, chatbotFlow);
+    }
+
+    if (nextFlowNode.type === 'finish') {
+      await this.sendFinishMessage(t, createChat);
+      return true;
+    }
+
+    return true;
   }
 
-  private getTextFromUpsertMessage(data: IUpsertMessage): string | null {
-    const messageContent: any = data.message?.message;
+  private async processMessageNode(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    node: ListChatbotFlowResponse['nodes'][number],
+    chatbotFlow: ListChatbotFlowResponse
+  ): Promise<boolean> {
+    const continueType = node.data?.continueType;
 
-    if (!messageContent) {
-      return null;
+    if (continueType === 'automatic') {
+      await this.sendMessage(t, createChat, node);
+      await this.updateCache(createChat, node.id);
+
+      const nextFlowId = this.getNextFlowId(chatbotFlow, node.id);
+      if (nextFlowId) {
+        return this.processNextNode(t, createChat, chatbotFlow, nextFlowId);
+      }
+
+      return true;
     }
 
-    if (messageContent.conversation) {
-      return messageContent.conversation as string;
+    if (continueType === 'after_response') {
+      await Promise.all([
+        this.sendMessage(t, createChat, node),
+        this.updateCache(createChat, node.id),
+      ]);
+      return true;
     }
 
-    if (messageContent.extendedTextMessage?.text) {
-      return messageContent.extendedTextMessage.text as string;
-    }
-
-    if (messageContent.imageMessage?.caption) {
-      return messageContent.imageMessage.caption as string;
-    }
-
-    return null;
+    return this.sendMessage(t, createChat, node);
   }
 
-  private async currentNodeTypeIsMenu(
+  private async processMessageNodeType(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentNode: ListChatbotFlowResponse['nodes'][number],
+    currentFlowId: string
+  ): Promise<boolean> {
+    const continueType = currentNode.data?.continueType;
+
+    if (continueType === 'automatic') {
+      await this.sendMessage(t, createChat, currentNode);
+      await this.updateCache(createChat, currentFlowId);
+
+      const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+      if (nextFlowId) {
+        return this.processNextNode(t, createChat, chatbotFlow, nextFlowId);
+      }
+
+      return true;
+    }
+
+    if (continueType === 'after_response') {
+      await Promise.all([
+        this.sendMessage(t, createChat, currentNode),
+        this.updateCache(createChat, currentFlowId),
+      ]);
+
+      return true;
+    }
+
+    if (!continueType) {
+      await this.sendMessage(t, createChat, currentNode);
+    }
+
+    return false;
+  }
+
+  private async processMenuNode(
     t: TFunction<'translation', undefined>,
     data: IUpsertMessage,
     createChat: IChat,
@@ -282,14 +391,7 @@ export class ChatbotFlowRunnerService {
       throw new Error(t('chatbot_flow_node_not_found'));
     }
 
-    const cacheKey = this.getChatbotFlowCacheKey(
-      createChat.account.id,
-      createChat.worker.id,
-      createChat.chat_id
-    );
-
     const text = this.getTextFromUpsertMessage(data)?.trim();
-
     if (!text) {
       return this.sendTextOptionInvalidMessage(t, createChat);
     }
@@ -321,68 +423,22 @@ export class ChatbotFlowRunnerService {
       throw new Error(t('chatbot_flow_not_found'));
     }
 
-    const nextFlowNode = this.getFlowNodeById(chatbotFlow, nextFlowId);
-
-    if (!nextFlowNode) {
-      throw new Error(t('chatbot_flow_node_not_found'));
-    }
-
-    await this.redis.set(cacheKey, nextFlowId, 'EX', 1800);
-
-    if (nextFlowNode.type === 'menu') {
-      return this.sendBuildMenuMessage(t, createChat, nextFlowNode);
-    }
-
-    if (nextFlowNode.type === 'message') {
-      return this.sendMessage(t, createChat, nextFlowNode);
-    }
-
-    if (nextFlowNode.type === 'finish') {
-      await this.sendFinishMessage(t, createChat);
-      return true;
-    }
-
-    return false;
+    return this.processNextNode(t, createChat, chatbotFlow, nextFlowId);
   }
 
-  private async currentNodeTypeIsStart(
+  private async processStartNode(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string
   ): Promise<boolean> {
     const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+
     if (!nextFlowId) {
       throw new Error(t('chatbot_flow_not_found'));
     }
 
-    const nextFlowNode = this.getFlowNodeById(chatbotFlow, nextFlowId);
-    if (!nextFlowNode) {
-      throw new Error(t('chatbot_flow_node_not_found'));
-    }
-
-    const cacheKey = this.getChatbotFlowCacheKey(
-      createChat.account.id,
-      createChat.worker.id,
-      createChat.chat_id
-    );
-
-    await this.redis.set(cacheKey, nextFlowId, 'EX', 1800);
-
-    if (nextFlowNode.type === 'menu') {
-      return this.sendBuildMenuMessage(t, createChat, nextFlowNode);
-    }
-
-    if (nextFlowNode.type === 'message') {
-      return this.sendMessage(t, createChat, nextFlowNode);
-    }
-
-    if (nextFlowNode.type === 'finish') {
-      await this.sendFinishMessage(t, createChat);
-      return true;
-    }
-
-    return false;
+    return this.processNextNode(t, createChat, chatbotFlow, nextFlowId);
   }
 
   private async processFlowNode(
@@ -397,23 +453,15 @@ export class ChatbotFlowRunnerService {
       throw new Error(t('chatbot_flow_node_not_found'));
     }
 
-    const cacheKey = this.getChatbotFlowCacheKey(
-      createChat.account.id,
-      createChat.worker.id,
-      createChat.chat_id
-    );
+    console.log('currentNode');
+    console.dir(currentNode, { depth: null });
 
     if (currentNode.type === 'start') {
-      return this.currentNodeTypeIsStart(
-        t,
-        createChat,
-        chatbotFlow,
-        currentFlowId
-      );
+      return this.processStartNode(t, createChat, chatbotFlow, currentFlowId);
     }
 
     if (currentNode.type === 'menu') {
-      return this.currentNodeTypeIsMenu(
+      return this.processMenuNode(
         t,
         data,
         createChat,
@@ -423,34 +471,13 @@ export class ChatbotFlowRunnerService {
     }
 
     if (currentNode.type === 'message') {
-      const continueType = currentNode.data?.continueType;
-
-      if (continueType === 'automatic') {
-        const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
-
-        if (nextFlowId) {
-          const nextFlowNode = this.getFlowNodeById(chatbotFlow, nextFlowId);
-
-          if (nextFlowNode) {
-            await this.redis.set(cacheKey, nextFlowId, 'EX', 1800);
-
-            if (nextFlowNode.type === 'menu') {
-              return this.sendBuildMenuMessage(t, createChat, nextFlowNode);
-            }
-
-            if (nextFlowNode.type === 'message') {
-              return this.sendMessage(t, createChat, nextFlowNode);
-            }
-
-            if (nextFlowNode.type === 'finish') {
-              await this.sendFinishMessage(t, createChat);
-              return true;
-            }
-          }
-        }
-      }
-
-      return false;
+      return this.processMessageNodeType(
+        t,
+        createChat,
+        chatbotFlow,
+        currentNode,
+        currentFlowId
+      );
     }
 
     if (currentNode.type === 'finish') {
