@@ -69,7 +69,7 @@ export class ChatbotFlowSaverUseCase {
     const normalized = handle
       .toString()
       .trim()
-      .replace(/^(option-)+/i, '')
+      .replace(/^option-/i, '')
       .replace(/-source$/i, '');
 
     return normalized || null;
@@ -133,10 +133,7 @@ export class ChatbotFlowSaverUseCase {
         continue;
       }
 
-      const expectedHandleKey =
-        this.normalizeHandleId(`option-${option.id}-source`) ||
-        this.normalizeHandleId(option.id) ||
-        option.id;
+      const expectedHandleKey = option.id;
 
       const matchedIndex = connectedHandles.findIndex(
         (handle) => handle === expectedHandleKey
@@ -831,9 +828,6 @@ export class ChatbotFlowSaverUseCase {
     accountId: string
   ): Promise<string | null> {
     const requestData = this.normalizeRequestData(input.request, t);
-
-    console.log('input');
-    console.dir(input, { depth: null });
 
     await this.validate(t, requestData, input, accountId);
 

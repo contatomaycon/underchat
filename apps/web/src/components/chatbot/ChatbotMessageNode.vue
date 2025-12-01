@@ -154,6 +154,19 @@ const showAttachment = computed(() => {
   );
 });
 
+const attachmentDisplayName = computed(() => {
+  if (messageData.value.messageType === EMessageType.image) {
+    return t('chatbot_message_image');
+  }
+  if (messageData.value.messageType === EMessageType.video) {
+    return t('chatbot_message_video');
+  }
+  if (messageData.value.messageType === EMessageType.audio) {
+    return t('chatbot_message_audio');
+  }
+  return '';
+});
+
 const showTextarea = computed(() => {
   return messageData.value.messageType !== null;
 });
@@ -458,11 +471,7 @@ watch(
           >
             <div class="d-flex align-center ga-2">
               <span class="text-body-2 text-truncate" style="flex: 1">
-                {{
-                  messageData.attachmentFile?.name ||
-                  messageData.attachmentUrl?.split('/').pop() ||
-                  ''
-                }}
+                {{ attachmentDisplayName }}
               </span>
               <VBtn
                 icon
@@ -554,11 +563,7 @@ watch(
                     class="text-caption text-truncate"
                     style="flex: 0 1 auto"
                   >
-                    {{
-                      messageData.attachmentFile?.name ||
-                      messageData.attachmentUrl?.split('/').pop() ||
-                      ''
-                    }}
+                    {{ attachmentDisplayName }}
                   </span>
                   <span
                     class="text-caption text-medium-emphasis"

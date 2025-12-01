@@ -494,7 +494,7 @@ const normalizeHandleId = (handle?: string | null): string | null => {
   const normalized = handle
     .toString()
     .trim()
-    .replace(/^(option-)+/i, '')
+    .replace(/^option-/i, '')
     .replace(/-source$/i, '');
 
   return normalized || null;
@@ -924,8 +924,40 @@ const loadChatbotFlow = async () => {
           if (node.type === 'menu' && !node.data.options) {
             node.data.options = [];
           }
+          if (
+            node.type === 'menu' &&
+            node.data.options &&
+            Array.isArray(node.data.options)
+          ) {
+            node.data.options = node.data.options.map((option: any) => {
+              if (option && option.id) {
+                const normalizedId = option.id.replace(/^option-/i, '');
+                return {
+                  ...option,
+                  id: normalizedId,
+                };
+              }
+              return option;
+            });
+          }
           if (node.type === 'satisfaction' && !node.data.options) {
             node.data.options = [];
+          }
+          if (
+            node.type === 'satisfaction' &&
+            node.data.options &&
+            Array.isArray(node.data.options)
+          ) {
+            node.data.options = node.data.options.map((option: any) => {
+              if (option && option.id) {
+                const normalizedId = option.id.replace(/^option-/i, '');
+                return {
+                  ...option,
+                  id: normalizedId,
+                };
+              }
+              return option;
+            });
           }
           if (node.type === 'redirect') {
             if (node.data.redirectType === undefined)

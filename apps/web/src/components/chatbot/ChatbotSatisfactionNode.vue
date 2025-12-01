@@ -40,8 +40,7 @@ const messageLength = computed(() => satisfactionData.value.message.length);
 const maxMessageLength = 500;
 
 const buildOptionHandleId = (optionId: string) => {
-  const normalizedId = optionId.replace(/^(option-)+/i, '');
-  return `option-${normalizedId}-source`;
+  return `option-${optionId}-source`;
 };
 
 const updateNodeData = () => {
@@ -55,7 +54,7 @@ const updateNodeData = () => {
 
 const addOption = () => {
   const newOption: SatisfactionOption = {
-    id: `option-${crypto.randomUUID()}`,
+    id: crypto.randomUUID(),
     text: '',
   };
   satisfactionData.value.options.push(newOption);
