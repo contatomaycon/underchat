@@ -126,52 +126,60 @@ export class ChatbotFlowRunnerService {
 
   private async sendTextOptionInvalidMessage(
     t: TFunction<'translation', undefined>,
-    createChat: IChat
+    createChat: IChat,
+    customMessage?: string
   ): Promise<boolean> {
+    const message = customMessage || t('chatbot_option_invalid');
     return this.chatMessageService.sendMessage(t, {
       chat: createChat,
       accountId: createChat.account.id,
       type: EMessageType.text,
-      message: t('chatbot_option_invalid'),
+      message,
       typeUser: ETypeUserChat.bot,
     });
   }
 
   private async sendInvalidEmailMessage(
     t: TFunction<'translation', undefined>,
-    createChat: IChat
+    createChat: IChat,
+    customMessage?: string
   ): Promise<boolean> {
+    const message = customMessage || t('email_invalid');
     return this.chatMessageService.sendMessage(t, {
       chat: createChat,
       accountId: createChat.account.id,
       type: EMessageType.text,
-      message: t('email_invalid'),
+      message,
       typeUser: ETypeUserChat.bot,
     });
   }
 
   private async sendInvalidCpfMessage(
     t: TFunction<'translation', undefined>,
-    createChat: IChat
+    createChat: IChat,
+    customMessage?: string
   ): Promise<boolean> {
+    const message = customMessage || t('cpf_invalid');
     return this.chatMessageService.sendMessage(t, {
       chat: createChat,
       accountId: createChat.account.id,
       type: EMessageType.text,
-      message: t('cpf_invalid'),
+      message,
       typeUser: ETypeUserChat.bot,
     });
   }
 
   private async sendInvalidCnpjMessage(
     t: TFunction<'translation', undefined>,
-    createChat: IChat
+    createChat: IChat,
+    customMessage?: string
   ): Promise<boolean> {
+    const message = customMessage || t('cnpj_invalid');
     return this.chatMessageService.sendMessage(t, {
       chat: createChat,
       accountId: createChat.account.id,
       type: EMessageType.text,
-      message: t('cnpj_invalid'),
+      message,
       typeUser: ETypeUserChat.bot,
     });
   }
@@ -354,7 +362,8 @@ export class ChatbotFlowRunnerService {
 
   private async sendFinishMessage(
     t: TFunction<'translation', undefined>,
-    createChat: IChat
+    createChat: IChat,
+    customMessage?: string
   ): Promise<boolean> {
     const closedAt = new Date().toISOString();
     const cacheKey = this.getChatbotFlowCacheKey(
@@ -363,12 +372,14 @@ export class ChatbotFlowRunnerService {
       createChat.chat_id
     );
 
+    const message = customMessage || t('chatbot_service_finished');
+
     await Promise.all([
       this.chatMessageService.sendMessage(t, {
         chat: createChat,
         accountId: createChat.account.id,
         type: EMessageType.text,
-        message: t('chatbot_service_finished'),
+        message,
         typeUser: ETypeUserChat.bot,
       }),
       this.chatService.updateChatStatus(
@@ -807,7 +818,12 @@ export class ChatbotFlowRunnerService {
     data: IUpsertMessage,
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
-    currentFlowId: string
+    currentFlowId: string,
+    customMessages?: {
+      invalid_cpf_message?: string;
+      invalid_cnpj_message?: string;
+      invalid_email_message?: string;
+    }
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
 
@@ -833,7 +849,11 @@ export class ChatbotFlowRunnerService {
 
     if (dataType === 'email') {
       if (!this.isValidEmail(userText)) {
-        await this.sendInvalidEmailMessage(t, createChat);
+        await this.sendInvalidEmailMessage(
+          t,
+          createChat,
+          customMessages?.invalid_email_message
+        );
         return false;
       }
 
@@ -847,7 +867,11 @@ export class ChatbotFlowRunnerService {
 
     if (dataType === 'cpf') {
       if (!this.isValidCPF(userText)) {
-        await this.sendInvalidCpfMessage(t, createChat);
+        await this.sendInvalidCpfMessage(
+          t,
+          createChat,
+          customMessages?.invalid_cpf_message
+        );
         return false;
       }
 
@@ -861,7 +885,11 @@ export class ChatbotFlowRunnerService {
 
     if (dataType === 'cnpj') {
       if (!this.isValidCNPJ(userText)) {
-        await this.sendInvalidCnpjMessage(t, createChat);
+        await this.sendInvalidCnpjMessage(
+          t,
+          createChat,
+          customMessages?.invalid_cnpj_message
+        );
         return false;
       }
 
@@ -881,7 +909,8 @@ export class ChatbotFlowRunnerService {
     data: IUpsertMessage,
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
-    currentFlowId: string
+    currentFlowId: string,
+    customMessage?: string
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
     if (!currentNode) {
@@ -890,7 +919,7 @@ export class ChatbotFlowRunnerService {
 
     const text = this.getTextFromUpsertMessage(data)?.trim();
     if (!text) {
-      return this.sendTextOptionInvalidMessage(t, createChat);
+      return this.sendTextOptionInvalidMessage(t, createChat, customMessage);
     }
 
     const options = currentNode.data?.options ?? [];
@@ -901,13 +930,13 @@ export class ChatbotFlowRunnerService {
       selectedNumber < 1 ||
       selectedNumber > options.length
     ) {
-      return this.sendTextOptionInvalidMessage(t, createChat);
+      return this.sendTextOptionInvalidMessage(t, createChat, customMessage);
     }
 
     const selectedOption = options[selectedNumber - 1];
 
     if (!selectedOption) {
-      return this.sendTextOptionInvalidMessage(t, createChat);
+      return this.sendTextOptionInvalidMessage(t, createChat, customMessage);
     }
 
     const nextFlowId = this.getNextFlowIdByOption(
@@ -943,7 +972,16 @@ export class ChatbotFlowRunnerService {
     data: IUpsertMessage,
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
-    currentFlowId: string
+    currentFlowId: string,
+    customMessages?: {
+      inactivity_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
+      invalid_cpf_message?: string;
+      invalid_cnpj_message?: string;
+      invalid_email_message?: string;
+      service_finished_message?: string;
+    }
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
     if (!currentNode) {
@@ -955,12 +993,17 @@ export class ChatbotFlowRunnerService {
     }
 
     if (currentNode.type === 'menu' || currentNode.type === 'satisfaction') {
+      const message =
+        currentNode.type === 'menu'
+          ? customMessages?.invalid_menu_option_message
+          : customMessages?.invalid_satisfaction_option_message;
       return this.processMenuNode(
         t,
         data,
         createChat,
         chatbotFlow,
-        currentFlowId
+        currentFlowId,
+        message
       );
     }
 
@@ -993,12 +1036,17 @@ export class ChatbotFlowRunnerService {
         data,
         createChat,
         chatbotFlow,
-        currentFlowId
+        currentFlowId,
+        customMessages
       );
     }
 
     if (currentNode.type === 'finish') {
-      await this.sendFinishMessage(t, createChat);
+      await this.sendFinishMessage(
+        t,
+        createChat,
+        customMessages?.service_finished_message
+      );
       return true;
     }
 
@@ -1020,6 +1068,14 @@ export class ChatbotFlowRunnerService {
       throw new Error(t('chatbot_flow_not_found'));
     }
 
+    const configurations =
+      await this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
+        createChat.account.id,
+        chatbotId
+      );
+
+    const customMessages = configurations?.configurations?.messages;
+
     const currentFlowId = await this.cacheFirstChatbotFlowNodeIfNeeded(
       chatbotFlow,
       createChat
@@ -1029,7 +1085,14 @@ export class ChatbotFlowRunnerService {
       throw new Error(t('chatbot_flow_not_found'));
     }
 
-    await this.processFlowNode(t, data, createChat, chatbotFlow, currentFlowId);
+    await this.processFlowNode(
+      t,
+      data,
+      createChat,
+      chatbotFlow,
+      currentFlowId,
+      customMessages
+    );
 
     return currentFlowId;
   };

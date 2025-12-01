@@ -95,6 +95,30 @@ const isRedirectFailedAttemptsUserMenuOpen = ref(false);
 const isRedirectFailedAttemptsSectorMenuOpen = ref(false);
 const isRedirectFailedAttemptsSectorUserMenuOpen = ref(false);
 
+const configTab = ref('resources');
+
+const defaultInactivityMessage = computed(() => '');
+const defaultInvalidMenuOptionMessage = computed(() =>
+  t('chatbot_option_invalid')
+);
+const defaultInvalidSatisfactionOptionMessage = computed(() =>
+  t('chatbot_option_invalid')
+);
+const defaultInvalidCpfMessage = computed(() => t('cpf_invalid'));
+const defaultInvalidCnpjMessage = computed(() => t('cnpj_invalid'));
+const defaultInvalidEmailMessage = computed(() => t('email_invalid'));
+const defaultServiceFinishedMessage = computed(() =>
+  t('chatbot_service_finished')
+);
+
+const inactivityMessage = ref('');
+const invalidMenuOptionMessage = ref('');
+const invalidSatisfactionOptionMessage = ref('');
+const invalidCpfMessage = ref('');
+const invalidCnpjMessage = ref('');
+const invalidEmailMessage = ref('');
+const serviceFinishedMessage = ref('');
+
 const onlyDigits = (s: string) => s.replaceAll(/\D+/g, '');
 
 const inactivityAlertQuantityComputed = computed({
@@ -1157,6 +1181,27 @@ const processConfigurations = async (configs: any): Promise<void> => {
   if (configs.redirect_failed_attempts) {
     await processRedirectFailedAttemptsConfig(configs.redirect_failed_attempts);
   }
+
+  if (configs.messages) {
+    inactivityMessage.value = configs.messages.inactivity_message || '';
+    invalidMenuOptionMessage.value =
+      configs.messages.invalid_menu_option_message || '';
+    invalidSatisfactionOptionMessage.value =
+      configs.messages.invalid_satisfaction_option_message || '';
+    invalidCpfMessage.value = configs.messages.invalid_cpf_message || '';
+    invalidCnpjMessage.value = configs.messages.invalid_cnpj_message || '';
+    invalidEmailMessage.value = configs.messages.invalid_email_message || '';
+    serviceFinishedMessage.value =
+      configs.messages.service_finished_message || '';
+  } else {
+    inactivityMessage.value = '';
+    invalidMenuOptionMessage.value = '';
+    invalidSatisfactionOptionMessage.value = '';
+    invalidCpfMessage.value = '';
+    invalidCnpjMessage.value = '';
+    invalidEmailMessage.value = '';
+    serviceFinishedMessage.value = '';
+  }
 };
 
 const loadChatbotFlowConfigurations = async () => {
@@ -1225,6 +1270,17 @@ const handleSaveConfigurations = async () => {
                 redirectFailedAttemptsSelectedSectorUser.value || undefined,
             }
           : undefined,
+      messages: {
+        inactivity_message: inactivityMessage.value || undefined,
+        invalid_menu_option_message:
+          invalidMenuOptionMessage.value || undefined,
+        invalid_satisfaction_option_message:
+          invalidSatisfactionOptionMessage.value || undefined,
+        invalid_cpf_message: invalidCpfMessage.value || undefined,
+        invalid_cnpj_message: invalidCnpjMessage.value || undefined,
+        invalid_email_message: invalidEmailMessage.value || undefined,
+        service_finished_message: serviceFinishedMessage.value || undefined,
+      },
     };
 
     const result = await chatbotStore.saveChatbotFlowConfigurations({
@@ -1328,125 +1384,47 @@ onMounted(() => {
       </VCardText>
     </VCard>
 
-    <VDialog v-model="isConfigModalOpen" max-width="600" persistent>
+    <VDialog v-model="isConfigModalOpen" max-width="1000" persistent>
       <DialogCloseBtn @click="closeConfigModal" />
 
       <VCard :title="t('chatbot_configurations')">
+        <VCardText class="pb-0">
+          <VTabs v-model="configTab">
+            <VTab value="resources">{{ t('resources') }}</VTab>
+            <VTab value="messages">{{ t('messages') }}</VTab>
+          </VTabs>
+        </VCardText>
+
+        <VDivider />
+
         <VCardText>
-          <VCard variant="outlined" class="mb-4">
-            <VCardTitle class="text-body-1 pa-3 font-weight-bold">
-              {{ t('chatbot_inactivity_alert') }}
-            </VCardTitle>
-            <VCardSubtitle class="text-caption pa-3 pt-0 config-description">
-              {{ t('chatbot_inactivity_alert_description') }}
-            </VCardSubtitle>
-            <VDivider />
-            <VCardText>
-              <div class="mb-3">
-                <VLabel class="mb-1 text-body-2">{{
-                  t('chatbot_inactivity_alert')
-                }}</VLabel>
-                <VSelect
-                  v-model="inactivityAlertStatus"
-                  :items="[
-                    {
-                      value: 'active',
-                      title: t('chatbot_inactivity_alert_active'),
-                    },
-                    {
-                      value: 'inactive',
-                      title: t('chatbot_inactivity_alert_inactive'),
-                    },
-                  ]"
-                  item-title="title"
-                  item-value="value"
-                  variant="outlined"
-                  density="compact"
-                  hide-details
-                />
-              </div>
-
-              <div v-if="showInactivityAlertFields">
-                <div class="mb-3">
-                  <VLabel class="mb-1 text-body-2">{{
-                    t('chatbot_inactivity_alert_quantity')
-                  }}</VLabel>
-                  <VTextField
-                    v-model="inactivityAlertQuantityComputed"
-                    @keydown="onKeyPress"
-                    @paste.prevent="
-                      (e: ClipboardEvent) => {
-                        const pastedText =
-                          e.clipboardData?.getData('text') || '';
-                        const numericValue = onlyDigits(pastedText);
-                        if (numericValue) {
-                          inactivityAlertQuantityComputed = numericValue;
-                        }
-                      }
-                    "
-                    variant="outlined"
-                    density="compact"
-                    hide-details
-                    inputmode="numeric"
-                    type="text"
-                  />
-                </div>
-
-                <div class="mb-3">
-                  <VLabel class="mb-1 text-body-2">{{
-                    t('chatbot_inactivity_alert_time')
-                  }}</VLabel>
-                  <VTextField
-                    v-model="inactivityAlertTimeComputed"
-                    @keydown="onKeyPress"
-                    @paste.prevent="
-                      (e: ClipboardEvent) => {
-                        const pastedText =
-                          e.clipboardData?.getData('text') || '';
-                        const numericValue = onlyDigits(pastedText);
-                        if (numericValue) {
-                          inactivityAlertTimeComputed = numericValue;
-                        }
-                      }
-                    "
-                    variant="outlined"
-                    density="compact"
-                    hide-details
-                    inputmode="numeric"
-                    type="text"
-                  />
-                </div>
-
-                <div class="mb-3">
-                  <VLabel class="mb-1 text-body-2">{{
-                    t('chatbot_action')
-                  }}</VLabel>
-                  <VSelect
-                    v-model="inactivityAlertAction"
-                    :items="[
-                      { value: 'redirect', title: t('chatbot_redirect') },
-                      { value: 'finish', title: t('chatbot_finish') },
-                    ]"
-                    item-title="title"
-                    item-value="value"
-                    variant="outlined"
-                    density="compact"
-                    hide-details
-                  />
-                </div>
-
-                <div v-if="showInactivityAlertRedirectFields">
+          <VWindow v-model="configTab">
+            <VWindowItem value="resources">
+              <VCard variant="outlined" class="mb-4">
+                <VCardTitle class="text-body-1 pa-3 font-weight-bold">
+                  {{ t('chatbot_inactivity_alert') }}
+                </VCardTitle>
+                <VCardSubtitle
+                  class="text-caption pa-3 pt-0 config-description"
+                >
+                  {{ t('chatbot_inactivity_alert_description') }}
+                </VCardSubtitle>
+                <VDivider />
+                <VCardText>
                   <div class="mb-3">
                     <VLabel class="mb-1 text-body-2">{{
-                      t('chatbot_redirect_to')
+                      t('chatbot_inactivity_alert')
                     }}</VLabel>
                     <VSelect
-                      v-model="inactivityAlertRedirectType"
+                      v-model="inactivityAlertStatus"
                       :items="[
-                        { value: 'user', title: t('chatbot_redirect_user') },
                         {
-                          value: 'sector',
-                          title: t('chatbot_redirect_sector'),
+                          value: 'active',
+                          title: t('chatbot_inactivity_alert_active'),
+                        },
+                        {
+                          value: 'inactive',
+                          title: t('chatbot_inactivity_alert_inactive'),
                         },
                       ]"
                       item-title="title"
@@ -1457,602 +1435,938 @@ onMounted(() => {
                     />
                   </div>
 
-                  <div v-if="showInactivityAlertUserField" class="mb-3">
-                    <VLabel class="mb-1 text-body-2">{{
-                      t('chatbot_user_label')
-                    }}</VLabel>
-                    <VMenu v-model="isInactivityUserMenuOpen">
-                      <template #activator="{ props: menuProps }">
-                        <VTextField
-                          v-bind="menuProps"
-                          :model-value="
-                            inactivityUsers.find(
-                              (u) => u.value === inactivityAlertSelectedUser
-                            )?.title || ''
-                          "
-                          :placeholder="t('chatbot_search')"
-                          variant="outlined"
-                          readonly
-                          append-inner-icon="tabler-chevron-down"
-                          :loading="isLoadingInactivityUsers"
-                          density="compact"
-                        />
-                      </template>
-                      <VCard>
-                        <VCardText>
-                          <VTextField
-                            v-model="inactivityUserSearch"
-                            :placeholder="t('chatbot_search_user')"
-                            variant="outlined"
-                            density="compact"
-                            prepend-inner-icon="tabler-search"
-                            hide-details
-                          />
-                        </VCardText>
-                        <VDivider />
-                        <VList density="compact" class="max-height-300">
-                          <VListItem
-                            v-for="user in filteredInactivityUsers"
-                            :key="user.value"
-                            :value="user.value"
-                            @click="
-                              inactivityAlertSelectedUser = user.value;
-                              isInactivityUserMenuOpen = false;
-                            "
-                          >
-                            <template #prepend>
-                              <VAvatar
-                                size="32"
-                                :variant="!user.photo ? 'tonal' : undefined"
-                                color="primary"
-                              >
-                                <VImg
-                                  v-if="user.photo"
-                                  :src="user.photo"
-                                  :alt="user.title"
-                                />
-                                <VIcon v-else icon="tabler-user" size="18" />
-                              </VAvatar>
-                            </template>
-                            <VListItemTitle>{{ user.title }}</VListItemTitle>
-                            <template #append v-if="user.status === 'online'">
-                              <VChip
-                                size="small"
-                                color="success"
-                                variant="tonal"
-                              >
-                                {{ t('chatbot_online') }}
-                              </VChip>
-                            </template>
-                          </VListItem>
-                          <VListItem
-                            v-if="
-                              filteredInactivityUsers.length === 0 &&
-                              !isLoadingInactivityUsers
-                            "
-                            disabled
-                          >
-                            <VListItemTitle
-                              class="text-center text-body-2 text-medium-emphasis"
-                            >
-                              {{ t('chatbot_no_results_found') }}
-                            </VListItemTitle>
-                          </VListItem>
-                        </VList>
-                      </VCard>
-                    </VMenu>
-                  </div>
+                  <div v-if="showInactivityAlertFields">
+                    <div class="mb-3">
+                      <VLabel class="mb-1 text-body-2">{{
+                        t('chatbot_inactivity_alert_quantity')
+                      }}</VLabel>
+                      <VTextField
+                        v-model="inactivityAlertQuantityComputed"
+                        @keydown="onKeyPress"
+                        @paste.prevent="
+                          (e: ClipboardEvent) => {
+                            const pastedText =
+                              e.clipboardData?.getData('text') || '';
+                            const numericValue = onlyDigits(pastedText);
+                            if (numericValue) {
+                              inactivityAlertQuantityComputed = numericValue;
+                            }
+                          }
+                        "
+                        variant="outlined"
+                        density="compact"
+                        hide-details
+                        inputmode="numeric"
+                        type="text"
+                      />
+                    </div>
 
-                  <div v-if="showInactivityAlertSectorField" class="mb-3">
-                    <VLabel class="mb-1 text-body-2">{{
-                      t('chatbot_sector_label')
-                    }}</VLabel>
-                    <VMenu v-model="isInactivitySectorMenuOpen">
-                      <template #activator="{ props: menuProps }">
-                        <VTextField
-                          v-bind="menuProps"
-                          :model-value="
-                            inactivitySectors.find(
-                              (s) => s.value === inactivityAlertSelectedSector
-                            )?.title || ''
-                          "
-                          :placeholder="t('chatbot_search')"
-                          variant="outlined"
-                          readonly
-                          append-inner-icon="tabler-chevron-down"
-                          :loading="isLoadingInactivitySectors"
-                          density="compact"
-                        />
-                      </template>
-                      <VCard>
-                        <VCardText>
-                          <VTextField
-                            v-model="inactivitySectorSearch"
-                            :placeholder="t('chatbot_search_sector')"
-                            variant="outlined"
-                            density="compact"
-                            prepend-inner-icon="tabler-search"
-                            hide-details
-                          />
-                        </VCardText>
-                        <VDivider />
-                        <VList density="compact" class="max-height-300">
-                          <VListItem
-                            v-for="sector in filteredInactivitySectors"
-                            :key="sector.value"
-                            :value="sector.value"
-                            @click="
-                              inactivityAlertSelectedSector = sector.value;
-                              isInactivitySectorMenuOpen = false;
-                            "
-                          >
-                            <template #prepend>
-                              <VAvatar
-                                size="24"
-                                :style="{
-                                  backgroundColor: sector.color || '#1976D2',
-                                }"
-                              />
-                            </template>
-                            <VListItemTitle>{{ sector.title }}</VListItemTitle>
-                          </VListItem>
-                          <VListItem
-                            v-if="
-                              filteredInactivitySectors.length === 0 &&
-                              !isLoadingInactivitySectors
-                            "
-                            disabled
-                          >
-                            <VListItemTitle
-                              class="text-center text-body-2 text-medium-emphasis"
-                            >
-                              {{ t('chatbot_no_results_found') }}
-                            </VListItemTitle>
-                          </VListItem>
-                        </VList>
-                      </VCard>
-                    </VMenu>
-                  </div>
+                    <div class="mb-3">
+                      <VLabel class="mb-1 text-body-2">{{
+                        t('chatbot_inactivity_alert_time')
+                      }}</VLabel>
+                      <VTextField
+                        v-model="inactivityAlertTimeComputed"
+                        @keydown="onKeyPress"
+                        @paste.prevent="
+                          (e: ClipboardEvent) => {
+                            const pastedText =
+                              e.clipboardData?.getData('text') || '';
+                            const numericValue = onlyDigits(pastedText);
+                            if (numericValue) {
+                              inactivityAlertTimeComputed = numericValue;
+                            }
+                          }
+                        "
+                        variant="outlined"
+                        density="compact"
+                        hide-details
+                        inputmode="numeric"
+                        type="text"
+                      />
+                    </div>
 
-                  <div v-if="showInactivityAlertSectorUserField" class="mb-3">
-                    <VLabel class="mb-1 text-body-2">{{
-                      t('chatbot_sector_user_label')
-                    }}</VLabel>
-                    <VMenu v-model="isInactivitySectorUserMenuOpen">
-                      <template #activator="{ props: menuProps }">
-                        <VTextField
-                          v-bind="menuProps"
-                          :model-value="
-                            inactivitySectorUsers.find(
-                              (u) =>
-                                u.value === inactivityAlertSelectedSectorUser
-                            )?.title || ''
-                          "
-                          :placeholder="t('chatbot_search_optional')"
+                    <div class="mb-3">
+                      <VLabel class="mb-1 text-body-2">{{
+                        t('chatbot_action')
+                      }}</VLabel>
+                      <VSelect
+                        v-model="inactivityAlertAction"
+                        :items="[
+                          { value: 'redirect', title: t('chatbot_redirect') },
+                          { value: 'finish', title: t('chatbot_finish') },
+                        ]"
+                        item-title="title"
+                        item-value="value"
+                        variant="outlined"
+                        density="compact"
+                        hide-details
+                      />
+                    </div>
+
+                    <div v-if="showInactivityAlertRedirectFields">
+                      <div class="mb-3">
+                        <VLabel class="mb-1 text-body-2">{{
+                          t('chatbot_redirect_to')
+                        }}</VLabel>
+                        <VSelect
+                          v-model="inactivityAlertRedirectType"
+                          :items="[
+                            {
+                              value: 'user',
+                              title: t('chatbot_redirect_user'),
+                            },
+                            {
+                              value: 'sector',
+                              title: t('chatbot_redirect_sector'),
+                            },
+                          ]"
+                          item-title="title"
+                          item-value="value"
                           variant="outlined"
-                          readonly
-                          :loading="isLoadingInactivitySectorUsers"
                           density="compact"
-                        >
-                          <template #append-inner>
-                            <VIcon
-                              v-if="inactivityAlertSelectedSectorUser"
-                              icon="tabler-x"
-                              size="20"
-                              class="cursor-pointer me-1"
-                              @click.stop="
-                                inactivityAlertSelectedSectorUser = null;
-                                isInactivitySectorUserMenuOpen = false;
+                          hide-details
+                        />
+                      </div>
+
+                      <div v-if="showInactivityAlertUserField" class="mb-3">
+                        <VLabel class="mb-1 text-body-2">{{
+                          t('chatbot_user_label')
+                        }}</VLabel>
+                        <VMenu v-model="isInactivityUserMenuOpen">
+                          <template #activator="{ props: menuProps }">
+                            <VTextField
+                              v-bind="menuProps"
+                              :model-value="
+                                inactivityUsers.find(
+                                  (u) => u.value === inactivityAlertSelectedUser
+                                )?.title || ''
                               "
+                              :placeholder="t('chatbot_search')"
+                              variant="outlined"
+                              readonly
+                              append-inner-icon="tabler-chevron-down"
+                              :loading="isLoadingInactivityUsers"
+                              density="compact"
                             />
-                            <VIcon icon="tabler-chevron-down" size="20" />
                           </template>
-                        </VTextField>
-                      </template>
-                      <VCard>
-                        <VCardText>
-                          <VTextField
-                            v-model="inactivitySectorUserSearch"
-                            :placeholder="t('chatbot_search_user')"
-                            variant="outlined"
-                            density="compact"
-                            prepend-inner-icon="tabler-search"
-                            hide-details
-                          />
-                        </VCardText>
-                        <VDivider />
-                        <VList density="compact" class="max-height-300">
-                          <VListItem
-                            v-for="user in filteredInactivitySectorUsers"
-                            :key="user.value"
-                            :value="user.value"
-                            @click="
-                              inactivityAlertSelectedSectorUser = user.value;
-                              isInactivitySectorUserMenuOpen = false;
-                            "
-                          >
-                            <template #prepend>
-                              <VAvatar
-                                size="32"
-                                :variant="!user.photo ? 'tonal' : undefined"
-                                color="primary"
-                              >
-                                <VImg
-                                  v-if="user.photo"
-                                  :src="user.photo"
-                                  :alt="user.title"
-                                />
-                                <VIcon v-else icon="tabler-user" size="18" />
-                              </VAvatar>
-                            </template>
-                            <VListItemTitle>{{ user.title }}</VListItemTitle>
-                            <template #append v-if="user.status === 'online'">
-                              <VChip
-                                size="small"
-                                color="success"
-                                variant="tonal"
-                              >
-                                {{ t('chatbot_online') }}
-                              </VChip>
-                            </template>
-                          </VListItem>
-                          <VListItem
-                            v-if="
-                              filteredInactivitySectorUsers.length === 0 &&
-                              !isLoadingInactivitySectorUsers
-                            "
-                            disabled
-                          >
-                            <VListItemTitle
-                              class="text-center text-body-2 text-medium-emphasis"
-                            >
-                              {{ t('chatbot_no_results_found') }}
-                            </VListItemTitle>
-                          </VListItem>
-                        </VList>
-                      </VCard>
-                    </VMenu>
-                  </div>
-                </div>
-              </div>
-            </VCardText>
-          </VCard>
-
-          <VCard variant="outlined" class="mb-4">
-            <VCardTitle class="text-body-1 pa-3 font-weight-bold">
-              {{ t('chatbot_redirect_failed_attempts') }}
-            </VCardTitle>
-            <VCardSubtitle class="text-caption pa-3 pt-0 config-description">
-              {{ t('chatbot_redirect_failed_attempts_description') }}
-            </VCardSubtitle>
-            <VDivider />
-            <VCardText>
-              <div class="mb-3">
-                <VLabel class="mb-1 text-body-2">{{
-                  t('chatbot_redirect_failed_attempts')
-                }}</VLabel>
-                <VSelect
-                  v-model="redirectFailedAttemptsStatus"
-                  :items="[
-                    {
-                      value: 'active',
-                      title: t('chatbot_redirect_failed_attempts_active'),
-                    },
-                    {
-                      value: 'inactive',
-                      title: t('chatbot_redirect_failed_attempts_inactive'),
-                    },
-                  ]"
-                  item-title="title"
-                  item-value="value"
-                  variant="outlined"
-                  density="compact"
-                  hide-details
-                />
-              </div>
-
-              <div v-if="showRedirectFailedAttemptsFields">
-                <div class="mb-3">
-                  <VLabel class="mb-1 text-body-2">{{
-                    t('chatbot_redirect_failed_attempts_quantity')
-                  }}</VLabel>
-                  <VTextField
-                    v-model="redirectFailedAttemptsQuantityComputed"
-                    @keydown="onKeyPress"
-                    @paste.prevent="
-                      (e: ClipboardEvent) => {
-                        const pastedText =
-                          e.clipboardData?.getData('text') || '';
-                        const numericValue = onlyDigits(pastedText);
-                        if (numericValue) {
-                          redirectFailedAttemptsQuantityComputed = numericValue;
-                        }
-                      }
-                    "
-                    variant="outlined"
-                    density="compact"
-                    hide-details
-                    inputmode="numeric"
-                    type="text"
-                  />
-                </div>
-
-                <div class="mb-3">
-                  <VLabel class="mb-1 text-body-2">{{
-                    t('chatbot_redirect_to')
-                  }}</VLabel>
-                  <VSelect
-                    v-model="redirectFailedAttemptsRedirectType"
-                    :items="[
-                      { value: 'user', title: t('chatbot_redirect_user') },
-                      { value: 'sector', title: t('chatbot_redirect_sector') },
-                    ]"
-                    item-title="title"
-                    item-value="value"
-                    variant="outlined"
-                    density="compact"
-                    hide-details
-                  />
-                </div>
-
-                <div v-if="showRedirectFailedAttemptsUserField" class="mb-3">
-                  <VLabel class="mb-1 text-body-2">{{
-                    t('chatbot_user_label')
-                  }}</VLabel>
-                  <VMenu v-model="isRedirectFailedAttemptsUserMenuOpen">
-                    <template #activator="{ props: menuProps }">
-                      <VTextField
-                        v-bind="menuProps"
-                        :model-value="
-                          redirectFailedAttemptsUsers.find(
-                            (u) =>
-                              u.value === redirectFailedAttemptsSelectedUser
-                          )?.title || ''
-                        "
-                        :placeholder="t('chatbot_search')"
-                        variant="outlined"
-                        readonly
-                        append-inner-icon="tabler-chevron-down"
-                        :loading="isLoadingRedirectFailedAttemptsUsers"
-                        density="compact"
-                      />
-                    </template>
-                    <VCard>
-                      <VCardText>
-                        <VTextField
-                          v-model="redirectFailedAttemptsUserSearch"
-                          :placeholder="t('chatbot_search_user')"
-                          variant="outlined"
-                          density="compact"
-                          prepend-inner-icon="tabler-search"
-                          hide-details
-                        />
-                      </VCardText>
-                      <VDivider />
-                      <VList density="compact" class="max-height-300">
-                        <VListItem
-                          v-for="user in filteredRedirectFailedAttemptsUsers"
-                          :key="user.value"
-                          :value="user.value"
-                          @click="
-                            redirectFailedAttemptsSelectedUser = user.value;
-                            isRedirectFailedAttemptsUserMenuOpen = false;
-                          "
-                        >
-                          <template #prepend>
-                            <VAvatar
-                              size="32"
-                              :variant="!user.photo ? 'tonal' : undefined"
-                              color="primary"
-                            >
-                              <VImg
-                                v-if="user.photo"
-                                :src="user.photo"
-                                :alt="user.title"
+                          <VCard>
+                            <VCardText>
+                              <VTextField
+                                v-model="inactivityUserSearch"
+                                :placeholder="t('chatbot_search_user')"
+                                variant="outlined"
+                                density="compact"
+                                prepend-inner-icon="tabler-search"
+                                hide-details
                               />
-                              <VIcon v-else icon="tabler-user" size="18" />
-                            </VAvatar>
-                          </template>
-                          <VListItemTitle>{{ user.title }}</VListItemTitle>
-                          <template #append v-if="user.status === 'online'">
-                            <VChip size="small" color="success" variant="tonal">
-                              {{ t('chatbot_online') }}
-                            </VChip>
-                          </template>
-                        </VListItem>
-                        <VListItem
-                          v-if="
-                            filteredRedirectFailedAttemptsUsers.length === 0 &&
-                            !isLoadingRedirectFailedAttemptsUsers
-                          "
-                          disabled
-                        >
-                          <VListItemTitle
-                            class="text-center text-body-2 text-medium-emphasis"
-                          >
-                            {{ t('chatbot_no_results_found') }}
-                          </VListItemTitle>
-                        </VListItem>
-                      </VList>
-                    </VCard>
-                  </VMenu>
-                </div>
+                            </VCardText>
+                            <VDivider />
+                            <VList density="compact" class="max-height-300">
+                              <VListItem
+                                v-for="user in filteredInactivityUsers"
+                                :key="user.value"
+                                :value="user.value"
+                                @click="
+                                  inactivityAlertSelectedUser = user.value;
+                                  isInactivityUserMenuOpen = false;
+                                "
+                              >
+                                <template #prepend>
+                                  <VAvatar
+                                    size="32"
+                                    :variant="!user.photo ? 'tonal' : undefined"
+                                    color="primary"
+                                  >
+                                    <VImg
+                                      v-if="user.photo"
+                                      :src="user.photo"
+                                      :alt="user.title"
+                                    />
+                                    <VIcon
+                                      v-else
+                                      icon="tabler-user"
+                                      size="18"
+                                    />
+                                  </VAvatar>
+                                </template>
+                                <VListItemTitle>{{
+                                  user.title
+                                }}</VListItemTitle>
+                                <template
+                                  #append
+                                  v-if="user.status === 'online'"
+                                >
+                                  <VChip
+                                    size="small"
+                                    color="success"
+                                    variant="tonal"
+                                  >
+                                    {{ t('chatbot_online') }}
+                                  </VChip>
+                                </template>
+                              </VListItem>
+                              <VListItem
+                                v-if="
+                                  filteredInactivityUsers.length === 0 &&
+                                  !isLoadingInactivityUsers
+                                "
+                                disabled
+                              >
+                                <VListItemTitle
+                                  class="text-center text-body-2 text-medium-emphasis"
+                                >
+                                  {{ t('chatbot_no_results_found') }}
+                                </VListItemTitle>
+                              </VListItem>
+                            </VList>
+                          </VCard>
+                        </VMenu>
+                      </div>
 
-                <div v-if="showRedirectFailedAttemptsSectorField" class="mb-3">
-                  <VLabel class="mb-1 text-body-2">{{
-                    t('chatbot_sector_label')
-                  }}</VLabel>
-                  <VMenu v-model="isRedirectFailedAttemptsSectorMenuOpen">
-                    <template #activator="{ props: menuProps }">
-                      <VTextField
-                        v-bind="menuProps"
-                        :model-value="
-                          redirectFailedAttemptsSectors.find(
-                            (s) =>
-                              s.value === redirectFailedAttemptsSelectedSector
-                          )?.title || ''
-                        "
-                        :placeholder="t('chatbot_search')"
-                        variant="outlined"
-                        readonly
-                        append-inner-icon="tabler-chevron-down"
-                        :loading="isLoadingRedirectFailedAttemptsSectors"
-                        density="compact"
-                      />
-                    </template>
-                    <VCard>
-                      <VCardText>
-                        <VTextField
-                          v-model="redirectFailedAttemptsSectorSearch"
-                          :placeholder="t('chatbot_search_sector')"
-                          variant="outlined"
-                          density="compact"
-                          prepend-inner-icon="tabler-search"
-                          hide-details
-                        />
-                      </VCardText>
-                      <VDivider />
-                      <VList density="compact" class="max-height-300">
-                        <VListItem
-                          v-for="sector in filteredRedirectFailedAttemptsSectors"
-                          :key="sector.value"
-                          :value="sector.value"
-                          @click="
-                            redirectFailedAttemptsSelectedSector = sector.value;
-                            isRedirectFailedAttemptsSectorMenuOpen = false;
-                          "
-                        >
-                          <template #prepend>
-                            <VAvatar
-                              size="24"
-                              :style="{
-                                backgroundColor: sector.color || '#1976D2',
-                              }"
+                      <div v-if="showInactivityAlertSectorField" class="mb-3">
+                        <VLabel class="mb-1 text-body-2">{{
+                          t('chatbot_sector_label')
+                        }}</VLabel>
+                        <VMenu v-model="isInactivitySectorMenuOpen">
+                          <template #activator="{ props: menuProps }">
+                            <VTextField
+                              v-bind="menuProps"
+                              :model-value="
+                                inactivitySectors.find(
+                                  (s) =>
+                                    s.value === inactivityAlertSelectedSector
+                                )?.title || ''
+                              "
+                              :placeholder="t('chatbot_search')"
+                              variant="outlined"
+                              readonly
+                              append-inner-icon="tabler-chevron-down"
+                              :loading="isLoadingInactivitySectors"
+                              density="compact"
                             />
                           </template>
-                          <VListItemTitle>{{ sector.title }}</VListItemTitle>
-                        </VListItem>
-                        <VListItem
-                          v-if="
-                            filteredRedirectFailedAttemptsSectors.length ===
-                              0 && !isLoadingRedirectFailedAttemptsSectors
-                          "
-                          disabled
-                        >
-                          <VListItemTitle
-                            class="text-center text-body-2 text-medium-emphasis"
-                          >
-                            {{ t('chatbot_no_results_found') }}
-                          </VListItemTitle>
-                        </VListItem>
-                      </VList>
-                    </VCard>
-                  </VMenu>
-                </div>
+                          <VCard>
+                            <VCardText>
+                              <VTextField
+                                v-model="inactivitySectorSearch"
+                                :placeholder="t('chatbot_search_sector')"
+                                variant="outlined"
+                                density="compact"
+                                prepend-inner-icon="tabler-search"
+                                hide-details
+                              />
+                            </VCardText>
+                            <VDivider />
+                            <VList density="compact" class="max-height-300">
+                              <VListItem
+                                v-for="sector in filteredInactivitySectors"
+                                :key="sector.value"
+                                :value="sector.value"
+                                @click="
+                                  inactivityAlertSelectedSector = sector.value;
+                                  isInactivitySectorMenuOpen = false;
+                                "
+                              >
+                                <template #prepend>
+                                  <VAvatar
+                                    size="24"
+                                    :style="{
+                                      backgroundColor:
+                                        sector.color || '#1976D2',
+                                    }"
+                                  />
+                                </template>
+                                <VListItemTitle>{{
+                                  sector.title
+                                }}</VListItemTitle>
+                              </VListItem>
+                              <VListItem
+                                v-if="
+                                  filteredInactivitySectors.length === 0 &&
+                                  !isLoadingInactivitySectors
+                                "
+                                disabled
+                              >
+                                <VListItemTitle
+                                  class="text-center text-body-2 text-medium-emphasis"
+                                >
+                                  {{ t('chatbot_no_results_found') }}
+                                </VListItemTitle>
+                              </VListItem>
+                            </VList>
+                          </VCard>
+                        </VMenu>
+                      </div>
 
-                <div
-                  v-if="showRedirectFailedAttemptsSectorUserField"
-                  class="mb-3"
-                >
-                  <VLabel class="mb-1 text-body-2">{{
-                    t('chatbot_sector_user_label')
-                  }}</VLabel>
-                  <VMenu v-model="isRedirectFailedAttemptsSectorUserMenuOpen">
-                    <template #activator="{ props: menuProps }">
-                      <VTextField
-                        v-bind="menuProps"
-                        :model-value="
-                          redirectFailedAttemptsSectorUsers.find(
-                            (u) =>
-                              u.value ===
-                              redirectFailedAttemptsSelectedSectorUser
-                          )?.title || ''
-                        "
-                        :placeholder="t('chatbot_search_optional')"
-                        variant="outlined"
-                        readonly
-                        :loading="isLoadingRedirectFailedAttemptsSectorUsers"
-                        density="compact"
+                      <div
+                        v-if="showInactivityAlertSectorUserField"
+                        class="mb-3"
                       >
-                        <template #append-inner>
-                          <VIcon
-                            v-if="redirectFailedAttemptsSelectedSectorUser"
-                            icon="tabler-x"
-                            size="20"
-                            class="cursor-pointer me-1"
-                            @click.stop="
-                              redirectFailedAttemptsSelectedSectorUser = null;
-                              isRedirectFailedAttemptsSectorUserMenuOpen = false;
-                            "
-                          />
-                          <VIcon icon="tabler-chevron-down" size="20" />
-                        </template>
-                      </VTextField>
-                    </template>
-                    <VCard>
-                      <VCardText>
-                        <VTextField
-                          v-model="redirectFailedAttemptsSectorUserSearch"
-                          :placeholder="t('chatbot_search_user')"
-                          variant="outlined"
-                          density="compact"
-                          prepend-inner-icon="tabler-search"
-                          hide-details
-                        />
-                      </VCardText>
-                      <VDivider />
-                      <VList density="compact" class="max-height-300">
-                        <VListItem
-                          v-for="user in filteredRedirectFailedAttemptsSectorUsers"
-                          :key="user.value"
-                          :value="user.value"
-                          @click="
-                            redirectFailedAttemptsSelectedSectorUser =
-                              user.value;
-                            isRedirectFailedAttemptsSectorUserMenuOpen = false;
-                          "
-                        >
-                          <template #prepend>
-                            <VAvatar
-                              size="32"
-                              :variant="!user.photo ? 'tonal' : undefined"
-                              color="primary"
+                        <VLabel class="mb-1 text-body-2">{{
+                          t('chatbot_sector_user_label')
+                        }}</VLabel>
+                        <VMenu v-model="isInactivitySectorUserMenuOpen">
+                          <template #activator="{ props: menuProps }">
+                            <VTextField
+                              v-bind="menuProps"
+                              :model-value="
+                                inactivitySectorUsers.find(
+                                  (u) =>
+                                    u.value ===
+                                    inactivityAlertSelectedSectorUser
+                                )?.title || ''
+                              "
+                              :placeholder="t('chatbot_search_optional')"
+                              variant="outlined"
+                              readonly
+                              :loading="isLoadingInactivitySectorUsers"
+                              density="compact"
                             >
-                              <VImg
-                                v-if="user.photo"
-                                :src="user.photo"
-                                :alt="user.title"
+                              <template #append-inner>
+                                <VIcon
+                                  v-if="inactivityAlertSelectedSectorUser"
+                                  icon="tabler-x"
+                                  size="20"
+                                  class="cursor-pointer me-1"
+                                  @click.stop="
+                                    inactivityAlertSelectedSectorUser = null;
+                                    isInactivitySectorUserMenuOpen = false;
+                                  "
+                                />
+                                <VIcon icon="tabler-chevron-down" size="20" />
+                              </template>
+                            </VTextField>
+                          </template>
+                          <VCard>
+                            <VCardText>
+                              <VTextField
+                                v-model="inactivitySectorUserSearch"
+                                :placeholder="t('chatbot_search_user')"
+                                variant="outlined"
+                                density="compact"
+                                prepend-inner-icon="tabler-search"
+                                hide-details
                               />
-                              <VIcon v-else icon="tabler-user" size="18" />
-                            </VAvatar>
-                          </template>
-                          <VListItemTitle>{{ user.title }}</VListItemTitle>
-                          <template #append v-if="user.status === 'online'">
-                            <VChip size="small" color="success" variant="tonal">
-                              {{ t('chatbot_online') }}
-                            </VChip>
-                          </template>
-                        </VListItem>
-                        <VListItem
-                          v-if="
-                            filteredRedirectFailedAttemptsSectorUsers.length ===
-                              0 && !isLoadingRedirectFailedAttemptsSectorUsers
-                          "
-                          disabled
-                        >
-                          <VListItemTitle
-                            class="text-center text-body-2 text-medium-emphasis"
+                            </VCardText>
+                            <VDivider />
+                            <VList density="compact" class="max-height-300">
+                              <VListItem
+                                v-for="user in filteredInactivitySectorUsers"
+                                :key="user.value"
+                                :value="user.value"
+                                @click="
+                                  inactivityAlertSelectedSectorUser =
+                                    user.value;
+                                  isInactivitySectorUserMenuOpen = false;
+                                "
+                              >
+                                <template #prepend>
+                                  <VAvatar
+                                    size="32"
+                                    :variant="!user.photo ? 'tonal' : undefined"
+                                    color="primary"
+                                  >
+                                    <VImg
+                                      v-if="user.photo"
+                                      :src="user.photo"
+                                      :alt="user.title"
+                                    />
+                                    <VIcon
+                                      v-else
+                                      icon="tabler-user"
+                                      size="18"
+                                    />
+                                  </VAvatar>
+                                </template>
+                                <VListItemTitle>{{
+                                  user.title
+                                }}</VListItemTitle>
+                                <template
+                                  #append
+                                  v-if="user.status === 'online'"
+                                >
+                                  <VChip
+                                    size="small"
+                                    color="success"
+                                    variant="tonal"
+                                  >
+                                    {{ t('chatbot_online') }}
+                                  </VChip>
+                                </template>
+                              </VListItem>
+                              <VListItem
+                                v-if="
+                                  filteredInactivitySectorUsers.length === 0 &&
+                                  !isLoadingInactivitySectorUsers
+                                "
+                                disabled
+                              >
+                                <VListItemTitle
+                                  class="text-center text-body-2 text-medium-emphasis"
+                                >
+                                  {{ t('chatbot_no_results_found') }}
+                                </VListItemTitle>
+                              </VListItem>
+                            </VList>
+                          </VCard>
+                        </VMenu>
+                      </div>
+                    </div>
+                  </div>
+                </VCardText>
+              </VCard>
+
+              <VCard variant="outlined" class="mb-4">
+                <VCardTitle class="text-body-1 pa-3 font-weight-bold">
+                  {{ t('chatbot_redirect_failed_attempts') }}
+                </VCardTitle>
+                <VCardSubtitle
+                  class="text-caption pa-3 pt-0 config-description"
+                >
+                  {{ t('chatbot_redirect_failed_attempts_description') }}
+                </VCardSubtitle>
+                <VDivider />
+                <VCardText>
+                  <div class="mb-3">
+                    <VLabel class="mb-1 text-body-2">{{
+                      t('chatbot_redirect_failed_attempts')
+                    }}</VLabel>
+                    <VSelect
+                      v-model="redirectFailedAttemptsStatus"
+                      :items="[
+                        {
+                          value: 'active',
+                          title: t('chatbot_redirect_failed_attempts_active'),
+                        },
+                        {
+                          value: 'inactive',
+                          title: t('chatbot_redirect_failed_attempts_inactive'),
+                        },
+                      ]"
+                      item-title="title"
+                      item-value="value"
+                      variant="outlined"
+                      density="compact"
+                      hide-details
+                    />
+                  </div>
+
+                  <div v-if="showRedirectFailedAttemptsFields">
+                    <div class="mb-3">
+                      <VLabel class="mb-1 text-body-2">{{
+                        t('chatbot_redirect_failed_attempts_quantity')
+                      }}</VLabel>
+                      <VTextField
+                        v-model="redirectFailedAttemptsQuantityComputed"
+                        @keydown="onKeyPress"
+                        @paste.prevent="
+                          (e: ClipboardEvent) => {
+                            const pastedText =
+                              e.clipboardData?.getData('text') || '';
+                            const numericValue = onlyDigits(pastedText);
+                            if (numericValue) {
+                              redirectFailedAttemptsQuantityComputed =
+                                numericValue;
+                            }
+                          }
+                        "
+                        variant="outlined"
+                        density="compact"
+                        hide-details
+                        inputmode="numeric"
+                        type="text"
+                      />
+                    </div>
+
+                    <div class="mb-3">
+                      <VLabel class="mb-1 text-body-2">{{
+                        t('chatbot_redirect_to')
+                      }}</VLabel>
+                      <VSelect
+                        v-model="redirectFailedAttemptsRedirectType"
+                        :items="[
+                          { value: 'user', title: t('chatbot_redirect_user') },
+                          {
+                            value: 'sector',
+                            title: t('chatbot_redirect_sector'),
+                          },
+                        ]"
+                        item-title="title"
+                        item-value="value"
+                        variant="outlined"
+                        density="compact"
+                        hide-details
+                      />
+                    </div>
+
+                    <div
+                      v-if="showRedirectFailedAttemptsUserField"
+                      class="mb-3"
+                    >
+                      <VLabel class="mb-1 text-body-2">{{
+                        t('chatbot_user_label')
+                      }}</VLabel>
+                      <VMenu v-model="isRedirectFailedAttemptsUserMenuOpen">
+                        <template #activator="{ props: menuProps }">
+                          <VTextField
+                            v-bind="menuProps"
+                            :model-value="
+                              redirectFailedAttemptsUsers.find(
+                                (u) =>
+                                  u.value === redirectFailedAttemptsSelectedUser
+                              )?.title || ''
+                            "
+                            :placeholder="t('chatbot_search')"
+                            variant="outlined"
+                            readonly
+                            append-inner-icon="tabler-chevron-down"
+                            :loading="isLoadingRedirectFailedAttemptsUsers"
+                            density="compact"
+                          />
+                        </template>
+                        <VCard>
+                          <VCardText>
+                            <VTextField
+                              v-model="redirectFailedAttemptsUserSearch"
+                              :placeholder="t('chatbot_search_user')"
+                              variant="outlined"
+                              density="compact"
+                              prepend-inner-icon="tabler-search"
+                              hide-details
+                            />
+                          </VCardText>
+                          <VDivider />
+                          <VList density="compact" class="max-height-300">
+                            <VListItem
+                              v-for="user in filteredRedirectFailedAttemptsUsers"
+                              :key="user.value"
+                              :value="user.value"
+                              @click="
+                                redirectFailedAttemptsSelectedUser = user.value;
+                                isRedirectFailedAttemptsUserMenuOpen = false;
+                              "
+                            >
+                              <template #prepend>
+                                <VAvatar
+                                  size="32"
+                                  :variant="!user.photo ? 'tonal' : undefined"
+                                  color="primary"
+                                >
+                                  <VImg
+                                    v-if="user.photo"
+                                    :src="user.photo"
+                                    :alt="user.title"
+                                  />
+                                  <VIcon v-else icon="tabler-user" size="18" />
+                                </VAvatar>
+                              </template>
+                              <VListItemTitle>{{ user.title }}</VListItemTitle>
+                              <template #append v-if="user.status === 'online'">
+                                <VChip
+                                  size="small"
+                                  color="success"
+                                  variant="tonal"
+                                >
+                                  {{ t('chatbot_online') }}
+                                </VChip>
+                              </template>
+                            </VListItem>
+                            <VListItem
+                              v-if="
+                                filteredRedirectFailedAttemptsUsers.length ===
+                                  0 && !isLoadingRedirectFailedAttemptsUsers
+                              "
+                              disabled
+                            >
+                              <VListItemTitle
+                                class="text-center text-body-2 text-medium-emphasis"
+                              >
+                                {{ t('chatbot_no_results_found') }}
+                              </VListItemTitle>
+                            </VListItem>
+                          </VList>
+                        </VCard>
+                      </VMenu>
+                    </div>
+
+                    <div
+                      v-if="showRedirectFailedAttemptsSectorField"
+                      class="mb-3"
+                    >
+                      <VLabel class="mb-1 text-body-2">{{
+                        t('chatbot_sector_label')
+                      }}</VLabel>
+                      <VMenu v-model="isRedirectFailedAttemptsSectorMenuOpen">
+                        <template #activator="{ props: menuProps }">
+                          <VTextField
+                            v-bind="menuProps"
+                            :model-value="
+                              redirectFailedAttemptsSectors.find(
+                                (s) =>
+                                  s.value ===
+                                  redirectFailedAttemptsSelectedSector
+                              )?.title || ''
+                            "
+                            :placeholder="t('chatbot_search')"
+                            variant="outlined"
+                            readonly
+                            append-inner-icon="tabler-chevron-down"
+                            :loading="isLoadingRedirectFailedAttemptsSectors"
+                            density="compact"
+                          />
+                        </template>
+                        <VCard>
+                          <VCardText>
+                            <VTextField
+                              v-model="redirectFailedAttemptsSectorSearch"
+                              :placeholder="t('chatbot_search_sector')"
+                              variant="outlined"
+                              density="compact"
+                              prepend-inner-icon="tabler-search"
+                              hide-details
+                            />
+                          </VCardText>
+                          <VDivider />
+                          <VList density="compact" class="max-height-300">
+                            <VListItem
+                              v-for="sector in filteredRedirectFailedAttemptsSectors"
+                              :key="sector.value"
+                              :value="sector.value"
+                              @click="
+                                redirectFailedAttemptsSelectedSector =
+                                  sector.value;
+                                isRedirectFailedAttemptsSectorMenuOpen = false;
+                              "
+                            >
+                              <template #prepend>
+                                <VAvatar
+                                  size="24"
+                                  :style="{
+                                    backgroundColor: sector.color || '#1976D2',
+                                  }"
+                                />
+                              </template>
+                              <VListItemTitle>{{
+                                sector.title
+                              }}</VListItemTitle>
+                            </VListItem>
+                            <VListItem
+                              v-if="
+                                filteredRedirectFailedAttemptsSectors.length ===
+                                  0 && !isLoadingRedirectFailedAttemptsSectors
+                              "
+                              disabled
+                            >
+                              <VListItemTitle
+                                class="text-center text-body-2 text-medium-emphasis"
+                              >
+                                {{ t('chatbot_no_results_found') }}
+                              </VListItemTitle>
+                            </VListItem>
+                          </VList>
+                        </VCard>
+                      </VMenu>
+                    </div>
+
+                    <div
+                      v-if="showRedirectFailedAttemptsSectorUserField"
+                      class="mb-3"
+                    >
+                      <VLabel class="mb-1 text-body-2">{{
+                        t('chatbot_sector_user_label')
+                      }}</VLabel>
+                      <VMenu
+                        v-model="isRedirectFailedAttemptsSectorUserMenuOpen"
+                      >
+                        <template #activator="{ props: menuProps }">
+                          <VTextField
+                            v-bind="menuProps"
+                            :model-value="
+                              redirectFailedAttemptsSectorUsers.find(
+                                (u) =>
+                                  u.value ===
+                                  redirectFailedAttemptsSelectedSectorUser
+                              )?.title || ''
+                            "
+                            :placeholder="t('chatbot_search_optional')"
+                            variant="outlined"
+                            readonly
+                            :loading="
+                              isLoadingRedirectFailedAttemptsSectorUsers
+                            "
+                            density="compact"
                           >
-                            {{ t('chatbot_no_results_found') }}
-                          </VListItemTitle>
-                        </VListItem>
-                      </VList>
-                    </VCard>
-                  </VMenu>
-                </div>
+                            <template #append-inner>
+                              <VIcon
+                                v-if="redirectFailedAttemptsSelectedSectorUser"
+                                icon="tabler-x"
+                                size="20"
+                                class="cursor-pointer me-1"
+                                @click.stop="
+                                  redirectFailedAttemptsSelectedSectorUser =
+                                    null;
+                                  isRedirectFailedAttemptsSectorUserMenuOpen = false;
+                                "
+                              />
+                              <VIcon icon="tabler-chevron-down" size="20" />
+                            </template>
+                          </VTextField>
+                        </template>
+                        <VCard>
+                          <VCardText>
+                            <VTextField
+                              v-model="redirectFailedAttemptsSectorUserSearch"
+                              :placeholder="t('chatbot_search_user')"
+                              variant="outlined"
+                              density="compact"
+                              prepend-inner-icon="tabler-search"
+                              hide-details
+                            />
+                          </VCardText>
+                          <VDivider />
+                          <VList density="compact" class="max-height-300">
+                            <VListItem
+                              v-for="user in filteredRedirectFailedAttemptsSectorUsers"
+                              :key="user.value"
+                              :value="user.value"
+                              @click="
+                                redirectFailedAttemptsSelectedSectorUser =
+                                  user.value;
+                                isRedirectFailedAttemptsSectorUserMenuOpen = false;
+                              "
+                            >
+                              <template #prepend>
+                                <VAvatar
+                                  size="32"
+                                  :variant="!user.photo ? 'tonal' : undefined"
+                                  color="primary"
+                                >
+                                  <VImg
+                                    v-if="user.photo"
+                                    :src="user.photo"
+                                    :alt="user.title"
+                                  />
+                                  <VIcon v-else icon="tabler-user" size="18" />
+                                </VAvatar>
+                              </template>
+                              <VListItemTitle>{{ user.title }}</VListItemTitle>
+                              <template #append v-if="user.status === 'online'">
+                                <VChip
+                                  size="small"
+                                  color="success"
+                                  variant="tonal"
+                                >
+                                  {{ t('chatbot_online') }}
+                                </VChip>
+                              </template>
+                            </VListItem>
+                            <VListItem
+                              v-if="
+                                filteredRedirectFailedAttemptsSectorUsers.length ===
+                                  0 &&
+                                !isLoadingRedirectFailedAttemptsSectorUsers
+                              "
+                              disabled
+                            >
+                              <VListItemTitle
+                                class="text-center text-body-2 text-medium-emphasis"
+                              >
+                                {{ t('chatbot_no_results_found') }}
+                              </VListItemTitle>
+                            </VListItem>
+                          </VList>
+                        </VCard>
+                      </VMenu>
+                    </div>
+                  </div>
+                </VCardText>
+              </VCard>
+            </VWindowItem>
+
+            <VWindowItem value="messages">
+              <div class="d-flex flex-column gap-4">
+                <VCard variant="outlined">
+                  <VCardTitle class="text-body-1 pa-3 font-weight-bold">
+                    {{ t('chatbot_message_inactivity') }}
+                  </VCardTitle>
+                  <VCardSubtitle
+                    class="text-caption pa-3 pb-0 pt-0 config-description"
+                  >
+                    {{ t('chatbot_message_inactivity_description') }}
+                  </VCardSubtitle>
+                  <VDivider />
+                  <VCardText>
+                    <VTextField
+                      v-model="inactivityMessage"
+                      :placeholder="defaultInactivityMessage"
+                      variant="outlined"
+                      density="compact"
+                      hide-details
+                    />
+                    <div class="text-caption text-medium-emphasis mt-2">
+                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      {{ defaultInactivityMessage }}
+                    </div>
+                  </VCardText>
+                </VCard>
+
+                <VCard variant="outlined">
+                  <VCardTitle class="text-body-1 pa-3 font-weight-bold">
+                    {{ t('chatbot_message_invalid_menu_option') }}
+                  </VCardTitle>
+                  <VCardSubtitle
+                    class="text-caption pa-3 pt-0 config-description"
+                  >
+                    {{ t('chatbot_message_invalid_menu_option_description') }}
+                  </VCardSubtitle>
+                  <VDivider />
+                  <VCardText>
+                    <VTextField
+                      v-model="invalidMenuOptionMessage"
+                      :placeholder="defaultInvalidMenuOptionMessage"
+                      variant="outlined"
+                      density="compact"
+                      hide-details
+                    />
+                    <div class="text-caption text-medium-emphasis mt-2">
+                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      {{ defaultInvalidMenuOptionMessage }}
+                    </div>
+                  </VCardText>
+                </VCard>
+
+                <VCard variant="outlined">
+                  <VCardTitle class="text-body-1 pa-3 font-weight-bold">
+                    {{ t('chatbot_message_invalid_satisfaction_option') }}
+                  </VCardTitle>
+                  <VCardSubtitle
+                    class="text-caption pa-3 pt-0 config-description"
+                  >
+                    {{
+                      t(
+                        'chatbot_message_invalid_satisfaction_option_description'
+                      )
+                    }}
+                  </VCardSubtitle>
+                  <VDivider />
+                  <VCardText>
+                    <VTextField
+                      v-model="invalidSatisfactionOptionMessage"
+                      :placeholder="defaultInvalidSatisfactionOptionMessage"
+                      variant="outlined"
+                      density="compact"
+                      hide-details
+                    />
+                    <div class="text-caption text-medium-emphasis mt-2">
+                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      {{ defaultInvalidSatisfactionOptionMessage }}
+                    </div>
+                  </VCardText>
+                </VCard>
+
+                <VCard variant="outlined">
+                  <VCardTitle class="text-body-1 pa-3 font-weight-bold">
+                    {{ t('chatbot_message_invalid_cpf') }}
+                  </VCardTitle>
+                  <VCardSubtitle
+                    class="text-caption pa-3 pt-0 config-description"
+                  >
+                    {{ t('chatbot_message_invalid_cpf_description') }}
+                  </VCardSubtitle>
+                  <VDivider />
+                  <VCardText>
+                    <VTextField
+                      v-model="invalidCpfMessage"
+                      :placeholder="defaultInvalidCpfMessage"
+                      variant="outlined"
+                      density="compact"
+                      hide-details
+                    />
+                    <div class="text-caption text-medium-emphasis mt-2">
+                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      {{ defaultInvalidCpfMessage }}
+                    </div>
+                  </VCardText>
+                </VCard>
+
+                <VCard variant="outlined">
+                  <VCardTitle class="text-body-1 pa-3 font-weight-bold">
+                    {{ t('chatbot_message_invalid_cnpj') }}
+                  </VCardTitle>
+                  <VCardSubtitle
+                    class="text-caption pa-3 pt-0 config-description"
+                  >
+                    {{ t('chatbot_message_invalid_cnpj_description') }}
+                  </VCardSubtitle>
+                  <VDivider />
+                  <VCardText>
+                    <VTextField
+                      v-model="invalidCnpjMessage"
+                      :placeholder="defaultInvalidCnpjMessage"
+                      variant="outlined"
+                      density="compact"
+                      hide-details
+                    />
+                    <div class="text-caption text-medium-emphasis mt-2">
+                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      {{ defaultInvalidCnpjMessage }}
+                    </div>
+                  </VCardText>
+                </VCard>
+
+                <VCard variant="outlined">
+                  <VCardTitle class="text-body-1 pa-3 font-weight-bold">
+                    {{ t('chatbot_message_invalid_email') }}
+                  </VCardTitle>
+                  <VCardSubtitle
+                    class="text-caption pa-3 pt-0 config-description"
+                  >
+                    {{ t('chatbot_message_invalid_email_description') }}
+                  </VCardSubtitle>
+                  <VDivider />
+                  <VCardText>
+                    <VTextField
+                      v-model="invalidEmailMessage"
+                      :placeholder="defaultInvalidEmailMessage"
+                      variant="outlined"
+                      density="compact"
+                      hide-details
+                    />
+                    <div class="text-caption text-medium-emphasis mt-2">
+                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      {{ defaultInvalidEmailMessage }}
+                    </div>
+                  </VCardText>
+                </VCard>
+
+                <VCard variant="outlined">
+                  <VCardTitle class="text-body-1 pa-3 font-weight-bold">
+                    {{ t('chatbot_message_service_finished') }}
+                  </VCardTitle>
+                  <VCardSubtitle
+                    class="text-caption pa-3 pt-0 config-description"
+                  >
+                    {{ t('chatbot_message_service_finished_description') }}
+                  </VCardSubtitle>
+                  <VDivider />
+                  <VCardText>
+                    <VTextField
+                      v-model="serviceFinishedMessage"
+                      :placeholder="defaultServiceFinishedMessage"
+                      variant="outlined"
+                      density="compact"
+                      hide-details
+                    />
+                    <div class="text-caption text-medium-emphasis mt-2">
+                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      {{ defaultServiceFinishedMessage }}
+                    </div>
+                  </VCardText>
+                </VCard>
               </div>
-            </VCardText>
-          </VCard>
+            </VWindowItem>
+          </VWindow>
         </VCardText>
 
         <VDivider />

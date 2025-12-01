@@ -69,6 +69,32 @@ export const chatbotFlowMappings = () => {
                 },
               },
             },
+            messages: {
+              type: 'nested',
+              properties: {
+                inactivity_message: {
+                  type: 'text',
+                },
+                invalid_menu_option_message: {
+                  type: 'text',
+                },
+                invalid_satisfaction_option_message: {
+                  type: 'text',
+                },
+                invalid_cpf_message: {
+                  type: 'text',
+                },
+                invalid_cnpj_message: {
+                  type: 'text',
+                },
+                invalid_email_message: {
+                  type: 'text',
+                },
+                service_finished_message: {
+                  type: 'text',
+                },
+              },
+            },
           },
         },
         nodes: {
