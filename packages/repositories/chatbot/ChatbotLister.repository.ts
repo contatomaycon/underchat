@@ -3,7 +3,7 @@ import { chatbot } from '@core/models';
 import { ListChatbotResponse } from '@core/schema/chatbot/listChatbot/response.schema';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, asc } from 'drizzle-orm';
+import { eq, asc } from 'drizzle-orm';
 
 @injectable()
 export class ChatbotListerRepository {

@@ -1,5 +1,4 @@
 import { injectable } from 'tsyringe';
-import { TFunction } from 'i18next';
 import { ChatbotService } from '@core/services/chatbot.service';
 import { ListChatbotResponse } from '@core/schema/chatbot/listChatbot/response.schema';
 

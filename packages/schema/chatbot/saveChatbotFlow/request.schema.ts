@@ -1,5 +1,4 @@
 import { Static, Type } from '@sinclair/typebox';
-import { uploadFileRequestSchema } from '@core/schema/upload/request.schema';
 
 const nodeDataSchema = Type.Object({
   title: Type.Optional(Type.String()),

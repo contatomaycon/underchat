@@ -14,7 +14,6 @@ import { ChatbotUserResponse } from '@core/schema/chatbot/listUsers/response.sch
 import { ChatbotSectorResponse } from '@core/schema/chatbot/listSectors/response.schema';
 import { ChatbotSectorUserResponse } from '@core/schema/chatbot/listSectorUsers/response.schema';
 import { ChatbotChatTagResponse } from '@core/schema/chatbot/listChatTags/response.schema';
-import { SaveChatbotFlowRequest } from '@core/schema/chatbot/saveChatbotFlow/request.schema';
 import { SaveChatbotFlowResponse } from '@core/schema/chatbot/saveChatbotFlow/response.schema';
 import { ListChatbotFlowResponse } from '@core/schema/chatbot/listChatbotFlow/response.schema';
 import { SaveChatbotFlowConfigurationsRequest } from '@core/schema/chatbot/saveChatbotFlowConfigurations/request.schema';
