@@ -49,13 +49,13 @@ export const useChatbotStore = defineStore('chatbot', {
           .map((msg: string) => msg.trim());
         const translatedMessages = messages.map((msg: string) => {
           const translation = this.i18n.global.t(msg);
-          return translation !== msg ? translation : msg;
+          return translation === msg ? msg : translation;
         });
         return translatedMessages.join('; ');
       }
 
       const translation = this.i18n.global.t(backendMessage);
-      return translation !== backendMessage ? translation : backendMessage;
+      return translation === backendMessage ? backendMessage : translation;
     },
 
     _getErrorMessage(error: unknown, defaultKey: string): string {

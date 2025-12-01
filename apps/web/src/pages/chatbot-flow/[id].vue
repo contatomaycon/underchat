@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { VueFlow } from '@vue-flow/core';
 import type { Node, Edge, Connection, NodeChange } from '@vue-flow/core';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
@@ -13,7 +13,6 @@ import ChatbotFinishNode from '@/components/chatbot/ChatbotFinishNode.vue';
 import ChatbotTagNode from '@/components/chatbot/ChatbotTagNode.vue';
 import { useChatbotStore } from '@/@webcore/stores/chatbot';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
 
 definePage({
   meta: {
@@ -31,7 +30,11 @@ const router = useRouter();
 const chatbotStore = useChatbotStore();
 const { t } = useI18n();
 
-const chatbotId = computed(() => route.params.id as string);
+const chatbotId = computed(() => {
+  const params = route.params as Record<string, string | string[]>;
+  const id = params.id;
+  return Array.isArray(id) ? id[0] : (id ?? '');
+});
 const chatbotName = ref('');
 
 onMounted(async () => {
@@ -261,7 +264,9 @@ const handleSave = () => {
 
 <template>
   <div>
-    <VCard :title="`${t('configurations')} ${chatbotName ? `- ${chatbotName}` : t('chatbot')}`">
+    <VCard
+      :title="`${t('configurations')} ${chatbotName ? `- ${chatbotName}` : t('chatbot')}`"
+    >
       <VCardText>
         <div class="flow-layout">
           <div class="node-menu">
@@ -362,4 +367,3 @@ const handleSave = () => {
   height: 100%;
 }
 </style>
-

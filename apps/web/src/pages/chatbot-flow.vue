@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, markRaw, computed } from 'vue';
+import { ref, markRaw, computed, onMounted, watch } from 'vue';
 import { VueFlow } from '@vue-flow/core';
 import type { Node, Edge, Connection, NodeChange } from '@vue-flow/core';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
@@ -18,7 +18,6 @@ import { useRouter, useRoute } from 'vue-router';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
 import { useChatbotStore } from '@/@webcore/stores/chatbot';
 import { getUser } from '@/@webcore/localStorage/user';
-import { onMounted } from 'vue';
 
 definePage({
   meta: {
@@ -254,7 +253,7 @@ const filteredRedirectFailedAttemptsSectorUsers = computed(() => {
 const onKeyPress = (event: KeyboardEvent) => {
   const char = event.key;
   if (
-    !/[0-9]/.test(char) &&
+    !/\d/.test(char) &&
     ![
       'Backspace',
       'Delete',
@@ -484,7 +483,7 @@ const nodes = ref<Node[]>(initialNodes);
 const edges = ref<Edge[]>(initialEdges);
 
 let nodeIdCounter = 2;
-const optionNodeTypes = ['menu', 'satisfaction'];
+const optionNodeTypes = new Set(['menu', 'satisfaction']);
 
 const normalizeHandleId = (handle?: string | null): string | null => {
   if (!handle) {
@@ -512,7 +511,7 @@ const normalizeEdgeSourceHandle = (edge: Edge): string | undefined => {
     | Node
     | undefined;
   const nodeType = sourceNode?.type as string | undefined;
-  const shouldNormalize = nodeType && optionNodeTypes.includes(nodeType);
+  const shouldNormalize = nodeType && optionNodeTypes.has(nodeType);
 
   if (shouldNormalize) {
     return (
@@ -544,7 +543,7 @@ const normalizeConnectionSourceHandle = (
     | Node
     | undefined;
   const nodeType = sourceNode?.type as string | undefined;
-  const shouldNormalize = nodeType && optionNodeTypes.includes(nodeType);
+  const shouldNormalize = nodeType && optionNodeTypes.has(nodeType);
 
   if (shouldNormalize) {
     return (
@@ -883,15 +882,170 @@ const handleSave = async () => {
       }
     }
 
-    const result = await chatbotStore.saveChatbotFlow(formData);
-
-    if (result) {
-    }
+    await chatbotStore.saveChatbotFlow(formData);
   } catch (error) {
     console.error('Error saving flow:', error);
   } finally {
     isLoadingFlow.value = false;
   }
+};
+
+const normalizeOptionId = (option: any): any => {
+  if (option && option.id) {
+    const normalizedId = option.id.replace(/^option-/i, '');
+    return {
+      ...option,
+      id: normalizedId,
+    };
+  }
+  return option;
+};
+
+const normalizeOptions = (options: any[]): any[] => {
+  if (!Array.isArray(options)) {
+    return [];
+  }
+  return options.map(normalizeOptionId);
+};
+
+const processMenuNodeData = (nodeData: any): void => {
+  if (!nodeData.options) {
+    nodeData.options = [];
+  }
+  if (Array.isArray(nodeData.options)) {
+    nodeData.options = normalizeOptions(nodeData.options);
+  }
+};
+
+const processSatisfactionNodeData = (nodeData: any): void => {
+  if (!nodeData.options) {
+    nodeData.options = [];
+  }
+  if (Array.isArray(nodeData.options)) {
+    nodeData.options = normalizeOptions(nodeData.options);
+  }
+};
+
+const processRedirectNodeData = (nodeData: any): void => {
+  if (nodeData.redirectType === undefined) nodeData.redirectType = null;
+  if (nodeData.selectedUser === undefined) nodeData.selectedUser = null;
+  if (nodeData.selectedSector === undefined) nodeData.selectedSector = null;
+  if (nodeData.selectedSectorUser === undefined)
+    nodeData.selectedSectorUser = null;
+};
+
+const processTagNodeData = (nodeData: any): void => {
+  if (nodeData.tagType === undefined) nodeData.tagType = null;
+  if (nodeData.selectedTag === undefined) nodeData.selectedTag = null;
+};
+
+const processMessageNodeData = (nodeData: any): void => {
+  if (nodeData.messageType === undefined) nodeData.messageType = null;
+  if (nodeData.text === undefined) nodeData.text = '';
+  if (nodeData.attachmentFile === undefined) nodeData.attachmentFile = null;
+  if (nodeData.attachmentUrl === undefined) nodeData.attachmentUrl = null;
+  if (nodeData.attachmentMimetype === undefined)
+    nodeData.attachmentMimetype = null;
+  if (nodeData.attachmentDuration === undefined)
+    nodeData.attachmentDuration = null;
+  if (nodeData.attachmentWidth === undefined) nodeData.attachmentWidth = null;
+  if (nodeData.attachmentHeight === undefined) nodeData.attachmentHeight = null;
+  if (nodeData.continueType === undefined) nodeData.continueType = null;
+};
+
+const processDataNodeData = (nodeData: any): void => {
+  if (nodeData.dataType === undefined) nodeData.dataType = null;
+  if (nodeData.firstName === undefined) nodeData.firstName = '';
+  if (nodeData.lastName === undefined) nodeData.lastName = '';
+  if (nodeData.email === undefined) nodeData.email = '';
+  if (nodeData.cpf === undefined) nodeData.cpf = '';
+  if (nodeData.cnpj === undefined) nodeData.cnpj = '';
+};
+
+const processNodeDataByType = (node: Node): void => {
+  if (!node.data) {
+    node.data = {};
+  }
+
+  switch (node.type) {
+    case 'menu':
+      processMenuNodeData(node.data);
+      break;
+    case 'satisfaction':
+      processSatisfactionNodeData(node.data);
+      break;
+    case 'redirect':
+      processRedirectNodeData(node.data);
+      break;
+    case 'tag':
+      processTagNodeData(node.data);
+      break;
+    case 'message':
+      processMessageNodeData(node.data);
+      break;
+    case 'data':
+      processDataNodeData(node.data);
+      break;
+  }
+};
+
+const processLoadedNode = (node: Node): Node => {
+  if (node.type === 'start') {
+    node.draggable = false;
+    if (!node.data) {
+      node.data = {};
+    }
+  } else {
+    node.draggable = true;
+    if (!node.data) {
+      node.data = {};
+    }
+    node.data.onRemove = () => removeNode(node.id);
+  }
+
+  processNodeDataByType(node);
+  return node;
+};
+
+const calculateMaxNodeId = (loadedNodes: Node[]): number => {
+  return loadedNodes.reduce((max, node) => {
+    const match = node.id.match(/\d+$/);
+    if (match) {
+      const num = Number.parseInt(match[0], 10);
+      return Math.max(max, num);
+    }
+    return max;
+  }, 0);
+};
+
+const processLoadedNodes = (loadedNodes: Node[]): void => {
+  nodes.value = loadedNodes.map(processLoadedNode);
+  const maxId = calculateMaxNodeId(loadedNodes);
+  nodeIdCounter = maxId + 1;
+};
+
+const processLoadedEdges = (loadedEdges: Edge[]): void => {
+  edges.value = loadedEdges.map((edge) => {
+    const baseEdge: Edge = {
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: edge.sourceHandle ? String(edge.sourceHandle) : undefined,
+      targetHandle: edge.targetHandle ? String(edge.targetHandle) : undefined,
+      markerEnd:
+        edge.markerEnd ||
+        ({
+          type: 'arrowclosed',
+          color: '#1a192b',
+        } as any),
+      style: edge.style || {
+        stroke: '#1a192b',
+        strokeWidth: 2,
+      },
+    };
+
+    return normalizeEdge(baseEdge);
+  });
 };
 
 const loadChatbotFlow = async () => {
@@ -904,154 +1058,99 @@ const loadChatbotFlow = async () => {
   try {
     const flow = await chatbotStore.listChatbotFlow(chatbotId.value);
 
-    if (flow) {
-      if (flow.nodes && flow.nodes.length > 0) {
-        const loadedNodes = flow.nodes as Node[];
+    if (!flow) {
+      return;
+    }
 
-        nodes.value = loadedNodes.map((node) => {
-          if (node.type !== 'start') {
-            node.draggable = true;
-            if (!node.data) {
-              node.data = {};
-            }
-            node.data.onRemove = () => removeNode(node.id);
-          } else {
-            node.draggable = false;
-            if (!node.data) {
-              node.data = {};
-            }
-          }
-          if (node.type === 'menu' && !node.data.options) {
-            node.data.options = [];
-          }
-          if (
-            node.type === 'menu' &&
-            node.data.options &&
-            Array.isArray(node.data.options)
-          ) {
-            node.data.options = node.data.options.map((option: any) => {
-              if (option && option.id) {
-                const normalizedId = option.id.replace(/^option-/i, '');
-                return {
-                  ...option,
-                  id: normalizedId,
-                };
-              }
-              return option;
-            });
-          }
-          if (node.type === 'satisfaction' && !node.data.options) {
-            node.data.options = [];
-          }
-          if (
-            node.type === 'satisfaction' &&
-            node.data.options &&
-            Array.isArray(node.data.options)
-          ) {
-            node.data.options = node.data.options.map((option: any) => {
-              if (option && option.id) {
-                const normalizedId = option.id.replace(/^option-/i, '');
-                return {
-                  ...option,
-                  id: normalizedId,
-                };
-              }
-              return option;
-            });
-          }
-          if (node.type === 'redirect') {
-            if (node.data.redirectType === undefined)
-              node.data.redirectType = null;
-            if (node.data.selectedUser === undefined)
-              node.data.selectedUser = null;
-            if (node.data.selectedSector === undefined)
-              node.data.selectedSector = null;
-            if (node.data.selectedSectorUser === undefined)
-              node.data.selectedSectorUser = null;
-          }
-          if (node.type === 'tag') {
-            if (node.data.tagType === undefined) node.data.tagType = null;
-            if (node.data.selectedTag === undefined)
-              node.data.selectedTag = null;
-          }
-          if (node.type === 'message') {
-            if (node.data.messageType === undefined)
-              node.data.messageType = null;
-            if (node.data.text === undefined) node.data.text = '';
-            if (node.data.attachmentFile === undefined)
-              node.data.attachmentFile = null;
-            if (node.data.attachmentUrl === undefined)
-              node.data.attachmentUrl = null;
-            if (node.data.attachmentMimetype === undefined)
-              node.data.attachmentMimetype = null;
-            if (node.data.attachmentDuration === undefined)
-              node.data.attachmentDuration = null;
-            if (node.data.attachmentWidth === undefined)
-              node.data.attachmentWidth = null;
-            if (node.data.attachmentHeight === undefined)
-              node.data.attachmentHeight = null;
-            if (node.data.continueType === undefined)
-              node.data.continueType = null;
-          }
-          if (node.type === 'data') {
-            if (node.data.dataType === undefined) node.data.dataType = null;
-            if (node.data.firstName === undefined) node.data.firstName = '';
-            if (node.data.lastName === undefined) node.data.lastName = '';
-            if (node.data.email === undefined) node.data.email = '';
-            if (node.data.cpf === undefined) node.data.cpf = '';
-            if (node.data.cnpj === undefined) node.data.cnpj = '';
-          }
+    if (flow.nodes && flow.nodes.length > 0) {
+      processLoadedNodes(flow.nodes as Node[]);
+    } else {
+      nodes.value = initialNodes;
+    }
 
-          return node;
-        });
-
-        const maxId = loadedNodes.reduce((max, node) => {
-          const match = node.id.match(/\d+$/);
-          if (match) {
-            const num = parseInt(match[0], 10);
-            return Math.max(max, num);
-          }
-          return max;
-        }, 0);
-        nodeIdCounter = maxId + 1;
-      } else {
-        nodes.value = initialNodes;
-      }
-
-      if (flow.edges && flow.edges.length > 0) {
-        edges.value = (flow.edges as Edge[]).map((edge) => {
-          const baseEdge: Edge = {
-            id: edge.id,
-            source: edge.source,
-            target: edge.target,
-            sourceHandle: edge.sourceHandle
-              ? String(edge.sourceHandle)
-              : undefined,
-            targetHandle: edge.targetHandle
-              ? String(edge.targetHandle)
-              : undefined,
-            markerEnd:
-              edge.markerEnd ||
-              ({
-                type: 'arrowclosed',
-                color: '#1a192b',
-              } as any),
-            style: edge.style || {
-              stroke: '#1a192b',
-              strokeWidth: 2,
-            },
-          };
-
-          return normalizeEdge(baseEdge);
-        });
-      } else {
-        edges.value = [];
-      }
+    if (flow.edges && flow.edges.length > 0) {
+      processLoadedEdges(flow.edges as Edge[]);
+    } else {
+      edges.value = [];
     }
   } catch (error) {
     console.error('Error loading flow:', error);
   } finally {
     isLoadingFlow.value = false;
+  }
+};
+
+const processInactivityAlertConfig = async (config: any): Promise<void> => {
+  inactivityAlertStatus.value =
+    (config.status as 'active' | 'inactive') || 'inactive';
+
+  if (config.quantity) {
+    inactivityAlertQuantity.value = config.quantity.toString();
+  }
+  if (config.time) {
+    inactivityAlertTime.value = config.time.toString();
+  }
+  if (config.action) {
+    inactivityAlertAction.value = config.action as 'redirect' | 'finish';
+  }
+  if (config.redirect_type) {
+    inactivityAlertRedirectType.value = config.redirect_type as
+      | 'user'
+      | 'sector';
+  }
+  if (config.selected_user) {
+    inactivityAlertSelectedUser.value = config.selected_user;
+  }
+  if (config.selected_sector) {
+    inactivityAlertSelectedSector.value = config.selected_sector;
+    await loadInactivitySectorUsers(config.selected_sector);
+  }
+  if (config.selected_sector_user) {
+    inactivityAlertSelectedSectorUser.value = config.selected_sector_user;
+  }
+};
+
+const processRedirectFailedAttemptsConfig = async (
+  config: any
+): Promise<void> => {
+  redirectFailedAttemptsStatus.value =
+    (config.status as 'active' | 'inactive') || 'inactive';
+
+  if (config.quantity) {
+    redirectFailedAttemptsQuantity.value = config.quantity.toString();
+  }
+  if (config.redirect_type) {
+    redirectFailedAttemptsRedirectType.value = config.redirect_type as
+      | 'user'
+      | 'sector';
+  }
+  if (config.selected_user) {
+    redirectFailedAttemptsSelectedUser.value = config.selected_user;
+  }
+  if (config.selected_sector) {
+    redirectFailedAttemptsSelectedSector.value = config.selected_sector;
+    await loadRedirectFailedAttemptsSectorUsers(config.selected_sector);
+  }
+  if (config.selected_sector_user) {
+    redirectFailedAttemptsSelectedSectorUser.value =
+      config.selected_sector_user;
+  }
+};
+
+const loadInitialData = async (): Promise<void> => {
+  await loadInactivitySectors();
+  await loadInactivityUsers();
+  await loadRedirectFailedAttemptsSectors();
+  await loadRedirectFailedAttemptsUsers();
+};
+
+const processConfigurations = async (configs: any): Promise<void> => {
+  if (configs.inactivity_alert) {
+    await processInactivityAlertConfig(configs.inactivity_alert);
+  }
+
+  if (configs.redirect_failed_attempts) {
+    await processRedirectFailedAttemptsConfig(configs.redirect_failed_attempts);
   }
 };
 
@@ -1061,72 +1160,14 @@ const loadChatbotFlowConfigurations = async () => {
   }
 
   try {
-    await loadInactivitySectors();
-    await loadInactivityUsers();
-    await loadRedirectFailedAttemptsSectors();
-    await loadRedirectFailedAttemptsUsers();
+    await loadInitialData();
 
     const configurations = await chatbotStore.listChatbotFlowConfigurations(
       chatbotId.value
     );
 
-    if (configurations && configurations.configurations) {
-      const configs = configurations.configurations;
-
-      if (configs.inactivity_alert) {
-        const config = configs.inactivity_alert;
-        inactivityAlertStatus.value =
-          (config.status as 'active' | 'inactive') || 'inactive';
-        if (config.quantity) {
-          inactivityAlertQuantity.value = config.quantity.toString();
-        }
-        if (config.time) {
-          inactivityAlertTime.value = config.time.toString();
-        }
-        if (config.action) {
-          inactivityAlertAction.value = config.action as 'redirect' | 'finish';
-        }
-        if (config.redirect_type) {
-          inactivityAlertRedirectType.value = config.redirect_type as
-            | 'user'
-            | 'sector';
-        }
-        if (config.selected_user) {
-          inactivityAlertSelectedUser.value = config.selected_user;
-        }
-        if (config.selected_sector) {
-          inactivityAlertSelectedSector.value = config.selected_sector;
-          await loadInactivitySectorUsers(config.selected_sector);
-        }
-        if (config.selected_sector_user) {
-          inactivityAlertSelectedSectorUser.value = config.selected_sector_user;
-        }
-      }
-
-      if (configs.redirect_failed_attempts) {
-        const config = configs.redirect_failed_attempts;
-        redirectFailedAttemptsStatus.value =
-          (config.status as 'active' | 'inactive') || 'inactive';
-        if (config.quantity) {
-          redirectFailedAttemptsQuantity.value = config.quantity.toString();
-        }
-        if (config.redirect_type) {
-          redirectFailedAttemptsRedirectType.value = config.redirect_type as
-            | 'user'
-            | 'sector';
-        }
-        if (config.selected_user) {
-          redirectFailedAttemptsSelectedUser.value = config.selected_user;
-        }
-        if (config.selected_sector) {
-          redirectFailedAttemptsSelectedSector.value = config.selected_sector;
-          await loadRedirectFailedAttemptsSectorUsers(config.selected_sector);
-        }
-        if (config.selected_sector_user) {
-          redirectFailedAttemptsSelectedSectorUser.value =
-            config.selected_sector_user;
-        }
-      }
+    if (configurations?.configurations) {
+      await processConfigurations(configurations.configurations);
     }
   } catch (error) {
     console.error('Error loading configurations:', error);
@@ -1149,10 +1190,10 @@ const handleSaveConfigurations = async () => {
           ? {
               status: inactivityAlertStatus.value,
               quantity: inactivityAlertQuantity.value
-                ? parseInt(inactivityAlertQuantity.value)
+                ? Number.parseInt(inactivityAlertQuantity.value)
                 : undefined,
               time: inactivityAlertTime.value
-                ? parseInt(inactivityAlertTime.value)
+                ? Number.parseInt(inactivityAlertTime.value)
                 : undefined,
               action: inactivityAlertAction.value || undefined,
               redirect_type: inactivityAlertRedirectType.value || undefined,
@@ -1167,7 +1208,7 @@ const handleSaveConfigurations = async () => {
           ? {
               status: redirectFailedAttemptsStatus.value,
               quantity: redirectFailedAttemptsQuantity.value
-                ? parseInt(redirectFailedAttemptsQuantity.value)
+                ? Number.parseInt(redirectFailedAttemptsQuantity.value)
                 : undefined,
               redirect_type:
                 redirectFailedAttemptsRedirectType.value || undefined,

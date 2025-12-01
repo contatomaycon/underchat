@@ -103,7 +103,7 @@ export class ChatbotFlowSaverUseCase {
       return;
     }
 
-    const nodeData = node.data as any;
+    const nodeData = node.data;
     const options = nodeData?.options || [];
 
     const outgoingEdges = requestData.edges.filter(
@@ -119,7 +119,7 @@ export class ChatbotFlowSaverUseCase {
             : null
         )
       )
-      .filter((handle): handle is string => Boolean(handle));
+      .filter(Boolean) as string[];
 
     const handleLessEdges = outgoingEdges.filter(
       (edge) =>
@@ -129,15 +129,13 @@ export class ChatbotFlowSaverUseCase {
     );
 
     for (const option of options) {
-      if (!option || !option.id) {
+      if (!option?.id) {
         continue;
       }
 
       const expectedHandleKey = option.id;
 
-      const matchedIndex = connectedHandles.findIndex(
-        (handle) => handle === expectedHandleKey
-      );
+      const matchedIndex = connectedHandles.indexOf(expectedHandleKey);
 
       if (matchedIndex !== -1) {
         connectedHandles.splice(matchedIndex, 1);
@@ -158,6 +156,51 @@ export class ChatbotFlowSaverUseCase {
     }
   }
 
+  private validateTextMessage(
+    t: TFunction<'translation', undefined>,
+    node: any,
+    data: any,
+    errors: string[]
+  ): void {
+    if (!data.text || data.text.trim().length === 0) {
+      errors.push(
+        t('chatbot_flow_validation_message_text_required', {
+          nodeLabel: node.label || node.id,
+        })
+      );
+    }
+    if (data.text && data.text.length > 2000) {
+      errors.push(
+        t('chatbot_flow_validation_message_text_too_long', {
+          nodeLabel: node.label || node.id,
+        })
+      );
+    }
+  }
+
+  private validateMediaMessage(
+    t: TFunction<'translation', undefined>,
+    node: any,
+    data: any,
+    hasAttachmentFile: boolean | undefined,
+    errors: string[]
+  ): void {
+    if (!data.attachmentUrl && !hasAttachmentFile && !data.text) {
+      errors.push(
+        t('chatbot_flow_validation_message_attachment_required', {
+          nodeLabel: node.label || node.id,
+        })
+      );
+    }
+    if (data.text && data.text.length > 500) {
+      errors.push(
+        t('chatbot_flow_validation_message_caption_too_long', {
+          nodeLabel: node.label || node.id,
+        })
+      );
+    }
+  }
+
   private validateMessageNode(
     t: TFunction<'translation', undefined>,
     node: any,
@@ -168,7 +211,7 @@ export class ChatbotFlowSaverUseCase {
       return;
     }
 
-    const data = node.data as any;
+    const data = node.data;
     if (!data.messageType) {
       errors.push(
         t('chatbot_flow_validation_message_type_required', {
@@ -179,42 +222,93 @@ export class ChatbotFlowSaverUseCase {
     }
 
     if (data.messageType === 'text') {
-      if (!data.text || data.text.trim().length === 0) {
-        errors.push(
-          t('chatbot_flow_validation_message_text_required', {
-            nodeLabel: node.label || node.id,
-          })
-        );
-      }
-      if (data.text && data.text.length > 2000) {
-        errors.push(
-          t('chatbot_flow_validation_message_text_too_long', {
-            nodeLabel: node.label || node.id,
-          })
-        );
-      }
+      this.validateTextMessage(t, node, data, errors);
     }
 
     if (['image', 'audio', 'video'].includes(data.messageType)) {
-      if (!data.attachmentUrl && !hasAttachmentFile && !data.text) {
-        errors.push(
-          t('chatbot_flow_validation_message_attachment_required', {
-            nodeLabel: node.label || node.id,
-          })
-        );
-      }
-      if (data.text && data.text.length > 500) {
-        errors.push(
-          t('chatbot_flow_validation_message_caption_too_long', {
-            nodeLabel: node.label || node.id,
-          })
-        );
-      }
+      this.validateMediaMessage(t, node, data, hasAttachmentFile, errors);
     }
 
     if (!data.continueType) {
       errors.push(
         t('chatbot_flow_validation_continue_type_required', {
+          nodeLabel: node.label || node.id,
+        })
+      );
+    }
+  }
+
+  private validateNameData(
+    t: TFunction<'translation', undefined>,
+    node: any,
+    data: any,
+    errors: string[]
+  ): void {
+    if (!data.firstName || data.firstName.trim().length === 0) {
+      errors.push(
+        t('chatbot_flow_validation_first_name_required', {
+          nodeLabel: node.label || node.id,
+        })
+      );
+    }
+    if (!data.lastName || data.lastName.trim().length === 0) {
+      errors.push(
+        t('chatbot_flow_validation_last_name_required', {
+          nodeLabel: node.label || node.id,
+        })
+      );
+    }
+  }
+
+  private validateEmailData(
+    t: TFunction<'translation', undefined>,
+    node: any,
+    data: any,
+    errors: string[]
+  ): void {
+    if (!data.email || data.email.trim().length === 0) {
+      errors.push(
+        t('chatbot_flow_validation_email_required', {
+          nodeLabel: node.label || node.id,
+        })
+      );
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(data.email)) {
+      errors.push(
+        t('chatbot_flow_validation_email_invalid', {
+          nodeLabel: node.label || node.id,
+        })
+      );
+    }
+  }
+
+  private validateCpfData(
+    t: TFunction<'translation', undefined>,
+    node: any,
+    data: any,
+    errors: string[]
+  ): void {
+    if (!data.cpf || data.cpf.trim().length === 0) {
+      errors.push(
+        t('chatbot_flow_validation_cpf_required', {
+          nodeLabel: node.label || node.id,
+        })
+      );
+    }
+  }
+
+  private validateCnpjData(
+    t: TFunction<'translation', undefined>,
+    node: any,
+    data: any,
+    errors: string[]
+  ): void {
+    if (!data.cnpj || data.cnpj.trim().length === 0) {
+      errors.push(
+        t('chatbot_flow_validation_cnpj_required', {
           nodeLabel: node.label || node.id,
         })
       );
@@ -230,7 +324,7 @@ export class ChatbotFlowSaverUseCase {
       return;
     }
 
-    const data = node.data as any;
+    const data = node.data;
     if (!data.dataType) {
       errors.push(
         t('chatbot_flow_validation_data_type_required', {
@@ -240,64 +334,19 @@ export class ChatbotFlowSaverUseCase {
       return;
     }
 
-    if (data.dataType === 'name') {
-      if (!data.firstName || data.firstName.trim().length === 0) {
-        errors.push(
-          t('chatbot_flow_validation_first_name_required', {
-            nodeLabel: node.label || node.id,
-          })
-        );
-      }
-      if (!data.lastName || data.lastName.trim().length === 0) {
-        errors.push(
-          t('chatbot_flow_validation_last_name_required', {
-            nodeLabel: node.label || node.id,
-          })
-        );
-      }
-      return;
-    }
-
-    if (data.dataType === 'email') {
-      if (!data.email || data.email.trim().length === 0) {
-        errors.push(
-          t('chatbot_flow_validation_email_required', {
-            nodeLabel: node.label || node.id,
-          })
-        );
-        return;
-      }
-
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(data.email)) {
-        errors.push(
-          t('chatbot_flow_validation_email_invalid', {
-            nodeLabel: node.label || node.id,
-          })
-        );
-      }
-      return;
-    }
-
-    if (data.dataType === 'cpf') {
-      if (!data.cpf || data.cpf.trim().length === 0) {
-        errors.push(
-          t('chatbot_flow_validation_cpf_required', {
-            nodeLabel: node.label || node.id,
-          })
-        );
-      }
-      return;
-    }
-
-    if (data.dataType === 'cnpj') {
-      if (!data.cnpj || data.cnpj.trim().length === 0) {
-        errors.push(
-          t('chatbot_flow_validation_cnpj_required', {
-            nodeLabel: node.label || node.id,
-          })
-        );
-      }
+    switch (data.dataType) {
+      case 'name':
+        this.validateNameData(t, node, data, errors);
+        break;
+      case 'email':
+        this.validateEmailData(t, node, data, errors);
+        break;
+      case 'cpf':
+        this.validateCpfData(t, node, data, errors);
+        break;
+      case 'cnpj':
+        this.validateCnpjData(t, node, data, errors);
+        break;
     }
   }
 
@@ -310,7 +359,7 @@ export class ChatbotFlowSaverUseCase {
       return;
     }
 
-    const data = node.data as any;
+    const data = node.data;
     if (!data.redirectType) {
       errors.push(
         t('chatbot_flow_validation_redirect_type_required', {
@@ -346,7 +395,7 @@ export class ChatbotFlowSaverUseCase {
       return;
     }
 
-    const data = node.data as any;
+    const data = node.data;
     if (!data.tagType) {
       errors.push(
         t('chatbot_flow_validation_tag_type_required', {
@@ -373,7 +422,7 @@ export class ChatbotFlowSaverUseCase {
       return;
     }
 
-    const data = node.data as any;
+    const data = node.data;
     if (!data.title || data.title.trim().length === 0) {
       errors.push(
         t('chatbot_flow_validation_title_required', {
@@ -429,20 +478,21 @@ export class ChatbotFlowSaverUseCase {
     this.validateBasicFlowStructure(t, requestData, errors);
 
     if (errors.length > 0) {
-      throw new Error(errors.join('; '));
+      const errorMessage =
+        errors.filter(Boolean).join('; ') || 'Validation failed';
+      throw new Error(errorMessage);
     }
 
     for (const node of requestData.nodes) {
       this.validateNodeConnections(t, node, requestData, errors);
 
       if (node.type === 'message') {
-        const data = node.data as any;
+        const data = node.data;
         const messageType = data.messageType;
-        const hasAttachmentFile = this.hasMediaFileForNode(
-          input,
-          node.id,
-          messageType
-        );
+        const hasAttachmentFile =
+          node.id && messageType
+            ? this.hasMediaFileForNode(input, node.id, messageType)
+            : false;
 
         this.validateMessageNode(t, node, errors, hasAttachmentFile);
       } else {
@@ -456,7 +506,9 @@ export class ChatbotFlowSaverUseCase {
     }
 
     if (errors.length > 0) {
-      throw new Error(errors.join('; '));
+      const errorMessage =
+        errors.filter(Boolean).join('; ') || 'Validation failed';
+      throw new Error(errorMessage);
     }
   }
 
@@ -586,22 +638,49 @@ export class ChatbotFlowSaverUseCase {
   }
 
   private extractNodeIdFromFieldName(fieldName: string): string | null {
-    const imageMatch = fieldName.match(/^image_(.+)$/);
+    const imageRegex = /^image_(.+)$/;
+    const imageMatch = imageRegex.exec(fieldName);
     if (imageMatch) {
       return imageMatch[1];
     }
 
-    const videoMatch = fieldName.match(/^video_(.+)$/);
+    const videoRegex = /^video_(.+)$/;
+    const videoMatch = videoRegex.exec(fieldName);
     if (videoMatch) {
       return videoMatch[1];
     }
 
-    const audioMatch = fieldName.match(/^audio_(.+)$/);
+    const audioRegex = /^audio_(.+)$/;
+    const audioMatch = audioRegex.exec(fieldName);
     if (audioMatch) {
       return audioMatch[1];
     }
 
     return null;
+  }
+
+  private isValidUploadFileRequest(value: unknown): value is UploadFileRequest {
+    return value !== null && typeof value === 'object' && 'toBuffer' in value;
+  }
+
+  private processMediaFile(
+    fieldName: string,
+    value: unknown,
+    nodeId: string,
+    mediaType: 'image' | 'video' | 'audio',
+    mediaFiles: Map<
+      string,
+      { type: 'image' | 'video' | 'audio'; file: UploadFileRequest }
+    >
+  ): void {
+    if (!fieldName.startsWith(`${mediaType}_`)) {
+      return;
+    }
+
+    const file = value as UploadFileRequest;
+    if (this.isValidUploadFileRequest(file)) {
+      mediaFiles.set(nodeId, { type: mediaType, file });
+    }
   }
 
   private getMediaFilesByNodeId(
@@ -625,29 +704,98 @@ export class ChatbotFlowSaverUseCase {
         continue;
       }
 
-      if (fieldName.startsWith('image_')) {
-        const file = value as UploadFileRequest;
-        if (file && typeof file === 'object' && 'toBuffer' in file) {
-          mediaFiles.set(nodeId, { type: 'image', file });
-        }
-      }
-
-      if (fieldName.startsWith('video_')) {
-        const file = value as UploadFileRequest;
-        if (file && typeof file === 'object' && 'toBuffer' in file) {
-          mediaFiles.set(nodeId, { type: 'video', file });
-        }
-      }
-
-      if (fieldName.startsWith('audio_')) {
-        const file = value as UploadFileRequest;
-        if (file && typeof file === 'object' && 'toBuffer' in file) {
-          mediaFiles.set(nodeId, { type: 'audio', file });
-        }
-      }
+      this.processMediaFile(fieldName, value, nodeId, 'image', mediaFiles);
+      this.processMediaFile(fieldName, value, nodeId, 'video', mediaFiles);
+      this.processMediaFile(fieldName, value, nodeId, 'audio', mediaFiles);
     }
 
     return mediaFiles;
+  }
+
+  private shouldSkipProcessing(data: any): boolean {
+    return (
+      !data.messageType || (data.attachmentUrl && data.attachmentUrl !== null)
+    );
+  }
+
+  private async validateFileSize(
+    file: UploadFileRequest,
+    t: TFunction<'translation', undefined>
+  ): Promise<void> {
+    const buffer = await file.toBuffer();
+    if (buffer.byteLength > this.MAX_FILE_SIZE) {
+      throw new Error(t('chatbot_flow_validation_file_too_large'));
+    }
+  }
+
+  private async processImageNode(
+    node: any,
+    data: any,
+    image: UploadFileRequest,
+    messageType: string,
+    t: TFunction<'translation', undefined>,
+    accountId: string
+  ): Promise<any> {
+    await this.validateFileSize(image, t);
+    this.validateFileFormat(image, messageType, t);
+    const uploadResult = await this.processImage(image, accountId);
+
+    return {
+      ...node,
+      data: {
+        ...data,
+        attachmentUrl: uploadResult.url,
+        attachmentMimetype: uploadResult.mimetype,
+      },
+    };
+  }
+
+  private async processVideoNode(
+    node: any,
+    data: any,
+    video: UploadFileRequest,
+    messageType: string,
+    t: TFunction<'translation', undefined>,
+    accountId: string
+  ): Promise<any> {
+    await this.validateFileSize(video, t);
+    this.validateFileFormat(video, messageType, t);
+    const uploadResult = await this.processVideo(video, accountId);
+
+    return {
+      ...node,
+      data: {
+        ...data,
+        attachmentUrl: uploadResult.url,
+        attachmentMimetype: uploadResult.mimetype,
+        attachmentDuration: uploadResult.duration,
+        attachmentWidth: uploadResult.width,
+        attachmentHeight: uploadResult.height,
+      },
+    };
+  }
+
+  private async processAudioNode(
+    node: any,
+    data: any,
+    audio: UploadFileRequest,
+    messageType: string,
+    t: TFunction<'translation', undefined>,
+    accountId: string
+  ): Promise<any> {
+    await this.validateFileSize(audio, t);
+    this.validateFileFormat(audio, messageType, t);
+    const uploadResult = await this.processAudio(audio, accountId);
+
+    return {
+      ...node,
+      data: {
+        ...data,
+        attachmentUrl: uploadResult.url,
+        attachmentMimetype: uploadResult.mimetype,
+        attachmentDuration: uploadResult.duration,
+      },
+    };
   }
 
   private async processMediaFiles(
@@ -665,15 +813,10 @@ export class ChatbotFlowSaverUseCase {
     const processedNodes: typeof messageNodes = [];
 
     for (const node of messageNodes) {
-      const data = node.data as any;
+      const data = node.data;
       const messageType = data.messageType;
 
-      if (!messageType) {
-        processedNodes.push(node);
-        continue;
-      }
-
-      if (data.attachmentUrl && data.attachmentUrl !== null) {
+      if (this.shouldSkipProcessing(data)) {
         processedNodes.push(node);
         continue;
       }
@@ -685,72 +828,41 @@ export class ChatbotFlowSaverUseCase {
       }
 
       if (messageType === EMessageType.image && mediaFile.type === 'image') {
-        const image = mediaFile.file;
-
-        const buffer = await image.toBuffer();
-        if (buffer.byteLength > this.MAX_FILE_SIZE) {
-          throw new Error(t('chatbot_flow_validation_file_too_large'));
-        }
-
-        this.validateFileFormat(image, messageType, t);
-        const uploadResult = await this.processImage(image, accountId);
-
-        processedNodes.push({
-          ...node,
-          data: {
-            ...data,
-            attachmentUrl: uploadResult.url,
-            attachmentMimetype: uploadResult.mimetype,
-          },
-        });
+        const processedNode = await this.processImageNode(
+          node,
+          data,
+          mediaFile.file,
+          messageType,
+          t,
+          accountId
+        );
+        processedNodes.push(processedNode);
         continue;
       }
 
       if (messageType === EMessageType.video && mediaFile.type === 'video') {
-        const video = mediaFile.file;
-
-        const buffer = await video.toBuffer();
-        if (buffer.byteLength > this.MAX_FILE_SIZE) {
-          throw new Error(t('chatbot_flow_validation_file_too_large'));
-        }
-
-        this.validateFileFormat(video, messageType, t);
-        const uploadResult = await this.processVideo(video, accountId);
-
-        processedNodes.push({
-          ...node,
-          data: {
-            ...data,
-            attachmentUrl: uploadResult.url,
-            attachmentMimetype: uploadResult.mimetype,
-            attachmentDuration: uploadResult.duration,
-            attachmentWidth: uploadResult.width,
-            attachmentHeight: uploadResult.height,
-          },
-        });
+        const processedNode = await this.processVideoNode(
+          node,
+          data,
+          mediaFile.file,
+          messageType,
+          t,
+          accountId
+        );
+        processedNodes.push(processedNode);
         continue;
       }
 
       if (messageType === EMessageType.audio && mediaFile.type === 'audio') {
-        const audio = mediaFile.file;
-
-        const buffer = await audio.toBuffer();
-        if (buffer.byteLength > this.MAX_FILE_SIZE) {
-          throw new Error(t('chatbot_flow_validation_file_too_large'));
-        }
-
-        this.validateFileFormat(audio, messageType, t);
-        const uploadResult = await this.processAudio(audio, accountId);
-
-        processedNodes.push({
-          ...node,
-          data: {
-            ...data,
-            attachmentUrl: uploadResult.url,
-            attachmentMimetype: uploadResult.mimetype,
-            attachmentDuration: uploadResult.duration,
-          },
-        });
+        const processedNode = await this.processAudioNode(
+          node,
+          data,
+          mediaFile.file,
+          messageType,
+          t,
+          accountId
+        );
+        processedNodes.push(processedNode);
         continue;
       }
 

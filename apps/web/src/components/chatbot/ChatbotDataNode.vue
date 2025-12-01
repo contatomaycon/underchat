@@ -71,19 +71,19 @@ const isValidCPF = (cpf: string): boolean => {
 
   let sum = 0;
   for (let i = 0; i < 9; i++) {
-    sum += parseInt(digits.charAt(i)) * (10 - i);
+    sum += Number.parseInt(digits.charAt(i)) * (10 - i);
   }
   let remainder = (sum * 10) % 11;
   if (remainder === 10 || remainder === 11) remainder = 0;
-  if (remainder !== parseInt(digits.charAt(9))) return false;
+  if (remainder !== Number.parseInt(digits.charAt(9))) return false;
 
   sum = 0;
   for (let i = 0; i < 10; i++) {
-    sum += parseInt(digits.charAt(i)) * (11 - i);
+    sum += Number.parseInt(digits.charAt(i)) * (11 - i);
   }
   remainder = (sum * 10) % 11;
   if (remainder === 10 || remainder === 11) remainder = 0;
-  if (remainder !== parseInt(digits.charAt(10))) return false;
+  if (remainder !== Number.parseInt(digits.charAt(10))) return false;
 
   return true;
 };
@@ -101,13 +101,13 @@ const isValidCNPJ = (cnpj: string): boolean => {
   let sum = 0;
 
   for (let i = 0; i < length; i++) {
-    sum += parseInt(numbers.charAt(i)) * multipliers[i];
+    sum += Number.parseInt(numbers.charAt(i)) * multipliers[i];
   }
 
   let remainder = sum % 11;
   let digit = remainder < 2 ? 0 : 11 - remainder;
 
-  if (digit !== parseInt(digits.charAt(length))) return false;
+  if (digit !== Number.parseInt(digits.charAt(length))) return false;
 
   length = length + 1;
   numbers = digits.substring(0, length);
@@ -115,13 +115,13 @@ const isValidCNPJ = (cnpj: string): boolean => {
   sum = 0;
 
   for (let i = 0; i < length; i++) {
-    sum += parseInt(numbers.charAt(i)) * multipliers2[i];
+    sum += Number.parseInt(numbers.charAt(i)) * multipliers2[i];
   }
 
   remainder = sum % 11;
   digit = remainder < 2 ? 0 : 11 - remainder;
 
-  if (digit !== parseInt(digits.charAt(length))) return false;
+  if (digit !== Number.parseInt(digits.charAt(length))) return false;
 
   return true;
 };
