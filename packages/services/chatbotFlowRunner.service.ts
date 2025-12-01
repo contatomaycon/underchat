@@ -436,7 +436,7 @@ export class ChatbotFlowRunnerService {
 
     await this.updateCache(createChat, nextFlowId);
 
-    if (nextFlowNode.type === 'menu') {
+    if (nextFlowNode.type === 'menu' || nextFlowNode.type === 'satisfaction') {
       return this.sendBuildMenuMessage(t, createChat, nextFlowNode);
     }
 
@@ -954,7 +954,7 @@ export class ChatbotFlowRunnerService {
       return this.processStartNode(t, createChat, chatbotFlow, currentFlowId);
     }
 
-    if (currentNode.type === 'menu') {
+    if (currentNode.type === 'menu' || currentNode.type === 'satisfaction') {
       return this.processMenuNode(
         t,
         data,
