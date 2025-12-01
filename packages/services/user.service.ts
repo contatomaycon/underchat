@@ -2,6 +2,7 @@ import { injectable } from 'tsyringe';
 import { ListUserRequest } from '@core/schema/user/listUser/request.schema';
 import { ListUserResponse } from '@core/schema/user/listUser/response.schema';
 import { UserListerRepository } from '@core/repositories/user/UserLister.repository';
+import { UserAllListerRepository } from '@core/repositories/user/UserAllLister.repository';
 import { UserViewerExistsRepository } from '@core/repositories/user/UserViewerExists.repository';
 import { UserDeleterRepository } from '@core/repositories/user/UserDeleter.repository';
 import { UserViewerRepository } from '@core/repositories/user/UserViewer.repository';
@@ -45,12 +46,14 @@ import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { IChat } from '@core/common/interfaces/IChat';
 import { TransferUserResponse } from '@core/schema/chat/listTransferUsers/response.schema';
+import { ListAllUsersResponse } from '@core/schema/user/listAllUsers/response.schema';
 
 @injectable()
 export class UserService {
   constructor(
     private readonly encryptService: EncryptService,
     private readonly userListerRepository: UserListerRepository,
+    private readonly userAllListerRepository: UserAllListerRepository,
     private readonly userViewerExistsRepository: UserViewerExistsRepository,
     private readonly userDeleterRepository: UserDeleterRepository,
     private readonly userViewerRepository: UserViewerRepository,
@@ -113,6 +116,10 @@ export class UserService {
     ]);
 
     return [result, total];
+  };
+
+  listAllUsers = async (accountId: string): Promise<ListAllUsersResponse[]> => {
+    return this.userAllListerRepository.listAllUsers(accountId);
   };
 
   existsUserById = async (

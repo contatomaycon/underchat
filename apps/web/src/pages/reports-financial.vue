@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EFinancialPermissions } from '@core/common/enums/EPermissions/financial';
+import { EReportConversationHistoryPermissions } from '@core/common/enums/EPermissions/reportConversationHistory';
 import { useI18n } from 'vue-i18n';
 import { useFinancialReportStore } from '@/@webcore/stores/financialReport';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
@@ -13,6 +14,8 @@ definePage({
       EGeneralPermissions.full_access_group,
       EFinancialPermissions.financial_group,
       EFinancialPermissions.financial_view,
+      EReportConversationHistoryPermissions.report_conversation_history_group,
+      EReportConversationHistoryPermissions.report_conversation_history_view,
     ],
   },
 });

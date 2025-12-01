@@ -81,7 +81,7 @@ services:
     restart: always
 
   under-temporal-db:
-    image: postgres:latest
+    image: postgres:16-alpine
     container_name: under-temporal-db
     environment:
       - POSTGRES_USER=temporal
@@ -92,6 +92,11 @@ services:
     restart: always
     volumes:
       - temporal_postgresql:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U temporal -d temporal']
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   under-temporal:
     image: temporalio/auto-setup:latest
@@ -107,7 +112,8 @@ services:
       - POSTGRES_SEEDS=under-temporal-db
       - DB_PORT=5432
     depends_on:
-      - under-temporal-db
+      under-temporal-db:
+        condition: service_healthy
     networks:
       - underchat
 
@@ -118,7 +124,8 @@ services:
     environment:
       - TEMPORAL_CLI_ADDRESS=under-temporal:7233
     depends_on:
-      - under-temporal
+      under-temporal:
+        condition: service_started
     networks:
       - underchat
 
@@ -131,7 +138,8 @@ services:
     environment:
       - TEMPORAL_ADDRESS=under-temporal:7233
     depends_on:
-      - under-temporal
+      under-temporal:
+        condition: service_started
     networks:
       - underchat
 
@@ -176,7 +184,7 @@ services:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: 'broker,controller'
       KAFKA_LISTENERS: 'PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092'
-      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://under-kafka:9092,EXTERNAL://localhost:29092'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://under-kafka:9092,EXTERNAL://192.168.1.4:29092'
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT'
       KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
       KAFKA_CONTROLLER_QUORUM_VOTERS: '1@under-kafka:9093'
