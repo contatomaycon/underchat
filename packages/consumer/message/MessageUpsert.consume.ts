@@ -64,7 +64,6 @@ import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/req
 export class MessageUpsertConsume {
   private consumer: Consumer | null = null;
   private processingChain: Promise<void> = Promise.resolve();
-  private readonly t: TFunction<'translation', undefined> | null = null;
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
