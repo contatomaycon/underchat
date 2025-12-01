@@ -1,14 +1,64 @@
 import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AccountService } from '@core/services/account.service';
-import { SaveChatbotFlowRequest } from '@core/schema/chatbot/saveChatbotFlow/request.schema';
+import {
+  SaveChatbotFlowRequest,
+  SaveChatbotFlowRequestData,
+} from '@core/schema/chatbot/saveChatbotFlow/request.schema';
 import { ChatbotService } from '@core/services/chatbot.service';
+import { StorageService } from '@core/services/storage.service';
+import { ConverterService } from '@core/services/converter';
+import { UploadFileRequest } from '@core/schema/upload/request.schema';
+import { UploadFileResponse } from '@core/schema/upload/response.schema';
+import { EMessageType } from '@core/common/enums/EMessageType';
 
 @injectable()
 export class ChatbotFlowSaverUseCase {
+  private readonly MAX_FILE_SIZE = 16 * 1024 * 1024;
+  private readonly ALLOWED_IMAGE_EXTENSIONS = [
+    'jpg',
+    'jpeg',
+    'png',
+    'gif',
+    'webp',
+  ];
+  private readonly ALLOWED_VIDEO_EXTENSIONS = ['mp4', 'webm', 'ogg'];
+  private readonly ALLOWED_AUDIO_EXTENSIONS = [
+    'mp3',
+    'wav',
+    'm4a',
+    'aac',
+    'flac',
+    'opus',
+  ];
+  private readonly ALLOWED_IMAGE_MIME_TYPES = [
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+  ];
+  private readonly ALLOWED_VIDEO_MIME_TYPES = [
+    'video/mp4',
+    'video/webm',
+    'video/ogg',
+  ];
+  private readonly ALLOWED_AUDIO_MIME_TYPES = [
+    'audio/mpeg',
+    'audio/mp3',
+    'audio/wav',
+    'audio/x-wav',
+    'audio/m4a',
+    'audio/x-m4a',
+    'audio/aac',
+    'audio/flac',
+    'audio/opus',
+  ];
+
   constructor(
     private readonly chatbotService: ChatbotService,
-    private readonly accountService: AccountService
+    private readonly accountService: AccountService,
+    private readonly storageService: StorageService,
+    private readonly converterService: ConverterService
   ) {}
 
   private normalizeHandleId(handle?: string | null): string | null {
@@ -27,15 +77,17 @@ export class ChatbotFlowSaverUseCase {
 
   private validateBasicFlowStructure(
     t: TFunction<'translation', undefined>,
-    input: SaveChatbotFlowRequest,
+    requestData: SaveChatbotFlowRequestData,
     errors: string[]
   ): void {
-    if (!input.nodes || input.nodes.length === 0) {
+    if (!requestData.nodes || requestData.nodes.length === 0) {
       errors.push(t('chatbot_flow_validation_no_nodes'));
       return;
     }
 
-    const hasStartNode = input.nodes.some((node) => node.type === 'start');
+    const hasStartNode = requestData.nodes.some(
+      (node) => node.type === 'start'
+    );
     if (!hasStartNode) {
       errors.push(t('chatbot_flow_validation_no_start_node'));
     }
@@ -44,7 +96,7 @@ export class ChatbotFlowSaverUseCase {
   private validateNodeConnections(
     t: TFunction<'translation', undefined>,
     node: any,
-    input: SaveChatbotFlowRequest,
+    requestData: SaveChatbotFlowRequestData,
     errors: string[]
   ): void {
     if (node.type !== 'menu' && node.type !== 'satisfaction') {
@@ -54,7 +106,9 @@ export class ChatbotFlowSaverUseCase {
     const nodeData = node.data as any;
     const options = nodeData?.options || [];
 
-    const outgoingEdges = input.edges.filter((edge) => edge.source === node.id);
+    const outgoingEdges = requestData.edges.filter(
+      (edge) => edge.source === node.id
+    );
 
     const connectedHandles = outgoingEdges
       .map((edge) =>
@@ -110,7 +164,8 @@ export class ChatbotFlowSaverUseCase {
   private validateMessageNode(
     t: TFunction<'translation', undefined>,
     node: any,
-    errors: string[]
+    errors: string[],
+    hasAttachmentFile?: boolean
   ): void {
     if (node.type !== 'message') {
       return;
@@ -144,7 +199,7 @@ export class ChatbotFlowSaverUseCase {
     }
 
     if (['image', 'audio', 'video'].includes(data.messageType)) {
-      if (!data.attachmentFile && !data.text) {
+      if (!data.attachmentUrl && !hasAttachmentFile && !data.text) {
         errors.push(
           t('chatbot_flow_validation_message_attachment_required', {
             nodeLabel: node.label || node.id,
@@ -347,21 +402,56 @@ export class ChatbotFlowSaverUseCase {
     }
   }
 
+  private hasMediaFileForNode(
+    input: SaveChatbotFlowRequest & Record<string, unknown>,
+    nodeId: string,
+    messageType: string
+  ): boolean {
+    if (messageType === EMessageType.image) {
+      return !!input[`image_${nodeId}`];
+    }
+
+    if (messageType === EMessageType.video) {
+      return !!input[`video_${nodeId}`];
+    }
+
+    if (messageType === EMessageType.audio) {
+      return !!input[`audio_${nodeId}`];
+    }
+
+    return false;
+  }
+
   private validateFlow(
     t: TFunction<'translation', undefined>,
-    input: SaveChatbotFlowRequest
+    requestData: SaveChatbotFlowRequestData,
+    input: SaveChatbotFlowRequest & Record<string, unknown>
   ): void {
     const errors: string[] = [];
 
-    this.validateBasicFlowStructure(t, input, errors);
+    this.validateBasicFlowStructure(t, requestData, errors);
 
     if (errors.length > 0) {
       throw new Error(errors.join('; '));
     }
 
-    for (const node of input.nodes) {
-      this.validateNodeConnections(t, node, input, errors);
-      this.validateMessageNode(t, node, errors);
+    for (const node of requestData.nodes) {
+      this.validateNodeConnections(t, node, requestData, errors);
+
+      if (node.type === 'message') {
+        const data = node.data as any;
+        const messageType = data.messageType;
+        const hasAttachmentFile = this.hasMediaFileForNode(
+          input,
+          node.id,
+          messageType
+        );
+
+        this.validateMessageNode(t, node, errors, hasAttachmentFile);
+      } else {
+        this.validateMessageNode(t, node, errors);
+      }
+
       this.validateDataNode(t, node, errors);
       this.validateRedirectNode(t, node, errors);
       this.validateTagNode(t, node, errors);
@@ -373,9 +463,357 @@ export class ChatbotFlowSaverUseCase {
     }
   }
 
+  private getFileExtension(filename: string): string {
+    const match = /\.([^./\\]+)$/.exec(filename);
+    return match?.[1]?.toLowerCase() ?? '';
+  }
+
+  private validateFileFormat(
+    file: UploadFileRequest,
+    messageType: string,
+    t: TFunction<'translation', undefined>
+  ): void {
+    const ext = this.getFileExtension(file.filename);
+    const mimetype = file.mimetype?.toLowerCase() || '';
+
+    if (messageType === EMessageType.image) {
+      const isValidExt = this.ALLOWED_IMAGE_EXTENSIONS.includes(ext);
+      const isValidMime = this.ALLOWED_IMAGE_MIME_TYPES.includes(mimetype);
+      if (!isValidExt && !isValidMime) {
+        throw new Error(t('chatbot_flow_validation_invalid_image_format'));
+      }
+    }
+
+    if (messageType === EMessageType.video) {
+      const isValidExt = this.ALLOWED_VIDEO_EXTENSIONS.includes(ext);
+      const isValidMime = this.ALLOWED_VIDEO_MIME_TYPES.includes(mimetype);
+      if (!isValidExt && !isValidMime) {
+        throw new Error(t('chatbot_flow_validation_invalid_video_format'));
+      }
+    }
+
+    if (messageType === EMessageType.audio) {
+      const isValidExt = this.ALLOWED_AUDIO_EXTENSIONS.includes(ext);
+      const isValidMime = this.ALLOWED_AUDIO_MIME_TYPES.includes(mimetype);
+      if (!isValidExt && !isValidMime) {
+        throw new Error(t('chatbot_flow_validation_invalid_audio_format'));
+      }
+    }
+  }
+
+  private async processImage(
+    image: UploadFileRequest,
+    accountId: string
+  ): Promise<UploadFileResponse> {
+    const uploadResult = await this.storageService.uploadImage(
+      image,
+      accountId
+    );
+    if (!uploadResult) {
+      throw new Error('Failed to upload image');
+    }
+    return uploadResult;
+  }
+
+  private async processVideo(
+    video: UploadFileRequest,
+    accountId: string
+  ): Promise<
+    UploadFileResponse & { duration?: number; width?: number; height?: number }
+  > {
+    const originalBuffer = await video.toBuffer();
+    const originalMimetype = video.mimetype || null;
+
+    const converted = await this.converterService.convertVideo(
+      originalBuffer,
+      originalMimetype
+    );
+
+    const filename = video.filename.replace(/\.[^.]+$/, '') || 'video';
+    const newFilename = `${filename}.${converted.extension}`;
+
+    const uploadResult = await this.storageService.uploadVideoFromBuffer(
+      converted.buffer,
+      newFilename,
+      converted.mimetype,
+      accountId,
+      converted.width,
+      converted.height
+    );
+
+    if (!uploadResult) {
+      throw new Error('Failed to upload video');
+    }
+
+    return {
+      ...uploadResult,
+      mimetype: converted.mimetype,
+      duration: converted.duration,
+      width: converted.width ?? undefined,
+      height: converted.height ?? undefined,
+    };
+  }
+
+  private async processAudio(
+    audio: UploadFileRequest,
+    accountId: string
+  ): Promise<UploadFileResponse & { duration?: number }> {
+    const originalBuffer = await audio.toBuffer();
+    const originalMimetype = audio.mimetype || null;
+
+    const converted = await this.converterService.convertAudio(
+      originalBuffer,
+      originalMimetype,
+      false
+    );
+
+    const filename = audio.filename.replace(/\.[^.]+$/, '') || 'audio';
+    const newFilename = `${filename}.${converted.extension}`;
+
+    const uploadResult = await this.storageService.uploadAudioFromBuffer(
+      converted.buffer,
+      newFilename,
+      converted.mimetype,
+      accountId
+    );
+
+    if (!uploadResult) {
+      throw new Error('Failed to upload audio');
+    }
+
+    return {
+      ...uploadResult,
+      mimetype: converted.mimetype,
+      duration: converted.duration,
+    };
+  }
+
+  private extractNodeIdFromFieldName(fieldName: string): string | null {
+    const imageMatch = fieldName.match(/^image_(.+)$/);
+    if (imageMatch) {
+      return imageMatch[1];
+    }
+
+    const videoMatch = fieldName.match(/^video_(.+)$/);
+    if (videoMatch) {
+      return videoMatch[1];
+    }
+
+    const audioMatch = fieldName.match(/^audio_(.+)$/);
+    if (audioMatch) {
+      return audioMatch[1];
+    }
+
+    return null;
+  }
+
+  private getMediaFilesByNodeId(
+    input: SaveChatbotFlowRequest & Record<string, unknown>
+  ): Map<
+    string,
+    { type: 'image' | 'video' | 'audio'; file: UploadFileRequest }
+  > {
+    const mediaFiles = new Map<
+      string,
+      { type: 'image' | 'video' | 'audio'; file: UploadFileRequest }
+    >();
+
+    for (const [fieldName, value] of Object.entries(input)) {
+      if (fieldName === 'request') {
+        continue;
+      }
+
+      const nodeId = this.extractNodeIdFromFieldName(fieldName);
+      if (!nodeId) {
+        continue;
+      }
+
+      if (fieldName.startsWith('image_')) {
+        const file = value as UploadFileRequest;
+        if (file && typeof file === 'object' && 'toBuffer' in file) {
+          mediaFiles.set(nodeId, { type: 'image', file });
+        }
+      }
+
+      if (fieldName.startsWith('video_')) {
+        const file = value as UploadFileRequest;
+        if (file && typeof file === 'object' && 'toBuffer' in file) {
+          mediaFiles.set(nodeId, { type: 'video', file });
+        }
+      }
+
+      if (fieldName.startsWith('audio_')) {
+        const file = value as UploadFileRequest;
+        if (file && typeof file === 'object' && 'toBuffer' in file) {
+          mediaFiles.set(nodeId, { type: 'audio', file });
+        }
+      }
+    }
+
+    return mediaFiles;
+  }
+
+  private async processMediaFiles(
+    t: TFunction<'translation', undefined>,
+    requestData: SaveChatbotFlowRequestData,
+    input: SaveChatbotFlowRequest & Record<string, unknown>,
+    accountId: string
+  ): Promise<SaveChatbotFlowRequestData> {
+    const messageNodes = requestData.nodes.filter(
+      (node) => node.type === 'message'
+    );
+
+    const mediaFilesByNodeId = this.getMediaFilesByNodeId(input);
+
+    const processedNodes: typeof messageNodes = [];
+
+    for (const node of messageNodes) {
+      const data = node.data as any;
+      const messageType = data.messageType;
+
+      if (!messageType) {
+        processedNodes.push(node);
+        continue;
+      }
+
+      if (data.attachmentUrl && data.attachmentUrl !== null) {
+        processedNodes.push(node);
+        continue;
+      }
+
+      const mediaFile = mediaFilesByNodeId.get(node.id);
+      if (!mediaFile) {
+        processedNodes.push(node);
+        continue;
+      }
+
+      if (messageType === EMessageType.image && mediaFile.type === 'image') {
+        const image = mediaFile.file;
+
+        const buffer = await image.toBuffer();
+        if (buffer.byteLength > this.MAX_FILE_SIZE) {
+          throw new Error(t('chatbot_flow_validation_file_too_large'));
+        }
+
+        this.validateFileFormat(image, messageType, t);
+        const uploadResult = await this.processImage(image, accountId);
+
+        processedNodes.push({
+          ...node,
+          data: {
+            ...data,
+            attachmentUrl: uploadResult.url,
+            attachmentMimetype: uploadResult.mimetype,
+          },
+        });
+        continue;
+      }
+
+      if (messageType === EMessageType.video && mediaFile.type === 'video') {
+        const video = mediaFile.file;
+
+        const buffer = await video.toBuffer();
+        if (buffer.byteLength > this.MAX_FILE_SIZE) {
+          throw new Error(t('chatbot_flow_validation_file_too_large'));
+        }
+
+        this.validateFileFormat(video, messageType, t);
+        const uploadResult = await this.processVideo(video, accountId);
+
+        processedNodes.push({
+          ...node,
+          data: {
+            ...data,
+            attachmentUrl: uploadResult.url,
+            attachmentMimetype: uploadResult.mimetype,
+            attachmentDuration: uploadResult.duration,
+            attachmentWidth: uploadResult.width,
+            attachmentHeight: uploadResult.height,
+          },
+        });
+        continue;
+      }
+
+      if (messageType === EMessageType.audio && mediaFile.type === 'audio') {
+        const audio = mediaFile.file;
+
+        const buffer = await audio.toBuffer();
+        if (buffer.byteLength > this.MAX_FILE_SIZE) {
+          throw new Error(t('chatbot_flow_validation_file_too_large'));
+        }
+
+        this.validateFileFormat(audio, messageType, t);
+        const uploadResult = await this.processAudio(audio, accountId);
+
+        processedNodes.push({
+          ...node,
+          data: {
+            ...data,
+            attachmentUrl: uploadResult.url,
+            attachmentMimetype: uploadResult.mimetype,
+            attachmentDuration: uploadResult.duration,
+          },
+        });
+        continue;
+      }
+
+      processedNodes.push(node);
+    }
+
+    const otherNodes = requestData.nodes.filter(
+      (node) => node.type !== 'message'
+    );
+
+    return {
+      ...requestData,
+      nodes: [...otherNodes, ...processedNodes],
+    };
+  }
+
+  private extractFieldValue(value: unknown): string | null {
+    if (value === null || value === undefined) {
+      return null;
+    }
+
+    if (Array.isArray(value)) {
+      return this.extractFieldValue(value[0]);
+    }
+
+    if (typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      if ('value' in record) {
+        return this.extractFieldValue(record.value);
+      }
+      return null;
+    }
+
+    if (typeof value === 'string') {
+      return value;
+    }
+
+    return null;
+  }
+
+  private normalizeRequestData(
+    requestField: SaveChatbotFlowRequest['request'],
+    t: TFunction<'translation', undefined>
+  ): SaveChatbotFlowRequestData {
+    const rawValue = this.extractFieldValue(requestField);
+    if (!rawValue) {
+      throw new Error(t('chatbot_flow_validation_request_data_required'));
+    }
+
+    try {
+      return JSON.parse(rawValue) as SaveChatbotFlowRequestData;
+    } catch {
+      throw new Error(t('chatbot_flow_validation_invalid_request_data_format'));
+    }
+  }
+
   async validate(
     t: TFunction<'translation', undefined>,
-    input: SaveChatbotFlowRequest,
+    requestData: SaveChatbotFlowRequestData,
+    input: SaveChatbotFlowRequest & Record<string, unknown>,
     accountId: string
   ): Promise<void> {
     const accountExists =
@@ -384,18 +822,30 @@ export class ChatbotFlowSaverUseCase {
       throw new Error(t('account_not_found'));
     }
 
-    this.validateFlow(t, input);
+    this.validateFlow(t, requestData, input);
   }
 
   async execute(
     t: TFunction<'translation', undefined>,
-    input: SaveChatbotFlowRequest,
+    input: SaveChatbotFlowRequest & Record<string, unknown>,
     accountId: string
   ): Promise<string | null> {
-    await this.validate(t, input, accountId);
+    const requestData = this.normalizeRequestData(input.request, t);
+
+    console.log('input');
+    console.dir(input, { depth: null });
+
+    await this.validate(t, requestData, input, accountId);
+
+    const processedRequestData = await this.processMediaFiles(
+      t,
+      requestData,
+      input,
+      accountId
+    );
 
     const chatbotFlowId = await this.chatbotService.saveChatbotFlow(
-      input,
+      processedRequestData,
       accountId
     );
 

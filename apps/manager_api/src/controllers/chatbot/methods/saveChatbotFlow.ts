@@ -19,7 +19,7 @@ export const saveChatbotFlow = async (
 
     const chatbotFlowId = await chatbotFlowSaverUseCase.execute(
       t,
-      request.body,
+      request.body as SaveChatbotFlowRequest & Record<string, unknown>,
       accountIdToUse
     );
 

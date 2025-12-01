@@ -15,6 +15,11 @@ interface MessageData {
     | null;
   text: string;
   attachmentFile: File | null;
+  attachmentUrl?: string | null;
+  attachmentMimetype?: string | null;
+  attachmentDuration?: number | null;
+  attachmentWidth?: number | null;
+  attachmentHeight?: number | null;
   continueType: 'automatic' | 'after_response' | null;
   onRemove?: () => void;
 }
@@ -59,6 +64,11 @@ const getInitialData = (): MessageData => {
     messageType: data?.messageType || null,
     text: data?.text || '',
     attachmentFile: data?.attachmentFile || null,
+    attachmentUrl: data?.attachmentUrl || null,
+    attachmentMimetype: data?.attachmentMimetype || null,
+    attachmentDuration: data?.attachmentDuration || null,
+    attachmentWidth: data?.attachmentWidth || null,
+    attachmentHeight: data?.attachmentHeight || null,
     continueType: data?.continueType || null,
   };
 };
@@ -154,6 +164,11 @@ const updateNodeData = () => {
     data.messageType = messageData.value.messageType;
     data.text = messageData.value.text;
     data.attachmentFile = messageData.value.attachmentFile;
+    data.attachmentUrl = messageData.value.attachmentUrl;
+    data.attachmentMimetype = messageData.value.attachmentMimetype;
+    data.attachmentDuration = messageData.value.attachmentDuration;
+    data.attachmentWidth = messageData.value.attachmentWidth;
+    data.attachmentHeight = messageData.value.attachmentHeight;
     data.continueType = messageData.value.continueType;
   }
 };
@@ -228,10 +243,15 @@ const onFileChange = (event: Event) => {
 };
 
 const removeFile = () => {
-  if (filePreview.value) {
+  if (filePreview.value && filePreview.value.startsWith('blob:')) {
     URL.revokeObjectURL(filePreview.value);
   }
   messageData.value.attachmentFile = null;
+  messageData.value.attachmentUrl = null;
+  messageData.value.attachmentMimetype = null;
+  messageData.value.attachmentDuration = null;
+  messageData.value.attachmentWidth = null;
+  messageData.value.attachmentHeight = null;
   filePreview.value = null;
   fileSizeError.value = null;
   if (fileInputRef.value) {
@@ -340,6 +360,19 @@ const handleRemove = () => {
 };
 
 watch(
+  () => (props.data as MessageData)?.attachmentUrl,
+  (newUrl) => {
+    if (newUrl && !filePreview.value) {
+      filePreview.value = newUrl;
+    }
+    if (!newUrl && filePreview.value && !messageData.value.attachmentFile) {
+      filePreview.value = null;
+    }
+  },
+  { immediate: true }
+);
+
+watch(
   () => messageData.value.messageType,
   (newType, oldType) => {
     if (oldType !== undefined && oldType !== newType) {
@@ -405,7 +438,10 @@ watch(
             style="display: none"
             @change="onFileChange"
           />
-          <div v-if="!filePreview" class="d-flex align-center ga-2">
+          <div
+            v-if="!filePreview && !messageData.attachmentUrl"
+            class="d-flex align-center ga-2"
+          >
             <VBtn
               variant="outlined"
               color="primary"
@@ -416,10 +452,17 @@ watch(
               {{ t('chatbot_message_attach') }}
             </VBtn>
           </div>
-          <div v-else class="d-flex flex-column ga-2">
+          <div
+            v-else-if="filePreview || messageData.attachmentUrl"
+            class="d-flex flex-column ga-2"
+          >
             <div class="d-flex align-center ga-2">
               <span class="text-body-2 text-truncate" style="flex: 1">
-                {{ messageData.attachmentFile?.name }}
+                {{
+                  messageData.attachmentFile?.name ||
+                  messageData.attachmentUrl?.split('/').pop() ||
+                  ''
+                }}
               </span>
               <VBtn
                 icon
@@ -432,14 +475,18 @@ watch(
               </VBtn>
             </div>
             <VCard
-              v-if="filePreview"
+              v-if="filePreview || messageData.attachmentUrl"
               class="pa-1 cursor-pointer"
-              style="max-width: 100px"
+              :style="
+                messageData.messageType === EMessageType.audio
+                  ? 'width: 100%'
+                  : 'max-width: 100px'
+              "
               @click="openPreview"
             >
               <VImg
                 v-if="messageData.messageType === EMessageType.image"
-                :src="filePreview"
+                :src="(filePreview || messageData.attachmentUrl) ?? undefined"
                 max-width="100"
                 max-height="75"
                 aspect-ratio="4/3"
@@ -457,7 +504,7 @@ watch(
                 "
               >
                 <video
-                  :src="filePreview"
+                  :src="(filePreview || messageData.attachmentUrl) ?? undefined"
                   class="rounded"
                   preload="metadata"
                   muted
@@ -495,22 +542,40 @@ watch(
                 style="
                   background: rgba(var(--v-theme-surface-variant), 0.1);
                   border-radius: 8px;
-                  max-width: 100px;
+                  width: 100%;
                 "
               >
-                <VIcon icon="tabler-music" size="24" />
-                <div class="flex-grow-1" style="min-width: 0">
-                  <div class="text-caption text-truncate">
-                    {{ messageData.attachmentFile?.name }}
-                  </div>
-                  <div
+                <VIcon icon="tabler-music" size="20" class="flex-shrink-0" />
+                <div
+                  class="flex-grow-1 d-flex align-center gap-1"
+                  style="min-width: 0; flex: 1; overflow: hidden"
+                >
+                  <span
+                    class="text-caption text-truncate"
+                    style="flex: 0 1 auto"
+                  >
+                    {{
+                      messageData.attachmentFile?.name ||
+                      messageData.attachmentUrl?.split('/').pop() ||
+                      ''
+                    }}
+                  </span>
+                  <span
                     class="text-caption text-medium-emphasis"
-                    style="font-size: 0.7rem"
+                    style="
+                      font-size: 0.7rem;
+                      white-space: nowrap;
+                      flex-shrink: 0;
+                    "
                   >
                     {{ t('chatbot_message_click_to_preview') }}
-                  </div>
+                  </span>
                 </div>
-                <VIcon icon="tabler-player-play-filled" size="20" />
+                <VIcon
+                  icon="tabler-player-play-filled"
+                  size="18"
+                  class="flex-shrink-0"
+                />
               </div>
             </VCard>
           </div>

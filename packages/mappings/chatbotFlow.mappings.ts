@@ -110,6 +110,21 @@ export const chatbotFlowMappings = () => {
                   type: 'object',
                   enabled: false,
                 },
+                attachmentUrl: {
+                  type: 'keyword',
+                },
+                attachmentMimetype: {
+                  type: 'keyword',
+                },
+                attachmentDuration: {
+                  type: 'integer',
+                },
+                attachmentWidth: {
+                  type: 'integer',
+                },
+                attachmentHeight: {
+                  type: 'integer',
+                },
                 continueType: {
                   type: 'keyword',
                 },

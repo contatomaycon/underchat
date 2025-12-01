@@ -5,6 +5,11 @@ const nodeDataSchema = Type.Object({
   message: Type.Optional(Type.String()),
   messageType: Type.Optional(Type.String()),
   text: Type.Optional(Type.String()),
+  attachmentUrl: Type.Optional(Type.String()),
+  attachmentMimetype: Type.Optional(Type.String()),
+  attachmentDuration: Type.Optional(Type.Number()),
+  attachmentWidth: Type.Optional(Type.Number()),
+  attachmentHeight: Type.Optional(Type.Number()),
   attachmentFile: Type.Optional(Type.Any()),
   continueType: Type.Optional(Type.String()),
   dataType: Type.Optional(Type.String()),
@@ -49,31 +54,6 @@ const edgeSchema = Type.Object({
   targetHandle: Type.Optional(Type.String()),
   markerEnd: Type.Optional(Type.Any()),
   style: Type.Optional(Type.Any()),
-});
-
-const configurationsSchema = Type.Object({
-  inactivity_alert: Type.Optional(
-    Type.Object({
-      status: Type.String(),
-      quantity: Type.Optional(Type.Number()),
-      time: Type.Optional(Type.Number()),
-      action: Type.Optional(Type.String()),
-      redirect_type: Type.Optional(Type.String()),
-      selected_user: Type.Optional(Type.String()),
-      selected_sector: Type.Optional(Type.String()),
-      selected_sector_user: Type.Optional(Type.String()),
-    })
-  ),
-  redirect_failed_attempts: Type.Optional(
-    Type.Object({
-      status: Type.String(),
-      quantity: Type.Optional(Type.Number()),
-      redirect_type: Type.Optional(Type.String()),
-      selected_user: Type.Optional(Type.String()),
-      selected_sector: Type.Optional(Type.String()),
-      selected_sector_user: Type.Optional(Type.String()),
-    })
-  ),
 });
 
 export const listChatbotFlowResponseSchema = Type.Object({

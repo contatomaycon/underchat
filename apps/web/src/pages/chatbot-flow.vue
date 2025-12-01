@@ -508,9 +508,11 @@ const buildNormalizedOptionHandle = (
 };
 
 const normalizeEdgeSourceHandle = (edge: Edge): string | undefined => {
-  const sourceNode = nodes.value.find((n) => n.id === edge.source);
-  const shouldNormalize =
-    sourceNode && optionNodeTypes.includes(sourceNode.type as string);
+  const sourceNode = nodes.value.find((n) => n.id === edge.source) as
+    | Node
+    | undefined;
+  const nodeType = sourceNode?.type as string | undefined;
+  const shouldNormalize = nodeType && optionNodeTypes.includes(nodeType);
 
   if (shouldNormalize) {
     return (
@@ -526,19 +528,23 @@ const normalizeEdgeSourceHandle = (edge: Edge): string | undefined => {
 const normalizeEdge = (edge: Edge): Edge => {
   const normalizedSourceHandle = normalizeEdgeSourceHandle(edge);
 
-  return {
+  const normalizedEdge: Edge = {
     ...edge,
     sourceHandle: normalizedSourceHandle,
     targetHandle: edge.targetHandle ? String(edge.targetHandle) : undefined,
   };
+
+  return normalizedEdge;
 };
 
 const normalizeConnectionSourceHandle = (
   connection: Connection
 ): string | undefined => {
-  const sourceNode = nodes.value.find((n) => n.id === connection.source);
-  const shouldNormalize =
-    sourceNode && optionNodeTypes.includes(sourceNode.type as string);
+  const sourceNode = nodes.value.find((n) => n.id === connection.source) as
+    | Node
+    | undefined;
+  const nodeType = sourceNode?.type as string | undefined;
+  const shouldNormalize = nodeType && optionNodeTypes.includes(nodeType);
 
   if (shouldNormalize) {
     return (
@@ -569,8 +575,9 @@ const removeNode = (nodeId: string) => {
 };
 
 const addMenuNode = () => {
+  const nodeId = `menu-${nodeIdCounter++}`;
   const newNode: Node = {
-    id: `menu-${nodeIdCounter++}`,
+    id: nodeId,
     type: 'menu',
     position: {
       x: getSecureRandom(400) + 100,
@@ -580,15 +587,16 @@ const addMenuNode = () => {
       title: '',
       message: '',
       options: [],
-      onRemove: () => removeNode(newNode.id),
+      onRemove: () => removeNode(nodeId),
     },
   };
-  nodes.value.push(newNode);
+  nodes.value.push(newNode as Node);
 };
 
 const addSatisfactionNode = () => {
+  const nodeId = `satisfaction-${nodeIdCounter++}`;
   const newNode: Node = {
-    id: `satisfaction-${nodeIdCounter++}`,
+    id: nodeId,
     type: 'satisfaction',
     position: {
       x: getSecureRandom(400) + 100,
@@ -598,15 +606,16 @@ const addSatisfactionNode = () => {
       title: '',
       message: '',
       options: [],
-      onRemove: () => removeNode(newNode.id),
+      onRemove: () => removeNode(nodeId),
     },
   };
-  nodes.value.push(newNode);
+  nodes.value.push(newNode as Node);
 };
 
 const addRedirectNode = () => {
+  const nodeId = `redirect-${nodeIdCounter++}`;
   const newNode: Node = {
-    id: `redirect-${nodeIdCounter++}`,
+    id: nodeId,
     type: 'redirect',
     position: {
       x: getSecureRandom(400) + 100,
@@ -617,30 +626,32 @@ const addRedirectNode = () => {
       selectedUser: null,
       selectedSector: null,
       selectedSectorUser: null,
-      onRemove: () => removeNode(newNode.id),
+      onRemove: () => removeNode(nodeId),
     },
   };
-  nodes.value.push(newNode);
+  nodes.value.push(newNode as Node);
 };
 
 const addFinishNode = () => {
+  const nodeId = `finish-${nodeIdCounter++}`;
   const newNode: Node = {
-    id: `finish-${nodeIdCounter++}`,
+    id: nodeId,
     type: 'finish',
     position: {
       x: getSecureRandom(400) + 100,
       y: getSecureRandom(300) + 100,
     },
     data: {
-      onRemove: () => removeNode(newNode.id),
+      onRemove: () => removeNode(nodeId),
     },
   };
-  nodes.value.push(newNode);
+  nodes.value.push(newNode as Node);
 };
 
 const addTagNode = () => {
+  const nodeId = `tag-${nodeIdCounter++}`;
   const newNode: Node = {
-    id: `tag-${nodeIdCounter++}`,
+    id: nodeId,
     type: 'tag',
     position: {
       x: getSecureRandom(400) + 100,
@@ -649,15 +660,16 @@ const addTagNode = () => {
     data: {
       tagType: null,
       selectedTag: null,
-      onRemove: () => removeNode(newNode.id),
+      onRemove: () => removeNode(nodeId),
     },
   };
-  nodes.value.push(newNode);
+  nodes.value.push(newNode as Node);
 };
 
 const addMessageNode = () => {
+  const nodeId = `message-${nodeIdCounter++}`;
   const newNode: Node = {
-    id: `message-${nodeIdCounter++}`,
+    id: nodeId,
     type: 'message',
     position: {
       x: getSecureRandom(400) + 100,
@@ -667,16 +679,22 @@ const addMessageNode = () => {
       messageType: null,
       text: '',
       attachmentFile: null,
+      attachmentUrl: null,
+      attachmentMimetype: null,
+      attachmentDuration: null,
+      attachmentWidth: null,
+      attachmentHeight: null,
       continueType: null,
-      onRemove: () => removeNode(newNode.id),
+      onRemove: () => removeNode(nodeId),
     },
   };
-  nodes.value.push(newNode);
+  nodes.value.push(newNode as Node);
 };
 
 const addDataNode = () => {
+  const nodeId = `data-${nodeIdCounter++}`;
   const newNode: Node = {
-    id: `data-${nodeIdCounter++}`,
+    id: nodeId,
     type: 'data',
     position: {
       x: getSecureRandom(400) + 100,
@@ -689,10 +707,10 @@ const addDataNode = () => {
       email: '',
       cpf: '',
       cnpj: '',
-      onRemove: () => removeNode(newNode.id),
+      onRemove: () => removeNode(nodeId),
     },
   };
-  nodes.value.push(newNode);
+  nodes.value.push(newNode as Node);
 };
 
 const onConnect = (connection: Connection) => {
@@ -833,11 +851,39 @@ const handleSave = async () => {
       };
     });
 
-    const result = await chatbotStore.saveChatbotFlow({
+    const requestData = {
       chatbot_id: chatbotId.value,
       nodes: preparedNodes,
       edges: preparedEdges,
-    });
+    };
+
+    const formData = new FormData();
+    formData.append('request', JSON.stringify(requestData));
+
+    const messageNodes = nodes.value.filter((node) => node.type === 'message');
+    for (const node of messageNodes) {
+      const data = node.data as any;
+      const messageType = data.messageType;
+      const attachmentFile = data.attachmentFile as File | null;
+
+      if (!attachmentFile) {
+        continue;
+      }
+
+      if (messageType === 'image') {
+        formData.append(`image_${node.id}`, attachmentFile);
+      }
+
+      if (messageType === 'video') {
+        formData.append(`video_${node.id}`, attachmentFile);
+      }
+
+      if (messageType === 'audio') {
+        formData.append(`audio_${node.id}`, attachmentFile);
+      }
+    }
+
+    const result = await chatbotStore.saveChatbotFlow(formData);
 
     if (result) {
     }
@@ -902,6 +948,16 @@ const loadChatbotFlow = async () => {
             if (node.data.text === undefined) node.data.text = '';
             if (node.data.attachmentFile === undefined)
               node.data.attachmentFile = null;
+            if (node.data.attachmentUrl === undefined)
+              node.data.attachmentUrl = null;
+            if (node.data.attachmentMimetype === undefined)
+              node.data.attachmentMimetype = null;
+            if (node.data.attachmentDuration === undefined)
+              node.data.attachmentDuration = null;
+            if (node.data.attachmentWidth === undefined)
+              node.data.attachmentWidth = null;
+            if (node.data.attachmentHeight === undefined)
+              node.data.attachmentHeight = null;
             if (node.data.continueType === undefined)
               node.data.continueType = null;
           }

@@ -435,6 +435,8 @@
   "chatbot_flow_validation_cnpj_required": "CNPJ es obligatorio en el nodo \"{{nodeLabel}}\"",
   "chatbot_flow_validation_redirect_type_required": "Tipo de redirección es obligatorio en el nodo \"{{nodeLabel}}\"",
   "chatbot_flow_validation_redirect_user_required": "Usuario es obligatorio en el nodo \"{{nodeLabel}}\"",
+  "chatbot_flow_validation_request_data_required": "Los datos de la solicitud son obligatorios",
+  "chatbot_flow_validation_invalid_request_data_format": "Formato inválido de los datos de la solicitud",
   "chatbot_flow_validation_redirect_sector_required": "Sector es obligatorio en el nodo \"{{nodeLabel}}\"",
   "chatbot_flow_validation_tag_type_required": "Tipo de etiqueta es obligatorio en el nodo \"{{nodeLabel}}\"",
   "chatbot_flow_validation_tag_required": "Etiqueta es obligatoria en el nodo \"{{nodeLabel}}\"",

@@ -1,4 +1,5 @@
 import { Static, Type } from '@sinclair/typebox';
+import { uploadFileRequestSchema } from '@core/schema/upload/request.schema';
 
 const nodeDataSchema = Type.Object({
   title: Type.Optional(Type.String()),
@@ -6,6 +7,11 @@ const nodeDataSchema = Type.Object({
   messageType: Type.Optional(Type.String()),
   text: Type.Optional(Type.String()),
   attachmentFile: Type.Optional(Type.Any()),
+  attachmentUrl: Type.Optional(Type.String()),
+  attachmentMimetype: Type.Optional(Type.String()),
+  attachmentDuration: Type.Optional(Type.Number()),
+  attachmentWidth: Type.Optional(Type.Number()),
+  attachmentHeight: Type.Optional(Type.Number()),
   continueType: Type.Optional(Type.String()),
   dataType: Type.Optional(Type.String()),
   firstName: Type.Optional(Type.String()),
@@ -51,12 +57,24 @@ const edgeSchema = Type.Object({
   style: Type.Optional(Type.Any()),
 });
 
-export const saveChatbotFlowRequestSchema = Type.Object({
+const requestDataSchema = Type.Object({
   chatbot_id: Type.String(),
   nodes: Type.Array(nodeSchema),
   edges: Type.Array(edgeSchema),
 });
 
+export const saveChatbotFlowRequestSchema = Type.Object({
+  request: Type.Union([
+    requestDataSchema,
+    Type.String(),
+    Type.Object({
+      value: Type.String(),
+    }),
+  ]),
+});
+
 export type SaveChatbotFlowRequest = Static<
   typeof saveChatbotFlowRequestSchema
 >;
+
+export type SaveChatbotFlowRequestData = Static<typeof requestDataSchema>;

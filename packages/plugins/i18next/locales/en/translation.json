@@ -435,6 +435,8 @@
   "chatbot_flow_validation_cnpj_required": "CNPJ is required in node \"{{nodeLabel}}\"",
   "chatbot_flow_validation_redirect_type_required": "Redirect type is required in node \"{{nodeLabel}}\"",
   "chatbot_flow_validation_redirect_user_required": "User is required in node \"{{nodeLabel}}\"",
+  "chatbot_flow_validation_request_data_required": "Request data is required",
+  "chatbot_flow_validation_invalid_request_data_format": "Invalid request data format",
   "chatbot_flow_validation_redirect_sector_required": "Sector is required in node \"{{nodeLabel}}\"",
   "chatbot_flow_validation_tag_type_required": "Tag type is required in node \"{{nodeLabel}}\"",
   "chatbot_flow_validation_tag_required": "Tag is required in node \"{{nodeLabel}}\"",

@@ -7,6 +7,7 @@ import { saveChatbotFlowResponseSchema } from './response.schema';
 export const saveChatbotFlowSchema = {
   description: 'Salva o fluxo do chatbot',
   tags: [ETagSwagger.chatbot],
+  consumes: ['multipart/form-data'],
   produces: ['application/json'],
   security: [
     {

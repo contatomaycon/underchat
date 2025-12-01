@@ -18,7 +18,7 @@ import { ChatbotSectorUserResponse } from '@core/schema/chatbot/listSectorUsers/
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { chatbotFlowMappings } from '@core/mappings/chatbotFlow.mappings';
-import { SaveChatbotFlowRequest } from '@core/schema/chatbot/saveChatbotFlow/request.schema';
+import { SaveChatbotFlowRequestData } from '@core/schema/chatbot/saveChatbotFlow/request.schema';
 import { ListChatbotFlowResponse } from '@core/schema/chatbot/listChatbotFlow/response.schema';
 import { SaveChatbotFlowConfigurationsRequest } from '@core/schema/chatbot/saveChatbotFlowConfigurations/request.schema';
 import { ListChatbotFlowConfigurationsResponse } from '@core/schema/chatbot/listChatbotFlowConfigurations/response.schema';
@@ -102,7 +102,7 @@ export class ChatbotService {
   };
 
   saveChatbotFlow = async (
-    input: SaveChatbotFlowRequest,
+    input: SaveChatbotFlowRequestData,
     accountId: string
   ): Promise<string | null> => {
     const mappings = chatbotFlowMappings();

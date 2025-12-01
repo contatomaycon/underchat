@@ -348,17 +348,51 @@ export const useChatbotStore = defineStore('chatbot', {
     },
 
     async saveChatbotFlow(
-      input: SaveChatbotFlowRequest
+      formData: FormData
     ): Promise<SaveChatbotFlowResponse | null> {
-      return this._handlePostRequestWithComplexError<
-        SaveChatbotFlowRequest,
-        SaveChatbotFlowResponse
-      >(
-        '/chatbot/flow',
-        input,
-        'chatbot_flow_save_success',
-        'chatbot_flow_save_error'
-      );
+      try {
+        this.loading = true;
+
+        const response = await axios.post<
+          IApiResponse<SaveChatbotFlowResponse>
+        >('/chatbot/flow', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('chatbot_flow_save_error');
+          this.showSnackbar(message, EColor.error);
+          return null;
+        }
+
+        const successMessage = this.i18n.global.t('chatbot_flow_save_success');
+        this.showSnackbar(successMessage, EColor.success);
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('chatbot_flow_save_error');
+        if (error instanceof AxiosError) {
+          const backendMessage = error?.response?.data?.message;
+          if (!backendMessage) {
+            this.showSnackbar(errorMessage, EColor.error);
+            this.loading = false;
+            return null;
+          }
+
+          errorMessage = this._translateErrorMessage(backendMessage);
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+        return null;
+      }
     },
 
     async listChatbotFlow(
