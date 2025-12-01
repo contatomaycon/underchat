@@ -216,7 +216,13 @@ export const useChatbotStore = defineStore('chatbot', {
 
         const data = response?.data;
 
-        if (!data?.status || !data?.data) {
+        if (!data?.status) {
+          const message = data?.message ?? this.i18n.global.t(errorKey);
+          this.showSnackbar(message, EColor.error);
+          return null;
+        }
+
+        if (!data?.data) {
           const message = data?.message ?? this.i18n.global.t(errorKey);
           this.showSnackbar(message, EColor.error);
           return null;
