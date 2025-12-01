@@ -701,11 +701,10 @@ const addDataNode = () => {
     },
     data: {
       dataType: null,
-      firstName: '',
-      lastName: '',
-      email: '',
-      cpf: '',
-      cnpj: '',
+      firstName: t('chatbot_data_default_name_question'),
+      email: t('chatbot_data_default_email_question'),
+      cpf: t('chatbot_data_default_cpf_question'),
+      cnpj: t('chatbot_data_default_cnpj_question'),
       onRemove: () => removeNode(nodeId),
     },
   };
@@ -950,11 +949,14 @@ const processMessageNodeData = (nodeData: any): void => {
 
 const processDataNodeData = (nodeData: any): void => {
   if (nodeData.dataType === undefined) nodeData.dataType = null;
-  if (nodeData.firstName === undefined) nodeData.firstName = '';
-  if (nodeData.lastName === undefined) nodeData.lastName = '';
-  if (nodeData.email === undefined) nodeData.email = '';
-  if (nodeData.cpf === undefined) nodeData.cpf = '';
-  if (nodeData.cnpj === undefined) nodeData.cnpj = '';
+  if (nodeData.firstName === undefined)
+    nodeData.firstName = t('chatbot_data_default_name_question');
+  if (nodeData.email === undefined)
+    nodeData.email = t('chatbot_data_default_email_question');
+  if (nodeData.cpf === undefined)
+    nodeData.cpf = t('chatbot_data_default_cpf_question');
+  if (nodeData.cnpj === undefined)
+    nodeData.cnpj = t('chatbot_data_default_cnpj_question');
 };
 
 const processNodeDataByType = (node: Node): void => {

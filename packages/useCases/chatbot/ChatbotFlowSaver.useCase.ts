@@ -240,115 +240,6 @@ export class ChatbotFlowSaverUseCase {
     }
   }
 
-  private validateNameData(
-    t: TFunction<'translation', undefined>,
-    node: any,
-    data: any,
-    errors: string[]
-  ): void {
-    if (!data.firstName || data.firstName.trim().length === 0) {
-      errors.push(
-        t('chatbot_flow_validation_first_name_required', {
-          nodeLabel: node.label || node.id,
-        })
-      );
-    }
-    if (!data.lastName || data.lastName.trim().length === 0) {
-      errors.push(
-        t('chatbot_flow_validation_last_name_required', {
-          nodeLabel: node.label || node.id,
-        })
-      );
-    }
-  }
-
-  private validateEmailData(
-    t: TFunction<'translation', undefined>,
-    node: any,
-    data: any,
-    errors: string[]
-  ): void {
-    if (!data.email || data.email.trim().length === 0) {
-      errors.push(
-        t('chatbot_flow_validation_email_required', {
-          nodeLabel: node.label || node.id,
-        })
-      );
-      return;
-    }
-
-    const email = data.email.trim();
-    const atIndex = email.indexOf('@');
-
-    if (
-      atIndex <= 0 ||
-      atIndex === email.length - 1 ||
-      email.substring(atIndex + 1).includes('@')
-    ) {
-      errors.push(
-        t('chatbot_flow_validation_email_invalid', {
-          nodeLabel: node.label || node.id,
-        })
-      );
-      return;
-    }
-
-    const localPart = email.substring(0, atIndex);
-    const domainPart = email.substring(atIndex + 1);
-
-    if (localPart.length === 0 || localPart.includes(' ')) {
-      errors.push(
-        t('chatbot_flow_validation_email_invalid', {
-          nodeLabel: node.label || node.id,
-        })
-      );
-      return;
-    }
-
-    const dotIndex = domainPart.indexOf('.');
-    if (
-      dotIndex <= 0 ||
-      dotIndex === domainPart.length - 1 ||
-      domainPart.includes(' ')
-    ) {
-      errors.push(
-        t('chatbot_flow_validation_email_invalid', {
-          nodeLabel: node.label || node.id,
-        })
-      );
-    }
-  }
-
-  private validateCpfData(
-    t: TFunction<'translation', undefined>,
-    node: any,
-    data: any,
-    errors: string[]
-  ): void {
-    if (!data.cpf || data.cpf.trim().length === 0) {
-      errors.push(
-        t('chatbot_flow_validation_cpf_required', {
-          nodeLabel: node.label || node.id,
-        })
-      );
-    }
-  }
-
-  private validateCnpjData(
-    t: TFunction<'translation', undefined>,
-    node: any,
-    data: any,
-    errors: string[]
-  ): void {
-    if (!data.cnpj || data.cnpj.trim().length === 0) {
-      errors.push(
-        t('chatbot_flow_validation_cnpj_required', {
-          nodeLabel: node.label || node.id,
-        })
-      );
-    }
-  }
-
   private validateDataNode(
     t: TFunction<'translation', undefined>,
     node: any,
@@ -365,22 +256,6 @@ export class ChatbotFlowSaverUseCase {
           nodeLabel: node.label || node.id,
         })
       );
-      return;
-    }
-
-    switch (data.dataType) {
-      case 'name':
-        this.validateNameData(t, node, data, errors);
-        break;
-      case 'email':
-        this.validateEmailData(t, node, data, errors);
-        break;
-      case 'cpf':
-        this.validateCpfData(t, node, data, errors);
-        break;
-      case 'cnpj':
-        this.validateCnpjData(t, node, data, errors);
-        break;
     }
   }
 
