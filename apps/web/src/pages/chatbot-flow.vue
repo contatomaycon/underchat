@@ -1401,11 +1401,11 @@ onMounted(() => {
           <VWindow v-model="configTab">
             <VWindowItem value="resources">
               <VCard variant="outlined" class="mb-4">
-                <VCardTitle class="text-body-1 pa-3 font-weight-bold">
+                <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
                   {{ t('chatbot_inactivity_alert') }}
                 </VCardTitle>
                 <VCardSubtitle
-                  class="text-caption pa-3 pt-0 config-description"
+                  class="text-caption pa-3 pb-0 pt-0 config-description"
                 >
                   {{ t('chatbot_inactivity_alert_description') }}
                 </VCardSubtitle>
@@ -1818,11 +1818,11 @@ onMounted(() => {
               </VCard>
 
               <VCard variant="outlined" class="mb-4">
-                <VCardTitle class="text-body-1 pa-3 font-weight-bold">
+                <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
                   {{ t('chatbot_redirect_failed_attempts') }}
                 </VCardTitle>
                 <VCardSubtitle
-                  class="text-caption pa-3 pt-0 config-description"
+                  class="text-caption pa-3 pb-0 pt-0 config-description"
                 >
                   {{ t('chatbot_redirect_failed_attempts_description') }}
                 </VCardSubtitle>
@@ -2187,7 +2187,7 @@ onMounted(() => {
             <VWindowItem value="messages">
               <div class="d-flex flex-column gap-4">
                 <VCard variant="outlined">
-                  <VCardTitle class="text-body-1 pa-3 font-weight-bold">
+                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
                     {{ t('chatbot_message_inactivity') }}
                   </VCardTitle>
                   <VCardSubtitle
@@ -2212,11 +2212,11 @@ onMounted(() => {
                 </VCard>
 
                 <VCard variant="outlined">
-                  <VCardTitle class="text-body-1 pa-3 font-weight-bold">
+                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
                     {{ t('chatbot_message_invalid_menu_option') }}
                   </VCardTitle>
                   <VCardSubtitle
-                    class="text-caption pa-3 pt-0 config-description"
+                    class="text-caption pa-3 pb-0 pt-0 config-description"
                   >
                     {{ t('chatbot_message_invalid_menu_option_description') }}
                   </VCardSubtitle>
@@ -2237,11 +2237,11 @@ onMounted(() => {
                 </VCard>
 
                 <VCard variant="outlined">
-                  <VCardTitle class="text-body-1 pa-3 font-weight-bold">
+                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
                     {{ t('chatbot_message_invalid_satisfaction_option') }}
                   </VCardTitle>
                   <VCardSubtitle
-                    class="text-caption pa-3 pt-0 config-description"
+                    class="text-caption pa-3 pb-0 pt-0 config-description"
                   >
                     {{
                       t(
@@ -2266,11 +2266,11 @@ onMounted(() => {
                 </VCard>
 
                 <VCard variant="outlined">
-                  <VCardTitle class="text-body-1 pa-3 font-weight-bold">
+                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
                     {{ t('chatbot_message_invalid_cpf') }}
                   </VCardTitle>
                   <VCardSubtitle
-                    class="text-caption pa-3 pt-0 config-description"
+                    class="text-caption pa-3 pb-0 pt-0 config-description"
                   >
                     {{ t('chatbot_message_invalid_cpf_description') }}
                   </VCardSubtitle>
@@ -2291,11 +2291,11 @@ onMounted(() => {
                 </VCard>
 
                 <VCard variant="outlined">
-                  <VCardTitle class="text-body-1 pa-3 font-weight-bold">
+                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
                     {{ t('chatbot_message_invalid_cnpj') }}
                   </VCardTitle>
                   <VCardSubtitle
-                    class="text-caption pa-3 pt-0 config-description"
+                    class="text-caption pa-3 pb-0 pt-0 config-description"
                   >
                     {{ t('chatbot_message_invalid_cnpj_description') }}
                   </VCardSubtitle>
@@ -2316,11 +2316,11 @@ onMounted(() => {
                 </VCard>
 
                 <VCard variant="outlined">
-                  <VCardTitle class="text-body-1 pa-3 font-weight-bold">
+                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
                     {{ t('chatbot_message_invalid_email') }}
                   </VCardTitle>
                   <VCardSubtitle
-                    class="text-caption pa-3 pt-0 config-description"
+                    class="text-caption pa-3 pb-0 pt-0 config-description"
                   >
                     {{ t('chatbot_message_invalid_email_description') }}
                   </VCardSubtitle>
@@ -2341,11 +2341,11 @@ onMounted(() => {
                 </VCard>
 
                 <VCard variant="outlined">
-                  <VCardTitle class="text-body-1 pa-3 font-weight-bold">
+                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
                     {{ t('chatbot_message_service_finished') }}
                   </VCardTitle>
                   <VCardSubtitle
-                    class="text-caption pa-3 pt-0 config-description"
+                    class="text-caption pa-3 pb-0 pt-0 config-description"
                   >
                     {{ t('chatbot_message_service_finished_description') }}
                   </VCardSubtitle>
