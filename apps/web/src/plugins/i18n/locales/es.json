@@ -1293,6 +1293,7 @@
     "chatbot_message_default_label": "Predeterminado",
     "chatbot_message_inactivity_placeholder": "Ingrese mensaje personalizado o deje en blanco",
     "chatbot_message_inactivity_default_example": "El mensaje predeterminado será establecido por el sistema",
+    "chatbot_inactivity_message_default": "¡Hola! Notamos que estás inactivo. ¿Podemos ayudarte en algo más?",
     "download_pdf": "Descargar PDF",
     "no_messages_found": "No se encontraron mensajes",
     "image": "Imagen",

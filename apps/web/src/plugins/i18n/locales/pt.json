@@ -1304,6 +1304,7 @@
     "chatbot_message_default_label": "Padrão",
     "chatbot_message_inactivity_placeholder": "Digite a mensagem personalizada ou deixe em branco",
     "chatbot_message_inactivity_default_example": "Mensagem padrão será definida pelo sistema",
+    "chatbot_inactivity_message_default": "Olá! Percebemos que você está inativo. Podemos ajudar em algo mais?",
     "download_pdf": "Baixar PDF",
     "no_messages_found": "Nenhuma mensagem encontrada",
     "image": "Imagem",

@@ -1293,6 +1293,7 @@
     "chatbot_message_default_label": "Default",
     "chatbot_message_inactivity_placeholder": "Enter custom message or leave blank",
     "chatbot_message_inactivity_default_example": "Default message will be set by the system",
+    "chatbot_inactivity_message_default": "Hello! We noticed you're inactive. Can we help with anything else?",
     "download_pdf": "Download PDF",
     "no_messages_found": "No messages found",
     "image": "Image",

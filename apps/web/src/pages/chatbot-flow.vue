@@ -97,7 +97,9 @@ const isRedirectFailedAttemptsSectorUserMenuOpen = ref(false);
 
 const configTab = ref('resources');
 
-const defaultInactivityMessage = computed(() => '');
+const defaultInactivityMessage = computed(() =>
+  t('chatbot_inactivity_message_default')
+);
 const defaultInvalidMenuOptionMessage = computed(() =>
   t('chatbot_option_invalid')
 );
