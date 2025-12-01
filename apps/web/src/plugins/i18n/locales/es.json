@@ -609,6 +609,7 @@
     "view_contact": "Ver Contacto",
     "delete_contact": "Eliminar Contacto",
     "delete_contact_confirmation": "¿Estás seguro de que deseas eliminar este contacto?",
+    "delete_chatbot_confirmation": "¿Estás seguro de que deseas eliminar este chatbot?",
     "export_csv": "Exportar a CSV",
     "notes": "Notas",
     "birthday": "Fecha de Nacimiento",

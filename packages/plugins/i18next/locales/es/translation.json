@@ -409,6 +409,8 @@
   "chatbot_update_success": "¡Chatbot actualizado con éxito!",
   "chatbot_view_success": "¡Chatbot obtenido con éxito!",
   "chatbot_not_found": "¡Chatbot no encontrado!",
+  "chatbot_deleter_error": "Ocurrió un error al eliminar el chatbot. Por favor, inténtalo de nuevo.",
+  "chatbot_deleted_successfully": "¡Chatbot eliminado con éxito!",
   "simultaneous_attendance_view_success": "¡Cantidad de atenciones simultáneas obtenida con éxito!",
   "simultaneous_attendance_update_success": "¡Cantidad de atenciones simultáneas actualizada con éxito!",
   "simultaneous_attendance_limit_reached": "Ha alcanzado el límite de atenciones simultáneas permitidas para este canal. Límite: {{limit}} atención(es).",

@@ -409,6 +409,8 @@
   "chatbot_update_success": "Chatbot updated successfully!",
   "chatbot_view_success": "Chatbot retrieved successfully!",
   "chatbot_not_found": "Chatbot not found!",
+  "chatbot_deleter_error": "An error occurred while deleting the chatbot. Please try again.",
+  "chatbot_deleted_successfully": "Chatbot deleted successfully!",
   "simultaneous_attendance_view_success": "Number of simultaneous attendances retrieved successfully!",
   "simultaneous_attendance_update_success": "Number of simultaneous attendances updated successfully!",
   "simultaneous_attendance_limit_reached": "You have reached the limit of simultaneous attendances allowed for this channel. Limit: {{limit}} attendance(s).",

@@ -13,6 +13,7 @@ import { saveChatbotFlowSchema } from '@core/schema/chatbot/saveChatbotFlow';
 import { listChatbotFlowSchema } from '@core/schema/chatbot/listChatbotFlow';
 import { saveChatbotFlowConfigurationsSchema } from '@core/schema/chatbot/saveChatbotFlowConfigurations';
 import { listChatbotFlowConfigurationsSchema } from '@core/schema/chatbot/listChatbotFlowConfigurations';
+import { deleteChatbotSchema } from '@core/schema/chatbot/deleteChatbot';
 
 export default function chatbotRoutes(server: FastifyInstance) {
   const chatbotController = container.resolve(ChatbotController);
@@ -38,6 +39,15 @@ export default function chatbotRoutes(server: FastifyInstance) {
   server.put('/chatbot/:chatbot_id', {
     schema: updateChatbotSchema,
     handler: chatbotController.updateChatbot,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatbotPermissions),
+    ],
+  });
+
+  server.delete('/chatbot/:chatbot_id', {
+    schema: deleteChatbotSchema,
+    handler: chatbotController.deleteChatbot,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatbotPermissions),
