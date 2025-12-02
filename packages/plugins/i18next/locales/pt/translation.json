@@ -464,5 +464,11 @@
   "cpf_invalid": "CPF inválido",
   "cnpj_invalid": "CNPJ inválido",
   "chatbot_inactivity_message_default": "Olá! Percebemos que você está inativo. Podemos ajudar em algo mais?",
-  "chatbot_transfer_message_default": "Você foi transferido para um atendente. Em breve você será atendido."
+  "chatbot_transfer_message_default": "Você foi transferido para um atendente. Em breve você será atendido.",
+  "chatbot_transfer_message_user_default": "Você foi transferido para o atendente *{{ user }}*. Em breve você será atendido.",
+  "chatbot_transfer_message_sector_default": "Você foi transferido para o setor *{{ sector }}*. Em breve você será atendido.",
+  "chatbot_transfer_message_sector_user_default": "Você foi transferido para o atendente *{{ user }}* do setor *{{ sector }}*. Em breve você será atendido.",
+  "good_morning": "Bom dia",
+  "good_afternoon": "Boa tarde",
+  "good_evening": "Boa noite"
 }

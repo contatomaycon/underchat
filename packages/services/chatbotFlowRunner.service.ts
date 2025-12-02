@@ -21,6 +21,8 @@ import {
 } from '@core/common/functions/centrifugoQueue';
 import { IInactivityData } from '@core/common/interfaces/IInactivityData';
 import { IProcessFlowNodeOptions } from '@core/common/interfaces/IProcessFlowNodeOptions';
+import { generateProtocol } from '@core/common/functions/generateProtocol';
+import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 
 @injectable()
 export class ChatbotFlowRunnerService {
@@ -115,7 +117,14 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     customMessage?: string
   ): Promise<boolean> {
-    const message = customMessage || t('chatbot_option_invalid');
+    const rawMessage = customMessage || t('chatbot_option_invalid');
+    const message = await this.replaceVariables(
+      t,
+      rawMessage,
+      createChat,
+      createChat.user,
+      createChat.sector
+    );
     return this.chatMessageService.sendMessage(t, {
       chat: createChat,
       accountId: createChat.account.id,
@@ -130,7 +139,14 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     customMessage?: string
   ): Promise<boolean> {
-    const message = customMessage || t('email_invalid');
+    const rawMessage = customMessage || t('email_invalid');
+    const message = await this.replaceVariables(
+      t,
+      rawMessage,
+      createChat,
+      createChat.user,
+      createChat.sector
+    );
     return this.chatMessageService.sendMessage(t, {
       chat: createChat,
       accountId: createChat.account.id,
@@ -145,7 +161,14 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     customMessage?: string
   ): Promise<boolean> {
-    const message = customMessage || t('cpf_invalid');
+    const rawMessage = customMessage || t('cpf_invalid');
+    const message = await this.replaceVariables(
+      t,
+      rawMessage,
+      createChat,
+      createChat.user,
+      createChat.sector
+    );
     return this.chatMessageService.sendMessage(t, {
       chat: createChat,
       accountId: createChat.account.id,
@@ -160,7 +183,14 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     customMessage?: string
   ): Promise<boolean> {
-    const message = customMessage || t('cnpj_invalid');
+    const rawMessage = customMessage || t('cnpj_invalid');
+    const message = await this.replaceVariables(
+      t,
+      rawMessage,
+      createChat,
+      createChat.user,
+      createChat.sector
+    );
     return this.chatMessageService.sendMessage(t, {
       chat: createChat,
       accountId: createChat.account.id,
@@ -172,6 +202,151 @@ export class ChatbotFlowRunnerService {
 
   private onlyDigits(s: string): string {
     return s.replaceAll(/\D+/g, '');
+  }
+
+  private getGreeting(t: TFunction<'translation', undefined>): string {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) {
+      return t('good_morning');
+    }
+    if (hour >= 12 && hour < 18) {
+      return t('good_afternoon');
+    }
+    return t('good_evening');
+  }
+
+  private async getContactName(createChat: IChat): Promise<string | null> {
+    if (!createChat.phone) {
+      return null;
+    }
+
+    const phoneAndDdi = extractPhoneAndDdi(createChat.phone);
+    if (!phoneAndDdi) {
+      return null;
+    }
+
+    const contact = await this.contactService.getContactByPhone(
+      createChat.account.id,
+      phoneAndDdi.phone,
+      phoneAndDdi.phone_ddi
+    );
+
+    if (!contact) {
+      return null;
+    }
+
+    const fullName = [contact.name, contact.last_name]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+
+    return fullName || null;
+  }
+
+  private async replaceVariables(
+    t: TFunction<'translation', undefined>,
+    message: string | null | undefined,
+    createChat: IChat,
+    user?: IChat['user'] | null,
+    sector?: IChat['sector'] | null
+  ): Promise<string> {
+    if (!message) {
+      return '';
+    }
+
+    let replacedMessage = message;
+
+    const greeting = this.getGreeting(t);
+    replacedMessage = replacedMessage.replaceAll(
+      /\{\{\s*greeting\s*\}\}/gi,
+      greeting
+    );
+
+    const contactName = await this.getContactName(createChat);
+    const whatsappName = createChat.name || null;
+
+    const name = contactName || whatsappName || '';
+    replacedMessage = replacedMessage.replaceAll(/\{\{\s*name\s*\}\}/gi, name);
+
+    replacedMessage = replacedMessage.replaceAll(
+      /\{\{\s*contact_name\s*\}\}/gi,
+      name
+    );
+
+    const protocol = generateProtocol();
+    replacedMessage = replacedMessage.replaceAll(
+      /\{\{\s*protocol\s*\}\}/gi,
+      protocol
+    );
+
+    if (sector?.name) {
+      replacedMessage = replacedMessage.replaceAll(
+        /\{\{\s*sector\s*\}\}/gi,
+        sector.name
+      );
+    } else {
+      replacedMessage = replacedMessage.replaceAll(
+        /\{\{\s*sector\s*\}\}/gi,
+        ''
+      );
+    }
+
+    if (user?.name) {
+      replacedMessage = replacedMessage.replaceAll(
+        /\{\{\s*user\s*\}\}/gi,
+        user.name
+      );
+    } else {
+      replacedMessage = replacedMessage.replaceAll(/\{\{\s*user\s*\}\}/gi, '');
+    }
+
+    const date = new Date().toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+    replacedMessage = replacedMessage.replaceAll(/\{\{\s*date\s*\}\}/gi, date);
+
+    const time = new Date().toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    replacedMessage = replacedMessage.replaceAll(/\{\{\s*time\s*\}\}/gi, time);
+
+    if (createChat.account?.name) {
+      replacedMessage = replacedMessage.replaceAll(
+        /\{\{\s*account_name\s*\}\}/gi,
+        createChat.account.name
+      );
+    } else {
+      replacedMessage = replacedMessage.replaceAll(
+        /\{\{\s*account_name\s*\}\}/gi,
+        ''
+      );
+    }
+
+    if (createChat.phone) {
+      replacedMessage = replacedMessage.replaceAll(
+        /\{\{\s*phone\s*\}\}/gi,
+        createChat.phone
+      );
+    } else {
+      replacedMessage = replacedMessage.replaceAll(/\{\{\s*phone\s*\}\}/gi, '');
+    }
+
+    if (createChat.worker?.name) {
+      replacedMessage = replacedMessage.replaceAll(
+        /\{\{\s*channel_name\s*\}\}/gi,
+        createChat.worker.name
+      );
+    } else {
+      replacedMessage = replacedMessage.replaceAll(
+        /\{\{\s*channel_name\s*\}\}/gi,
+        ''
+      );
+    }
+
+    return replacedMessage;
   }
 
   private isValidEmail(email: string): boolean {
@@ -264,7 +439,14 @@ export class ChatbotFlowRunnerService {
     node: ListChatbotFlowResponse['nodes'][number]
   ): Promise<boolean> {
     const messageType = node.data?.messageType || 'text';
-    const text = node.data?.text || node.data?.message || '';
+    const rawText = node.data?.text || node.data?.message || '';
+    const text = await this.replaceVariables(
+      t,
+      rawText,
+      createChat,
+      createChat.user,
+      createChat.sector
+    );
     const attachmentUrl = node.data?.attachmentUrl;
     const attachmentMimetype = node.data?.attachmentMimetype;
     const attachmentDuration = node.data?.attachmentDuration;
@@ -327,7 +509,14 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     node: ListChatbotFlowResponse['nodes'][number]
   ): Promise<boolean> {
-    const baseMessage = node.data?.message;
+    const rawBaseMessage = node.data?.message || '';
+    const baseMessage = await this.replaceVariables(
+      t,
+      rawBaseMessage,
+      createChat,
+      createChat.user,
+      createChat.sector
+    );
     const options = node.data?.options ?? [];
 
     const lines = options.map((option, index) => {
@@ -358,7 +547,14 @@ export class ChatbotFlowRunnerService {
       createChat.chat_id
     );
 
-    const message = customMessage || t('chatbot_service_finished');
+    const rawMessage = customMessage || t('chatbot_service_finished');
+    const message = await this.replaceVariables(
+      t,
+      rawMessage,
+      createChat,
+      createChat.user,
+      createChat.sector
+    );
 
     await Promise.all([
       this.chatMessageService.sendMessage(t, {
@@ -814,7 +1010,11 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    customTransferMessage?: string
+    customMessages?: {
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
 
@@ -854,10 +1054,31 @@ export class ChatbotFlowRunnerService {
       sector
     );
 
-    const transferMessage =
-      customTransferMessage || t('chatbot_transfer_message_default');
+    let rawTransferMessage: string | undefined;
+    if (redirectType === 'user' && user) {
+      rawTransferMessage =
+        customMessages?.transfer_message_user ||
+        t('chatbot_transfer_message_user_default');
+    } else if (redirectType === 'sector' && sector) {
+      if (user) {
+        rawTransferMessage =
+          customMessages?.transfer_message_sector_user ||
+          t('chatbot_transfer_message_sector_user_default');
+      } else {
+        rawTransferMessage =
+          customMessages?.transfer_message_sector ||
+          t('chatbot_transfer_message_sector_default');
+      }
+    }
 
-    if (user || sector) {
+    if (rawTransferMessage && (user || sector)) {
+      const transferMessage = await this.replaceVariables(
+        t,
+        rawTransferMessage,
+        updatedChat,
+        user,
+        sector
+      );
       await this.chatMessageService.sendMessage(t, {
         chat: updatedChat,
         accountId: updatedChat.account.id,
@@ -1148,8 +1369,15 @@ export class ChatbotFlowRunnerService {
     timeMinutes: number,
     customInactivityMessage?: string
   ): Promise<void> {
-    const inactivityMessage =
+    const rawInactivityMessage =
       customInactivityMessage || t('chatbot_inactivity_message_default');
+    const inactivityMessage = await this.replaceVariables(
+      t,
+      rawInactivityMessage,
+      createChat,
+      createChat.user,
+      createChat.sector
+    );
     await this.chatMessageService.sendMessage(t, {
       chat: createChat,
       accountId: createChat.account.id,
@@ -1479,7 +1707,7 @@ export class ChatbotFlowRunnerService {
         createChat,
         chatbotFlow,
         currentFlowId,
-        customMessages?.transfer_message
+        customMessages
       );
     }
 

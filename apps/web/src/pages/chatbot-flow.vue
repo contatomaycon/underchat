@@ -96,6 +96,7 @@ const isRedirectFailedAttemptsSectorMenuOpen = ref(false);
 const isRedirectFailedAttemptsSectorUserMenuOpen = ref(false);
 
 const configTab = ref('resources');
+const isVariablesSidebarOpen = ref(false);
 
 const defaultInactivityMessage = computed(() =>
   t('chatbot_inactivity_message_default')
@@ -112,9 +113,58 @@ const defaultInvalidEmailMessage = computed(() => t('email_invalid'));
 const defaultServiceFinishedMessage = computed(() =>
   t('chatbot_service_finished')
 );
-const defaultTransferMessage = computed(() =>
-  t('chatbot_transfer_message_default')
+const defaultTransferMessageUser = computed(() =>
+  t('chatbot_transfer_message_user_default')
 );
+const defaultTransferMessageSector = computed(() =>
+  t('chatbot_transfer_message_sector_default')
+);
+const defaultTransferMessageSectorUser = computed(() =>
+  t('chatbot_transfer_message_sector_user_default')
+);
+
+const availableVariables = computed(() => [
+  {
+    tag: '{{ sector }}',
+    description: t('chatbot_variable_sector_description'),
+  },
+  {
+    tag: '{{ user }}',
+    description: t('chatbot_variable_user_description'),
+  },
+  {
+    tag: '{{ greeting }}',
+    description: t('chatbot_variable_greeting_description'),
+  },
+  {
+    tag: '{{ name }}',
+    description: t('chatbot_variable_name_description'),
+  },
+  {
+    tag: '{{ protocol }}',
+    description: t('chatbot_variable_protocol_description'),
+  },
+  {
+    tag: '{{ date }}',
+    description: t('chatbot_variable_date_description'),
+  },
+  {
+    tag: '{{ time }}',
+    description: t('chatbot_variable_time_description'),
+  },
+  {
+    tag: '{{ account_name }}',
+    description: t('chatbot_variable_account_name_description'),
+  },
+  {
+    tag: '{{ phone }}',
+    description: t('chatbot_variable_phone_description'),
+  },
+  {
+    tag: '{{ channel_name }}',
+    description: t('chatbot_variable_channel_name_description'),
+  },
+]);
 
 const inactivityMessage = ref('');
 const invalidMenuOptionMessage = ref('');
@@ -123,7 +173,9 @@ const invalidCpfMessage = ref('');
 const invalidCnpjMessage = ref('');
 const invalidEmailMessage = ref('');
 const serviceFinishedMessage = ref('');
-const transferMessage = ref('');
+const transferMessageUser = ref('');
+const transferMessageSector = ref('');
+const transferMessageSectorUser = ref('');
 
 const onlyDigits = (s: string) => s.replaceAll(/\D+/g, '');
 
@@ -1199,7 +1251,11 @@ const processConfigurations = async (configs: any): Promise<void> => {
     invalidEmailMessage.value = configs.messages.invalid_email_message || '';
     serviceFinishedMessage.value =
       configs.messages.service_finished_message || '';
-    transferMessage.value = configs.messages.transfer_message || '';
+    transferMessageUser.value = configs.messages.transfer_message_user || '';
+    transferMessageSector.value =
+      configs.messages.transfer_message_sector || '';
+    transferMessageSectorUser.value =
+      configs.messages.transfer_message_sector_user || '';
   } else {
     inactivityMessage.value = '';
     invalidMenuOptionMessage.value = '';
@@ -1208,7 +1264,9 @@ const processConfigurations = async (configs: any): Promise<void> => {
     invalidCnpjMessage.value = '';
     invalidEmailMessage.value = '';
     serviceFinishedMessage.value = '';
-    transferMessage.value = '';
+    transferMessageUser.value = '';
+    transferMessageSector.value = '';
+    transferMessageSectorUser.value = '';
   }
 };
 
@@ -1288,7 +1346,10 @@ const handleSaveConfigurations = async () => {
         invalid_cnpj_message: invalidCnpjMessage.value || undefined,
         invalid_email_message: invalidEmailMessage.value || undefined,
         service_finished_message: serviceFinishedMessage.value || undefined,
-        transfer_message: transferMessage.value || undefined,
+        transfer_message_user: transferMessageUser.value || undefined,
+        transfer_message_sector: transferMessageSector.value || undefined,
+        transfer_message_sector_user:
+          transferMessageSectorUser.value || undefined,
       },
     };
 
@@ -1319,6 +1380,14 @@ onMounted(() => {
     <VCard :title="`${t('configurations')} ${t('chatbot')}`">
       <VCardText>
         <div class="actions-row">
+          <VBtn
+            variant="tonal"
+            color="info"
+            @click="isVariablesSidebarOpen = true"
+          >
+            <VIcon icon="tabler-code" class="me-2" />
+            {{ t('chatbot_message_variables_legend') }}
+          </VBtn>
           <VBtn variant="tonal" color="secondary" @click="handleCancel">
             {{ t('cancel') }}
           </VBtn>
@@ -1392,6 +1461,49 @@ onMounted(() => {
         </div>
       </VCardText>
     </VCard>
+
+    <VNavigationDrawer
+      v-model="isVariablesSidebarOpen"
+      data-allow-mismatch
+      temporary
+      touchless
+      absolute
+      class="variables-sidebar"
+      location="end"
+      width="400"
+    >
+      <div class="d-flex flex-column" style="height: 100%">
+        <div class="d-flex align-center pa-4 border-b">
+          <IconBtn class="me-2" @click="isVariablesSidebarOpen = false">
+            <VIcon icon="tabler-x" />
+          </IconBtn>
+          <h6 class="text-h6">{{ t('chatbot_message_variables_legend') }}</h6>
+        </div>
+        <div class="pa-4 flex-grow-1" style="overflow-y: auto">
+          <p class="text-body-2 text-medium-emphasis mb-4">
+            {{ t('chatbot_message_variables_legend_description') }}
+          </p>
+          <div class="d-flex flex-column gap-3">
+            <div
+              v-for="variable in availableVariables"
+              :key="variable.tag"
+              class="d-flex flex-column gap-1"
+            >
+              <code
+                class="text-primary font-weight-bold text-body-1"
+                style="display: block; margin: 0; padding: 0; line-height: 1.5"
+                >{{ variable.tag }}</code
+              >
+              <span
+                class="text-body-2 text-medium-emphasis"
+                style="display: block; margin: 0; padding: 0; line-height: 1.5"
+                >{{ variable.description }}</span
+              >
+            </div>
+          </div>
+        </div>
+      </div>
+    </VNavigationDrawer>
 
     <VDialog v-model="isConfigModalOpen" max-width="1000" persistent>
       <DialogCloseBtn @click="closeConfigModal" />
@@ -2376,25 +2488,75 @@ onMounted(() => {
 
                 <VCard variant="outlined">
                   <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
-                    {{ t('chatbot_message_transfer') }}
+                    {{ t('chatbot_message_transfer_user') }}
                   </VCardTitle>
                   <VCardSubtitle
                     class="text-caption pa-3 pb-0 pt-0 config-description"
                   >
-                    {{ t('chatbot_message_transfer_description') }}
+                    {{ t('chatbot_message_transfer_user_description') }}
                   </VCardSubtitle>
                   <VDivider />
                   <VCardText>
                     <VTextField
-                      v-model="transferMessage"
-                      :placeholder="defaultTransferMessage"
+                      v-model="transferMessageUser"
+                      :placeholder="defaultTransferMessageUser"
                       variant="outlined"
                       density="compact"
                       hide-details
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
-                      {{ defaultTransferMessage }}
+                      {{ defaultTransferMessageUser }}
+                    </div>
+                  </VCardText>
+                </VCard>
+
+                <VCard variant="outlined">
+                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
+                    {{ t('chatbot_message_transfer_sector') }}
+                  </VCardTitle>
+                  <VCardSubtitle
+                    class="text-caption pa-3 pb-0 pt-0 config-description"
+                  >
+                    {{ t('chatbot_message_transfer_sector_description') }}
+                  </VCardSubtitle>
+                  <VDivider />
+                  <VCardText>
+                    <VTextField
+                      v-model="transferMessageSector"
+                      :placeholder="defaultTransferMessageSector"
+                      variant="outlined"
+                      density="compact"
+                      hide-details
+                    />
+                    <div class="text-caption text-medium-emphasis mt-2">
+                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      {{ defaultTransferMessageSector }}
+                    </div>
+                  </VCardText>
+                </VCard>
+
+                <VCard variant="outlined">
+                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
+                    {{ t('chatbot_message_transfer_sector_user') }}
+                  </VCardTitle>
+                  <VCardSubtitle
+                    class="text-caption pa-3 pb-0 pt-0 config-description"
+                  >
+                    {{ t('chatbot_message_transfer_sector_user_description') }}
+                  </VCardSubtitle>
+                  <VDivider />
+                  <VCardText>
+                    <VTextField
+                      v-model="transferMessageSectorUser"
+                      :placeholder="defaultTransferMessageSectorUser"
+                      variant="outlined"
+                      density="compact"
+                      hide-details
+                    />
+                    <div class="text-caption text-medium-emphasis mt-2">
+                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      {{ defaultTransferMessageSectorUser }}
                     </div>
                   </VCardText>
                 </VCard>
