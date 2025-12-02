@@ -1054,6 +1054,8 @@ export class ChatbotFlowRunnerService {
       sector
     );
 
+    await this.cancelInactivityCheck(updatedChat);
+
     let rawTransferMessage: string | undefined;
     if (redirectType === 'user' && user) {
       rawTransferMessage =
@@ -1311,6 +1313,12 @@ export class ChatbotFlowRunnerService {
     timeMinutes: number,
     chatbotId: string
   ): Promise<void> {
+    if (createChat.status !== EChatStatus.ura) {
+      await this.cancelInactivityCheck(createChat);
+
+      return;
+    }
+
     const inactivityCacheKey = this.getInactivityCacheKey(
       createChat.account.id,
       createChat.worker.id,
@@ -1369,6 +1377,12 @@ export class ChatbotFlowRunnerService {
     timeMinutes: number,
     customInactivityMessage?: string
   ): Promise<void> {
+    if (createChat.status !== EChatStatus.ura) {
+      await this.cancelInactivityCheck(createChat);
+
+      return;
+    }
+
     const rawInactivityMessage =
       customInactivityMessage || t('chatbot_inactivity_message_default');
     const inactivityMessage = await this.replaceVariables(
@@ -1612,6 +1626,12 @@ export class ChatbotFlowRunnerService {
         continue;
       }
 
+      if (createChat.status !== EChatStatus.ura) {
+        await this.cancelInactivityCheck(createChat);
+
+        continue;
+      }
+
       const customInactivityMessage =
         configurations?.configurations?.messages?.inactivity_message;
       const customServiceFinishedMessage =
@@ -1656,7 +1676,11 @@ export class ChatbotFlowRunnerService {
     const inactivityAlert = options?.inactivityAlert;
     const customMessages = options?.customMessages;
 
-    if (inactivityAlert && inactivityAlert.status === 'active') {
+    if (
+      inactivityAlert &&
+      inactivityAlert.status === 'active' &&
+      createChat.status === EChatStatus.ura
+    ) {
       const timeMinutes = inactivityAlert.time ?? 5;
       await this.scheduleInactivityCheck(createChat, timeMinutes, chatbotId);
     } else {
@@ -1740,6 +1764,23 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     chatbotId: string
   ): Promise<string | null> => {
+    const userText = this.getTextFromUpsertMessage(data)?.trim();
+
+    if (userText?.toLowerCase() === 'sair') {
+      const configurations =
+        await this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
+          createChat.account.id,
+          chatbotId
+        );
+
+      const customServiceFinishedMessage =
+        configurations?.configurations?.messages?.service_finished_message;
+
+      await this.sendFinishMessage(t, createChat, customServiceFinishedMessage);
+
+      return null;
+    }
+
     const chatbotFlow = await this.chatbotService.findChatbotFlowByChatbotId(
       createChat.account.id,
       chatbotId
