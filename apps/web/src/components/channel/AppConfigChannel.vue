@@ -193,7 +193,6 @@ type WorkerConfigForm = {
   show_worker_name: boolean;
   allow_attendance_only_online: boolean;
   simultaneous_attendance: boolean;
-  generate_protocol_at_ura: boolean;
   generate_protocol_at_start: boolean;
   generate_protocol_at_transfer: boolean;
   show_message_on_call: boolean;
@@ -207,7 +206,6 @@ const createDefaultWorkerConfig = (): WorkerConfigForm => ({
   show_worker_name: false,
   allow_attendance_only_online: false,
   simultaneous_attendance: false,
-  generate_protocol_at_ura: false,
   generate_protocol_at_start: false,
   generate_protocol_at_transfer: false,
   show_message_on_call: false,
@@ -227,9 +225,6 @@ const isSavingTransferProtocol = ref(false);
 const startProtocolText = ref<string>('');
 const startProtocolModalOpen = ref(false);
 const isSavingStartProtocol = ref(false);
-const uraProtocolText = ref<string>('');
-const uraProtocolModalOpen = ref(false);
-const isSavingUraProtocol = ref(false);
 const simultaneousAttendance = ref<number | null>(null);
 const simultaneousAttendanceModalOpen = ref(false);
 const isSavingSimultaneousAttendance = ref(false);
@@ -408,9 +403,6 @@ const applyWorkerConfig = (config?: ViewWorkerConfigResponse | null) => {
     nextState.allow_attendance_only_online =
       config.allow_attendance_only_online;
     nextState.simultaneous_attendance = Boolean(config.simultaneous_attendance);
-    nextState.generate_protocol_at_ura = Boolean(
-      config.generate_protocol_at_ura
-    );
     nextState.generate_protocol_at_start = Boolean(
       config.generate_protocol_at_start
     );
@@ -443,14 +435,12 @@ const loadWorkerConfig = async (force = false) => {
     const [
       protocolTransferText,
       protocolStartText,
-      protocolUraText,
       simultaneousAttendanceValue,
       showMessageOnCallValue,
       chatbotValue,
     ] = await Promise.all([
       channelStore.fetchTransferProtocolText(channelId.value),
       channelStore.fetchStartProtocolText(channelId.value),
-      channelStore.fetchUraProtocolText(channelId.value),
       channelStore.fetchSimultaneousAttendance(channelId.value),
       channelStore.fetchShowMessageOnCall(channelId.value),
       channelStore.fetchChatbot(channelId.value),
@@ -460,8 +450,6 @@ const loadWorkerConfig = async (force = false) => {
       protocolTransferText !== null && protocolTransferText.trim().length > 0;
     const hasStartProtocolText =
       protocolStartText !== null && protocolStartText.trim().length > 0;
-    const hasUraProtocolText =
-      protocolUraText !== null && protocolUraText.trim().length > 0;
     const hasSimultaneousAttendance =
       simultaneousAttendanceValue !== null && simultaneousAttendanceValue > 0;
 
@@ -472,9 +460,6 @@ const loadWorkerConfig = async (force = false) => {
 
     startProtocolText.value = hasStartProtocolText ? protocolStartText : '';
     workerConfigForm.generate_protocol_at_start = hasStartProtocolText;
-
-    uraProtocolText.value = hasUraProtocolText ? protocolUraText : '';
-    workerConfigForm.generate_protocol_at_ura = hasUraProtocolText;
 
     simultaneousAttendance.value = simultaneousAttendanceValue;
     workerConfigForm.simultaneous_attendance = hasSimultaneousAttendance;
@@ -626,54 +611,6 @@ const deleteStartProtocolText = async () => {
     closeStartProtocolModal();
   } finally {
     isSavingStartProtocol.value = false;
-  }
-};
-
-const openUraProtocolModal = async () => {
-  if (!channelId.value) return;
-
-  const protocolText = await channelStore.fetchUraProtocolText(channelId.value);
-  uraProtocolText.value = protocolText || '';
-  uraProtocolModalOpen.value = true;
-};
-
-const closeUraProtocolModal = () => {
-  uraProtocolModalOpen.value = false;
-};
-
-const saveUraProtocolText = async () => {
-  if (!channelId.value) return;
-
-  try {
-    isSavingUraProtocol.value = true;
-    const text = uraProtocolText.value.trim() || null;
-    const result = await channelStore.updateUraProtocolText(
-      channelId.value,
-      text
-    );
-
-    const hasText = result !== null && result.trim().length > 0;
-    workerConfigForm.generate_protocol_at_ura = hasText;
-    uraProtocolText.value = result || '';
-
-    closeUraProtocolModal();
-  } finally {
-    isSavingUraProtocol.value = false;
-  }
-};
-
-const deleteUraProtocolText = async () => {
-  if (!channelId.value) return;
-
-  try {
-    isSavingUraProtocol.value = true;
-    await channelStore.updateUraProtocolText(channelId.value, null);
-
-    workerConfigForm.generate_protocol_at_ura = false;
-    uraProtocolText.value = '';
-    closeUraProtocolModal();
-  } finally {
-    isSavingUraProtocol.value = false;
   }
 };
 
@@ -872,11 +809,6 @@ const workerConfigOptions = computed(() => [
     description: t(
       'channel_general_config_simultaneous_attendance_description'
     ),
-  },
-  {
-    key: 'generate_protocol_at_ura' as WorkerConfigField,
-    title: t('channel_general_config_generate_protocol_ura_title'),
-    description: t('channel_general_config_generate_protocol_ura_description'),
   },
   {
     key: 'generate_protocol_at_start' as WorkerConfigField,
@@ -2126,7 +2058,6 @@ onMounted(async () => {
                         v-if="
                           option.key !== 'generate_protocol_at_transfer' &&
                           option.key !== 'generate_protocol_at_start' &&
-                          option.key !== 'generate_protocol_at_ura' &&
                           option.key !== 'simultaneous_attendance' &&
                           option.key !== 'show_message_on_call' &&
                           option.key !== 'chatbot'
@@ -2163,15 +2094,6 @@ onMounted(async () => {
                           isSavingWorkerConfig || isSavingStartProtocol
                         "
                         @click.stop.prevent="openStartProtocolModal"
-                      />
-                      <VCheckbox
-                        v-else-if="option.key === 'generate_protocol_at_ura'"
-                        :model-value="workerConfigForm[option.key]"
-                        :label="option.title"
-                        color="primary"
-                        hide-details
-                        :disabled="isSavingWorkerConfig || isSavingUraProtocol"
-                        @click.stop.prevent="openUraProtocolModal"
                       />
                       <VCheckbox
                         v-else-if="option.key === 'simultaneous_attendance'"
@@ -3079,63 +3001,6 @@ onMounted(async () => {
           :loading="isSavingStartProtocol"
           :disabled="isSavingStartProtocol"
           @click="saveStartProtocolText"
-        >
-          {{ $t('save') }}
-        </VBtn>
-      </VCardText>
-    </VCard>
-  </VDialog>
-
-  <VDialog v-model="uraProtocolModalOpen" max-width="600" persistent>
-    <VCard>
-      <VCardTitle class="d-flex justify-space-between align-center">
-        <span>{{
-          $t('channel_general_config_generate_protocol_ura_title')
-        }}</span>
-        <IconBtn @click="closeUraProtocolModal">
-          <VIcon icon="tabler-x" />
-        </IconBtn>
-      </VCardTitle>
-      <VCardText>
-        <VTextarea
-          v-model="uraProtocolText"
-          :label="$t('ura_protocol_text_label')"
-          :placeholder="$t('ura_protocol_text_placeholder')"
-          :maxlength="2000"
-          rows="8"
-          counter
-          auto-grow
-        />
-        <div class="text-caption text-medium-emphasis mt-2">
-          {{ $t('ura_protocol_text_hint') }}
-        </div>
-        <div class="text-caption text-medium-emphasis">
-          {{ $t('ura_protocol_tag_hint') }}
-        </div>
-      </VCardText>
-      <VCardText class="d-flex justify-end flex-wrap gap-3">
-        <VBtn
-          variant="tonal"
-          color="secondary"
-          :disabled="isSavingUraProtocol"
-          @click="closeUraProtocolModal"
-        >
-          {{ $t('close') }}
-        </VBtn>
-        <VBtn
-          color="error"
-          variant="tonal"
-          :loading="isSavingUraProtocol"
-          :disabled="isSavingUraProtocol"
-          @click="deleteUraProtocolText"
-        >
-          {{ $t('delete') }}
-        </VBtn>
-        <VBtn
-          color="primary"
-          :loading="isSavingUraProtocol"
-          :disabled="isSavingUraProtocol"
-          @click="saveUraProtocolText"
         >
           {{ $t('save') }}
         </VBtn>

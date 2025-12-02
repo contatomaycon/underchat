@@ -20,7 +20,6 @@ export class WorkerConfigFieldsViewerRepository {
         show_attendee_name: workerConfig.show_attendee_name,
         show_worker_name: workerConfig.show_worker_name,
         allow_attendance_only_online: workerConfig.allow_attendance_only_online,
-        generate_protocol_at_ura: workerConfig.generate_protocol_at_ura,
         generate_protocol_at_start: workerConfig.generate_protocol_at_start,
         generate_protocol_at_transfer:
           workerConfig.generate_protocol_at_transfer,

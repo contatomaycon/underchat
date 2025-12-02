@@ -6,7 +6,6 @@ CREATE TABLE "worker_config" (
   "show_attendee_name" boolean NULL DEFAULT false,
   "show_worker_name" boolean NULL DEFAULT false,
   "allow_attendance_only_online" boolean NULL DEFAULT false,
-  "generate_protocol_at_ura" character varying(2000) NULL,
   "generate_protocol_at_start" character varying(2000) NULL,
   "generate_protocol_at_transfer" character varying(2000) NULL,
   "show_message_on_call" character varying(2000) NULL,

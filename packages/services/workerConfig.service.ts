@@ -65,7 +65,6 @@ export class WorkerConfigService {
       allow_attendance_only_online:
         result.allow_attendance_only_online ?? false,
       simultaneous_attendance: result.simultaneous_attendance ?? null,
-      generate_protocol_at_ura: result.generate_protocol_at_ura,
       generate_protocol_at_start: result.generate_protocol_at_start,
       generate_protocol_at_transfer: result.generate_protocol_at_transfer,
       show_message_on_call: result.show_message_on_call,
@@ -130,31 +129,6 @@ export class WorkerConfigService {
     }
 
     return result.generate_protocol_at_start || null;
-  }
-
-  async updateUraProtocolText(
-    workerId: string,
-    text: string | null
-  ): Promise<string | null> {
-    const [result] = await Promise.all([
-      this.workerConfigUpserterRepository.updateUraProtocolText(workerId, text),
-      this.invalidateWorkerConfigCache(workerId),
-    ]);
-
-    return result;
-  }
-
-  async viewUraProtocolText(workerId: string): Promise<string | null> {
-    const result =
-      await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
-        workerId
-      );
-
-    if (!result) {
-      return null;
-    }
-
-    return result.generate_protocol_at_ura || null;
   }
 
   async updateSimultaneousAttendance(

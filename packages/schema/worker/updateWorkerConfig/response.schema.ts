@@ -8,7 +8,6 @@ export const workerConfigSchema = Type.Object({
   show_worker_name: Type.Boolean(),
   allow_attendance_only_online: Type.Boolean(),
   simultaneous_attendance: Type.Union([Type.Integer(), Type.Null()]),
-  generate_protocol_at_ura: Type.Union([Type.String(), Type.Null()]),
   generate_protocol_at_start: Type.Union([Type.String(), Type.Null()]),
   generate_protocol_at_transfer: Type.Union([Type.String(), Type.Null()]),
   show_message_on_call: Type.Union([Type.String(), Type.Null()]),

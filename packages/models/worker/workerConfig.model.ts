@@ -19,7 +19,6 @@ export const workerConfig = pgTable('worker_config', {
   show_worker_name: boolean().default(false),
   allow_attendance_only_online: boolean().default(false),
   simultaneous_attendance: integer(),
-  generate_protocol_at_ura: varchar({ length: 2000 }),
   generate_protocol_at_start: varchar({ length: 2000 }),
   generate_protocol_at_transfer: varchar({ length: 2000 }),
   show_message_on_call: varchar({ length: 2000 }),
