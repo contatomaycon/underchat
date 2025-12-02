@@ -1002,7 +1002,6 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
-
     async fetchChatbot(workerId: string): Promise<string | null> {
       if (!workerId) return null;
 
