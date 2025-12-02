@@ -36,6 +36,15 @@ const emojiIndex = new EmojiIndex(data);
 const emojiPickerOpen = ref<Record<string, boolean>>({});
 const messageEmojiPickerOpen = ref(false);
 
+const getNextOptionId = () => {
+  const numericIds = menuData.value.options
+    .map((option) => Number(option.id))
+    .filter((id) => !Number.isNaN(id));
+
+  const maxId = numericIds.length ? Math.max(...numericIds) : 0;
+  return (maxId + 1).toString();
+};
+
 const messageLength = computed(() => menuData.value.message.length);
 const maxMessageLength = 500;
 
@@ -54,15 +63,10 @@ const updateNodeData = () => {
 
 const addOption = () => {
   const newOption: MenuOption = {
-    id: crypto.randomUUID(),
+    id: getNextOptionId(),
     text: '',
   };
   menuData.value.options.push(newOption);
-  updateNodeData();
-};
-
-const removeOption = (index: number) => {
-  menuData.value.options.splice(index, 1);
   updateNodeData();
 };
 

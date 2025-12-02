@@ -13,13 +13,13 @@ import {
 import { IChat } from '@core/common/interfaces/IChat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { EMessageType } from '@core/common/enums/EMessageType';
-import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
-import { ChatMessageCreatorUseCase } from '@core/useCases/chat/ChatMessageCreator.useCase';
+import { ChatMessageService } from './chatMessage.service';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
 import { IViewUserNamePhoto } from '@core/common/interfaces/IViewUserNamePhoto';
 import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import Redis from 'ioredis';
+import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 
 @injectable()
 export class AutomaticAttendanceService {
@@ -29,7 +29,7 @@ export class AutomaticAttendanceService {
     private readonly workerService: WorkerService,
     private readonly workerConfigService: WorkerConfigService,
     private readonly centrifugoService: CentrifugoService,
-    private readonly chatMessageCreatorUseCase: ChatMessageCreatorUseCase,
+    private readonly chatMessageService: ChatMessageService,
     private readonly sectorService: SectorService,
     private readonly chatUserViewerRepository: ChatUserViewerRepository,
     @inject('Redis') private readonly redis: Redis
@@ -48,20 +48,19 @@ export class AutomaticAttendanceService {
       protocol
     );
 
-    const protocolMessageBody: CreateMessageChatsBody = {
-      type: EMessageType.system,
-      message,
-    };
+    const chat = await this.chatService.findChatByChatId(accountId, chatId);
+    if (!chat) {
+      throw new Error(t('chat_not_found'));
+    }
 
     await Promise.all([
-      this.chatMessageCreatorUseCase.execute(
-        t,
+      this.chatMessageService.sendMessage(t, {
+        chat,
         accountId,
-        {
-          chat_id: chatId,
-        },
-        protocolMessageBody
-      ),
+        type: EMessageType.system,
+        message,
+        typeUser: ETypeUserChat.system,
+      }),
       this.chatService.updateChatProtocol(chatId, protocolType, protocol),
     ]);
 

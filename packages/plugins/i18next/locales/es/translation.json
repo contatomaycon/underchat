@@ -409,6 +409,8 @@
   "chatbot_update_success": "¡Chatbot actualizado con éxito!",
   "chatbot_view_success": "¡Chatbot obtenido con éxito!",
   "chatbot_not_found": "¡Chatbot no encontrado!",
+  "chatbot_deleter_error": "Ocurrió un error al eliminar el chatbot. Por favor, inténtalo de nuevo.",
+  "chatbot_deleted_successfully": "¡Chatbot eliminado con éxito!",
   "simultaneous_attendance_view_success": "¡Cantidad de atenciones simultáneas obtenida con éxito!",
   "simultaneous_attendance_update_success": "¡Cantidad de atenciones simultáneas actualizada con éxito!",
   "simultaneous_attendance_limit_reached": "Ha alcanzado el límite de atenciones simultáneas permitidas para este canal. Límite: {{limit}} atención(es).",
@@ -455,5 +457,11 @@
   "chatbot_flow_validation_failed_attempts_quantity_required": "Cantidad es obligatoria cuando redirigir intentos fallidos está activo",
   "chatbot_flow_validation_failed_attempts_redirect_type_required": "Tipo de redirección es obligatorio cuando redirigir intentos fallidos está activo",
   "chatbot_flow_validation_failed_attempts_redirect_user_required": "Usuario es obligatorio cuando el tipo de redirección es usuario",
-  "chatbot_flow_validation_failed_attempts_redirect_sector_required": "Sector es obligatorio cuando el tipo de redirección es sector"
+  "chatbot_flow_validation_failed_attempts_redirect_sector_required": "Sector es obligatorio cuando el tipo de redirección es sector",
+  "chatbot_option_invalid": "Opción inválida",
+  "chatbot_service_finished": "Servicio finalizado",
+  "email_invalid": "Correo electrónico inválido",
+  "cpf_invalid": "CPF inválido",
+  "cnpj_invalid": "CNPJ inválido",
+  "chatbot_inactivity_message_default": "¡Hola! Notamos que estás inactivo. ¿Podemos ayudarte en algo más?"
 }

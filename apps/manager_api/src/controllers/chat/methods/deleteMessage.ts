@@ -8,6 +8,7 @@ import {
   CreateMessageChatsBody,
   CreateMessageChatsParams,
 } from '@core/schema/chat/createMessageChats/request.schema';
+import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 
 export const deleteMessage = async (
   request: FastifyRequest<{
@@ -34,7 +35,8 @@ export const deleteMessage = async (
       t,
       tokenJwtData.account_id,
       params,
-      body
+      body,
+      ETypeUserChat.operator
     );
 
     if (response) {

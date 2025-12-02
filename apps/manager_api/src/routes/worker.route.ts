@@ -31,8 +31,6 @@ import { updateTransferProtocolTextSchema } from '@core/schema/worker/updateTran
 import { viewTransferProtocolTextSchema } from '@core/schema/worker/viewTransferProtocolText';
 import { updateStartProtocolTextSchema } from '@core/schema/worker/updateStartProtocolText';
 import { viewStartProtocolTextSchema } from '@core/schema/worker/viewStartProtocolText';
-import { updateUraProtocolTextSchema } from '@core/schema/worker/updateUraProtocolText';
-import { viewUraProtocolTextSchema } from '@core/schema/worker/viewUraProtocolText';
 import { updateSimultaneousAttendanceSchema } from '@core/schema/worker/updateSimultaneousAttendance';
 import { viewSimultaneousAttendanceSchema } from '@core/schema/worker/viewSimultaneousAttendance';
 import { updateShowMessageOnCallSchema } from '@core/schema/worker/updateShowMessageOnCall';
@@ -217,24 +215,6 @@ export default function workerRoutes(server: FastifyInstance) {
   server.patch('/worker/:worker_id/config/start-protocol', {
     schema: updateStartProtocolTextSchema,
     handler: workerController.updateStartProtocolText,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, workerEditPermissions),
-    ],
-  });
-
-  server.get('/worker/:worker_id/config/ura-protocol', {
-    schema: viewUraProtocolTextSchema,
-    handler: workerController.viewUraProtocolText,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, workerViewPermissions),
-    ],
-  });
-
-  server.patch('/worker/:worker_id/config/ura-protocol', {
-    schema: updateUraProtocolTextSchema,
-    handler: workerController.updateUraProtocolText,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerEditPermissions),

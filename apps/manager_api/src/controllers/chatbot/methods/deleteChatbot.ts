@@ -2,37 +2,37 @@ import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { UpdateUraProtocolTextUseCase } from '@core/useCases/worker/UpdateUraProtocolText.useCase';
-import {
-  UpdateUraProtocolTextRequest,
-  UpdateUraProtocolTextParams,
-} from '@core/schema/worker/updateUraProtocolText/request.schema';
+import { DeleteChatbotRequest } from '@core/schema/chatbot/deleteChatbot/request.schema';
+import { ChatbotDeleterUseCase } from '@core/useCases/chatbot/ChatbotDeleter.useCase';
 
-export const updateUraProtocolText = async (
+export const deleteChatbot = async (
   request: FastifyRequest<{
-    Params: UpdateUraProtocolTextParams;
-    Body: UpdateUraProtocolTextRequest;
+    Params: DeleteChatbotRequest;
   }>,
   reply: FastifyReply
 ) => {
-  const updateUraProtocolTextUseCase = container.resolve(
-    UpdateUraProtocolTextUseCase
-  );
+  const chatbotDeleterUseCase = container.resolve(ChatbotDeleterUseCase);
   const { t, tokenJwtData } = request;
 
   try {
-    const response = await updateUraProtocolTextUseCase.execute(
+    const response = await chatbotDeleterUseCase.execute(
       t,
-      tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
-      request.params.worker_id,
-      request.body
+      request.params.chatbot_id,
+      tokenJwtData.account_id
     );
 
+    if (response) {
+      return sendResponse(reply, {
+        message: t('chatbot_deleted_successfully'),
+        httpStatusCode: EHTTPStatusCode.ok,
+      });
+    }
+
+    request.server.logger.info(response, request.id);
+
     return sendResponse(reply, {
-      message: t('ura_protocol_text_update_success'),
-      httpStatusCode: EHTTPStatusCode.ok,
-      data: response,
+      message: t('chatbot_deleter_error'),
+      httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
     request.server.logger.error(error, request.id);

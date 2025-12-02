@@ -19,8 +19,6 @@ import { updateTransferProtocolText } from './methods/updateTransferProtocolText
 import { viewTransferProtocolText } from './methods/viewTransferProtocolText';
 import { updateStartProtocolText } from './methods/updateStartProtocolText';
 import { viewStartProtocolText } from './methods/viewStartProtocolText';
-import { updateUraProtocolText } from './methods/updateUraProtocolText';
-import { viewUraProtocolText } from './methods/viewUraProtocolText';
 import { updateSimultaneousAttendance } from './methods/updateSimultaneousAttendance';
 import { viewSimultaneousAttendance } from './methods/viewSimultaneousAttendance';
 import { updateShowMessageOnCall } from './methods/updateShowMessageOnCall';
@@ -50,8 +48,6 @@ class WorkerController {
   public viewTransferProtocolText = viewTransferProtocolText;
   public updateStartProtocolText = updateStartProtocolText;
   public viewStartProtocolText = viewStartProtocolText;
-  public updateUraProtocolText = updateUraProtocolText;
-  public viewUraProtocolText = viewUraProtocolText;
   public updateSimultaneousAttendance = updateSimultaneousAttendance;
   public viewSimultaneousAttendance = viewSimultaneousAttendance;
   public updateShowMessageOnCall = updateShowMessageOnCall;

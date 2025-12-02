@@ -2,6 +2,7 @@ import { injectable } from 'tsyringe';
 import { ChatbotCreatorRepository } from '@core/repositories/chatbot/ChatbotCreator.repository';
 import { ChatbotListerRepository } from '@core/repositories/chatbot/ChatbotLister.repository';
 import { ChatbotUpdaterRepository } from '@core/repositories/chatbot/ChatbotUpdater.repository';
+import { ChatbotDeleterRepository } from '@core/repositories/chatbot/ChatbotDeleter.repository';
 import { ChatbotNameExistsRepository } from '@core/repositories/chatbot/ChatbotNameExists.repository';
 import { ChatbotChatTagsListerRepository } from '@core/repositories/labelTemplate/ChatbotChatTagsLister.repository';
 import { CreateChatbotRequest } from '@core/schema/chatbot/createChatbot/request.schema';
@@ -34,6 +35,7 @@ export class ChatbotService {
     private readonly chatbotCreatorRepository: ChatbotCreatorRepository,
     private readonly chatbotListerRepository: ChatbotListerRepository,
     private readonly chatbotUpdaterRepository: ChatbotUpdaterRepository,
+    private readonly chatbotDeleterRepository: ChatbotDeleterRepository,
     private readonly chatbotNameExistsRepository: ChatbotNameExistsRepository,
     private readonly chatbotChatTagsListerRepository: ChatbotChatTagsListerRepository,
     private readonly userService: UserService,
@@ -260,5 +262,46 @@ export class ChatbotService {
       | ElasticHit<ListChatbotFlowConfigurationsResponse>
       | undefined;
     return hit?._source ?? null;
+  };
+
+  deleteChatbotFlowByChatbotId = async (
+    chatbotId: string
+  ): Promise<boolean> => {
+    const deletedFlow = await this.elasticDatabaseService.deleteAllByQuery(
+      EElasticIndex.chatbot_flow,
+      {
+        term: {
+          chatbot_id: chatbotId,
+        },
+      }
+    );
+
+    return deletedFlow;
+  };
+
+  deleteChatbotFlowConfigurationsByChatbotId = async (
+    chatbotId: string
+  ): Promise<boolean> => {
+    const deletedConfigurations =
+      await this.elasticDatabaseService.deleteAllByQuery(
+        EElasticIndex.chatbot_flow_configurations,
+        {
+          term: {
+            chatbot_id: chatbotId,
+          },
+        }
+      );
+
+    return deletedConfigurations;
+  };
+
+  clearChatbotFromWorkerConfigs = async (chatbotId: string): Promise<void> => {
+    await this.chatbotDeleterRepository.clearChatbotFromWorkerConfigs(
+      chatbotId
+    );
+  };
+
+  deleteChatbotById = async (chatbotId: string): Promise<boolean> => {
+    return this.chatbotDeleterRepository.deleteChatbotById(chatbotId);
   };
 }

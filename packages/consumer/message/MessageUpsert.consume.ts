@@ -57,14 +57,14 @@ import { ContactService } from '@core/services/contact.service';
 import { AutomaticAttendanceService } from '@core/services/automaticAttendance.service';
 import { TFunction } from 'i18next';
 import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
-import { ChatMessageCreatorUseCase } from '@core/useCases/chat/ChatMessageCreator.useCase';
-import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
+import { ChatMessageService } from '@core/services/chatMessage.service';
+import { ChatbotFlowRunnerService } from '@core/services/chatbotFlowRunner.service';
+import { WorkerConfigService } from '@core/services/workerConfig.service';
 
 @singleton()
 export class MessageUpsertConsume {
   private consumer: Consumer | null = null;
   private processingChain: Promise<void> = Promise.resolve();
-  private readonly t: TFunction<'translation', undefined> | null = null;
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
@@ -80,7 +80,9 @@ export class MessageUpsertConsume {
     private readonly encryptService: EncryptService,
     private readonly contactService: ContactService,
     private readonly automaticAttendanceService: AutomaticAttendanceService,
-    private readonly chatMessageCreatorUseCase: ChatMessageCreatorUseCase
+    private readonly chatMessageService: ChatMessageService,
+    private readonly workerConfigService: WorkerConfigService,
+    private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService
   ) {}
 
   private get consumerOrThrow(): Consumer {
@@ -111,6 +113,48 @@ export class MessageUpsertConsume {
     );
 
     return promise;
+  }
+
+  private async handleNewChatMessageAndPublish(
+    createChat: IChat,
+    data: IUpsertMessage
+  ): Promise<void> {
+    await this.createChatMessage(createChat, data);
+
+    const updatedChat = await this.chatService.findChatByChatId(
+      data.account_id,
+      createChat.chat_id
+    );
+
+    if (updatedChat && updatedChat.status === EChatStatus.queue) {
+      await this.centrifugoChatQueuePublish(updatedChat);
+      return;
+    }
+
+    if (!updatedChat) {
+      await this.centrifugoChatQueuePublish(createChat);
+    }
+  }
+
+  private async ensureChatAndHandleMessage(
+    t: TFunction<'translation', undefined>,
+    data: IUpsertMessage,
+    chat: IChat | null
+  ): Promise<IChat> {
+    if (chat) {
+      await this.createChatMessage(chat, data);
+
+      return chat;
+    }
+
+    const newChat = await this.createChat(t, data, EChatStatus.ura);
+    if (!newChat) {
+      throw new Error('Failed to create chat');
+    }
+
+    await this.handleNewChatMessageAndPublish(newChat, data);
+
+    return newChat;
   }
 
   private async markIncomingMessageAsRead(
@@ -1254,19 +1298,13 @@ export class MessageUpsertConsume {
       await this.updateChatPhotoIfNeeded(chat, data);
     }
 
-    const messageBody: CreateMessageChatsBody = {
+    await this.chatMessageService.sendMessage(t, {
+      chat,
+      accountId: data.account_id,
       type: EMessageType.system,
       message: workerConfig.show_message_on_call,
-    };
-
-    await this.chatMessageCreatorUseCase.execute(
-      t,
-      data.account_id,
-      {
-        chat_id: chat.chat_id,
-      },
-      messageBody
-    );
+      typeUser: ETypeUserChat.system,
+    });
   }
 
   private async createChatFromCallEvent(
@@ -1612,7 +1650,8 @@ export class MessageUpsertConsume {
 
   private async createChat(
     t: TFunction<'translation', undefined>,
-    data: IUpsertMessage
+    data: IUpsertMessage,
+    status: EChatStatus
   ): Promise<IChat> {
     const [viewAccountName, viewWorkerNameAndId] = await Promise.all([
       this.accountService.viewAccountName(data.account_id),
@@ -1653,7 +1692,7 @@ export class MessageUpsertConsume {
       worker: viewWorkerNameAndId,
       name,
       phone,
-      status: EChatStatus.queue,
+      status,
       date: messageDate,
       summary: {
         last_message: messageText,
@@ -1723,7 +1762,36 @@ export class MessageUpsertConsume {
     }
   }
 
-  private async createOrUpdateChat(
+  private async createOrUpdateChatBotFlow(
+    t: TFunction<'translation', undefined>,
+    data: IUpsertMessage,
+    chatbotId: string
+  ) {
+    const jid = remoteJid(data.message?.key);
+    const jidAlt = remoteJidAlt(data.message?.key);
+    if (!jid && !jidAlt) {
+      throw new Error('Received message without remoteJid');
+    }
+
+    const phone = getPhoneFromJid(jid, jidAlt);
+    if (!phone) {
+      throw new Error('Failed to get phone from jid');
+    }
+
+    const existingChat = await this.getChat(
+      data.account_id,
+      data.worker_id,
+      phone,
+      jid,
+      jidAlt
+    );
+
+    const chat = await this.ensureChatAndHandleMessage(t, data, existingChat);
+
+    return this.chatbotFlowRunnerService.execute(t, data, chat, chatbotId);
+  }
+
+  private async createOrUpdateChatQueue(
     t: TFunction<'translation', undefined>,
     data: IUpsertMessage,
     phone: string,
@@ -1739,30 +1807,35 @@ export class MessageUpsertConsume {
     );
 
     if (!getChat) {
-      const createChat = await this.createChat(t, data);
+      const createChat = await this.createChat(t, data, EChatStatus.queue);
       if (!createChat) {
         throw new Error('Failed to create chat');
       }
 
-      await this.createChatMessage(createChat, data);
+      return this.handleNewChatMessageAndPublish(createChat, data);
+    }
 
-      const updatedChat = await this.chatService.findChatByChatId(
-        data.account_id,
-        createChat.chat_id
-      );
+    await this.createChatMessage(getChat, data);
+  }
 
-      if (updatedChat) {
-        if (updatedChat.status === EChatStatus.queue) {
-          await this.centrifugoChatQueuePublish(updatedChat);
-        }
-      } else {
-        await this.centrifugoChatQueuePublish(createChat);
-      }
+  private async createOrUpdateChat(
+    t: TFunction<'translation', undefined>,
+    data: IUpsertMessage,
+    phone: string,
+    jid?: string | null,
+    jidAlt?: string | null
+  ): Promise<void> {
+    const chatbotId = await this.workerConfigService.viewChatbot(
+      data.worker_id
+    );
+
+    if (chatbotId) {
+      await this.createOrUpdateChatBotFlow(t, data, chatbotId);
 
       return;
     }
 
-    await this.createChatMessage(getChat, data);
+    await this.createOrUpdateChatQueue(t, data, phone, jid, jidAlt);
   }
 
   public async execute(t: TFunction<'translation', undefined>): Promise<void> {

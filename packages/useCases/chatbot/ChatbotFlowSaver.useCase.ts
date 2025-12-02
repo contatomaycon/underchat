@@ -151,7 +151,7 @@ export class ChatbotFlowSaverUseCase {
 
       errors.push(
         t('chatbot_flow_validation_option_not_connected', {
-          nodeLabel: node.label || node.id,
+          nodeLabel: node.data?.title || node.label || node.id,
           optionText: option.text || `Opção ${option.id}`,
         })
       );
@@ -167,14 +167,14 @@ export class ChatbotFlowSaverUseCase {
     if (!data.text || data.text.trim().length === 0) {
       errors.push(
         t('chatbot_flow_validation_message_text_required', {
-          nodeLabel: node.label || node.id,
+          nodeLabel: node.data?.title || node.label || node.id,
         })
       );
     }
     if (data.text && data.text.length > 2000) {
       errors.push(
         t('chatbot_flow_validation_message_text_too_long', {
-          nodeLabel: node.label || node.id,
+          nodeLabel: node.data?.title || node.label || node.id,
         })
       );
     }
@@ -190,14 +190,14 @@ export class ChatbotFlowSaverUseCase {
     if (!data.attachmentUrl && !hasAttachmentFile && !data.text) {
       errors.push(
         t('chatbot_flow_validation_message_attachment_required', {
-          nodeLabel: node.label || node.id,
+          nodeLabel: node.data?.title || node.label || node.id,
         })
       );
     }
     if (data.text && data.text.length > 500) {
       errors.push(
         t('chatbot_flow_validation_message_caption_too_long', {
-          nodeLabel: node.label || node.id,
+          nodeLabel: node.data?.title || node.label || node.id,
         })
       );
     }
@@ -217,7 +217,7 @@ export class ChatbotFlowSaverUseCase {
     if (!data.messageType) {
       errors.push(
         t('chatbot_flow_validation_message_type_required', {
-          nodeLabel: node.label || node.id,
+          nodeLabel: node.data?.title || node.label || node.id,
         })
       );
       return;
@@ -234,116 +234,7 @@ export class ChatbotFlowSaverUseCase {
     if (!data.continueType) {
       errors.push(
         t('chatbot_flow_validation_continue_type_required', {
-          nodeLabel: node.label || node.id,
-        })
-      );
-    }
-  }
-
-  private validateNameData(
-    t: TFunction<'translation', undefined>,
-    node: any,
-    data: any,
-    errors: string[]
-  ): void {
-    if (!data.firstName || data.firstName.trim().length === 0) {
-      errors.push(
-        t('chatbot_flow_validation_first_name_required', {
-          nodeLabel: node.label || node.id,
-        })
-      );
-    }
-    if (!data.lastName || data.lastName.trim().length === 0) {
-      errors.push(
-        t('chatbot_flow_validation_last_name_required', {
-          nodeLabel: node.label || node.id,
-        })
-      );
-    }
-  }
-
-  private validateEmailData(
-    t: TFunction<'translation', undefined>,
-    node: any,
-    data: any,
-    errors: string[]
-  ): void {
-    if (!data.email || data.email.trim().length === 0) {
-      errors.push(
-        t('chatbot_flow_validation_email_required', {
-          nodeLabel: node.label || node.id,
-        })
-      );
-      return;
-    }
-
-    const email = data.email.trim();
-    const atIndex = email.indexOf('@');
-
-    if (
-      atIndex <= 0 ||
-      atIndex === email.length - 1 ||
-      email.substring(atIndex + 1).includes('@')
-    ) {
-      errors.push(
-        t('chatbot_flow_validation_email_invalid', {
-          nodeLabel: node.label || node.id,
-        })
-      );
-      return;
-    }
-
-    const localPart = email.substring(0, atIndex);
-    const domainPart = email.substring(atIndex + 1);
-
-    if (localPart.length === 0 || localPart.includes(' ')) {
-      errors.push(
-        t('chatbot_flow_validation_email_invalid', {
-          nodeLabel: node.label || node.id,
-        })
-      );
-      return;
-    }
-
-    const dotIndex = domainPart.indexOf('.');
-    if (
-      dotIndex <= 0 ||
-      dotIndex === domainPart.length - 1 ||
-      domainPart.includes(' ')
-    ) {
-      errors.push(
-        t('chatbot_flow_validation_email_invalid', {
-          nodeLabel: node.label || node.id,
-        })
-      );
-    }
-  }
-
-  private validateCpfData(
-    t: TFunction<'translation', undefined>,
-    node: any,
-    data: any,
-    errors: string[]
-  ): void {
-    if (!data.cpf || data.cpf.trim().length === 0) {
-      errors.push(
-        t('chatbot_flow_validation_cpf_required', {
-          nodeLabel: node.label || node.id,
-        })
-      );
-    }
-  }
-
-  private validateCnpjData(
-    t: TFunction<'translation', undefined>,
-    node: any,
-    data: any,
-    errors: string[]
-  ): void {
-    if (!data.cnpj || data.cnpj.trim().length === 0) {
-      errors.push(
-        t('chatbot_flow_validation_cnpj_required', {
-          nodeLabel: node.label || node.id,
+          nodeLabel: node.data?.title || node.label || node.id,
         })
       );
     }
@@ -362,25 +253,9 @@ export class ChatbotFlowSaverUseCase {
     if (!data.dataType) {
       errors.push(
         t('chatbot_flow_validation_data_type_required', {
-          nodeLabel: node.label || node.id,
+          nodeLabel: node.data?.title || node.label || node.id,
         })
       );
-      return;
-    }
-
-    switch (data.dataType) {
-      case 'name':
-        this.validateNameData(t, node, data, errors);
-        break;
-      case 'email':
-        this.validateEmailData(t, node, data, errors);
-        break;
-      case 'cpf':
-        this.validateCpfData(t, node, data, errors);
-        break;
-      case 'cnpj':
-        this.validateCnpjData(t, node, data, errors);
-        break;
     }
   }
 
@@ -397,7 +272,7 @@ export class ChatbotFlowSaverUseCase {
     if (!data.redirectType) {
       errors.push(
         t('chatbot_flow_validation_redirect_type_required', {
-          nodeLabel: node.label || node.id,
+          nodeLabel: node.data?.title || node.label || node.id,
         })
       );
       return;
@@ -406,7 +281,7 @@ export class ChatbotFlowSaverUseCase {
     if (data.redirectType === 'user' && !data.selectedUser) {
       errors.push(
         t('chatbot_flow_validation_redirect_user_required', {
-          nodeLabel: node.label || node.id,
+          nodeLabel: node.data?.title || node.label || node.id,
         })
       );
     }
@@ -414,7 +289,7 @@ export class ChatbotFlowSaverUseCase {
     if (data.redirectType === 'sector' && !data.selectedSector) {
       errors.push(
         t('chatbot_flow_validation_redirect_sector_required', {
-          nodeLabel: node.label || node.id,
+          nodeLabel: node.data?.title || node.label || node.id,
         })
       );
     }
@@ -433,7 +308,7 @@ export class ChatbotFlowSaverUseCase {
     if (!data.tagType) {
       errors.push(
         t('chatbot_flow_validation_tag_type_required', {
-          nodeLabel: node.label || node.id,
+          nodeLabel: node.data?.title || node.label || node.id,
         })
       );
     }
@@ -441,7 +316,7 @@ export class ChatbotFlowSaverUseCase {
     if (!data.selectedTag) {
       errors.push(
         t('chatbot_flow_validation_tag_required', {
-          nodeLabel: node.label || node.id,
+          nodeLabel: node.data?.title || node.label || node.id,
         })
       );
     }
@@ -460,7 +335,7 @@ export class ChatbotFlowSaverUseCase {
     if (!data.title || data.title.trim().length === 0) {
       errors.push(
         t('chatbot_flow_validation_title_required', {
-          nodeLabel: node.label || node.id,
+          nodeLabel: node.data?.title || node.label || node.id,
         })
       );
     }
@@ -468,7 +343,7 @@ export class ChatbotFlowSaverUseCase {
     if (!data.message || data.message.trim().length === 0) {
       errors.push(
         t('chatbot_flow_validation_message_required', {
-          nodeLabel: node.label || node.id,
+          nodeLabel: node.data?.title || node.label || node.id,
         })
       );
     }
@@ -476,7 +351,7 @@ export class ChatbotFlowSaverUseCase {
     if (!data.options || data.options.length === 0) {
       errors.push(
         t('chatbot_flow_validation_options_required', {
-          nodeLabel: node.label || node.id,
+          nodeLabel: node.data?.title || node.label || node.id,
         })
       );
     }

@@ -9,7 +9,6 @@ type DataType = 'name' | 'email' | 'cpf' | 'cnpj' | null;
 interface DataNodeData {
   dataType: DataType;
   firstName: string;
-  lastName: string;
   email: string;
   cpf: string;
   cnpj: string;
@@ -23,11 +22,10 @@ const getInitialData = (): DataNodeData => {
   const data = props.data as DataNodeData | undefined;
   return {
     dataType: data?.dataType || null,
-    firstName: data?.firstName || '',
-    lastName: data?.lastName || '',
-    email: data?.email || '',
-    cpf: data?.cpf || '',
-    cnpj: data?.cnpj || '',
+    firstName: data?.firstName || t('chatbot_data_default_name_question'),
+    email: data?.email || t('chatbot_data_default_email_question'),
+    cpf: data?.cpf || t('chatbot_data_default_cpf_question'),
+    cnpj: data?.cnpj || t('chatbot_data_default_cnpj_question'),
   };
 };
 
@@ -57,109 +55,7 @@ const showEmailField = computed(() => dataNodeData.value.dataType === 'email');
 const showCpfField = computed(() => dataNodeData.value.dataType === 'cpf');
 const showCnpjField = computed(() => dataNodeData.value.dataType === 'cnpj');
 
-const cpfMask = '###.###.###-##';
-const cnpjMask = '##.###.###/####-##';
-
-const onlyDigits = (s: string) => s.replaceAll(/\D+/g, '');
-
-const isValidCPF = (cpf: string): boolean => {
-  const digits = onlyDigits(cpf);
-
-  if (digits.length !== 11) return false;
-
-  if (/^(\d)\1{10}$/.test(digits)) return false;
-
-  let sum = 0;
-  for (let i = 0; i < 9; i++) {
-    sum += Number.parseInt(digits.charAt(i)) * (10 - i);
-  }
-  let remainder = (sum * 10) % 11;
-  if (remainder === 10 || remainder === 11) remainder = 0;
-  if (remainder !== Number.parseInt(digits.charAt(9))) return false;
-
-  sum = 0;
-  for (let i = 0; i < 10; i++) {
-    sum += Number.parseInt(digits.charAt(i)) * (11 - i);
-  }
-  remainder = (sum * 10) % 11;
-  if (remainder === 10 || remainder === 11) remainder = 0;
-  if (remainder !== Number.parseInt(digits.charAt(10))) return false;
-
-  return true;
-};
-
-const isValidCNPJ = (cnpj: string): boolean => {
-  const digits = onlyDigits(cnpj);
-
-  if (digits.length !== 14) return false;
-
-  if (/^(\d)\1{13}$/.test(digits)) return false;
-
-  let length = digits.length - 2;
-  let numbers = digits.substring(0, length);
-  const multipliers = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
-  let sum = 0;
-
-  for (let i = 0; i < length; i++) {
-    sum += Number.parseInt(numbers.charAt(i)) * multipliers[i];
-  }
-
-  let remainder = sum % 11;
-  let digit = remainder < 2 ? 0 : 11 - remainder;
-
-  if (digit !== Number.parseInt(digits.charAt(length))) return false;
-
-  length = length + 1;
-  numbers = digits.substring(0, length);
-  const multipliers2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
-  sum = 0;
-
-  for (let i = 0; i < length; i++) {
-    sum += Number.parseInt(numbers.charAt(i)) * multipliers2[i];
-  }
-
-  remainder = sum % 11;
-  digit = remainder < 2 ? 0 : 11 - remainder;
-
-  if (digit !== Number.parseInt(digits.charAt(length))) return false;
-
-  return true;
-};
-
-const emailValidator = (v: string | null | undefined) => {
-  const s = (v ?? '').trim();
-  if (!s) return t('chatbot_data_field_required');
-  const re = /^[^\s@]+@(?:[^\s@.]+\.)+[^\s@.]{2,}$/;
-  return re.test(s) || t('email_invalid');
-};
-
-const cpfValidator = (v: string | null | undefined) => {
-  const s = (v ?? '').trim();
-  if (!s) return t('chatbot_data_field_required');
-  const digits = onlyDigits(s);
-  if (digits.length !== 11) return t('chatbot_data_cpf_must_have_11_digits');
-  if (!isValidCPF(s)) return t('cpf_invalid');
-  return true;
-};
-
-const cnpjValidator = (v: string | null | undefined) => {
-  const s = (v ?? '').trim();
-  if (!s) return t('chatbot_data_field_required');
-  const digits = onlyDigits(s);
-  if (digits.length !== 14) return t('chatbot_data_cnpj_must_have_14_digits');
-  if (!isValidCNPJ(s)) return t('cnpj_invalid');
-  return true;
-};
-
 const firstNameRules = computed(() => [
-  (v: string | null | undefined) => {
-    if (!showNameFields.value) return true;
-    const s = (v ?? '').trim();
-    return !!s || t('chatbot_data_field_required');
-  },
-]);
-
-const lastNameRules = computed(() => [
   (v: string | null | undefined) => {
     if (!showNameFields.value) return true;
     const s = (v ?? '').trim();
@@ -170,21 +66,24 @@ const lastNameRules = computed(() => [
 const emailRules = computed(() => [
   (v: string | null | undefined) => {
     if (!showEmailField.value) return true;
-    return emailValidator(v);
+    const s = (v ?? '').trim();
+    return !!s || t('chatbot_data_field_required');
   },
 ]);
 
 const cpfRules = computed(() => [
   (v: string | null | undefined) => {
     if (!showCpfField.value) return true;
-    return cpfValidator(v);
+    const s = (v ?? '').trim();
+    return !!s || t('chatbot_data_field_required');
   },
 ]);
 
 const cnpjRules = computed(() => [
   (v: string | null | undefined) => {
     if (!showCnpjField.value) return true;
-    return cnpjValidator(v);
+    const s = (v ?? '').trim();
+    return !!s || t('chatbot_data_field_required');
   },
 ]);
 
@@ -193,7 +92,6 @@ const updateNodeData = () => {
     const data = props.data as DataNodeData;
     data.dataType = dataNodeData.value.dataType;
     data.firstName = dataNodeData.value.firstName;
-    data.lastName = dataNodeData.value.lastName;
     data.email = dataNodeData.value.email;
     data.cpf = dataNodeData.value.cpf;
     data.cnpj = dataNodeData.value.cnpj;
@@ -211,11 +109,29 @@ watch(
   () => dataNodeData.value.dataType,
   (newType, oldType) => {
     if (oldType !== undefined && oldType !== newType) {
+      if (newType === 'name') {
+        dataNodeData.value.firstName = t('chatbot_data_default_name_question');
+      } else {
       dataNodeData.value.firstName = '';
-      dataNodeData.value.lastName = '';
+      }
+
+      if (newType === 'email') {
+        dataNodeData.value.email = t('chatbot_data_default_email_question');
+      } else {
       dataNodeData.value.email = '';
+      }
+
+      if (newType === 'cpf') {
+        dataNodeData.value.cpf = t('chatbot_data_default_cpf_question');
+      } else {
       dataNodeData.value.cpf = '';
+      }
+
+      if (newType === 'cnpj') {
+        dataNodeData.value.cnpj = t('chatbot_data_default_cnpj_question');
+      } else {
       dataNodeData.value.cnpj = '';
+      }
     }
     updateNodeData();
   }
@@ -269,20 +185,11 @@ watch(
         <template v-if="showNameFields">
           <VTextField
             v-model="dataNodeData.firstName"
-            :label="t('chatbot_data_first_name_question')"
+            :label="t('chatbot_data_question')"
             variant="outlined"
             density="compact"
             class="mb-3"
             :rules="firstNameRules"
-            hide-details="auto"
-          />
-          <VTextField
-            v-model="dataNodeData.lastName"
-            :label="t('chatbot_data_last_name_question')"
-            variant="outlined"
-            density="compact"
-            class="mb-3"
-            :rules="lastNameRules"
             hide-details="auto"
           />
         </template>
@@ -290,7 +197,7 @@ watch(
         <VTextField
           v-if="showEmailField"
           v-model="dataNodeData.email"
-          :label="t('chatbot_data_email_question')"
+          :label="t('chatbot_data_question')"
           variant="outlined"
           density="compact"
           class="mb-3"
@@ -301,29 +208,23 @@ watch(
         <VTextField
           v-if="showCpfField"
           v-model="dataNodeData.cpf"
-          v-maska="cpfMask"
-          :label="t('chatbot_data_cpf_question')"
-          placeholder="000.000.000-00"
+          :label="t('chatbot_data_question')"
           variant="outlined"
           density="compact"
           class="mb-3"
           :rules="cpfRules"
           hide-details="auto"
-          inputmode="numeric"
         />
 
         <VTextField
           v-if="showCnpjField"
           v-model="dataNodeData.cnpj"
-          v-maska="cnpjMask"
-          :label="t('chatbot_data_cnpj_question')"
-          placeholder="00.000.000/0000-00"
+          :label="t('chatbot_data_question')"
           variant="outlined"
           density="compact"
           class="mb-3"
           :rules="cnpjRules"
           hide-details="auto"
-          inputmode="numeric"
         />
       </VCardText>
     </VCard>

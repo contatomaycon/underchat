@@ -23,6 +23,17 @@ const configurationsSchema = Type.Object({
       selected_sector_user: Type.Optional(Type.String()),
     })
   ),
+  messages: Type.Optional(
+    Type.Object({
+      inactivity_message: Type.Optional(Type.String()),
+      invalid_menu_option_message: Type.Optional(Type.String()),
+      invalid_satisfaction_option_message: Type.Optional(Type.String()),
+      invalid_cpf_message: Type.Optional(Type.String()),
+      invalid_cnpj_message: Type.Optional(Type.String()),
+      invalid_email_message: Type.Optional(Type.String()),
+      service_finished_message: Type.Optional(Type.String()),
+    })
+  ),
 });
 
 export const saveChatbotFlowConfigurationsRequestSchema = Type.Object({

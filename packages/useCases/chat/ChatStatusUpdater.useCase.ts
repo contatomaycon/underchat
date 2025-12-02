@@ -15,14 +15,14 @@ import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { UserService } from '@core/services/user.service';
 import { WorkerService } from '@core/services/worker.service';
 import { WorkerConfigService } from '@core/services/workerConfig.service';
-import { ChatMessageCreatorUseCase } from './ChatMessageCreator.useCase';
-import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
+import { ChatMessageService } from '@core/services/chatMessage.service';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
 import { AutomaticAttendanceService } from '@core/services/automaticAttendance.service';
 import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import Redis from 'ioredis';
+import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 
 @injectable()
 export class ChatStatusUpdaterUseCase {
@@ -32,7 +32,7 @@ export class ChatStatusUpdaterUseCase {
     private readonly userService: UserService,
     private readonly workerService: WorkerService,
     private readonly workerConfigService: WorkerConfigService,
-    private readonly chatMessageCreatorUseCase: ChatMessageCreatorUseCase,
+    private readonly chatMessageService: ChatMessageService,
     private readonly automaticAttendanceService: AutomaticAttendanceService,
     private readonly chatUserViewerRepository: ChatUserViewerRepository,
     @inject('Redis') private readonly redis: Redis
@@ -51,20 +51,19 @@ export class ChatStatusUpdaterUseCase {
       protocol
     );
 
-    const protocolMessageBody: CreateMessageChatsBody = {
-      type: EMessageType.system,
-      message,
-    };
+    const chat = await this.chatService.findChatByChatId(accountId, chatId);
+    if (!chat) {
+      throw new Error(t('chat_not_found'));
+    }
 
     await Promise.all([
-      this.chatMessageCreatorUseCase.execute(
-        t,
+      this.chatMessageService.sendMessage(t, {
+        chat,
         accountId,
-        {
-          chat_id: chatId,
-        },
-        protocolMessageBody
-      ),
+        type: EMessageType.system,
+        message,
+        typeUser: ETypeUserChat.system,
+      }),
       this.chatService.updateChatProtocol(chatId, protocolType, protocol),
     ]);
 

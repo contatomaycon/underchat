@@ -11,6 +11,7 @@ import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { useRouter } from 'vue-router';
 import AppAddChatbot from '@/components/chatbot/AppAddChatbot.vue';
 import AppEditChatbot from '@/components/chatbot/AppEditChatbot.vue';
+import VDialogHandler from '@/components/VDialogHandler.vue';
 
 definePage({
   meta: {
@@ -37,6 +38,8 @@ const headers: DataTableHeader<ListChatbotResponse>[] = [
 const isAddModalOpen = ref(false);
 const isEditModalOpen = ref(false);
 const editingChatbotId = ref<string | null>(null);
+const isDialogDeleterShow = ref(false);
+const chatbotToDelete = ref<string | null>(null);
 
 const editChatbot = (id: string) => {
   editingChatbotId.value = id;
@@ -44,7 +47,17 @@ const editChatbot = (id: string) => {
 };
 
 const deleteChatbot = (id: string) => {
-  // Por enquanto não faz nada
+  chatbotToDelete.value = id;
+  isDialogDeleterShow.value = true;
+};
+
+const handleDelete = async () => {
+  if (!chatbotToDelete.value) {
+    return;
+  }
+
+  await chatbotStore.deleteChatbot(chatbotToDelete.value);
+  chatbotToDelete.value = null;
 };
 
 const openConfigurations = (id: string) => {
@@ -156,6 +169,13 @@ onMounted(async () => {
       v-model="isEditModalOpen"
       :chatbot-id="editingChatbotId"
       @updated="handleUpdated"
+    />
+
+    <VDialogHandler
+      v-model="isDialogDeleterShow"
+      :title="$t('delete') + ' ' + $t('chatbot')"
+      :message="$t('delete_chatbot_confirmation')"
+      @confirm="handleDelete"
     />
   </div>
 </template>

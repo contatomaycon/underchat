@@ -1,12 +1,11 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { viewUraProtocolTextParamsSchema } from './request.schema';
-import { viewUraProtocolTextResponseSchema } from './response.schema';
+import { deleteChatbotRequestSchema } from './request.schema';
 
-export const viewUraProtocolTextSchema = {
-  description: 'Visualizar texto do protocolo na URA',
-  tags: [ETagSwagger.worker],
+export const deleteChatbotSchema = {
+  description: 'Remove um chatbot existente',
+  tags: [ETagSwagger.chatbot],
   produces: ['application/json'],
   security: [
     {
@@ -22,14 +21,14 @@ export const viewUraProtocolTextSchema = {
       })
     ),
   }),
-  params: viewUraProtocolTextParamsSchema,
+  params: deleteChatbotRequestSchema,
   response: {
     200: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: viewUraProtocolTextResponseSchema,
+        data: Type.Null(),
       },
       { description: 'Successful' }
     ),

@@ -216,7 +216,13 @@ export const useChatbotStore = defineStore('chatbot', {
 
         const data = response?.data;
 
-        if (!data?.status || !data?.data) {
+        if (!data?.status) {
+          const message = data?.message ?? this.i18n.global.t(errorKey);
+          this.showSnackbar(message, EColor.error);
+          return null;
+        }
+
+        if (!data?.data) {
           const message = data?.message ?? this.i18n.global.t(errorKey);
           this.showSnackbar(message, EColor.error);
           return null;
@@ -424,6 +430,50 @@ export const useChatbotStore = defineStore('chatbot', {
         '/chatbot/flow/configurations',
         { chatbot_id: chatbotId }
       );
+    },
+
+    async deleteChatbot(chatbotId: string): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.delete<IApiResponse<null>>(
+          `/chatbot/${chatbotId}`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const message =
+            data?.message ?? this.i18n.global.t('chatbot_deleter_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('chatbot_deleted_successfully'),
+          EColor.success
+        );
+
+        await this.listChatbots();
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('chatbot_deleter_error');
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
     },
   },
 });
