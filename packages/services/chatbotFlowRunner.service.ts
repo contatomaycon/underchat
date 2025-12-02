@@ -1766,13 +1766,27 @@ export class ChatbotFlowRunnerService {
   ): Promise<string | null> => {
     const userText = this.getTextFromUpsertMessage(data)?.trim();
 
-    if (userText?.toLowerCase() === 'sair') {
-      const configurations =
-        await this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
-          createChat.account.id,
-          chatbotId
-        );
+    if (!userText) {
+      return null;
+    }
 
+    const configurations =
+      await this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
+        createChat.account.id,
+        chatbotId
+      );
+
+    const finishTriggers =
+      configurations?.configurations?.finish_triggers || [];
+    const userTextLower = userText.toLowerCase();
+    const userWords = userTextLower.split(/\s+/);
+
+    const hasFinishTrigger = finishTriggers.some((trigger) => {
+      const triggerLower = trigger.toLowerCase();
+      return userWords.includes(triggerLower);
+    });
+
+    if (hasFinishTrigger) {
       const customServiceFinishedMessage =
         configurations?.configurations?.messages?.service_finished_message;
 
@@ -1789,12 +1803,6 @@ export class ChatbotFlowRunnerService {
     if (!chatbotFlow) {
       throw new Error(t('chatbot_flow_not_found'));
     }
-
-    const configurations =
-      await this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
-        createChat.account.id,
-        chatbotId
-      );
 
     const customMessages = configurations?.configurations?.messages;
     const inactivityAlert = configurations?.configurations?.inactivity_alert;

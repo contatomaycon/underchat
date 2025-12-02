@@ -69,6 +69,9 @@ const redirectFailedAttemptsSelectedUser = ref<string | null>(null);
 const redirectFailedAttemptsSelectedSector = ref<string | null>(null);
 const redirectFailedAttemptsSelectedSectorUser = ref<string | null>(null);
 
+const finishTriggers = ref<string[]>([]);
+const finishTriggerInput = ref('');
+
 const inactivityUsers = ref<any[]>([]);
 const inactivitySectors = ref<any[]>([]);
 const inactivitySectorUsers = ref<any[]>([]);
@@ -1240,6 +1243,14 @@ const processConfigurations = async (configs: any): Promise<void> => {
     await processRedirectFailedAttemptsConfig(configs.redirect_failed_attempts);
   }
 
+  if (configs.finish_triggers) {
+    finishTriggers.value = Array.isArray(configs.finish_triggers)
+      ? configs.finish_triggers
+      : [];
+  } else {
+    finishTriggers.value = [];
+  }
+
   if (configs.messages) {
     inactivityMessage.value = configs.messages.inactivity_message || '';
     invalidMenuOptionMessage.value =
@@ -1268,6 +1279,31 @@ const processConfigurations = async (configs: any): Promise<void> => {
     transferMessageSector.value = '';
     transferMessageSectorUser.value = '';
   }
+};
+
+const addFinishTrigger = () => {
+  const text = finishTriggerInput.value.trim();
+  if (!text) {
+    return;
+  }
+
+  const words = text.split(/\s+/).filter((word) => word.length > 0);
+  words.forEach((word) => {
+    const normalizedWord = word.toLowerCase();
+    if (
+      !finishTriggers.value.some(
+        (trigger) => trigger.toLowerCase() === normalizedWord
+      )
+    ) {
+      finishTriggers.value.push(word);
+    }
+  });
+
+  finishTriggerInput.value = '';
+};
+
+const removeFinishTrigger = (index: number) => {
+  finishTriggers.value.splice(index, 1);
 };
 
 const loadChatbotFlowConfigurations = async () => {
@@ -1336,6 +1372,8 @@ const handleSaveConfigurations = async () => {
                 redirectFailedAttemptsSelectedSectorUser.value || undefined,
             }
           : undefined,
+      finish_triggers:
+        finishTriggers.value.length > 0 ? finishTriggers.value : undefined,
       messages: {
         inactivity_message: inactivityMessage.value || undefined,
         invalid_menu_option_message:
@@ -2300,6 +2338,49 @@ onMounted(() => {
                         </VCard>
                       </VMenu>
                     </div>
+                  </div>
+                </VCardText>
+              </VCard>
+
+              <VCard variant="outlined" class="mb-4">
+                <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
+                  {{ t('chatbot_finish_triggers') }}
+                </VCardTitle>
+                <VCardSubtitle
+                  class="text-caption pa-3 pb-0 pt-0 config-description"
+                >
+                  {{ t('chatbot_finish_triggers_description') }}
+                </VCardSubtitle>
+                <VDivider />
+                <VCardText>
+                  <div class="mb-3">
+                    <VLabel class="mb-1 text-body-2">{{
+                      t('chatbot_finish_triggers_label')
+                    }}</VLabel>
+                    <VTextField
+                      v-model="finishTriggerInput"
+                      :placeholder="t('chatbot_finish_triggers_placeholder')"
+                      variant="outlined"
+                      density="compact"
+                      hide-details
+                      @keydown.enter.prevent="addFinishTrigger"
+                    />
+                    <div class="text-caption text-medium-emphasis mt-2">
+                      {{ t('chatbot_finish_triggers_hint') }}
+                    </div>
+                  </div>
+
+                  <div v-if="finishTriggers.length > 0" class="d-flex flex-wrap gap-2">
+                    <VChip
+                      v-for="(trigger, index) in finishTriggers"
+                      :key="index"
+                      closable
+                      @click:close="removeFinishTrigger(index)"
+                      color="primary"
+                      variant="tonal"
+                    >
+                      {{ trigger }}
+                    </VChip>
                   </div>
                 </VCardText>
               </VCard>

@@ -23,6 +23,7 @@ const configurationsSchema = Type.Object({
       selected_sector_user: Type.Optional(Type.String()),
     })
   ),
+  finish_triggers: Type.Optional(Type.Array(Type.String())),
   messages: Type.Optional(
     Type.Object({
       inactivity_message: Type.Optional(Type.String()),
