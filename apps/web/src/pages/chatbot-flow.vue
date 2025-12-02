@@ -2318,12 +2318,13 @@ onMounted(() => {
                   </VCardSubtitle>
                   <VDivider />
                   <VCardText>
-                    <VTextField
+                    <VTextarea
                       v-model="inactivityMessage"
                       :placeholder="defaultInactivityMessage"
                       variant="outlined"
                       density="compact"
                       hide-details
+                      rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
@@ -2343,12 +2344,13 @@ onMounted(() => {
                   </VCardSubtitle>
                   <VDivider />
                   <VCardText>
-                    <VTextField
+                    <VTextarea
                       v-model="invalidMenuOptionMessage"
                       :placeholder="defaultInvalidMenuOptionMessage"
                       variant="outlined"
                       density="compact"
                       hide-details
+                      rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
@@ -2372,12 +2374,13 @@ onMounted(() => {
                   </VCardSubtitle>
                   <VDivider />
                   <VCardText>
-                    <VTextField
+                    <VTextarea
                       v-model="invalidSatisfactionOptionMessage"
                       :placeholder="defaultInvalidSatisfactionOptionMessage"
                       variant="outlined"
                       density="compact"
                       hide-details
+                      rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
@@ -2397,12 +2400,13 @@ onMounted(() => {
                   </VCardSubtitle>
                   <VDivider />
                   <VCardText>
-                    <VTextField
+                    <VTextarea
                       v-model="invalidCpfMessage"
                       :placeholder="defaultInvalidCpfMessage"
                       variant="outlined"
                       density="compact"
                       hide-details
+                      rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
@@ -2422,12 +2426,13 @@ onMounted(() => {
                   </VCardSubtitle>
                   <VDivider />
                   <VCardText>
-                    <VTextField
+                    <VTextarea
                       v-model="invalidCnpjMessage"
                       :placeholder="defaultInvalidCnpjMessage"
                       variant="outlined"
                       density="compact"
                       hide-details
+                      rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
@@ -2447,12 +2452,13 @@ onMounted(() => {
                   </VCardSubtitle>
                   <VDivider />
                   <VCardText>
-                    <VTextField
+                    <VTextarea
                       v-model="invalidEmailMessage"
                       :placeholder="defaultInvalidEmailMessage"
                       variant="outlined"
                       density="compact"
                       hide-details
+                      rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
@@ -2472,12 +2478,13 @@ onMounted(() => {
                   </VCardSubtitle>
                   <VDivider />
                   <VCardText>
-                    <VTextField
+                    <VTextarea
                       v-model="serviceFinishedMessage"
                       :placeholder="defaultServiceFinishedMessage"
                       variant="outlined"
                       density="compact"
                       hide-details
+                      rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
@@ -2497,12 +2504,13 @@ onMounted(() => {
                   </VCardSubtitle>
                   <VDivider />
                   <VCardText>
-                    <VTextField
+                    <VTextarea
                       v-model="transferMessageUser"
                       :placeholder="defaultTransferMessageUser"
                       variant="outlined"
                       density="compact"
                       hide-details
+                      rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
@@ -2522,12 +2530,13 @@ onMounted(() => {
                   </VCardSubtitle>
                   <VDivider />
                   <VCardText>
-                    <VTextField
+                    <VTextarea
                       v-model="transferMessageSector"
                       :placeholder="defaultTransferMessageSector"
                       variant="outlined"
                       density="compact"
                       hide-details
+                      rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
@@ -2547,12 +2556,13 @@ onMounted(() => {
                   </VCardSubtitle>
                   <VDivider />
                   <VCardText>
-                    <VTextField
+                    <VTextarea
                       v-model="transferMessageSectorUser"
                       :placeholder="defaultTransferMessageSectorUser"
                       variant="outlined"
                       density="compact"
                       hide-details
+                      rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
