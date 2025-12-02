@@ -813,7 +813,8 @@ export class ChatbotFlowRunnerService {
     t: TFunction<'translation', undefined>,
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
-    currentFlowId: string
+    currentFlowId: string,
+    customTransferMessage?: string
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
 
@@ -852,6 +853,19 @@ export class ChatbotFlowRunnerService {
       user,
       sector
     );
+
+    const transferMessage =
+      customTransferMessage || t('chatbot_transfer_message_default');
+
+    if (user || sector) {
+      await this.chatMessageService.sendMessage(t, {
+        chat: updatedChat,
+        accountId: updatedChat.account.id,
+        type: EMessageType.text,
+        message: transferMessage,
+        typeUser: ETypeUserChat.bot,
+      });
+    }
 
     const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
 
@@ -1464,7 +1478,8 @@ export class ChatbotFlowRunnerService {
         t,
         createChat,
         chatbotFlow,
-        currentFlowId
+        currentFlowId,
+        customMessages?.transfer_message
       );
     }
 

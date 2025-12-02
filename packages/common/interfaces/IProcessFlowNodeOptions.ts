@@ -17,5 +17,6 @@ export interface IProcessFlowNodeOptions {
     invalid_cnpj_message?: string;
     invalid_email_message?: string;
     service_finished_message?: string;
+    transfer_message?: string;
   };
 }

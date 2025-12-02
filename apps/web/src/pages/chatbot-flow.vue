@@ -112,6 +112,9 @@ const defaultInvalidEmailMessage = computed(() => t('email_invalid'));
 const defaultServiceFinishedMessage = computed(() =>
   t('chatbot_service_finished')
 );
+const defaultTransferMessage = computed(() =>
+  t('chatbot_transfer_message_default')
+);
 
 const inactivityMessage = ref('');
 const invalidMenuOptionMessage = ref('');
@@ -120,6 +123,7 @@ const invalidCpfMessage = ref('');
 const invalidCnpjMessage = ref('');
 const invalidEmailMessage = ref('');
 const serviceFinishedMessage = ref('');
+const transferMessage = ref('');
 
 const onlyDigits = (s: string) => s.replaceAll(/\D+/g, '');
 
@@ -1195,6 +1199,7 @@ const processConfigurations = async (configs: any): Promise<void> => {
     invalidEmailMessage.value = configs.messages.invalid_email_message || '';
     serviceFinishedMessage.value =
       configs.messages.service_finished_message || '';
+    transferMessage.value = configs.messages.transfer_message || '';
   } else {
     inactivityMessage.value = '';
     invalidMenuOptionMessage.value = '';
@@ -1203,6 +1208,7 @@ const processConfigurations = async (configs: any): Promise<void> => {
     invalidCnpjMessage.value = '';
     invalidEmailMessage.value = '';
     serviceFinishedMessage.value = '';
+    transferMessage.value = '';
   }
 };
 
@@ -1282,6 +1288,7 @@ const handleSaveConfigurations = async () => {
         invalid_cnpj_message: invalidCnpjMessage.value || undefined,
         invalid_email_message: invalidEmailMessage.value || undefined,
         service_finished_message: serviceFinishedMessage.value || undefined,
+        transfer_message: transferMessage.value || undefined,
       },
     };
 
@@ -2363,6 +2370,31 @@ onMounted(() => {
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
                       {{ defaultServiceFinishedMessage }}
+                    </div>
+                  </VCardText>
+                </VCard>
+
+                <VCard variant="outlined">
+                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
+                    {{ t('chatbot_message_transfer') }}
+                  </VCardTitle>
+                  <VCardSubtitle
+                    class="text-caption pa-3 pb-0 pt-0 config-description"
+                  >
+                    {{ t('chatbot_message_transfer_description') }}
+                  </VCardSubtitle>
+                  <VDivider />
+                  <VCardText>
+                    <VTextField
+                      v-model="transferMessage"
+                      :placeholder="defaultTransferMessage"
+                      variant="outlined"
+                      density="compact"
+                      hide-details
+                    />
+                    <div class="text-caption text-medium-emphasis mt-2">
+                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      {{ defaultTransferMessage }}
                     </div>
                   </VCardText>
                 </VCard>

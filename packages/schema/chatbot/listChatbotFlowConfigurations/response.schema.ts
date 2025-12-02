@@ -32,6 +32,7 @@ const configurationsSchema = Type.Object({
       invalid_cnpj_message: Type.Optional(Type.String()),
       invalid_email_message: Type.Optional(Type.String()),
       service_finished_message: Type.Optional(Type.String()),
+      transfer_message: Type.Optional(Type.String()),
     })
   ),
 });

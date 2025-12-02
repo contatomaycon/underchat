@@ -93,6 +93,9 @@ export const chatbotFlowMappings = () => {
                 service_finished_message: {
                   type: 'text',
                 },
+                transfer_message: {
+                  type: 'text',
+                },
               },
             },
           },

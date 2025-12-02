@@ -463,5 +463,6 @@
   "email_invalid": "Correo electrónico inválido",
   "cpf_invalid": "CPF inválido",
   "cnpj_invalid": "CNPJ inválido",
-  "chatbot_inactivity_message_default": "¡Hola! Notamos que estás inactivo. ¿Podemos ayudarte en algo más?"
+  "chatbot_inactivity_message_default": "¡Hola! Notamos que estás inactivo. ¿Podemos ayudarte en algo más?",
+  "chatbot_transfer_message_default": "Has sido transferido a un atendente. Serás atendido en breve."
 }
