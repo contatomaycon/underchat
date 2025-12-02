@@ -507,219 +507,258 @@ export class ChatMessageCreatorUseCase {
   }
 
   private async sendContactMessage(
-    t: TFunction<'translation', undefined>,
+    messageContext: IMessageContext,
     chat: IChat,
     accountId: string,
-    message: string | null,
-    messageQuotedId: string | null,
-    hash: string | null,
-    typeUser: ETypeUserChat,
-    contacts: string[]
+    contactData: {
+      message: string | null;
+      messageQuotedId: string | null;
+      contacts: string[];
+    }
   ): Promise<boolean> {
-    return this.chatMessageService.sendMessage(t, {
+    return this.chatMessageService.sendMessage(messageContext.t, {
       chat,
       accountId,
       type: EMessageType.contact_card,
-      message,
-      messageQuotedId,
-      hash,
-      typeUser,
-      contactIds: contacts,
+      message: contactData.message,
+      messageQuotedId: contactData.messageQuotedId,
+      hash: messageContext.hash,
+      typeUser: messageContext.typeUser,
+      contactIds: contactData.contacts,
     });
   }
 
   private async sendLocationMessage(
-    t: TFunction<'translation', undefined>,
+    messageContext: IMessageContext,
     chat: IChat,
     accountId: string,
-    message: string | null,
-    messageQuotedId: string | null,
-    hash: string | null,
-    typeUser: ETypeUserChat,
-    locationLatitude: number | null,
-    locationLongitude: number | null,
-    locationName: string | null,
-    locationAddress: string | null
+    messageData: {
+      message: string | null;
+      messageQuotedId: string | null;
+    },
+    locationData: {
+      latitude: number | null;
+      longitude: number | null;
+      name: string | null;
+      address: string | null;
+    }
   ): Promise<boolean> {
-    if (locationLatitude === null || locationLongitude === null) {
-      throw new Error(t('location_coordinates_required'));
+    if (locationData.latitude === null || locationData.longitude === null) {
+      throw new Error(messageContext.t('location_coordinates_required'));
     }
 
-    return this.chatMessageService.sendMessage(t, {
+    return this.chatMessageService.sendMessage(messageContext.t, {
       chat,
       accountId,
       type: EMessageType.location,
-      message,
-      messageQuotedId,
-      hash,
-      typeUser,
-      latitude: locationLatitude,
-      longitude: locationLongitude,
-      name: locationName,
-      address: locationAddress,
+      message: messageData.message,
+      messageQuotedId: messageData.messageQuotedId,
+      hash: messageContext.hash,
+      typeUser: messageContext.typeUser,
+      latitude: locationData.latitude,
+      longitude: locationData.longitude,
+      name: locationData.name,
+      address: locationData.address,
     });
   }
 
   private async sendDocumentMessage(
-    t: TFunction<'translation', undefined>,
+    messageContext: IMessageContext,
     chat: IChat,
     accountId: string,
-    message: string | null,
-    messageQuotedId: string | null,
-    hash: string | null,
-    typeUser: ETypeUserChat,
-    documents: UploadFileRequest[],
-    isQuickMessage: boolean,
-    quickMessageUrl: string | null,
-    quickMessageMimetype: string | null
-  ): Promise<boolean> {
-    if (documents.length === 0 && !isQuickMessage) {
-      throw new Error(t('documents_required'));
+    messageData: {
+      message: string | null;
+      messageQuotedId: string | null;
+    },
+    documentData: {
+      documents: UploadFileRequest[];
+      isQuickMessage: boolean;
+      quickMessageUrl: string | null;
+      quickMessageMimetype: string | null;
     }
-    return this.chatMessageService.sendMessage(t, {
+  ): Promise<boolean> {
+    if (documentData.documents.length === 0 && !documentData.isQuickMessage) {
+      throw new Error(messageContext.t('documents_required'));
+    }
+    return this.chatMessageService.sendMessage(messageContext.t, {
       chat,
       accountId,
       type: EMessageType.document,
-      message,
-      messageQuotedId,
-      hash,
-      typeUser,
-      documents: documents.length > 0 ? documents : undefined,
-      documentUrl: isQuickMessage ? quickMessageUrl : undefined,
-      documentMimetype: isQuickMessage ? quickMessageMimetype : undefined,
+      message: messageData.message,
+      messageQuotedId: messageData.messageQuotedId,
+      hash: messageContext.hash,
+      typeUser: messageContext.typeUser,
+      documents:
+        documentData.documents.length > 0 ? documentData.documents : undefined,
+      documentUrl: documentData.isQuickMessage
+        ? documentData.quickMessageUrl
+        : undefined,
+      documentMimetype: documentData.isQuickMessage
+        ? documentData.quickMessageMimetype
+        : undefined,
     });
   }
 
   private async sendVideoMessage(
-    t: TFunction<'translation', undefined>,
+    messageContext: IMessageContext,
     chat: IChat,
     accountId: string,
-    message: string | null,
-    messageQuotedId: string | null,
-    hash: string | null,
-    typeUser: ETypeUserChat,
-    videos: UploadFileRequest[],
-    videoDuration: number | null,
-    isQuickMessage: boolean,
-    quickMessageUrl: string | null,
-    quickMessageMimetype: string | null,
-    quickMessageDuration: number | null,
-    quickMessageWidth: number | null,
-    quickMessageHeight: number | null
-  ): Promise<boolean> {
-    if (videos.length === 0 && !isQuickMessage) {
-      throw new Error(t('videos_required'));
+    messageData: {
+      message: string | null;
+      messageQuotedId: string | null;
+    },
+    videoData: {
+      videos: UploadFileRequest[];
+      videoDuration: number | null;
+      isQuickMessage: boolean;
+      quickMessageUrl: string | null;
+      quickMessageMimetype: string | null;
+      quickMessageDuration: number | null;
+      quickMessageWidth: number | null;
+      quickMessageHeight: number | null;
     }
-    return this.chatMessageService.sendMessage(t, {
+  ): Promise<boolean> {
+    if (videoData.videos.length === 0 && !videoData.isQuickMessage) {
+      throw new Error(messageContext.t('videos_required'));
+    }
+    return this.chatMessageService.sendMessage(messageContext.t, {
       chat,
       accountId,
       type: EMessageType.video,
-      message,
-      messageQuotedId,
-      hash,
-      typeUser,
-      videos: videos.length > 0 ? videos : undefined,
-      videoUrl: isQuickMessage ? quickMessageUrl : undefined,
-      videoMimetype: isQuickMessage ? quickMessageMimetype : undefined,
+      message: messageData.message,
+      messageQuotedId: messageData.messageQuotedId,
+      hash: messageContext.hash,
+      typeUser: messageContext.typeUser,
+      videos: videoData.videos.length > 0 ? videoData.videos : undefined,
+      videoUrl: videoData.isQuickMessage
+        ? videoData.quickMessageUrl
+        : undefined,
+      videoMimetype: videoData.isQuickMessage
+        ? videoData.quickMessageMimetype
+        : undefined,
       videoDuration:
-        videoDuration ??
-        (isQuickMessage ? quickMessageDuration : undefined) ??
+        videoData.videoDuration ??
+        (videoData.isQuickMessage
+          ? videoData.quickMessageDuration
+          : undefined) ??
         undefined,
-      videoWidth: isQuickMessage ? quickMessageWidth : undefined,
-      videoHeight: isQuickMessage ? quickMessageHeight : undefined,
+      videoWidth: videoData.isQuickMessage
+        ? videoData.quickMessageWidth
+        : undefined,
+      videoHeight: videoData.isQuickMessage
+        ? videoData.quickMessageHeight
+        : undefined,
     });
   }
 
   private async sendAudioMessage(
-    t: TFunction<'translation', undefined>,
+    messageContext: IMessageContext,
     chat: IChat,
     accountId: string,
-    message: string | null,
-    messageQuotedId: string | null,
-    hash: string | null,
-    typeUser: ETypeUserChat,
-    audios: UploadFileRequest[],
-    audioDuration: number | null,
-    audioPtt: boolean,
-    audioViewOnce: boolean,
-    isQuickMessage: boolean,
-    quickMessageUrl: string | null,
-    quickMessageMimetype: string | null,
-    quickMessageDuration: number | null
-  ): Promise<boolean> {
-    if (audios.length === 0 && !isQuickMessage) {
-      throw new Error(t('audio_required'));
+    messageData: {
+      message: string | null;
+      messageQuotedId: string | null;
+    },
+    audioData: {
+      audios: UploadFileRequest[];
+      audioDuration: number | null;
+      audioPtt: boolean;
+      audioViewOnce: boolean;
+      isQuickMessage: boolean;
+      quickMessageUrl: string | null;
+      quickMessageMimetype: string | null;
+      quickMessageDuration: number | null;
     }
-    return this.chatMessageService.sendMessage(t, {
+  ): Promise<boolean> {
+    if (audioData.audios.length === 0 && !audioData.isQuickMessage) {
+      throw new Error(messageContext.t('audio_required'));
+    }
+    return this.chatMessageService.sendMessage(messageContext.t, {
       chat,
       accountId,
       type: EMessageType.audio,
-      message,
-      messageQuotedId,
-      hash,
-      typeUser,
-      audios: audios.length > 0 ? audios : undefined,
-      audioUrl: isQuickMessage ? quickMessageUrl : undefined,
-      audioMimetype: isQuickMessage ? quickMessageMimetype : undefined,
+      message: messageData.message,
+      messageQuotedId: messageData.messageQuotedId,
+      hash: messageContext.hash,
+      typeUser: messageContext.typeUser,
+      audios: audioData.audios.length > 0 ? audioData.audios : undefined,
+      audioUrl: audioData.isQuickMessage
+        ? audioData.quickMessageUrl
+        : undefined,
+      audioMimetype: audioData.isQuickMessage
+        ? audioData.quickMessageMimetype
+        : undefined,
       audioDuration:
-        audioDuration ??
-        (isQuickMessage ? quickMessageDuration : undefined) ??
+        audioData.audioDuration ??
+        (audioData.isQuickMessage
+          ? audioData.quickMessageDuration
+          : undefined) ??
         undefined,
-      audioPtt,
-      audioViewOnce,
+      audioPtt: audioData.audioPtt,
+      audioViewOnce: audioData.audioViewOnce,
     });
   }
 
   private async sendImageMessage(
-    t: TFunction<'translation', undefined>,
+    messageContext: IMessageContext,
     chat: IChat,
     accountId: string,
-    message: string | null,
-    messageQuotedId: string | null,
-    hash: string | null,
-    typeUser: ETypeUserChat,
-    images: UploadFileRequest[],
-    isQuickMessage: boolean,
-    quickMessageUrl: string | null,
-    quickMessageMimetype: string | null,
-    quickMessageWidth: number | null,
-    quickMessageHeight: number | null
+    messageData: {
+      message: string | null;
+      messageQuotedId: string | null;
+    },
+    imageData: {
+      images: UploadFileRequest[];
+      isQuickMessage: boolean;
+      quickMessageUrl: string | null;
+      quickMessageMimetype: string | null;
+      quickMessageWidth: number | null;
+      quickMessageHeight: number | null;
+    }
   ): Promise<boolean> {
-    return this.chatMessageService.sendMessage(t, {
+    return this.chatMessageService.sendMessage(messageContext.t, {
       chat,
       accountId,
       type: EMessageType.image,
-      message,
-      messageQuotedId,
-      hash,
-      typeUser,
-      images: images.length > 0 ? images : undefined,
-      imageUrl: isQuickMessage ? quickMessageUrl : undefined,
-      imageMimetype: isQuickMessage ? quickMessageMimetype : undefined,
-      imageWidth: isQuickMessage ? quickMessageWidth : undefined,
-      imageHeight: isQuickMessage ? quickMessageHeight : undefined,
+      message: messageData.message,
+      messageQuotedId: messageData.messageQuotedId,
+      hash: messageContext.hash,
+      typeUser: messageContext.typeUser,
+      images: imageData.images.length > 0 ? imageData.images : undefined,
+      imageUrl: imageData.isQuickMessage
+        ? imageData.quickMessageUrl
+        : undefined,
+      imageMimetype: imageData.isQuickMessage
+        ? imageData.quickMessageMimetype
+        : undefined,
+      imageWidth: imageData.isQuickMessage
+        ? imageData.quickMessageWidth
+        : undefined,
+      imageHeight: imageData.isQuickMessage
+        ? imageData.quickMessageHeight
+        : undefined,
     });
   }
 
   private async sendTextMessage(
-    t: TFunction<'translation', undefined>,
+    messageContext: IMessageContext,
     chat: IChat,
     accountId: string,
-    message: string | null,
-    messageQuotedId: string | null,
-    hash: string | null,
-    typeUser: ETypeUserChat,
+    messageData: {
+      message: string | null;
+      messageQuotedId: string | null;
+    },
     type: EMessageType,
     linkPreview?: any
   ): Promise<boolean> {
-    return this.chatMessageService.sendMessage(t, {
+    return this.chatMessageService.sendMessage(messageContext.t, {
       chat,
       accountId,
       type: type as EMessageType.text | EMessageType.system,
-      message,
-      messageQuotedId,
-      hash,
-      typeUser,
+      message: messageData.message,
+      messageQuotedId: messageData.messageQuotedId,
+      hash: messageContext.hash,
+      typeUser: messageContext.typeUser,
       linkPreview,
     });
   }
@@ -776,14 +815,14 @@ export class ChatMessageCreatorUseCase {
 
     if (normalizedFields.contacts.length > 0) {
       return this.sendContactMessage(
-        t,
+        { t, hash: normalizedFields.hash, typeUser },
         chat,
         accountId,
-        normalizedFields.message,
-        normalizedFields.messageQuotedId,
-        normalizedFields.hash,
-        typeUser,
-        normalizedFields.contacts
+        {
+          message: normalizedFields.message,
+          messageQuotedId: normalizedFields.messageQuotedId,
+          contacts: normalizedFields.contacts,
+        }
       );
     }
 
@@ -793,73 +832,81 @@ export class ChatMessageCreatorUseCase {
       normalizedFields.locationLongitude !== null
     ) {
       return this.sendLocationMessage(
-        t,
+        { t, hash: normalizedFields.hash, typeUser },
         chat,
         accountId,
-        normalizedFields.message,
-        normalizedFields.messageQuotedId,
-        normalizedFields.hash,
-        typeUser,
-        normalizedFields.locationLatitude,
-        normalizedFields.locationLongitude,
-        normalizedFields.locationName,
-        normalizedFields.locationAddress
+        {
+          message: normalizedFields.message,
+          messageQuotedId: normalizedFields.messageQuotedId,
+        },
+        {
+          latitude: normalizedFields.locationLatitude,
+          longitude: normalizedFields.locationLongitude,
+          name: normalizedFields.locationName,
+          address: normalizedFields.locationAddress,
+        }
       );
     }
 
     if (type === EMessageType.document) {
       return this.sendDocumentMessage(
-        t,
+        { t, hash: normalizedFields.hash, typeUser },
         chat,
         accountId,
-        normalizedFields.message,
-        normalizedFields.messageQuotedId,
-        normalizedFields.hash,
-        typeUser,
-        normalizedFields.documents,
-        isQuickMessage,
-        quickMessageUrl,
-        quickMessageMimetype
+        {
+          message: normalizedFields.message,
+          messageQuotedId: normalizedFields.messageQuotedId,
+        },
+        {
+          documents: normalizedFields.documents,
+          isQuickMessage,
+          quickMessageUrl,
+          quickMessageMimetype,
+        }
       );
     }
 
     if (type === EMessageType.video) {
       return this.sendVideoMessage(
-        t,
+        { t, hash: normalizedFields.hash, typeUser },
         chat,
         accountId,
-        normalizedFields.message,
-        normalizedFields.messageQuotedId,
-        normalizedFields.hash,
-        typeUser,
-        normalizedFields.videos,
-        normalizedFields.videoDuration,
-        isQuickMessage,
-        quickMessageUrl,
-        quickMessageMimetype,
-        quickMessageDuration,
-        quickMessageWidth,
-        quickMessageHeight
+        {
+          message: normalizedFields.message,
+          messageQuotedId: normalizedFields.messageQuotedId,
+        },
+        {
+          videos: normalizedFields.videos,
+          videoDuration: normalizedFields.videoDuration,
+          isQuickMessage,
+          quickMessageUrl,
+          quickMessageMimetype,
+          quickMessageDuration,
+          quickMessageWidth,
+          quickMessageHeight,
+        }
       );
     }
 
     if (type === EMessageType.audio) {
       return this.sendAudioMessage(
-        t,
+        { t, hash: normalizedFields.hash, typeUser },
         chat,
         accountId,
-        normalizedFields.message,
-        normalizedFields.messageQuotedId,
-        normalizedFields.hash,
-        typeUser,
-        normalizedFields.audios,
-        normalizedFields.audioDuration,
-        normalizedFields.audioPtt,
-        normalizedFields.audioViewOnce,
-        isQuickMessage,
-        quickMessageUrl,
-        quickMessageMimetype,
-        quickMessageDuration
+        {
+          message: normalizedFields.message,
+          messageQuotedId: normalizedFields.messageQuotedId,
+        },
+        {
+          audios: normalizedFields.audios,
+          audioDuration: normalizedFields.audioDuration,
+          audioPtt: normalizedFields.audioPtt,
+          audioViewOnce: normalizedFields.audioViewOnce,
+          isQuickMessage,
+          quickMessageUrl,
+          quickMessageMimetype,
+          quickMessageDuration,
+        }
       );
     }
 
@@ -868,30 +915,32 @@ export class ChatMessageCreatorUseCase {
       (isQuickMessage && quickMessageUrl && type === EMessageType.image)
     ) {
       return this.sendImageMessage(
-        t,
+        { t, hash: normalizedFields.hash, typeUser },
         chat,
         accountId,
-        normalizedFields.message,
-        normalizedFields.messageQuotedId,
-        normalizedFields.hash,
-        typeUser,
-        normalizedFields.images,
-        isQuickMessage,
-        quickMessageUrl,
-        quickMessageMimetype,
-        quickMessageWidth,
-        quickMessageHeight
+        {
+          message: normalizedFields.message,
+          messageQuotedId: normalizedFields.messageQuotedId,
+        },
+        {
+          images: normalizedFields.images,
+          isQuickMessage,
+          quickMessageUrl,
+          quickMessageMimetype,
+          quickMessageWidth,
+          quickMessageHeight,
+        }
       );
     }
 
     return this.sendTextMessage(
-      t,
+      { t, hash: normalizedFields.hash, typeUser },
       chat,
       accountId,
-      normalizedFields.message,
-      normalizedFields.messageQuotedId,
-      normalizedFields.hash,
-      typeUser,
+      {
+        message: normalizedFields.message,
+        messageQuotedId: normalizedFields.messageQuotedId,
+      },
       type,
       body.link_preview
     );

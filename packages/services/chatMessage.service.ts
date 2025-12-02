@@ -866,10 +866,12 @@ export class ChatMessageService {
     type: EMessageType,
     message: string | null,
     options: SendMessageOptions,
-    quotedId: string | null,
-    quotedMessage: IQuotedMessage | null,
-    normalizedHash: string | null,
-    typeUser: ETypeUserChat
+    messageContext: {
+      quotedId: string | null;
+      quotedMessage: IQuotedMessage | null;
+      normalizedHash: string | null;
+      typeUser: ETypeUserChat;
+    }
   ): Promise<boolean> {
     const formattedMessage = await this.formatOperatorTextWithAttendeeName(
       chatData,
@@ -883,10 +885,10 @@ export class ChatMessageService {
       type,
       message: formattedMessage,
       linkPreview: 'linkPreview' in options ? options.linkPreview : undefined,
-      messageQuotedId: quotedId,
-      quotedMessage,
-      hash: normalizedHash,
-      typeUser,
+      messageQuotedId: messageContext.quotedId,
+      quotedMessage: messageContext.quotedMessage,
+      hash: messageContext.normalizedHash,
+      typeUser: messageContext.typeUser,
     });
 
     return this.publishMessage(textMessage);
@@ -899,10 +901,12 @@ export class ChatMessageService {
     message: string | null,
     imageOptions: ISendImageMessageOptions,
     accountId: string,
-    quotedId: string | null,
-    quotedMessage: IQuotedMessage | null,
-    normalizedHash: string | null,
-    typeUser: ETypeUserChat
+    messageContext: {
+      quotedId: string | null;
+      quotedMessage: IQuotedMessage | null;
+      normalizedHash: string | null;
+      typeUser: ETypeUserChat;
+    }
   ): Promise<boolean> {
     let imageData: UploadFileResponse | null = null;
 
@@ -930,10 +934,10 @@ export class ChatMessageService {
       type,
       message,
       imageData,
-      messageQuotedId: quotedId,
-      quotedMessage,
-      hash: normalizedHash,
-      typeUser,
+      messageQuotedId: messageContext.quotedId,
+      quotedMessage: messageContext.quotedMessage,
+      hash: messageContext.normalizedHash,
+      typeUser: messageContext.typeUser,
     });
 
     return this.publishMessage(imageMessage);
@@ -946,10 +950,12 @@ export class ChatMessageService {
     message: string | null,
     videoOptions: ISendVideoMessageOptions,
     accountId: string,
-    quotedId: string | null,
-    quotedMessage: IQuotedMessage | null,
-    normalizedHash: string | null,
-    typeUser: ETypeUserChat
+    messageContext: {
+      quotedId: string | null;
+      quotedMessage: IQuotedMessage | null;
+      normalizedHash: string | null;
+      typeUser: ETypeUserChat;
+    }
   ): Promise<boolean> {
     let videoData:
       | (UploadFileResponse & {
@@ -988,12 +994,12 @@ export class ChatMessageService {
         type,
         message,
         videoData,
-        messageQuotedId: quotedId,
-        quotedMessage,
+        messageQuotedId: messageContext.quotedId,
+        quotedMessage: messageContext.quotedMessage,
         videoDuration: finalDuration,
-        typeUser,
+        typeUser: messageContext.typeUser,
       },
-      normalizedHash
+      messageContext.normalizedHash
     );
 
     return this.publishMessage(videoMessage);
@@ -1006,10 +1012,12 @@ export class ChatMessageService {
     message: string | null,
     audioOptions: ISendAudioMessageOptions,
     accountId: string,
-    quotedId: string | null,
-    quotedMessage: IQuotedMessage | null,
-    normalizedHash: string | null,
-    typeUser: ETypeUserChat
+    messageContext: {
+      quotedId: string | null;
+      quotedMessage: IQuotedMessage | null;
+      normalizedHash: string | null;
+      typeUser: ETypeUserChat;
+    }
   ): Promise<boolean> {
     let audioData:
       | (UploadFileResponse & {
@@ -1046,14 +1054,14 @@ export class ChatMessageService {
         type,
         message,
         audioData,
-        messageQuotedId: quotedId,
-        quotedMessage,
+        messageQuotedId: messageContext.quotedId,
+        quotedMessage: messageContext.quotedMessage,
         duration: finalDuration,
         isViewOnce: audioOptions.audioViewOnce ?? false,
         isPtt: audioOptions.audioPtt ?? false,
-        typeUser,
+        typeUser: messageContext.typeUser,
       },
-      normalizedHash
+      messageContext.normalizedHash
     );
 
     return this.publishMessage(audioMessage);
@@ -1066,10 +1074,12 @@ export class ChatMessageService {
     message: string | null,
     documentOptions: ISendDocumentMessageOptions,
     accountId: string,
-    quotedId: string | null,
-    quotedMessage: IQuotedMessage | null,
-    normalizedHash: string | null,
-    typeUser: ETypeUserChat
+    messageContext: {
+      quotedId: string | null;
+      quotedMessage: IQuotedMessage | null;
+      normalizedHash: string | null;
+      typeUser: ETypeUserChat;
+    }
   ): Promise<boolean> {
     let documentData: UploadFileResponse | null = null;
 
@@ -1098,10 +1108,10 @@ export class ChatMessageService {
       type,
       message,
       documentData,
-      messageQuotedId: quotedId,
-      quotedMessage,
-      hash: normalizedHash,
-      typeUser,
+      messageQuotedId: messageContext.quotedId,
+      quotedMessage: messageContext.quotedMessage,
+      hash: messageContext.normalizedHash,
+      typeUser: messageContext.typeUser,
     });
 
     return this.publishMessage(documentMessage);
@@ -1113,10 +1123,12 @@ export class ChatMessageService {
     type: EMessageType,
     message: string | null,
     locationOptions: ISendLocationMessageOptions,
-    quotedId: string | null,
-    quotedMessage: IQuotedMessage | null,
-    normalizedHash: string | null,
-    typeUser: ETypeUserChat
+    messageContext: {
+      quotedId: string | null;
+      quotedMessage: IQuotedMessage | null;
+      normalizedHash: string | null;
+      typeUser: ETypeUserChat;
+    }
   ): Promise<boolean> {
     const locationMessage: IChatMessage = {
       message_id: uuidv7(),
@@ -1126,7 +1138,7 @@ export class ChatMessageService {
         remote_jid_alt: chatData.message_key?.remote_jid_alt ?? null,
         is_view_once: false,
       },
-      type_user: typeUser,
+      type_user: messageContext.typeUser,
       account: chatData.account,
       worker: chatData.worker,
       user: chatData.user,
@@ -1138,12 +1150,12 @@ export class ChatMessageService {
         is_sent_to_internal: true,
       },
       deleted: false,
-      has_quoted: !!quotedMessage,
+      has_quoted: !!messageContext.quotedMessage,
       content: {
         type,
         message,
-        message_quoted_id: quotedId,
-        quoted: quotedMessage,
+        message_quoted_id: messageContext.quotedId,
+        quoted: messageContext.quotedMessage,
         location: {
           latitude: locationOptions.latitude,
           longitude: locationOptions.longitude,
@@ -1152,7 +1164,7 @@ export class ChatMessageService {
         },
       },
       date: new Date().toISOString(),
-      hash: normalizedHash,
+      hash: messageContext.normalizedHash,
     };
 
     return this.publishMessage(locationMessage);
@@ -1201,10 +1213,12 @@ export class ChatMessageService {
     message: string | null,
     contactOptions: ISendContactMessageOptions,
     accountId: string,
-    quotedId: string | null,
-    quotedMessage: IQuotedMessage | null,
-    normalizedHash: string | null,
-    typeUser: ETypeUserChat
+    messageContext: {
+      quotedId: string | null;
+      quotedMessage: IQuotedMessage | null;
+      normalizedHash: string | null;
+      typeUser: ETypeUserChat;
+    }
   ): Promise<boolean> {
     if (contactOptions.contactIds.length === 0) {
       return false;
@@ -1244,7 +1258,7 @@ export class ChatMessageService {
     }
 
     const publishTasks = validContacts.map((contactData) => {
-      const messageHash = normalizedHash || uuidv7();
+      const messageHash = messageContext.normalizedHash || uuidv7();
       const contactMessage: IChatMessage = {
         message_id: uuidv7(),
         chat_id: chatId,
@@ -1253,7 +1267,7 @@ export class ChatMessageService {
           remote_jid_alt: chatData.message_key?.remote_jid_alt ?? null,
           is_view_once: false,
         },
-        type_user: typeUser,
+        type_user: messageContext.typeUser,
         account: chatData.account,
         worker: chatData.worker,
         user: chatData.user,
@@ -1265,12 +1279,12 @@ export class ChatMessageService {
           is_sent_to_internal: true,
         },
         deleted: false,
-        has_quoted: !!quotedMessage,
+        has_quoted: !!messageContext.quotedMessage,
         content: {
           type,
           message,
-          message_quoted_id: quotedId,
-          quoted: quotedMessage,
+          message_quoted_id: messageContext.quotedId,
+          quoted: messageContext.quotedMessage,
           contact: {
             contact_id: contactData.contact_id,
             name: contactData.name,
@@ -1330,10 +1344,12 @@ export class ChatMessageService {
         type,
         message ?? null,
         options,
-        quotedId,
-        quotedMessage,
-        normalizedHash,
-        typeUser
+        {
+          quotedId,
+          quotedMessage,
+          normalizedHash,
+          typeUser,
+        }
       );
     }
 
@@ -1345,10 +1361,12 @@ export class ChatMessageService {
         message ?? null,
         options,
         accountId,
-        quotedId,
-        quotedMessage,
-        normalizedHash,
-        typeUser
+        {
+          quotedId,
+          quotedMessage,
+          normalizedHash,
+          typeUser,
+        }
       );
     }
 
@@ -1360,10 +1378,12 @@ export class ChatMessageService {
         message ?? null,
         options,
         accountId,
-        quotedId,
-        quotedMessage,
-        normalizedHash,
-        typeUser
+        {
+          quotedId,
+          quotedMessage,
+          normalizedHash,
+          typeUser,
+        }
       );
     }
 
@@ -1375,10 +1395,12 @@ export class ChatMessageService {
         message ?? null,
         options,
         accountId,
-        quotedId,
-        quotedMessage,
-        normalizedHash,
-        typeUser
+        {
+          quotedId,
+          quotedMessage,
+          normalizedHash,
+          typeUser,
+        }
       );
     }
 
@@ -1390,10 +1412,12 @@ export class ChatMessageService {
         message ?? null,
         options,
         accountId,
-        quotedId,
-        quotedMessage,
-        normalizedHash,
-        typeUser
+        {
+          quotedId,
+          quotedMessage,
+          normalizedHash,
+          typeUser,
+        }
       );
     }
 
@@ -1404,10 +1428,12 @@ export class ChatMessageService {
         type,
         message ?? null,
         options,
-        quotedId,
-        quotedMessage,
-        normalizedHash,
-        typeUser
+        {
+          quotedId,
+          quotedMessage,
+          normalizedHash,
+          typeUser,
+        }
       );
     }
 
@@ -1419,10 +1445,12 @@ export class ChatMessageService {
         message ?? null,
         options,
         accountId,
-        quotedId,
-        quotedMessage,
-        normalizedHash,
-        typeUser
+        {
+          quotedId,
+          quotedMessage,
+          normalizedHash,
+          typeUser,
+        }
       );
     }
 
