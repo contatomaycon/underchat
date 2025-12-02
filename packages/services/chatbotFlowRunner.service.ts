@@ -3,7 +3,6 @@ import Redis from 'ioredis';
 import { ChatbotService } from './chatbot.service';
 import { ChatService } from './chat.service';
 import { ChatMessageService } from './chatMessage.service';
-import { WorkerConfigService } from './workerConfig.service';
 import { ContactService } from './contact.service';
 import { LabelTemplateViewerRepository } from '@core/repositories/labelTemplate/LabelTemplateViewer.repository';
 import { CentrifugoService } from './centrifugo.service';
@@ -20,6 +19,7 @@ import {
   chatAccountCentrifugo,
   chatQueueAccountCentrifugo,
 } from '@core/common/functions/centrifugoQueue';
+import { IInactivityData } from '@core/common/interfaces/IInactivityData';
 
 @injectable()
 export class ChatbotFlowRunnerService {
@@ -28,7 +28,6 @@ export class ChatbotFlowRunnerService {
     private readonly chatbotService: ChatbotService,
     private readonly chatService: ChatService,
     private readonly chatMessageService: ChatMessageService,
-    private readonly workerConfigService: WorkerConfigService,
     private readonly contactService: ContactService,
     private readonly labelTemplateViewerRepository: LabelTemplateViewerRepository,
     private readonly centrifugoService: CentrifugoService,
@@ -44,30 +43,16 @@ export class ChatbotFlowRunnerService {
     return `underchat:chatbot-flow:${accountId}:${workerId}:${chatId}`;
   }
 
-  private getFirstLogicalNodeId(
-    chatbotFlow: ListChatbotFlowResponse
-  ): string | null {
-    const { nodes, edges } = chatbotFlow;
+  private getInactivityCacheKey(
+    accountId: string,
+    workerId: string,
+    chatId: string
+  ): string {
+    return `underchat:chatbot-inactivity:${accountId}:${workerId}:${chatId}`;
+  }
 
-    if (!nodes || !Array.isArray(nodes) || nodes.length === 0) {
-      return null;
-    }
-
-    const startNode = nodes.find((node) => node.type === 'start');
-
-    if (startNode && Array.isArray(edges) && edges.length > 0) {
-      const firstEdgeFromStart = edges.find(
-        (edge) => edge.source === startNode.id
-      );
-
-      if (firstEdgeFromStart) {
-        return firstEdgeFromStart.target;
-      }
-    }
-
-    const firstNonStartNode = nodes.find((node) => node.type !== 'start');
-
-    return firstNonStartNode ? firstNonStartNode.id : null;
+  private getInactivityScheduleKey(): string {
+    return 'underchat:chatbot-inactivity-schedule';
   }
 
   private getFlowNodeById(
@@ -390,6 +375,7 @@ export class ChatbotFlowRunnerService {
         closedAt
       ),
       this.redis.del(cacheKey),
+      this.cancelInactivityCheck(createChat),
     ]);
 
     return true;
@@ -952,6 +938,321 @@ export class ChatbotFlowRunnerService {
     return this.processNextNode(t, createChat, chatbotFlow, nextFlowId);
   }
 
+  private async scheduleInactivityCheck(
+    createChat: IChat,
+    timeMinutes: number,
+    chatbotId: string
+  ): Promise<void> {
+    const inactivityCacheKey = this.getInactivityCacheKey(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id
+    );
+    const scheduleKey = this.getInactivityScheduleKey();
+    const now = Date.now();
+    const checkTime = now + timeMinutes * 60 * 1000;
+
+    const inactivityData = await this.redis.get(inactivityCacheKey);
+    const data: IInactivityData = inactivityData
+      ? (JSON.parse(inactivityData) as IInactivityData)
+      : {
+          lastInteraction: now,
+          alertCount: 0,
+          lastAlertTime: null,
+          chatbotId: chatbotId,
+          accountId: createChat.account.id,
+          workerId: createChat.worker.id,
+          chatId: createChat.chat_id,
+        };
+
+    data.lastInteraction = now;
+    data.alertCount = 0;
+    data.chatbotId = chatbotId;
+    data.accountId = createChat.account.id;
+    data.workerId = createChat.worker.id;
+    data.chatId = createChat.chat_id;
+
+    await Promise.all([
+      this.redis.set(inactivityCacheKey, JSON.stringify(data)),
+      this.redis.zadd(scheduleKey, checkTime, inactivityCacheKey),
+    ]);
+  }
+
+  private async cancelInactivityCheck(createChat: IChat): Promise<void> {
+    const inactivityCacheKey = this.getInactivityCacheKey(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id
+    );
+    const scheduleKey = this.getInactivityScheduleKey();
+
+    await Promise.all([
+      this.redis.del(inactivityCacheKey),
+      this.redis.zrem(scheduleKey, inactivityCacheKey),
+    ]);
+  }
+
+  private async processInactivityAlert(
+    t: TFunction<'translation', undefined>,
+    inactivityCacheKey: string,
+    inactivityData: IInactivityData,
+    inactivityAlert: {
+      status?: string;
+      quantity?: number;
+      time?: number;
+      action?: string;
+      redirect_type?: string;
+      selected_user?: string;
+      selected_sector?: string;
+      selected_sector_user?: string;
+    },
+    createChat: IChat,
+    customInactivityMessage?: string,
+    customServiceFinishedMessage?: string
+  ): Promise<boolean> {
+    const quantity = inactivityAlert.quantity ?? 1;
+    const timeMinutes = inactivityAlert.time ?? 5;
+    const action = inactivityAlert.action;
+    const now = Date.now();
+
+    if (!action) {
+      return false;
+    }
+
+    const currentAlertCount = inactivityData.alertCount || 0;
+    const newAlertCount = currentAlertCount + 1;
+
+    if (newAlertCount <= quantity) {
+      const inactivityMessage =
+        customInactivityMessage || t('chatbot_inactivity_message_default');
+      await this.chatMessageService.sendMessage(t, {
+        chat: createChat,
+        accountId: createChat.account.id,
+        type: EMessageType.text,
+        message: inactivityMessage,
+        typeUser: ETypeUserChat.bot,
+      });
+
+      const scheduleKey = this.getInactivityScheduleKey();
+      const updatedData = {
+        ...inactivityData,
+        alertCount: newAlertCount,
+        lastAlertTime: now,
+      };
+
+      const nextCheckTime = now + timeMinutes * 60 * 1000;
+
+      await Promise.all([
+        this.redis.set(inactivityCacheKey, JSON.stringify(updatedData)),
+        this.redis.zadd(scheduleKey, nextCheckTime, inactivityCacheKey),
+      ]);
+
+      return false;
+    }
+
+    await this.cancelInactivityCheck(createChat);
+
+    if (action === 'finish') {
+      await this.sendFinishMessage(t, createChat, customServiceFinishedMessage);
+      return true;
+    }
+
+    if (action === 'redirect') {
+      const redirectType = inactivityAlert.redirect_type;
+      let user: IChat['user'] | null | undefined = undefined;
+      let sector: IChat['sector'] | null | undefined = undefined;
+
+      if (redirectType === 'user') {
+        const selectedUser = inactivityAlert.selected_user;
+        if (!selectedUser) {
+          return false;
+        }
+
+        const userData = await this.userService.viewUserNamePhoto(selectedUser);
+        if (!userData) {
+          return false;
+        }
+
+        user = {
+          id: userData.id,
+          name: userData.name,
+          photo: userData.photo ?? null,
+        };
+      }
+
+      if (redirectType === 'sector') {
+        const selectedSector = inactivityAlert.selected_sector;
+        if (!selectedSector) {
+          return false;
+        }
+
+        const sectorData = await this.sectorService.viewSectorById(
+          selectedSector,
+          createChat.account.id,
+          false
+        );
+
+        if (!sectorData) {
+          return false;
+        }
+
+        sector = {
+          id: sectorData.sector_id,
+          name: sectorData.name,
+        };
+
+        const selectedSectorUser = inactivityAlert.selected_sector_user;
+        if (selectedSectorUser) {
+          const sectorUserData =
+            await this.userService.viewUserNamePhoto(selectedSectorUser);
+
+          if (sectorUserData) {
+            user = {
+              id: sectorUserData.id,
+              name: sectorUserData.name,
+              photo: sectorUserData.photo ?? null,
+            };
+          }
+        }
+      }
+
+      await this.chatService.updateChatUserAndSector(
+        createChat.chat_id,
+        user,
+        sector
+      );
+
+      await this.chatService.updateChatStatus(
+        createChat.chat_id,
+        EChatStatus.queue
+      );
+
+      const updatedChat: IChat = {
+        ...createChat,
+        user,
+        sector,
+        status: EChatStatus.queue,
+      };
+
+      await this.chatService.saveChat(updatedChat);
+
+      const channelAccountId = updatedChat.account?.id ?? createChat.account.id;
+
+      await Promise.all([
+        this.centrifugoService.publishSub(
+          chatAccountCentrifugo(channelAccountId),
+          updatedChat
+        ),
+        this.centrifugoService.publishSub(
+          chatQueueAccountCentrifugo(channelAccountId),
+          updatedChat
+        ),
+      ]);
+
+      return true;
+    }
+
+    return false;
+  }
+
+  async processScheduledInactivityChecks(
+    t: TFunction<'translation', undefined>
+  ): Promise<void> {
+    const scheduleKey = this.getInactivityScheduleKey();
+    const now = Date.now();
+
+    const keysToCheck = await this.redis.zrangebyscore(
+      scheduleKey,
+      0,
+      now,
+      'LIMIT',
+      0,
+      100
+    );
+
+    if (keysToCheck.length === 0) {
+      return;
+    }
+
+    for (const inactivityCacheKey of keysToCheck) {
+      await this.redis.zrem(scheduleKey, inactivityCacheKey);
+
+      const inactivityDataStr = await this.redis.get(inactivityCacheKey);
+
+      if (!inactivityDataStr) {
+        continue;
+      }
+
+      const inactivityData = JSON.parse(inactivityDataStr) as IInactivityData;
+      const timeSinceLastInteraction =
+        (now - inactivityData.lastInteraction) / 1000 / 60;
+
+      if (timeSinceLastInteraction < 0) {
+        continue;
+      }
+
+      const chatbotFlow = await this.chatbotService.findChatbotFlowByChatbotId(
+        inactivityData.accountId,
+        inactivityData.chatbotId
+      );
+
+      if (!chatbotFlow) {
+        await this.cancelInactivityCheck({
+          account: { id: inactivityData.accountId },
+          worker: { id: inactivityData.workerId },
+          chat_id: inactivityData.chatId,
+        } as IChat);
+        continue;
+      }
+
+      const configurations =
+        await this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
+          inactivityData.accountId,
+          inactivityData.chatbotId
+        );
+
+      const inactivityAlert = configurations?.configurations?.inactivity_alert;
+
+      if (!inactivityAlert || inactivityAlert.status !== 'active') {
+        await this.cancelInactivityCheck({
+          account: { id: inactivityData.accountId },
+          worker: { id: inactivityData.workerId },
+          chat_id: inactivityData.chatId,
+        } as IChat);
+        continue;
+      }
+
+      const createChat = await this.chatService.findChatByChatId(
+        inactivityData.accountId,
+        inactivityData.chatId
+      );
+
+      if (!createChat) {
+        await this.cancelInactivityCheck({
+          account: { id: inactivityData.accountId },
+          worker: { id: inactivityData.workerId },
+          chat_id: inactivityData.chatId,
+        } as IChat);
+        continue;
+      }
+
+      const customInactivityMessage =
+        configurations?.configurations?.messages?.inactivity_message;
+      const customServiceFinishedMessage =
+        configurations?.configurations?.messages?.service_finished_message;
+
+      await this.processInactivityAlert(
+        t,
+        inactivityCacheKey,
+        inactivityData,
+        inactivityAlert,
+        createChat,
+        customInactivityMessage,
+        customServiceFinishedMessage
+      );
+    }
+  }
+
   private async processStartNode(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
@@ -973,6 +1274,17 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
+    chatbotId: string,
+    inactivityAlert?: {
+      status?: string;
+      quantity?: number;
+      time?: number;
+      action?: string;
+      redirect_type?: string;
+      selected_user?: string;
+      selected_sector?: string;
+      selected_sector_user?: string;
+    },
     customMessages?: {
       inactivity_message?: string;
       invalid_menu_option_message?: string;
@@ -983,6 +1295,13 @@ export class ChatbotFlowRunnerService {
       service_finished_message?: string;
     }
   ): Promise<boolean> {
+    if (inactivityAlert && inactivityAlert.status === 'active') {
+      const timeMinutes = inactivityAlert.time ?? 5;
+      await this.scheduleInactivityCheck(createChat, timeMinutes, chatbotId);
+    } else {
+      await this.cancelInactivityCheck(createChat);
+    }
+
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
     if (!currentNode) {
       throw new Error(t('chatbot_flow_node_not_found'));
@@ -1075,6 +1394,7 @@ export class ChatbotFlowRunnerService {
       );
 
     const customMessages = configurations?.configurations?.messages;
+    const inactivityAlert = configurations?.configurations?.inactivity_alert;
 
     const currentFlowId = await this.cacheFirstChatbotFlowNodeIfNeeded(
       chatbotFlow,
@@ -1091,6 +1411,8 @@ export class ChatbotFlowRunnerService {
       createChat,
       chatbotFlow,
       currentFlowId,
+      chatbotId,
+      inactivityAlert,
       customMessages
     );
 

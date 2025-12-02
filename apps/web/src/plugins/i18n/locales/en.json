@@ -1227,6 +1227,8 @@
     "chatbot_redirect_failed_attempts_quantity": "Quantity",
     "chatbot_flow_save_success": "Chatbot flow saved successfully!",
     "chatbot_flow_save_error": "An error occurred while saving the chatbot flow. Please try again.",
+    "chatbot_flow_configurations_save_success": "Chatbot configurations saved successfully!",
+    "chatbot_flow_configurations_save_error": "An error occurred while saving the chatbot configurations. Please try again.",
     "chatbot_flow_list_successfully": "Chatbot flow loaded successfully!",
     "chatbot_flow_validation_chatbot_id_required": "Chatbot ID is required",
     "chatbot_flow_validation_no_nodes": "The flow must contain at least one node",

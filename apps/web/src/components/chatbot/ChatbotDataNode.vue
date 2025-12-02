@@ -112,25 +112,25 @@ watch(
       if (newType === 'name') {
         dataNodeData.value.firstName = t('chatbot_data_default_name_question');
       } else {
-        dataNodeData.value.firstName = '';
+      dataNodeData.value.firstName = '';
       }
 
       if (newType === 'email') {
         dataNodeData.value.email = t('chatbot_data_default_email_question');
       } else {
-        dataNodeData.value.email = '';
+      dataNodeData.value.email = '';
       }
 
       if (newType === 'cpf') {
         dataNodeData.value.cpf = t('chatbot_data_default_cpf_question');
       } else {
-        dataNodeData.value.cpf = '';
+      dataNodeData.value.cpf = '';
       }
 
       if (newType === 'cnpj') {
         dataNodeData.value.cnpj = t('chatbot_data_default_cnpj_question');
       } else {
-        dataNodeData.value.cnpj = '';
+      dataNodeData.value.cnpj = '';
       }
     }
     updateNodeData();

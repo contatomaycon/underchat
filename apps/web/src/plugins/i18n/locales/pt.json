@@ -1238,6 +1238,8 @@
     "chatbot_redirect_failed_attempts_quantity": "Quantidade",
     "chatbot_flow_save_success": "Fluxo do chatbot salvo com sucesso!",
     "chatbot_flow_save_error": "Ocorreu um erro ao salvar o fluxo do chatbot. Por favor, tente novamente.",
+    "chatbot_flow_configurations_save_success": "Configurações do chatbot salvas com sucesso!",
+    "chatbot_flow_configurations_save_error": "Ocorreu um erro ao salvar as configurações do chatbot. Por favor, tente novamente.",
     "chatbot_flow_list_successfully": "Fluxo do chatbot carregado com sucesso!",
     "chatbot_flow_validation_chatbot_id_required": "ID do chatbot é obrigatório",
     "chatbot_flow_validation_no_nodes": "O fluxo deve conter pelo menos um nó",

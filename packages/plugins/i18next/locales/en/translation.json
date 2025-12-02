@@ -462,5 +462,6 @@
   "chatbot_service_finished": "Service finished",
   "email_invalid": "Invalid email",
   "cpf_invalid": "Invalid CPF",
-  "cnpj_invalid": "Invalid CNPJ"
+  "cnpj_invalid": "Invalid CNPJ",
+  "chatbot_inactivity_message_default": "Hello! We noticed you're inactive. Can we help with anything else?"
 }
