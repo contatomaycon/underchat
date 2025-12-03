@@ -162,19 +162,22 @@ watch(
       :class="{
         'chat-active': isChatContactActive,
         'chat-disabled': props.disabled,
-        'chat-has-label': showWorkerNameLabel && workerName,
+        'chat-has-label':
+          (showWorkerNameLabel && workerName) || chatLabelForList,
         'chat-has-sector': sectorName,
       }"
       :aria-disabled="props.disabled ? 'true' : undefined"
     >
       <div
-        v-if="showWorkerNameLabel && workerName"
+        v-if="(showWorkerNameLabel && workerName) || chatLabelForList"
         class="chat-worker-label-wrapper"
       >
         <div
+          v-if="showWorkerNameLabel && workerName"
           class="chat-worker-label text-caption"
           :class="{
             'chat-worker-label--with-tag': chatLabelForList,
+            'chat-worker-label--standalone': !chatLabelForList,
           }"
         >
           {{ workerName }}
@@ -182,6 +185,10 @@ watch(
         <div
           v-if="chatLabelForList"
           class="chat-label-tag text-caption"
+          :class="{
+            'chat-label-tag--standalone': !(showWorkerNameLabel && workerName),
+            'chat-label-tag--with-worker': showWorkerNameLabel && workerName,
+          }"
           :style="{
             backgroundColor: chatLabelForList.color,
           }"
@@ -364,7 +371,11 @@ watch(
   font-weight: 500;
 
   &.chat-worker-label--with-tag {
-    border-top-right-radius: 0;
+    border-radius: vuetify.$border-radius-root 0 0 0;
+  }
+
+  &.chat-worker-label--standalone {
+    border-radius: vuetify.$border-radius-root vuetify.$border-radius-root 0 0;
   }
 }
 
@@ -377,6 +388,15 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 500;
+
+  &.chat-label-tag--standalone {
+    border-radius: vuetify.$border-radius-root vuetify.$border-radius-root 0 0;
+  }
+
+  &.chat-label-tag--with-worker {
+    border-radius: 0 vuetify.$border-radius-root 0 0;
+    border-top-left-radius: 0;
+  }
 }
 
 .chat-message-preview {
