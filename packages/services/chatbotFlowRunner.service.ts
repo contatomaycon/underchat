@@ -1696,7 +1696,11 @@ export class ChatbotFlowRunnerService {
       return true;
     }
 
-    const quantity = redirectFailedAttempts!.quantity ?? 1;
+    if (!redirectFailedAttempts) {
+      return true;
+    }
+
+    const quantity = redirectFailedAttempts.quantity ?? 1;
     const failedAttemptsCount = await this.incrementFailedAttempts(createChat);
 
     if (failedAttemptsCount < quantity) {
@@ -1706,7 +1710,7 @@ export class ChatbotFlowRunnerService {
     await this.resetFailedAttempts(createChat);
 
     const { user, sector } = await this.getRedirectTargets(
-      redirectFailedAttempts!,
+      redirectFailedAttempts,
       createChat
     );
 
@@ -1722,7 +1726,7 @@ export class ChatbotFlowRunnerService {
     await this.sendTransferMessageIfNeeded(
       t,
       updatedChat,
-      redirectFailedAttempts!.redirect_type,
+      redirectFailedAttempts.redirect_type,
       user,
       sector,
       customMessages
