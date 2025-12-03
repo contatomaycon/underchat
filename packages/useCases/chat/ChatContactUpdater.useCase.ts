@@ -15,7 +15,8 @@ export class ChatContactUpdaterUseCase {
     body: UpdateChatContactRequest
   ): Promise<boolean> {
     const contactRequest: UpdateContactRequest = {
-      label_template_id: body.label_template_id,
+      label_template_id:
+        body.label_template_id === undefined ? null : body.label_template_id,
       name: body.name,
       last_name: body.last_name,
       email: body.email,
