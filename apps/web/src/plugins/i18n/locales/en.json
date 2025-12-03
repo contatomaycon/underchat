@@ -390,6 +390,8 @@
     "no_chat_in_service": "No chats in service",
     "no_chat_in_queue": "No chats in queue",
     "no_chat_in_ura": "No chats in IVR",
+    "my_chats": "My chats",
+    "no_my_chats": "No chats found",
     "today": "Today",
     "yesterday": "Yesterday",
     "sunday": "Sunday",

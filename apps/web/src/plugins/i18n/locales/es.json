@@ -391,6 +391,8 @@
     "no_chat_in_service": "No hay chats en servicio",
     "no_chat_in_queue": "No hay chats en cola",
     "no_chat_in_ura": "No hay chats en IVR",
+    "my_chats": "Mis atendimientos",
+    "no_my_chats": "No se encontraron atendimientos",
     "today": "Hoy",
     "yesterday": "Ayer",
     "sunday": "Domingo",
