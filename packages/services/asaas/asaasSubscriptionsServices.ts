@@ -1,55 +1,61 @@
 import { injectable } from 'tsyringe';
-import {
-  CreateSubscriptionService,
-  CreateSubscriptionWithCreditCardService,
-  GetSubscriptionService,
-  UpdateSubscriptionService,
-  UpdateSubscriptionCreditCardService,
-  DeleteSubscriptionService,
-  ListSubscriptionsService,
-  ListSubscriptionPaymentsService,
-  GetSubscriptionPaymentBookService,
-  ListSubscriptionInvoicesService,
-} from './subscriptions';
-import { AsaasSubscriptionInvoiceSettingsServices } from './asaasSubscriptionInvoiceSettingsServices';
+import { AsaasSubscriptionBasicServices } from './asaasSubscriptionBasicServices';
+import { AsaasSubscriptionRelatedServices } from './asaasSubscriptionRelatedServices';
 
 @injectable()
 export class AsaasSubscriptionsServices {
-  public readonly create: CreateSubscriptionService;
-  public readonly createWithCreditCard: CreateSubscriptionWithCreditCardService;
-  public readonly get: GetSubscriptionService;
-  public readonly update: UpdateSubscriptionService;
-  public readonly updateCreditCard: UpdateSubscriptionCreditCardService;
-  public readonly delete: DeleteSubscriptionService;
-  public readonly list: ListSubscriptionsService;
-  public readonly listPayments: ListSubscriptionPaymentsService;
-  public readonly getPaymentBook: GetSubscriptionPaymentBookService;
-  public readonly invoiceSettings: AsaasSubscriptionInvoiceSettingsServices;
-  public readonly listInvoices: ListSubscriptionInvoicesService;
+  public readonly basic: AsaasSubscriptionBasicServices;
+  public readonly related: AsaasSubscriptionRelatedServices;
 
   constructor(
-    create: CreateSubscriptionService,
-    createWithCreditCard: CreateSubscriptionWithCreditCardService,
-    get: GetSubscriptionService,
-    update: UpdateSubscriptionService,
-    updateCreditCard: UpdateSubscriptionCreditCardService,
-    deleteService: DeleteSubscriptionService,
-    list: ListSubscriptionsService,
-    listPayments: ListSubscriptionPaymentsService,
-    getPaymentBook: GetSubscriptionPaymentBookService,
-    invoiceSettings: AsaasSubscriptionInvoiceSettingsServices,
-    listInvoices: ListSubscriptionInvoicesService
+    basic: AsaasSubscriptionBasicServices,
+    related: AsaasSubscriptionRelatedServices
   ) {
-    this.create = create;
-    this.createWithCreditCard = createWithCreditCard;
-    this.get = get;
-    this.update = update;
-    this.updateCreditCard = updateCreditCard;
-    this.delete = deleteService;
-    this.list = list;
-    this.listPayments = listPayments;
-    this.getPaymentBook = getPaymentBook;
-    this.invoiceSettings = invoiceSettings;
-    this.listInvoices = listInvoices;
+    this.basic = basic;
+    this.related = related;
+  }
+
+  get create() {
+    return this.basic.create;
+  }
+
+  get createWithCreditCard() {
+    return this.basic.createWithCreditCard;
+  }
+
+  get get() {
+    return this.basic.get;
+  }
+
+  get update() {
+    return this.basic.update;
+  }
+
+  get updateCreditCard() {
+    return this.basic.updateCreditCard;
+  }
+
+  get delete() {
+    return this.basic.delete;
+  }
+
+  get list() {
+    return this.basic.list;
+  }
+
+  get listPayments() {
+    return this.related.listPayments;
+  }
+
+  get getPaymentBook() {
+    return this.related.getPaymentBook;
+  }
+
+  get invoiceSettings() {
+    return this.related.invoiceSettings;
+  }
+
+  get listInvoices() {
+    return this.related.listInvoices;
   }
 }

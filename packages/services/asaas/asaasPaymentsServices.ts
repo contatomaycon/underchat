@@ -1,71 +1,77 @@
 import { injectable } from 'tsyringe';
-import {
-  CreatePaymentService,
-  CreateCreditCardPaymentService,
-  CaptureAuthorizedPaymentService,
-  PayWithCreditCardService,
-  GetPaymentService,
-  UpdatePaymentService,
-  DeletePaymentService,
-  RestorePaymentService,
-  GetPaymentStatusService,
-  GetPaymentIdentificationFieldService,
-  GetPaymentPixQrCodeService,
-  GetPaymentBillingInfoService,
-  GetPaymentViewingInfoService,
-  ListPaymentsService,
-} from './payments';
+import { ListPaymentsService } from './payments';
+import { AsaasPaymentBasicServices } from './asaasPaymentBasicServices';
+import { AsaasPaymentInfoServices } from './asaasPaymentInfoServices';
 import { AsaasPaymentDocumentsServices } from './asaasPaymentDocumentsServices';
 
 @injectable()
 export class AsaasPaymentsServices {
-  public readonly create: CreatePaymentService;
-  public readonly createCreditCard: CreateCreditCardPaymentService;
-  public readonly captureAuthorized: CaptureAuthorizedPaymentService;
-  public readonly payWithCreditCard: PayWithCreditCardService;
-  public readonly get: GetPaymentService;
-  public readonly update: UpdatePaymentService;
-  public readonly delete: DeletePaymentService;
-  public readonly restore: RestorePaymentService;
-  public readonly getStatus: GetPaymentStatusService;
-  public readonly getIdentificationField: GetPaymentIdentificationFieldService;
-  public readonly getPixQrCode: GetPaymentPixQrCodeService;
-  public readonly getBillingInfo: GetPaymentBillingInfoService;
-  public readonly getViewingInfo: GetPaymentViewingInfoService;
+  public readonly basic: AsaasPaymentBasicServices;
+  public readonly info: AsaasPaymentInfoServices;
   public readonly list: ListPaymentsService;
   public readonly documents: AsaasPaymentDocumentsServices;
 
   constructor(
-    create: CreatePaymentService,
-    createCreditCard: CreateCreditCardPaymentService,
-    captureAuthorized: CaptureAuthorizedPaymentService,
-    payWithCreditCard: PayWithCreditCardService,
-    get: GetPaymentService,
-    update: UpdatePaymentService,
-    deleteService: DeletePaymentService,
-    restore: RestorePaymentService,
-    getStatus: GetPaymentStatusService,
-    getIdentificationField: GetPaymentIdentificationFieldService,
-    getPixQrCode: GetPaymentPixQrCodeService,
-    getBillingInfo: GetPaymentBillingInfoService,
-    getViewingInfo: GetPaymentViewingInfoService,
+    basic: AsaasPaymentBasicServices,
+    info: AsaasPaymentInfoServices,
     list: ListPaymentsService,
     documents: AsaasPaymentDocumentsServices
   ) {
-    this.create = create;
-    this.createCreditCard = createCreditCard;
-    this.captureAuthorized = captureAuthorized;
-    this.payWithCreditCard = payWithCreditCard;
-    this.get = get;
-    this.update = update;
-    this.delete = deleteService;
-    this.restore = restore;
-    this.getStatus = getStatus;
-    this.getIdentificationField = getIdentificationField;
-    this.getPixQrCode = getPixQrCode;
-    this.getBillingInfo = getBillingInfo;
-    this.getViewingInfo = getViewingInfo;
+    this.basic = basic;
+    this.info = info;
     this.list = list;
     this.documents = documents;
+  }
+
+  get create() {
+    return this.basic.create;
+  }
+
+  get createCreditCard() {
+    return this.basic.createCreditCard;
+  }
+
+  get captureAuthorized() {
+    return this.basic.captureAuthorized;
+  }
+
+  get payWithCreditCard() {
+    return this.basic.payWithCreditCard;
+  }
+
+  get get() {
+    return this.basic.get;
+  }
+
+  get update() {
+    return this.basic.update;
+  }
+
+  get delete() {
+    return this.basic.delete;
+  }
+
+  get restore() {
+    return this.basic.restore;
+  }
+
+  get getStatus() {
+    return this.info.getStatus;
+  }
+
+  get getIdentificationField() {
+    return this.info.getIdentificationField;
+  }
+
+  get getPixQrCode() {
+    return this.info.getPixQrCode;
+  }
+
+  get getBillingInfo() {
+    return this.info.getBillingInfo;
+  }
+
+  get getViewingInfo() {
+    return this.info.getViewingInfo;
   }
 }

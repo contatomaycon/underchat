@@ -1,47 +1,53 @@
 import { injectable } from 'tsyringe';
-import {
-  CreateInstallmentService,
-  CreateInstallmentWithCreditCardService,
-  GetInstallmentService,
-  DeleteInstallmentService,
-  ListInstallmentsService,
-  ListInstallmentPaymentsService,
-  GetInstallmentPaymentBookService,
-  UpdateInstallmentSplitsService,
-  RefundInstallmentService,
-} from './installments';
+import { AsaasInstallmentBasicServices } from './asaasInstallmentBasicServices';
+import { AsaasInstallmentAdvancedServices } from './asaasInstallmentAdvancedServices';
 
 @injectable()
 export class AsaasInstallmentsServices {
-  public readonly create: CreateInstallmentService;
-  public readonly createWithCreditCard: CreateInstallmentWithCreditCardService;
-  public readonly get: GetInstallmentService;
-  public readonly delete: DeleteInstallmentService;
-  public readonly list: ListInstallmentsService;
-  public readonly listPayments: ListInstallmentPaymentsService;
-  public readonly getPaymentBook: GetInstallmentPaymentBookService;
-  public readonly updateSplits: UpdateInstallmentSplitsService;
-  public readonly refund: RefundInstallmentService;
+  public readonly basic: AsaasInstallmentBasicServices;
+  public readonly advanced: AsaasInstallmentAdvancedServices;
 
   constructor(
-    create: CreateInstallmentService,
-    createWithCreditCard: CreateInstallmentWithCreditCardService,
-    get: GetInstallmentService,
-    deleteService: DeleteInstallmentService,
-    list: ListInstallmentsService,
-    listPayments: ListInstallmentPaymentsService,
-    getPaymentBook: GetInstallmentPaymentBookService,
-    updateSplits: UpdateInstallmentSplitsService,
-    refund: RefundInstallmentService
+    basic: AsaasInstallmentBasicServices,
+    advanced: AsaasInstallmentAdvancedServices
   ) {
-    this.create = create;
-    this.createWithCreditCard = createWithCreditCard;
-    this.get = get;
-    this.delete = deleteService;
-    this.list = list;
-    this.listPayments = listPayments;
-    this.getPaymentBook = getPaymentBook;
-    this.updateSplits = updateSplits;
-    this.refund = refund;
+    this.basic = basic;
+    this.advanced = advanced;
+  }
+
+  get create() {
+    return this.basic.create;
+  }
+
+  get createWithCreditCard() {
+    return this.basic.createWithCreditCard;
+  }
+
+  get get() {
+    return this.basic.get;
+  }
+
+  get delete() {
+    return this.basic.delete;
+  }
+
+  get list() {
+    return this.basic.list;
+  }
+
+  get listPayments() {
+    return this.advanced.listPayments;
+  }
+
+  get getPaymentBook() {
+    return this.advanced.getPaymentBook;
+  }
+
+  get updateSplits() {
+    return this.advanced.updateSplits;
+  }
+
+  get refund() {
+    return this.advanced.refund;
   }
 }

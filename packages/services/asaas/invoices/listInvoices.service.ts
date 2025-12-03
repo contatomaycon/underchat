@@ -10,48 +10,55 @@ import {
 export class ListInvoicesService {
   constructor(private readonly asaasBaseService: AsaasBaseService) {}
 
+  private buildQueryParams(
+    request?: IListAsaasInvoicesRequest
+  ): URLSearchParams {
+    const params = new URLSearchParams();
+
+    if (request?.offset !== undefined) {
+      params.append('offset', request.offset.toString());
+    }
+
+    if (request?.limit !== undefined) {
+      params.append('limit', request.limit.toString());
+    }
+
+    if (request?.['effectiveDate[ge]']) {
+      params.append('effectiveDate[ge]', request['effectiveDate[ge]']);
+    }
+
+    if (request?.['effectiveDate[le]']) {
+      params.append('effectiveDate[le]', request['effectiveDate[le]']);
+    }
+
+    if (request?.payment) {
+      params.append('payment', request.payment);
+    }
+
+    if (request?.installment) {
+      params.append('installment', request.installment);
+    }
+
+    if (request?.externalReference) {
+      params.append('externalReference', request.externalReference);
+    }
+
+    if (request?.status) {
+      params.append('status', request.status);
+    }
+
+    if (request?.customer) {
+      params.append('customer', request.customer);
+    }
+
+    return params;
+  }
+
   listInvoices = async (
     request?: IListAsaasInvoicesRequest
   ): Promise<IListAsaasInvoicesResponse | null> => {
     try {
-      const params = new URLSearchParams();
-
-      if (request?.offset !== undefined) {
-        params.append('offset', request.offset.toString());
-      }
-
-      if (request?.limit !== undefined) {
-        params.append('limit', request.limit.toString());
-      }
-
-      if (request?.['effectiveDate[ge]']) {
-        params.append('effectiveDate[ge]', request['effectiveDate[ge]']);
-      }
-
-      if (request?.['effectiveDate[le]']) {
-        params.append('effectiveDate[le]', request['effectiveDate[le]']);
-      }
-
-      if (request?.payment) {
-        params.append('payment', request.payment);
-      }
-
-      if (request?.installment) {
-        params.append('installment', request.installment);
-      }
-
-      if (request?.externalReference) {
-        params.append('externalReference', request.externalReference);
-      }
-
-      if (request?.status) {
-        params.append('status', request.status);
-      }
-
-      if (request?.customer) {
-        params.append('customer', request.customer);
-      }
-
+      const params = this.buildQueryParams(request);
       const queryString = params.toString();
       const url = queryString ? `/v3/invoices?${queryString}` : '/v3/invoices';
 
