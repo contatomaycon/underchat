@@ -24,6 +24,30 @@ const isChatContactActive = computed(() => {
 const workerName = computed(() => props.user?.worker?.name ?? '');
 const showWorkerNameLabel = ref(false);
 
+const chatLabelForList = computed<{
+  label: string;
+  color: string;
+} | null>(() => {
+  // Etiqueta do chat
+  if (props.user.label) {
+    return {
+      label: props.user.label.label,
+      color: props.user.label.color,
+    };
+  }
+
+  // Fallback: etiqueta do contato (se disponível no objeto de contato)
+  const contact: any = props.user.contact;
+  if (contact?.label_template) {
+    return {
+      label: contact.label_template.label,
+      color: contact.label_template.color,
+    };
+  }
+
+  return null;
+});
+
 const loadWorkerConfig = async (workerId?: string | null) => {
   if (!workerId) {
     showWorkerNameLabel.value = false;
@@ -60,9 +84,26 @@ watch(
     >
       <div
         v-if="showWorkerNameLabel && workerName"
-        class="chat-worker-label text-caption"
+        class="chat-worker-label-wrapper"
       >
-        {{ workerName }}
+        <div
+          class="chat-worker-label text-caption"
+          :class="{
+            'chat-worker-label--with-tag': chatLabelForList,
+          }"
+        >
+          {{ workerName }}
+        </div>
+        <div
+          v-if="chatLabelForList"
+          class="chat-label-tag text-caption"
+          :style="{
+            backgroundColor: chatLabelForList.color,
+          }"
+          :title="chatLabelForList.label"
+        >
+          {{ chatLabelForList.label }}
+        </div>
       </div>
       <VAvatar
         size="40"
@@ -182,20 +223,40 @@ watch(
   }
 
   &.chat-has-label {
-    margin-top: 1.125rem;
+    margin-top: 1.5rem;
   }
 }
 
-.chat-worker-label {
+.chat-worker-label-wrapper {
   position: absolute;
   top: 0;
   left: 0;
   transform: translateY(-100%);
+  display: inline-flex;
+  max-width: 100%;
+}
+
+.chat-worker-label {
   padding: 2px 10px;
   border-radius: 0 vuetify.$border-radius-root 0 0;
   background-color: rgba(var(--v-theme-primary), 0.12);
   color: rgb(var(--v-theme-primary));
   max-width: 160px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+
+  &.chat-worker-label--with-tag {
+    border-top-right-radius: 0;
+  }
+}
+
+.chat-label-tag {
+  padding: 2px 10px;
+  border-radius: 0 vuetify.$border-radius-root 0 0;
+  color: #fff;
+  max-width: 140px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
