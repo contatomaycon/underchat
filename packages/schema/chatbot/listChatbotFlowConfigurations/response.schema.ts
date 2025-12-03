@@ -23,6 +23,7 @@ const configurationsSchema = Type.Object({
       selected_sector_user: Type.Optional(Type.String()),
     })
   ),
+  finish_triggers: Type.Optional(Type.Array(Type.String())),
   messages: Type.Optional(
     Type.Object({
       inactivity_message: Type.Optional(Type.String()),
@@ -32,6 +33,9 @@ const configurationsSchema = Type.Object({
       invalid_cnpj_message: Type.Optional(Type.String()),
       invalid_email_message: Type.Optional(Type.String()),
       service_finished_message: Type.Optional(Type.String()),
+      transfer_message_user: Type.Optional(Type.String()),
+      transfer_message_sector: Type.Optional(Type.String()),
+      transfer_message_sector_user: Type.Optional(Type.String()),
     })
   ),
 });

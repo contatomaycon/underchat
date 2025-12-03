@@ -17,8 +17,8 @@ export class ContactUpdaterRepository {
   ): Partial<typeof contact.$inferInsert> {
     const inputUpdate: Partial<typeof contact.$inferInsert> = {};
 
-    if (input?.label_template_id) {
-      inputUpdate.label_template_id = input.label_template_id;
+    if ('label_template_id' in input) {
+      inputUpdate.label_template_id = input.label_template_id ?? null;
     }
 
     if (input?.name) {

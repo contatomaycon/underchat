@@ -38,7 +38,7 @@ interface RequiredData {
   user: IViewUserNamePhoto;
   account: IViewAccountName;
   worker: IViewWorkerNameAndId;
-  sector: { id: string; name: string } | null;
+  sector: { id: string; name: string; color?: string } | null;
 }
 
 @injectable()
@@ -176,7 +176,7 @@ export class StartChatWithContactUseCase {
       throw new Error(t('chat_create_not_found'));
     }
 
-    let sector: { id: string; name: string } | null = null;
+    let sector: { id: string; name: string; color?: string } | null = null;
     if (sectorId) {
       const sectorData = await this.sectorService.viewSectorById(
         sectorId,
@@ -188,6 +188,7 @@ export class StartChatWithContactUseCase {
         sector = {
           id: sectorData.sector_id,
           name: sectorData.name,
+          color: sectorData.color,
         };
       }
     }

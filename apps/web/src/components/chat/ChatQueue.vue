@@ -6,8 +6,10 @@ import { limitCharacters } from '@core/common/functions/limitCharacters';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { formatDateToMonthShort } from '@/@webcore/utils/formatters';
 import { useI18n } from 'vue-i18n';
+import { useTheme } from 'vuetify';
 
 const { t } = useI18n();
+const { global } = useTheme();
 
 const chatStore = useChatStore();
 const channelsStore = useChannelsStore();
@@ -23,6 +25,112 @@ const isChatContactActive = computed(() => {
 
 const workerName = computed(() => props.user?.worker?.name ?? '');
 const showWorkerNameLabel = ref(false);
+
+const chatLabelForList = computed<{
+  label: string;
+  color: string;
+} | null>(() => {
+  const chatLabel = props.user.label as
+    | { label?: string | null; color?: string | null }
+    | null
+    | undefined;
+
+  if (chatLabel?.label && chatLabel.color) {
+    return {
+      label: chatLabel.label,
+      color: chatLabel.color,
+    };
+  }
+
+  const contactId = props.user.contact?.id;
+  if (contactId) {
+    const contact = chatStore.chatContacts[contactId];
+    if (contact?.label_template) {
+      return {
+        label: contact.label_template.label,
+        color: contact.label_template.color,
+      };
+    }
+  }
+
+  return null;
+});
+
+const sectorName = computed(() => {
+  return props.user?.sector?.name ?? null;
+});
+
+const sectorColor = computed(() => {
+  return props.user?.sector?.color ?? null;
+});
+
+const isHexColor = (s: string): boolean => {
+  return /^#([0-9A-F]{6}|[0-9A-F]{3})$/i.test(s);
+};
+
+const isDarkMode = computed(() => global.name.value === 'dark');
+
+const backgroundColor = (s: string | null): string => {
+  if (!s) return 'rgba(var(--v-theme-secondary), 0.12)';
+  if (!isHexColor(s)) return 'rgba(var(--v-theme-secondary), 0.12)';
+
+  let hex = s.substring(1);
+  if (hex.length === 3) {
+    hex = hex
+      .split('')
+      .map((ch) => ch + ch)
+      .join('');
+  }
+
+  const r = Number.parseInt(hex.slice(0, 2), 16);
+  const g = Number.parseInt(hex.slice(2, 4), 16);
+  const b = Number.parseInt(hex.slice(4, 6), 16);
+
+  const opacity = isDarkMode.value ? 0.2 : 0.12;
+
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+};
+
+const textColor = (s: string | null): string => {
+  if (!s) return 'rgb(var(--v-theme-secondary))';
+  if (!isHexColor(s)) return 'rgb(var(--v-theme-secondary))';
+
+  let hex = s.substring(1);
+  if (hex.length === 3) {
+    hex = hex
+      .split('')
+      .map((ch) => ch + ch)
+      .join('');
+  }
+
+  const r = Number.parseInt(hex.slice(0, 2), 16);
+  const g = Number.parseInt(hex.slice(2, 4), 16);
+  const b = Number.parseInt(hex.slice(4, 6), 16);
+
+  const opacity = isDarkMode.value ? 0.2 : 0.12;
+
+  const backgroundR = isDarkMode.value ? 30 : 255;
+  const backgroundG = isDarkMode.value ? 30 : 255;
+  const backgroundB = isDarkMode.value ? 30 : 255;
+
+  const finalR = Math.round(r * opacity + backgroundR * (1 - opacity));
+  const finalG = Math.round(g * opacity + backgroundG * (1 - opacity));
+  const finalB = Math.round(b * opacity + backgroundB * (1 - opacity));
+
+  const yiq = (finalR * 299 + finalG * 587 + finalB * 114) / 1000;
+
+  return yiq >= 128 ? '#4A4A4A' : '#FFFFFF';
+};
+
+watch(
+  () => props.user.contact?.id,
+  (contactId) => {
+    if (contactId) {
+      chatStore.getChatContactById(contactId);
+    }
+  },
+  { immediate: true }
+);
 
 const loadWorkerConfig = async (workerId?: string | null) => {
   if (!workerId) {
@@ -54,15 +162,50 @@ watch(
       :class="{
         'chat-active': isChatContactActive,
         'chat-disabled': props.disabled,
-        'chat-has-label': showWorkerNameLabel && workerName,
+        'chat-has-label':
+          (showWorkerNameLabel && workerName) || chatLabelForList,
+        'chat-has-sector': sectorName,
       }"
       :aria-disabled="props.disabled ? 'true' : undefined"
     >
       <div
-        v-if="showWorkerNameLabel && workerName"
-        class="chat-worker-label text-caption"
+        v-if="(showWorkerNameLabel && workerName) || chatLabelForList"
+        class="chat-worker-label-wrapper"
       >
-        {{ workerName }}
+        <div
+          v-if="showWorkerNameLabel && workerName"
+          class="chat-worker-label text-caption"
+          :class="{
+            'chat-worker-label--with-tag': chatLabelForList,
+            'chat-worker-label--standalone': !chatLabelForList,
+          }"
+        >
+          {{ workerName }}
+        </div>
+        <div
+          v-if="chatLabelForList"
+          class="chat-label-tag text-caption"
+          :class="{
+            'chat-label-tag--standalone': !(showWorkerNameLabel && workerName),
+            'chat-label-tag--with-worker': showWorkerNameLabel && workerName,
+          }"
+          :style="{
+            backgroundColor: chatLabelForList.color,
+          }"
+          :title="chatLabelForList.label"
+        >
+          {{ chatLabelForList.label }}
+        </div>
+      </div>
+      <div
+        v-if="sectorName"
+        class="chat-sector-label text-caption"
+        :style="{
+          backgroundColor: backgroundColor(sectorColor),
+          color: textColor(sectorColor),
+        }"
+      >
+        {{ sectorName }}
       </div>
       <VAvatar
         size="40"
@@ -182,15 +325,41 @@ watch(
   }
 
   &.chat-has-label {
-    margin-top: 1.125rem;
+    margin-top: 1.5rem;
+  }
+
+  &.chat-has-sector {
+    margin-bottom: 1.5rem;
   }
 }
 
-.chat-worker-label {
+.chat-sector-label {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  transform: translateY(100%);
+  width: 100%;
+  padding: 2px 10px;
+  border-radius: 0 0 vuetify.$border-radius-root vuetify.$border-radius-root;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  z-index: 3;
+  text-align: center;
+}
+
+.chat-worker-label-wrapper {
   position: absolute;
   top: 0;
   left: 0;
   transform: translateY(-100%);
+  display: inline-flex;
+  max-width: 100%;
+  z-index: 2;
+}
+
+.chat-worker-label {
   padding: 2px 10px;
   border-radius: 0 vuetify.$border-radius-root 0 0;
   background-color: rgba(var(--v-theme-primary), 0.12);
@@ -200,6 +369,34 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 500;
+
+  &.chat-worker-label--with-tag {
+    border-radius: vuetify.$border-radius-root 0 0 0;
+  }
+
+  &.chat-worker-label--standalone {
+    border-radius: vuetify.$border-radius-root vuetify.$border-radius-root 0 0;
+  }
+}
+
+.chat-label-tag {
+  padding: 2px 10px;
+  border-radius: 0 vuetify.$border-radius-root 0 0;
+  color: #fff;
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+
+  &.chat-label-tag--standalone {
+    border-radius: vuetify.$border-radius-root vuetify.$border-radius-root 0 0;
+  }
+
+  &.chat-label-tag--with-worker {
+    border-radius: 0 vuetify.$border-radius-root 0 0;
+    border-top-left-radius: 0;
+  }
 }
 
 .chat-message-preview {

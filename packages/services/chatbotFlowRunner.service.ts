@@ -21,6 +21,9 @@ import {
 } from '@core/common/functions/centrifugoQueue';
 import { IInactivityData } from '@core/common/interfaces/IInactivityData';
 import { IProcessFlowNodeOptions } from '@core/common/interfaces/IProcessFlowNodeOptions';
+import { generateProtocol } from '@core/common/functions/generateProtocol';
+import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
+import { proto } from '@whiskeysockets/baileys';
 
 @injectable()
 export class ChatbotFlowRunnerService {
@@ -56,6 +59,35 @@ export class ChatbotFlowRunnerService {
     return 'underchat:chatbot-inactivity-schedule';
   }
 
+  private getFailedAttemptsCacheKey(
+    accountId: string,
+    workerId: string,
+    chatId: string
+  ): string {
+    return `underchat:chatbot-failed-attempts:${accountId}:${workerId}:${chatId}`;
+  }
+
+  private getBaileysChatCacheKey(
+    accountId: string,
+    workerId: string,
+    phone: string
+  ): string {
+    return `underchat:chat:${accountId}:${workerId}:${phone}`;
+  }
+
+  private async invalidateChatFromCache(chat: IChat): Promise<void> {
+    const accountId = chat.account?.id;
+    const workerId = chat.worker?.id;
+    const phone = chat.phone;
+
+    if (!accountId || !workerId || !phone) {
+      return;
+    }
+
+    const key = this.getBaileysChatCacheKey(accountId, workerId, phone);
+    await this.redis.del(key);
+  }
+
   private getFlowNodeById(
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string
@@ -89,22 +121,23 @@ export class ChatbotFlowRunnerService {
   }
 
   private getTextFromUpsertMessage(data: IUpsertMessage): string | null {
-    const messageContent: any = data.message?.message;
+    const messageContent: proto.IMessage | null | undefined =
+      data.message?.message;
 
     if (!messageContent) {
       return null;
     }
 
     if (messageContent.conversation) {
-      return messageContent.conversation as string;
+      return messageContent.conversation;
     }
 
     if (messageContent.extendedTextMessage?.text) {
-      return messageContent.extendedTextMessage.text as string;
+      return messageContent.extendedTextMessage.text;
     }
 
     if (messageContent.imageMessage?.caption) {
-      return messageContent.imageMessage.caption as string;
+      return messageContent.imageMessage.caption;
     }
 
     return null;
@@ -115,7 +148,14 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     customMessage?: string
   ): Promise<boolean> {
-    const message = customMessage || t('chatbot_option_invalid');
+    const rawMessage = customMessage || t('chatbot_option_invalid');
+    const message = await this.replaceVariables(
+      t,
+      rawMessage,
+      createChat,
+      createChat.user,
+      createChat.sector
+    );
     return this.chatMessageService.sendMessage(t, {
       chat: createChat,
       accountId: createChat.account.id,
@@ -130,7 +170,14 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     customMessage?: string
   ): Promise<boolean> {
-    const message = customMessage || t('email_invalid');
+    const rawMessage = customMessage || t('email_invalid');
+    const message = await this.replaceVariables(
+      t,
+      rawMessage,
+      createChat,
+      createChat.user,
+      createChat.sector
+    );
     return this.chatMessageService.sendMessage(t, {
       chat: createChat,
       accountId: createChat.account.id,
@@ -145,7 +192,14 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     customMessage?: string
   ): Promise<boolean> {
-    const message = customMessage || t('cpf_invalid');
+    const rawMessage = customMessage || t('cpf_invalid');
+    const message = await this.replaceVariables(
+      t,
+      rawMessage,
+      createChat,
+      createChat.user,
+      createChat.sector
+    );
     return this.chatMessageService.sendMessage(t, {
       chat: createChat,
       accountId: createChat.account.id,
@@ -160,7 +214,14 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     customMessage?: string
   ): Promise<boolean> {
-    const message = customMessage || t('cnpj_invalid');
+    const rawMessage = customMessage || t('cnpj_invalid');
+    const message = await this.replaceVariables(
+      t,
+      rawMessage,
+      createChat,
+      createChat.user,
+      createChat.sector
+    );
     return this.chatMessageService.sendMessage(t, {
       chat: createChat,
       accountId: createChat.account.id,
@@ -172,6 +233,151 @@ export class ChatbotFlowRunnerService {
 
   private onlyDigits(s: string): string {
     return s.replaceAll(/\D+/g, '');
+  }
+
+  private getGreeting(t: TFunction<'translation', undefined>): string {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) {
+      return t('good_morning');
+    }
+    if (hour >= 12 && hour < 18) {
+      return t('good_afternoon');
+    }
+    return t('good_evening');
+  }
+
+  private async getContactName(createChat: IChat): Promise<string | null> {
+    if (!createChat.phone) {
+      return null;
+    }
+
+    const phoneAndDdi = extractPhoneAndDdi(createChat.phone);
+    if (!phoneAndDdi) {
+      return null;
+    }
+
+    const contact = await this.contactService.getContactByPhone(
+      createChat.account.id,
+      phoneAndDdi.phone,
+      phoneAndDdi.phone_ddi
+    );
+
+    if (!contact) {
+      return null;
+    }
+
+    const fullName = [contact.name, contact.last_name]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+
+    return fullName || null;
+  }
+
+  private async replaceVariables(
+    t: TFunction<'translation', undefined>,
+    message: string | null | undefined,
+    createChat: IChat,
+    user?: IChat['user'] | null,
+    sector?: IChat['sector'] | null
+  ): Promise<string> {
+    if (!message) {
+      return '';
+    }
+
+    let replacedMessage = message;
+
+    const greeting = this.getGreeting(t);
+    replacedMessage = replacedMessage.replaceAll(
+      /\{\{\s*greeting\s*\}\}/gi,
+      greeting
+    );
+
+    const contactName = await this.getContactName(createChat);
+    const whatsappName = createChat.name || null;
+
+    const name = contactName || whatsappName || '';
+    replacedMessage = replacedMessage.replaceAll(/\{\{\s*name\s*\}\}/gi, name);
+
+    replacedMessage = replacedMessage.replaceAll(
+      /\{\{\s*contact_name\s*\}\}/gi,
+      name
+    );
+
+    const protocol = generateProtocol();
+    replacedMessage = replacedMessage.replaceAll(
+      /\{\{\s*protocol\s*\}\}/gi,
+      protocol
+    );
+
+    if (sector?.name) {
+      replacedMessage = replacedMessage.replaceAll(
+        /\{\{\s*sector\s*\}\}/gi,
+        sector.name
+      );
+    } else {
+      replacedMessage = replacedMessage.replaceAll(
+        /\{\{\s*sector\s*\}\}/gi,
+        ''
+      );
+    }
+
+    if (user?.name) {
+      replacedMessage = replacedMessage.replaceAll(
+        /\{\{\s*user\s*\}\}/gi,
+        user.name
+      );
+    } else {
+      replacedMessage = replacedMessage.replaceAll(/\{\{\s*user\s*\}\}/gi, '');
+    }
+
+    const date = new Date().toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+    replacedMessage = replacedMessage.replaceAll(/\{\{\s*date\s*\}\}/gi, date);
+
+    const time = new Date().toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    replacedMessage = replacedMessage.replaceAll(/\{\{\s*time\s*\}\}/gi, time);
+
+    if (createChat.account?.name) {
+      replacedMessage = replacedMessage.replaceAll(
+        /\{\{\s*account_name\s*\}\}/gi,
+        createChat.account.name
+      );
+    } else {
+      replacedMessage = replacedMessage.replaceAll(
+        /\{\{\s*account_name\s*\}\}/gi,
+        ''
+      );
+    }
+
+    if (createChat.phone) {
+      replacedMessage = replacedMessage.replaceAll(
+        /\{\{\s*phone\s*\}\}/gi,
+        createChat.phone
+      );
+    } else {
+      replacedMessage = replacedMessage.replaceAll(/\{\{\s*phone\s*\}\}/gi, '');
+    }
+
+    if (createChat.worker?.name) {
+      replacedMessage = replacedMessage.replaceAll(
+        /\{\{\s*channel_name\s*\}\}/gi,
+        createChat.worker.name
+      );
+    } else {
+      replacedMessage = replacedMessage.replaceAll(
+        /\{\{\s*channel_name\s*\}\}/gi,
+        ''
+      );
+    }
+
+    return replacedMessage;
   }
 
   private isValidEmail(email: string): boolean {
@@ -264,7 +470,14 @@ export class ChatbotFlowRunnerService {
     node: ListChatbotFlowResponse['nodes'][number]
   ): Promise<boolean> {
     const messageType = node.data?.messageType || 'text';
-    const text = node.data?.text || node.data?.message || '';
+    const rawText = node.data?.text || node.data?.message || '';
+    const text = await this.replaceVariables(
+      t,
+      rawText,
+      createChat,
+      createChat.user,
+      createChat.sector
+    );
     const attachmentUrl = node.data?.attachmentUrl;
     const attachmentMimetype = node.data?.attachmentMimetype;
     const attachmentDuration = node.data?.attachmentDuration;
@@ -327,7 +540,14 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     node: ListChatbotFlowResponse['nodes'][number]
   ): Promise<boolean> {
-    const baseMessage = node.data?.message;
+    const rawBaseMessage = node.data?.message || '';
+    const baseMessage = await this.replaceVariables(
+      t,
+      rawBaseMessage,
+      createChat,
+      createChat.user,
+      createChat.sector
+    );
     const options = node.data?.options ?? [];
 
     const lines = options.map((option, index) => {
@@ -358,7 +578,14 @@ export class ChatbotFlowRunnerService {
       createChat.chat_id
     );
 
-    const message = customMessage || t('chatbot_service_finished');
+    const rawMessage = customMessage || t('chatbot_service_finished');
+    const message = await this.replaceVariables(
+      t,
+      rawMessage,
+      createChat,
+      createChat.user,
+      createChat.sector
+    );
 
     await Promise.all([
       this.chatMessageService.sendMessage(t, {
@@ -377,6 +604,7 @@ export class ChatbotFlowRunnerService {
       ),
       this.redis.del(cacheKey),
       this.cancelInactivityCheck(createChat),
+      this.invalidateChatFromCache(createChat),
     ]);
 
     return true;
@@ -613,7 +841,10 @@ export class ChatbotFlowRunnerService {
       label,
     };
 
-    await this.chatService.saveChat(updatedChat);
+    await Promise.all([
+      this.chatService.saveChat(updatedChat),
+      this.invalidateChatFromCache(updatedChat),
+    ]);
 
     const channelAccountId = updatedChat.account?.id ?? createChat.account.id;
 
@@ -657,6 +888,8 @@ export class ChatbotFlowRunnerService {
     if (!updated) {
       throw new Error(t('contact_update_error'));
     }
+
+    await this.invalidateChatFromCache(createChat);
   }
 
   private async processTagNode(
@@ -741,6 +974,7 @@ export class ChatbotFlowRunnerService {
     const sector: IChat['sector'] = {
       id: sectorData.sector_id,
       name: sectorData.name,
+      color: sectorData.color,
     };
 
     let user: IChat['user'] | undefined = undefined;
@@ -791,7 +1025,10 @@ export class ChatbotFlowRunnerService {
       status: EChatStatus.queue,
     };
 
-    await this.chatService.saveChat(updatedChat);
+    await Promise.all([
+      this.chatService.saveChat(updatedChat),
+      this.invalidateChatFromCache(updatedChat),
+    ]);
 
     const channelAccountId = updatedChat.account?.id ?? createChat.account.id;
 
@@ -813,7 +1050,12 @@ export class ChatbotFlowRunnerService {
     t: TFunction<'translation', undefined>,
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
-    currentFlowId: string
+    currentFlowId: string,
+    customMessages?: {
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
 
@@ -852,6 +1094,42 @@ export class ChatbotFlowRunnerService {
       user,
       sector
     );
+
+    await this.cancelInactivityCheck(updatedChat);
+
+    let rawTransferMessage: string | undefined;
+    if (redirectType === 'user' && user) {
+      rawTransferMessage =
+        customMessages?.transfer_message_user ||
+        t('chatbot_transfer_message_user_default');
+    } else if (redirectType === 'sector' && sector) {
+      if (user) {
+        rawTransferMessage =
+          customMessages?.transfer_message_sector_user ||
+          t('chatbot_transfer_message_sector_user_default');
+      } else {
+        rawTransferMessage =
+          customMessages?.transfer_message_sector ||
+          t('chatbot_transfer_message_sector_default');
+      }
+    }
+
+    if (rawTransferMessage && (user || sector)) {
+      const transferMessage = await this.replaceVariables(
+        t,
+        rawTransferMessage,
+        updatedChat,
+        user,
+        sector
+      );
+      await this.chatMessageService.sendMessage(t, {
+        chat: updatedChat,
+        accountId: updatedChat.account.id,
+        type: EMessageType.text,
+        message: transferMessage,
+        typeUser: ETypeUserChat.bot,
+      });
+    }
 
     const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
 
@@ -1029,7 +1307,22 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    customMessage?: string
+    options?: {
+      customMessage?: string;
+      redirectFailedAttempts?: {
+        status?: string;
+        quantity?: number;
+        redirect_type?: string;
+        selected_user?: string;
+        selected_sector?: string;
+        selected_sector_user?: string;
+      };
+      customMessages?: {
+        transfer_message_user?: string;
+        transfer_message_sector?: string;
+        transfer_message_sector_user?: string;
+      };
+    }
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
     if (!currentNode) {
@@ -1038,24 +1331,42 @@ export class ChatbotFlowRunnerService {
 
     const text = this.getTextFromUpsertMessage(data)?.trim();
     if (!text) {
-      return this.sendTextOptionInvalidMessage(t, createChat, customMessage);
+      return this.handleInvalidMenuAttempt(
+        t,
+        createChat,
+        options?.customMessage,
+        options?.redirectFailedAttempts,
+        options?.customMessages
+      );
     }
 
-    const options = currentNode.data?.options ?? [];
+    const menuOptions = currentNode.data?.options ?? [];
     const selectedNumber = Number.parseInt(text, 10);
 
     if (
       Number.isNaN(selectedNumber) ||
       selectedNumber < 1 ||
-      selectedNumber > options.length
+      selectedNumber > menuOptions.length
     ) {
-      return this.sendTextOptionInvalidMessage(t, createChat, customMessage);
+      return this.handleInvalidMenuAttempt(
+        t,
+        createChat,
+        options?.customMessage,
+        options?.redirectFailedAttempts,
+        options?.customMessages
+      );
     }
 
-    const selectedOption = options[selectedNumber - 1];
+    const selectedOption = menuOptions[selectedNumber - 1];
 
     if (!selectedOption) {
-      return this.sendTextOptionInvalidMessage(t, createChat, customMessage);
+      return this.handleInvalidMenuAttempt(
+        t,
+        createChat,
+        options?.customMessage,
+        options?.redirectFailedAttempts,
+        options?.customMessages
+      );
     }
 
     const nextFlowId = this.getNextFlowIdByOption(
@@ -1068,6 +1379,8 @@ export class ChatbotFlowRunnerService {
       throw new Error(t('chatbot_flow_not_found'));
     }
 
+    await this.resetFailedAttempts(createChat);
+
     return this.processNextNode(t, createChat, chatbotFlow, nextFlowId);
   }
 
@@ -1076,6 +1389,12 @@ export class ChatbotFlowRunnerService {
     timeMinutes: number,
     chatbotId: string
   ): Promise<void> {
+    if (createChat.status !== EChatStatus.ura) {
+      await this.cancelInactivityCheck(createChat);
+
+      return;
+    }
+
     const inactivityCacheKey = this.getInactivityCacheKey(
       createChat.account.id,
       createChat.worker.id,
@@ -1134,8 +1453,21 @@ export class ChatbotFlowRunnerService {
     timeMinutes: number,
     customInactivityMessage?: string
   ): Promise<void> {
-    const inactivityMessage =
+    if (createChat.status !== EChatStatus.ura) {
+      await this.cancelInactivityCheck(createChat);
+
+      return;
+    }
+
+    const rawInactivityMessage =
       customInactivityMessage || t('chatbot_inactivity_message_default');
+    const inactivityMessage = await this.replaceVariables(
+      t,
+      rawInactivityMessage,
+      createChat,
+      createChat.user,
+      createChat.sector
+    );
     await this.chatMessageService.sendMessage(t, {
       chat: createChat,
       accountId: createChat.account.id,
@@ -1171,65 +1503,68 @@ export class ChatbotFlowRunnerService {
     }
   ): Promise<boolean> {
     const redirectType = inactivityAlert.redirect_type;
-    let user: IChat['user'] | null | undefined = undefined;
-    let sector: IChat['sector'] | null | undefined = undefined;
 
     if (redirectType === 'user') {
-      const selectedUser = inactivityAlert.selected_user;
-      if (!selectedUser) {
-        return false;
-      }
-
-      const userData = await this.userService.viewUserNamePhoto(selectedUser);
-      if (!userData) {
-        return false;
-      }
-
-      user = {
-        id: userData.id,
-        name: userData.name,
-        photo: userData.photo ?? null,
-      };
+      return this.processInactivityUserRedirect(
+        t,
+        createChat,
+        inactivityAlert.selected_user
+      );
     }
 
     if (redirectType === 'sector') {
-      const selectedSector = inactivityAlert.selected_sector;
-      if (!selectedSector) {
-        return false;
-      }
-
-      const sectorData = await this.sectorService.viewSectorById(
-        selectedSector,
-        createChat.account.id,
-        false
+      return this.processInactivitySectorRedirect(
+        t,
+        createChat,
+        inactivityAlert.selected_sector,
+        inactivityAlert.selected_sector_user
       );
-
-      if (!sectorData) {
-        return false;
-      }
-
-      sector = {
-        id: sectorData.sector_id,
-        name: sectorData.name,
-      };
-
-      const selectedSectorUser = inactivityAlert.selected_sector_user;
-      if (selectedSectorUser) {
-        const sectorUserData =
-          await this.userService.viewUserNamePhoto(selectedSectorUser);
-
-        if (sectorUserData) {
-          user = {
-            id: sectorUserData.id,
-            name: sectorUserData.name,
-            photo: sectorUserData.photo ?? null,
-          };
-        }
-      }
     }
 
-    await this.updateAndPublishChat(t, createChat, user, sector);
+    return false;
+  }
 
+  private async processInactivityUserRedirect(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    selectedUser?: string
+  ): Promise<boolean> {
+    if (!selectedUser) {
+      return false;
+    }
+
+    const user = await this.getUserForRedirect(selectedUser);
+    if (!user) {
+      return false;
+    }
+
+    await this.updateAndPublishChat(t, createChat, user, undefined);
+    return true;
+  }
+
+  private async processInactivitySectorRedirect(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    selectedSector?: string,
+    selectedSectorUser?: string
+  ): Promise<boolean> {
+    if (!selectedSector) {
+      return false;
+    }
+
+    const sector = await this.getSectorForRedirect(
+      selectedSector,
+      createChat.account.id
+    );
+    if (!sector) {
+      return false;
+    }
+
+    const user = selectedSectorUser
+      ? await this.getUserForRedirect(selectedSectorUser)
+      : undefined;
+
+    await this.updateAndPublishChat(t, createChat, user, sector);
     return true;
   }
 
@@ -1251,32 +1586,78 @@ export class ChatbotFlowRunnerService {
     customInactivityMessage?: string,
     customServiceFinishedMessage?: string
   ): Promise<boolean> {
-    const quantity = inactivityAlert.quantity ?? 1;
-    const timeMinutes = inactivityAlert.time ?? 5;
     const action = inactivityAlert.action;
-
     if (!action) {
       return false;
     }
 
-    const currentAlertCount = inactivityData.alertCount || 0;
-    const newAlertCount = currentAlertCount + 1;
+    const shouldSendAlert = await this.shouldSendInactivityAlert(
+      t,
+      inactivityCacheKey,
+      inactivityData,
+      inactivityAlert,
+      createChat,
+      customInactivityMessage
+    );
 
-    if (newAlertCount <= quantity) {
-      await this.sendInactivityAlertMessage(
-        t,
-        createChat,
-        inactivityCacheKey,
-        inactivityData,
-        newAlertCount,
-        timeMinutes,
-        customInactivityMessage
-      );
+    if (shouldSendAlert) {
       return false;
     }
 
     await this.cancelInactivityCheck(createChat);
+    return this.executeInactivityAction(
+      t,
+      createChat,
+      action,
+      inactivityAlert,
+      customServiceFinishedMessage
+    );
+  }
 
+  private async shouldSendInactivityAlert(
+    t: TFunction<'translation', undefined>,
+    inactivityCacheKey: string,
+    inactivityData: IInactivityData,
+    inactivityAlert: {
+      quantity?: number;
+      time?: number;
+    },
+    createChat: IChat,
+    customInactivityMessage?: string
+  ): Promise<boolean> {
+    const quantity = inactivityAlert.quantity ?? 1;
+    const timeMinutes = inactivityAlert.time ?? 5;
+    const currentAlertCount = inactivityData.alertCount || 0;
+    const newAlertCount = currentAlertCount + 1;
+
+    if (newAlertCount > quantity) {
+      return false;
+    }
+
+    await this.sendInactivityAlertMessage(
+      t,
+      createChat,
+      inactivityCacheKey,
+      inactivityData,
+      newAlertCount,
+      timeMinutes,
+      customInactivityMessage
+    );
+    return true;
+  }
+
+  private async executeInactivityAction(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    action: string,
+    inactivityAlert: {
+      redirect_type?: string;
+      selected_user?: string;
+      selected_sector?: string;
+      selected_sector_user?: string;
+    },
+    customServiceFinishedMessage?: string
+  ): Promise<boolean> {
     if (action === 'finish') {
       await this.sendFinishMessage(t, createChat, customServiceFinishedMessage);
       return true;
@@ -1287,6 +1668,267 @@ export class ChatbotFlowRunnerService {
     }
 
     return false;
+  }
+
+  private async handleInvalidMenuAttempt(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    customMessage?: string,
+    redirectFailedAttempts?: {
+      status?: string;
+      quantity?: number;
+      redirect_type?: string;
+      selected_user?: string;
+      selected_sector?: string;
+      selected_sector_user?: string;
+    },
+    customMessages?: {
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
+  ): Promise<boolean> {
+    await this.sendTextOptionInvalidMessage(t, createChat, customMessage);
+
+    if (
+      !this.shouldRedirectOnFailedAttempt(redirectFailedAttempts, createChat)
+    ) {
+      return false;
+    }
+
+    if (!redirectFailedAttempts) {
+      return false;
+    }
+
+    const quantity = redirectFailedAttempts.quantity ?? 1;
+    const failedAttemptsCount = await this.incrementFailedAttempts(createChat);
+
+    if (failedAttemptsCount < quantity) {
+      return false;
+    }
+
+    await this.resetFailedAttempts(createChat);
+
+    const { user, sector } = await this.getRedirectTargets(
+      redirectFailedAttempts,
+      createChat
+    );
+
+    const updatedChat = await this.updateAndPublishChat(
+      t,
+      createChat,
+      user,
+      sector
+    );
+
+    await this.cancelInactivityCheck(updatedChat);
+
+    await this.sendTransferMessageIfNeeded(
+      t,
+      updatedChat,
+      redirectFailedAttempts.redirect_type,
+      user,
+      sector,
+      customMessages
+    );
+
+    return true;
+  }
+
+  private shouldRedirectOnFailedAttempt(
+    redirectFailedAttempts?: {
+      status?: string;
+      quantity?: number;
+      redirect_type?: string;
+      selected_user?: string;
+      selected_sector?: string;
+      selected_sector_user?: string;
+    },
+    createChat?: IChat
+  ): boolean {
+    return (
+      !!redirectFailedAttempts &&
+      redirectFailedAttempts.status === 'active' &&
+      createChat?.status === EChatStatus.ura
+    );
+  }
+
+  private async getRedirectTargets(
+    redirectFailedAttempts: {
+      status?: string;
+      quantity?: number;
+      redirect_type?: string;
+      selected_user?: string;
+      selected_sector?: string;
+      selected_sector_user?: string;
+    },
+    createChat: IChat
+  ): Promise<{
+    user: IChat['user'] | null | undefined;
+    sector: IChat['sector'] | null | undefined;
+  }> {
+    const redirectType = redirectFailedAttempts.redirect_type;
+    let user: IChat['user'] | null | undefined = undefined;
+    let sector: IChat['sector'] | null | undefined = undefined;
+
+    if (redirectType === 'user') {
+      user = await this.getUserForRedirect(
+        redirectFailedAttempts.selected_user
+      );
+    }
+
+    if (redirectType === 'sector') {
+      sector = await this.getSectorForRedirect(
+        redirectFailedAttempts.selected_sector,
+        createChat.account.id
+      );
+      user = await this.getUserForRedirect(
+        redirectFailedAttempts.selected_sector_user
+      );
+    }
+
+    return { user, sector };
+  }
+
+  private async getUserForRedirect(
+    userId?: string
+  ): Promise<IChat['user'] | null | undefined> {
+    if (!userId) {
+      return undefined;
+    }
+
+    const userData = await this.userService.viewUserNamePhoto(userId);
+    if (!userData) {
+      return undefined;
+    }
+
+    return {
+      id: userData.id,
+      name: userData.name,
+      photo: userData.photo ?? null,
+    };
+  }
+
+  private async getSectorForRedirect(
+    sectorId?: string,
+    accountId?: string
+  ): Promise<IChat['sector'] | null | undefined> {
+    if (!sectorId || !accountId) {
+      return undefined;
+    }
+
+    const sectorData = await this.sectorService.viewSectorById(
+      sectorId,
+      accountId,
+      false
+    );
+
+    if (!sectorData) {
+      return undefined;
+    }
+
+    return {
+      id: sectorData.sector_id,
+      name: sectorData.name,
+      color: sectorData.color,
+    };
+  }
+
+  private async sendTransferMessageIfNeeded(
+    t: TFunction<'translation', undefined>,
+    updatedChat: IChat,
+    redirectType?: string,
+    user?: IChat['user'] | null | undefined,
+    sector?: IChat['sector'] | null | undefined,
+    customMessages?: {
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
+  ): Promise<void> {
+    const rawTransferMessage = this.getTransferMessage(
+      t,
+      redirectType,
+      user,
+      sector,
+      customMessages
+    );
+
+    if (!rawTransferMessage || (!user && !sector)) {
+      return;
+    }
+
+    const transferMessage = await this.replaceVariables(
+      t,
+      rawTransferMessage,
+      updatedChat,
+      user,
+      sector
+    );
+
+    await this.chatMessageService.sendMessage(t, {
+      chat: updatedChat,
+      accountId: updatedChat.account.id,
+      type: EMessageType.text,
+      message: transferMessage,
+      typeUser: ETypeUserChat.bot,
+    });
+  }
+
+  private getTransferMessage(
+    t: TFunction<'translation', undefined>,
+    redirectType?: string,
+    user?: IChat['user'] | null | undefined,
+    sector?: IChat['sector'] | null | undefined,
+    customMessages?: {
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
+  ): string | undefined {
+    if (redirectType === 'user' && user) {
+      return (
+        customMessages?.transfer_message_user ||
+        t('chatbot_transfer_message_user_default')
+      );
+    }
+
+    if (redirectType === 'sector' && sector) {
+      if (user) {
+        return (
+          customMessages?.transfer_message_sector_user ||
+          t('chatbot_transfer_message_sector_user_default')
+        );
+      }
+      return (
+        customMessages?.transfer_message_sector ||
+        t('chatbot_transfer_message_sector_default')
+      );
+    }
+
+    return undefined;
+  }
+
+  private async incrementFailedAttempts(createChat: IChat): Promise<number> {
+    const key = this.getFailedAttemptsCacheKey(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id
+    );
+
+    const newValue = await this.redis.incr(key);
+
+    return newValue;
+  }
+
+  private async resetFailedAttempts(createChat: IChat): Promise<void> {
+    const key = this.getFailedAttemptsCacheKey(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id
+    );
+
+    await this.redis.del(key);
   }
 
   async processScheduledInactivityChecks(
@@ -1370,6 +2012,12 @@ export class ChatbotFlowRunnerService {
         continue;
       }
 
+      if (createChat.status !== EChatStatus.ura) {
+        await this.cancelInactivityCheck(createChat);
+
+        continue;
+      }
+
       const customInactivityMessage =
         configurations?.configurations?.messages?.inactivity_message;
       const customServiceFinishedMessage =
@@ -1412,9 +2060,14 @@ export class ChatbotFlowRunnerService {
     options?: IProcessFlowNodeOptions
   ): Promise<boolean> {
     const inactivityAlert = options?.inactivityAlert;
+    const redirectFailedAttempts = options?.redirectFailedAttempts;
     const customMessages = options?.customMessages;
 
-    if (inactivityAlert && inactivityAlert.status === 'active') {
+    if (
+      inactivityAlert &&
+      inactivityAlert.status === 'active' &&
+      createChat.status === EChatStatus.ura
+    ) {
       const timeMinutes = inactivityAlert.time ?? 5;
       await this.scheduleInactivityCheck(createChat, timeMinutes, chatbotId);
     } else {
@@ -1441,7 +2094,11 @@ export class ChatbotFlowRunnerService {
         createChat,
         chatbotFlow,
         currentFlowId,
-        message
+        {
+          customMessage: message,
+          redirectFailedAttempts,
+          customMessages,
+        }
       );
     }
 
@@ -1464,7 +2121,8 @@ export class ChatbotFlowRunnerService {
         t,
         createChat,
         chatbotFlow,
-        currentFlowId
+        currentFlowId,
+        customMessages
       );
     }
 
@@ -1497,6 +2155,37 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     chatbotId: string
   ): Promise<string | null> => {
+    const userText = this.getTextFromUpsertMessage(data)?.trim();
+
+    if (!userText) {
+      return null;
+    }
+
+    const configurations =
+      await this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
+        createChat.account.id,
+        chatbotId
+      );
+
+    const finishTriggers =
+      configurations?.configurations?.finish_triggers || [];
+    const userTextLower = userText.toLowerCase();
+    const userWords = userTextLower.split(/\s+/);
+
+    const hasFinishTrigger = finishTriggers.some((trigger) => {
+      const triggerLower = trigger.toLowerCase();
+      return userWords.includes(triggerLower);
+    });
+
+    if (hasFinishTrigger) {
+      const customServiceFinishedMessage =
+        configurations?.configurations?.messages?.service_finished_message;
+
+      await this.sendFinishMessage(t, createChat, customServiceFinishedMessage);
+
+      return null;
+    }
+
     const chatbotFlow = await this.chatbotService.findChatbotFlowByChatbotId(
       createChat.account.id,
       chatbotId
@@ -1506,14 +2195,10 @@ export class ChatbotFlowRunnerService {
       throw new Error(t('chatbot_flow_not_found'));
     }
 
-    const configurations =
-      await this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
-        createChat.account.id,
-        chatbotId
-      );
-
     const customMessages = configurations?.configurations?.messages;
     const inactivityAlert = configurations?.configurations?.inactivity_alert;
+    const redirectFailedAttempts =
+      configurations?.configurations?.redirect_failed_attempts;
 
     const currentFlowId = await this.cacheFirstChatbotFlowNodeIfNeeded(
       chatbotFlow,
@@ -1533,6 +2218,7 @@ export class ChatbotFlowRunnerService {
       chatbotId,
       {
         inactivityAlert,
+        redirectFailedAttempts,
         customMessages,
       }
     );

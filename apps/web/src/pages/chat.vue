@@ -468,6 +468,10 @@ const isQueueStatus = computed(
   () => chatStore.activeChat?.status === EChatStatus.queue
 );
 
+const isUraStatus = computed(
+  () => chatStore.activeChat?.status === EChatStatus.ura
+);
+
 const workerConfigForChat = ref<ViewWorkerConfigForChatResponse>(null);
 
 const getStatusColor = (status: EChatUserStatus): string => {
@@ -598,29 +602,32 @@ const selectedLabelTemplateId = ref<string | null>(null);
 const isLoadingLabels = ref(false);
 const isSavingLabel = ref(false);
 
-const activeContactLabelTemplate = ref<{ label: string; color: string } | null>(
-  null
-);
+const activeContactLabelTemplate = computed<{
+  label: string;
+  color: string;
+} | null>(() => {
+  const contactId = chatStore.activeChat?.contact?.id;
+  if (!contactId) {
+    return null;
+  }
+
+  const contact = chatStore.chatContacts[contactId];
+  if (contact?.label_template) {
+    return {
+      label: contact.label_template.label,
+      color: contact.label_template.color,
+    };
+  }
+
+  return null;
+});
 
 watch(
   () => chatStore.activeChat?.contact?.id,
-  async (contactId) => {
-    if (!contactId) {
-      activeContactLabelTemplate.value = null;
-      return;
+  (contactId) => {
+    if (contactId) {
+      chatStore.getChatContactById(contactId);
     }
-
-    const contact = await chatStore.getChatContactById(contactId);
-
-    if (contact?.label_template) {
-      activeContactLabelTemplate.value = {
-        label: contact.label_template.label,
-        color: contact.label_template.color,
-      };
-      return;
-    }
-
-    activeContactLabelTemplate.value = null;
   },
   { immediate: true }
 );
@@ -2014,6 +2021,7 @@ const sendMessage = async () => {
   if (!canSendMessage()) return;
   if (!hasActiveChat()) return;
   if (isQueueStatus.value) return;
+  if (isUraStatus.value) return;
 
   const savedMsg = msg.value;
   const savedLinkPreview = linkPreview.value ? { ...linkPreview.value } : null;
@@ -2164,6 +2172,8 @@ const openAttach = (
     | 'location'
     | 'annotation'
 ) => {
+  if (isUraStatus.value) return;
+
   switch (type) {
     case 'document':
       fileDocRef.value?.click();
@@ -3365,6 +3375,7 @@ const onEmojiSelect = (e: any) => {
 };
 
 const onRecordAudio = () => {
+  if (isUraStatus.value) return;
   startAudioRecording();
 };
 
@@ -4487,34 +4498,25 @@ onBeforeUnmount(() => {
           <VSpacer />
 
           <div class="d-sm-flex align-center d-none text-medium-emphasis">
-            <div
+            <VChip
               v-if="isInChatStatus && chatStore.activeChat?.label"
-              class="d-flex align-center label-container me-2"
-              :style="{
-                gap: '4px',
-                borderColor: `${chatStore.activeChat.label.color}40`,
-              }"
+              class="me-2"
+              size="small"
+              variant="flat"
+              :color="chatStore.activeChat.label.color"
+              text-color="white"
+              closable
+              @click="openLabelModal"
+              @click:close.stop="removeLabel"
+              :title="chatStore.activeChat.label.label"
             >
-              <IconBtn
-                @click="openLabelModal"
-                :title="chatStore.activeChat.label.label"
-              >
-                <VIcon
-                  icon="tabler-tag"
-                  :color="chatStore.activeChat.label.color"
-                />
-              </IconBtn>
-              <span
-                class="text-body-2 text-medium-emphasis"
-                :title="chatStore.activeChat.label.label"
-              >
-                {{
-                  chatStore.activeChat.label.label.length > 15
-                    ? `${chatStore.activeChat.label.label.slice(0, 15)}…`
-                    : chatStore.activeChat.label.label
-                }}
-              </span>
-            </div>
+              <VIcon icon="tabler-tag" start size="16" />
+              {{
+                chatStore.activeChat.label.label.length > 15
+                  ? `${chatStore.activeChat.label.label.slice(0, 15)}…`
+                  : chatStore.activeChat.label.label
+              }}
+            </VChip>
             <IconBtn
               v-else-if="isInChatStatus"
               class="me-1"
@@ -5111,7 +5113,7 @@ onBeforeUnmount(() => {
               :auto-grow="true"
               rows="1"
               :max-rows="8"
-              :disabled="isQueueStatus || !!selectedQuickMessage"
+              :disabled="isQueueStatus || isUraStatus || !!selectedQuickMessage"
               @keydown.enter.exact.prevent="onSendText"
             >
               <template #prepend-inner>
@@ -5119,14 +5121,18 @@ onBeforeUnmount(() => {
                   offset="8"
                   :close-on-content-click="true"
                   location="top start"
-                  :disabled="!!selectedQuickMessage"
+                  :disabled="
+                    !!selectedQuickMessage || isQueueStatus || isUraStatus
+                  "
                 >
                   <template #activator="{ props }">
                     <IconBtn
                       v-bind="props"
                       class="composer-btn"
                       aria-label="Anexar"
-                      :disabled="!!selectedQuickMessage"
+                      :disabled="
+                        !!selectedQuickMessage || isQueueStatus || isUraStatus
+                      "
                     >
                       <VIcon size="22">tabler-plus</VIcon>
                     </IconBtn>
@@ -5137,43 +5143,64 @@ onBeforeUnmount(() => {
                     min-width="220"
                     class="attach-menu"
                   >
-                    <VListItem @click="openAttach('document')">
+                    <VListItem
+                      :disabled="isQueueStatus || isUraStatus"
+                      @click="openAttach('document')"
+                    >
                       <template #prepend
                         ><VIcon size="20">tabler-file</VIcon></template
                       >
                       <VListItemTitle>Documentos</VListItemTitle>
                     </VListItem>
-                    <VListItem @click="openAttach('photo')">
+                    <VListItem
+                      :disabled="isQueueStatus || isUraStatus"
+                      @click="openAttach('photo')"
+                    >
                       <template #prepend
                         ><VIcon size="20">tabler-photo</VIcon></template
                       >
                       <VListItemTitle>Fotos</VListItemTitle>
                     </VListItem>
-                    <VListItem @click="openAttach('video')">
+                    <VListItem
+                      :disabled="isQueueStatus || isUraStatus"
+                      @click="openAttach('video')"
+                    >
                       <template #prepend
                         ><VIcon size="20">tabler-video</VIcon></template
                       >
                       <VListItemTitle>Vídeos</VListItemTitle>
                     </VListItem>
-                    <VListItem @click="openAttach('audio')">
+                    <VListItem
+                      :disabled="isQueueStatus || isUraStatus"
+                      @click="openAttach('audio')"
+                    >
                       <template #prepend
                         ><VIcon size="20">tabler-headphones</VIcon></template
                       >
                       <VListItemTitle>Áudio</VListItemTitle>
                     </VListItem>
-                    <VListItem @click="openAttach('contact')">
+                    <VListItem
+                      :disabled="isQueueStatus || isUraStatus"
+                      @click="openAttach('contact')"
+                    >
                       <template #prepend
                         ><VIcon size="20">tabler-user</VIcon></template
                       >
                       <VListItemTitle>Contato</VListItemTitle>
                     </VListItem>
-                    <VListItem @click="openAttach('location')">
+                    <VListItem
+                      :disabled="isQueueStatus || isUraStatus"
+                      @click="openAttach('location')"
+                    >
                       <template #prepend
                         ><VIcon size="20">tabler-map-pin</VIcon></template
                       >
                       <VListItemTitle>Localização</VListItemTitle>
                     </VListItem>
-                    <VListItem @click="openAttach('annotation')">
+                    <VListItem
+                      :disabled="isQueueStatus || isUraStatus"
+                      @click="openAttach('annotation')"
+                    >
                       <template #prepend
                         ><VIcon size="20">tabler-note</VIcon></template
                       >
@@ -5219,6 +5246,7 @@ onBeforeUnmount(() => {
                     v-if="!hasAttachmentsOrContent && !selectedQuickMessage"
                     class="composer-btn mic-btn"
                     aria-label="Gravar áudio"
+                    :disabled="isQueueStatus || isUraStatus"
                     @click="onRecordAudio"
                   >
                     <VIcon size="22">tabler-microphone</VIcon>
@@ -5232,7 +5260,7 @@ onBeforeUnmount(() => {
                     variant="flat"
                     rounded="pill"
                     aria-label="Enviar mensagem"
-                    :disabled="!hasActiveChat() || isQueueStatus"
+                    :disabled="!hasActiveChat() || isQueueStatus || isUraStatus"
                     @click="onSendText"
                   >
                     <VIcon size="22">tabler-send</VIcon>
@@ -6414,15 +6442,6 @@ $chat-app-header-height: 76px;
   border-radius: 50%;
   flex-shrink: 0;
   margin-inline-end: 8px;
-}
-
-.label-container {
-  padding: 0px 6px 0px 4px;
-  border-top: 0.5px solid;
-  border-right: 0.5px solid;
-  border-bottom: 0.5px solid;
-  border-left: none;
-  border-radius: 0 4px 4px 0;
 }
 
 .audio-modal-progress-bar {

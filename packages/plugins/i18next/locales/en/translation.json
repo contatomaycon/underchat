@@ -463,5 +463,12 @@
   "email_invalid": "Invalid email",
   "cpf_invalid": "Invalid CPF",
   "cnpj_invalid": "Invalid CNPJ",
-  "chatbot_inactivity_message_default": "Hello! We noticed you're inactive. Can we help with anything else?"
+  "chatbot_inactivity_message_default": "Hello! We noticed you're inactive. Can we help with anything else?",
+  "chatbot_transfer_message_default": "You have been transferred to an attendant. You will be attended shortly.",
+  "chatbot_transfer_message_user_default": "You have been transferred to attendant *{{ user }}*. You will be attended shortly.",
+  "chatbot_transfer_message_sector_default": "You have been transferred to sector *{{ sector }}*. You will be attended shortly.",
+  "chatbot_transfer_message_sector_user_default": "You have been transferred to attendant *{{ user }}* from sector *{{ sector }}*. You will be attended shortly.",
+  "good_morning": "Good morning",
+  "good_afternoon": "Good afternoon",
+  "good_evening": "Good evening"
 }

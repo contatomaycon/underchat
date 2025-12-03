@@ -82,7 +82,16 @@ const availableWorkers = ref<TransferWorker[]>([]);
 const availableSectors = ref<TransferSector[]>([]);
 const workerConfigForChat = ref<ViewWorkerConfigForChatResponse | null>(null);
 
-type FilterType = 'new' | 'all' | 'in_chat' | 'queue' | 'chatbot';
+const chatbotPagings = ref({
+  current_page: 1,
+  total_pages: 1,
+  per_page: 50,
+  count: 0,
+  total: 0,
+});
+const isLoadingChatbot = ref(false);
+
+type FilterType = 'new' | 'all' | 'in_chat' | 'queue' | 'chatbot' | 'my_chats';
 
 const activeFilter = ref<FilterType>('all');
 const expandedFilter = ref<FilterType | null>('all');
@@ -97,6 +106,17 @@ const filteredInChat = computed(() => {
 const filteredQueue = computed(() => {
   if (activeFilter.value === 'all' || activeFilter.value === 'queue') {
     return chatStore.listQueue;
+  }
+  return [];
+});
+
+const filteredMyChats = computed(() => {
+  if (activeFilter.value === 'my_chats') {
+    const userId = chatStore.user?.user_id;
+    if (!userId) return [];
+
+    const allChats = [...chatStore.listInChat, ...chatStore.listQueue];
+    return allChats.filter((chat) => chat.user?.id === userId);
   }
   return [];
 });
@@ -118,6 +138,15 @@ const queueSelectionPermissions = [
 
 const canSelectAnyQueueChat = computed(() => can(queueSelectionPermissions));
 
+const chatbotFilterPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EChatPermissions.chat_group,
+  EChatPermissions.view_chatbot_messages,
+];
+
+const canViewChatbotTab = computed(() => can(chatbotFilterPermissions));
+
 const isQueueChatSelectable = (index: number): boolean => {
   if (canSelectAnyQueueChat.value) {
     return true;
@@ -138,6 +167,10 @@ const handleQueueClick = (
 };
 
 const handleFilterClick = (filter: FilterType) => {
+  if (filter === 'chatbot' && !canViewChatbotTab.value) {
+    return;
+  }
+
   if (activeFilter.value === filter && expandedFilter.value === filter) {
     return;
   }
@@ -151,11 +184,16 @@ const handleFilterClick = (filter: FilterType) => {
     currentPageContacts.value = 1;
     accumulatedContacts.value = [];
     loadContacts();
+  } else if (filter === 'chatbot') {
+    chatbotPagings.value.current_page = 1;
+    loadChatbotChats();
+  } else if (filter === 'my_chats') {
+    loadChatsByFilter();
   }
 };
 
 const loadChatsByFilter = async () => {
-  if (activeFilter.value === 'all') {
+  if (activeFilter.value === 'all' || activeFilter.value === 'my_chats') {
     const requestQueue: ListChatsQuery = {
       current_page: currentPageQueue.value,
       per_page: perPageQueue.value,
@@ -213,6 +251,24 @@ const loadContacts = async (append = false) => {
     }
   } finally {
     isLoadingMoreContacts.value = false;
+  }
+};
+
+const loadChatbotChats = async () => {
+  if (isLoadingChatbot.value) return;
+
+  isLoadingChatbot.value = true;
+
+  try {
+    const request: ListChatsQuery = {
+      current_page: chatbotPagings.value.current_page,
+      per_page: chatbotPagings.value.per_page,
+      status: EChatStatus.ura,
+    };
+
+    await chatStore.listChatbotChats(request);
+  } finally {
+    isLoadingChatbot.value = false;
   }
 };
 
@@ -588,6 +644,16 @@ onMounted(async () => {
       </div>
       <div class="chat-filter-item flex-grow-1">
         <VBtn
+          :variant="activeFilter === 'my_chats' ? 'flat' : 'text'"
+          :color="activeFilter === 'my_chats' ? 'primary' : undefined"
+          class="chat-filter-btn w-100"
+          @click="handleFilterClick('my_chats')"
+        >
+          <VIcon size="24">tabler-message-circle-user</VIcon>
+        </VBtn>
+      </div>
+      <div class="chat-filter-item flex-grow-1">
+        <VBtn
           :variant="activeFilter === 'queue' ? 'flat' : 'text'"
           :color="activeFilter === 'queue' ? 'primary' : undefined"
           class="chat-filter-btn w-100"
@@ -596,7 +662,7 @@ onMounted(async () => {
           <VIcon size="24">tabler-clock</VIcon>
         </VBtn>
       </div>
-      <div class="chat-filter-item flex-grow-1">
+      <div v-if="canViewChatbotTab" class="chat-filter-item flex-grow-1">
         <VBtn
           :variant="activeFilter === 'chatbot' ? 'flat' : 'text'"
           :color="activeFilter === 'chatbot' ? 'primary' : undefined"
@@ -618,7 +684,9 @@ onMounted(async () => {
                 ? $t('in_service')
                 : expandedFilter === 'queue'
                   ? $t('waiting_for_service')
-                  : $t('chatbot', 'ChatBot')
+                  : expandedFilter === 'my_chats'
+                    ? $t('my_chats', 'Meus atendimentos')
+                    : $t('chatbot', 'ChatBot')
         }}
       </div>
     </Transition>
@@ -794,6 +862,54 @@ onMounted(async () => {
           v-if="chatStore.loading || isLoadingMoreContacts"
           class="d-flex justify-center pa-4"
         >
+          <VProgressCircular indeterminate color="primary" size="32" />
+        </li>
+      </ul>
+    </PerfectScrollbar>
+  </template>
+
+  <template v-else-if="activeFilter === 'chatbot'">
+    <PerfectScrollbar :options="{ wheelPropagation: false }">
+      <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
+        <ChatQueue
+          v-for="chat in chatStore.listChatbot"
+          :key="`chatbot-${chat.chat_id}`"
+          :user="chat"
+          @click="$emit('openChat', chat.chat_id)"
+        />
+
+        <li
+          v-if="!chatStore.listChatbot.length && !isLoadingChatbot"
+          class="no-chat-items-text text-disabled"
+        >
+          {{ $t('no_chat_in_ura') }}
+        </li>
+
+        <li v-if="isLoadingChatbot" class="d-flex justify-center pa-4">
+          <VProgressCircular indeterminate color="primary" size="32" />
+        </li>
+      </ul>
+    </PerfectScrollbar>
+  </template>
+
+  <template v-else-if="activeFilter === 'my_chats'">
+    <PerfectScrollbar :options="{ wheelPropagation: false }">
+      <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
+        <ChatQueue
+          v-for="chat in filteredMyChats"
+          :key="`my-chat-${chat.chat_id}`"
+          :user="chat"
+          @click="$emit('openChat', chat.chat_id)"
+        />
+
+        <li
+          v-if="!filteredMyChats.length && !chatStore.loading"
+          class="no-chat-items-text text-disabled"
+        >
+          {{ $t('no_my_chats', 'Nenhum atendimento encontrado') }}
+        </li>
+
+        <li v-if="chatStore.loading" class="d-flex justify-center pa-4">
           <VProgressCircular indeterminate color="primary" size="32" />
         </li>
       </ul>

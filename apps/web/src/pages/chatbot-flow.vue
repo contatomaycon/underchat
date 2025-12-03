@@ -69,6 +69,9 @@ const redirectFailedAttemptsSelectedUser = ref<string | null>(null);
 const redirectFailedAttemptsSelectedSector = ref<string | null>(null);
 const redirectFailedAttemptsSelectedSectorUser = ref<string | null>(null);
 
+const finishTriggers = ref<string[]>([]);
+const finishTriggerInput = ref('');
+
 const inactivityUsers = ref<any[]>([]);
 const inactivitySectors = ref<any[]>([]);
 const inactivitySectorUsers = ref<any[]>([]);
@@ -96,6 +99,7 @@ const isRedirectFailedAttemptsSectorMenuOpen = ref(false);
 const isRedirectFailedAttemptsSectorUserMenuOpen = ref(false);
 
 const configTab = ref('resources');
+const isVariablesSidebarOpen = ref(false);
 
 const defaultInactivityMessage = computed(() =>
   t('chatbot_inactivity_message_default')
@@ -112,6 +116,58 @@ const defaultInvalidEmailMessage = computed(() => t('email_invalid'));
 const defaultServiceFinishedMessage = computed(() =>
   t('chatbot_service_finished')
 );
+const defaultTransferMessageUser = computed(() =>
+  t('chatbot_transfer_message_user_default')
+);
+const defaultTransferMessageSector = computed(() =>
+  t('chatbot_transfer_message_sector_default')
+);
+const defaultTransferMessageSectorUser = computed(() =>
+  t('chatbot_transfer_message_sector_user_default')
+);
+
+const availableVariables = computed(() => [
+  {
+    tag: '{{ sector }}',
+    description: t('chatbot_variable_sector_description'),
+  },
+  {
+    tag: '{{ user }}',
+    description: t('chatbot_variable_user_description'),
+  },
+  {
+    tag: '{{ greeting }}',
+    description: t('chatbot_variable_greeting_description'),
+  },
+  {
+    tag: '{{ name }}',
+    description: t('chatbot_variable_name_description'),
+  },
+  {
+    tag: '{{ protocol }}',
+    description: t('chatbot_variable_protocol_description'),
+  },
+  {
+    tag: '{{ date }}',
+    description: t('chatbot_variable_date_description'),
+  },
+  {
+    tag: '{{ time }}',
+    description: t('chatbot_variable_time_description'),
+  },
+  {
+    tag: '{{ account_name }}',
+    description: t('chatbot_variable_account_name_description'),
+  },
+  {
+    tag: '{{ phone }}',
+    description: t('chatbot_variable_phone_description'),
+  },
+  {
+    tag: '{{ channel_name }}',
+    description: t('chatbot_variable_channel_name_description'),
+  },
+]);
 
 const inactivityMessage = ref('');
 const invalidMenuOptionMessage = ref('');
@@ -120,6 +176,9 @@ const invalidCpfMessage = ref('');
 const invalidCnpjMessage = ref('');
 const invalidEmailMessage = ref('');
 const serviceFinishedMessage = ref('');
+const transferMessageUser = ref('');
+const transferMessageSector = ref('');
+const transferMessageSectorUser = ref('');
 
 const onlyDigits = (s: string) => s.replaceAll(/\D+/g, '');
 
@@ -599,12 +658,12 @@ const removeNode = (nodeId: string) => {
   );
 };
 
-const addMenuNode = () => {
+const addMenuNode = (position?: { x: number; y: number }) => {
   const nodeId = `menu-${nodeIdCounter++}`;
   const newNode: Node = {
     id: nodeId,
     type: 'menu',
-    position: {
+    position: position || {
       x: getSecureRandom(400) + 100,
       y: getSecureRandom(300) + 100,
     },
@@ -618,12 +677,12 @@ const addMenuNode = () => {
   nodes.value.push(newNode as Node);
 };
 
-const addSatisfactionNode = () => {
+const addSatisfactionNode = (position?: { x: number; y: number }) => {
   const nodeId = `satisfaction-${nodeIdCounter++}`;
   const newNode: Node = {
     id: nodeId,
     type: 'satisfaction',
-    position: {
+    position: position || {
       x: getSecureRandom(400) + 100,
       y: getSecureRandom(300) + 100,
     },
@@ -637,12 +696,12 @@ const addSatisfactionNode = () => {
   nodes.value.push(newNode as Node);
 };
 
-const addRedirectNode = () => {
+const addRedirectNode = (position?: { x: number; y: number }) => {
   const nodeId = `redirect-${nodeIdCounter++}`;
   const newNode: Node = {
     id: nodeId,
     type: 'redirect',
-    position: {
+    position: position || {
       x: getSecureRandom(400) + 100,
       y: getSecureRandom(300) + 100,
     },
@@ -657,12 +716,12 @@ const addRedirectNode = () => {
   nodes.value.push(newNode as Node);
 };
 
-const addFinishNode = () => {
+const addFinishNode = (position?: { x: number; y: number }) => {
   const nodeId = `finish-${nodeIdCounter++}`;
   const newNode: Node = {
     id: nodeId,
     type: 'finish',
-    position: {
+    position: position || {
       x: getSecureRandom(400) + 100,
       y: getSecureRandom(300) + 100,
     },
@@ -673,12 +732,12 @@ const addFinishNode = () => {
   nodes.value.push(newNode as Node);
 };
 
-const addTagNode = () => {
+const addTagNode = (position?: { x: number; y: number }) => {
   const nodeId = `tag-${nodeIdCounter++}`;
   const newNode: Node = {
     id: nodeId,
     type: 'tag',
-    position: {
+    position: position || {
       x: getSecureRandom(400) + 100,
       y: getSecureRandom(300) + 100,
     },
@@ -691,12 +750,12 @@ const addTagNode = () => {
   nodes.value.push(newNode as Node);
 };
 
-const addMessageNode = () => {
+const addMessageNode = (position?: { x: number; y: number }) => {
   const nodeId = `message-${nodeIdCounter++}`;
   const newNode: Node = {
     id: nodeId,
     type: 'message',
-    position: {
+    position: position || {
       x: getSecureRandom(400) + 100,
       y: getSecureRandom(300) + 100,
     },
@@ -716,12 +775,12 @@ const addMessageNode = () => {
   nodes.value.push(newNode as Node);
 };
 
-const addDataNode = () => {
+const addDataNode = (position?: { x: number; y: number }) => {
   const nodeId = `data-${nodeIdCounter++}`;
   const newNode: Node = {
     id: nodeId,
     type: 'data',
-    position: {
+    position: position || {
       x: getSecureRandom(400) + 100,
       y: getSecureRandom(300) + 100,
     },
@@ -743,13 +802,17 @@ const onConnect = (connection: Connection) => {
     ? String(connection.targetHandle)
     : undefined;
 
-  const existingEdge = edges.value.find(
-    (e) =>
-      e.source === connection.source &&
-      e.target === connection.target &&
+  const source = connection.source;
+  const target = connection.target;
+
+  const existingEdge = edges.value.find((e) => {
+    return (
+      e.source === source &&
+      e.target === target &&
       e.sourceHandle === normalizedSourceHandle &&
       e.targetHandle === normalizedTargetHandle
-  );
+    );
+  });
   if (existingEdge) return;
 
   const newEdge = normalizeEdge({
@@ -826,6 +889,54 @@ const onNodesChange = (changes: NodeChange[]) => {
 };
 
 const isLoadingFlow = ref(false);
+const draggedNodeType = ref<string | null>(null);
+const vueFlowRef = ref<InstanceType<typeof VueFlow> | null>(null);
+
+const onDrop = (event: DragEvent) => {
+  if (!draggedNodeType.value) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  const vueFlowElement = document.querySelector('.vue-flow') as HTMLElement;
+  if (!vueFlowElement) return;
+
+  const rect = vueFlowElement.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+
+  const viewport = vueFlowRef.value?.viewport || { x: 0, y: 0, zoom: 1 };
+  const position = {
+    x: (x - viewport.x) / viewport.zoom,
+    y: (y - viewport.y) / viewport.zoom,
+  };
+
+  switch (draggedNodeType.value) {
+    case 'menu':
+      addMenuNode(position);
+      break;
+    case 'satisfaction':
+      addSatisfactionNode(position);
+      break;
+    case 'redirect':
+      addRedirectNode(position);
+      break;
+    case 'finish':
+      addFinishNode(position);
+      break;
+    case 'tag':
+      addTagNode(position);
+      break;
+    case 'message':
+      addMessageNode(position);
+      break;
+    case 'data':
+      addDataNode(position);
+      break;
+  }
+
+  draggedNodeType.value = null;
+};
 
 const prepareNodesForSave = (nodesToSave: Node[]) => {
   return nodesToSave.map((node) => {
@@ -1184,6 +1295,14 @@ const processConfigurations = async (configs: any): Promise<void> => {
     await processRedirectFailedAttemptsConfig(configs.redirect_failed_attempts);
   }
 
+  if (configs.finish_triggers) {
+    finishTriggers.value = Array.isArray(configs.finish_triggers)
+      ? configs.finish_triggers
+      : [];
+  } else {
+    finishTriggers.value = [];
+  }
+
   if (configs.messages) {
     inactivityMessage.value = configs.messages.inactivity_message || '';
     invalidMenuOptionMessage.value =
@@ -1195,6 +1314,11 @@ const processConfigurations = async (configs: any): Promise<void> => {
     invalidEmailMessage.value = configs.messages.invalid_email_message || '';
     serviceFinishedMessage.value =
       configs.messages.service_finished_message || '';
+    transferMessageUser.value = configs.messages.transfer_message_user || '';
+    transferMessageSector.value =
+      configs.messages.transfer_message_sector || '';
+    transferMessageSectorUser.value =
+      configs.messages.transfer_message_sector_user || '';
   } else {
     inactivityMessage.value = '';
     invalidMenuOptionMessage.value = '';
@@ -1203,7 +1327,37 @@ const processConfigurations = async (configs: any): Promise<void> => {
     invalidCnpjMessage.value = '';
     invalidEmailMessage.value = '';
     serviceFinishedMessage.value = '';
+    transferMessageUser.value = '';
+    transferMessageSector.value = '';
+    transferMessageSectorUser.value = '';
   }
+};
+
+const addFinishTrigger = () => {
+  const text = finishTriggerInput.value.trim();
+  if (!text) {
+    return;
+  }
+
+  const words = text.split(/\s+/).filter((word) => word.length > 0);
+  for (const word of words) {
+    const normalizedWord = word.toLowerCase();
+    if (
+      !finishTriggers.value.some(
+        (trigger) => trigger.toLowerCase() === normalizedWord
+      )
+    ) {
+      finishTriggers.value.push(word);
+    }
+  }
+
+  finishTriggerInput.value = '';
+};
+
+const removeFinishTrigger = (triggerToRemove: string) => {
+  finishTriggers.value = finishTriggers.value.filter(
+    (trigger) => trigger !== triggerToRemove
+  );
 };
 
 const loadChatbotFlowConfigurations = async () => {
@@ -1272,6 +1426,8 @@ const handleSaveConfigurations = async () => {
                 redirectFailedAttemptsSelectedSectorUser.value || undefined,
             }
           : undefined,
+      finish_triggers:
+        finishTriggers.value.length > 0 ? finishTriggers.value : undefined,
       messages: {
         inactivity_message: inactivityMessage.value || undefined,
         invalid_menu_option_message:
@@ -1282,6 +1438,10 @@ const handleSaveConfigurations = async () => {
         invalid_cnpj_message: invalidCnpjMessage.value || undefined,
         invalid_email_message: invalidEmailMessage.value || undefined,
         service_finished_message: serviceFinishedMessage.value || undefined,
+        transfer_message_user: transferMessageUser.value || undefined,
+        transfer_message_sector: transferMessageSector.value || undefined,
+        transfer_message_sector_user:
+          transferMessageSectorUser.value || undefined,
       },
     };
 
@@ -1312,6 +1472,14 @@ onMounted(() => {
     <VCard :title="`${t('configurations')} ${t('chatbot')}`">
       <VCardText>
         <div class="actions-row">
+          <VBtn
+            variant="tonal"
+            color="info"
+            @click="isVariablesSidebarOpen = true"
+          >
+            <VIcon icon="tabler-code" class="me-2" />
+            {{ t('chatbot_message_variables_legend') }}
+          </VBtn>
           <VBtn variant="tonal" color="secondary" @click="handleCancel">
             {{ t('cancel') }}
           </VBtn>
@@ -1330,11 +1498,43 @@ onMounted(() => {
               <VIcon icon="tabler-settings" class="me-2" />
               {{ t('chatbot_configurations') }}
             </VBtn>
-            <VBtn color="primary" @click="addMenuNode">
+            <VBtn
+              color="primary"
+              draggable="true"
+              @dragstart.stop="
+                (e: DragEvent) => {
+                  draggedNodeType = 'menu';
+                  e.dataTransfer!.effectAllowed = 'move';
+                  e.dataTransfer!.dropEffect = 'move';
+                }
+              "
+              @dragend="
+                () => {
+                  draggedNodeType = null;
+                }
+              "
+              style="cursor: grab"
+            >
               <VIcon icon="tabler-menu-2" class="me-2" />
               {{ t('chatbot_menu') }}
             </VBtn>
-            <VBtn color="warning" @click="addSatisfactionNode">
+            <VBtn
+              color="warning"
+              draggable="true"
+              @dragstart.stop="
+                (e: DragEvent) => {
+                  draggedNodeType = 'satisfaction';
+                  e.dataTransfer!.effectAllowed = 'move';
+                  e.dataTransfer!.dropEffect = 'move';
+                }
+              "
+              @dragend="
+                () => {
+                  draggedNodeType = null;
+                }
+              "
+              style="cursor: grab"
+            >
               <VIcon icon="tabler-star" class="me-2" />
               {{ t('chatbot_satisfaction') }}
             </VBtn>
@@ -1342,23 +1542,103 @@ onMounted(() => {
             <div class="text-caption text-medium-emphasis mb-2">
               {{ t('chatbot_options') }}
             </div>
-            <VBtn color="info" @click="addRedirectNode">
+            <VBtn
+              color="info"
+              draggable="true"
+              @dragstart.stop="
+                (e: DragEvent) => {
+                  draggedNodeType = 'redirect';
+                  e.dataTransfer!.effectAllowed = 'move';
+                  e.dataTransfer!.dropEffect = 'move';
+                }
+              "
+              @dragend="
+                () => {
+                  draggedNodeType = null;
+                }
+              "
+              style="cursor: grab"
+            >
               <VIcon icon="tabler-arrow-forward" class="me-2" />
               {{ t('chatbot_redirect') }}
             </VBtn>
-            <VBtn color="error" @click="addFinishNode">
+            <VBtn
+              color="error"
+              draggable="true"
+              @dragstart.stop="
+                (e: DragEvent) => {
+                  draggedNodeType = 'finish';
+                  e.dataTransfer!.effectAllowed = 'move';
+                  e.dataTransfer!.dropEffect = 'move';
+                }
+              "
+              @dragend="
+                () => {
+                  draggedNodeType = null;
+                }
+              "
+              style="cursor: grab"
+            >
               <VIcon icon="tabler-circle-check" class="me-2" />
               {{ t('chatbot_finish') }}
             </VBtn>
-            <VBtn color="secondary" @click="addTagNode">
+            <VBtn
+              color="secondary"
+              draggable="true"
+              @dragstart.stop="
+                (e: DragEvent) => {
+                  draggedNodeType = 'tag';
+                  e.dataTransfer!.effectAllowed = 'move';
+                  e.dataTransfer!.dropEffect = 'move';
+                }
+              "
+              @dragend="
+                () => {
+                  draggedNodeType = null;
+                }
+              "
+              style="cursor: grab"
+            >
               <VIcon icon="tabler-tag" class="me-2" />
               {{ t('chatbot_tag_node_title') }}
             </VBtn>
-            <VBtn color="success" @click="addMessageNode">
+            <VBtn
+              color="success"
+              draggable="true"
+              @dragstart.stop="
+                (e: DragEvent) => {
+                  draggedNodeType = 'message';
+                  e.dataTransfer!.effectAllowed = 'move';
+                  e.dataTransfer!.dropEffect = 'move';
+                }
+              "
+              @dragend="
+                () => {
+                  draggedNodeType = null;
+                }
+              "
+              style="cursor: grab"
+            >
               <VIcon icon="tabler-message" class="me-2" />
               {{ t('chatbot_message') }}
             </VBtn>
-            <VBtn color="info" @click="addDataNode">
+            <VBtn
+              color="info"
+              draggable="true"
+              @dragstart.stop="
+                (e: DragEvent) => {
+                  draggedNodeType = 'data';
+                  e.dataTransfer!.effectAllowed = 'move';
+                  e.dataTransfer!.dropEffect = 'move';
+                }
+              "
+              @dragend="
+                () => {
+                  draggedNodeType = null;
+                }
+              "
+              style="cursor: grab"
+            >
               <VIcon icon="tabler-database" class="me-2" />
               {{ t('chatbot_data') }}
             </VBtn>
@@ -1366,6 +1646,7 @@ onMounted(() => {
           <div class="vertical-divider" />
           <div class="flow-area">
             <VueFlow
+              ref="vueFlowRef"
               v-model:nodes="nodes"
               v-model:edges="edges"
               :node-types="nodeTypes"
@@ -1380,11 +1661,56 @@ onMounted(() => {
               :connection-radius="20"
               @connect="onConnect"
               @nodes-change="onNodesChange"
+              @drop="onDrop"
+              @dragover.prevent
             />
           </div>
         </div>
       </VCardText>
     </VCard>
+
+    <VNavigationDrawer
+      v-model="isVariablesSidebarOpen"
+      data-allow-mismatch
+      temporary
+      touchless
+      absolute
+      class="variables-sidebar"
+      location="end"
+      width="400"
+    >
+      <div class="d-flex flex-column" style="height: 100%">
+        <div class="d-flex align-center pa-4 border-b">
+          <IconBtn class="me-2" @click="isVariablesSidebarOpen = false">
+            <VIcon icon="tabler-x" />
+          </IconBtn>
+          <h6 class="text-h6">{{ t('chatbot_message_variables_legend') }}</h6>
+        </div>
+        <div class="pa-4 flex-grow-1" style="overflow-y: auto">
+          <p class="text-body-2 text-medium-emphasis mb-4">
+            {{ t('chatbot_message_variables_legend_description') }}
+          </p>
+          <div class="d-flex flex-column gap-3">
+            <div
+              v-for="variable in availableVariables"
+              :key="variable.tag"
+              class="d-flex flex-column gap-1"
+            >
+              <code
+                class="text-primary font-weight-bold text-body-1"
+                style="display: block; margin: 0; padding: 0; line-height: 1.5"
+                >{{ variable.tag }}</code
+              >
+              <span
+                class="text-body-2 text-medium-emphasis"
+                style="display: block; margin: 0; padding: 0; line-height: 1.5"
+                >{{ variable.description }}</span
+              >
+            </div>
+          </div>
+        </div>
+      </div>
+    </VNavigationDrawer>
 
     <VDialog v-model="isConfigModalOpen" max-width="1000" persistent>
       <DialogCloseBtn @click="closeConfigModal" />
@@ -2184,6 +2510,52 @@ onMounted(() => {
                   </div>
                 </VCardText>
               </VCard>
+
+              <VCard variant="outlined" class="mb-4">
+                <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
+                  {{ t('chatbot_finish_triggers') }}
+                </VCardTitle>
+                <VCardSubtitle
+                  class="text-caption pa-3 pb-0 pt-0 config-description"
+                >
+                  {{ t('chatbot_finish_triggers_description') }}
+                </VCardSubtitle>
+                <VDivider />
+                <VCardText>
+                  <div class="mb-3">
+                    <VLabel class="mb-1 text-body-2">{{
+                      t('chatbot_finish_triggers_label')
+                    }}</VLabel>
+                    <VTextField
+                      v-model="finishTriggerInput"
+                      :placeholder="t('chatbot_finish_triggers_placeholder')"
+                      variant="outlined"
+                      density="compact"
+                      hide-details
+                      @keydown.enter.prevent="addFinishTrigger"
+                    />
+                    <div class="text-caption text-medium-emphasis mt-2">
+                      {{ t('chatbot_finish_triggers_hint') }}
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="finishTriggers.length > 0"
+                    class="d-flex flex-wrap gap-2"
+                  >
+                    <VChip
+                      v-for="trigger in finishTriggers"
+                      :key="trigger"
+                      closable
+                      @click:close="removeFinishTrigger(trigger)"
+                      color="primary"
+                      variant="tonal"
+                    >
+                      {{ trigger }}
+                    </VChip>
+                  </div>
+                </VCardText>
+              </VCard>
             </VWindowItem>
 
             <VWindowItem value="messages">
@@ -2199,12 +2571,13 @@ onMounted(() => {
                   </VCardSubtitle>
                   <VDivider />
                   <VCardText>
-                    <VTextField
+                    <VTextarea
                       v-model="inactivityMessage"
                       :placeholder="defaultInactivityMessage"
                       variant="outlined"
                       density="compact"
                       hide-details
+                      rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
@@ -2224,12 +2597,13 @@ onMounted(() => {
                   </VCardSubtitle>
                   <VDivider />
                   <VCardText>
-                    <VTextField
+                    <VTextarea
                       v-model="invalidMenuOptionMessage"
                       :placeholder="defaultInvalidMenuOptionMessage"
                       variant="outlined"
                       density="compact"
                       hide-details
+                      rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
@@ -2253,12 +2627,13 @@ onMounted(() => {
                   </VCardSubtitle>
                   <VDivider />
                   <VCardText>
-                    <VTextField
+                    <VTextarea
                       v-model="invalidSatisfactionOptionMessage"
                       :placeholder="defaultInvalidSatisfactionOptionMessage"
                       variant="outlined"
                       density="compact"
                       hide-details
+                      rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
@@ -2278,12 +2653,13 @@ onMounted(() => {
                   </VCardSubtitle>
                   <VDivider />
                   <VCardText>
-                    <VTextField
+                    <VTextarea
                       v-model="invalidCpfMessage"
                       :placeholder="defaultInvalidCpfMessage"
                       variant="outlined"
                       density="compact"
                       hide-details
+                      rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
@@ -2303,12 +2679,13 @@ onMounted(() => {
                   </VCardSubtitle>
                   <VDivider />
                   <VCardText>
-                    <VTextField
+                    <VTextarea
                       v-model="invalidCnpjMessage"
                       :placeholder="defaultInvalidCnpjMessage"
                       variant="outlined"
                       density="compact"
                       hide-details
+                      rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
@@ -2328,12 +2705,13 @@ onMounted(() => {
                   </VCardSubtitle>
                   <VDivider />
                   <VCardText>
-                    <VTextField
+                    <VTextarea
                       v-model="invalidEmailMessage"
                       :placeholder="defaultInvalidEmailMessage"
                       variant="outlined"
                       density="compact"
                       hide-details
+                      rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
@@ -2353,16 +2731,95 @@ onMounted(() => {
                   </VCardSubtitle>
                   <VDivider />
                   <VCardText>
-                    <VTextField
+                    <VTextarea
                       v-model="serviceFinishedMessage"
                       :placeholder="defaultServiceFinishedMessage"
                       variant="outlined"
                       density="compact"
                       hide-details
+                      rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
                       {{ defaultServiceFinishedMessage }}
+                    </div>
+                  </VCardText>
+                </VCard>
+
+                <VCard variant="outlined">
+                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
+                    {{ t('chatbot_message_transfer_user') }}
+                  </VCardTitle>
+                  <VCardSubtitle
+                    class="text-caption pa-3 pb-0 pt-0 config-description"
+                  >
+                    {{ t('chatbot_message_transfer_user_description') }}
+                  </VCardSubtitle>
+                  <VDivider />
+                  <VCardText>
+                    <VTextarea
+                      v-model="transferMessageUser"
+                      :placeholder="defaultTransferMessageUser"
+                      variant="outlined"
+                      density="compact"
+                      hide-details
+                      rows="3"
+                    />
+                    <div class="text-caption text-medium-emphasis mt-2">
+                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      {{ defaultTransferMessageUser }}
+                    </div>
+                  </VCardText>
+                </VCard>
+
+                <VCard variant="outlined">
+                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
+                    {{ t('chatbot_message_transfer_sector') }}
+                  </VCardTitle>
+                  <VCardSubtitle
+                    class="text-caption pa-3 pb-0 pt-0 config-description"
+                  >
+                    {{ t('chatbot_message_transfer_sector_description') }}
+                  </VCardSubtitle>
+                  <VDivider />
+                  <VCardText>
+                    <VTextarea
+                      v-model="transferMessageSector"
+                      :placeholder="defaultTransferMessageSector"
+                      variant="outlined"
+                      density="compact"
+                      hide-details
+                      rows="3"
+                    />
+                    <div class="text-caption text-medium-emphasis mt-2">
+                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      {{ defaultTransferMessageSector }}
+                    </div>
+                  </VCardText>
+                </VCard>
+
+                <VCard variant="outlined">
+                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
+                    {{ t('chatbot_message_transfer_sector_user') }}
+                  </VCardTitle>
+                  <VCardSubtitle
+                    class="text-caption pa-3 pb-0 pt-0 config-description"
+                  >
+                    {{ t('chatbot_message_transfer_sector_user_description') }}
+                  </VCardSubtitle>
+                  <VDivider />
+                  <VCardText>
+                    <VTextarea
+                      v-model="transferMessageSectorUser"
+                      :placeholder="defaultTransferMessageSectorUser"
+                      variant="outlined"
+                      density="compact"
+                      hide-details
+                      rows="3"
+                    />
+                    <div class="text-caption text-medium-emphasis mt-2">
+                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      {{ defaultTransferMessageSectorUser }}
                     </div>
                   </VCardText>
                 </VCard>

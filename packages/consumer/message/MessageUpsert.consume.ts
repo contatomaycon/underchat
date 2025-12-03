@@ -1764,6 +1764,7 @@ export class MessageUpsertConsume {
 
   private async createOrUpdateChatBotFlow(
     t: TFunction<'translation', undefined>,
+    getChat: IChat | null,
     data: IUpsertMessage,
     chatbotId: string
   ) {
@@ -1778,34 +1779,16 @@ export class MessageUpsertConsume {
       throw new Error('Failed to get phone from jid');
     }
 
-    const existingChat = await this.getChat(
-      data.account_id,
-      data.worker_id,
-      phone,
-      jid,
-      jidAlt
-    );
-
-    const chat = await this.ensureChatAndHandleMessage(t, data, existingChat);
+    const chat = await this.ensureChatAndHandleMessage(t, data, getChat);
 
     return this.chatbotFlowRunnerService.execute(t, data, chat, chatbotId);
   }
 
   private async createOrUpdateChatQueue(
     t: TFunction<'translation', undefined>,
-    data: IUpsertMessage,
-    phone: string,
-    jid?: string | null,
-    jidAlt?: string | null
+    getChat: IChat | null,
+    data: IUpsertMessage
   ): Promise<void> {
-    const getChat = await this.getChat(
-      data.account_id,
-      data.worker_id,
-      phone,
-      jid,
-      jidAlt
-    );
-
     if (!getChat) {
       const createChat = await this.createChat(t, data, EChatStatus.queue);
       if (!createChat) {
@@ -1825,17 +1808,18 @@ export class MessageUpsertConsume {
     jid?: string | null,
     jidAlt?: string | null
   ): Promise<void> {
-    const chatbotId = await this.workerConfigService.viewChatbot(
-      data.worker_id
-    );
+    const [chatbotId, getChat] = await Promise.all([
+      this.workerConfigService.viewChatbot(data.worker_id),
+      this.getChat(data.account_id, data.worker_id, phone, jid, jidAlt),
+    ]);
 
-    if (chatbotId) {
-      await this.createOrUpdateChatBotFlow(t, data, chatbotId);
+    if (chatbotId && (!getChat || getChat.status === EChatStatus.ura)) {
+      await this.createOrUpdateChatBotFlow(t, getChat, data, chatbotId);
 
       return;
     }
 
-    await this.createOrUpdateChatQueue(t, data, phone, jid, jidAlt);
+    await this.createOrUpdateChatQueue(t, getChat, data);
   }
 
   public async execute(t: TFunction<'translation', undefined>): Promise<void> {

@@ -69,6 +69,9 @@ export const chatbotFlowMappings = () => {
                 },
               },
             },
+            finish_triggers: {
+              type: 'keyword',
+            },
             messages: {
               type: 'nested',
               properties: {
@@ -91,6 +94,15 @@ export const chatbotFlowMappings = () => {
                   type: 'text',
                 },
                 service_finished_message: {
+                  type: 'text',
+                },
+                transfer_message_user: {
+                  type: 'text',
+                },
+                transfer_message_sector: {
+                  type: 'text',
+                },
+                transfer_message_sector_user: {
                   type: 'text',
                 },
               },

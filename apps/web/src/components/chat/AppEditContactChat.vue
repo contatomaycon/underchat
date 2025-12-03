@@ -1160,6 +1160,9 @@ onMounted(() => {
                 item-value="value"
                 :label="$t('label') + ':'"
                 :placeholder="$t('select_label')"
+                clearable
+                clear-icon="tabler-x"
+                @click:clear="label_template_id = null"
               >
                 <template #item="{ props, item }">
                   <VListItem v-bind="props">

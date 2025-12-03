@@ -291,7 +291,6 @@ export class ContactCreatorUseCase {
 
     if (chatId) {
       await this.updateChatWithContactData(
-        t,
         accountId,
         chatId,
         contactId,
@@ -304,7 +303,6 @@ export class ContactCreatorUseCase {
   }
 
   private async updateChatWithContactData(
-    t: TFunction<'translation', undefined>,
     accountId: string,
     chatId: string,
     contactId: string,
@@ -312,19 +310,13 @@ export class ContactCreatorUseCase {
     phoneDdi: string
   ): Promise<void> {
     const chat = await this.chatService.findChatByChatId(accountId, chatId);
-
-    if (!chat) {
-      return;
-    }
+    if (!chat) return;
 
     const contact = await this.contactService.getContactById(
       contactId,
       accountId
     );
-
-    if (!contact) {
-      return;
-    }
+    if (!contact) return;
 
     const updatedChat: IChat = {
       ...chat,
@@ -339,10 +331,7 @@ export class ContactCreatorUseCase {
     };
 
     const saved = await this.chatService.saveChat(updatedChat);
-
-    if (!saved) {
-      return;
-    }
+    if (!saved) return;
 
     const channelAccountId = updatedChat.account?.id ?? accountId;
 

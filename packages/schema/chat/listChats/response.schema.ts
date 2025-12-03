@@ -21,6 +21,7 @@ export const workerSchema = Type.Object({
 export const sectorSchema = Type.Object({
   id: Type.String(),
   name: Type.String(),
+  color: Type.Optional(Type.String()),
 });
 
 export const userSchema = Type.Object({

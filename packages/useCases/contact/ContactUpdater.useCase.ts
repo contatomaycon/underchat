@@ -253,9 +253,13 @@ export class ContactUpdaterUseCase {
       throw new Error(t('contact_not_found'));
     }
 
-    const labelTemplateId = this.extractFieldValue(
+    const rawLabelTemplateId = this.extractFieldValue(
       body.label_template_id as FieldValue
     );
+    const labelTemplateId =
+      rawLabelTemplateId && rawLabelTemplateId.trim() !== ''
+        ? rawLabelTemplateId
+        : null;
     const name = this.extractFieldValue(body.name as FieldValue);
     const lastName = this.extractFieldValue(body.last_name as FieldValue);
     const email = this.extractFieldValue(body.email as FieldValue);

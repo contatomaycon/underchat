@@ -94,11 +94,13 @@ export const useChatStore = defineStore('chat', {
     listMessages: [] as ListMessageResult[],
     listQueue: [] as ListChatsResult[],
     listInChat: [] as ListChatsResult[],
+    listChatbot: [] as ListChatsResult[],
     messageReply: null as ListMessageResult | null,
     user: getUser(),
     currentPage: 1,
     totalPages: 1,
     localMessageState: {} as Record<string, LocalMessageState>,
+    chatContacts: {} as Record<string, ViewChatContactResponse | null>,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -250,6 +252,11 @@ export const useChatStore = defineStore('chat', {
         return;
       }
 
+      if (chat.status === EChatStatus.ura) {
+        this.handleUraStatusChat(input, chat, isActiveChat);
+        return;
+      }
+
       if (chat.status === EChatStatus.closed) {
         this.handleClosedStatusChat(input, chat);
       }
@@ -347,7 +354,20 @@ export const useChatStore = defineStore('chat', {
           perm === EChatPermissions.view_others_chats
       );
 
+      const canViewChatbotMessages = permissions.some(
+        (perm: EPermissionsRoles) =>
+          perm === EGeneralPermissions.full_access ||
+          perm === EGeneralPermissions.full_access_group ||
+          perm === EChatPermissions.chat_group ||
+          perm === EChatPermissions.view_chatbot_messages
+      );
+
       const isOwnChat = chat.user?.id === this.user?.user_id;
+
+      if (chat.status === EChatStatus.ura) {
+        return canViewChatbotMessages || isOwnChat;
+      }
+
       return canViewOthersChats || isOwnChat;
     },
 
@@ -357,6 +377,7 @@ export const useChatStore = defineStore('chat', {
       isActiveChat: boolean
     ): void {
       this.removeFromList(this.listInChat, chat.chat_id);
+      this.removeFromList(this.listChatbot, chat.chat_id);
       this.replaceOrPushInList(this.listQueue, input, isActiveChat);
 
       if (this.activeChat?.chat_id === chat.chat_id) {
@@ -372,6 +393,7 @@ export const useChatStore = defineStore('chat', {
       if (!this.canViewChat(chat)) {
         this.removeFromList(this.listInChat, chat.chat_id);
         this.removeFromList(this.listQueue, chat.chat_id);
+        this.removeFromList(this.listChatbot, chat.chat_id);
 
         if (this.activeChat?.chat_id === chat.chat_id) {
           this.activeChat = null;
@@ -380,7 +402,33 @@ export const useChatStore = defineStore('chat', {
       }
 
       this.removeFromList(this.listQueue, chat.chat_id);
+      this.removeFromList(this.listChatbot, chat.chat_id);
       this.replaceOrPushInList(this.listInChat, input, isActiveChat);
+
+      if (this.activeChat?.chat_id === chat.chat_id) {
+        this.activeChat = this.createUpdatedActiveChat(input, isActiveChat);
+      }
+    },
+
+    handleUraStatusChat(
+      input: ListChatsResult,
+      chat: IChat,
+      isActiveChat: boolean
+    ): void {
+      if (!this.canViewChat(chat)) {
+        this.removeFromList(this.listChatbot, chat.chat_id);
+        this.removeFromList(this.listInChat, chat.chat_id);
+        this.removeFromList(this.listQueue, chat.chat_id);
+
+        if (this.activeChat?.chat_id === chat.chat_id) {
+          this.activeChat = null;
+        }
+        return;
+      }
+
+      this.removeFromList(this.listInChat, chat.chat_id);
+      this.removeFromList(this.listQueue, chat.chat_id);
+      this.replaceOrPushInList(this.listChatbot, input, isActiveChat);
 
       if (this.activeChat?.chat_id === chat.chat_id) {
         this.activeChat = this.createUpdatedActiveChat(input, isActiveChat);
@@ -390,6 +438,7 @@ export const useChatStore = defineStore('chat', {
     handleClosedStatusChat(input: ListChatsResult, chat: IChat): void {
       this.removeFromList(this.listInChat, chat.chat_id);
       this.removeFromList(this.listQueue, chat.chat_id);
+      this.removeFromList(this.listChatbot, chat.chat_id);
 
       if (this.activeChat?.chat_id === chat.chat_id) {
         this.activeChat = null;
@@ -495,6 +544,43 @@ export const useChatStore = defineStore('chat', {
         return data.data.results;
       } catch {
         this.listInChat = [];
+
+        return [] as ListChatsResult[];
+      }
+    },
+
+    async listChatbotChats(input: ListChatsQuery): Promise<ListChatsResult[]> {
+      try {
+        this.loading = true;
+
+        const request: ListChatsQuery = {
+          current_page: input.current_page,
+          per_page: input.per_page,
+          status: input.status,
+        };
+
+        const response = await axios.get<IApiResponse<ListChatsResponse>>(
+          `/chat`,
+          {
+            params: request,
+          }
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          this.listChatbot = [];
+
+          return [] as ListChatsResult[];
+        }
+
+        this.listChatbot = data.data.results;
+
+        return data.data.results;
+      } catch {
+        this.listChatbot = [];
 
         return [] as ListChatsResult[];
       }
@@ -1124,7 +1210,8 @@ export const useChatStore = defineStore('chat', {
       if (this.activeChat?.chat_id === chatId) return;
 
       const chat = (this.listQueue.find((c) => c.chat_id === chatId) ??
-        this.listInChat.find((c) => c.chat_id === chatId)) as ListChatsResult;
+        this.listInChat.find((c) => c.chat_id === chatId) ??
+        this.listChatbot.find((c) => c.chat_id === chatId)) as ListChatsResult;
 
       if (!chat?.chat_id) {
         this.activeChat = null;
@@ -1426,6 +1513,8 @@ export const useChatStore = defineStore('chat', {
           return null;
         }
 
+        this.chatContacts[contactId] = data.data;
+
         return data.data;
       } catch {
         return null;
@@ -1594,6 +1683,10 @@ export const useChatStore = defineStore('chat', {
         } else if (photoFile) {
           formData.append('photo', photoFile);
         }
+        const chatId = this.extractFieldValue(payload.chat_id as FieldValue);
+        if (chatId) {
+          formData.append('chat_id', chatId);
+        }
 
         const response = await axios.post<IApiResponse<boolean>>(
           `/chat/contacts`,
@@ -1714,6 +1807,8 @@ export const useChatStore = defineStore('chat', {
 
           return false;
         }
+
+        void this.getChatContactById(payload.contact_id);
 
         this.showSnackbar(
           this.i18n.global.t('contact_edit_success'),

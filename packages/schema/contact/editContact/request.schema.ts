@@ -12,9 +12,9 @@ export type EditContactParamsRequest = Static<
 export const updateContactRequestSchema = Type.Object({
   label_template_id: Type.Optional(
     Type.Union([
-      Type.String({ format: 'uuid' }),
+      Type.String(),
       Type.Object({
-        value: Type.String({ format: 'uuid' }),
+        value: Type.String(),
       }),
       Type.Null(),
     ])

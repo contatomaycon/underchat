@@ -19,6 +19,7 @@ interface IWorker {
 interface ISector {
   id: string;
   name: string;
+  color?: string;
 }
 
 interface IUser {

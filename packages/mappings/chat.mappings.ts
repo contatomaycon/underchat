@@ -61,6 +61,9 @@ export const chatMappings = () => {
             name: {
               type: 'text',
             },
+            color: {
+              type: 'keyword',
+            },
           },
         },
         user: {
