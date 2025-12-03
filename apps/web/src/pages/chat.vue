@@ -598,29 +598,32 @@ const selectedLabelTemplateId = ref<string | null>(null);
 const isLoadingLabels = ref(false);
 const isSavingLabel = ref(false);
 
-const activeContactLabelTemplate = ref<{ label: string; color: string } | null>(
-  null
-);
+const activeContactLabelTemplate = computed<{
+  label: string;
+  color: string;
+} | null>(() => {
+  const contactId = chatStore.activeChat?.contact?.id;
+  if (!contactId) {
+    return null;
+  }
+
+  const contact = chatStore.chatContacts[contactId];
+  if (contact?.label_template) {
+    return {
+      label: contact.label_template.label,
+      color: contact.label_template.color,
+    };
+  }
+
+  return null;
+});
 
 watch(
   () => chatStore.activeChat?.contact?.id,
-  async (contactId) => {
-    if (!contactId) {
-      activeContactLabelTemplate.value = null;
-      return;
+  (contactId) => {
+    if (contactId) {
+      void chatStore.getChatContactById(contactId);
     }
-
-    const contact = await chatStore.getChatContactById(contactId);
-
-    if (contact?.label_template) {
-      activeContactLabelTemplate.value = {
-        label: contact.label_template.label,
-        color: contact.label_template.color,
-      };
-      return;
-    }
-
-    activeContactLabelTemplate.value = null;
   },
   { immediate: true }
 );
@@ -4499,11 +4502,7 @@ onBeforeUnmount(() => {
               @click:close.stop="removeLabel"
               :title="chatStore.activeChat.label.label"
             >
-              <VIcon
-                icon="tabler-tag"
-                start
-                size="16"
-              />
+              <VIcon icon="tabler-tag" start size="16" />
               {{
                 chatStore.activeChat.label.label.length > 15
                   ? `${chatStore.activeChat.label.label.slice(0, 15)}…`

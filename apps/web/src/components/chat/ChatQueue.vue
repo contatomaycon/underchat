@@ -28,25 +28,41 @@ const chatLabelForList = computed<{
   label: string;
   color: string;
 } | null>(() => {
-  // Etiqueta do chat
-  if (props.user.label) {
+  const chatLabel = props.user.label as
+    | { label?: string | null; color?: string | null }
+    | null
+    | undefined;
+
+  if (chatLabel?.label && chatLabel.color) {
     return {
-      label: props.user.label.label,
-      color: props.user.label.color,
+      label: chatLabel.label,
+      color: chatLabel.color,
     };
   }
 
-  // Fallback: etiqueta do contato (se disponível no objeto de contato)
-  const contact: any = props.user.contact;
-  if (contact?.label_template) {
-    return {
-      label: contact.label_template.label,
-      color: contact.label_template.color,
-    };
+  const contactId = props.user.contact?.id;
+  if (contactId) {
+    const contact = chatStore.chatContacts[contactId];
+    if (contact?.label_template) {
+      return {
+        label: contact.label_template.label,
+        color: contact.label_template.color,
+      };
+    }
   }
 
   return null;
 });
+
+watch(
+  () => props.user.contact?.id,
+  (contactId) => {
+    if (contactId) {
+      void chatStore.getChatContactById(contactId);
+    }
+  },
+  { immediate: true }
+);
 
 const loadWorkerConfig = async (workerId?: string | null) => {
   if (!workerId) {

@@ -99,6 +99,7 @@ export const useChatStore = defineStore('chat', {
     currentPage: 1,
     totalPages: 1,
     localMessageState: {} as Record<string, LocalMessageState>,
+    chatContacts: {} as Record<string, ViewChatContactResponse | null>,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -1426,6 +1427,8 @@ export const useChatStore = defineStore('chat', {
           return null;
         }
 
+        this.chatContacts[contactId] = data.data;
+
         return data.data;
       } catch {
         return null;
@@ -1714,6 +1717,8 @@ export const useChatStore = defineStore('chat', {
 
           return false;
         }
+
+        void this.getChatContactById(payload.contact_id);
 
         this.showSnackbar(
           this.i18n.global.t('contact_edit_success'),
