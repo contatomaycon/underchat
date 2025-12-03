@@ -4487,34 +4487,29 @@ onBeforeUnmount(() => {
           <VSpacer />
 
           <div class="d-sm-flex align-center d-none text-medium-emphasis">
-            <div
+            <VChip
               v-if="isInChatStatus && chatStore.activeChat?.label"
-              class="d-flex align-center label-container me-2"
-              :style="{
-                gap: '4px',
-                borderColor: `${chatStore.activeChat.label.color}40`,
-              }"
+              class="me-2"
+              size="small"
+              variant="flat"
+              :color="chatStore.activeChat.label.color"
+              text-color="white"
+              closable
+              @click="openLabelModal"
+              @click:close.stop="removeLabel"
+              :title="chatStore.activeChat.label.label"
             >
-              <IconBtn
-                @click="openLabelModal"
-                :title="chatStore.activeChat.label.label"
-              >
-                <VIcon
-                  icon="tabler-tag"
-                  :color="chatStore.activeChat.label.color"
-                />
-              </IconBtn>
-              <span
-                class="text-body-2 text-medium-emphasis"
-                :title="chatStore.activeChat.label.label"
-              >
-                {{
-                  chatStore.activeChat.label.label.length > 15
-                    ? `${chatStore.activeChat.label.label.slice(0, 15)}…`
-                    : chatStore.activeChat.label.label
-                }}
-              </span>
-            </div>
+              <VIcon
+                icon="tabler-tag"
+                start
+                size="16"
+              />
+              {{
+                chatStore.activeChat.label.label.length > 15
+                  ? `${chatStore.activeChat.label.label.slice(0, 15)}…`
+                  : chatStore.activeChat.label.label
+              }}
+            </VChip>
             <IconBtn
               v-else-if="isInChatStatus"
               class="me-1"
@@ -6414,15 +6409,6 @@ $chat-app-header-height: 76px;
   border-radius: 50%;
   flex-shrink: 0;
   margin-inline-end: 8px;
-}
-
-.label-container {
-  padding: 0px 6px 0px 4px;
-  border-top: 0.5px solid;
-  border-right: 0.5px solid;
-  border-bottom: 0.5px solid;
-  border-left: none;
-  border-radius: 0 4px 4px 0;
 }
 
 .audio-modal-progress-bar {
