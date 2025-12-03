@@ -16,6 +16,7 @@ import { KafkaEnvironment } from './KafkaEnvironment';
 import { TemporalEnvironment } from './TemporalEnvironment';
 import { BalanceEnvironment } from './BalanceEnvironment';
 import { S3Environment } from './S3Environment';
+import { AsaasEnvironment } from './AsaasEnvironment';
 
 export const generalEnvironment = new GeneralEnvironment();
 export const databaseEnvironment = new DatabaseEnvironment();
@@ -28,3 +29,4 @@ export const kafkaEnvironment = new KafkaEnvironment();
 export const temporalEnvironment = new TemporalEnvironment();
 export const balanceEnvironment = new BalanceEnvironment();
 export const s3Environment = new S3Environment();
+export const asaasEnvironment = new AsaasEnvironment();
