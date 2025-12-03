@@ -468,19 +468,29 @@ watch(
                   v-if="group.permissions.length"
                   class="d-flex flex-column gap-2 ms-4"
                 >
-                  <VCheckbox
+                  <div
                     v-for="permission in group.permissions"
                     :key="permission.permission_action_id"
-                    :model-value="permission.selected"
-                    :label="permission.name"
-                    :disabled="!canEdit || permission.disabled"
-                    hide-details
-                    density="compact"
-                    @update:model-value="
-                      (value) =>
-                        togglePermission(group, permission, Boolean(value))
-                    "
-                  />
+                    class="d-flex flex-column"
+                  >
+                    <VCheckbox
+                      :model-value="permission.selected"
+                      :label="permission.name"
+                      :disabled="!canEdit || permission.disabled"
+                      hide-details
+                      density="compact"
+                      @update:model-value="
+                        (value) =>
+                          togglePermission(group, permission, Boolean(value))
+                      "
+                    />
+                    <p
+                      v-if="permission.description"
+                      class="text-body-2 text-medium-emphasis ms-8 mb-1"
+                    >
+                      {{ permission.description }}
+                    </p>
+                  </div>
                 </div>
 
                 <template v-if="!group.permissions.length">
