@@ -661,22 +661,22 @@ onMounted(async () => {
       </div>
       <div class="chat-filter-item flex-grow-1">
         <VBtn
-          :variant="activeFilter === 'queue' ? 'flat' : 'text'"
-          :color="activeFilter === 'queue' ? 'primary' : undefined"
-          class="chat-filter-btn w-100"
-          @click="handleFilterClick('queue')"
-        >
-          <VIcon size="24">tabler-clock</VIcon>
-        </VBtn>
-      </div>
-      <div class="chat-filter-item flex-grow-1">
-        <VBtn
           :variant="activeFilter === 'my_chats' ? 'flat' : 'text'"
           :color="activeFilter === 'my_chats' ? 'primary' : undefined"
           class="chat-filter-btn w-100"
           @click="handleFilterClick('my_chats')"
         >
           <VIcon size="24">tabler-message-circle-user</VIcon>
+        </VBtn>
+      </div>
+      <div class="chat-filter-item flex-grow-1">
+        <VBtn
+          :variant="activeFilter === 'queue' ? 'flat' : 'text'"
+          :color="activeFilter === 'queue' ? 'primary' : undefined"
+          class="chat-filter-btn w-100"
+          @click="handleFilterClick('queue')"
+        >
+          <VIcon size="24">tabler-clock</VIcon>
         </VBtn>
       </div>
       <div v-if="canViewChatbotTab" class="chat-filter-item flex-grow-1">
