@@ -155,11 +155,16 @@ export const useContactStore = defineStore('contact', {
       photoFile?: File | null
     ): FormData {
       const formData = new FormData();
-      const labelTemplateId = this.extractFieldValue(
-        body.label_template_id as FieldValue
-      );
-      if (labelTemplateId) {
-        formData.append('label_template_id', labelTemplateId);
+      if (body.label_template_id === null) {
+        formData.append('label_template_id', '');
+      } else if (body.label_template_id !== undefined) {
+        const labelTemplateId = this.extractFieldValue(
+          body.label_template_id as FieldValue
+        );
+
+        if (labelTemplateId) {
+          formData.append('label_template_id', labelTemplateId);
+        }
       }
       const name = this.extractFieldValue(body.name as FieldValue);
       if (name) {

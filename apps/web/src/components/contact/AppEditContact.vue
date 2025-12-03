@@ -944,9 +944,11 @@ const handleRemovePhotoConfirm = async () => {
 };
 
 const loadLabelTemplates = async () => {
-  let templates:
-    | Array<{ label_template_id: string; label: string; color?: string }>
-    | null = null;
+  let templates: Array<{
+    label_template_id: string;
+    label: string;
+    color?: string;
+  }> | null = null;
 
   if (canAccessLabelTemplate.value) {
     templates = await labelTemplateStore.listLabelTemplateAll();
@@ -1187,6 +1189,9 @@ onMounted(async () => {
                 item-value="value"
                 :label="$t('label') + ':'"
                 :placeholder="$t('select_label')"
+                clearable
+                clear-icon="tabler-x"
+                @click:clear="label_template_id = null"
               >
                 <template #item="{ props, item }">
                   <VListItem v-bind="props">
