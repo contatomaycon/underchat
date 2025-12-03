@@ -54,6 +54,10 @@ const chatLabelForList = computed<{
   return null;
 });
 
+const sectorName = computed(() => {
+  return props.user?.sector?.name ?? null;
+});
+
 watch(
   () => props.user.contact?.id,
   (contactId) => {
@@ -95,6 +99,7 @@ watch(
         'chat-active': isChatContactActive,
         'chat-disabled': props.disabled,
         'chat-has-label': showWorkerNameLabel && workerName,
+        'chat-has-sector': sectorName,
       }"
       :aria-disabled="props.disabled ? 'true' : undefined"
     >
@@ -120,6 +125,9 @@ watch(
         >
           {{ chatLabelForList.label }}
         </div>
+      </div>
+      <div v-if="sectorName" class="chat-sector-label text-caption">
+        {{ sectorName }}
       </div>
       <VAvatar
         size="40"
@@ -241,6 +249,28 @@ watch(
   &.chat-has-label {
     margin-top: 1.5rem;
   }
+
+  &.chat-has-sector {
+    margin-bottom: 1.5rem;
+  }
+}
+
+.chat-sector-label {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  transform: translateY(100%);
+  width: 100%;
+  padding: 2px 10px;
+  border-radius: 0 0 vuetify.$border-radius-root vuetify.$border-radius-root;
+  background-color: rgba(var(--v-theme-secondary), 0.12);
+  color: rgb(var(--v-theme-secondary));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  z-index: 3;
+  text-align: center;
 }
 
 .chat-worker-label-wrapper {
