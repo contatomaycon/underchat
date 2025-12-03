@@ -119,6 +119,7 @@ import {
   IUpdateAsaasPaymentDocumentRequest,
   IDeleteAsaasPaymentDocumentResponse,
   IListAsaasPaymentDocumentsResponse,
+  IRefundAsaasPaymentResponse,
 } from '@core/common/interfaces/IAsaasPayment';
 import {
   ICreateAsaasInstallmentRequest,
@@ -188,7 +189,6 @@ import {
   IRefundAsaasPaymentRequest,
   IRefundAsaasPaymentLeanResponse,
 } from '@core/common/interfaces/IAsaasRefund';
-import { IRefundAsaasPaymentResponse } from '@core/common/interfaces/IAsaasPayment';
 import {
   ICreateAsaasInvoiceRequest,
   ICreateAsaasInvoiceResponse,

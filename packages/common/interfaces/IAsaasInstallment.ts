@@ -1,5 +1,4 @@
 import {
-  PaymentBillingType,
   IAsaasPaymentDiscount,
   IAsaasPaymentInterest,
   IAsaasPaymentFine,
