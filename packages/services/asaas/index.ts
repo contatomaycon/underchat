@@ -1,90 +1,13 @@
 import { injectable } from 'tsyringe';
-import {
-  CreateCustomerService,
-  ListCustomersService,
-  GetCustomerService,
-  UpdateCustomerService,
-  DeleteCustomerService,
-  RestoreCustomerService,
-  GetCustomerNotificationsService,
-} from './clients';
-import {
-  CreatePaymentService,
-  CreateCreditCardPaymentService,
-  CaptureAuthorizedPaymentService,
-  PayWithCreditCardService,
-  GetPaymentService,
-  UpdatePaymentService,
-  DeletePaymentService,
-  RestorePaymentService,
-  GetPaymentStatusService,
-  GetPaymentIdentificationFieldService,
-  GetPaymentPixQrCodeService,
-  GetPaymentBillingInfoService,
-  GetPaymentViewingInfoService,
-  ListPaymentsService,
-  UploadPaymentDocumentService,
-  ListPaymentDocumentsService,
-  GetPaymentDocumentService,
-  UpdatePaymentDocumentService,
-  DeletePaymentDocumentService,
-} from './payments';
-import {
-  CreateInstallmentService,
-  CreateInstallmentWithCreditCardService,
-  GetInstallmentService,
-  DeleteInstallmentService,
-  ListInstallmentsService,
-  ListInstallmentPaymentsService,
-  GetInstallmentPaymentBookService,
-  UpdateInstallmentSplitsService,
-  RefundInstallmentService,
-} from './installments';
-import {
-  CreateSubscriptionService,
-  CreateSubscriptionWithCreditCardService,
-  GetSubscriptionService,
-  UpdateSubscriptionService,
-  UpdateSubscriptionCreditCardService,
-  DeleteSubscriptionService,
-  ListSubscriptionsService,
-  ListSubscriptionPaymentsService,
-  GetSubscriptionPaymentBookService,
-  CreateSubscriptionInvoiceSettingsService,
-  GetSubscriptionInvoiceSettingsService,
-  UpdateSubscriptionInvoiceSettingsService,
-  DeleteSubscriptionInvoiceSettingsService,
-  ListSubscriptionInvoicesService,
-} from './subscriptions';
-import {
-  CreatePaymentLinkService,
-  ListPaymentLinksService,
-  GetPaymentLinkService,
-  UpdatePaymentLinkService,
-  DeletePaymentLinkService,
-  RestorePaymentLinkService,
-  UploadPaymentLinkImageService,
-  ListPaymentLinkImagesService,
-  GetPaymentLinkImageService,
-  DeletePaymentLinkImageService,
-  SetPaymentLinkImageAsMainService,
-} from './paymentLinks';
-import { CreateCheckoutService, CancelCheckoutService } from './checkout';
-import { TokenizeCreditCardService } from './creditCard';
-import {
-  ListPaymentRefundsService,
-  RefundBankSlipService,
-  RefundPaymentLeanService,
-  RefundPaymentService,
-} from './refunds';
-import {
-  CreateInvoiceService,
-  ListInvoicesService,
-  UpdateInvoiceService,
-  GetInvoiceService,
-  AuthorizeInvoiceService,
-  CancelInvoiceService,
-} from './invoices';
+import { AsaasClientsServices } from './asaasClientsServices';
+import { AsaasPaymentsServices } from './asaasPaymentsServices';
+import { AsaasInstallmentsServices } from './asaasInstallmentsServices';
+import { AsaasSubscriptionsServices } from './asaasSubscriptionsServices';
+import { AsaasPaymentLinksServices } from './asaasPaymentLinksServices';
+import { AsaasCheckoutServices } from './asaasCheckoutServices';
+import { AsaasCreditCardServices } from './asaasCreditCardServices';
+import { AsaasRefundsServices } from './asaasRefundsServices';
+import { AsaasInvoicesServices } from './asaasInvoicesServices';
 import {
   ICreateAsaasCustomerRequest,
   ICreateAsaasCustomerResponse,
@@ -205,188 +128,123 @@ import {
 @injectable()
 export class AsaasService {
   constructor(
-    private readonly createCustomerService: CreateCustomerService,
-    private readonly listCustomersService: ListCustomersService,
-    private readonly getCustomerService: GetCustomerService,
-    private readonly updateCustomerService: UpdateCustomerService,
-    private readonly deleteCustomerService: DeleteCustomerService,
-    private readonly restoreCustomerService: RestoreCustomerService,
-    private readonly getCustomerNotificationsService: GetCustomerNotificationsService,
-    private readonly createPaymentService: CreatePaymentService,
-    private readonly createCreditCardPaymentService: CreateCreditCardPaymentService,
-    private readonly captureAuthorizedPaymentService: CaptureAuthorizedPaymentService,
-    private readonly payWithCreditCardService: PayWithCreditCardService,
-    private readonly getPaymentService: GetPaymentService,
-    private readonly updatePaymentService: UpdatePaymentService,
-    private readonly deletePaymentService: DeletePaymentService,
-    private readonly restorePaymentService: RestorePaymentService,
-    private readonly getPaymentStatusService: GetPaymentStatusService,
-    private readonly getPaymentIdentificationFieldService: GetPaymentIdentificationFieldService,
-    private readonly getPaymentPixQrCodeService: GetPaymentPixQrCodeService,
-    private readonly getPaymentBillingInfoService: GetPaymentBillingInfoService,
-    private readonly getPaymentViewingInfoService: GetPaymentViewingInfoService,
-    private readonly listPaymentsService: ListPaymentsService,
-    private readonly uploadPaymentDocumentService: UploadPaymentDocumentService,
-    private readonly listPaymentDocumentsService: ListPaymentDocumentsService,
-    private readonly getPaymentDocumentService: GetPaymentDocumentService,
-    private readonly updatePaymentDocumentService: UpdatePaymentDocumentService,
-    private readonly deletePaymentDocumentService: DeletePaymentDocumentService,
-    private readonly createInstallmentService: CreateInstallmentService,
-    private readonly createInstallmentWithCreditCardService: CreateInstallmentWithCreditCardService,
-    private readonly getInstallmentService: GetInstallmentService,
-    private readonly deleteInstallmentService: DeleteInstallmentService,
-    private readonly listInstallmentsService: ListInstallmentsService,
-    private readonly listInstallmentPaymentsService: ListInstallmentPaymentsService,
-    private readonly getInstallmentPaymentBookService: GetInstallmentPaymentBookService,
-    private readonly updateInstallmentSplitsService: UpdateInstallmentSplitsService,
-    private readonly refundInstallmentService: RefundInstallmentService,
-    private readonly createSubscriptionService: CreateSubscriptionService,
-    private readonly createSubscriptionWithCreditCardService: CreateSubscriptionWithCreditCardService,
-    private readonly getSubscriptionService: GetSubscriptionService,
-    private readonly updateSubscriptionService: UpdateSubscriptionService,
-    private readonly updateSubscriptionCreditCardService: UpdateSubscriptionCreditCardService,
-    private readonly deleteSubscriptionService: DeleteSubscriptionService,
-    private readonly listSubscriptionsService: ListSubscriptionsService,
-    private readonly listSubscriptionPaymentsService: ListSubscriptionPaymentsService,
-    private readonly getSubscriptionPaymentBookService: GetSubscriptionPaymentBookService,
-    private readonly createSubscriptionInvoiceSettingsService: CreateSubscriptionInvoiceSettingsService,
-    private readonly getSubscriptionInvoiceSettingsService: GetSubscriptionInvoiceSettingsService,
-    private readonly updateSubscriptionInvoiceSettingsService: UpdateSubscriptionInvoiceSettingsService,
-    private readonly deleteSubscriptionInvoiceSettingsService: DeleteSubscriptionInvoiceSettingsService,
-    private readonly listSubscriptionInvoicesService: ListSubscriptionInvoicesService,
-    private readonly createPaymentLinkService: CreatePaymentLinkService,
-    private readonly listPaymentLinksService: ListPaymentLinksService,
-    private readonly getPaymentLinkService: GetPaymentLinkService,
-    private readonly updatePaymentLinkService: UpdatePaymentLinkService,
-    private readonly deletePaymentLinkService: DeletePaymentLinkService,
-    private readonly restorePaymentLinkService: RestorePaymentLinkService,
-    private readonly uploadPaymentLinkImageService: UploadPaymentLinkImageService,
-    private readonly listPaymentLinkImagesService: ListPaymentLinkImagesService,
-    private readonly getPaymentLinkImageService: GetPaymentLinkImageService,
-    private readonly deletePaymentLinkImageService: DeletePaymentLinkImageService,
-    private readonly setPaymentLinkImageAsMainService: SetPaymentLinkImageAsMainService,
-    private readonly createCheckoutService: CreateCheckoutService,
-    private readonly cancelCheckoutService: CancelCheckoutService,
-    private readonly tokenizeCreditCardService: TokenizeCreditCardService,
-    private readonly listPaymentRefundsService: ListPaymentRefundsService,
-    private readonly refundBankSlipService: RefundBankSlipService,
-    private readonly refundPaymentLeanService: RefundPaymentLeanService,
-    private readonly refundPaymentService: RefundPaymentService,
-    private readonly createInvoiceService: CreateInvoiceService,
-    private readonly listInvoicesService: ListInvoicesService,
-    private readonly updateInvoiceService: UpdateInvoiceService,
-    private readonly getInvoiceService: GetInvoiceService,
-    private readonly authorizeInvoiceService: AuthorizeInvoiceService,
-    private readonly cancelInvoiceService: CancelInvoiceService
+    private readonly clients: AsaasClientsServices,
+    private readonly payments: AsaasPaymentsServices,
+    private readonly installments: AsaasInstallmentsServices,
+    private readonly subscriptions: AsaasSubscriptionsServices,
+    private readonly paymentLinks: AsaasPaymentLinksServices,
+    private readonly checkout: AsaasCheckoutServices,
+    private readonly creditCard: AsaasCreditCardServices,
+    private readonly refunds: AsaasRefundsServices,
+    private readonly invoices: AsaasInvoicesServices
   ) {}
 
   createCustomer = async (
     request: ICreateAsaasCustomerRequest
   ): Promise<ICreateAsaasCustomerResponse | null> => {
-    return this.createCustomerService.createCustomer(request);
+    return this.clients.create.createCustomer(request);
   };
 
   listCustomers = async (
     request?: IListAsaasCustomersRequest
   ): Promise<IListAsaasCustomersResponse | null> => {
-    return this.listCustomersService.listCustomers(request);
+    return this.clients.list.listCustomers(request);
   };
 
   getCustomer = async (
     customerId: string
   ): Promise<IGetAsaasCustomerResponse | null> => {
-    return this.getCustomerService.getCustomer(customerId);
+    return this.clients.get.getCustomer(customerId);
   };
 
   updateCustomer = async (
     customerId: string,
     request: IUpdateAsaasCustomerRequest
   ): Promise<IUpdateAsaasCustomerResponse | null> => {
-    return this.updateCustomerService.updateCustomer(customerId, request);
+    return this.clients.update.updateCustomer(customerId, request);
   };
 
   deleteCustomer = async (
     customerId: string
   ): Promise<IDeleteAsaasCustomerResponse | null> => {
-    return this.deleteCustomerService.deleteCustomer(customerId);
+    return this.clients.delete.deleteCustomer(customerId);
   };
 
   restoreCustomer = async (
     customerId: string
   ): Promise<IRestoreAsaasCustomerResponse | null> => {
-    return this.restoreCustomerService.restoreCustomer(customerId);
+    return this.clients.restore.restoreCustomer(customerId);
   };
 
   getCustomerNotifications = async (
     customerId: string
   ): Promise<IListAsaasCustomerNotificationsResponse | null> => {
-    return this.getCustomerNotificationsService.getCustomerNotifications(
-      customerId
-    );
+    return this.clients.getNotifications.getCustomerNotifications(customerId);
   };
 
   createPayment = async (
     request: ICreateAsaasPaymentRequest
   ): Promise<ICreateAsaasPaymentResponse | null> => {
-    return this.createPaymentService.createPayment(request);
+    return this.payments.create.createPayment(request);
   };
 
   createCreditCardPayment = async (
     request: ICreateAsaasCreditCardPaymentRequest
   ): Promise<ICreateAsaasCreditCardPaymentResponse | null> => {
-    return this.createCreditCardPaymentService.createCreditCardPayment(request);
+    return this.payments.createCreditCard.createCreditCardPayment(request);
   };
 
   captureAuthorizedPayment = async (
     paymentId: string
   ): Promise<ICreateAsaasPaymentResponse | null> => {
-    return this.captureAuthorizedPaymentService.captureAuthorizedPayment(
-      paymentId
-    );
+    return this.payments.captureAuthorized.captureAuthorizedPayment(paymentId);
   };
 
   payWithCreditCard = async (
     paymentId: string,
     request: IPayAsaasPaymentWithCreditCardRequest
   ): Promise<IPayAsaasPaymentWithCreditCardResponse | null> => {
-    return this.payWithCreditCardService.payWithCreditCard(paymentId, request);
+    return this.payments.payWithCreditCard.payWithCreditCard(
+      paymentId,
+      request
+    );
   };
 
   getPayment = async (
     paymentId: string
   ): Promise<ICreateAsaasPaymentResponse | null> => {
-    return this.getPaymentService.getPayment(paymentId);
+    return this.payments.get.getPayment(paymentId);
   };
 
   updatePayment = async (
     paymentId: string,
     request: IUpdateAsaasPaymentRequest
   ): Promise<IUpdateAsaasPaymentResponse | null> => {
-    return this.updatePaymentService.updatePayment(paymentId, request);
+    return this.payments.update.updatePayment(paymentId, request);
   };
 
   deletePayment = async (
     paymentId: string
   ): Promise<IDeleteAsaasPaymentResponse | null> => {
-    return this.deletePaymentService.deletePayment(paymentId);
+    return this.payments.delete.deletePayment(paymentId);
   };
 
   restorePayment = async (
     paymentId: string
   ): Promise<ICreateAsaasPaymentResponse | null> => {
-    return this.restorePaymentService.restorePayment(paymentId);
+    return this.payments.restore.restorePayment(paymentId);
   };
 
   getPaymentStatus = async (
     paymentId: string
   ): Promise<IGetAsaasPaymentStatusResponse | null> => {
-    return this.getPaymentStatusService.getPaymentStatus(paymentId);
+    return this.payments.getStatus.getPaymentStatus(paymentId);
   };
 
   getPaymentIdentificationField = async (
     paymentId: string
   ): Promise<IGetAsaasPaymentIdentificationFieldResponse | null> => {
-    return this.getPaymentIdentificationFieldService.getPaymentIdentificationField(
+    return this.payments.getIdentificationField.getPaymentIdentificationField(
       paymentId
     );
   };
@@ -394,32 +252,32 @@ export class AsaasService {
   getPaymentPixQrCode = async (
     paymentId: string
   ): Promise<IGetAsaasPaymentPixQrCodeResponse | null> => {
-    return this.getPaymentPixQrCodeService.getPaymentPixQrCode(paymentId);
+    return this.payments.getPixQrCode.getPaymentPixQrCode(paymentId);
   };
 
   getPaymentBillingInfo = async (
     paymentId: string
   ): Promise<IGetAsaasPaymentBillingInfoResponse | null> => {
-    return this.getPaymentBillingInfoService.getPaymentBillingInfo(paymentId);
+    return this.payments.getBillingInfo.getPaymentBillingInfo(paymentId);
   };
 
   getPaymentViewingInfo = async (
     paymentId: string
   ): Promise<IGetAsaasPaymentViewingInfoResponse | null> => {
-    return this.getPaymentViewingInfoService.getPaymentViewingInfo(paymentId);
+    return this.payments.getViewingInfo.getPaymentViewingInfo(paymentId);
   };
 
   listPayments = async (
     request?: IListAsaasPaymentsRequest
   ): Promise<IListAsaasPaymentsResponse | null> => {
-    return this.listPaymentsService.listPayments(request);
+    return this.payments.list.listPayments(request);
   };
 
   uploadPaymentDocument = async (
     paymentId: string,
     request: IUploadAsaasPaymentDocumentRequest
   ): Promise<IUploadAsaasPaymentDocumentResponse | null> => {
-    return this.uploadPaymentDocumentService.uploadPaymentDocument(
+    return this.payments.documents.upload.uploadPaymentDocument(
       paymentId,
       request
     );
@@ -428,14 +286,14 @@ export class AsaasService {
   listPaymentDocuments = async (
     paymentId: string
   ): Promise<IListAsaasPaymentDocumentsResponse | null> => {
-    return this.listPaymentDocumentsService.listPaymentDocuments(paymentId);
+    return this.payments.documents.list.listPaymentDocuments(paymentId);
   };
 
   getPaymentDocument = async (
     paymentId: string,
     documentId: string
   ): Promise<IUploadAsaasPaymentDocumentResponse | null> => {
-    return this.getPaymentDocumentService.getPaymentDocument(
+    return this.payments.documents.get.getPaymentDocument(
       paymentId,
       documentId
     );
@@ -446,7 +304,7 @@ export class AsaasService {
     documentId: string,
     request: IUpdateAsaasPaymentDocumentRequest
   ): Promise<IUploadAsaasPaymentDocumentResponse | null> => {
-    return this.updatePaymentDocumentService.updatePaymentDocument(
+    return this.payments.documents.update.updatePaymentDocument(
       paymentId,
       documentId,
       request
@@ -457,7 +315,7 @@ export class AsaasService {
     paymentId: string,
     documentId: string
   ): Promise<IDeleteAsaasPaymentDocumentResponse | null> => {
-    return this.deletePaymentDocumentService.deletePaymentDocument(
+    return this.payments.documents.delete.deletePaymentDocument(
       paymentId,
       documentId
     );
@@ -466,13 +324,13 @@ export class AsaasService {
   createInstallment = async (
     request: ICreateAsaasInstallmentRequest
   ): Promise<ICreateAsaasInstallmentResponse | null> => {
-    return this.createInstallmentService.createInstallment(request);
+    return this.installments.create.createInstallment(request);
   };
 
   createInstallmentWithCreditCard = async (
     request: ICreateAsaasInstallmentWithCreditCardRequest
   ): Promise<ICreateAsaasInstallmentWithCreditCardResponse | null> => {
-    return this.createInstallmentWithCreditCardService.createInstallmentWithCreditCard(
+    return this.installments.createWithCreditCard.createInstallmentWithCreditCard(
       request
     );
   };
@@ -480,26 +338,26 @@ export class AsaasService {
   getInstallment = async (
     installmentId: string
   ): Promise<ICreateAsaasInstallmentResponse | null> => {
-    return this.getInstallmentService.getInstallment(installmentId);
+    return this.installments.get.getInstallment(installmentId);
   };
 
   deleteInstallment = async (
     installmentId: string
   ): Promise<IDeleteAsaasInstallmentResponse | null> => {
-    return this.deleteInstallmentService.deleteInstallment(installmentId);
+    return this.installments.delete.deleteInstallment(installmentId);
   };
 
   listInstallments = async (
     request?: IListAsaasInstallmentsRequest
   ): Promise<IListAsaasInstallmentsResponse | null> => {
-    return this.listInstallmentsService.listInstallments(request);
+    return this.installments.list.listInstallments(request);
   };
 
   listInstallmentPayments = async (
     installmentId: string,
     request?: IListAsaasInstallmentPaymentsRequest
   ): Promise<IListAsaasInstallmentPaymentsResponse | null> => {
-    return this.listInstallmentPaymentsService.listInstallmentPayments(
+    return this.installments.listPayments.listInstallmentPayments(
       installmentId,
       request
     );
@@ -509,7 +367,7 @@ export class AsaasService {
     installmentId: string,
     request?: IGetAsaasInstallmentPaymentBookRequest
   ): Promise<ArrayBuffer | null> => {
-    return this.getInstallmentPaymentBookService.getInstallmentPaymentBook(
+    return this.installments.getPaymentBook.getInstallmentPaymentBook(
       installmentId,
       request
     );
@@ -519,7 +377,7 @@ export class AsaasService {
     installmentId: string,
     request: IUpdateAsaasInstallmentSplitsRequest
   ): Promise<IUpdateAsaasInstallmentSplitsResponse | null> => {
-    return this.updateInstallmentSplitsService.updateInstallmentSplits(
+    return this.installments.updateSplits.updateInstallmentSplits(
       installmentId,
       request
     );
@@ -529,22 +387,19 @@ export class AsaasService {
     installmentId: string,
     request?: IRefundAsaasInstallmentRequest
   ): Promise<IRefundAsaasInstallmentResponse | null> => {
-    return this.refundInstallmentService.refundInstallment(
-      installmentId,
-      request
-    );
+    return this.installments.refund.refundInstallment(installmentId, request);
   };
 
   createSubscription = async (
     request: ICreateAsaasSubscriptionRequest
   ): Promise<ICreateAsaasSubscriptionResponse | null> => {
-    return this.createSubscriptionService.createSubscription(request);
+    return this.subscriptions.create.createSubscription(request);
   };
 
   createSubscriptionWithCreditCard = async (
     request: ICreateAsaasSubscriptionWithCreditCardRequest
   ): Promise<ICreateAsaasSubscriptionWithCreditCardResponse | null> => {
-    return this.createSubscriptionWithCreditCardService.createSubscriptionWithCreditCard(
+    return this.subscriptions.createWithCreditCard.createSubscriptionWithCreditCard(
       request
     );
   };
@@ -552,14 +407,14 @@ export class AsaasService {
   getSubscription = async (
     subscriptionId: string
   ): Promise<ICreateAsaasSubscriptionResponse | null> => {
-    return this.getSubscriptionService.getSubscription(subscriptionId);
+    return this.subscriptions.get.getSubscription(subscriptionId);
   };
 
   updateSubscription = async (
     subscriptionId: string,
     request: IUpdateAsaasSubscriptionRequest
   ): Promise<IUpdateAsaasSubscriptionResponse | null> => {
-    return this.updateSubscriptionService.updateSubscription(
+    return this.subscriptions.update.updateSubscription(
       subscriptionId,
       request
     );
@@ -569,7 +424,7 @@ export class AsaasService {
     subscriptionId: string,
     request: IUpdateAsaasSubscriptionCreditCardRequest
   ): Promise<IUpdateAsaasSubscriptionCreditCardResponse | null> => {
-    return this.updateSubscriptionCreditCardService.updateSubscriptionCreditCard(
+    return this.subscriptions.updateCreditCard.updateSubscriptionCreditCard(
       subscriptionId,
       request
     );
@@ -578,20 +433,20 @@ export class AsaasService {
   deleteSubscription = async (
     subscriptionId: string
   ): Promise<IDeleteAsaasSubscriptionResponse | null> => {
-    return this.deleteSubscriptionService.deleteSubscription(subscriptionId);
+    return this.subscriptions.delete.deleteSubscription(subscriptionId);
   };
 
   listSubscriptions = async (
     request?: IListAsaasSubscriptionsRequest
   ): Promise<IListAsaasSubscriptionsResponse | null> => {
-    return this.listSubscriptionsService.listSubscriptions(request);
+    return this.subscriptions.list.listSubscriptions(request);
   };
 
   listSubscriptionPayments = async (
     subscriptionId: string,
     request?: IListAsaasSubscriptionPaymentsRequest
   ): Promise<IListAsaasSubscriptionPaymentsResponse | null> => {
-    return this.listSubscriptionPaymentsService.listSubscriptionPayments(
+    return this.subscriptions.listPayments.listSubscriptionPayments(
       subscriptionId,
       request
     );
@@ -601,7 +456,7 @@ export class AsaasService {
     subscriptionId: string,
     request?: IGetAsaasSubscriptionPaymentBookRequest
   ): Promise<ArrayBuffer | null> => {
-    return this.getSubscriptionPaymentBookService.getSubscriptionPaymentBook(
+    return this.subscriptions.getPaymentBook.getSubscriptionPaymentBook(
       subscriptionId,
       request
     );
@@ -611,7 +466,7 @@ export class AsaasService {
     subscriptionId: string,
     request: ICreateAsaasSubscriptionInvoiceSettingsRequest
   ): Promise<ICreateAsaasSubscriptionInvoiceSettingsResponse | null> => {
-    return this.createSubscriptionInvoiceSettingsService.createSubscriptionInvoiceSettings(
+    return this.subscriptions.invoiceSettings.create.createSubscriptionInvoiceSettings(
       subscriptionId,
       request
     );
@@ -620,7 +475,7 @@ export class AsaasService {
   getSubscriptionInvoiceSettings = async (
     subscriptionId: string
   ): Promise<ICreateAsaasSubscriptionInvoiceSettingsResponse | null> => {
-    return this.getSubscriptionInvoiceSettingsService.getSubscriptionInvoiceSettings(
+    return this.subscriptions.invoiceSettings.get.getSubscriptionInvoiceSettings(
       subscriptionId
     );
   };
@@ -629,7 +484,7 @@ export class AsaasService {
     subscriptionId: string,
     request: IUpdateAsaasSubscriptionInvoiceSettingsRequest
   ): Promise<IUpdateAsaasSubscriptionInvoiceSettingsResponse | null> => {
-    return this.updateSubscriptionInvoiceSettingsService.updateSubscriptionInvoiceSettings(
+    return this.subscriptions.invoiceSettings.update.updateSubscriptionInvoiceSettings(
       subscriptionId,
       request
     );
@@ -638,7 +493,7 @@ export class AsaasService {
   deleteSubscriptionInvoiceSettings = async (
     subscriptionId: string
   ): Promise<IDeleteAsaasSubscriptionInvoiceSettingsResponse | null> => {
-    return this.deleteSubscriptionInvoiceSettingsService.deleteSubscriptionInvoiceSettings(
+    return this.subscriptions.invoiceSettings.delete.deleteSubscriptionInvoiceSettings(
       subscriptionId
     );
   };
@@ -647,7 +502,7 @@ export class AsaasService {
     subscriptionId: string,
     request?: IListAsaasSubscriptionInvoicesRequest
   ): Promise<IListAsaasSubscriptionInvoicesResponse | null> => {
-    return this.listSubscriptionInvoicesService.listSubscriptionInvoices(
+    return this.subscriptions.listInvoices.listSubscriptionInvoices(
       subscriptionId,
       request
     );
@@ -656,48 +511,45 @@ export class AsaasService {
   createPaymentLink = async (
     request: ICreateAsaasPaymentLinkRequest
   ): Promise<ICreateAsaasPaymentLinkResponse | null> => {
-    return this.createPaymentLinkService.createPaymentLink(request);
+    return this.paymentLinks.create.createPaymentLink(request);
   };
 
   listPaymentLinks = async (
     request?: IListAsaasPaymentLinksRequest
   ): Promise<IListAsaasPaymentLinksResponse | null> => {
-    return this.listPaymentLinksService.listPaymentLinks(request);
+    return this.paymentLinks.list.listPaymentLinks(request);
   };
 
   getPaymentLink = async (
     paymentLinkId: string
   ): Promise<ICreateAsaasPaymentLinkResponse | null> => {
-    return this.getPaymentLinkService.getPaymentLink(paymentLinkId);
+    return this.paymentLinks.get.getPaymentLink(paymentLinkId);
   };
 
   updatePaymentLink = async (
     paymentLinkId: string,
     request: IUpdateAsaasPaymentLinkRequest
   ): Promise<IUpdateAsaasPaymentLinkResponse | null> => {
-    return this.updatePaymentLinkService.updatePaymentLink(
-      paymentLinkId,
-      request
-    );
+    return this.paymentLinks.update.updatePaymentLink(paymentLinkId, request);
   };
 
   deletePaymentLink = async (
     paymentLinkId: string
   ): Promise<IDeleteAsaasPaymentLinkResponse | null> => {
-    return this.deletePaymentLinkService.deletePaymentLink(paymentLinkId);
+    return this.paymentLinks.delete.deletePaymentLink(paymentLinkId);
   };
 
   restorePaymentLink = async (
     paymentLinkId: string
   ): Promise<IRestoreAsaasPaymentLinkResponse | null> => {
-    return this.restorePaymentLinkService.restorePaymentLink(paymentLinkId);
+    return this.paymentLinks.restore.restorePaymentLink(paymentLinkId);
   };
 
   uploadPaymentLinkImage = async (
     paymentLinkId: string,
     request: IUploadAsaasPaymentLinkImageRequest
   ): Promise<IUploadAsaasPaymentLinkImageResponse | null> => {
-    return this.uploadPaymentLinkImageService.uploadPaymentLinkImage(
+    return this.paymentLinks.images.upload.uploadPaymentLinkImage(
       paymentLinkId,
       request
     );
@@ -706,16 +558,14 @@ export class AsaasService {
   listPaymentLinkImages = async (
     paymentLinkId: string
   ): Promise<IListAsaasPaymentLinkImagesResponse | null> => {
-    return this.listPaymentLinkImagesService.listPaymentLinkImages(
-      paymentLinkId
-    );
+    return this.paymentLinks.images.list.listPaymentLinkImages(paymentLinkId);
   };
 
   getPaymentLinkImage = async (
     paymentLinkId: string,
     imageId: string
   ): Promise<IUploadAsaasPaymentLinkImageResponse | null> => {
-    return this.getPaymentLinkImageService.getPaymentLinkImage(
+    return this.paymentLinks.images.get.getPaymentLinkImage(
       paymentLinkId,
       imageId
     );
@@ -725,7 +575,7 @@ export class AsaasService {
     paymentLinkId: string,
     imageId: string
   ): Promise<IDeleteAsaasPaymentLinkImageResponse | null> => {
-    return this.deletePaymentLinkImageService.deletePaymentLinkImage(
+    return this.paymentLinks.images.delete.deletePaymentLinkImage(
       paymentLinkId,
       imageId
     );
@@ -735,7 +585,7 @@ export class AsaasService {
     paymentLinkId: string,
     imageId: string
   ): Promise<ISetAsMainPaymentLinkImageResponse | null> => {
-    return this.setPaymentLinkImageAsMainService.setPaymentLinkImageAsMain(
+    return this.paymentLinks.images.setAsMain.setPaymentLinkImageAsMain(
       paymentLinkId,
       imageId
     );
@@ -744,82 +594,82 @@ export class AsaasService {
   createCheckout = async (
     request: ICreateAsaasCheckoutRequest
   ): Promise<ICreateAsaasCheckoutResponse | null> => {
-    return this.createCheckoutService.createCheckout(request);
+    return this.checkout.create.createCheckout(request);
   };
 
   cancelCheckout = async (
     checkoutId: string
   ): Promise<ICreateAsaasCheckoutResponse | null> => {
-    return this.cancelCheckoutService.cancelCheckout(checkoutId);
+    return this.checkout.cancel.cancelCheckout(checkoutId);
   };
 
   tokenizeCreditCard = async (
     request: ITokenizeAsaasCreditCardRequest
   ): Promise<ITokenizeAsaasCreditCardResponse | null> => {
-    return this.tokenizeCreditCardService.tokenizeCreditCard(request);
+    return this.creditCard.tokenize.tokenizeCreditCard(request);
   };
 
   listPaymentRefunds = async (
     paymentId: string
   ): Promise<IListAsaasPaymentRefundsResponse | null> => {
-    return this.listPaymentRefundsService.listPaymentRefunds(paymentId);
+    return this.refunds.list.listPaymentRefunds(paymentId);
   };
 
   refundBankSlip = async (
     paymentId: string
   ): Promise<IRefundAsaasBankSlipResponse | null> => {
-    return this.refundBankSlipService.refundBankSlip(paymentId);
+    return this.refunds.refundBankSlip.refundBankSlip(paymentId);
   };
 
   refundPaymentLean = async (
     paymentId: string,
     request?: IRefundAsaasPaymentRequest
   ): Promise<IRefundAsaasPaymentLeanResponse | null> => {
-    return this.refundPaymentLeanService.refundPaymentLean(paymentId, request);
+    return this.refunds.refundPaymentLean.refundPaymentLean(paymentId, request);
   };
 
   refundPayment = async (
     paymentId: string,
     request?: IRefundAsaasPaymentRequest
   ): Promise<IRefundAsaasPaymentResponse | null> => {
-    return this.refundPaymentService.refundPayment(paymentId, request);
+    return this.refunds.refundPayment.refundPayment(paymentId, request);
   };
 
   createInvoice = async (
     request: ICreateAsaasInvoiceRequest
   ): Promise<ICreateAsaasInvoiceResponse | null> => {
-    return this.createInvoiceService.createInvoice(request);
+    return this.invoices.create.createInvoice(request);
   };
 
   listInvoices = async (
     request?: IListAsaasInvoicesRequest
   ): Promise<IListAsaasInvoicesResponse | null> => {
-    return this.listInvoicesService.listInvoices(request);
+    return this.invoices.list.listInvoices(request);
   };
 
   updateInvoice = async (
     invoiceId: string,
     request: IUpdateAsaasInvoiceRequest
   ): Promise<IUpdateAsaasInvoiceResponse | null> => {
-    return this.updateInvoiceService.updateInvoice(invoiceId, request);
+    return this.invoices.update.updateInvoice(invoiceId, request);
   };
 
   getInvoice = async (
     invoiceId: string
   ): Promise<IGetAsaasInvoiceResponse | null> => {
-    return this.getInvoiceService.getInvoice(invoiceId);
+    return this.invoices.get.getInvoice(invoiceId);
   };
 
   authorizeInvoice = async (
     invoiceId: string
   ): Promise<IAuthorizeAsaasInvoiceResponse | null> => {
-    return this.authorizeInvoiceService.authorizeInvoice(invoiceId);
+    return this.invoices.authorize.authorizeInvoice(invoiceId);
   };
 
   cancelInvoice = async (
     invoiceId: string,
     request?: ICancelAsaasInvoiceRequest
   ): Promise<ICancelAsaasInvoiceResponse | null> => {
-    return this.cancelInvoiceService.cancelInvoice(invoiceId, request);
+    return this.invoices.cancel.cancelInvoice(invoiceId, request);
   };
 }
