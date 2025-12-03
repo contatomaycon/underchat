@@ -902,7 +902,7 @@ onMounted(async () => {
           v-if="!chatbotChats.length && !isLoadingChatbot"
           class="no-chat-items-text text-disabled"
         >
-          {{ $t('no_chat_in_service') }}
+          {{ $t('no_chat_in_ura') }}
         </li>
 
         <li v-if="isLoadingChatbot" class="d-flex justify-center pa-4">

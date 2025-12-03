@@ -389,6 +389,7 @@
     "next": "Next",
     "no_chat_in_service": "No chats in service",
     "no_chat_in_queue": "No chats in queue",
+    "no_chat_in_ura": "No chats in IVR",
     "today": "Today",
     "yesterday": "Yesterday",
     "sunday": "Sunday",
