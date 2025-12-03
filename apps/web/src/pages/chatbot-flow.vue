@@ -1354,8 +1354,10 @@ const addFinishTrigger = () => {
   finishTriggerInput.value = '';
 };
 
-const removeFinishTrigger = (index: number) => {
-  finishTriggers.value.splice(index, 1);
+const removeFinishTrigger = (triggerToRemove: string) => {
+  finishTriggers.value = finishTriggers.value.filter(
+    (trigger) => trigger !== triggerToRemove
+  );
 };
 
 const loadChatbotFlowConfigurations = async () => {
@@ -2542,10 +2544,10 @@ onMounted(() => {
                     class="d-flex flex-wrap gap-2"
                   >
                     <VChip
-                      v-for="(trigger, index) in finishTriggers"
-                      :key="index"
+                      v-for="trigger in finishTriggers"
+                      :key="trigger"
                       closable
-                      @click:close="removeFinishTrigger(index)"
+                      @click:close="removeFinishTrigger(trigger)"
                       color="primary"
                       variant="tonal"
                     >
