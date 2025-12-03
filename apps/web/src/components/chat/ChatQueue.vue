@@ -234,6 +234,7 @@ watch(
   transform: translateY(-100%);
   display: inline-flex;
   max-width: 100%;
+  z-index: 2;
 }
 
 .chat-worker-label {
