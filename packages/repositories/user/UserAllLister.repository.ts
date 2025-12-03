@@ -15,7 +15,7 @@ export class UserAllListerRepository {
     const result = await this.db.query.user.findMany({
       where: and(eq(user.account_id, accountId), isNull(user.deleted_at)),
       with: {
-        aac: {
+        uac: {
           columns: {
             account_id: true,
             name: true,
@@ -41,8 +41,8 @@ export class UserAllListerRepository {
       user_id: user.user_id,
       first_name: user.uui?.name || null,
       last_name: user.uui?.last_name || null,
-      account_id: user.aac?.account_id || accountId,
-      account_name: user.aac?.name || '',
+      account_id: user.uac?.account_id || accountId,
+      account_name: user.uac?.name || '',
     }));
   };
 }

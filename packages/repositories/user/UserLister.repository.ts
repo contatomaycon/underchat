@@ -136,7 +136,7 @@ export class UserListerRepository {
         ...filtersUser
       ),
       with: {
-        aac: {
+        uac: {
           columns: {
             account_id: true,
             name: true,
@@ -226,10 +226,10 @@ export class UserListerRepository {
 
     return result.map((user) => ({
       user_id: user.user_id,
-      account: user.aac
+      account: user.uac
         ? {
-            account_id: user.aac.account_id,
-            name: user.aac.name,
+            account_id: user.uac.account_id,
+            name: user.uac.name,
           }
         : null,
       email_partial: user.email_partial,
