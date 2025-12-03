@@ -23,6 +23,7 @@ import { IInactivityData } from '@core/common/interfaces/IInactivityData';
 import { IProcessFlowNodeOptions } from '@core/common/interfaces/IProcessFlowNodeOptions';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
+import { proto } from '@whiskeysockets/baileys';
 
 @injectable()
 export class ChatbotFlowRunnerService {
@@ -66,6 +67,27 @@ export class ChatbotFlowRunnerService {
     return `underchat:chatbot-failed-attempts:${accountId}:${workerId}:${chatId}`;
   }
 
+  private getBaileysChatCacheKey(
+    accountId: string,
+    workerId: string,
+    phone: string
+  ): string {
+    return `underchat:chat:${accountId}:${workerId}:${phone}`;
+  }
+
+  private async invalidateChatFromCache(chat: IChat): Promise<void> {
+    const accountId = chat.account?.id;
+    const workerId = chat.worker?.id;
+    const phone = chat.phone;
+
+    if (!accountId || !workerId || !phone) {
+      return;
+    }
+
+    const key = this.getBaileysChatCacheKey(accountId, workerId, phone);
+    await this.redis.del(key);
+  }
+
   private getFlowNodeById(
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string
@@ -99,7 +121,8 @@ export class ChatbotFlowRunnerService {
   }
 
   private getTextFromUpsertMessage(data: IUpsertMessage): string | null {
-    const messageContent: any = data.message?.message;
+    const messageContent: proto.IMessage | null | undefined =
+      data.message?.message;
 
     if (!messageContent) {
       return null;
@@ -817,7 +840,10 @@ export class ChatbotFlowRunnerService {
       label,
     };
 
-    await this.chatService.saveChat(updatedChat);
+    await Promise.all([
+      this.chatService.saveChat(updatedChat),
+      this.invalidateChatFromCache(updatedChat),
+    ]);
 
     const channelAccountId = updatedChat.account?.id ?? createChat.account.id;
 
@@ -861,6 +887,8 @@ export class ChatbotFlowRunnerService {
     if (!updated) {
       throw new Error(t('contact_update_error'));
     }
+
+    await this.invalidateChatFromCache(createChat);
   }
 
   private async processTagNode(
@@ -995,7 +1023,10 @@ export class ChatbotFlowRunnerService {
       status: EChatStatus.queue,
     };
 
-    await this.chatService.saveChat(updatedChat);
+    await Promise.all([
+      this.chatService.saveChat(updatedChat),
+      this.invalidateChatFromCache(updatedChat),
+    ]);
 
     const channelAccountId = updatedChat.account?.id ?? createChat.account.id;
 
