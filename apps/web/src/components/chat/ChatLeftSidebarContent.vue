@@ -82,6 +82,16 @@ const availableWorkers = ref<TransferWorker[]>([]);
 const availableSectors = ref<TransferSector[]>([]);
 const workerConfigForChat = ref<ViewWorkerConfigForChatResponse | null>(null);
 
+const chatbotChats = ref<ListChatsResult[]>([]);
+const chatbotPagings = ref({
+  current_page: 1,
+  total_pages: 1,
+  per_page: 50,
+  count: 0,
+  total: 0,
+});
+const isLoadingChatbot = ref(false);
+
 type FilterType = 'new' | 'all' | 'in_chat' | 'queue' | 'chatbot';
 
 const activeFilter = ref<FilterType>('all');
@@ -118,6 +128,15 @@ const queueSelectionPermissions = [
 
 const canSelectAnyQueueChat = computed(() => can(queueSelectionPermissions));
 
+const chatbotFilterPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EChatPermissions.chat_group,
+  EChatPermissions.view_chatbot_messages,
+];
+
+const canViewChatbotTab = computed(() => can(chatbotFilterPermissions));
+
 const isQueueChatSelectable = (index: number): boolean => {
   if (canSelectAnyQueueChat.value) {
     return true;
@@ -138,6 +157,10 @@ const handleQueueClick = (
 };
 
 const handleFilterClick = (filter: FilterType) => {
+  if (filter === 'chatbot' && !canViewChatbotTab.value) {
+    return;
+  }
+
   if (activeFilter.value === filter && expandedFilter.value === filter) {
     return;
   }
@@ -151,6 +174,10 @@ const handleFilterClick = (filter: FilterType) => {
     currentPageContacts.value = 1;
     accumulatedContacts.value = [];
     loadContacts();
+  } else if (filter === 'chatbot') {
+    chatbotPagings.value.current_page = 1;
+    chatbotChats.value = [];
+    loadChatbotChats();
   }
 };
 
@@ -213,6 +240,64 @@ const loadContacts = async (append = false) => {
     }
   } finally {
     isLoadingMoreContacts.value = false;
+  }
+};
+
+const loadChatbotChats = async (append = false) => {
+  if (isLoadingChatbot.value) return;
+
+  isLoadingChatbot.value = true;
+
+  try {
+    const request: ListChatsQuery = {
+      current_page: chatbotPagings.value.current_page,
+      per_page: chatbotPagings.value.per_page,
+      status: EChatStatus.ura,
+    };
+
+    const results = await chatStore.listChatbotChats(request);
+
+    if (results) {
+      if (append) {
+        chatbotChats.value.push(...results);
+      } else {
+        chatbotChats.value = [...results];
+      }
+
+      const hasMore =
+        results.length >= chatbotPagings.value.per_page &&
+        chatbotPagings.value.current_page < 1000;
+
+      chatbotPagings.value.total_pages = hasMore
+        ? chatbotPagings.value.current_page + 1
+        : chatbotPagings.value.current_page;
+    }
+  } finally {
+    isLoadingChatbot.value = false;
+  }
+};
+
+const hasMoreChatbot = computed(() => {
+  return chatbotPagings.value.current_page < chatbotPagings.value.total_pages;
+});
+
+const handleChatbotScroll = (e: Event) => {
+  const target = e.target as HTMLElement;
+  if (!target) return;
+
+  const scrollContainer = target.closest('.ps') as HTMLElement;
+  if (!scrollContainer) return;
+
+  const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+  const threshold = 100;
+
+  if (
+    scrollTop + clientHeight >= scrollHeight - threshold &&
+    hasMoreChatbot.value &&
+    !isLoadingChatbot.value
+  ) {
+    chatbotPagings.value.current_page += 1;
+    void loadChatbotChats(true);
   }
 };
 
@@ -596,7 +681,7 @@ onMounted(async () => {
           <VIcon size="24">tabler-clock</VIcon>
         </VBtn>
       </div>
-      <div class="chat-filter-item flex-grow-1">
+      <div v-if="canViewChatbotTab" class="chat-filter-item flex-grow-1">
         <VBtn
           :variant="activeFilter === 'chatbot' ? 'flat' : 'text'"
           :color="activeFilter === 'chatbot' ? 'primary' : undefined"
@@ -794,6 +879,33 @@ onMounted(async () => {
           v-if="chatStore.loading || isLoadingMoreContacts"
           class="d-flex justify-center pa-4"
         >
+          <VProgressCircular indeterminate color="primary" size="32" />
+        </li>
+      </ul>
+    </PerfectScrollbar>
+  </template>
+
+  <template v-else-if="activeFilter === 'chatbot'">
+    <PerfectScrollbar
+      :options="{ wheelPropagation: false }"
+      @ps-scroll-y="handleChatbotScroll"
+    >
+      <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
+        <ChatQueue
+          v-for="chat in chatbotChats"
+          :key="`chatbot-${chat.chat_id}`"
+          :user="chat"
+          @click="$emit('openChat', chat.chat_id)"
+        />
+
+        <li
+          v-if="!chatbotChats.length && !isLoadingChatbot"
+          class="no-chat-items-text text-disabled"
+        >
+          {{ $t('no_chat_in_service') }}
+        </li>
+
+        <li v-if="isLoadingChatbot" class="d-flex justify-center pa-4">
           <VProgressCircular indeterminate color="primary" size="32" />
         </li>
       </ul>

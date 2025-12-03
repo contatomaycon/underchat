@@ -468,6 +468,10 @@ const isQueueStatus = computed(
   () => chatStore.activeChat?.status === EChatStatus.queue
 );
 
+const isUraStatus = computed(
+  () => chatStore.activeChat?.status === EChatStatus.ura
+);
+
 const workerConfigForChat = ref<ViewWorkerConfigForChatResponse>(null);
 
 const getStatusColor = (status: EChatUserStatus): string => {
@@ -2017,6 +2021,7 @@ const sendMessage = async () => {
   if (!canSendMessage()) return;
   if (!hasActiveChat()) return;
   if (isQueueStatus.value) return;
+  if (isUraStatus.value) return;
 
   const savedMsg = msg.value;
   const savedLinkPreview = linkPreview.value ? { ...linkPreview.value } : null;
@@ -2167,6 +2172,8 @@ const openAttach = (
     | 'location'
     | 'annotation'
 ) => {
+  if (isUraStatus.value) return;
+
   switch (type) {
     case 'document':
       fileDocRef.value?.click();
@@ -3368,6 +3375,7 @@ const onEmojiSelect = (e: any) => {
 };
 
 const onRecordAudio = () => {
+  if (isUraStatus.value) return;
   startAudioRecording();
 };
 
@@ -5105,7 +5113,7 @@ onBeforeUnmount(() => {
               :auto-grow="true"
               rows="1"
               :max-rows="8"
-              :disabled="isQueueStatus || !!selectedQuickMessage"
+              :disabled="isQueueStatus || isUraStatus || !!selectedQuickMessage"
               @keydown.enter.exact.prevent="onSendText"
             >
               <template #prepend-inner>
@@ -5113,14 +5121,18 @@ onBeforeUnmount(() => {
                   offset="8"
                   :close-on-content-click="true"
                   location="top start"
-                  :disabled="!!selectedQuickMessage"
+                  :disabled="
+                    !!selectedQuickMessage || isQueueStatus || isUraStatus
+                  "
                 >
                   <template #activator="{ props }">
                     <IconBtn
                       v-bind="props"
                       class="composer-btn"
                       aria-label="Anexar"
-                      :disabled="!!selectedQuickMessage"
+                      :disabled="
+                        !!selectedQuickMessage || isQueueStatus || isUraStatus
+                      "
                     >
                       <VIcon size="22">tabler-plus</VIcon>
                     </IconBtn>
@@ -5131,43 +5143,64 @@ onBeforeUnmount(() => {
                     min-width="220"
                     class="attach-menu"
                   >
-                    <VListItem @click="openAttach('document')">
+                    <VListItem
+                      :disabled="isQueueStatus || isUraStatus"
+                      @click="openAttach('document')"
+                    >
                       <template #prepend
                         ><VIcon size="20">tabler-file</VIcon></template
                       >
                       <VListItemTitle>Documentos</VListItemTitle>
                     </VListItem>
-                    <VListItem @click="openAttach('photo')">
+                    <VListItem
+                      :disabled="isQueueStatus || isUraStatus"
+                      @click="openAttach('photo')"
+                    >
                       <template #prepend
                         ><VIcon size="20">tabler-photo</VIcon></template
                       >
                       <VListItemTitle>Fotos</VListItemTitle>
                     </VListItem>
-                    <VListItem @click="openAttach('video')">
+                    <VListItem
+                      :disabled="isQueueStatus || isUraStatus"
+                      @click="openAttach('video')"
+                    >
                       <template #prepend
                         ><VIcon size="20">tabler-video</VIcon></template
                       >
                       <VListItemTitle>Vídeos</VListItemTitle>
                     </VListItem>
-                    <VListItem @click="openAttach('audio')">
+                    <VListItem
+                      :disabled="isQueueStatus || isUraStatus"
+                      @click="openAttach('audio')"
+                    >
                       <template #prepend
                         ><VIcon size="20">tabler-headphones</VIcon></template
                       >
                       <VListItemTitle>Áudio</VListItemTitle>
                     </VListItem>
-                    <VListItem @click="openAttach('contact')">
+                    <VListItem
+                      :disabled="isQueueStatus || isUraStatus"
+                      @click="openAttach('contact')"
+                    >
                       <template #prepend
                         ><VIcon size="20">tabler-user</VIcon></template
                       >
                       <VListItemTitle>Contato</VListItemTitle>
                     </VListItem>
-                    <VListItem @click="openAttach('location')">
+                    <VListItem
+                      :disabled="isQueueStatus || isUraStatus"
+                      @click="openAttach('location')"
+                    >
                       <template #prepend
                         ><VIcon size="20">tabler-map-pin</VIcon></template
                       >
                       <VListItemTitle>Localização</VListItemTitle>
                     </VListItem>
-                    <VListItem @click="openAttach('annotation')">
+                    <VListItem
+                      :disabled="isQueueStatus || isUraStatus"
+                      @click="openAttach('annotation')"
+                    >
                       <template #prepend
                         ><VIcon size="20">tabler-note</VIcon></template
                       >
@@ -5213,6 +5246,7 @@ onBeforeUnmount(() => {
                     v-if="!hasAttachmentsOrContent && !selectedQuickMessage"
                     class="composer-btn mic-btn"
                     aria-label="Gravar áudio"
+                    :disabled="isQueueStatus || isUraStatus"
                     @click="onRecordAudio"
                   >
                     <VIcon size="22">tabler-microphone</VIcon>
@@ -5226,7 +5260,7 @@ onBeforeUnmount(() => {
                     variant="flat"
                     rounded="pill"
                     aria-label="Enviar mensagem"
-                    :disabled="!hasActiveChat() || isQueueStatus"
+                    :disabled="!hasActiveChat() || isQueueStatus || isUraStatus"
                     @click="onSendText"
                   >
                     <VIcon size="22">tabler-send</VIcon>

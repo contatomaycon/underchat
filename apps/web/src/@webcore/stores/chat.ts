@@ -94,6 +94,7 @@ export const useChatStore = defineStore('chat', {
     listMessages: [] as ListMessageResult[],
     listQueue: [] as ListChatsResult[],
     listInChat: [] as ListChatsResult[],
+    listChatbot: [] as ListChatsResult[],
     messageReply: null as ListMessageResult | null,
     user: getUser(),
     currentPage: 1,
@@ -496,6 +497,43 @@ export const useChatStore = defineStore('chat', {
         return data.data.results;
       } catch {
         this.listInChat = [];
+
+        return [] as ListChatsResult[];
+      }
+    },
+
+    async listChatbotChats(input: ListChatsQuery): Promise<ListChatsResult[]> {
+      try {
+        this.loading = true;
+
+        const request: ListChatsQuery = {
+          current_page: input.current_page,
+          per_page: input.per_page,
+          status: input.status,
+        };
+
+        const response = await axios.get<IApiResponse<ListChatsResponse>>(
+          `/chat`,
+          {
+            params: request,
+          }
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          this.listChatbot = [];
+
+          return [] as ListChatsResult[];
+        }
+
+        this.listChatbot = data.data.results;
+
+        return data.data.results;
+      } catch {
+        this.listChatbot = [];
 
         return [] as ListChatsResult[];
       }
@@ -1125,7 +1163,8 @@ export const useChatStore = defineStore('chat', {
       if (this.activeChat?.chat_id === chatId) return;
 
       const chat = (this.listQueue.find((c) => c.chat_id === chatId) ??
-        this.listInChat.find((c) => c.chat_id === chatId)) as ListChatsResult;
+        this.listInChat.find((c) => c.chat_id === chatId) ??
+        this.listChatbot.find((c) => c.chat_id === chatId)) as ListChatsResult;
 
       if (!chat?.chat_id) {
         this.activeChat = null;
