@@ -1693,18 +1693,18 @@ export class ChatbotFlowRunnerService {
     if (
       !this.shouldRedirectOnFailedAttempt(redirectFailedAttempts, createChat)
     ) {
-      return true;
+      return false;
     }
 
     if (!redirectFailedAttempts) {
-      return true;
+      return false;
     }
 
     const quantity = redirectFailedAttempts.quantity ?? 1;
     const failedAttemptsCount = await this.incrementFailedAttempts(createChat);
 
     if (failedAttemptsCount < quantity) {
-      return true;
+      return false;
     }
 
     await this.resetFailedAttempts(createChat);
