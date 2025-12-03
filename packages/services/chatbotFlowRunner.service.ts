@@ -1691,21 +1691,20 @@ export class ChatbotFlowRunnerService {
             name: sectorData.name,
             color: sectorData.color,
           };
+        }
+      }
 
-          const selectedSectorUser =
-            redirectFailedAttempts.selected_sector_user;
-          if (selectedSectorUser) {
-            const sectorUserData =
-              await this.userService.viewUserNamePhoto(selectedSectorUser);
+      const selectedSectorUser = redirectFailedAttempts.selected_sector_user;
+      if (selectedSectorUser) {
+        const sectorUserData =
+          await this.userService.viewUserNamePhoto(selectedSectorUser);
 
-            if (sectorUserData) {
-              user = {
-                id: sectorUserData.id,
-                name: sectorUserData.name,
-                photo: sectorUserData.photo ?? null,
-              };
-            }
-          }
+        if (sectorUserData) {
+          user = {
+            id: sectorUserData.id,
+            name: sectorUserData.name,
+            photo: sectorUserData.photo ?? null,
+          };
         }
       }
     }
