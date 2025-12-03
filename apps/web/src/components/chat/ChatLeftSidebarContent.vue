@@ -82,7 +82,6 @@ const availableWorkers = ref<TransferWorker[]>([]);
 const availableSectors = ref<TransferSector[]>([]);
 const workerConfigForChat = ref<ViewWorkerConfigForChatResponse | null>(null);
 
-const chatbotChats = ref<ListChatsResult[]>([]);
 const chatbotPagings = ref({
   current_page: 1,
   total_pages: 1,
@@ -176,7 +175,6 @@ const handleFilterClick = (filter: FilterType) => {
     loadContacts();
   } else if (filter === 'chatbot') {
     chatbotPagings.value.current_page = 1;
-    chatbotChats.value = [];
     loadChatbotChats();
   }
 };
@@ -243,7 +241,7 @@ const loadContacts = async (append = false) => {
   }
 };
 
-const loadChatbotChats = async (append = false) => {
+const loadChatbotChats = async () => {
   if (isLoadingChatbot.value) return;
 
   isLoadingChatbot.value = true;
@@ -255,49 +253,9 @@ const loadChatbotChats = async (append = false) => {
       status: EChatStatus.ura,
     };
 
-    const results = await chatStore.listChatbotChats(request);
-
-    if (results) {
-      if (append) {
-        chatbotChats.value.push(...results);
-      } else {
-        chatbotChats.value = [...results];
-      }
-
-      const hasMore =
-        results.length >= chatbotPagings.value.per_page &&
-        chatbotPagings.value.current_page < 1000;
-
-      chatbotPagings.value.total_pages = hasMore
-        ? chatbotPagings.value.current_page + 1
-        : chatbotPagings.value.current_page;
-    }
+    await chatStore.listChatbotChats(request);
   } finally {
     isLoadingChatbot.value = false;
-  }
-};
-
-const hasMoreChatbot = computed(() => {
-  return chatbotPagings.value.current_page < chatbotPagings.value.total_pages;
-});
-
-const handleChatbotScroll = (e: Event) => {
-  const target = e.target as HTMLElement;
-  if (!target) return;
-
-  const scrollContainer = target.closest('.ps') as HTMLElement;
-  if (!scrollContainer) return;
-
-  const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
-  const threshold = 100;
-
-  if (
-    scrollTop + clientHeight >= scrollHeight - threshold &&
-    hasMoreChatbot.value &&
-    !isLoadingChatbot.value
-  ) {
-    chatbotPagings.value.current_page += 1;
-    void loadChatbotChats(true);
   }
 };
 
@@ -886,20 +844,17 @@ onMounted(async () => {
   </template>
 
   <template v-else-if="activeFilter === 'chatbot'">
-    <PerfectScrollbar
-      :options="{ wheelPropagation: false }"
-      @ps-scroll-y="handleChatbotScroll"
-    >
+    <PerfectScrollbar :options="{ wheelPropagation: false }">
       <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
         <ChatQueue
-          v-for="chat in chatbotChats"
+          v-for="chat in chatStore.listChatbot"
           :key="`chatbot-${chat.chat_id}`"
           :user="chat"
           @click="$emit('openChat', chat.chat_id)"
         />
 
         <li
-          v-if="!chatbotChats.length && !isLoadingChatbot"
+          v-if="!chatStore.listChatbot.length && !isLoadingChatbot"
           class="no-chat-items-text text-disabled"
         >
           {{ $t('no_chat_in_ura') }}

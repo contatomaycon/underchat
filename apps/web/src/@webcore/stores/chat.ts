@@ -252,6 +252,11 @@ export const useChatStore = defineStore('chat', {
         return;
       }
 
+      if (chat.status === EChatStatus.ura) {
+        this.handleUraStatusChat(input, chat, isActiveChat);
+        return;
+      }
+
       if (chat.status === EChatStatus.closed) {
         this.handleClosedStatusChat(input, chat);
       }
@@ -349,7 +354,20 @@ export const useChatStore = defineStore('chat', {
           perm === EChatPermissions.view_others_chats
       );
 
+      const canViewChatbotMessages = permissions.some(
+        (perm: EPermissionsRoles) =>
+          perm === EGeneralPermissions.full_access ||
+          perm === EGeneralPermissions.full_access_group ||
+          perm === EChatPermissions.chat_group ||
+          perm === EChatPermissions.view_chatbot_messages
+      );
+
       const isOwnChat = chat.user?.id === this.user?.user_id;
+
+      if (chat.status === EChatStatus.ura) {
+        return canViewChatbotMessages || isOwnChat;
+      }
+
       return canViewOthersChats || isOwnChat;
     },
 
@@ -359,6 +377,7 @@ export const useChatStore = defineStore('chat', {
       isActiveChat: boolean
     ): void {
       this.removeFromList(this.listInChat, chat.chat_id);
+      this.removeFromList(this.listChatbot, chat.chat_id);
       this.replaceOrPushInList(this.listQueue, input, isActiveChat);
 
       if (this.activeChat?.chat_id === chat.chat_id) {
@@ -374,6 +393,7 @@ export const useChatStore = defineStore('chat', {
       if (!this.canViewChat(chat)) {
         this.removeFromList(this.listInChat, chat.chat_id);
         this.removeFromList(this.listQueue, chat.chat_id);
+        this.removeFromList(this.listChatbot, chat.chat_id);
 
         if (this.activeChat?.chat_id === chat.chat_id) {
           this.activeChat = null;
@@ -382,7 +402,33 @@ export const useChatStore = defineStore('chat', {
       }
 
       this.removeFromList(this.listQueue, chat.chat_id);
+      this.removeFromList(this.listChatbot, chat.chat_id);
       this.replaceOrPushInList(this.listInChat, input, isActiveChat);
+
+      if (this.activeChat?.chat_id === chat.chat_id) {
+        this.activeChat = this.createUpdatedActiveChat(input, isActiveChat);
+      }
+    },
+
+    handleUraStatusChat(
+      input: ListChatsResult,
+      chat: IChat,
+      isActiveChat: boolean
+    ): void {
+      if (!this.canViewChat(chat)) {
+        this.removeFromList(this.listChatbot, chat.chat_id);
+        this.removeFromList(this.listInChat, chat.chat_id);
+        this.removeFromList(this.listQueue, chat.chat_id);
+
+        if (this.activeChat?.chat_id === chat.chat_id) {
+          this.activeChat = null;
+        }
+        return;
+      }
+
+      this.removeFromList(this.listInChat, chat.chat_id);
+      this.removeFromList(this.listQueue, chat.chat_id);
+      this.replaceOrPushInList(this.listChatbot, input, isActiveChat);
 
       if (this.activeChat?.chat_id === chat.chat_id) {
         this.activeChat = this.createUpdatedActiveChat(input, isActiveChat);
@@ -392,6 +438,7 @@ export const useChatStore = defineStore('chat', {
     handleClosedStatusChat(input: ListChatsResult, chat: IChat): void {
       this.removeFromList(this.listInChat, chat.chat_id);
       this.removeFromList(this.listQueue, chat.chat_id);
+      this.removeFromList(this.listChatbot, chat.chat_id);
 
       if (this.activeChat?.chat_id === chat.chat_id) {
         this.activeChat = null;
