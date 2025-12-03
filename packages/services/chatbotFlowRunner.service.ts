@@ -604,6 +604,7 @@ export class ChatbotFlowRunnerService {
       ),
       this.redis.del(cacheKey),
       this.cancelInactivityCheck(createChat),
+      this.invalidateChatFromCache(createChat),
     ]);
 
     return true;
