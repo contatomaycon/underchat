@@ -2,6 +2,8 @@ import * as schema from '@core/models';
 import {
   account,
   plan,
+  planAccount,
+  planAccountStatus,
   planCrossSellAccount,
   planCrossSell,
   planProduct,
@@ -32,7 +34,7 @@ export class PlanSalesListerRepository {
     const filters: SQLWrapper[] = [];
 
     if (query.plan_id) {
-      filters.push(eq(account.plan_id, query.plan_id));
+      filters.push(eq(planAccount.plan_id, query.plan_id));
     }
 
     if (query.start_date) {
@@ -62,9 +64,22 @@ export class PlanSalesListerRepository {
         created_at: sql<string>`MIN(${account.created_at})::text`,
       })
       .from(account)
-      .innerJoin(plan, eq(account.plan_id, plan.plan_id))
+      .innerJoin(planAccount, eq(planAccount.account_id, account.account_id))
+      .innerJoin(plan, eq(planAccount.plan_id, plan.plan_id))
+      .innerJoin(
+        planAccountStatus,
+        eq(
+          planAccount.plan_account_status_id,
+          planAccountStatus.plan_account_status_id
+        )
+      )
       .where(
-        and(isNull(account.deleted_at), isNull(plan.deleted_at), ...filters)
+        and(
+          isNull(account.deleted_at),
+          isNull(plan.deleted_at),
+          eq(planAccountStatus.name, 'active'),
+          ...filters
+        )
       )
       .groupBy(plan.plan_id, plan.name, plan.price, plan.price_old)
       .execute();
@@ -83,9 +98,18 @@ export class PlanSalesListerRepository {
           account_id: account.account_id,
         })
         .from(account)
+        .innerJoin(planAccount, eq(planAccount.account_id, account.account_id))
+        .innerJoin(
+          planAccountStatus,
+          eq(
+            planAccount.plan_account_status_id,
+            planAccountStatus.plan_account_status_id
+          )
+        )
         .where(
           and(
-            eq(account.plan_id, planSale.plan_id),
+            eq(planAccount.plan_id, planSale.plan_id),
+            eq(planAccountStatus.name, 'active'),
             isNull(account.deleted_at),
             ...filters
           )

@@ -24,10 +24,6 @@ export class AccountUpdaterRepository {
       inputUpdate.account_status_id = input.account_status.account_status_id;
     }
 
-    if (input.plan?.plan_id) {
-      inputUpdate.plan_id = input.plan.plan_id;
-    }
-
     return inputUpdate;
   }
 

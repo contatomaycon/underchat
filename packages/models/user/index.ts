@@ -4,3 +4,5 @@ export * from './userAddress.model';
 export * from './userDocument.model';
 export * from './userDocumentType.model';
 export * from './userInfo.model';
+export * from './userCard.model';
+export * from './userCustomer.model';

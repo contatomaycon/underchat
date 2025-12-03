@@ -21,7 +21,6 @@ export class AccountCreatorRepository {
       .values({
         account_id: accountId,
         account_status_id: input.account_status.account_status_id,
-        plan_id: input.plan.plan_id,
         name: input.name,
       })
       .execute();

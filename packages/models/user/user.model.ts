@@ -8,6 +8,8 @@ import {
   account,
   permissionAssignment,
   chatUser,
+  userCard,
+  userCustomer,
 } from '@core/models';
 
 export const user = pgTable('user', {
@@ -33,8 +35,8 @@ export const user = pgTable('user', {
   deleted_at: timestamp({ mode: 'string', withTimezone: true }),
 });
 
-export const userRelations = relations(user, ({ one }) => ({
-  aac: one(account, {
+export const userRelations = relations(user, ({ one, many }) => ({
+  uac: one(account, {
     fields: [user.account_id],
     references: [account.account_id],
   }),
@@ -62,4 +64,6 @@ export const userRelations = relations(user, ({ one }) => ({
     fields: [user.user_id],
     references: [chatUser.user_id],
   }),
+  ucd: many(userCard),
+  uct: many(userCustomer),
 }));
