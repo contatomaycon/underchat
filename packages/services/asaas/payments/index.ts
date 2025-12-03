@@ -12,3 +12,4 @@ export * from './getPaymentPixQrCode.service';
 export * from './getPaymentBillingInfo.service';
 export * from './getPaymentViewingInfo.service';
 export * from './listPayments.service';
+export * from './documents';
