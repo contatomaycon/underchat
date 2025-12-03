@@ -1597,6 +1597,10 @@ export const useChatStore = defineStore('chat', {
         } else if (photoFile) {
           formData.append('photo', photoFile);
         }
+        const chatId = this.extractFieldValue(payload.chat_id as FieldValue);
+        if (chatId) {
+          formData.append('chat_id', chatId);
+        }
 
         const response = await axios.post<IApiResponse<boolean>>(
           `/chat/contacts`,

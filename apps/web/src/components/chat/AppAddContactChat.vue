@@ -157,6 +157,7 @@ const addContact = async () => {
       birthday: birthday.value ?? null,
       notes: notes.value ?? null,
       image_url: imageUrl,
+      chat_id: chatStore.activeChat?.chat_id ?? undefined,
     },
     imageUrl ? null : photoFile.value
   );
