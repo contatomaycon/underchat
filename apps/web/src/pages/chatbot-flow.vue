@@ -1340,7 +1340,7 @@ const addFinishTrigger = () => {
   }
 
   const words = text.split(/\s+/).filter((word) => word.length > 0);
-  words.forEach((word) => {
+  for (const word of words) {
     const normalizedWord = word.toLowerCase();
     if (
       !finishTriggers.value.some(
@@ -1349,7 +1349,7 @@ const addFinishTrigger = () => {
     ) {
       finishTriggers.value.push(word);
     }
-  });
+  }
 
   finishTriggerInput.value = '';
 };

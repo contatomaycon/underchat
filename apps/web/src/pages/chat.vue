@@ -626,7 +626,7 @@ watch(
   () => chatStore.activeChat?.contact?.id,
   (contactId) => {
     if (contactId) {
-      void chatStore.getChatContactById(contactId);
+      chatStore.getChatContactById(contactId);
     }
   },
   { immediate: true }

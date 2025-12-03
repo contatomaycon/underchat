@@ -193,7 +193,7 @@ const handleFilterClick = (filter: FilterType) => {
 };
 
 const loadChatsByFilter = async () => {
-  if (activeFilter.value === 'all') {
+  if (activeFilter.value === 'all' || activeFilter.value === 'my_chats') {
     const requestQueue: ListChatsQuery = {
       current_page: currentPageQueue.value,
       per_page: perPageQueue.value,
@@ -226,23 +226,6 @@ const loadChatsByFilter = async () => {
     };
 
     await chatStore.listQueueChats(requestQueue);
-  } else if (activeFilter.value === 'my_chats') {
-    const requestQueue: ListChatsQuery = {
-      current_page: currentPageQueue.value,
-      per_page: perPageQueue.value,
-      status: EChatStatus.queue,
-    };
-
-    const requestInChat: ListChatsQuery = {
-      current_page: currentPageInChat.value,
-      per_page: perPageInChat.value,
-      status: EChatStatus.in_chat,
-    };
-
-    await Promise.all([
-      chatStore.listQueueChats(requestQueue),
-      chatStore.listInChatChats(requestInChat),
-    ]);
   }
 };
 

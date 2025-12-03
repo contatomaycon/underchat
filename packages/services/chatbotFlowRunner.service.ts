@@ -129,15 +129,15 @@ export class ChatbotFlowRunnerService {
     }
 
     if (messageContent.conversation) {
-      return messageContent.conversation as string;
+      return messageContent.conversation;
     }
 
     if (messageContent.extendedTextMessage?.text) {
-      return messageContent.extendedTextMessage.text as string;
+      return messageContent.extendedTextMessage.text;
     }
 
     if (messageContent.imageMessage?.caption) {
-      return messageContent.imageMessage.caption as string;
+      return messageContent.imageMessage.caption;
     }
 
     return null;
@@ -1307,19 +1307,21 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    customMessage?: string,
-    redirectFailedAttempts?: {
-      status?: string;
-      quantity?: number;
-      redirect_type?: string;
-      selected_user?: string;
-      selected_sector?: string;
-      selected_sector_user?: string;
-    },
-    customMessages?: {
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
+    options?: {
+      customMessage?: string;
+      redirectFailedAttempts?: {
+        status?: string;
+        quantity?: number;
+        redirect_type?: string;
+        selected_user?: string;
+        selected_sector?: string;
+        selected_sector_user?: string;
+      };
+      customMessages?: {
+        transfer_message_user?: string;
+        transfer_message_sector?: string;
+        transfer_message_sector_user?: string;
+      };
     }
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
@@ -1332,38 +1334,38 @@ export class ChatbotFlowRunnerService {
       return this.handleInvalidMenuAttempt(
         t,
         createChat,
-        customMessage,
-        redirectFailedAttempts,
-        customMessages
+        options?.customMessage,
+        options?.redirectFailedAttempts,
+        options?.customMessages
       );
     }
 
-    const options = currentNode.data?.options ?? [];
+    const menuOptions = currentNode.data?.options ?? [];
     const selectedNumber = Number.parseInt(text, 10);
 
     if (
       Number.isNaN(selectedNumber) ||
       selectedNumber < 1 ||
-      selectedNumber > options.length
+      selectedNumber > menuOptions.length
     ) {
       return this.handleInvalidMenuAttempt(
         t,
         createChat,
-        customMessage,
-        redirectFailedAttempts,
-        customMessages
+        options?.customMessage,
+        options?.redirectFailedAttempts,
+        options?.customMessages
       );
     }
 
-    const selectedOption = options[selectedNumber - 1];
+    const selectedOption = menuOptions[selectedNumber - 1];
 
     if (!selectedOption) {
       return this.handleInvalidMenuAttempt(
         t,
         createChat,
-        customMessage,
-        redirectFailedAttempts,
-        customMessages
+        options?.customMessage,
+        options?.redirectFailedAttempts,
+        options?.customMessages
       );
     }
 
@@ -1501,66 +1503,68 @@ export class ChatbotFlowRunnerService {
     }
   ): Promise<boolean> {
     const redirectType = inactivityAlert.redirect_type;
-    let user: IChat['user'] | null | undefined = undefined;
-    let sector: IChat['sector'] | null | undefined = undefined;
 
     if (redirectType === 'user') {
-      const selectedUser = inactivityAlert.selected_user;
-      if (!selectedUser) {
-        return false;
-      }
-
-      const userData = await this.userService.viewUserNamePhoto(selectedUser);
-      if (!userData) {
-        return false;
-      }
-
-      user = {
-        id: userData.id,
-        name: userData.name,
-        photo: userData.photo ?? null,
-      };
+      return this.processInactivityUserRedirect(
+        t,
+        createChat,
+        inactivityAlert.selected_user
+      );
     }
 
     if (redirectType === 'sector') {
-      const selectedSector = inactivityAlert.selected_sector;
-      if (!selectedSector) {
-        return false;
-      }
-
-      const sectorData = await this.sectorService.viewSectorById(
-        selectedSector,
-        createChat.account.id,
-        false
+      return this.processInactivitySectorRedirect(
+        t,
+        createChat,
+        inactivityAlert.selected_sector,
+        inactivityAlert.selected_sector_user
       );
-
-      if (!sectorData) {
-        return false;
-      }
-
-      sector = {
-        id: sectorData.sector_id,
-        name: sectorData.name,
-        color: sectorData.color,
-      };
-
-      const selectedSectorUser = inactivityAlert.selected_sector_user;
-      if (selectedSectorUser) {
-        const sectorUserData =
-          await this.userService.viewUserNamePhoto(selectedSectorUser);
-
-        if (sectorUserData) {
-          user = {
-            id: sectorUserData.id,
-            name: sectorUserData.name,
-            photo: sectorUserData.photo ?? null,
-          };
-        }
-      }
     }
 
-    await this.updateAndPublishChat(t, createChat, user, sector);
+    return false;
+  }
 
+  private async processInactivityUserRedirect(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    selectedUser?: string
+  ): Promise<boolean> {
+    if (!selectedUser) {
+      return false;
+    }
+
+    const user = await this.getUserForRedirect(selectedUser);
+    if (!user) {
+      return false;
+    }
+
+    await this.updateAndPublishChat(t, createChat, user, undefined);
+    return true;
+  }
+
+  private async processInactivitySectorRedirect(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    selectedSector?: string,
+    selectedSectorUser?: string
+  ): Promise<boolean> {
+    if (!selectedSector) {
+      return false;
+    }
+
+    const sector = await this.getSectorForRedirect(
+      selectedSector,
+      createChat.account.id
+    );
+    if (!sector) {
+      return false;
+    }
+
+    const user = selectedSectorUser
+      ? await this.getUserForRedirect(selectedSectorUser)
+      : undefined;
+
+    await this.updateAndPublishChat(t, createChat, user, sector);
     return true;
   }
 
@@ -1582,32 +1586,78 @@ export class ChatbotFlowRunnerService {
     customInactivityMessage?: string,
     customServiceFinishedMessage?: string
   ): Promise<boolean> {
-    const quantity = inactivityAlert.quantity ?? 1;
-    const timeMinutes = inactivityAlert.time ?? 5;
     const action = inactivityAlert.action;
-
     if (!action) {
       return false;
     }
 
-    const currentAlertCount = inactivityData.alertCount || 0;
-    const newAlertCount = currentAlertCount + 1;
+    const shouldSendAlert = await this.shouldSendInactivityAlert(
+      t,
+      inactivityCacheKey,
+      inactivityData,
+      inactivityAlert,
+      createChat,
+      customInactivityMessage
+    );
 
-    if (newAlertCount <= quantity) {
-      await this.sendInactivityAlertMessage(
-        t,
-        createChat,
-        inactivityCacheKey,
-        inactivityData,
-        newAlertCount,
-        timeMinutes,
-        customInactivityMessage
-      );
+    if (shouldSendAlert) {
       return false;
     }
 
     await this.cancelInactivityCheck(createChat);
+    return this.executeInactivityAction(
+      t,
+      createChat,
+      action,
+      inactivityAlert,
+      customServiceFinishedMessage
+    );
+  }
 
+  private async shouldSendInactivityAlert(
+    t: TFunction<'translation', undefined>,
+    inactivityCacheKey: string,
+    inactivityData: IInactivityData,
+    inactivityAlert: {
+      quantity?: number;
+      time?: number;
+    },
+    createChat: IChat,
+    customInactivityMessage?: string
+  ): Promise<boolean> {
+    const quantity = inactivityAlert.quantity ?? 1;
+    const timeMinutes = inactivityAlert.time ?? 5;
+    const currentAlertCount = inactivityData.alertCount || 0;
+    const newAlertCount = currentAlertCount + 1;
+
+    if (newAlertCount > quantity) {
+      return false;
+    }
+
+    await this.sendInactivityAlertMessage(
+      t,
+      createChat,
+      inactivityCacheKey,
+      inactivityData,
+      newAlertCount,
+      timeMinutes,
+      customInactivityMessage
+    );
+    return true;
+  }
+
+  private async executeInactivityAction(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    action: string,
+    inactivityAlert: {
+      redirect_type?: string;
+      selected_user?: string;
+      selected_sector?: string;
+      selected_sector_user?: string;
+    },
+    customServiceFinishedMessage?: string
+  ): Promise<boolean> {
     if (action === 'finish') {
       await this.sendFinishMessage(t, createChat, customServiceFinishedMessage);
       return true;
@@ -1641,15 +1691,12 @@ export class ChatbotFlowRunnerService {
     await this.sendTextOptionInvalidMessage(t, createChat, customMessage);
 
     if (
-      !redirectFailedAttempts ||
-      redirectFailedAttempts.status !== 'active' ||
-      createChat.status !== EChatStatus.ura
+      !this.shouldRedirectOnFailedAttempt(redirectFailedAttempts, createChat)
     ) {
       return true;
     }
 
-    const quantity = redirectFailedAttempts.quantity ?? 1;
-
+    const quantity = redirectFailedAttempts!.quantity ?? 1;
     const failedAttemptsCount = await this.incrementFailedAttempts(createChat);
 
     if (failedAttemptsCount < quantity) {
@@ -1658,56 +1705,10 @@ export class ChatbotFlowRunnerService {
 
     await this.resetFailedAttempts(createChat);
 
-    const redirectType = redirectFailedAttempts.redirect_type;
-    let user: IChat['user'] | null | undefined = undefined;
-    let sector: IChat['sector'] | null | undefined = undefined;
-
-    if (redirectType === 'user') {
-      const selectedUser = redirectFailedAttempts.selected_user;
-      if (selectedUser) {
-        const userData = await this.userService.viewUserNamePhoto(selectedUser);
-        if (userData) {
-          user = {
-            id: userData.id,
-            name: userData.name,
-            photo: userData.photo ?? null,
-          };
-        }
-      }
-    }
-
-    if (redirectType === 'sector') {
-      const selectedSector = redirectFailedAttempts.selected_sector;
-      if (selectedSector) {
-        const sectorData = await this.sectorService.viewSectorById(
-          selectedSector,
-          createChat.account.id,
-          false
-        );
-
-        if (sectorData) {
-          sector = {
-            id: sectorData.sector_id,
-            name: sectorData.name,
-            color: sectorData.color,
-          };
-        }
-      }
-
-      const selectedSectorUser = redirectFailedAttempts.selected_sector_user;
-      if (selectedSectorUser) {
-        const sectorUserData =
-          await this.userService.viewUserNamePhoto(selectedSectorUser);
-
-        if (sectorUserData) {
-          user = {
-            id: sectorUserData.id,
-            name: sectorUserData.name,
-            photo: sectorUserData.photo ?? null,
-          };
-        }
-      }
-    }
+    const { user, sector } = await this.getRedirectTargets(
+      redirectFailedAttempts!,
+      createChat
+    );
 
     const updatedChat = await this.updateAndPublishChat(
       t,
@@ -1718,41 +1719,190 @@ export class ChatbotFlowRunnerService {
 
     await this.cancelInactivityCheck(updatedChat);
 
-    let rawTransferMessage: string | undefined;
-    if (redirectType === 'user' && user) {
-      rawTransferMessage =
-        customMessages?.transfer_message_user ||
-        t('chatbot_transfer_message_user_default');
-    } else if (redirectType === 'sector' && sector) {
-      if (user) {
-        rawTransferMessage =
-          customMessages?.transfer_message_sector_user ||
-          t('chatbot_transfer_message_sector_user_default');
-      } else {
-        rawTransferMessage =
-          customMessages?.transfer_message_sector ||
-          t('chatbot_transfer_message_sector_default');
-      }
-    }
-
-    if (rawTransferMessage && (user || sector)) {
-      const transferMessage = await this.replaceVariables(
-        t,
-        rawTransferMessage,
-        updatedChat,
-        user,
-        sector
-      );
-      await this.chatMessageService.sendMessage(t, {
-        chat: updatedChat,
-        accountId: updatedChat.account.id,
-        type: EMessageType.text,
-        message: transferMessage,
-        typeUser: ETypeUserChat.bot,
-      });
-    }
+    await this.sendTransferMessageIfNeeded(
+      t,
+      updatedChat,
+      redirectFailedAttempts!.redirect_type,
+      user,
+      sector,
+      customMessages
+    );
 
     return true;
+  }
+
+  private shouldRedirectOnFailedAttempt(
+    redirectFailedAttempts?: {
+      status?: string;
+      quantity?: number;
+      redirect_type?: string;
+      selected_user?: string;
+      selected_sector?: string;
+      selected_sector_user?: string;
+    },
+    createChat?: IChat
+  ): boolean {
+    return (
+      !!redirectFailedAttempts &&
+      redirectFailedAttempts.status === 'active' &&
+      createChat?.status === EChatStatus.ura
+    );
+  }
+
+  private async getRedirectTargets(
+    redirectFailedAttempts: {
+      status?: string;
+      quantity?: number;
+      redirect_type?: string;
+      selected_user?: string;
+      selected_sector?: string;
+      selected_sector_user?: string;
+    },
+    createChat: IChat
+  ): Promise<{
+    user: IChat['user'] | null | undefined;
+    sector: IChat['sector'] | null | undefined;
+  }> {
+    const redirectType = redirectFailedAttempts.redirect_type;
+    let user: IChat['user'] | null | undefined = undefined;
+    let sector: IChat['sector'] | null | undefined = undefined;
+
+    if (redirectType === 'user') {
+      user = await this.getUserForRedirect(
+        redirectFailedAttempts.selected_user
+      );
+    }
+
+    if (redirectType === 'sector') {
+      sector = await this.getSectorForRedirect(
+        redirectFailedAttempts.selected_sector,
+        createChat.account.id
+      );
+      user = await this.getUserForRedirect(
+        redirectFailedAttempts.selected_sector_user
+      );
+    }
+
+    return { user, sector };
+  }
+
+  private async getUserForRedirect(
+    userId?: string
+  ): Promise<IChat['user'] | null | undefined> {
+    if (!userId) {
+      return undefined;
+    }
+
+    const userData = await this.userService.viewUserNamePhoto(userId);
+    if (!userData) {
+      return undefined;
+    }
+
+    return {
+      id: userData.id,
+      name: userData.name,
+      photo: userData.photo ?? null,
+    };
+  }
+
+  private async getSectorForRedirect(
+    sectorId?: string,
+    accountId?: string
+  ): Promise<IChat['sector'] | null | undefined> {
+    if (!sectorId || !accountId) {
+      return undefined;
+    }
+
+    const sectorData = await this.sectorService.viewSectorById(
+      sectorId,
+      accountId,
+      false
+    );
+
+    if (!sectorData) {
+      return undefined;
+    }
+
+    return {
+      id: sectorData.sector_id,
+      name: sectorData.name,
+      color: sectorData.color,
+    };
+  }
+
+  private async sendTransferMessageIfNeeded(
+    t: TFunction<'translation', undefined>,
+    updatedChat: IChat,
+    redirectType?: string,
+    user?: IChat['user'] | null | undefined,
+    sector?: IChat['sector'] | null | undefined,
+    customMessages?: {
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
+  ): Promise<void> {
+    const rawTransferMessage = this.getTransferMessage(
+      t,
+      redirectType,
+      user,
+      sector,
+      customMessages
+    );
+
+    if (!rawTransferMessage || (!user && !sector)) {
+      return;
+    }
+
+    const transferMessage = await this.replaceVariables(
+      t,
+      rawTransferMessage,
+      updatedChat,
+      user,
+      sector
+    );
+
+    await this.chatMessageService.sendMessage(t, {
+      chat: updatedChat,
+      accountId: updatedChat.account.id,
+      type: EMessageType.text,
+      message: transferMessage,
+      typeUser: ETypeUserChat.bot,
+    });
+  }
+
+  private getTransferMessage(
+    t: TFunction<'translation', undefined>,
+    redirectType?: string,
+    user?: IChat['user'] | null | undefined,
+    sector?: IChat['sector'] | null | undefined,
+    customMessages?: {
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
+  ): string | undefined {
+    if (redirectType === 'user' && user) {
+      return (
+        customMessages?.transfer_message_user ||
+        t('chatbot_transfer_message_user_default')
+      );
+    }
+
+    if (redirectType === 'sector' && sector) {
+      if (user) {
+        return (
+          customMessages?.transfer_message_sector_user ||
+          t('chatbot_transfer_message_sector_user_default')
+        );
+      }
+      return (
+        customMessages?.transfer_message_sector ||
+        t('chatbot_transfer_message_sector_default')
+      );
+    }
+
+    return undefined;
   }
 
   private async incrementFailedAttempts(createChat: IChat): Promise<number> {
@@ -1940,9 +2090,11 @@ export class ChatbotFlowRunnerService {
         createChat,
         chatbotFlow,
         currentFlowId,
-        message,
-        redirectFailedAttempts,
-        customMessages
+        {
+          customMessage: message,
+          redirectFailedAttempts,
+          customMessages,
+        }
       );
     }
 
