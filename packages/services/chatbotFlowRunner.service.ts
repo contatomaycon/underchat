@@ -974,6 +974,7 @@ export class ChatbotFlowRunnerService {
     const sector: IChat['sector'] = {
       id: sectorData.sector_id,
       name: sectorData.name,
+      color: sectorData.color,
     };
 
     let user: IChat['user'] | undefined = undefined;
@@ -1540,6 +1541,7 @@ export class ChatbotFlowRunnerService {
       sector = {
         id: sectorData.sector_id,
         name: sectorData.name,
+        color: sectorData.color,
       };
 
       const selectedSectorUser = inactivityAlert.selected_sector_user;
@@ -1687,6 +1689,7 @@ export class ChatbotFlowRunnerService {
           sector = {
             id: sectorData.sector_id,
             name: sectorData.name,
+            color: sectorData.color,
           };
 
           const selectedSectorUser =

@@ -110,6 +110,7 @@ export class TransferChatUseCase {
     return {
       id: sectorData.sector_id,
       name: sectorData.name,
+      color: sectorData.color,
     };
   }
 

@@ -6,8 +6,10 @@ import { limitCharacters } from '@core/common/functions/limitCharacters';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { formatDateToMonthShort } from '@/@webcore/utils/formatters';
 import { useI18n } from 'vue-i18n';
+import { useTheme } from 'vuetify';
 
 const { t } = useI18n();
+const { global } = useTheme();
 
 const chatStore = useChatStore();
 const channelsStore = useChannelsStore();
@@ -57,6 +59,68 @@ const chatLabelForList = computed<{
 const sectorName = computed(() => {
   return props.user?.sector?.name ?? null;
 });
+
+const sectorColor = computed(() => {
+  return props.user?.sector?.color ?? null;
+});
+
+const isHexColor = (s: string): boolean => {
+  return /^#([0-9A-F]{6}|[0-9A-F]{3})$/i.test(s);
+};
+
+const isDarkMode = computed(() => global.name.value === 'dark');
+
+const backgroundColor = (s: string | null): string => {
+  if (!s) return 'rgba(var(--v-theme-secondary), 0.12)';
+  if (!isHexColor(s)) return 'rgba(var(--v-theme-secondary), 0.12)';
+
+  let hex = s.substring(1);
+  if (hex.length === 3) {
+    hex = hex
+      .split('')
+      .map((ch) => ch + ch)
+      .join('');
+  }
+
+  const r = Number.parseInt(hex.slice(0, 2), 16);
+  const g = Number.parseInt(hex.slice(2, 4), 16);
+  const b = Number.parseInt(hex.slice(4, 6), 16);
+
+  const opacity = isDarkMode.value ? 0.2 : 0.12;
+
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+};
+
+const textColor = (s: string | null): string => {
+  if (!s) return 'rgb(var(--v-theme-secondary))';
+  if (!isHexColor(s)) return 'rgb(var(--v-theme-secondary))';
+
+  let hex = s.substring(1);
+  if (hex.length === 3) {
+    hex = hex
+      .split('')
+      .map((ch) => ch + ch)
+      .join('');
+  }
+
+  const r = Number.parseInt(hex.slice(0, 2), 16);
+  const g = Number.parseInt(hex.slice(2, 4), 16);
+  const b = Number.parseInt(hex.slice(4, 6), 16);
+
+  const opacity = isDarkMode.value ? 0.2 : 0.12;
+
+  const backgroundR = isDarkMode.value ? 30 : 255;
+  const backgroundG = isDarkMode.value ? 30 : 255;
+  const backgroundB = isDarkMode.value ? 30 : 255;
+
+  const finalR = Math.round(r * opacity + backgroundR * (1 - opacity));
+  const finalG = Math.round(g * opacity + backgroundG * (1 - opacity));
+  const finalB = Math.round(b * opacity + backgroundB * (1 - opacity));
+
+  const yiq = (finalR * 299 + finalG * 587 + finalB * 114) / 1000;
+
+  return yiq >= 128 ? '#4A4A4A' : '#FFFFFF';
+};
 
 watch(
   () => props.user.contact?.id,
@@ -126,7 +190,14 @@ watch(
           {{ chatLabelForList.label }}
         </div>
       </div>
-      <div v-if="sectorName" class="chat-sector-label text-caption">
+      <div
+        v-if="sectorName"
+        class="chat-sector-label text-caption"
+        :style="{
+          backgroundColor: backgroundColor(sectorColor),
+          color: textColor(sectorColor),
+        }"
+      >
         {{ sectorName }}
       </div>
       <VAvatar
@@ -263,8 +334,6 @@ watch(
   width: 100%;
   padding: 2px 10px;
   border-radius: 0 0 vuetify.$border-radius-root vuetify.$border-radius-root;
-  background-color: rgba(var(--v-theme-secondary), 0.12);
-  color: rgb(var(--v-theme-secondary));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
