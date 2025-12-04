@@ -400,6 +400,7 @@ const address2Partial = ref<string | null>(null);
 const isAddress2Decrypted = ref(false);
 const isLoadingAddress2 = ref(false);
 const address2HasBeenEdited = ref(false);
+const isInitializing = ref(true);
 const city = ref<string | null>(null);
 const state = ref<string | null>(null);
 const state_id = ref<string | null>(null);
@@ -854,7 +855,13 @@ const updateAddressFields = async (response: {
   district: string;
 }) => {
   address1.value = response.address_1;
+  address1HasBeenEdited.value = true;
+  isAddress1Decrypted.value = true;
   address2.value = response.address_2 ?? null;
+  if (response.address_2) {
+    address2HasBeenEdited.value = true;
+    isAddress2Decrypted.value = true;
+  }
   district.value = response.district;
 
   if (country_id.value) {
@@ -1040,8 +1047,14 @@ const loadUserData = async () => {
   if (addressData) {
     country_id.value = addressData.country_id ?? ECountry.Brasil;
     zip_code.value = addressData.zip_code ?? null;
-    address1.value = addressData.address1 ?? null;
-    address2.value = addressData.address2 ?? null;
+    
+    if (!address1Partial.value || address1HasBeenEdited.value || isAddress1Decrypted.value) {
+      address1.value = addressData.address1 ?? null;
+    }
+    if (!address2Partial.value || address2HasBeenEdited.value || isAddress2Decrypted.value) {
+      address2.value = addressData.address2 ?? null;
+    }
+    
     district.value = addressData.district ?? null;
     state.value = addressData.state ?? null;
     city.value = addressData.city ?? null;
@@ -1056,6 +1069,8 @@ const loadUserData = async () => {
       await loadCities(state_id.value);
     }
   }
+  
+  isInitializing.value = false;
 };
 
 onMounted(async () => {
@@ -1064,6 +1079,8 @@ onMounted(async () => {
 
 let timer: number | null = null;
 watch(zip_code, () => {
+  if (isInitializing.value) return;
+  
   if (!country_id.value || !zip_code.value || zip_code.value.length < 8) return;
 
   if (timer) (globalThis as Window & typeof globalThis).clearTimeout(timer);
