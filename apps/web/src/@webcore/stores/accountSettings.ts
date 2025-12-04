@@ -224,7 +224,7 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
         }
 
         return data.data.phone;
-      } catch (error) {
+      } catch {
         return null;
       }
     },
@@ -241,7 +241,7 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
         }
 
         return data.data.document;
-      } catch (error) {
+      } catch {
         return null;
       }
     },
@@ -258,7 +258,7 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
         }
 
         return data.data;
-      } catch (error) {
+      } catch {
         return null;
       }
     },
@@ -275,7 +275,7 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
         }
 
         return data.data.address1;
-      } catch (error) {
+      } catch {
         return null;
       }
     },
@@ -292,7 +292,7 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
         }
 
         return data.data.address2;
-      } catch (error) {
+      } catch {
         return null;
       }
     },
@@ -309,7 +309,7 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
         }
 
         return data.data;
-      } catch (error) {
+      } catch {
         return null;
       }
     },

@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { account, planAccount, planAccountStatus } from '@core/models';
+import { account } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq, isNull } from 'drizzle-orm';

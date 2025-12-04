@@ -537,7 +537,7 @@ export const usePlanStore = defineStore('plan', {
         }
 
         return data.data;
-      } catch (error) {
+      } catch {
         this.loading = false;
         return null;
       }

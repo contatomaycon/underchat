@@ -1,6 +1,5 @@
 import { RouteNamedMap } from 'vue-router/auto-routes';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
-import { EHomePermissions } from '@core/common/enums/EPermissions/home';
 import { EServerPermissions } from '@core/common/enums/EPermissions/server';
 import { EWorkerPermissions } from '@core/common/enums/EPermissions/worker';
 import { ERolePermissions } from '@core/common/enums/EPermissions/role';

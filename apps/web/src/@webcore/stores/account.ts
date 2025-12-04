@@ -530,7 +530,7 @@ export const useAccountStore = defineStore('account', {
         }
 
         return data.data.plan_id;
-      } catch (error) {
+      } catch {
         this.loading = false;
         return null;
       }

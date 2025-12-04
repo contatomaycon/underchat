@@ -86,20 +86,23 @@ export class PlanWithItemsListerRepository {
       if (!itemsByPlanId.has(planId)) {
         itemsByPlanId.set(planId, []);
       }
-      itemsByPlanId.get(planId)!.push({
-        plan_item_id: item.plan_item_id,
-        plan_id: item.plan_id,
-        plan_product_id: item.plan_product_id,
-        quantity: item.quantity,
-        created_at: item.created_at,
-        plan_product: item.plan_product?.plan_product_id
-          ? {
-              plan_product_id: item.plan_product.plan_product_id,
-              name: item.plan_product.name ?? null,
-              description: item.plan_product.description ?? null,
-            }
-          : undefined,
-      });
+      const planItems = itemsByPlanId.get(planId);
+      if (planItems) {
+        planItems.push({
+          plan_item_id: item.plan_item_id,
+          plan_id: item.plan_id,
+          plan_product_id: item.plan_product_id,
+          quantity: item.quantity,
+          created_at: item.created_at,
+          plan_product: item.plan_product?.plan_product_id
+            ? {
+                plan_product_id: item.plan_product.plan_product_id,
+                name: item.plan_product.name ?? null,
+                description: item.plan_product.description ?? null,
+              }
+            : undefined,
+        });
+      }
     }
 
     return itemsByPlanId;
