@@ -308,6 +308,7 @@
   "plan_list_all_unauthorized": "Você não está autorizado a visualizar os planos!",
   "plan_list_with_items_successfully": "Planos com itens listados com sucesso!",
   "plan_list_with_items_not_found": "Nenhum plano com itens encontrado!",
+  "current_plan_view_successfully": "Plano atual visualizado com sucesso!",
   "invalid_attachment_type": "Tipo de anexo inválido!",
   "attachment_size_exceeded": "Tamanho do anexo excedido!",
   "chat_delete_success": "Mensagem excluída com sucesso!",

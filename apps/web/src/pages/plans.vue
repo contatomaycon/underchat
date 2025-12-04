@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { usePlanStore } from '@/@webcore/stores/plan';
+import { useAccountStore } from '@/@webcore/stores/account';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/response.schema';
 
@@ -20,12 +21,15 @@ definePage({
 
 const { t, locale } = useI18n();
 const planStore = usePlanStore();
+const accountStore = useAccountStore();
 useSnackbarCleanup(planStore);
 
 const plans = ref<ListPlanWithItemsResponse[]>([]);
 const loading = ref(false);
 const billingPeriod = ref<'monthly' | 'annual'>('monthly');
 const selectedPlanId = ref<string | null>(null);
+const currentPlanId = ref<string | null>(null);
+const TEST_PLAN_ID = '019a930d-c6f4-75ad-88ff-9a1b2c3d4e5f';
 
 const getCurrencyConfig = () => {
   const localeMap: Record<string, { locale: string; currency: string }> = {
@@ -70,9 +74,14 @@ const getPrice = (plan: ListPlanWithItemsResponse): number => {
 
 const loadPlans = async () => {
   loading.value = true;
-  const result = await planStore.listPlanWithItems();
+  const [result, currentPlan] = await Promise.all([
+    planStore.listPlanWithItems(),
+    accountStore.getCurrentPlan(),
+  ]);
+
   if (result) {
     plans.value = result;
+    currentPlanId.value = currentPlan || TEST_PLAN_ID;
 
     if (result.length > 1) {
       selectedPlanId.value = result[1].plan_id;
@@ -87,6 +96,17 @@ const selectPlan = (planId: string) => {
 
 const isPlanSelected = (planId: string): boolean => {
   return selectedPlanId.value === planId;
+};
+
+const isCurrentPlan = (planId: string): boolean => {
+  return currentPlanId.value === planId;
+};
+
+const getButtonText = (planId: string): string => {
+  if (isCurrentPlan(planId)) {
+    return t('your_current_plan');
+  }
+  return t('upgrade');
 };
 
 const formatItemName = (
@@ -205,10 +225,23 @@ onMounted(() => {
             <VCard
               :class="[
                 'plan-card',
+                isCurrentPlan(plan.plan_id) ? 'plan-card-current' : '',
                 isPlanSelected(plan.plan_id) ? 'plan-card-popular' : '',
               ]"
-              :variant="isPlanSelected(plan.plan_id) ? 'elevated' : 'outlined'"
-              :elevation="isPlanSelected(plan.plan_id) ? 4 : 0"
+              :variant="
+                isCurrentPlan(plan.plan_id)
+                  ? 'elevated'
+                  : isPlanSelected(plan.plan_id)
+                    ? 'elevated'
+                    : 'outlined'
+              "
+              :elevation="
+                isCurrentPlan(plan.plan_id)
+                  ? 4
+                  : isPlanSelected(plan.plan_id)
+                    ? 4
+                    : 0
+              "
               @click="selectPlan(plan.plan_id)"
               style="cursor: pointer"
             >
@@ -323,11 +356,24 @@ onMounted(() => {
 
                 <VBtn
                   block
-                  :color="isPlanSelected(plan.plan_id) ? 'primary' : 'default'"
-                  :variant="isPlanSelected(plan.plan_id) ? 'flat' : 'outlined'"
+                  :color="
+                    isCurrentPlan(plan.plan_id)
+                      ? 'success'
+                      : isPlanSelected(plan.plan_id)
+                        ? 'primary'
+                        : 'default'
+                  "
+                  :variant="
+                    isCurrentPlan(plan.plan_id)
+                      ? 'flat'
+                      : isPlanSelected(plan.plan_id)
+                        ? 'flat'
+                        : 'outlined'
+                  "
+                  :disabled="isCurrentPlan(plan.plan_id)"
                   @click.stop="selectPlan(plan.plan_id)"
                 >
-                  {{ $t('select_plan') }}
+                  {{ getButtonText(plan.plan_id) }}
                 </VBtn>
               </VCardText>
             </VCard>
@@ -382,6 +428,11 @@ onMounted(() => {
 
 .plan-card-popular {
   border: 2px solid rgb(var(--v-theme-primary));
+  position: relative;
+}
+
+.plan-card-current {
+  border: 2px solid rgb(var(--v-theme-success));
   position: relative;
 }
 </style>
