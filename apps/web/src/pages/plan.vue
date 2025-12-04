@@ -138,7 +138,7 @@ watch(
 
 <template>
   <div>
-    <VCard :title="$t('plans')" no-padding>
+    <VCard title="Listar Planos" no-padding>
       <VCardText>
         <div class="d-flex justify-space-between flex-wrap gap-4">
           <div class="d-flex gap-4 align-center mt-5">
