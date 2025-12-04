@@ -189,6 +189,17 @@ watch(
         @update:options="handleTableChange"
         :loading-text="$t('loading_text')"
       >
+        <template #item.name="{ item }">
+          <div class="d-flex align-center gap-2">
+            <VIcon
+              v-if="item.icon"
+              :icon="item.icon"
+              size="20"
+            />
+            <span>{{ item.name }}</span>
+          </div>
+        </template>
+
         <template #item.price="{ item }">
           {{
             new Intl.NumberFormat('pt-BR', {
