@@ -270,6 +270,7 @@
   "user_document_view_successfully": "Decrypted document retrieved successfully!",
   "user_address1_view_successfully": "Decrypted address 1 retrieved successfully!",
   "user_address2_view_successfully": "Decrypted address 2 retrieved successfully!",
+  "user_address_view_successfully": "Complete address retrieved successfully!",
   "contact_not_found": "Contact not found!",
   "contact_must_be_validated": "The contact must be validated to open a conversation!",
   "contact_phone_required": "The contact needs to have a phone number to start a conversation!",
@@ -481,5 +482,9 @@
   "chatbot_transfer_message_sector_user_default": "You have been transferred to attendant *{{ user }}* from sector *{{ sector }}*. You will be attended shortly.",
   "good_morning": "Good morning",
   "good_afternoon": "Good afternoon",
-  "good_evening": "Good evening"
+  "good_evening": "Good evening",
+  "invalid_birth_date": "Invalid birth date!",
+  "birth_date_cannot_be_future": "Birth date cannot be in the future!",
+  "user_info_update_success": "User information updated successfully!",
+  "user_address_update_success": "User address updated successfully!"
 }

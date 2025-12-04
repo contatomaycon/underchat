@@ -485,6 +485,12 @@ export class UserService {
     }
   };
 
+  getUserSensitiveDataRaw = async (
+    userId: string
+  ): Promise<IUserSensitiveDataDecrypted | null> => {
+    return this.userSensitiveDataRepository.getUserSensitiveDataById(userId);
+  };
+
   getUserSensitiveDataDecrypted = async (
     userId: string
   ): Promise<IUserSensitiveDataDecrypted | null> => {

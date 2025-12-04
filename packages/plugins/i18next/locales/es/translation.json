@@ -270,6 +270,7 @@
   "user_document_view_successfully": "¡Documento descriptado recuperado con éxito!",
   "user_address1_view_successfully": "¡Dirección 1 descriptada recuperada con éxito!",
   "user_address2_view_successfully": "¡Dirección 2 descriptada recuperada con éxito!",
+  "user_address_view_successfully": "¡Dirección completa recuperada con éxito!",
   "contact_not_found": "¡Contacto no encontrado!",
   "contact_must_be_validated": "¡El contacto debe estar validado para abrir una conversación!",
   "contact_phone_required": "¡El contacto necesita tener un número de teléfono para iniciar una conversación!",
@@ -481,5 +482,9 @@
   "chatbot_transfer_message_sector_user_default": "Has sido transferido al atendente *{{ user }}* del sector *{{ sector }}*. Serás atendido en breve.",
   "good_morning": "Buenos días",
   "good_afternoon": "Buenas tardes",
-  "good_evening": "Buenas noches"
+  "good_evening": "Buenas noches",
+  "invalid_birth_date": "¡Fecha de nacimiento inválida!",
+  "birth_date_cannot_be_future": "¡La fecha de nacimiento no puede ser en el futuro!",
+  "user_info_update_success": "¡Información del usuario actualizada con éxito!",
+  "user_address_update_success": "¡Dirección del usuario actualizada con éxito!"
 }

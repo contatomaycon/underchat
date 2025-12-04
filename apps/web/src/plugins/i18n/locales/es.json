@@ -1399,5 +1399,13 @@
     "product_roles": "Roles",
     "product_user": "Usuario",
     "product_users": "Usuarios",
-    "currency_zero": "€0,00"
+    "currency_zero": "€0,00",
+    "profile_details": "Detalles del Perfil",
+    "upload_new_photo": "Subir Nueva Foto",
+    "reset": "Restablecer",
+    "allowed_jpg_gif_png_max_size_800k": "Formatos permitidos: JPG, GIF, PNG. Tamaño máximo: 16 MB",
+    "user_info_update_error": "Error al actualizar información del usuario",
+    "user_info_update_success": "¡Información del usuario actualizada con éxito!",
+    "user_address_update_error": "Error al actualizar dirección del usuario",
+    "user_address_update_success": "¡Dirección del usuario actualizada con éxito!"
 }

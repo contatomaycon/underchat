@@ -270,6 +270,7 @@
   "user_document_view_successfully": "Documento descriptografado recuperado com sucesso!",
   "user_address1_view_successfully": "Endereço 1 descriptografado recuperado com sucesso!",
   "user_address2_view_successfully": "Endereço 2 descriptografado recuperado com sucesso!",
+  "user_address_view_successfully": "Endereço completo recuperado com sucesso!",
   "contact_not_found": "Contato não encontrado!",
   "contact_must_be_validated": "O contato deve estar validado para abrir uma conversa!",
   "contact_phone_required": "O contato precisa ter um telefone para iniciar uma conversa!",
@@ -481,5 +482,9 @@
   "chatbot_transfer_message_sector_user_default": "Você foi transferido para o atendente *{{ user }}* do setor *{{ sector }}*. Em breve você será atendido.",
   "good_morning": "Bom dia",
   "good_afternoon": "Boa tarde",
-  "good_evening": "Boa noite"
+  "good_evening": "Boa noite",
+  "invalid_birth_date": "Data de nascimento inválida!",
+  "birth_date_cannot_be_future": "A data de nascimento não pode ser no futuro!",
+  "user_info_update_success": "Informações do usuário atualizadas com sucesso!",
+  "user_address_update_success": "Endereço do usuário atualizado com sucesso!"
 }
