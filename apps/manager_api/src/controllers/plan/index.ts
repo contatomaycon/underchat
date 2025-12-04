@@ -11,6 +11,7 @@ import { listPlanProductAll } from './methods/listPlanProductAll';
 import { listPlanSales } from './methods/listPlanSales';
 import { listPlanWithItems } from './methods/listPlanWithItems';
 import { viewCurrentPlan } from './methods/viewCurrentPlan';
+import { viewCurrentPlanInvoice } from './methods/viewCurrentPlanInvoice';
 
 @injectable()
 class PlanController {
@@ -26,6 +27,7 @@ class PlanController {
   public listPlanSales = listPlanSales;
   public listPlanWithItems = listPlanWithItems;
   public viewCurrentPlan = viewCurrentPlan;
+  public viewCurrentPlanInvoice = viewCurrentPlanInvoice;
 }
 
 export default PlanController;

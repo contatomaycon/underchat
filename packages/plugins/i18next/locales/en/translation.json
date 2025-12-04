@@ -309,6 +309,7 @@
   "plan_list_with_items_successfully": "Plans with items listed successfully!",
   "plan_list_with_items_not_found": "No plans with items found!",
   "current_plan_view_successfully": "Current plan viewed successfully!",
+  "current_plan_invoice_view_successfully": "Current plan invoice information retrieved successfully!",
   "invalid_attachment_type": "Invalid attachment type!",
   "attachment_size_exceeded": "Attachment size exceeded!",
   "chat_delete_success": "Message deleted successfully!",

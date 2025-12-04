@@ -114,6 +114,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'invoices': RouteRecordInfo<
+      'invoices',
+      '/invoices',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     'label': RouteRecordInfo<
       'label',
       '/label',
@@ -308,6 +315,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/expenditure.vue': {
       routes:
         | 'expenditure'
+      views:
+        | never
+    }
+    'src/pages/invoices.vue': {
+      routes:
+        | 'invoices'
       views:
         | never
     }

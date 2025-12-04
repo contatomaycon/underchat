@@ -13,6 +13,7 @@ import {
   userCard,
   paymentBillingType,
   paymentStatus,
+  billingPeriod,
 } from '@core/models';
 
 export const accountPayment = pgTable('account_payment', {
@@ -45,6 +46,7 @@ export const accountPayment = pgTable('account_payment', {
     mode: 'string',
     withTimezone: true,
   }),
+  billing_period_id: uuid().references(() => billingPeriod.billing_period_id),
   invoice_url: varchar({ length: 1000 }),
   created_at: timestamp({
     mode: 'string',
@@ -80,5 +82,9 @@ export const accountPaymentRelations = relations(accountPayment, ({ one }) => ({
   aps: one(paymentStatus, {
     fields: [accountPayment.payment_status_id],
     references: [paymentStatus.payment_status_id],
+  }),
+  app: one(billingPeriod, {
+    fields: [accountPayment.billing_period_id],
+    references: [billingPeriod.billing_period_id],
   }),
 }));
