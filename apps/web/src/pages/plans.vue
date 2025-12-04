@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
@@ -108,6 +108,36 @@ const formatItemName = (
   return name;
 };
 
+const getColClasses = computed(() => {
+  const count = plans.value.length;
+
+  if (count === 1) {
+    return { cols: '12', sm: '12', md: '4', offset: '4' };
+  }
+
+  if (count === 2) {
+    return { cols: '12', sm: '6', md: '6', offset: '' };
+  }
+
+  if (count === 3) {
+    return { cols: '12', sm: '6', md: '4', offset: '' };
+  }
+
+  if (count === 4) {
+    return { cols: '12', sm: '6', md: '3', offset: '' };
+  }
+
+  if (count % 2 === 0) {
+    return { cols: '12', sm: '6', md: '6', offset: '' };
+  }
+
+  if (count === 5) {
+    return { cols: '12', sm: '6', md: '4', offset: '' };
+  }
+
+  return { cols: '12', sm: '6', md: '4', offset: '' };
+});
+
 onMounted(() => {
   loadPlans();
 });
@@ -162,13 +192,14 @@ onMounted(() => {
           </VCol>
         </VRow>
 
-        <VRow v-else-if="plans.length > 0" class="plans-row">
+        <VRow v-else-if="plans.length > 0" class="plans-row" justify="center">
           <VCol
             v-for="(plan, index) in plans"
             :key="plan.plan_id"
-            cols="12"
-            sm="6"
-            md="3"
+            :cols="getColClasses.cols"
+            :sm="getColClasses.sm"
+            :md="getColClasses.md"
+            :offset-md="getColClasses.offset || undefined"
             class="plan-col"
           >
             <VCard
@@ -327,10 +358,12 @@ onMounted(() => {
 <style lang="scss" scoped>
 .plans-row {
   margin-top: 16px;
+  justify-content: center;
 }
 
 .plan-col {
   margin-bottom: 24px;
+  display: flex;
 }
 
 .plan-card {
