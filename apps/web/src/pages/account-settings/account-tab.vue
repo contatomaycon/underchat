@@ -173,12 +173,10 @@ const documentFormatted = computed({
 });
 
 const togglePhoneVisibility = async () => {
-  if (isPhoneDecrypted.value && !phone.value) {
+  if (isPhoneDecrypted.value) {
+    phone.value = null;
+    phoneHasBeenEdited.value = false;
     isPhoneDecrypted.value = false;
-    return;
-  }
-
-  if (phone.value) {
     return;
   }
 
@@ -193,12 +191,10 @@ const togglePhoneVisibility = async () => {
 };
 
 const toggleDocumentVisibility = async () => {
-  if (isDocumentDecrypted.value && !document.value) {
+  if (isDocumentDecrypted.value) {
+    document.value = null;
+    documentHasBeenEdited.value = false;
     isDocumentDecrypted.value = false;
-    return;
-  }
-
-  if (document.value) {
     return;
   }
 
@@ -207,18 +203,18 @@ const toggleDocumentVisibility = async () => {
   isLoadingDocument.value = false;
 
   if (decryptedDocument) {
+    documentHasBeenEdited.value = true;
+    await nextTick();
     document.value = decryptedDocument.replaceAll(/\D/g, '');
     isDocumentDecrypted.value = true;
   }
 };
 
 const toggleAddress1Visibility = async () => {
-  if (isAddress1Decrypted.value && !address1.value) {
+  if (isAddress1Decrypted.value) {
+    address1.value = null;
+    address1HasBeenEdited.value = false;
     isAddress1Decrypted.value = false;
-    return;
-  }
-
-  if (address1.value) {
     return;
   }
 
@@ -233,12 +229,10 @@ const toggleAddress1Visibility = async () => {
 };
 
 const toggleAddress2Visibility = async () => {
-  if (isAddress2Decrypted.value && !address2.value) {
+  if (isAddress2Decrypted.value) {
+    address2.value = null;
+    address2HasBeenEdited.value = false;
     isAddress2Decrypted.value = false;
-    return;
-  }
-
-  if (address2.value) {
     return;
   }
 
@@ -933,6 +927,19 @@ const saveAddress = async () => {
   await accountSettingsStore.updateAddress(body);
 };
 
+const formatBirthDate = (
+  dateString: string | null | undefined
+): string | null => {
+  if (!dateString) return null;
+
+  const dateMatch = dateString.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (dateMatch) {
+    return dateMatch[1];
+  }
+
+  return dateString;
+};
+
 const loadUserData = async () => {
   if (chatStore.user?.info) {
     phonePartial.value = chatStore.user.info.phone_partial ?? null;
@@ -941,7 +948,7 @@ const loadUserData = async () => {
     phoneHasBeenEdited.value = false;
     name.value = chatStore.user.info.name ?? null;
     last_name.value = chatStore.user.info.last_name ?? null;
-    birth_date.value = chatStore.user.info.birth_date ?? null;
+    birth_date.value = formatBirthDate(chatStore.user.info.birth_date);
     photoPreview.value = chatStore.user.info.photo ?? null;
   }
 
@@ -1156,7 +1163,7 @@ watch(zip_code, () => {
               >
                 <template #append-inner>
                   <VIcon
-                    v-if="phonePartial && !phone"
+                    v-if="phonePartial"
                     :icon="isPhoneDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
                     class="cursor-pointer"
                     :class="{ 'opacity-50': isLoadingPhone }"
@@ -1214,7 +1221,7 @@ watch(zip_code, () => {
               >
                 <template #append-inner>
                   <VIcon
-                    v-if="documentPartial && !document"
+                    v-if="documentPartial"
                     :icon="
                       isDocumentDecrypted ? 'tabler-eye-off' : 'tabler-eye'
                     "
@@ -1239,7 +1246,7 @@ watch(zip_code, () => {
               >
                 <template #append-inner>
                   <VIcon
-                    v-if="documentPartial && !document"
+                    v-if="documentPartial"
                     :icon="
                       isDocumentDecrypted ? 'tabler-eye-off' : 'tabler-eye'
                     "
@@ -1438,7 +1445,7 @@ watch(zip_code, () => {
               >
                 <template #append-inner>
                   <VIcon
-                    v-if="address1Partial && !address1"
+                    v-if="address1Partial"
                     :icon="
                       isAddress1Decrypted ? 'tabler-eye-off' : 'tabler-eye'
                     "
@@ -1458,7 +1465,7 @@ watch(zip_code, () => {
               >
                 <template #append-inner>
                   <VIcon
-                    v-if="address2Partial && !address2"
+                    v-if="address2Partial"
                     :icon="
                       isAddress2Decrypted ? 'tabler-eye-off' : 'tabler-eye'
                     "
