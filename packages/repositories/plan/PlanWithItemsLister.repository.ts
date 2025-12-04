@@ -7,7 +7,7 @@ import {
 } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { eq, isNull, and } from 'drizzle-orm';
+import { eq, isNull, asc } from 'drizzle-orm';
 import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/response.schema';
 import { ListPlanItemResponse } from '@core/schema/plan/listPlanItems/response.schema';
 
@@ -45,6 +45,7 @@ export class PlanWithItemsListerRepository {
       })
       .from(plan)
       .where(isNull(plan.deleted_at))
+      .orderBy(asc(plan.price))
       .execute();
   };
 

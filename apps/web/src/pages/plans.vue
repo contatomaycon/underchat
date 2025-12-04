@@ -24,7 +24,7 @@ useSnackbarCleanup(planStore);
 
 const plans = ref<ListPlanWithItemsResponse[]>([]);
 const loading = ref(false);
-const billingPeriod = ref<'monthly' | 'annual'>('annual');
+const billingPeriod = ref<'monthly' | 'annual'>('monthly');
 const selectedPlanId = ref<string | null>(null);
 
 const formatCurrency = (value: number | null | undefined): string => {
@@ -35,13 +35,24 @@ const formatCurrency = (value: number | null | undefined): string => {
   }).format(value);
 };
 
-const getAnnualPrice = (monthlyPrice: number): number => {
-  return monthlyPrice * 12;
+const getAnnualPriceWithoutDiscount = (
+  plan: ListPlanWithItemsResponse
+): number => {
+  return plan.price * 12;
+};
+
+const getAnnualPrice = (plan: ListPlanWithItemsResponse): number => {
+  const annualPrice = getAnnualPriceWithoutDiscount(plan);
+  if (plan.annual_discount) {
+    const discount = Number.parseFloat(plan.annual_discount);
+    return annualPrice * (1 - discount / 100);
+  }
+  return annualPrice;
 };
 
 const getPrice = (plan: ListPlanWithItemsResponse): number => {
   if (billingPeriod.value === 'annual') {
-    return getAnnualPrice(plan.price);
+    return getAnnualPrice(plan);
   }
   return plan.price;
 };
@@ -106,14 +117,12 @@ onMounted(() => {
             >
               {{ $t('annual') }}
             </span>
-            <VChip
+            <span
               v-if="billingPeriod === 'annual'"
-              color="primary"
-              size="small"
-              class="ms-2"
+              class="text-body-2 text-medium-emphasis ms-2"
             >
-              {{ $t('save_up_to') }} 10%
-            </VChip>
+              {{ $t('save_with_annual_plans') }}
+            </span>
           </div>
         </div>
 
@@ -152,26 +161,28 @@ onMounted(() => {
                     variant="tonal"
                     class="mb-4"
                   >
-                    <VIcon
-                      :icon="
-                        index === 0
-                          ? 'tabler-piggy-bank'
-                          : index === 1
-                            ? 'tabler-safe'
-                            : 'tabler-rocket'
-                      "
-                      size="40"
-                    />
+                    <VIcon :icon="plan.icon || 'tabler-rocket'" size="40" />
                   </VAvatar>
                   <h3 class="text-h5 mb-2">{{ plan.name }}</h3>
-                  <p class="text-body-2 text-medium-emphasis mb-4">
-                    {{
-                      index === 0
-                        ? $t('simple_start_for_everyone')
-                        : index === 1
-                          ? $t('for_small_to_medium_businesses')
-                          : $t('solution_for_big_organizations')
-                    }}
+                  <VChip
+                    v-if="
+                      billingPeriod === 'annual' &&
+                      plan.annual_discount &&
+                      Number.parseFloat(plan.annual_discount) > 0
+                    "
+                    color="primary"
+                    size="small"
+                    variant="tonal"
+                    class="mb-2"
+                  >
+                    {{ $t('save_up_to') }}
+                    {{ Number.parseFloat(plan.annual_discount) }}%
+                  </VChip>
+                  <p
+                    v-if="plan.description"
+                    class="text-body-2 text-medium-emphasis mb-4"
+                  >
+                    {{ plan.description }}
                   </p>
                 </div>
 
@@ -181,25 +192,35 @@ onMounted(() => {
                       {{ formatCurrency(getPrice(plan)) }}
                     </span>
                     <span class="text-body-2 text-medium-emphasis">
-                      /{{ $t('month') }}
+                      /{{
+                        billingPeriod === 'annual' ? $t('year') : $t('month')
+                      }}
                     </span>
                   </div>
                   <div
-                    v-if="billingPeriod === 'annual'"
+                    v-if="
+                      billingPeriod === 'annual' &&
+                      plan.annual_discount &&
+                      Number.parseFloat(plan.annual_discount) > 0
+                    "
                     class="text-body-2 text-medium-emphasis"
                   >
-                    {{ formatCurrency(getAnnualPrice(plan.price)) }}/{{
-                      $t('year')
-                    }}
+                    <s>
+                      {{
+                        formatCurrency(getAnnualPriceWithoutDiscount(plan))
+                      }}/{{ $t('year') }}
+                    </s>
                   </div>
                   <div
-                    v-else-if="plan.price === 0"
+                    v-if="billingPeriod === 'monthly' && plan.price === 0"
                     class="text-body-2 text-medium-emphasis"
                   >
                     {{ $t('free') }}
                   </div>
                   <div
-                    v-else-if="plan.price_old > plan.price"
+                    v-if="
+                      billingPeriod === 'monthly' && plan.price_old > plan.price
+                    "
                     class="text-body-2"
                   >
                     <s class="text-medium-emphasis">
