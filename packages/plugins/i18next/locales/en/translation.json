@@ -372,6 +372,8 @@
   "profile_photo_upload_error": "Error uploading profile photo!",
   "profile_photo_remove_success": "Profile photo removed successfully!",
   "profile_photo_remove_error": "Error removing profile photo!",
+  "profile_photo_delete_success": "Profile photo deleted successfully!",
+  "profile_photo_delete_error": "Error deleting profile photo!",
   "profile_info_not_found": "Profile information not found!",
   "profile_info_view_success": "Profile information viewed successfully!",
   "profile_info_upload_success": "Profile information saved successfully!",

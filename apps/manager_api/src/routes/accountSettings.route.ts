@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import AccountSettingsController from '@/controllers/accountSettings';
 import { updatePhotoSchema } from '@core/schema/accountSettings/updatePhoto';
+import { deletePhotoSchema } from '@core/schema/accountSettings/deletePhoto';
 import { updateAdditionalInfoSchema } from '@core/schema/accountSettings/updateAdditionalInfo';
 import { updateAddressSchema } from '@core/schema/accountSettings/updateAddress';
 import { viewPhoneSchema } from '@core/schema/accountSettings/viewPhone';
@@ -19,6 +20,12 @@ export default async function accountSettingsRoutes(server: FastifyInstance) {
   server.patch('/account-settings/photo', {
     schema: updatePhotoSchema,
     handler: accountSettingsController.updatePhoto,
+    preHandler: [(request, reply) => server.authenticateJwt(request, reply)],
+  });
+
+  server.delete('/account-settings/photo', {
+    schema: deletePhotoSchema,
+    handler: accountSettingsController.deletePhoto,
     preHandler: [(request, reply) => server.authenticateJwt(request, reply)],
   });
 

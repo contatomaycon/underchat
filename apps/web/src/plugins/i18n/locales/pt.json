@@ -190,6 +190,8 @@
     "profile_photo_upload_error": "Erro ao fazer upload da foto do perfil.",
     "profile_photo_remove_success": "Foto do perfil removida com sucesso!",
     "profile_photo_remove_error": "Erro ao remover a foto do perfil.",
+    "profile_photo_delete_success": "Foto do perfil removida com sucesso!",
+    "profile_photo_delete_error": "Erro ao remover a foto do perfil.",
     "wait_image_load": "Aguarde a imagem carregar completamente",
     "crop_image": "Cortar Imagem",
     "apply_crop": "Aplicar Corte",

@@ -6,6 +6,7 @@ import { ISnackbar } from '@core/common/interfaces/ISnackbar';
 import axios from '@webcore/axios';
 import { AxiosRequestConfig, AxiosError } from 'axios';
 import { UpdatePhotoResponse } from '@core/schema/accountSettings/updatePhoto/response.schema';
+import { DeletePhotoResponse } from '@core/schema/accountSettings/deletePhoto/response.schema';
 import { UpdateAdditionalInfoResponse } from '@core/schema/accountSettings/updateAdditionalInfo/response.schema';
 import { UpdateAdditionalInfoRequest } from '@core/schema/accountSettings/updateAdditionalInfo/request.schema';
 import { UpdateAddressResponse } from '@core/schema/accountSettings/updateAddress/response.schema';
@@ -77,6 +78,45 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
       } catch (error) {
         this.loading = false;
         let errorMessage = this.i18n.global.t('profile_photo_upload_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+    async deletePhoto(): Promise<DeletePhotoResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.delete<IApiResponse<DeletePhotoResponse>>(
+          '/account-settings/photo'
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('profile_photo_delete_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          data.message ?? this.i18n.global.t('profile_photo_delete_success'),
+          EColor.success
+        );
+
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t('profile_photo_delete_error');
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }

@@ -1,5 +1,6 @@
 import { injectable } from 'tsyringe';
 import { updatePhoto } from './methods/updatePhoto';
+import { deletePhoto } from './methods/deletePhoto';
 import { updateAdditionalInfo } from './methods/updateAdditionalInfo';
 import { updateAddress } from './methods/updateAddress';
 import { viewPhone } from './methods/viewPhone';
@@ -12,6 +13,7 @@ import { viewAdditionalInfo } from './methods/viewAdditionalInfo';
 @injectable()
 class AccountSettingsController {
   public updatePhoto = updatePhoto;
+  public deletePhoto = deletePhoto;
   public updateAdditionalInfo = updateAdditionalInfo;
   public updateAddress = updateAddress;
   public viewPhone = viewPhone;

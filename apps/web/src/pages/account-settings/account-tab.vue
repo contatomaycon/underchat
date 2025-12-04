@@ -385,7 +385,9 @@ const refFormAdditionalInfo = ref<VForm>();
 const shouldUseDocMask = computed(
   () =>
     (isCPF.value || isCNPJ.value) &&
-    (documentHasBeenEdited.value || isDocumentDecrypted.value || !!document.value)
+    (documentHasBeenEdited.value ||
+      isDocumentDecrypted.value ||
+      !!document.value)
 );
 
 const country_id = ref<number | null>(null);
@@ -771,6 +773,18 @@ const resetPhoto = () => {
   cropDialog.value.croppedImage = '';
 };
 
+const deletePhoto = async () => {
+  const result = await accountSettingsStore.deletePhoto();
+
+  if (result && chatStore.user?.info) {
+    chatStore.user.info.photo = result.photo;
+    setUser(chatStore.user);
+    photoPreview.value = null;
+    photoFile.value = null;
+    cropDialog.value.croppedImage = '';
+  }
+};
+
 const saveAdditionalInfo = async () => {
   const validateForm = await refFormAdditionalInfo.value?.validate();
   if (!validateForm?.valid) return;
@@ -1047,14 +1061,22 @@ const loadUserData = async () => {
   if (addressData) {
     country_id.value = addressData.country_id ?? ECountry.Brasil;
     zip_code.value = addressData.zip_code ?? null;
-    
-    if (!address1Partial.value || address1HasBeenEdited.value || isAddress1Decrypted.value) {
+
+    if (
+      !address1Partial.value ||
+      address1HasBeenEdited.value ||
+      isAddress1Decrypted.value
+    ) {
       address1.value = addressData.address1 ?? null;
     }
-    if (!address2Partial.value || address2HasBeenEdited.value || isAddress2Decrypted.value) {
+    if (
+      !address2Partial.value ||
+      address2HasBeenEdited.value ||
+      isAddress2Decrypted.value
+    ) {
       address2.value = addressData.address2 ?? null;
     }
-    
+
     district.value = addressData.district ?? null;
     state.value = addressData.state ?? null;
     city.value = addressData.city ?? null;
@@ -1069,7 +1091,7 @@ const loadUserData = async () => {
       await loadCities(state_id.value);
     }
   }
-  
+
   isInitializing.value = false;
 };
 
@@ -1080,7 +1102,7 @@ onMounted(async () => {
 let timer: number | null = null;
 watch(zip_code, () => {
   if (isInitializing.value) return;
-  
+
   if (!country_id.value || !zip_code.value || zip_code.value.length < 8) return;
 
   if (timer) (globalThis as Window & typeof globalThis).clearTimeout(timer);
@@ -1140,12 +1162,13 @@ watch(zip_code, () => {
               </VBtn>
               <VBtn
                 v-if="chatStore.user?.info.photo || photoPreview"
-                color="grey"
+                color="error"
                 variant="outlined"
                 size="default"
-                @click="resetPhoto"
+                @click="deletePhoto"
+                :loading="accountSettingsStore.loading"
               >
-                {{ $t('reset') }}
+                {{ $t('delete') }}
               </VBtn>
             </div>
 
