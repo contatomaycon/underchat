@@ -30,6 +30,10 @@ export const canNavigate = (to: RouteLocationNormalized): boolean => {
   const ability = useAbility();
 
   const hasPermission = (perms?: EPermissionsRoles[]): boolean => {
+    if (perms === undefined) {
+      return true;
+    }
+
     if (!perms?.length) {
       return false;
     }

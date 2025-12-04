@@ -11,6 +11,7 @@ export const viewCurrentPlanInvoiceResponseSchema = Type.Object({
   next_payment_date: Type.Union([Type.String(), Type.Null()]),
   last_payment_date: Type.Union([Type.String(), Type.Null()]),
   recurring_payment: Type.Union([Type.Boolean(), Type.Null()]),
+  cancellation_date: Type.Union([Type.String(), Type.Null()]),
   billing_period: Type.Union([Type.String(), Type.Null()]),
 });
 

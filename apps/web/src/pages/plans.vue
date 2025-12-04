@@ -29,7 +29,6 @@ const loading = ref(false);
 const billingPeriod = ref<'monthly' | 'annual'>('monthly');
 const selectedPlanId = ref<string | null>(null);
 const currentPlanId = ref<string | null>(null);
-const TEST_PLAN_ID = '019a930d-c6f4-75ad-88ff-9a1b2c3d4e5f';
 
 const getCurrencyConfig = () => {
   const localeMap: Record<string, { locale: string; currency: string }> = {
@@ -81,7 +80,7 @@ const loadPlans = async () => {
 
   if (result) {
     plans.value = result;
-    currentPlanId.value = currentPlan || TEST_PLAN_ID;
+    currentPlanId.value = currentPlan;
 
     if (result.length > 1) {
       selectedPlanId.value = result[1].plan_id;

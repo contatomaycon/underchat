@@ -22,6 +22,10 @@ export const planAccount = pgTable('plan_account', {
     mode: 'string',
     withTimezone: true,
   }),
+  cancellation_date: timestamp({
+    mode: 'string',
+    withTimezone: true,
+  }),
   created_at: timestamp({
     mode: 'string',
     withTimezone: true,

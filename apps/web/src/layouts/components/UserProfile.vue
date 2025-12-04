@@ -18,7 +18,7 @@ const { t } = useI18n();
 const { global } = useTheme();
 const ability = useAbility();
 
-const canAccessInvoices = computed(() => {
+const canAccessPlanInvoice = computed(() => {
   const permissions = [
     EGeneralPermissions.full_access,
     EGeneralPermissions.full_access_group,
@@ -29,8 +29,8 @@ const canAccessInvoices = computed(() => {
   return permissions.some((perm) => ability.can(perm, perm));
 });
 
-const navigateToInvoices = () => {
-  router.push({ name: 'invoices' });
+const navigateToAccountSettings = (tab: string) => {
+  router.push({ name: 'account-settings', query: { tab } });
 };
 
 const isPhotoModalOpen = ref(false);
@@ -699,10 +699,42 @@ onMounted(() => {
             <VListItemTitle>{{ $t('change_photo') }}</VListItemTitle>
           </VListItem>
 
-          <!-- 👉 Invoices -->
-          <VListItem v-if="canAccessInvoices" @click="navigateToInvoices" link>
+          <!-- 👉 Account Settings -->
+          <VListItem @click="navigateToAccountSettings('account')" link>
             <template #prepend>
-              <VIcon class="me-2" icon="tabler-file-invoice" size="22" />
+              <VIcon class="me-2" icon="tabler-user" size="22" />
+            </template>
+
+            <VListItemTitle>{{ $t('account') }}</VListItemTitle>
+          </VListItem>
+
+          <VListItem @click="navigateToAccountSettings('security')" link>
+            <template #prepend>
+              <VIcon class="me-2" icon="tabler-lock" size="22" />
+            </template>
+
+            <VListItemTitle>{{ $t('security') }}</VListItemTitle>
+          </VListItem>
+
+          <VListItem
+            v-if="canAccessPlanInvoice"
+            @click="navigateToAccountSettings('plans')"
+            link
+          >
+            <template #prepend>
+              <VIcon class="me-2" icon="tabler-package" size="22" />
+            </template>
+
+            <VListItemTitle>{{ $t('plans') }}</VListItemTitle>
+          </VListItem>
+
+          <VListItem
+            v-if="canAccessPlanInvoice"
+            @click="navigateToAccountSettings('invoices')"
+            link
+          >
+            <template #prepend>
+              <VIcon class="me-2" icon="tabler-receipt-2" size="22" />
             </template>
 
             <VListItemTitle>{{ $t('invoices') }}</VListItemTitle>
