@@ -22,23 +22,6 @@ CREATE TABLE "plan_account_status" (
   "updated_at" timestamptz NULL DEFAULT now(),
   PRIMARY KEY ("plan_account_status_id")
 );
--- Create "plan_account" table
-CREATE TABLE "plan_account" (
-  "plan_account_id" uuid NOT NULL,
-  "account_id" uuid NOT NULL,
-  "plan_id" uuid NOT NULL,
-  "plan_account_status_id" uuid NOT NULL,
-  "recurring_payment" boolean NOT NULL DEFAULT false,
-  "last_payment_date" timestamptz NULL,
-  "next_payment_date" timestamptz NULL,
-  "cancellation_date" timestamptz NULL,
-  "created_at" timestamptz NULL DEFAULT now(),
-  "updated_at" timestamptz NULL DEFAULT now(),
-  PRIMARY KEY ("plan_account_id"),
-  CONSTRAINT "plan_account_account_id_account_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "account" ("account_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
-  CONSTRAINT "plan_account_plan_account_status_id_plan_account_status_plan_ac" FOREIGN KEY ("plan_account_status_id") REFERENCES "plan_account_status" ("plan_account_status_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
-  CONSTRAINT "plan_account_plan_id_plan_plan_id_fk" FOREIGN KEY ("plan_id") REFERENCES "plan" ("plan_id") ON UPDATE NO ACTION ON DELETE NO ACTION
-);
 -- Create "user_card" table
 CREATE TABLE "user_card" (
   "user_card_id" uuid NOT NULL,
@@ -63,7 +46,6 @@ CREATE TABLE "user_customer" (
   PRIMARY KEY ("user_customer_id"),
   CONSTRAINT "user_customer_user_id_user_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "user" ("user_id") ON UPDATE NO ACTION ON DELETE NO ACTION
 );
-
 -- Create "billing_period" table
 CREATE TABLE "billing_period" (
   "billing_period_id" uuid NOT NULL,
@@ -72,7 +54,25 @@ CREATE TABLE "billing_period" (
   "updated_at" timestamptz NULL DEFAULT now(),
   PRIMARY KEY ("billing_period_id")
 );
-
+-- Create "plan_account" table
+CREATE TABLE "plan_account" (
+  "plan_account_id" uuid NOT NULL,
+  "account_id" uuid NOT NULL,
+  "plan_id" uuid NOT NULL,
+  "plan_account_status_id" uuid NOT NULL,
+  "recurring_payment" boolean NOT NULL DEFAULT false,
+  "billing_period_id" uuid NULL,
+  "last_payment_date" timestamptz NULL,
+  "next_payment_date" timestamptz NULL,
+  "cancellation_date" timestamptz NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  PRIMARY KEY ("plan_account_id"),
+  CONSTRAINT "plan_account_account_id_account_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "account" ("account_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "plan_account_plan_account_status_id_plan_account_status_plan_ac" FOREIGN KEY ("plan_account_status_id") REFERENCES "plan_account_status" ("plan_account_status_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "plan_account_plan_id_plan_plan_id_fk" FOREIGN KEY ("plan_id") REFERENCES "plan" ("plan_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "plan_account_billing_period_id_billing_period_billing_period_id_fk" FOREIGN KEY ("billing_period_id") REFERENCES "billing_period" ("billing_period_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+);
 -- Create "account_payment" table
 CREATE TABLE "account_payment" (
   "account_payment_id" uuid NOT NULL,

@@ -1,8 +1,8 @@
 import * as schema from '@core/models';
-import { account, accountPayment, billingPeriod } from '@core/models';
+import { account } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull, desc } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { ViewCurrentPlanInvoiceResponse } from '@core/schema/plan/viewCurrentPlanInvoice/response.schema';
 import { calculateBillingPeriodByDates } from '@core/common/functions/calculateBillingPeriodByDates';
 
@@ -22,8 +22,8 @@ export class PlanCurrentInvoiceViewerRepository {
       return this.buildEmptyResponse();
     }
 
-    const billingPeriodValue = await this.getBillingPeriod(
-      activePlanAccount.plan_account_id,
+    const billingPeriodValue = this.getBillingPeriod(
+      activePlanAccount.bpl?.name,
       activePlanAccount.last_payment_date,
       activePlanAccount.next_payment_date
     );
@@ -68,6 +68,12 @@ export class PlanCurrentInvoiceViewerRepository {
                 icon: true,
               },
             },
+            bpl: {
+              columns: {
+                billing_period_id: true,
+                name: true,
+              },
+            },
           },
         },
       },
@@ -81,43 +87,16 @@ export class PlanCurrentInvoiceViewerRepository {
     return accountResult?.apc?.find((pa: any) => pa.pas?.name === 'active');
   };
 
-  private getBillingPeriod = async (
-    planAccountId: string,
+  private getBillingPeriod = (
+    billingPeriodName: string | null | undefined,
     lastPaymentDate: string | null,
     nextPaymentDate: string | null
-  ): Promise<string | null> => {
-    const billingPeriodFromPayment =
-      await this.getBillingPeriodFromLastPayment(planAccountId);
-
-    if (billingPeriodFromPayment) {
-      return billingPeriodFromPayment;
+  ): string | null => {
+    if (billingPeriodName) {
+      return billingPeriodName;
     }
 
     return calculateBillingPeriodByDates(lastPaymentDate, nextPaymentDate);
-  };
-
-  private getBillingPeriodFromLastPayment = async (
-    planAccountId: string
-  ): Promise<string | null> => {
-    const lastPayment = await this.db
-      .select({
-        billing_period_name: billingPeriod.name,
-      })
-      .from(accountPayment)
-      .leftJoin(
-        billingPeriod,
-        eq(accountPayment.billing_period_id, billingPeriod.billing_period_id)
-      )
-      .where(eq(accountPayment.plan_account_id, planAccountId))
-      .orderBy(
-        desc(accountPayment.payment_date),
-        desc(accountPayment.created_at)
-      )
-      .limit(1)
-      .execute()
-      .then((results) => results[0] || null);
-
-    return lastPayment?.billing_period_name ?? null;
   };
 
   private buildPlanInvoiceResponse = (

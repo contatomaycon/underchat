@@ -1,6 +1,6 @@
 import { pgTable, uuid, timestamp, boolean } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import { account, plan, planAccountStatus } from '@core/models';
+import { account, billingPeriod, plan, planAccountStatus } from '@core/models';
 
 export const planAccount = pgTable('plan_account', {
   plan_account_id: uuid().primaryKey().notNull(),
@@ -13,6 +13,7 @@ export const planAccount = pgTable('plan_account', {
   plan_account_status_id: uuid()
     .references(() => planAccountStatus.plan_account_status_id)
     .notNull(),
+  billing_period_id: uuid().references(() => billingPeriod.billing_period_id),
   recurring_payment: boolean().notNull().default(false),
   last_payment_date: timestamp({
     mode: 'string',
@@ -48,5 +49,9 @@ export const planAccountRelations = relations(planAccount, ({ one }) => ({
   pas: one(planAccountStatus, {
     fields: [planAccount.plan_account_status_id],
     references: [planAccountStatus.plan_account_status_id],
+  }),
+  bpl: one(billingPeriod, {
+    fields: [planAccount.billing_period_id],
+    references: [billingPeriod.billing_period_id],
   }),
 }));
