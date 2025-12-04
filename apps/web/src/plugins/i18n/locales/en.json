@@ -1358,5 +1358,12 @@
     "no_plans_available": "No plans available",
     "listar": "List",
     "planos": "Plans",
-    "plans_pricing": "Plans"
+    "plans_pricing": "Plans",
+    "product_channel": "Channel",
+    "product_channels": "Channels",
+    "product_role": "Role",
+    "product_roles": "Roles",
+    "product_user": "User",
+    "product_users": "Users",
+    "currency_zero": "$0.00"
 }

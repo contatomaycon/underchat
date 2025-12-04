@@ -1358,5 +1358,12 @@
     "no_plans_available": "No hay planes disponibles",
     "listar": "Listar",
     "planos": "Planes",
-    "plans_pricing": "Planes"
+    "plans_pricing": "Planes",
+    "product_channel": "Canal",
+    "product_channels": "Canales",
+    "product_role": "Rol",
+    "product_roles": "Roles",
+    "product_user": "Usuario",
+    "product_users": "Usuarios",
+    "currency_zero": "€0,00"
 }

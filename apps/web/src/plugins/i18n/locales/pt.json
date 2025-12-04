@@ -1369,5 +1369,12 @@
     "no_plans_available": "Nenhum plano disponível",
     "listar": "Listar",
     "planos": "Planos",
-    "plans_pricing": "Planos"
+    "plans_pricing": "Planos",
+    "product_channel": "Canal",
+    "product_channels": "Canais",
+    "product_role": "Cargo",
+    "product_roles": "Cargos",
+    "product_user": "Usuário",
+    "product_users": "Usuários",
+    "currency_zero": "R$ 0,00"
 }

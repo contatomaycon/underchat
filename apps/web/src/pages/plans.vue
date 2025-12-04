@@ -18,7 +18,7 @@ definePage({
   },
 });
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const planStore = usePlanStore();
 useSnackbarCleanup(planStore);
 
@@ -27,11 +27,22 @@ const loading = ref(false);
 const billingPeriod = ref<'monthly' | 'annual'>('monthly');
 const selectedPlanId = ref<string | null>(null);
 
+const getCurrencyConfig = () => {
+  const localeMap: Record<string, { locale: string; currency: string }> = {
+    pt: { locale: 'pt-BR', currency: 'BRL' },
+    en: { locale: 'en-US', currency: 'USD' },
+    es: { locale: 'es-ES', currency: 'EUR' },
+  };
+
+  return localeMap[locale.value] || localeMap.pt;
+};
+
 const formatCurrency = (value: number | null | undefined): string => {
-  if (!value) return 'R$ 0,00';
-  return new Intl.NumberFormat('pt-BR', {
+  if (!value) return t('currency_zero');
+  const config = getCurrencyConfig();
+  return new Intl.NumberFormat(config.locale, {
     style: 'currency',
-    currency: 'BRL',
+    currency: config.currency,
   }).format(value);
 };
 
@@ -76,6 +87,25 @@ const selectPlan = (planId: string) => {
 
 const isPlanSelected = (planId: string): boolean => {
   return selectedPlanId.value === planId;
+};
+
+const formatItemName = (
+  name: string | null | undefined,
+  quantity: number
+): string => {
+  if (!name) return '';
+
+  const pluralToSingular: Record<string, string> = {
+    [t('product_channels')]: t('product_channel'),
+    [t('product_roles')]: t('product_role'),
+    [t('product_users')]: t('product_user'),
+  };
+
+  if (quantity === 1) {
+    return pluralToSingular[name] || name;
+  }
+
+  return name;
 };
 
 onMounted(() => {
@@ -243,10 +273,13 @@ onMounted(() => {
                       color="success"
                     />
                     <span class="text-body-2">
-                      <span v-if="item.quantity > 1">
-                        {{ item.quantity }}x
-                      </span>
-                      {{ item.plan_product?.name || $t('plan_item') }}
+                      {{ item.quantity }}x
+                      {{
+                        formatItemName(
+                          item.plan_product?.name,
+                          item.quantity
+                        ) || $t('plan_item')
+                      }}
                     </span>
                   </div>
                   <div
