@@ -146,7 +146,7 @@ const phoneFormatted = computed({
 const documentFormatted = computed({
   get: () => {
     if (document.value) {
-      return document.value;
+      return formatDocumentForDisplay(document.value);
     }
     if (!documentHasBeenEdited.value && documentPartial.value) {
       return documentPartial.value;
@@ -158,7 +158,8 @@ const documentFormatted = computed({
       documentHasBeenEdited.value = true;
     }
     if (isCPF.value || isCNPJ.value) {
-      const digits = value.replaceAll(/\D/g, '');
+      const maxLength = isCPF.value ? 11 : 14;
+      const digits = onlyDigits(value).slice(0, maxLength);
       document.value = digits || null;
     } else {
       document.value = value || null;
@@ -330,6 +331,33 @@ const docPlaceholder = computed(() =>
 );
 
 const onlyDigits = (s: string) => s.replaceAll(/\D+/g, '');
+const formatCpfDigits = (digits: string) => {
+  const clean = digits.slice(0, 11);
+  if (clean.length <= 3) return clean;
+  if (clean.length <= 6) return `${clean.slice(0, 3)}.${clean.slice(3)}`;
+  if (clean.length <= 9) {
+    return `${clean.slice(0, 3)}.${clean.slice(3, 6)}.${clean.slice(6)}`;
+  }
+  return `${clean.slice(0, 3)}.${clean.slice(3, 6)}.${clean.slice(6, 9)}-${clean.slice(9, 11)}`;
+};
+const formatCnpjDigits = (digits: string) => {
+  const clean = digits.slice(0, 14);
+  if (clean.length <= 2) return clean;
+  if (clean.length <= 5) return `${clean.slice(0, 2)}.${clean.slice(2)}`;
+  if (clean.length <= 8) {
+    return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5)}`;
+  }
+  if (clean.length <= 12) {
+    return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8)}`;
+  }
+  return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8, 12)}-${clean.slice(12, 14)}`;
+};
+const formatDocumentForDisplay = (digits: string | null) => {
+  if (!digits) return '';
+  if (isCPF.value) return formatCpfDigits(digits);
+  if (isCNPJ.value) return formatCnpjDigits(digits);
+  return digits;
+};
 
 const cpfRegex = /^\d{11}$/;
 const cnpjRegex = /^\d{14}$/;
@@ -354,6 +382,11 @@ const docRules = computed(() => {
 });
 
 const refFormAdditionalInfo = ref<VForm>();
+const shouldUseDocMask = computed(
+  () =>
+    (isCPF.value || isCNPJ.value) &&
+    (documentHasBeenEdited.value || isDocumentDecrypted.value || !!document.value)
+);
 
 const country_id = ref<number | null>(null);
 const zip_code = ref<string | null>(null);
@@ -1224,38 +1257,12 @@ watch(zip_code, () => {
 
             <VCol v-if="isCPF || isCNPJ || documentPartial" cols="12" md="6">
               <AppTextField
-                v-if="documentHasBeenEdited && (isCPF || isCNPJ)"
-                v-model="document"
-                :label="docLabel + ':'"
-                :placeholder="docPlaceholder"
-                v-maska="docMask"
-                inputmode="numeric"
-                :rules="docRules"
-              >
-                <template #append-inner>
-                  <VIcon
-                    v-if="documentPartial"
-                    :icon="
-                      isDocumentDecrypted ? 'tabler-eye-off' : 'tabler-eye'
-                    "
-                    class="cursor-pointer"
-                    :class="{ 'opacity-50': isLoadingDocument }"
-                    @click.stop="toggleDocumentVisibility"
-                  />
-                </template>
-              </AppTextField>
-              <AppTextField
-                v-else
                 v-model="documentFormatted"
                 :label="docLabel + ':'"
                 :placeholder="docPlaceholder"
                 :inputmode="isCPF || isCNPJ ? 'numeric' : 'text'"
-                :rules="documentHasBeenEdited ? docRules : []"
-                @input="
-                  if (!documentHasBeenEdited) {
-                    documentHasBeenEdited = true;
-                  }
-                "
+                :rules="docRules"
+                v-maska="shouldUseDocMask ? docMask : ''"
               >
                 <template #append-inner>
                   <VIcon
