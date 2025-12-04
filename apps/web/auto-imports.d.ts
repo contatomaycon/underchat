@@ -9,6 +9,7 @@ declare global {
   const $api: typeof import('./src/utils/api').$api
   const COOKIE_MAX_AGE_1_YEAR: typeof import('./src/utils/constants').COOKIE_MAX_AGE_1_YEAR
   const CreateUrl: (typeof import('./src/@webcore/composable/CreateUrl'))['CreateUrl']
+  const EPasswordStrength: typeof import('./src/@webcore/utils/passwordStrength').EPasswordStrength
   const EffectScope: typeof import('vue').EffectScope
   const acceptHMRUpdate: typeof import('pinia').acceptHMRUpdate
   const alphaDashValidator: typeof import('./src/@webcore/utils/validators').alphaDashValidator
@@ -17,6 +18,7 @@ declare global {
   const autoResetRef: typeof import('@vueuse/core').autoResetRef
   const avatarText: typeof import('./src/@webcore/utils/formatters').avatarText
   const betweenValidator: typeof import('./src/@webcore/utils/validators').betweenValidator
+  const calculatePasswordStrength: typeof import('./src/@webcore/utils/passwordStrength').calculatePasswordStrength
   const computed: typeof import('vue').computed
   const computedAsync: typeof import('@vueuse/core').computedAsync
   const computedEager: typeof import('@vueuse/core').computedEager
@@ -60,6 +62,8 @@ declare global {
   const getOfflineColor: typeof import('./src/@webcore/utils/formatters').getOfflineColor
   const getOfflineColorDark: typeof import('./src/@webcore/utils/formatters').getOfflineColorDark
   const getOfflineColorLight: typeof import('./src/@webcore/utils/formatters').getOfflineColorLight
+  const getPasswordStrengthColor: typeof import('./src/@webcore/utils/passwordStrength').getPasswordStrengthColor
+  const getPasswordStrengthLabel: typeof import('./src/@webcore/utils/passwordStrength').getPasswordStrengthLabel
   const h: typeof import('vue').h
   const hexToRgb: typeof import('./src/@webcore/utils/colorConverter').hexToRgb
   const ignorableWatch: typeof import('@vueuse/core').ignorableWatch
@@ -289,6 +293,7 @@ declare global {
   const usePageLeave: typeof import('@vueuse/core').usePageLeave
   const useParallax: typeof import('@vueuse/core').useParallax
   const useParentElement: typeof import('@vueuse/core').useParentElement
+  const usePasswordStrength: typeof import('./src/composables/usePasswordStrength').usePasswordStrength
   const usePerformanceObserver: typeof import('@vueuse/core').usePerformanceObserver
   const usePermission: typeof import('@vueuse/core').usePermission
   const usePointer: typeof import('@vueuse/core').usePointer
@@ -368,6 +373,7 @@ declare global {
   const useWindowScroll: typeof import('@vueuse/core').useWindowScroll
   const useWindowSize: typeof import('@vueuse/core').useWindowSize
   const usecreateUrl: (typeof import('./src/@webcore/composable/usecreateUrl'))['usecreateUrl']
+  const validatePassword: typeof import('./src/@webcore/utils/passwordStrength').validatePassword
   const watch: typeof import('vue').watch
   const watchArray: typeof import('@vueuse/core').watchArray
   const watchAtMost: typeof import('@vueuse/core').watchAtMost
@@ -391,6 +397,9 @@ declare global {
   export type { Component, Slot, Slots, ComponentPublicInstance, ComputedRef, DirectiveBinding, ExtractDefaultPropTypes, ExtractPropTypes, ExtractPublicPropTypes, InjectionKey, PropType, Ref, ShallowRef, MaybeRef, MaybeRefOrGetter, VNode, WritableComputedRef } from 'vue'
   import('vue')
   // @ts-ignore
+  export type { EPasswordStrength, IPasswordStrength } from './src/@webcore/utils/passwordStrength'
+  import('./src/@webcore/utils/passwordStrength')
+  // @ts-ignore
   export type { CookieOptions, CookieRef } from './src/@webcore/composable/useCookie'
   import('./src/@webcore/composable/useCookie')
 }
@@ -402,6 +411,7 @@ declare module 'vue' {
   interface ComponentCustomProperties {
     readonly $api: UnwrapRef<typeof import('./src/utils/api')['$api']>
     readonly COOKIE_MAX_AGE_1_YEAR: UnwrapRef<typeof import('./src/utils/constants')['COOKIE_MAX_AGE_1_YEAR']>
+    readonly EPasswordStrength: UnwrapRef<typeof import('./src/@webcore/utils/passwordStrength')['EPasswordStrength']>
     readonly EffectScope: UnwrapRef<typeof import('vue')['EffectScope']>
     readonly acceptHMRUpdate: UnwrapRef<typeof import('pinia')['acceptHMRUpdate']>
     readonly alphaDashValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['alphaDashValidator']>
@@ -410,6 +420,7 @@ declare module 'vue' {
     readonly autoResetRef: UnwrapRef<typeof import('@vueuse/core')['autoResetRef']>
     readonly avatarText: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['avatarText']>
     readonly betweenValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['betweenValidator']>
+    readonly calculatePasswordStrength: UnwrapRef<typeof import('./src/@webcore/utils/passwordStrength')['calculatePasswordStrength']>
     readonly computed: UnwrapRef<typeof import('vue')['computed']>
     readonly computedAsync: UnwrapRef<typeof import('@vueuse/core')['computedAsync']>
     readonly computedEager: UnwrapRef<typeof import('@vueuse/core')['computedEager']>
@@ -449,6 +460,8 @@ declare module 'vue' {
     readonly getCurrentWatcher: UnwrapRef<typeof import('vue')['getCurrentWatcher']>
     readonly getOfflineColorDark: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['getOfflineColorDark']>
     readonly getOfflineColorLight: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['getOfflineColorLight']>
+    readonly getPasswordStrengthColor: UnwrapRef<typeof import('./src/@webcore/utils/passwordStrength')['getPasswordStrengthColor']>
+    readonly getPasswordStrengthLabel: UnwrapRef<typeof import('./src/@webcore/utils/passwordStrength')['getPasswordStrengthLabel']>
     readonly h: UnwrapRef<typeof import('vue')['h']>
     readonly hexToRgb: UnwrapRef<typeof import('./src/@webcore/utils/colorConverter')['hexToRgb']>
     readonly ignorableWatch: UnwrapRef<typeof import('@vueuse/core')['ignorableWatch']>
@@ -668,6 +681,7 @@ declare module 'vue' {
     readonly usePageLeave: UnwrapRef<typeof import('@vueuse/core')['usePageLeave']>
     readonly useParallax: UnwrapRef<typeof import('@vueuse/core')['useParallax']>
     readonly useParentElement: UnwrapRef<typeof import('@vueuse/core')['useParentElement']>
+    readonly usePasswordStrength: UnwrapRef<typeof import('./src/composables/usePasswordStrength')['usePasswordStrength']>
     readonly usePerformanceObserver: UnwrapRef<typeof import('@vueuse/core')['usePerformanceObserver']>
     readonly usePermission: UnwrapRef<typeof import('@vueuse/core')['usePermission']>
     readonly usePointer: UnwrapRef<typeof import('@vueuse/core')['usePointer']>
@@ -741,6 +755,7 @@ declare module 'vue' {
     readonly useWindowFocus: UnwrapRef<typeof import('@vueuse/core')['useWindowFocus']>
     readonly useWindowScroll: UnwrapRef<typeof import('@vueuse/core')['useWindowScroll']>
     readonly useWindowSize: UnwrapRef<typeof import('@vueuse/core')['useWindowSize']>
+    readonly validatePassword: UnwrapRef<typeof import('./src/@webcore/utils/passwordStrength')['validatePassword']>
     readonly watch: UnwrapRef<typeof import('vue')['watch']>
     readonly watchArray: UnwrapRef<typeof import('@vueuse/core')['watchArray']>
     readonly watchAtMost: UnwrapRef<typeof import('@vueuse/core')['watchAtMost']>

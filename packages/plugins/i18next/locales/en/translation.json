@@ -489,5 +489,11 @@
   "invalid_birth_date": "Invalid birth date!",
   "birth_date_cannot_be_future": "Birth date cannot be in the future!",
   "user_info_update_success": "User information updated successfully!",
-  "user_address_update_success": "User address updated successfully!"
+  "user_address_update_success": "User address updated successfully!",
+  "current_password_invalid": "Invalid current password!",
+  "password_change_success": "Password changed successfully!",
+  "password_change_error": "Error changing password!",
+  "password_minimum_8_characters": "Password must be at least 8 characters long",
+  "password_requires_lowercase": "Password must contain at least one lowercase character",
+  "password_requires_number_symbol_or_whitespace": "Password must contain at least one number, symbol, or whitespace character"
 }

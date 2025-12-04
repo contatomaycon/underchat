@@ -17,6 +17,8 @@ import { ViewAddressResponse } from '@core/schema/accountSettings/viewAddress/re
 import { ViewAddress1Response } from '@core/schema/accountSettings/viewAddress1/response.schema';
 import { ViewAddress2Response } from '@core/schema/accountSettings/viewAddress2/response.schema';
 import { ViewAdditionalInfoResponse } from '@core/schema/accountSettings/viewAdditionalInfo/response.schema';
+import { ChangePasswordResponse } from '@core/schema/accountSettings/changePassword/response.schema';
+import { ChangePasswordRequest } from '@core/schema/accountSettings/changePassword/request.schema';
 
 export const useAccountSettingsStore = defineStore('accountSettings', {
   state: () => ({
@@ -308,6 +310,37 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
 
         return data.data;
       } catch (error) {
+        return null;
+      }
+    },
+    async changePassword(
+      body: ChangePasswordRequest
+    ): Promise<ChangePasswordResponse | null> {
+      try {
+        this.loading = true;
+        const response = await axios.patch<
+          IApiResponse<ChangePasswordResponse>
+        >('/account-settings/password', body);
+        this.loading = false;
+        const data = response?.data;
+        if (!data?.status) {
+          const message =
+            data?.message ?? this.i18n.global.t('password_change_error');
+          this.showSnackbar(message, EColor.error);
+          return null;
+        }
+        this.showSnackbar(
+          data.message ?? this.i18n.global.t('password_change_success'),
+          EColor.success
+        );
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t('password_change_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+        this.showSnackbar(errorMessage, EColor.error);
         return null;
       }
     },

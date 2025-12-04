@@ -489,5 +489,11 @@
   "invalid_birth_date": "Data de nascimento inválida!",
   "birth_date_cannot_be_future": "A data de nascimento não pode ser no futuro!",
   "user_info_update_success": "Informações do usuário atualizadas com sucesso!",
-  "user_address_update_success": "Endereço do usuário atualizado com sucesso!"
+  "user_address_update_success": "Endereço do usuário atualizado com sucesso!",
+  "current_password_invalid": "Senha atual inválida!",
+  "password_change_success": "Senha alterada com sucesso!",
+  "password_change_error": "Erro ao alterar a senha!",
+  "password_minimum_8_characters": "A senha deve ter no mínimo 8 caracteres",
+  "password_requires_lowercase": "A senha deve conter pelo menos um caractere minúsculo",
+  "password_requires_number_symbol_or_whitespace": "A senha deve conter pelo menos um número, símbolo ou caractere de espaço em branco"
 }

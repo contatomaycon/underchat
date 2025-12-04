@@ -489,5 +489,11 @@
   "invalid_birth_date": "¡Fecha de nacimiento inválida!",
   "birth_date_cannot_be_future": "¡La fecha de nacimiento no puede ser en el futuro!",
   "user_info_update_success": "¡Información del usuario actualizada con éxito!",
-  "user_address_update_success": "¡Dirección del usuario actualizada con éxito!"
+  "user_address_update_success": "¡Dirección del usuario actualizada con éxito!",
+  "current_password_invalid": "¡Contraseña actual inválida!",
+  "password_change_success": "¡Contraseña cambiada con éxito!",
+  "password_change_error": "¡Error al cambiar la contraseña!",
+  "password_minimum_8_characters": "La contraseña debe tener al menos 8 caracteres",
+  "password_requires_lowercase": "La contraseña debe contener al menos un carácter en minúscula",
+  "password_requires_number_symbol_or_whitespace": "La contraseña debe contener al menos un número, símbolo o carácter de espacio en blanco"
 }

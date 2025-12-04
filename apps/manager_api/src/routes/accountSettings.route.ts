@@ -11,6 +11,7 @@ import { viewAddressSchema } from '@core/schema/accountSettings/viewAddress';
 import { viewAddress1Schema } from '@core/schema/accountSettings/viewAddress1';
 import { viewAddress2Schema } from '@core/schema/accountSettings/viewAddress2';
 import { viewAdditionalInfoSchema } from '@core/schema/accountSettings/viewAdditionalInfo';
+import { changePasswordSchema } from '@core/schema/accountSettings/changePassword';
 
 export default async function accountSettingsRoutes(server: FastifyInstance) {
   const accountSettingsController = container.resolve(
@@ -74,6 +75,12 @@ export default async function accountSettingsRoutes(server: FastifyInstance) {
   server.get('/account-settings/additional-info', {
     schema: viewAdditionalInfoSchema,
     handler: accountSettingsController.viewAdditionalInfo,
+    preHandler: [(request, reply) => server.authenticateJwt(request, reply)],
+  });
+
+  server.patch('/account-settings/password', {
+    schema: changePasswordSchema,
+    handler: accountSettingsController.changePassword,
     preHandler: [(request, reply) => server.authenticateJwt(request, reply)],
   });
 }

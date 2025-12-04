@@ -13,6 +13,7 @@ import { IUpdateUserAddress } from '@core/common/interfaces/IUpdateUserAddress';
 import { CountryService } from '@core/services/country.service';
 import { AccountService } from '@core/services/account.service';
 import { StorageService } from '@core/services/storage.service';
+import { validatePassword } from '@core/common/utils/passwordValidator';
 
 @injectable()
 export class UserUpdaterUseCase {
@@ -272,9 +273,21 @@ export class UserUpdaterUseCase {
     };
   }
 
-  private buildUpdateUserInput(body: UpdateUserRequest): IUpdateUser {
+  private buildUpdateUserInput(
+    t: TFunction<'translation', undefined>,
+    body: UpdateUserRequest
+  ): IUpdateUser {
     const emailData = this.encryptEmailData(body.email);
     const passwordValue = this.extractStringValue(body.password);
+
+    if (passwordValue) {
+      const passwordValidation = validatePassword(passwordValue);
+      if (!passwordValidation.isValid) {
+        const errorMessages = passwordValidation.errors.map((err) => t(err));
+        throw new Error(errorMessages.join(', '));
+      }
+    }
+
     const passwordEncrypted = passwordValue
       ? this.encryptService.encrypt(passwordValue)
       : null;
@@ -409,7 +422,7 @@ export class UserUpdaterUseCase {
       throw new Error(t('account_not_found'));
     }
 
-    const updateUserInput = this.buildUpdateUserInput(body);
+    const updateUserInput = this.buildUpdateUserInput(t, body);
     const accountIdValue = this.extractStringValue(body.account_id);
     const hasAccountChange =
       accountIdValue && currentAccountId && accountIdValue !== currentAccountId;

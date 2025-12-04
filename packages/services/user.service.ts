@@ -28,6 +28,7 @@ import { UserSensitiveDataRepository } from '@core/repositories/user/UserSensiti
 import { AccountSettingsAdditionalInfoViewerRepository } from '@core/repositories/accountSettings/AccountSettingsAdditionalInfoViewer.repository';
 import { ViewAdditionalInfoResponse } from '@core/schema/accountSettings/viewAdditionalInfo/response.schema';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
+import { UserPasswordViewerRepository } from '@core/repositories/user/UserPasswordViewer.repository';
 import { PermissionAssignmentCreatorRepository } from '@core/repositories/permission/PermissionAssignmentCreator.repository';
 import { PermissionAssignmentExistsRepository } from '@core/repositories/permission/PermissionAssignmentExists.repository';
 import { PermissionAssignmentViewerRepository } from '@core/repositories/permission/PermissionAssignmentViewer.repository';
@@ -84,7 +85,8 @@ export class UserService {
     private readonly userTransferListerRepository: UserTransferListerRepository,
     private readonly storageService: StorageService,
     private readonly elasticDatabaseService: ElasticDatabaseService,
-    private readonly accountSettingsAdditionalInfoViewerRepository: AccountSettingsAdditionalInfoViewerRepository
+    private readonly accountSettingsAdditionalInfoViewerRepository: AccountSettingsAdditionalInfoViewerRepository,
+    private readonly userPasswordViewerRepository: UserPasswordViewerRepository
   ) {}
 
   listUsers = async (
@@ -696,5 +698,41 @@ export class UserService {
     return this.accountSettingsAdditionalInfoViewerRepository.viewAdditionalInfoByUserId(
       userId
     );
+  };
+
+  verifyUserPassword = async (
+    userId: string,
+    accountId: string,
+    currentPassword: string
+  ): Promise<boolean> => {
+    const encryptedPassword =
+      await this.userPasswordViewerRepository.viewUserPasswordById(
+        userId,
+        accountId
+      );
+
+    if (!encryptedPassword) {
+      return false;
+    }
+
+    const currentPasswordEncrypted =
+      this.encryptService.encrypt(currentPassword);
+
+    return encryptedPassword === currentPasswordEncrypted;
+  };
+
+  updateUserPassword = async (
+    t: TFunction<'translation', undefined>,
+    userId: string,
+    accountId: string,
+    newPassword: string
+  ): Promise<boolean> => {
+    const newPasswordEncrypted = this.encryptService.encrypt(newPassword);
+
+    const input: IUpdateUser = {
+      password: newPasswordEncrypted,
+    };
+
+    return this.userUpdaterRepository.updateUserById(userId, input, accountId);
   };
 }
