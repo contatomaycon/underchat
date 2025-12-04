@@ -1547,8 +1547,6 @@ watch(zip_code, () => {
               :src="cropDialog.imageSrc"
               alt="Crop"
               class="crop-image"
-              @mousedown.stop="startCropDrag"
-              @touchstart.stop="startCropDrag"
             />
             <div
               class="crop-area"
@@ -1558,6 +1556,8 @@ watch(zip_code, () => {
                 width: cropArea.width + 'px',
                 height: cropArea.height + 'px',
               }"
+              @mousedown.stop="startCropDrag"
+              @touchstart.stop="startCropDrag"
             >
               <div class="crop-area-border"></div>
               <div class="crop-area-handles">
@@ -1656,6 +1656,7 @@ watch(zip_code, () => {
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
   z-index: 10;
   touch-action: none;
+  pointer-events: all;
 }
 
 .crop-area-border {
