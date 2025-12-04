@@ -941,30 +941,43 @@ const formatBirthDate = (
 };
 
 const loadUserData = async () => {
-  if (chatStore.user?.info) {
-    phonePartial.value = chatStore.user.info.phone_partial ?? null;
+  const additionalInfo = await accountSettingsStore.getAdditionalInfo();
+
+  if (additionalInfo) {
+    phone_ddi.value = additionalInfo.phone_ddi ?? '55';
+    phonePartial.value = additionalInfo.phone_partial ?? null;
     phone.value = null;
     isPhoneDecrypted.value = false;
     phoneHasBeenEdited.value = false;
-    name.value = chatStore.user.info.name ?? null;
-    last_name.value = chatStore.user.info.last_name ?? null;
-    birth_date.value = formatBirthDate(chatStore.user.info.birth_date);
-    photoPreview.value = chatStore.user.info.photo ?? null;
-  }
-
-  if (chatStore.user?.document) {
-    const documentTypeName = chatStore.user.document.document_type;
-    if (documentTypeName === 'CPF') {
-      user_document_type_id.value = EUserDocumentType.CPF;
-    } else if (documentTypeName === 'CNPJ') {
-      user_document_type_id.value = EUserDocumentType.CNPJ;
-    } else {
-      user_document_type_id.value = null;
-    }
-    documentPartial.value = chatStore.user.document.document_partial ?? null;
+    name.value = additionalInfo.name ?? null;
+    last_name.value = additionalInfo.last_name ?? null;
+    birth_date.value = formatBirthDate(additionalInfo.birth_date);
+    photoPreview.value = additionalInfo.photo ?? null;
+    documentPartial.value = additionalInfo.document_partial ?? null;
     document.value = null;
     isDocumentDecrypted.value = false;
     documentHasBeenEdited.value = false;
+
+    if (additionalInfo.document_type_id === EUserDocumentType.CPF) {
+      user_document_type_id.value = EUserDocumentType.CPF;
+    }
+    if (additionalInfo.document_type_id === EUserDocumentType.CNPJ) {
+      user_document_type_id.value = EUserDocumentType.CNPJ;
+    }
+    if (
+      additionalInfo.document_type_id &&
+      additionalInfo.document_type_id !== EUserDocumentType.CPF &&
+      additionalInfo.document_type_id !== EUserDocumentType.CNPJ
+    ) {
+      user_document_type_id.value = additionalInfo.document_type_id;
+    }
+    if (!additionalInfo.document_type_id) {
+      user_document_type_id.value = null;
+    }
+  }
+
+  if (!phone_ddi.value) {
+    phone_ddi.value = '55';
   }
 
   if (chatStore.user?.address) {

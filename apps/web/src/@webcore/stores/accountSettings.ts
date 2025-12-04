@@ -15,6 +15,7 @@ import { ViewDocumentResponse } from '@core/schema/accountSettings/viewDocument/
 import { ViewAddressResponse } from '@core/schema/accountSettings/viewAddress/response.schema';
 import { ViewAddress1Response } from '@core/schema/accountSettings/viewAddress1/response.schema';
 import { ViewAddress2Response } from '@core/schema/accountSettings/viewAddress2/response.schema';
+import { ViewAdditionalInfoResponse } from '@core/schema/accountSettings/viewAdditionalInfo/response.schema';
 
 export const useAccountSettingsStore = defineStore('accountSettings', {
   state: () => ({
@@ -249,6 +250,23 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
         }
 
         return data.data.address2;
+      } catch (error) {
+        return null;
+      }
+    },
+    async getAdditionalInfo(): Promise<ViewAdditionalInfoResponse | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ViewAdditionalInfoResponse>
+        >('/account-settings/additional-info');
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
       } catch (error) {
         return null;
       }

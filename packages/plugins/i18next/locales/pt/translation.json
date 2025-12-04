@@ -271,6 +271,7 @@
   "user_address1_view_successfully": "Endereço 1 descriptografado recuperado com sucesso!",
   "user_address2_view_successfully": "Endereço 2 descriptografado recuperado com sucesso!",
   "user_address_view_successfully": "Endereço completo recuperado com sucesso!",
+  "user_additional_info_view_successfully": "Informações adicionais recuperadas com sucesso!",
   "contact_not_found": "Contato não encontrado!",
   "contact_must_be_validated": "O contato deve estar validado para abrir uma conversa!",
   "contact_phone_required": "O contato precisa ter um telefone para iniciar uma conversa!",

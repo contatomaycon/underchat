@@ -9,6 +9,7 @@ import { viewDocumentSchema } from '@core/schema/accountSettings/viewDocument';
 import { viewAddressSchema } from '@core/schema/accountSettings/viewAddress';
 import { viewAddress1Schema } from '@core/schema/accountSettings/viewAddress1';
 import { viewAddress2Schema } from '@core/schema/accountSettings/viewAddress2';
+import { viewAdditionalInfoSchema } from '@core/schema/accountSettings/viewAdditionalInfo';
 
 export default async function accountSettingsRoutes(server: FastifyInstance) {
   const accountSettingsController = container.resolve(
@@ -60,6 +61,12 @@ export default async function accountSettingsRoutes(server: FastifyInstance) {
   server.get('/account-settings/address2', {
     schema: viewAddress2Schema,
     handler: accountSettingsController.viewAddress2,
+    preHandler: [(request, reply) => server.authenticateJwt(request, reply)],
+  });
+
+  server.get('/account-settings/additional-info', {
+    schema: viewAdditionalInfoSchema,
+    handler: accountSettingsController.viewAdditionalInfo,
     preHandler: [(request, reply) => server.authenticateJwt(request, reply)],
   });
 }
