@@ -299,6 +299,8 @@
   "plan_list_all_successfully": "Plan list retrieved successfully!",
   "plan_list_all_not_found": "No plans found!",
   "plan_list_all_unauthorized": "You are not authorized to view the plans!",
+  "plan_list_with_items_successfully": "Plans with items listed successfully!",
+  "plan_list_with_items_not_found": "No plans with items found!",
   "invalid_attachment_type": "Invalid attachment type!",
   "attachment_size_exceeded": "Attachment size exceeded!",
   "chat_delete_success": "Message deleted successfully!",

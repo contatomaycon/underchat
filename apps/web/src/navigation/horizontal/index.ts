@@ -174,9 +174,20 @@ export default [
     icon: { icon: 'tabler-package' },
     children: [
       {
-        title: 'plans',
-        to: { name: 'plan' as keyof RouteNamedMap },
+        title: 'plans_pricing',
+        to: { name: 'plans' as keyof RouteNamedMap },
         icon: { icon: 'tabler-package' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EPlanPermissions.plan_group,
+          EPlanPermissions.plan_view,
+        ],
+      },
+      {
+        title: 'listar',
+        to: { name: 'plan' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-list' },
         permissions: [
           EGeneralPermissions.full_access,
           EGeneralPermissions.full_access_group,

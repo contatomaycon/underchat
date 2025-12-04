@@ -9,6 +9,7 @@ import { listPlanItems } from './methods/listPlanItems';
 import { deletePlanItem } from './methods/deletePlanItem';
 import { listPlanProductAll } from './methods/listPlanProductAll';
 import { listPlanSales } from './methods/listPlanSales';
+import { listPlanWithItems } from './methods/listPlanWithItems';
 
 @injectable()
 class PlanController {
@@ -22,6 +23,7 @@ class PlanController {
   public deletePlanItem = deletePlanItem;
   public listPlanProductAll = listPlanProductAll;
   public listPlanSales = listPlanSales;
+  public listPlanWithItems = listPlanWithItems;
 }
 
 export default PlanController;

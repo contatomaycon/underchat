@@ -299,6 +299,8 @@
   "plan_list_all_successfully": "¡Lista de planes obtenida con éxito!",
   "plan_list_all_not_found": "¡No se encontraron planes!",
   "plan_list_all_unauthorized": "¡No está autorizado para ver los planes!",
+  "plan_list_with_items_successfully": "¡Planes con elementos listados con éxito!",
+  "plan_list_with_items_not_found": "¡No se encontraron planes con elementos!",
   "invalid_attachment_type": "¡Tipo de archivo adjunto inválido!",
   "attachment_size_exceeded": "¡Tamaño del archivo adjunto excedido!",
   "chat_delete_success": "¡Mensaje eliminado con éxito!",
