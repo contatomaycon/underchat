@@ -20,6 +20,9 @@ const isVisible = computed({
 const name = ref<string | null>(null);
 const priceRaw = ref<number | null>(null);
 const price_oldRaw = ref<number | null>(null);
+const description = ref<string | null>(null);
+const annual_discount = ref<number | null>(null);
+const icon = ref<string | null>(null);
 
 const refFormAddPlan = ref<VForm>();
 
@@ -212,6 +215,9 @@ const addPlan = async () => {
     name: name.value,
     price: priceRaw.value,
     price_old: price_oldRaw.value ?? 0,
+    description: description.value ?? undefined,
+    annual_discount: annual_discount.value ?? undefined,
+    icon: icon.value ?? undefined,
   };
 
   const result = await planStore.createPlan(payload);
@@ -227,6 +233,9 @@ const resetForm = () => {
   price_oldRaw.value = null;
   priceDisplay.value = '';
   price_oldDisplay.value = '';
+  description.value = null;
+  annual_discount.value = null;
+  icon.value = null;
   refFormAddPlan.value?.resetValidation();
 };
 
@@ -279,6 +288,36 @@ onMounted(resetForm);
                 :placeholder="formatCurrency(0)"
                 @input="handlePriceOldInput"
                 @blur="handlePriceOldBlur"
+              />
+            </VCol>
+            <VCol cols="12">
+              <AppTextarea
+                v-model="description"
+                :label="$t('description') + ':'"
+                :placeholder="$t('description')"
+                :maxlength="500"
+                :counter="500"
+                rows="3"
+              />
+            </VCol>
+            <VCol cols="12" sm="6">
+              <AppTextField
+                v-model="annual_discount"
+                type="number"
+                :label="$t('annual_discount') + ' (%):'"
+                :placeholder="'0'"
+                :rules="[
+                  (v: number | null) =>
+                    !v || (v >= 0 && v <= 100) || $t('annual_discount_invalid'),
+                ]"
+              />
+            </VCol>
+            <VCol cols="12" sm="6">
+              <AppTextField
+                v-model="icon"
+                :label="$t('icon') + ':'"
+                :placeholder="$t('icon')"
+                :maxlength="100"
               />
             </VCol>
           </VRow>

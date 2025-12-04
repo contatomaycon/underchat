@@ -38,6 +38,9 @@ export class PlanWithItemsListerRepository {
         name: plan.name,
         price: plan.price,
         price_old: plan.price_old,
+        description: plan.description,
+        annual_discount: plan.annual_discount,
+        icon: plan.icon,
         created_at: plan.created_at,
       })
       .from(plan)
@@ -110,6 +113,9 @@ export class PlanWithItemsListerRepository {
       name: p.name,
       price: Number(p.price),
       price_old: Number(p.price_old),
+      description: p.description ?? null,
+      annual_discount: p.annual_discount ?? null,
+      icon: p.icon ?? null,
       created_at: p.created_at,
       plan_items: itemsByPlanId.get(p.plan_id) ?? [],
     }));

@@ -13,6 +13,9 @@ export const plan = pgTable('plan', {
   name: varchar({ length: 50 }).notNull(),
   price: numeric({ precision: 10, scale: 2 }).notNull(),
   price_old: numeric({ precision: 10, scale: 2 }).notNull(),
+  description: varchar({ length: 500 }),
+  annual_discount: numeric({ precision: 5, scale: 2 }),
+  icon: varchar({ length: 100 }),
   created_at: timestamp('created_at', {
     mode: 'string',
     withTimezone: true,

@@ -21,6 +21,9 @@ export class PlanCreatorRepository {
         name: input.name,
         price: input.price.toString(),
         price_old: input.price_old.toString(),
+        description: input.description ?? null,
+        annual_discount: input.annual_discount?.toString() ?? null,
+        icon: input.icon ?? null,
       })
       .execute();
 

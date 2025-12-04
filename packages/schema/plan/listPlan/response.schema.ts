@@ -6,6 +6,9 @@ export const listPlanResponseSchema = Type.Object({
   name: Type.String(),
   price: Type.Number(),
   price_old: Type.Number(),
+  description: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  annual_discount: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  icon: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   created_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
