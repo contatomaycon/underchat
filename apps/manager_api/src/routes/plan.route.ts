@@ -5,6 +5,7 @@ import {
   planCreatePermissions,
   planUpdatePermissions,
   planDeletePermissions,
+  planInvoicePermissions,
 } from '@/permissions';
 import PlanController from '@/controllers/plan';
 import { listPlanSchema } from '@core/schema/plan/listPlan';
@@ -117,7 +118,7 @@ export default function planRoutes(server: FastifyInstance) {
     handler: planController.listPlanWithItems,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, planViewPermissions),
+        server.authenticateJwt(request, reply, planInvoicePermissions),
     ],
   });
 }

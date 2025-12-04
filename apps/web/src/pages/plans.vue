@@ -13,7 +13,7 @@ definePage({
       EGeneralPermissions.full_access,
       EGeneralPermissions.full_access_group,
       EPlanPermissions.plan_group,
-      EPlanPermissions.plan_view,
+      EPlanPermissions.plan_invoice,
     ],
   },
 });

@@ -25,3 +25,9 @@ export const planCreatePermissions = [
   EPlanPermissions.plan_group,
   EPlanPermissions.plan_create,
 ];
+export const planInvoicePermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EPlanPermissions.plan_group,
+  EPlanPermissions.plan_invoice,
+];
