@@ -180,7 +180,7 @@ onMounted(() => {
 
     <VRow v-else-if="planInvoice && planInvoice.plan_id" class="align-stretch">
       <VCol cols="12" md="6" class="d-flex">
-        <VCard variant="outlined" class="d-flex flex-column w-100">
+        <VCard variant="elevated" class="account-settings-card d-flex flex-column w-100">
           <VCardText class="d-flex flex-column flex-grow-1">
             <div class="d-flex align-center gap-4 mb-4">
               <VAvatar
@@ -287,7 +287,7 @@ onMounted(() => {
       </VCol>
 
       <VCol cols="12" md="6" class="d-flex">
-        <VCard variant="outlined" class="d-flex flex-column w-100">
+        <VCard variant="elevated" class="account-settings-card d-flex flex-column w-100">
           <VCardText class="d-flex flex-column flex-grow-1">
             <VAlert
               v-if="planInvoice && planInvoice.plan_id"
@@ -358,7 +358,7 @@ onMounted(() => {
 
     <VRow v-else>
       <VCol cols="12" class="text-center mt-12">
-        <VCard variant="outlined" class="d-inline-block pa-8">
+        <VCard variant="elevated" class="account-settings-card d-inline-block pa-8">
           <VCardText>
             <p class="text-body-1 text-medium-emphasis mb-0">
               {{ $t('no_plan_found') }}
@@ -378,3 +378,11 @@ onMounted(() => {
     </VSnackbar>
   </div>
 </template>
+
+<style scoped>
+.account-settings-card {
+  background-color: rgb(var(--v-theme-surface)) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+  border-radius: 8px;
+}
+</style>

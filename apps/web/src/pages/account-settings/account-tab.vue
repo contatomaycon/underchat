@@ -1092,8 +1092,8 @@ watch(zip_code, () => {
 </script>
 
 <template>
-  <div class="d-flex flex-column gap-4">
-    <VCard variant="outlined">
+  <div class="d-flex flex-column account-tab-container">
+    <VCard variant="elevated" class="account-settings-card">
       <VCardTitle class="text-h6 pa-6 pb-4">
         {{ $t('profile_details') }}
       </VCardTitle>
@@ -1157,7 +1157,7 @@ watch(zip_code, () => {
       </VCardText>
     </VCard>
 
-    <VCard variant="outlined">
+    <VCard variant="elevated" class="account-settings-card">
       <VCardTitle class="text-h6 pa-6 pb-4">
         {{ $t('additional_info') }}
       </VCardTitle>
@@ -1316,7 +1316,7 @@ watch(zip_code, () => {
       </VCardText>
     </VCard>
 
-    <VCard variant="outlined">
+    <VCard variant="elevated" class="account-settings-card">
       <VCardTitle class="text-h6 pa-6 pb-4">
         {{ $t('address') }}
       </VCardTitle>
@@ -1705,5 +1705,15 @@ watch(zip_code, () => {
   bottom: -6px;
   right: -6px;
   cursor: nwse-resize;
+}
+
+.account-tab-container {
+  gap: 24px;
+}
+
+.account-settings-card {
+  background-color: rgb(var(--v-theme-surface)) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+  border-radius: 8px;
 }
 </style>

@@ -50,9 +50,9 @@ watch(
 </script>
 
 <template>
-  <VCard flat>
-    <VCardText class="pb-0">
-      <VTabs v-model="tab" class="mb-2">
+  <div class="account-settings-page">
+    <div class="mb-6">
+      <VTabs v-model="tab">
         <VTab value="account" prepend-icon="tabler-user">
           {{ $t('account') }}
         </VTab>
@@ -74,23 +74,21 @@ watch(
           {{ $t('invoices') }}
         </VTab>
       </VTabs>
-    </VCardText>
+    </div>
 
-    <VCardText>
-      <VWindow v-model="tab" class="disable-tab-transition">
-        <VWindowItem value="account">
-          <AccountTab />
-        </VWindowItem>
-        <VWindowItem value="security">
-          <SecurityTab />
-        </VWindowItem>
-        <VWindowItem v-if="canAccessPlanInvoice" value="plans">
-          <PlansTab />
-        </VWindowItem>
-        <VWindowItem v-if="canAccessPlanInvoice" value="invoices">
-          <InvoicesTab />
-        </VWindowItem>
-      </VWindow>
-    </VCardText>
-  </VCard>
+    <VWindow v-model="tab" class="disable-tab-transition">
+      <VWindowItem value="account">
+        <AccountTab />
+      </VWindowItem>
+      <VWindowItem value="security">
+        <SecurityTab />
+      </VWindowItem>
+      <VWindowItem v-if="canAccessPlanInvoice" value="plans">
+        <PlansTab />
+      </VWindowItem>
+      <VWindowItem v-if="canAccessPlanInvoice" value="invoices">
+        <InvoicesTab />
+      </VWindowItem>
+    </VWindow>
+  </div>
 </template>
