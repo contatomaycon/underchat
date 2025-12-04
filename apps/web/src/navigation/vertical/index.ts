@@ -22,12 +22,6 @@ export default [
     title: 'home',
     to: { name: 'root' as keyof RouteNamedMap },
     icon: { icon: 'tabler-smart-home' },
-    permissions: [
-      EGeneralPermissions.full_access,
-      EGeneralPermissions.full_access_group,
-      EHomePermissions.home_group,
-      EHomePermissions.home_view,
-    ],
   },
   {
     title: 'chat',
