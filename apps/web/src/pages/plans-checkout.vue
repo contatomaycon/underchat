@@ -346,11 +346,20 @@ const getAddonQuantity = (productId: string): number => {
   return addon?.quantity || 0;
 };
 
+const getAddonPrice = (addon: {
+  plan_product_id: string;
+  name: string;
+  quantity: number;
+  price?: number;
+}): number => {
+  const addonPrice = addon.price || 0;
+  const multiplier = billingPeriod.value === 'annual' ? 12 : 1;
+  return addonPrice * addon.quantity * multiplier;
+};
+
 const getAddonsTotal = computed(() => {
   return selectedAddons.value.reduce((total, addon) => {
-    const addonPrice = addon.price || 0;
-    const multiplier = billingPeriod.value === 'annual' ? 12 : 1;
-    return total + addonPrice * addon.quantity * multiplier;
+    return total + getAddonPrice(addon);
   }, 0);
 });
 
@@ -556,26 +565,6 @@ const getBrandLogoUrl = (brand: string | null) => {
   return url;
 };
 
-const getBrandColor = (brand: string | null): string => {
-  if (!brand) return '#667eea';
-
-  const brandColors: Record<string, string> = {
-    VISA: '#1A1F71',
-    MASTERCARD: '#EB001B',
-    AMEX: '#006FCF',
-    ELO: '#FFCB05',
-    DINERS: '#0079BE',
-    DISCOVER: '#FF6000',
-    JCB: '#0066CC',
-    MAESTRO: '#EB001B',
-    HIPERCARD: '#D52B1E',
-    MELI: '#FFF159',
-    REAL: '#FF6B00',
-  };
-
-  return brandColors[brand] || '#667eea';
-};
-
 const getBrandGradient = (brand: string | null): string => {
   const neutralGradient = 'linear-gradient(135deg, #3e475a 0%, #515c73 100%)';
 
@@ -609,6 +598,12 @@ watch(currentStep, async (newStep) => {
     await loadStep3();
   } else if (newStep === 4 && !step4Loaded.value) {
     await loadStep4();
+  }
+});
+
+watch(selectedPaymentMethod, (newMethod) => {
+  if (newMethod !== 'credit_card' && showAddCardModal.value) {
+    showAddCardModal.value = false;
   }
 });
 
@@ -1380,314 +1375,709 @@ onMounted(async () => {
                   </VRow>
 
                   <!-- Resumo do Boleto -->
-                  <VCard
-                    v-if="selectedPaymentMethod === 'boleto'"
-                    variant="outlined"
-                    class="mt-6"
-                  >
-                    <VCardText>
-                      <h5 class="text-h6 mb-4">{{ $t('boleto_summary') }}</h5>
-                      <div class="d-flex flex-column gap-2">
-                        <div class="d-flex justify-space-between">
-                          <span class="text-body-2 text-medium-emphasis">{{
-                            $t('payment_due_date')
-                          }}</span>
-                          <span class="text-body-1 font-weight-medium">{{
-                            $t('boleto_due_date_info')
-                          }}</span>
-                        </div>
-                        <VDivider />
-                        <div class="d-flex justify-space-between">
-                          <span class="text-body-2 text-medium-emphasis">{{
-                            $t('payment_amount')
-                          }}</span>
-                          <span class="text-body-1 font-weight-medium">
-                            {{ formatCurrency(getCheckoutTotal) }}
-                          </span>
-                        </div>
-                        <VDivider />
-                        <p class="text-body-2 text-medium-emphasis mt-2">
-                          {{ $t('boleto_instructions') }}
-                        </p>
-                      </div>
-                    </VCardText>
-                  </VCard>
-
-                  <!-- Seleção de Cartão de Crédito -->
-                  <div
-                    v-if="selectedPaymentMethod === 'credit_card'"
-                    class="mt-6"
-                  >
-                    <h5 class="text-h6 mb-4">{{ $t('select_credit_card') }}</h5>
-
-                    <VProgressCircular
-                      v-if="loadingCards"
-                      indeterminate
-                      color="primary"
-                      size="32"
-                      class="mb-4"
-                    />
-
-                    <div
-                      v-else-if="userCards.length > 0"
-                      class="d-flex flex-column gap-3"
-                    >
-                      <VCard
-                        v-for="card in userCards"
-                        :key="card.user_card_id"
-                        :class="[
-                          'credit-card-item',
-                          selectedCardId === card.user_card_id
-                            ? 'credit-card-selected'
-                            : '',
-                        ]"
-                        :variant="
-                          selectedCardId === card.user_card_id
-                            ? 'elevated'
-                            : 'outlined'
-                        "
-                        :elevation="
-                          selectedCardId === card.user_card_id ? 4 : 0
-                        "
-                        @click="selectedCardId = card.user_card_id"
-                        style="cursor: pointer"
-                      >
+                  <VRow v-if="selectedPaymentMethod === 'boleto'" class="mt-6">
+                    <VCol cols="12" md="6">
+                      <VCard variant="outlined">
                         <VCardText>
-                          <div
-                            class="d-flex align-center justify-space-between"
-                          >
-                            <div class="d-flex align-center gap-3">
+                          <h5 class="text-h6 mb-4">
+                            {{ $t('boleto_summary') }}
+                          </h5>
+                          <div class="d-flex flex-column gap-2">
+                            <div class="d-flex justify-space-between">
+                              <span class="text-body-2 text-medium-emphasis">{{
+                                $t('payment_due_date')
+                              }}</span>
+                              <span class="text-body-1 font-weight-medium">{{
+                                $t('boleto_due_date_info')
+                              }}</span>
+                            </div>
+                            <VDivider />
+                            <p class="text-body-2 text-medium-emphasis mt-2">
+                              {{ $t('boleto_instructions') }}
+                            </p>
+                          </div>
+                        </VCardText>
+                      </VCard>
+                    </VCol>
+                    <VCol cols="12" md="6">
+                      <VCard variant="outlined">
+                        <VCardText>
+                          <h4 class="text-h6 mb-4">
+                            {{ $t('selected_plan') }}
+                          </h4>
+
+                          <div v-if="selectedPlanForCheckout" class="mb-4">
+                            <div class="d-flex align-center gap-3 mb-3">
                               <VIcon
-                                icon="tabler-credit-card"
+                                :icon="
+                                  selectedPlanForCheckout.icon ||
+                                  'tabler-rocket'
+                                "
                                 size="32"
                                 color="primary"
                               />
                               <div>
-                                <div class="text-body-1 font-weight-medium">
-                                  {{ card.holder_name }}
-                                </div>
-                                <div class="text-body-2 text-medium-emphasis">
-                                  {{ $t('ending_in') }} {{ card.last_number }}
-                                </div>
-                                <div class="text-body-2 text-medium-emphasis">
-                                  {{ card.brand }}
-                                </div>
+                                <h5 class="text-h6 mb-1">
+                                  {{ selectedPlanForCheckout.name }}
+                                </h5>
+                                <p
+                                  v-if="selectedPlanForCheckout.description"
+                                  class="text-body-2 text-medium-emphasis mb-0"
+                                >
+                                  {{ selectedPlanForCheckout.description }}
+                                </p>
                               </div>
                             </div>
-                            <div>
-                              <VChip
-                                v-if="card.default"
-                                color="primary"
-                                size="small"
-                                variant="tonal"
+                          </div>
+
+                          <VDivider class="my-4" />
+
+                          <div
+                            class="d-flex justify-space-between align-center mb-2"
+                          >
+                            <span class="text-body-1"
+                              >{{ $t('subtotal') }}:</span
+                            >
+                            <span class="text-body-1 font-weight-medium">
+                              {{
+                                formatCurrency(
+                                  selectedPlanForCheckout
+                                    ? getPrice(selectedPlanForCheckout)
+                                    : 0
+                                )
+                              }}
+                            </span>
+                          </div>
+
+                          <div class="mb-2">
+                            <div
+                              v-if="selectedAddons.length > 0"
+                              class="d-flex flex-column gap-2 mb-2"
+                            >
+                              <div
+                                v-for="addon in selectedAddons"
+                                :key="addon.plan_product_id"
+                                class="d-flex justify-space-between align-center"
                               >
-                                {{ $t('default') }}
-                              </VChip>
+                                <span class="text-body-2 text-medium-emphasis">
+                                  {{ addon.name }}
+                                  <span v-if="addon.quantity > 1"
+                                    >(x{{ addon.quantity }})</span
+                                  >:
+                                </span>
+                                <span class="text-body-2 font-weight-medium">
+                                  {{ formatCurrency(getAddonPrice(addon)) }}
+                                </span>
+                              </div>
                             </div>
+                            <div
+                              v-else
+                              class="d-flex justify-space-between align-center"
+                            >
+                              <span class="text-body-1"
+                                >{{ $t('addons') }}:</span
+                              >
+                              <span class="text-body-1 font-weight-medium">
+                                {{ formatCurrency(0) }}
+                              </span>
+                            </div>
+                          </div>
+
+                          <VDivider class="my-4" />
+
+                          <div
+                            class="d-flex justify-space-between align-center"
+                          >
+                            <span class="text-h6 font-weight-bold">
+                              {{ $t('payment_amount') }}:
+                            </span>
+                            <span class="text-h6 font-weight-bold text-primary">
+                              {{ formatCurrency(getCheckoutTotal) }}
+                            </span>
                           </div>
                         </VCardText>
                       </VCard>
-                    </div>
+                    </VCol>
+                  </VRow>
 
-                    <VCard v-else variant="outlined" class="mb-4">
-                      <VCardText class="text-center py-4">
-                        <div class="text-body-2 text-medium-emphasis mb-3">
-                          {{ $t('no_cards_registered') }}
-                        </div>
-                      </VCardText>
-                    </VCard>
-
-                    <VBtn
-                      color="primary"
-                      variant="outlined"
-                      prepend-icon="tabler-plus"
-                      @click="showAddCardModal = !showAddCardModal"
-                    >
-                      {{ $t('add_new_card') }}
-                    </VBtn>
-
-                    <!-- Formulário de Adicionar Cartão -->
-                    <VCard
-                      v-if="showAddCardModal"
-                      variant="outlined"
-                      class="mt-6 credit-card-form"
-                    >
-                      <VCardText>
-                        <!-- Visual do Cartão -->
-                        <div
-                          class="credit-card-preview mb-6"
-                          :style="{
-                            background: getBrandGradient(detectedBrand),
-                          }"
-                        >
-                          <div class="brand-logo-wrapper">
-                            <div
-                              v-if="getBrandLogoUrl(detectedBrand)"
-                              class="brand-logo"
-                            >
-                              <img
-                                :src="getBrandLogoUrl(detectedBrand) || ''"
-                                :alt="detectedBrand || 'card brand'"
-                                class="brand-logo-img"
-                              />
-                            </div>
-                            <VIcon
-                              v-else
-                              icon="tabler-credit-card"
-                              size="32"
-                              color="white"
-                              class="brand-logo-icon"
-                            />
-                          </div>
-                          <div class="text-h5 text-white mb-4 font-weight-bold">
-                            {{ newCard.number || '0000 0000 0000 0000' }}
-                          </div>
-                          <div class="d-flex justify-space-between align-end">
-                            <div>
-                              <div
-                                class="text-body-2 text-white text-medium-emphasis mb-1"
-                              >
-                                {{ $t('cardholder_name') }}
-                              </div>
-                              <div
-                                class="text-body-1 text-white font-weight-medium"
-                              >
-                                {{
-                                  newCard.holderName ||
-                                  $t('cardholder_name_placeholder')
-                                }}
-                              </div>
-                            </div>
-                            <div>
-                              <div
-                                class="text-body-2 text-white text-medium-emphasis mb-1"
-                              >
-                                {{ $t('expiry') }}
-                              </div>
-                              <div
-                                class="text-body-1 text-white font-weight-medium"
-                              >
-                                {{
-                                  newCard.expiryMonth && newCard.expiryYear
-                                    ? `${newCard.expiryMonth}/${newCard.expiryYear}`
-                                    : 'MM/AA'
-                                }}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        <!-- Formulário -->
-                        <VForm>
-                          <VRow>
-                            <VCol cols="12">
-                              <VTextField
-                                v-model="newCard.number"
-                                :label="$t('card_number')"
-                                placeholder="0000 0000 0000 0000"
-                                @input="onCardNumberInput"
-                                :maxlength="19"
-                              >
-                                <template #append-inner>
-                                  <div
-                                    v-if="
-                                      detectedBrand &&
-                                      getBrandLogoUrl(detectedBrand)
-                                    "
-                                    class="brand-logo-small"
-                                  >
-                                    <img
-                                      :src="
-                                        getBrandLogoUrl(detectedBrand) || ''
-                                      "
-                                      :alt="detectedBrand || 'card brand'"
-                                      class="brand-logo-img"
-                                    />
-                                  </div>
-                                </template>
-                              </VTextField>
-                            </VCol>
-                            <VCol cols="12">
-                              <VTextField
-                                v-model="newCard.holderName"
-                                :label="$t('cardholder_name')"
-                                placeholder="Nome como está no cartão"
-                                :maxlength="100"
-                              />
-                            </VCol>
-                            <VCol cols="6">
-                              <VTextField
-                                :model-value="
-                                  newCard.expiryMonth && newCard.expiryYear
-                                    ? `${newCard.expiryMonth}/${newCard.expiryYear}`
-                                    : ''
-                                "
-                                :label="$t('expiry_date')"
-                                placeholder="MM/AA"
-                                @input="onExpiryInput"
-                                :maxlength="5"
-                                :error="!!expiryError"
-                                :error-messages="expiryError"
-                              />
-                            </VCol>
-                            <VCol cols="6">
-                              <VTextField
-                                v-model="newCard.cvv"
-                                :label="$t('cvv')"
-                                placeholder="000"
-                                :type="showCvv ? 'text' : 'password'"
-                                :maxlength="4"
-                              >
-                                <template #append-inner>
-                                  <VIcon
-                                    :icon="
-                                      showCvv ? 'tabler-eye-off' : 'tabler-eye'
-                                    "
-                                    @click="showCvv = !showCvv"
-                                    style="cursor: pointer"
-                                  />
-                                </template>
-                              </VTextField>
-                            </VCol>
-                          </VRow>
-                          <div class="d-flex gap-3 mt-4">
-                            <VBtn
-                              variant="outlined"
-                              color="secondary"
-                              @click="showAddCardModal = false"
-                            >
-                              {{ $t('cancel') }}
-                            </VBtn>
-                          </div>
-                        </VForm>
-                      </VCardText>
-                    </VCard>
-                  </div>
-
-                  <!-- Resumo do PIX -->
-                  <VCard
-                    v-if="selectedPaymentMethod === 'pix'"
-                    variant="outlined"
+                  <!-- Seleção de Cartão de Crédito -->
+                  <VRow
+                    v-if="
+                      selectedPaymentMethod === 'credit_card' &&
+                      !showAddCardModal
+                    "
                     class="mt-6"
                   >
-                    <VCardText>
-                      <h5 class="text-h6 mb-4">{{ $t('pix_summary') }}</h5>
-                      <div class="d-flex flex-column gap-2">
-                        <div class="d-flex justify-space-between">
-                          <span class="text-body-2 text-medium-emphasis">{{
-                            $t('payment_amount')
-                          }}</span>
-                          <span class="text-body-1 font-weight-medium">
-                            {{ formatCurrency(getCheckoutTotal) }}
-                          </span>
-                        </div>
-                        <VDivider />
-                        <p class="text-body-2 text-medium-emphasis mt-2">
-                          {{ $t('pix_instructions') }}
-                        </p>
+                    <VCol cols="12" md="6">
+                      <h5 class="text-h6 mb-4">
+                        {{ $t('select_credit_card') }}
+                      </h5>
+
+                      <VProgressCircular
+                        v-if="loadingCards"
+                        indeterminate
+                        color="primary"
+                        size="32"
+                        class="mb-4"
+                      />
+
+                      <div
+                        v-else-if="userCards.length > 0"
+                        class="d-flex flex-column gap-3"
+                      >
+                        <VCard
+                          v-for="card in userCards"
+                          :key="card.user_card_id"
+                          :class="[
+                            'credit-card-item',
+                            selectedCardId === card.user_card_id
+                              ? 'credit-card-selected'
+                              : '',
+                          ]"
+                          :variant="
+                            selectedCardId === card.user_card_id
+                              ? 'elevated'
+                              : 'outlined'
+                          "
+                          :elevation="
+                            selectedCardId === card.user_card_id ? 4 : 0
+                          "
+                          @click="selectedCardId = card.user_card_id"
+                          style="cursor: pointer"
+                        >
+                          <VCardText>
+                            <div
+                              class="d-flex align-center justify-space-between"
+                            >
+                              <div class="d-flex align-center gap-3">
+                                <VIcon
+                                  icon="tabler-credit-card"
+                                  size="32"
+                                  color="primary"
+                                />
+                                <div>
+                                  <div class="text-body-1 font-weight-medium">
+                                    {{ card.holder_name }}
+                                  </div>
+                                  <div class="text-body-2 text-medium-emphasis">
+                                    {{ $t('ending_in') }} {{ card.last_number }}
+                                  </div>
+                                  <div class="text-body-2 text-medium-emphasis">
+                                    {{ card.brand }}
+                                  </div>
+                                </div>
+                              </div>
+                              <div>
+                                <VChip
+                                  v-if="card.default"
+                                  color="primary"
+                                  size="small"
+                                  variant="tonal"
+                                >
+                                  {{ $t('default') }}
+                                </VChip>
+                              </div>
+                            </div>
+                          </VCardText>
+                        </VCard>
                       </div>
-                    </VCardText>
-                  </VCard>
+
+                      <VCard v-else variant="outlined" class="mb-4">
+                        <VCardText class="text-center py-4">
+                          <div class="text-body-2 text-medium-emphasis mb-3">
+                            {{ $t('no_cards_registered') }}
+                          </div>
+                        </VCardText>
+                      </VCard>
+
+                      <VBtn
+                        color="primary"
+                        variant="outlined"
+                        prepend-icon="tabler-plus"
+                        @click="showAddCardModal = !showAddCardModal"
+                        class="mb-4"
+                      >
+                        {{ $t('add_new_card') }}
+                      </VBtn>
+                    </VCol>
+                    <VCol cols="12" md="6">
+                      <VCard variant="outlined">
+                        <VCardText>
+                          <h4 class="text-h6 mb-4">
+                            {{ $t('selected_plan') }}
+                          </h4>
+
+                          <div v-if="selectedPlanForCheckout" class="mb-4">
+                            <div class="d-flex align-center gap-3 mb-3">
+                              <VIcon
+                                :icon="
+                                  selectedPlanForCheckout.icon ||
+                                  'tabler-rocket'
+                                "
+                                size="32"
+                                color="primary"
+                              />
+                              <div>
+                                <h5 class="text-h6 mb-1">
+                                  {{ selectedPlanForCheckout.name }}
+                                </h5>
+                                <p
+                                  v-if="selectedPlanForCheckout.description"
+                                  class="text-body-2 text-medium-emphasis mb-0"
+                                >
+                                  {{ selectedPlanForCheckout.description }}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <VDivider class="my-4" />
+
+                          <div
+                            class="d-flex justify-space-between align-center mb-2"
+                          >
+                            <span class="text-body-1"
+                              >{{ $t('subtotal') }}:</span
+                            >
+                            <span class="text-body-1 font-weight-medium">
+                              {{
+                                formatCurrency(
+                                  selectedPlanForCheckout
+                                    ? getPrice(selectedPlanForCheckout)
+                                    : 0
+                                )
+                              }}
+                            </span>
+                          </div>
+
+                          <div class="mb-2">
+                            <div
+                              v-if="selectedAddons.length > 0"
+                              class="d-flex flex-column gap-2 mb-2"
+                            >
+                              <div
+                                v-for="addon in selectedAddons"
+                                :key="addon.plan_product_id"
+                                class="d-flex justify-space-between align-center"
+                              >
+                                <span class="text-body-2 text-medium-emphasis">
+                                  {{ addon.name }}
+                                  <span v-if="addon.quantity > 1"
+                                    >(x{{ addon.quantity }})</span
+                                  >:
+                                </span>
+                                <span class="text-body-2 font-weight-medium">
+                                  {{ formatCurrency(getAddonPrice(addon)) }}
+                                </span>
+                              </div>
+                            </div>
+                            <div
+                              v-else
+                              class="d-flex justify-space-between align-center"
+                            >
+                              <span class="text-body-1"
+                                >{{ $t('addons') }}:</span
+                              >
+                              <span class="text-body-1 font-weight-medium">
+                                {{ formatCurrency(0) }}
+                              </span>
+                            </div>
+                          </div>
+
+                          <VDivider class="my-4" />
+
+                          <div
+                            class="d-flex justify-space-between align-center"
+                          >
+                            <span class="text-h6 font-weight-bold">
+                              {{ $t('payment_amount') }}:
+                            </span>
+                            <span class="text-h6 font-weight-bold text-primary">
+                              {{ formatCurrency(getCheckoutTotal) }}
+                            </span>
+                          </div>
+                        </VCardText>
+                      </VCard>
+                    </VCol>
+                  </VRow>
+
+                  <!-- Formulário de Adicionar Cartão -->
+                  <VRow v-if="showAddCardModal" class="mt-6">
+                    <!-- Esquerda: Formulário de Cartão (6 colunas) -->
+                    <VCol cols="12" md="6">
+                      <VCard variant="outlined" class="credit-card-form">
+                        <VCardText>
+                          <!-- Visual do Cartão -->
+                          <div
+                            class="credit-card-preview mb-6"
+                            :style="{
+                              background: getBrandGradient(detectedBrand),
+                            }"
+                          >
+                            <div class="brand-logo-wrapper">
+                              <div
+                                v-if="getBrandLogoUrl(detectedBrand)"
+                                class="brand-logo"
+                              >
+                                <img
+                                  :src="getBrandLogoUrl(detectedBrand) || ''"
+                                  :alt="detectedBrand || 'card brand'"
+                                  class="brand-logo-img"
+                                />
+                              </div>
+                              <VIcon
+                                v-else
+                                icon="tabler-credit-card"
+                                size="32"
+                                color="white"
+                                class="brand-logo-icon"
+                              />
+                            </div>
+                            <div
+                              class="text-h5 text-white mb-4 font-weight-bold"
+                            >
+                              {{ newCard.number || '0000 0000 0000 0000' }}
+                            </div>
+                            <div class="d-flex justify-space-between align-end">
+                              <div>
+                                <div
+                                  class="text-body-2 text-white text-medium-emphasis mb-1"
+                                >
+                                  {{ $t('cardholder_name') }}
+                                </div>
+                                <div
+                                  class="text-body-1 text-white font-weight-medium"
+                                >
+                                  {{
+                                    newCard.holderName ||
+                                    $t('cardholder_name_placeholder')
+                                  }}
+                                </div>
+                              </div>
+                              <div>
+                                <div
+                                  class="text-body-2 text-white text-medium-emphasis mb-1"
+                                >
+                                  {{ $t('expiry') }}
+                                </div>
+                                <div
+                                  class="text-body-1 text-white font-weight-medium"
+                                >
+                                  {{
+                                    newCard.expiryMonth && newCard.expiryYear
+                                      ? `${newCard.expiryMonth}/${newCard.expiryYear}`
+                                      : 'MM/AA'
+                                  }}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <!-- Formulário -->
+                          <VForm>
+                            <VRow>
+                              <VCol cols="12">
+                                <VTextField
+                                  v-model="newCard.number"
+                                  :label="$t('card_number')"
+                                  placeholder="0000 0000 0000 0000"
+                                  @input="onCardNumberInput"
+                                  :maxlength="19"
+                                >
+                                  <template #append-inner>
+                                    <div
+                                      v-if="
+                                        detectedBrand &&
+                                        getBrandLogoUrl(detectedBrand)
+                                      "
+                                      class="brand-logo-small"
+                                    >
+                                      <img
+                                        :src="
+                                          getBrandLogoUrl(detectedBrand) || ''
+                                        "
+                                        :alt="detectedBrand || 'card brand'"
+                                        class="brand-logo-img"
+                                      />
+                                    </div>
+                                  </template>
+                                </VTextField>
+                              </VCol>
+                              <VCol cols="12">
+                                <VTextField
+                                  v-model="newCard.holderName"
+                                  :label="$t('cardholder_name')"
+                                  placeholder="Nome como está no cartão"
+                                  :maxlength="100"
+                                />
+                              </VCol>
+                              <VCol cols="6">
+                                <VTextField
+                                  :model-value="
+                                    newCard.expiryMonth && newCard.expiryYear
+                                      ? `${newCard.expiryMonth}/${newCard.expiryYear}`
+                                      : ''
+                                  "
+                                  :label="$t('expiry_date')"
+                                  placeholder="MM/AA"
+                                  @input="onExpiryInput"
+                                  :maxlength="5"
+                                  :error="!!expiryError"
+                                  :error-messages="expiryError"
+                                />
+                              </VCol>
+                              <VCol cols="6">
+                                <VTextField
+                                  v-model="newCard.cvv"
+                                  :label="$t('cvv')"
+                                  placeholder="000"
+                                  :type="showCvv ? 'text' : 'password'"
+                                  :maxlength="4"
+                                >
+                                  <template #append-inner>
+                                    <VIcon
+                                      :icon="
+                                        showCvv
+                                          ? 'tabler-eye-off'
+                                          : 'tabler-eye'
+                                      "
+                                      @click="showCvv = !showCvv"
+                                      style="cursor: pointer"
+                                    />
+                                  </template>
+                                </VTextField>
+                              </VCol>
+                            </VRow>
+                            <div class="d-flex gap-3 mt-4">
+                              <VBtn
+                                variant="outlined"
+                                color="secondary"
+                                @click="showAddCardModal = false"
+                              >
+                                {{ $t('cancel') }}
+                              </VBtn>
+                            </div>
+                          </VForm>
+                        </VCardText>
+                      </VCard>
+                    </VCol>
+
+                    <!-- Direita: Informações do Plano (6 colunas) -->
+                    <VCol cols="12" md="6">
+                      <VCard variant="outlined">
+                        <VCardText>
+                          <h4 class="text-h6 mb-4">
+                            {{ $t('selected_plan') }}
+                          </h4>
+
+                          <div v-if="selectedPlanForCheckout" class="mb-4">
+                            <div class="d-flex align-center gap-3 mb-3">
+                              <VIcon
+                                :icon="
+                                  selectedPlanForCheckout.icon ||
+                                  'tabler-rocket'
+                                "
+                                size="32"
+                                color="primary"
+                              />
+                              <div>
+                                <h5 class="text-h6 mb-1">
+                                  {{ selectedPlanForCheckout.name }}
+                                </h5>
+                                <p
+                                  v-if="selectedPlanForCheckout.description"
+                                  class="text-body-2 text-medium-emphasis mb-0"
+                                >
+                                  {{ selectedPlanForCheckout.description }}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <VDivider class="my-4" />
+
+                          <div
+                            class="d-flex justify-space-between align-center mb-2"
+                          >
+                            <span class="text-body-1"
+                              >{{ $t('subtotal') }}:</span
+                            >
+                            <span class="text-body-1 font-weight-medium">
+                              {{
+                                formatCurrency(
+                                  selectedPlanForCheckout
+                                    ? getPrice(selectedPlanForCheckout)
+                                    : 0
+                                )
+                              }}
+                            </span>
+                          </div>
+
+                          <div class="mb-2">
+                            <div
+                              v-if="selectedAddons.length > 0"
+                              class="d-flex flex-column gap-2 mb-2"
+                            >
+                              <div
+                                v-for="addon in selectedAddons"
+                                :key="addon.plan_product_id"
+                                class="d-flex justify-space-between align-center"
+                              >
+                                <span class="text-body-2 text-medium-emphasis">
+                                  {{ addon.name }}
+                                  <span v-if="addon.quantity > 1"
+                                    >(x{{ addon.quantity }})</span
+                                  >:
+                                </span>
+                                <span class="text-body-2 font-weight-medium">
+                                  {{ formatCurrency(getAddonPrice(addon)) }}
+                                </span>
+                              </div>
+                            </div>
+                            <div
+                              v-else
+                              class="d-flex justify-space-between align-center"
+                            >
+                              <span class="text-body-1"
+                                >{{ $t('addons') }}:</span
+                              >
+                              <span class="text-body-1 font-weight-medium">
+                                {{ formatCurrency(0) }}
+                              </span>
+                            </div>
+                          </div>
+
+                          <VDivider class="my-4" />
+
+                          <div
+                            class="d-flex justify-space-between align-center"
+                          >
+                            <span class="text-h6 font-weight-bold">
+                              {{ $t('payment_amount') }}:
+                            </span>
+                            <span class="text-h6 font-weight-bold text-primary">
+                              {{ formatCurrency(getCheckoutTotal) }}
+                            </span>
+                          </div>
+                        </VCardText>
+                      </VCard>
+                    </VCol>
+                  </VRow>
+
+                  <!-- Resumo do PIX -->
+                  <VRow v-if="selectedPaymentMethod === 'pix'" class="mt-6">
+                    <VCol cols="12" md="6">
+                      <VCard variant="outlined">
+                        <VCardText>
+                          <h5 class="text-h6 mb-4">{{ $t('pix_summary') }}</h5>
+                          <div class="d-flex flex-column gap-2">
+                            <p class="text-body-2 text-medium-emphasis mt-2">
+                              {{ $t('pix_instructions') }}
+                            </p>
+                          </div>
+                        </VCardText>
+                      </VCard>
+                    </VCol>
+                    <VCol cols="12" md="6">
+                      <VCard variant="outlined">
+                        <VCardText>
+                          <h4 class="text-h6 mb-4">
+                            {{ $t('selected_plan') }}
+                          </h4>
+
+                          <div v-if="selectedPlanForCheckout" class="mb-4">
+                            <div class="d-flex align-center gap-3 mb-3">
+                              <VIcon
+                                :icon="
+                                  selectedPlanForCheckout.icon ||
+                                  'tabler-rocket'
+                                "
+                                size="32"
+                                color="primary"
+                              />
+                              <div>
+                                <h5 class="text-h6 mb-1">
+                                  {{ selectedPlanForCheckout.name }}
+                                </h5>
+                                <p
+                                  v-if="selectedPlanForCheckout.description"
+                                  class="text-body-2 text-medium-emphasis mb-0"
+                                >
+                                  {{ selectedPlanForCheckout.description }}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <VDivider class="my-4" />
+
+                          <div
+                            class="d-flex justify-space-between align-center mb-2"
+                          >
+                            <span class="text-body-1"
+                              >{{ $t('subtotal') }}:</span
+                            >
+                            <span class="text-body-1 font-weight-medium">
+                              {{
+                                formatCurrency(
+                                  selectedPlanForCheckout
+                                    ? getPrice(selectedPlanForCheckout)
+                                    : 0
+                                )
+                              }}
+                            </span>
+                          </div>
+
+                          <div class="mb-2">
+                            <div
+                              v-if="selectedAddons.length > 0"
+                              class="d-flex flex-column gap-2 mb-2"
+                            >
+                              <div
+                                v-for="addon in selectedAddons"
+                                :key="addon.plan_product_id"
+                                class="d-flex justify-space-between align-center"
+                              >
+                                <span class="text-body-2 text-medium-emphasis">
+                                  {{ addon.name }}
+                                  <span v-if="addon.quantity > 1"
+                                    >(x{{ addon.quantity }})</span
+                                  >:
+                                </span>
+                                <span class="text-body-2 font-weight-medium">
+                                  {{ formatCurrency(getAddonPrice(addon)) }}
+                                </span>
+                              </div>
+                            </div>
+                            <div
+                              v-else
+                              class="d-flex justify-space-between align-center"
+                            >
+                              <span class="text-body-1"
+                                >{{ $t('addons') }}:</span
+                              >
+                              <span class="text-body-1 font-weight-medium">
+                                {{ formatCurrency(0) }}
+                              </span>
+                            </div>
+                          </div>
+
+                          <VDivider class="my-4" />
+
+                          <div
+                            class="d-flex justify-space-between align-center"
+                          >
+                            <span class="text-h6 font-weight-bold">
+                              {{ $t('payment_amount') }}:
+                            </span>
+                            <span class="text-h6 font-weight-bold text-primary">
+                              {{ formatCurrency(getCheckoutTotal) }}
+                            </span>
+                          </div>
+                        </VCardText>
+                      </VCard>
+                    </VCol>
+                  </VRow>
                 </div>
               </VStepperWindowItem>
             </VStepperWindow>
