@@ -12,7 +12,8 @@ const isDigit = (char: string): boolean => {
 
 const findNumberStart = (text: string): number => {
   for (let i = 0; i < text.length; i++) {
-    if (isDigit(text[i]!)) {
+    const char = text[i];
+    if (char && isDigit(char)) {
       return i;
     }
   }
@@ -21,7 +22,8 @@ const findNumberStart = (text: string): number => {
 
 const findNumberEnd = (text: string, startIndex: number): number => {
   for (let i = startIndex; i < text.length; i++) {
-    if (!isDigit(text[i]!)) {
+    const char = text[i];
+    if (!char || !isDigit(char)) {
       return i;
     }
   }
@@ -39,7 +41,11 @@ const extractComplementStart = (text: string, numberEnd: number): number => {
   }
 
   let complementStart = numberEnd + 1;
-  while (complementStart < text.length && isDigit(text[complementStart]!)) {
+  while (complementStart < text.length) {
+    const char = text[complementStart];
+    if (!char || !isDigit(char)) {
+      break;
+    }
     complementStart++;
   }
 
