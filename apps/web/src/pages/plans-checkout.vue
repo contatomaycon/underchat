@@ -560,6 +560,24 @@ const getAddonPrice = (addon: {
   return addonPrice * multiplier;
 };
 
+const cardSelectItems = computed(() => {
+  const items: Array<{ title: string; value: string | null }> = [
+    {
+      title: t('select_option'),
+      value: null,
+    },
+  ];
+
+  userCards.value.forEach((card) => {
+    items.push({
+      title: `${card.holder_name} - ${t('ending_in')} ${card.last_number} ${card.brand}${card.default ? ` (${t('default')})` : ''}`,
+      value: card.user_card_id,
+    });
+  });
+
+  return items;
+});
+
 const getAddonsTotal = computed(() => {
   return selectedAddons.value.reduce((total, addon) => {
     return total + getAddonPrice(addon);
@@ -721,8 +739,9 @@ const processPayment = async () => {
   if (!selectedPlanForCheckout.value || !selectedPaymentMethod.value) return;
 
   const isPixPayment = selectedPaymentMethod.value === 'pix';
+  const isCreditCardPayment = selectedPaymentMethod.value === 'credit_card';
 
-  if (isPixPayment) {
+  if (isPixPayment || isCreditCardPayment) {
     processingPayment.value = true;
   }
 
@@ -796,31 +815,29 @@ const processPayment = async () => {
         is_confirmed: boolean;
       };
 
+      pixPaymentId.value = creditCardData.payment_id;
+      pixPaymentStatus.value =
+        (creditCardData.status as
+          | 'PENDING'
+          | 'RECEIVED'
+          | 'CONFIRMED'
+          | 'OVERDUE'
+          | 'REFUNDED') || 'PENDING';
+      pixPaymentInitiated.value = true;
+
       if (creditCardData.is_confirmed) {
-        planStore.showSnackbar(
-          planStore.i18n.global.t('payment_success_title'),
-          EColor.success
-        );
-        setTimeout(() => {
-          router.push({ name: 'account-settings', query: { tab: 'plans' } });
-        }, 2000);
-      } else {
-        pixPaymentId.value = creditCardData.payment_id;
-        pixPaymentStatus.value =
-          (creditCardData.status as
-            | 'PENDING'
-            | 'RECEIVED'
-            | 'CONFIRMED'
-            | 'OVERDUE'
-            | 'REFUNDED') || 'PENDING';
-        pixPaymentInitiated.value = true;
-        await initPaymentSubscription();
+        pixPaymentConfirmed.value = true;
       }
+
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      await nextTick();
+      pixModalOpen.value = true;
+      await initPaymentSubscription();
     } else if (result) {
       console.log('Pagamento processado:', result);
     }
   } finally {
-    if (isPixPayment) {
+    if (isPixPayment || isCreditCardPayment) {
       processingPayment.value = false;
     }
   }
@@ -2089,66 +2106,18 @@ onMounted(async () => {
                         class="mb-4"
                       />
 
-                      <div
+                      <VSelect
                         v-else-if="userCards.length > 0"
-                        class="d-flex flex-column gap-3"
-                      >
-                        <VCard
-                          v-for="card in userCards"
-                          :key="card.user_card_id"
-                          :class="[
-                            'credit-card-item',
-                            selectedCardId === card.user_card_id
-                              ? 'credit-card-selected'
-                              : '',
-                          ]"
-                          :variant="
-                            selectedCardId === card.user_card_id
-                              ? 'elevated'
-                              : 'outlined'
-                          "
-                          :elevation="
-                            selectedCardId === card.user_card_id ? 4 : 0
-                          "
-                          @click="selectedCardId = card.user_card_id"
-                          style="cursor: pointer"
-                        >
-                          <VCardText>
-                            <div
-                              class="d-flex align-center justify-space-between"
-                            >
-                              <div class="d-flex align-center gap-3">
-                                <VIcon
-                                  icon="tabler-credit-card"
-                                  size="32"
-                                  color="primary"
-                                />
-                                <div>
-                                  <div class="text-body-1 font-weight-medium">
-                                    {{ card.holder_name }}
-                                  </div>
-                                  <div class="text-body-2 text-medium-emphasis">
-                                    {{ $t('ending_in') }} {{ card.last_number }}
-                                  </div>
-                                  <div class="text-body-2 text-medium-emphasis">
-                                    {{ card.brand }}
-                                  </div>
-                                </div>
-                              </div>
-                              <div>
-                                <VChip
-                                  v-if="card.default"
-                                  color="primary"
-                                  size="small"
-                                  variant="tonal"
-                                >
-                                  {{ $t('default') }}
-                                </VChip>
-                              </div>
-                            </div>
-                          </VCardText>
-                        </VCard>
-                      </div>
+                        v-model="selectedCardId"
+                        :items="cardSelectItems"
+                        :label="$t('select_credit_card')"
+                        variant="outlined"
+                        density="comfortable"
+                        item-title="title"
+                        item-value="value"
+                        clearable
+                        class="mb-4"
+                      />
 
                       <VCard v-else variant="outlined" class="mb-4">
                         <VCardText class="text-center py-4">
@@ -2887,10 +2856,17 @@ onMounted(async () => {
   </div>
 
   <VDialog v-model="pixModalOpen" max-width="500" persistent>
-    <DialogCloseBtn v-if="!pixPaymentConfirmed" @click="closePixModal" />
+    <DialogCloseBtn
+      v-if="!pixPaymentConfirmed && !isPaymentReceived"
+      @click="closePixModal"
+    />
     <VCard>
       <VCardTitle>
-        <span>{{ $t('pix_payment') }}</span>
+        <span>{{
+          selectedPaymentMethod === 'pix'
+            ? $t('pix_payment')
+            : $t('credit_card_payment')
+        }}</span>
       </VCardTitle>
       <VDivider />
       <VCardText class="d-flex flex-column align-center gap-4 pa-6">
@@ -2918,15 +2894,21 @@ onMounted(async () => {
               {{ getPaymentStatusText(pixPaymentStatus) }}
             </VChip>
           </div>
-          <p class="text-body-1 mb-2">{{ $t('pix_payment_instructions') }}</p>
-          <p class="text-caption text-medium-emphasis">
+          <p v-if="selectedPaymentMethod === 'pix'" class="text-body-1 mb-2">
+            {{ $t('pix_payment_instructions') }}
+          </p>
+          <p v-else class="text-body-1 mb-2">
+            {{ $t('credit_card_payment_processing') }}
+          </p>
+          <p
+            v-if="
+              selectedPaymentMethod === 'pix' && pixPaymentData?.expiration_date
+            "
+            class="text-caption text-medium-emphasis"
+          >
             {{ $t('pix_expires_at') }}:
             {{
-              pixPaymentData?.expiration_date
-                ? new Date(pixPaymentData.expiration_date).toLocaleString(
-                    locale
-                  )
-                : ''
+              new Date(pixPaymentData.expiration_date).toLocaleString(locale)
             }}
           </p>
         </div>
@@ -2952,7 +2934,14 @@ onMounted(async () => {
           />
         </div>
 
-        <div v-if="!pixPaymentConfirmed && !isPaymentReceived" class="w-100">
+        <div
+          v-if="
+            selectedPaymentMethod === 'pix' &&
+            !pixPaymentConfirmed &&
+            !isPaymentReceived
+          "
+          class="w-100"
+        >
           <VLabel class="mb-2">{{ $t('pix_copy_paste_code') }}</VLabel>
           <VTextField
             :model-value="pixPaymentData?.payload || ''"
@@ -2975,7 +2964,11 @@ onMounted(async () => {
         </div>
 
         <VAlert
-          v-if="!pixPaymentConfirmed && !isPaymentReceived"
+          v-if="
+            selectedPaymentMethod === 'pix' &&
+            !pixPaymentConfirmed &&
+            !isPaymentReceived
+          "
           type="info"
           variant="tonal"
           class="w-100"
@@ -2984,7 +2977,10 @@ onMounted(async () => {
         </VAlert>
       </VCardText>
       <VDivider />
-      <VCardActions v-if="!pixPaymentConfirmed" class="justify-end pa-4">
+      <VCardActions
+        v-if="!pixPaymentConfirmed && !isPaymentReceived"
+        class="justify-end pa-4"
+      >
         <VBtn variant="tonal" color="secondary" @click="closePixModal">
           {{ $t('close') }}
         </VBtn>
@@ -3053,21 +3049,6 @@ onMounted(async () => {
 }
 
 .payment-method-selected {
-  border: 2px solid rgb(var(--v-theme-primary));
-}
-
-.credit-card-item {
-  transition:
-    transform 0.2s ease-in-out,
-    box-shadow 0.2s ease-in-out;
-
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-  }
-}
-
-.credit-card-selected {
   border: 2px solid rgb(var(--v-theme-primary));
 }
 

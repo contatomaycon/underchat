@@ -218,6 +218,8 @@
   "installments_only_for_annual_plans": "Pagos a plazos permitidos solo para planes anuales",
   "installments_must_be_between_1_and_12": "El número de cuotas debe estar entre 1 y 12",
   "credit_card_payment_creation_failed": "Error al crear el pago con tarjeta de crédito",
+  "credit_card_payment": "Pago con Tarjeta de Crédito",
+  "credit_card_payment_processing": "Procesando pago con tarjeta de crédito...",
   "order_payment_creation_failed": "Error al crear el pago del pedido",
   "customer_not_found_or_could_not_create": "Cliente no encontrado o no se pudo crear",
   "active_plan_not_found": "Plan activo no encontrado",

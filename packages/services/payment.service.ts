@@ -582,6 +582,23 @@ export class PaymentService {
       throw new Error('Falha ao tokenizar cartão de crédito');
     }
 
+    const existingCard =
+      await this.userCardsListerRepository.getUserCardByToken(
+        userId,
+        tokenizeResult.creditCardToken
+      );
+
+    if (existingCard) {
+      return {
+        creditCardToken: existingCard.token,
+        userCardId: existingCard.user_card_id,
+      };
+    }
+
+    const userCardsCount =
+      await this.userCardsListerRepository.getUserCardsCount(userId);
+    const isFirstCard = userCardsCount === 0;
+
     const lastNumber = newCard.number.replace(/\s/g, '').slice(-4);
     const userCardId = await this.userCardCreatorRepository.createUserCard({
       userId,
@@ -589,7 +606,7 @@ export class PaymentService {
       holderName: newCard.holder_name,
       lastNumber,
       brand: tokenizeResult.creditCardBrand,
-      isDefault: false,
+      isDefault: isFirstCard,
     });
 
     return {

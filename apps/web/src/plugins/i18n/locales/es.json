@@ -39,6 +39,7 @@
     "search_minimum_characters": "Escriba al menos {count} caracteres para buscar",
     "search": "Buscar",
     "search_service_placeholder": "Buscar servicio...",
+    "select_option": "Seleccione una opción",
     "searching": "Buscando...",
     "select_state": "Selecciona el estado",
     "all": "Todos",
@@ -1517,5 +1518,7 @@
     "payment_success_title": "Pago Confirmado",
     "payment_success_message": "¡Su pago ha sido confirmado con éxito!",
     "payment_received_title": "Pago Recibido",
-    "payment_received_message": "Su pago ha sido recibido y está siendo procesado. El plan será liberado en breve."
+    "payment_received_message": "Su pago ha sido recibido y está siendo procesado. El plan será liberado en breve.",
+    "credit_card_payment": "Pago con Tarjeta de Crédito",
+    "credit_card_payment_processing": "Procesando pago con tarjeta de crédito..."
 }

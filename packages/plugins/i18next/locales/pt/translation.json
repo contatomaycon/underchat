@@ -218,6 +218,8 @@
   "installments_only_for_annual_plans": "Parcelamento permitido apenas para planos anuais",
   "installments_must_be_between_1_and_12": "O número de parcelas deve estar entre 1 e 12",
   "credit_card_payment_creation_failed": "Erro ao criar pagamento com cartão de crédito",
+  "credit_card_payment": "Pagamento com Cartão de Crédito",
+  "credit_card_payment_processing": "Processando pagamento com cartão de crédito...",
   "order_payment_creation_failed": "Falha ao criar o pedido de pagamento",
   "customer_not_found_or_could_not_create": "Cliente não encontrado ou não foi possível criar",
   "active_plan_not_found": "Plano ativo não encontrado",

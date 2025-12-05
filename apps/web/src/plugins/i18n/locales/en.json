@@ -39,6 +39,7 @@
     "search_minimum_characters": "Type at least {count} characters to search",
     "search": "Search",
     "search_service_placeholder": "Search service...",
+    "select_option": "Select an option",
     "searching": "Searching...",
     "select_state": "Select status",
     "all": "All",
@@ -1517,5 +1518,7 @@
     "payment_success_title": "Payment Confirmed",
     "payment_success_message": "Your payment has been confirmed successfully!",
     "payment_received_title": "Payment Received",
-    "payment_received_message": "Your payment has been received and is being processed. The plan will be released shortly."
+    "payment_received_message": "Your payment has been received and is being processed. The plan will be released shortly.",
+    "credit_card_payment": "Credit Card Payment",
+    "credit_card_payment_processing": "Processing credit card payment..."
 }

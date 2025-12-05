@@ -29,6 +29,31 @@ export class UserCardsListerRepository {
     return result || null;
   };
 
+  getUserCardByToken = async (
+    userId: string,
+    token: string
+  ): Promise<{ user_card_id: string; token: string } | null> => {
+    const result = await this.db.query.userCard.findFirst({
+      where: and(eq(userCard.user_id, userId), eq(userCard.token, token)),
+      columns: {
+        user_card_id: true,
+        token: true,
+      },
+    });
+
+    return result || null;
+  };
+
+  getUserCardsCount = async (userId: string): Promise<number> => {
+    const result = await this.db
+      .select()
+      .from(userCard)
+      .where(eq(userCard.user_id, userId))
+      .execute();
+
+    return result.length;
+  };
+
   listUserCards = async (userId: string): Promise<ListUserCardResponse[]> => {
     const result = await this.db
       .select({
