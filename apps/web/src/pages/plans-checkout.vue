@@ -556,7 +556,7 @@ const getAddonPrice = (addon: {
 }): number => {
   const addonPrice = addon.price;
   const multiplier = billingPeriod.value === 'annual' ? 12 : 1;
-  return addonPrice * addon.quantity * multiplier;
+  return addonPrice * multiplier;
 };
 
 const getAddonsTotal = computed(() => {

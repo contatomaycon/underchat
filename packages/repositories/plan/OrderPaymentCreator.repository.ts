@@ -152,8 +152,7 @@ export class OrderPaymentCreatorRepository {
         continue;
       }
 
-      const unitValue = Number(crossSell.price) * multiplier;
-      const totalValue = unitValue * crossSell.quantity;
+      const totalValue = Number(crossSell.price) * multiplier;
 
       crossSellRecords.push({
         account_payment_cross_sell_id: randomUUID(),
@@ -227,8 +226,8 @@ export class OrderPaymentCreatorRepository {
     const multiplier = billingPeriod === 'annual' ? 12 : 1;
 
     return crossSells.reduce((total, crossSell) => {
-      const unitValue = Number(crossSell.price) * multiplier;
-      return total + unitValue * crossSell.quantity;
+      const addonValue = Number(crossSell.price) * multiplier;
+      return total + addonValue;
     }, 0);
   };
 
