@@ -633,6 +633,27 @@ const isTotalZero = computed(() => {
   );
 });
 
+const isNewCardValid = computed(() => {
+  if (!showAddCardModal.value) return false;
+
+  const card = newCard.value;
+  const hasNumber = card.number.replace(/\s/g, '').length >= 13;
+  const hasHolderName = card.holderName.trim().length > 0;
+  const hasExpiryMonth = card.expiryMonth.length === 2;
+  const hasExpiryYear = card.expiryYear.length === 2;
+  const hasCvv = card.cvv.length >= 3;
+  const hasNoExpiryError = !expiryError.value;
+
+  return (
+    hasNumber &&
+    hasHolderName &&
+    hasExpiryMonth &&
+    hasExpiryYear &&
+    hasCvv &&
+    hasNoExpiryError
+  );
+});
+
 const goBack = () => {
   router.push({ name: 'plans' });
 };
@@ -2849,7 +2870,8 @@ onMounted(async () => {
                       (currentStep === 4 &&
                         selectedPaymentMethod === 'credit_card' &&
                         !selectedCardId &&
-                        userCards.length > 0) ||
+                        userCards.length > 0 &&
+                        !isNewCardValid) ||
                       isDiscountGreaterThanTotal ||
                       isUpgradeBlocked ||
                       isTotalZero
@@ -2866,7 +2888,8 @@ onMounted(async () => {
                       !selectedPaymentMethod ||
                       (selectedPaymentMethod === 'credit_card' &&
                         !selectedCardId &&
-                        userCards.length > 0) ||
+                        userCards.length > 0 &&
+                        !isNewCardValid) ||
                       isDiscountGreaterThanTotal ||
                       isUpgradeBlocked ||
                       isTotalZero ||
