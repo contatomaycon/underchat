@@ -35,6 +35,7 @@ import { CalculateUpgradeDiscountResponse } from '@core/schema/plan/calculateUpg
 import { CreateOrderPaymentRequest } from '@core/schema/plan/createOrderPayment/request.schema';
 import { CreateOrderPaymentResponse } from '@core/schema/plan/createOrderPayment/response.schema';
 import creditCardType from 'credit-card-type';
+import bwipjs from 'bwip-js';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { paymentAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
@@ -674,6 +675,25 @@ const getPixQrCodeImageSrc = (qrCode: string): string => {
   return `data:image/png;base64,${qrCode}`;
 };
 
+const getBoletoBarcodeImageSrc = (barCode: string): string => {
+  if (!barCode) return '';
+  try {
+    const canvas = document.createElement('canvas');
+    bwipjs.toCanvas(canvas, {
+      bcid: 'interleaved2of5',
+      text: barCode,
+      scale: 3,
+      height: 50,
+      includetext: false,
+      textxalign: 'center',
+    });
+    return canvas.toDataURL('image/png');
+  } catch (error) {
+    console.error('Erro ao gerar código de barras:', error);
+    return '';
+  }
+};
+
 const getPaymentStatusText = (status: string | null): string => {
   if (!status) return t('payment_status_pending');
   const statusMap: Record<string, string> = {
@@ -833,8 +853,9 @@ const processPayment = async () => {
 
   const isPixPayment = selectedPaymentMethod.value === 'pix';
   const isCreditCardPayment = selectedPaymentMethod.value === 'credit_card';
+  const isBoletoPayment = selectedPaymentMethod.value === 'boleto';
 
-  if (isPixPayment || isCreditCardPayment) {
+  if (isPixPayment || isCreditCardPayment || isBoletoPayment) {
     processingPayment.value = true;
   }
 
@@ -954,7 +975,7 @@ const processPayment = async () => {
       console.log('Pagamento processado:', result);
     }
   } finally {
-    if (isPixPayment || isCreditCardPayment) {
+    if (isPixPayment || isCreditCardPayment || isBoletoPayment) {
       processingPayment.value = false;
     }
   }
@@ -3010,8 +3031,19 @@ onMounted(async () => {
                     variant="outlined"
                     @click="pixModalOpen = true"
                   >
-                    <VIcon start icon="tabler-qrcode" />
-                    {{ $t('view_pix_payment') }}
+                    <VIcon
+                      start
+                      :icon="
+                        selectedPaymentMethod === 'boleto'
+                          ? 'tabler-file-invoice'
+                          : 'tabler-qrcode'
+                      "
+                    />
+                    {{
+                      selectedPaymentMethod === 'boleto'
+                        ? $t('view_boleto_payment')
+                        : $t('view_pix_payment')
+                    }}
                   </VBtn>
                 </div>
                 <VSpacer />
@@ -3173,7 +3205,7 @@ onMounted(async () => {
             class="d-flex justify-center align-center pa-4 bg-grey-lighten-4 rounded mb-4"
           >
             <img
-              :src="`data:image/png;base64,${boletoPaymentData.bar_code}`"
+              :src="getBoletoBarcodeImageSrc(boletoPaymentData.bar_code)"
               alt="Código de Barras"
               style="
                 max-width: 100%;
