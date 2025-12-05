@@ -305,6 +305,7 @@ export class OrderPaymentCreatorUseCase {
       recurringPayment: false,
       boleto: boletoResult.identificationField.identificationField,
       boletoNumber: boletoResult.identificationField.nossoNumero,
+      boletoPdf: boletoResult.payment.bankSlipUrl || null,
     });
 
     await this.planService.createAccountPaymentCrossSells({
@@ -318,7 +319,9 @@ export class OrderPaymentCreatorUseCase {
       identification_field:
         boletoResult.identificationField.identificationField,
       nosso_numero: boletoResult.identificationField.nossoNumero,
-      bar_code: boletoResult.identificationField.barCode,
+      qr_code: boletoResult.pixQrCode?.encodedImage || undefined,
+      payload: boletoResult.pixQrCode?.payload || undefined,
+      expiration_date: boletoResult.pixQrCode?.expirationDate || undefined,
       bank_slip_url: boletoResult.payment.bankSlipUrl || '',
       due_date: boletoResult.payment.dueDate,
     };

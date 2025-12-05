@@ -423,6 +423,7 @@ export class PaymentService {
   ): Promise<{
     payment: ICreateAsaasPaymentResponse | null;
     identificationField: IGetAsaasPaymentIdentificationFieldResponse | null;
+    pixQrCode: IGetAsaasPaymentPixQrCodeResponse | null;
   }> => {
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 3);
@@ -439,13 +440,15 @@ export class PaymentService {
     const payment = await this.asaasService.createPayment(paymentRequest);
 
     if (!payment || !payment.id) {
-      return { payment: null, identificationField: null };
+      return { payment: null, identificationField: null, pixQrCode: null };
     }
 
     const identificationField =
       await this.asaasService.getPaymentIdentificationField(payment.id);
 
-    return { payment, identificationField };
+    const pixQrCode = await this.asaasService.getPaymentPixQrCode(payment.id);
+
+    return { payment, identificationField, pixQrCode };
   };
 
   createCreditCardPayment = async (

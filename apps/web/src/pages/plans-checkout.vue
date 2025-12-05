@@ -35,7 +35,6 @@ import { CalculateUpgradeDiscountResponse } from '@core/schema/plan/calculateUpg
 import { CreateOrderPaymentRequest } from '@core/schema/plan/createOrderPayment/request.schema';
 import { CreateOrderPaymentResponse } from '@core/schema/plan/createOrderPayment/response.schema';
 import creditCardType from 'credit-card-type';
-import bwipjs from 'bwip-js';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { paymentAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
@@ -122,7 +121,9 @@ const boletoPaymentData = ref<{
   payment_id: string;
   identification_field: string;
   nosso_numero: string;
-  bar_code: string;
+  qr_code?: string;
+  payload?: string;
+  expiration_date?: string;
   bank_slip_url: string;
   due_date: string;
 } | null>(null);
@@ -675,25 +676,6 @@ const getPixQrCodeImageSrc = (qrCode: string): string => {
   return `data:image/png;base64,${qrCode}`;
 };
 
-const getBoletoBarcodeImageSrc = (barCode: string): string => {
-  if (!barCode) return '';
-  try {
-    const canvas = document.createElement('canvas');
-    bwipjs.toCanvas(canvas, {
-      bcid: 'interleaved2of5',
-      text: barCode,
-      scale: 3,
-      height: 50,
-      includetext: false,
-      textxalign: 'center',
-    });
-    return canvas.toDataURL('image/png');
-  } catch (error) {
-    console.error('Erro ao gerar código de barras:', error);
-    return '';
-  }
-};
-
 const getPaymentStatusText = (status: string | null): string => {
   if (!status) return t('payment_status_pending');
   const statusMap: Record<string, string> = {
@@ -730,6 +712,9 @@ const shouldShowCloseButton = computed(() => {
     return true;
   }
   if (isPaymentReceived.value && selectedPaymentMethod.value === 'pix') {
+    return true;
+  }
+  if (isPaymentReceived.value && selectedPaymentMethod.value === 'boleto') {
     return true;
   }
   return !pixPaymentConfirmed.value && !isPaymentReceived.value;
@@ -821,6 +806,19 @@ const copyBoletoCode = async () => {
   }
 };
 
+const copyBoletoPixPayload = async () => {
+  if (boletoPaymentData.value?.payload) {
+    try {
+      await navigator.clipboard.writeText(boletoPaymentData.value.payload);
+      planStore.snackbar.status = true;
+      planStore.snackbar.message = t('pix_code_copied');
+      planStore.snackbar.color = EColor.success;
+    } catch (error) {
+      console.error('Erro ao copiar código PIX do boleto:', error);
+    }
+  }
+};
+
 const downloadBoleto = () => {
   if (boletoPaymentData.value?.bank_slip_url) {
     window.open(boletoPaymentData.value.bank_slip_url, '_blank');
@@ -841,9 +839,11 @@ const closePixModal = async () => {
   const wasReceived = isPaymentReceived.value;
   const wasCreditCardConfirmed =
     pixPaymentConfirmed.value && selectedPaymentMethod.value === 'credit_card';
+  const wasBoletoReceived =
+    isPaymentReceived.value && selectedPaymentMethod.value === 'boleto';
   await cleanupPaymentSubscription();
   pixModalOpen.value = false;
-  if (wasReceived || wasCreditCardConfirmed) {
+  if (wasReceived || wasCreditCardConfirmed || wasBoletoReceived) {
     router.push({ name: 'account-settings', query: { tab: 'plans' } });
   }
 };
@@ -927,7 +927,9 @@ const processPayment = async () => {
         payment_id: string;
         identification_field: string;
         nosso_numero: string;
-        bar_code: string;
+        qr_code?: string;
+        payload?: string;
+        expiration_date?: string;
         bank_slip_url: string;
         due_date: string;
       };
@@ -935,7 +937,9 @@ const processPayment = async () => {
         payment_id: boletoData.payment_id,
         identification_field: boletoData.identification_field,
         nosso_numero: boletoData.nosso_numero,
-        bar_code: boletoData.bar_code,
+        qr_code: boletoData.qr_code,
+        payload: boletoData.payload,
+        expiration_date: boletoData.expiration_date,
         bank_slip_url: boletoData.bank_slip_url,
         due_date: boletoData.due_date,
       };
@@ -3201,20 +3205,42 @@ onMounted(async () => {
           class="w-100"
         >
           <div
-            v-if="boletoPaymentData.bar_code"
+            v-if="boletoPaymentData.qr_code"
             class="d-flex justify-center align-center pa-4 bg-grey-lighten-4 rounded mb-4"
           >
             <img
-              :src="getBoletoBarcodeImageSrc(boletoPaymentData.bar_code)"
-              alt="Código de Barras"
+              :src="getPixQrCodeImageSrc(boletoPaymentData.qr_code)"
+              alt="QR Code PIX"
               style="
-                max-width: 100%;
-                max-height: 100px;
-                width: auto;
+                max-width: 300px;
+                max-height: 300px;
+                width: 100%;
                 height: auto;
                 object-fit: contain;
               "
             />
+          </div>
+
+          <div v-if="boletoPaymentData.payload" class="mb-4">
+            <VLabel class="mb-2">{{ $t('pix_copy_paste_code') }}</VLabel>
+            <VTextField
+              :model-value="boletoPaymentData.payload || ''"
+              readonly
+              variant="outlined"
+              density="compact"
+              class="mb-2"
+            >
+              <template #append-inner>
+                <IconBtn
+                  size="small"
+                  variant="text"
+                  class="me-n2"
+                  @click="copyBoletoPixPayload"
+                >
+                  <VIcon size="20">tabler-copy</VIcon>
+                </IconBtn>
+              </template>
+            </VTextField>
           </div>
 
           <div class="mb-4">

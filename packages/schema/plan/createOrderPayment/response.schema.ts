@@ -21,7 +21,15 @@ export const boletoPaymentDataSchema = Type.Object({
     description: 'Linha digitável do boleto',
   }),
   nosso_numero: Type.String({ description: 'Nosso número do boleto' }),
-  bar_code: Type.String({ description: 'Código de barras do boleto' }),
+  qr_code: Type.Optional(
+    Type.String({ description: 'QR Code do PIX do boleto em base64' })
+  ),
+  payload: Type.Optional(
+    Type.String({ description: 'Código PIX copia e cola do boleto' })
+  ),
+  expiration_date: Type.Optional(
+    Type.String({ description: 'Data de expiração do QR Code do PIX' })
+  ),
   bank_slip_url: Type.String({ description: 'URL do boleto para download' }),
   due_date: Type.String({ description: 'Data de vencimento do boleto' }),
 });

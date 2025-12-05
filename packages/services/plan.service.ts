@@ -190,6 +190,7 @@ export class PlanService {
     installment?: string | null;
     boleto?: string | null;
     boletoNumber?: string | null;
+    boletoPdf?: string | null;
   }): Promise<string> => {
     return this.orderPaymentCreatorRepository.createAccountPayment(data);
   };

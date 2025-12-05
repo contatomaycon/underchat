@@ -1529,5 +1529,6 @@
     "boleto_due_date": "Fecha de Vencimiento",
     "download_boleto": "Descargar Boleto",
     "boleto_code_copied": "¡Código del boleto copiado!",
+    "pix_code_copied": "¡Código PIX copiado!",
     "view_boleto_payment": "Ver Boleto"
 }

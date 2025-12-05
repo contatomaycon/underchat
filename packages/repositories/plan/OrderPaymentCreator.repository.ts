@@ -89,6 +89,7 @@ export class OrderPaymentCreatorRepository {
     installment?: string | null;
     boleto?: string | null;
     boletoNumber?: string | null;
+    boletoPdf?: string | null;
   }): Promise<string> => {
     const accountPaymentId = randomUUID();
 
@@ -110,6 +111,7 @@ export class OrderPaymentCreatorRepository {
       installment: data.installment || null,
       boleto: data.boleto || null,
       boleto_number: data.boletoNumber || null,
+      boleto_pdf: data.boletoPdf || null,
     });
 
     return accountPaymentId;

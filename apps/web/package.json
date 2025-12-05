@@ -31,7 +31,6 @@
     "@vueuse/core": "14.0.0",
     "@vueuse/math": "14.0.0",
     "apexcharts": "5.3.6",
-    "bwip-js": "^4.8.0",
     "chart.js": "4.5.1",
     "cookie-es": "2.0.0",
     "credit-card-type": "^10.1.0",
