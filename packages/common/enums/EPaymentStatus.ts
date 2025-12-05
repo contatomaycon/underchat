@@ -1,0 +1,16 @@
+export enum EPaymentStatus {
+  pending = '019a930d-c6f4-75ad-88ff-9a1b2c3d4e5d',
+  received = '019a930d-c6f4-75ad-88ff-9b2c3d4e5f6d',
+  confirmed = '019a930d-c6f4-75ad-88ff-9c3d4e5f6a7d',
+  overdue = '019a930d-c6f4-75ad-88ff-9d4e5f6a7b8d',
+  refunded = '019a930d-c6f4-75ad-88ff-9e5f6a7b8c9d',
+  received_in_cash = '019a930d-c6f4-75ad-88ff-9f6a7b8c9d0d',
+  refund_requested = '019a930d-c6f4-75ad-88ff-9a7b8c9d0e1d',
+  refund_in_progress = '019a930d-c6f4-75ad-88ff-9b8c9d0e1f2d',
+  chargeback_requested = '019a930d-c6f4-75ad-88ff-9c9d0e1f2a3d',
+  chargeback_dispute = '019a930d-c6f4-75ad-88ff-9d0e1f2a3b4d',
+  awaiting_chargeback_reversal = '019a930d-c6f4-75ad-88ff-9e1f2a3b4c5d',
+  dunning_requested = '019a930d-c6f4-75ad-88ff-9f2a3b4c5d6d',
+  dunning_received = '019a930d-c6f4-75ad-88ff-9a3b4c5d6e7d',
+  awaiting_risk_analysis = '019a930d-c6f4-75ad-88ff-9b4c5d6e7f8d',
+}

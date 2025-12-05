@@ -1,30 +1,30 @@
 import * as schema from '@core/models';
-import { plan, planCrossSell } from '@core/models';
+import { plan, planCrossSell, accountPayment, account } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { CreateOrderPaymentRequest } from '@core/schema/plan/createOrderPayment/request.schema';
-import { CreateOrderPaymentResponse } from '@core/schema/plan/createOrderPayment/response.schema';
 import { UpgradeDiscountCalculatorRepository } from './UpgradeDiscountCalculator.repository';
-import { PaymentService } from '@core/services/payment.service';
 import { randomUUID } from 'crypto';
+import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
 
 @injectable()
 export class OrderPaymentCreatorRepository {
   constructor(
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>,
     @inject(UpgradeDiscountCalculatorRepository)
-    private readonly upgradeDiscountCalculator: UpgradeDiscountCalculatorRepository,
-    @inject(PaymentService)
-    private readonly paymentService: PaymentService
+    private readonly upgradeDiscountCalculator: UpgradeDiscountCalculatorRepository
   ) {}
 
-  createOrderPayment = async (
+  calculateOrderPayment = async (
     accountId: string,
     input: CreateOrderPaymentRequest
-  ): Promise<CreateOrderPaymentResponse> => {
-    const customer = await this.paymentService.getOrCreateCustomer(accountId);
-
+  ): Promise<{
+    planPrice: number;
+    addonsTotal: number;
+    discountAmount: number;
+    totalAmount: number;
+  }> => {
     const newPlan = await this.getPlan(input.plan_id);
     if (!newPlan) {
       throw new Error('Plano não encontrado');
@@ -57,16 +57,48 @@ export class OrderPaymentCreatorRepository {
     const totalAmount =
       Math.round(Math.max(0, planPrice + addonsTotal - discountAmount) * 100) /
       100;
-    const orderId = randomUUID();
 
     return {
-      order_id: orderId,
-      total_amount: totalAmount,
-      plan_price: planPrice,
-      addons_total: addonsTotal,
-      upgrade_discount: discountAmount,
-      payment_method: input.payment_method,
+      planPrice,
+      addonsTotal,
+      discountAmount,
+      totalAmount,
     };
+  };
+
+  createAccountPayment = async (data: {
+    accountId: string;
+    userCustomerId: string;
+    planAccountId: string;
+    billing: string;
+    paymentBillingTypeId: string;
+    value: string;
+    netValue: string;
+    pixTransaction: string | null;
+    pixQrCodeId: string | null;
+    paymentStatusId: string;
+    billingPeriodId: string | null;
+    invoiceUrl: string | null;
+  }): Promise<string> => {
+    const accountPaymentId = randomUUID();
+
+    await this.db.insert(accountPayment).values({
+      account_payment_id: accountPaymentId,
+      account_id: data.accountId,
+      user_customer_id: data.userCustomerId,
+      plan_account_id: data.planAccountId,
+      billing: data.billing,
+      payment_billing_type_id: data.paymentBillingTypeId,
+      value: data.value,
+      net_value: data.netValue,
+      pix_transaction: data.pixTransaction,
+      pix_qr_code_id: data.pixQrCodeId,
+      payment_status_id: data.paymentStatusId,
+      billing_period_id: data.billingPeriodId,
+      invoice_url: data.invoiceUrl,
+    });
+
+    return accountPaymentId;
   };
 
   private readonly getPlan = async (planId: string) => {
@@ -86,16 +118,17 @@ export class OrderPaymentCreatorRepository {
   ): number => {
     const monthlyPrice = Number(planData.price);
 
-    if (billingPeriodName === 'annual') {
-      const annualPrice = monthlyPrice * 12;
-      if (planData.annual_discount) {
-        const discount = Number.parseFloat(planData.annual_discount);
-        return annualPrice * (1 - discount / 100);
-      }
+    if (billingPeriodName !== 'annual') {
+      return monthlyPrice;
+    }
+
+    const annualPrice = monthlyPrice * 12;
+    if (!planData.annual_discount) {
       return annualPrice;
     }
 
-    return monthlyPrice;
+    const discount = Number.parseFloat(planData.annual_discount);
+    return annualPrice * (1 - discount / 100);
   };
 
   private readonly calculateAddonsTotal = async (
@@ -128,8 +161,55 @@ export class OrderPaymentCreatorRepository {
       const crossSell = crossSells.find(
         (cs) => cs.plan_product_id === addon.plan_product_id
       );
-      if (!crossSell) return total;
+      if (!crossSell) {
+        return total;
+      }
       return total + Number(crossSell.price) * addon.quantity * multiplier;
     }, 0);
+  };
+
+  getActivePlanAccountId = async (
+    accountId: string
+  ): Promise<string | null> => {
+    const accountResult = await this.db.query.account.findFirst({
+      where: and(eq(account.account_id, accountId), isNull(account.deleted_at)),
+      with: {
+        apc: {
+          columns: {
+            plan_account_id: true,
+          },
+          with: {
+            pas: {
+              columns: {
+                plan_account_status_id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+      columns: {
+        account_id: true,
+      },
+    });
+
+    if (!accountResult) {
+      return null;
+    }
+
+    const activePlanAccount = accountResult.apc?.find(
+      (pa) => pa.pas?.name === 'active'
+    );
+
+    return activePlanAccount?.plan_account_id || null;
+  };
+
+  getBillingPeriodId = (billingPeriod: 'monthly' | 'annual'): string | null => {
+    const billingPeriodMap: Record<'monthly' | 'annual', string> = {
+      monthly: EBillingPeriod.monthly,
+      annual: EBillingPeriod.annual,
+    };
+
+    return billingPeriodMap[billingPeriod] || null;
   };
 }

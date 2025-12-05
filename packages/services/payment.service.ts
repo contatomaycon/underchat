@@ -9,6 +9,11 @@ import {
 } from '@core/common/interfaces/IAsaasCustomer';
 import { EUserDocumentType } from '@core/common/enums/EUserDocumentType';
 import { ViewUserResponse } from '@core/schema/user/viewUser/response.schema';
+import {
+  ICreateAsaasPaymentRequest,
+  ICreateAsaasPaymentResponse,
+  IGetAsaasPaymentPixQrCodeResponse,
+} from '@core/common/interfaces/IAsaasPayment';
 
 @injectable()
 export class PaymentService {
@@ -336,5 +341,37 @@ export class PaymentService {
       observations: createdCustomer.observations || undefined,
       foreignCustomer: createdCustomer.foreignCustomer || undefined,
     };
+  };
+
+  createPixPayment = async (
+    customerId: string,
+    value: number,
+    description?: string,
+    externalReference?: string
+  ): Promise<{
+    payment: ICreateAsaasPaymentResponse | null;
+    qrCode: IGetAsaasPaymentPixQrCodeResponse | null;
+  }> => {
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + 1);
+
+    const paymentRequest: ICreateAsaasPaymentRequest = {
+      customer: customerId,
+      billingType: 'PIX',
+      value: value,
+      dueDate: dueDate.toISOString().split('T')[0],
+      description: description,
+      externalReference: externalReference,
+    };
+
+    const payment = await this.asaasService.createPayment(paymentRequest);
+
+    if (!payment || !payment.id) {
+      return { payment: null, qrCode: null };
+    }
+
+    const qrCode = await this.asaasService.getPaymentPixQrCode(payment.id);
+
+    return { payment, qrCode };
   };
 }

@@ -16,6 +16,7 @@ export const createOrderPayment = async (
 
   try {
     const response = await orderPaymentCreatorUseCase.execute(
+      t,
       tokenJwtData.account_id,
       request.body
     );

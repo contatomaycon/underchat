@@ -25,7 +25,9 @@ import { ViewUserInfoResponse } from '@core/schema/plan/viewUserInfo/response.sc
 import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.schema';
 import { CalculateUpgradeDiscountResponse } from '@core/schema/plan/calculateUpgradeDiscount/response.schema';
 import { CreateOrderPaymentRequest } from '@core/schema/plan/createOrderPayment/request.schema';
+import { CreateOrderPaymentResponse } from '@core/schema/plan/createOrderPayment/response.schema';
 import creditCardType from 'credit-card-type';
+import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
 
 definePage({
   meta: {
@@ -90,6 +92,13 @@ const step2Loaded = ref(false);
 const step3Loaded = ref(false);
 const step4Loaded = ref(false);
 const expiryError = ref<string | null>(null);
+const pixModalOpen = ref(false);
+const processingPayment = ref(false);
+const pixPaymentData = ref<{
+  qr_code: string;
+  payload: string;
+  expiration_date: string;
+} | null>(null);
 
 const getCurrencyConfig = () => {
   const localeMap: Record<string, { locale: string; currency: string }> = {
@@ -177,8 +186,6 @@ const loadStep1 = async () => {
       if (plan) {
         selectedPlanForCheckout.value = plan;
         currentStep.value = 2;
-
-        loadUpgradeDiscount();
       }
     }
   }
@@ -469,55 +476,96 @@ const goBack = () => {
   router.push({ name: 'plans' });
 };
 
+const getPixQrCodeImageSrc = (qrCode: string): string => {
+  if (!qrCode) return '';
+  if (qrCode.startsWith('data:image')) {
+    return qrCode;
+  }
+  return `data:image/png;base64,${qrCode}`;
+};
+
+const copyPixCode = async () => {
+  if (pixPaymentData.value?.payload) {
+    try {
+      await navigator.clipboard.writeText(pixPaymentData.value.payload);
+    } catch (error) {
+      console.error('Erro ao copiar código PIX:', error);
+    }
+  }
+};
+
 const processPayment = async () => {
   if (!selectedPlanForCheckout.value || !selectedPaymentMethod.value) return;
 
-  const addons =
-    selectedAddons.value.length > 0
-      ? selectedAddons.value.map((addon) => ({
-          plan_product_id: addon.plan_product_id,
-          quantity: addon.quantity,
-        }))
-      : undefined;
+  const isPixPayment = selectedPaymentMethod.value === 'pix';
 
-  const paymentData: CreateOrderPaymentRequest = {
-    plan_id: selectedPlanForCheckout.value.plan_id,
-    billing_period: billingPeriod.value,
-    addons: addons,
-    payment_method: selectedPaymentMethod.value,
-    credit_card_id:
-      selectedPaymentMethod.value === 'credit_card' && selectedCardId.value
-        ? selectedCardId.value
-        : undefined,
-    new_card:
-      selectedPaymentMethod.value === 'credit_card' &&
-      showAddCardModal.value &&
-      newCard.value.number
-        ? {
-            number: newCard.value.number.replace(/\s/g, ''),
-            holder_name: newCard.value.holderName,
-            expiry_month: newCard.value.expiryMonth,
-            expiry_year: newCard.value.expiryYear,
-            cvv: newCard.value.cvv,
-          }
-        : undefined,
-    recurring_payment:
-      selectedPaymentMethod.value === 'credit_card'
-        ? recurringPayment.value
-        : undefined,
-    installments:
-      selectedPaymentMethod.value === 'credit_card' &&
-      billingPeriod.value === 'annual'
-        ? installments.value
-        : undefined,
-  };
+  if (isPixPayment) {
+    processingPayment.value = true;
+  }
 
-  const result = await planStore.createOrderPayment(paymentData);
+  try {
+    const addons =
+      selectedAddons.value.length > 0
+        ? selectedAddons.value.map((addon) => ({
+            plan_product_id: addon.plan_product_id,
+            quantity: addon.quantity,
+          }))
+        : undefined;
 
-  if (result) {
-    // Pagamento processado com sucesso
-    // Aqui você pode redirecionar ou mostrar uma mensagem de sucesso
-    console.log('Pagamento processado:', result);
+    const paymentData: CreateOrderPaymentRequest = {
+      plan_id: selectedPlanForCheckout.value.plan_id,
+      billing_period: billingPeriod.value,
+      addons: addons,
+      payment_method: selectedPaymentMethod.value,
+      credit_card_id:
+        selectedPaymentMethod.value === 'credit_card' && selectedCardId.value
+          ? selectedCardId.value
+          : undefined,
+      new_card:
+        selectedPaymentMethod.value === 'credit_card' &&
+        showAddCardModal.value &&
+        newCard.value.number
+          ? {
+              number: newCard.value.number.replace(/\s/g, ''),
+              holder_name: newCard.value.holderName,
+              expiry_month: newCard.value.expiryMonth,
+              expiry_year: newCard.value.expiryYear,
+              cvv: newCard.value.cvv,
+            }
+          : undefined,
+      recurring_payment:
+        selectedPaymentMethod.value === 'credit_card'
+          ? recurringPayment.value
+          : undefined,
+      installments:
+        selectedPaymentMethod.value === 'credit_card' &&
+        billingPeriod.value === 'annual'
+          ? installments.value
+          : undefined,
+    };
+
+    const result: CreateOrderPaymentResponse | null =
+      await planStore.createOrderPayment(paymentData);
+
+    if (result && result.pix_payment) {
+      const pixData = result.pix_payment as {
+        qr_code: string;
+        payload: string;
+        expiration_date: string;
+      };
+      pixPaymentData.value = {
+        qr_code: pixData.qr_code,
+        payload: pixData.payload,
+        expiration_date: pixData.expiration_date,
+      };
+      pixModalOpen.value = true;
+    } else if (result) {
+      console.log('Pagamento processado:', result);
+    }
+  } finally {
+    if (isPixPayment) {
+      processingPayment.value = false;
+    }
   }
 };
 
@@ -2520,8 +2568,10 @@ onMounted(async () => {
                       userCards.length > 0) ||
                     isDiscountGreaterThanTotal ||
                     isUpgradeBlocked ||
-                    isTotalZero
+                    isTotalZero ||
+                    processingPayment
                   "
+                  :loading="processingPayment"
                   @click="processPayment"
                 >
                   {{ $t('finalize_purchase') }}
@@ -2542,6 +2592,80 @@ onMounted(async () => {
       {{ planStore.snackbar.message }}
     </VSnackbar>
   </div>
+
+  <VDialog v-model="pixModalOpen" max-width="500" persistent>
+    <DialogCloseBtn @click="pixModalOpen = false" />
+    <VCard>
+      <VCardTitle>
+        <span>{{ $t('pix_payment') }}</span>
+      </VCardTitle>
+      <VDivider />
+      <VCardText class="d-flex flex-column align-center gap-4 pa-6">
+        <div class="text-center">
+          <p class="text-body-1 mb-2">{{ $t('pix_payment_instructions') }}</p>
+          <p class="text-caption text-medium-emphasis">
+            {{ $t('pix_expires_at') }}:
+            {{
+              pixPaymentData?.expiration_date
+                ? new Date(pixPaymentData.expiration_date).toLocaleString(
+                    locale
+                  )
+                : ''
+            }}
+          </p>
+        </div>
+
+        <div
+          v-if="pixPaymentData?.qr_code"
+          class="d-flex justify-center align-center pa-4 bg-grey-lighten-4 rounded mt-n2"
+        >
+          <img
+            :src="getPixQrCodeImageSrc(pixPaymentData.qr_code)"
+            alt="QR Code PIX"
+            style="
+              max-width: 300px;
+              max-height: 300px;
+              width: 100%;
+              height: auto;
+              object-fit: contain;
+            "
+          />
+        </div>
+
+        <div class="w-100">
+          <VLabel class="mb-2">{{ $t('pix_copy_paste_code') }}</VLabel>
+          <VTextField
+            :model-value="pixPaymentData?.payload || ''"
+            readonly
+            variant="outlined"
+            density="compact"
+            class="mb-2"
+          >
+            <template #append-inner>
+              <IconBtn
+                size="small"
+                variant="text"
+                class="me-n2"
+                @click="copyPixCode"
+              >
+                <VIcon size="20">tabler-copy</VIcon>
+              </IconBtn>
+            </template>
+          </VTextField>
+        </div>
+
+        <VAlert type="info" variant="tonal" class="w-100">
+          {{ $t('pix_payment_warning') }}
+        </VAlert>
+      </VCardText>
+      <VDivider />
+      <VCardActions class="justify-end pa-4">
+        <VBtn variant="tonal" color="secondary" @click="pixModalOpen = false">
+          {{ $t('close') }}
+        </VBtn>
+      </VCardActions>
+    </VCard>
+  </VDialog>
 </template>
 
 <style lang="scss" scoped>

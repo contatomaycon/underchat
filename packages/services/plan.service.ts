@@ -29,9 +29,6 @@ import { ViewUserInfoResponse } from '@core/schema/plan/viewUserInfo/response.sc
 import { UserInfoViewerRepository } from '@core/repositories/plan/UserInfoViewer.repository';
 import { CalculateUpgradeDiscountResponse } from '@core/schema/plan/calculateUpgradeDiscount/response.schema';
 import { UpgradeDiscountCalculatorRepository } from '@core/repositories/plan/UpgradeDiscountCalculator.repository';
-import { CreateOrderPaymentRequest } from '@core/schema/plan/createOrderPayment/request.schema';
-import { CreateOrderPaymentResponse } from '@core/schema/plan/createOrderPayment/response.schema';
-import { OrderPaymentCreatorRepository } from '@core/repositories/plan/OrderPaymentCreator.repository';
 import { PaymentService } from './payment.service';
 
 @injectable()
@@ -52,7 +49,6 @@ export class PlanService {
     private readonly userCardsListerRepository: UserCardsListerRepository,
     private readonly userInfoViewerRepository: UserInfoViewerRepository,
     private readonly upgradeDiscountCalculatorRepository: UpgradeDiscountCalculatorRepository,
-    private readonly orderPaymentCreatorRepository: OrderPaymentCreatorRepository,
     private readonly paymentService: PaymentService
   ) {}
 
@@ -139,16 +135,6 @@ export class PlanService {
     return this.upgradeDiscountCalculatorRepository.calculateUpgradeDiscount(
       accountId,
       newPlanId
-    );
-  };
-
-  createOrderPayment = async (
-    accountId: string,
-    input: CreateOrderPaymentRequest
-  ): Promise<CreateOrderPaymentResponse> => {
-    return this.orderPaymentCreatorRepository.createOrderPayment(
-      accountId,
-      input
     );
   };
 
