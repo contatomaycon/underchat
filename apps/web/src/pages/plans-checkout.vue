@@ -75,6 +75,7 @@ const newCard = ref({
   cvv: '',
 });
 const detectedBrand = ref<string | null>(null);
+const showCvv = ref(false);
 const step1Loaded = ref(false);
 const step2Loaded = ref(false);
 const step3Loaded = ref(false);
@@ -1634,18 +1635,22 @@ onMounted(async () => {
                                 v-model="newCard.cvv"
                                 :label="$t('cvv')"
                                 placeholder="000"
-                                type="password"
+                                :type="showCvv ? 'text' : 'password'"
                                 :maxlength="4"
-                              />
+                              >
+                                <template #append-inner>
+                                  <VIcon
+                                    :icon="
+                                      showCvv ? 'tabler-eye-off' : 'tabler-eye'
+                                    "
+                                    @click="showCvv = !showCvv"
+                                    style="cursor: pointer"
+                                  />
+                                </template>
+                              </VTextField>
                             </VCol>
                           </VRow>
                           <div class="d-flex gap-3 mt-4">
-                            <VBtn
-                              color="primary"
-                              @click="showAddCardModal = false"
-                            >
-                              {{ $t('save_card') }}
-                            </VBtn>
                             <VBtn
                               variant="outlined"
                               color="secondary"
