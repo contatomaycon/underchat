@@ -69,7 +69,7 @@ export class OrderPaymentCreatorRepository {
   createAccountPayment = async (data: {
     accountId: string;
     userCustomerId: string;
-    planAccountId: string;
+    planId: string;
     billing: string;
     paymentBillingTypeId: string;
     value: string;
@@ -87,7 +87,7 @@ export class OrderPaymentCreatorRepository {
       account_payment_id: accountPaymentId,
       account_id: data.accountId,
       user_customer_id: data.userCustomerId,
-      plan_account_id: data.planAccountId,
+      plan_id: data.planId,
       billing: data.billing,
       payment_billing_type_id: data.paymentBillingTypeId,
       value: data.value,
@@ -168,38 +168,6 @@ export class OrderPaymentCreatorRepository {
       }
       return total + Number(crossSell.price) * addon.quantity * multiplier;
     }, 0);
-  };
-
-  getActivePlanAccountId = async (
-    accountId: string
-  ): Promise<string | null> => {
-    const accountResult = await this.db.query.account.findFirst({
-      where: and(eq(account.account_id, accountId), isNull(account.deleted_at)),
-      with: {
-        apc: {
-          columns: {
-            plan_account_id: true,
-            next_payment_date: true,
-          },
-        },
-      },
-      columns: {
-        account_id: true,
-      },
-    });
-
-    if (!accountResult) {
-      return null;
-    }
-
-    const now = new Date();
-    const activePlanAccount = accountResult.apc?.find((pa) => {
-      if (!pa.next_payment_date) return false;
-      const nextPaymentDate = new Date(pa.next_payment_date);
-      return nextPaymentDate > now;
-    });
-
-    return activePlanAccount?.plan_account_id || null;
   };
 
   getBillingPeriodId = (billingPeriod: 'monthly' | 'annual'): string | null => {

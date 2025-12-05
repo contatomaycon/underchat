@@ -75,14 +75,6 @@ export class OrderPaymentCreatorUseCase {
     orderId: string,
     billingPeriod: 'monthly' | 'annual'
   ) => {
-    const activePlanAccountId =
-      await this.orderPaymentCreatorRepository.getActivePlanAccountId(
-        accountId
-      );
-    if (!activePlanAccountId) {
-      throw new Error(t('active_plan_not_found'));
-    }
-
     const billingPeriodId =
       this.orderPaymentCreatorRepository.getBillingPeriodId(billingPeriod);
     if (!billingPeriodId) {
@@ -103,7 +95,7 @@ export class OrderPaymentCreatorUseCase {
     await this.orderPaymentCreatorRepository.createAccountPayment({
       accountId,
       userCustomerId: customer.user_customer_id,
-      planAccountId: activePlanAccountId,
+      planId,
       billing: pixResult.payment.id,
       paymentBillingTypeId: EPaymentBillingType.pix,
       value: totalAmount.toString(),

@@ -247,17 +247,17 @@ const isPlanExpired = computed(() => {
 });
 
 const loadUpgradeDiscount = async () => {
-  if (!selectedPlanForCheckout.value) return;
+  if (!selectedPlanForCheckout.value) {
+    return;
+  }
+
+  if (!currentPlanId.value) {
+    upgradeDiscount.value = null;
+    return;
+  }
 
   if (isPlanExpired.value) {
-    upgradeDiscount.value = {
-      discount: 0,
-      current_plan_price: 0,
-      days_used: 0,
-      days_remaining: 0,
-      total_days: 0,
-      is_upgrade: false,
-    };
+    upgradeDiscount.value = null;
     return;
   }
 
@@ -267,6 +267,8 @@ const loadUpgradeDiscount = async () => {
   );
   if (discount) {
     upgradeDiscount.value = discount;
+  } else {
+    upgradeDiscount.value = null;
   }
   loadingDiscount.value = false;
 };
@@ -496,7 +498,17 @@ const isDiscountGreaterThanTotal = computed(() => {
 });
 
 const isUpgradeBlocked = computed(() => {
-  if (!upgradeDiscount.value) return false;
+  if (!upgradeDiscount.value) {
+    return false;
+  }
+
+  if (!currentPlanId.value) {
+    return false;
+  }
+
+  if (isPlanExpired.value) {
+    return false;
+  }
 
   return upgradeDiscount.value.is_upgrade === false;
 });

@@ -10,7 +10,7 @@ import { relations } from 'drizzle-orm';
 import {
   account,
   userCustomer,
-  planAccount,
+  plan,
   userCard,
   paymentBillingType,
   paymentStatus,
@@ -25,8 +25,8 @@ export const accountPayment = pgTable('account_payment', {
   user_customer_id: uuid()
     .references(() => userCustomer.user_customer_id)
     .notNull(),
-  plan_account_id: uuid()
-    .references(() => planAccount.plan_account_id)
+  plan_id: uuid()
+    .references(() => plan.plan_id)
     .notNull(),
   billing: varchar({ length: 500 }).notNull(),
   payment_billing_type_id: uuid()
@@ -69,9 +69,9 @@ export const accountPaymentRelations = relations(accountPayment, ({ one }) => ({
     fields: [accountPayment.user_customer_id],
     references: [userCustomer.user_customer_id],
   }),
-  apc: one(planAccount, {
-    fields: [accountPayment.plan_account_id],
-    references: [planAccount.plan_account_id],
+  apl: one(plan, {
+    fields: [accountPayment.plan_id],
+    references: [plan.plan_id],
   }),
   apd: one(userCard, {
     fields: [accountPayment.user_card_id],
