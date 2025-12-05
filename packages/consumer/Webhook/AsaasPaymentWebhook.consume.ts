@@ -52,7 +52,7 @@ export class AsaasPaymentWebhookConsume {
 
         const stop = startHeartbeat(heartbeat);
         try {
-          await this.handleWebhookEvent(server, data);
+          await this.handleWebhookEvent(data);
         } catch (error) {
           server.log.error(
             error,
@@ -91,71 +91,56 @@ export class AsaasPaymentWebhookConsume {
   }
 
   private async handleWebhookEvent(
-    server: FastifyInstance,
     data: AsaasPaymentWebhookRequest
   ): Promise<void> {
-    server.log.info(
-      `Processing Asaas payment webhook event: ${data.event} for payment ${data.payment.id}`
-    );
-
     switch (data.event) {
       case 'PAYMENT_CREATED':
-        await this.handlePaymentCreated(server, data);
+        await this.handlePaymentCreated(data);
         break;
       case 'PAYMENT_RECEIVED':
-        await this.handlePaymentReceived(server, data);
+        await this.handlePaymentReceived(data);
         break;
       case 'PAYMENT_CONFIRMED':
-        await this.handlePaymentConfirmed(server, data);
+        await this.handlePaymentConfirmed(data);
         break;
       case 'PAYMENT_OVERDUE':
-        await this.handlePaymentOverdue(server, data);
+        await this.handlePaymentOverdue(data);
         break;
       case 'PAYMENT_REFUNDED':
-        await this.handlePaymentRefunded(server, data);
+        await this.handlePaymentRefunded(data);
         break;
       default:
-        server.log.info(`Unhandled event type: ${data.event}`);
+        throw new Error(`Unhandled event type: ${data.event}`);
     }
   }
 
   private async handlePaymentCreated(
-    server: FastifyInstance,
     data: AsaasPaymentWebhookRequest
   ): Promise<void> {
-    server.log.info(`Payment created: ${data.payment.id}`);
     await this.planReleaseService.processPaymentWebhook(data);
   }
 
   private async handlePaymentReceived(
-    server: FastifyInstance,
     data: AsaasPaymentWebhookRequest
   ): Promise<void> {
-    server.log.info(`Payment received: ${data.payment.id}`);
     await this.planReleaseService.processPaymentWebhook(data);
   }
 
   private async handlePaymentConfirmed(
-    server: FastifyInstance,
     data: AsaasPaymentWebhookRequest
   ): Promise<void> {
-    server.log.info(`Payment confirmed: ${data.payment.id}`);
     await this.planReleaseService.processPaymentWebhook(data);
   }
 
   private async handlePaymentOverdue(
-    server: FastifyInstance,
     data: AsaasPaymentWebhookRequest
   ): Promise<void> {
-    server.log.info(`Payment overdue: ${data.payment.id}`);
     await this.planReleaseService.processPaymentWebhook(data);
   }
 
   private async handlePaymentRefunded(
-    server: FastifyInstance,
     data: AsaasPaymentWebhookRequest
   ): Promise<void> {
-    server.log.info(`Payment refunded: ${data.payment.id}`);
     await this.planReleaseService.processPaymentWebhook(data);
   }
 

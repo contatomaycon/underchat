@@ -25,6 +25,7 @@ import { listPlanWithItemsSchema } from '@core/schema/plan/listPlanWithItems';
 import { viewCurrentPlanSchema } from '@core/schema/plan/viewCurrentPlan';
 import { calculateUpgradeDiscountSchema } from '@core/schema/plan/calculateUpgradeDiscount';
 import { createOrderPaymentSchema } from '@core/schema/plan/createOrderPayment';
+import { listAvailableCrossSellSchema } from '@core/schema/plan/listAvailableCrossSell';
 
 export default function planRoutes(server: FastifyInstance) {
   const planController = container.resolve(PlanController);
@@ -176,6 +177,15 @@ export default function planRoutes(server: FastifyInstance) {
   server.post('/plan/order/payment', {
     schema: createOrderPaymentSchema,
     handler: planController.createOrderPayment,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.get('/plan/cross-sell/available', {
+    schema: listAvailableCrossSellSchema,
+    handler: planController.listAvailableCrossSell,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),

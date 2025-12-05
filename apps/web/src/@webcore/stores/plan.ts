@@ -31,6 +31,7 @@ import {
 import { ListPlanSalesRequest } from '@core/schema/plan/listPlanSales/request.schema';
 import { IListPlanSales } from '../interfaces/IListPlanSales';
 import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/response.schema';
+import { ListAvailableCrossSellResponse } from '@core/schema/plan/listAvailableCrossSell/response.schema';
 
 export const usePlanStore = defineStore('plan', {
   state: () => ({
@@ -48,6 +49,7 @@ export const usePlanStore = defineStore('plan', {
     userCards: [] as ListUserCardResponse[],
     listSales: [] as ListPlanSalesResponse[],
     listWithItems: [] as ListPlanWithItemsResponse[],
+    availableCrossSells: [] as ListAvailableCrossSellResponse[],
     pagings: {
       current_page: 1 as number,
       total_pages: 1 as number,
@@ -744,6 +746,43 @@ export const usePlanStore = defineStore('plan', {
         this.loading = false;
 
         return null;
+      }
+    },
+
+    async listAvailableCrossSell(): Promise<ListAvailableCrossSellResponse[]> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListAvailableCrossSellResponse[]>
+        >('/plan/cross-sell/available');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('cross_sell_list_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return [];
+        }
+
+        this.availableCrossSells = data.data;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('cross_sell_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+
+        return [];
       }
     },
   },

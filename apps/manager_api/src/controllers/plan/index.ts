@@ -16,6 +16,7 @@ import { listPlanWithItems } from './methods/listPlanWithItems';
 import { viewCurrentPlan } from './methods/viewCurrentPlan';
 import { calculateUpgradeDiscount } from './methods/calculateUpgradeDiscount';
 import { createOrderPayment } from './methods/createOrderPayment';
+import { listAvailableCrossSell } from './methods/listAvailableCrossSell';
 
 @injectable()
 class PlanController {
@@ -36,6 +37,7 @@ class PlanController {
   public viewCurrentPlan = viewCurrentPlan;
   public calculateUpgradeDiscount = calculateUpgradeDiscount;
   public createOrderPayment = createOrderPayment;
+  public listAvailableCrossSell = listAvailableCrossSell;
 }
 
 export default PlanController;

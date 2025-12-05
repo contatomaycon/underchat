@@ -75,7 +75,7 @@ export class OrderPaymentCreatorUseCase {
     totalAmount: number,
     orderId: string,
     billingPeriod: 'monthly' | 'annual',
-    addons: Array<{ plan_product_id: string; quantity: number }>
+    addons: Array<{ plan_cross_sell_id: string }>
   ) => {
     const billingPeriodId =
       this.orderPaymentCreatorRepository.getBillingPeriodId(billingPeriod);

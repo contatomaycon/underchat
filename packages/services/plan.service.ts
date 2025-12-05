@@ -30,6 +30,8 @@ import { UserInfoViewerRepository } from '@core/repositories/plan/UserInfoViewer
 import { CalculateUpgradeDiscountResponse } from '@core/schema/plan/calculateUpgradeDiscount/response.schema';
 import { UpgradeDiscountCalculatorRepository } from '@core/repositories/plan/UpgradeDiscountCalculator.repository';
 import { PaymentService } from './payment.service';
+import { CrossSellListerRepository } from '@core/repositories/planCrossSell/CrossSellLister.repository';
+import { ListAvailableCrossSellResponse } from '@core/schema/plan/listAvailableCrossSell/response.schema';
 
 @injectable()
 export class PlanService {
@@ -49,7 +51,8 @@ export class PlanService {
     private readonly userCardsListerRepository: UserCardsListerRepository,
     private readonly userInfoViewerRepository: UserInfoViewerRepository,
     private readonly upgradeDiscountCalculatorRepository: UpgradeDiscountCalculatorRepository,
-    private readonly paymentService: PaymentService
+    private readonly paymentService: PaymentService,
+    private readonly crossSellListerRepository: CrossSellListerRepository
   ) {}
 
   listPlans = async (
@@ -140,5 +143,11 @@ export class PlanService {
 
   getOrCreateCustomer = async (accountId: string) => {
     return this.paymentService.getOrCreateCustomer(accountId);
+  };
+
+  listAvailableCrossSells = async (): Promise<
+    ListAvailableCrossSellResponse[]
+  > => {
+    return this.crossSellListerRepository.listAvailableCrossSells();
   };
 }

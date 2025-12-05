@@ -27,7 +27,7 @@ import hipercardSvg from '@images/icons/payments/card/hipercard.svg?url';
 import meliSvg from '@images/icons/payments/card/meli.svg?url';
 import realSvg from '@images/icons/payments/card/real.svg?url';
 import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/response.schema';
-import { ListPlanProductWithPriceResponse } from '@core/schema/plan/listPlanProductWithPrice/response.schema';
+import { ListAvailableCrossSellResponse } from '@core/schema/plan/listAvailableCrossSell/response.schema';
 import { ViewUserInfoResponse } from '@core/schema/plan/viewUserInfo/response.schema';
 import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.schema';
 import { CalculateUpgradeDiscountResponse } from '@core/schema/plan/calculateUpgradeDiscount/response.schema';
@@ -68,13 +68,14 @@ const currentPlanBillingPeriod = ref<'monthly' | 'annual' | null>(null);
 const currentPlanInvoiceData = ref<{
   next_payment_date: string | null;
 } | null>(null);
-const availableProducts = ref<ListPlanProductWithPriceResponse[]>([]);
+const availableCrossSells = ref<ListAvailableCrossSellResponse[]>([]);
 const selectedAddons = ref<
   Array<{
+    plan_cross_sell_id: string;
     plan_product_id: string;
     name: string;
     quantity: number;
-    price?: number;
+    price: number;
   }>
 >([]);
 const loadingProducts = ref(false);
@@ -226,12 +227,12 @@ const loadStep2 = async () => {
   if (step2Loaded.value) return;
 
   loadingProducts.value = true;
-  const [products] = await Promise.all([
-    planStore.listPlanProductWithPrice(),
+  const [crossSells] = await Promise.all([
+    planStore.listAvailableCrossSell(),
     loadUpgradeDiscount(),
   ]);
-  if (products) {
-    availableProducts.value = products;
+  if (crossSells) {
+    availableCrossSells.value = crossSells;
   }
   loadingProducts.value = false;
   step2Loaded.value = true;
@@ -441,51 +442,53 @@ const prevStep = () => {
   }
 };
 
-const addAddon = (product: ListPlanProductWithPriceResponse) => {
+const addAddon = (crossSell: ListAvailableCrossSellResponse) => {
   const existingAddon = selectedAddons.value.find(
-    (a) => a.plan_product_id === product.plan_product_id
+    (a) => a.plan_product_id === crossSell.plan_product_id
   );
 
   if (existingAddon) {
-    existingAddon.quantity += 1;
-  } else {
-    selectedAddons.value.push({
-      plan_product_id: product.plan_product_id,
-      name: product.name || '',
-      quantity: 1,
-      price: product.price ?? undefined,
-    });
+    return;
   }
+
+  selectedAddons.value.push({
+    plan_cross_sell_id: crossSell.plan_cross_sell_id,
+    plan_product_id: crossSell.plan_product_id,
+    name: crossSell.plan_product?.name || '',
+    quantity: crossSell.quantity,
+    price: crossSell.price,
+  });
 };
 
-const removeAddon = (productId: string) => {
+const removeAddon = (planProductId: string) => {
   const index = selectedAddons.value.findIndex(
-    (a) => a.plan_product_id === productId
+    (a) => a.plan_product_id === planProductId
   );
 
   if (index !== -1) {
-    if (selectedAddons.value[index].quantity > 1) {
-      selectedAddons.value[index].quantity -= 1;
-    } else {
-      selectedAddons.value.splice(index, 1);
-    }
+    selectedAddons.value.splice(index, 1);
   }
 };
 
-const getAddonQuantity = (productId: string): number => {
+const getAddonQuantity = (planProductId: string): number => {
   const addon = selectedAddons.value.find(
-    (a) => a.plan_product_id === productId
+    (a) => a.plan_product_id === planProductId
   );
-  return addon?.quantity || 0;
+  return addon ? 1 : 0;
+};
+
+const isAddonSelected = (planProductId: string): boolean => {
+  return selectedAddons.value.some((a) => a.plan_product_id === planProductId);
 };
 
 const getAddonPrice = (addon: {
+  plan_cross_sell_id: string;
   plan_product_id: string;
   name: string;
   quantity: number;
-  price?: number;
+  price: number;
 }): number => {
-  const addonPrice = addon.price || 0;
+  const addonPrice = addon.price;
   const multiplier = billingPeriod.value === 'annual' ? 12 : 1;
   return addonPrice * addon.quantity * multiplier;
 };
@@ -651,8 +654,7 @@ const processPayment = async () => {
     const addons =
       selectedAddons.value.length > 0
         ? selectedAddons.value.map((addon) => ({
-            plan_product_id: addon.plan_product_id,
-            quantity: addon.quantity,
+            plan_cross_sell_id: addon.plan_cross_sell_id,
           }))
         : undefined;
 
@@ -1381,13 +1383,18 @@ onMounted(async () => {
                       </VCard>
 
                       <div
-                        v-else-if="availableProducts.length > 0"
+                        v-else-if="availableCrossSells.length > 0"
                         class="d-flex flex-column gap-3"
                       >
                         <VCard
-                          v-for="product in availableProducts"
-                          :key="product.plan_product_id"
+                          v-for="crossSell in availableCrossSells"
+                          :key="crossSell.plan_cross_sell_id"
                           variant="outlined"
+                          :class="{
+                            'border-primary': isAddonSelected(
+                              crossSell.plan_product_id
+                            ),
+                          }"
                         >
                           <VCardText>
                             <div
@@ -1395,55 +1402,52 @@ onMounted(async () => {
                             >
                               <div class="flex-grow-1">
                                 <div class="font-weight-medium mb-1">
-                                  {{ product.name }}
+                                  {{ crossSell.plan_product?.name }}
+                                  <VChip
+                                    size="small"
+                                    color="primary"
+                                    variant="tonal"
+                                    class="ml-2"
+                                  >
+                                    {{ crossSell.quantity }}x
+                                  </VChip>
                                 </div>
                                 <div
-                                  v-if="product.description"
+                                  v-if="crossSell.plan_product?.description"
                                   class="text-body-2 text-medium-emphasis"
                                 >
-                                  {{ product.description }}
+                                  {{ crossSell.plan_product.description }}
                                 </div>
-                                <div
-                                  v-if="product.price"
-                                  class="text-body-2 text-primary mt-1"
-                                >
-                                  {{ formatCurrency(product.price) }}
+                                <div class="text-body-2 text-primary mt-1">
+                                  {{
+                                    formatCurrency(
+                                      crossSell.price *
+                                        (billingPeriod === 'annual' ? 12 : 1)
+                                    )
+                                  }}
                                 </div>
                               </div>
                               <div class="d-flex align-center gap-3">
-                                <div class="d-flex align-center gap-2">
-                                  <VBtn
-                                    icon
-                                    size="small"
-                                    variant="outlined"
-                                    :disabled="
-                                      getAddonQuantity(
-                                        product.plan_product_id
-                                      ) === 0
-                                    "
-                                    @click="
-                                      removeAddon(product.plan_product_id)
-                                    "
-                                  >
-                                    <VIcon size="20">tabler-minus</VIcon>
-                                  </VBtn>
-                                  <span
-                                    class="text-body-1 font-weight-medium"
-                                    style="min-width: 24px; text-align: center"
-                                  >
-                                    {{
-                                      getAddonQuantity(product.plan_product_id)
-                                    }}
-                                  </span>
-                                  <VBtn
-                                    icon
-                                    size="small"
-                                    variant="outlined"
-                                    @click="addAddon(product)"
-                                  >
-                                    <VIcon size="20">tabler-plus</VIcon>
-                                  </VBtn>
-                                </div>
+                                <VBtn
+                                  v-if="
+                                    isAddonSelected(crossSell.plan_product_id)
+                                  "
+                                  color="error"
+                                  variant="outlined"
+                                  @click="
+                                    removeAddon(crossSell.plan_product_id)
+                                  "
+                                >
+                                  {{ $t('remove') }}
+                                </VBtn>
+                                <VBtn
+                                  v-else
+                                  color="primary"
+                                  variant="outlined"
+                                  @click="addAddon(crossSell)"
+                                >
+                                  {{ $t('add') }}
+                                </VBtn>
                               </div>
                             </div>
                           </VCardText>
@@ -1886,14 +1890,12 @@ onMounted(async () => {
                             >
                               <div
                                 v-for="addon in selectedAddons"
-                                :key="addon.plan_product_id"
+                                :key="addon.plan_cross_sell_id"
                                 class="d-flex justify-space-between align-center"
                               >
                                 <span class="text-body-2 text-medium-emphasis">
                                   {{ addon.name }}
-                                  <span v-if="addon.quantity > 1"
-                                    >(x{{ addon.quantity }})</span
-                                  >:
+                                  <span>(x{{ addon.quantity }})</span>:
                                 </span>
                                 <span class="text-body-2 font-weight-medium">
                                   {{ formatCurrency(getAddonPrice(addon)) }}
@@ -2147,14 +2149,12 @@ onMounted(async () => {
                             >
                               <div
                                 v-for="addon in selectedAddons"
-                                :key="addon.plan_product_id"
+                                :key="addon.plan_cross_sell_id"
                                 class="d-flex justify-space-between align-center"
                               >
                                 <span class="text-body-2 text-medium-emphasis">
                                   {{ addon.name }}
-                                  <span v-if="addon.quantity > 1"
-                                    >(x{{ addon.quantity }})</span
-                                  >:
+                                  <span>(x{{ addon.quantity }})</span>:
                                 </span>
                                 <span class="text-body-2 font-weight-medium">
                                   {{ formatCurrency(getAddonPrice(addon)) }}
@@ -2480,14 +2480,12 @@ onMounted(async () => {
                             >
                               <div
                                 v-for="addon in selectedAddons"
-                                :key="addon.plan_product_id"
+                                :key="addon.plan_cross_sell_id"
                                 class="d-flex justify-space-between align-center"
                               >
                                 <span class="text-body-2 text-medium-emphasis">
                                   {{ addon.name }}
-                                  <span v-if="addon.quantity > 1"
-                                    >(x{{ addon.quantity }})</span
-                                  >:
+                                  <span>(x{{ addon.quantity }})</span>:
                                 </span>
                                 <span class="text-body-2 font-weight-medium">
                                   {{ formatCurrency(getAddonPrice(addon)) }}
@@ -2612,14 +2610,12 @@ onMounted(async () => {
                             >
                               <div
                                 v-for="addon in selectedAddons"
-                                :key="addon.plan_product_id"
+                                :key="addon.plan_cross_sell_id"
                                 class="d-flex justify-space-between align-center"
                               >
                                 <span class="text-body-2 text-medium-emphasis">
                                   {{ addon.name }}
-                                  <span v-if="addon.quantity > 1"
-                                    >(x{{ addon.quantity }})</span
-                                  >:
+                                  <span>(x{{ addon.quantity }})</span>:
                                 </span>
                                 <span class="text-body-2 font-weight-medium">
                                   {{ formatCurrency(getAddonPrice(addon)) }}

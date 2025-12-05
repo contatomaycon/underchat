@@ -524,5 +524,6 @@
   "payment_status_overdue": "Vencido",
   "payment_status_refunded": "Reembolsado",
   "payment_success_title": "Pagamento Confirmado!",
-  "payment_success_message": "Seu pagamento foi confirmado com sucesso. Você será redirecionado em instantes."
+  "payment_success_message": "Seu pagamento foi confirmado com sucesso. Você será redirecionado em instantes.",
+  "cross_sell_available_list_successfully": "Vendas cruzadas disponíveis listadas com sucesso!"
 }

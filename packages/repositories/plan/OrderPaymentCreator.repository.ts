@@ -52,7 +52,7 @@ export class OrderPaymentCreatorRepository {
       );
 
     const addonsTotal = await this.calculateAddonsTotal(
-      input.addons || [],
+      input.addons?.map((a) => a.plan_cross_sell_id) || [],
       input.billing_period
     );
 
@@ -109,25 +109,25 @@ export class OrderPaymentCreatorRepository {
 
   createAccountPaymentCrossSells = async (data: {
     accountPaymentId: string;
-    addons: Array<{ plan_product_id: string; quantity: number }>;
+    addons: Array<{ plan_cross_sell_id: string }>;
     billingPeriod: 'monthly' | 'annual';
   }): Promise<void> => {
     if (!data.addons || data.addons.length === 0) {
       return;
     }
 
-    const addonIds = data.addons.map((a) => a.plan_product_id);
+    const crossSellIds = data.addons.map((a) => a.plan_cross_sell_id);
 
     const crossSells = await this.db
       .select({
         plan_cross_sell_id: planCrossSell.plan_cross_sell_id,
-        plan_product_id: planCrossSell.plan_product_id,
+        quantity: planCrossSell.quantity,
         price: planCrossSell.price,
       })
       .from(planCrossSell)
       .where(
         and(
-          inArray(planCrossSell.plan_product_id, addonIds),
+          inArray(planCrossSell.plan_cross_sell_id, crossSellIds),
           isNull(planCrossSell.deleted_at)
         )
       )
@@ -146,24 +146,24 @@ export class OrderPaymentCreatorRepository {
 
     for (const addon of data.addons) {
       const crossSell = crossSells.find(
-        (cs) => cs.plan_product_id === addon.plan_product_id
+        (cs) => cs.plan_cross_sell_id === addon.plan_cross_sell_id
       );
       if (!crossSell) {
         continue;
       }
 
       const unitValue = Number(crossSell.price) * multiplier;
-      for (let i = 0; i < addon.quantity; i++) {
-        crossSellRecords.push({
-          account_payment_cross_sell_id: randomUUID(),
-          plan_cross_sell_id: crossSell.plan_cross_sell_id,
-          account_payment_id: data.accountPaymentId,
-          quantity: 1,
-          value: unitValue.toString(),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
-      }
+      const totalValue = unitValue * crossSell.quantity;
+
+      crossSellRecords.push({
+        account_payment_cross_sell_id: randomUUID(),
+        plan_cross_sell_id: crossSell.plan_cross_sell_id,
+        account_payment_id: data.accountPaymentId,
+        quantity: crossSell.quantity,
+        value: totalValue.toString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
     }
 
     if (crossSellRecords.length > 0) {
@@ -202,24 +202,23 @@ export class OrderPaymentCreatorRepository {
   };
 
   private readonly calculateAddonsTotal = async (
-    addons: Array<{ plan_product_id: string; quantity: number }>,
+    planCrossSellIds: string[],
     billingPeriod: 'monthly' | 'annual'
   ): Promise<number> => {
-    if (!addons || addons.length === 0) {
+    if (!planCrossSellIds || planCrossSellIds.length === 0) {
       return 0;
     }
 
-    const addonIds = addons.map((a) => a.plan_product_id);
-
     const crossSells = await this.db
       .select({
-        plan_product_id: planCrossSell.plan_product_id,
+        plan_cross_sell_id: planCrossSell.plan_cross_sell_id,
+        quantity: planCrossSell.quantity,
         price: planCrossSell.price,
       })
       .from(planCrossSell)
       .where(
         and(
-          inArray(planCrossSell.plan_product_id, addonIds),
+          inArray(planCrossSell.plan_cross_sell_id, planCrossSellIds),
           isNull(planCrossSell.deleted_at)
         )
       )
@@ -227,14 +226,9 @@ export class OrderPaymentCreatorRepository {
 
     const multiplier = billingPeriod === 'annual' ? 12 : 1;
 
-    return addons.reduce((total, addon) => {
-      const crossSell = crossSells.find(
-        (cs) => cs.plan_product_id === addon.plan_product_id
-      );
-      if (!crossSell) {
-        return total;
-      }
-      return total + Number(crossSell.price) * addon.quantity * multiplier;
+    return crossSells.reduce((total, crossSell) => {
+      const unitValue = Number(crossSell.price) * multiplier;
+      return total + unitValue * crossSell.quantity;
     }, 0);
   };
 

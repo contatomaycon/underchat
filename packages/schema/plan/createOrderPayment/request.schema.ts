@@ -20,17 +20,13 @@ export const createOrderPaymentRequestSchema = Type.Object({
   addons: Type.Optional(
     Type.Array(
       Type.Object({
-        plan_product_id: Type.String({
+        plan_cross_sell_id: Type.String({
           format: 'uuid',
-          description: 'ID do adicional',
-        }),
-        quantity: Type.Number({
-          minimum: 1,
-          description: 'Quantidade do adicional',
+          description: 'ID do cross sell selecionado',
         }),
       }),
       {
-        description: 'Adicionais selecionados com suas quantidades',
+        description: 'Cross sells selecionados',
       }
     )
   ),

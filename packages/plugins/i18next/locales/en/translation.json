@@ -524,5 +524,6 @@
   "payment_status_overdue": "Overdue",
   "payment_status_refunded": "Refunded",
   "payment_success_title": "Payment Confirmed!",
-  "payment_success_message": "Your payment has been confirmed successfully. You will be redirected shortly."
+  "payment_success_message": "Your payment has been confirmed successfully. You will be redirected shortly.",
+  "cross_sell_available_list_successfully": "Available cross sells listed successfully!"
 }
