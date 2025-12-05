@@ -1481,5 +1481,6 @@
     "pix_summary": "Resumen del PIX",
     "pix_instructions": "El código QR del PIX se generará después de la confirmación de la compra. El pago es instantáneo.",
     "finalize_purchase": "Finalizar Compra",
-    "user_cards_list_error": "Ocurrió un error al cargar las tarjetas. Por favor, intente nuevamente."
+    "user_cards_list_error": "Ocurrió un error al cargar las tarjetas. Por favor, intente nuevamente.",
+    "user_info_view_error": "Ocurrió un error al cargar la información del usuario. Por favor, intente nuevamente."
 }

@@ -1481,5 +1481,6 @@
     "pix_summary": "PIX Summary",
     "pix_instructions": "The PIX QR Code will be generated after purchase confirmation. Payment is instant.",
     "finalize_purchase": "Finalize Purchase",
-    "user_cards_list_error": "An error occurred while loading cards. Please try again."
+    "user_cards_list_error": "An error occurred while loading cards. Please try again.",
+    "user_info_view_error": "An error occurred while loading user information. Please try again."
 }

@@ -1,16 +1,15 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { usePlanStore } from '@/@webcore/stores/plan';
-import { useUsersStore } from '@/@webcore/stores/user';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { getUser } from '@/@webcore/localStorage/user';
 import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/response.schema';
 import { ListPlanProductWithPriceResponse } from '@core/schema/plan/listPlanProductWithPrice/response.schema';
-import { ViewUserResponse } from '@core/schema/user/viewUser/response.schema';
+import { ViewUserInfoResponse } from '@core/schema/plan/viewUserInfo/response.schema';
 import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.schema';
 
 definePage({
@@ -28,7 +27,6 @@ const { t, locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const planStore = usePlanStore();
-const usersStore = useUsersStore();
 useSnackbarCleanup(planStore);
 
 const currentStep = ref(1);
@@ -48,7 +46,7 @@ const selectedAddons = ref<
   }>
 >([]);
 const loadingProducts = ref(false);
-const currentUser = ref<ViewUserResponse | null>(null);
+const currentUser = ref<ViewUserInfoResponse | null>(null);
 const loadingUser = ref(false);
 const userCards = ref<ListUserCardResponse[]>([]);
 const loadingCards = ref(false);
@@ -57,6 +55,10 @@ const selectedPaymentMethod = ref<'boleto' | 'credit_card' | 'pix' | null>(
 );
 const selectedCardId = ref<string | null>(null);
 const showAddCardModal = ref(false);
+const step1Loaded = ref(false);
+const step2Loaded = ref(false);
+const step3Loaded = ref(false);
+const step4Loaded = ref(false);
 
 const getCurrencyConfig = () => {
   const localeMap: Record<string, { locale: string; currency: string }> = {
@@ -99,7 +101,9 @@ const getPrice = (plan: ListPlanWithItemsResponse): number => {
   return plan.price;
 };
 
-const loadCheckoutData = async () => {
+const loadStep1 = async () => {
+  if (step1Loaded.value) return;
+
   loading.value = true;
   const planId = route.query.plan_id as string;
   const billing = (route.query.billing as 'monthly' | 'annual') || 'monthly';
@@ -131,26 +135,39 @@ const loadCheckoutData = async () => {
     }
   }
 
+  step1Loaded.value = true;
+  loading.value = false;
+};
+
+const loadStep2 = async () => {
+  if (step2Loaded.value) return;
+
   loadingProducts.value = true;
   const products = await planStore.listPlanProductWithPrice();
   if (products) {
     availableProducts.value = products;
   }
   loadingProducts.value = false;
+  step2Loaded.value = true;
+};
+
+const loadStep3 = async () => {
+  if (step3Loaded.value) return;
 
   await loadUserData();
+  step3Loaded.value = true;
+};
+
+const loadStep4 = async () => {
+  if (step4Loaded.value) return;
 
   await loadUserCards();
-
-  loading.value = false;
+  step4Loaded.value = true;
 };
 
 const loadUserData = async () => {
-  const user = getUser();
-  if (!user?.user_id) return;
-
   loadingUser.value = true;
-  const userData = await usersStore.viewUserById(user.user_id);
+  const userData = await planStore.viewUserInfo();
   if (userData) {
     currentUser.value = userData;
   }
@@ -258,7 +275,7 @@ const selectPlan = (plan: ListPlanWithItemsResponse) => {
 };
 
 const nextStep = () => {
-  if (currentStep.value < 3) {
+  if (currentStep.value < 4) {
     currentStep.value += 1;
   }
 };
@@ -327,8 +344,21 @@ const goBack = () => {
   router.push({ name: 'plans' });
 };
 
-onMounted(() => {
-  loadCheckoutData();
+watch(currentStep, async (newStep) => {
+  if (newStep === 1 && !step1Loaded.value) {
+    await loadStep1();
+  } else if (newStep === 2 && !step2Loaded.value) {
+    await loadStep2();
+  } else if (newStep === 3 && !step3Loaded.value) {
+    await loadStep3();
+  } else if (newStep === 4 && !step4Loaded.value) {
+    await loadStep4();
+  }
+});
+
+onMounted(async () => {
+  // Carregar step 1 inicialmente
+  await loadStep1();
 });
 </script>
 

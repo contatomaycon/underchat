@@ -308,6 +308,8 @@
   "plan_list_all_successfully": "¡Lista de planes obtenida con éxito!",
   "plan_product_with_price_list_successfully": "¡Productos de plan con precio listados con éxito!",
   "user_cards_list_successfully": "¡Tarjetas del usuario listadas con éxito!",
+  "user_info_view_successfully": "¡Información del usuario visualizada con éxito!",
+  "user_info_not_found": "¡Información del usuario no encontrada!",
   "plan_list_all_not_found": "¡No se encontraron planes!",
   "plan_list_all_unauthorized": "¡No está autorizado para ver los planes!",
   "plan_list_with_items_successfully": "¡Planes con elementos listados con éxito!",

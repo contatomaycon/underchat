@@ -10,6 +10,7 @@ import { deletePlanItem } from './methods/deletePlanItem';
 import { listPlanProductAll } from './methods/listPlanProductAll';
 import { listPlanProductWithPrice } from './methods/listPlanProductWithPrice';
 import { listUserCards } from './methods/listUserCards';
+import { viewUserInfo } from './methods/viewUserInfo';
 import { listPlanSales } from './methods/listPlanSales';
 import { listPlanWithItems } from './methods/listPlanWithItems';
 import { viewCurrentPlan } from './methods/viewCurrentPlan';
@@ -27,6 +28,7 @@ class PlanController {
   public listPlanProductAll = listPlanProductAll;
   public listPlanProductWithPrice = listPlanProductWithPrice;
   public listUserCards = listUserCards;
+  public viewUserInfo = viewUserInfo;
   public listPlanSales = listPlanSales;
   public listPlanWithItems = listPlanWithItems;
   public viewCurrentPlan = viewCurrentPlan;

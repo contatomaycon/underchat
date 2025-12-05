@@ -20,6 +20,7 @@ import { ListPlanItemResponse } from '@core/schema/plan/listPlanItems/response.s
 import { ListPlanProductAllResponse } from '@core/schema/plan/listPlanProductAll/response.schema';
 import { ListPlanProductWithPriceResponse } from '@core/schema/plan/listPlanProductWithPrice/response.schema';
 import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.schema';
+import { ViewUserInfoResponse } from '@core/schema/plan/viewUserInfo/response.schema';
 import {
   ListPlanSalesFinalResponse,
   ListPlanSalesResponse,
@@ -622,6 +623,43 @@ export const usePlanStore = defineStore('plan', {
         return data.data.plan_id;
       } catch {
         this.loading = false;
+        return null;
+      }
+    },
+
+    async viewUserInfo(): Promise<ViewUserInfoResponse | null> {
+      try {
+        this.loading = true;
+
+        const response =
+          await axios.get<IApiResponse<ViewUserInfoResponse>>(
+            '/plan/user-info'
+          );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('user_info_view_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('user_info_view_error');
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+
         return null;
       }
     },

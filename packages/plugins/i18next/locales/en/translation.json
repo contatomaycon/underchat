@@ -308,6 +308,8 @@
   "plan_list_all_successfully": "Plan list retrieved successfully!",
   "plan_product_with_price_list_successfully": "Plan products with price listed successfully!",
   "user_cards_list_successfully": "User cards listed successfully!",
+  "user_info_view_successfully": "User information viewed successfully!",
+  "user_info_not_found": "User information not found!",
   "plan_list_all_not_found": "No plans found!",
   "plan_list_all_unauthorized": "You are not authorized to view the plans!",
   "plan_list_with_items_successfully": "Plans with items listed successfully!",
