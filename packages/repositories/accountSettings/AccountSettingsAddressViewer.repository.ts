@@ -56,9 +56,10 @@ export class AccountSettingsAddressViewerRepository {
     if (result.uzs) {
       if (result.uzs.abbreviation) {
         stateName = `${result.uzs.state} (${result.uzs.abbreviation})`;
-      } else {
-        stateName = result.uzs.state;
+        return;
       }
+
+      stateName = result.uzs.state;
     }
 
     return {

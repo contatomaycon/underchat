@@ -27,14 +27,9 @@ export class AccountViewerRepository {
         apc: {
           columns: {
             plan_account_id: true,
+            next_payment_date: true,
           },
           with: {
-            pas: {
-              columns: {
-                plan_account_status_id: true,
-                name: true,
-              },
-            },
             ppl: {
               columns: {
                 plan_id: true,
@@ -57,9 +52,12 @@ export class AccountViewerRepository {
       return null;
     }
 
-    const activePlanAccount = result[0].apc?.find(
-      (pa) => pa.pas?.name === 'active'
-    );
+    const now = new Date();
+    const activePlanAccount = result[0].apc?.find((pa) => {
+      if (!pa.next_payment_date) return false;
+      const nextPaymentDate = new Date(pa.next_payment_date);
+      return nextPaymentDate > now;
+    });
 
     return isAdministrator
       ? {

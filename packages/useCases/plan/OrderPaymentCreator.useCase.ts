@@ -113,6 +113,7 @@ export class OrderPaymentCreatorUseCase {
       paymentStatusId: EPaymentStatus.pending,
       billingPeriodId,
       invoiceUrl: pixResult.payment.invoiceUrl || null,
+      recurringPayment: false,
     });
 
     return {

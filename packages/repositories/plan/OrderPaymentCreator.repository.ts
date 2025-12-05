@@ -79,6 +79,7 @@ export class OrderPaymentCreatorRepository {
     paymentStatusId: string;
     billingPeriodId: string | null;
     invoiceUrl: string | null;
+    recurringPayment: boolean;
   }): Promise<string> => {
     const accountPaymentId = randomUUID();
 
@@ -96,6 +97,7 @@ export class OrderPaymentCreatorRepository {
       payment_status_id: data.paymentStatusId,
       billing_period_id: data.billingPeriodId,
       invoice_url: data.invoiceUrl,
+      recurring_payment: data.recurringPayment,
     });
 
     return accountPaymentId;
@@ -177,14 +179,7 @@ export class OrderPaymentCreatorRepository {
         apc: {
           columns: {
             plan_account_id: true,
-          },
-          with: {
-            pas: {
-              columns: {
-                plan_account_status_id: true,
-                name: true,
-              },
-            },
+            next_payment_date: true,
           },
         },
       },
@@ -197,9 +192,12 @@ export class OrderPaymentCreatorRepository {
       return null;
     }
 
-    const activePlanAccount = accountResult.apc?.find(
-      (pa) => pa.pas?.name === 'active'
-    );
+    const now = new Date();
+    const activePlanAccount = accountResult.apc?.find((pa) => {
+      if (!pa.next_payment_date) return false;
+      const nextPaymentDate = new Date(pa.next_payment_date);
+      return nextPaymentDate > now;
+    });
 
     return activePlanAccount?.plan_account_id || null;
   };

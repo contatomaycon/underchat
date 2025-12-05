@@ -55,6 +55,9 @@ const selectedPlanForCheckout = ref<ListPlanWithItemsResponse | null>(null);
 const currentPlanId = ref<string | null>(null);
 const currentPlan = ref<ListPlanWithItemsResponse | null>(null);
 const currentPlanBillingPeriod = ref<'monthly' | 'annual' | null>(null);
+const currentPlanInvoiceData = ref<{
+  next_payment_date: string | null;
+} | null>(null);
 const availableProducts = ref<ListPlanProductWithPriceResponse[]>([]);
 const selectedAddons = ref<
   Array<{
@@ -170,15 +173,22 @@ const loadStep1 = async () => {
       currentPlan.value = null;
     }
 
-    if (currentPlanInvoice?.billing_period) {
-      currentPlanBillingPeriod.value = currentPlanInvoice.billing_period as
-        | 'monthly'
-        | 'annual';
+    if (currentPlanInvoice) {
+      currentPlanInvoiceData.value = currentPlanInvoice;
 
-      if (currentPlanBillingPeriod.value === 'annual') {
-        billingPeriod.value = 'annual';
+      if (currentPlanInvoice.billing_period) {
+        currentPlanBillingPeriod.value = currentPlanInvoice.billing_period as
+          | 'monthly'
+          | 'annual';
+
+        if (currentPlanBillingPeriod.value === 'annual') {
+          billingPeriod.value = 'annual';
+        }
+      } else {
+        currentPlanBillingPeriod.value = null;
       }
     } else {
+      currentPlanInvoiceData.value = null;
       currentPlanBillingPeriod.value = null;
     }
 
@@ -224,8 +234,32 @@ const loadStep4 = async () => {
   step4Loaded.value = true;
 };
 
+const isPlanExpired = computed(() => {
+  if (!currentPlanInvoiceData.value?.next_payment_date) {
+    return false;
+  }
+
+  const now = new Date();
+  const nextPaymentDate = new Date(
+    currentPlanInvoiceData.value.next_payment_date
+  );
+  return nextPaymentDate <= now;
+});
+
 const loadUpgradeDiscount = async () => {
   if (!selectedPlanForCheckout.value) return;
+
+  if (isPlanExpired.value) {
+    upgradeDiscount.value = {
+      discount: 0,
+      current_plan_price: 0,
+      days_used: 0,
+      days_remaining: 0,
+      total_days: 0,
+      is_upgrade: false,
+    };
+    return;
+  }
 
   loadingDiscount.value = true;
   const discount = await planStore.calculateUpgradeDiscount(

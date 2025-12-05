@@ -14,14 +14,6 @@ CREATE TABLE "payment_status" (
   "updated_at" timestamptz NULL DEFAULT now(),
   PRIMARY KEY ("payment_status_id")
 );
--- Create "plan_account_status" table
-CREATE TABLE "plan_account_status" (
-  "plan_account_status_id" uuid NOT NULL,
-  "name" character varying(20) NOT NULL,
-  "created_at" timestamptz NULL DEFAULT now(),
-  "updated_at" timestamptz NULL DEFAULT now(),
-  PRIMARY KEY ("plan_account_status_id")
-);
 -- Create "user_card" table
 CREATE TABLE "user_card" (
   "user_card_id" uuid NOT NULL,
@@ -59,7 +51,6 @@ CREATE TABLE "plan_account" (
   "plan_account_id" uuid NOT NULL,
   "account_id" uuid NOT NULL,
   "plan_id" uuid NOT NULL,
-  "plan_account_status_id" uuid NOT NULL,
   "recurring_payment" boolean NOT NULL DEFAULT false,
   "billing_period_id" uuid NULL,
   "last_payment_date" timestamptz NULL,
@@ -70,7 +61,6 @@ CREATE TABLE "plan_account" (
   "updated_at" timestamptz NULL DEFAULT now(),
   PRIMARY KEY ("plan_account_id"),
   CONSTRAINT "plan_account_account_id_account_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "account" ("account_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
-  CONSTRAINT "plan_account_plan_account_status_id_plan_account_status_plan_ac" FOREIGN KEY ("plan_account_status_id") REFERENCES "plan_account_status" ("plan_account_status_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
   CONSTRAINT "plan_account_plan_id_plan_plan_id_fk" FOREIGN KEY ("plan_id") REFERENCES "plan" ("plan_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
   CONSTRAINT "plan_account_billing_period_id_billing_period_billing_period_id_fk" FOREIGN KEY ("billing_period_id") REFERENCES "billing_period" ("billing_period_id") ON UPDATE NO ACTION ON DELETE NO ACTION
 );
@@ -94,6 +84,7 @@ CREATE TABLE "account_payment" (
   "payment_status_id" uuid NOT NULL,
   "payment_date" timestamptz NULL,
   "invoice_url" character varying(1000) NULL,
+  "recurring_payment" boolean NOT NULL DEFAULT false,
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
   PRIMARY KEY ("account_payment_id"),

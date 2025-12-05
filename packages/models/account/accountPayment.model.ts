@@ -4,6 +4,7 @@ import {
   timestamp,
   varchar,
   numeric,
+  boolean,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import {
@@ -48,6 +49,7 @@ export const accountPayment = pgTable('account_payment', {
   }),
   billing_period_id: uuid().references(() => billingPeriod.billing_period_id),
   invoice_url: varchar({ length: 1000 }),
+  recurring_payment: boolean().notNull().default(false),
   created_at: timestamp({
     mode: 'string',
     withTimezone: true,

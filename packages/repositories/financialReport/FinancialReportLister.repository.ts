@@ -3,14 +3,23 @@ import {
   account,
   plan,
   planAccount,
-  planAccountStatus,
   planCrossSellAccount,
   planCrossSell,
   expenditure,
 } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, isNull, gte, lte, SQLWrapper, inArray, eq } from 'drizzle-orm';
+import {
+  and,
+  isNull,
+  gte,
+  lte,
+  SQLWrapper,
+  inArray,
+  eq,
+  gt,
+  sql,
+} from 'drizzle-orm';
 import { ListFinancialReportRequest } from '@core/schema/financialReport/listFinancialReport/request.schema';
 import {
   ListFinancialReportResponse,
@@ -77,10 +86,16 @@ export class FinancialReportListerRepository {
         monthKey,
         (incomeByMonth.get(monthKey) || 0) + planPrice
       );
-    } else if (period === 'annual') {
+      return planPrice;
+    }
+
+    if (period === 'annual') {
       const yearKey = date.getFullYear().toString();
       incomeByYear.set(yearKey, (incomeByYear.get(yearKey) || 0) + planPrice);
-    } else if (period === 'daily') {
+      return planPrice;
+    }
+
+    if (period === 'daily') {
       const year = date.getUTCFullYear();
       const month = String(date.getUTCMonth() + 1).padStart(2, '0');
       const day = String(date.getUTCDate()).padStart(2, '0');
@@ -179,13 +194,19 @@ export class FinancialReportListerRepository {
         monthKey,
         (expenditureByMonth.get(monthKey) || 0) + price
       );
-    } else if (period === 'annual') {
+      return price;
+    }
+
+    if (period === 'annual') {
       const yearKey = date.getFullYear().toString();
       expenditureByYear.set(
         yearKey,
         (expenditureByYear.get(yearKey) || 0) + price
       );
-    } else if (period === 'daily') {
+      return price;
+    }
+
+    if (period === 'daily') {
       const year = date.getUTCFullYear();
       const month = String(date.getUTCMonth() + 1).padStart(2, '0');
       const day = String(date.getUTCDate()).padStart(2, '0');
@@ -283,18 +304,11 @@ export class FinancialReportListerRepository {
       .from(account)
       .innerJoin(planAccount, eq(planAccount.account_id, account.account_id))
       .innerJoin(plan, eq(planAccount.plan_id, plan.plan_id))
-      .innerJoin(
-        planAccountStatus,
-        eq(
-          planAccount.plan_account_status_id,
-          planAccountStatus.plan_account_status_id
-        )
-      )
       .where(
         and(
           isNull(account.deleted_at),
           isNull(plan.deleted_at),
-          eq(planAccountStatus.name, 'active'),
+          gt(planAccount.next_payment_date, sql`NOW()`),
           ...filters
         )
       )
@@ -487,9 +501,10 @@ export class FinancialReportListerRepository {
           existing.net = (
             Number(existing.income) - Number(item.outgoing)
           ).toString();
-        } else {
-          monthMap.set(item.month, item);
+          continue;
         }
+
+        monthMap.set(item.month, item);
       }
     }
 
@@ -544,9 +559,10 @@ export class FinancialReportListerRepository {
           existing.net = (
             Number(existing.income) - Number(item.outgoing)
           ).toString();
-        } else {
-          yearMap.set(item.month, item);
+          continue;
         }
+
+        yearMap.set(item.month, item);
       }
     }
 
@@ -580,9 +596,10 @@ export class FinancialReportListerRepository {
           existing.net = (
             Number(existing.income) - Number(item.outgoing)
           ).toString();
-        } else {
-          dayMap.set(item.date, item);
+          continue;
         }
+
+        dayMap.set(item.date, item);
       }
     }
 
@@ -611,7 +628,9 @@ export class FinancialReportListerRepository {
         incomeData.byMonth,
         expenditureData.byMonth
       );
-    } else if (query.period === 'annual') {
+    }
+
+    if (query.period === 'annual') {
       monthlyDetails = this.combineYearlyData(
         incomeData.byYear,
         expenditureData.byYear

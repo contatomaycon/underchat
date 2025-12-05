@@ -87,7 +87,9 @@ export class UserInfoViewerRepository {
     if (result.uua?.uzs) {
       if (result.uua.uzs.abbreviation) {
         stateName = `${result.uua.uzs.state} (${result.uua.uzs.abbreviation})`;
-      } else {
+      }
+
+      if (!result.uua.uzs.abbreviation) {
         stateName = result.uua.uzs.state;
       }
     }

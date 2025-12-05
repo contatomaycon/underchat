@@ -17,7 +17,8 @@ export class UpgradeDiscountCalculatorRepository {
     newPlanId: string,
     selectedBillingPeriod?: 'monthly' | 'annual'
   ): Promise<CalculateUpgradeDiscountResponse> => {
-    const activePlanAccount = await this.getActivePlanAccount(accountId);
+    const accountResult = await this.findAccountWithPlanAccounts(accountId);
+    const activePlanAccount = this.findActivePlanAccount(accountResult);
 
     if (!activePlanAccount?.ppl) {
       return this.buildEmptyResponse();
@@ -30,8 +31,14 @@ export class UpgradeDiscountCalculatorRepository {
       return this.buildEmptyResponse();
     }
 
+    const now = new Date();
+    const nextPaymentDate = new Date(activePlanAccount.next_payment_date);
+    if (nextPaymentDate <= now) {
+      return this.buildEmptyResponse();
+    }
+
     const currentPlanValue = Number(activePlanAccount.value);
-    let billingPeriodName = activePlanAccount.bpl?.name;
+    let billingPeriodName: string | null = activePlanAccount.bpl?.name || null;
 
     if (!billingPeriodName) {
       billingPeriodName = calculateBillingPeriodByDates(
@@ -46,7 +53,8 @@ export class UpgradeDiscountCalculatorRepository {
       return this.buildResponseWithoutDiscount(currentPlanValue, false);
     }
 
-    const billingPeriodForNewPlan = selectedBillingPeriod || billingPeriodName;
+    const billingPeriodForNewPlan: string | null =
+      selectedBillingPeriod || billingPeriodName || null;
 
     const newPlanPrice = this.getNewPlanPrice(
       {
@@ -101,11 +109,6 @@ export class UpgradeDiscountCalculatorRepository {
       total_days: Math.max(0, dateCalculations.totalDays),
       is_upgrade: isUpgrade,
     };
-  };
-
-  private readonly getActivePlanAccount = async (accountId: string) => {
-    const accountResult = await this.findAccountWithPlanAccounts(accountId);
-    return this.findActivePlanAccount(accountResult);
   };
 
   private readonly getNewPlan = async (newPlanId: string) => {
@@ -233,12 +236,6 @@ export class UpgradeDiscountCalculatorRepository {
             billing_period_id: true,
           },
           with: {
-            pas: {
-              columns: {
-                plan_account_status_id: true,
-                name: true,
-              },
-            },
             ppl: {
               columns: {
                 plan_id: true,
@@ -260,7 +257,22 @@ export class UpgradeDiscountCalculatorRepository {
     });
   };
 
-  private readonly findActivePlanAccount = (accountResult: any) => {
-    return accountResult?.apc?.find((pa: any) => pa.pas?.name === 'active');
+  private readonly findActivePlanAccount = (
+    accountResult: Awaited<
+      ReturnType<typeof this.findAccountWithPlanAccounts>
+    > | null
+  ) => {
+    if (!accountResult?.apc) {
+      return null;
+    }
+
+    const now = new Date();
+    return accountResult.apc.find((pa) => {
+      if (!pa.next_payment_date) {
+        return false;
+      }
+      const nextPaymentDate = new Date(pa.next_payment_date);
+      return nextPaymentDate > now;
+    });
   };
 }
