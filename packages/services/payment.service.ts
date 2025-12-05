@@ -23,6 +23,7 @@ import { UserCardCreatorRepository } from '@core/repositories/plan/UserCardCreat
 import { UserCardsListerRepository } from '@core/repositories/plan/UserCardsLister.repository';
 import { UserInfoViewerRepository } from '@core/repositories/plan/UserInfoViewer.repository';
 import { ViewUserInfoResponse } from '@core/schema/plan/viewUserInfo/response.schema';
+import { parseAddress } from '@core/common/functions/parseAddress';
 
 @injectable()
 export class PaymentService {
@@ -34,43 +35,6 @@ export class PaymentService {
     private readonly userCardsListerRepository: UserCardsListerRepository,
     private readonly userInfoViewerRepository: UserInfoViewerRepository
   ) {}
-
-  private readonly parseAddress = (
-    address: string
-  ): {
-    street: string;
-    number?: string;
-    complement?: string;
-  } => {
-    const trimmedAddress = address.trim();
-
-    if (trimmedAddress.length > 500) {
-      return {
-        street: trimmedAddress,
-      };
-    }
-
-    const numberPattern = /\s+(\d+)(?:\s*[-/]\s*(\d+))?$/;
-    const numberMatch = numberPattern.exec(trimmedAddress);
-    if (!numberMatch || numberMatch.index === undefined) {
-      return {
-        street: trimmedAddress,
-      };
-    }
-
-    const street = trimmedAddress.substring(0, numberMatch.index).trim();
-    const number = numberMatch[1];
-    const afterNumber = trimmedAddress
-      .substring(numberMatch.index + numberMatch[0].length)
-      .trim();
-    const complement = afterNumber || undefined;
-
-    return {
-      street: street || trimmedAddress,
-      number: number,
-      complement: complement,
-    };
-  };
 
   getOrCreateCustomer = async (
     accountId: string
@@ -281,7 +245,8 @@ export class PaymentService {
     postalCode: string | undefined;
   } => {
     if (sensitiveData.address1) {
-      const addressParts = this.parseAddress(sensitiveData.address1);
+      const addressParts = parseAddress(sensitiveData.address1);
+
       return {
         addressNumber: addressParts.number,
         complement:
@@ -311,7 +276,8 @@ export class PaymentService {
     postalCode: string | undefined;
   } => {
     if (sensitiveData.address1) {
-      const addressParts = this.parseAddress(sensitiveData.address1);
+      const addressParts = parseAddress(sensitiveData.address1);
+
       return {
         address: addressParts.street,
         addressNumber: addressParts.number,
