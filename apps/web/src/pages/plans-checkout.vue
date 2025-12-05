@@ -458,6 +458,12 @@ const isUpgradeBlocked = computed(() => {
   return upgradeDiscount.value.is_upgrade === false;
 });
 
+const isTotalZero = computed(() => {
+  return (
+    getCheckoutTotal.value <= 0 && upgradeDiscount.value?.is_upgrade === true
+  );
+});
+
 const goBack = () => {
   router.push({ name: 'plans' });
 };
@@ -1030,6 +1036,22 @@ onMounted(async () => {
                     </div>
                   </VAlert>
 
+                  <!-- Alerta quando total fica zerado -->
+                  <VAlert
+                    v-if="isTotalZero"
+                    type="warning"
+                    variant="tonal"
+                    class="mb-4"
+                    prominent
+                  >
+                    <VAlertTitle>
+                      {{ $t('total_zero_title') }}
+                    </VAlertTitle>
+                    <div>
+                      {{ $t('total_zero_message') }}
+                    </div>
+                  </VAlert>
+
                   <VRow>
                     <!-- Plano Selecionado - Esquerda -->
                     <VCol cols="12" md="6">
@@ -1405,6 +1427,22 @@ onMounted(async () => {
                     </VAlertTitle>
                     <div>
                       {{ $t('upgrade_blocked_message') }}
+                    </div>
+                  </VAlert>
+
+                  <!-- Alerta quando total fica zerado -->
+                  <VAlert
+                    v-if="isTotalZero"
+                    type="warning"
+                    variant="tonal"
+                    class="mb-4"
+                    prominent
+                  >
+                    <VAlertTitle>
+                      {{ $t('total_zero_title') }}
+                    </VAlertTitle>
+                    <div>
+                      {{ $t('total_zero_message') }}
                     </div>
                   </VAlert>
 
@@ -2394,7 +2432,8 @@ onMounted(async () => {
                       !selectedCardId &&
                       userCards.length > 0) ||
                     isDiscountGreaterThanTotal ||
-                    isUpgradeBlocked
+                    isUpgradeBlocked ||
+                    isTotalZero
                   "
                   @click="nextStep"
                 >
@@ -2410,7 +2449,8 @@ onMounted(async () => {
                       !selectedCardId &&
                       userCards.length > 0) ||
                     isDiscountGreaterThanTotal ||
-                    isUpgradeBlocked
+                    isUpgradeBlocked ||
+                    isTotalZero
                   "
                 >
                   {{ $t('finalize_purchase') }}

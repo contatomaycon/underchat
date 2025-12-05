@@ -4,6 +4,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq, isNull } from 'drizzle-orm';
 import { CalculateUpgradeDiscountResponse } from '@core/schema/plan/calculateUpgradeDiscount/response.schema';
+import { calculateBillingPeriodByDates } from '@core/common/functions/calculateBillingPeriodByDates';
 
 @injectable()
 export class UpgradeDiscountCalculatorRepository {
@@ -29,7 +30,14 @@ export class UpgradeDiscountCalculatorRepository {
     }
 
     const currentPlanValue = Number(activePlanAccount.value);
-    const billingPeriodName = activePlanAccount.bpl?.name;
+    let billingPeriodName = activePlanAccount.bpl?.name;
+
+    if (!billingPeriodName) {
+      billingPeriodName = calculateBillingPeriodByDates(
+        activePlanAccount.last_payment_date,
+        activePlanAccount.next_payment_date
+      );
+    }
 
     const newPlan = await this.getNewPlan(newPlanId);
 
@@ -44,7 +52,17 @@ export class UpgradeDiscountCalculatorRepository {
       },
       billingPeriodName
     );
-    const isUpgrade = this.isUpgrade(newPlanPrice, currentPlanValue);
+
+    const currentPlanMonthlyPrice = Number(activePlanAccount.ppl.price);
+    const currentPlanPriceForComparison =
+      billingPeriodName === 'annual'
+        ? currentPlanMonthlyPrice * 12
+        : currentPlanMonthlyPrice;
+
+    const isUpgrade = this.isUpgrade(
+      newPlanPrice,
+      currentPlanPriceForComparison
+    );
 
     if (!isUpgrade) {
       return this.buildResponseWithoutDiscount(currentPlanValue, false);

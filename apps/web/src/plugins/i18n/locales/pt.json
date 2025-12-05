@@ -1512,5 +1512,7 @@
     "invalid_year": "Ano inválido.",
     "card_expired": "Data inválida. O cartão já expirou.",
     "upgrade_blocked_title": "Upgrade não disponível",
-    "upgrade_blocked_message": "O valor do desconto de upgrade é maior que o valor da contratação do novo plano. Por favor, entre em contato com o setor financeiro para realizar a alteração do plano."
+    "upgrade_blocked_message": "O valor do desconto de upgrade é maior que o valor da contratação do novo plano. Por favor, entre em contato com o setor financeiro para realizar a alteração do plano.",
+    "total_zero_title": "Valor total zerado",
+    "total_zero_message": "O desconto de upgrade é maior ou igual ao valor total da contratação. Por favor, entre em contato com o setor financeiro para realizar a alteração do plano."
 }

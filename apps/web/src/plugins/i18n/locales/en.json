@@ -1501,5 +1501,7 @@
     "invalid_year": "Invalid year.",
     "card_expired": "Invalid date. The card has already expired.",
     "upgrade_blocked_title": "Upgrade not available",
-    "upgrade_blocked_message": "The upgrade discount value is greater than the new plan contract value. Please contact the finance department to proceed with the plan change."
+    "upgrade_blocked_message": "The upgrade discount value is greater than the new plan contract value. Please contact the finance department to proceed with the plan change.",
+    "total_zero_title": "Total value is zero",
+    "total_zero_message": "The upgrade discount is greater than or equal to the total contract value. Please contact the finance department to proceed with the plan change."
 }
