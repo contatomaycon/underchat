@@ -1,4 +1,4 @@
-import { injectable, inject } from 'tsyringe';
+import { injectable } from 'tsyringe';
 import { PlanReleaseRepository } from '@core/repositories/plan/PlanRelease.repository';
 import { EPaymentStatus } from '@core/common/enums/EPaymentStatus';
 import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
@@ -307,11 +307,11 @@ export class PlanReleaseService {
         new Date().toISOString()
       : null;
 
-    if (isSuccessful) {
+    if (isSuccessful && paymentDate) {
       await this.processSuccessfulPayment(
         accountPaymentData,
         paymentStatusId,
-        paymentDate!,
+        paymentDate,
         data.payment.pixTransaction || null
       );
     }

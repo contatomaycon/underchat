@@ -2,8 +2,8 @@ import { injectable } from 'tsyringe';
 import { UserCustomerRepository } from '@core/repositories/payment/UserCustomer.repository';
 import { AsaasService } from './asaas';
 import { UserService } from './user.service';
-import { ICreateAsaasCustomerRequest } from '@core/common/interfaces/IAsaasCustomer';
 import {
+  ICreateAsaasCustomerRequest,
   IGetAsaasCustomerResponse,
   ICreateAsaasCustomerResponse,
 } from '@core/common/interfaces/IAsaasCustomer';
@@ -93,7 +93,7 @@ export class PaymentService {
       return null;
     }
 
-    return await this.userCustomerRepository.createUserCustomer(
+    return this.userCustomerRepository.createUserCustomer(
       userId,
       asaasCustomer.id
     );
@@ -102,9 +102,7 @@ export class PaymentService {
   private getUserIdByAccountId = async (
     accountId: string
   ): Promise<string | null> => {
-    return await this.userCustomerRepository.getFirstUserIdByAccountId(
-      accountId
-    );
+    return this.userCustomerRepository.getFirstUserIdByAccountId(accountId);
   };
 
   private findOrCreateAsaasCustomer = async (
@@ -129,7 +127,7 @@ export class PaymentService {
       return existingCustomer;
     }
 
-    return await this.createNewAsaasCustomer(userId, accountId, sensitiveData);
+    return this.createNewAsaasCustomer(userId, accountId, sensitiveData);
   };
 
   private findExistingAsaasCustomer = async (
@@ -216,9 +214,13 @@ export class PaymentService {
     const fiscalData = this.getFiscalData(userView);
     const isCNPJ = this.isCNPJ(userView);
 
+    if (!sensitiveData.document) {
+      throw new Error('Document is required to create Asaas customer');
+    }
+
     return {
       name: fullName,
-      cpfCnpj: sensitiveData.document!,
+      cpfCnpj: sensitiveData.document,
       email: sensitiveData.email || undefined,
       phone: phoneData.fullPhone,
       mobilePhone: phoneData.mobilePhone,

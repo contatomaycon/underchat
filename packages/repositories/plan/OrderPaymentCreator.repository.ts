@@ -3,7 +3,6 @@ import {
   plan,
   planCrossSell,
   accountPayment,
-  account,
   accountPaymentCrossSell,
 } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';

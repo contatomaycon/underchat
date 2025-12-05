@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { notifications, worker } from '@core/models';
+import { notifications } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { isNull } from 'drizzle-orm';

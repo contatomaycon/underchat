@@ -1,7 +1,7 @@
 import * as schema from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { eq, and, isNull, inArray } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import {
   accountPayment,
   planAccount,

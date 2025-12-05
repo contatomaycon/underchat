@@ -1,4 +1,4 @@
-import { inject, injectable } from 'tsyringe';
+import { injectable } from 'tsyringe';
 import { PlanService } from '@core/services/plan.service';
 import { ViewUserInfoResponse } from '@core/schema/plan/viewUserInfo/response.schema';
 

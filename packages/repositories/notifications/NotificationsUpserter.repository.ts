@@ -20,21 +20,16 @@ export class NotificationsUpserterRepository {
   upsertNotifications = async (
     input: UpdateNotificationsRequest
   ): Promise<UpdateNotificationsResponse> => {
-    return await this.db.transaction(async (tx) => {
+    return this.db.transaction(async (tx) => {
       await this.ensureSingleNotification(tx);
 
       const existing = await this.findExistingNotification(tx);
 
       if (existing) {
-        return await this.updateNotificationTx(
-          tx,
-          existing.notification_id,
-          input,
-          existing
-        );
+        return this.updateNotificationTx(tx, existing.notification_id, input);
       }
 
-      return await this.createNotificationTx(tx, input);
+      return this.createNotificationTx(tx, input);
     });
   };
 
@@ -93,12 +88,7 @@ export class NotificationsUpserterRepository {
   }
 
   private buildUpdateData(
-    input: UpdateNotificationsRequest,
-    existing: {
-      two_factor_notification: string | null;
-      plan_notification: string | null;
-      plan_expiration_reminder: string | null;
-    }
+    input: UpdateNotificationsRequest
   ): Partial<typeof notifications.$inferInsert> {
     const updateData: Partial<typeof notifications.$inferInsert> = {
       updated_at: new Date().toISOString(),
@@ -128,14 +118,9 @@ export class NotificationsUpserterRepository {
       ExtractTablesWithRelations<typeof schema>
     >,
     notificationId: string,
-    input: UpdateNotificationsRequest,
-    existingData: {
-      two_factor_notification: string | null;
-      plan_notification: string | null;
-      plan_expiration_reminder: string | null;
-    }
+    input: UpdateNotificationsRequest
   ): Promise<UpdateNotificationsResponse> {
-    const updateData = this.buildUpdateData(input, existingData);
+    const updateData = this.buildUpdateData(input);
 
     await tx
       .update(notifications)
