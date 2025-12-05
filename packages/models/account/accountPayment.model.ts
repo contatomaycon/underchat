@@ -39,7 +39,6 @@ export const accountPayment = pgTable('account_payment', {
   boleto: varchar({ length: 500 }),
   boleto_number: varchar({ length: 100 }),
   pix_transaction: varchar({ length: 500 }),
-  pix_qr_code_id: varchar({ length: 500 }),
   payment_status_id: uuid()
     .references(() => paymentStatus.payment_status_id)
     .notNull(),

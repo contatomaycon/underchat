@@ -101,7 +101,6 @@ export class OrderPaymentCreatorUseCase {
       value: totalAmount.toString(),
       netValue: pixResult.payment.netValue.toString(),
       pixTransaction: pixResult.payment.pixTransaction || null,
-      pixQrCodeId: pixResult.payment.pixQrCodeId || null,
       paymentStatusId: EPaymentStatus.pending,
       billingPeriodId,
       invoiceUrl: pixResult.payment.invoiceUrl || null,

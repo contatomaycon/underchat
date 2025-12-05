@@ -75,7 +75,6 @@ export class OrderPaymentCreatorRepository {
     value: string;
     netValue: string;
     pixTransaction: string | null;
-    pixQrCodeId: string | null;
     paymentStatusId: string;
     billingPeriodId: string | null;
     invoiceUrl: string | null;
@@ -93,7 +92,6 @@ export class OrderPaymentCreatorRepository {
       value: data.value,
       net_value: data.netValue,
       pix_transaction: data.pixTransaction,
-      pix_qr_code_id: data.pixQrCodeId,
       payment_status_id: data.paymentStatusId,
       billing_period_id: data.billingPeriodId,
       invoice_url: data.invoiceUrl,

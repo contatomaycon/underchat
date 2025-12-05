@@ -62,7 +62,6 @@ CREATE TABLE "account_payment" (
   "boleto" character varying(500) NULL,
   "boleto_number" character varying(100) NULL,
   "pix_transaction" character varying(500) NULL,
-  "pix_qr_code_id" character varying(500) NULL,
   "payment_status_id" uuid NOT NULL,
   "payment_date" timestamptz NULL,
   "invoice_url" character varying(1000) NULL,

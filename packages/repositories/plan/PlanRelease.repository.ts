@@ -46,15 +46,27 @@ export class PlanReleaseRepository {
     >[0],
     accountPaymentId: string,
     paymentStatusId: string,
-    paymentDate: string | null
+    paymentDate: string | null,
+    pixTransaction: string | null | undefined
   ): Promise<void> => {
+    const updateData: {
+      payment_status_id: string;
+      payment_date: string | null;
+      pix_transaction?: string | null;
+      updated_at: string;
+    } = {
+      payment_status_id: paymentStatusId,
+      payment_date: paymentDate,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (pixTransaction !== undefined) {
+      updateData.pix_transaction = pixTransaction;
+    }
+
     await tx
       .update(accountPayment)
-      .set({
-        payment_status_id: paymentStatusId,
-        payment_date: paymentDate,
-        updated_at: new Date().toISOString(),
-      })
+      .set(updateData)
       .where(eq(accountPayment.account_payment_id, accountPaymentId));
   };
 
@@ -153,6 +165,7 @@ export class PlanReleaseRepository {
     accountPaymentId: string;
     paymentStatusId: string;
     paymentDate: string | null;
+    pixTransaction: string | null | undefined;
     accountId: string;
     planId: string;
     accountPaymentIdForPlan: string;
@@ -168,7 +181,8 @@ export class PlanReleaseRepository {
         tx,
         data.accountPaymentId,
         data.paymentStatusId,
-        data.paymentDate
+        data.paymentDate,
+        data.pixTransaction
       );
 
       if (data.shouldReleasePlan) {
