@@ -78,6 +78,7 @@ const selectedAddons = ref<
     price: number;
   }>
 >([]);
+const selectedCrossSellByType = ref<Record<string, string | null>>({});
 const loadingProducts = ref(false);
 const currentUser = ref<ViewUserInfoResponse | null>(null);
 const loadingUser = ref(false);
@@ -233,6 +234,7 @@ const loadStep2 = async () => {
   ]);
   if (crossSells) {
     availableCrossSells.value = crossSells;
+    selectedCrossSellByType.value = {};
   }
   loadingProducts.value = false;
   step2Loaded.value = true;
@@ -442,7 +444,47 @@ const prevStep = () => {
   }
 };
 
-const addAddon = (crossSell: ListAvailableCrossSellResponse) => {
+const groupedCrossSells = computed(() => {
+  const grouped: Record<
+    string,
+    {
+      product_id: string;
+      product_name: string;
+      product_description: string | null;
+      options: ListAvailableCrossSellResponse[];
+    }
+  > = {};
+
+  availableCrossSells.value.forEach((crossSell) => {
+    const productId = crossSell.plan_product_id;
+    if (!grouped[productId]) {
+      grouped[productId] = {
+        product_id: productId,
+        product_name: crossSell.plan_product?.name || '',
+        product_description: crossSell.plan_product?.description || null,
+        options: [],
+      };
+    }
+    grouped[productId].options.push(crossSell);
+  });
+
+  return Object.values(grouped);
+});
+
+const addAddon = (planProductId: string) => {
+  const selectedCrossSellId = selectedCrossSellByType.value[planProductId];
+  if (!selectedCrossSellId) {
+    return;
+  }
+
+  const crossSell = availableCrossSells.value.find(
+    (cs) => cs.plan_cross_sell_id === selectedCrossSellId
+  );
+
+  if (!crossSell) {
+    return;
+  }
+
   const existingAddon = selectedAddons.value.find(
     (a) => a.plan_product_id === crossSell.plan_product_id
   );
@@ -458,6 +500,8 @@ const addAddon = (crossSell: ListAvailableCrossSellResponse) => {
     quantity: crossSell.quantity,
     price: crossSell.price,
   });
+
+  selectedCrossSellByType.value[planProductId] = null;
 };
 
 const removeAddon = (planProductId: string) => {
@@ -479,6 +523,28 @@ const getAddonQuantity = (planProductId: string): number => {
 
 const isAddonSelected = (planProductId: string): boolean => {
   return selectedAddons.value.some((a) => a.plan_product_id === planProductId);
+};
+
+const getSelectedCrossSellForType = (planProductId: string): string | null => {
+  return selectedCrossSellByType.value[planProductId] || null;
+};
+
+const canAddCrossSell = (planProductId: string): boolean => {
+  const selectedId = selectedCrossSellByType.value[planProductId];
+  if (!selectedId) {
+    return false;
+  }
+  return !isAddonSelected(planProductId);
+};
+
+const getCrossSellLabel = (
+  crossSell: ListAvailableCrossSellResponse
+): string => {
+  const quantity = crossSell.quantity;
+  const price = formatCurrency(
+    crossSell.price * (billingPeriod.value === 'annual' ? 12 : 1)
+  );
+  return `${quantity}x - ${price}`;
 };
 
 const getAddonPrice = (addon: {
@@ -1383,68 +1449,73 @@ onMounted(async () => {
                       </VCard>
 
                       <div
-                        v-else-if="availableCrossSells.length > 0"
-                        class="d-flex flex-column gap-3"
+                        v-else-if="groupedCrossSells.length > 0"
+                        class="d-flex flex-column gap-4"
                       >
                         <VCard
-                          v-for="crossSell in availableCrossSells"
-                          :key="crossSell.plan_cross_sell_id"
+                          v-for="group in groupedCrossSells"
+                          :key="group.product_id"
                           variant="outlined"
                           :class="{
-                            'border-primary': isAddonSelected(
-                              crossSell.plan_product_id
-                            ),
+                            'border-primary': isAddonSelected(group.product_id),
                           }"
                         >
                           <VCardText>
-                            <div
-                              class="d-flex align-center justify-space-between"
-                            >
-                              <div class="flex-grow-1">
+                            <div class="d-flex flex-column gap-3">
+                              <div>
                                 <div class="font-weight-medium mb-1">
-                                  {{ crossSell.plan_product?.name }}
-                                  <VChip
-                                    size="small"
-                                    color="primary"
-                                    variant="tonal"
-                                    class="ml-2"
-                                  >
-                                    {{ crossSell.quantity }}x
-                                  </VChip>
+                                  {{ group.product_name }}
                                 </div>
                                 <div
-                                  v-if="crossSell.plan_product?.description"
+                                  v-if="group.product_description"
                                   class="text-body-2 text-medium-emphasis"
                                 >
-                                  {{ crossSell.plan_product.description }}
-                                </div>
-                                <div class="text-body-2 text-primary mt-1">
-                                  {{
-                                    formatCurrency(
-                                      crossSell.price *
-                                        (billingPeriod === 'annual' ? 12 : 1)
-                                    )
-                                  }}
+                                  {{ group.product_description }}
                                 </div>
                               </div>
-                              <div class="d-flex align-center gap-3">
+
+                              <div
+                                v-if="isAddonSelected(group.product_id)"
+                                class="d-flex align-center justify-space-between"
+                              >
+                                <VChip color="success" variant="tonal">
+                                  Adicionado
+                                </VChip>
                                 <VBtn
-                                  v-if="
-                                    isAddonSelected(crossSell.plan_product_id)
-                                  "
                                   color="error"
                                   variant="outlined"
-                                  @click="
-                                    removeAddon(crossSell.plan_product_id)
-                                  "
+                                  size="small"
+                                  @click="removeAddon(group.product_id)"
                                 >
                                   {{ $t('remove') }}
                                 </VBtn>
+                              </div>
+
+                              <div v-else class="d-flex align-center gap-2">
+                                <VSelect
+                                  v-model="
+                                    selectedCrossSellByType[group.product_id]
+                                  "
+                                  :items="
+                                    group.options.map((opt) => ({
+                                      title: getCrossSellLabel(opt),
+                                      value: opt.plan_cross_sell_id,
+                                      raw: opt,
+                                    }))
+                                  "
+                                  item-title="title"
+                                  item-value="value"
+                                  :label="`Selecione ${group.product_name}`"
+                                  variant="outlined"
+                                  density="compact"
+                                  class="flex-grow-1"
+                                  placeholder="Selecione uma opção"
+                                />
                                 <VBtn
-                                  v-else
                                   color="primary"
                                   variant="outlined"
-                                  @click="addAddon(crossSell)"
+                                  :disabled="!canAddCrossSell(group.product_id)"
+                                  @click="addAddon(group.product_id)"
                                 >
                                   {{ $t('add') }}
                                 </VBtn>
