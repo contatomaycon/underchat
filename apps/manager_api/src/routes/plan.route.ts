@@ -20,7 +20,6 @@ import { listPlanProductAllSchema } from '@core/schema/plan/listPlanProductAll';
 import { listPlanSalesSchema } from '@core/schema/plan/listPlanSales';
 import { listPlanWithItemsSchema } from '@core/schema/plan/listPlanWithItems';
 import { viewCurrentPlanSchema } from '@core/schema/plan/viewCurrentPlan';
-import { viewCurrentPlanInvoiceSchema } from '@core/schema/plan/viewCurrentPlanInvoice';
 
 export default function planRoutes(server: FastifyInstance) {
   const planController = container.resolve(PlanController);
@@ -127,15 +126,6 @@ export default function planRoutes(server: FastifyInstance) {
   server.get('/account/current-plan', {
     schema: viewCurrentPlanSchema,
     handler: planController.viewCurrentPlan,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, planInvoicePermissions),
-    ],
-  });
-
-  server.get('/account/current-plan-invoice', {
-    schema: viewCurrentPlanInvoiceSchema,
-    handler: planController.viewCurrentPlanInvoice,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),

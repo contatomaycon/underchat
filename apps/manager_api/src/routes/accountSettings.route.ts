@@ -12,6 +12,8 @@ import { viewAddress1Schema } from '@core/schema/accountSettings/viewAddress1';
 import { viewAddress2Schema } from '@core/schema/accountSettings/viewAddress2';
 import { viewAdditionalInfoSchema } from '@core/schema/accountSettings/viewAdditionalInfo';
 import { changePasswordSchema } from '@core/schema/accountSettings/changePassword';
+import { viewCurrentPlanInvoiceSchema } from '@core/schema/accountSettings/viewCurrentPlanInvoice';
+import { planInvoicePermissions } from '@/permissions';
 
 export default async function accountSettingsRoutes(server: FastifyInstance) {
   const accountSettingsController = container.resolve(
@@ -82,5 +84,14 @@ export default async function accountSettingsRoutes(server: FastifyInstance) {
     schema: changePasswordSchema,
     handler: accountSettingsController.changePassword,
     preHandler: [(request, reply) => server.authenticateJwt(request, reply)],
+  });
+
+  server.get('/account-settings/current-plan-invoice', {
+    schema: viewCurrentPlanInvoiceSchema,
+    handler: accountSettingsController.viewCurrentPlanInvoice,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
   });
 }

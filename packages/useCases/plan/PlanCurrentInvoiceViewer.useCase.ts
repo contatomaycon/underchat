@@ -1,6 +1,6 @@
 import { inject, injectable } from 'tsyringe';
 import { PlanCurrentInvoiceViewerRepository } from '@core/repositories/plan/PlanCurrentInvoiceViewer.repository';
-import { ViewCurrentPlanInvoiceResponse } from '@core/schema/plan/viewCurrentPlanInvoice/response.schema';
+import { ViewCurrentPlanInvoiceResponse } from '@core/schema/accountSettings/viewCurrentPlanInvoice/response.schema';
 
 @injectable()
 export class PlanCurrentInvoiceViewerUseCase {

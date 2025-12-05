@@ -603,7 +603,7 @@ const onCropResize = (e: MouseEvent | TouchEvent) => {
   if (!cropArea.value.isResizing || !cropImageRef.value) return;
 
   e.preventDefault();
-  const { x: clientX, y: clientY } = getEventCoordinates(e);
+  const { x: clientX } = getEventCoordinates(e);
 
   const container = cropImageRef.value.parentElement;
   if (!container) return;

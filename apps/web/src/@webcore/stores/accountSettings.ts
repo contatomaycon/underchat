@@ -19,6 +19,7 @@ import { ViewAddress2Response } from '@core/schema/accountSettings/viewAddress2/
 import { ViewAdditionalInfoResponse } from '@core/schema/accountSettings/viewAdditionalInfo/response.schema';
 import { ChangePasswordResponse } from '@core/schema/accountSettings/changePassword/response.schema';
 import { ChangePasswordRequest } from '@core/schema/accountSettings/changePassword/request.schema';
+import { ViewCurrentPlanInvoiceResponse } from '@core/schema/accountSettings/viewCurrentPlanInvoice/response.schema';
 
 export const useAccountSettingsStore = defineStore('accountSettings', {
   state: () => ({
@@ -341,6 +342,28 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }
         this.showSnackbar(errorMessage, EColor.error);
+        return null;
+      }
+    },
+    async getCurrentPlanInvoice(): Promise<ViewCurrentPlanInvoiceResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ViewCurrentPlanInvoiceResponse>
+        >('/account-settings/current-plan-invoice');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        this.loading = false;
         return null;
       }
     },

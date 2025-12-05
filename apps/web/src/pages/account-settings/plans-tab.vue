@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { usePlanStore } from '@/@webcore/stores/plan';
+import { useAccountSettingsStore } from '@/@webcore/stores/accountSettings';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
-import { ViewCurrentPlanInvoiceResponse } from '@core/schema/plan/viewCurrentPlanInvoice/response.schema';
+import { ViewCurrentPlanInvoiceResponse } from '@core/schema/accountSettings/viewCurrentPlanInvoice/response.schema';
 
 const { t, locale } = useI18n();
-const planStore = usePlanStore();
-useSnackbarCleanup(planStore);
+const accountSettingsStore = useAccountSettingsStore();
+useSnackbarCleanup(accountSettingsStore);
 
 const loading = ref(false);
 const planInvoice = ref<ViewCurrentPlanInvoiceResponse | null>(null);
@@ -164,7 +164,7 @@ const getAlertMessage = computed(() => {
 
 const loadPlanInvoice = async () => {
   loading.value = true;
-  const result = await planStore.getCurrentPlanInvoice();
+  const result = await accountSettingsStore.getCurrentPlanInvoice();
   if (result) {
     planInvoice.value = result;
   }
@@ -384,12 +384,12 @@ onMounted(() => {
     </VRow>
 
     <VSnackbar
-      v-model="planStore.snackbar.status"
+      v-model="accountSettingsStore.snackbar.status"
       transition="scroll-y-reverse-transition"
       location="top end"
-      :color="planStore.snackbar.color"
+      :color="accountSettingsStore.snackbar.color"
     >
-      {{ planStore.snackbar.message }}
+      {{ accountSettingsStore.snackbar.message }}
     </VSnackbar>
   </div>
 </template>

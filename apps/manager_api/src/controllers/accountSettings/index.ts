@@ -10,6 +10,7 @@ import { viewAddress1 } from './methods/viewAddress1';
 import { viewAddress2 } from './methods/viewAddress2';
 import { viewAdditionalInfo } from './methods/viewAdditionalInfo';
 import { changePassword } from './methods/changePassword';
+import { viewCurrentPlanInvoice } from './methods/viewCurrentPlanInvoice';
 
 @injectable()
 class AccountSettingsController {
@@ -24,6 +25,7 @@ class AccountSettingsController {
   public viewAddress2 = viewAddress2;
   public viewAdditionalInfo = viewAdditionalInfo;
   public changePassword = changePassword;
+  public viewCurrentPlanInvoice = viewCurrentPlanInvoice;
 }
 
 export default AccountSettingsController;

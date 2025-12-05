@@ -3,7 +3,7 @@ import { account } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq, isNull } from 'drizzle-orm';
-import { ViewCurrentPlanInvoiceResponse } from '@core/schema/plan/viewCurrentPlanInvoice/response.schema';
+import { ViewCurrentPlanInvoiceResponse } from '@core/schema/accountSettings/viewCurrentPlanInvoice/response.schema';
 import { calculateBillingPeriodByDates } from '@core/common/functions/calculateBillingPeriodByDates';
 
 @injectable()

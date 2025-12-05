@@ -25,7 +25,6 @@ import {
 import { ListPlanSalesRequest } from '@core/schema/plan/listPlanSales/request.schema';
 import { IListPlanSales } from '../interfaces/IListPlanSales';
 import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/response.schema';
-import { ViewCurrentPlanInvoiceResponse } from '@core/schema/plan/viewCurrentPlanInvoice/response.schema';
 
 export const usePlanStore = defineStore('plan', {
   state: () => ({
@@ -516,29 +515,6 @@ export const usePlanStore = defineStore('plan', {
         this.showSnackbar(errorMessage, EColor.error);
         this.loading = false;
 
-        return null;
-      }
-    },
-
-    async getCurrentPlanInvoice(): Promise<ViewCurrentPlanInvoiceResponse | null> {
-      try {
-        this.loading = true;
-
-        const response = await axios.get<
-          IApiResponse<ViewCurrentPlanInvoiceResponse>
-        >('/account/current-plan-invoice');
-
-        this.loading = false;
-
-        const data = response?.data;
-
-        if (!data?.status || !data?.data) {
-          return null;
-        }
-
-        return data.data;
-      } catch {
-        this.loading = false;
         return null;
       }
     },
