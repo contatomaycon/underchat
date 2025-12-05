@@ -2859,10 +2859,7 @@ onMounted(async () => {
   </div>
 
   <VDialog v-model="pixModalOpen" max-width="500" persistent>
-    <DialogCloseBtn
-      v-if="!pixPaymentConfirmed"
-      @click="closePixModal"
-    />
+    <DialogCloseBtn v-if="!pixPaymentConfirmed" @click="closePixModal" />
     <VCard>
       <VCardTitle>
         <span>{{ $t('pix_payment') }}</span>
@@ -2959,10 +2956,7 @@ onMounted(async () => {
         </VAlert>
       </VCardText>
       <VDivider />
-      <VCardActions
-        v-if="!pixPaymentConfirmed"
-        class="justify-end pa-4"
-      >
+      <VCardActions v-if="!pixPaymentConfirmed" class="justify-end pa-4">
         <VBtn variant="tonal" color="secondary" @click="closePixModal">
           {{ $t('close') }}
         </VBtn>
