@@ -732,11 +732,6 @@ export const usePlanStore = defineStore('plan', {
           return null;
         }
 
-        this.showSnackbar(
-          this.i18n.global.t('order_payment_created_successfully'),
-          EColor.success
-        );
-
         return data.data || null;
       } catch (error) {
         let errorMessage = this.i18n.global.t('order_payment_creation_failed');

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted, computed, watch, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
@@ -93,6 +93,7 @@ const step3Loaded = ref(false);
 const step4Loaded = ref(false);
 const expiryError = ref<string | null>(null);
 const pixModalOpen = ref(false);
+const pixPaymentInitiated = ref(false);
 const processingPayment = ref(false);
 const pixPaymentData = ref<{
   qr_code: string;
@@ -558,6 +559,9 @@ const processPayment = async () => {
         payload: pixData.payload,
         expiration_date: pixData.expiration_date,
       };
+      pixPaymentInitiated.value = true;
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      await nextTick();
       pixModalOpen.value = true;
     } else if (result) {
       console.log('Pagamento processado:', result);
@@ -2526,57 +2530,83 @@ onMounted(async () => {
 
             <!-- Botões de Navegação -->
             <VCardText class="d-flex justify-space-between flex-wrap gap-3">
-              <VBtn
-                v-if="currentStep > 1"
-                variant="tonal"
-                color="secondary"
-                @click="prevStep"
-              >
-                {{ $t('back') }}
-              </VBtn>
-              <VSpacer v-if="currentStep === 1" />
-              <div class="d-flex gap-3">
-                <VBtn variant="tonal" color="secondary" @click="goBack">
-                  {{ $t('cancel') }}
-                </VBtn>
+              <template v-if="!pixPaymentInitiated">
                 <VBtn
-                  v-if="currentStep < 4"
-                  color="primary"
-                  :disabled="
-                    (currentStep === 1 && !selectedPlanForCheckout) ||
-                    (currentStep === 4 && !selectedPaymentMethod) ||
-                    (currentStep === 4 &&
-                      selectedPaymentMethod === 'credit_card' &&
-                      !selectedCardId &&
-                      userCards.length > 0) ||
-                    isDiscountGreaterThanTotal ||
-                    isUpgradeBlocked ||
-                    isTotalZero
-                  "
-                  @click="nextStep"
+                  v-if="currentStep > 1"
+                  variant="tonal"
+                  color="secondary"
+                  @click="prevStep"
                 >
-                  {{ $t('next') }}
+                  {{ $t('back') }}
                 </VBtn>
-                <VBtn
-                  v-else
-                  color="primary"
-                  :disabled="
-                    !selectedPlanForCheckout ||
-                    !selectedPaymentMethod ||
-                    (selectedPaymentMethod === 'credit_card' &&
-                      !selectedCardId &&
-                      userCards.length > 0) ||
-                    isDiscountGreaterThanTotal ||
-                    isUpgradeBlocked ||
-                    isTotalZero ||
-                    processingPayment
-                  "
-                  :loading="processingPayment"
-                  @click="processPayment"
-                >
-                  {{ $t('finalize_purchase') }}
-                </VBtn>
-              </div>
+                <VSpacer v-if="currentStep === 1" />
+                <div class="d-flex gap-3">
+                  <VBtn variant="tonal" color="secondary" @click="goBack">
+                    {{ $t('cancel') }}
+                  </VBtn>
+                  <VBtn
+                    v-if="currentStep < 4"
+                    color="primary"
+                    :disabled="
+                      (currentStep === 1 && !selectedPlanForCheckout) ||
+                      (currentStep === 4 && !selectedPaymentMethod) ||
+                      (currentStep === 4 &&
+                        selectedPaymentMethod === 'credit_card' &&
+                        !selectedCardId &&
+                        userCards.length > 0) ||
+                      isDiscountGreaterThanTotal ||
+                      isUpgradeBlocked ||
+                      isTotalZero
+                    "
+                    @click="nextStep"
+                  >
+                    {{ $t('next') }}
+                  </VBtn>
+                  <VBtn
+                    v-else
+                    color="primary"
+                    :disabled="
+                      !selectedPlanForCheckout ||
+                      !selectedPaymentMethod ||
+                      (selectedPaymentMethod === 'credit_card' &&
+                        !selectedCardId &&
+                        userCards.length > 0) ||
+                      isDiscountGreaterThanTotal ||
+                      isUpgradeBlocked ||
+                      isTotalZero ||
+                      processingPayment
+                    "
+                    :loading="processingPayment"
+                    @click="processPayment"
+                  >
+                    {{ $t('finalize_purchase') }}
+                  </VBtn>
+                </div>
+              </template>
+              <template v-else>
+                <VSpacer />
+                <div class="d-flex align-center gap-3">
+                  <VAlert
+                    type="info"
+                    variant="tonal"
+                    class="d-flex align-center"
+                    density="comfortable"
+                  >
+                    <VIcon start icon="tabler-clock-hour-4" />
+                    {{ $t('awaiting_payment') }}
+                  </VAlert>
+                  <VBtn
+                    v-if="!pixModalOpen"
+                    color="primary"
+                    variant="outlined"
+                    @click="pixModalOpen = true"
+                  >
+                    <VIcon start icon="tabler-qrcode" />
+                    {{ $t('view_pix_payment') }}
+                  </VBtn>
+                </div>
+                <VSpacer />
+              </template>
             </VCardText>
           </VStepper>
         </div>

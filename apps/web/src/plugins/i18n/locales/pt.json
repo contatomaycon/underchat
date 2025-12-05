@@ -1521,5 +1521,7 @@
     "pix_payment_instructions": "Escaneie o QR Code ou copie o código PIX para realizar o pagamento",
     "pix_expires_at": "Expira em",
     "pix_copy_paste_code": "Código PIX (Copia e Cola)",
-    "pix_payment_warning": "Após realizar o pagamento, aguarde a confirmação. O processamento pode levar alguns minutos."
+    "pix_payment_warning": "Após realizar o pagamento, aguarde a confirmação. O processamento pode levar alguns minutos.",
+    "awaiting_payment": "Aguardando pagamento",
+    "view_pix_payment": "Ver Pagamento PIX"
 }
