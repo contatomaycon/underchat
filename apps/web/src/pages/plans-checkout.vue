@@ -188,7 +188,10 @@ const loadStep2 = async () => {
   if (step2Loaded.value) return;
 
   loadingProducts.value = true;
-  const products = await planStore.listPlanProductWithPrice();
+  const [products] = await Promise.all([
+    planStore.listPlanProductWithPrice(),
+    loadUpgradeDiscount(),
+  ]);
   if (products) {
     availableProducts.value = products;
   }
@@ -431,7 +434,8 @@ const getCheckoutTotal = computed(() => {
 
   const planPrice = getPrice(selectedPlanForCheckout.value);
   const addonsTotal = getAddonsTotal.value;
-  return planPrice + addonsTotal;
+  const discount = upgradeDiscount.value?.discount || 0;
+  return Math.max(0, planPrice + addonsTotal - discount);
 });
 
 const goBack = () => {
@@ -1171,6 +1175,22 @@ onMounted(async () => {
                         <span class="text-body-1">{{ $t('addons') }}:</span>
                         <span class="text-body-1 font-weight-medium">
                           {{ formatCurrency(getAddonsTotal) }}
+                        </span>
+                      </div>
+                      <div
+                        v-if="
+                          upgradeDiscount?.is_upgrade &&
+                          upgradeDiscount.discount > 0
+                        "
+                        class="d-flex align-center justify-space-between mb-2"
+                      >
+                        <span class="text-body-1 text-success">
+                          {{ $t('upgrade_discount') }}:
+                        </span>
+                        <span
+                          class="text-body-1 font-weight-medium text-success"
+                        >
+                          -{{ formatCurrency(upgradeDiscount.discount) }}
                         </span>
                       </div>
                       <VDivider class="my-2" />

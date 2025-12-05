@@ -21,18 +21,33 @@ export class UpgradeDiscountCalculatorRepository {
       return this.buildEmptyResponse();
     }
 
-    const currentPlanPrice = Number(activePlanAccount.ppl.price);
+    if (
+      !activePlanAccount.last_payment_date ||
+      !activePlanAccount.next_payment_date
+    ) {
+      return this.buildEmptyResponse();
+    }
+
+    const currentPlanValue = Number(activePlanAccount.value);
+    const billingPeriodName = activePlanAccount.bpl?.name;
+
     const newPlan = await this.getNewPlan(newPlanId);
 
     if (!newPlan) {
-      return this.buildResponseWithoutDiscount(currentPlanPrice, false);
+      return this.buildResponseWithoutDiscount(currentPlanValue, false);
     }
 
-    const newPlanPrice = Number(newPlan.price);
-    const isUpgrade = this.isUpgrade(newPlanPrice, currentPlanPrice);
+    const newPlanPrice = this.getNewPlanPrice(
+      {
+        price: Number(newPlan.price),
+        annual_discount: newPlan.annual_discount,
+      },
+      billingPeriodName
+    );
+    const isUpgrade = this.isUpgrade(newPlanPrice, currentPlanValue);
 
     if (!isUpgrade) {
-      return this.buildResponseWithoutDiscount(currentPlanPrice, false);
+      return this.buildResponseWithoutDiscount(currentPlanValue, false);
     }
 
     const dateCalculations = this.calculateDays(
@@ -43,7 +58,7 @@ export class UpgradeDiscountCalculatorRepository {
     if (!this.isValidForDiscount(dateCalculations)) {
       return {
         discount: 0,
-        current_plan_price: currentPlanPrice,
+        current_plan_price: currentPlanValue,
         days_used: dateCalculations.daysUsed,
         days_remaining: dateCalculations.daysRemaining,
         total_days: dateCalculations.totalDays,
@@ -52,14 +67,14 @@ export class UpgradeDiscountCalculatorRepository {
     }
 
     const discount = this.calculateDiscountAmount(
-      currentPlanPrice,
+      currentPlanValue,
       dateCalculations.totalDays,
       dateCalculations.daysRemaining
     );
 
     return {
       discount: Math.max(0, discount),
-      current_plan_price: currentPlanPrice,
+      current_plan_price: currentPlanValue,
       days_used: Math.max(0, dateCalculations.daysUsed),
       days_remaining: Math.max(0, dateCalculations.daysRemaining),
       total_days: Math.max(0, dateCalculations.totalDays),
@@ -81,8 +96,27 @@ export class UpgradeDiscountCalculatorRepository {
       columns: {
         plan_id: true,
         price: true,
+        annual_discount: true,
       },
     });
+  };
+
+  private readonly getNewPlanPrice = (
+    newPlan: { price: number; annual_discount: string | null },
+    billingPeriodName: string | null
+  ): number => {
+    const monthlyPrice = Number(newPlan.price);
+
+    if (billingPeriodName === 'annual') {
+      const annualPrice = monthlyPrice * 12;
+      if (newPlan.annual_discount) {
+        const discount = Number.parseFloat(newPlan.annual_discount);
+        return annualPrice * (1 - discount / 100);
+      }
+      return annualPrice;
+    }
+
+    return monthlyPrice;
   };
 
   private readonly isUpgrade = (
@@ -93,19 +127,20 @@ export class UpgradeDiscountCalculatorRepository {
   };
 
   private readonly calculateDays = (
-    lastPaymentDate: string | null,
-    nextPaymentDate: string | null
+    lastPaymentDate: string,
+    nextPaymentDate: string
   ) => {
     const now = new Date();
-    const lastDate = lastPaymentDate ? new Date(lastPaymentDate) : now;
-    const nextDate = nextPaymentDate ? new Date(nextPaymentDate) : now;
+    const lastDate = new Date(lastPaymentDate);
+    const nextDate = new Date(nextPaymentDate);
 
     const totalDays = Math.ceil(
       (nextDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24)
     );
 
-    const daysUsed = Math.ceil(
-      (now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24)
+    const daysUsed = Math.max(
+      0,
+      Math.ceil((now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24))
     );
 
     const daysRemaining = Math.max(
@@ -133,7 +168,9 @@ export class UpgradeDiscountCalculatorRepository {
     daysRemaining: number
   ): number => {
     const pricePerDay = currentPlanPrice / totalDays;
-    return pricePerDay * daysRemaining;
+    const discount = pricePerDay * daysRemaining;
+
+    return Math.round(discount * 100) / 100;
   };
 
   private readonly buildEmptyResponse =
@@ -171,6 +208,8 @@ export class UpgradeDiscountCalculatorRepository {
             plan_account_id: true,
             next_payment_date: true,
             last_payment_date: true,
+            value: true,
+            billing_period_id: true,
           },
           with: {
             pas: {
@@ -183,6 +222,12 @@ export class UpgradeDiscountCalculatorRepository {
               columns: {
                 plan_id: true,
                 price: true,
+              },
+            },
+            bpl: {
+              columns: {
+                billing_period_id: true,
+                name: true,
               },
             },
           },
