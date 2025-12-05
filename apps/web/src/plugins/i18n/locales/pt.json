@@ -1510,5 +1510,7 @@
     "save_card": "Salvar Cartão",
     "invalid_month": "Mês inválido. Use um valor entre 01 e 12.",
     "invalid_year": "Ano inválido.",
-    "card_expired": "Data inválida. O cartão já expirou."
+    "card_expired": "Data inválida. O cartão já expirou.",
+    "upgrade_blocked_title": "Upgrade não disponível",
+    "upgrade_blocked_message": "O valor do desconto de upgrade é maior que o valor da contratação do novo plano. Por favor, entre em contato com o setor financeiro para realizar a alteração do plano."
 }

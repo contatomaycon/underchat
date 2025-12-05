@@ -1499,5 +1499,7 @@
     "save_card": "Guardar Tarjeta",
     "invalid_month": "Mes inválido. Use un valor entre 01 y 12.",
     "invalid_year": "Año inválido.",
-    "card_expired": "Fecha inválida. La tarjeta ya ha expirado."
+    "card_expired": "Fecha inválida. La tarjeta ya ha expirado.",
+    "upgrade_blocked_title": "Upgrade no disponible",
+    "upgrade_blocked_message": "El valor del descuento de upgrade es mayor que el valor de la contratación del nuevo plan. Por favor, póngase en contacto con el departamento financiero para realizar el cambio de plan."
 }

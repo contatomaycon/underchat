@@ -1499,5 +1499,7 @@
     "save_card": "Save Card",
     "invalid_month": "Invalid month. Use a value between 01 and 12.",
     "invalid_year": "Invalid year.",
-    "card_expired": "Invalid date. The card has already expired."
+    "card_expired": "Invalid date. The card has already expired.",
+    "upgrade_blocked_title": "Upgrade not available",
+    "upgrade_blocked_message": "The upgrade discount value is greater than the new plan contract value. Please contact the finance department to proceed with the plan change."
 }

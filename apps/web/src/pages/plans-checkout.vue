@@ -440,6 +440,24 @@ const getCheckoutTotal = computed(() => {
   return Math.max(0, planPrice + addonsTotal - discount);
 });
 
+const isDiscountGreaterThanTotal = computed(() => {
+  if (!selectedPlanForCheckout.value) return false;
+  if (!upgradeDiscount.value?.is_upgrade) return false;
+
+  const planPrice = getPrice(selectedPlanForCheckout.value);
+  const addonsTotal = getAddonsTotal.value;
+  const totalBeforeDiscount = planPrice + addonsTotal;
+  const discount = upgradeDiscount.value.discount || 0;
+
+  return discount >= totalBeforeDiscount;
+});
+
+const isUpgradeBlocked = computed(() => {
+  if (!upgradeDiscount.value) return false;
+
+  return upgradeDiscount.value.is_upgrade === false;
+});
+
 const goBack = () => {
   router.push({ name: 'plans' });
 };
@@ -996,6 +1014,22 @@ onMounted(async () => {
               <!-- Step 2: Plano e Adicionais -->
               <VStepperWindowItem :value="2">
                 <div v-if="selectedPlanForCheckout">
+                  <!-- Alerta quando upgrade está bloqueado -->
+                  <VAlert
+                    v-if="isUpgradeBlocked"
+                    type="warning"
+                    variant="tonal"
+                    class="mb-4"
+                    prominent
+                  >
+                    <VAlertTitle>
+                      {{ $t('upgrade_blocked_title') }}
+                    </VAlertTitle>
+                    <div>
+                      {{ $t('upgrade_blocked_message') }}
+                    </div>
+                  </VAlert>
+
                   <VRow>
                     <!-- Plano Selecionado - Esquerda -->
                     <VCol cols="12" md="6">
@@ -1357,6 +1391,22 @@ onMounted(async () => {
                   <h4 class="text-h6 mb-4">
                     {{ $t('select_payment_method') }}
                   </h4>
+
+                  <!-- Alerta quando upgrade está bloqueado -->
+                  <VAlert
+                    v-if="isUpgradeBlocked"
+                    type="warning"
+                    variant="tonal"
+                    class="mb-4"
+                    prominent
+                  >
+                    <VAlertTitle>
+                      {{ $t('upgrade_blocked_title') }}
+                    </VAlertTitle>
+                    <div>
+                      {{ $t('upgrade_blocked_message') }}
+                    </div>
+                  </VAlert>
 
                   <VRow>
                     <!-- Boleto -->
@@ -2342,7 +2392,9 @@ onMounted(async () => {
                     (currentStep === 4 &&
                       selectedPaymentMethod === 'credit_card' &&
                       !selectedCardId &&
-                      userCards.length > 0)
+                      userCards.length > 0) ||
+                    isDiscountGreaterThanTotal ||
+                    isUpgradeBlocked
                   "
                   @click="nextStep"
                 >
@@ -2356,7 +2408,9 @@ onMounted(async () => {
                     !selectedPaymentMethod ||
                     (selectedPaymentMethod === 'credit_card' &&
                       !selectedCardId &&
-                      userCards.length > 0)
+                      userCards.length > 0) ||
+                    isDiscountGreaterThanTotal ||
+                    isUpgradeBlocked
                   "
                 >
                   {{ $t('finalize_purchase') }}
