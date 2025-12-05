@@ -1,5 +1,11 @@
 import * as schema from '@core/models';
-import { plan, planCrossSell, accountPayment, account } from '@core/models';
+import {
+  plan,
+  planCrossSell,
+  accountPayment,
+  account,
+  accountPaymentCrossSell,
+} from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
@@ -99,6 +105,70 @@ export class OrderPaymentCreatorRepository {
     });
 
     return accountPaymentId;
+  };
+
+  createAccountPaymentCrossSells = async (data: {
+    accountPaymentId: string;
+    addons: Array<{ plan_product_id: string; quantity: number }>;
+    billingPeriod: 'monthly' | 'annual';
+  }): Promise<void> => {
+    if (!data.addons || data.addons.length === 0) {
+      return;
+    }
+
+    const addonIds = data.addons.map((a) => a.plan_product_id);
+
+    const crossSells = await this.db
+      .select({
+        plan_cross_sell_id: planCrossSell.plan_cross_sell_id,
+        plan_product_id: planCrossSell.plan_product_id,
+        price: planCrossSell.price,
+      })
+      .from(planCrossSell)
+      .where(
+        and(
+          inArray(planCrossSell.plan_product_id, addonIds),
+          isNull(planCrossSell.deleted_at)
+        )
+      )
+      .execute();
+
+    const multiplier = data.billingPeriod === 'annual' ? 12 : 1;
+    const crossSellRecords: Array<{
+      account_payment_cross_sell_id: string;
+      plan_cross_sell_id: string;
+      account_payment_id: string;
+      quantity: number;
+      value: string;
+      created_at: string;
+      updated_at: string;
+    }> = [];
+
+    for (const addon of data.addons) {
+      const crossSell = crossSells.find(
+        (cs) => cs.plan_product_id === addon.plan_product_id
+      );
+      if (!crossSell) {
+        continue;
+      }
+
+      const unitValue = Number(crossSell.price) * multiplier;
+      for (let i = 0; i < addon.quantity; i++) {
+        crossSellRecords.push({
+          account_payment_cross_sell_id: randomUUID(),
+          plan_cross_sell_id: crossSell.plan_cross_sell_id,
+          account_payment_id: data.accountPaymentId,
+          quantity: 1,
+          value: unitValue.toString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      }
+    }
+
+    if (crossSellRecords.length > 0) {
+      await this.db.insert(accountPaymentCrossSell).values(crossSellRecords);
+    }
   };
 
   private readonly getPlan = async (planId: string) => {

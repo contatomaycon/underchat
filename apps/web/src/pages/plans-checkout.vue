@@ -366,6 +366,9 @@ const getButtonText = (planId: string): string => {
   if (isCurrentPlan(planId)) {
     return t('your_current_plan');
   }
+  if (!currentPlanId.value) {
+    return t('buy');
+  }
   return t('upgrade');
 };
 

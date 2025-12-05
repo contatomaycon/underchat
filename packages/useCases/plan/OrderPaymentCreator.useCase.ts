@@ -43,7 +43,8 @@ export class OrderPaymentCreatorUseCase {
               input.plan_id,
               totalAmount,
               orderId,
-              input.billing_period
+              input.billing_period,
+              input.addons || []
             )
           : undefined;
 
@@ -73,7 +74,8 @@ export class OrderPaymentCreatorUseCase {
     planId: string,
     totalAmount: number,
     orderId: string,
-    billingPeriod: 'monthly' | 'annual'
+    billingPeriod: 'monthly' | 'annual',
+    addons: Array<{ plan_product_id: string; quantity: number }>
   ) => {
     const billingPeriodId =
       this.orderPaymentCreatorRepository.getBillingPeriodId(billingPeriod);
@@ -92,19 +94,26 @@ export class OrderPaymentCreatorUseCase {
       throw new Error(t('pix_payment_creation_failed'));
     }
 
-    await this.orderPaymentCreatorRepository.createAccountPayment({
-      accountId,
-      userCustomerId: customer.user_customer_id,
-      planId,
-      billing: pixResult.payment.id,
-      paymentBillingTypeId: EPaymentBillingType.pix,
-      value: totalAmount.toString(),
-      netValue: pixResult.payment.netValue.toString(),
-      pixTransaction: pixResult.payment.pixTransaction || null,
-      paymentStatusId: EPaymentStatus.pending,
-      billingPeriodId,
-      invoiceUrl: pixResult.payment.invoiceUrl || null,
-      recurringPayment: false,
+    const accountPaymentId =
+      await this.orderPaymentCreatorRepository.createAccountPayment({
+        accountId,
+        userCustomerId: customer.user_customer_id,
+        planId,
+        billing: pixResult.payment.id,
+        paymentBillingTypeId: EPaymentBillingType.pix,
+        value: totalAmount.toString(),
+        netValue: pixResult.payment.netValue.toString(),
+        pixTransaction: pixResult.payment.pixTransaction || null,
+        paymentStatusId: EPaymentStatus.pending,
+        billingPeriodId,
+        invoiceUrl: pixResult.payment.invoiceUrl || null,
+        recurringPayment: false,
+      });
+
+    await this.orderPaymentCreatorRepository.createAccountPaymentCrossSells({
+      accountPaymentId,
+      addons,
+      billingPeriod,
     });
 
     return {
