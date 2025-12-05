@@ -38,7 +38,7 @@ export class PlanCurrentInvoiceViewerRepository {
     );
   };
 
-  private findAccountWithPlanAccounts = async (accountId: string) => {
+  private readonly findAccountWithPlanAccounts = async (accountId: string) => {
     return this.db.query.account.findFirst({
       where: and(eq(account.account_id, accountId), isNull(account.deleted_at)),
       with: {
@@ -83,11 +83,11 @@ export class PlanCurrentInvoiceViewerRepository {
     });
   };
 
-  private findActivePlanAccount = (accountResult: any) => {
+  private readonly findActivePlanAccount = (accountResult: any) => {
     return accountResult?.apc?.find((pa: any) => pa.pas?.name === 'active');
   };
 
-  private getBillingPeriod = (
+  private readonly getBillingPeriod = (
     billingPeriodName: string | null | undefined,
     lastPaymentDate: string | null,
     nextPaymentDate: string | null
@@ -99,7 +99,7 @@ export class PlanCurrentInvoiceViewerRepository {
     return calculateBillingPeriodByDates(lastPaymentDate, nextPaymentDate);
   };
 
-  private buildPlanInvoiceResponse = (
+  private readonly buildPlanInvoiceResponse = (
     planData: any,
     lastPaymentDate: string | null,
     nextPaymentDate: string | null,
@@ -125,7 +125,7 @@ export class PlanCurrentInvoiceViewerRepository {
     };
   };
 
-  private buildEmptyResponse = (): ViewCurrentPlanInvoiceResponse => {
+  private readonly buildEmptyResponse = (): ViewCurrentPlanInvoiceResponse => {
     return {
       plan_id: null,
       plan_name: null,

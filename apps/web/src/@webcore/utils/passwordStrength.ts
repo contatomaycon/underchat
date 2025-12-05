@@ -27,7 +27,7 @@ export const validatePassword = (
     errors.push('password_requires_lowercase');
   }
 
-  if (!/[\d\W\s]/.test(password)) {
+  if (!/\d/.test(password) && !/[^\w]/.test(password)) {
     errors.push('password_requires_number_symbol_or_whitespace');
   }
 
@@ -35,6 +35,75 @@ export const validatePassword = (
     isValid: errors.length === 0,
     errors,
   };
+};
+
+const calculateLengthScore = (length: number): number => {
+  let score = 0;
+  if (length >= 8) score += 20;
+  if (length >= 12) score += 10;
+  if (length >= 16) score += 10;
+  return score;
+};
+
+const calculateCharacterScore = (
+  password: string
+): {
+  score: number;
+  feedback: string[];
+} => {
+  let score = 0;
+  const feedback: string[] = [];
+
+  const hasLowercase = /[a-z]/.test(password);
+  const hasUppercase = /[A-Z]/.test(password);
+  const hasDigit = /\d/.test(password);
+  const hasSymbolOrWhitespace = /[^\w]/.test(password);
+
+  if (hasLowercase) {
+    score += 15;
+  }
+  if (!hasLowercase) {
+    feedback.push('password_requires_lowercase');
+  }
+
+  if (hasUppercase) {
+    score += 15;
+  }
+
+  if (hasDigit) {
+    score += 15;
+  }
+
+  if (hasSymbolOrWhitespace) {
+    score += 15;
+  }
+
+  if (!hasDigit && !hasSymbolOrWhitespace) {
+    feedback.push('password_requires_number_symbol_or_whitespace');
+  }
+
+  return { score, feedback };
+};
+
+const calculateVarietyScore = (password: string): number => {
+  const uniqueChars = new Set(password).size;
+  if (uniqueChars >= password.length * 0.7) {
+    return 10;
+  }
+  return 0;
+};
+
+const determineStrength = (score: number): EPasswordStrength => {
+  if (score < 40) {
+    return EPasswordStrength.weak;
+  }
+  if (score < 60) {
+    return EPasswordStrength.fair;
+  }
+  if (score < 80) {
+    return EPasswordStrength.good;
+  }
+  return EPasswordStrength.strong;
 };
 
 export const calculatePasswordStrength = (
@@ -48,60 +117,16 @@ export const calculatePasswordStrength = (
     };
   }
 
-  let score = 0;
-  const feedback: string[] = [];
+  const lengthScore = calculateLengthScore(password.length);
+  const { score: characterScore, feedback } = calculateCharacterScore(password);
+  const varietyScore = calculateVarietyScore(password);
 
-  if (password.length >= 8) score += 20;
-  if (password.length >= 12) score += 10;
-  if (password.length >= 16) score += 10;
-
-  if (/[a-z]/.test(password)) {
-    score += 15;
-  }
-
-  if (!/[a-z]/.test(password)) {
-    feedback.push('password_requires_lowercase');
-  }
-
-  if (/[A-Z]/.test(password)) {
-    score += 15;
-  }
-
-  if (/\d/.test(password)) {
-    score += 15;
-  }
-
-  if (!/\d/.test(password) && !/[\W\s]/.test(password)) {
-    feedback.push('password_requires_number_symbol_or_whitespace');
-  }
-
-  if (/[\W\s]/.test(password)) {
-    score += 15;
-  }
-
-  if (!/[\W\s]/.test(password) && !/\d/.test(password)) {
-    feedback.push('password_requires_number_symbol_or_whitespace');
-  }
-
-  const uniqueChars = new Set(password).size;
-  if (uniqueChars >= password.length * 0.7) {
-    score += 10;
-  }
-
-  let strength: EPasswordStrength = EPasswordStrength.strong;
-  if (score < 40) {
-    strength = EPasswordStrength.weak;
-  }
-  if (score >= 40 && score < 60) {
-    strength = EPasswordStrength.fair;
-  }
-  if (score >= 60 && score < 80) {
-    strength = EPasswordStrength.good;
-  }
+  const totalScore = lengthScore + characterScore + varietyScore;
+  const strength = determineStrength(totalScore);
 
   return {
     strength,
-    score: Math.min(100, score),
+    score: Math.min(100, totalScore),
     feedback,
   };
 };

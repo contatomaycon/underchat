@@ -15,103 +15,130 @@ export class ListPaymentsService {
   ): URLSearchParams {
     const params = new URLSearchParams();
 
-    if (request?.installment) {
-      params.append('installment', request.installment);
+    if (!request) {
+      return params;
     }
 
-    if (request?.offset !== undefined) {
+    this.addStringParams(params, request);
+    this.addNumericParams(params, request);
+    this.addBooleanParams(params, request);
+    this.addDateRangeParams(params, request);
+
+    return params;
+  }
+
+  private addStringParams(
+    params: URLSearchParams,
+    request: IListAsaasPaymentsRequest
+  ): void {
+    const stringFields: Array<
+      keyof Pick<
+        IListAsaasPaymentsRequest,
+        | 'installment'
+        | 'customer'
+        | 'customerGroupName'
+        | 'billingType'
+        | 'status'
+        | 'subscription'
+        | 'externalReference'
+        | 'paymentDate'
+        | 'invoiceStatus'
+        | 'estimatedCreditDate'
+        | 'pixQrCodeId'
+        | 'user'
+      >
+    > = [
+      'installment',
+      'customer',
+      'customerGroupName',
+      'billingType',
+      'status',
+      'subscription',
+      'externalReference',
+      'paymentDate',
+      'invoiceStatus',
+      'estimatedCreditDate',
+      'pixQrCodeId',
+      'user',
+    ];
+
+    for (const field of stringFields) {
+      const value = request[field];
+      if (value) {
+        params.append(field, value);
+      }
+    }
+  }
+
+  private addNumericParams(
+    params: URLSearchParams,
+    request: IListAsaasPaymentsRequest
+  ): void {
+    if (request.offset !== undefined) {
       params.append('offset', request.offset.toString());
     }
 
-    if (request?.limit !== undefined) {
+    if (request.limit !== undefined) {
       params.append('limit', request.limit.toString());
     }
+  }
 
-    if (request?.customer) {
-      params.append('customer', request.customer);
-    }
-
-    if (request?.customerGroupName) {
-      params.append('customerGroupName', request.customerGroupName);
-    }
-
-    if (request?.billingType) {
-      params.append('billingType', request.billingType);
-    }
-
-    if (request?.status) {
-      params.append('status', request.status);
-    }
-
-    if (request?.subscription) {
-      params.append('subscription', request.subscription);
-    }
-
-    if (request?.externalReference) {
-      params.append('externalReference', request.externalReference);
-    }
-
-    if (request?.paymentDate) {
-      params.append('paymentDate', request.paymentDate);
-    }
-
-    if (request?.invoiceStatus) {
-      params.append('invoiceStatus', request.invoiceStatus);
-    }
-
-    if (request?.estimatedCreditDate) {
-      params.append('estimatedCreditDate', request.estimatedCreditDate);
-    }
-
-    if (request?.pixQrCodeId) {
-      params.append('pixQrCodeId', request.pixQrCodeId);
-    }
-
-    if (request?.anticipated !== undefined) {
+  private addBooleanParams(
+    params: URLSearchParams,
+    request: IListAsaasPaymentsRequest
+  ): void {
+    if (request.anticipated !== undefined) {
       params.append('anticipated', request.anticipated.toString());
     }
 
-    if (request?.anticipable !== undefined) {
+    if (request.anticipable !== undefined) {
       params.append('anticipable', request.anticipable.toString());
     }
+  }
 
-    if (request?.dateCreatedGe) {
-      params.append('dateCreated[ge]', request.dateCreatedGe);
+  private addDateRangeParams(
+    params: URLSearchParams,
+    request: IListAsaasPaymentsRequest
+  ): void {
+    const dateRanges: Array<{
+      geField: keyof IListAsaasPaymentsRequest;
+      leField: keyof IListAsaasPaymentsRequest;
+      paramName: string;
+    }> = [
+      {
+        geField: 'dateCreatedGe',
+        leField: 'dateCreatedLe',
+        paramName: 'dateCreated',
+      },
+      {
+        geField: 'paymentDateGe',
+        leField: 'paymentDateLe',
+        paramName: 'paymentDate',
+      },
+      {
+        geField: 'estimatedCreditDateGe',
+        leField: 'estimatedCreditDateLe',
+        paramName: 'estimatedCreditDate',
+      },
+      {
+        geField: 'dueDateGe',
+        leField: 'dueDateLe',
+        paramName: 'dueDate',
+      },
+    ];
+
+    for (const range of dateRanges) {
+      const geValue = request[range.geField];
+      const leValue = request[range.leField];
+
+      if (geValue) {
+        params.append(`${range.paramName}[ge]`, geValue as string);
+      }
+
+      if (leValue) {
+        params.append(`${range.paramName}[le]`, leValue as string);
+      }
     }
-
-    if (request?.dateCreatedLe) {
-      params.append('dateCreated[le]', request.dateCreatedLe);
-    }
-
-    if (request?.paymentDateGe) {
-      params.append('paymentDate[ge]', request.paymentDateGe);
-    }
-
-    if (request?.paymentDateLe) {
-      params.append('paymentDate[le]', request.paymentDateLe);
-    }
-
-    if (request?.estimatedCreditDateGe) {
-      params.append('estimatedCreditDate[ge]', request.estimatedCreditDateGe);
-    }
-
-    if (request?.estimatedCreditDateLe) {
-      params.append('estimatedCreditDate[le]', request.estimatedCreditDateLe);
-    }
-
-    if (request?.dueDateGe) {
-      params.append('dueDate[ge]', request.dueDateGe);
-    }
-
-    if (request?.dueDateLe) {
-      params.append('dueDate[le]', request.dueDateLe);
-    }
-
-    if (request?.user) {
-      params.append('user', request.user);
-    }
-
-    return params;
   }
 
   listPayments = async (

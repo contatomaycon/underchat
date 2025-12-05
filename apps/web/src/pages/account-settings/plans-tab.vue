@@ -34,14 +34,20 @@ const formatCurrency = (value: number | null | undefined): string => {
 const formatDate = (dateString: string | null | undefined): string => {
   if (!dateString) return '';
   const date = new Date(dateString);
-  return new Intl.DateTimeFormat(
-    locale.value === 'pt' ? 'pt-BR' : locale.value === 'es' ? 'es-ES' : 'en-US',
-    {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-    }
-  ).format(date);
+
+  let dateLocale = 'en-US';
+  if (locale.value === 'pt') {
+    dateLocale = 'pt-BR';
+  }
+  if (locale.value === 'es') {
+    dateLocale = 'es-ES';
+  }
+
+  return new Intl.DateTimeFormat(dateLocale, {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  }).format(date);
 };
 
 const getAnnualPrice = (): number => {
@@ -180,7 +186,10 @@ onMounted(() => {
 
     <VRow v-else-if="planInvoice && planInvoice.plan_id" class="align-stretch">
       <VCol cols="12" md="6" class="d-flex">
-        <VCard variant="elevated" class="account-settings-card d-flex flex-column w-100">
+        <VCard
+          variant="elevated"
+          class="account-settings-card d-flex flex-column w-100"
+        >
           <VCardText class="d-flex flex-column flex-grow-1">
             <div class="d-flex align-center gap-4 mb-4">
               <VAvatar
@@ -287,7 +296,10 @@ onMounted(() => {
       </VCol>
 
       <VCol cols="12" md="6" class="d-flex">
-        <VCard variant="elevated" class="account-settings-card d-flex flex-column w-100">
+        <VCard
+          variant="elevated"
+          class="account-settings-card d-flex flex-column w-100"
+        >
           <VCardText class="d-flex flex-column flex-grow-1">
             <VAlert
               v-if="planInvoice && planInvoice.plan_id"
@@ -358,7 +370,10 @@ onMounted(() => {
 
     <VRow v-else>
       <VCol cols="12" class="text-center mt-12">
-        <VCard variant="elevated" class="account-settings-card d-inline-block pa-8">
+        <VCard
+          variant="elevated"
+          class="account-settings-card d-inline-block pa-8"
+        >
           <VCardText>
             <p class="text-body-1 text-medium-emphasis mb-0">
               {{ $t('no_plan_found') }}

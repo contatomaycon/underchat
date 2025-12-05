@@ -51,11 +51,15 @@ export class AccountSettingsAddressViewerRepository {
     }
 
     const cityName = result.uzc?.city ?? null;
-    const stateName = result.uzs
-      ? result.uzs.abbreviation
-        ? `${result.uzs.state} (${result.uzs.abbreviation})`
-        : result.uzs.state
-      : null;
+
+    let stateName: string | null = null;
+    if (result.uzs) {
+      if (result.uzs.abbreviation) {
+        stateName = `${result.uzs.state} (${result.uzs.abbreviation})`;
+      } else {
+        stateName = result.uzs.state;
+      }
+    }
 
     return {
       country_id: result.uuc?.country_id ?? null,

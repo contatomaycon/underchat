@@ -17,9 +17,11 @@ export class AccountSettingsAdditionalInfoUpdaterUseCase {
     private readonly passwordEncryptorService: PasswordEncryptorService
   ) {}
 
-  private extractStringValue(field: string | null | undefined): string | null {
-    const value = field ?? null;
-    return value === '' ? null : value;
+  private extractStringValue(
+    field: string | null | undefined = null
+  ): string | null {
+    const normalized = field ?? null;
+    return normalized === '' ? null : normalized;
   }
 
   private encryptPhoneData(phone: string | null | undefined) {
@@ -67,8 +69,8 @@ export class AccountSettingsAdditionalInfoUpdaterUseCase {
     const date = new Date(birthDate);
     const now = new Date();
 
-    if (isNaN(date.getTime())) {
-      throw new Error(t('invalid_birth_date'));
+    if (Number.isNaN(date.getTime())) {
+      throw new TypeError(t('invalid_birth_date'));
     }
 
     if (date > now) {

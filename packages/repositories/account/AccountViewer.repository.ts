@@ -53,7 +53,7 @@ export class AccountViewerRepository {
       },
     });
 
-    if (!result || !result.length) {
+    if (!result?.length) {
       return null;
     }
 

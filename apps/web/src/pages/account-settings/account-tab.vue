@@ -610,7 +610,6 @@ const onCropResize = (e: MouseEvent | TouchEvent) => {
 
   const rect = container.getBoundingClientRect();
   const deltaX = clientX - rect.left - cropArea.value.startX;
-  const deltaY = clientY - rect.top - cropArea.value.startY;
 
   const handle = cropArea.value.resizeHandle!;
   const minSize = 50;
@@ -785,12 +784,8 @@ const deletePhoto = async () => {
   }
 };
 
-const saveAdditionalInfo = async () => {
-  const validateForm = await refFormAdditionalInfo.value?.validate();
-  if (!validateForm?.valid) return;
-
+const buildAdditionalInfoBody = (): UpdateAdditionalInfoRequest => {
   const phoneNumber = phone.value?.replaceAll(/\D/g, '');
-
   const body: UpdateAdditionalInfoRequest = {};
 
   if (phone_ddi.value) {
@@ -815,16 +810,34 @@ const saveAdditionalInfo = async () => {
     body.document = document.value;
   }
 
+  return body;
+};
+
+const updateChatStoreUserInfo = () => {
+  if (!chatStore.user?.info) {
+    return;
+  }
+
+  if (name.value) {
+    chatStore.user.info.name = name.value;
+  }
+  if (last_name.value) {
+    chatStore.user.info.last_name = last_name.value;
+  }
+  setUser(chatStore.user);
+};
+
+const saveAdditionalInfo = async () => {
+  const validateForm = await refFormAdditionalInfo.value?.validate();
+  if (!validateForm?.valid) {
+    return;
+  }
+
+  const body = buildAdditionalInfoBody();
   const result = await accountSettingsStore.updateAdditionalInfo(body);
 
   if (result && chatStore.user) {
-    if (name.value && chatStore.user.info) {
-      chatStore.user.info.name = name.value;
-    }
-    if (last_name.value && chatStore.user.info) {
-      chatStore.user.info.last_name = last_name.value;
-    }
-    setUser(chatStore.user);
+    updateChatStoreUserInfo();
   }
 };
 
@@ -994,104 +1007,118 @@ const formatBirthDate = (
   return dateString;
 };
 
-const loadUserData = async () => {
+const loadAdditionalInfo = async () => {
   const additionalInfo = await accountSettingsStore.getAdditionalInfo();
 
-  if (additionalInfo) {
-    phone_ddi.value = additionalInfo.phone_ddi ?? '55';
-    phonePartial.value = additionalInfo.phone_partial ?? null;
-    phone.value = null;
-    isPhoneDecrypted.value = false;
-    phoneHasBeenEdited.value = false;
-    name.value = additionalInfo.name ?? null;
-    last_name.value = additionalInfo.last_name ?? null;
-    birth_date.value = formatBirthDate(additionalInfo.birth_date);
-    photoPreview.value = additionalInfo.photo ?? null;
-    documentPartial.value = additionalInfo.document_partial ?? null;
-    document.value = null;
-    isDocumentDecrypted.value = false;
-    documentHasBeenEdited.value = false;
-
-    if (additionalInfo.document_type_id === EUserDocumentType.CPF) {
-      user_document_type_id.value = EUserDocumentType.CPF;
-    }
-    if (additionalInfo.document_type_id === EUserDocumentType.CNPJ) {
-      user_document_type_id.value = EUserDocumentType.CNPJ;
-    }
-    if (
-      additionalInfo.document_type_id &&
-      additionalInfo.document_type_id !== EUserDocumentType.CPF &&
-      additionalInfo.document_type_id !== EUserDocumentType.CNPJ
-    ) {
-      user_document_type_id.value = additionalInfo.document_type_id;
-    }
-    if (!additionalInfo.document_type_id) {
-      user_document_type_id.value = null;
-    }
+  if (!additionalInfo) {
+    return;
   }
 
+  phone_ddi.value = additionalInfo.phone_ddi ?? '55';
+  phonePartial.value = additionalInfo.phone_partial ?? null;
+  phone.value = null;
+  isPhoneDecrypted.value = false;
+  phoneHasBeenEdited.value = false;
+  name.value = additionalInfo.name ?? null;
+  last_name.value = additionalInfo.last_name ?? null;
+  birth_date.value = formatBirthDate(additionalInfo.birth_date);
+  photoPreview.value = additionalInfo.photo ?? null;
+  documentPartial.value = additionalInfo.document_partial ?? null;
+  document.value = null;
+  isDocumentDecrypted.value = false;
+  documentHasBeenEdited.value = false;
+
+  if (additionalInfo.document_type_id === EUserDocumentType.CPF) {
+    user_document_type_id.value = EUserDocumentType.CPF;
+  }
+  if (additionalInfo.document_type_id === EUserDocumentType.CNPJ) {
+    user_document_type_id.value = EUserDocumentType.CNPJ;
+  }
+  if (
+    additionalInfo.document_type_id &&
+    additionalInfo.document_type_id !== EUserDocumentType.CPF &&
+    additionalInfo.document_type_id !== EUserDocumentType.CNPJ
+  ) {
+    user_document_type_id.value = additionalInfo.document_type_id;
+  }
+  if (!additionalInfo.document_type_id) {
+    user_document_type_id.value = null;
+  }
+};
+
+const loadAddressFromChatStore = () => {
+  if (!chatStore.user?.address) {
+    return;
+  }
+
+  zip_code.value = chatStore.user.address.zip_code ?? null;
+  address1Partial.value = chatStore.user.address.address1_partial ?? null;
+  address1.value = null;
+  isAddress1Decrypted.value = false;
+  address1HasBeenEdited.value = false;
+  address2Partial.value = chatStore.user.address.address2_partial ?? null;
+  address2.value = null;
+  isAddress2Decrypted.value = false;
+  address2HasBeenEdited.value = false;
+  district.value = chatStore.user.address.district ?? null;
+  state.value = chatStore.user.address.state ?? null;
+  city.value = chatStore.user.address.city ?? null;
+};
+
+const loadAddressData = async () => {
+  const addressData = await accountSettingsStore.getAddressComplete();
+
+  if (!addressData) {
+    return;
+  }
+
+  country_id.value = addressData.country_id ?? ECountry.Brasil;
+  zip_code.value = addressData.zip_code ?? null;
+
+  if (
+    !address1Partial.value ||
+    address1HasBeenEdited.value ||
+    isAddress1Decrypted.value
+  ) {
+    address1.value = addressData.address1 ?? null;
+  }
+  if (
+    !address2Partial.value ||
+    address2HasBeenEdited.value ||
+    isAddress2Decrypted.value
+  ) {
+    address2.value = addressData.address2 ?? null;
+  }
+
+  district.value = addressData.district ?? null;
+  state.value = addressData.state ?? null;
+  city.value = addressData.city ?? null;
+  state_id.value = addressData.state_id ?? null;
+  city_id.value = addressData.city_id ?? null;
+
+  if (country_id.value) {
+    await loadStates(country_id.value);
+  }
+
+  if (state_id.value) {
+    await loadCities(state_id.value);
+  }
+};
+
+const setDefaultValues = () => {
   if (!phone_ddi.value) {
     phone_ddi.value = '55';
   }
-
-  if (chatStore.user?.address) {
-    zip_code.value = chatStore.user.address.zip_code ?? null;
-    address1Partial.value = chatStore.user.address.address1_partial ?? null;
-    address1.value = null;
-    isAddress1Decrypted.value = false;
-    address1HasBeenEdited.value = false;
-    address2Partial.value = chatStore.user.address.address2_partial ?? null;
-    address2.value = null;
-    isAddress2Decrypted.value = false;
-    address2HasBeenEdited.value = false;
-    district.value = chatStore.user.address.district ?? null;
-    state.value = chatStore.user.address.state ?? null;
-    city.value = chatStore.user.address.city ?? null;
-  }
-
-  if (!phone_ddi.value) {
-    phone_ddi.value = '55';
-  }
-
   if (!country_id.value) {
     country_id.value = ECountry.Brasil;
   }
+};
 
-  const addressData = await accountSettingsStore.getAddressComplete();
-  if (addressData) {
-    country_id.value = addressData.country_id ?? ECountry.Brasil;
-    zip_code.value = addressData.zip_code ?? null;
-
-    if (
-      !address1Partial.value ||
-      address1HasBeenEdited.value ||
-      isAddress1Decrypted.value
-    ) {
-      address1.value = addressData.address1 ?? null;
-    }
-    if (
-      !address2Partial.value ||
-      address2HasBeenEdited.value ||
-      isAddress2Decrypted.value
-    ) {
-      address2.value = addressData.address2 ?? null;
-    }
-
-    district.value = addressData.district ?? null;
-    state.value = addressData.state ?? null;
-    city.value = addressData.city ?? null;
-    state_id.value = addressData.state_id ?? null;
-    city_id.value = addressData.city_id ?? null;
-
-    if (country_id.value) {
-      await loadStates(country_id.value);
-    }
-
-    if (state_id.value) {
-      await loadCities(state_id.value);
-    }
-  }
-
+const loadUserData = async () => {
+  await loadAdditionalInfo();
+  setDefaultValues();
+  loadAddressFromChatStore();
+  await loadAddressData();
   isInitializing.value = false;
 };
 

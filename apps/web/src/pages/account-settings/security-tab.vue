@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAccountSettingsStore } from '@/@webcore/stores/accountSettings';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
@@ -23,6 +23,18 @@ const confirmPassword = ref<string | null>(null);
 const isCurrentPasswordVisible = ref(false);
 const isNewPasswordVisible = ref(false);
 const isConfirmPasswordVisible = ref(false);
+
+const currentPasswordAutocomplete = computed(() =>
+  isCurrentPasswordVisible.value ? undefined : 'current-password'
+);
+
+const newPasswordAutocomplete = computed(() =>
+  isNewPasswordVisible.value ? undefined : 'new-password'
+);
+
+const confirmPasswordAutocomplete = computed(() =>
+  isConfirmPasswordVisible.value ? undefined : 'new-password'
+);
 
 const {
   strength: passwordStrength,
@@ -91,9 +103,10 @@ const handleChangePassword = async () => {
 <template>
   <div>
     <VCard variant="elevated" class="account-settings-card">
-      <VCardTitle class="text-h5 mb-4">
+      <VCardTitle class="text-h6 pa-6 pb-4">
         {{ $t('change_password') }}
       </VCardTitle>
+      <VDivider />
       <VCardText>
         <VForm
           ref="refFormChangePassword"
@@ -106,7 +119,7 @@ const handleChangePassword = async () => {
                 :label="$t('current_password') + ':'"
                 :placeholder="$t('current_password')"
                 :type="isCurrentPasswordVisible ? 'text' : 'password'"
-                autocomplete="current-password"
+                :autocomplete="currentPasswordAutocomplete"
                 autocapitalize="off"
                 autocorrect="off"
                 spellcheck="false"
@@ -133,7 +146,7 @@ const handleChangePassword = async () => {
                 :label="$t('new_password') + ':'"
                 :placeholder="$t('new_password')"
                 :type="isNewPasswordVisible ? 'text' : 'password'"
-                autocomplete="new-password"
+                :autocomplete="newPasswordAutocomplete"
                 autocapitalize="off"
                 autocorrect="off"
                 spellcheck="false"
@@ -172,7 +185,7 @@ const handleChangePassword = async () => {
                 :label="$t('confirm_new_password') + ':'"
                 :placeholder="$t('confirm_new_password')"
                 :type="isConfirmPasswordVisible ? 'text' : 'password'"
-                autocomplete="new-password"
+                :autocomplete="confirmPasswordAutocomplete"
                 autocapitalize="off"
                 autocorrect="off"
                 spellcheck="false"

@@ -31,7 +31,7 @@ export class PlanWithItemsListerRepository {
     return result;
   };
 
-  private listAllPlans = async () => {
+  private readonly listAllPlans = async () => {
     return this.db
       .select({
         plan_id: plan.plan_id,
@@ -49,7 +49,7 @@ export class PlanWithItemsListerRepository {
       .execute();
   };
 
-  private listAllPlanItems = async () => {
+  private readonly listAllPlanItems = async () => {
     return this.db
       .select({
         plan_item_id: planItems.plan_item_id,
@@ -76,7 +76,7 @@ export class PlanWithItemsListerRepository {
       .execute();
   };
 
-  private groupItemsByPlanId = (
+  private readonly groupItemsByPlanId = (
     allItems: Awaited<ReturnType<typeof this.listAllPlanItems>>
   ): Map<string, ListPlanItemResponse[]> => {
     const itemsByPlanId = new Map<string, ListPlanItemResponse[]>();
@@ -108,7 +108,7 @@ export class PlanWithItemsListerRepository {
     return itemsByPlanId;
   };
 
-  private combinePlansWithItems = (
+  private readonly combinePlansWithItems = (
     plans: Awaited<ReturnType<typeof this.listAllPlans>>,
     itemsByPlanId: Map<string, ListPlanItemResponse[]>
   ): ListPlanWithItemsResponse[] => {

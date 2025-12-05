@@ -16,14 +16,17 @@ export class AccountSettingsAddressUpdaterUseCase {
     private readonly passwordEncryptorService: PasswordEncryptorService
   ) {}
 
-  private extractStringValue(field: string | null | undefined): string | null {
-    const value = field ?? null;
-    return value === '' ? null : value;
+  private extractStringValue(
+    field: string | null | undefined = null
+  ): string | null {
+    const normalized = field ?? null;
+    return normalized === '' ? null : normalized;
   }
 
-  private extractNumberValue(field: number | null | undefined): number | null {
-    const value = field ?? null;
-    return value;
+  private extractNumberValue(
+    field: number | null | undefined = null
+  ): number | null {
+    return field;
   }
 
   private encryptAddressData(address: string | null | undefined) {

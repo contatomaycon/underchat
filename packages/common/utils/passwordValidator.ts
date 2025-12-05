@@ -16,7 +16,7 @@ export const validatePassword = (
     errors.push('password_requires_lowercase');
   }
 
-  if (!/[\d\W\s]/.test(password)) {
+  if (!/\d/.test(password) && !/[^\w]/.test(password)) {
     errors.push('password_requires_number_symbol_or_whitespace');
   }
 
