@@ -27,7 +27,7 @@ export class UserViewerRepository {
         eq(user.user_id, userId)
       ),
       with: {
-        aac: {
+        uac: {
           columns: {
             account_id: true,
             name: true,
@@ -121,8 +121,8 @@ export class UserViewerRepository {
     const userById: ViewUserResponse = {
       user_id: result.user_id,
       account: {
-        account_id: result.aac.account_id,
-        name: result.aac.name,
+        account_id: result.uac.account_id,
+        name: result.uac.name,
       },
       email_partial: result.email_partial,
       user_status: result.uus

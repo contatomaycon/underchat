@@ -24,6 +24,7 @@ import {
 } from '@core/schema/plan/listPlanSales/response.schema';
 import { ListPlanSalesRequest } from '@core/schema/plan/listPlanSales/request.schema';
 import { IListPlanSales } from '../interfaces/IListPlanSales';
+import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/response.schema';
 
 export const usePlanStore = defineStore('plan', {
   state: () => ({
@@ -38,6 +39,7 @@ export const usePlanStore = defineStore('plan', {
     listAll: [] as ListPlanAllResponse[],
     listProductAll: [] as ListPlanProductAllResponse[],
     listSales: [] as ListPlanSalesResponse[],
+    listWithItems: [] as ListPlanWithItemsResponse[],
     pagings: {
       current_page: 1 as number,
       total_pages: 1 as number,
@@ -472,6 +474,45 @@ export const usePlanStore = defineStore('plan', {
 
         this.showSnackbar(errorMessage, EColor.error);
 
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listPlanWithItems(): Promise<ListPlanWithItemsResponse[] | null> {
+      try {
+        this.loading = true;
+
+        const response =
+          await axios.get<IApiResponse<ListPlanWithItemsResponse[]>>(
+            '/plan/with-items'
+          );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('plan_list_with_items_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.listWithItems = data.data;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('plan_list_with_items_error');
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
         this.loading = false;
 
         return null;

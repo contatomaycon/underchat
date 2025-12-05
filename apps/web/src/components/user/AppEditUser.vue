@@ -16,6 +16,10 @@ import { ViewZipcodeRequest } from '@core/schema/zipcode/viewZipcode/request.sch
 import { getAdministrator, getUser } from '@/@webcore/localStorage/user';
 import { EColor } from '@core/common/enums/EColor';
 import { ViewUserResponse } from '@core/schema/user/viewUser/response.schema';
+import { useI18n } from 'vue-i18n';
+import { requiredValidator } from '@/@webcore/utils/validators';
+import { usePasswordStrength } from '@/composables/usePasswordStrength';
+import { validatePassword } from '@/@webcore/utils/passwordStrength';
 
 const userStore = useUsersStore();
 const accountStore = useAccountStore();
@@ -383,9 +387,20 @@ const goPrev = () => {
   tab.value = navigateToPrevTab(tab.value);
 };
 
+const {
+  strength: passwordStrength,
+  strengthColor,
+  strengthLabel,
+  strengthPercentage,
+} = usePasswordStrength(() => password.value);
+
 const rules = {
-  passwordMinIfFilled: (v: string | null) =>
-    !v || v.length >= 8 || t('minimum_eight_characters'),
+  password: (v: string | null) => {
+    if (!v) return true;
+    const validation = validatePassword(v);
+    if (validation.isValid) return true;
+    return validation.errors.map((err) => t(err)).join(', ');
+  },
 
   confirmRequiredIfPassword: (v: string | null) =>
     !password.value || !!v || t('confirm_password'),
@@ -1739,7 +1754,8 @@ const buildUpdateUserBody = (): UpdateUserRequest => {
 
   if (photoRemoved.value) {
     body.photo_url = { value: null };
-  } else {
+  }
+  if (!photoRemoved.value) {
     const photoUrl = determinePhotoUrl();
     addFieldIfDefined(body, 'photo_url', photoUrl);
   }
@@ -1935,7 +1951,8 @@ const setAddress2Partial = (address2Partial: string): void => {
   initialValues.value.address2 = address2Partial;
   if (address2Partial) {
     address2.value = address2Partial.includes('*') ? null : address2Partial;
-  } else {
+  }
+  if (!address2Partial) {
     address2.value = null;
   }
   isAddress2Decrypted.value = false;
@@ -2349,11 +2366,55 @@ watch(
                           :append-inner-icon="
                             isPasswordVisible ? 'tabler-eye-off' : 'tabler-eye'
                           "
-                          :rules="[rules.passwordMinIfFilled]"
+                          :rules="[rules.password]"
                           @click:append-inner="
                             isPasswordVisible = !isPasswordVisible
                           "
                         />
+                        <div v-if="password" class="mt-2">
+                          <div
+                            class="d-flex align-center justify-space-between mb-1"
+                          >
+                            <span class="text-caption"
+                              >{{ $t('password_strength') }}:</span
+                            >
+                            <span
+                              class="text-caption font-weight-medium"
+                              :class="`text-${strengthColor}`"
+                            >
+                              {{ strengthLabel }}
+                            </span>
+                          </div>
+                          <VProgressLinear
+                            :model-value="strengthPercentage"
+                            :color="strengthColor"
+                            height="4"
+                            rounded
+                          />
+                        </div>
+                        <div class="mt-2">
+                          <div class="text-body-2 font-weight-medium mb-1">
+                            {{ $t('password_requirements') }}:
+                          </div>
+                          <ul
+                            class="text-body-2 pl-4"
+                            style="list-style-type: disc"
+                          >
+                            <li>
+                              {{
+                                $t('password_requirement_minimum_8_characters')
+                              }}
+                            </li>
+                            <li>{{ $t('password_requirement_lowercase') }}</li>
+                            <li>
+                              {{
+                                $t(
+                                  'password_requirement_number_symbol_or_whitespace'
+                                )
+                              }}
+                            </li>
+                          </ul>
+                        </div>
                       </VCol>
 
                       <VCol cols="12" md="6">

@@ -1,5 +1,11 @@
 import * as schema from '@core/models';
-import { account, accountStatus, plan } from '@core/models';
+import {
+  account,
+  accountStatus,
+  plan,
+  planAccount,
+  planAccountStatus,
+} from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import {
@@ -31,7 +37,7 @@ export class AccountListerRepository {
         query.name ? ilike(account.name, `%${query.name}%`) : undefined,
         query.plan
           ? inArray(
-              account.plan_id,
+              planAccount.plan_id,
               this.db
                 .select({ plan_id: plan.plan_id })
                 .from(plan)
@@ -69,12 +75,25 @@ export class AccountListerRepository {
             name: true,
           },
         },
-        apl: {
+        apc: {
           columns: {
-            plan_id: true,
-            name: true,
-            price: true,
-            price_old: true,
+            plan_account_id: true,
+          },
+          with: {
+            pas: {
+              columns: {
+                plan_account_status_id: true,
+                name: true,
+              },
+            },
+            ppl: {
+              columns: {
+                plan_id: true,
+                name: true,
+                price: true,
+                price_old: true,
+              },
+            },
           },
         },
       },
@@ -92,25 +111,30 @@ export class AccountListerRepository {
     }
 
     return isAdministrator
-      ? result.map((item) => ({
-          account_id: item.account_id,
-          name: item.name,
-          account_status: item.aac
-            ? {
-                account_status_id: item.aac.account_status_id,
-                name: item.aac.name,
-              }
-            : null,
-          plan: item.apl
-            ? {
-                plan_id: item.apl.plan_id,
-                name: item.apl.name,
-                price: Number(item.apl.price),
-                price_old: Number(item.apl.price_old),
-              }
-            : null,
-          created_at: item.created_at,
-        }))
+      ? result.map((item) => {
+          const activePlanAccount = item.apc?.find(
+            (pa) => pa.pas?.name === 'active'
+          );
+          return {
+            account_id: item.account_id,
+            name: item.name,
+            account_status: item.aac
+              ? {
+                  account_status_id: item.aac.account_status_id,
+                  name: item.aac.name,
+                }
+              : null,
+            plan: activePlanAccount?.ppl
+              ? {
+                  plan_id: activePlanAccount.ppl.plan_id,
+                  name: activePlanAccount.ppl.name,
+                  price: Number(activePlanAccount.ppl.price),
+                  price_old: Number(activePlanAccount.ppl.price_old),
+                }
+              : null,
+            created_at: item.created_at,
+          };
+        })
       : [];
   };
 
@@ -129,8 +153,22 @@ export class AccountListerRepository {
         accountStatus,
         eq(accountStatus.account_status_id, account.account_status_id)
       )
-      .leftJoin(plan, eq(plan.plan_id, account.plan_id))
-      .where(and(...filtersAccount, isNull(account.deleted_at)))
+      .leftJoin(planAccount, eq(planAccount.account_id, account.account_id))
+      .leftJoin(plan, eq(plan.plan_id, planAccount.plan_id))
+      .leftJoin(
+        planAccountStatus,
+        eq(
+          planAccount.plan_account_status_id,
+          planAccountStatus.plan_account_status_id
+        )
+      )
+      .where(
+        and(
+          ...filtersAccount,
+          isNull(account.deleted_at),
+          eq(planAccountStatus.name, 'active')
+        )
+      )
       .execute();
 
     return isAdministrator ? (result[0]?.count ?? 0) : 0;

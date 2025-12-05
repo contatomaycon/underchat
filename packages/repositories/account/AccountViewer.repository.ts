@@ -24,12 +24,25 @@ export class AccountViewerRepository {
             name: true,
           },
         },
-        apl: {
+        apc: {
           columns: {
-            plan_id: true,
-            name: true,
-            price: true,
-            price_old: true,
+            plan_account_id: true,
+          },
+          with: {
+            pas: {
+              columns: {
+                plan_account_status_id: true,
+                name: true,
+              },
+            },
+            ppl: {
+              columns: {
+                plan_id: true,
+                name: true,
+                price: true,
+                price_old: true,
+              },
+            },
           },
         },
       },
@@ -40,9 +53,13 @@ export class AccountViewerRepository {
       },
     });
 
-    if (!result) {
+    if (!result?.length) {
       return null;
     }
+
+    const activePlanAccount = result[0].apc?.find(
+      (pa) => pa.pas?.name === 'active'
+    );
 
     return isAdministrator
       ? {
@@ -54,12 +71,12 @@ export class AccountViewerRepository {
                 name: result[0].aac.name,
               }
             : null,
-          plan: result[0].apl
+          plan: activePlanAccount?.ppl
             ? {
-                plan_id: result[0].apl.plan_id,
-                name: result[0].apl.name,
-                price: Number(result[0].apl.price),
-                price_old: Number(result[0].apl.price_old),
+                plan_id: activePlanAccount.ppl.plan_id,
+                name: activePlanAccount.ppl.name,
+                price: Number(activePlanAccount.ppl.price),
+                price_old: Number(activePlanAccount.ppl.price_old),
               }
             : null,
           created_at: result[0].created_at,

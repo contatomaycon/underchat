@@ -25,7 +25,10 @@ import { UserNamePhotoViewerRepository } from '@core/repositories/user/UserNameP
 import { IViewUserNamePhoto } from '@core/common/interfaces/IViewUserNamePhoto';
 import { UserExistsByEmailAndPhoneRepository } from '@core/repositories/user/UserExistsByEmailAndPhone.repository';
 import { UserSensitiveDataRepository } from '@core/repositories/user/UserSensitiveData.repository';
+import { AccountSettingsAdditionalInfoViewerRepository } from '@core/repositories/accountSettings/AccountSettingsAdditionalInfoViewer.repository';
+import { ViewAdditionalInfoResponse } from '@core/schema/accountSettings/viewAdditionalInfo/response.schema';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
+import { UserPasswordViewerRepository } from '@core/repositories/user/UserPasswordViewer.repository';
 import { PermissionAssignmentCreatorRepository } from '@core/repositories/permission/PermissionAssignmentCreator.repository';
 import { PermissionAssignmentExistsRepository } from '@core/repositories/permission/PermissionAssignmentExists.repository';
 import { PermissionAssignmentViewerRepository } from '@core/repositories/permission/PermissionAssignmentViewer.repository';
@@ -81,7 +84,9 @@ export class UserService {
     private readonly userOnlineListerRepository: UserOnlineListerRepository,
     private readonly userTransferListerRepository: UserTransferListerRepository,
     private readonly storageService: StorageService,
-    private readonly elasticDatabaseService: ElasticDatabaseService
+    private readonly elasticDatabaseService: ElasticDatabaseService,
+    private readonly accountSettingsAdditionalInfoViewerRepository: AccountSettingsAdditionalInfoViewerRepository,
+    private readonly userPasswordViewerRepository: UserPasswordViewerRepository
   ) {}
 
   listUsers = async (
@@ -485,6 +490,12 @@ export class UserService {
     }
   };
 
+  getUserSensitiveDataRaw = async (
+    userId: string
+  ): Promise<IUserSensitiveDataDecrypted | null> => {
+    return this.userSensitiveDataRepository.getUserSensitiveDataById(userId);
+  };
+
   getUserSensitiveDataDecrypted = async (
     userId: string
   ): Promise<IUserSensitiveDataDecrypted | null> => {
@@ -679,5 +690,49 @@ export class UserService {
       accountId,
       excludeUserId
     );
+  };
+
+  viewAdditionalInfo = async (
+    userId: string
+  ): Promise<ViewAdditionalInfoResponse | null> => {
+    return this.accountSettingsAdditionalInfoViewerRepository.viewAdditionalInfoByUserId(
+      userId
+    );
+  };
+
+  verifyUserPassword = async (
+    userId: string,
+    accountId: string,
+    currentPassword: string
+  ): Promise<boolean> => {
+    const encryptedPassword =
+      await this.userPasswordViewerRepository.viewUserPasswordById(
+        userId,
+        accountId
+      );
+
+    if (!encryptedPassword) {
+      return false;
+    }
+
+    const currentPasswordEncrypted =
+      this.encryptService.encrypt(currentPassword);
+
+    return encryptedPassword === currentPasswordEncrypted;
+  };
+
+  updateUserPassword = async (
+    t: TFunction<'translation', undefined>,
+    userId: string,
+    accountId: string,
+    newPassword: string
+  ): Promise<boolean> => {
+    const newPasswordEncrypted = this.encryptService.encrypt(newPassword);
+
+    const input: IUpdateUser = {
+      password: newPasswordEncrypted,
+    };
+
+    return this.userUpdaterRepository.updateUserById(userId, input, accountId);
   };
 }

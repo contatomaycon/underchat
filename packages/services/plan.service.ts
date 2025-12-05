@@ -12,6 +12,7 @@ import { PlanItemDeleterRepository } from '@core/repositories/plan/PlanItemDelet
 import { PlanItemsListerRepository } from '@core/repositories/plan/PlanItemsLister.repository';
 import { PlanProductAllListerRepository } from '@core/repositories/plan/PlanProductAllLister.repository';
 import { PlanSalesListerRepository } from '@core/repositories/plan/PlanSalesLister.repository';
+import { PlanWithItemsListerRepository } from '@core/repositories/plan/PlanWithItemsLister.repository';
 import { CreatePlanRequest } from '@core/schema/plan/createPlan/request.schema';
 import { UpdatePlanRequest } from '@core/schema/plan/updatePlan/request.schema';
 import { CreatePlanItemRequest } from '@core/schema/plan/createPlanItem/request.schema';
@@ -19,6 +20,7 @@ import { ListPlanItemResponse } from '@core/schema/plan/listPlanItems/response.s
 import { ListPlanProductAllResponse } from '@core/schema/plan/listPlanProductAll/response.schema';
 import { ListPlanSalesRequest } from '@core/schema/plan/listPlanSales/request.schema';
 import { ListPlanSalesResponse } from '@core/schema/plan/listPlanSales/response.schema';
+import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/response.schema';
 
 @injectable()
 export class PlanService {
@@ -32,7 +34,8 @@ export class PlanService {
     private readonly planItemDeleterRepository: PlanItemDeleterRepository,
     private readonly planItemsListerRepository: PlanItemsListerRepository,
     private readonly planProductAllListerRepository: PlanProductAllListerRepository,
-    private readonly planSalesListerRepository: PlanSalesListerRepository
+    private readonly planSalesListerRepository: PlanSalesListerRepository,
+    private readonly planWithItemsListerRepository: PlanWithItemsListerRepository
   ) {}
 
   listPlans = async (
@@ -89,5 +92,9 @@ export class PlanService {
     query: ListPlanSalesRequest
   ): Promise<ListPlanSalesResponse[]> => {
     return this.planSalesListerRepository.listPlanSales(query);
+  };
+
+  listPlanWithItems = async (): Promise<ListPlanWithItemsResponse[]> => {
+    return this.planWithItemsListerRepository.listPlanWithItems();
   };
 }

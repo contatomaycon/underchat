@@ -1,6 +1,5 @@
 import { RouteNamedMap } from 'vue-router/auto-routes';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
-import { EHomePermissions } from '@core/common/enums/EPermissions/home';
 import { EServerPermissions } from '@core/common/enums/EPermissions/server';
 import { EWorkerPermissions } from '@core/common/enums/EPermissions/worker';
 import { ERolePermissions } from '@core/common/enums/EPermissions/role';
@@ -22,12 +21,6 @@ export default [
     title: 'home',
     to: { name: 'root' as keyof RouteNamedMap },
     icon: { icon: 'tabler-smart-home' },
-    permissions: [
-      EGeneralPermissions.full_access,
-      EGeneralPermissions.full_access_group,
-      EHomePermissions.home_group,
-      EHomePermissions.home_view,
-    ],
   },
   {
     title: 'chat',
@@ -174,9 +167,20 @@ export default [
     icon: { icon: 'tabler-package' },
     children: [
       {
-        title: 'plans',
-        to: { name: 'plan' as keyof RouteNamedMap },
+        title: 'plans_pricing',
+        to: { name: 'plans' as keyof RouteNamedMap },
         icon: { icon: 'tabler-package' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EPlanPermissions.plan_group,
+          EPlanPermissions.plan_invoice,
+        ],
+      },
+      {
+        title: 'listar',
+        to: { name: 'plan' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-list' },
         permissions: [
           EGeneralPermissions.full_access,
           EGeneralPermissions.full_access_group,

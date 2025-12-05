@@ -6,13 +6,32 @@ import { useChatStore } from '@/@webcore/stores/chat';
 import { useProfileStore } from '@/@webcore/stores/profile';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { EColor } from '@core/common/enums/EColor';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { useTheme } from 'vuetify';
+import { useAbility } from '@/plugins/casl/composables/useAbility';
 
 const router = useRouter();
 const chatStore = useChatStore();
 const profileStore = useProfileStore();
 const { t } = useI18n();
 const { global } = useTheme();
+const ability = useAbility();
+
+const canAccessPlanInvoice = computed(() => {
+  const permissions = [
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EPlanPermissions.plan_group,
+    EPlanPermissions.plan_invoice,
+  ];
+
+  return permissions.some((perm) => ability.can(perm, perm));
+});
+
+const navigateToAccountSettings = (tab: string) => {
+  router.push({ name: 'account-settings', query: { tab } });
+};
 
 const isPhotoModalOpen = ref(false);
 const isCropModalOpen = ref(false);
@@ -678,6 +697,47 @@ onMounted(() => {
             </template>
 
             <VListItemTitle>{{ $t('change_photo') }}</VListItemTitle>
+          </VListItem>
+
+          <!-- 👉 Account Settings -->
+          <VListItem @click="navigateToAccountSettings('account')" link>
+            <template #prepend>
+              <VIcon class="me-2" icon="tabler-user" size="22" />
+            </template>
+
+            <VListItemTitle>{{ $t('account') }}</VListItemTitle>
+          </VListItem>
+
+          <VListItem @click="navigateToAccountSettings('security')" link>
+            <template #prepend>
+              <VIcon class="me-2" icon="tabler-lock" size="22" />
+            </template>
+
+            <VListItemTitle>{{ $t('security') }}</VListItemTitle>
+          </VListItem>
+
+          <VListItem
+            v-if="canAccessPlanInvoice"
+            @click="navigateToAccountSettings('plans')"
+            link
+          >
+            <template #prepend>
+              <VIcon class="me-2" icon="tabler-package" size="22" />
+            </template>
+
+            <VListItemTitle>{{ $t('plans') }}</VListItemTitle>
+          </VListItem>
+
+          <VListItem
+            v-if="canAccessPlanInvoice"
+            @click="navigateToAccountSettings('invoices')"
+            link
+          >
+            <template #prepend>
+              <VIcon class="me-2" icon="tabler-receipt-2" size="22" />
+            </template>
+
+            <VListItemTitle>{{ $t('invoices') }}</VListItemTitle>
           </VListItem>
 
           <VDivider class="my-2" />

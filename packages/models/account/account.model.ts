@@ -6,22 +6,20 @@ import {
   apiKey,
   permissionAssignment,
   worker,
-  plan,
   sector,
   messageTemplate,
   labelTemplate,
   contact,
   contactGroup,
   planCrossSellAccount,
+  planAccount,
+  accountPayment,
 } from '@core/models';
 
 export const account = pgTable('account', {
   account_id: uuid().primaryKey().notNull(),
   account_status_id: uuid()
     .references(() => accountStatus.account_status_id)
-    .notNull(),
-  plan_id: uuid()
-    .references(() => plan.plan_id)
     .notNull(),
   name: varchar({ length: 10 }).notNull(),
   created_at: timestamp({
@@ -48,10 +46,7 @@ export const accountRelations = relations(account, ({ one, many }) => ({
     fields: [account.account_id],
     references: [permissionAssignment.account_id],
   }),
-  apl: one(plan, {
-    fields: [account.plan_id],
-    references: [plan.plan_id],
-  }),
+  apc: many(planAccount),
   aak: many(apiKey),
   swk: many(worker),
   sct: many(sector),
@@ -60,4 +55,5 @@ export const accountRelations = relations(account, ({ one, many }) => ({
   ctc: many(contact),
   ctg: many(contactGroup),
   pca: many(planCrossSellAccount),
+  apm: many(accountPayment),
 }));

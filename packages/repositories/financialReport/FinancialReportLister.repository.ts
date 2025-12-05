@@ -2,6 +2,8 @@ import * as schema from '@core/models';
 import {
   account,
   plan,
+  planAccount,
+  planAccountStatus,
   planCrossSellAccount,
   planCrossSell,
   expenditure,
@@ -279,9 +281,22 @@ export class FinancialReportListerRepository {
         created_at: account.created_at,
       })
       .from(account)
-      .innerJoin(plan, eq(account.plan_id, plan.plan_id))
+      .innerJoin(planAccount, eq(planAccount.account_id, account.account_id))
+      .innerJoin(plan, eq(planAccount.plan_id, plan.plan_id))
+      .innerJoin(
+        planAccountStatus,
+        eq(
+          planAccount.plan_account_status_id,
+          planAccountStatus.plan_account_status_id
+        )
+      )
       .where(
-        and(isNull(account.deleted_at), isNull(plan.deleted_at), ...filters)
+        and(
+          isNull(account.deleted_at),
+          isNull(plan.deleted_at),
+          eq(planAccountStatus.name, 'active'),
+          ...filters
+        )
       )
       .execute();
 

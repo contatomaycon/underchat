@@ -44,6 +44,44 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'account-settings': RouteRecordInfo<
+      'account-settings',
+      '/account-settings',
+      Record<never, never>,
+      Record<never, never>,
+      | 'account-settings-account-tab'
+      | 'account-settings-invoices-tab'
+      | 'account-settings-plans-tab'
+      | 'account-settings-security-tab'
+    >,
+    'account-settings-account-tab': RouteRecordInfo<
+      'account-settings-account-tab',
+      '/account-settings/account-tab',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'account-settings-invoices-tab': RouteRecordInfo<
+      'account-settings-invoices-tab',
+      '/account-settings/invoices-tab',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'account-settings-plans-tab': RouteRecordInfo<
+      'account-settings-plans-tab',
+      '/account-settings/plans-tab',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'account-settings-security-tab': RouteRecordInfo<
+      'account-settings-security-tab',
+      '/account-settings/security-tab',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     'channels': RouteRecordInfo<
       'channels',
       '/channels',
@@ -149,6 +187,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'plans': RouteRecordInfo<
+      'plans',
+      '/plans',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     'reports-clients': RouteRecordInfo<
       'reports-clients',
       '/reports-clients',
@@ -243,6 +288,40 @@ declare module 'vue-router/auto-routes' {
       views:
         | never
     }
+    'src/pages/account-settings.vue': {
+      routes:
+        | 'account-settings'
+        | 'account-settings-account-tab'
+        | 'account-settings-invoices-tab'
+        | 'account-settings-plans-tab'
+        | 'account-settings-security-tab'
+      views:
+        | 'default'
+    }
+    'src/pages/account-settings/account-tab.vue': {
+      routes:
+        | 'account-settings-account-tab'
+      views:
+        | never
+    }
+    'src/pages/account-settings/invoices-tab.vue': {
+      routes:
+        | 'account-settings-invoices-tab'
+      views:
+        | never
+    }
+    'src/pages/account-settings/plans-tab.vue': {
+      routes:
+        | 'account-settings-plans-tab'
+      views:
+        | never
+    }
+    'src/pages/account-settings/security-tab.vue': {
+      routes:
+        | 'account-settings-security-tab'
+      views:
+        | never
+    }
     'src/pages/channels.vue': {
       routes:
         | 'channels'
@@ -331,6 +410,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/plan.vue': {
       routes:
         | 'plan'
+      views:
+        | never
+    }
+    'src/pages/plans.vue': {
+      routes:
+        | 'plans'
       views:
         | never
     }

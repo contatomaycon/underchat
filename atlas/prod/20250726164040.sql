@@ -12,6 +12,9 @@ CREATE TABLE "plan" (
   "name" character varying(50) NOT NULL,
   "price" numeric(10,2) NOT NULL,
   "price_old" numeric(10,2) NOT NULL,
+  "description" text NULL,
+  "annual_discount" numeric(5,2) NULL,
+  "icon" character varying(100) NULL,
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
   "deleted_at" timestamptz NULL,
@@ -21,14 +24,12 @@ CREATE TABLE "plan" (
 CREATE TABLE "account" (
   "account_id" uuid NOT NULL,
   "account_status_id" uuid NOT NULL,
-  "plan_id" uuid NOT NULL,
   "name" character varying(10) NOT NULL,
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
   "deleted_at" timestamptz NULL,
   PRIMARY KEY ("account_id"),
-  CONSTRAINT "account_account_status_id_account_status_account_status_id_fk" FOREIGN KEY ("account_status_id") REFERENCES "account_status" ("account_status_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
-  CONSTRAINT "account_plan_id_plan_plan_id_fk" FOREIGN KEY ("plan_id") REFERENCES "plan" ("plan_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+  CONSTRAINT "account_account_status_id_account_status_account_status_id_fk" FOREIGN KEY ("account_status_id") REFERENCES "account_status" ("account_status_id") ON UPDATE NO ACTION ON DELETE NO ACTION
 );
 -- Create "account_info" table
 CREATE TABLE "account_info" (

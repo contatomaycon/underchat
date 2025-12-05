@@ -6,6 +6,7 @@ import { UserService } from '@core/services/user.service';
 import { CountryService } from '@core/services/country.service';
 import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 import { StorageService } from '@core/services/storage.service';
+import { validatePassword } from '@core/common/utils/passwordValidator';
 
 @injectable()
 export class UserCreatorUseCase {
@@ -63,6 +64,16 @@ export class UserCreatorUseCase {
 
     if (userEmailExists) {
       throw new Error(t('user_already_exists_email'));
+    }
+
+    if (!input.password?.value) {
+      throw new Error(t('password_required'));
+    }
+
+    const passwordValidation = validatePassword(input.password.value);
+    if (!passwordValidation.isValid) {
+      const errorMessages = passwordValidation.errors.map((err) => t(err));
+      throw new Error(errorMessages.join(', '));
     }
 
     if (isAdministrator) {

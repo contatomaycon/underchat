@@ -1,23 +1,10 @@
 <script setup lang="ts">
-import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
-import { EHomePermissions } from '@core/common/enums/EPermissions/home';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 
 const channelsStore = useChannelsStore();
 
 useSnackbarCleanup(channelsStore);
-
-definePage({
-  meta: {
-    permissions: [
-      EGeneralPermissions.full_access,
-      EGeneralPermissions.full_access_group,
-      EHomePermissions.home_group,
-      EHomePermissions.home_view,
-    ],
-  },
-});
 </script>
 
 <template>

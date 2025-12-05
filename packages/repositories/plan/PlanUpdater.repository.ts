@@ -19,6 +19,9 @@ export class PlanUpdaterRepository {
       name?: string;
       price?: string;
       price_old?: string;
+      description?: string | null;
+      annual_discount?: string | null;
+      icon?: string | null;
     } = {};
 
     if (input.name !== null && input.name !== undefined) {
@@ -31,6 +34,18 @@ export class PlanUpdaterRepository {
 
     if (input.price_old !== null && input.price_old !== undefined) {
       updateData.price_old = input.price_old.toString();
+    }
+
+    if (input.description !== undefined) {
+      updateData.description = input.description;
+    }
+
+    if (input.annual_discount !== undefined) {
+      updateData.annual_discount = input.annual_discount?.toString() ?? null;
+    }
+
+    if (input.icon !== undefined) {
+      updateData.icon = input.icon;
     }
 
     const result = await this.db

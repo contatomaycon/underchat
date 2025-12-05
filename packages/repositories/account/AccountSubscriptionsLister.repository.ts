@@ -17,30 +17,43 @@ export class AccountSubscriptionsListerRepository {
     const accountResult = await this.db.query.account.findFirst({
       where: and(eq(account.account_id, accountId), isNull(account.deleted_at)),
       with: {
-        apl: {
+        apc: {
           columns: {
-            plan_id: true,
-            name: true,
-            price: true,
+            plan_account_id: true,
           },
           with: {
-            ppi: {
+            pas: {
               columns: {
-                plan_item_id: true,
-                quantity: true,
-                plan_product_id: true,
-                deleted_at: true,
+                plan_account_status_id: true,
+                name: true,
+              },
+            },
+            ppl: {
+              columns: {
+                plan_id: true,
+                name: true,
+                price: true,
               },
               with: {
-                ppr: {
+                ppi: {
                   columns: {
+                    plan_item_id: true,
+                    quantity: true,
                     plan_product_id: true,
+                    deleted_at: true,
                   },
                   with: {
-                    ppd: {
+                    ppr: {
                       columns: {
-                        name: true,
-                        description: true,
+                        plan_product_id: true,
+                      },
+                      with: {
+                        ppd: {
+                          columns: {
+                            name: true,
+                            description: true,
+                          },
+                        },
                       },
                     },
                   },
@@ -91,16 +104,21 @@ export class AccountSubscriptionsListerRepository {
       return null;
     }
 
+    const activePlanAccount = accountResult.apc?.find(
+      (pa) => pa.pas?.name === 'active'
+    );
+    const activePlan = activePlanAccount?.ppl;
+
     return {
-      plan: accountResult.apl
+      plan: activePlan
         ? {
-            plan_id: accountResult.apl.plan_id,
-            name: accountResult.apl.name,
-            price: accountResult.apl.price,
+            plan_id: activePlan.plan_id,
+            name: activePlan.name,
+            price: activePlan.price,
           }
         : null,
       plan_items:
-        accountResult.apl?.ppi
+        activePlan?.ppi
           ?.filter(
             (item) =>
               item.plan_item_id && !item.deleted_at && item.ppr?.plan_product_id

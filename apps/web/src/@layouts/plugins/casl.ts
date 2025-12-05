@@ -4,7 +4,7 @@ import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { useAbility } from '@/plugins/casl/composables/useAbility';
 
 export const can = (permissions?: EPermissionsRoles[]): boolean => {
-  if (!permissions?.length) return false;
+  if (!permissions?.length) return true;
   const ability = useAbility();
 
   for (const perm of permissions) {
@@ -30,6 +30,10 @@ export const canNavigate = (to: RouteLocationNormalized): boolean => {
   const ability = useAbility();
 
   const hasPermission = (perms?: EPermissionsRoles[]): boolean => {
+    if (perms === undefined) {
+      return true;
+    }
+
     if (!perms?.length) {
       return false;
     }

@@ -512,5 +512,28 @@ export const useAccountStore = defineStore('account', {
         return null;
       }
     },
+
+    async getCurrentPlan(): Promise<string | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<{ plan_id: string | null }>
+        >(`/account/current-plan`);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data.plan_id;
+      } catch {
+        this.loading = false;
+        return null;
+      }
+    },
   },
 });

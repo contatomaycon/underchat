@@ -23,6 +23,9 @@ const planId = toRef(props, 'planId');
 const name = ref<string | null>(null);
 const priceRaw = ref<number | null>(null);
 const price_oldRaw = ref<number | null>(null);
+const description = ref<string | null>(null);
+const annual_discount = ref<number | null>(null);
+const icon = ref<string | null>(null);
 
 const refFormEditPlan = ref<VForm>();
 
@@ -215,6 +218,9 @@ const updatePlan = async () => {
     name: name.value,
     price: priceRaw.value,
     price_old: price_oldRaw.value ?? 0,
+    description: description.value ?? null,
+    annual_discount: annual_discount.value ?? null,
+    icon: icon.value ?? null,
   };
 
   const result = await planStore.updatePlan(planId.value, payload);
@@ -234,6 +240,11 @@ onMounted(async () => {
     price_oldRaw.value = plan.price_old;
     priceDisplay.value = formatCurrency(plan.price);
     price_oldDisplay.value = formatCurrency(plan.price_old);
+    description.value = plan.description ?? null;
+    annual_discount.value = plan.annual_discount
+      ? Number.parseFloat(plan.annual_discount)
+      : null;
+    icon.value = plan.icon ?? null;
   }
 });
 </script>
@@ -280,6 +291,36 @@ onMounted(async () => {
                 :placeholder="formatCurrency(0)"
                 @input="handlePriceOldInput"
                 @blur="handlePriceOldBlur"
+              />
+            </VCol>
+            <VCol cols="12">
+              <AppTextarea
+                v-model="description"
+                :label="$t('description') + ':'"
+                :placeholder="$t('description')"
+                :maxlength="500"
+                :counter="500"
+                rows="3"
+              />
+            </VCol>
+            <VCol cols="12" sm="6">
+              <AppTextField
+                v-model="annual_discount"
+                type="number"
+                :label="$t('annual_discount') + ' (%):'"
+                :placeholder="'0'"
+                :rules="[
+                  (v: number | null) =>
+                    !v || (v >= 0 && v <= 100) || $t('annual_discount_invalid'),
+                ]"
+              />
+            </VCol>
+            <VCol cols="12" sm="6">
+              <AppTextField
+                v-model="icon"
+                :label="$t('icon') + ':'"
+                :placeholder="$t('icon')"
+                :maxlength="100"
               />
             </VCol>
           </VRow>

@@ -62,6 +62,9 @@ export class PlanListerRepository {
         name: plan.name,
         price: plan.price,
         price_old: plan.price_old,
+        description: plan.description,
+        annual_discount: plan.annual_discount,
+        icon: plan.icon,
         created_at: plan.created_at,
       })
       .from(plan)
@@ -79,6 +82,9 @@ export class PlanListerRepository {
       name: item.name,
       price: Number(item.price),
       price_old: Number(item.price_old),
+      description: item.description ?? null,
+      annual_discount: item.annual_discount ?? null,
+      icon: item.icon ?? null,
       created_at: item.created_at,
     }));
 
