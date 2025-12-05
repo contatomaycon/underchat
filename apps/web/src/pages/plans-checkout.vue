@@ -576,27 +576,27 @@ const getBrandColor = (brand: string | null): string => {
 };
 
 const getBrandGradient = (brand: string | null): string => {
-  if (!brand) return 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+  const neutralGradient = 'linear-gradient(135deg, #3e475a 0%, #515c73 100%)';
+
+  if (!brand) return neutralGradient;
 
   const brandGradients: Record<string, string> = {
-    VISA: 'linear-gradient(135deg, #1A1F71 0%, #1A1F71 100%)',
-    MASTERCARD: 'linear-gradient(135deg, #EB001B 0%, #F79E1B 100%)',
-    AMEX: 'linear-gradient(135deg, #006FCF 0%, #006FCF 100%)',
-    ELO: 'linear-gradient(135deg, #FFCB05 0%, #FF8C00 100%)',
-    DINERS: 'linear-gradient(135deg, #0079BE 0%, #0079BE 100%)',
-    DISCOVER: 'linear-gradient(135deg, #FF6000 0%, #FF8C00 100%)',
-    JCB: 'linear-gradient(135deg, #0066CC 0%, #0066CC 100%)',
-    MAESTRO: 'linear-gradient(135deg, #EB001B 0%, #F79E1B 100%)',
-    HIPERCARD: 'linear-gradient(135deg, #D52B1E 0%, #FF6B00 100%)',
-    MELI: 'linear-gradient(135deg, #FFF159 0%, #FFE600 100%)',
-    REAL: 'linear-gradient(135deg, #FF6B00 0%, #FF8C00 100%)',
-    UNIONPAY: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    MIR: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    VISA: 'linear-gradient(135deg, #55627a 0%, #6a7893 100%)',
+    MASTERCARD: 'linear-gradient(135deg, #6b3b3b 0%, #7e4d4a 100%)',
+    AMEX: 'linear-gradient(135deg, #4f6a87 0%, #6380a0 100%)',
+    ELO: 'linear-gradient(135deg, #73643a 0%, #86784e 100%)',
+    DINERS: 'linear-gradient(135deg, #4d6478 0%, #607b90 100%)',
+    DISCOVER: 'linear-gradient(135deg, #775634 0%, #8b6947 100%)',
+    JCB: 'linear-gradient(135deg, #4e6688 0%, #637ca0 100%)',
+    MAESTRO: 'linear-gradient(135deg, #6f4141 0%, #835454 100%)',
+    HIPERCARD: 'linear-gradient(135deg, #6f3f3d 0%, #834f4c 100%)',
+    MELI: 'linear-gradient(135deg, #736a3a 0%, #877d4e 100%)',
+    REAL: 'linear-gradient(135deg, #7a5638 0%, #8e684a 100%)',
+    UNIONPAY: 'linear-gradient(135deg, #4a5268 0%, #5d6780 100%)',
+    MIR: 'linear-gradient(135deg, #4a5268 0%, #5d6780 100%)',
   };
 
-  return (
-    brandGradients[brand] || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-  );
+  return brandGradients[brand] || neutralGradient;
 };
 
 watch(currentStep, async (newStep) => {
@@ -1596,7 +1596,9 @@ onMounted(async () => {
                                     class="brand-logo-small"
                                   >
                                     <img
-                                      :src="getBrandLogoUrl(detectedBrand) || ''"
+                                      :src="
+                                        getBrandLogoUrl(detectedBrand) || ''
+                                      "
                                       :alt="detectedBrand || 'card brand'"
                                       class="brand-logo-img"
                                     />
