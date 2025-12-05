@@ -694,6 +694,41 @@ const isPaymentReceived = computed(() => {
   return pixPaymentStatus.value === 'RECEIVED';
 });
 
+const shouldShowCloseButton = computed(() => {
+  if (
+    pixPaymentConfirmed.value &&
+    selectedPaymentMethod.value === 'credit_card'
+  ) {
+    return true;
+  }
+  if (isPaymentReceived.value && selectedPaymentMethod.value === 'pix') {
+    return true;
+  }
+  return !pixPaymentConfirmed.value && !isPaymentReceived.value;
+});
+
+const paymentStatusAlert = computed(() => {
+  if (pixPaymentConfirmed.value) {
+    return {
+      type: 'success' as const,
+      message: t('payment_confirmed'),
+      icon: 'tabler-circle-check',
+    };
+  }
+  if (isPaymentReceived.value) {
+    return {
+      type: 'success' as const,
+      message: t('payment_received'),
+      icon: 'tabler-circle-check',
+    };
+  }
+  return {
+    type: 'info' as const,
+    message: t('awaiting_payment'),
+    icon: 'tabler-clock-hour-4',
+  };
+});
+
 const initPaymentSubscription = async () => {
   const user = getUser();
   if (!user?.account_id || !pixPaymentId.value) {
@@ -755,9 +790,11 @@ const copyPixCode = async () => {
 
 const closePixModal = async () => {
   const wasReceived = isPaymentReceived.value;
+  const wasCreditCardConfirmed =
+    pixPaymentConfirmed.value && selectedPaymentMethod.value === 'credit_card';
   await cleanupPaymentSubscription();
   pixModalOpen.value = false;
-  if (wasReceived) {
+  if (wasReceived || wasCreditCardConfirmed) {
     router.push({ name: 'account-settings', query: { tab: 'plans' } });
   }
 };
@@ -2906,13 +2943,13 @@ onMounted(async () => {
                 <VSpacer />
                 <div class="d-flex align-center gap-3">
                   <VAlert
-                    type="info"
+                    :type="paymentStatusAlert.type"
                     variant="tonal"
                     class="d-flex align-center"
                     density="comfortable"
                   >
-                    <VIcon start icon="tabler-clock-hour-4" />
-                    {{ $t('awaiting_payment') }}
+                    <VIcon start :icon="paymentStatusAlert.icon" />
+                    {{ paymentStatusAlert.message }}
                   </VAlert>
                   <VBtn
                     v-if="!pixModalOpen"
@@ -2943,10 +2980,7 @@ onMounted(async () => {
   </div>
 
   <VDialog v-model="pixModalOpen" max-width="500" persistent>
-    <DialogCloseBtn
-      v-if="!pixPaymentConfirmed && !isPaymentReceived"
-      @click="closePixModal"
-    />
+    <DialogCloseBtn v-if="shouldShowCloseButton" @click="closePixModal" />
     <VCard>
       <VCardTitle>
         <span>{{
@@ -3064,10 +3098,7 @@ onMounted(async () => {
         </VAlert>
       </VCardText>
       <VDivider />
-      <VCardActions
-        v-if="!pixPaymentConfirmed && !isPaymentReceived"
-        class="justify-end pa-4"
-      >
+      <VCardActions v-if="shouldShowCloseButton" class="justify-end pa-4">
         <VBtn variant="tonal" color="secondary" @click="closePixModal">
           {{ $t('close') }}
         </VBtn>

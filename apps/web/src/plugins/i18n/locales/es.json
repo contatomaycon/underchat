@@ -1509,6 +1509,8 @@
     "order_payment_created_successfully": "Pago de pedido creado con éxito",
     "order_payment_creation_failed": "Error al crear el pago del pedido",
     "awaiting_payment": "Esperando pago",
+    "payment_confirmed": "Pago confirmado",
+    "payment_received": "Pago recibido",
     "view_pix_payment": "Ver Pago PIX",
     "payment_status_pending": "Pendiente",
     "payment_status_received": "Recibido",
