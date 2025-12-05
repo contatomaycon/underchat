@@ -17,6 +17,7 @@ import { createPlanItemSchema } from '@core/schema/plan/createPlanItem';
 import { listPlanItemsSchema } from '@core/schema/plan/listPlanItems';
 import { deletePlanItemSchema } from '@core/schema/plan/deletePlanItem';
 import { listPlanProductAllSchema } from '@core/schema/plan/listPlanProductAll';
+import { listPlanProductWithPriceSchema } from '@core/schema/plan/listPlanProductWithPrice';
 import { listPlanSalesSchema } from '@core/schema/plan/listPlanSales';
 import { listPlanWithItemsSchema } from '@core/schema/plan/listPlanWithItems';
 import { viewCurrentPlanSchema } from '@core/schema/plan/viewCurrentPlan';
@@ -102,6 +103,15 @@ export default function planRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planViewPermissions),
+    ],
+  });
+
+  server.get('/plan/product/with-price', {
+    schema: listPlanProductWithPriceSchema,
+    handler: planController.listPlanProductWithPrice,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
     ],
   });
 

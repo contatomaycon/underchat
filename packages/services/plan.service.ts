@@ -21,6 +21,8 @@ import { ListPlanProductAllResponse } from '@core/schema/plan/listPlanProductAll
 import { ListPlanSalesRequest } from '@core/schema/plan/listPlanSales/request.schema';
 import { ListPlanSalesResponse } from '@core/schema/plan/listPlanSales/response.schema';
 import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/response.schema';
+import { ListPlanProductWithPriceResponse } from '@core/schema/plan/listPlanProductWithPrice/response.schema';
+import { PlanProductWithPriceListerRepository } from '@core/repositories/plan/PlanProductWithPriceLister.repository';
 
 @injectable()
 export class PlanService {
@@ -35,7 +37,8 @@ export class PlanService {
     private readonly planItemsListerRepository: PlanItemsListerRepository,
     private readonly planProductAllListerRepository: PlanProductAllListerRepository,
     private readonly planSalesListerRepository: PlanSalesListerRepository,
-    private readonly planWithItemsListerRepository: PlanWithItemsListerRepository
+    private readonly planWithItemsListerRepository: PlanWithItemsListerRepository,
+    private readonly planProductWithPriceListerRepository: PlanProductWithPriceListerRepository
   ) {}
 
   listPlans = async (
@@ -86,6 +89,12 @@ export class PlanService {
 
   listPlanProductAll = async (): Promise<ListPlanProductAllResponse[]> => {
     return this.planProductAllListerRepository.listPlanProductAll();
+  };
+
+  listPlanProductWithPrice = async (): Promise<
+    ListPlanProductWithPriceResponse[]
+  > => {
+    return this.planProductWithPriceListerRepository.listPlanProductWithPrice();
   };
 
   listPlanSales = async (

@@ -7,7 +7,7 @@ import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { usePlanStore } from '@/@webcore/stores/plan';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/response.schema';
-import { ListPlanProductAllResponse } from '@core/schema/plan/listPlanProductAll/response.schema';
+import { ListPlanProductWithPriceResponse } from '@core/schema/plan/listPlanProductWithPrice/response.schema';
 
 definePage({
   meta: {
@@ -29,7 +29,7 @@ useSnackbarCleanup(planStore);
 const loading = ref(false);
 const billingPeriod = ref<'monthly' | 'annual'>('monthly');
 const selectedPlanForCheckout = ref<ListPlanWithItemsResponse | null>(null);
-const availableProducts = ref<ListPlanProductAllResponse[]>([]);
+const availableProducts = ref<ListPlanProductWithPriceResponse[]>([]);
 const selectedAddons = ref<
   Array<{
     plan_product_id: string;
@@ -104,7 +104,7 @@ const loadCheckoutData = async () => {
   }
 
   loadingProducts.value = true;
-  const products = await planStore.listPlanProductAll();
+  const products = await planStore.listPlanProductWithPrice();
   if (products) {
     availableProducts.value = products;
   }
@@ -113,7 +113,7 @@ const loadCheckoutData = async () => {
   loading.value = false;
 };
 
-const addAddon = (product: ListPlanProductAllResponse) => {
+const addAddon = (product: ListPlanProductWithPriceResponse) => {
   const existingAddon = selectedAddons.value.find(
     (a) => a.plan_product_id === product.plan_product_id
   );
@@ -125,6 +125,7 @@ const addAddon = (product: ListPlanProductAllResponse) => {
       plan_product_id: product.plan_product_id,
       name: product.name || '',
       quantity: 1,
+      price: product.price ?? undefined,
     });
   }
 };

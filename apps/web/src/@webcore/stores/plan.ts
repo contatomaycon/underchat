@@ -18,6 +18,7 @@ import { UpdatePlanRequest } from '@core/schema/plan/updatePlan/request.schema';
 import { CreatePlanItemRequest } from '@core/schema/plan/createPlanItem/request.schema';
 import { ListPlanItemResponse } from '@core/schema/plan/listPlanItems/response.schema';
 import { ListPlanProductAllResponse } from '@core/schema/plan/listPlanProductAll/response.schema';
+import { ListPlanProductWithPriceResponse } from '@core/schema/plan/listPlanProductWithPrice/response.schema';
 import {
   ListPlanSalesFinalResponse,
   ListPlanSalesResponse,
@@ -38,6 +39,7 @@ export const usePlanStore = defineStore('plan', {
     list: [] as ListPlanResponse[],
     listAll: [] as ListPlanAllResponse[],
     listProductAll: [] as ListPlanProductAllResponse[],
+    listProductWithPrice: [] as ListPlanProductWithPriceResponse[],
     listSales: [] as ListPlanSalesResponse[],
     listWithItems: [] as ListPlanWithItemsResponse[],
     pagings: {
@@ -414,6 +416,46 @@ export const usePlanStore = defineStore('plan', {
         }
 
         this.listProductAll = data.data;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('plan_product_list_all_error');
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+
+        return [];
+      }
+    },
+
+    async listPlanProductWithPrice(): Promise<
+      ListPlanProductWithPriceResponse[]
+    > {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListPlanProductWithPriceResponse[]>
+        >('/plan/product/with-price');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('plan_product_list_all_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return [];
+        }
+
+        this.listProductWithPrice = data.data;
 
         return data.data;
       } catch (error) {
