@@ -4,15 +4,9 @@ import { worker } from '@core/models';
 
 export const notifications = pgTable('notifications', {
   notification_id: uuid().primaryKey().notNull(),
-  two_factor_notification: uuid()
-    .references(() => worker.worker_id)
-    .notNull(),
-  plan_notification: uuid()
-    .references(() => worker.worker_id)
-    .notNull(),
-  plan_expiration_reminder: uuid()
-    .references(() => worker.worker_id)
-    .notNull(),
+  two_factor_notification: uuid().references(() => worker.worker_id),
+  plan_notification: uuid().references(() => worker.worker_id),
+  plan_expiration_reminder: uuid().references(() => worker.worker_id),
   created_at: timestamp({
     mode: 'string',
     withTimezone: true,

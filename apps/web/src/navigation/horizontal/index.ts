@@ -277,6 +277,15 @@ export default [
     ],
   },
   {
+    title: 'notifications',
+    to: { name: 'notifications' as keyof RouteNamedMap },
+    icon: { icon: 'tabler-bell' },
+    permissions: [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+    ],
+  },
+  {
     title: 'server',
     to: { name: 'server' as keyof RouteNamedMap },
     icon: { icon: 'tabler-server' },

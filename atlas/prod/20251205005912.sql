@@ -1,9 +1,9 @@
 -- Create "notifications" table
 CREATE TABLE "notifications" (
   "notification_id" uuid NOT NULL,
-  "two_factor_notification" uuid NOT NULL,
-  "plan_notification" uuid NOT NULL,
-  "plan_expiration_reminder" uuid NOT NULL,
+  "two_factor_notification" uuid,
+  "plan_notification" uuid,
+  "plan_expiration_reminder" uuid,
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
   "deleted_at" timestamptz NULL,

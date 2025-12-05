@@ -495,5 +495,8 @@
   "password_change_error": "Error changing password!",
   "password_minimum_8_characters": "Password must be at least 8 characters long",
   "password_requires_lowercase": "Password must contain at least one lowercase character",
-  "password_requires_number_symbol_or_whitespace": "Password must contain at least one number, symbol, or whitespace character"
+  "password_requires_number_symbol_or_whitespace": "Password must contain at least one number, symbol, or whitespace character",
+  "notifications_view_successfully": "Notifications viewed successfully!",
+  "notifications_update_successfully": "Notifications updated successfully!",
+  "workers_list_successfully": "Workers list retrieved successfully!"
 }

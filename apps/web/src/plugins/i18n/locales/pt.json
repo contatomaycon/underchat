@@ -1440,5 +1440,19 @@
     "password_strength_weak": "Fraca",
     "password_strength_fair": "Razoável",
     "password_strength_good": "Boa",
-    "password_strength_strong": "Forte"
+    "password_strength_strong": "Forte",
+    "notifications": "Notificações",
+    "two_factor_notification": "Notificação de Dois Fatores",
+    "plan_notification": "Notificação de Planos",
+    "plan_expiration_reminder": "Lembrete de Vencimento de Plano",
+    "worker": "Worker",
+    "not_configured": "Não configurado",
+    "select_worker_two_factor": "Selecionar Worker para Notificação de Dois Fatores",
+    "select_worker_plan": "Selecionar Worker para Notificação de Planos",
+    "select_worker_plan_expiration": "Selecionar Worker para Lembrete de Vencimento",
+    "select_worker": "Selecionar Worker",
+    "notifications_update_error": "Ocorreu um erro ao atualizar as notificações. Por favor, tente novamente.",
+    "notifications_update_success": "Notificações atualizadas com sucesso!",
+    "deactivated": "Desativado",
+    "no_workers_available": "Nenhum canal disponível"
 }
