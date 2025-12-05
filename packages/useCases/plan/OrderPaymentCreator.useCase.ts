@@ -6,13 +6,15 @@ import { CreateOrderPaymentRequest } from '@core/schema/plan/createOrderPayment/
 import { CreateOrderPaymentResponse } from '@core/schema/plan/createOrderPayment/response.schema';
 import { EPaymentBillingType } from '@core/common/enums/EPaymentBillingType';
 import { EPaymentStatus } from '@core/common/enums/EPaymentStatus';
+import { PlanReleaseService } from '@core/services/planRelease.service';
 import { randomUUID } from 'crypto';
 
 @injectable()
 export class OrderPaymentCreatorUseCase {
   constructor(
     private readonly paymentService: PaymentService,
-    private readonly orderPaymentCreatorRepository: OrderPaymentCreatorRepository
+    private readonly orderPaymentCreatorRepository: OrderPaymentCreatorRepository,
+    private readonly planReleaseService: PlanReleaseService
   ) {}
 
   execute = async (
@@ -186,9 +188,11 @@ export class OrderPaymentCreatorUseCase {
       }
     );
 
-    if (!creditCardResult.payment || !creditCardResult.paymentId) {
+    if (!creditCardResult.payment || !creditCardResult.payment.id) {
       throw new Error(t('credit_card_payment_creation_failed'));
     }
+
+    const paymentId = creditCardResult.payment.id;
 
     const paymentStatus =
       creditCardResult.payment.status === 'CONFIRMED' ||
@@ -201,7 +205,7 @@ export class OrderPaymentCreatorUseCase {
         accountId,
         userCustomerId: customer.user_customer_id,
         planId,
-        billing: creditCardResult.paymentId,
+        billing: paymentId,
         paymentBillingTypeId: EPaymentBillingType.credit_card,
         value: totalAmount.toString(),
         netValue: creditCardResult.payment.netValue.toString(),
@@ -220,8 +224,35 @@ export class OrderPaymentCreatorUseCase {
       billingPeriod,
     });
 
+    console.log('paymentStatus', paymentStatus);
+
+    if (paymentStatus === EPaymentStatus.received) {
+      const paymentDate =
+        creditCardResult.payment.paymentDate || new Date().toISOString();
+
+      console.log('paymentDate', paymentDate);
+
+      try {
+        await this.planReleaseService.releasePlanForCreditCard({
+          accountPaymentId,
+          accountId,
+          planId,
+          billingPeriodId,
+          recurringPayment: input.recurring_payment || false,
+          value: totalAmount.toString(),
+          paymentDate,
+          paymentStatusId: paymentStatus,
+        });
+      } catch (error) {
+        console.error(
+          'Erro ao liberar plano para pagamento com cartão de crédito:',
+          error
+        );
+      }
+    }
+
     return {
-      payment_id: creditCardResult.paymentId,
+      payment_id: creditCardResult.payment.id,
       status: creditCardResult.payment.status,
       is_confirmed: paymentStatus === EPaymentStatus.received,
     };

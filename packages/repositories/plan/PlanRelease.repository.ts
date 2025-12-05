@@ -45,6 +45,35 @@ export class PlanReleaseRepository {
     return payment || null;
   };
 
+  findAccountPaymentById = async (
+    accountPaymentId: string
+  ): Promise<{
+    account_payment_id: string;
+    account_id: string;
+    plan_id: string;
+    billing_period_id: string | null;
+    recurring_payment: boolean;
+    value: string;
+    payment_date: string | null;
+    payment_status_id: string;
+  } | null> => {
+    const payment = await this.db.query.accountPayment.findFirst({
+      where: eq(accountPayment.account_payment_id, accountPaymentId),
+      columns: {
+        account_payment_id: true,
+        account_id: true,
+        plan_id: true,
+        billing_period_id: true,
+        recurring_payment: true,
+        value: true,
+        payment_date: true,
+        payment_status_id: true,
+      },
+    });
+
+    return payment || null;
+  };
+
   updateAccountPaymentStatus = async (
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
@@ -81,9 +110,30 @@ export class PlanReleaseRepository {
     plan_account_id: string;
     plan_id: string;
     next_payment_date: string | null;
+    account_payment_id: string | null;
   } | null> => {
     const planAcc = await this.db.query.planAccount.findFirst({
       where: eq(planAccount.account_id, accountId),
+      columns: {
+        plan_account_id: true,
+        plan_id: true,
+        next_payment_date: true,
+        account_payment_id: true,
+      },
+    });
+
+    return planAcc || null;
+  };
+
+  findPlanAccountByAccountPaymentId = async (
+    accountPaymentId: string
+  ): Promise<{
+    plan_account_id: string;
+    plan_id: string;
+    next_payment_date: string | null;
+  } | null> => {
+    const planAcc = await this.db.query.planAccount.findFirst({
+      where: eq(planAccount.account_payment_id, accountPaymentId),
       columns: {
         plan_account_id: true,
         plan_id: true,
