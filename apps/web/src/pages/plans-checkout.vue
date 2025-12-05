@@ -11,6 +11,7 @@ import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
+import { EColor } from '@core/common/enums/EColor';
 import { usePlanStore } from '@/@webcore/stores/plan';
 import { useAccountSettingsStore } from '@/@webcore/stores/accountSettings';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
@@ -788,6 +789,33 @@ const processPayment = async () => {
       await nextTick();
       pixModalOpen.value = true;
       await initPaymentSubscription();
+    } else if (result && result.credit_card_payment) {
+      const creditCardData = result.credit_card_payment as {
+        payment_id: string;
+        status: string;
+        is_confirmed: boolean;
+      };
+
+      if (creditCardData.is_confirmed) {
+        planStore.showSnackbar(
+          planStore.i18n.global.t('payment_success_title'),
+          EColor.success
+        );
+        setTimeout(() => {
+          router.push({ name: 'account-settings', query: { tab: 'plans' } });
+        }, 2000);
+      } else {
+        pixPaymentId.value = creditCardData.payment_id;
+        pixPaymentStatus.value =
+          (creditCardData.status as
+            | 'PENDING'
+            | 'RECEIVED'
+            | 'CONFIRMED'
+            | 'OVERDUE'
+            | 'REFUNDED') || 'PENDING';
+        pixPaymentInitiated.value = true;
+        await initPaymentSubscription();
+      }
     } else if (result) {
       console.log('Pagamento processado:', result);
     }

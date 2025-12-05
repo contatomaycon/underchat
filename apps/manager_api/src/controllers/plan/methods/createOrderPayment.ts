@@ -1,5 +1,6 @@
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
+import { getClientIp } from '@core/common/functions/getClientIp';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { OrderPaymentCreatorUseCase } from '@core/useCases/plan/OrderPaymentCreator.useCase';
@@ -15,10 +16,13 @@ export const createOrderPayment = async (
   const { t, tokenJwtData } = request;
 
   try {
+    const remoteIp = getClientIp(request);
+
     const response = await orderPaymentCreatorUseCase.execute(
       t,
       tokenJwtData.account_id,
-      request.body
+      request.body,
+      remoteIp
     );
 
     return sendResponse(reply, {

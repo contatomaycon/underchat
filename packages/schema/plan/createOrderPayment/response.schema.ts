@@ -9,6 +9,12 @@ export const pixPaymentDataSchema = Type.Object({
   }),
 });
 
+export const creditCardPaymentDataSchema = Type.Object({
+  payment_id: Type.String({ description: 'ID do pagamento no Asaas' }),
+  status: Type.String({ description: 'Status do pagamento' }),
+  is_confirmed: Type.Boolean({ description: 'Se o pagamento foi confirmado' }),
+});
+
 export const createOrderPaymentResponseSchema = Type.Object({
   order_id: Type.String({ format: 'uuid', description: 'ID do pedido criado' }),
   total_amount: Type.Number({ description: 'Valor total a ser pago' }),
@@ -19,9 +25,11 @@ export const createOrderPaymentResponseSchema = Type.Object({
   }),
   payment_method: Type.String({ description: 'Método de pagamento' }),
   pix_payment: Type.Optional(pixPaymentDataSchema),
+  credit_card_payment: Type.Optional(creditCardPaymentDataSchema),
 });
 
 export type CreateOrderPaymentResponse = Static<
   typeof createOrderPaymentResponseSchema
 >;
 export type PixPaymentData = Static<typeof pixPaymentDataSchema>;
+export type CreditCardPaymentData = Static<typeof creditCardPaymentDataSchema>;

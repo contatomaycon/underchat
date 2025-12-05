@@ -18,7 +18,8 @@ export class OrderPaymentCreatorUseCase {
   execute = async (
     t: TFunction<'translation', undefined>,
     accountId: string,
-    input: CreateOrderPaymentRequest
+    input: CreateOrderPaymentRequest,
+    remoteIp: string
   ): Promise<CreateOrderPaymentResponse> => {
     try {
       const customer = await this.paymentService.getOrCreateCustomer(accountId);
@@ -48,6 +49,22 @@ export class OrderPaymentCreatorUseCase {
             )
           : undefined;
 
+      const creditCardPaymentData =
+        input.payment_method === 'credit_card'
+          ? await this.processCreditCardPayment(
+              t,
+              accountId,
+              customer,
+              input.plan_id,
+              totalAmount,
+              orderId,
+              input.billing_period,
+              input.addons || [],
+              remoteIp,
+              input
+            )
+          : undefined;
+
       const result: CreateOrderPaymentResponse = {
         order_id: orderId,
         total_amount: totalAmount,
@@ -56,6 +73,7 @@ export class OrderPaymentCreatorUseCase {
         upgrade_discount: discountAmount,
         payment_method: input.payment_method,
         pix_payment: pixPaymentData,
+        credit_card_payment: creditCardPaymentData,
       };
 
       return result;
@@ -121,6 +139,91 @@ export class OrderPaymentCreatorUseCase {
       qr_code: pixResult.qrCode.encodedImage,
       payload: pixResult.qrCode.payload,
       expiration_date: pixResult.qrCode.expirationDate,
+    };
+  };
+
+  private readonly processCreditCardPayment = async (
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    customer: { user_customer_id: string; user_customer: string },
+    planId: string,
+    totalAmount: number,
+    orderId: string,
+    billingPeriod: 'monthly' | 'annual',
+    addons: Array<{ plan_cross_sell_id: string }>,
+    remoteIp: string,
+    input: CreateOrderPaymentRequest
+  ) => {
+    if (input.billing_period !== 'annual' && input.installments) {
+      throw new Error(t('installments_only_for_annual_plans'));
+    }
+
+    if (
+      input.installments &&
+      (input.installments < 1 || input.installments > 12)
+    ) {
+      throw new Error(t('installments_must_be_between_1_and_12'));
+    }
+
+    const billingPeriodId =
+      this.orderPaymentCreatorRepository.getBillingPeriodId(billingPeriod);
+    if (!billingPeriodId) {
+      throw new Error(t('billing_period_not_found'));
+    }
+
+    const creditCardResult = await this.paymentService.createCreditCardPayment(
+      accountId,
+      customer.user_customer,
+      totalAmount,
+      `Pagamento do plano ${planId}`,
+      orderId,
+      remoteIp,
+      {
+        creditCardId: input.credit_card_id,
+        newCard: input.new_card,
+        installments: input.installments,
+        recurringPayment: input.recurring_payment || false,
+      }
+    );
+
+    if (!creditCardResult.payment || !creditCardResult.paymentId) {
+      throw new Error(t('credit_card_payment_creation_failed'));
+    }
+
+    const paymentStatus =
+      creditCardResult.payment.status === 'CONFIRMED' ||
+      creditCardResult.payment.status === 'RECEIVED'
+        ? EPaymentStatus.received
+        : EPaymentStatus.pending;
+
+    const accountPaymentId =
+      await this.orderPaymentCreatorRepository.createAccountPayment({
+        accountId,
+        userCustomerId: customer.user_customer_id,
+        planId,
+        billing: creditCardResult.paymentId,
+        paymentBillingTypeId: EPaymentBillingType.credit_card,
+        value: totalAmount.toString(),
+        netValue: creditCardResult.payment.netValue.toString(),
+        pixTransaction: null,
+        paymentStatusId: paymentStatus,
+        billingPeriodId,
+        invoiceUrl: creditCardResult.payment.invoiceUrl || null,
+        recurringPayment: input.recurring_payment || false,
+        userCardId: input.credit_card_id || creditCardResult.userCardId || null,
+        installment: input.installments ? input.installments.toString() : null,
+      });
+
+    await this.orderPaymentCreatorRepository.createAccountPaymentCrossSells({
+      accountPaymentId,
+      addons,
+      billingPeriod,
+    });
+
+    return {
+      payment_id: creditCardResult.paymentId,
+      status: creditCardResult.payment.status,
+      is_confirmed: paymentStatus === EPaymentStatus.received,
     };
   };
 }
