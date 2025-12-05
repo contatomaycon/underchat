@@ -32,6 +32,7 @@ import { UpgradeDiscountCalculatorRepository } from '@core/repositories/plan/Upg
 import { CreateOrderPaymentRequest } from '@core/schema/plan/createOrderPayment/request.schema';
 import { CreateOrderPaymentResponse } from '@core/schema/plan/createOrderPayment/response.schema';
 import { OrderPaymentCreatorRepository } from '@core/repositories/plan/OrderPaymentCreator.repository';
+import { PaymentService } from './payment.service';
 
 @injectable()
 export class PlanService {
@@ -51,7 +52,8 @@ export class PlanService {
     private readonly userCardsListerRepository: UserCardsListerRepository,
     private readonly userInfoViewerRepository: UserInfoViewerRepository,
     private readonly upgradeDiscountCalculatorRepository: UpgradeDiscountCalculatorRepository,
-    private readonly orderPaymentCreatorRepository: OrderPaymentCreatorRepository
+    private readonly orderPaymentCreatorRepository: OrderPaymentCreatorRepository,
+    private readonly paymentService: PaymentService
   ) {}
 
   listPlans = async (
@@ -148,5 +150,9 @@ export class PlanService {
       accountId,
       input
     );
+  };
+
+  getOrCreateCustomer = async (accountId: string) => {
+    return this.paymentService.getOrCreateCustomer(accountId);
   };
 }

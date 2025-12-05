@@ -6,6 +6,7 @@ import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { CreateOrderPaymentRequest } from '@core/schema/plan/createOrderPayment/request.schema';
 import { CreateOrderPaymentResponse } from '@core/schema/plan/createOrderPayment/response.schema';
 import { UpgradeDiscountCalculatorRepository } from './UpgradeDiscountCalculator.repository';
+import { PaymentService } from '@core/services/payment.service';
 import { randomUUID } from 'crypto';
 
 @injectable()
@@ -13,13 +14,17 @@ export class OrderPaymentCreatorRepository {
   constructor(
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>,
     @inject(UpgradeDiscountCalculatorRepository)
-    private readonly upgradeDiscountCalculator: UpgradeDiscountCalculatorRepository
+    private readonly upgradeDiscountCalculator: UpgradeDiscountCalculatorRepository,
+    @inject(PaymentService)
+    private readonly paymentService: PaymentService
   ) {}
 
   createOrderPayment = async (
     accountId: string,
     input: CreateOrderPaymentRequest
   ): Promise<CreateOrderPaymentResponse> => {
+    const customer = await this.paymentService.getOrCreateCustomer(accountId);
+
     const newPlan = await this.getPlan(input.plan_id);
     if (!newPlan) {
       throw new Error('Plano não encontrado');

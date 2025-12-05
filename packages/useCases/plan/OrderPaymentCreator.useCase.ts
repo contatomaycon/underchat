@@ -18,9 +18,12 @@ export class OrderPaymentCreatorUseCase {
 
     const result = await this.planService.createOrderPayment(accountId, input);
 
+    const customer = await this.planService.getOrCreateCustomer(accountId);
+
     console.log('=== RESULTADO DO PAGAMENTO ===');
     console.log('Result:', JSON.stringify(result, null, 2));
     console.log('VALOR FINAL A SER PAGO:', result.total_amount);
+    console.log('Customer:', JSON.stringify(customer, null, 2));
     console.log('===============================');
 
     return result;
