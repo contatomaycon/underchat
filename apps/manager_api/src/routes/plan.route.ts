@@ -24,6 +24,7 @@ import { listPlanSalesSchema } from '@core/schema/plan/listPlanSales';
 import { listPlanWithItemsSchema } from '@core/schema/plan/listPlanWithItems';
 import { viewCurrentPlanSchema } from '@core/schema/plan/viewCurrentPlan';
 import { calculateUpgradeDiscountSchema } from '@core/schema/plan/calculateUpgradeDiscount';
+import { createOrderPaymentSchema } from '@core/schema/plan/createOrderPayment';
 
 export default function planRoutes(server: FastifyInstance) {
   const planController = container.resolve(PlanController);
@@ -166,6 +167,15 @@ export default function planRoutes(server: FastifyInstance) {
   server.get('/plan/upgrade-discount', {
     schema: calculateUpgradeDiscountSchema,
     handler: planController.calculateUpgradeDiscount,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.post('/plan/order/payment', {
+    schema: createOrderPaymentSchema,
+    handler: planController.createOrderPayment,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),

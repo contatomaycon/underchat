@@ -14,7 +14,8 @@ export class UpgradeDiscountCalculatorRepository {
 
   calculateUpgradeDiscount = async (
     accountId: string,
-    newPlanId: string
+    newPlanId: string,
+    selectedBillingPeriod?: 'monthly' | 'annual'
   ): Promise<CalculateUpgradeDiscountResponse> => {
     const activePlanAccount = await this.getActivePlanAccount(accountId);
 
@@ -45,12 +46,14 @@ export class UpgradeDiscountCalculatorRepository {
       return this.buildResponseWithoutDiscount(currentPlanValue, false);
     }
 
+    const billingPeriodForNewPlan = selectedBillingPeriod || billingPeriodName;
+
     const newPlanPrice = this.getNewPlanPrice(
       {
         price: Number(newPlan.price),
         annual_discount: newPlan.annual_discount,
       },
-      billingPeriodName
+      billingPeriodForNewPlan
     );
 
     const currentPlanMonthlyPrice = Number(activePlanAccount.ppl.price);

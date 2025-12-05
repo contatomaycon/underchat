@@ -22,6 +22,8 @@ import { ListPlanProductWithPriceResponse } from '@core/schema/plan/listPlanProd
 import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.schema';
 import { ViewUserInfoResponse } from '@core/schema/plan/viewUserInfo/response.schema';
 import { CalculateUpgradeDiscountResponse } from '@core/schema/plan/calculateUpgradeDiscount/response.schema';
+import { CreateOrderPaymentRequest } from '@core/schema/plan/createOrderPayment/request.schema';
+import { CreateOrderPaymentResponse } from '@core/schema/plan/createOrderPayment/response.schema';
 import {
   ListPlanSalesFinalResponse,
   ListPlanSalesResponse,
@@ -694,6 +696,50 @@ export const usePlanStore = defineStore('plan', {
         let errorMessage = this.i18n.global.t(
           'upgrade_discount_calculation_error'
         );
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async createOrderPayment(
+      input: CreateOrderPaymentRequest
+    ): Promise<CreateOrderPaymentResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<
+          IApiResponse<CreateOrderPaymentResponse>
+        >('/plan/order/payment', input);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('order_payment_creation_failed');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('order_payment_created_successfully'),
+          EColor.success
+        );
+
+        return data.data || null;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('order_payment_creation_failed');
 
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;

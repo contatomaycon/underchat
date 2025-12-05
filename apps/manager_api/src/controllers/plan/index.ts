@@ -15,6 +15,7 @@ import { listPlanSales } from './methods/listPlanSales';
 import { listPlanWithItems } from './methods/listPlanWithItems';
 import { viewCurrentPlan } from './methods/viewCurrentPlan';
 import { calculateUpgradeDiscount } from './methods/calculateUpgradeDiscount';
+import { createOrderPayment } from './methods/createOrderPayment';
 
 @injectable()
 class PlanController {
@@ -34,6 +35,7 @@ class PlanController {
   public listPlanWithItems = listPlanWithItems;
   public viewCurrentPlan = viewCurrentPlan;
   public calculateUpgradeDiscount = calculateUpgradeDiscount;
+  public createOrderPayment = createOrderPayment;
 }
 
 export default PlanController;

@@ -24,6 +24,7 @@ import { ListPlanProductWithPriceResponse } from '@core/schema/plan/listPlanProd
 import { ViewUserInfoResponse } from '@core/schema/plan/viewUserInfo/response.schema';
 import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.schema';
 import { CalculateUpgradeDiscountResponse } from '@core/schema/plan/calculateUpgradeDiscount/response.schema';
+import { CreateOrderPaymentRequest } from '@core/schema/plan/createOrderPayment/request.schema';
 import creditCardType from 'credit-card-type';
 
 definePage({
@@ -466,6 +467,58 @@ const isTotalZero = computed(() => {
 
 const goBack = () => {
   router.push({ name: 'plans' });
+};
+
+const processPayment = async () => {
+  if (!selectedPlanForCheckout.value || !selectedPaymentMethod.value) return;
+
+  const addons =
+    selectedAddons.value.length > 0
+      ? selectedAddons.value.map((addon) => ({
+          plan_product_id: addon.plan_product_id,
+          quantity: addon.quantity,
+        }))
+      : undefined;
+
+  const paymentData: CreateOrderPaymentRequest = {
+    plan_id: selectedPlanForCheckout.value.plan_id,
+    billing_period: billingPeriod.value,
+    addons: addons,
+    payment_method: selectedPaymentMethod.value,
+    credit_card_id:
+      selectedPaymentMethod.value === 'credit_card' && selectedCardId.value
+        ? selectedCardId.value
+        : undefined,
+    new_card:
+      selectedPaymentMethod.value === 'credit_card' &&
+      showAddCardModal.value &&
+      newCard.value.number
+        ? {
+            number: newCard.value.number.replace(/\s/g, ''),
+            holder_name: newCard.value.holderName,
+            expiry_month: newCard.value.expiryMonth,
+            expiry_year: newCard.value.expiryYear,
+            cvv: newCard.value.cvv,
+          }
+        : undefined,
+    recurring_payment:
+      selectedPaymentMethod.value === 'credit_card'
+        ? recurringPayment.value
+        : undefined,
+    installments:
+      selectedPaymentMethod.value === 'credit_card' &&
+      billingPeriod.value === 'annual'
+        ? installments.value
+        : undefined,
+  };
+
+  const result = await planStore.createOrderPayment(paymentData);
+
+  if (result) {
+    // Pagamento processado com sucesso
+    // Aqui você pode redirecionar ou mostrar uma mensagem de sucesso
+    console.log('Pagamento processado:', result);
+  }
 };
 
 const detectCardBrand = (cardNumber: string): string | null => {
@@ -2386,6 +2439,23 @@ onMounted(async () => {
                             </div>
                           </div>
 
+                          <div
+                            v-if="
+                              upgradeDiscount?.is_upgrade &&
+                              upgradeDiscount.discount > 0
+                            "
+                            class="d-flex justify-space-between align-center mb-2"
+                          >
+                            <span class="text-body-1 text-success">
+                              {{ $t('upgrade_discount') }}:
+                            </span>
+                            <span
+                              class="text-body-1 font-weight-medium text-success"
+                            >
+                              -{{ formatCurrency(upgradeDiscount.discount) }}
+                            </span>
+                          </div>
+
                           <VDivider class="my-4" />
 
                           <div
@@ -2452,6 +2522,7 @@ onMounted(async () => {
                     isUpgradeBlocked ||
                     isTotalZero
                   "
+                  @click="processPayment"
                 >
                   {{ $t('finalize_purchase') }}
                 </VBtn>

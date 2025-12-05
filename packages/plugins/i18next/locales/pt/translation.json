@@ -214,6 +214,7 @@
   "plan_name_required": "O nome do plano é obrigatório!",
   "plan_id_required": "O ID do plano é obrigatório",
   "upgrade_discount_calculated_successfully": "Desconto de upgrade calculado com sucesso",
+  "order_payment_created_successfully": "Pedido de pagamento criado com sucesso",
   "plan_price_invalid": "O preço do plano deve ser maior ou igual a zero!",
   "plan_price_old_invalid": "O preço antigo do plano deve ser maior ou igual a zero!",
   "plan_creation_failed": "Falha ao criar o plano!",
