@@ -29,6 +29,7 @@ const loading = ref(false);
 const billingPeriod = ref<'monthly' | 'annual'>('monthly');
 const selectedPlanId = ref<string | null>(null);
 const currentPlanId = ref<string | null>(null);
+const currentPlan = ref<ListPlanWithItemsResponse | null>(null);
 
 const getCurrencyConfig = () => {
   const localeMap: Record<string, { locale: string; currency: string }> = {
@@ -73,14 +74,22 @@ const getPrice = (plan: ListPlanWithItemsResponse): number => {
 
 const loadPlans = async () => {
   loading.value = true;
-  const [result, currentPlan] = await Promise.all([
+  const [result, currentPlanIdValue] = await Promise.all([
     planStore.listPlanWithItems(),
     accountStore.getCurrentPlan(),
   ]);
 
   if (result) {
     plans.value = result;
-    currentPlanId.value = currentPlan;
+    currentPlanId.value = currentPlanIdValue;
+
+    // Encontrar o plano atual na lista
+    if (currentPlanIdValue) {
+      currentPlan.value =
+        result.find((p) => p.plan_id === currentPlanIdValue) || null;
+    } else {
+      currentPlan.value = null;
+    }
 
     if (result.length > 1) {
       selectedPlanId.value = result[1].plan_id;
@@ -94,11 +103,31 @@ const selectPlan = (planId: string) => {
 };
 
 const isPlanSelected = (planId: string): boolean => {
-  return selectedPlanId.value === planId;
+  if (selectedPlanId.value !== planId) return false;
+  const plan = plans.value.find((p) => p.plan_id === planId);
+  if (!plan) return false;
+  return !isPlanDisabled(plan);
 };
 
 const isCurrentPlan = (planId: string): boolean => {
   return currentPlanId.value === planId;
+};
+
+const getCurrentPlanPrice = (): number | null => {
+  if (!currentPlan.value) return null;
+  return getPrice(currentPlan.value);
+};
+
+const isDowngrade = (plan: ListPlanWithItemsResponse): boolean => {
+  const currentPrice = getCurrentPlanPrice();
+  if (currentPrice === null) return false;
+  
+  const planPrice = getPrice(plan);
+  return planPrice < currentPrice;
+};
+
+const isPlanDisabled = (plan: ListPlanWithItemsResponse): boolean => {
+  return isCurrentPlan(plan.plan_id) || isDowngrade(plan);
 };
 
 const getButtonText = (planId: string): string => {
@@ -225,7 +254,10 @@ onMounted(() => {
               :class="[
                 'plan-card',
                 isCurrentPlan(plan.plan_id) ? 'plan-card-current' : '',
-                isPlanSelected(plan.plan_id) ? 'plan-card-popular' : '',
+                isPlanSelected(plan.plan_id) && !isDowngrade(plan)
+                  ? 'plan-card-popular'
+                  : '',
+                isDowngrade(plan) ? 'plan-card-disabled' : '',
               ]"
               :variant="
                 isCurrentPlan(plan.plan_id)
@@ -241,10 +273,20 @@ onMounted(() => {
                     ? 4
                     : 0
               "
-              @click="selectPlan(plan.plan_id)"
-              style="cursor: pointer"
+              @click="!isPlanDisabled(plan) && selectPlan(plan.plan_id)"
+              :style="
+                isPlanDisabled(plan) ? 'cursor: not-allowed' : 'cursor: pointer'
+              "
             >
               <VCardText class="position-relative">
+                <div
+                  v-if="isDowngrade(plan)"
+                  class="plan-disabled-overlay"
+                >
+                  <VChip color="error" size="small" variant="tonal">
+                    {{ $t('unavailable') }}
+                  </VChip>
+                </div>
                 <div class="text-center mb-4">
                   <VAvatar
                     :color="
@@ -253,10 +295,16 @@ onMounted(() => {
                     size="80"
                     variant="tonal"
                     class="mb-4"
+                    :class="{ 'opacity-50': isDowngrade(plan) }"
                   >
                     <VIcon :icon="plan.icon || 'tabler-rocket'" size="40" />
                   </VAvatar>
-                  <h3 class="text-h5 mb-2">{{ plan.name }}</h3>
+                  <h3
+                    class="text-h5 mb-2"
+                    :class="{ 'text-disabled': isDowngrade(plan) }"
+                  >
+                    {{ plan.name }}
+                  </h3>
                   <VChip
                     v-if="
                       billingPeriod === 'annual' &&
@@ -369,10 +417,14 @@ onMounted(() => {
                         ? 'flat'
                         : 'outlined'
                   "
-                  :disabled="isCurrentPlan(plan.plan_id)"
-                  @click.stop="selectPlan(plan.plan_id)"
+                  :disabled="isPlanDisabled(plan)"
+                  @click.stop="!isPlanDisabled(plan) && selectPlan(plan.plan_id)"
                 >
-                  {{ getButtonText(plan.plan_id) }}
+                  {{
+                    isDowngrade(plan)
+                      ? $t('unavailable')
+                      : getButtonText(plan.plan_id)
+                  }}
                 </VBtn>
               </VCardText>
             </VCard>
@@ -433,5 +485,18 @@ onMounted(() => {
 .plan-card-current {
   border: 2px solid rgb(var(--v-theme-success));
   position: relative;
+}
+
+.plan-card-disabled {
+  opacity: 0.6;
+  position: relative;
+}
+
+.plan-disabled-overlay {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  pointer-events: none;
 }
 </style>

@@ -1443,5 +1443,7 @@
     "notifications_update_error": "Ocurrió un error al actualizar las notificaciones. Por favor, inténtalo de nuevo.",
     "notifications_update_success": "¡Notificaciones actualizadas con éxito!",
     "deactivated": "Desactivado",
-    "no_workers_available": "No hay canales disponibles"
+    "no_workers_available": "No hay canales disponibles",
+    "unavailable": "No disponible",
+    "downgrade_not_allowed": "Downgrade no permitido"
 }
