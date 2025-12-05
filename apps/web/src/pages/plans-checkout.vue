@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { usePlanStore } from '@/@webcore/stores/plan';
+import { useAccountStore } from '@/@webcore/stores/account';
 import { useUsersStore } from '@/@webcore/stores/user';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { getUser } from '@/@webcore/localStorage/user';
@@ -27,6 +28,7 @@ const { t, locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const planStore = usePlanStore();
+const accountStore = useAccountStore();
 const usersStore = useUsersStore();
 useSnackbarCleanup(planStore);
 
@@ -35,6 +37,8 @@ const loading = ref(false);
 const billingPeriod = ref<'monthly' | 'annual'>('monthly');
 const plans = ref<ListPlanWithItemsResponse[]>([]);
 const selectedPlanForCheckout = ref<ListPlanWithItemsResponse | null>(null);
+const currentPlanId = ref<string | null>(null);
+const currentPlan = ref<ListPlanWithItemsResponse | null>(null);
 const availableProducts = ref<ListPlanProductWithPriceResponse[]>([]);
 const selectedAddons = ref<
   Array<{
@@ -96,12 +100,22 @@ const loadCheckoutData = async () => {
 
   billingPeriod.value = billing;
 
-  // Carregar todos os planos para step 1
-  const plansList = await planStore.listPlanWithItems();
+  const [plansList, currentPlanIdValue] = await Promise.all([
+    planStore.listPlanWithItems(),
+    accountStore.getCurrentPlan(),
+  ]);
+
   if (plansList) {
     plans.value = plansList;
+    currentPlanId.value = currentPlanIdValue;
 
-    // Se tiver plan_id na query, selecionar e ir para step 2
+    if (currentPlanIdValue) {
+      currentPlan.value =
+        plansList.find((p) => p.plan_id === currentPlanIdValue) || null;
+    } else {
+      currentPlan.value = null;
+    }
+
     if (planId) {
       const plan = plansList.find((p) => p.plan_id === planId);
       if (plan) {
@@ -111,7 +125,6 @@ const loadCheckoutData = async () => {
     }
   }
 
-  // Carregar produtos disponíveis
   loadingProducts.value = true;
   const products = await planStore.listPlanProductWithPrice();
   if (products) {
@@ -119,7 +132,6 @@ const loadCheckoutData = async () => {
   }
   loadingProducts.value = false;
 
-  // Carregar dados do usuário
   await loadUserData();
 
   loading.value = false;
@@ -137,7 +149,85 @@ const loadUserData = async () => {
   loadingUser.value = false;
 };
 
+const isCurrentPlan = (planId: string): boolean => {
+  return currentPlanId.value === planId;
+};
+
+const getCurrentPlanPrice = (): number | null => {
+  if (!currentPlan.value) return null;
+  return getPrice(currentPlan.value);
+};
+
+const isDowngrade = (plan: ListPlanWithItemsResponse): boolean => {
+  const currentPrice = getCurrentPlanPrice();
+  if (currentPrice === null) return false;
+
+  const planPrice = getPrice(plan);
+  return planPrice < currentPrice;
+};
+
+const isPlanDisabled = (plan: ListPlanWithItemsResponse): boolean => {
+  return isCurrentPlan(plan.plan_id) || isDowngrade(plan);
+};
+
+const getButtonText = (planId: string): string => {
+  if (isCurrentPlan(planId)) {
+    return t('your_current_plan');
+  }
+  return t('upgrade');
+};
+
+const formatItemName = (
+  name: string | null | undefined,
+  quantity: number
+): string => {
+  if (!name) return '';
+
+  const pluralToSingular: Record<string, string> = {
+    [t('product_channels')]: t('product_channel'),
+    [t('product_roles')]: t('product_role'),
+    [t('product_users')]: t('product_user'),
+  };
+
+  if (quantity === 1) {
+    return pluralToSingular[name] || name;
+  }
+
+  return name;
+};
+
+const getColClasses = computed(() => {
+  const count = plans.value.length;
+
+  if (count === 1) {
+    return { cols: '12', sm: '12', md: '4', offset: '4' };
+  }
+
+  if (count === 2) {
+    return { cols: '12', sm: '6', md: '6', offset: '' };
+  }
+
+  if (count === 3) {
+    return { cols: '12', sm: '6', md: '4', offset: '' };
+  }
+
+  if (count === 4) {
+    return { cols: '12', sm: '6', md: '3', offset: '' };
+  }
+
+  if (count % 2 === 0) {
+    return { cols: '12', sm: '6', md: '6', offset: '' };
+  }
+
+  if (count === 5) {
+    return { cols: '12', sm: '6', md: '4', offset: '' };
+  }
+
+  return { cols: '12', sm: '6', md: '4', offset: '' };
+});
+
 const selectPlan = (plan: ListPlanWithItemsResponse) => {
+  if (isPlanDisabled(plan)) return;
   selectedPlanForCheckout.value = plan;
   currentStep.value = 2;
 };
@@ -246,56 +336,278 @@ onMounted(() => {
               <!-- Step 1: Seleção de Planos -->
               <VStepperWindowItem :value="1">
                 <div class="mb-6">
-                  <h4 class="text-h6 mb-4">{{ $t('select_plan') }}</h4>
-                  <VRow>
+                  <div class="d-flex flex-column align-center mb-8">
+                    <h2 class="text-h4 mb-2">{{ $t('pricing_plans') }}</h2>
+                    <p class="text-body-1 text-medium-emphasis text-center">
+                      {{ $t('pricing_plans_subtitle') }}
+                    </p>
+
+                    <div class="d-flex align-center gap-4 mt-6">
+                      <span
+                        :class="[
+                          'text-body-1',
+                          billingPeriod === 'monthly'
+                            ? 'text-primary'
+                            : 'text-disabled',
+                        ]"
+                      >
+                        {{ $t('monthly') }}
+                      </span>
+                      <VSwitch
+                        v-model="billingPeriod"
+                        true-value="annual"
+                        false-value="monthly"
+                        color="primary"
+                        hide-details
+                      />
+                      <span
+                        :class="[
+                          'text-body-1',
+                          billingPeriod === 'annual'
+                            ? 'text-primary'
+                            : 'text-disabled',
+                        ]"
+                      >
+                        {{ $t('annual') }}
+                      </span>
+                      <span
+                        v-if="billingPeriod === 'annual'"
+                        class="text-body-2 text-medium-emphasis ms-2"
+                      >
+                        {{ $t('save_with_annual_plans') }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <VRow
+                    v-if="plans.length > 0"
+                    class="plans-row"
+                    justify="center"
+                  >
                     <VCol
-                      v-for="plan in plans"
+                      v-for="(plan, index) in plans"
                       :key="plan.plan_id"
-                      cols="12"
-                      md="4"
+                      :cols="getColClasses.cols"
+                      :sm="getColClasses.sm"
+                      :md="getColClasses.md"
+                      :offset-md="getColClasses.offset || undefined"
+                      class="plan-col"
                     >
                       <VCard
-                        variant="outlined"
-                        class="plan-card-select"
-                        :class="{
-                          'plan-card-selected':
-                            selectedPlanForCheckout?.plan_id === plan.plan_id,
-                        }"
-                        @click="selectPlan(plan)"
+                        :class="[
+                          'plan-card',
+                          isCurrentPlan(plan.plan_id)
+                            ? 'plan-card-current'
+                            : '',
+                          selectedPlanForCheckout?.plan_id === plan.plan_id &&
+                          !isPlanDisabled(plan)
+                            ? 'plan-card-popular'
+                            : '',
+                          isDowngrade(plan) ? 'plan-card-disabled' : '',
+                        ]"
+                        :variant="
+                          isCurrentPlan(plan.plan_id)
+                            ? 'elevated'
+                            : selectedPlanForCheckout?.plan_id ===
+                                  plan.plan_id && !isPlanDisabled(plan)
+                              ? 'elevated'
+                              : 'outlined'
+                        "
+                        :elevation="
+                          isCurrentPlan(plan.plan_id)
+                            ? 4
+                            : selectedPlanForCheckout?.plan_id ===
+                                  plan.plan_id && !isPlanDisabled(plan)
+                              ? 4
+                              : 0
+                        "
+                        @click="!isPlanDisabled(plan) && selectPlan(plan)"
+                        :style="
+                          isPlanDisabled(plan)
+                            ? 'cursor: not-allowed'
+                            : 'cursor: pointer'
+                        "
                       >
-                        <VCardText>
+                        <VCardText class="position-relative">
+                          <div
+                            v-if="isDowngrade(plan)"
+                            class="plan-disabled-overlay"
+                          >
+                            <VChip color="error" size="small" variant="tonal">
+                              {{ $t('unavailable') }}
+                            </VChip>
+                          </div>
                           <div class="text-center mb-4">
                             <VAvatar
-                              color="primary"
-                              size="60"
+                              :color="
+                                index === 0
+                                  ? 'pink'
+                                  : index === 1
+                                    ? 'blue'
+                                    : 'primary'
+                              "
+                              size="80"
                               variant="tonal"
-                              class="mb-3"
+                              class="mb-4"
+                              :class="{ 'opacity-50': isDowngrade(plan) }"
                             >
                               <VIcon
                                 :icon="plan.icon || 'tabler-rocket'"
-                                size="30"
+                                size="40"
                               />
                             </VAvatar>
-                            <h5 class="text-h6 mb-2">{{ plan.name }}</h5>
+                            <h3
+                              class="text-h5 mb-2"
+                              :class="{ 'text-disabled': isDowngrade(plan) }"
+                            >
+                              {{ plan.name }}
+                            </h3>
+                            <VChip
+                              v-if="
+                                billingPeriod === 'annual' &&
+                                plan.annual_discount &&
+                                Number.parseFloat(plan.annual_discount) > 0
+                              "
+                              color="primary"
+                              size="small"
+                              variant="tonal"
+                              class="mb-2"
+                            >
+                              {{ $t('save_up_to') }}
+                              {{ Number.parseFloat(plan.annual_discount) }}%
+                            </VChip>
                             <p
                               v-if="plan.description"
-                              class="text-body-2 text-medium-emphasis mb-3"
+                              class="text-body-2 text-medium-emphasis mb-4"
                             >
                               {{ plan.description }}
                             </p>
-                            <div class="text-h5 font-weight-bold text-primary">
-                              {{ formatCurrency(getPrice(plan)) }}
+                          </div>
+
+                          <div class="text-center mb-6">
+                            <div
+                              class="d-flex align-center justify-center gap-2 mb-2"
+                            >
+                              <span
+                                class="text-h3 font-weight-bold text-primary"
+                              >
+                                {{ formatCurrency(getPrice(plan)) }}
+                              </span>
+                              <span class="text-body-2 text-medium-emphasis">
+                                /{{
+                                  billingPeriod === 'annual'
+                                    ? $t('year')
+                                    : $t('month')
+                                }}
+                              </span>
                             </div>
-                            <div class="text-body-2 text-medium-emphasis">
-                              /{{
-                                billingPeriod === 'annual'
-                                  ? $t('year')
-                                  : $t('month')
-                              }}
+                            <div
+                              v-if="
+                                billingPeriod === 'annual' &&
+                                plan.annual_discount &&
+                                Number.parseFloat(plan.annual_discount) > 0
+                              "
+                              class="text-body-2 text-medium-emphasis"
+                            >
+                              <s>
+                                {{
+                                  formatCurrency(
+                                    getAnnualPriceWithoutDiscount(plan)
+                                  )
+                                }}/{{ $t('year') }}
+                              </s>
+                            </div>
+                            <div
+                              v-if="
+                                billingPeriod === 'monthly' && plan.price === 0
+                              "
+                              class="text-body-2 text-medium-emphasis"
+                            >
+                              {{ $t('free') }}
+                            </div>
+                            <div
+                              v-if="
+                                billingPeriod === 'monthly' &&
+                                plan.price_old > plan.price
+                              "
+                              class="text-body-2"
+                            >
+                              <s class="text-medium-emphasis">
+                                {{ formatCurrency(plan.price_old) }}
+                              </s>
                             </div>
                           </div>
+
+                          <VDivider class="mb-4" />
+
+                          <div class="d-flex flex-column gap-3 mb-6">
+                            <div
+                              v-for="item in plan.plan_items"
+                              :key="item.plan_item_id"
+                              class="d-flex align-center gap-2"
+                            >
+                              <VIcon
+                                icon="tabler-circle-check"
+                                size="20"
+                                color="success"
+                              />
+                              <span class="text-body-2">
+                                {{ item.quantity }}x
+                                {{
+                                  formatItemName(
+                                    item.plan_product?.name,
+                                    item.quantity
+                                  ) || $t('plan_item')
+                                }}
+                              </span>
+                            </div>
+                            <div
+                              v-if="plan.plan_items.length === 0"
+                              class="text-body-2 text-medium-emphasis"
+                            >
+                              {{ $t('no_items_available') }}
+                            </div>
+                          </div>
+
+                          <VBtn
+                            block
+                            :color="
+                              isCurrentPlan(plan.plan_id)
+                                ? 'success'
+                                : selectedPlanForCheckout?.plan_id ===
+                                    plan.plan_id
+                                  ? 'primary'
+                                  : 'default'
+                            "
+                            :variant="
+                              isCurrentPlan(plan.plan_id)
+                                ? 'flat'
+                                : selectedPlanForCheckout?.plan_id ===
+                                    plan.plan_id
+                                  ? 'flat'
+                                  : 'outlined'
+                            "
+                            :disabled="isPlanDisabled(plan)"
+                            @click.stop="
+                              !isPlanDisabled(plan) && selectPlan(plan)
+                            "
+                          >
+                            {{
+                              isDowngrade(plan)
+                                ? $t('unavailable')
+                                : getButtonText(plan.plan_id)
+                            }}
+                          </VBtn>
                         </VCardText>
                       </VCard>
+                    </VCol>
+                  </VRow>
+
+                  <VRow v-else>
+                    <VCol cols="12" class="text-center">
+                      <p class="text-body-1 text-medium-emphasis">
+                        {{ $t('no_plans_available') }}
+                      </p>
                     </VCol>
                   </VRow>
                 </div>
@@ -693,18 +1005,50 @@ onMounted(() => {
 </template>
 
 <style lang="scss" scoped>
-.plan-card-select {
-  cursor: pointer;
-  transition: all 0.2s ease-in-out;
+.plans-row {
+  margin-top: 16px;
+  justify-content: center;
+}
+
+.plan-col {
+  margin-bottom: 24px;
+  display: flex;
+}
+
+.plan-card {
+  height: 100%;
+  transition:
+    transform 0.2s ease-in-out,
+    box-shadow 0.2s ease-in-out;
+  overflow: visible;
+  position: relative;
 
   &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    transform: translateY(-4px);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
   }
 }
 
-.plan-card-selected {
+.plan-card-popular {
   border: 2px solid rgb(var(--v-theme-primary));
-  background-color: rgba(var(--v-theme-primary), 0.05);
+  position: relative;
+}
+
+.plan-card-current {
+  border: 2px solid rgb(var(--v-theme-success));
+  position: relative;
+}
+
+.plan-card-disabled {
+  opacity: 0.6;
+  position: relative;
+}
+
+.plan-disabled-overlay {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  pointer-events: none;
 }
 </style>
