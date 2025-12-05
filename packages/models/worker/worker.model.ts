@@ -6,6 +6,7 @@ import {
   server,
   workerPhoneConnection,
   workerConfig,
+  notifications,
 } from '@core/models';
 import { relations } from 'drizzle-orm';
 
@@ -60,4 +61,5 @@ export const workerRelations = relations(worker, ({ one, many }) => ({
   }),
   wwp: many(workerPhoneConnection),
   wwc: many(workerConfig),
+  wwn: many(notifications),
 }));
