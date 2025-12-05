@@ -154,7 +154,8 @@ const getAddonQuantity = (productId: string): number => {
 const getAddonsTotal = computed(() => {
   return selectedAddons.value.reduce((total, addon) => {
     const addonPrice = addon.price || 0;
-    return total + addonPrice * addon.quantity;
+    const multiplier = billingPeriod.value === 'annual' ? 12 : 1;
+    return total + addonPrice * addon.quantity * multiplier;
   }, 0);
 });
 
