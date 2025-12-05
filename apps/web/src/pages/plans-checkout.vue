@@ -73,6 +73,8 @@ const selectedPaymentMethod = ref<'boleto' | 'credit_card' | 'pix' | null>(
 );
 const selectedCardId = ref<string | null>(null);
 const showAddCardModal = ref(false);
+const installments = ref<number>(1);
+const recurringPayment = ref<boolean>(false);
 const newCard = ref({
   number: '',
   holderName: '',
@@ -1694,6 +1696,49 @@ onMounted(async () => {
                         </VCardText>
                       </VCard>
 
+                      <!-- Opções de Parcelamento e Recorrência -->
+                      <VCard variant="outlined" class="mb-4">
+                        <VCardText>
+                          <h5 class="text-h6 mb-4">
+                            {{ $t('payment_options') }}
+                          </h5>
+
+                          <!-- Parcelamento (apenas para plano anual) -->
+                          <div v-if="billingPeriod === 'annual'" class="mb-4">
+                            <VLabel class="mb-2">
+                              {{ $t('installments') }}
+                            </VLabel>
+                            <VSelect
+                              v-model="installments"
+                              :items="
+                                Array.from({ length: 12 }, (_, i) => ({
+                                  title: `${i + 1}x`,
+                                  value: i + 1,
+                                }))
+                              "
+                              :label="$t('select_installments')"
+                              variant="outlined"
+                              density="compact"
+                              item-title="title"
+                              item-value="value"
+                            />
+                          </div>
+
+                          <!-- Recorrência -->
+                          <div>
+                            <VCheckbox
+                              v-model="recurringPayment"
+                              :label="$t('recurring_payment')"
+                              color="primary"
+                              hide-details
+                            />
+                            <p class="text-body-2 text-medium-emphasis mt-2">
+                              {{ $t('recurring_payment_description') }}
+                            </p>
+                          </div>
+                        </VCardText>
+                      </VCard>
+
                       <VBtn
                         color="primary"
                         variant="outlined"
@@ -1816,6 +1861,59 @@ onMounted(async () => {
                             <span class="text-h6 font-weight-bold text-primary">
                               {{ formatCurrency(getCheckoutTotal) }}
                             </span>
+                          </div>
+                        </VCardText>
+                      </VCard>
+                    </VCol>
+                  </VRow>
+
+                  <!-- Opções de Parcelamento e Recorrência (quando formulário de adicionar cartão está aberto) -->
+                  <VRow
+                    v-if="
+                      selectedPaymentMethod === 'credit_card' &&
+                      showAddCardModal
+                    "
+                    class="mt-6"
+                  >
+                    <VCol cols="12" md="6">
+                      <VCard variant="outlined">
+                        <VCardText>
+                          <h5 class="text-h6 mb-4">
+                            {{ $t('payment_options') }}
+                          </h5>
+
+                          <!-- Parcelamento (apenas para plano anual) -->
+                          <div v-if="billingPeriod === 'annual'" class="mb-4">
+                            <VLabel class="mb-2">
+                              {{ $t('installments') }}
+                            </VLabel>
+                            <VSelect
+                              v-model="installments"
+                              :items="
+                                Array.from({ length: 12 }, (_, i) => ({
+                                  title: `${i + 1}x`,
+                                  value: i + 1,
+                                }))
+                              "
+                              :label="$t('select_installments')"
+                              variant="outlined"
+                              density="compact"
+                              item-title="title"
+                              item-value="value"
+                            />
+                          </div>
+
+                          <!-- Recorrência -->
+                          <div>
+                            <VCheckbox
+                              v-model="recurringPayment"
+                              :label="$t('recurring_payment')"
+                              color="primary"
+                              hide-details
+                            />
+                            <p class="text-body-2 text-medium-emphasis mt-2">
+                              {{ $t('recurring_payment_description') }}
+                            </p>
                           </div>
                         </VCardText>
                       </VCard>
