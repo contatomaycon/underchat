@@ -109,70 +109,72 @@ export class PlanReleaseService {
     return nextPaymentDate > now;
   };
 
-  private readonly updatePaymentStatusOnly = async (
-    accountPaymentId: string,
-    paymentStatusId: string,
-    paymentDate: string | null,
-    pixTransaction: string | null,
-    accountId: string,
-    planId: string,
-    recurringPayment: boolean,
-    billingPeriodId: string | null,
-    value: string,
-    nextPaymentDate: string
-  ): Promise<void> => {
+  private readonly updatePaymentStatusOnly = async (data: {
+    accountPaymentId: string;
+    paymentStatusId: string;
+    paymentDate: string | null;
+    pixTransaction: string | null;
+    accountId: string;
+    planId: string;
+    recurringPayment: boolean;
+    billingPeriodId: string | null;
+    value: string;
+    nextPaymentDate: string;
+  }): Promise<void> => {
     await this.planReleaseRepository.processPaymentAndReleasePlan({
-      accountPaymentId,
-      paymentStatusId,
-      paymentDate,
-      pixTransaction,
-      accountId,
-      planId,
-      accountPaymentIdForPlan: accountPaymentId,
-      recurringPayment,
-      billingPeriodId,
-      lastPaymentDate: paymentDate || new Date().toISOString(),
-      nextPaymentDate,
-      value,
+      accountPaymentId: data.accountPaymentId,
+      paymentStatusId: data.paymentStatusId,
+      paymentDate: data.paymentDate,
+      pixTransaction: data.pixTransaction,
+      accountId: data.accountId,
+      planId: data.planId,
+      accountPaymentIdForPlan: data.accountPaymentId,
+      recurringPayment: data.recurringPayment,
+      billingPeriodId: data.billingPeriodId,
+      lastPaymentDate: data.paymentDate || new Date().toISOString(),
+      nextPaymentDate: data.nextPaymentDate,
+      value: data.value,
       shouldReleasePlan: false,
     });
   };
 
-  private readonly releasePlanForPayment = async (
-    accountPaymentId: string,
-    paymentStatusId: string,
-    paymentDate: string,
-    pixTransaction: string | null,
-    accountId: string,
-    planId: string,
-    recurringPayment: boolean,
-    billingPeriodId: string | null,
-    value: string
-  ): Promise<void> => {
+  private readonly releasePlanForPayment = async (data: {
+    accountPaymentId: string;
+    paymentStatusId: string;
+    paymentDate: string;
+    pixTransaction: string | null;
+    accountId: string;
+    planId: string;
+    recurringPayment: boolean;
+    billingPeriodId: string | null;
+    value: string;
+  }): Promise<void> => {
     const currentPlanAccount =
-      await this.planReleaseRepository.findPlanAccountByAccountId(accountId);
+      await this.planReleaseRepository.findPlanAccountByAccountId(
+        data.accountId
+      );
 
     const nextPaymentDate = this.calculateNextPaymentDate(
-      paymentDate,
-      billingPeriodId,
+      data.paymentDate,
+      data.billingPeriodId,
       currentPlanAccount?.plan_id || null,
-      planId,
+      data.planId,
       currentPlanAccount?.next_payment_date || null
     );
 
     await this.planReleaseRepository.processPaymentAndReleasePlan({
-      accountPaymentId,
-      paymentStatusId,
-      paymentDate,
-      pixTransaction,
-      accountId,
-      planId,
-      accountPaymentIdForPlan: accountPaymentId,
-      recurringPayment,
-      billingPeriodId,
-      lastPaymentDate: paymentDate,
+      accountPaymentId: data.accountPaymentId,
+      paymentStatusId: data.paymentStatusId,
+      paymentDate: data.paymentDate,
+      pixTransaction: data.pixTransaction,
+      accountId: data.accountId,
+      planId: data.planId,
+      accountPaymentIdForPlan: data.accountPaymentId,
+      recurringPayment: data.recurringPayment,
+      billingPeriodId: data.billingPeriodId,
+      lastPaymentDate: data.paymentDate,
       nextPaymentDate,
-      value,
+      value: data.value,
       shouldReleasePlan: true,
     });
   };
@@ -200,33 +202,34 @@ export class PlanReleaseService {
           accountPaymentData.account_payment_id
         );
 
-      await this.updatePaymentStatusOnly(
-        accountPaymentData.account_payment_id,
+      await this.updatePaymentStatusOnly({
+        accountPaymentId: accountPaymentData.account_payment_id,
         paymentStatusId,
         paymentDate,
         pixTransaction,
-        accountPaymentData.account_id,
-        accountPaymentData.plan_id,
-        accountPaymentData.recurring_payment,
-        accountPaymentData.billing_period_id,
-        accountPaymentData.value,
-        existingPlanAccount?.next_payment_date || new Date().toISOString()
-      );
+        accountId: accountPaymentData.account_id,
+        planId: accountPaymentData.plan_id,
+        recurringPayment: accountPaymentData.recurring_payment,
+        billingPeriodId: accountPaymentData.billing_period_id,
+        value: accountPaymentData.value,
+        nextPaymentDate:
+          existingPlanAccount?.next_payment_date || new Date().toISOString(),
+      });
 
       return;
     }
 
-    await this.releasePlanForPayment(
-      accountPaymentData.account_payment_id,
+    await this.releasePlanForPayment({
+      accountPaymentId: accountPaymentData.account_payment_id,
       paymentStatusId,
       paymentDate,
       pixTransaction,
-      accountPaymentData.account_id,
-      accountPaymentData.plan_id,
-      accountPaymentData.recurring_payment,
-      accountPaymentData.billing_period_id,
-      accountPaymentData.value
-    );
+      accountId: accountPaymentData.account_id,
+      planId: accountPaymentData.plan_id,
+      recurringPayment: accountPaymentData.recurring_payment,
+      billingPeriodId: accountPaymentData.billing_period_id,
+      value: accountPaymentData.value,
+    });
   };
 
   private readonly processUnsuccessfulPayment = async (
@@ -241,18 +244,18 @@ export class PlanReleaseService {
     paymentDate: string | null,
     pixTransaction: string | null
   ): Promise<void> => {
-    await this.updatePaymentStatusOnly(
-      accountPaymentData.account_payment_id,
+    await this.updatePaymentStatusOnly({
+      accountPaymentId: accountPaymentData.account_payment_id,
       paymentStatusId,
       paymentDate,
       pixTransaction,
-      accountPaymentData.account_id,
-      accountPaymentData.plan_id,
-      accountPaymentData.recurring_payment,
-      accountPaymentData.billing_period_id,
-      accountPaymentData.value,
-      new Date().toISOString()
-    );
+      accountId: accountPaymentData.account_id,
+      planId: accountPaymentData.plan_id,
+      recurringPayment: accountPaymentData.recurring_payment,
+      billingPeriodId: accountPaymentData.billing_period_id,
+      value: accountPaymentData.value,
+      nextPaymentDate: new Date().toISOString(),
+    });
   };
 
   private readonly checkIfCreditCardPlanAlreadyReleased = async (
@@ -372,17 +375,17 @@ export class PlanReleaseService {
       return;
     }
 
-    await this.releasePlanForPayment(
-      data.accountPaymentId,
-      data.paymentStatusId,
-      data.paymentDate,
-      null,
-      data.accountId,
-      data.planId,
-      data.recurringPayment,
-      data.billingPeriodId,
-      data.value
-    );
+    await this.releasePlanForPayment({
+      accountPaymentId: data.accountPaymentId,
+      paymentStatusId: data.paymentStatusId,
+      paymentDate: data.paymentDate,
+      pixTransaction: null,
+      accountId: data.accountId,
+      planId: data.planId,
+      recurringPayment: data.recurringPayment,
+      billingPeriodId: data.billingPeriodId,
+      value: data.value,
+    });
   };
 
   private readonly notifyPaymentStatusUpdate = async (

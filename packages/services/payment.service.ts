@@ -44,22 +44,31 @@ export class PaymentService {
   } => {
     const trimmedAddress = address.trim();
 
-    const addressRegex = /\s+(\d+)(?:\s*[-/]?\s*(\d+))?(\s+.*)?$/;
-    const numberMatch = addressRegex.exec(trimmedAddress);
-    if (numberMatch) {
-      const street = trimmedAddress.substring(0, numberMatch.index).trim();
-      const number = numberMatch[1];
-      const complement = numberMatch[3]?.trim() || undefined;
-
+    if (trimmedAddress.length > 500) {
       return {
-        street: street || trimmedAddress,
-        number: number,
-        complement: complement,
+        street: trimmedAddress,
       };
     }
 
+    const numberPattern = /\s+(\d+)(?:\s*[-/]\s*(\d+))?$/;
+    const numberMatch = numberPattern.exec(trimmedAddress);
+    if (!numberMatch || numberMatch.index === undefined) {
+      return {
+        street: trimmedAddress,
+      };
+    }
+
+    const street = trimmedAddress.substring(0, numberMatch.index).trim();
+    const number = numberMatch[1];
+    const afterNumber = trimmedAddress
+      .substring(numberMatch.index + numberMatch[0].length)
+      .trim();
+    const complement = afterNumber || undefined;
+
     return {
-      street: trimmedAddress,
+      street: street || trimmedAddress,
+      number: number,
+      complement: complement,
     };
   };
 
@@ -407,7 +416,7 @@ export class PaymentService {
 
     const payment = await this.asaasService.createPayment(paymentRequest);
 
-    if (!payment || !payment.id) {
+    if (!payment?.id) {
       return { payment: null, qrCode: null };
     }
 
@@ -440,7 +449,7 @@ export class PaymentService {
 
     const payment = await this.asaasService.createPayment(paymentRequest);
 
-    if (!payment || !payment.id) {
+    if (!payment?.id) {
       return { payment: null, identificationField: null, pixQrCode: null };
     }
 
@@ -587,7 +596,7 @@ export class PaymentService {
     }
 
     const userInfo = await this.userInfoViewerRepository.viewUserInfo(userId);
-    if (!userInfo || !userInfo.user_info) {
+    if (!userInfo?.user_info) {
       throw new Error('Informações do usuário não encontradas');
     }
 
@@ -612,7 +621,7 @@ export class PaymentService {
     const tokenizeResult =
       await this.asaasService.tokenizeCreditCard(tokenizeRequest);
 
-    if (!tokenizeResult || !tokenizeResult.creditCardToken) {
+    if (!tokenizeResult?.creditCardToken) {
       throw new Error('Falha ao tokenizar cartão de crédito');
     }
 

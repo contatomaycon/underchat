@@ -36,46 +36,46 @@ export class OrderPaymentCreatorUseCase {
 
       const pixPaymentData =
         input.payment_method === 'pix'
-          ? await this.processPixPayment(
+          ? await this.processPixPayment({
               t,
               accountId,
               customer,
-              input.plan_id,
+              planId: input.plan_id,
               totalAmount,
               orderId,
-              input.billing_period,
-              input.addons || []
-            )
+              billingPeriod: input.billing_period,
+              addons: input.addons || [],
+            })
           : undefined;
 
       const creditCardPaymentData =
         input.payment_method === 'credit_card'
-          ? await this.processCreditCardPayment(
+          ? await this.processCreditCardPayment({
               t,
               accountId,
               customer,
-              input.plan_id,
+              planId: input.plan_id,
               totalAmount,
               orderId,
-              input.billing_period,
-              input.addons || [],
+              billingPeriod: input.billing_period,
+              addons: input.addons || [],
               remoteIp,
-              input
-            )
+              input,
+            })
           : undefined;
 
       const boletoPaymentData =
         input.payment_method === 'boleto'
-          ? await this.processBoletoPayment(
+          ? await this.processBoletoPayment({
               t,
               accountId,
               customer,
-              input.plan_id,
+              planId: input.plan_id,
               totalAmount,
               orderId,
-              input.billing_period,
-              input.addons || []
-            )
+              billingPeriod: input.billing_period,
+              addons: input.addons || [],
+            })
           : undefined;
 
       const result: CreateOrderPaymentResponse = {
@@ -99,39 +99,41 @@ export class OrderPaymentCreatorUseCase {
     }
   };
 
-  private readonly processPixPayment = async (
-    t: TFunction<'translation', undefined>,
-    accountId: string,
-    customer: { user_customer_id: string; user_customer: string },
-    planId: string,
-    totalAmount: number,
-    orderId: string,
-    billingPeriod: 'monthly' | 'annual',
-    addons: Array<{ plan_cross_sell_id: string }>
-  ) => {
-    const billingPeriodId = this.planService.getBillingPeriodId(billingPeriod);
+  private readonly processPixPayment = async (data: {
+    t: TFunction<'translation', undefined>;
+    accountId: string;
+    customer: { user_customer_id: string; user_customer: string };
+    planId: string;
+    totalAmount: number;
+    orderId: string;
+    billingPeriod: 'monthly' | 'annual';
+    addons: Array<{ plan_cross_sell_id: string }>;
+  }) => {
+    const billingPeriodId = this.planService.getBillingPeriodId(
+      data.billingPeriod
+    );
     if (!billingPeriodId) {
-      throw new Error(t('billing_period_not_found'));
+      throw new Error(data.t('billing_period_not_found'));
     }
 
     const pixResult = await this.paymentService.createPixPayment(
-      customer.user_customer,
-      totalAmount,
-      `Pagamento do plano ${planId}`,
-      orderId
+      data.customer.user_customer,
+      data.totalAmount,
+      `Pagamento do plano ${data.planId}`,
+      data.orderId
     );
 
     if (!pixResult.payment || !pixResult.qrCode) {
-      throw new Error(t('pix_payment_creation_failed'));
+      throw new Error(data.t('pix_payment_creation_failed'));
     }
 
     const accountPaymentId = await this.planService.createAccountPayment({
-      accountId,
-      userCustomerId: customer.user_customer_id,
-      planId,
+      accountId: data.accountId,
+      userCustomerId: data.customer.user_customer_id,
+      planId: data.planId,
       billing: pixResult.payment.id,
       paymentBillingTypeId: EPaymentBillingType.pix,
-      value: totalAmount.toString(),
+      value: data.totalAmount.toString(),
       netValue: pixResult.payment.netValue.toString(),
       pixTransaction: pixResult.payment.pixTransaction || null,
       paymentStatusId: EPaymentStatus.pending,
@@ -142,8 +144,8 @@ export class OrderPaymentCreatorUseCase {
 
     await this.planService.createAccountPaymentCrossSells({
       accountPaymentId,
-      addons,
-      billingPeriod,
+      addons: data.addons,
+      billingPeriod: data.billingPeriod,
     });
 
     return {
@@ -154,51 +156,53 @@ export class OrderPaymentCreatorUseCase {
     };
   };
 
-  private readonly processCreditCardPayment = async (
-    t: TFunction<'translation', undefined>,
-    accountId: string,
-    customer: { user_customer_id: string; user_customer: string },
-    planId: string,
-    totalAmount: number,
-    orderId: string,
-    billingPeriod: 'monthly' | 'annual',
-    addons: Array<{ plan_cross_sell_id: string }>,
-    remoteIp: string,
-    input: CreateOrderPaymentRequest
-  ) => {
-    if (input.billing_period !== 'annual' && input.installments) {
-      throw new Error(t('installments_only_for_annual_plans'));
+  private readonly processCreditCardPayment = async (data: {
+    t: TFunction<'translation', undefined>;
+    accountId: string;
+    customer: { user_customer_id: string; user_customer: string };
+    planId: string;
+    totalAmount: number;
+    orderId: string;
+    billingPeriod: 'monthly' | 'annual';
+    addons: Array<{ plan_cross_sell_id: string }>;
+    remoteIp: string;
+    input: CreateOrderPaymentRequest;
+  }) => {
+    if (data.input.billing_period !== 'annual' && data.input.installments) {
+      throw new Error(data.t('installments_only_for_annual_plans'));
     }
 
     if (
-      input.installments &&
-      (input.installments < 1 || input.installments > 12)
+      data.input.installments &&
+      (data.input.installments < 1 || data.input.installments > 12)
     ) {
-      throw new Error(t('installments_must_be_between_1_and_12'));
+      throw new Error(data.t('installments_must_be_between_1_and_12'));
     }
 
-    const billingPeriodId = this.planService.getBillingPeriodId(billingPeriod);
+    const billingPeriodId = this.planService.getBillingPeriodId(
+      data.billingPeriod
+    );
     if (!billingPeriodId) {
-      throw new Error(t('billing_period_not_found'));
+      throw new Error(data.t('billing_period_not_found'));
     }
 
     const creditCardResult = await this.paymentService.createCreditCardPayment(
-      accountId,
-      customer.user_customer,
-      totalAmount,
-      `Pagamento do plano ${planId}`,
-      orderId,
-      remoteIp,
+      data.accountId,
+      data.customer.user_customer,
+      data.totalAmount,
+      `Pagamento do plano ${data.planId}`,
+      data.orderId,
+      data.remoteIp,
       {
-        creditCardId: input.credit_card_id,
-        newCard: input.new_card,
-        installments: input.installments,
-        recurringPayment: input.recurring_payment || false,
+        creditCardId: data.input.credit_card_id,
+        newCard: data.input.new_card,
+        installments: data.input.installments,
+        recurringPayment: data.input.recurring_payment || false,
       }
     );
 
-    if (!creditCardResult.payment || !creditCardResult.payment.id) {
-      throw new Error(t('credit_card_payment_creation_failed'));
+    if (!creditCardResult.payment?.id) {
+      throw new Error(data.t('credit_card_payment_creation_failed'));
     }
 
     const paymentId = creditCardResult.payment.id;
@@ -210,26 +214,29 @@ export class OrderPaymentCreatorUseCase {
         : EPaymentStatus.pending;
 
     const accountPaymentId = await this.planService.createAccountPayment({
-      accountId,
-      userCustomerId: customer.user_customer_id,
-      planId,
+      accountId: data.accountId,
+      userCustomerId: data.customer.user_customer_id,
+      planId: data.planId,
       billing: paymentId,
       paymentBillingTypeId: EPaymentBillingType.credit_card,
-      value: totalAmount.toString(),
+      value: data.totalAmount.toString(),
       netValue: creditCardResult.payment.netValue.toString(),
       pixTransaction: null,
       paymentStatusId: paymentStatus,
       billingPeriodId,
       invoiceUrl: creditCardResult.payment.invoiceUrl || null,
-      recurringPayment: input.recurring_payment || false,
-      userCardId: input.credit_card_id || creditCardResult.userCardId || null,
-      installment: input.installments ? input.installments.toString() : null,
+      recurringPayment: data.input.recurring_payment || false,
+      userCardId:
+        data.input.credit_card_id || creditCardResult.userCardId || null,
+      installment: data.input.installments
+        ? data.input.installments.toString()
+        : null,
     });
 
     await this.planService.createAccountPaymentCrossSells({
       accountPaymentId,
-      addons,
-      billingPeriod,
+      addons: data.addons,
+      billingPeriod: data.billingPeriod,
     });
 
     if (paymentStatus === EPaymentStatus.received) {
@@ -239,11 +246,11 @@ export class OrderPaymentCreatorUseCase {
       try {
         await this.planReleaseService.releasePlanForCreditCard({
           accountPaymentId,
-          accountId,
-          planId,
+          accountId: data.accountId,
+          planId: data.planId,
           billingPeriodId,
-          recurringPayment: input.recurring_payment || false,
-          value: totalAmount.toString(),
+          recurringPayment: data.input.recurring_payment || false,
+          value: data.totalAmount.toString(),
           paymentDate,
           paymentStatusId: paymentStatus,
         });
@@ -262,41 +269,43 @@ export class OrderPaymentCreatorUseCase {
     };
   };
 
-  private readonly processBoletoPayment = async (
-    t: TFunction<'translation', undefined>,
-    accountId: string,
-    customer: { user_customer_id: string; user_customer: string },
-    planId: string,
-    totalAmount: number,
-    orderId: string,
-    billingPeriod: 'monthly' | 'annual',
-    addons: Array<{ plan_cross_sell_id: string }>
-  ) => {
-    const billingPeriodId = this.planService.getBillingPeriodId(billingPeriod);
+  private readonly processBoletoPayment = async (data: {
+    t: TFunction<'translation', undefined>;
+    accountId: string;
+    customer: { user_customer_id: string; user_customer: string };
+    planId: string;
+    totalAmount: number;
+    orderId: string;
+    billingPeriod: 'monthly' | 'annual';
+    addons: Array<{ plan_cross_sell_id: string }>;
+  }) => {
+    const billingPeriodId = this.planService.getBillingPeriodId(
+      data.billingPeriod
+    );
     if (!billingPeriodId) {
-      throw new Error(t('billing_period_not_found'));
+      throw new Error(data.t('billing_period_not_found'));
     }
 
     const boletoResult = await this.paymentService.createBoletoPayment(
-      customer.user_customer,
-      totalAmount,
-      `Pagamento do plano ${planId}`,
-      orderId
+      data.customer.user_customer,
+      data.totalAmount,
+      `Pagamento do plano ${data.planId}`,
+      data.orderId
     );
 
-    if (!boletoResult.payment || !boletoResult.identificationField) {
-      throw new Error(t('boleto_payment_creation_failed'));
+    if (!boletoResult.payment?.id || !boletoResult.identificationField) {
+      throw new Error(data.t('boleto_payment_creation_failed'));
     }
 
     const paymentStatus = EPaymentStatus.pending;
 
     const accountPaymentId = await this.planService.createAccountPayment({
-      accountId,
-      userCustomerId: customer.user_customer_id,
-      planId,
+      accountId: data.accountId,
+      userCustomerId: data.customer.user_customer_id,
+      planId: data.planId,
       billing: boletoResult.payment.id,
       paymentBillingTypeId: EPaymentBillingType.boleto,
-      value: totalAmount.toString(),
+      value: data.totalAmount.toString(),
       netValue: boletoResult.payment.netValue.toString(),
       pixTransaction: null,
       paymentStatusId: paymentStatus,
@@ -310,8 +319,8 @@ export class OrderPaymentCreatorUseCase {
 
     await this.planService.createAccountPaymentCrossSells({
       accountPaymentId,
-      addons,
-      billingPeriod,
+      addons: data.addons,
+      billingPeriod: data.billingPeriod,
     });
 
     return {
