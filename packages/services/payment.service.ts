@@ -194,7 +194,7 @@ export class PaymentService {
       throw new Error('Document is required');
     }
     const fullName = this.getFullName(userView);
-    const phoneData = this.getPhoneData(userView, sensitiveData.phone);
+    const phoneData = this.getPhoneData(sensitiveData.phone);
     const addressData = this.getAddressData(userView, sensitiveData);
     const fiscalData = this.getFiscalData(userView);
     const isCNPJ = this.isCNPJ(userView);
@@ -224,15 +224,17 @@ export class PaymentService {
   };
 
   private getPhoneData = (
-    userView: ViewUserResponse,
     phone: string | null
   ): { fullPhone: string | undefined; mobilePhone: string | undefined } => {
-    const phoneDdi = userView.user_info?.phone_ddi || '';
-    const phonePartial = userView.user_info?.phone_partial || '';
-    const fullPhone =
-      phoneDdi && phonePartial
-        ? `${phoneDdi}${phonePartial}`
-        : phone || undefined;
+    if (!phone) {
+      return {
+        fullPhone: undefined,
+        mobilePhone: undefined,
+      };
+    }
+
+    const cleanedPhone = phone.replace(/\D/g, '');
+    const fullPhone = cleanedPhone || undefined;
 
     return {
       fullPhone,
@@ -253,19 +255,13 @@ export class PaymentService {
     province: string | undefined;
     postalCode: string | undefined;
   } => {
-    const address1Decrypted = this.userService.getUserAddress1Decrypted(
-      sensitiveData.address1
-    );
-    const address2Decrypted = this.userService.getUserAddress2Decrypted(
-      sensitiveData.address2
-    );
-
-    if (address1Decrypted) {
-      const addressParts = this.parseAddress(address1Decrypted);
+    if (sensitiveData.address1) {
+      const addressParts = this.parseAddress(sensitiveData.address1);
       return {
         address: addressParts.street,
         addressNumber: addressParts.number,
-        complement: addressParts.complement || address2Decrypted || undefined,
+        complement:
+          addressParts.complement || sensitiveData.address2 || undefined,
         province: userView.user_address?.district || undefined,
         postalCode: userView.user_address?.zip_code || undefined,
       };
@@ -275,7 +271,10 @@ export class PaymentService {
       return {
         address: userView.user_address.address1_partial,
         addressNumber: undefined,
-        complement: userView.user_address.address2_partial || undefined,
+        complement:
+          sensitiveData.address2 ||
+          userView.user_address.address2_partial ||
+          undefined,
         province: userView.user_address.district || undefined,
         postalCode: userView.user_address.zip_code || undefined,
       };
@@ -284,7 +283,7 @@ export class PaymentService {
     return {
       address: undefined,
       addressNumber: undefined,
-      complement: undefined,
+      complement: sensitiveData.address2 || undefined,
       province: userView.user_address?.district || undefined,
       postalCode: userView.user_address?.zip_code || undefined,
     };
