@@ -23,6 +23,8 @@ import { ListPlanSalesResponse } from '@core/schema/plan/listPlanSales/response.
 import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/response.schema';
 import { ListPlanProductWithPriceResponse } from '@core/schema/plan/listPlanProductWithPrice/response.schema';
 import { PlanProductWithPriceListerRepository } from '@core/repositories/plan/PlanProductWithPriceLister.repository';
+import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.schema';
+import { UserCardsListerRepository } from '@core/repositories/plan/UserCardsLister.repository';
 
 @injectable()
 export class PlanService {
@@ -38,7 +40,8 @@ export class PlanService {
     private readonly planProductAllListerRepository: PlanProductAllListerRepository,
     private readonly planSalesListerRepository: PlanSalesListerRepository,
     private readonly planWithItemsListerRepository: PlanWithItemsListerRepository,
-    private readonly planProductWithPriceListerRepository: PlanProductWithPriceListerRepository
+    private readonly planProductWithPriceListerRepository: PlanProductWithPriceListerRepository,
+    private readonly userCardsListerRepository: UserCardsListerRepository
   ) {}
 
   listPlans = async (
@@ -105,5 +108,9 @@ export class PlanService {
 
   listPlanWithItems = async (): Promise<ListPlanWithItemsResponse[]> => {
     return this.planWithItemsListerRepository.listPlanWithItems();
+  };
+
+  listUserCards = async (userId: string): Promise<ListUserCardResponse[]> => {
+    return this.userCardsListerRepository.listUserCards(userId);
   };
 }

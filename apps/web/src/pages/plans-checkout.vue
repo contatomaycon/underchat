@@ -5,13 +5,13 @@ import { useRoute, useRouter } from 'vue-router';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { usePlanStore } from '@/@webcore/stores/plan';
-import { useAccountStore } from '@/@webcore/stores/account';
 import { useUsersStore } from '@/@webcore/stores/user';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { getUser } from '@/@webcore/localStorage/user';
 import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/response.schema';
 import { ListPlanProductWithPriceResponse } from '@core/schema/plan/listPlanProductWithPrice/response.schema';
 import { ViewUserResponse } from '@core/schema/user/viewUser/response.schema';
+import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.schema';
 
 definePage({
   meta: {
@@ -28,7 +28,6 @@ const { t, locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const planStore = usePlanStore();
-const accountStore = useAccountStore();
 const usersStore = useUsersStore();
 useSnackbarCleanup(planStore);
 
@@ -51,6 +50,13 @@ const selectedAddons = ref<
 const loadingProducts = ref(false);
 const currentUser = ref<ViewUserResponse | null>(null);
 const loadingUser = ref(false);
+const userCards = ref<ListUserCardResponse[]>([]);
+const loadingCards = ref(false);
+const selectedPaymentMethod = ref<'boleto' | 'credit_card' | 'pix' | null>(
+  null
+);
+const selectedCardId = ref<string | null>(null);
+const showAddCardModal = ref(false);
 
 const getCurrencyConfig = () => {
   const localeMap: Record<string, { locale: string; currency: string }> = {
@@ -102,7 +108,7 @@ const loadCheckoutData = async () => {
 
   const [plansList, currentPlanIdValue] = await Promise.all([
     planStore.listPlanWithItems(),
-    accountStore.getCurrentPlan(),
+    planStore.getCurrentPlan(),
   ]);
 
   if (plansList) {
@@ -134,6 +140,8 @@ const loadCheckoutData = async () => {
 
   await loadUserData();
 
+  await loadUserCards();
+
   loading.value = false;
 };
 
@@ -147,6 +155,23 @@ const loadUserData = async () => {
     currentUser.value = userData;
   }
   loadingUser.value = false;
+};
+
+const loadUserCards = async () => {
+  const user = getUser();
+  if (!user?.user_id) return;
+
+  loadingCards.value = true;
+  const cards = await planStore.listUserCards();
+  if (cards) {
+    userCards.value = cards;
+
+    const defaultCard = cards.find((c) => c.default);
+    if (defaultCard) {
+      selectedCardId.value = defaultCard.user_card_id;
+    }
+  }
+  loadingCards.value = false;
 };
 
 const isCurrentPlan = (planId: string): boolean => {
@@ -330,6 +355,8 @@ onMounted(() => {
               <VStepperItem :value="2" :title="$t('plan_and_addons')" />
               <VDivider />
               <VStepperItem :value="3" :title="$t('user_information')" />
+              <VDivider />
+              <VStepperItem :value="4" :title="$t('payment')" />
             </VStepperHeader>
 
             <VStepperWindow>
@@ -954,6 +981,273 @@ onMounted(() => {
                   <VProgressCircular indeterminate color="primary" size="64" />
                 </div>
               </VStepperWindowItem>
+
+              <!-- Step 4: Pagamento -->
+              <VStepperWindowItem :value="4">
+                <div>
+                  <h4 class="text-h6 mb-4">
+                    {{ $t('select_payment_method') }}
+                  </h4>
+
+                  <VRow>
+                    <!-- Boleto -->
+                    <VCol cols="12" md="4">
+                      <VCard
+                        :class="[
+                          'payment-method-card',
+                          selectedPaymentMethod === 'boleto'
+                            ? 'payment-method-selected'
+                            : '',
+                        ]"
+                        :variant="
+                          selectedPaymentMethod === 'boleto'
+                            ? 'elevated'
+                            : 'outlined'
+                        "
+                        :elevation="selectedPaymentMethod === 'boleto' ? 4 : 0"
+                        @click="selectedPaymentMethod = 'boleto'"
+                        style="cursor: pointer"
+                      >
+                        <VCardText class="text-center">
+                          <VIcon
+                            icon="tabler-receipt"
+                            size="48"
+                            color="primary"
+                            class="mb-3"
+                          />
+                          <h5 class="text-h6 mb-2">{{ $t('boleto') }}</h5>
+                          <p class="text-body-2 text-medium-emphasis">
+                            {{ $t('boleto_description') }}
+                          </p>
+                        </VCardText>
+                      </VCard>
+                    </VCol>
+
+                    <!-- Cartão de Crédito -->
+                    <VCol cols="12" md="4">
+                      <VCard
+                        :class="[
+                          'payment-method-card',
+                          selectedPaymentMethod === 'credit_card'
+                            ? 'payment-method-selected'
+                            : '',
+                        ]"
+                        :variant="
+                          selectedPaymentMethod === 'credit_card'
+                            ? 'elevated'
+                            : 'outlined'
+                        "
+                        :elevation="
+                          selectedPaymentMethod === 'credit_card' ? 4 : 0
+                        "
+                        @click="selectedPaymentMethod = 'credit_card'"
+                        style="cursor: pointer"
+                      >
+                        <VCardText class="text-center">
+                          <VIcon
+                            icon="tabler-credit-card"
+                            size="48"
+                            color="primary"
+                            class="mb-3"
+                          />
+                          <h5 class="text-h6 mb-2">
+                            {{ $t('credit_card') }}
+                          </h5>
+                          <p class="text-body-2 text-medium-emphasis">
+                            {{ $t('credit_card_description') }}
+                          </p>
+                        </VCardText>
+                      </VCard>
+                    </VCol>
+
+                    <!-- PIX -->
+                    <VCol cols="12" md="4">
+                      <VCard
+                        :class="[
+                          'payment-method-card',
+                          selectedPaymentMethod === 'pix'
+                            ? 'payment-method-selected'
+                            : '',
+                        ]"
+                        :variant="
+                          selectedPaymentMethod === 'pix'
+                            ? 'elevated'
+                            : 'outlined'
+                        "
+                        :elevation="selectedPaymentMethod === 'pix' ? 4 : 0"
+                        @click="selectedPaymentMethod = 'pix'"
+                        style="cursor: pointer"
+                      >
+                        <VCardText class="text-center">
+                          <VIcon
+                            icon="tabler-qrcode"
+                            size="48"
+                            color="primary"
+                            class="mb-3"
+                          />
+                          <h5 class="text-h6 mb-2">{{ $t('pix') }}</h5>
+                          <p class="text-body-2 text-medium-emphasis">
+                            {{ $t('pix_description') }}
+                          </p>
+                        </VCardText>
+                      </VCard>
+                    </VCol>
+                  </VRow>
+
+                  <!-- Resumo do Boleto -->
+                  <VCard
+                    v-if="selectedPaymentMethod === 'boleto'"
+                    variant="outlined"
+                    class="mt-6"
+                  >
+                    <VCardText>
+                      <h5 class="text-h6 mb-4">{{ $t('boleto_summary') }}</h5>
+                      <div class="d-flex flex-column gap-2">
+                        <div class="d-flex justify-space-between">
+                          <span class="text-body-2 text-medium-emphasis">{{
+                            $t('payment_due_date')
+                          }}</span>
+                          <span class="text-body-1 font-weight-medium">{{
+                            $t('boleto_due_date_info')
+                          }}</span>
+                        </div>
+                        <VDivider />
+                        <div class="d-flex justify-space-between">
+                          <span class="text-body-2 text-medium-emphasis">{{
+                            $t('payment_amount')
+                          }}</span>
+                          <span class="text-body-1 font-weight-medium">
+                            {{ formatCurrency(getCheckoutTotal) }}
+                          </span>
+                        </div>
+                        <VDivider />
+                        <p class="text-body-2 text-medium-emphasis mt-2">
+                          {{ $t('boleto_instructions') }}
+                        </p>
+                      </div>
+                    </VCardText>
+                  </VCard>
+
+                  <!-- Seleção de Cartão de Crédito -->
+                  <div
+                    v-if="selectedPaymentMethod === 'credit_card'"
+                    class="mt-6"
+                  >
+                    <h5 class="text-h6 mb-4">{{ $t('select_credit_card') }}</h5>
+
+                    <VProgressCircular
+                      v-if="loadingCards"
+                      indeterminate
+                      color="primary"
+                      size="32"
+                      class="mb-4"
+                    />
+
+                    <div
+                      v-else-if="userCards.length > 0"
+                      class="d-flex flex-column gap-3"
+                    >
+                      <VCard
+                        v-for="card in userCards"
+                        :key="card.user_card_id"
+                        :class="[
+                          'credit-card-item',
+                          selectedCardId === card.user_card_id
+                            ? 'credit-card-selected'
+                            : '',
+                        ]"
+                        :variant="
+                          selectedCardId === card.user_card_id
+                            ? 'elevated'
+                            : 'outlined'
+                        "
+                        :elevation="
+                          selectedCardId === card.user_card_id ? 4 : 0
+                        "
+                        @click="selectedCardId = card.user_card_id"
+                        style="cursor: pointer"
+                      >
+                        <VCardText>
+                          <div
+                            class="d-flex align-center justify-space-between"
+                          >
+                            <div class="d-flex align-center gap-3">
+                              <VIcon
+                                icon="tabler-credit-card"
+                                size="32"
+                                color="primary"
+                              />
+                              <div>
+                                <div class="text-body-1 font-weight-medium">
+                                  {{ card.holder_name }}
+                                </div>
+                                <div class="text-body-2 text-medium-emphasis">
+                                  {{ $t('ending_in') }} {{ card.last_number }}
+                                </div>
+                                <div class="text-body-2 text-medium-emphasis">
+                                  {{ card.brand }}
+                                </div>
+                              </div>
+                            </div>
+                            <div>
+                              <VChip
+                                v-if="card.default"
+                                color="primary"
+                                size="small"
+                                variant="tonal"
+                              >
+                                {{ $t('default') }}
+                              </VChip>
+                            </div>
+                          </div>
+                        </VCardText>
+                      </VCard>
+                    </div>
+
+                    <VCard v-else variant="outlined" class="mb-4">
+                      <VCardText class="text-center py-4">
+                        <div class="text-body-2 text-medium-emphasis mb-3">
+                          {{ $t('no_cards_registered') }}
+                        </div>
+                      </VCardText>
+                    </VCard>
+
+                    <VBtn
+                      color="primary"
+                      variant="outlined"
+                      prepend-icon="tabler-plus"
+                      @click="showAddCardModal = true"
+                    >
+                      {{ $t('add_new_card') }}
+                    </VBtn>
+                  </div>
+
+                  <!-- Resumo do PIX -->
+                  <VCard
+                    v-if="selectedPaymentMethod === 'pix'"
+                    variant="outlined"
+                    class="mt-6"
+                  >
+                    <VCardText>
+                      <h5 class="text-h6 mb-4">{{ $t('pix_summary') }}</h5>
+                      <div class="d-flex flex-column gap-2">
+                        <div class="d-flex justify-space-between">
+                          <span class="text-body-2 text-medium-emphasis">{{
+                            $t('payment_amount')
+                          }}</span>
+                          <span class="text-body-1 font-weight-medium">
+                            {{ formatCurrency(getCheckoutTotal) }}
+                          </span>
+                        </div>
+                        <VDivider />
+                        <p class="text-body-2 text-medium-emphasis mt-2">
+                          {{ $t('pix_instructions') }}
+                        </p>
+                      </div>
+                    </VCardText>
+                  </VCard>
+                </div>
+              </VStepperWindowItem>
             </VStepperWindow>
 
             <!-- Botões de Navegação -->
@@ -972,9 +1266,16 @@ onMounted(() => {
                   {{ $t('cancel') }}
                 </VBtn>
                 <VBtn
-                  v-if="currentStep < 3"
+                  v-if="currentStep < 4"
                   color="primary"
-                  :disabled="currentStep === 1 && !selectedPlanForCheckout"
+                  :disabled="
+                    (currentStep === 1 && !selectedPlanForCheckout) ||
+                    (currentStep === 4 && !selectedPaymentMethod) ||
+                    (currentStep === 4 &&
+                      selectedPaymentMethod === 'credit_card' &&
+                      !selectedCardId &&
+                      userCards.length > 0)
+                  "
                   @click="nextStep"
                 >
                   {{ $t('next') }}
@@ -982,9 +1283,15 @@ onMounted(() => {
                 <VBtn
                   v-else
                   color="primary"
-                  :disabled="!selectedPlanForCheckout"
+                  :disabled="
+                    !selectedPlanForCheckout ||
+                    !selectedPaymentMethod ||
+                    (selectedPaymentMethod === 'credit_card' &&
+                      !selectedCardId &&
+                      userCards.length > 0)
+                  "
                 >
-                  {{ $t('proceed_to_payment') }}
+                  {{ $t('finalize_purchase') }}
                 </VBtn>
               </div>
             </VCardText>
@@ -1050,5 +1357,35 @@ onMounted(() => {
   right: 8px;
   z-index: 2;
   pointer-events: none;
+}
+
+.payment-method-card {
+  transition:
+    transform 0.2s ease-in-out,
+    box-shadow 0.2s ease-in-out;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+}
+
+.payment-method-selected {
+  border: 2px solid rgb(var(--v-theme-primary));
+}
+
+.credit-card-item {
+  transition:
+    transform 0.2s ease-in-out,
+    box-shadow 0.2s ease-in-out;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+}
+
+.credit-card-selected {
+  border: 2px solid rgb(var(--v-theme-primary));
 }
 </style>

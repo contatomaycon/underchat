@@ -5,7 +5,6 @@ import { useRouter } from 'vue-router';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { usePlanStore } from '@/@webcore/stores/plan';
-import { useAccountStore } from '@/@webcore/stores/account';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/response.schema';
 
@@ -23,7 +22,6 @@ definePage({
 const { t, locale } = useI18n();
 const router = useRouter();
 const planStore = usePlanStore();
-const accountStore = useAccountStore();
 useSnackbarCleanup(planStore);
 
 const plans = ref<ListPlanWithItemsResponse[]>([]);
@@ -78,7 +76,7 @@ const loadPlans = async () => {
   loading.value = true;
   const [result, currentPlanIdValue] = await Promise.all([
     planStore.listPlanWithItems(),
-    accountStore.getCurrentPlan(),
+    planStore.getCurrentPlan(),
   ]);
 
   if (result) {

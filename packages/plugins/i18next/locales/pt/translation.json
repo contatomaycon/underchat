@@ -307,6 +307,7 @@
   "no_contacts_found_in_file": "Nenhum contato encontrado no arquivo!",
   "plan_list_all_successfully": "Lista de planos obtida com sucesso!",
   "plan_product_with_price_list_successfully": "Produtos de plano com preço listados com sucesso!",
+  "user_cards_list_successfully": "Cartões do usuário listados com sucesso!",
   "plan_list_all_not_found": "Nenhum plano encontrado!",
   "plan_list_all_unauthorized": "Você não está autorizado a visualizar os planos!",
   "plan_list_with_items_successfully": "Planos com itens listados com sucesso!",
