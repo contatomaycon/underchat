@@ -1373,165 +1373,176 @@ onMounted(async () => {
                     </div>
                   </VAlert>
 
-                  <VRow>
+                  <VRow class="plan-addons-row">
                     <!-- Plano Selecionado - Esquerda -->
-                    <VCol cols="12" md="6">
+                    <VCol cols="12" md="6" class="d-flex flex-column">
                       <h4 class="text-h6 mb-4">{{ $t('selected_plan') }}</h4>
-                      <VCard variant="outlined">
-                        <VCardText>
-                          <div class="text-center mb-4">
-                            <VAvatar
-                              color="primary"
-                              size="80"
-                              variant="tonal"
-                              class="mb-4"
-                            >
-                              <VIcon
-                                :icon="
-                                  selectedPlanForCheckout.icon ||
-                                  'tabler-rocket'
-                                "
-                                size="40"
-                              />
-                            </VAvatar>
-                            <h4 class="text-h6 mb-2">
-                              {{ selectedPlanForCheckout.name }}
-                            </h4>
-                            <p
-                              v-if="selectedPlanForCheckout.description"
-                              class="text-body-2 text-medium-emphasis mb-4"
-                            >
-                              {{ selectedPlanForCheckout.description }}
-                            </p>
-                          </div>
-                          <VDivider class="mb-4" />
-                          <div
-                            class="d-flex align-center justify-space-between"
-                          >
-                            <span class="text-body-1 font-weight-medium"
-                              >{{ $t('price') }}:</span
-                            >
-                            <div class="text-right">
-                              <div
-                                class="text-h5 font-weight-bold text-primary"
-                              >
-                                {{
-                                  formatCurrency(
-                                    getPrice(selectedPlanForCheckout)
-                                  )
-                                }}
-                              </div>
-                              <div class="text-body-2 text-medium-emphasis">
-                                /{{
-                                  billingPeriod === 'annual'
-                                    ? $t('year')
-                                    : $t('month')
-                                }}
-                              </div>
-                            </div>
-                          </div>
-                        </VCardText>
-                      </VCard>
-                    </VCol>
-
-                    <!-- Adicionais - Direita -->
-                    <VCol cols="12" md="6">
-                      <h4 class="text-h6 mb-4">{{ $t('addons') }}</h4>
-
-                      <VCard v-if="loadingProducts" variant="outlined">
-                        <VCardText class="text-center py-4">
-                          <VProgressCircular
-                            indeterminate
-                            color="primary"
-                            size="32"
-                          />
-                        </VCardText>
-                      </VCard>
-
-                      <div
-                        v-else-if="groupedCrossSells.length > 0"
-                        class="d-flex flex-column gap-4"
-                      >
-                        <VCard
-                          v-for="group in groupedCrossSells"
-                          :key="group.product_id"
-                          variant="outlined"
-                          :class="{
-                            'border-primary': isAddonSelected(group.product_id),
-                          }"
-                        >
+                      <div class="plan-selected-container">
+                        <VCard variant="outlined" class="h-100">
                           <VCardText>
-                            <div class="d-flex flex-column gap-3">
-                              <div>
-                                <div class="font-weight-medium mb-1">
-                                  {{ group.product_name }}
-                                </div>
-                                <div
-                                  v-if="group.product_description"
-                                  class="text-body-2 text-medium-emphasis"
-                                >
-                                  {{ group.product_description }}
-                                </div>
-                              </div>
-
-                              <div
-                                v-if="isAddonSelected(group.product_id)"
-                                class="d-flex align-center justify-space-between"
+                            <div class="text-center mb-4">
+                              <VAvatar
+                                color="primary"
+                                size="80"
+                                variant="tonal"
+                                class="mb-4"
                               >
-                                <VChip color="success" variant="tonal">
-                                  Adicionado
-                                </VChip>
-                                <VBtn
-                                  color="error"
-                                  variant="outlined"
-                                  size="small"
-                                  @click="removeAddon(group.product_id)"
-                                >
-                                  {{ $t('remove') }}
-                                </VBtn>
-                              </div>
-
-                              <div v-else class="d-flex align-center gap-2">
-                                <VSelect
-                                  v-model="
-                                    selectedCrossSellByType[group.product_id]
+                                <VIcon
+                                  :icon="
+                                    selectedPlanForCheckout.icon ||
+                                    'tabler-rocket'
                                   "
-                                  :items="
-                                    group.options.map((opt) => ({
-                                      title: getCrossSellLabel(opt),
-                                      value: opt.plan_cross_sell_id,
-                                      raw: opt,
-                                    }))
-                                  "
-                                  item-title="title"
-                                  item-value="value"
-                                  :label="`Selecione ${group.product_name}`"
-                                  variant="outlined"
-                                  density="compact"
-                                  class="flex-grow-1"
-                                  placeholder="Selecione uma opção"
+                                  size="40"
                                 />
-                                <VBtn
-                                  color="primary"
-                                  variant="outlined"
-                                  :disabled="!canAddCrossSell(group.product_id)"
-                                  @click="addAddon(group.product_id)"
+                              </VAvatar>
+                              <h4 class="text-h6 mb-2">
+                                {{ selectedPlanForCheckout.name }}
+                              </h4>
+                              <p
+                                v-if="selectedPlanForCheckout.description"
+                                class="text-body-2 text-medium-emphasis mb-4"
+                              >
+                                {{ selectedPlanForCheckout.description }}
+                              </p>
+                            </div>
+                            <VDivider class="mb-4" />
+                            <div
+                              class="d-flex align-center justify-space-between"
+                            >
+                              <span class="text-body-1 font-weight-medium"
+                                >{{ $t('price') }}:</span
+                              >
+                              <div class="text-right">
+                                <div
+                                  class="text-h5 font-weight-bold text-primary"
                                 >
-                                  {{ $t('add') }}
-                                </VBtn>
+                                  {{
+                                    formatCurrency(
+                                      getPrice(selectedPlanForCheckout)
+                                    )
+                                  }}
+                                </div>
+                                <div class="text-body-2 text-medium-emphasis">
+                                  /{{
+                                    billingPeriod === 'annual'
+                                      ? $t('year')
+                                      : $t('month')
+                                  }}
+                                </div>
                               </div>
                             </div>
                           </VCardText>
                         </VCard>
                       </div>
+                    </VCol>
 
-                      <VCard v-else variant="outlined">
-                        <VCardText class="text-center py-4">
-                          <div class="text-body-2 text-medium-emphasis">
-                            {{ $t('no_addons_available') }}
-                          </div>
-                        </VCardText>
-                      </VCard>
+                    <!-- Adicionais - Direita -->
+                    <VCol cols="12" md="6" class="d-flex flex-column">
+                      <h4 class="text-h6 mb-4">{{ $t('addons') }}</h4>
+                      <div class="addons-container">
+                        <VCard
+                          v-if="loadingProducts"
+                          variant="outlined"
+                          class="h-100"
+                        >
+                          <VCardText class="text-center py-4">
+                            <VProgressCircular
+                              indeterminate
+                              color="primary"
+                              size="32"
+                            />
+                          </VCardText>
+                        </VCard>
+
+                        <div
+                          v-else-if="groupedCrossSells.length > 0"
+                          class="addons-scrollable"
+                        >
+                          <VCard
+                            v-for="group in groupedCrossSells"
+                            :key="group.product_id"
+                            variant="outlined"
+                            :class="{
+                              'border-primary': isAddonSelected(
+                                group.product_id
+                              ),
+                            }"
+                          >
+                            <VCardText>
+                              <div class="d-flex flex-column gap-3">
+                                <div>
+                                  <div class="font-weight-medium mb-1">
+                                    {{ group.product_name }}
+                                  </div>
+                                  <div
+                                    v-if="group.product_description"
+                                    class="text-body-2 text-medium-emphasis"
+                                  >
+                                    {{ group.product_description }}
+                                  </div>
+                                </div>
+
+                                <div
+                                  v-if="isAddonSelected(group.product_id)"
+                                  class="d-flex align-center justify-space-between"
+                                >
+                                  <VChip color="success" variant="tonal">
+                                    Adicionado
+                                  </VChip>
+                                  <VBtn
+                                    color="error"
+                                    variant="outlined"
+                                    size="small"
+                                    @click="removeAddon(group.product_id)"
+                                  >
+                                    {{ $t('remove') }}
+                                  </VBtn>
+                                </div>
+
+                                <div v-else class="d-flex align-center gap-2">
+                                  <VSelect
+                                    v-model="
+                                      selectedCrossSellByType[group.product_id]
+                                    "
+                                    :items="
+                                      group.options.map((opt) => ({
+                                        title: getCrossSellLabel(opt),
+                                        value: opt.plan_cross_sell_id,
+                                        raw: opt,
+                                      }))
+                                    "
+                                    item-title="title"
+                                    item-value="value"
+                                    :label="`Selecione ${group.product_name}`"
+                                    variant="outlined"
+                                    density="compact"
+                                    class="flex-grow-1"
+                                    placeholder="Selecione uma opção"
+                                  />
+                                  <VBtn
+                                    color="primary"
+                                    variant="outlined"
+                                    :disabled="
+                                      !canAddCrossSell(group.product_id)
+                                    "
+                                    @click="addAddon(group.product_id)"
+                                  >
+                                    {{ $t('add') }}
+                                  </VBtn>
+                                </div>
+                              </div>
+                            </VCardText>
+                          </VCard>
+                        </div>
+
+                        <VCard v-else variant="outlined" class="h-100">
+                          <VCardText class="text-center py-4">
+                            <div class="text-body-2 text-medium-emphasis">
+                              {{ $t('no_addons_available') }}
+                            </div>
+                          </VCardText>
+                        </VCard>
+                      </div>
                     </VCol>
                   </VRow>
 
@@ -3121,5 +3132,54 @@ onMounted(async () => {
 .brand-logo-small .brand-logo-img {
   max-width: 32px;
   max-height: 20px;
+}
+
+.plan-addons-row {
+  align-items: stretch;
+}
+
+.plan-selected-container,
+.addons-container {
+  flex: 1;
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+}
+
+.addons-scrollable {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 8px;
+  min-height: 0;
+}
+
+/* Estilização da barra de rolagem */
+.addons-scrollable::-webkit-scrollbar {
+  width: 8px;
+}
+
+.addons-scrollable::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+}
+
+.addons-scrollable::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+.addons-scrollable::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* Para Firefox */
+.addons-scrollable {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) rgba(0, 0, 0, 0.05);
 }
 </style>
