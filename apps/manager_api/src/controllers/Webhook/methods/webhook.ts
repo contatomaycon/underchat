@@ -4,11 +4,23 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { PaymentWebhookUseCase } from '@core/useCases/Webhook/PaymentWebhook.useCase';
 import { AsaasPaymentWebhookRequest } from '@core/schema/payment/Webhook/request.schema';
+import { asaasEnvironment } from '@core/config/environments';
 
 export const webhook = async (
   request: FastifyRequest<{ Body: AsaasPaymentWebhookRequest }>,
   reply: FastifyReply
 ) => {
+  const receivedToken = request.headers['asaas-access-token'] as string;
+  const expectedToken = asaasEnvironment.getAsaasWebhook();
+
+  if (!receivedToken || receivedToken !== expectedToken) {
+    return sendResponse(reply, {
+      message: 'Token de autenticação inválido',
+      httpStatusCode: EHTTPStatusCode.unauthorized,
+      data: { success: false },
+    });
+  }
+
   const paymentWebhookUseCase = container.resolve(PaymentWebhookUseCase);
 
   try {

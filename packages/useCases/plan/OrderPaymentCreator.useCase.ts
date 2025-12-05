@@ -109,6 +109,7 @@ export class OrderPaymentCreatorUseCase {
     });
 
     return {
+      payment_id: pixResult.payment.id,
       qr_code: pixResult.qrCode.encodedImage,
       payload: pixResult.qrCode.payload,
       expiration_date: pixResult.qrCode.expirationDate,

@@ -510,5 +510,19 @@
   "password_requires_number_symbol_or_whitespace": "La contraseña debe contener al menos un número, símbolo o carácter de espacio en blanco",
   "notifications_view_successfully": "¡Notificaciones visualizadas con éxito!",
   "notifications_update_successfully": "¡Notificaciones actualizadas con éxito!",
-  "workers_list_successfully": "¡Lista de workers obtenida con éxito!"
+  "workers_list_successfully": "¡Lista de workers obtenida con éxito!",
+  "pix_payment": "Pago PIX",
+  "pix_payment_instructions": "Escanee el código QR o copie el código PIX para realizar el pago",
+  "pix_expires_at": "Expira en",
+  "pix_copy_paste_code": "Código PIX (Copiar y Pegar)",
+  "pix_payment_warning": "Después del pago, espere la confirmación automática",
+  "view_pix_payment": "Ver Pago PIX",
+  "awaiting_payment": "Esperando pago",
+  "payment_status_pending": "Pendiente",
+  "payment_status_received": "Recibido",
+  "payment_status_confirmed": "Confirmado",
+  "payment_status_overdue": "Vencido",
+  "payment_status_refunded": "Reembolsado",
+  "payment_success_title": "¡Pago Confirmado!",
+  "payment_success_message": "Su pago ha sido confirmado con éxito. Será redirigido en breve."
 }

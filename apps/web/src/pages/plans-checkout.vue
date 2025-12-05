@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch, nextTick } from 'vue';
+import {
+  ref,
+  onMounted,
+  onBeforeUnmount,
+  computed,
+  watch,
+  nextTick,
+} from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
@@ -28,6 +35,9 @@ import { CreateOrderPaymentRequest } from '@core/schema/plan/createOrderPayment/
 import { CreateOrderPaymentResponse } from '@core/schema/plan/createOrderPayment/response.schema';
 import creditCardType from 'credit-card-type';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
+import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
+import { paymentAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
+import type { Subscription } from 'centrifuge';
 
 definePage({
   meta: {
@@ -99,10 +109,17 @@ const pixModalOpen = ref(false);
 const pixPaymentInitiated = ref(false);
 const processingPayment = ref(false);
 const pixPaymentData = ref<{
+  payment_id: string;
   qr_code: string;
   payload: string;
   expiration_date: string;
 } | null>(null);
+const pixPaymentId = ref<string | null>(null);
+const pixPaymentStatus = ref<
+  'PENDING' | 'RECEIVED' | 'CONFIRMED' | 'OVERDUE' | 'REFUNDED' | null
+>(null);
+const pixPaymentConfirmed = ref(false);
+const paymentSubscription = ref<Subscription | null>(null);
 
 const getCurrencyConfig = () => {
   const localeMap: Record<string, { locale: string; currency: string }> = {
@@ -531,6 +548,83 @@ const getPixQrCodeImageSrc = (qrCode: string): string => {
   return `data:image/png;base64,${qrCode}`;
 };
 
+const getPaymentStatusText = (status: string | null): string => {
+  if (!status) return t('payment_status_pending');
+  const statusMap: Record<string, string> = {
+    PENDING: t('payment_status_pending'),
+    RECEIVED: t('payment_status_received'),
+    CONFIRMED: t('payment_status_confirmed'),
+    OVERDUE: t('payment_status_overdue'),
+    REFUNDED: t('payment_status_refunded'),
+  };
+  return statusMap[status] || status;
+};
+
+const getPaymentStatusColor = (status: string | null): string => {
+  if (!status) return 'info';
+  const colorMap: Record<string, string> = {
+    PENDING: 'info',
+    RECEIVED: 'success',
+    CONFIRMED: 'success',
+    OVERDUE: 'error',
+    REFUNDED: 'error',
+  };
+  return colorMap[status] || 'info';
+};
+
+const isPaymentReceived = computed(() => {
+  return pixPaymentStatus.value === 'RECEIVED';
+});
+
+const initPaymentSubscription = async () => {
+  const user = getUser();
+  if (!user?.account_id || !pixPaymentId.value) {
+    return;
+  }
+
+  try {
+    const channel = paymentAccountCentrifugo(user.account_id);
+    const sub = await onMessage(channel, (data: any) => {
+      if (data?.payment_id === pixPaymentId.value) {
+        pixPaymentStatus.value = data.status || null;
+        if (data.is_confirmed) {
+          pixPaymentConfirmed.value = true;
+          setTimeout(() => {
+            pixModalOpen.value = false;
+            router.push('/plans');
+          }, 3000);
+        }
+      }
+    });
+    paymentSubscription.value = sub;
+  } catch (error) {
+    console.error('Erro ao conectar ao Centrifugo:', error);
+  }
+};
+
+const cleanupPaymentSubscription = async () => {
+  if (paymentSubscription.value) {
+    const user = getUser();
+    if (user?.account_id) {
+      const channel = paymentAccountCentrifugo(user.account_id);
+      await unsubscribe(channel);
+      paymentSubscription.value = null;
+    }
+  }
+};
+
+watch(pixModalOpen, async (isOpen) => {
+  if (!isOpen) {
+    await cleanupPaymentSubscription();
+    pixPaymentStatus.value = null;
+    pixPaymentConfirmed.value = false;
+  }
+});
+
+onBeforeUnmount(async () => {
+  await cleanupPaymentSubscription();
+});
+
 const copyPixCode = async () => {
   if (pixPaymentData.value?.payload) {
     try {
@@ -596,19 +690,24 @@ const processPayment = async () => {
 
     if (result && result.pix_payment) {
       const pixData = result.pix_payment as {
+        payment_id: string;
         qr_code: string;
         payload: string;
         expiration_date: string;
       };
       pixPaymentData.value = {
+        payment_id: pixData.payment_id,
         qr_code: pixData.qr_code,
         payload: pixData.payload,
         expiration_date: pixData.expiration_date,
       };
+      pixPaymentId.value = pixData.payment_id;
+      pixPaymentStatus.value = 'PENDING';
       pixPaymentInitiated.value = true;
       window.scrollTo({ top: 0, behavior: 'smooth' });
       await nextTick();
       pixModalOpen.value = true;
+      await initPaymentSubscription();
     } else if (result) {
       console.log('Pagamento processado:', result);
     }
@@ -2670,14 +2769,40 @@ onMounted(async () => {
   </div>
 
   <VDialog v-model="pixModalOpen" max-width="500" persistent>
-    <DialogCloseBtn @click="pixModalOpen = false" />
+    <DialogCloseBtn
+      v-if="!pixPaymentConfirmed && !isPaymentReceived"
+      @click="pixModalOpen = false"
+    />
     <VCard>
       <VCardTitle>
         <span>{{ $t('pix_payment') }}</span>
       </VCardTitle>
       <VDivider />
       <VCardText class="d-flex flex-column align-center gap-4 pa-6">
-        <div class="text-center">
+        <div v-if="pixPaymentConfirmed" class="text-center w-100">
+          <VIcon size="64" color="success" class="mb-4"
+            >tabler-circle-check</VIcon
+          >
+          <h3 class="text-h5 mb-2">{{ $t('payment_success_title') }}</h3>
+          <p class="text-body-1">{{ $t('payment_success_message') }}</p>
+        </div>
+        <div v-else-if="isPaymentReceived" class="text-center w-100">
+          <VIcon size="64" color="success" class="mb-4"
+            >tabler-circle-check</VIcon
+          >
+          <h3 class="text-h5 mb-2">{{ $t('payment_received_title') }}</h3>
+          <p class="text-body-1">{{ $t('payment_received_message') }}</p>
+        </div>
+        <div v-else class="text-center w-100">
+          <div v-if="pixPaymentStatus" class="mb-4">
+            <VChip
+              :color="getPaymentStatusColor(pixPaymentStatus)"
+              variant="tonal"
+              size="large"
+            >
+              {{ getPaymentStatusText(pixPaymentStatus) }}
+            </VChip>
+          </div>
           <p class="text-body-1 mb-2">{{ $t('pix_payment_instructions') }}</p>
           <p class="text-caption text-medium-emphasis">
             {{ $t('pix_expires_at') }}:
@@ -2692,7 +2817,11 @@ onMounted(async () => {
         </div>
 
         <div
-          v-if="pixPaymentData?.qr_code"
+          v-if="
+            pixPaymentData?.qr_code &&
+            !pixPaymentConfirmed &&
+            !isPaymentReceived
+          "
           class="d-flex justify-center align-center pa-4 bg-grey-lighten-4 rounded mt-n2"
         >
           <img
@@ -2708,7 +2837,7 @@ onMounted(async () => {
           />
         </div>
 
-        <div class="w-100">
+        <div v-if="!pixPaymentConfirmed && !isPaymentReceived" class="w-100">
           <VLabel class="mb-2">{{ $t('pix_copy_paste_code') }}</VLabel>
           <VTextField
             :model-value="pixPaymentData?.payload || ''"
@@ -2730,12 +2859,20 @@ onMounted(async () => {
           </VTextField>
         </div>
 
-        <VAlert type="info" variant="tonal" class="w-100">
+        <VAlert
+          v-if="!pixPaymentConfirmed && !isPaymentReceived"
+          type="info"
+          variant="tonal"
+          class="w-100"
+        >
           {{ $t('pix_payment_warning') }}
         </VAlert>
       </VCardText>
       <VDivider />
-      <VCardActions class="justify-end pa-4">
+      <VCardActions
+        v-if="!pixPaymentConfirmed && !isPaymentReceived"
+        class="justify-end pa-4"
+      >
         <VBtn variant="tonal" color="secondary" @click="pixModalOpen = false">
           {{ $t('close') }}
         </VBtn>

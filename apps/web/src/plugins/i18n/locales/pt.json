@@ -1523,5 +1523,14 @@
     "pix_copy_paste_code": "Código PIX (Copia e Cola)",
     "pix_payment_warning": "Após realizar o pagamento, aguarde a confirmação. O processamento pode levar alguns minutos.",
     "awaiting_payment": "Aguardando pagamento",
-    "view_pix_payment": "Ver Pagamento PIX"
+    "view_pix_payment": "Ver Pagamento PIX",
+    "payment_status_pending": "Pendente",
+    "payment_status_received": "Recebido",
+    "payment_status_confirmed": "Confirmado",
+    "payment_status_overdue": "Vencido",
+    "payment_status_refunded": "Reembolsado",
+    "payment_success_title": "Pagamento Confirmado",
+    "payment_success_message": "Seu pagamento foi confirmado com sucesso!",
+    "payment_received_title": "Pagamento Recebido",
+    "payment_received_message": "Seu pagamento foi recebido e está sendo processado. O plano será liberado em instantes."
 }

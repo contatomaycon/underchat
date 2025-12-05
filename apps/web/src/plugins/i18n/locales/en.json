@@ -1507,5 +1507,14 @@
     "order_payment_created_successfully": "Order payment created successfully",
     "order_payment_creation_failed": "Failed to create order payment",
     "awaiting_payment": "Awaiting payment",
-    "view_pix_payment": "View PIX Payment"
+    "view_pix_payment": "View PIX Payment",
+    "payment_status_pending": "Pending",
+    "payment_status_received": "Received",
+    "payment_status_confirmed": "Confirmed",
+    "payment_status_overdue": "Overdue",
+    "payment_status_refunded": "Refunded",
+    "payment_success_title": "Payment Confirmed",
+    "payment_success_message": "Your payment has been confirmed successfully!",
+    "payment_received_title": "Payment Received",
+    "payment_received_message": "Your payment has been received and is being processed. The plan will be released shortly."
 }

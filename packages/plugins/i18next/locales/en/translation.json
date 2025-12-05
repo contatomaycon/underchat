@@ -510,5 +510,19 @@
   "password_requires_number_symbol_or_whitespace": "Password must contain at least one number, symbol, or whitespace character",
   "notifications_view_successfully": "Notifications viewed successfully!",
   "notifications_update_successfully": "Notifications updated successfully!",
-  "workers_list_successfully": "Workers list retrieved successfully!"
+  "workers_list_successfully": "Workers list retrieved successfully!",
+  "pix_payment": "PIX Payment",
+  "pix_payment_instructions": "Scan the QR Code or copy the PIX code to make the payment",
+  "pix_expires_at": "Expires at",
+  "pix_copy_paste_code": "PIX Code (Copy and Paste)",
+  "pix_payment_warning": "After payment, wait for automatic confirmation",
+  "view_pix_payment": "View PIX Payment",
+  "awaiting_payment": "Awaiting payment",
+  "payment_status_pending": "Pending",
+  "payment_status_received": "Received",
+  "payment_status_confirmed": "Confirmed",
+  "payment_status_overdue": "Overdue",
+  "payment_status_refunded": "Refunded",
+  "payment_success_title": "Payment Confirmed!",
+  "payment_success_message": "Your payment has been confirmed successfully. You will be redirected shortly."
 }

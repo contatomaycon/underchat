@@ -1507,5 +1507,14 @@
     "order_payment_created_successfully": "Pago de pedido creado con éxito",
     "order_payment_creation_failed": "Error al crear el pago del pedido",
     "awaiting_payment": "Esperando pago",
-    "view_pix_payment": "Ver Pago PIX"
+    "view_pix_payment": "Ver Pago PIX",
+    "payment_status_pending": "Pendiente",
+    "payment_status_received": "Recibido",
+    "payment_status_confirmed": "Confirmado",
+    "payment_status_overdue": "Vencido",
+    "payment_status_refunded": "Reembolsado",
+    "payment_success_title": "Pago Confirmado",
+    "payment_success_message": "¡Su pago ha sido confirmado con éxito!",
+    "payment_received_title": "Pago Recibido",
+    "payment_received_message": "Su pago ha sido recibido y está siendo procesado. El plan será liberado en breve."
 }

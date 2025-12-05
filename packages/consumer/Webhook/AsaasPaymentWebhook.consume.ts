@@ -6,6 +6,7 @@ import { createConsumer } from '@core/common/functions/createConsumer';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { FastifyInstance } from 'fastify';
+import { PlanReleaseService } from '@core/services/planRelease.service';
 
 @singleton()
 export class AsaasPaymentWebhookConsume {
@@ -13,7 +14,8 @@ export class AsaasPaymentWebhookConsume {
 
   constructor(
     @inject('Kafka') private readonly kafka: Kafka,
-    private readonly kafkaServiceQueueService: KafkaServiceQueueService
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    private readonly planReleaseService: PlanReleaseService
   ) {}
 
   private get consumerOrThrow(): Consumer {
@@ -122,6 +124,7 @@ export class AsaasPaymentWebhookConsume {
     data: AsaasPaymentWebhookRequest
   ): Promise<void> {
     server.log.info(`Payment created: ${data.payment.id}`);
+    await this.planReleaseService.processPaymentWebhook(data);
   }
 
   private async handlePaymentReceived(
@@ -129,6 +132,7 @@ export class AsaasPaymentWebhookConsume {
     data: AsaasPaymentWebhookRequest
   ): Promise<void> {
     server.log.info(`Payment received: ${data.payment.id}`);
+    await this.planReleaseService.processPaymentWebhook(data);
   }
 
   private async handlePaymentConfirmed(
@@ -136,6 +140,7 @@ export class AsaasPaymentWebhookConsume {
     data: AsaasPaymentWebhookRequest
   ): Promise<void> {
     server.log.info(`Payment confirmed: ${data.payment.id}`);
+    await this.planReleaseService.processPaymentWebhook(data);
   }
 
   private async handlePaymentOverdue(
@@ -143,6 +148,7 @@ export class AsaasPaymentWebhookConsume {
     data: AsaasPaymentWebhookRequest
   ): Promise<void> {
     server.log.info(`Payment overdue: ${data.payment.id}`);
+    await this.planReleaseService.processPaymentWebhook(data);
   }
 
   private async handlePaymentRefunded(
@@ -150,6 +156,7 @@ export class AsaasPaymentWebhookConsume {
     data: AsaasPaymentWebhookRequest
   ): Promise<void> {
     server.log.info(`Payment refunded: ${data.payment.id}`);
+    await this.planReleaseService.processPaymentWebhook(data);
   }
 
   private parseMessage(

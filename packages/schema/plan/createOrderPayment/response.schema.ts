@@ -1,6 +1,7 @@
 import { Static, Type } from '@sinclair/typebox';
 
 export const pixPaymentDataSchema = Type.Object({
+  payment_id: Type.String({ description: 'ID do pagamento no Asaas' }),
   qr_code: Type.String({ description: 'QR Code do PIX em base64' }),
   payload: Type.String({ description: 'Código PIX copia e cola' }),
   expiration_date: Type.String({
