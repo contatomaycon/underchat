@@ -21,7 +21,6 @@ services:
     restart: always
     volumes:
       - db_postgresql:/var/lib/postgresql
-      - db_postgresql_data:/var/lib/postgresql/data
 
   under-db-elastic:
     image: docker.elastic.co/elasticsearch/elasticsearch:9.0.1
@@ -80,7 +79,7 @@ services:
     restart: always
 
   under-temporal-db:
-    image: postgres:16-alpine
+    image: postgres:latest
     container_name: under-temporal-db
     environment:
       - POSTGRES_USER=temporal
@@ -90,7 +89,7 @@ services:
       - underchat
     restart: always
     volumes:
-      - temporal_postgresql:/var/lib/postgresql/data
+      - temporal_postgresql:/var/lib/postgresql
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U temporal -d temporal']
       interval: 5s
@@ -154,7 +153,6 @@ services:
     restart: always
     volumes:
       - atlas_db_postgresql:/var/lib/postgresql
-      - atlas_db_postgresql_data:/var/lib/postgresql/data
 
   under-atlas:
     build:
@@ -278,10 +276,8 @@ volumes:
   temporal_postgresql:
   postgresql_data:
   db_postgresql:
-  db_postgresql_data:
   db_elastic_data:
   atlas_db_postgresql:
-  atlas_db_postgresql_data:
   elasticsearch_data:
   kafka_data:
   minio_data:
