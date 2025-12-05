@@ -65,6 +65,7 @@ CREATE TABLE "plan_account" (
   "last_payment_date" timestamptz NULL,
   "next_payment_date" timestamptz NULL,
   "cancellation_date" timestamptz NULL,
+  "value" numeric(10,2) NOT NULL,
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
   PRIMARY KEY ("plan_account_id"),

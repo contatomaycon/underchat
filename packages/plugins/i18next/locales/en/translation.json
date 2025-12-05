@@ -212,6 +212,8 @@
   "plan_list_successfully": "Plan list retrieved successfully!",
   "plan_list_not_found": "No plans found!",
   "plan_name_required": "Plan name is required!",
+  "plan_id_required": "Plan ID is required",
+  "upgrade_discount_calculated_successfully": "Upgrade discount calculated successfully",
   "plan_price_invalid": "Plan price must be greater than or equal to zero!",
   "plan_price_old_invalid": "Plan old price must be greater than or equal to zero!",
   "plan_creation_failed": "Failed to create plan!",

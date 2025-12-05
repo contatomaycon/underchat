@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { usePlanStore } from '@/@webcore/stores/plan';
+import { useAccountSettingsStore } from '@/@webcore/stores/accountSettings';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/response.schema';
 
@@ -22,6 +23,7 @@ definePage({
 const { t, locale } = useI18n();
 const router = useRouter();
 const planStore = usePlanStore();
+const accountSettingsStore = useAccountSettingsStore();
 useSnackbarCleanup(planStore);
 
 const plans = ref<ListPlanWithItemsResponse[]>([]);
@@ -30,6 +32,7 @@ const billingPeriod = ref<'monthly' | 'annual'>('monthly');
 const selectedPlanId = ref<string | null>(null);
 const currentPlanId = ref<string | null>(null);
 const currentPlan = ref<ListPlanWithItemsResponse | null>(null);
+const currentPlanBillingPeriod = ref<'monthly' | 'annual' | null>(null);
 
 const getCurrencyConfig = () => {
   const localeMap: Record<string, { locale: string; currency: string }> = {
@@ -74,9 +77,10 @@ const getPrice = (plan: ListPlanWithItemsResponse): number => {
 
 const loadPlans = async () => {
   loading.value = true;
-  const [result, currentPlanIdValue] = await Promise.all([
+  const [result, currentPlanIdValue, currentPlanInvoice] = await Promise.all([
     planStore.listPlanWithItems(),
     planStore.getCurrentPlan(),
+    accountSettingsStore.getCurrentPlanInvoice(),
   ]);
 
   if (result) {
@@ -89,6 +93,18 @@ const loadPlans = async () => {
         result.find((p) => p.plan_id === currentPlanIdValue) || null;
     } else {
       currentPlan.value = null;
+    }
+
+    if (currentPlanInvoice?.billing_period) {
+      currentPlanBillingPeriod.value = currentPlanInvoice.billing_period as
+        | 'monthly'
+        | 'annual';
+
+      if (currentPlanBillingPeriod.value === 'annual') {
+        billingPeriod.value = 'annual';
+      }
+    } else {
+      currentPlanBillingPeriod.value = null;
     }
 
     if (result.length > 1) {
@@ -138,8 +154,27 @@ const isDowngrade = (plan: ListPlanWithItemsResponse): boolean => {
   return planPrice < currentPrice;
 };
 
+const isInvalidBillingPeriodChange = (
+  plan: ListPlanWithItemsResponse
+): boolean => {
+  if (!currentPlanBillingPeriod.value) return false;
+
+  if (
+    currentPlanBillingPeriod.value === 'annual' &&
+    billingPeriod.value === 'monthly'
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
 const isPlanDisabled = (plan: ListPlanWithItemsResponse): boolean => {
-  return isCurrentPlan(plan.plan_id) || isDowngrade(plan);
+  return (
+    isCurrentPlan(plan.plan_id) ||
+    isDowngrade(plan) ||
+    isInvalidBillingPeriodChange(plan)
+  );
 };
 
 const getButtonText = (planId: string): string => {
@@ -198,6 +233,12 @@ const getColClasses = computed(() => {
   return { cols: '12', sm: '6', md: '4', offset: '' };
 });
 
+watch(billingPeriod, (newValue) => {
+  if (currentPlanBillingPeriod.value === 'annual' && newValue === 'monthly') {
+    billingPeriod.value = 'annual';
+  }
+});
+
 onMounted(() => {
   loadPlans();
 });
@@ -218,6 +259,7 @@ onMounted(() => {
               :class="[
                 'text-body-1',
                 billingPeriod === 'monthly' ? 'text-primary' : 'text-disabled',
+                currentPlanBillingPeriod === 'annual' ? 'text-disabled' : '',
               ]"
             >
               {{ $t('monthly') }}
@@ -228,6 +270,7 @@ onMounted(() => {
               false-value="monthly"
               color="primary"
               hide-details
+              :disabled="currentPlanBillingPeriod === 'annual'"
             />
             <span
               :class="[

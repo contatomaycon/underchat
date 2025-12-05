@@ -9,6 +9,7 @@ INSERT INTO "plan_account" (
   "last_payment_date",
   "next_payment_date",
   "cancellation_date",
+  "value",
   "created_at",
   "updated_at"
 ) VALUES (
@@ -21,6 +22,7 @@ INSERT INTO "plan_account" (
   '2025-01-01 15:43:26.672000 +00:00',
   '2100-01-01 15:43:34.917000 +00:00',
   NULL,
+  '2500.00',
   '2025-12-04 18:43:48.412140 +00:00',
   '2025-12-04 18:43:48.412140 +00:00'
 )

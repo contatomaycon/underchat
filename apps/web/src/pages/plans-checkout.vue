@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { usePlanStore } from '@/@webcore/stores/plan';
+import { useAccountSettingsStore } from '@/@webcore/stores/accountSettings';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { getUser } from '@/@webcore/localStorage/user';
 import visaSvg from '@images/icons/payments/card/visa.svg?url';
@@ -22,6 +23,7 @@ import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/r
 import { ListPlanProductWithPriceResponse } from '@core/schema/plan/listPlanProductWithPrice/response.schema';
 import { ViewUserInfoResponse } from '@core/schema/plan/viewUserInfo/response.schema';
 import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.schema';
+import { CalculateUpgradeDiscountResponse } from '@core/schema/plan/calculateUpgradeDiscount/response.schema';
 import creditCardType from 'credit-card-type';
 
 definePage({
@@ -39,6 +41,7 @@ const { t, locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const planStore = usePlanStore();
+const accountSettingsStore = useAccountSettingsStore();
 useSnackbarCleanup(planStore);
 
 const currentStep = ref(1);
@@ -48,6 +51,7 @@ const plans = ref<ListPlanWithItemsResponse[]>([]);
 const selectedPlanForCheckout = ref<ListPlanWithItemsResponse | null>(null);
 const currentPlanId = ref<string | null>(null);
 const currentPlan = ref<ListPlanWithItemsResponse | null>(null);
+const currentPlanBillingPeriod = ref<'monthly' | 'annual' | null>(null);
 const availableProducts = ref<ListPlanProductWithPriceResponse[]>([]);
 const selectedAddons = ref<
   Array<{
@@ -62,6 +66,8 @@ const currentUser = ref<ViewUserInfoResponse | null>(null);
 const loadingUser = ref(false);
 const userCards = ref<ListUserCardResponse[]>([]);
 const loadingCards = ref(false);
+const upgradeDiscount = ref<CalculateUpgradeDiscountResponse | null>(null);
+const loadingDiscount = ref(false);
 const selectedPaymentMethod = ref<'boleto' | 'credit_card' | 'pix' | null>(
   null
 );
@@ -132,10 +138,13 @@ const loadStep1 = async () => {
 
   billingPeriod.value = billing;
 
-  const [plansList, currentPlanIdValue] = await Promise.all([
-    planStore.listPlanWithItems(),
-    planStore.getCurrentPlan(),
-  ]);
+  const [plansList, currentPlanIdValue, currentPlanInvoice] = await Promise.all(
+    [
+      planStore.listPlanWithItems(),
+      planStore.getCurrentPlan(),
+      accountSettingsStore.getCurrentPlanInvoice(),
+    ]
+  );
 
   if (plansList) {
     plans.value = plansList;
@@ -148,11 +157,25 @@ const loadStep1 = async () => {
       currentPlan.value = null;
     }
 
+    if (currentPlanInvoice?.billing_period) {
+      currentPlanBillingPeriod.value = currentPlanInvoice.billing_period as
+        | 'monthly'
+        | 'annual';
+
+      if (currentPlanBillingPeriod.value === 'annual') {
+        billingPeriod.value = 'annual';
+      }
+    } else {
+      currentPlanBillingPeriod.value = null;
+    }
+
     if (planId) {
       const plan = plansList.find((p) => p.plan_id === planId);
       if (plan) {
         selectedPlanForCheckout.value = plan;
         currentStep.value = 2;
+
+        loadUpgradeDiscount();
       }
     }
   }
@@ -183,8 +206,21 @@ const loadStep3 = async () => {
 const loadStep4 = async () => {
   if (step4Loaded.value) return;
 
-  await loadUserCards();
+  await Promise.all([loadUserCards(), loadUpgradeDiscount()]);
   step4Loaded.value = true;
+};
+
+const loadUpgradeDiscount = async () => {
+  if (!selectedPlanForCheckout.value) return;
+
+  loadingDiscount.value = true;
+  const discount = await planStore.calculateUpgradeDiscount(
+    selectedPlanForCheckout.value.plan_id
+  );
+  if (discount) {
+    upgradeDiscount.value = discount;
+  }
+  loadingDiscount.value = false;
 };
 
 const loadUserData = async () => {
@@ -230,8 +266,33 @@ const isDowngrade = (plan: ListPlanWithItemsResponse): boolean => {
   return planPrice < currentPrice;
 };
 
+const isInvalidBillingPeriodChange = (
+  plan: ListPlanWithItemsResponse
+): boolean => {
+  if (!currentPlanBillingPeriod.value) return false;
+
+  if (
+    currentPlanBillingPeriod.value === 'annual' &&
+    billingPeriod.value === 'monthly'
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
+watch(billingPeriod, (newValue) => {
+  if (currentPlanBillingPeriod.value === 'annual' && newValue === 'monthly') {
+    billingPeriod.value = 'annual';
+  }
+});
+
 const isPlanDisabled = (plan: ListPlanWithItemsResponse): boolean => {
-  return isCurrentPlan(plan.plan_id) || isDowngrade(plan);
+  return (
+    isCurrentPlan(plan.plan_id) ||
+    isDowngrade(plan) ||
+    isInvalidBillingPeriodChange(plan)
+  );
 };
 
 const getButtonText = (planId: string): string => {
@@ -294,6 +355,8 @@ const selectPlan = (plan: ListPlanWithItemsResponse) => {
   if (isPlanDisabled(plan)) return;
   selectedPlanForCheckout.value = plan;
   currentStep.value = 2;
+
+  loadUpgradeDiscount();
 };
 
 const nextStep = () => {
@@ -656,6 +719,9 @@ onMounted(async () => {
                           billingPeriod === 'monthly'
                             ? 'text-primary'
                             : 'text-disabled',
+                          currentPlanBillingPeriod === 'annual'
+                            ? 'text-disabled'
+                            : '',
                         ]"
                       >
                         {{ $t('monthly') }}
@@ -666,6 +732,7 @@ onMounted(async () => {
                         false-value="monthly"
                         color="primary"
                         hide-details
+                        :disabled="currentPlanBillingPeriod === 'annual'"
                       />
                       <span
                         :class="[
@@ -1483,6 +1550,23 @@ onMounted(async () => {
                             </div>
                           </div>
 
+                          <div
+                            v-if="
+                              upgradeDiscount?.is_upgrade &&
+                              upgradeDiscount.discount > 0
+                            "
+                            class="d-flex justify-space-between align-center mb-2"
+                          >
+                            <span class="text-body-1 text-success">
+                              {{ $t('upgrade_discount') }}:
+                            </span>
+                            <span
+                              class="text-body-1 font-weight-medium text-success"
+                            >
+                              -{{ formatCurrency(upgradeDiscount.discount) }}
+                            </span>
+                          </div>
+
                           <VDivider class="my-4" />
 
                           <div
@@ -1682,6 +1766,23 @@ onMounted(async () => {
                                 {{ formatCurrency(0) }}
                               </span>
                             </div>
+                          </div>
+
+                          <div
+                            v-if="
+                              upgradeDiscount?.is_upgrade &&
+                              upgradeDiscount.discount > 0
+                            "
+                            class="d-flex justify-space-between align-center mb-2"
+                          >
+                            <span class="text-body-1 text-success">
+                              {{ $t('upgrade_discount') }}:
+                            </span>
+                            <span
+                              class="text-body-1 font-weight-medium text-success"
+                            >
+                              -{{ formatCurrency(upgradeDiscount.discount) }}
+                            </span>
                           </div>
 
                           <VDivider class="my-4" />
@@ -1945,6 +2046,23 @@ onMounted(async () => {
                                 {{ formatCurrency(0) }}
                               </span>
                             </div>
+                          </div>
+
+                          <div
+                            v-if="
+                              upgradeDiscount?.is_upgrade &&
+                              upgradeDiscount.discount > 0
+                            "
+                            class="d-flex justify-space-between align-center mb-2"
+                          >
+                            <span class="text-body-1 text-success">
+                              {{ $t('upgrade_discount') }}:
+                            </span>
+                            <span
+                              class="text-body-1 font-weight-medium text-success"
+                            >
+                              -{{ formatCurrency(upgradeDiscount.discount) }}
+                            </span>
                           </div>
 
                           <VDivider class="my-4" />

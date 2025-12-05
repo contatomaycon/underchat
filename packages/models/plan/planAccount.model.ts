@@ -1,4 +1,10 @@
-import { pgTable, uuid, timestamp, boolean } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  uuid,
+  timestamp,
+  boolean,
+  numeric,
+} from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { account, billingPeriod, plan, planAccountStatus } from '@core/models';
 
@@ -27,6 +33,7 @@ export const planAccount = pgTable('plan_account', {
     mode: 'string',
     withTimezone: true,
   }),
+  value: numeric({ precision: 10, scale: 2 }).notNull(),
   created_at: timestamp({
     mode: 'string',
     withTimezone: true,

@@ -27,6 +27,8 @@ import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.s
 import { UserCardsListerRepository } from '@core/repositories/plan/UserCardsLister.repository';
 import { ViewUserInfoResponse } from '@core/schema/plan/viewUserInfo/response.schema';
 import { UserInfoViewerRepository } from '@core/repositories/plan/UserInfoViewer.repository';
+import { CalculateUpgradeDiscountResponse } from '@core/schema/plan/calculateUpgradeDiscount/response.schema';
+import { UpgradeDiscountCalculatorRepository } from '@core/repositories/plan/UpgradeDiscountCalculator.repository';
 
 @injectable()
 export class PlanService {
@@ -44,7 +46,8 @@ export class PlanService {
     private readonly planWithItemsListerRepository: PlanWithItemsListerRepository,
     private readonly planProductWithPriceListerRepository: PlanProductWithPriceListerRepository,
     private readonly userCardsListerRepository: UserCardsListerRepository,
-    private readonly userInfoViewerRepository: UserInfoViewerRepository
+    private readonly userInfoViewerRepository: UserInfoViewerRepository,
+    private readonly upgradeDiscountCalculatorRepository: UpgradeDiscountCalculatorRepository
   ) {}
 
   listPlans = async (
@@ -121,5 +124,15 @@ export class PlanService {
     userId: string
   ): Promise<ViewUserInfoResponse | null> => {
     return this.userInfoViewerRepository.viewUserInfo(userId);
+  };
+
+  calculateUpgradeDiscount = async (
+    accountId: string,
+    newPlanId: string
+  ): Promise<CalculateUpgradeDiscountResponse> => {
+    return this.upgradeDiscountCalculatorRepository.calculateUpgradeDiscount(
+      accountId,
+      newPlanId
+    );
   };
 }

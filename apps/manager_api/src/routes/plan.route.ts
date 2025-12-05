@@ -23,6 +23,7 @@ import { viewUserInfoSchema } from '@core/schema/plan/viewUserInfo';
 import { listPlanSalesSchema } from '@core/schema/plan/listPlanSales';
 import { listPlanWithItemsSchema } from '@core/schema/plan/listPlanWithItems';
 import { viewCurrentPlanSchema } from '@core/schema/plan/viewCurrentPlan';
+import { calculateUpgradeDiscountSchema } from '@core/schema/plan/calculateUpgradeDiscount';
 
 export default function planRoutes(server: FastifyInstance) {
   const planController = container.resolve(PlanController);
@@ -156,6 +157,15 @@ export default function planRoutes(server: FastifyInstance) {
   server.get('/plan/current-plan', {
     schema: viewCurrentPlanSchema,
     handler: planController.viewCurrentPlan,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.get('/plan/upgrade-discount', {
+    schema: calculateUpgradeDiscountSchema,
+    handler: planController.calculateUpgradeDiscount,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),
