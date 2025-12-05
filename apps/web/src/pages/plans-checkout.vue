@@ -561,17 +561,23 @@ const getAddonPrice = (addon: {
 };
 
 const cardSelectItems = computed(() => {
-  const items: Array<{ title: string; value: string | null }> = [
+  const items: Array<{
+    title: string;
+    value: string | null;
+    brand: string | null;
+  }> = [
     {
       title: t('select_option'),
       value: null,
+      brand: null,
     },
   ];
 
   userCards.value.forEach((card) => {
     items.push({
-      title: `${card.holder_name} - ${t('ending_in')} ${card.last_number} ${card.brand}${card.default ? ` (${t('default')})` : ''}`,
+      title: `${card.holder_name} - ${t('ending_in')} ${card.last_number}${card.default ? ` (${t('default')})` : ''}`,
       value: card.user_card_id,
+      brand: card.brand,
     });
   });
 
@@ -2117,7 +2123,59 @@ onMounted(async () => {
                         item-value="value"
                         clearable
                         class="mb-4"
-                      />
+                      >
+                        <template #item="{ item, props: itemProps }">
+                          <VListItem v-bind="itemProps" :title="item.raw.title">
+                            <template #prepend>
+                              <VAvatar
+                                v-if="
+                                  item.raw.brand &&
+                                  getBrandLogoUrl(item.raw.brand)
+                                "
+                                size="32"
+                                class="mr-2"
+                              >
+                                <VImg
+                                  :src="getBrandLogoUrl(item.raw.brand) || ''"
+                                  :alt="item.raw.brand || ''"
+                                  cover
+                                />
+                              </VAvatar>
+                              <VIcon
+                                v-else-if="item.raw.value"
+                                icon="tabler-credit-card"
+                                size="24"
+                                class="mr-2"
+                              />
+                            </template>
+                          </VListItem>
+                        </template>
+                        <template #selection="{ item }">
+                          <div class="d-flex align-center">
+                            <VAvatar
+                              v-if="
+                                item.raw.brand &&
+                                getBrandLogoUrl(item.raw.brand)
+                              "
+                              size="24"
+                              class="mr-2"
+                            >
+                              <VImg
+                                :src="getBrandLogoUrl(item.raw.brand) || ''"
+                                :alt="item.raw.brand || ''"
+                                cover
+                              />
+                            </VAvatar>
+                            <VIcon
+                              v-else-if="item.raw.value"
+                              icon="tabler-credit-card"
+                              size="20"
+                              class="mr-2"
+                            />
+                            <span>{{ item.raw.title }}</span>
+                          </div>
+                        </template>
+                      </VSelect>
 
                       <VCard v-else variant="outlined" class="mb-4">
                         <VCardText class="text-center py-4">
