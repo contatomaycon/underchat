@@ -2122,7 +2122,13 @@ onMounted(async () => {
                         item-title="title"
                         item-value="value"
                         clearable
-                        class="mb-4"
+                        clear-icon="tabler-x"
+                        class="mb-4 credit-card-select"
+                        @update:model-value="
+                          (value) => {
+                            selectedCardId = value;
+                          }
+                        "
                       >
                         <template #item="{ item, props: itemProps }">
                           <VListItem v-bind="itemProps" :title="item.raw.title">
@@ -3245,6 +3251,38 @@ onMounted(async () => {
 
 .addons-scrollable::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.3);
+}
+
+.credit-card-select {
+  .v-field__clearable {
+    opacity: 1 !important;
+    visibility: visible !important;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    border-radius: 50%;
+    background-color: rgba(var(--v-theme-error), 0.1);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-inline-start: 8px;
+
+    &:hover {
+      background-color: rgba(var(--v-theme-error), 0.2);
+      transform: scale(1.1);
+    }
+
+    &:active {
+      transform: scale(0.95);
+    }
+
+    .v-icon {
+      color: rgb(var(--v-theme-error)) !important;
+      font-size: 20px !important;
+    }
+  }
 }
 
 /* Para Firefox */
