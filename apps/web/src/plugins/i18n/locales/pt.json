@@ -1456,5 +1456,11 @@
     "deactivated": "Desativado",
     "no_workers_available": "Nenhum canal disponível",
     "unavailable": "Indisponível",
-    "downgrade_not_allowed": "Downgrade não permitido"
+    "downgrade_not_allowed": "Downgrade não permitido",
+    "checkout": "Checkout",
+    "selected_plan": "Plano Selecionado",
+    "addons": "Adicionais",
+    "subtotal": "Subtotal",
+    "proceed_to_payment": "Prosseguir para Pagamento",
+    "no_addons_available": "Nenhum adicional disponível"
 }

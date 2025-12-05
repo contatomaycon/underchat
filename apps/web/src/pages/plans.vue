@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRouter } from 'vue-router';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { usePlanStore } from '@/@webcore/stores/plan';
@@ -20,6 +21,7 @@ definePage({
 });
 
 const { t, locale } = useI18n();
+const router = useRouter();
 const planStore = usePlanStore();
 const accountStore = useAccountStore();
 useSnackbarCleanup(planStore);
@@ -102,6 +104,18 @@ const selectPlan = (planId: string) => {
   selectedPlanId.value = planId;
 };
 
+const openCheckout = (plan: ListPlanWithItemsResponse) => {
+  if (isPlanDisabled(plan)) return;
+
+  router.push({
+    name: 'plans-checkout',
+    query: {
+      plan_id: plan.plan_id,
+      billing: billingPeriod.value,
+    },
+  });
+};
+
 const isPlanSelected = (planId: string): boolean => {
   if (selectedPlanId.value !== planId) return false;
   const plan = plans.value.find((p) => p.plan_id === planId);
@@ -121,7 +135,7 @@ const getCurrentPlanPrice = (): number | null => {
 const isDowngrade = (plan: ListPlanWithItemsResponse): boolean => {
   const currentPrice = getCurrentPlanPrice();
   if (currentPrice === null) return false;
-  
+
   const planPrice = getPrice(plan);
   return planPrice < currentPrice;
 };
@@ -273,16 +287,13 @@ onMounted(() => {
                     ? 4
                     : 0
               "
-              @click="!isPlanDisabled(plan) && selectPlan(plan.plan_id)"
+              @click="!isPlanDisabled(plan) && openCheckout(plan)"
               :style="
                 isPlanDisabled(plan) ? 'cursor: not-allowed' : 'cursor: pointer'
               "
             >
               <VCardText class="position-relative">
-                <div
-                  v-if="isDowngrade(plan)"
-                  class="plan-disabled-overlay"
-                >
+                <div v-if="isDowngrade(plan)" class="plan-disabled-overlay">
                   <VChip color="error" size="small" variant="tonal">
                     {{ $t('unavailable') }}
                   </VChip>
@@ -418,7 +429,7 @@ onMounted(() => {
                         : 'outlined'
                   "
                   :disabled="isPlanDisabled(plan)"
-                  @click.stop="!isPlanDisabled(plan) && selectPlan(plan.plan_id)"
+                  @click.stop="!isPlanDisabled(plan) && openCheckout(plan)"
                 >
                   {{
                     isDowngrade(plan)
