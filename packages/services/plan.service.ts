@@ -32,6 +32,8 @@ import { UpgradeDiscountCalculatorRepository } from '@core/repositories/plan/Upg
 import { PaymentService } from './payment.service';
 import { CrossSellListerRepository } from '@core/repositories/planCrossSell/CrossSellLister.repository';
 import { ListAvailableCrossSellResponse } from '@core/schema/plan/listAvailableCrossSell/response.schema';
+import { OrderPaymentCreatorRepository } from '@core/repositories/plan/OrderPaymentCreator.repository';
+import { CreateOrderPaymentRequest } from '@core/schema/plan/createOrderPayment/request.schema';
 
 @injectable()
 export class PlanService {
@@ -52,7 +54,8 @@ export class PlanService {
     private readonly userInfoViewerRepository: UserInfoViewerRepository,
     private readonly upgradeDiscountCalculatorRepository: UpgradeDiscountCalculatorRepository,
     private readonly paymentService: PaymentService,
-    private readonly crossSellListerRepository: CrossSellListerRepository
+    private readonly crossSellListerRepository: CrossSellListerRepository,
+    private readonly orderPaymentCreatorRepository: OrderPaymentCreatorRepository
   ) {}
 
   listPlans = async (
@@ -149,5 +152,55 @@ export class PlanService {
     ListAvailableCrossSellResponse[]
   > => {
     return this.crossSellListerRepository.listAvailableCrossSells();
+  };
+
+  calculateOrderPayment = async (
+    accountId: string,
+    input: CreateOrderPaymentRequest
+  ): Promise<{
+    planPrice: number;
+    addonsTotal: number;
+    discountAmount: number;
+    totalAmount: number;
+  }> => {
+    return this.orderPaymentCreatorRepository.calculateOrderPayment(
+      accountId,
+      input
+    );
+  };
+
+  getBillingPeriodId = (billingPeriod: 'monthly' | 'annual'): string | null => {
+    return this.orderPaymentCreatorRepository.getBillingPeriodId(billingPeriod);
+  };
+
+  createAccountPayment = async (data: {
+    accountId: string;
+    userCustomerId: string;
+    planId: string;
+    billing: string;
+    paymentBillingTypeId: string;
+    value: string;
+    netValue: string;
+    pixTransaction: string | null;
+    paymentStatusId: string;
+    billingPeriodId: string | null;
+    invoiceUrl: string | null;
+    recurringPayment: boolean;
+    userCardId?: string | null;
+    installment?: string | null;
+    boleto?: string | null;
+    boletoNumber?: string | null;
+  }): Promise<string> => {
+    return this.orderPaymentCreatorRepository.createAccountPayment(data);
+  };
+
+  createAccountPaymentCrossSells = async (data: {
+    accountPaymentId: string;
+    addons: Array<{ plan_cross_sell_id: string }>;
+    billingPeriod: 'monthly' | 'annual';
+  }): Promise<void> => {
+    return this.orderPaymentCreatorRepository.createAccountPaymentCrossSells(
+      data
+    );
   };
 }

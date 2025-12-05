@@ -87,6 +87,8 @@ export class OrderPaymentCreatorRepository {
     recurringPayment: boolean;
     userCardId?: string | null;
     installment?: string | null;
+    boleto?: string | null;
+    boletoNumber?: string | null;
   }): Promise<string> => {
     const accountPaymentId = randomUUID();
 
@@ -106,6 +108,8 @@ export class OrderPaymentCreatorRepository {
       recurring_payment: data.recurringPayment,
       user_card_id: data.userCardId || null,
       installment: data.installment || null,
+      boleto: data.boleto || null,
+      boleto_number: data.boletoNumber || null,
     });
 
     return accountPaymentId;

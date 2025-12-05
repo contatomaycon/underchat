@@ -117,6 +117,14 @@ const pixPaymentData = ref<{
   payload: string;
   expiration_date: string;
 } | null>(null);
+const boletoPaymentData = ref<{
+  payment_id: string;
+  identification_field: string;
+  nosso_numero: string;
+  bar_code: string;
+  bank_slip_url: string;
+  due_date: string;
+} | null>(null);
 const pixPaymentId = ref<string | null>(null);
 const pixPaymentStatus = ref<
   'PENDING' | 'RECEIVED' | 'CONFIRMED' | 'OVERDUE' | 'REFUNDED' | null
@@ -778,6 +786,27 @@ onBeforeUnmount(async () => {
   await cleanupPaymentSubscription();
 });
 
+const copyBoletoCode = async () => {
+  if (boletoPaymentData.value?.identification_field) {
+    try {
+      await navigator.clipboard.writeText(
+        boletoPaymentData.value.identification_field
+      );
+      planStore.snackbar.status = true;
+      planStore.snackbar.message = t('boleto_code_copied');
+      planStore.snackbar.color = EColor.success;
+    } catch (error) {
+      console.error('Erro ao copiar código do boleto:', error);
+    }
+  }
+};
+
+const downloadBoleto = () => {
+  if (boletoPaymentData.value?.bank_slip_url) {
+    window.open(boletoPaymentData.value.bank_slip_url, '_blank');
+  }
+};
+
 const copyPixCode = async () => {
   if (pixPaymentData.value?.payload) {
     try {
@@ -866,6 +895,30 @@ const processPayment = async () => {
         expiration_date: pixData.expiration_date,
       };
       pixPaymentId.value = pixData.payment_id;
+      pixPaymentStatus.value = 'PENDING';
+      pixPaymentInitiated.value = true;
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      await nextTick();
+      pixModalOpen.value = true;
+      await initPaymentSubscription();
+    } else if (result && result.boleto_payment) {
+      const boletoData = result.boleto_payment as {
+        payment_id: string;
+        identification_field: string;
+        nosso_numero: string;
+        bar_code: string;
+        bank_slip_url: string;
+        due_date: string;
+      };
+      boletoPaymentData.value = {
+        payment_id: boletoData.payment_id,
+        identification_field: boletoData.identification_field,
+        nosso_numero: boletoData.nosso_numero,
+        bar_code: boletoData.bar_code,
+        bank_slip_url: boletoData.bank_slip_url,
+        due_date: boletoData.due_date,
+      };
+      pixPaymentId.value = boletoData.payment_id;
       pixPaymentStatus.value = 'PENDING';
       pixPaymentInitiated.value = true;
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2986,7 +3039,9 @@ onMounted(async () => {
         <span>{{
           selectedPaymentMethod === 'pix'
             ? $t('pix_payment')
-            : $t('credit_card_payment')
+            : selectedPaymentMethod === 'boleto'
+              ? $t('boleto_payment')
+              : $t('credit_card_payment')
         }}</span>
       </VCardTitle>
       <VDivider />
@@ -3017,6 +3072,12 @@ onMounted(async () => {
           </div>
           <p v-if="selectedPaymentMethod === 'pix'" class="text-body-1 mb-2">
             {{ $t('pix_payment_instructions') }}
+          </p>
+          <p
+            v-else-if="selectedPaymentMethod === 'boleto'"
+            class="text-body-1 mb-2"
+          >
+            {{ $t('boleto_payment_instructions') }}
           </p>
           <p v-else class="text-body-1 mb-2">
             {{ $t('credit_card_payment_processing') }}
@@ -3096,6 +3157,85 @@ onMounted(async () => {
         >
           {{ $t('pix_payment_warning') }}
         </VAlert>
+
+        <!-- Boleto Content -->
+        <div
+          v-if="
+            selectedPaymentMethod === 'boleto' &&
+            boletoPaymentData &&
+            !pixPaymentConfirmed &&
+            !isPaymentReceived
+          "
+          class="w-100"
+        >
+          <div
+            v-if="boletoPaymentData.bar_code"
+            class="d-flex justify-center align-center pa-4 bg-grey-lighten-4 rounded mb-4"
+          >
+            <img
+              :src="`data:image/png;base64,${boletoPaymentData.bar_code}`"
+              alt="Código de Barras"
+              style="
+                max-width: 100%;
+                max-height: 100px;
+                width: auto;
+                height: auto;
+                object-fit: contain;
+              "
+            />
+          </div>
+
+          <div class="mb-4">
+            <VLabel class="mb-2">{{
+              $t('boleto_identification_field')
+            }}</VLabel>
+            <VTextField
+              :model-value="boletoPaymentData.identification_field || ''"
+              readonly
+              variant="outlined"
+              density="compact"
+              class="mb-2"
+            >
+              <template #append-inner>
+                <IconBtn
+                  size="small"
+                  variant="text"
+                  class="me-n2"
+                  @click="copyBoletoCode"
+                >
+                  <VIcon size="20">tabler-copy</VIcon>
+                </IconBtn>
+              </template>
+            </VTextField>
+          </div>
+
+          <div class="mb-4">
+            <VLabel class="mb-2">{{ $t('boleto_due_date') }}</VLabel>
+            <p class="text-body-1">
+              {{
+                new Date(boletoPaymentData.due_date).toLocaleDateString(
+                  locale,
+                  {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                  }
+                )
+              }}
+            </p>
+          </div>
+
+          <VBtn
+            v-if="boletoPaymentData.bank_slip_url"
+            color="primary"
+            variant="elevated"
+            block
+            @click="downloadBoleto"
+          >
+            <VIcon start>tabler-download</VIcon>
+            {{ $t('download_boleto') }}
+          </VBtn>
+        </div>
       </VCardText>
       <VDivider />
       <VCardActions v-if="shouldShowCloseButton" class="justify-end pa-4">

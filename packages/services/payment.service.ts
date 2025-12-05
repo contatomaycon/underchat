@@ -1,4 +1,4 @@
-import { inject, injectable } from 'tsyringe';
+import { injectable } from 'tsyringe';
 import { UserCustomerRepository } from '@core/repositories/payment/UserCustomer.repository';
 import { AsaasService } from './asaas';
 import { UserService } from './user.service';
@@ -13,15 +13,12 @@ import {
   ICreateAsaasPaymentRequest,
   ICreateAsaasPaymentResponse,
   IGetAsaasPaymentPixQrCodeResponse,
+  IGetAsaasPaymentIdentificationFieldResponse,
   ICreateAsaasCreditCardPaymentRequest,
   ICreateAsaasCreditCardPaymentResponse,
-  IAsaasCreditCardRequest,
   IAsaasCreditCardHolderInfo,
 } from '@core/common/interfaces/IAsaasPayment';
-import {
-  ITokenizeAsaasCreditCardRequest,
-  ITokenizeAsaasCreditCardResponse,
-} from '@core/common/interfaces/IAsaasCreditCard';
+import { ITokenizeAsaasCreditCardRequest } from '@core/common/interfaces/IAsaasCreditCard';
 import { UserCardCreatorRepository } from '@core/repositories/plan/UserCardCreator.repository';
 import { UserCardsListerRepository } from '@core/repositories/plan/UserCardsLister.repository';
 import { UserInfoViewerRepository } from '@core/repositories/plan/UserInfoViewer.repository';
@@ -416,6 +413,39 @@ export class PaymentService {
     const qrCode = await this.asaasService.getPaymentPixQrCode(payment.id);
 
     return { payment, qrCode };
+  };
+
+  createBoletoPayment = async (
+    customerId: string,
+    value: number,
+    description?: string,
+    externalReference?: string
+  ): Promise<{
+    payment: ICreateAsaasPaymentResponse | null;
+    identificationField: IGetAsaasPaymentIdentificationFieldResponse | null;
+  }> => {
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + 3);
+
+    const paymentRequest: ICreateAsaasPaymentRequest = {
+      customer: customerId,
+      billingType: 'BOLETO',
+      value: value,
+      dueDate: dueDate.toISOString().split('T')[0],
+      description: description,
+      externalReference: externalReference,
+    };
+
+    const payment = await this.asaasService.createPayment(paymentRequest);
+
+    if (!payment || !payment.id) {
+      return { payment: null, identificationField: null };
+    }
+
+    const identificationField =
+      await this.asaasService.getPaymentIdentificationField(payment.id);
+
+    return { payment, identificationField };
   };
 
   createCreditCardPayment = async (

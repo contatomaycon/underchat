@@ -15,6 +15,17 @@ export const creditCardPaymentDataSchema = Type.Object({
   is_confirmed: Type.Boolean({ description: 'Se o pagamento foi confirmado' }),
 });
 
+export const boletoPaymentDataSchema = Type.Object({
+  payment_id: Type.String({ description: 'ID do pagamento no Asaas' }),
+  identification_field: Type.String({
+    description: 'Linha digitável do boleto',
+  }),
+  nosso_numero: Type.String({ description: 'Nosso número do boleto' }),
+  bar_code: Type.String({ description: 'Código de barras do boleto' }),
+  bank_slip_url: Type.String({ description: 'URL do boleto para download' }),
+  due_date: Type.String({ description: 'Data de vencimento do boleto' }),
+});
+
 export const createOrderPaymentResponseSchema = Type.Object({
   order_id: Type.String({ format: 'uuid', description: 'ID do pedido criado' }),
   total_amount: Type.Number({ description: 'Valor total a ser pago' }),
@@ -26,6 +37,7 @@ export const createOrderPaymentResponseSchema = Type.Object({
   payment_method: Type.String({ description: 'Método de pagamento' }),
   pix_payment: Type.Optional(pixPaymentDataSchema),
   credit_card_payment: Type.Optional(creditCardPaymentDataSchema),
+  boleto_payment: Type.Optional(boletoPaymentDataSchema),
 });
 
 export type CreateOrderPaymentResponse = Static<
@@ -33,3 +45,4 @@ export type CreateOrderPaymentResponse = Static<
 >;
 export type PixPaymentData = Static<typeof pixPaymentDataSchema>;
 export type CreditCardPaymentData = Static<typeof creditCardPaymentDataSchema>;
+export type BoletoPaymentData = Static<typeof boletoPaymentDataSchema>;

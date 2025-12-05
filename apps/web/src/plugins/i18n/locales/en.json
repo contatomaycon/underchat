@@ -1522,5 +1522,12 @@
     "payment_received_title": "Payment Received",
     "payment_received_message": "Your payment has been received and is being processed. The plan will be released shortly.",
     "credit_card_payment": "Credit Card Payment",
-    "credit_card_payment_processing": "Processing credit card payment..."
+    "credit_card_payment_processing": "Processing credit card payment...",
+    "boleto_payment": "Bank Slip Payment",
+    "boleto_payment_instructions": "Download the bank slip or copy the barcode to make the payment",
+    "boleto_identification_field": "Identification Field",
+    "boleto_due_date": "Due Date",
+    "download_boleto": "Download Bank Slip",
+    "boleto_code_copied": "Bank slip code copied!",
+    "view_boleto_payment": "View Bank Slip"
 }

@@ -1522,5 +1522,12 @@
     "payment_received_title": "Pago Recibido",
     "payment_received_message": "Su pago ha sido recibido y está siendo procesado. El plan será liberado en breve.",
     "credit_card_payment": "Pago con Tarjeta de Crédito",
-    "credit_card_payment_processing": "Procesando pago con tarjeta de crédito..."
+    "credit_card_payment_processing": "Procesando pago con tarjeta de crédito...",
+    "boleto_payment": "Pago con Boleto",
+    "boleto_payment_instructions": "Descargue el boleto o copie el código de barras para realizar el pago",
+    "boleto_identification_field": "Línea Digitável",
+    "boleto_due_date": "Fecha de Vencimiento",
+    "download_boleto": "Descargar Boleto",
+    "boleto_code_copied": "¡Código del boleto copiado!",
+    "view_boleto_payment": "Ver Boleto"
 }

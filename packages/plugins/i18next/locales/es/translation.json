@@ -530,5 +530,6 @@
   "payment_status_refunded": "Reembolsado",
   "payment_success_title": "¡Pago Confirmado!",
   "payment_success_message": "Su pago ha sido confirmado con éxito. Será redirigido en breve.",
+  "boleto_payment_creation_failed": "Error al crear el pago con boleto",
   "cross_sell_available_list_successfully": "Ventas cruzadas disponibles listadas con éxito!"
 }
