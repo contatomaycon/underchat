@@ -1482,5 +1482,15 @@
     "pix_instructions": "The PIX QR Code will be generated after purchase confirmation. Payment is instant.",
     "finalize_purchase": "Finalize Purchase",
     "user_cards_list_error": "An error occurred while loading cards. Please try again.",
-    "user_info_view_error": "An error occurred while loading user information. Please try again."
+    "user_info_view_error": "An error occurred while loading user information. Please try again.",
+    "card_number": "Card Number",
+    "cardholder_name": "Cardholder Name",
+    "cardholder_name_placeholder": "CARDHOLDER NAME",
+    "expiry": "Expiry",
+    "expiry_date": "Expiry Date",
+    "cvv": "CVV",
+    "save_card": "Save Card",
+    "invalid_month": "Invalid month. Use a value between 01 and 12.",
+    "invalid_year": "Invalid year.",
+    "card_expired": "Invalid date. The card has already expired."
 }

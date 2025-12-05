@@ -1482,5 +1482,15 @@
     "pix_instructions": "El código QR del PIX se generará después de la confirmación de la compra. El pago es instantáneo.",
     "finalize_purchase": "Finalizar Compra",
     "user_cards_list_error": "Ocurrió un error al cargar las tarjetas. Por favor, intente nuevamente.",
-    "user_info_view_error": "Ocurrió un error al cargar la información del usuario. Por favor, intente nuevamente."
+    "user_info_view_error": "Ocurrió un error al cargar la información del usuario. Por favor, intente nuevamente.",
+    "card_number": "Número de Tarjeta",
+    "cardholder_name": "Nombre del Titular",
+    "cardholder_name_placeholder": "NOMBRE EN LA TARJETA",
+    "expiry": "Vencimiento",
+    "expiry_date": "Fecha de Vencimiento",
+    "cvv": "CVV",
+    "save_card": "Guardar Tarjeta",
+    "invalid_month": "Mes inválido. Use un valor entre 01 y 12.",
+    "invalid_year": "Año inválido.",
+    "card_expired": "Fecha inválida. La tarjeta ya ha expirado."
 }

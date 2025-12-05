@@ -387,6 +387,9 @@ importers:
       cookie-es:
         specifier: 2.0.0
         version: 2.0.0
+      credit-card-type:
+        specifier: ^10.1.0
+        version: 10.1.0
       destr:
         specifier: 2.0.5
         version: 2.0.5
@@ -4662,6 +4665,9 @@ packages:
 
   create-require@1.1.1:
     resolution: {integrity: sha512-dcKFX3jn0MpIaXjisoRvexIJVEKzaq7z2rZKxf+MSr9TkdmHmsU4m2lcLojrj/FHl8mk5VxMmYA+ftRkP/3oKQ==}
+
+  credit-card-type@10.1.0:
+    resolution: {integrity: sha512-yd9ebGqWQ9zDvxrvCOkX80GiTvVJ28940uIMqRA58Cu3ReiPkOS4p45d9Y2cmJZtZgp90WdwLSiUtI8lHDgE2g==}
 
   crelt@1.0.6:
     resolution: {integrity: sha512-VQ2MBenTq1fWZUH9DJNGti7kKv6EeAuYr3cLwxUWhIu1baTaXh4Ib5W2CqHVqib4/MqbYGJqiL3Zb8GJZr3l4g==}
@@ -14269,6 +14275,8 @@ snapshots:
     optional: true
 
   create-require@1.1.1: {}
+
+  credit-card-type@10.1.0: {}
 
   crelt@1.0.6: {}
 

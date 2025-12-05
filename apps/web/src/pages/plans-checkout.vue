@@ -7,10 +7,22 @@ import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { usePlanStore } from '@/@webcore/stores/plan';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { getUser } from '@/@webcore/localStorage/user';
+import visaSvg from '@images/icons/payments/card/visa.svg?url';
+import mastercardSvg from '@images/icons/payments/card/mastercard.svg?url';
+import amexSvg from '@images/icons/payments/card/amex.svg?url';
+import dinersSvg from '@images/icons/payments/card/diners.svg?url';
+import discoverSvg from '@images/icons/payments/card/discover.svg?url';
+import eloSvg from '@images/icons/payments/card/elo.svg?url';
+import jcbSvg from '@images/icons/payments/card/jcb.svg?url';
+import maestroSvg from '@images/icons/payments/card/maestro.svg?url';
+import hipercardSvg from '@images/icons/payments/card/hipercard.svg?url';
+import meliSvg from '@images/icons/payments/card/meli.svg?url';
+import realSvg from '@images/icons/payments/card/real.svg?url';
 import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/response.schema';
 import { ListPlanProductWithPriceResponse } from '@core/schema/plan/listPlanProductWithPrice/response.schema';
 import { ViewUserInfoResponse } from '@core/schema/plan/viewUserInfo/response.schema';
 import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.schema';
+import creditCardType from 'credit-card-type';
 
 definePage({
   meta: {
@@ -55,10 +67,19 @@ const selectedPaymentMethod = ref<'boleto' | 'credit_card' | 'pix' | null>(
 );
 const selectedCardId = ref<string | null>(null);
 const showAddCardModal = ref(false);
+const newCard = ref({
+  number: '',
+  holderName: '',
+  expiryMonth: '',
+  expiryYear: '',
+  cvv: '',
+});
+const detectedBrand = ref<string | null>(null);
 const step1Loaded = ref(false);
 const step2Loaded = ref(false);
 const step3Loaded = ref(false);
 const step4Loaded = ref(false);
+const expiryError = ref<string | null>(null);
 
 const getCurrencyConfig = () => {
   const localeMap: Record<string, { locale: string; currency: string }> = {
@@ -344,6 +365,240 @@ const goBack = () => {
   router.push({ name: 'plans' });
 };
 
+const detectCardBrand = (cardNumber: string): string | null => {
+  const cleaned = cardNumber.replace(/\s/g, '');
+
+  if (cleaned.length < 4) return null;
+
+  try {
+    const cardTypes = creditCardType(cleaned);
+
+    if (cardTypes && cardTypes.length > 0) {
+      const type = cardTypes[0].type?.toUpperCase();
+
+      const typeMap: Record<string, string> = {
+        VISA: 'VISA',
+        MASTERCARD: 'MASTERCARD',
+        'AMERICAN-EXPRESS': 'AMEX',
+        'DINERS-CLUB': 'DINERS',
+        DISCOVER: 'DISCOVER',
+        JCB: 'JCB',
+        UNIONPAY: 'UNIONPAY',
+        MAESTRO: 'MAESTRO',
+        MIR: 'MIR',
+        ELO: 'ELO',
+      };
+
+      const mappedType = typeMap[type || ''];
+
+      if (mappedType) {
+        return mappedType;
+      }
+    }
+
+    if (cleaned.match(/^(606282|3841)/)) {
+      return 'HIPERCARD';
+    }
+
+    if (cleaned.match(/^(5018|5020|5038|6304|6759|6761|6762|6763)/)) {
+      return 'MELI';
+    }
+
+    if (cleaned.match(/^(5090|5091|5092)/)) {
+      return 'REAL';
+    }
+  } catch (error) {
+    return null;
+  }
+
+  return null;
+};
+
+const formatCardNumber = (value: string): string => {
+  const cleaned = value.replace(/\s/g, '');
+  const chunks = cleaned.match(/.{1,4}/g);
+  return chunks ? chunks.join(' ') : cleaned;
+};
+
+const onCardNumberInput = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const value = target.value.replace(/\D/g, '');
+  newCard.value.number = formatCardNumber(value);
+  detectedBrand.value = detectCardBrand(value);
+};
+
+const formatExpiry = (value: string): string => {
+  const cleaned = value.replace(/\D/g, '');
+
+  if (cleaned.length === 0) {
+    return '';
+  }
+
+  if (cleaned.length === 1) {
+    const firstDigit = parseInt(cleaned[0], 10);
+    if (firstDigit > 1) {
+      return `0${firstDigit}`;
+    }
+    return cleaned;
+  }
+
+  if (cleaned.length >= 2) {
+    const month = cleaned.slice(0, 2);
+    const monthNum = parseInt(month, 10);
+
+    if (monthNum > 12) {
+      return `12/${cleaned.slice(2, 4)}`;
+    }
+
+    if (cleaned.length === 2) {
+      return month;
+    }
+
+    return `${month}/${cleaned.slice(2, 4)}`;
+  }
+
+  return cleaned;
+};
+
+const validateExpiry = (month: string, year: string): string | null => {
+  if (!month || month.length !== 2) {
+    return null;
+  }
+
+  const monthNum = parseInt(month, 10);
+
+  if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
+    return t('invalid_month');
+  }
+
+  if (!year || year.length !== 2) {
+    return null;
+  }
+
+  const yearNum = parseInt(year, 10);
+
+  if (isNaN(yearNum)) {
+    return t('invalid_year');
+  }
+
+  const currentDate = new Date();
+  const currentYear = currentDate.getFullYear() % 100;
+  const currentMonth = currentDate.getMonth() + 1;
+  const fullYear = 2000 + yearNum;
+
+  if (fullYear < currentDate.getFullYear()) {
+    return t('card_expired');
+  }
+
+  if (fullYear === currentDate.getFullYear() && monthNum < currentMonth) {
+    return t('card_expired');
+  }
+
+  return null;
+};
+
+const onExpiryInput = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  let value = target.value.replace(/\D/g, '');
+
+  if (value.length > 4) {
+    value = value.slice(0, 4);
+  }
+
+  const formatted = formatExpiry(value);
+  const parts = formatted.split('/');
+  const month = parts[0] || '';
+  const year = parts[1] || '';
+
+  newCard.value.expiryMonth = month;
+  newCard.value.expiryYear = year;
+
+  if (month.length === 2) {
+    if (year.length === 2) {
+      expiryError.value = validateExpiry(month, year);
+    } else {
+      expiryError.value = null;
+    }
+  } else {
+    expiryError.value = null;
+  }
+
+  target.value = formatted;
+};
+
+const getBrandLogoUrl = (brand: string | null) => {
+  if (!brand) return null;
+
+  const logoPaths: Record<string, string | any> = {
+    VISA: visaSvg,
+    MASTERCARD: mastercardSvg,
+    AMEX: amexSvg,
+    DINERS: dinersSvg,
+    DISCOVER: discoverSvg,
+    ELO: eloSvg,
+    JCB: jcbSvg,
+    MAESTRO: maestroSvg,
+    HIPERCARD: hipercardSvg,
+    MELI: meliSvg,
+    REAL: realSvg,
+  };
+
+  const logoPath = logoPaths[brand];
+
+  if (!logoPath) return null;
+
+  const url =
+    typeof logoPath === 'string'
+      ? logoPath
+      : (logoPath as any)?.default || logoPath;
+
+  return url;
+};
+
+const getBrandColor = (brand: string | null): string => {
+  if (!brand) return '#667eea';
+
+  const brandColors: Record<string, string> = {
+    VISA: '#1A1F71',
+    MASTERCARD: '#EB001B',
+    AMEX: '#006FCF',
+    ELO: '#FFCB05',
+    DINERS: '#0079BE',
+    DISCOVER: '#FF6000',
+    JCB: '#0066CC',
+    MAESTRO: '#EB001B',
+    HIPERCARD: '#D52B1E',
+    MELI: '#FFF159',
+    REAL: '#FF6B00',
+  };
+
+  return brandColors[brand] || '#667eea';
+};
+
+const getBrandGradient = (brand: string | null): string => {
+  if (!brand) return 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+
+  const brandGradients: Record<string, string> = {
+    VISA: 'linear-gradient(135deg, #1A1F71 0%, #1A1F71 100%)',
+    MASTERCARD: 'linear-gradient(135deg, #EB001B 0%, #F79E1B 100%)',
+    AMEX: 'linear-gradient(135deg, #006FCF 0%, #006FCF 100%)',
+    ELO: 'linear-gradient(135deg, #FFCB05 0%, #FF8C00 100%)',
+    DINERS: 'linear-gradient(135deg, #0079BE 0%, #0079BE 100%)',
+    DISCOVER: 'linear-gradient(135deg, #FF6000 0%, #FF8C00 100%)',
+    JCB: 'linear-gradient(135deg, #0066CC 0%, #0066CC 100%)',
+    MAESTRO: 'linear-gradient(135deg, #EB001B 0%, #F79E1B 100%)',
+    HIPERCARD: 'linear-gradient(135deg, #D52B1E 0%, #FF6B00 100%)',
+    MELI: 'linear-gradient(135deg, #FFF159 0%, #FFE600 100%)',
+    REAL: 'linear-gradient(135deg, #FF6B00 0%, #FF8C00 100%)',
+    UNIONPAY: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    MIR: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+  };
+
+  return (
+    brandGradients[brand] || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+  );
+};
+
 watch(currentStep, async (newStep) => {
   if (newStep === 1 && !step1Loaded.value) {
     await loadStep1();
@@ -357,7 +612,6 @@ watch(currentStep, async (newStep) => {
 });
 
 onMounted(async () => {
-  // Carregar step 1 inicialmente
   await loadStep1();
 });
 </script>
@@ -1246,10 +1500,161 @@ onMounted(async () => {
                       color="primary"
                       variant="outlined"
                       prepend-icon="tabler-plus"
-                      @click="showAddCardModal = true"
+                      @click="showAddCardModal = !showAddCardModal"
                     >
                       {{ $t('add_new_card') }}
                     </VBtn>
+
+                    <!-- Formulário de Adicionar Cartão -->
+                    <VCard
+                      v-if="showAddCardModal"
+                      variant="outlined"
+                      class="mt-6 credit-card-form"
+                    >
+                      <VCardText>
+                        <!-- Visual do Cartão -->
+                        <div
+                          class="credit-card-preview mb-6"
+                          :style="{
+                            background: getBrandGradient(detectedBrand),
+                          }"
+                        >
+                          <div class="brand-logo-wrapper">
+                            <div
+                              v-if="getBrandLogoUrl(detectedBrand)"
+                              class="brand-logo"
+                            >
+                              <img
+                                :src="getBrandLogoUrl(detectedBrand) || ''"
+                                :alt="detectedBrand || 'card brand'"
+                                class="brand-logo-img"
+                              />
+                            </div>
+                            <VIcon
+                              v-else
+                              icon="tabler-credit-card"
+                              size="32"
+                              color="white"
+                              class="brand-logo-icon"
+                            />
+                          </div>
+                          <div class="text-h5 text-white mb-4 font-weight-bold">
+                            {{ newCard.number || '0000 0000 0000 0000' }}
+                          </div>
+                          <div class="d-flex justify-space-between align-end">
+                            <div>
+                              <div
+                                class="text-body-2 text-white text-medium-emphasis mb-1"
+                              >
+                                {{ $t('cardholder_name') }}
+                              </div>
+                              <div
+                                class="text-body-1 text-white font-weight-medium"
+                              >
+                                {{
+                                  newCard.holderName ||
+                                  $t('cardholder_name_placeholder')
+                                }}
+                              </div>
+                            </div>
+                            <div>
+                              <div
+                                class="text-body-2 text-white text-medium-emphasis mb-1"
+                              >
+                                {{ $t('expiry') }}
+                              </div>
+                              <div
+                                class="text-body-1 text-white font-weight-medium"
+                              >
+                                {{
+                                  newCard.expiryMonth && newCard.expiryYear
+                                    ? `${newCard.expiryMonth}/${newCard.expiryYear}`
+                                    : 'MM/AA'
+                                }}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- Formulário -->
+                        <VForm>
+                          <VRow>
+                            <VCol cols="12">
+                              <VTextField
+                                v-model="newCard.number"
+                                :label="$t('card_number')"
+                                placeholder="0000 0000 0000 0000"
+                                @input="onCardNumberInput"
+                                :maxlength="19"
+                              >
+                                <template #append-inner>
+                                  <div
+                                    v-if="
+                                      detectedBrand &&
+                                      getBrandLogoUrl(detectedBrand)
+                                    "
+                                    class="brand-logo-small"
+                                  >
+                                    <img
+                                      :src="getBrandLogoUrl(detectedBrand) || ''"
+                                      :alt="detectedBrand || 'card brand'"
+                                      class="brand-logo-img"
+                                    />
+                                  </div>
+                                </template>
+                              </VTextField>
+                            </VCol>
+                            <VCol cols="12">
+                              <VTextField
+                                v-model="newCard.holderName"
+                                :label="$t('cardholder_name')"
+                                placeholder="Nome como está no cartão"
+                                :maxlength="100"
+                              />
+                            </VCol>
+                            <VCol cols="6">
+                              <VTextField
+                                :model-value="
+                                  newCard.expiryMonth && newCard.expiryYear
+                                    ? `${newCard.expiryMonth}/${newCard.expiryYear}`
+                                    : ''
+                                "
+                                :label="$t('expiry_date')"
+                                placeholder="MM/AA"
+                                @input="onExpiryInput"
+                                :maxlength="5"
+                                :error="!!expiryError"
+                                :error-messages="expiryError"
+                              />
+                            </VCol>
+                            <VCol cols="6">
+                              <VTextField
+                                v-model="newCard.cvv"
+                                :label="$t('cvv')"
+                                placeholder="000"
+                                type="password"
+                                :maxlength="4"
+                              />
+                            </VCol>
+                          </VRow>
+                          <div class="d-flex gap-3 mt-4">
+                            <VBtn
+                              color="primary"
+                              @click="showAddCardModal = false"
+                            >
+                              {{ $t('save_card') }}
+                            </VBtn>
+                            <VBtn
+                              variant="outlined"
+                              color="secondary"
+                              @click="showAddCardModal = false"
+                            >
+                              {{ $t('cancel') }}
+                            </VBtn>
+                          </div>
+                        </VForm>
+                      </VCardText>
+                    </VCard>
                   </div>
 
                   <!-- Resumo do PIX -->
@@ -1417,5 +1822,99 @@ onMounted(async () => {
 
 .credit-card-selected {
   border: 2px solid rgb(var(--v-theme-primary));
+}
+
+.credit-card-form {
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.credit-card-preview {
+  border-radius: 16px;
+  padding: 24px;
+  color: white;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+  position: relative;
+  overflow: hidden;
+}
+
+.credit-card-preview::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.1) 0%,
+    transparent 70%
+  );
+  pointer-events: none;
+}
+
+.brand-logo-wrapper {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  z-index: 1;
+}
+
+.brand-logo {
+  width: 90px;
+  height: 55px;
+  max-width: 90px;
+  max-height: 55px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.brand-logo img,
+.brand-logo .brand-logo-img {
+  width: 90px !important;
+  height: 55px !important;
+  max-width: 90px !important;
+  max-height: 55px !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  object-fit: contain;
+  display: block;
+}
+
+.brand-logo-icon {
+  color: white;
+}
+
+.brand-logo-small {
+  width: 32px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.brand-logo-small .brand-logo-img {
+  max-width: 32px;
+  max-height: 20px;
 }
 </style>

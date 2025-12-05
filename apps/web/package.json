@@ -61,7 +61,8 @@
     "vue3-apexcharts": "1.10.0",
     "vue3-perfect-scrollbar": "2.0.0",
     "vuetify": "3.10.11",
-    "webfontloader": "1.6.28"
+    "webfontloader": "1.6.28",
+    "credit-card-type": "^10.1.0"
   },
   "devDependencies": {
     "@antfu/eslint-config-vue": "0.43.1",
