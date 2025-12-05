@@ -707,6 +707,15 @@ const copyPixCode = async () => {
   }
 };
 
+const closePixModal = async () => {
+  const wasReceived = isPaymentReceived.value;
+  await cleanupPaymentSubscription();
+  pixModalOpen.value = false;
+  if (wasReceived) {
+    router.push({ name: 'account-settings', query: { tab: 'plans' } });
+  }
+};
+
 const processPayment = async () => {
   if (!selectedPlanForCheckout.value || !selectedPaymentMethod.value) return;
 
@@ -2851,8 +2860,8 @@ onMounted(async () => {
 
   <VDialog v-model="pixModalOpen" max-width="500" persistent>
     <DialogCloseBtn
-      v-if="!pixPaymentConfirmed && !isPaymentReceived"
-      @click="pixModalOpen = false"
+      v-if="!pixPaymentConfirmed"
+      @click="closePixModal"
     />
     <VCard>
       <VCardTitle>
@@ -2951,10 +2960,10 @@ onMounted(async () => {
       </VCardText>
       <VDivider />
       <VCardActions
-        v-if="!pixPaymentConfirmed && !isPaymentReceived"
+        v-if="!pixPaymentConfirmed"
         class="justify-end pa-4"
       >
-        <VBtn variant="tonal" color="secondary" @click="pixModalOpen = false">
+        <VBtn variant="tonal" color="secondary" @click="closePixModal">
           {{ $t('close') }}
         </VBtn>
       </VCardActions>
