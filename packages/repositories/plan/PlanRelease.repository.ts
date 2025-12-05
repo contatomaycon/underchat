@@ -8,7 +8,7 @@ import {
   accountPaymentCrossSell,
   planCrossSellAccount,
 } from '@core/models';
-import { randomUUID } from 'crypto';
+import { randomUUID } from 'node:crypto';
 
 @injectable()
 export class PlanReleaseRepository {
@@ -212,7 +212,7 @@ export class PlanReleaseRepository {
     });
   };
 
-  private updatePlanAccount = async (
+  private readonly updatePlanAccount = async (
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
     >[0],
@@ -247,7 +247,7 @@ export class PlanReleaseRepository {
       .where(eq(planAccount.plan_account_id, planAccountId));
   };
 
-  private createPlanAccount = async (
+  private readonly createPlanAccount = async (
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
     >[0],
@@ -327,7 +327,7 @@ export class PlanReleaseRepository {
     });
   };
 
-  private findAccountPaymentCrossSells = async (
+  private readonly findAccountPaymentCrossSells = async (
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
     >[0],
@@ -343,7 +343,7 @@ export class PlanReleaseRepository {
     return crossSells;
   };
 
-  private findPlanCrossSellAccountsByAccountId = async (
+  private readonly findPlanCrossSellAccountsByAccountId = async (
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
     >[0],
@@ -367,7 +367,7 @@ export class PlanReleaseRepository {
     return accounts;
   };
 
-  private syncPlanCrossSellAccount = async (
+  private readonly syncPlanCrossSellAccount = async (
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
     >[0],
@@ -403,7 +403,7 @@ export class PlanReleaseRepository {
     ]);
   };
 
-  private categorizeCrossSellAccounts = (
+  private readonly categorizeCrossSellAccounts = (
     paymentCrossSellIds: string[],
     existingCrossSellAccounts: Array<{
       plan_cross_sell_account_id: string;
@@ -455,7 +455,7 @@ export class PlanReleaseRepository {
     return { toRestore, toCreate, toDelete };
   };
 
-  private deleteAllCrossSellAccounts = async (
+  private readonly deleteAllCrossSellAccounts = async (
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
     >[0],
@@ -487,7 +487,7 @@ export class PlanReleaseRepository {
     await Promise.all(updatePromises);
   };
 
-  private restoreCrossSellAccounts = async (
+  private readonly restoreCrossSellAccounts = async (
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
     >[0],
@@ -518,7 +518,7 @@ export class PlanReleaseRepository {
     await Promise.all(restorePromises);
   };
 
-  private createCrossSellAccounts = async (
+  private readonly createCrossSellAccounts = async (
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
     >[0],
@@ -542,7 +542,7 @@ export class PlanReleaseRepository {
     await tx.insert(planCrossSellAccount).values(insertValues);
   };
 
-  private deleteCrossSellAccounts = async (
+  private readonly deleteCrossSellAccounts = async (
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
     >[0],

@@ -10,7 +10,7 @@ import { inject, injectable } from 'tsyringe';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { CreateOrderPaymentRequest } from '@core/schema/plan/createOrderPayment/request.schema';
 import { UpgradeDiscountCalculatorRepository } from './UpgradeDiscountCalculator.repository';
-import { randomUUID } from 'crypto';
+import { randomUUID } from 'node:crypto';
 import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
 
 @injectable()

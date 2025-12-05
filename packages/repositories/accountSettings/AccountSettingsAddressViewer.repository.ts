@@ -52,15 +52,7 @@ export class AccountSettingsAddressViewerRepository {
 
     const cityName = result.uzc?.city ?? null;
 
-    let stateName: string | null = null;
-    if (result.uzs) {
-      if (result.uzs.abbreviation) {
-        stateName = `${result.uzs.state} (${result.uzs.abbreviation})`;
-        return;
-      }
-
-      stateName = result.uzs.state;
-    }
+    const stateName = this.formatStateName(result.uzs);
 
     return {
       country_id: result.uuc?.country_id ?? null,
@@ -73,5 +65,19 @@ export class AccountSettingsAddressViewerRepository {
       city_id: result.uzc?.id_zipcode_city ?? null,
       district: result.district,
     };
+  };
+
+  private readonly formatStateName = (
+    uzs: {
+      state: string;
+      abbreviation: string | null;
+    } | null
+  ): string | null => {
+    if (!uzs) return null;
+    if (uzs.abbreviation) {
+      return `${uzs.state} (${uzs.abbreviation})`;
+    }
+
+    return uzs.state;
   };
 }

@@ -13,7 +13,7 @@ export class PlanReleaseService {
     private readonly centrifugoService: CentrifugoService
   ) {}
 
-  private mapAsaasStatusToPaymentStatus = (
+  private readonly mapAsaasStatusToPaymentStatus = (
     asaasStatus: string
   ): string | null => {
     const statusMap: Record<string, string> = {
@@ -36,7 +36,7 @@ export class PlanReleaseService {
     return statusMap[asaasStatus] || null;
   };
 
-  private isPaymentSuccessful = (status: string): boolean => {
+  private readonly isPaymentSuccessful = (status: string): boolean => {
     return (
       status === 'RECEIVED' ||
       status === 'CONFIRMED' ||
@@ -44,7 +44,9 @@ export class PlanReleaseService {
     );
   };
 
-  private isPaymentStatusSuccessful = (paymentStatusId: string): boolean => {
+  private readonly isPaymentStatusSuccessful = (
+    paymentStatusId: string
+  ): boolean => {
     return (
       paymentStatusId === EPaymentStatus.received ||
       paymentStatusId === EPaymentStatus.confirmed ||
@@ -52,7 +54,7 @@ export class PlanReleaseService {
     );
   };
 
-  private calculateNextPaymentDate = (
+  private readonly calculateNextPaymentDate = (
     paymentDate: string,
     billingPeriodId: string | null,
     currentPlanId: string | null,
@@ -80,7 +82,7 @@ export class PlanReleaseService {
     return paymentDateObj.toISOString();
   };
 
-  private checkIfPlanAlreadyReleased = async (
+  private readonly checkIfPlanAlreadyReleased = async (
     accountPaymentId: string,
     planId: string
   ): Promise<boolean> => {
@@ -107,7 +109,7 @@ export class PlanReleaseService {
     return nextPaymentDate > now;
   };
 
-  private updatePaymentStatusOnly = async (
+  private readonly updatePaymentStatusOnly = async (
     accountPaymentId: string,
     paymentStatusId: string,
     paymentDate: string | null,
@@ -136,7 +138,7 @@ export class PlanReleaseService {
     });
   };
 
-  private releasePlanForPayment = async (
+  private readonly releasePlanForPayment = async (
     accountPaymentId: string,
     paymentStatusId: string,
     paymentDate: string,
@@ -175,7 +177,7 @@ export class PlanReleaseService {
     });
   };
 
-  private processSuccessfulPayment = async (
+  private readonly processSuccessfulPayment = async (
     accountPaymentData: NonNullable<
       Awaited<
         ReturnType<
@@ -227,7 +229,7 @@ export class PlanReleaseService {
     );
   };
 
-  private processUnsuccessfulPayment = async (
+  private readonly processUnsuccessfulPayment = async (
     accountPaymentData: NonNullable<
       Awaited<
         ReturnType<
@@ -253,7 +255,7 @@ export class PlanReleaseService {
     );
   };
 
-  private checkIfCreditCardPlanAlreadyReleased = async (
+  private readonly checkIfCreditCardPlanAlreadyReleased = async (
     accountPaymentId: string,
     planId: string
   ): Promise<boolean> => {
@@ -383,7 +385,7 @@ export class PlanReleaseService {
     );
   };
 
-  private notifyPaymentStatusUpdate = async (
+  private readonly notifyPaymentStatusUpdate = async (
     accountId: string,
     paymentId: string,
     status: string,

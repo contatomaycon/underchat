@@ -7,7 +7,7 @@ import { CreateOrderPaymentResponse } from '@core/schema/plan/createOrderPayment
 import { EPaymentBillingType } from '@core/common/enums/EPaymentBillingType';
 import { EPaymentStatus } from '@core/common/enums/EPaymentStatus';
 import { PlanReleaseService } from '@core/services/planRelease.service';
-import { randomUUID } from 'crypto';
+import { randomUUID } from 'node:crypto';
 
 @injectable()
 export class OrderPaymentCreatorUseCase {

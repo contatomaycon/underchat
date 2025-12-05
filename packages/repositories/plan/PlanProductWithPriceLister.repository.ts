@@ -55,11 +55,11 @@ export class PlanProductWithPriceListerRepository {
       .execute();
 
     const priceMap = new Map<string, number>();
-    crossSells.forEach((cs) => {
+    for (const cs of crossSells) {
       if (!priceMap.has(cs.plan_product_id)) {
         priceMap.set(cs.plan_product_id, Number(cs.price));
       }
-    });
+    }
 
     return priceMap;
   };

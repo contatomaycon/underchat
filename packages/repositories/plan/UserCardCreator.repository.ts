@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { userCard } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { randomUUID } from 'crypto';
+import { randomUUID } from 'node:crypto';
 
 @injectable()
 export class UserCardCreatorRepository {

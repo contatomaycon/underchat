@@ -35,7 +35,7 @@ export class PaymentService {
     private readonly userInfoViewerRepository: UserInfoViewerRepository
   ) {}
 
-  private parseAddress = (
+  private readonly parseAddress = (
     address: string
   ): {
     street: string;
@@ -44,9 +44,8 @@ export class PaymentService {
   } => {
     const trimmedAddress = address.trim();
 
-    const numberMatch = trimmedAddress.match(
-      /\s+(\d+)(?:\s*[-/]?\s*(\d+))?(\s+.*)?$/
-    );
+    const addressRegex = /\s+(\d+)(?:\s*[-/]?\s*(\d+))?(\s+.*)?$/;
+    const numberMatch = addressRegex.exec(trimmedAddress);
     if (numberMatch) {
       const street = trimmedAddress.substring(0, numberMatch.index).trim();
       const number = numberMatch[1];
@@ -99,13 +98,13 @@ export class PaymentService {
     );
   };
 
-  private getUserIdByAccountId = async (
+  private readonly getUserIdByAccountId = async (
     accountId: string
   ): Promise<string | null> => {
     return this.userCustomerRepository.getFirstUserIdByAccountId(accountId);
   };
 
-  private findOrCreateAsaasCustomer = async (
+  private readonly findOrCreateAsaasCustomer = async (
     userId: string,
     accountId: string,
     sensitiveData: {
@@ -130,7 +129,7 @@ export class PaymentService {
     return this.createNewAsaasCustomer(userId, accountId, sensitiveData);
   };
 
-  private findExistingAsaasCustomer = async (
+  private readonly findExistingAsaasCustomer = async (
     document: string,
     email: string | null
   ): Promise<IGetAsaasCustomerResponse | null> => {
@@ -155,7 +154,7 @@ export class PaymentService {
     return null;
   };
 
-  private createNewAsaasCustomer = async (
+  private readonly createNewAsaasCustomer = async (
     userId: string,
     accountId: string,
     sensitiveData: {
@@ -194,7 +193,7 @@ export class PaymentService {
     return this.mapCreatedCustomerToResponse(createdCustomer);
   };
 
-  private buildCreateCustomerRequest = (
+  private readonly buildCreateCustomerRequest = (
     userId: string,
     userView: ViewUserResponse,
     sensitiveData: {
@@ -236,13 +235,13 @@ export class PaymentService {
     };
   };
 
-  private getFullName = (userView: ViewUserResponse): string => {
+  private readonly getFullName = (userView: ViewUserResponse): string => {
     const firstName = userView.user_info?.name || '';
     const lastName = userView.user_info?.last_name || '';
     return `${firstName} ${lastName}`.trim() || 'Cliente';
   };
 
-  private getPhoneData = (
+  private readonly getPhoneData = (
     phone: string | null
   ): { fullPhone: string | undefined; mobilePhone: string | undefined } => {
     if (!phone) {
@@ -252,7 +251,7 @@ export class PaymentService {
       };
     }
 
-    const cleanedPhone = phone.replace(/\D/g, '');
+    const cleanedPhone = phone.replaceAll(/\D/g, '');
     const fullPhone = cleanedPhone || undefined;
 
     return {
@@ -261,7 +260,7 @@ export class PaymentService {
     };
   };
 
-  private getAddressDataForCreditCard = (
+  private readonly getAddressDataForCreditCard = (
     userInfo: ViewUserInfoResponse,
     sensitiveData: {
       address1: string | null;
@@ -289,7 +288,7 @@ export class PaymentService {
     };
   };
 
-  private getAddressData = (
+  private readonly getAddressData = (
     userView: ViewUserResponse,
     sensitiveData: {
       address1: string | null;
@@ -336,7 +335,7 @@ export class PaymentService {
     };
   };
 
-  private getFiscalData = (
+  private readonly getFiscalData = (
     userView: ViewUserResponse
   ): {
     cityFiscalCode: string | undefined;
@@ -348,13 +347,13 @@ export class PaymentService {
     };
   };
 
-  private isCNPJ = (userView: ViewUserResponse): boolean => {
+  private readonly isCNPJ = (userView: ViewUserResponse): boolean => {
     const documentTypeId =
       userView.user_document?.user_document_type?.user_document_type_id;
     return documentTypeId === EUserDocumentType.CNPJ;
   };
 
-  private mapCreatedCustomerToResponse = (
+  private readonly mapCreatedCustomerToResponse = (
     createdCustomer: ICreateAsaasCustomerResponse
   ): IGetAsaasCustomerResponse => {
     return {
@@ -513,7 +512,7 @@ export class PaymentService {
     };
   };
 
-  private getCreditCardToken = async (
+  private readonly getCreditCardToken = async (
     userId: string,
     customerId: string,
     remoteIp: string,
@@ -547,7 +546,7 @@ export class PaymentService {
     return { creditCardToken: undefined };
   };
 
-  private getCreditCardTokenFromExistingCard = async (
+  private readonly getCreditCardTokenFromExistingCard = async (
     userId: string,
     creditCardId: string
   ): Promise<{
@@ -566,7 +565,7 @@ export class PaymentService {
     return { creditCardToken: userCard.token };
   };
 
-  private tokenizeAndSaveNewCard = async (
+  private readonly tokenizeAndSaveNewCard = async (
     userId: string,
     customerId: string,
     remoteIp: string,
@@ -601,7 +600,7 @@ export class PaymentService {
       customer: customerId,
       creditCard: {
         holderName: newCard.holder_name,
-        number: newCard.number.replace(/\s/g, ''),
+        number: newCard.number.replaceAll(/\s/g, ''),
         expiryMonth: newCard.expiry_month,
         expiryYear: newCard.expiry_year,
         ccv: newCard.cvv,
@@ -634,7 +633,7 @@ export class PaymentService {
       await this.userCardsListerRepository.getUserCardsCount(userId);
     const isFirstCard = userCardsCount === 0;
 
-    const lastNumber = newCard.number.replace(/\s/g, '').slice(-4);
+    const lastNumber = newCard.number.replaceAll(/\s/g, '').slice(-4);
     const userCardId = await this.userCardCreatorRepository.createUserCard({
       userId,
       token: tokenizeResult.creditCardToken,
@@ -650,7 +649,7 @@ export class PaymentService {
     };
   };
 
-  private buildCreditCardHolderInfo = (
+  private readonly buildCreditCardHolderInfo = (
     userInfo: ViewUserInfoResponse,
     sensitiveData: {
       email: string | null;
@@ -677,7 +676,7 @@ export class PaymentService {
     };
   };
 
-  private calculateInstallmentValue = (
+  private readonly calculateInstallmentValue = (
     value: number,
     installments?: number
   ): number | undefined => {
@@ -688,7 +687,7 @@ export class PaymentService {
     return Number((value / installments).toFixed(2));
   };
 
-  private buildCreditCardPaymentRequest = (
+  private readonly buildCreditCardPaymentRequest = (
     customerId: string,
     value: number,
     description: string | undefined,

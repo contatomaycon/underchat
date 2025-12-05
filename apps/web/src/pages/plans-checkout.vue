@@ -34,6 +34,7 @@ import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.s
 import { CalculateUpgradeDiscountResponse } from '@core/schema/plan/calculateUpgradeDiscount/response.schema';
 import { CreateOrderPaymentRequest } from '@core/schema/plan/createOrderPayment/request.schema';
 import { CreateOrderPaymentResponse } from '@core/schema/plan/createOrderPayment/response.schema';
+import { ViewCurrentPlanInvoiceResponse } from '@core/schema/accountSettings/viewCurrentPlanInvoice/response.schema';
 import creditCardType from 'credit-card-type';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
@@ -175,6 +176,61 @@ const getPrice = (plan: ListPlanWithItemsResponse): number => {
   return plan.price;
 };
 
+const processCurrentPlan = (
+  plansList: ListPlanWithItemsResponse[],
+  currentPlanIdValue: string | null
+) => {
+  currentPlanId.value = currentPlanIdValue;
+
+  if (currentPlanIdValue) {
+    currentPlan.value =
+      plansList.find((p) => p.plan_id === currentPlanIdValue) || null;
+    return;
+  }
+
+  currentPlan.value = null;
+};
+
+const processCurrentPlanInvoice = (
+  currentPlanInvoice: ViewCurrentPlanInvoiceResponse | null
+) => {
+  if (!currentPlanInvoice) {
+    currentPlanInvoiceData.value = null;
+    currentPlanBillingPeriod.value = null;
+    return;
+  }
+
+  currentPlanInvoiceData.value = currentPlanInvoice;
+
+  if (!currentPlanInvoice.billing_period) {
+    currentPlanBillingPeriod.value = null;
+    return;
+  }
+
+  currentPlanBillingPeriod.value = currentPlanInvoice.billing_period as
+    | 'monthly'
+    | 'annual';
+
+  if (currentPlanBillingPeriod.value === 'annual') {
+    billingPeriod.value = 'annual';
+  }
+};
+
+const processPlanIdFromQuery = (
+  plansList: ListPlanWithItemsResponse[],
+  planId: string | undefined
+) => {
+  if (!planId) {
+    return;
+  }
+
+  const plan = plansList.find((p) => p.plan_id === planId);
+  if (plan) {
+    selectedPlanForCheckout.value = plan;
+    currentStep.value = 2;
+  }
+};
+
 const loadStep1 = async () => {
   if (step1Loaded.value) return;
 
@@ -192,44 +248,16 @@ const loadStep1 = async () => {
     ]
   );
 
-  if (plansList) {
-    plans.value = plansList;
-    currentPlanId.value = currentPlanIdValue;
-
-    if (currentPlanIdValue) {
-      currentPlan.value =
-        plansList.find((p) => p.plan_id === currentPlanIdValue) || null;
-    } else {
-      currentPlan.value = null;
-    }
-
-    if (currentPlanInvoice) {
-      currentPlanInvoiceData.value = currentPlanInvoice;
-
-      if (currentPlanInvoice.billing_period) {
-        currentPlanBillingPeriod.value = currentPlanInvoice.billing_period as
-          | 'monthly'
-          | 'annual';
-
-        if (currentPlanBillingPeriod.value === 'annual') {
-          billingPeriod.value = 'annual';
-        }
-      } else {
-        currentPlanBillingPeriod.value = null;
-      }
-    } else {
-      currentPlanInvoiceData.value = null;
-      currentPlanBillingPeriod.value = null;
-    }
-
-    if (planId) {
-      const plan = plansList.find((p) => p.plan_id === planId);
-      if (plan) {
-        selectedPlanForCheckout.value = plan;
-        currentStep.value = 2;
-      }
-    }
+  if (!plansList) {
+    step1Loaded.value = true;
+    loading.value = false;
+    return;
   }
+
+  plans.value = plansList;
+  processCurrentPlan(plansList, currentPlanIdValue);
+  processCurrentPlanInvoice(currentPlanInvoice);
+  processPlanIdFromQuery(plansList, planId);
 
   step1Loaded.value = true;
   loading.value = false;
@@ -466,7 +494,7 @@ const groupedCrossSells = computed(() => {
     }
   > = {};
 
-  availableCrossSells.value.forEach((crossSell) => {
+  for (const crossSell of availableCrossSells.value) {
     const productId = crossSell.plan_product_id;
     if (!grouped[productId]) {
       grouped[productId] = {
@@ -477,7 +505,7 @@ const groupedCrossSells = computed(() => {
       };
     }
     grouped[productId].options.push(crossSell);
-  });
+  }
 
   return Object.values(grouped);
 });
@@ -583,13 +611,14 @@ const cardSelectItems = computed(() => {
     },
   ];
 
-  userCards.value.forEach((card) => {
+  for (const card of userCards.value) {
+    const defaultLabel = card.default ? ` (${t('default')})` : '';
     items.push({
-      title: `${card.holder_name} - ${t('ending_in')} ${card.last_number}${card.default ? ` (${t('default')})` : ''}`,
+      title: `${card.holder_name} - ${t('ending_in')} ${card.last_number}${defaultLabel}`,
       value: card.user_card_id,
       brand: card.brand,
     });
-  });
+  }
 
   return items;
 });
@@ -647,7 +676,7 @@ const isNewCardValid = computed(() => {
   if (!showAddCardModal.value) return false;
 
   const card = newCard.value;
-  const hasNumber = card.number.replace(/\s/g, '').length >= 13;
+  const hasNumber = card.number.replaceAll(/\s/g, '').length >= 13;
   const hasHolderName = card.holderName.trim().length > 0;
   const hasExpiryMonth = card.expiryMonth.length === 2;
   const hasExpiryYear = card.expiryYear.length === 2;
@@ -848,6 +877,114 @@ const closePixModal = async () => {
   }
 };
 
+const buildPaymentData = (): CreateOrderPaymentRequest => {
+  const addons =
+    selectedAddons.value.length > 0
+      ? selectedAddons.value.map((addon) => ({
+          plan_cross_sell_id: addon.plan_cross_sell_id,
+        }))
+      : undefined;
+
+  const isCreditCard = selectedPaymentMethod.value === 'credit_card';
+
+  return {
+    plan_id: selectedPlanForCheckout.value!.plan_id,
+    billing_period: billingPeriod.value,
+    addons: addons,
+    payment_method: selectedPaymentMethod.value!,
+    credit_card_id:
+      isCreditCard && selectedCardId.value ? selectedCardId.value : undefined,
+    new_card:
+      isCreditCard && showAddCardModal.value && newCard.value.number
+        ? {
+            number: newCard.value.number.replaceAll(/\s/g, ''),
+            holder_name: newCard.value.holderName,
+            expiry_month: newCard.value.expiryMonth,
+            expiry_year: newCard.value.expiryYear,
+            cvv: newCard.value.cvv,
+          }
+        : undefined,
+    recurring_payment: isCreditCard ? recurringPayment.value : undefined,
+    installments:
+      isCreditCard && billingPeriod.value === 'annual'
+        ? installments.value
+        : undefined,
+  };
+};
+
+const openPaymentModal = async () => {
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  await nextTick();
+  pixModalOpen.value = true;
+  await initPaymentSubscription();
+};
+
+const processPixPayment = async (pixData: {
+  payment_id: string;
+  qr_code: string;
+  payload: string;
+  expiration_date: string;
+}) => {
+  pixPaymentData.value = {
+    payment_id: pixData.payment_id,
+    qr_code: pixData.qr_code,
+    payload: pixData.payload,
+    expiration_date: pixData.expiration_date,
+  };
+  pixPaymentId.value = pixData.payment_id;
+  pixPaymentStatus.value = 'PENDING';
+  pixPaymentInitiated.value = true;
+  await openPaymentModal();
+};
+
+const processBoletoPayment = async (boletoData: {
+  payment_id: string;
+  identification_field: string;
+  nosso_numero: string;
+  qr_code?: string;
+  payload?: string;
+  expiration_date?: string;
+  bank_slip_url: string;
+  due_date: string;
+}) => {
+  boletoPaymentData.value = {
+    payment_id: boletoData.payment_id,
+    identification_field: boletoData.identification_field,
+    nosso_numero: boletoData.nosso_numero,
+    qr_code: boletoData.qr_code,
+    payload: boletoData.payload,
+    expiration_date: boletoData.expiration_date,
+    bank_slip_url: boletoData.bank_slip_url,
+    due_date: boletoData.due_date,
+  };
+  pixPaymentId.value = boletoData.payment_id;
+  pixPaymentStatus.value = 'PENDING';
+  pixPaymentInitiated.value = true;
+  await openPaymentModal();
+};
+
+const processCreditCardPayment = async (creditCardData: {
+  payment_id: string;
+  status: string;
+  is_confirmed: boolean;
+}) => {
+  pixPaymentId.value = creditCardData.payment_id;
+  pixPaymentStatus.value =
+    (creditCardData.status as
+      | 'PENDING'
+      | 'RECEIVED'
+      | 'CONFIRMED'
+      | 'OVERDUE'
+      | 'REFUNDED') || 'PENDING';
+  pixPaymentInitiated.value = true;
+
+  if (creditCardData.is_confirmed) {
+    pixPaymentConfirmed.value = true;
+  }
+
+  await openPaymentModal();
+};
+
 const processPayment = async () => {
   if (!selectedPlanForCheckout.value || !selectedPaymentMethod.value) return;
 
@@ -860,124 +997,30 @@ const processPayment = async () => {
   }
 
   try {
-    const addons =
-      selectedAddons.value.length > 0
-        ? selectedAddons.value.map((addon) => ({
-            plan_cross_sell_id: addon.plan_cross_sell_id,
-          }))
-        : undefined;
-
-    const paymentData: CreateOrderPaymentRequest = {
-      plan_id: selectedPlanForCheckout.value.plan_id,
-      billing_period: billingPeriod.value,
-      addons: addons,
-      payment_method: selectedPaymentMethod.value,
-      credit_card_id:
-        selectedPaymentMethod.value === 'credit_card' && selectedCardId.value
-          ? selectedCardId.value
-          : undefined,
-      new_card:
-        selectedPaymentMethod.value === 'credit_card' &&
-        showAddCardModal.value &&
-        newCard.value.number
-          ? {
-              number: newCard.value.number.replace(/\s/g, ''),
-              holder_name: newCard.value.holderName,
-              expiry_month: newCard.value.expiryMonth,
-              expiry_year: newCard.value.expiryYear,
-              cvv: newCard.value.cvv,
-            }
-          : undefined,
-      recurring_payment:
-        selectedPaymentMethod.value === 'credit_card'
-          ? recurringPayment.value
-          : undefined,
-      installments:
-        selectedPaymentMethod.value === 'credit_card' &&
-        billingPeriod.value === 'annual'
-          ? installments.value
-          : undefined,
-    };
-
+    const paymentData = buildPaymentData();
     const result: CreateOrderPaymentResponse | null =
       await planStore.createOrderPayment(paymentData);
 
-    if (result && result.pix_payment) {
-      const pixData = result.pix_payment as {
-        payment_id: string;
-        qr_code: string;
-        payload: string;
-        expiration_date: string;
-      };
-      pixPaymentData.value = {
-        payment_id: pixData.payment_id,
-        qr_code: pixData.qr_code,
-        payload: pixData.payload,
-        expiration_date: pixData.expiration_date,
-      };
-      pixPaymentId.value = pixData.payment_id;
-      pixPaymentStatus.value = 'PENDING';
-      pixPaymentInitiated.value = true;
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      await nextTick();
-      pixModalOpen.value = true;
-      await initPaymentSubscription();
-    } else if (result && result.boleto_payment) {
-      const boletoData = result.boleto_payment as {
-        payment_id: string;
-        identification_field: string;
-        nosso_numero: string;
-        qr_code?: string;
-        payload?: string;
-        expiration_date?: string;
-        bank_slip_url: string;
-        due_date: string;
-      };
-      boletoPaymentData.value = {
-        payment_id: boletoData.payment_id,
-        identification_field: boletoData.identification_field,
-        nosso_numero: boletoData.nosso_numero,
-        qr_code: boletoData.qr_code,
-        payload: boletoData.payload,
-        expiration_date: boletoData.expiration_date,
-        bank_slip_url: boletoData.bank_slip_url,
-        due_date: boletoData.due_date,
-      };
-      pixPaymentId.value = boletoData.payment_id;
-      pixPaymentStatus.value = 'PENDING';
-      pixPaymentInitiated.value = true;
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      await nextTick();
-      pixModalOpen.value = true;
-      await initPaymentSubscription();
-    } else if (result && result.credit_card_payment) {
-      const creditCardData = result.credit_card_payment as {
-        payment_id: string;
-        status: string;
-        is_confirmed: boolean;
-      };
-
-      pixPaymentId.value = creditCardData.payment_id;
-      pixPaymentStatus.value =
-        (creditCardData.status as
-          | 'PENDING'
-          | 'RECEIVED'
-          | 'CONFIRMED'
-          | 'OVERDUE'
-          | 'REFUNDED') || 'PENDING';
-      pixPaymentInitiated.value = true;
-
-      if (creditCardData.is_confirmed) {
-        pixPaymentConfirmed.value = true;
-      }
-
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      await nextTick();
-      pixModalOpen.value = true;
-      await initPaymentSubscription();
-    } else if (result) {
-      console.log('Pagamento processado:', result);
+    if (!result) {
+      return;
     }
+
+    if (result.pix_payment) {
+      await processPixPayment(result.pix_payment);
+      return;
+    }
+
+    if (result.boleto_payment) {
+      await processBoletoPayment(result.boleto_payment);
+      return;
+    }
+
+    if (result.credit_card_payment) {
+      await processCreditCardPayment(result.credit_card_payment);
+      return;
+    }
+
+    console.log('Pagamento processado:', result);
   } finally {
     if (isPixPayment || isCreditCardPayment || isBoletoPayment) {
       processingPayment.value = false;
@@ -986,7 +1029,7 @@ const processPayment = async () => {
 };
 
 const detectCardBrand = (cardNumber: string): string | null => {
-  const cleaned = cardNumber.replace(/\s/g, '');
+  const cleaned = cardNumber.replaceAll(/\s/g, '');
 
   if (cleaned.length < 4) return null;
 
@@ -1028,6 +1071,7 @@ const detectCardBrand = (cardNumber: string): string | null => {
       return 'REAL';
     }
   } catch (error) {
+    console.error('Erro ao detectar marca do cartão:', error);
     return null;
   }
 
@@ -1035,27 +1079,27 @@ const detectCardBrand = (cardNumber: string): string | null => {
 };
 
 const formatCardNumber = (value: string): string => {
-  const cleaned = value.replace(/\s/g, '');
+  const cleaned = value.replaceAll(/\s/g, '');
   const chunks = cleaned.match(/.{1,4}/g);
   return chunks ? chunks.join(' ') : cleaned;
 };
 
 const onCardNumberInput = (event: Event) => {
   const target = event.target as HTMLInputElement;
-  const value = target.value.replace(/\D/g, '');
+  const value = target.value.replaceAll(/\D/g, '');
   newCard.value.number = formatCardNumber(value);
   detectedBrand.value = detectCardBrand(value);
 };
 
 const formatExpiry = (value: string): string => {
-  const cleaned = value.replace(/\D/g, '');
+  const cleaned = value.replaceAll(/\D/g, '');
 
   if (cleaned.length === 0) {
     return '';
   }
 
   if (cleaned.length === 1) {
-    const firstDigit = parseInt(cleaned[0], 10);
+    const firstDigit = Number.parseInt(cleaned[0], 10);
     if (firstDigit > 1) {
       return `0${firstDigit}`;
     }
@@ -1064,7 +1108,7 @@ const formatExpiry = (value: string): string => {
 
   if (cleaned.length >= 2) {
     const month = cleaned.slice(0, 2);
-    const monthNum = parseInt(month, 10);
+    const monthNum = Number.parseInt(month, 10);
 
     if (monthNum > 12) {
       return `12/${cleaned.slice(2, 4)}`;
@@ -1085,9 +1129,9 @@ const validateExpiry = (month: string, year: string): string | null => {
     return null;
   }
 
-  const monthNum = parseInt(month, 10);
+  const monthNum = Number.parseInt(month, 10);
 
-  if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
+  if (Number.isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
     return t('invalid_month');
   }
 
@@ -1095,14 +1139,13 @@ const validateExpiry = (month: string, year: string): string | null => {
     return null;
   }
 
-  const yearNum = parseInt(year, 10);
+  const yearNum = Number.parseInt(year, 10);
 
-  if (isNaN(yearNum)) {
+  if (Number.isNaN(yearNum)) {
     return t('invalid_year');
   }
 
   const currentDate = new Date();
-  const currentYear = currentDate.getFullYear() % 100;
   const currentMonth = currentDate.getMonth() + 1;
   const fullYear = 2000 + yearNum;
 
@@ -1119,7 +1162,7 @@ const validateExpiry = (month: string, year: string): string | null => {
 
 const onExpiryInput = (event: Event) => {
   const target = event.target as HTMLInputElement;
-  let value = target.value.replace(/\D/g, '');
+  let value = target.value.replaceAll(/\D/g, '');
 
   if (value.length > 4) {
     value = value.slice(0, 4);
@@ -3483,6 +3526,9 @@ onMounted(async () => {
   overflow-x: hidden;
   padding-right: 8px;
   min-height: 0;
+  /* Para Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) rgba(0, 0, 0, 0.05);
 }
 
 /* Estilização da barra de rolagem */
@@ -3535,11 +3581,5 @@ onMounted(async () => {
       font-size: 20px !important;
     }
   }
-}
-
-/* Para Firefox */
-.addons-scrollable {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.2) rgba(0, 0, 0, 0.05);
 }
 </style>
