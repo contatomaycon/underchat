@@ -253,9 +253,16 @@ const setCardAsDefault = async (cardId: string) => {
 };
 
 const canDeleteCard = (card: ListUserCardResponse): boolean => {
-  if (userCards.value.length === 1) {
+  if (!planInvoice.value) {
+    return true;
+  }
+
+  const hasRecurringPayment = planInvoice.value.recurring_payment === true;
+
+  if (hasRecurringPayment && userCards.value.length === 1) {
     return false;
   }
+
   return true;
 };
 

@@ -22,6 +22,11 @@ export class UserCardDeleterUseCase {
     userId: string,
     accountId: string
   ): Promise<boolean> => {
+    const planInvoice =
+      await this.planCurrentInvoiceViewerRepository.viewCurrentPlanInvoice(
+        accountId
+      );
+
     const cards = await this.userCardsListerRepository.listUserCards(userId);
     const cardToDelete = cards.find((c) => c.user_card_id === userCardId);
 
@@ -29,7 +34,9 @@ export class UserCardDeleterUseCase {
       throw new Error(t('card_not_found'));
     }
 
-    if (cards.length === 1) {
+    const hasRecurringPayment = planInvoice?.recurring_payment === true;
+
+    if (hasRecurringPayment && cards.length === 1) {
       throw new Error(t('cannot_delete_last_card'));
     }
 
@@ -45,15 +52,17 @@ export class UserCardDeleterUseCase {
     }
 
     if (isDefault) {
-      await this.userCardDefaultUpdaterRepository.setFirstCardAsDefault(userId);
+      const remainingCards = await this.userCardsListerRepository.listUserCards(
+        userId
+      );
+      if (remainingCards.length > 0) {
+        await this.userCardDefaultUpdaterRepository.setFirstCardAsDefault(
+          userId
+        );
+      }
     }
 
-    const planInvoice =
-      await this.planCurrentInvoiceViewerRepository.viewCurrentPlanInvoice(
-        accountId
-      );
-
-    if (planInvoice?.recurring_payment) {
+    if (hasRecurringPayment) {
       await this.planRecurringUpdaterRepository.updatePlanRecurring(
         accountId,
         false
