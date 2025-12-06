@@ -3,7 +3,6 @@ import {
   account,
   plan,
   planAccount,
-  planAccountStatus,
   planCrossSellAccount,
   planCrossSell,
   planProduct,
@@ -20,6 +19,7 @@ import {
   sql,
   SQLWrapper,
   inArray,
+  gt,
 } from 'drizzle-orm';
 import { ListPlanSalesRequest } from '@core/schema/plan/listPlanSales/request.schema';
 import { ListPlanSalesResponse } from '@core/schema/plan/listPlanSales/response.schema';
@@ -52,8 +52,40 @@ export class PlanSalesListerRepository {
     query: ListPlanSalesRequest
   ): Promise<ListPlanSalesResponse[]> => {
     const filters = this.setFilters(query);
+    const planSalesResult = await this.getPlanSales(filters);
 
-    const planSalesResult = await this.db
+    if (!planSalesResult.length) {
+      return [];
+    }
+
+    const results: ListPlanSalesResponse[] = [];
+
+    for (const planSale of planSalesResult) {
+      const accountsForPlan = await this.getAccountsForPlan(
+        planSale.plan_id,
+        filters
+      );
+      const accountIds = accountsForPlan.map((a) => a.account_id);
+
+      const crossSellsResult = await this.getCrossSellsForAccounts(accountIds);
+      const totalRevenue = this.calculateTotalRevenue(
+        planSale.total_revenue,
+        crossSellsResult
+      );
+
+      const planSaleResponse = this.buildPlanSaleResponse(
+        planSale,
+        crossSellsResult,
+        totalRevenue
+      );
+      results.push(planSaleResponse);
+    }
+
+    return results;
+  };
+
+  private readonly getPlanSales = async (filters: SQLWrapper[]) => {
+    return this.db
       .select({
         plan_id: plan.plan_id,
         plan_name: plan.name,
@@ -66,126 +98,128 @@ export class PlanSalesListerRepository {
       .from(account)
       .innerJoin(planAccount, eq(planAccount.account_id, account.account_id))
       .innerJoin(plan, eq(planAccount.plan_id, plan.plan_id))
-      .innerJoin(
-        planAccountStatus,
-        eq(
-          planAccount.plan_account_status_id,
-          planAccountStatus.plan_account_status_id
-        )
-      )
       .where(
         and(
           isNull(account.deleted_at),
           isNull(plan.deleted_at),
-          eq(planAccountStatus.name, 'active'),
+          gt(planAccount.next_payment_date, sql`NOW()`),
           ...filters
         )
       )
       .groupBy(plan.plan_id, plan.name, plan.price, plan.price_old)
       .execute();
+  };
 
-    let filteredResults = planSalesResult;
+  private readonly getAccountsForPlan = async (
+    planId: string,
+    filters: SQLWrapper[]
+  ) => {
+    return this.db
+      .select({
+        account_id: account.account_id,
+      })
+      .from(account)
+      .innerJoin(planAccount, eq(planAccount.account_id, account.account_id))
+      .where(
+        and(
+          eq(planAccount.plan_id, planId),
+          gt(planAccount.next_payment_date, sql`NOW()`),
+          isNull(account.deleted_at),
+          ...filters
+        )
+      )
+      .execute();
+  };
 
-    if (!filteredResults.length) {
+  private readonly getCrossSellsForAccounts = async (accountIds: string[]) => {
+    if (!accountIds.length) {
       return [];
     }
 
-    const results: ListPlanSalesResponse[] = [];
-
-    for (const planSale of filteredResults) {
-      const accountsForPlan = await this.db
-        .select({
-          account_id: account.account_id,
-        })
-        .from(account)
-        .innerJoin(planAccount, eq(planAccount.account_id, account.account_id))
-        .innerJoin(
-          planAccountStatus,
-          eq(
-            planAccount.plan_account_status_id,
-            planAccountStatus.plan_account_status_id
-          )
+    return this.db
+      .select({
+        plan_cross_sell_id: planCrossSell.plan_cross_sell_id,
+        plan_product_name: planProductDescription.name,
+        total_price: sql<string>`SUM(${planCrossSell.price})::text`,
+        quantity: sql<number>`COUNT(DISTINCT ${planCrossSellAccount.account_id})::int`,
+        cross_sell_quantity: planCrossSell.quantity,
+      })
+      .from(planCrossSellAccount)
+      .innerJoin(
+        planCrossSell,
+        eq(
+          planCrossSellAccount.plan_cross_sell_id,
+          planCrossSell.plan_cross_sell_id
         )
-        .where(
-          and(
-            eq(planAccount.plan_id, planSale.plan_id),
-            eq(planAccountStatus.name, 'active'),
-            isNull(account.deleted_at),
-            ...filters
-          )
+      )
+      .innerJoin(
+        planProduct,
+        eq(planCrossSell.plan_product_id, planProduct.plan_product_id)
+      )
+      .innerJoin(
+        planProductDescription,
+        eq(planProduct.plan_product_id, planProductDescription.plan_product_id)
+      )
+      .where(
+        and(
+          inArray(planCrossSellAccount.account_id, accountIds),
+          isNull(planCrossSellAccount.deleted_at),
+          isNull(planCrossSell.deleted_at)
         )
-        .execute();
+      )
+      .groupBy(
+        planCrossSell.plan_cross_sell_id,
+        planProductDescription.name,
+        planCrossSell.quantity
+      )
+      .execute();
+  };
 
-      const accountIds = accountsForPlan.map((a) => a.account_id);
+  private readonly calculateTotalRevenue = (
+    planRevenue: string,
+    crossSellsResult: Array<{ total_price: string }>
+  ): string => {
+    const planRevenueNumber = Number(planRevenue);
+    const crossSellsTotal = crossSellsResult.reduce(
+      (sum, cs) => sum + Number(cs.total_price),
+      0
+    );
+    return (planRevenueNumber + crossSellsTotal).toString();
+  };
 
-      const crossSellsResult = accountIds.length
-        ? await this.db
-            .select({
-              plan_cross_sell_id: planCrossSell.plan_cross_sell_id,
-              plan_product_name: planProductDescription.name,
-              total_price: sql<string>`SUM(${planCrossSell.price})::text`,
-              quantity: sql<number>`COUNT(DISTINCT ${planCrossSellAccount.account_id})::int`,
-              cross_sell_quantity: planCrossSell.quantity,
-            })
-            .from(planCrossSellAccount)
-            .innerJoin(
-              planCrossSell,
-              eq(
-                planCrossSellAccount.plan_cross_sell_id,
-                planCrossSell.plan_cross_sell_id
-              )
-            )
-            .innerJoin(
-              planProduct,
-              eq(planCrossSell.plan_product_id, planProduct.plan_product_id)
-            )
-            .innerJoin(
-              planProductDescription,
-              eq(
-                planProduct.plan_product_id,
-                planProductDescription.plan_product_id
-              )
-            )
-            .where(
-              and(
-                inArray(planCrossSellAccount.account_id, accountIds),
-                isNull(planCrossSellAccount.deleted_at),
-                isNull(planCrossSell.deleted_at)
-              )
-            )
-            .groupBy(
-              planCrossSell.plan_cross_sell_id,
-              planProductDescription.name,
-              planCrossSell.quantity
-            )
-            .execute()
-        : [];
-
-      const planRevenue = Number(planSale.total_revenue);
-      const crossSellsTotal = crossSellsResult.reduce(
-        (sum, cs) => sum + Number(cs.total_price),
-        0
-      );
-      const totalRevenue = (planRevenue + crossSellsTotal).toString();
-
-      results.push({
-        plan_id: planSale.plan_id,
-        plan_name: planSale.plan_name,
-        price: planSale.price,
-        price_old: planSale.price_old,
-        quantity_sold: planSale.quantity_sold,
-        total_revenue: totalRevenue,
-        cross_sells: crossSellsResult.map((cs) => ({
-          plan_cross_sell_id: cs.plan_cross_sell_id,
-          plan_product_name: cs.plan_product_name ?? null,
-          total_price: cs.total_price,
-          quantity: cs.quantity,
-          cross_sell_quantity: cs.cross_sell_quantity,
-        })),
-        created_at: planSale.created_at ?? null,
-      });
-    }
-
-    return results;
+  private readonly buildPlanSaleResponse = (
+    planSale: {
+      plan_id: string;
+      plan_name: string;
+      price: string;
+      price_old: string;
+      quantity_sold: number;
+      created_at: string | null;
+    },
+    crossSellsResult: Array<{
+      plan_cross_sell_id: string;
+      plan_product_name: string | null;
+      total_price: string;
+      quantity: number;
+      cross_sell_quantity: number;
+    }>,
+    totalRevenue: string
+  ): ListPlanSalesResponse => {
+    return {
+      plan_id: planSale.plan_id,
+      plan_name: planSale.plan_name,
+      price: planSale.price,
+      price_old: planSale.price_old,
+      quantity_sold: planSale.quantity_sold,
+      total_revenue: totalRevenue,
+      cross_sells: crossSellsResult.map((cs) => ({
+        plan_cross_sell_id: cs.plan_cross_sell_id,
+        plan_product_name: cs.plan_product_name ?? null,
+        total_price: cs.total_price,
+        quantity: cs.quantity,
+        cross_sell_quantity: cs.cross_sell_quantity,
+      })),
+      created_at: planSale.created_at ?? null,
+    };
   };
 }

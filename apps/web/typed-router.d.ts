@@ -180,6 +180,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'notifications': RouteRecordInfo<
+      'notifications',
+      '/notifications',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     'plan': RouteRecordInfo<
       'plan',
       '/plan',
@@ -190,6 +197,13 @@ declare module 'vue-router/auto-routes' {
     'plans': RouteRecordInfo<
       'plans',
       '/plans',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'plans-checkout': RouteRecordInfo<
+      'plans-checkout',
+      '/plans-checkout',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -407,6 +421,12 @@ declare module 'vue-router/auto-routes' {
       views:
         | never
     }
+    'src/pages/notifications.vue': {
+      routes:
+        | 'notifications'
+      views:
+        | never
+    }
     'src/pages/plan.vue': {
       routes:
         | 'plan'
@@ -416,6 +436,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/plans.vue': {
       routes:
         | 'plans'
+      views:
+        | never
+    }
+    'src/pages/plans-checkout.vue': {
+      routes:
+        | 'plans-checkout'
       views:
         | never
     }

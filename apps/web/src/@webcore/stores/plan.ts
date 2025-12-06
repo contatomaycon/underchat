@@ -18,6 +18,12 @@ import { UpdatePlanRequest } from '@core/schema/plan/updatePlan/request.schema';
 import { CreatePlanItemRequest } from '@core/schema/plan/createPlanItem/request.schema';
 import { ListPlanItemResponse } from '@core/schema/plan/listPlanItems/response.schema';
 import { ListPlanProductAllResponse } from '@core/schema/plan/listPlanProductAll/response.schema';
+import { ListPlanProductWithPriceResponse } from '@core/schema/plan/listPlanProductWithPrice/response.schema';
+import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.schema';
+import { ViewUserInfoResponse } from '@core/schema/plan/viewUserInfo/response.schema';
+import { CalculateUpgradeDiscountResponse } from '@core/schema/plan/calculateUpgradeDiscount/response.schema';
+import { CreateOrderPaymentRequest } from '@core/schema/plan/createOrderPayment/request.schema';
+import { CreateOrderPaymentResponse } from '@core/schema/plan/createOrderPayment/response.schema';
 import {
   ListPlanSalesFinalResponse,
   ListPlanSalesResponse,
@@ -25,6 +31,7 @@ import {
 import { ListPlanSalesRequest } from '@core/schema/plan/listPlanSales/request.schema';
 import { IListPlanSales } from '../interfaces/IListPlanSales';
 import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/response.schema';
+import { ListAvailableCrossSellResponse } from '@core/schema/plan/listAvailableCrossSell/response.schema';
 
 export const usePlanStore = defineStore('plan', {
   state: () => ({
@@ -38,8 +45,11 @@ export const usePlanStore = defineStore('plan', {
     list: [] as ListPlanResponse[],
     listAll: [] as ListPlanAllResponse[],
     listProductAll: [] as ListPlanProductAllResponse[],
+    listProductWithPrice: [] as ListPlanProductWithPriceResponse[],
+    userCards: [] as ListUserCardResponse[],
     listSales: [] as ListPlanSalesResponse[],
     listWithItems: [] as ListPlanWithItemsResponse[],
+    availableCrossSells: [] as ListAvailableCrossSellResponse[],
     pagings: {
       current_page: 1 as number,
       total_pages: 1 as number,
@@ -430,6 +440,85 @@ export const usePlanStore = defineStore('plan', {
       }
     },
 
+    async listPlanProductWithPrice(): Promise<
+      ListPlanProductWithPriceResponse[]
+    > {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListPlanProductWithPriceResponse[]>
+        >('/plan/product/with-price');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('plan_product_list_all_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return [];
+        }
+
+        this.listProductWithPrice = data.data;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('plan_product_list_all_error');
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+
+        return [];
+      }
+    },
+
+    async listUserCards(): Promise<ListUserCardResponse[]> {
+      try {
+        this.loading = true;
+
+        const response =
+          await axios.get<IApiResponse<ListUserCardResponse[]>>(
+            '/plan/user-cards'
+          );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('user_cards_list_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return [];
+        }
+
+        this.userCards = data.data;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('user_cards_list_error');
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+
+        return [];
+      }
+    },
+
     async listPlanSales(
       input?: IListPlanSales
     ): Promise<ListPlanSalesFinalResponse | null> {
@@ -516,6 +605,184 @@ export const usePlanStore = defineStore('plan', {
         this.loading = false;
 
         return null;
+      }
+    },
+
+    async getCurrentPlan(): Promise<string | null> {
+      try {
+        this.loading = true;
+
+        const response =
+          await axios.get<IApiResponse<{ plan_id: string | null }>>(
+            '/plan/current-plan'
+          );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data.plan_id;
+      } catch {
+        this.loading = false;
+        return null;
+      }
+    },
+
+    async viewUserInfo(): Promise<ViewUserInfoResponse | null> {
+      try {
+        this.loading = true;
+
+        const response =
+          await axios.get<IApiResponse<ViewUserInfoResponse>>(
+            '/plan/user-info'
+          );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('user_info_view_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('user_info_view_error');
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async calculateUpgradeDiscount(
+      planId: string
+    ): Promise<CalculateUpgradeDiscountResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<CalculateUpgradeDiscountResponse>
+        >(`/plan/upgrade-discount?plan_id=${planId}`);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('upgrade_discount_calculation_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          'upgrade_discount_calculation_error'
+        );
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async createOrderPayment(
+      input: CreateOrderPaymentRequest
+    ): Promise<CreateOrderPaymentResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<
+          IApiResponse<CreateOrderPaymentResponse>
+        >('/plan/order/payment', input);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('order_payment_creation_failed');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        return data.data || null;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('order_payment_creation_failed');
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listAvailableCrossSell(): Promise<ListAvailableCrossSellResponse[]> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListAvailableCrossSellResponse[]>
+        >('/plan/cross-sell/available');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('cross_sell_list_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return [];
+        }
+
+        this.availableCrossSells = data.data;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('cross_sell_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+
+        return [];
       }
     },
   },

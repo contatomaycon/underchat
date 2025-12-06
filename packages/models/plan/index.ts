@@ -5,4 +5,3 @@ export * from './planItems.model';
 export * from './planCrossSell.model';
 export * from './planCrossSellAccount.model';
 export * from './planAccount.model';
-export * from './planAccountStatus.model';

@@ -51,12 +51,6 @@ export class PlanCurrentInvoiceViewerRepository {
             cancellation_date: true,
           },
           with: {
-            pas: {
-              columns: {
-                plan_account_status_id: true,
-                name: true,
-              },
-            },
             ppl: {
               columns: {
                 plan_id: true,
@@ -83,8 +77,23 @@ export class PlanCurrentInvoiceViewerRepository {
     });
   };
 
-  private readonly findActivePlanAccount = (accountResult: any) => {
-    return accountResult?.apc?.find((pa: any) => pa.pas?.name === 'active');
+  private readonly findActivePlanAccount = (
+    accountResult: Awaited<
+      ReturnType<typeof this.findAccountWithPlanAccounts>
+    > | null
+  ) => {
+    if (!accountResult?.apc) {
+      return null;
+    }
+
+    const now = new Date();
+    return accountResult.apc.find((pa) => {
+      if (!pa.next_payment_date) {
+        return false;
+      }
+      const nextPaymentDate = new Date(pa.next_payment_date);
+      return nextPaymentDate > now;
+    });
   };
 
   private readonly getBillingPeriod = (
@@ -100,7 +109,15 @@ export class PlanCurrentInvoiceViewerRepository {
   };
 
   private readonly buildPlanInvoiceResponse = (
-    planData: any,
+    planData: {
+      plan_id: string;
+      name: string;
+      price: string;
+      price_old: string;
+      description: string | null;
+      annual_discount: string | null;
+      icon: string | null;
+    },
     lastPaymentDate: string | null,
     nextPaymentDate: string | null,
     recurringPayment: boolean,

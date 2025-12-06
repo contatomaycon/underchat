@@ -21,6 +21,19 @@ import { ListPlanProductAllResponse } from '@core/schema/plan/listPlanProductAll
 import { ListPlanSalesRequest } from '@core/schema/plan/listPlanSales/request.schema';
 import { ListPlanSalesResponse } from '@core/schema/plan/listPlanSales/response.schema';
 import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/response.schema';
+import { ListPlanProductWithPriceResponse } from '@core/schema/plan/listPlanProductWithPrice/response.schema';
+import { PlanProductWithPriceListerRepository } from '@core/repositories/plan/PlanProductWithPriceLister.repository';
+import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.schema';
+import { UserCardsListerRepository } from '@core/repositories/plan/UserCardsLister.repository';
+import { ViewUserInfoResponse } from '@core/schema/plan/viewUserInfo/response.schema';
+import { UserInfoViewerRepository } from '@core/repositories/plan/UserInfoViewer.repository';
+import { CalculateUpgradeDiscountResponse } from '@core/schema/plan/calculateUpgradeDiscount/response.schema';
+import { UpgradeDiscountCalculatorRepository } from '@core/repositories/plan/UpgradeDiscountCalculator.repository';
+import { PaymentService } from './payment.service';
+import { CrossSellListerRepository } from '@core/repositories/planCrossSell/CrossSellLister.repository';
+import { ListAvailableCrossSellResponse } from '@core/schema/plan/listAvailableCrossSell/response.schema';
+import { OrderPaymentCreatorRepository } from '@core/repositories/plan/OrderPaymentCreator.repository';
+import { CreateOrderPaymentRequest } from '@core/schema/plan/createOrderPayment/request.schema';
 
 @injectable()
 export class PlanService {
@@ -35,7 +48,14 @@ export class PlanService {
     private readonly planItemsListerRepository: PlanItemsListerRepository,
     private readonly planProductAllListerRepository: PlanProductAllListerRepository,
     private readonly planSalesListerRepository: PlanSalesListerRepository,
-    private readonly planWithItemsListerRepository: PlanWithItemsListerRepository
+    private readonly planWithItemsListerRepository: PlanWithItemsListerRepository,
+    private readonly planProductWithPriceListerRepository: PlanProductWithPriceListerRepository,
+    private readonly userCardsListerRepository: UserCardsListerRepository,
+    private readonly userInfoViewerRepository: UserInfoViewerRepository,
+    private readonly upgradeDiscountCalculatorRepository: UpgradeDiscountCalculatorRepository,
+    private readonly paymentService: PaymentService,
+    private readonly crossSellListerRepository: CrossSellListerRepository,
+    private readonly orderPaymentCreatorRepository: OrderPaymentCreatorRepository
   ) {}
 
   listPlans = async (
@@ -88,6 +108,12 @@ export class PlanService {
     return this.planProductAllListerRepository.listPlanProductAll();
   };
 
+  listPlanProductWithPrice = async (): Promise<
+    ListPlanProductWithPriceResponse[]
+  > => {
+    return this.planProductWithPriceListerRepository.listPlanProductWithPrice();
+  };
+
   listPlanSales = async (
     query: ListPlanSalesRequest
   ): Promise<ListPlanSalesResponse[]> => {
@@ -96,5 +122,86 @@ export class PlanService {
 
   listPlanWithItems = async (): Promise<ListPlanWithItemsResponse[]> => {
     return this.planWithItemsListerRepository.listPlanWithItems();
+  };
+
+  listUserCards = async (userId: string): Promise<ListUserCardResponse[]> => {
+    return this.userCardsListerRepository.listUserCards(userId);
+  };
+
+  viewUserInfo = async (
+    userId: string
+  ): Promise<ViewUserInfoResponse | null> => {
+    return this.userInfoViewerRepository.viewUserInfo(userId);
+  };
+
+  calculateUpgradeDiscount = async (
+    accountId: string,
+    newPlanId: string
+  ): Promise<CalculateUpgradeDiscountResponse> => {
+    return this.upgradeDiscountCalculatorRepository.calculateUpgradeDiscount(
+      accountId,
+      newPlanId
+    );
+  };
+
+  getOrCreateCustomer = async (accountId: string) => {
+    return this.paymentService.getOrCreateCustomer(accountId);
+  };
+
+  listAvailableCrossSells = async (): Promise<
+    ListAvailableCrossSellResponse[]
+  > => {
+    return this.crossSellListerRepository.listAvailableCrossSells();
+  };
+
+  calculateOrderPayment = async (
+    accountId: string,
+    input: CreateOrderPaymentRequest
+  ): Promise<{
+    planPrice: number;
+    addonsTotal: number;
+    discountAmount: number;
+    totalAmount: number;
+  }> => {
+    return this.orderPaymentCreatorRepository.calculateOrderPayment(
+      accountId,
+      input
+    );
+  };
+
+  getBillingPeriodId = (billingPeriod: 'monthly' | 'annual'): string | null => {
+    return this.orderPaymentCreatorRepository.getBillingPeriodId(billingPeriod);
+  };
+
+  createAccountPayment = async (data: {
+    accountId: string;
+    userCustomerId: string;
+    planId: string;
+    billing: string;
+    paymentBillingTypeId: string;
+    value: string;
+    netValue: string;
+    pixTransaction: string | null;
+    paymentStatusId: string;
+    billingPeriodId: string | null;
+    invoiceUrl: string | null;
+    recurringPayment: boolean;
+    userCardId?: string | null;
+    installment?: string | null;
+    boleto?: string | null;
+    boletoNumber?: string | null;
+    boletoPdf?: string | null;
+  }): Promise<string> => {
+    return this.orderPaymentCreatorRepository.createAccountPayment(data);
+  };
+
+  createAccountPaymentCrossSells = async (data: {
+    accountPaymentId: string;
+    addons: Array<{ plan_cross_sell_id: string }>;
+    billingPeriod: 'monthly' | 'annual';
+  }): Promise<void> => {
+    return this.orderPaymentCreatorRepository.createAccountPaymentCrossSells(
+      data
+    );
   };
 }

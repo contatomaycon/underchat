@@ -3,11 +3,10 @@ import {
   account,
   planItems,
   planAccount,
-  planAccountStatus,
   planCrossSellAccount,
   planCrossSell,
 } from '@core/models';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, gt, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 
@@ -28,17 +27,10 @@ export class AccountQuantityProductViewerRepository {
       .from(account)
       .innerJoin(planAccount, eq(planAccount.account_id, account.account_id))
       .innerJoin(planItems, eq(planItems.plan_id, planAccount.plan_id))
-      .innerJoin(
-        planAccountStatus,
-        eq(
-          planAccount.plan_account_status_id,
-          planAccountStatus.plan_account_status_id
-        )
-      )
       .where(
         and(
           eq(account.account_id, accountId),
-          eq(planAccountStatus.name, 'active'),
+          gt(planAccount.next_payment_date, sql`NOW()`),
           eq(planItems.plan_product_id, planProductId),
           isNull(account.deleted_at)
         )

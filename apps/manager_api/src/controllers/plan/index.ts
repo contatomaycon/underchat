@@ -8,9 +8,15 @@ import { createPlanItem } from './methods/createPlanItem';
 import { listPlanItems } from './methods/listPlanItems';
 import { deletePlanItem } from './methods/deletePlanItem';
 import { listPlanProductAll } from './methods/listPlanProductAll';
+import { listPlanProductWithPrice } from './methods/listPlanProductWithPrice';
+import { listUserCards } from './methods/listUserCards';
+import { viewUserInfo } from './methods/viewUserInfo';
 import { listPlanSales } from './methods/listPlanSales';
 import { listPlanWithItems } from './methods/listPlanWithItems';
 import { viewCurrentPlan } from './methods/viewCurrentPlan';
+import { calculateUpgradeDiscount } from './methods/calculateUpgradeDiscount';
+import { createOrderPayment } from './methods/createOrderPayment';
+import { listAvailableCrossSell } from './methods/listAvailableCrossSell';
 
 @injectable()
 class PlanController {
@@ -23,9 +29,15 @@ class PlanController {
   public listPlanItems = listPlanItems;
   public deletePlanItem = deletePlanItem;
   public listPlanProductAll = listPlanProductAll;
+  public listPlanProductWithPrice = listPlanProductWithPrice;
+  public listUserCards = listUserCards;
+  public viewUserInfo = viewUserInfo;
   public listPlanSales = listPlanSales;
   public listPlanWithItems = listPlanWithItems;
   public viewCurrentPlan = viewCurrentPlan;
+  public calculateUpgradeDiscount = calculateUpgradeDiscount;
+  public createOrderPayment = createOrderPayment;
+  public listAvailableCrossSell = listAvailableCrossSell;
 }
 
 export default PlanController;

@@ -17,9 +17,15 @@ import { createPlanItemSchema } from '@core/schema/plan/createPlanItem';
 import { listPlanItemsSchema } from '@core/schema/plan/listPlanItems';
 import { deletePlanItemSchema } from '@core/schema/plan/deletePlanItem';
 import { listPlanProductAllSchema } from '@core/schema/plan/listPlanProductAll';
+import { listPlanProductWithPriceSchema } from '@core/schema/plan/listPlanProductWithPrice';
+import { listUserCardsSchema } from '@core/schema/plan/listUserCards';
+import { viewUserInfoSchema } from '@core/schema/plan/viewUserInfo';
 import { listPlanSalesSchema } from '@core/schema/plan/listPlanSales';
 import { listPlanWithItemsSchema } from '@core/schema/plan/listPlanWithItems';
 import { viewCurrentPlanSchema } from '@core/schema/plan/viewCurrentPlan';
+import { calculateUpgradeDiscountSchema } from '@core/schema/plan/calculateUpgradeDiscount';
+import { createOrderPaymentSchema } from '@core/schema/plan/createOrderPayment';
+import { listAvailableCrossSellSchema } from '@core/schema/plan/listAvailableCrossSell';
 
 export default function planRoutes(server: FastifyInstance) {
   const planController = container.resolve(PlanController);
@@ -105,6 +111,33 @@ export default function planRoutes(server: FastifyInstance) {
     ],
   });
 
+  server.get('/plan/product/with-price', {
+    schema: listPlanProductWithPriceSchema,
+    handler: planController.listPlanProductWithPrice,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.get('/plan/user-cards', {
+    schema: listUserCardsSchema,
+    handler: planController.listUserCards,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.get('/plan/user-info', {
+    schema: viewUserInfoSchema,
+    handler: planController.viewUserInfo,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
   server.get('/plan/sales', {
     schema: listPlanSalesSchema,
     handler: planController.listPlanSales,
@@ -123,9 +156,36 @@ export default function planRoutes(server: FastifyInstance) {
     ],
   });
 
-  server.get('/account/current-plan', {
+  server.get('/plan/current-plan', {
     schema: viewCurrentPlanSchema,
     handler: planController.viewCurrentPlan,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.get('/plan/upgrade-discount', {
+    schema: calculateUpgradeDiscountSchema,
+    handler: planController.calculateUpgradeDiscount,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.post('/plan/order/payment', {
+    schema: createOrderPaymentSchema,
+    handler: planController.createOrderPayment,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.get('/plan/cross-sell/available', {
+    schema: listAvailableCrossSellSchema,
+    handler: planController.listAvailableCrossSell,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),

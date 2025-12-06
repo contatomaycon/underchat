@@ -18,6 +18,7 @@ import {
 } from 'drizzle-orm';
 import { ListCrossSellRequest } from '@core/schema/planCrossSell/listCrossSell/request.schema';
 import { ListCrossSellResponse } from '@core/schema/planCrossSell/listCrossSell/response.schema';
+import { ListAvailableCrossSellResponse } from '@core/schema/plan/listAvailableCrossSell/response.schema';
 
 @injectable()
 export class CrossSellListerRepository {
@@ -145,5 +146,55 @@ export class CrossSellListerRepository {
     }
 
     return result[0].count;
+  };
+
+  listAvailableCrossSells = async (): Promise<
+    ListAvailableCrossSellResponse[]
+  > => {
+    const result = await this.db
+      .select({
+        plan_cross_sell_id: planCrossSell.plan_cross_sell_id,
+        plan_product_id: planCrossSell.plan_product_id,
+        quantity: planCrossSell.quantity,
+        price: planCrossSell.price,
+        created_at: planCrossSell.created_at,
+        plan_product: {
+          plan_product_id: planProduct.plan_product_id,
+          name: planProductDescription.name,
+          description: planProductDescription.description,
+        },
+      })
+      .from(planCrossSell)
+      .innerJoin(
+        planProduct,
+        eq(planCrossSell.plan_product_id, planProduct.plan_product_id)
+      )
+      .innerJoin(
+        planProductDescription,
+        eq(planProduct.plan_product_id, planProductDescription.plan_product_id)
+      )
+      .where(isNull(planCrossSell.deleted_at))
+      .execute();
+
+    if (!result.length) {
+      return [] as ListAvailableCrossSellResponse[];
+    }
+
+    const crossSells: ListAvailableCrossSellResponse[] = result.map((item) => ({
+      plan_cross_sell_id: item.plan_cross_sell_id,
+      plan_product_id: item.plan_product_id,
+      quantity: item.quantity,
+      price: Number(item.price),
+      created_at: item.created_at,
+      plan_product: item.plan_product?.plan_product_id
+        ? {
+            plan_product_id: item.plan_product.plan_product_id,
+            name: item.plan_product.name ?? null,
+            description: item.plan_product.description ?? null,
+          }
+        : undefined,
+    }));
+
+    return crossSells;
   };
 }

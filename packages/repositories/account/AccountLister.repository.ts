@@ -1,11 +1,5 @@
 import * as schema from '@core/models';
-import {
-  account,
-  accountStatus,
-  plan,
-  planAccount,
-  planAccountStatus,
-} from '@core/models';
+import { account, accountStatus, plan, planAccount } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import {
@@ -17,6 +11,8 @@ import {
   or,
   ilike,
   inArray,
+  gt,
+  sql,
 } from 'drizzle-orm';
 import { ListAccountRequest } from '@core/schema/account/listAccount/request.schema';
 import { ListAccountResponse } from '@core/schema/account/listAccount/response.schema';
@@ -78,14 +74,9 @@ export class AccountListerRepository {
         apc: {
           columns: {
             plan_account_id: true,
+            next_payment_date: true,
           },
           with: {
-            pas: {
-              columns: {
-                plan_account_status_id: true,
-                name: true,
-              },
-            },
             ppl: {
               columns: {
                 plan_id: true,
@@ -110,11 +101,14 @@ export class AccountListerRepository {
       return [];
     }
 
+    const now = new Date();
     return isAdministrator
       ? result.map((item) => {
-          const activePlanAccount = item.apc?.find(
-            (pa) => pa.pas?.name === 'active'
-          );
+          const activePlanAccount = item.apc?.find((pa) => {
+            if (!pa.next_payment_date) return false;
+            const nextPaymentDate = new Date(pa.next_payment_date);
+            return nextPaymentDate > now;
+          });
           return {
             account_id: item.account_id,
             name: item.name,
@@ -155,18 +149,11 @@ export class AccountListerRepository {
       )
       .leftJoin(planAccount, eq(planAccount.account_id, account.account_id))
       .leftJoin(plan, eq(plan.plan_id, planAccount.plan_id))
-      .leftJoin(
-        planAccountStatus,
-        eq(
-          planAccount.plan_account_status_id,
-          planAccountStatus.plan_account_status_id
-        )
-      )
       .where(
         and(
           ...filtersAccount,
           isNull(account.deleted_at),
-          eq(planAccountStatus.name, 'active')
+          gt(planAccount.next_payment_date, sql`NOW()`)
         )
       )
       .execute();

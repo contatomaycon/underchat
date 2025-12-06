@@ -24,4 +24,12 @@ export class AsaasEnvironment {
 
     return process.env.ASAAS_TOKEN;
   }
+
+  public getAsaasWebhook(): string {
+    if (!process.env.ASAAS_WEBHOOK) {
+      throw new InvalidConfigurationError('ASAAS_WEBHOOK');
+    }
+
+    return process.env.ASAAS_WEBHOOK;
+  }
 }

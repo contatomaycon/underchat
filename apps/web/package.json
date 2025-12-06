@@ -33,6 +33,7 @@
     "apexcharts": "5.3.6",
     "chart.js": "4.5.1",
     "cookie-es": "2.0.0",
+    "credit-card-type": "^10.1.0",
     "destr": "2.0.5",
     "emoji-mart-vue-fast": "^15.0.5",
     "eslint-plugin-regexp": "2.10.0",

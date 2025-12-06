@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRouter } from 'vue-router';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { usePlanStore } from '@/@webcore/stores/plan';
-import { useAccountStore } from '@/@webcore/stores/account';
+import { useAccountSettingsStore } from '@/@webcore/stores/accountSettings';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/response.schema';
 
@@ -20,8 +21,9 @@ definePage({
 });
 
 const { t, locale } = useI18n();
+const router = useRouter();
 const planStore = usePlanStore();
-const accountStore = useAccountStore();
+const accountSettingsStore = useAccountSettingsStore();
 useSnackbarCleanup(planStore);
 
 const plans = ref<ListPlanWithItemsResponse[]>([]);
@@ -29,6 +31,8 @@ const loading = ref(false);
 const billingPeriod = ref<'monthly' | 'annual'>('monthly');
 const selectedPlanId = ref<string | null>(null);
 const currentPlanId = ref<string | null>(null);
+const currentPlan = ref<ListPlanWithItemsResponse | null>(null);
+const currentPlanBillingPeriod = ref<'monthly' | 'annual' | null>(null);
 
 const getCurrencyConfig = () => {
   const localeMap: Record<string, { locale: string; currency: string }> = {
@@ -73,14 +77,35 @@ const getPrice = (plan: ListPlanWithItemsResponse): number => {
 
 const loadPlans = async () => {
   loading.value = true;
-  const [result, currentPlan] = await Promise.all([
+  const [result, currentPlanIdValue, currentPlanInvoice] = await Promise.all([
     planStore.listPlanWithItems(),
-    accountStore.getCurrentPlan(),
+    planStore.getCurrentPlan(),
+    accountSettingsStore.getCurrentPlanInvoice(),
   ]);
 
   if (result) {
     plans.value = result;
-    currentPlanId.value = currentPlan;
+    currentPlanId.value = currentPlanIdValue;
+
+    // Encontrar o plano atual na lista
+    if (currentPlanIdValue) {
+      currentPlan.value =
+        result.find((p) => p.plan_id === currentPlanIdValue) || null;
+    } else {
+      currentPlan.value = null;
+    }
+
+    if (currentPlanInvoice?.billing_period) {
+      currentPlanBillingPeriod.value = currentPlanInvoice.billing_period as
+        | 'monthly'
+        | 'annual';
+
+      if (currentPlanBillingPeriod.value === 'annual') {
+        billingPeriod.value = 'annual';
+      }
+    } else {
+      currentPlanBillingPeriod.value = null;
+    }
 
     if (result.length > 1) {
       selectedPlanId.value = result[1].plan_id;
@@ -93,17 +118,71 @@ const selectPlan = (planId: string) => {
   selectedPlanId.value = planId;
 };
 
+const openCheckout = (plan: ListPlanWithItemsResponse) => {
+  if (isPlanDisabled(plan)) return;
+
+  router.push({
+    name: 'plans-checkout',
+    query: {
+      plan_id: plan.plan_id,
+      billing: billingPeriod.value,
+    },
+  });
+};
+
 const isPlanSelected = (planId: string): boolean => {
-  return selectedPlanId.value === planId;
+  if (selectedPlanId.value !== planId) return false;
+  const plan = plans.value.find((p) => p.plan_id === planId);
+  if (!plan) return false;
+  return !isPlanDisabled(plan);
 };
 
 const isCurrentPlan = (planId: string): boolean => {
   return currentPlanId.value === planId;
 };
 
+const getCurrentPlanPrice = (): number | null => {
+  if (!currentPlan.value) return null;
+  return getPrice(currentPlan.value);
+};
+
+const isDowngrade = (plan: ListPlanWithItemsResponse): boolean => {
+  const currentPrice = getCurrentPlanPrice();
+  if (currentPrice === null) return false;
+
+  const planPrice = getPrice(plan);
+  return planPrice < currentPrice;
+};
+
+const isInvalidBillingPeriodChange = (
+  plan: ListPlanWithItemsResponse
+): boolean => {
+  if (!currentPlanBillingPeriod.value) return false;
+
+  if (
+    currentPlanBillingPeriod.value === 'annual' &&
+    billingPeriod.value === 'monthly'
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
+const isPlanDisabled = (plan: ListPlanWithItemsResponse): boolean => {
+  return (
+    isCurrentPlan(plan.plan_id) ||
+    isDowngrade(plan) ||
+    isInvalidBillingPeriodChange(plan)
+  );
+};
+
 const getButtonText = (planId: string): string => {
   if (isCurrentPlan(planId)) {
     return t('your_current_plan');
+  }
+  if (!currentPlanId.value) {
+    return t('buy');
   }
   return t('upgrade');
 };
@@ -157,6 +236,12 @@ const getColClasses = computed(() => {
   return { cols: '12', sm: '6', md: '4', offset: '' };
 });
 
+watch(billingPeriod, (newValue) => {
+  if (currentPlanBillingPeriod.value === 'annual' && newValue === 'monthly') {
+    billingPeriod.value = 'annual';
+  }
+});
+
 onMounted(() => {
   loadPlans();
 });
@@ -177,6 +262,7 @@ onMounted(() => {
               :class="[
                 'text-body-1',
                 billingPeriod === 'monthly' ? 'text-primary' : 'text-disabled',
+                currentPlanBillingPeriod === 'annual' ? 'text-disabled' : '',
               ]"
             >
               {{ $t('monthly') }}
@@ -187,6 +273,7 @@ onMounted(() => {
               false-value="monthly"
               color="primary"
               hide-details
+              :disabled="currentPlanBillingPeriod === 'annual'"
             />
             <span
               :class="[
@@ -225,7 +312,10 @@ onMounted(() => {
               :class="[
                 'plan-card',
                 isCurrentPlan(plan.plan_id) ? 'plan-card-current' : '',
-                isPlanSelected(plan.plan_id) ? 'plan-card-popular' : '',
+                isPlanSelected(plan.plan_id) && !isDowngrade(plan)
+                  ? 'plan-card-popular'
+                  : '',
+                isDowngrade(plan) ? 'plan-card-disabled' : '',
               ]"
               :variant="
                 isCurrentPlan(plan.plan_id)
@@ -241,10 +331,17 @@ onMounted(() => {
                     ? 4
                     : 0
               "
-              @click="selectPlan(plan.plan_id)"
-              style="cursor: pointer"
+              @click="!isPlanDisabled(plan) && openCheckout(plan)"
+              :style="
+                isPlanDisabled(plan) ? 'cursor: not-allowed' : 'cursor: pointer'
+              "
             >
               <VCardText class="position-relative">
+                <div v-if="isDowngrade(plan)" class="plan-disabled-overlay">
+                  <VChip color="error" size="small" variant="tonal">
+                    {{ $t('unavailable') }}
+                  </VChip>
+                </div>
                 <div class="text-center mb-4">
                   <VAvatar
                     :color="
@@ -253,10 +350,16 @@ onMounted(() => {
                     size="80"
                     variant="tonal"
                     class="mb-4"
+                    :class="{ 'opacity-50': isDowngrade(plan) }"
                   >
                     <VIcon :icon="plan.icon || 'tabler-rocket'" size="40" />
                   </VAvatar>
-                  <h3 class="text-h5 mb-2">{{ plan.name }}</h3>
+                  <h3
+                    class="text-h5 mb-2"
+                    :class="{ 'text-disabled': isDowngrade(plan) }"
+                  >
+                    {{ plan.name }}
+                  </h3>
                   <VChip
                     v-if="
                       billingPeriod === 'annual' &&
@@ -369,10 +472,14 @@ onMounted(() => {
                         ? 'flat'
                         : 'outlined'
                   "
-                  :disabled="isCurrentPlan(plan.plan_id)"
-                  @click.stop="selectPlan(plan.plan_id)"
+                  :disabled="isPlanDisabled(plan)"
+                  @click.stop="!isPlanDisabled(plan) && openCheckout(plan)"
                 >
-                  {{ getButtonText(plan.plan_id) }}
+                  {{
+                    isDowngrade(plan)
+                      ? $t('unavailable')
+                      : getButtonText(plan.plan_id)
+                  }}
                 </VBtn>
               </VCardText>
             </VCard>
@@ -433,5 +540,18 @@ onMounted(() => {
 .plan-card-current {
   border: 2px solid rgb(var(--v-theme-success));
   position: relative;
+}
+
+.plan-card-disabled {
+  opacity: 0.6;
+  position: relative;
+}
+
+.plan-disabled-overlay {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  pointer-events: none;
 }
 </style>
