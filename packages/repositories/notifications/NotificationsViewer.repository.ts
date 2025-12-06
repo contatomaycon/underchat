@@ -100,6 +100,7 @@ export class NotificationsViewerRepository {
         notification_id: true,
         message_whatsapp: true,
         message_email: true,
+        email_subject: true,
         created_at: true,
         updated_at: true,
       },

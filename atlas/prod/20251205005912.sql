@@ -12,6 +12,7 @@ CREATE TABLE "notifications" (
   "worker_id" uuid NULL,
   "notification_type_id" uuid NOT NULL,
   "message_whatsapp" text,
+  "email_subject" text,
   "message_email" text,
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),

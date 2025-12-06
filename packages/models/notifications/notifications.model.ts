@@ -10,6 +10,7 @@ export const notifications = pgTable('notifications', {
     .references(() => notificationType.notification_type_id)
     .notNull(),
   message_whatsapp: text(),
+  email_subject: text(),
   message_email: text(),
   created_at: timestamp({
     mode: 'string',

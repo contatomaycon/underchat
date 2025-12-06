@@ -15,6 +15,7 @@ import { INotificationMessage } from '@core/common/interfaces/INotificationMessa
 import { PlanCurrentInvoiceViewerRepository } from '@core/repositories/plan/PlanCurrentInvoiceViewer.repository';
 import { ENotificationType } from '@core/common/enums/ENotificationType';
 import { webcrypto } from 'node:crypto';
+import { EmailService } from './email.service';
 
 @injectable()
 export class NotificationMessageService {
@@ -28,7 +29,8 @@ export class NotificationMessageService {
     private readonly userService: UserService,
     private readonly userInfoViewerRepository: UserInfoViewerRepository,
     private readonly workerNameViewerRepository: WorkerNameViewerRepository,
-    private readonly planCurrentInvoiceViewerRepository: PlanCurrentInvoiceViewerRepository
+    private readonly planCurrentInvoiceViewerRepository: PlanCurrentInvoiceViewerRepository,
+    private readonly emailService: EmailService
   ) {}
 
   async sendNotificationMessage(
@@ -53,6 +55,47 @@ export class NotificationMessageService {
       throw new Error('Master user not found for account');
     }
 
+    const notificationTypeName = notification.nnt?.name || '';
+
+    if (notification.message_whatsapp) {
+      await this.sendWhatsAppNotification(
+        notification,
+        masterUser,
+        accountId,
+        notificationTypeName
+      );
+    }
+
+    if (notification.message_email) {
+      await this.sendEmailNotification(
+        notification,
+        masterUser,
+        accountId,
+        notificationTypeName
+      );
+    }
+
+    return true;
+  }
+
+  private async sendWhatsAppNotification(
+    notification: NonNullable<
+      Awaited<
+        ReturnType<
+          typeof this.notificationMessageViewerRepository.findNotificationByTypeId
+        >
+      >
+    >,
+    masterUser: NonNullable<
+      Awaited<
+        ReturnType<
+          typeof this.userMasterViewerRepository.findMasterUserByAccountId
+        >
+      >
+    >,
+    accountId: string,
+    notificationTypeName: string
+  ): Promise<void> {
     const userInfo = await this.userInfoViewerRepository.findUserInfoByUserId(
       masterUser.user_id
     );
@@ -84,6 +127,13 @@ export class NotificationMessageService {
     const fullName = userInfo.name || userInfo.last_name || null;
     const remoteJid = normalizePhoneToJid(phone, userInfo.phone_ddi) || null;
 
+    const whatsappMessage = await this.replaceNotificationParameters(
+      notification.message_whatsapp,
+      notificationTypeName,
+      fullName,
+      accountId
+    );
+
     const notificationMessage: INotificationMessage = {
       id: notification.notification_id,
       notification_id: notification.notification_id,
@@ -100,14 +150,9 @@ export class NotificationMessageService {
       },
       notification_type: {
         id: notification.notification_type_id,
-        name: notification.nnt?.name || '',
+        name: notificationTypeName,
       },
-      message: await this.replaceNotificationParameters(
-        notification.message_whatsapp,
-        notification.nnt?.name || '',
-        fullName,
-        accountId
-      ),
+      message: whatsappMessage,
       name: fullName,
       phone: phone,
       date: new Date().toISOString(),
@@ -127,8 +172,64 @@ export class NotificationMessageService {
     const kafkaTopic =
       this.kafkaBaileysQueueService.workerNotificationMessage(workerId);
     await this.streamProducerService.send(kafkaTopic, notificationMessage);
+  }
 
-    return true;
+  private async sendEmailNotification(
+    notification: NonNullable<
+      Awaited<
+        ReturnType<
+          typeof this.notificationMessageViewerRepository.findNotificationByTypeId
+        >
+      >
+    >,
+    masterUser: NonNullable<
+      Awaited<
+        ReturnType<
+          typeof this.userMasterViewerRepository.findMasterUserByAccountId
+        >
+      >
+    >,
+    accountId: string,
+    notificationTypeName: string
+  ): Promise<void> {
+    const userEmail = await this.getUserEmail(masterUser.user_id);
+
+    if (!userEmail) {
+      throw new Error('User email not found');
+    }
+
+    const userInfo = await this.userInfoViewerRepository.findUserInfoByUserId(
+      masterUser.user_id
+    );
+
+    const fullName = userInfo?.name || userInfo?.last_name || null;
+
+    const emailMessage = await this.replaceNotificationParameters(
+      notification.message_email,
+      notificationTypeName,
+      fullName,
+      accountId
+    );
+
+    if (!emailMessage) {
+      throw new Error('Email message is empty');
+    }
+
+    const emailSubject = notification.email_subject
+      ? await this.replaceNotificationParameters(
+          notification.email_subject,
+          notificationTypeName,
+          fullName,
+          accountId
+        )
+      : null;
+
+    await this.emailService.sendEmail({
+      to: userEmail,
+      subject: emailSubject || '',
+      html: emailMessage,
+      text: emailMessage,
+    });
   }
 
   private async getFirstActiveWorkerId(
@@ -237,5 +338,16 @@ export class NotificationMessageService {
     }
 
     return replacedMessage;
+  }
+
+  private async getUserEmail(userId: string): Promise<string | null> {
+    try {
+      const sensitiveData =
+        await this.userService.getUserSensitiveDataDecrypted(userId);
+      return sensitiveData?.email || null;
+    } catch (error) {
+      console.error('Erro ao obter email do usuário:', error);
+      return null;
+    }
   }
 }
