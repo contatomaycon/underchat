@@ -17,25 +17,27 @@ export class PlanCurrentInvoiceViewerRepository {
   ): Promise<ViewCurrentPlanInvoiceResponse> => {
     const accountResult = await this.findAccountWithPlanAccounts(accountId);
     const activePlanAccount = this.findActivePlanAccount(accountResult);
+    const planAccount =
+      activePlanAccount || this.findMostRecentPlanAccount(accountResult);
 
-    if (!activePlanAccount?.ppl) {
+    if (!planAccount?.ppl) {
       return this.buildEmptyResponse();
     }
 
     const billingPeriodValue = this.getBillingPeriod(
-      activePlanAccount.bpl?.name,
-      activePlanAccount.last_payment_date,
-      activePlanAccount.next_payment_date
+      planAccount.bpl?.name,
+      planAccount.last_payment_date,
+      planAccount.next_payment_date
     );
 
     return this.buildPlanInvoiceResponse(
-      activePlanAccount.ppl,
-      activePlanAccount.last_payment_date,
-      activePlanAccount.next_payment_date,
-      activePlanAccount.recurring_payment,
-      activePlanAccount.cancellation_date,
+      planAccount.ppl,
+      planAccount.last_payment_date,
+      planAccount.next_payment_date,
+      planAccount.recurring_payment,
+      planAccount.cancellation_date,
       billingPeriodValue,
-      activePlanAccount.value
+      planAccount.value
     );
   };
 
@@ -96,6 +98,32 @@ export class PlanCurrentInvoiceViewerRepository {
       const nextPaymentDate = new Date(pa.next_payment_date);
       return nextPaymentDate > now;
     });
+  };
+
+  private readonly findMostRecentPlanAccount = (
+    accountResult: Awaited<
+      ReturnType<typeof this.findAccountWithPlanAccounts>
+    > | null
+  ) => {
+    if (!accountResult?.apc || accountResult.apc.length === 0) {
+      return null;
+    }
+
+    const planAccountsWithDate = accountResult.apc
+      .filter((pa) => pa.last_payment_date || pa.cancellation_date)
+      .map((pa) => ({
+        ...pa,
+        sortDate: pa.last_payment_date || pa.cancellation_date || '',
+      }))
+      .sort((a, b) => {
+        const dateA = new Date(a.sortDate).getTime();
+        const dateB = new Date(b.sortDate).getTime();
+        return dateB - dateA;
+      });
+
+    return planAccountsWithDate.length > 0
+      ? planAccountsWithDate[0]
+      : accountResult.apc[0];
   };
 
   private readonly getBillingPeriod = (

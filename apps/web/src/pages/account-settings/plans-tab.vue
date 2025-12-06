@@ -149,6 +149,18 @@ const getProgressPercentage = computed(() => {
 });
 
 const getAlertStatus = computed(() => {
+  if (planInvoice.value?.cancellation_date) {
+    const nextPaymentDateStr = planInvoice.value.next_payment_date;
+    if (nextPaymentDateStr) {
+      const nextPaymentDate = new Date(nextPaymentDateStr);
+      const now = new Date();
+      if (nextPaymentDate > now) {
+        return 'warning';
+      }
+    }
+    return 'error';
+  }
+
   if (
     !planInvoice.value?.next_payment_date ||
     !planInvoice.value?.last_payment_date
@@ -171,6 +183,18 @@ const getAlertStatus = computed(() => {
 });
 
 const getAlertMessage = computed(() => {
+  if (planInvoice.value?.cancellation_date) {
+    const nextPaymentDateStr = planInvoice.value.next_payment_date;
+    if (nextPaymentDateStr) {
+      const nextPaymentDate = new Date(nextPaymentDateStr);
+      const now = new Date();
+      if (nextPaymentDate > now) {
+        return t('plan_cancelling_alert');
+      }
+    }
+    return t('plan_cancelled_alert');
+  }
+
   const status = getAlertStatus.value;
 
   if (status === 'error') {
@@ -839,7 +863,15 @@ onMounted(() => {
             >
               <div class="d-flex flex-column">
                 <span class="font-weight-medium mb-1">
-                  <template v-if="getAlertStatus === 'error'">
+                  <template v-if="planInvoice.cancellation_date">
+                    <template v-if="getAlertStatus === 'warning'">
+                      {{ $t('plan_cancelling_title') }}
+                    </template>
+                    <template v-else>
+                      {{ $t('plan_cancelled_title') }}
+                    </template>
+                  </template>
+                  <template v-else-if="getAlertStatus === 'error'">
                     {{ $t('plan_expired_title') }}
                   </template>
                   <template v-else-if="getAlertStatus === 'warning'">
