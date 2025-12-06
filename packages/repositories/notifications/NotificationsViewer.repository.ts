@@ -1,9 +1,10 @@
 import * as schema from '@core/models';
-import { notifications } from '@core/models';
+import { notifications, notificationType } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { isNull } from 'drizzle-orm';
+import { isNull, eq, and } from 'drizzle-orm';
 import { ListNotificationsResponse } from '@core/schema/notifications/listNotifications/response.schema';
+import { ENotificationType } from '@core/common/enums/ENotificationType';
 
 @injectable()
 export class NotificationsViewerRepository {
@@ -12,22 +13,80 @@ export class NotificationsViewerRepository {
   ) {}
 
   viewNotifications = async (): Promise<ListNotificationsResponse> => {
-    const result = await this.db.query.notifications.findFirst({
-      where: isNull(notifications.deleted_at),
+    const twoFactorTypeId = await this.findNotificationTypeIdByName(
+      ENotificationType.two_factor
+    );
+    const planTypeId = await this.findNotificationTypeIdByName(
+      ENotificationType.plan
+    );
+    const planExpirationTypeId = await this.findNotificationTypeIdByName(
+      ENotificationType.plan_expiration
+    );
+
+    const twoFactorNotification =
+      await this.findNotificationByType(twoFactorTypeId);
+    const planNotification = await this.findNotificationByType(planTypeId);
+    const planExpirationNotification =
+      await this.findNotificationByType(planExpirationTypeId);
+
+    const firstNotificationId =
+      twoFactorNotification?.notification_id ||
+      planNotification?.notification_id ||
+      planExpirationNotification?.notification_id ||
+      null;
+
+    return {
+      notification_id: firstNotificationId,
+      two_factor_notification: twoFactorNotification?.nwr
+        ? {
+            worker_id: twoFactorNotification.nwr.worker_id,
+            name: twoFactorNotification.nwr.name,
+          }
+        : null,
+      plan_notification: planNotification?.nwr
+        ? {
+            worker_id: planNotification.nwr.worker_id,
+            name: planNotification.nwr.name,
+          }
+        : null,
+      plan_expiration_reminder: planExpirationNotification?.nwr
+        ? {
+            worker_id: planExpirationNotification.nwr.worker_id,
+            name: planExpirationNotification.nwr.name,
+          }
+        : null,
+      created_at: twoFactorNotification?.created_at || null,
+      updated_at:
+        twoFactorNotification?.updated_at ||
+        planNotification?.updated_at ||
+        planExpirationNotification?.updated_at ||
+        null,
+    };
+  };
+
+  private async findNotificationTypeIdByName(name: string): Promise<string> {
+    const result = await this.db
+      .select({ notification_type_id: notificationType.notification_type_id })
+      .from(notificationType)
+      .where(eq(notificationType.name, name))
+      .limit(1)
+      .execute();
+
+    if (!result.length || !result[0].notification_type_id) {
+      throw new Error(`Notification type not found: ${name}`);
+    }
+
+    return result[0].notification_type_id;
+  }
+
+  private async findNotificationByType(notificationTypeId: string) {
+    return this.db.query.notifications.findFirst({
+      where: and(
+        eq(notifications.notification_type_id, notificationTypeId),
+        isNull(notifications.deleted_at)
+      ),
       with: {
-        ntw: {
-          columns: {
-            worker_id: true,
-            name: true,
-          },
-        },
-        npw: {
-          columns: {
-            worker_id: true,
-            name: true,
-          },
-        },
-        new: {
+        nwr: {
           columns: {
             worker_id: true,
             name: true,
@@ -36,47 +95,9 @@ export class NotificationsViewerRepository {
       },
       columns: {
         notification_id: true,
-        two_factor_notification: true,
-        plan_notification: true,
-        plan_expiration_reminder: true,
         created_at: true,
         updated_at: true,
       },
     });
-
-    if (!result) {
-      return {
-        notification_id: null,
-        two_factor_notification: null,
-        plan_notification: null,
-        plan_expiration_reminder: null,
-        created_at: null,
-        updated_at: null,
-      };
-    }
-
-    return {
-      notification_id: result.notification_id,
-      two_factor_notification: result.ntw
-        ? {
-            worker_id: result.ntw.worker_id,
-            name: result.ntw.name,
-          }
-        : null,
-      plan_notification: result.npw
-        ? {
-            worker_id: result.npw.worker_id,
-            name: result.npw.name,
-          }
-        : null,
-      plan_expiration_reminder: result.new
-        ? {
-            worker_id: result.new.worker_id,
-            name: result.new.name,
-          }
-        : null,
-      created_at: result.created_at,
-      updated_at: result.updated_at,
-    };
-  };
+  }
 }
