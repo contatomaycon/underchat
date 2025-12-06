@@ -1562,5 +1562,8 @@
     "delete_card_confirmation": "Are you sure you want to remove this card?",
     "addons_listed_successfully": "Addons listed successfully!",
     "no_addons_found": "No addons found",
-    "plan_recurring_updated_successfully": "Plan recurring payment updated successfully!"
+    "plan_recurring_updated_successfully": "Plan recurring payment updated successfully!",
+    "plan_products": "Plan Products",
+    "plan_products_listed_successfully": "Plan products listed successfully!",
+    "no_plan_products_found": "No products found"
 }

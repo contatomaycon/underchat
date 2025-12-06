@@ -538,5 +538,6 @@
   "card_deleted_error": "Error removing card",
   "card_not_found": "Card not found",
   "addons_listed_successfully": "Addons listed successfully!",
-  "plan_recurring_updated_successfully": "Plan recurring payment updated successfully!"
+  "plan_recurring_updated_successfully": "Plan recurring payment updated successfully!",
+  "plan_products_listed_successfully": "Plan products listed successfully!"
 }

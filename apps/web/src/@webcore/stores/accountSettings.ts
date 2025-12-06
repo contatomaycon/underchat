@@ -31,6 +31,10 @@ import {
   ListAccountAddonsFinalResponse,
   ListAccountAddonsResponse,
 } from '@core/schema/accountSettings/listAccountAddons/response.schema';
+import {
+  ListAccountPlanProductsFinalResponse,
+  ListAccountPlanProductsResponse,
+} from '@core/schema/accountSettings/listAccountPlanProducts/response.schema';
 
 export const useAccountSettingsStore = defineStore('accountSettings', {
   state: () => ({
@@ -51,6 +55,7 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
     } as PagingResponseSchema,
     userCardsList: [] as ListUserCardsFinalResponse,
     accountAddonsList: [] as ListAccountAddonsResponse[],
+    accountPlanProductsList: [] as ListAccountPlanProductsResponse[],
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -500,6 +505,30 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
         }
 
         this.accountAddonsList = data.data;
+
+        return data.data;
+      } catch {
+        this.loading = false;
+        return null;
+      }
+    },
+    async listAccountPlanProducts(): Promise<ListAccountPlanProductsFinalResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListAccountPlanProductsFinalResponse>
+        >('/account-settings/plan-products');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        this.accountPlanProductsList = data.data;
 
         return data.data;
       } catch {

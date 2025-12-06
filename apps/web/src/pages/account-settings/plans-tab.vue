@@ -6,6 +6,7 @@ import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { ViewCurrentPlanInvoiceResponse } from '@core/schema/accountSettings/viewCurrentPlanInvoice/response.schema';
 import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.schema';
 import { ListAccountAddonsResponse } from '@core/schema/accountSettings/listAccountAddons/response.schema';
+import { ListAccountPlanProductsResponse } from '@core/schema/accountSettings/listAccountPlanProducts/response.schema';
 
 const { t, locale } = useI18n();
 const accountSettingsStore = useAccountSettingsStore();
@@ -15,8 +16,10 @@ const loading = ref(false);
 const planInvoice = ref<ViewCurrentPlanInvoiceResponse | null>(null);
 const cardsLoading = ref(false);
 const addonsLoading = ref(false);
+const planProductsLoading = ref(false);
 const userCards = ref<ListUserCardResponse[]>([]);
 const accountAddons = ref<ListAccountAddonsResponse[]>([]);
+const accountPlanProducts = ref<ListAccountPlanProductsResponse[]>([]);
 const cardToDelete = ref<string | null>(null);
 const isDeleteDialogOpen = ref(false);
 
@@ -197,6 +200,15 @@ const loadAccountAddons = async () => {
   addonsLoading.value = false;
 };
 
+const loadAccountPlanProducts = async () => {
+  planProductsLoading.value = true;
+  const result = await accountSettingsStore.listAccountPlanProducts();
+  if (result) {
+    accountPlanProducts.value = result;
+  }
+  planProductsLoading.value = false;
+};
+
 const deleteCard = (cardId: string) => {
   cardToDelete.value = cardId;
   isDeleteDialogOpen.value = true;
@@ -225,10 +237,29 @@ const getPlanProgressPercentage = (addon: ListAccountAddonsResponse) => {
   return Math.min(Math.max((planUsed / addon.quantity_total) * 100, 0), 100);
 };
 
+const getPlanProductProgressPercentage = (
+  product: ListAccountPlanProductsResponse
+) => {
+  if (product.quantity_total === 0) return 0;
+  return Math.min(
+    Math.max((product.quantity_used / product.quantity_total) * 100, 0),
+    100
+  );
+};
+
+const getPlanProductPlanProgressPercentage = (
+  product: ListAccountPlanProductsResponse
+) => {
+  if (product.quantity_total === 0) return 0;
+  const planUsed = Math.min(product.quantity_used, product.quantity_plan);
+  return Math.min(Math.max((planUsed / product.quantity_total) * 100, 0), 100);
+};
+
 onMounted(() => {
   loadPlanInvoice();
   loadUserCards();
   loadAccountAddons();
+  loadAccountPlanProducts();
 });
 </script>
 
@@ -499,11 +530,11 @@ onMounted(() => {
 
             <div class="mb-4">
               <div class="d-flex align-center justify-space-between mb-3">
-                <span class="text-h6">{{ $t('addons') }}</span>
+                <span class="text-h6">{{ $t('plan_products') }}</span>
               </div>
 
               <VProgressCircular
-                v-if="addonsLoading"
+                v-if="planProductsLoading"
                 indeterminate
                 color="primary"
                 size="24"
@@ -511,36 +542,42 @@ onMounted(() => {
               />
 
               <div
-                v-else-if="accountAddons.length === 0"
+                v-else-if="accountPlanProducts.length === 0"
                 class="text-body-2 text-medium-emphasis"
               >
-                {{ $t('no_addons_found') }}
+                {{ $t('no_plan_products_found') }}
               </div>
 
               <div v-else class="d-flex flex-column gap-3">
                 <div
-                  v-for="addon in accountAddons"
-                  :key="addon.plan_cross_sell_id"
+                  v-for="product in accountPlanProducts"
+                  :key="product.plan_product_id"
                 >
                   <div class="d-flex align-center justify-space-between mb-2">
                     <span class="text-body-1 font-weight-medium">
-                      {{ addon.name }}
+                      {{ product.name }}
                     </span>
                     <span class="text-body-2 text-medium-emphasis">
-                      {{ addon.quantity_used }} / {{ addon.quantity_total }}
+                      {{ product.quantity_used }} / {{ product.quantity_total }}
                     </span>
                   </div>
                   <div class="addon-progress-container mb-1">
                     <VProgressLinear
-                      :model-value="getAddonProgressPercentage(addon)"
-                      color="primary"
+                      :model-value="getPlanProductProgressPercentage(product)"
+                      :color="
+                        product.source === 'plan' ? 'primary' : 'secondary'
+                      "
                       height="8"
                       rounded
                       class="addon-progress-base"
                     />
                     <VProgressLinear
-                      v-if="addon.quantity_plan > 0 && addon.quantity_addon > 0"
-                      :model-value="getPlanProgressPercentage(addon)"
+                      v-if="
+                        product.quantity_plan > 0 && product.quantity_addon > 0
+                      "
+                      :model-value="
+                        getPlanProductPlanProgressPercentage(product)
+                      "
                       color="secondary"
                       height="8"
                       rounded
@@ -557,10 +594,7 @@ onMounted(() => {
 
     <VRow v-else>
       <VCol cols="12" class="text-center mt-12">
-        <VCard
-          variant="elevated"
-          class="account-settings-card d-inline-block pa-8"
-        >
+        <VCard variant="elevated" class="account-settings-card pa-8">
           <VCardText>
             <p class="text-body-1 text-medium-emphasis mb-0">
               {{ $t('no_plan_found') }}

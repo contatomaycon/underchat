@@ -1562,5 +1562,8 @@
     "delete_card_confirmation": "¿Está seguro de que desea eliminar esta tarjeta?",
     "addons_listed_successfully": "¡Complementos listados con éxito!",
     "no_addons_found": "No se encontraron complementos",
-    "plan_recurring_updated_successfully": "¡Pago recurrente del plan actualizado con éxito!"
+    "plan_recurring_updated_successfully": "¡Pago recurrente del plan actualizado con éxito!",
+    "plan_products": "Productos del Plan",
+    "plan_products_listed_successfully": "¡Productos del plan listados con éxito!",
+    "no_plan_products_found": "No se encontraron productos"
 }

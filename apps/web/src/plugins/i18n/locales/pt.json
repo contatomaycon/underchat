@@ -1578,5 +1578,8 @@
     "delete_card_confirmation": "Tem certeza que deseja remover este cartão?",
     "addons_listed_successfully": "Addons listados com sucesso!",
     "no_addons_found": "Nenhum addon encontrado",
-    "plan_recurring_updated_successfully": "Recorrência do plano atualizada com sucesso!"
+    "plan_recurring_updated_successfully": "Recorrência do plano atualizada com sucesso!",
+    "plan_products": "Produtos do Plano",
+    "plan_products_listed_successfully": "Produtos do plano listados com sucesso!",
+    "no_plan_products_found": "Nenhum produto encontrado"
 }
