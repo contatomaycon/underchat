@@ -12,6 +12,9 @@ import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid'
 import { UserInfoViewerRepository } from '@core/repositories/user/UserInfoViewer.repository';
 import { WorkerNameViewerRepository } from '@core/repositories/worker/WorkerNameViewer.repository';
 import { INotificationMessage } from '@core/common/interfaces/INotificationMessage';
+import { PlanCurrentInvoiceViewerRepository } from '@core/repositories/plan/PlanCurrentInvoiceViewer.repository';
+import { ENotificationType } from '@core/common/enums/ENotificationType';
+import { webcrypto } from 'node:crypto';
 
 @injectable()
 export class NotificationMessageService {
@@ -24,16 +27,17 @@ export class NotificationMessageService {
     private readonly workerActiveByAccountViewerRepository: WorkerActiveByAccountViewerRepository,
     private readonly userService: UserService,
     private readonly userInfoViewerRepository: UserInfoViewerRepository,
-    private readonly workerNameViewerRepository: WorkerNameViewerRepository
+    private readonly workerNameViewerRepository: WorkerNameViewerRepository,
+    private readonly planCurrentInvoiceViewerRepository: PlanCurrentInvoiceViewerRepository
   ) {}
 
   async sendNotificationMessage(
-    notificationId: string,
+    notificationTypeId: string,
     accountId: string
   ): Promise<boolean> {
     const notification =
-      await this.notificationMessageViewerRepository.findNotificationById(
-        notificationId
+      await this.notificationMessageViewerRepository.findNotificationByTypeId(
+        notificationTypeId
       );
 
     if (!notification) {
@@ -94,7 +98,12 @@ export class NotificationMessageService {
         id: notification.notification_type_id,
         name: notification.nnt?.name || '',
       },
-      message: notification.message,
+      message: await this.replaceNotificationParameters(
+        notification.message,
+        notification.nnt?.name || '',
+        fullName,
+        accountId
+      ),
       name: fullName,
       phone: phone,
       date: new Date().toISOString(),
@@ -134,5 +143,98 @@ export class NotificationMessageService {
     }
 
     return workers[0].worker_id;
+  }
+
+  private generateCode(): string {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const randomArray = new Uint32Array(8);
+    webcrypto.getRandomValues(randomArray);
+    return Array.from(randomArray, (value) => chars[value % chars.length]).join(
+      ''
+    );
+  }
+
+  private async getPlanData(accountId: string): Promise<{
+    plan: string | null;
+    expiration_date: string | null;
+    value: string | null;
+  }> {
+    const planInvoice =
+      await this.planCurrentInvoiceViewerRepository.viewCurrentPlanInvoice(
+        accountId
+      );
+
+    if (!planInvoice.plan_name) {
+      return {
+        plan: null,
+        expiration_date: null,
+        value: null,
+      };
+    }
+
+    const expirationDate = planInvoice.next_payment_date
+      ? new Date(planInvoice.next_payment_date).toLocaleDateString('pt-BR')
+      : null;
+
+    const value = planInvoice.plan_price
+      ? new Intl.NumberFormat('pt-BR', {
+          style: 'currency',
+          currency: 'BRL',
+        }).format(Number(planInvoice.plan_price))
+      : null;
+
+    return {
+      plan: planInvoice.plan_name || null,
+      expiration_date: expirationDate,
+      value: value,
+    };
+  }
+
+  private async replaceNotificationParameters(
+    message: string | null,
+    notificationTypeName: string,
+    userName: string | null,
+    accountId: string
+  ): Promise<string | null> {
+    if (!message) {
+      return null;
+    }
+
+    let replacedMessage = message;
+
+    if (notificationTypeName === ENotificationType.two_factor) {
+      const code = this.generateCode();
+      replacedMessage = replacedMessage.replace(/\{\{code\}\}/g, code);
+      replacedMessage = replacedMessage.replace(
+        /\{\{name\}\}/g,
+        userName || ''
+      );
+      return replacedMessage;
+    }
+
+    if (
+      notificationTypeName === ENotificationType.plan ||
+      notificationTypeName === ENotificationType.plan_expiration
+    ) {
+      const planData = await this.getPlanData(accountId);
+      replacedMessage = replacedMessage.replace(
+        /\{\{plan\}\}/g,
+        planData.plan || ''
+      );
+      replacedMessage = replacedMessage.replace(
+        /\{\{name\}\}/g,
+        userName || ''
+      );
+      replacedMessage = replacedMessage.replace(
+        /\{\{expiration_date\}\}/g,
+        planData.expiration_date || ''
+      );
+      replacedMessage = replacedMessage.replace(
+        /\{\{value\}\}/g,
+        planData.value || ''
+      );
+    }
+
+    return replacedMessage;
   }
 }

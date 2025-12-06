@@ -40,4 +40,35 @@ export class NotificationMessageViewerRepository {
       },
     });
   };
+
+  findNotificationByTypeId = async (notificationTypeId: string) => {
+    return this.db.query.notifications.findFirst({
+      where: and(
+        eq(notifications.notification_type_id, notificationTypeId),
+        isNull(notifications.deleted_at)
+      ),
+      with: {
+        nnt: {
+          columns: {
+            notification_type_id: true,
+            name: true,
+          },
+        },
+        nwr: {
+          columns: {
+            worker_id: true,
+            name: true,
+          },
+        },
+      },
+      columns: {
+        notification_id: true,
+        worker_id: true,
+        notification_type_id: true,
+        message: true,
+        created_at: true,
+        updated_at: true,
+      },
+    });
+  };
 }
