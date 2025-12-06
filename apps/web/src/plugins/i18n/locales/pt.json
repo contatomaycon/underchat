@@ -81,6 +81,7 @@
     "reinstall_server_confirmation": "Você tem certeza que deseja reinstalar este servidor?",
     "refresh_server": "Atualizar Servidor",
     "server_reinstall_error": "Ocorreu um erro ao reinstalar o servidor. Por favor, tente novamente.",
+    "server_reinstall_success": "Servidor reinstalado com sucesso!",
     "request_reinstall_success": "Solicitação de reinstalação do servidor bem-sucedida!",
     "workers_allowed": "Canais permitidos",
     "workers_allowed_required": "Canais permitidos é obrigatório",
