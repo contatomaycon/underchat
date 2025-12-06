@@ -202,13 +202,6 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
-    'notifications': RouteRecordInfo<
-      'notifications',
-      '/notifications',
-      Record<never, never>,
-      Record<never, never>,
-      | never
-    >,
     'plan': RouteRecordInfo<
       'plan',
       '/plan',
@@ -460,12 +453,6 @@ declare module 'vue-router/auto-routes' {
     'src/pages/not-authorized.vue': {
       routes:
         | 'not-authorized'
-      views:
-        | never
-    }
-    'src/pages/notifications.vue': {
-      routes:
-        | 'notifications'
       views:
         | never
     }

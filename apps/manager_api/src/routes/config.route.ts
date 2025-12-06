@@ -4,6 +4,7 @@ import ConfigController from '@/controllers/config';
 import { listNotificationsSchema } from '@core/schema/notifications/listNotifications';
 import { updateNotificationsSchema } from '@core/schema/notifications/updateNotifications';
 import { listWorkersSchema } from '@core/schema/notifications/listWorkers';
+import { listSentNotificationsSchema } from '@core/schema/notifications/listSentNotifications';
 import { listNfseSchema } from '@core/schema/config/listNfse';
 import { updateNfseSchema } from '@core/schema/config/updateNfse';
 import { configPermissions } from '@/permissions';
@@ -32,6 +33,15 @@ export default async function configRoutes(server: FastifyInstance) {
   server.get('/config/notifications/workers', {
     schema: listWorkersSchema,
     handler: configController.listWorkers,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, configPermissions),
+    ],
+  });
+
+  server.get('/config/notifications/sent', {
+    schema: listSentNotificationsSchema,
+    handler: configController.listSentNotifications,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, configPermissions),

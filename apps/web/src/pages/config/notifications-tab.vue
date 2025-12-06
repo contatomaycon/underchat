@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useSettingsStore } from '@/@webcore/stores/settings';
+import { useNotificationsStore } from '@/@webcore/stores/notifications';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { ListNotificationsResponse } from '@core/schema/notifications/listNotifications/response.schema';
 import { UpdateNotificationsRequest } from '@core/schema/notifications/updateNotifications/request.schema';
 import { ListWorkersResponse } from '@core/schema/notifications/listWorkers/response.schema';
+import TablePagination from '@/@webcore/components/TablePagination.vue';
 
 const { t } = useI18n();
 const settingsStore = useSettingsStore();
+const notificationsStore = useNotificationsStore();
 useSnackbarCleanup(settingsStore);
 
 const loading = ref(false);
@@ -220,8 +223,94 @@ const removeNotification = async (
   }
 };
 
-onMounted(() => {
-  loadNotifications();
+const options = ref({
+  page: 1,
+  itemsPerPage: 10,
+});
+
+const query = computed(() => ({
+  current_page: options.value.page,
+  per_page: options.value.itemsPerPage,
+}));
+
+const formatNotificationId = (uuid: string): string => {
+  if (!uuid) return '-';
+  return uuid.slice(-8).toUpperCase();
+};
+
+const formatDate = (date: string | null): string => {
+  if (!date) return '-';
+  return new Date(date).toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
+const getNotificationTypeLabel = (typeName: string): string => {
+  const typeMap: Record<string, string> = {
+    TWO_FACTOR: t('two_factor_notification'),
+    PLAN: t('plan_notification'),
+    PLAN_EXPIRATION: t('plan_expiration_reminder'),
+  };
+  return typeMap[typeName] || typeName;
+};
+
+const getNotificationTypeColor = (typeName: string): string => {
+  const colorMap: Record<string, string> = {
+    TWO_FACTOR: 'primary',
+    PLAN: 'success',
+    PLAN_EXPIRATION: 'warning',
+  };
+  return colorMap[typeName] || 'default';
+};
+
+const handleTableChange = (o: { page: number; itemsPerPage: number }) => {
+  options.value.page = o.page;
+  options.value.itemsPerPage = o.itemsPerPage;
+};
+
+const whatsappModal = ref(false);
+const emailModal = ref(false);
+const selectedWhatsappMessage = ref<string | null>(null);
+const selectedEmailMessage = ref<string | null>(null);
+const selectedEmailSubject = ref<string | null>(null);
+
+const openWhatsappModal = (message: string | null) => {
+  selectedWhatsappMessage.value = message;
+  whatsappModal.value = true;
+};
+
+const openEmailModal = (message: string | null, subject: string | null) => {
+  selectedEmailMessage.value = message;
+  selectedEmailSubject.value = subject;
+  emailModal.value = true;
+};
+
+const closeWhatsappModal = () => {
+  whatsappModal.value = false;
+  selectedWhatsappMessage.value = null;
+};
+
+const closeEmailModal = () => {
+  emailModal.value = false;
+  selectedEmailMessage.value = null;
+  selectedEmailSubject.value = null;
+};
+
+watch(
+  query,
+  async (q) => {
+    await notificationsStore.getSentNotifications(q);
+  },
+  { immediate: true, deep: true }
+);
+
+onMounted(async () => {
+  await loadNotifications();
+  await notificationsStore.getSentNotifications(query.value);
 });
 </script>
 
@@ -377,6 +466,224 @@ onMounted(() => {
         </VCard>
       </VCol>
     </VRow>
+
+    <VRow class="mt-4">
+      <VCol cols="12">
+        <VCard>
+          <VCardTitle class="text-h6 pa-6 pb-4">
+            {{ $t('sent_notifications') }}
+          </VCardTitle>
+
+          <VDivider />
+
+          <VCardText>
+            <VDataTableServer
+              v-model:page="options.page"
+              v-model:items-per-page="options.itemsPerPage"
+              :headers="[
+                {
+                  title: 'ID',
+                  key: 'id',
+                  sortable: false,
+                },
+                {
+                  title: $t('notification_type'),
+                  key: 'notification_type',
+                  sortable: false,
+                },
+                {
+                  title: $t('account'),
+                  key: 'account',
+                  sortable: false,
+                },
+                {
+                  title: $t('channel'),
+                  key: 'worker',
+                  sortable: false,
+                },
+                {
+                  title: $t('name'),
+                  key: 'name',
+                  sortable: false,
+                },
+                {
+                  title: $t('email'),
+                  key: 'email',
+                  sortable: false,
+                },
+                {
+                  title: $t('phone'),
+                  key: 'phone',
+                  sortable: false,
+                },
+                {
+                  title: $t('date'),
+                  key: 'date',
+                  sortable: false,
+                },
+                {
+                  title: $t('actions'),
+                  key: 'actions',
+                  sortable: false,
+                  align: 'end',
+                },
+              ]"
+              :items="notificationsStore.sentNotificationsList"
+              :items-length="notificationsStore.sentNotificationsPagings.total"
+              :loading="notificationsStore.loading"
+              @update:options="handleTableChange"
+              :loading-text="$t('loading_text')"
+            >
+              <template #item.id="{ item }">
+                <VTooltip>
+                  <template #activator="{ props }">
+                    <span v-bind="props" class="text-caption font-mono">
+                      {{ formatNotificationId(item.id) }}
+                    </span>
+                  </template>
+                  <span>{{ item.id }}</span>
+                </VTooltip>
+              </template>
+
+              <template #item.notification_type="{ item }">
+                <VChip
+                  v-if="item.notification_type?.name"
+                  :color="getNotificationTypeColor(item.notification_type.name)"
+                  size="small"
+                  variant="tonal"
+                >
+                  {{ getNotificationTypeLabel(item.notification_type.name) }}
+                </VChip>
+                <span v-else class="text-medium-emphasis">-</span>
+              </template>
+
+              <template #item.account="{ item }">
+                {{ item.account?.name || '-' }}
+              </template>
+
+              <template #item.worker="{ item }">
+                {{ item.worker?.name || '-' }}
+              </template>
+
+              <template #item.name="{ item }">
+                {{ item.name || '-' }}
+              </template>
+
+              <template #item.email="{ item }">
+                {{ item.email || '-' }}
+              </template>
+
+              <template #item.phone="{ item }">
+                {{ item.phone || '-' }}
+              </template>
+
+              <template #item.date="{ item }">
+                {{ formatDate(item.date) }}
+              </template>
+
+              <template #item.actions="{ item }">
+                <div class="d-flex align-center gap-2">
+                  <VBtn
+                    v-if="item.message_whatsapp"
+                    icon
+                    variant="text"
+                    size="small"
+                    @click="openWhatsappModal(item.message_whatsapp)"
+                  >
+                    <VIcon icon="tabler-brand-whatsapp" size="20" />
+                    <VTooltip activator="parent" location="top">
+                      {{ $t('view_whatsapp_message') }}
+                    </VTooltip>
+                  </VBtn>
+                  <VBtn
+                    v-if="item.message_email"
+                    icon
+                    variant="text"
+                    size="small"
+                    @click="
+                      openEmailModal(item.message_email, item.email_subject)
+                    "
+                  >
+                    <VIcon icon="tabler-mail" size="20" />
+                    <VTooltip activator="parent" location="top">
+                      {{ $t('view_email_message') }}
+                    </VTooltip>
+                  </VBtn>
+                </div>
+              </template>
+
+              <template #no-data>
+                <div class="text-center py-8">
+                  <VIcon icon="tabler-bell-off" size="48" class="mb-4" />
+                  <p class="text-body-1">
+                    {{ $t('no_sent_notifications_found') }}
+                  </p>
+                </div>
+              </template>
+
+              <template #bottom>
+                <TablePagination
+                  v-model:page="options.page"
+                  :items-per-page="options.itemsPerPage"
+                  :total-items="
+                    notificationsStore.sentNotificationsPagings.total
+                  "
+                />
+              </template>
+            </VDataTableServer>
+          </VCardText>
+        </VCard>
+      </VCol>
+    </VRow>
+
+    <VDialog v-model="whatsappModal" max-width="600">
+      <VCard>
+        <VCardTitle class="d-flex align-center justify-space-between">
+          <span>{{ $t('whatsapp_message') }}</span>
+          <IconBtn @click="closeWhatsappModal">
+            <VIcon>tabler-x</VIcon>
+          </IconBtn>
+        </VCardTitle>
+
+        <VDivider />
+
+        <VCardText class="pt-6">
+          <div class="text-body-1" style="white-space: pre-wrap">
+            {{ selectedWhatsappMessage || '-' }}
+          </div>
+        </VCardText>
+      </VCard>
+    </VDialog>
+
+    <VDialog v-model="emailModal" max-width="800">
+      <VCard>
+        <VCardTitle class="d-flex align-center justify-space-between">
+          <span>{{ $t('email_message') }}</span>
+          <IconBtn @click="closeEmailModal">
+            <VIcon>tabler-x</VIcon>
+          </IconBtn>
+        </VCardTitle>
+
+        <VDivider />
+
+        <VCardText class="pt-6">
+          <div v-if="selectedEmailSubject" class="mb-4">
+            <div class="text-caption text-medium-emphasis mb-1">
+              {{ $t('subject') }}
+            </div>
+            <div class="text-body-1 font-weight-medium">
+              {{ selectedEmailSubject }}
+            </div>
+          </div>
+          <div
+            v-if="selectedEmailMessage"
+            v-html="selectedEmailMessage"
+            class="email-preview"
+          ></div>
+          <div v-else class="text-body-1">-</div>
+        </VCardText>
+      </VCard>
+    </VDialog>
 
     <VDialog v-model="isWorkerModalOpen" max-width="600" persistent>
       <VCard>
@@ -597,5 +904,20 @@ onMounted(() => {
 .notification-card--active {
   border-color: rgb(var(--v-theme-success)) !important;
   background-color: rgba(var(--v-theme-success), 0.05);
+}
+
+.email-preview {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.email-preview :deep(img) {
+  max-width: 100%;
+  height: auto;
+}
+
+.email-preview :deep(table) {
+  max-width: 100%;
+  overflow-x: auto;
 }
 </style>
