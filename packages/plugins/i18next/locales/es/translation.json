@@ -541,5 +541,8 @@
   "cannot_delete_last_card": "No se puede eliminar la última tarjeta",
   "addons_listed_successfully": "¡Complementos listados con éxito!",
   "plan_recurring_updated_successfully": "¡Pago recurrente del plan actualizado con éxito!",
-  "plan_products_listed_successfully": "¡Productos del plan listados con éxito!"
+  "plan_products_listed_successfully": "¡Productos del plan listados con éxito!",
+  "user_customer_not_found": "Cliente del usuario no encontrado",
+  "card_creation_failed": "Error al crear tarjeta",
+  "card_created_successfully": "¡Tarjeta agregada con éxito!"
 }

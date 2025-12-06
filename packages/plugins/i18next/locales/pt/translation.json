@@ -541,5 +541,8 @@
   "cannot_delete_last_card": "Não é possível remover o último cartão",
   "addons_listed_successfully": "Addons listados com sucesso!",
   "plan_recurring_updated_successfully": "Recorrência do plano atualizada com sucesso!",
-  "plan_products_listed_successfully": "Produtos do plano listados com sucesso!"
+  "plan_products_listed_successfully": "Produtos do plano listados com sucesso!",
+  "user_customer_not_found": "Cliente do usuário não encontrado",
+  "card_creation_failed": "Falha ao criar cartão",
+  "card_created_successfully": "Cartão adicionado com sucesso!"
 }

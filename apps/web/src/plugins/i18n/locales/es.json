@@ -1580,6 +1580,8 @@
     "cannot_delete_last_card": "No se puede eliminar la última tarjeta",
     "card_default_updated_success": "¡Tarjeta establecida como predeterminada con éxito!",
     "card_default_updated_error": "Error al establecer tarjeta como predeterminada",
+    "card_created_success": "¡Tarjeta agregada con éxito!",
+    "card_created_error": "Error al agregar tarjeta",
     "delete_card": "Eliminar Tarjeta",
     "delete_card_confirmation": "¿Está seguro de que desea eliminar esta tarjeta?",
     "addons_listed_successfully": "¡Complementos listados con éxito!",

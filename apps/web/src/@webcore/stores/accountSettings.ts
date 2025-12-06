@@ -35,6 +35,8 @@ import {
   ListAccountPlanProductsFinalResponse,
   ListAccountPlanProductsResponse,
 } from '@core/schema/accountSettings/listAccountPlanProducts/response.schema';
+import { CreateUserCardRequest } from '@core/schema/accountSettings/createUserCard/request.schema';
+import { CreateUserCardResponse } from '@core/schema/accountSettings/createUserCard/response.schema';
 
 export const useAccountSettingsStore = defineStore('accountSettings', {
   state: () => ({
@@ -576,6 +578,50 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
         this.showSnackbar(errorMessage, EColor.error);
 
         return false;
+      }
+    },
+    async createUserCard(
+      data: CreateUserCardRequest
+    ): Promise<CreateUserCardResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<CreateUserCardResponse>>(
+          '/account-settings/cards',
+          data
+        );
+
+        this.loading = false;
+
+        const responseData = response?.data;
+
+        if (!responseData?.status || !responseData?.data) {
+          const message =
+            responseData?.message ?? this.i18n.global.t('card_created_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          responseData.message ?? this.i18n.global.t('card_created_success'),
+          EColor.success
+        );
+
+        await this.listUserCards();
+
+        return responseData.data;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t('card_created_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
       }
     },
   },

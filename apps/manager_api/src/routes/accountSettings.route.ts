@@ -20,6 +20,7 @@ import { updatePlanRecurringSchema } from '@core/schema/accountSettings/updatePl
 import { listAccountAddonsSchema } from '@core/schema/accountSettings/listAccountAddons';
 import { listAccountPlanProductsSchema } from '@core/schema/accountSettings/listAccountPlanProducts';
 import { updateUserCardDefaultSchema } from '@core/schema/accountSettings/updateUserCardDefault';
+import { createUserCardSchema } from '@core/schema/accountSettings/createUserCard';
 import { planInvoicePermissions } from '@/permissions';
 
 export default async function accountSettingsRoutes(server: FastifyInstance) {
@@ -114,6 +115,15 @@ export default async function accountSettingsRoutes(server: FastifyInstance) {
   server.get('/account-settings/cards', {
     schema: listUserCardsSchema,
     handler: accountSettingsController.listUserCards,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.post('/account-settings/cards', {
+    schema: createUserCardSchema,
+    handler: accountSettingsController.createUserCard,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),

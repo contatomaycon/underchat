@@ -1,10 +1,11 @@
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
-import { viewCurrentPlanInvoiceResponseSchema } from './response.schema';
+import { createUserCardRequestSchema } from './request.schema';
+import { createUserCardResponseSchema } from './response.schema';
 
-export const viewCurrentPlanInvoiceSchema = {
-  description: 'Visualiza informações detalhadas do plano atual para fatura',
+export const createUserCardSchema = {
+  description: 'Adiciona um novo cartão de crédito para o usuário',
   tags: [ETagSwagger.account],
   produces: ['application/json'],
   security: [
@@ -21,13 +22,14 @@ export const viewCurrentPlanInvoiceSchema = {
       })
     ),
   }),
+  body: createUserCardRequestSchema,
   response: {
     200: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: viewCurrentPlanInvoiceResponseSchema,
+        data: createUserCardResponseSchema,
       },
       { description: 'Successful' }
     ),

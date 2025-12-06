@@ -7,6 +7,18 @@ import { ViewCurrentPlanInvoiceResponse } from '@core/schema/accountSettings/vie
 import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.schema';
 import { ListAccountAddonsResponse } from '@core/schema/accountSettings/listAccountAddons/response.schema';
 import { ListAccountPlanProductsResponse } from '@core/schema/accountSettings/listAccountPlanProducts/response.schema';
+import creditCardType from 'credit-card-type';
+import visaSvg from '@images/icons/payments/card/visa.svg?url';
+import mastercardSvg from '@images/icons/payments/card/mastercard.svg?url';
+import amexSvg from '@images/icons/payments/card/amex.svg?url';
+import dinersSvg from '@images/icons/payments/card/diners.svg?url';
+import discoverSvg from '@images/icons/payments/card/discover.svg?url';
+import eloSvg from '@images/icons/payments/card/elo.svg?url';
+import jcbSvg from '@images/icons/payments/card/jcb.svg?url';
+import maestroSvg from '@images/icons/payments/card/maestro.svg?url';
+import hipercardSvg from '@images/icons/payments/card/hipercard.svg?url';
+import meliSvg from '@images/icons/payments/card/meli.svg?url';
+import realSvg from '@images/icons/payments/card/real.svg?url';
 
 const { t, locale } = useI18n();
 const accountSettingsStore = useAccountSettingsStore();
@@ -22,6 +34,18 @@ const accountAddons = ref<ListAccountAddonsResponse[]>([]);
 const accountPlanProducts = ref<ListAccountPlanProductsResponse[]>([]);
 const cardToDelete = ref<string | null>(null);
 const isDeleteDialogOpen = ref(false);
+const showAddCardModal = ref(false);
+const newCard = ref({
+  number: '',
+  holderName: '',
+  expiryMonth: '',
+  expiryYear: '',
+  cvv: '',
+});
+const detectedBrand = ref<string | null>(null);
+const expiryError = ref<string | null>(null);
+const showCvv = ref(false);
+const isAddingCard = ref(false);
 
 const getCurrencyConfig = () => {
   const localeMap: Record<string, { locale: string; currency: string }> = {
@@ -235,6 +259,246 @@ const canDeleteCard = (card: ListUserCardResponse): boolean => {
   return true;
 };
 
+const detectCardBrand = (cardNumber: string): string | null => {
+  const cleaned = cardNumber.replaceAll(/\s/g, '');
+
+  if (cleaned.length < 4) return null;
+
+  try {
+    const cardTypes = creditCardType(cleaned);
+
+    if (cardTypes && cardTypes.length > 0) {
+      const type = cardTypes[0].type?.toUpperCase();
+
+      const typeMap: Record<string, string> = {
+        VISA: 'VISA',
+        MASTERCARD: 'MASTERCARD',
+        'AMERICAN-EXPRESS': 'AMEX',
+        'DINERS-CLUB': 'DINERS',
+        DISCOVER: 'DISCOVER',
+        JCB: 'JCB',
+        UNIONPAY: 'UNIONPAY',
+        MAESTRO: 'MAESTRO',
+        MIR: 'MIR',
+        ELO: 'ELO',
+      };
+
+      const mappedType = typeMap[type || ''];
+
+      if (mappedType) {
+        return mappedType;
+      }
+    }
+
+    if (cleaned.match(/^(606282|3841)/)) {
+      return 'HIPERCARD';
+    }
+
+    if (cleaned.match(/^(5018|5020|5038|6304|6759|6761|6762|6763)/)) {
+      return 'MELI';
+    }
+
+    if (cleaned.match(/^(5090|5091|5092)/)) {
+      return 'REAL';
+    }
+  } catch (error) {
+    console.error('Erro ao detectar marca do cartão:', error);
+    return null;
+  }
+
+  return null;
+};
+
+const formatCardNumber = (value: string): string => {
+  const cleaned = value.replaceAll(/\s/g, '');
+  const chunks = cleaned.match(/.{1,4}/g);
+  return chunks ? chunks.join(' ') : cleaned;
+};
+
+const onCardNumberInput = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const value = target.value.replaceAll(/\D/g, '');
+  newCard.value.number = formatCardNumber(value);
+  detectedBrand.value = detectCardBrand(value);
+};
+
+const formatExpiry = (value: string): string => {
+  const cleaned = value.replaceAll(/\D/g, '');
+
+  if (cleaned.length === 0) {
+    return '';
+  }
+
+  if (cleaned.length === 1) {
+    const firstDigit = Number.parseInt(cleaned[0], 10);
+    if (firstDigit > 1) {
+      return `0${firstDigit}`;
+    }
+    return cleaned;
+  }
+
+  if (cleaned.length >= 2) {
+    const month = cleaned.slice(0, 2);
+    const monthNum = Number.parseInt(month, 10);
+
+    if (monthNum > 12) {
+      return `12/${cleaned.slice(2, 4)}`;
+    }
+
+    if (cleaned.length === 2) {
+      return month;
+    }
+
+    return `${month}/${cleaned.slice(2, 4)}`;
+  }
+
+  return cleaned;
+};
+
+const validateExpiry = (month: string, year: string): string | null => {
+  if (!month || month.length !== 2) {
+    return null;
+  }
+
+  const monthNum = Number.parseInt(month, 10);
+
+  if (Number.isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
+    return t('invalid_month');
+  }
+
+  if (!year || year.length !== 2) {
+    return null;
+  }
+
+  const yearNum = Number.parseInt(year, 10);
+
+  if (Number.isNaN(yearNum)) {
+    return t('invalid_year');
+  }
+
+  const currentDate = new Date();
+  const currentMonth = currentDate.getMonth() + 1;
+  const fullYear = 2000 + yearNum;
+
+  if (fullYear < currentDate.getFullYear()) {
+    return t('card_expired');
+  }
+
+  if (fullYear === currentDate.getFullYear() && monthNum < currentMonth) {
+    return t('card_expired');
+  }
+
+  return null;
+};
+
+const onExpiryInput = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  let value = target.value.replaceAll(/\D/g, '');
+
+  if (value.length > 4) {
+    value = value.slice(0, 4);
+  }
+
+  const formatted = formatExpiry(value);
+  const parts = formatted.split('/');
+  const month = parts[0] || '';
+  const year = parts[1] || '';
+
+  newCard.value.expiryMonth = month;
+  newCard.value.expiryYear = year;
+
+  if (month.length === 2) {
+    if (year.length === 2) {
+      expiryError.value = validateExpiry(month, year);
+    } else {
+      expiryError.value = null;
+    }
+  } else {
+    expiryError.value = null;
+  }
+
+  target.value = formatted;
+};
+
+const getBrandLogoUrl = (brand: string | null) => {
+  if (!brand) return null;
+
+  const logoPaths: Record<string, string | any> = {
+    VISA: visaSvg,
+    MASTERCARD: mastercardSvg,
+    AMEX: amexSvg,
+    DINERS: dinersSvg,
+    DISCOVER: discoverSvg,
+    ELO: eloSvg,
+    JCB: jcbSvg,
+    MAESTRO: maestroSvg,
+    HIPERCARD: hipercardSvg,
+    MELI: meliSvg,
+    REAL: realSvg,
+  };
+
+  const logoPath = logoPaths[brand];
+
+  if (!logoPath) return null;
+
+  const url =
+    typeof logoPath === 'string'
+      ? logoPath
+      : (logoPath as any)?.default || logoPath;
+
+  return url;
+};
+
+const isNewCardValid = computed(() => {
+  const number = newCard.value.number.replaceAll(/\s/g, '');
+  return (
+    number.length >= 13 &&
+    newCard.value.holderName.trim().length >= 3 &&
+    newCard.value.expiryMonth.length === 2 &&
+    newCard.value.expiryYear.length === 2 &&
+    !expiryError.value &&
+    newCard.value.cvv.length >= 3 &&
+    newCard.value.cvv.length <= 4
+  );
+});
+
+const resetNewCardForm = () => {
+  newCard.value = {
+    number: '',
+    holderName: '',
+    expiryMonth: '',
+    expiryYear: '',
+    cvv: '',
+  };
+  detectedBrand.value = null;
+  expiryError.value = null;
+  showCvv.value = false;
+};
+
+const addCard = async () => {
+  if (!isNewCardValid.value) return;
+
+  isAddingCard.value = true;
+
+  try {
+    const result = await accountSettingsStore.createUserCard({
+      number: newCard.value.number,
+      holder_name: newCard.value.holderName,
+      expiry_month: newCard.value.expiryMonth,
+      expiry_year: newCard.value.expiryYear,
+      cvv: newCard.value.cvv,
+    });
+
+    if (result) {
+      showAddCardModal.value = false;
+      resetNewCardForm();
+      await loadUserCards();
+    }
+  } finally {
+    isAddingCard.value = false;
+  }
+};
+
 const getAddonProgressPercentage = (addon: ListAccountAddonsResponse) => {
   if (addon.quantity_total === 0) return 0;
   return Math.min(
@@ -426,12 +690,23 @@ onMounted(() => {
 
               <div
                 v-else-if="userCards.length === 0"
-                class="text-body-2 text-medium-emphasis"
+                class="text-body-2 text-medium-emphasis mb-3"
               >
                 {{ $t('no_cards_found') }}
               </div>
 
-              <div v-else class="d-flex flex-column gap-2">
+              <VBtn
+                v-if="!cardsLoading"
+                color="primary"
+                variant="outlined"
+                prepend-icon="tabler-plus"
+                @click="showAddCardModal = true"
+                class="mb-3"
+              >
+                {{ $t('add_new_card') }}
+              </VBtn>
+
+              <div v-if="userCards.length > 0" class="d-flex flex-column gap-2">
                 <VCard
                   v-for="card in userCards"
                   :key="card.user_card_id"
@@ -692,6 +967,124 @@ onMounted(() => {
           </VBtn>
           <VBtn color="error" variant="flat" @click="confirmDeleteCard">
             {{ $t('delete') }}
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <VDialog v-model="showAddCardModal" max-width="600" persistent>
+      <VCard>
+        <VCardTitle class="d-flex align-center justify-space-between">
+          <span>{{ $t('add_new_card') }}</span>
+          <VBtn
+            icon
+            variant="text"
+            size="small"
+            @click="
+              showAddCardModal = false;
+              resetNewCardForm();
+            "
+          >
+            <VIcon icon="tabler-x" />
+          </VBtn>
+        </VCardTitle>
+        <VCardText>
+          <VForm>
+            <VRow>
+              <VCol cols="12">
+                <VTextField
+                  v-model="newCard.number"
+                  :label="$t('card_number')"
+                  placeholder="0000 0000 0000 0000"
+                  @input="onCardNumberInput"
+                  :maxlength="19"
+                >
+                  <template #append-inner>
+                    <div
+                      v-if="detectedBrand && getBrandLogoUrl(detectedBrand)"
+                      class="brand-logo-small"
+                      style="
+                        width: 40px;
+                        height: 24px;
+                        display: flex;
+                        align-items: center;
+                      "
+                    >
+                      <img
+                        :src="getBrandLogoUrl(detectedBrand) || ''"
+                        :alt="detectedBrand || 'card brand'"
+                        style="
+                          max-width: 100%;
+                          max-height: 100%;
+                          object-fit: contain;
+                        "
+                      />
+                    </div>
+                  </template>
+                </VTextField>
+              </VCol>
+              <VCol cols="12">
+                <VTextField
+                  v-model="newCard.holderName"
+                  :label="$t('cardholder_name')"
+                  placeholder="Nome como está no cartão"
+                  :maxlength="100"
+                />
+              </VCol>
+              <VCol cols="6">
+                <VTextField
+                  :model-value="
+                    newCard.expiryMonth && newCard.expiryYear
+                      ? `${newCard.expiryMonth}/${newCard.expiryYear}`
+                      : ''
+                  "
+                  :label="$t('expiry_date')"
+                  placeholder="MM/AA"
+                  @input="onExpiryInput"
+                  :maxlength="5"
+                  :error="!!expiryError"
+                  :error-messages="expiryError"
+                />
+              </VCol>
+              <VCol cols="6">
+                <VTextField
+                  v-model="newCard.cvv"
+                  :label="$t('cvv')"
+                  placeholder="000"
+                  :type="showCvv ? 'text' : 'password'"
+                  :maxlength="4"
+                >
+                  <template #append-inner>
+                    <VIcon
+                      :icon="showCvv ? 'tabler-eye-off' : 'tabler-eye'"
+                      @click="showCvv = !showCvv"
+                      style="cursor: pointer"
+                    />
+                  </template>
+                </VTextField>
+              </VCol>
+            </VRow>
+          </VForm>
+        </VCardText>
+        <VCardActions>
+          <VSpacer />
+          <VBtn
+            variant="text"
+            @click="
+              showAddCardModal = false;
+              resetNewCardForm();
+            "
+          >
+            {{ $t('cancel') }}
+          </VBtn>
+          <VBtn
+            color="primary"
+            variant="flat"
+            :disabled="!isNewCardValid || isAddingCard"
+            :loading="isAddingCard"
+            @click="addCard"
+          >
+            {{ $t('add') }}
           </VBtn>
         </VCardActions>
       </VCard>

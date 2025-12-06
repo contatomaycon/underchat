@@ -1,4 +1,3 @@
-export * from './response.schema';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';

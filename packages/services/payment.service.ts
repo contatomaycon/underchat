@@ -540,7 +540,7 @@ export class PaymentService {
     return { creditCardToken: userCard.token };
   };
 
-  private readonly tokenizeAndSaveNewCard = async (
+  public readonly tokenizeAndSaveNewCard = async (
     userId: string,
     customerId: string,
     remoteIp: string,

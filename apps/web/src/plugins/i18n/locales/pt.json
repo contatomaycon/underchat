@@ -1580,6 +1580,8 @@
     "cannot_delete_last_card": "Não é possível remover o último cartão",
     "card_default_updated_success": "Cartão definido como padrão com sucesso!",
     "card_default_updated_error": "Erro ao definir cartão como padrão",
+    "card_created_success": "Cartão adicionado com sucesso!",
+    "card_created_error": "Erro ao adicionar cartão",
     "delete_card": "Remover Cartão",
     "delete_card_confirmation": "Tem certeza que deseja remover este cartão?",
     "addons_listed_successfully": "Addons listados com sucesso!",

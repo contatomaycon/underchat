@@ -541,5 +541,8 @@
   "cannot_delete_last_card": "Cannot delete the last card",
   "addons_listed_successfully": "Addons listed successfully!",
   "plan_recurring_updated_successfully": "Plan recurring payment updated successfully!",
-  "plan_products_listed_successfully": "Plan products listed successfully!"
+  "plan_products_listed_successfully": "Plan products listed successfully!",
+  "user_customer_not_found": "User customer not found",
+  "card_creation_failed": "Failed to create card",
+  "card_created_successfully": "Card added successfully!"
 }
