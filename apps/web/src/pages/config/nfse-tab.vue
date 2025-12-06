@@ -190,14 +190,6 @@ onMounted(() => {
               </VRow>
 
               <VCardText class="d-flex justify-end flex-wrap gap-3 mt-4 pt-4">
-                <VBtn
-                  variant="tonal"
-                  color="secondary"
-                  :disabled="saving"
-                  @click="loadNfse"
-                >
-                  {{ $t('cancel') }}
-                </VBtn>
                 <VBtn type="submit" :loading="saving" :disabled="saving">
                   {{ $t('save') }}
                 </VBtn>
