@@ -1480,6 +1480,8 @@
     "email_subject_placeholder": "Digite o assunto do e-mail...",
     "email_message": "Mensagem do E-mail",
     "email_message_placeholder": "Digite a mensagem do e-mail...",
+    "email_preview": "Visualização do E-mail",
+    "no_email_preview_available": "Nenhuma visualização disponível",
     "sent_notifications": "Notificações Enviadas",
     "notification_type": "Tipo de Notificação",
     "view_whatsapp_message": "Visualizar Mensagem do WhatsApp",

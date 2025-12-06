@@ -789,6 +789,42 @@ onMounted(async () => {
                 class="mt-4"
                 :placeholder="$t('email_message_placeholder')"
               />
+
+              <VCard
+                v-if="emailMessage"
+                variant="outlined"
+                class="mt-4"
+              >
+                <VCardTitle class="text-body-2 pa-3 pb-2">
+                  {{ $t('email_preview') }}
+                </VCardTitle>
+                <VDivider />
+                <VCardText class="pa-4">
+                  <div
+                    v-if="emailSubject"
+                    class="mb-4 pb-4"
+                    style="border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);"
+                  >
+                    <div class="text-caption text-medium-emphasis mb-1">
+                      {{ $t('subject') }}:
+                    </div>
+                    <div class="text-body-1 font-weight-medium">
+                      {{ emailSubject }}
+                    </div>
+                  </div>
+                  <div
+                    v-if="emailMessage"
+                    v-html="emailMessage"
+                    class="email-preview-content"
+                  ></div>
+                  <div
+                    v-else
+                    class="text-body-2 text-medium-emphasis"
+                  >
+                    {{ $t('no_email_preview_available') }}
+                  </div>
+                </VCardText>
+              </VCard>
             </div>
 
             <VCard
@@ -919,5 +955,24 @@ onMounted(async () => {
 .email-preview :deep(table) {
   max-width: 100%;
   overflow-x: auto;
+}
+
+.email-preview-content {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.email-preview-content :deep(img) {
+  max-width: 100%;
+  height: auto;
+}
+
+.email-preview-content :deep(table) {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.email-preview-content :deep(*) {
+  max-width: 100%;
 }
 </style>

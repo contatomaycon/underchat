@@ -1480,6 +1480,8 @@
     "email_subject_placeholder": "Ingrese el asunto del correo...",
     "email_message": "Mensaje del Correo",
     "email_message_placeholder": "Ingrese el mensaje del correo...",
+    "email_preview": "Vista Previa del Correo",
+    "no_email_preview_available": "No hay vista previa disponible",
     "sent_notifications": "Notificaciones Enviadas",
     "notification_type": "Tipo de Notificación",
     "view_whatsapp_message": "Ver Mensaje de WhatsApp",

@@ -1480,6 +1480,8 @@
     "email_subject_placeholder": "Enter the email subject...",
     "email_message": "Email Message",
     "email_message_placeholder": "Enter the email message...",
+    "email_preview": "Email Preview",
+    "no_email_preview_available": "No preview available",
     "sent_notifications": "Sent Notifications",
     "notification_type": "Notification Type",
     "view_whatsapp_message": "View WhatsApp Message",
