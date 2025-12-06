@@ -531,5 +531,6 @@
   "payment_success_title": "Payment Confirmed!",
   "payment_success_message": "Your payment has been confirmed successfully. You will be redirected shortly.",
   "boleto_payment_creation_failed": "Failed to create boleto payment",
-  "cross_sell_available_list_successfully": "Available cross sells listed successfully!"
+  "cross_sell_available_list_successfully": "Available cross sells listed successfully!",
+  "account_payments_listed_successfully": "Invoices listed successfully!"
 }

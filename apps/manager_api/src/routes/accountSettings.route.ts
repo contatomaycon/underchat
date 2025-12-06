@@ -13,6 +13,7 @@ import { viewAddress2Schema } from '@core/schema/accountSettings/viewAddress2';
 import { viewAdditionalInfoSchema } from '@core/schema/accountSettings/viewAdditionalInfo';
 import { changePasswordSchema } from '@core/schema/accountSettings/changePassword';
 import { viewCurrentPlanInvoiceSchema } from '@core/schema/accountSettings/viewCurrentPlanInvoice';
+import { listAccountPaymentsSchema } from '@core/schema/accountSettings/listAccountPayments';
 import { planInvoicePermissions } from '@/permissions';
 
 export default async function accountSettingsRoutes(server: FastifyInstance) {
@@ -89,6 +90,15 @@ export default async function accountSettingsRoutes(server: FastifyInstance) {
   server.get('/account-settings/current-plan-invoice', {
     schema: viewCurrentPlanInvoiceSchema,
     handler: accountSettingsController.viewCurrentPlanInvoice,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.get('/account-settings/payments', {
+    schema: listAccountPaymentsSchema,
+    handler: accountSettingsController.listAccountPayments,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),

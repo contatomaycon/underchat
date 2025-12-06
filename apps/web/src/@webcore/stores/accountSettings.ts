@@ -20,6 +20,12 @@ import { ViewAdditionalInfoResponse } from '@core/schema/accountSettings/viewAdd
 import { ChangePasswordResponse } from '@core/schema/accountSettings/changePassword/response.schema';
 import { ChangePasswordRequest } from '@core/schema/accountSettings/changePassword/request.schema';
 import { ViewCurrentPlanInvoiceResponse } from '@core/schema/accountSettings/viewCurrentPlanInvoice/response.schema';
+import {
+  ListAccountPaymentsFinalResponse,
+  ListAccountPaymentsResponse,
+} from '@core/schema/accountSettings/listAccountPayments/response.schema';
+import { ListAccountPaymentsRequest } from '@core/schema/accountSettings/listAccountPayments/request.schema';
+import { PagingResponseSchema } from '@core/schema/common/pagingResponseSchema';
 
 export const useAccountSettingsStore = defineStore('accountSettings', {
   state: () => ({
@@ -30,6 +36,14 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
     } as ISnackbar,
     i18n: getI18n(),
     loading: false,
+    accountPaymentsList: [] as ListAccountPaymentsResponse[],
+    accountPaymentsPagings: {
+      current_page: 1,
+      total_pages: 1,
+      per_page: 10,
+      count: 0,
+      total: 0,
+    } as PagingResponseSchema,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -360,6 +374,35 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
         if (!data?.status || !data?.data) {
           return null;
         }
+
+        return data.data;
+      } catch {
+        this.loading = false;
+        return null;
+      }
+    },
+    async listAccountPayments(
+      query?: ListAccountPaymentsRequest
+    ): Promise<ListAccountPaymentsFinalResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListAccountPaymentsFinalResponse>
+        >('/account-settings/payments', {
+          params: query,
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        this.accountPaymentsList = data.data.results;
+        this.accountPaymentsPagings = data.data.pagings;
 
         return data.data;
       } catch {

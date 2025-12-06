@@ -11,6 +11,7 @@ import { viewAddress2 } from './methods/viewAddress2';
 import { viewAdditionalInfo } from './methods/viewAdditionalInfo';
 import { changePassword } from './methods/changePassword';
 import { viewCurrentPlanInvoice } from './methods/viewCurrentPlanInvoice';
+import { listAccountPayments } from './methods/listAccountPayments';
 
 @injectable()
 class AccountSettingsController {
@@ -26,6 +27,7 @@ class AccountSettingsController {
   public viewAdditionalInfo = viewAdditionalInfo;
   public changePassword = changePassword;
   public viewCurrentPlanInvoice = viewCurrentPlanInvoice;
+  public listAccountPayments = listAccountPayments;
 }
 
 export default AccountSettingsController;
