@@ -97,7 +97,7 @@ export class NotificationMessageSendConsume {
         parsed &&
         'notification_id' in parsed &&
         'message_key' in parsed &&
-        'message' in parsed &&
+        'message_whatsapp' in parsed &&
         parsed.message_key?.remote_jid
       ) {
         return parsed;
@@ -111,13 +111,13 @@ export class NotificationMessageSendConsume {
   private async processNotificationMessage(
     data: INotificationMessage
   ): Promise<void> {
-    if (!data.message || !data.message_key?.remote_jid) {
+    if (!data.message_whatsapp || !data.message_key?.remote_jid) {
       return;
     }
 
     await this.baileysMessageTextService.sendText(
       data.message_key.remote_jid,
-      data.message
+      data.message_whatsapp
     );
   }
 

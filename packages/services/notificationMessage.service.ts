@@ -57,45 +57,6 @@ export class NotificationMessageService {
 
     const notificationTypeName = notification.nnt?.name || '';
 
-    if (notification.message_whatsapp) {
-      await this.sendWhatsAppNotification(
-        notification,
-        masterUser,
-        accountId,
-        notificationTypeName
-      );
-    }
-
-    if (notification.message_email) {
-      await this.sendEmailNotification(
-        notification,
-        masterUser,
-        accountId,
-        notificationTypeName
-      );
-    }
-
-    return true;
-  }
-
-  private async sendWhatsAppNotification(
-    notification: NonNullable<
-      Awaited<
-        ReturnType<
-          typeof this.notificationMessageViewerRepository.findNotificationByTypeId
-        >
-      >
-    >,
-    masterUser: NonNullable<
-      Awaited<
-        ReturnType<
-          typeof this.userMasterViewerRepository.findMasterUserByAccountId
-        >
-      >
-    >,
-    accountId: string,
-    notificationTypeName: string
-  ): Promise<void> {
     const userInfo = await this.userInfoViewerRepository.findUserInfoByUserId(
       masterUser.user_id
     );
@@ -104,11 +65,9 @@ export class NotificationMessageService {
       throw new Error('User info not found');
     }
 
+    const fullName = userInfo.name || userInfo.last_name || null;
     const phone = this.userService.getUserPhoneDecrypted(userInfo.phone);
-
-    if (!phone) {
-      throw new Error('User phone not found');
-    }
+    const userEmail = await this.getUserEmail(masterUser.user_id);
 
     const workerId =
       notification.worker_id || (await this.getFirstActiveWorkerId(accountId));
@@ -124,112 +83,97 @@ export class NotificationMessageService {
       throw new Error('Worker not found');
     }
 
-    const fullName = userInfo.name || userInfo.last_name || null;
-    const remoteJid = normalizePhoneToJid(phone, userInfo.phone_ddi) || null;
+    let whatsappMessage: string | null = null;
+    let emailMessage: string | null = null;
+    let emailSubject: string | null = null;
 
-    const whatsappMessage = await this.replaceNotificationParameters(
-      notification.message_whatsapp,
-      notificationTypeName,
-      fullName,
-      accountId
-    );
-
-    const notificationMessage: INotificationMessage = {
-      id: notification.notification_id,
-      notification_id: notification.notification_id,
-      message_key: {
-        remote_jid: remoteJid,
-      },
-      account: {
-        id: accountId,
-        name: masterUser.account_name,
-      },
-      worker: {
-        id: workerId,
-        name: workerName || null,
-      },
-      notification_type: {
-        id: notification.notification_type_id,
-        name: notificationTypeName,
-      },
-      message: whatsappMessage,
-      name: fullName,
-      phone: phone,
-      date: new Date().toISOString(),
-    };
-
-    await this.elasticDatabaseService.indices(
-      EElasticIndex.notification,
-      notificationMappings()
-    );
-
-    await this.elasticDatabaseService.update(
-      EElasticIndex.notification,
-      notificationMessage,
-      notification.notification_id
-    );
-
-    const kafkaTopic =
-      this.kafkaBaileysQueueService.workerNotificationMessage(workerId);
-    await this.streamProducerService.send(kafkaTopic, notificationMessage);
-  }
-
-  private async sendEmailNotification(
-    notification: NonNullable<
-      Awaited<
-        ReturnType<
-          typeof this.notificationMessageViewerRepository.findNotificationByTypeId
-        >
-      >
-    >,
-    masterUser: NonNullable<
-      Awaited<
-        ReturnType<
-          typeof this.userMasterViewerRepository.findMasterUserByAccountId
-        >
-      >
-    >,
-    accountId: string,
-    notificationTypeName: string
-  ): Promise<void> {
-    const userEmail = await this.getUserEmail(masterUser.user_id);
-
-    if (!userEmail) {
-      throw new Error('User email not found');
+    if (notification.message_whatsapp) {
+      whatsappMessage = await this.replaceNotificationParameters(
+        notification.message_whatsapp,
+        notificationTypeName,
+        fullName,
+        accountId
+      );
     }
 
-    const userInfo = await this.userInfoViewerRepository.findUserInfoByUserId(
-      masterUser.user_id
-    );
+    if (notification.message_email) {
+      emailMessage = await this.replaceNotificationParameters(
+        notification.message_email,
+        notificationTypeName,
+        fullName,
+        accountId
+      );
 
-    const fullName = userInfo?.name || userInfo?.last_name || null;
-
-    const emailMessage = await this.replaceNotificationParameters(
-      notification.message_email,
-      notificationTypeName,
-      fullName,
-      accountId
-    );
-
-    if (!emailMessage) {
-      throw new Error('Email message is empty');
+      emailSubject = notification.email_subject
+        ? await this.replaceNotificationParameters(
+            notification.email_subject,
+            notificationTypeName,
+            fullName,
+            accountId
+          )
+        : null;
     }
 
-    const emailSubject = notification.email_subject
-      ? await this.replaceNotificationParameters(
-          notification.email_subject,
-          notificationTypeName,
-          fullName,
-          accountId
-        )
-      : null;
+    if (notification.message_whatsapp || notification.message_email) {
+      const remoteJid = phone
+        ? normalizePhoneToJid(phone, userInfo.phone_ddi) || null
+        : null;
 
-    await this.emailService.sendEmail({
-      to: userEmail,
-      subject: emailSubject || '',
-      html: emailMessage,
-      text: emailMessage,
-    });
+      const notificationMessage: INotificationMessage = {
+        id: notification.notification_id,
+        notification_id: notification.notification_id,
+        message_key: {
+          remote_jid: remoteJid,
+        },
+        account: {
+          id: accountId,
+          name: masterUser.account_name,
+        },
+        worker: {
+          id: workerId,
+          name: workerName || null,
+        },
+        notification_type: {
+          id: notification.notification_type_id,
+          name: notificationTypeName,
+        },
+        message_whatsapp: whatsappMessage,
+        message_email: emailMessage,
+        email_subject: emailSubject,
+        name: fullName,
+        phone: phone || null,
+        email: userEmail || null,
+        date: new Date().toISOString(),
+      };
+
+      await this.elasticDatabaseService.indices(
+        EElasticIndex.notification,
+        notificationMappings()
+      );
+
+      await this.elasticDatabaseService.update(
+        EElasticIndex.notification,
+        notificationMessage,
+        notification.notification_id
+      );
+
+      if (notification.message_whatsapp && phone) {
+        const kafkaTopic =
+          this.kafkaBaileysQueueService.workerNotificationMessage(workerId);
+        await this.streamProducerService.send(kafkaTopic, notificationMessage);
+      }
+    }
+
+    if (notification.message_email && userEmail && emailMessage) {
+      await this.emailService.sendEmail({
+        to: userEmail,
+        subject: emailSubject || '',
+        html: emailMessage,
+        text: emailMessage,
+      });
+    }
+
+    return true;
   }
 
   private async getFirstActiveWorkerId(

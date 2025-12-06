@@ -16,8 +16,11 @@ export interface INotificationMessage {
     id: string;
     name: string;
   };
-  message: string | null;
+  message_whatsapp: string | null;
+  message_email: string | null;
+  email_subject: string | null;
   name: string | null;
   phone: string | null;
+  email: string | null;
   date: string;
 }

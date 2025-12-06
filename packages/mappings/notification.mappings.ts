@@ -49,7 +49,13 @@ export const notificationMappings = () => {
             },
           },
         },
-        message: {
+        message_whatsapp: {
+          type: 'text',
+        },
+        message_email: {
+          type: 'text',
+        },
+        email_subject: {
           type: 'text',
         },
         name: {
@@ -61,6 +67,9 @@ export const notificationMappings = () => {
           },
         },
         phone: {
+          type: 'keyword',
+        },
+        email: {
           type: 'keyword',
         },
         date: {
