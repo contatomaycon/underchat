@@ -16,6 +16,7 @@ export class KafkaServiceQueueService {
     const phoneValidationResponse = this.phoneValidationResponse();
     const updateProfileStatusExternalId = this.updateProfileStatusExternalId();
     const asaasPaymentWebhook = this.asaasPaymentWebhook();
+    const asaasNfseWebhook = this.asaasNfseWebhook();
 
     return [
       createServer,
@@ -28,6 +29,7 @@ export class KafkaServiceQueueService {
       phoneValidationResponse,
       updateProfileStatusExternalId,
       asaasPaymentWebhook,
+      asaasNfseWebhook,
     ];
   };
 
@@ -79,5 +81,9 @@ export class KafkaServiceQueueService {
 
   asaasPaymentWebhook = () => {
     return `asaas.payment.webhook`;
+  };
+
+  asaasNfseWebhook = () => {
+    return `asaas.nfse.webhook`;
   };
 }
