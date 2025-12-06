@@ -19,6 +19,7 @@ import { ESortOrder } from '@core/common/enums/ESortOrder';
 import { ListRoleResponse } from '@core/schema/role/listRole/response.schema';
 import { ListRoleRequest } from '@core/schema/role/listRole/request.schema';
 import { ESortByRole } from '@core/common/enums/ESortByRole';
+import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 
 @injectable()
 export class RoleListerRepository {
@@ -93,10 +94,7 @@ export class RoleListerRepository {
     );
     const excludeMasterRole = isAdministrator
       ? undefined
-      : ne(
-          permissionRole.permission_role_id,
-          '019a930d-c6f5-75af-82a5-8c20f9d0e6e2'
-        );
+      : ne(permissionRole.permission_role_id, EPermissionRole.master);
 
     const queryBuilder = this.db
       .select({
@@ -164,10 +162,7 @@ export class RoleListerRepository {
     );
     const excludeMasterRole = isAdministrator
       ? undefined
-      : ne(
-          permissionRole.permission_role_id,
-          '019a930d-c6f5-75af-82a5-8c20f9d0e6e2'
-        );
+      : ne(permissionRole.permission_role_id, EPermissionRole.master);
 
     const result = await this.db
       .select({
