@@ -34,11 +34,11 @@ export class SmtpEnvironment {
   }
 
   public getSmtpFrom(): string {
-    if (!process.env.SMTP_FROM) {
+    if (!process.env.SMTP_FROM || process.env.SMTP_FROM.trim() === '') {
       throw new InvalidConfigurationError('SMTP_FROM');
     }
 
-    return process.env.SMTP_FROM;
+    return process.env.SMTP_FROM.trim();
   }
 
   public getSmtpSecure(): boolean {
