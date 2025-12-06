@@ -85,22 +85,12 @@ const formatDate = (dateString: string | null | undefined): string => {
   }).format(date);
 };
 
-const getAnnualPrice = (): number => {
-  if (!planInvoice.value?.plan_price) return 0;
-  const annualPrice = planInvoice.value.plan_price * 12;
-  if (planInvoice.value.annual_discount) {
-    const discount = Number.parseFloat(planInvoice.value.annual_discount);
-    return annualPrice * (1 - discount / 100);
-  }
-  return annualPrice;
-};
-
 const getPrice = computed(() => {
   if (!planInvoice.value) return 0;
-  if (planInvoice.value.billing_period === 'annual') {
-    return getAnnualPrice();
-  }
-  return planInvoice.value.plan_price || 0;
+
+  return (
+    planInvoice.value.plan_account_value || planInvoice.value.plan_price || 0
+  );
 });
 
 const getTotalDays = computed(() => {
@@ -670,15 +660,22 @@ onMounted(() => {
                   {{ formatCurrency(getPrice) }}
                 </span>
                 <VChip
-                  v-if="planInvoice.billing_period === 'annual'"
-                  color="primary"
+                  v-if="planInvoice.billing_period"
+                  :color="
+                    planInvoice.billing_period === 'annual'
+                      ? 'primary'
+                      : 'default'
+                  "
                   size="small"
                   variant="tonal"
                 >
-                  {{ $t('annual') }}
-                </VChip>
-                <VChip v-else color="default" size="small" variant="tonal">
-                  {{ $t('monthly') }}
+                  {{
+                    planInvoice.billing_period === 'annual'
+                      ? $t('annual')
+                      : planInvoice.billing_period === 'monthly'
+                        ? $t('monthly')
+                        : planInvoice.billing_period
+                  }}
                 </VChip>
               </div>
             </div>
