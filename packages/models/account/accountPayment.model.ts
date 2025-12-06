@@ -15,6 +15,7 @@ import {
   paymentBillingType,
   paymentStatus,
   billingPeriod,
+  accountPaymentCrossSell,
 } from '@core/models';
 
 export const accountPayment = pgTable('account_payment', {
@@ -60,33 +61,37 @@ export const accountPayment = pgTable('account_payment', {
   }).defaultNow(),
 });
 
-export const accountPaymentRelations = relations(accountPayment, ({ one }) => ({
-  apa: one(account, {
-    fields: [accountPayment.account_id],
-    references: [account.account_id],
-  }),
-  auc: one(userCustomer, {
-    fields: [accountPayment.user_customer_id],
-    references: [userCustomer.user_customer_id],
-  }),
-  apl: one(plan, {
-    fields: [accountPayment.plan_id],
-    references: [plan.plan_id],
-  }),
-  apd: one(userCard, {
-    fields: [accountPayment.user_card_id],
-    references: [userCard.user_card_id],
-  }),
-  apb: one(paymentBillingType, {
-    fields: [accountPayment.payment_billing_type_id],
-    references: [paymentBillingType.payment_billing_type_id],
-  }),
-  aps: one(paymentStatus, {
-    fields: [accountPayment.payment_status_id],
-    references: [paymentStatus.payment_status_id],
-  }),
-  app: one(billingPeriod, {
-    fields: [accountPayment.billing_period_id],
-    references: [billingPeriod.billing_period_id],
-  }),
-}));
+export const accountPaymentRelations = relations(
+  accountPayment,
+  ({ one, many }) => ({
+    apa: one(account, {
+      fields: [accountPayment.account_id],
+      references: [account.account_id],
+    }),
+    auc: one(userCustomer, {
+      fields: [accountPayment.user_customer_id],
+      references: [userCustomer.user_customer_id],
+    }),
+    apl: one(plan, {
+      fields: [accountPayment.plan_id],
+      references: [plan.plan_id],
+    }),
+    apd: one(userCard, {
+      fields: [accountPayment.user_card_id],
+      references: [userCard.user_card_id],
+    }),
+    apb: one(paymentBillingType, {
+      fields: [accountPayment.payment_billing_type_id],
+      references: [paymentBillingType.payment_billing_type_id],
+    }),
+    aps: one(paymentStatus, {
+      fields: [accountPayment.payment_status_id],
+      references: [paymentStatus.payment_status_id],
+    }),
+    app: one(billingPeriod, {
+      fields: [accountPayment.billing_period_id],
+      references: [billingPeriod.billing_period_id],
+    }),
+    apcs: many(accountPaymentCrossSell),
+  })
+);

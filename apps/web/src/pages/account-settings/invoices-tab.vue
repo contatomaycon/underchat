@@ -12,6 +12,8 @@ const options = ref({
   itemsPerPage: 10,
 });
 
+const expanded = ref<string[]>([]);
+
 const query = computed(() => ({
   current_page: options.value.page,
   per_page: options.value.itemsPerPage,
@@ -108,6 +110,12 @@ watch(
           v-model:items-per-page="options.itemsPerPage"
           :headers="[
             {
+              title: '',
+              key: 'data-table-expand',
+              sortable: false,
+              width: '48px',
+            },
+            {
               title: 'ID',
               key: 'account_payment_id',
               sortable: false,
@@ -154,76 +162,141 @@ watch(
           :loading="accountSettingsStore.loading"
           @update:options="handleTableChange"
           :loading-text="$t('loading_text')"
+          :show-expand="false"
         >
-          <template #item.account_payment_id="{ item }">
-            <VTooltip>
-              <template #activator="{ props }">
-                <span v-bind="props" class="text-caption font-mono">
-                  {{ formatPaymentId(item.account_payment_id) }}
-                </span>
+          <template #item="{ item, columns }">
+            <tr>
+              <template v-for="column in columns" :key="column.key">
+                <td v-if="column.key === 'data-table-expand'">
+                  <VBtn
+                    v-if="item.cross_sells && item.cross_sells.length > 0"
+                    icon
+                    variant="text"
+                    size="small"
+                    @click="
+                      expanded.includes(item.account_payment_id)
+                        ? expanded.splice(
+                            expanded.indexOf(item.account_payment_id),
+                            1
+                          )
+                        : expanded.push(item.account_payment_id)
+                    "
+                  >
+                    <VIcon
+                      :icon="
+                        expanded.includes(item.account_payment_id)
+                          ? 'tabler-chevron-down'
+                          : 'tabler-chevron-right'
+                      "
+                      size="20"
+                    />
+                  </VBtn>
+                </td>
+                <td v-else-if="column.key === 'account_payment_id'">
+                  <VTooltip>
+                    <template #activator="{ props }">
+                      <span v-bind="props" class="text-caption font-mono">
+                        {{ formatPaymentId(item.account_payment_id) }}
+                      </span>
+                    </template>
+                    <span>{{ item.account_payment_id }}</span>
+                  </VTooltip>
+                </td>
+                <td v-else-if="column.key === 'payment_billing_type'">
+                  <div class="d-flex align-center gap-2">
+                    <VIcon
+                      :icon="
+                        getPaymentBillingTypeIcon(
+                          item.payment_billing_type_name
+                        )
+                      "
+                      size="20"
+                    />
+                    <span>{{
+                      getPaymentBillingTypeLabel(item.payment_billing_type_name)
+                    }}</span>
+                  </div>
+                </td>
+                <td v-else-if="column.key === 'plan_name'">
+                  <div class="d-flex align-center gap-2">
+                    <VIcon
+                      v-if="item.plan_icon"
+                      :icon="item.plan_icon"
+                      size="20"
+                    />
+                    <span>{{ item.plan_name }}</span>
+                  </div>
+                </td>
+                <td v-else-if="column.key === 'value'">
+                  {{ formatCurrency(item.value) }}
+                </td>
+                <td v-else-if="column.key === 'payment_status'">
+                  <VChip
+                    :color="getPaymentStatusColor(item.payment_status_name)"
+                    variant="tonal"
+                    size="small"
+                  >
+                    {{ getPaymentStatusLabel(item.payment_status_name) }}
+                  </VChip>
+                </td>
+                <td v-else-if="column.key === 'payment_date'">
+                  {{ formatDate(item.payment_date) }}
+                </td>
+                <td v-else-if="column.key === 'created_at'">
+                  {{ formatDate(item.created_at) }}
+                </td>
+                <td v-else-if="column.key === 'actions'">
+                  <VBtn
+                    v-if="item.invoice_url"
+                    icon
+                    variant="text"
+                    size="small"
+                    :href="item.invoice_url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <VIcon icon="tabler-eye" size="20" />
+                    <VTooltip activator="parent" location="top">
+                      {{ $t('view_invoice') }}
+                    </VTooltip>
+                  </VBtn>
+                </td>
               </template>
-              <span>{{ item.account_payment_id }}</span>
-            </VTooltip>
-          </template>
-
-          <template #item.payment_billing_type="{ item }">
-            <div class="d-flex align-center gap-2">
-              <VIcon
-                :icon="
-                  getPaymentBillingTypeIcon(item.payment_billing_type_name)
+            </tr>
+            <VExpandTransition>
+              <tr
+                v-if="
+                  expanded.includes(item.account_payment_id) &&
+                  item.cross_sells &&
+                  item.cross_sells.length > 0
                 "
-                size="20"
-              />
-              <span>{{
-                getPaymentBillingTypeLabel(item.payment_billing_type_name)
-              }}</span>
-            </div>
-          </template>
-
-          <template #item.plan_name="{ item }">
-            <div class="d-flex align-center gap-2">
-              <VIcon v-if="item.plan_icon" :icon="item.plan_icon" size="20" />
-              <span>{{ item.plan_name }}</span>
-            </div>
-          </template>
-
-          <template #item.value="{ item }">
-            {{ formatCurrency(item.value) }}
-          </template>
-
-          <template #item.payment_status="{ item }">
-            <VChip
-              :color="getPaymentStatusColor(item.payment_status_name)"
-              variant="tonal"
-              size="small"
-            >
-              {{ getPaymentStatusLabel(item.payment_status_name) }}
-            </VChip>
-          </template>
-
-          <template #item.payment_date="{ item }">
-            {{ formatDate(item.payment_date) }}
-          </template>
-
-          <template #item.created_at="{ item }">
-            {{ formatDate(item.created_at) }}
-          </template>
-
-          <template #item.actions="{ item }">
-            <VBtn
-              v-if="item.invoice_url"
-              icon
-              variant="text"
-              size="small"
-              :href="item.invoice_url"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <VIcon icon="tabler-eye" size="20" />
-              <VTooltip activator="parent" location="top">
-                {{ $t('view_invoice') }}
-              </VTooltip>
-            </VBtn>
+              >
+                <td :colspan="9">
+                  <div class="pa-4">
+                    <div class="text-h6 mb-4">{{ $t('addons') }}</div>
+                    <VTable>
+                      <thead>
+                        <tr>
+                          <th>{{ $t('name') }}</th>
+                          <th>{{ $t('quantity') }}</th>
+                          <th>{{ $t('value') }}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr
+                          v-for="(addon, index) in item.cross_sells"
+                          :key="index"
+                        >
+                          <td>{{ addon.name }}</td>
+                          <td>{{ addon.quantity }}</td>
+                          <td>{{ formatCurrency(addon.value) }}</td>
+                        </tr>
+                      </tbody>
+                    </VTable>
+                  </div>
+                </td>
+              </tr>
+            </VExpandTransition>
           </template>
 
           <template #no-data>
