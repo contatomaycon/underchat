@@ -20,40 +20,47 @@ const selectedNotificationType = ref<
   'two_factor' | 'plan' | 'plan_expiration' | null
 >(null);
 const selectedWorkerId = ref<string | null>(null);
-const notificationMessage = ref<string>('');
+const whatsappMessage = ref<string>('');
+const emailSubject = ref<string>('');
+const emailMessage = ref<string>('');
 const isSaving = ref(false);
 
 const isTwoFactorActive = computed(() => {
   return (
     notifications.value?.two_factor_notification !== null &&
-    notifications.value?.two_factor_notification?.worker_id !== null
+    (notifications.value?.two_factor_notification?.whatsapp?.worker_id !==
+      null ||
+      notifications.value?.two_factor_notification?.email?.message !== null)
   );
 });
 
 const isPlanActive = computed(() => {
   return (
     notifications.value?.plan_notification !== null &&
-    notifications.value?.plan_notification?.worker_id !== null
+    (notifications.value?.plan_notification?.whatsapp?.worker_id !== null ||
+      notifications.value?.plan_notification?.email?.message !== null)
   );
 });
 
 const isPlanExpirationActive = computed(() => {
   return (
     notifications.value?.plan_expiration_reminder !== null &&
-    notifications.value?.plan_expiration_reminder?.worker_id !== null
+    (notifications.value?.plan_expiration_reminder?.whatsapp?.worker_id !==
+      null ||
+      notifications.value?.plan_expiration_reminder?.email?.message !== null)
   );
 });
 
 const twoFactorWorkerName = computed(() => {
-  return notifications.value?.two_factor_notification?.name || null;
+  return notifications.value?.two_factor_notification?.whatsapp?.name || null;
 });
 
 const planWorkerName = computed(() => {
-  return notifications.value?.plan_notification?.name || null;
+  return notifications.value?.plan_notification?.whatsapp?.name || null;
 });
 
 const planExpirationWorkerName = computed(() => {
-  return notifications.value?.plan_expiration_reminder?.name || null;
+  return notifications.value?.plan_expiration_reminder?.whatsapp?.name || null;
 });
 
 const hasWorkers = computed(() => workers.value.length > 0);
@@ -83,23 +90,38 @@ const openWorkerModal = async (
 ) => {
   selectedNotificationType.value = type;
   selectedWorkerId.value = null;
-  notificationMessage.value = '';
+  whatsappMessage.value = '';
+  emailSubject.value = '';
+  emailMessage.value = '';
 
   if (type === 'two_factor') {
     selectedWorkerId.value =
-      notifications.value?.two_factor_notification?.worker_id || null;
-    notificationMessage.value =
-      notifications.value?.two_factor_notification?.message || '';
+      notifications.value?.two_factor_notification?.whatsapp?.worker_id || null;
+    whatsappMessage.value =
+      notifications.value?.two_factor_notification?.whatsapp?.message || '';
+    emailSubject.value =
+      notifications.value?.two_factor_notification?.email?.subject || '';
+    emailMessage.value =
+      notifications.value?.two_factor_notification?.email?.message || '';
   } else if (type === 'plan') {
     selectedWorkerId.value =
-      notifications.value?.plan_notification?.worker_id || null;
-    notificationMessage.value =
-      notifications.value?.plan_notification?.message || '';
+      notifications.value?.plan_notification?.whatsapp?.worker_id || null;
+    whatsappMessage.value =
+      notifications.value?.plan_notification?.whatsapp?.message || '';
+    emailSubject.value =
+      notifications.value?.plan_notification?.email?.subject || '';
+    emailMessage.value =
+      notifications.value?.plan_notification?.email?.message || '';
   } else if (type === 'plan_expiration') {
     selectedWorkerId.value =
-      notifications.value?.plan_expiration_reminder?.worker_id || null;
-    notificationMessage.value =
-      notifications.value?.plan_expiration_reminder?.message || '';
+      notifications.value?.plan_expiration_reminder?.whatsapp?.worker_id ||
+      null;
+    whatsappMessage.value =
+      notifications.value?.plan_expiration_reminder?.whatsapp?.message || '';
+    emailSubject.value =
+      notifications.value?.plan_expiration_reminder?.email?.subject || '';
+    emailMessage.value =
+      notifications.value?.plan_expiration_reminder?.email?.message || '';
   }
 
   await loadWorkers();
@@ -118,7 +140,9 @@ const closeWorkerModal = () => {
   isWorkerModalOpen.value = false;
   selectedNotificationType.value = null;
   selectedWorkerId.value = null;
-  notificationMessage.value = '';
+  whatsappMessage.value = '';
+  emailSubject.value = '';
+  emailMessage.value = '';
 };
 
 const saveNotification = async () => {
@@ -131,13 +155,20 @@ const saveNotification = async () => {
 
     if (selectedNotificationType.value === 'two_factor') {
       updateData.two_factor_notification = selectedWorkerId.value;
-      updateData.two_factor_message = notificationMessage.value || null;
+      updateData.two_factor_message_whatsapp = whatsappMessage.value || null;
+      updateData.two_factor_message_email = emailMessage.value || null;
+      updateData.two_factor_email_subject = emailSubject.value || null;
     } else if (selectedNotificationType.value === 'plan') {
       updateData.plan_notification = selectedWorkerId.value;
-      updateData.plan_message = notificationMessage.value || null;
+      updateData.plan_message_whatsapp = whatsappMessage.value || null;
+      updateData.plan_message_email = emailMessage.value || null;
+      updateData.plan_email_subject = emailSubject.value || null;
     } else if (selectedNotificationType.value === 'plan_expiration') {
       updateData.plan_expiration_reminder = selectedWorkerId.value;
-      updateData.plan_expiration_message = notificationMessage.value || null;
+      updateData.plan_expiration_message_whatsapp =
+        whatsappMessage.value || null;
+      updateData.plan_expiration_message_email = emailMessage.value || null;
+      updateData.plan_expiration_email_subject = emailSubject.value || null;
     }
 
     const result = await settingsStore.updateNotifications(updateData);
@@ -380,46 +411,78 @@ onMounted(() => {
           </div>
 
           <template v-else>
-            <VAutocomplete
-              v-model="selectedWorkerId"
-              :items="workers"
-              item-title="name"
-              item-value="id"
-              :placeholder="$t('select_channel')"
-              variant="outlined"
-              clearable
-              :label="$t('channel')"
-              :filter="filterWorkers"
-              prepend-inner-icon="tabler-search"
-            >
-              <template #no-data>
-                <div class="text-center py-4">
-                  <div class="text-body-2 text-medium-emphasis">
-                    {{ $t('no_results_found') }}
-                  </div>
-                </div>
-              </template>
-              <template #item="{ props: itemProps, item }">
-                <VListItem v-bind="itemProps">
-                  <template #prepend>
-                    <VIcon icon="tabler-device-mobile" class="me-2" />
-                  </template>
-                  <VListItemTitle>{{ item.raw.name }}</VListItemTitle>
-                  <VListItemSubtitle v-if="item.raw.number">
-                    {{ item.raw.number }}
-                  </VListItemSubtitle>
-                </VListItem>
-              </template>
-            </VAutocomplete>
+            <div class="mb-6">
+              <div class="d-flex align-center gap-2 mb-4">
+                <VIcon icon="tabler-brand-whatsapp" color="success" />
+                <span class="text-h6">{{ $t('whatsapp') }}</span>
+              </div>
 
-            <VTextarea
-              v-model="notificationMessage"
-              :label="$t('message')"
-              variant="outlined"
-              rows="4"
-              class="mt-4"
-              :placeholder="$t('notification_message_placeholder')"
-            />
+              <VAutocomplete
+                v-model="selectedWorkerId"
+                :items="workers"
+                item-title="name"
+                item-value="id"
+                :placeholder="$t('select_channel')"
+                variant="outlined"
+                clearable
+                :label="$t('channel')"
+                :filter="filterWorkers"
+                prepend-inner-icon="tabler-search"
+              >
+                <template #no-data>
+                  <div class="text-center py-4">
+                    <div class="text-body-2 text-medium-emphasis">
+                      {{ $t('no_results_found') }}
+                    </div>
+                  </div>
+                </template>
+                <template #item="{ props: itemProps, item }">
+                  <VListItem v-bind="itemProps">
+                    <template #prepend>
+                      <VIcon icon="tabler-device-mobile" class="me-2" />
+                    </template>
+                    <VListItemTitle>{{ item.raw.name }}</VListItemTitle>
+                    <VListItemSubtitle v-if="item.raw.number">
+                      {{ item.raw.number }}
+                    </VListItemSubtitle>
+                  </VListItem>
+                </template>
+              </VAutocomplete>
+
+              <VTextarea
+                v-model="whatsappMessage"
+                :label="$t('message')"
+                variant="outlined"
+                rows="4"
+                class="mt-4"
+                :placeholder="$t('notification_message_placeholder')"
+              />
+            </div>
+
+            <VDivider class="my-6" />
+
+            <div>
+              <div class="d-flex align-center gap-2 mb-4">
+                <VIcon icon="tabler-mail" color="primary" />
+                <span class="text-h6">{{ $t('email') }}</span>
+              </div>
+
+              <VTextField
+                v-model="emailSubject"
+                :label="$t('email_subject')"
+                variant="outlined"
+                :placeholder="$t('email_subject_placeholder')"
+              />
+
+              <VTextarea
+                v-model="emailMessage"
+                :label="$t('email_message')"
+                variant="outlined"
+                rows="4"
+                class="mt-4"
+                :placeholder="$t('email_message_placeholder')"
+              />
+            </div>
 
             <VCard
               v-if="selectedNotificationType"

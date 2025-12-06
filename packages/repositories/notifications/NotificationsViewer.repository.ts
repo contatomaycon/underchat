@@ -39,23 +39,41 @@ export class NotificationsViewerRepository {
       notification_id: firstNotificationId,
       two_factor_notification: twoFactorNotification
         ? {
-            worker_id: twoFactorNotification.nwr?.worker_id || null,
-            name: twoFactorNotification.nwr?.name || null,
-            message: twoFactorNotification.message_whatsapp || null,
+            whatsapp: {
+              worker_id: twoFactorNotification.nwr?.worker_id || null,
+              name: twoFactorNotification.nwr?.name || null,
+              message: twoFactorNotification.message_whatsapp || null,
+            },
+            email: {
+              subject: twoFactorNotification.email_subject || null,
+              message: twoFactorNotification.message_email || null,
+            },
           }
         : null,
       plan_notification: planNotification
         ? {
-            worker_id: planNotification.nwr?.worker_id || null,
-            name: planNotification.nwr?.name || null,
-            message: planNotification.message_whatsapp || null,
+            whatsapp: {
+              worker_id: planNotification.nwr?.worker_id || null,
+              name: planNotification.nwr?.name || null,
+              message: planNotification.message_whatsapp || null,
+            },
+            email: {
+              subject: planNotification.email_subject || null,
+              message: planNotification.message_email || null,
+            },
           }
         : null,
       plan_expiration_reminder: planExpirationNotification
         ? {
-            worker_id: planExpirationNotification.nwr?.worker_id || null,
-            name: planExpirationNotification.nwr?.name || null,
-            message: planExpirationNotification.message_whatsapp || null,
+            whatsapp: {
+              worker_id: planExpirationNotification.nwr?.worker_id || null,
+              name: planExpirationNotification.nwr?.name || null,
+              message: planExpirationNotification.message_whatsapp || null,
+            },
+            email: {
+              subject: planExpirationNotification.email_subject || null,
+              message: planExpirationNotification.message_email || null,
+            },
           }
         : null,
       created_at: twoFactorNotification?.created_at || null,

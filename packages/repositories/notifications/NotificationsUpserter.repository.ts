@@ -37,34 +37,46 @@ export class NotificationsUpserterRepository {
 
       const twoFactorNotification =
         input.two_factor_notification !== undefined ||
-        input.two_factor_message !== undefined
+        input.two_factor_message_whatsapp !== undefined ||
+        input.two_factor_message_email !== undefined ||
+        input.two_factor_email_subject !== undefined
           ? await this.upsertNotificationByType(
               tx,
               twoFactorTypeId,
               input.two_factor_notification,
-              input.two_factor_message
+              input.two_factor_message_whatsapp,
+              input.two_factor_message_email,
+              input.two_factor_email_subject
             )
           : await this.findNotificationByType(tx, twoFactorTypeId);
 
       const planNotification =
         input.plan_notification !== undefined ||
-        input.plan_message !== undefined
+        input.plan_message_whatsapp !== undefined ||
+        input.plan_message_email !== undefined ||
+        input.plan_email_subject !== undefined
           ? await this.upsertNotificationByType(
               tx,
               planTypeId,
               input.plan_notification,
-              input.plan_message
+              input.plan_message_whatsapp,
+              input.plan_message_email,
+              input.plan_email_subject
             )
           : await this.findNotificationByType(tx, planTypeId);
 
       const planExpirationNotification =
         input.plan_expiration_reminder !== undefined ||
-        input.plan_expiration_message !== undefined
+        input.plan_expiration_message_whatsapp !== undefined ||
+        input.plan_expiration_message_email !== undefined ||
+        input.plan_expiration_email_subject !== undefined
           ? await this.upsertNotificationByType(
               tx,
               planExpirationTypeId,
               input.plan_expiration_reminder,
-              input.plan_expiration_message
+              input.plan_expiration_message_whatsapp,
+              input.plan_expiration_message_email,
+              input.plan_expiration_email_subject
             )
           : await this.findNotificationByType(tx, planExpirationTypeId);
 
@@ -78,23 +90,41 @@ export class NotificationsUpserterRepository {
         notification_id: firstNotificationId,
         two_factor_notification: twoFactorNotification
           ? {
-              worker_id: twoFactorNotification.nwr?.worker_id || null,
-              name: twoFactorNotification.nwr?.name || null,
-              message: twoFactorNotification.message_whatsapp || null,
+              whatsapp: {
+                worker_id: twoFactorNotification.nwr?.worker_id || null,
+                name: twoFactorNotification.nwr?.name || null,
+                message: twoFactorNotification.message_whatsapp || null,
+              },
+              email: {
+                subject: twoFactorNotification.email_subject || null,
+                message: twoFactorNotification.message_email || null,
+              },
             }
           : null,
         plan_notification: planNotification
           ? {
-              worker_id: planNotification.nwr?.worker_id || null,
-              name: planNotification.nwr?.name || null,
-              message: planNotification.message_whatsapp || null,
+              whatsapp: {
+                worker_id: planNotification.nwr?.worker_id || null,
+                name: planNotification.nwr?.name || null,
+                message: planNotification.message_whatsapp || null,
+              },
+              email: {
+                subject: planNotification.email_subject || null,
+                message: planNotification.message_email || null,
+              },
             }
           : null,
         plan_expiration_reminder: planExpirationNotification
           ? {
-              worker_id: planExpirationNotification.nwr?.worker_id || null,
-              name: planExpirationNotification.nwr?.name || null,
-              message: planExpirationNotification.message_whatsapp || null,
+              whatsapp: {
+                worker_id: planExpirationNotification.nwr?.worker_id || null,
+                name: planExpirationNotification.nwr?.name || null,
+                message: planExpirationNotification.message_whatsapp || null,
+              },
+              email: {
+                subject: planExpirationNotification.email_subject || null,
+                message: planExpirationNotification.message_email || null,
+              },
             }
           : null,
         created_at: twoFactorNotification?.created_at || null,
@@ -170,7 +200,9 @@ export class NotificationsUpserterRepository {
     >,
     notificationTypeId: string,
     workerId: string | null | undefined,
-    messageWhatsapp: string | null | undefined
+    messageWhatsapp: string | null | undefined,
+    messageEmail: string | null | undefined,
+    emailSubject: string | null | undefined
   ) {
     const existing = await this.findNotificationByType(tx, notificationTypeId);
 
@@ -187,6 +219,8 @@ export class NotificationsUpserterRepository {
       const updateData: {
         worker_id?: string;
         message_whatsapp?: string | null;
+        message_email?: string | null;
+        email_subject?: string | null;
         updated_at: string;
       } = {
         updated_at: new Date().toISOString(),
@@ -198,6 +232,14 @@ export class NotificationsUpserterRepository {
 
       if (messageWhatsapp !== undefined) {
         updateData.message_whatsapp = messageWhatsapp;
+      }
+
+      if (messageEmail !== undefined) {
+        updateData.message_email = messageEmail;
+      }
+
+      if (emailSubject !== undefined) {
+        updateData.email_subject = emailSubject;
       }
 
       await tx
@@ -241,7 +283,8 @@ export class NotificationsUpserterRepository {
         notification_type_id: notificationTypeId,
         worker_id: workerId,
         message_whatsapp: messageWhatsapp || null,
-        message_email: null,
+        message_email: messageEmail || null,
+        email_subject: emailSubject || null,
       })
       .execute();
 
