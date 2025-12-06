@@ -56,4 +56,3 @@ export const asaasNfseWebhookRequestSchema = Type.Object({
 export type AsaasNfseWebhookRequest = Static<
   typeof asaasNfseWebhookRequestSchema
 >;
-

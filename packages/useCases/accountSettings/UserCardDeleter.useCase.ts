@@ -52,9 +52,8 @@ export class UserCardDeleterUseCase {
     }
 
     if (isDefault) {
-      const remainingCards = await this.userCardsListerRepository.listUserCards(
-        userId
-      );
+      const remainingCards =
+        await this.userCardsListerRepository.listUserCards(userId);
       if (remainingCards.length > 0) {
         await this.userCardDefaultUpdaterRepository.setFirstCardAsDefault(
           userId

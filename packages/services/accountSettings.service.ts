@@ -12,7 +12,7 @@ export class AccountSettingsService {
     accountId: string,
     accountPaymentId: string
   ): Promise<ViewAccountPaymentNfseResponse | null> => {
-    return await this.accountPaymentNfseViewerRepository.viewAccountPaymentNfse(
+    return this.accountPaymentNfseViewerRepository.viewAccountPaymentNfse(
       accountId,
       accountPaymentId
     );

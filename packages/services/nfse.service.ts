@@ -14,13 +14,13 @@ export class NfseService {
   ) {}
 
   viewNfse = async (): Promise<ListNfseResponse | null> => {
-    return await this.nfseViewerRepository.viewNfse();
+    return this.nfseViewerRepository.viewNfse();
   };
 
   upsertNfse = async (
     t: TFunction<'translation', undefined>,
     input: UpdateNfseRequest
   ): Promise<UpdateNfseResponse> => {
-    return await this.nfseUpdaterRepository.upsertNfse(t, input);
+    return this.nfseUpdaterRepository.upsertNfse(t, input);
   };
 }

@@ -15,6 +15,6 @@ export class NfseUpdaterUseCase {
     t: TFunction<'translation', undefined>,
     input: UpdateNfseRequest
   ): Promise<UpdateNfseResponse> => {
-    return await this.nfseService.upsertNfse(t, input);
+    return this.nfseService.upsertNfse(t, input);
   };
 }

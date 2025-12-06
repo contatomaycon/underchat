@@ -1,5 +1,4 @@
 import * as schema from '@core/models';
-import { accountPaymentNfSe } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { eq, and } from 'drizzle-orm';

@@ -9,9 +9,8 @@ import {
   NodePgQueryResultHKT,
 } from 'drizzle-orm/node-postgres';
 import { PgTransaction } from 'drizzle-orm/pg-core';
-import { ExtractTablesWithRelations } from 'drizzle-orm';
+import { ExtractTablesWithRelations, eq } from 'drizzle-orm';
 import { inject, injectable } from 'tsyringe';
-import { eq } from 'drizzle-orm';
 import { IGetAsaasInvoiceResponse } from '@core/common/interfaces/IAsaasInvoice';
 import { randomUUID } from 'node:crypto';
 
