@@ -1,6 +1,7 @@
 export type InvoiceStatus =
   | 'SCHEDULED'
   | 'AUTHORIZED'
+  | 'SYNCHRONIZED'
   | 'PROCESSING_CANCELLATION'
   | 'CANCELED'
   | 'CANCELLATION_DENIED'

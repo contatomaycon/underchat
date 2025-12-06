@@ -5,12 +5,17 @@ import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
 import { AsaasInvoiceWebhookRequest } from '@core/schema/payment/Webhook/request.schema';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { paymentAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
+import { AsaasService } from '@core/services/asaas';
+import { ICreateAsaasInvoiceRequest } from '@core/common/interfaces/IAsaasInvoice';
+import { AccountPaymentNfSeUpserterRepository } from '@core/repositories/account/AccountPaymentNfSeUpserter.repository';
 
 @injectable()
 export class PlanReleaseService {
   constructor(
     private readonly planReleaseRepository: PlanReleaseRepository,
-    private readonly centrifugoService: CentrifugoService
+    private readonly centrifugoService: CentrifugoService,
+    private readonly asaasService: AsaasService,
+    private readonly accountPaymentNfSeUpserterRepository: AccountPaymentNfSeUpserterRepository
   ) {}
 
   private readonly mapAsaasStatusToPaymentStatus = (
@@ -148,6 +153,7 @@ export class PlanReleaseService {
     recurringPayment: boolean;
     billingPeriodId: string | null;
     value: string;
+    paymentAsaasId: string;
   }): Promise<void> => {
     const currentPlanAccount =
       await this.planReleaseRepository.findPlanAccountByAccountId(
@@ -177,6 +183,11 @@ export class PlanReleaseService {
       value: data.value,
       shouldReleasePlan: true,
     });
+
+    await this.createInvoiceForPayment(
+      data.accountPaymentId,
+      data.paymentAsaasId
+    );
   };
 
   private readonly processSuccessfulPayment = async (
@@ -189,7 +200,8 @@ export class PlanReleaseService {
     >,
     paymentStatusId: string,
     paymentDate: string,
-    pixTransaction: string | null
+    pixTransaction: string | null,
+    paymentAsaasId: string
   ): Promise<void> => {
     const isPlanAlreadyReleased = await this.checkIfPlanAlreadyReleased(
       accountPaymentData.account_payment_id,
@@ -216,6 +228,11 @@ export class PlanReleaseService {
           existingPlanAccount?.next_payment_date || new Date().toISOString(),
       });
 
+      await this.createInvoiceForPayment(
+        accountPaymentData.account_payment_id,
+        paymentAsaasId
+      );
+
       return;
     }
 
@@ -229,6 +246,7 @@ export class PlanReleaseService {
       recurringPayment: accountPaymentData.recurring_payment,
       billingPeriodId: accountPaymentData.billing_period_id,
       value: accountPaymentData.value,
+      paymentAsaasId,
     });
   };
 
@@ -317,7 +335,8 @@ export class PlanReleaseService {
         accountPaymentData,
         paymentStatusId,
         paymentDate,
-        data.payment.pixTransaction || null
+        data.payment.pixTransaction || null,
+        data.payment.id
       );
     }
 
@@ -372,6 +391,11 @@ export class PlanReleaseService {
       );
 
     if (isPlanAlreadyReleased) {
+      await this.createInvoiceForPayment(
+        data.accountPaymentId,
+        accountPaymentData.billing || ''
+      );
+
       return;
     }
 
@@ -385,7 +409,93 @@ export class PlanReleaseService {
       recurringPayment: data.recurringPayment,
       billingPeriodId: data.billingPeriodId,
       value: data.value,
+      paymentAsaasId: accountPaymentData.billing || '',
     });
+  };
+
+  createInvoiceForPayment = async (
+    accountPaymentId: string,
+    paymentAsaasId: string
+  ): Promise<void> => {
+    try {
+      const paymentData =
+        await this.planReleaseRepository.findAccountPaymentById(
+          accountPaymentId
+        );
+      if (!paymentData) return;
+
+      const planData = await this.planReleaseRepository.findPlanById(
+        paymentData.plan_id
+      );
+      if (!planData) return;
+
+      const userCustomerData =
+        await this.planReleaseRepository.findUserCustomerByAccountPaymentId(
+          accountPaymentId
+        );
+      if (!userCustomerData) return;
+
+      const existingNfse =
+        await this.planReleaseRepository.findNfSeByAccountPaymentId(
+          accountPaymentId
+        );
+      if (existingNfse) return;
+
+      const nfseData = await this.planReleaseRepository.findDefaultNfse();
+      if (!nfseData) return;
+
+      const effectiveDate = paymentData.payment_date
+        ? new Date(paymentData.payment_date).toISOString().split('T')[0]
+        : new Date().toISOString().split('T')[0];
+
+      const invoiceRequest: ICreateAsaasInvoiceRequest = {
+        payment: paymentAsaasId,
+        customer: userCustomerData.user_customer,
+        serviceDescription: `Nota fiscal da Fatura ${paymentAsaasId}.\nDescrição dos Serviços: ${planData.name}`,
+        observations:
+          planData.description ||
+          `Pagamento referente ao plano ${planData.name}`,
+        value: Number(paymentData.value),
+        deductions: Number(nfseData.deductions || 0),
+        effectiveDate,
+        municipalServiceId: nfseData.external_id?.toString(),
+        municipalServiceCode: nfseData.municipal_service_code || undefined,
+        municipalServiceName: nfseData.name,
+        taxes: {
+          retainIss: nfseData.retain_iss,
+          iss: Number(nfseData.iss_value || 0),
+          cofins: Number(nfseData.cofins_value || 0),
+          csll: Number(nfseData.csll_value || 0),
+          inss: Number(nfseData.inss_value || 0),
+          ir: Number(nfseData.ir_value || 0),
+          pis: Number(nfseData.pis_value || 0),
+        },
+      };
+
+      const invoice = await this.asaasService.createInvoice(invoiceRequest);
+
+      if (!invoice) {
+        console.error(
+          `Erro ao criar nota fiscal para pagamento: ${paymentAsaasId}`
+        );
+        return;
+      }
+
+      const invoiceDataForSave = {
+        ...invoice,
+        status: 'SCHEDULED' as const,
+      };
+
+      await this.accountPaymentNfSeUpserterRepository.upsertAccountPaymentNfSe(
+        accountPaymentId,
+        invoiceDataForSave
+      );
+    } catch (error) {
+      console.error(
+        'Erro ao criar nota fiscal após pagamento aprovado:',
+        error
+      );
+    }
   };
 
   private readonly notifyPaymentStatusUpdate = async (

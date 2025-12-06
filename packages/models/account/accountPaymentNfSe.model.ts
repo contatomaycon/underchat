@@ -6,7 +6,7 @@ import {
   numeric,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import { accountPayment } from '@core/models';
+import { accountPayment, nfse } from '@core/models';
 import { accountPaymentNfSeStatus } from './accountPaymentNfSeStatus.model';
 
 export const accountPaymentNfSe = pgTable('account_payment_nfse', {
@@ -17,6 +17,9 @@ export const accountPaymentNfSe = pgTable('account_payment_nfse', {
   reference: varchar({ length: 100 }).notNull(),
   account_payment_nfse_status_id: uuid()
     .references(() => accountPaymentNfSeStatus.account_payment_nfse_status_id)
+    .notNull(),
+  nfse_id: uuid()
+    .references(() => nfse.nfse_id)
     .notNull(),
   type: varchar({ length: 50 }),
   status_description: varchar({ length: 500 }),
@@ -46,6 +49,10 @@ export const accountPaymentNfSeRelations = relations(
     aps: one(accountPaymentNfSeStatus, {
       fields: [accountPaymentNfSe.account_payment_nfse_status_id],
       references: [accountPaymentNfSeStatus.account_payment_nfse_status_id],
+    }),
+    afs: one(nfse, {
+      fields: [accountPaymentNfSe.nfse_id],
+      references: [nfse.nfse_id],
     }),
   })
 );

@@ -15,3 +15,4 @@ export * from './label';
 export * from './contact';
 export * from './expenditure';
 export * from './notifications';
+export * from './nfse';

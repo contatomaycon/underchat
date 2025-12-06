@@ -7,6 +7,8 @@ import {
   planAccount,
   accountPaymentCrossSell,
   planCrossSellAccount,
+  plan,
+  nfse,
 } from '@core/models';
 import { randomUUID } from 'node:crypto';
 
@@ -56,6 +58,7 @@ export class PlanReleaseRepository {
     value: string;
     payment_date: string | null;
     payment_status_id: string;
+    billing: string;
   } | null> => {
     const payment = await this.db.query.accountPayment.findFirst({
       where: eq(accountPayment.account_payment_id, accountPaymentId),
@@ -68,6 +71,7 @@ export class PlanReleaseRepository {
         value: true,
         payment_date: true,
         payment_status_id: true,
+        billing: true,
       },
     });
 
@@ -568,5 +572,95 @@ export class PlanReleaseRepository {
     );
 
     await Promise.all(deletePromises);
+  };
+
+  findPlanById = async (
+    planId: string
+  ): Promise<{ name: string; description: string | null } | null> => {
+    const planData = await this.db.query.plan.findFirst({
+      where: eq(plan.plan_id, planId),
+      columns: {
+        name: true,
+        description: true,
+      },
+    });
+
+    return planData || null;
+  };
+
+  findUserCustomerByAccountPaymentId = async (
+    accountPaymentId: string
+  ): Promise<{ user_customer: string } | null> => {
+    const payment = await this.db.query.accountPayment.findFirst({
+      where: eq(accountPayment.account_payment_id, accountPaymentId),
+      columns: {
+        user_customer_id: true,
+      },
+      with: {
+        auc: {
+          columns: {
+            user_customer: true,
+          },
+        },
+      },
+    });
+
+    if (!payment?.auc) {
+      return null;
+    }
+
+    return {
+      user_customer: payment.auc.user_customer,
+    };
+  };
+
+  findNfSeByAccountPaymentId = async (
+    accountPaymentId: string
+  ): Promise<{ account_payment_nfse_id: string } | null> => {
+    const nfseRecord = await this.db.query.accountPaymentNfSe.findFirst({
+      where: eq(schema.accountPaymentNfSe.account_payment_id, accountPaymentId),
+      columns: {
+        account_payment_nfse_id: true,
+      },
+    });
+
+    return nfseRecord || null;
+  };
+
+  findDefaultNfse = async (): Promise<{
+    nfse_id: string;
+    external_id: number | null;
+    name: string;
+    municipal_service_code: string | null;
+    municipal_service_description_field: string | null;
+    retain_iss: boolean;
+    iss_value: string | null;
+    cofins_value: string | null;
+    csll_value: string | null;
+    inss_value: string | null;
+    ir_value: string | null;
+    pis_value: string | null;
+    deductions: string | null;
+  } | null> => {
+    const nfseRecord = await this.db.query.nfse.findFirst({
+      where: eq(nfse.default_product, true),
+      columns: {
+        nfse_id: true,
+        external_id: true,
+        name: true,
+        municipal_service_code: true,
+        municipal_service_description_field: true,
+        retain_iss: true,
+        iss_value: true,
+        cofins_value: true,
+        csll_value: true,
+        inss_value: true,
+        ir_value: true,
+        pis_value: true,
+        deductions: true,
+      },
+    });
+
+    return nfseRecord || null;
   };
 }

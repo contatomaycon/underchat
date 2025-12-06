@@ -1,5 +1,9 @@
 import * as schema from '@core/models';
-import { accountPaymentNfSe, accountPaymentNfSeStatus } from '@core/models';
+import {
+  accountPaymentNfSe,
+  accountPaymentNfSeStatus,
+  nfse,
+} from '@core/models';
 import {
   NodePgDatabase,
   NodePgQueryResultHKT,
@@ -67,6 +71,11 @@ export class AccountPaymentNfSeUpserterRepository {
         throw new Error(`Status não encontrado: ${invoiceData.status}`);
       }
 
+      const defaultNfse = await this.findDefaultNfseTx(tx);
+      if (!defaultNfse) {
+        throw new Error('NFSe padrão não encontrado');
+      }
+
       const existing = await this.findNfSeByReferenceTx(tx, invoiceData.id);
 
       if (existing) {
@@ -75,7 +84,8 @@ export class AccountPaymentNfSeUpserterRepository {
           existing.account_payment_nfse_id,
           accountPaymentId,
           invoiceData,
-          status.account_payment_nfse_status_id
+          status.account_payment_nfse_status_id,
+          defaultNfse.nfse_id
         );
         return;
       }
@@ -84,7 +94,8 @@ export class AccountPaymentNfSeUpserterRepository {
         tx,
         accountPaymentId,
         invoiceData,
-        status.account_payment_nfse_status_id
+        status.account_payment_nfse_status_id,
+        defaultNfse.nfse_id
       );
     });
   };
@@ -115,14 +126,31 @@ export class AccountPaymentNfSeUpserterRepository {
     >,
     reference: string
   ): Promise<{ account_payment_nfse_id: string } | null> {
-    const nfse = await tx.query.accountPaymentNfSe.findFirst({
+    const nfseRecord = await tx.query.accountPaymentNfSe.findFirst({
       where: eq(accountPaymentNfSe.reference, reference),
       columns: {
         account_payment_nfse_id: true,
       },
     });
 
-    return nfse || null;
+    return nfseRecord || null;
+  }
+
+  private async findDefaultNfseTx(
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >
+  ): Promise<{ nfse_id: string } | null> {
+    const nfseRecord = await tx.query.nfse.findFirst({
+      where: eq(nfse.default_product, true),
+      columns: {
+        nfse_id: true,
+      },
+    });
+
+    return nfseRecord || null;
   }
 
   private async createAccountPaymentNfSeTx(
@@ -133,17 +161,19 @@ export class AccountPaymentNfSeUpserterRepository {
     >,
     accountPaymentId: string,
     invoiceData: IGetAsaasInvoiceResponse,
-    statusId: string
+    statusId: string,
+    nfseId: string
   ): Promise<void> {
-    const nfseId = randomUUID();
+    const accountPaymentNfseId = randomUUID();
 
     await tx
       .insert(accountPaymentNfSe)
       .values({
-        account_payment_nfse_id: nfseId,
+        account_payment_nfse_id: accountPaymentNfseId,
         account_payment_id: accountPaymentId,
         reference: invoiceData.id,
         account_payment_nfse_status_id: statusId,
+        nfse_id: nfseId,
         type: invoiceData.type,
         status_description: invoiceData.statusDescription || null,
         pdf_url: invoiceData.pdfUrl || null,
@@ -162,16 +192,18 @@ export class AccountPaymentNfSeUpserterRepository {
       typeof schema,
       ExtractTablesWithRelations<typeof schema>
     >,
-    nfseId: string,
+    accountPaymentNfseId: string,
     accountPaymentId: string,
     invoiceData: IGetAsaasInvoiceResponse,
-    statusId: string
+    statusId: string,
+    nfseId: string
   ): Promise<void> {
     await tx
       .update(accountPaymentNfSe)
       .set({
         account_payment_id: accountPaymentId,
         account_payment_nfse_status_id: statusId,
+        nfse_id: nfseId,
         type: invoiceData.type,
         status_description: invoiceData.statusDescription || null,
         pdf_url: invoiceData.pdfUrl || null,
@@ -182,7 +214,42 @@ export class AccountPaymentNfSeUpserterRepository {
         value: invoiceData.value.toString(),
         updated_at: new Date().toISOString(),
       })
-      .where(eq(accountPaymentNfSe.account_payment_nfse_id, nfseId))
+      .where(
+        eq(accountPaymentNfSe.account_payment_nfse_id, accountPaymentNfseId)
+      )
       .execute();
   }
+
+  updateNfSeStatusOnly = async (
+    reference: string,
+    statusName: string
+  ): Promise<void> => {
+    await this.db.transaction(async (tx) => {
+      const status = await this.findStatusByNameTx(tx, statusName);
+
+      if (!status) {
+        throw new Error(`Status não encontrado: ${statusName}`);
+      }
+
+      const existing = await this.findNfSeByReferenceTx(tx, reference);
+
+      if (!existing) {
+        throw new Error(`Nota fiscal não encontrada: ${reference}`);
+      }
+
+      await tx
+        .update(accountPaymentNfSe)
+        .set({
+          account_payment_nfse_status_id: status.account_payment_nfse_status_id,
+          updated_at: new Date().toISOString(),
+        })
+        .where(
+          eq(
+            accountPaymentNfSe.account_payment_nfse_id,
+            existing.account_payment_nfse_id
+          )
+        )
+        .execute();
+    });
+  };
 }
