@@ -549,5 +549,9 @@
   "no_cards_found": "No se encontraron tarjetas",
   "no_default_card_found": "No se encontró tarjeta predeterminada",
   "account_payment_nfse_viewed_successfully": "¡Factura visualizada con éxito!",
-  "account_payment_nfse_not_found": "Factura no encontrada"
+  "account_payment_nfse_not_found": "Factura no encontrada",
+  "nfse_viewed_successfully": "¡Configuración de NFSe visualizada con éxito!",
+  "nfse_updated_successfully": "¡Configuración de NFSe actualizada con éxito!",
+  "nfse_not_found": "Configuración de NFSe no encontrada",
+  "nfse_update_error": "Error al actualizar configuración de NFSe"
 }

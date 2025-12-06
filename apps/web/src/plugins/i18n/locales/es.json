@@ -1602,5 +1602,17 @@
     "nfse_status_canceled": "Cancelada",
     "nfse_status_cancellation_denied": "Cancelación Denegada",
     "nfse_status_error": "Error",
-    "nfse_status_synchronized": "Sincronizada"
+    "nfse_status_synchronized": "Sincronizada",
+    "nfse": "NFSe",
+    "config": "Configuración",
+    "municipal_service_code": "Código del Servicio Municipal",
+    "municipal_service_description_field": "Descripción del Servicio Municipal",
+    "retain_iss": "Retener ISS",
+    "iss_value": "Valor ISS",
+    "cofins_value": "Valor COFINS",
+    "csll_value": "Valor CSLL",
+    "inss_value": "Valor INSS",
+    "ir_value": "Valor IR",
+    "pis_value": "Valor PIS",
+    "deductions": "Deducciones"
 }

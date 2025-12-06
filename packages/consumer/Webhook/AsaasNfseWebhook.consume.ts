@@ -6,7 +6,7 @@ import { createConsumer } from '@core/common/functions/createConsumer';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { FastifyInstance } from 'fastify';
-import { NfseWebhookProcessorService } from '@core/services/nfse/NfseWebhookProcessor.service';
+import { NfseWebhookProcessorService } from '@core/services/NfseWebhookProcessor.service';
 
 @singleton()
 export class AsaasNfseWebhookConsume {

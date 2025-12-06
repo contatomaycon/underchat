@@ -549,5 +549,9 @@
   "no_cards_found": "No cards found",
   "no_default_card_found": "No default card found",
   "account_payment_nfse_viewed_successfully": "Invoice viewed successfully!",
-  "account_payment_nfse_not_found": "Invoice not found"
+  "account_payment_nfse_not_found": "Invoice not found",
+  "nfse_viewed_successfully": "NFSe configuration viewed successfully!",
+  "nfse_updated_successfully": "NFSe configuration updated successfully!",
+  "nfse_not_found": "NFSe configuration not found",
+  "nfse_update_error": "Error updating NFSe configuration"
 }
