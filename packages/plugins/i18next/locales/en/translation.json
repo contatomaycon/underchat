@@ -553,5 +553,13 @@
   "nfse_viewed_successfully": "NFSe configuration viewed successfully!",
   "nfse_updated_successfully": "NFSe configuration updated successfully!",
   "nfse_not_found": "NFSe configuration not found",
-  "nfse_update_error": "Error updating NFSe configuration"
+  "nfse_update_error": "Error updating NFSe configuration",
+  "plan_not_found_or_already_cancelled": "Plan not found or already cancelled",
+  "last_payment_date_not_found": "Last payment date not found",
+  "subscription_cancellation_error": "Error cancelling subscription",
+  "subscription_cancelled_successfully": "Subscription cancelled successfully",
+  "payment_refunded": "payment refunded",
+  "subscription_cancelled": "subscription cancelled",
+  "invoice_cancelled": "invoice cancelled",
+  "subscription_cancelled_and_actions_successfully": "Subscription cancelled and {{actions}} successfully"
 }

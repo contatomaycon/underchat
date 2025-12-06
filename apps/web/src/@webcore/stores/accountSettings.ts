@@ -38,6 +38,7 @@ import {
 import { CreateUserCardRequest } from '@core/schema/accountSettings/createUserCard/request.schema';
 import { CreateUserCardResponse } from '@core/schema/accountSettings/createUserCard/response.schema';
 import { ViewAccountPaymentNfseResponse } from '@core/schema/accountSettings/viewAccountPaymentNfse/response.schema';
+import { CancelPlanAccountResponse } from '@core/schema/accountSettings/cancelPlanAccount/response.schema';
 
 export const useAccountSettingsStore = defineStore('accountSettings', {
   state: () => ({
@@ -696,6 +697,45 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
         let errorMessage = this.i18n.global.t(
           'account_payment_nfse_view_error'
         );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+    async cancelPlanAccount(): Promise<CancelPlanAccountResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<
+          IApiResponse<CancelPlanAccountResponse>
+        >('/account-settings/plan/cancel');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('subscription_cancel_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          data.message ?? data.data.message,
+          data.data.success ? EColor.success : EColor.error
+        );
+
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t('subscription_cancel_error');
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }

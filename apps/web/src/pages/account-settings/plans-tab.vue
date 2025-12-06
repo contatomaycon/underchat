@@ -5,7 +5,6 @@ import { useAccountSettingsStore } from '@/@webcore/stores/accountSettings';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { ViewCurrentPlanInvoiceResponse } from '@core/schema/accountSettings/viewCurrentPlanInvoice/response.schema';
 import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.schema';
-import { ListAccountAddonsResponse } from '@core/schema/accountSettings/listAccountAddons/response.schema';
 import { ListAccountPlanProductsResponse } from '@core/schema/accountSettings/listAccountPlanProducts/response.schema';
 import creditCardType from 'credit-card-type';
 import visaSvg from '@images/icons/payments/card/visa.svg?url';
@@ -27,10 +26,8 @@ useSnackbarCleanup(accountSettingsStore);
 const loading = ref(false);
 const planInvoice = ref<ViewCurrentPlanInvoiceResponse | null>(null);
 const cardsLoading = ref(false);
-const addonsLoading = ref(false);
 const planProductsLoading = ref(false);
 const userCards = ref<ListUserCardResponse[]>([]);
-const accountAddons = ref<ListAccountAddonsResponse[]>([]);
 const accountPlanProducts = ref<ListAccountPlanProductsResponse[]>([]);
 const cardToDelete = ref<string | null>(null);
 const isDeleteDialogOpen = ref(false);
@@ -203,15 +200,6 @@ const loadUserCards = async () => {
     userCards.value = result;
   }
   cardsLoading.value = false;
-};
-
-const loadAccountAddons = async () => {
-  addonsLoading.value = true;
-  const result = await accountSettingsStore.listAccountAddons();
-  if (result) {
-    accountAddons.value = result;
-  }
-  addonsLoading.value = false;
 };
 
 const loadAccountPlanProducts = async () => {
@@ -510,20 +498,6 @@ const addCard = async () => {
   }
 };
 
-const getAddonProgressPercentage = (addon: ListAccountAddonsResponse) => {
-  if (addon.quantity_total === 0) return 0;
-  return Math.min(
-    Math.max((addon.quantity_used / addon.quantity_total) * 100, 0),
-    100
-  );
-};
-
-const getPlanProgressPercentage = (addon: ListAccountAddonsResponse) => {
-  if (addon.quantity_total === 0) return 0;
-  const planUsed = Math.min(addon.quantity_used, addon.quantity_plan);
-  return Math.min(Math.max((planUsed / addon.quantity_total) * 100, 0), 100);
-};
-
 const getPlanProductProgressPercentage = (
   product: ListAccountPlanProductsResponse
 ) => {
@@ -542,28 +516,65 @@ const getPlanProductPlanProgressPercentage = (
   return Math.min(Math.max((planUsed / product.quantity_total) * 100, 0), 100);
 };
 
-const getPlanUsed = (product: ListAccountPlanProductsResponse): number => {
-  return Math.min(product.quantity_used, product.quantity_plan);
-};
+const isWithin7Days = computed(() => {
+  if (!planInvoice.value?.last_payment_date) return false;
+  const lastPaymentDate = new Date(planInvoice.value.last_payment_date);
+  const now = new Date();
+  const daysDiff = Math.floor(
+    (now.getTime() - lastPaymentDate.getTime()) / (1000 * 60 * 60 * 24)
+  );
+  return daysDiff <= 7;
+});
 
-const getAddonUsed = (product: ListAccountPlanProductsResponse): number => {
-  const planUsed = getPlanUsed(product);
-  return Math.max(0, product.quantity_used - planUsed);
-};
+const planStatus = computed(() => {
+  if (!planInvoice.value) return null;
 
-const getPlanProductAddonProgressPercentage = (
-  product: ListAccountPlanProductsResponse
-) => {
-  if (product.quantity_total === 0) return 0;
-  const planUsed = Math.min(product.quantity_used, product.quantity_plan);
-  const addonUsed = Math.max(0, product.quantity_used - planUsed);
-  return Math.min(Math.max((addonUsed / product.quantity_total) * 100, 0), 100);
+  const hasCancellationDate = !!planInvoice.value.cancellation_date;
+  const nextPaymentDateStr = planInvoice.value.next_payment_date;
+
+  if (!hasCancellationDate) {
+    return { label: t('active'), color: 'success' };
+  }
+
+  if (nextPaymentDateStr) {
+    const nextPaymentDate = new Date(nextPaymentDateStr);
+    const now = new Date();
+    if (nextPaymentDate > now) {
+      return { label: t('cancelling'), color: 'warning' };
+    }
+  }
+
+  return { label: t('cancelled'), color: 'error' };
+});
+
+const cancelButtonColor = computed(() => {
+  if (isWithin7Days.value) return 'error';
+  return 'default';
+});
+
+const isCancelButtonDisabled = computed(() => {
+  return !!planInvoice.value?.cancellation_date;
+});
+
+const isCancelling = ref(false);
+
+const cancelSubscription = async () => {
+  if (isCancelling.value || isCancelButtonDisabled.value) return;
+
+  try {
+    isCancelling.value = true;
+    const result = await accountSettingsStore.cancelPlanAccount();
+    if (result) {
+      await loadPlanInvoice();
+    }
+  } finally {
+    isCancelling.value = false;
+  }
 };
 
 onMounted(() => {
   loadPlanInvoice();
   loadUserCards();
-  loadAccountAddons();
   loadAccountPlanProducts();
 });
 </script>
@@ -592,8 +603,18 @@ onMounted(() => {
               >
                 <VIcon :icon="planInvoice.plan_icon" size="30" />
               </VAvatar>
-              <div>
-                <h4 class="text-h6">{{ planInvoice.plan_name }}</h4>
+              <div class="flex-grow-1">
+                <div class="d-flex align-center gap-2 mb-1">
+                  <h4 class="text-h6">{{ planInvoice.plan_name }}</h4>
+                  <VChip
+                    v-if="planStatus"
+                    :color="planStatus.color"
+                    size="small"
+                    variant="tonal"
+                  >
+                    {{ planStatus.label }}
+                  </VChip>
+                </div>
                 <p class="text-body-2 text-medium-emphasis">
                   {{ planInvoice.plan_description || $t('no_description') }}
                 </p>
@@ -684,7 +705,13 @@ onMounted(() => {
               <VBtn color="primary" variant="flat">
                 {{ $t('upgrade_plan') }}
               </VBtn>
-              <VBtn color="default" variant="outlined">
+              <VBtn
+                :color="cancelButtonColor"
+                variant="outlined"
+                :disabled="isCancelButtonDisabled || isCancelling"
+                :loading="isCancelling"
+                @click="cancelSubscription"
+              >
                 {{ $t('cancel_subscription') }}
               </VBtn>
             </div>
