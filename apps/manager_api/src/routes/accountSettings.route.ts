@@ -19,6 +19,7 @@ import { deleteUserCardSchema } from '@core/schema/accountSettings/deleteUserCar
 import { updatePlanRecurringSchema } from '@core/schema/accountSettings/updatePlanRecurring';
 import { listAccountAddonsSchema } from '@core/schema/accountSettings/listAccountAddons';
 import { listAccountPlanProductsSchema } from '@core/schema/accountSettings/listAccountPlanProducts';
+import { updateUserCardDefaultSchema } from '@core/schema/accountSettings/updateUserCardDefault';
 import { planInvoicePermissions } from '@/permissions';
 
 export default async function accountSettingsRoutes(server: FastifyInstance) {
@@ -149,6 +150,15 @@ export default async function accountSettingsRoutes(server: FastifyInstance) {
   server.get('/account-settings/plan-products', {
     schema: listAccountPlanProductsSchema,
     handler: accountSettingsController.listAccountPlanProducts,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.patch('/account-settings/cards/default', {
+    schema: updateUserCardDefaultSchema,
+    handler: accountSettingsController.updateUserCardDefault,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),

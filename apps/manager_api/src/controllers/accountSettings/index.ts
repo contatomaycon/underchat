@@ -17,6 +17,7 @@ import { deleteUserCard } from './methods/deleteUserCard';
 import { updatePlanRecurring } from './methods/updatePlanRecurring';
 import { listAccountAddons } from './methods/listAccountAddons';
 import { listAccountPlanProducts } from './methods/listAccountPlanProducts';
+import { updateUserCardDefault } from './methods/updateUserCardDefault';
 
 @injectable()
 class AccountSettingsController {
@@ -38,6 +39,7 @@ class AccountSettingsController {
   public updatePlanRecurring = updatePlanRecurring;
   public listAccountAddons = listAccountAddons;
   public listAccountPlanProducts = listAccountPlanProducts;
+  public updateUserCardDefault = updateUserCardDefault;
 }
 
 export default AccountSettingsController;

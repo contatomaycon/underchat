@@ -537,6 +537,8 @@
   "card_deleted_successfully": "Cartão removido com sucesso!",
   "card_deleted_error": "Erro ao remover cartão",
   "card_not_found": "Cartão não encontrado",
+  "card_default_updated_successfully": "Cartão definido como padrão com sucesso!",
+  "cannot_delete_last_card": "Não é possível remover o último cartão",
   "addons_listed_successfully": "Addons listados com sucesso!",
   "plan_recurring_updated_successfully": "Recorrência do plano atualizada com sucesso!",
   "plan_products_listed_successfully": "Produtos do plano listados com sucesso!"

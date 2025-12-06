@@ -223,6 +223,18 @@ const confirmDeleteCard = async () => {
   await loadUserCards();
 };
 
+const setCardAsDefault = async (cardId: string) => {
+  await accountSettingsStore.updateUserCardDefault(cardId);
+  await loadUserCards();
+};
+
+const canDeleteCard = (card: ListUserCardResponse): boolean => {
+  if (userCards.value.length === 1) {
+    return false;
+  }
+  return true;
+};
+
 const getAddonProgressPercentage = (addon: ListAccountAddonsResponse) => {
   if (addon.quantity_total === 0) return 0;
   return Math.min(
@@ -455,18 +467,38 @@ onMounted(() => {
                         {{ $t('default') }}
                       </VChip>
                     </div>
-                    <VBtn
-                      icon
-                      variant="text"
-                      size="small"
-                      color="error"
-                      @click="deleteCard(card.user_card_id)"
-                    >
-                      <VIcon icon="tabler-trash" size="20" />
-                      <VTooltip activator="parent" location="top">
-                        {{ $t('delete') }}
-                      </VTooltip>
-                    </VBtn>
+                    <div class="d-flex align-center gap-1">
+                      <VBtn
+                        v-if="!card.default"
+                        icon
+                        variant="text"
+                        size="small"
+                        color="primary"
+                        @click="setCardAsDefault(card.user_card_id)"
+                      >
+                        <VIcon icon="tabler-star" size="20" />
+                        <VTooltip activator="parent" location="top">
+                          {{ $t('set_as_default') }}
+                        </VTooltip>
+                      </VBtn>
+                      <VBtn
+                        icon
+                        variant="text"
+                        size="small"
+                        color="error"
+                        :disabled="!canDeleteCard(card)"
+                        @click="deleteCard(card.user_card_id)"
+                      >
+                        <VIcon icon="tabler-trash" size="20" />
+                        <VTooltip activator="parent" location="top">
+                          {{
+                            canDeleteCard(card)
+                              ? $t('delete')
+                              : $t('cannot_delete_last_card')
+                          }}
+                        </VTooltip>
+                      </VBtn>
+                    </div>
                   </div>
                 </VCard>
               </div>

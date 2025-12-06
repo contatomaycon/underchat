@@ -1574,14 +1574,15 @@
     "cards_listed_successfully": "Cartões listados com sucesso!",
     "card_deleted_successfully": "Cartão removido com sucesso!",
     "card_deleted_error": "Erro ao remover cartão",
-    "card_not_found": "Cartão não encontrado",
     "no_cards_found": "Nenhum cartão encontrado",
+    "set_as_default": "Definir como padrão",
+    "cannot_delete_last_card": "Não é possível remover o último cartão",
+    "card_default_updated_success": "Cartão definido como padrão com sucesso!",
+    "card_default_updated_error": "Erro ao definir cartão como padrão",
     "delete_card": "Remover Cartão",
     "delete_card_confirmation": "Tem certeza que deseja remover este cartão?",
     "addons_listed_successfully": "Addons listados com sucesso!",
     "no_addons_found": "Nenhum addon encontrado",
-    "plan_recurring_updated_successfully": "Recorrência do plano atualizada com sucesso!",
     "plan_products": "Produtos do Plano",
-    "plan_products_listed_successfully": "Produtos do plano listados com sucesso!",
     "no_plan_products_found": "Nenhum produto encontrado"
 }

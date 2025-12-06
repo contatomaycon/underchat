@@ -536,5 +536,47 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
         return null;
       }
     },
+    async updateUserCardDefault(userCardId: string): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<IApiResponse<null>>(
+          '/account-settings/cards/default',
+          { user_card_id: userCardId }
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const message =
+            data?.message ?? this.i18n.global.t('card_default_updated_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          data.message ?? this.i18n.global.t('card_default_updated_success'),
+          EColor.success
+        );
+
+        await this.listUserCards();
+
+        return true;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t('card_default_updated_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return false;
+      }
+    },
   },
 });

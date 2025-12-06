@@ -1558,14 +1558,15 @@
     "cards_listed_successfully": "Cards listed successfully!",
     "card_deleted_successfully": "Card removed successfully!",
     "card_deleted_error": "Error removing card",
-    "card_not_found": "Card not found",
     "no_cards_found": "No cards found",
+    "set_as_default": "Set as default",
+    "cannot_delete_last_card": "Cannot delete the last card",
+    "card_default_updated_success": "Card set as default successfully!",
+    "card_default_updated_error": "Error setting card as default",
     "delete_card": "Remove Card",
     "delete_card_confirmation": "Are you sure you want to remove this card?",
     "addons_listed_successfully": "Addons listed successfully!",
     "no_addons_found": "No addons found",
-    "plan_recurring_updated_successfully": "Plan recurring payment updated successfully!",
     "plan_products": "Plan Products",
-    "plan_products_listed_successfully": "Plan products listed successfully!",
     "no_plan_products_found": "No products found"
 }
