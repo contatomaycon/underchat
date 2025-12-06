@@ -74,7 +74,8 @@ export class PlanReleaseService {
     billingPeriodId: string | null,
     currentPlanId: string | null,
     newPlanId: string,
-    currentNextPaymentDate: string | null
+    currentNextPaymentDate: string | null,
+    currentBillingPeriodId: string | null
   ): string => {
     const paymentDateObj = new Date(paymentDate);
     let daysToAdd = 0;
@@ -87,7 +88,11 @@ export class PlanReleaseService {
       daysToAdd = 365;
     }
 
-    if (currentPlanId === newPlanId && currentNextPaymentDate) {
+    if (
+      currentPlanId === newPlanId &&
+      currentBillingPeriodId === billingPeriodId &&
+      currentNextPaymentDate
+    ) {
       const currentNextDate = new Date(currentNextPaymentDate);
       currentNextDate.setDate(currentNextDate.getDate() + daysToAdd);
       return currentNextDate.toISOString();
@@ -176,7 +181,8 @@ export class PlanReleaseService {
       data.billingPeriodId,
       currentPlanAccount?.plan_id || null,
       data.planId,
-      currentPlanAccount?.next_payment_date || null
+      currentPlanAccount?.next_payment_date || null,
+      currentPlanAccount?.billing_period_id || null
     );
 
     await this.planReleaseRepository.processPaymentAndReleasePlan({

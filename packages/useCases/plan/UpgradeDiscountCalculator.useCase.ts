@@ -8,8 +8,13 @@ export class UpgradeDiscountCalculatorUseCase {
 
   execute = async (
     accountId: string,
-    newPlanId: string
+    newPlanId: string,
+    billingPeriod?: 'monthly' | 'annual'
   ): Promise<CalculateUpgradeDiscountResponse> => {
-    return this.planService.calculateUpgradeDiscount(accountId, newPlanId);
+    return this.planService.calculateUpgradeDiscount(
+      accountId,
+      newPlanId,
+      billingPeriod
+    );
   };
 }

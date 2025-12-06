@@ -154,7 +154,9 @@ const isPlanSelected = (planId: string): boolean => {
 };
 
 const isCurrentPlan = (planId: string): boolean => {
-  return currentPlanId.value === planId;
+  if (currentPlanId.value !== planId) return false;
+  if (!currentPlanBillingPeriod.value) return false;
+  return currentPlanBillingPeriod.value === billingPeriod.value;
 };
 
 const getCurrentPlanPrice = (): number | null => {

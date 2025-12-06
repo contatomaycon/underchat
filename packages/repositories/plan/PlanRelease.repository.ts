@@ -115,6 +115,7 @@ export class PlanReleaseRepository {
     plan_id: string;
     next_payment_date: string | null;
     account_payment_id: string | null;
+    billing_period_id: string | null;
   } | null> => {
     const planAcc = await this.db.query.planAccount.findFirst({
       where: eq(planAccount.account_id, accountId),
@@ -123,6 +124,7 @@ export class PlanReleaseRepository {
         plan_id: true,
         next_payment_date: true,
         account_payment_id: true,
+        billing_period_id: true,
       },
     });
 
@@ -157,6 +159,7 @@ export class PlanReleaseRepository {
     plan_account_id: string;
     plan_id: string;
     next_payment_date: string | null;
+    billing_period_id: string | null;
   } | null> => {
     const planAcc = await tx.query.planAccount.findFirst({
       where: eq(planAccount.account_id, accountId),
@@ -164,6 +167,7 @@ export class PlanReleaseRepository {
         plan_account_id: true,
         plan_id: true,
         next_payment_date: true,
+        billing_period_id: true,
       },
     });
 

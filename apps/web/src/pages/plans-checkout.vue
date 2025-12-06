@@ -343,7 +343,8 @@ const loadUpgradeDiscount = async () => {
 
   loadingDiscount.value = true;
   const discount = await planStore.calculateUpgradeDiscount(
-    selectedPlanForCheckout.value.plan_id
+    selectedPlanForCheckout.value.plan_id,
+    billingPeriod.value
   );
   if (discount) {
     upgradeDiscount.value = discount;
@@ -380,7 +381,9 @@ const loadUserCards = async () => {
 };
 
 const isCurrentPlan = (planId: string): boolean => {
-  return currentPlanId.value === planId;
+  if (currentPlanId.value !== planId) return false;
+  if (!currentPlanBillingPeriod.value) return false;
+  return currentPlanBillingPeriod.value === billingPeriod.value;
 };
 
 const getCurrentPlanPrice = (): number | null => {
@@ -419,6 +422,8 @@ watch(billingPeriod, (newValue) => {
     newValue === 'monthly'
   ) {
     billingPeriod.value = 'annual';
+  } else {
+    loadUpgradeDiscount();
   }
 });
 
@@ -686,6 +691,13 @@ const isUpgradeBlocked = computed(() => {
   }
 
   if (isPlanExpired.value) {
+    return false;
+  }
+
+  if (
+    currentPlanBillingPeriod.value &&
+    currentPlanBillingPeriod.value !== billingPeriod.value
+  ) {
     return false;
   }
 

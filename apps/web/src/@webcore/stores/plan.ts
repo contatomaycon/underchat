@@ -670,14 +670,20 @@ export const usePlanStore = defineStore('plan', {
     },
 
     async calculateUpgradeDiscount(
-      planId: string
+      planId: string,
+      billingPeriod?: 'monthly' | 'annual'
     ): Promise<CalculateUpgradeDiscountResponse | null> {
       try {
         this.loading = true;
 
+        const queryParams = new URLSearchParams({ plan_id: planId });
+        if (billingPeriod) {
+          queryParams.append('billing_period', billingPeriod);
+        }
+
         const response = await axios.get<
           IApiResponse<CalculateUpgradeDiscountResponse>
-        >(`/plan/upgrade-discount?plan_id=${planId}`);
+        >(`/plan/upgrade-discount?${queryParams.toString()}`);
 
         this.loading = false;
 

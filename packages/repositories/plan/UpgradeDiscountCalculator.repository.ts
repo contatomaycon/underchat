@@ -56,6 +56,10 @@ export class UpgradeDiscountCalculatorRepository {
     const billingPeriodForNewPlan: string | null =
       selectedBillingPeriod || billingPeriodName || null;
 
+    if (selectedBillingPeriod && billingPeriodName !== selectedBillingPeriod) {
+      return this.buildResponseWithoutDiscount(currentPlanValue, false);
+    }
+
     const newPlanPrice = this.getNewPlanPrice(
       {
         price: Number(newPlan.price),
