@@ -1528,6 +1528,7 @@
     "payment_confirmed": "Pagamento confirmado",
     "payment_received": "Pagamento recebido",
     "view_pix_payment": "Ver Pagamento PIX",
+    "view_invoice": "Visualizar Fatura",
     "payment_status_pending": "Pendente",
     "payment_status_received": "Aprovado",
     "payment_status_confirmed": "Confirmado",

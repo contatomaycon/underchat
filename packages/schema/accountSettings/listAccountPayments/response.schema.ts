@@ -14,6 +14,7 @@ export const listAccountPaymentsResponseSchema = Type.Object({
   payment_status_name: Type.String(),
   payment_date: Type.Union([Type.String(), Type.Null()]),
   created_at: Type.String(),
+  invoice_url: Type.Union([Type.String(), Type.Null()]),
 });
 
 export const listAccountPaymentsFinalResponseSchema = Type.Object({

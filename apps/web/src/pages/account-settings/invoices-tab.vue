@@ -142,6 +142,12 @@ watch(
               key: 'created_at',
               sortable: false,
             },
+            {
+              title: $t('actions'),
+              key: 'actions',
+              sortable: false,
+              align: 'end',
+            },
           ]"
           :items="accountSettingsStore.accountPaymentsList"
           :items-length="accountSettingsStore.accountPaymentsPagings.total"
@@ -201,6 +207,23 @@ watch(
 
           <template #item.created_at="{ item }">
             {{ formatDate(item.created_at) }}
+          </template>
+
+          <template #item.actions="{ item }">
+            <VBtn
+              v-if="item.invoice_url"
+              icon
+              variant="text"
+              size="small"
+              :href="item.invoice_url"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <VIcon icon="tabler-eye" size="20" />
+              <VTooltip activator="parent" location="top">
+                {{ $t('view_invoice') }}
+              </VTooltip>
+            </VBtn>
           </template>
 
           <template #no-data>

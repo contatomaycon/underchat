@@ -26,6 +26,7 @@ export class AccountPaymentsListerRepository {
         payment_status_id: true,
         payment_date: true,
         created_at: true,
+        invoice_url: true,
       },
       with: {
         apb: {
@@ -72,6 +73,7 @@ export class AccountPaymentsListerRepository {
       payment_status_name: payment.aps?.name || '',
       payment_date: payment.payment_date,
       created_at: payment.created_at || '',
+      invoice_url: payment.invoice_url,
     }));
   };
 
