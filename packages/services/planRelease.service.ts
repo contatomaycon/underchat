@@ -532,8 +532,6 @@ export class PlanReleaseService {
   };
 
   private async sendPlanNotification(accountId: string): Promise<void> {
-    console.log('sendPlanNotification', accountId);
-
     try {
       const topic = this.kafkaServiceQueueService.notificationMessage();
       await this.streamProducerService.send(topic, {

@@ -34,7 +34,7 @@ export class NotificationMessageSendConsume {
       `group-underchat-baileys-notification-send-${baileysEnvironment.baileysWorkerId}`
     );
 
-    const topic = this.kafkaBaileysQueueService.workerSendMessage(
+    const topic = this.kafkaBaileysQueueService.workerNotificationMessage(
       baileysEnvironment.baileysWorkerId
     );
 
@@ -114,8 +114,6 @@ export class NotificationMessageSendConsume {
     if (!data.message || !data.message_key?.remote_jid) {
       return;
     }
-
-    console.log('data', data);
 
     await this.baileysMessageTextService.sendText(
       data.message_key.remote_jid,
