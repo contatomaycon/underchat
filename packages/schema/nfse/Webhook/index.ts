@@ -1,8 +1,8 @@
 import { Type } from '@sinclair/typebox';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { asaasInvoiceWebhookRequestSchema } from './request.schema';
+import { asaasNfseWebhookRequestSchema } from './request.schema';
 
-export const asaasInvoiceWebhookSchema = {
+export const asaasNfseWebhookSchema = {
   description: 'Webhook para receber eventos de notas fiscais do Asaas',
   tags: [ETagSwagger.webhook],
   produces: ['application/json'],
@@ -11,7 +11,7 @@ export const asaasInvoiceWebhookSchema = {
       description: 'Token de autenticação do webhook Asaas',
     }),
   }),
-  body: asaasInvoiceWebhookRequestSchema,
+  body: asaasNfseWebhookRequestSchema,
   response: {
     200: Type.Object(
       {
@@ -46,3 +46,4 @@ export const asaasInvoiceWebhookSchema = {
     ),
   },
 };
+

@@ -2,12 +2,12 @@ import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { InvoiceWebhookUseCase } from '@core/useCases/Webhook/InvoiceWebhook.useCase';
-import { AsaasInvoiceWebhookRequest } from '@core/schema/invoice/Webhook/request.schema';
+import { NfseWebhookUseCase } from '@core/useCases/Webhook/NfseWebhook.useCase';
+import { AsaasNfseWebhookRequest } from '@core/schema/nfse/Webhook/request.schema';
 import { asaasEnvironment } from '@core/config/environments';
 
-export const invoiceWebhook = async (
-  request: FastifyRequest<{ Body: AsaasInvoiceWebhookRequest }>,
+export const nfseWebhook = async (
+  request: FastifyRequest<{ Body: AsaasNfseWebhookRequest }>,
   reply: FastifyReply
 ) => {
   const receivedToken = request.headers['asaas-access-token'] as string;
@@ -21,10 +21,10 @@ export const invoiceWebhook = async (
     });
   }
 
-  const invoiceWebhookUseCase = container.resolve(InvoiceWebhookUseCase);
+  const nfseWebhookUseCase = container.resolve(NfseWebhookUseCase);
 
   try {
-    await invoiceWebhookUseCase.execute(request.body);
+    await nfseWebhookUseCase.execute(request.body);
 
     return sendResponse(reply, {
       message: 'Webhook de nota fiscal recebido com sucesso',

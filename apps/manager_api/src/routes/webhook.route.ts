@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import WebhookController from '@/controllers/Webhook';
 import { asaasPaymentWebhookSchema } from '@core/schema/payment/Webhook';
-import { asaasInvoiceWebhookSchema } from '@core/schema/invoice/Webhook';
+import { asaasNfseWebhookSchema } from '@core/schema/nfse/Webhook';
 
 export default function webhookRoutes(server: FastifyInstance) {
   const webhookController = container.resolve(WebhookController);
@@ -13,7 +13,7 @@ export default function webhookRoutes(server: FastifyInstance) {
   });
 
   server.post('/webhook/nfse', {
-    schema: asaasInvoiceWebhookSchema,
-    handler: webhookController.invoiceWebhook,
+    schema: asaasNfseWebhookSchema,
+    handler: webhookController.nfseWebhook,
   });
 }

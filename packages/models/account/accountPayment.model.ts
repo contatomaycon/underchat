@@ -16,6 +16,7 @@ import {
   paymentStatus,
   billingPeriod,
   accountPaymentCrossSell,
+  accountPaymentNfSe,
 } from '@core/models';
 
 export const accountPayment = pgTable('account_payment', {
@@ -92,6 +93,7 @@ export const accountPaymentRelations = relations(
       fields: [accountPayment.billing_period_id],
       references: [billingPeriod.billing_period_id],
     }),
-    apcs: many(accountPaymentCrossSell),
+    apc: many(accountPaymentCrossSell),
+    apn: many(accountPaymentNfSe),
   })
 );

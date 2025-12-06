@@ -48,7 +48,7 @@ export class AccountPaymentsListerRepository {
             name: true,
           },
         },
-        apcs: {
+        apc: {
           columns: {
             account_payment_cross_sell_id: true,
             plan_cross_sell_id: true,
@@ -56,7 +56,7 @@ export class AccountPaymentsListerRepository {
             value: true,
           },
           with: {
-            apcs: {
+            apc: {
               columns: {
                 plan_cross_sell_id: true,
               },
@@ -105,10 +105,10 @@ export class AccountPaymentsListerRepository {
       created_at: payment.created_at || '',
       invoice_url: payment.invoice_url,
       cross_sells:
-        payment.apcs?.map((crossSell) => ({
+        payment.apc?.map((crossSell) => ({
           account_payment_cross_sell_id:
             crossSell.account_payment_cross_sell_id,
-          name: crossSell.apcs?.ppt?.ppd?.name || '',
+          name: crossSell.apc?.ppt?.ppd?.name || '',
           quantity: crossSell.quantity,
           value: crossSell.value,
         })) || [],
