@@ -74,7 +74,9 @@ export class WorkerCreatorUseCase {
     isAdministrator: boolean,
     input: CreateWorkerRequest
   ): Promise<boolean> {
-    await this.validate(t, accountId);
+    if (!isAdministrator) {
+      await this.validate(t, accountId);
+    }
 
     const viewWorkerServer =
       await this.workerService.viewWorkerServer(accountId);
