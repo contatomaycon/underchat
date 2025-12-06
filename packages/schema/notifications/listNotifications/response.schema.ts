@@ -3,6 +3,7 @@ import { Static, Type } from '@sinclair/typebox';
 const workerSchema = Type.Object({
   worker_id: Type.String({ format: 'uuid' }),
   name: Type.Union([Type.String(), Type.Null()]),
+  message: Type.Union([Type.String(), Type.Null()]),
 });
 
 export const listNotificationsResponseSchema = Type.Object({

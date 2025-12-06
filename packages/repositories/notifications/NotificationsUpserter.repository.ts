@@ -36,29 +36,35 @@ export class NotificationsUpserterRepository {
       );
 
       const twoFactorNotification =
-        input.two_factor_notification !== undefined
+        input.two_factor_notification !== undefined ||
+        input.two_factor_message !== undefined
           ? await this.upsertNotificationByType(
               tx,
               twoFactorTypeId,
-              input.two_factor_notification
+              input.two_factor_notification,
+              input.two_factor_message
             )
           : await this.findNotificationByType(tx, twoFactorTypeId);
 
       const planNotification =
-        input.plan_notification !== undefined
+        input.plan_notification !== undefined ||
+        input.plan_message !== undefined
           ? await this.upsertNotificationByType(
               tx,
               planTypeId,
-              input.plan_notification
+              input.plan_notification,
+              input.plan_message
             )
           : await this.findNotificationByType(tx, planTypeId);
 
       const planExpirationNotification =
-        input.plan_expiration_reminder !== undefined
+        input.plan_expiration_reminder !== undefined ||
+        input.plan_expiration_message !== undefined
           ? await this.upsertNotificationByType(
               tx,
               planExpirationTypeId,
-              input.plan_expiration_reminder
+              input.plan_expiration_reminder,
+              input.plan_expiration_message
             )
           : await this.findNotificationByType(tx, planExpirationTypeId);
 
@@ -74,18 +80,21 @@ export class NotificationsUpserterRepository {
           ? {
               worker_id: twoFactorNotification.nwr.worker_id,
               name: twoFactorNotification.nwr.name,
+              message: twoFactorNotification.message || null,
             }
           : null,
         plan_notification: planNotification?.nwr
           ? {
               worker_id: planNotification.nwr.worker_id,
               name: planNotification.nwr.name,
+              message: planNotification.message || null,
             }
           : null,
         plan_expiration_reminder: planExpirationNotification?.nwr
           ? {
               worker_id: planExpirationNotification.nwr.worker_id,
               name: planExpirationNotification.nwr.name,
+              message: planExpirationNotification.message || null,
             }
           : null,
         created_at: twoFactorNotification?.created_at || null,
@@ -143,6 +152,7 @@ export class NotificationsUpserterRepository {
       },
       columns: {
         notification_id: true,
+        message: true,
         created_at: true,
         updated_at: true,
       },
@@ -156,7 +166,8 @@ export class NotificationsUpserterRepository {
       ExtractTablesWithRelations<typeof schema>
     >,
     notificationTypeId: string,
-    workerId: string | null
+    workerId: string | null | undefined,
+    message: string | null | undefined
   ) {
     const existing = await this.findNotificationByType(tx, notificationTypeId);
 
@@ -170,12 +181,25 @@ export class NotificationsUpserterRepository {
         return null;
       }
 
+      const updateData: {
+        worker_id?: string;
+        message?: string | null;
+        updated_at: string;
+      } = {
+        updated_at: new Date().toISOString(),
+      };
+
+      if (workerId !== undefined) {
+        updateData.worker_id = workerId;
+      }
+
+      if (message !== undefined) {
+        updateData.message = message;
+      }
+
       await tx
         .update(notifications)
-        .set({
-          worker_id: workerId,
-          updated_at: new Date().toISOString(),
-        })
+        .set(updateData)
         .where(eq(notifications.notification_id, existing.notification_id))
         .execute();
 
@@ -191,13 +215,14 @@ export class NotificationsUpserterRepository {
         },
         columns: {
           notification_id: true,
+          message: true,
           created_at: true,
           updated_at: true,
         },
       });
     }
 
-    if (workerId === null) {
+    if (workerId === null || workerId === undefined) {
       return null;
     }
 
@@ -209,6 +234,7 @@ export class NotificationsUpserterRepository {
         notification_id: notificationId,
         notification_type_id: notificationTypeId,
         worker_id: workerId,
+        message: message || null,
       })
       .execute();
 
@@ -224,6 +250,7 @@ export class NotificationsUpserterRepository {
       },
       columns: {
         notification_id: true,
+        message: true,
         created_at: true,
         updated_at: true,
       },

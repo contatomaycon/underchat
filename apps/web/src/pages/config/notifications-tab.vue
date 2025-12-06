@@ -20,6 +20,7 @@ const selectedNotificationType = ref<
   'two_factor' | 'plan' | 'plan_expiration' | null
 >(null);
 const selectedWorkerId = ref<string | null>(null);
+const notificationMessage = ref<string>('');
 const isSaving = ref(false);
 
 const isTwoFactorActive = computed(() => {
@@ -57,6 +58,10 @@ const planExpirationWorkerName = computed(() => {
 
 const hasWorkers = computed(() => workers.value.length > 0);
 
+const formatParameter = (param: string) => {
+  return `{{${param}}}`;
+};
+
 const loadNotifications = async () => {
   loading.value = true;
   const result = await settingsStore.getNotifications();
@@ -78,16 +83,23 @@ const openWorkerModal = async (
 ) => {
   selectedNotificationType.value = type;
   selectedWorkerId.value = null;
+  notificationMessage.value = '';
 
   if (type === 'two_factor') {
     selectedWorkerId.value =
       notifications.value?.two_factor_notification?.worker_id || null;
+    notificationMessage.value =
+      notifications.value?.two_factor_notification?.message || '';
   } else if (type === 'plan') {
     selectedWorkerId.value =
       notifications.value?.plan_notification?.worker_id || null;
+    notificationMessage.value =
+      notifications.value?.plan_notification?.message || '';
   } else if (type === 'plan_expiration') {
     selectedWorkerId.value =
       notifications.value?.plan_expiration_reminder?.worker_id || null;
+    notificationMessage.value =
+      notifications.value?.plan_expiration_reminder?.message || '';
   }
 
   await loadWorkers();
@@ -106,6 +118,7 @@ const closeWorkerModal = () => {
   isWorkerModalOpen.value = false;
   selectedNotificationType.value = null;
   selectedWorkerId.value = null;
+  notificationMessage.value = '';
 };
 
 const saveNotification = async () => {
@@ -118,10 +131,13 @@ const saveNotification = async () => {
 
     if (selectedNotificationType.value === 'two_factor') {
       updateData.two_factor_notification = selectedWorkerId.value;
+      updateData.two_factor_message = notificationMessage.value || null;
     } else if (selectedNotificationType.value === 'plan') {
       updateData.plan_notification = selectedWorkerId.value;
+      updateData.plan_message = notificationMessage.value || null;
     } else if (selectedNotificationType.value === 'plan_expiration') {
       updateData.plan_expiration_reminder = selectedWorkerId.value;
+      updateData.plan_expiration_message = notificationMessage.value || null;
     }
 
     const result = await settingsStore.updateNotifications(updateData);
@@ -395,6 +411,59 @@ onMounted(() => {
                 </VListItem>
               </template>
             </VAutocomplete>
+
+            <VTextarea
+              v-model="notificationMessage"
+              :label="$t('message')"
+              variant="outlined"
+              rows="4"
+              class="mt-4"
+              :placeholder="$t('notification_message_placeholder')"
+            />
+
+            <VCard
+              v-if="selectedNotificationType"
+              variant="outlined"
+              color="info"
+              class="mt-4"
+            >
+              <VCardText class="pa-4">
+                <div class="text-body-2 font-weight-medium mb-2">
+                  {{ $t('allowed_parameters') }}:
+                </div>
+                <div
+                  v-if="selectedNotificationType === 'two_factor'"
+                  class="text-body-2"
+                >
+                  <div>• {{ $t('code') }}: {{ formatParameter('code') }}</div>
+                  <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
+                </div>
+                <div
+                  v-else-if="selectedNotificationType === 'plan'"
+                  class="text-body-2"
+                >
+                  <div>• {{ $t('plan') }}: {{ formatParameter('plan') }}</div>
+                  <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
+                  <div>
+                    • {{ $t('expiration_date') }}:
+                    {{ formatParameter('expiration_date') }}
+                  </div>
+                  <div>• {{ $t('value') }}: {{ formatParameter('value') }}</div>
+                </div>
+                <div
+                  v-else-if="selectedNotificationType === 'plan_expiration'"
+                  class="text-body-2"
+                >
+                  <div>• {{ $t('plan') }}: {{ formatParameter('plan') }}</div>
+                  <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
+                  <div>
+                    • {{ $t('expiration_date') }}:
+                    {{ formatParameter('expiration_date') }}
+                  </div>
+                  <div>• {{ $t('value') }}: {{ formatParameter('value') }}</div>
+                </div>
+              </VCardText>
+            </VCard>
           </template>
         </VCardText>
 

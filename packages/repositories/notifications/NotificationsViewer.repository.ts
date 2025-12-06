@@ -41,18 +41,21 @@ export class NotificationsViewerRepository {
         ? {
             worker_id: twoFactorNotification.nwr.worker_id,
             name: twoFactorNotification.nwr.name,
+            message: twoFactorNotification.message || null,
           }
         : null,
       plan_notification: planNotification?.nwr
         ? {
             worker_id: planNotification.nwr.worker_id,
             name: planNotification.nwr.name,
+            message: planNotification.message || null,
           }
         : null,
       plan_expiration_reminder: planExpirationNotification?.nwr
         ? {
             worker_id: planExpirationNotification.nwr.worker_id,
             name: planExpirationNotification.nwr.name,
+            message: planExpirationNotification.message || null,
           }
         : null,
       created_at: twoFactorNotification?.created_at || null,
@@ -95,6 +98,7 @@ export class NotificationsViewerRepository {
       },
       columns: {
         notification_id: true,
+        message: true,
         created_at: true,
         updated_at: true,
       },
