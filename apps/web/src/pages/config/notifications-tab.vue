@@ -8,6 +8,7 @@ import { ListNotificationsResponse } from '@core/schema/notifications/listNotifi
 import { UpdateNotificationsRequest } from '@core/schema/notifications/updateNotifications/request.schema';
 import { ListWorkersResponse } from '@core/schema/notifications/listWorkers/response.schema';
 import TablePagination from '@/@webcore/components/TablePagination.vue';
+import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 
 const { t } = useI18n();
 const settingsStore = useSettingsStore();
@@ -247,6 +248,30 @@ const formatDate = (date: string | null): string => {
     hour: '2-digit',
     minute: '2-digit',
   });
+};
+
+const formatPhone = (phone: string | null): string => {
+  if (!phone) return '-';
+  
+  // Tenta formatar com formatPhoneBR primeiro (para números com DDI 55)
+  const formattedBR = formatPhoneBR(phone);
+  if (formattedBR !== phone.replaceAll(/\D/g, '')) {
+    return formattedBR;
+  }
+  
+  // Se não formatou, formata como número brasileiro sem DDI
+  const numbers = phone.replaceAll(/\D/g, '').slice(0, 11);
+  
+  if (numbers.length <= 2) {
+    return numbers;
+  }
+  if (numbers.length <= 6) {
+    return `(${numbers.slice(0, 2)}) ${numbers.slice(2)}`;
+  }
+  if (numbers.length <= 10) {
+    return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 6)}-${numbers.slice(6)}`;
+  }
+  return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`;
 };
 
 const getNotificationTypeLabel = (typeName: string): string => {
@@ -574,7 +599,7 @@ onMounted(async () => {
               </template>
 
               <template #item.phone="{ item }">
-                {{ item.phone || '-' }}
+                {{ formatPhone(item.phone) }}
               </template>
 
               <template #item.date="{ item }">
