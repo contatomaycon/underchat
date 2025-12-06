@@ -2,12 +2,12 @@ import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { PaymentWebhookUseCase } from '@core/useCases/Webhook/PaymentWebhook.useCase';
-import { AsaasPaymentWebhookRequest } from '@core/schema/payment/Webhook/request.schema';
+import { InvoiceWebhookUseCase } from '@core/useCases/Webhook/InvoiceWebhook.useCase';
+import { AsaasInvoiceWebhookRequest } from '@core/schema/payment/Webhook/request.schema';
 import { asaasEnvironment } from '@core/config/environments';
 
-export const webhook = async (
-  request: FastifyRequest<{ Body: AsaasPaymentWebhookRequest }>,
+export const invoiceWebhook = async (
+  request: FastifyRequest<{ Body: AsaasInvoiceWebhookRequest }>,
   reply: FastifyReply
 ) => {
   const receivedToken = request.headers['asaas-access-token'] as string;
@@ -21,10 +21,10 @@ export const webhook = async (
     });
   }
 
-  const paymentWebhookUseCase = container.resolve(PaymentWebhookUseCase);
+  const invoiceWebhookUseCase = container.resolve(InvoiceWebhookUseCase);
 
   try {
-    await paymentWebhookUseCase.execute(request.body);
+    await invoiceWebhookUseCase.execute(request.body);
 
     return sendResponse(reply, {
       message: 'Webhook recebido com sucesso',

@@ -1,21 +1,21 @@
 import { singleton, inject } from 'tsyringe';
 import { Kafka, Consumer } from 'kafkajs';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
-import { AsaasPaymentWebhookRequest } from '@core/schema/payment/Webhook/request.schema';
+import { AsaasNfseWebhookRequest } from '@core/schema/nfse/Webhook/request.schema';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { FastifyInstance } from 'fastify';
-import { PlanReleaseService } from '@core/services/planRelease.service';
+import { NfseWebhookProcessorService } from '@core/services/nfse/NfseWebhookProcessor.service';
 
 @singleton()
-export class AsaasPaymentWebhookConsume {
+export class AsaasNfseWebhookConsume {
   private consumer: Consumer | null = null;
 
   constructor(
     @inject('Kafka') private readonly kafka: Kafka,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
-    private readonly planReleaseService: PlanReleaseService
+    private readonly nfseWebhookProcessorService: NfseWebhookProcessorService
   ) {}
 
   private get consumerOrThrow(): Consumer {
@@ -29,10 +29,10 @@ export class AsaasPaymentWebhookConsume {
 
     this.consumer = createConsumer(
       this.kafka,
-      'group-underchat-asaas-payment-webhook'
+      'group-underchat-asaas-nfse-webhook'
     );
 
-    const topic = this.kafkaServiceQueueService.asaasPaymentWebhook();
+    const topic = this.kafkaServiceQueueService.asaasNfseWebhook();
 
     await ensureKafkaTopic(this.kafka, topic);
     await this.consumer.connect();
@@ -56,7 +56,7 @@ export class AsaasPaymentWebhookConsume {
         } catch (error) {
           server.log.error(
             error,
-            `Error processing webhook event: ${data.event}`
+            `Error processing nfse webhook event: ${data.event}`
           );
         } finally {
           stop();
@@ -91,62 +91,12 @@ export class AsaasPaymentWebhookConsume {
   }
 
   private async handleWebhookEvent(
-    data: AsaasPaymentWebhookRequest
+    data: AsaasNfseWebhookRequest
   ): Promise<void> {
-    switch (data.event) {
-      case 'PAYMENT_CREATED':
-        await this.handlePaymentCreated(data);
-        break;
-      case 'PAYMENT_RECEIVED':
-        await this.handlePaymentReceived(data);
-        break;
-      case 'PAYMENT_CONFIRMED':
-        await this.handlePaymentConfirmed(data);
-        break;
-      case 'PAYMENT_OVERDUE':
-        await this.handlePaymentOverdue(data);
-        break;
-      case 'PAYMENT_REFUNDED':
-        await this.handlePaymentRefunded(data);
-        break;
-      default:
-        throw new Error(`Unhandled event type: ${data.event}`);
-    }
+    await this.nfseWebhookProcessorService.processWebhookEvent(data);
   }
 
-  private async handlePaymentCreated(
-    data: AsaasPaymentWebhookRequest
-  ): Promise<void> {
-    await this.planReleaseService.processPaymentWebhook(data);
-  }
-
-  private async handlePaymentReceived(
-    data: AsaasPaymentWebhookRequest
-  ): Promise<void> {
-    await this.planReleaseService.processPaymentWebhook(data);
-  }
-
-  private async handlePaymentConfirmed(
-    data: AsaasPaymentWebhookRequest
-  ): Promise<void> {
-    await this.planReleaseService.processPaymentWebhook(data);
-  }
-
-  private async handlePaymentOverdue(
-    data: AsaasPaymentWebhookRequest
-  ): Promise<void> {
-    await this.planReleaseService.processPaymentWebhook(data);
-  }
-
-  private async handlePaymentRefunded(
-    data: AsaasPaymentWebhookRequest
-  ): Promise<void> {
-    await this.planReleaseService.processPaymentWebhook(data);
-  }
-
-  private parseMessage(
-    value: Buffer | null
-  ): AsaasPaymentWebhookRequest | null {
+  private parseMessage(value: Buffer | null): AsaasNfseWebhookRequest | null {
     if (!value) {
       return null;
     }
@@ -157,7 +107,7 @@ export class AsaasPaymentWebhookConsume {
     }
 
     try {
-      const parsed = JSON.parse(raw) as AsaasPaymentWebhookRequest;
+      const parsed = JSON.parse(raw) as AsaasNfseWebhookRequest;
       return parsed ?? null;
     } catch {
       return null;

@@ -2,7 +2,7 @@ import { injectable } from 'tsyringe';
 import { PlanReleaseRepository } from '@core/repositories/plan/PlanRelease.repository';
 import { EPaymentStatus } from '@core/common/enums/EPaymentStatus';
 import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
-import { AsaasPaymentWebhookRequest } from '@core/schema/payment/Webhook/request.schema';
+import { AsaasInvoiceWebhookRequest } from '@core/schema/payment/Webhook/request.schema';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { paymentAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 
@@ -286,7 +286,7 @@ export class PlanReleaseService {
   };
 
   processPaymentWebhook = async (
-    data: AsaasPaymentWebhookRequest
+    data: AsaasInvoiceWebhookRequest
   ): Promise<void> => {
     const paymentStatusId = this.mapAsaasStatusToPaymentStatus(
       data.payment.status
