@@ -12,6 +12,10 @@ import { viewAdditionalInfo } from './methods/viewAdditionalInfo';
 import { changePassword } from './methods/changePassword';
 import { viewCurrentPlanInvoice } from './methods/viewCurrentPlanInvoice';
 import { listAccountPayments } from './methods/listAccountPayments';
+import { listUserCards } from './methods/listUserCards';
+import { deleteUserCard } from './methods/deleteUserCard';
+import { updatePlanRecurring } from './methods/updatePlanRecurring';
+import { listAccountAddons } from './methods/listAccountAddons';
 
 @injectable()
 class AccountSettingsController {
@@ -28,6 +32,10 @@ class AccountSettingsController {
   public changePassword = changePassword;
   public viewCurrentPlanInvoice = viewCurrentPlanInvoice;
   public listAccountPayments = listAccountPayments;
+  public listUserCards = listUserCards;
+  public deleteUserCard = deleteUserCard;
+  public updatePlanRecurring = updatePlanRecurring;
+  public listAccountAddons = listAccountAddons;
 }
 
 export default AccountSettingsController;

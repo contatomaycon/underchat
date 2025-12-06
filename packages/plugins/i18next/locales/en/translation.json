@@ -532,5 +532,11 @@
   "payment_success_message": "Your payment has been confirmed successfully. You will be redirected shortly.",
   "boleto_payment_creation_failed": "Failed to create boleto payment",
   "cross_sell_available_list_successfully": "Available cross sells listed successfully!",
-  "account_payments_listed_successfully": "Invoices listed successfully!"
+  "account_payments_listed_successfully": "Invoices listed successfully!",
+  "cards_listed_successfully": "Cards listed successfully!",
+  "card_deleted_successfully": "Card removed successfully!",
+  "card_deleted_error": "Error removing card",
+  "card_not_found": "Card not found",
+  "addons_listed_successfully": "Addons listed successfully!",
+  "plan_recurring_updated_successfully": "Plan recurring payment updated successfully!"
 }

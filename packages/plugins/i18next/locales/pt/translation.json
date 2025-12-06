@@ -532,5 +532,11 @@
   "payment_success_message": "Seu pagamento foi confirmado com sucesso. Você será redirecionado em instantes.",
   "boleto_payment_creation_failed": "Falha ao criar pagamento via boleto",
   "cross_sell_available_list_successfully": "Vendas cruzadas disponíveis listadas com sucesso!",
-  "account_payments_listed_successfully": "Faturas listadas com sucesso!"
+  "account_payments_listed_successfully": "Faturas listadas com sucesso!",
+  "cards_listed_successfully": "Cartões listados com sucesso!",
+  "card_deleted_successfully": "Cartão removido com sucesso!",
+  "card_deleted_error": "Erro ao remover cartão",
+  "card_not_found": "Cartão não encontrado",
+  "addons_listed_successfully": "Addons listados com sucesso!",
+  "plan_recurring_updated_successfully": "Recorrência do plano atualizada com sucesso!"
 }

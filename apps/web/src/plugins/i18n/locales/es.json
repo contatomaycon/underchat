@@ -1551,5 +1551,16 @@
     "payment_billing_type_debit_card": "Tarjeta de Débito",
     "payment_billing_type_pix": "PIX",
     "payment_billing_type_transfer": "Transferencia",
-    "payment_billing_type_deposit": "Depósito"
+    "payment_billing_type_deposit": "Depósito",
+    "cards": "Tarjetas",
+    "cards_listed_successfully": "¡Tarjetas listadas con éxito!",
+    "card_deleted_successfully": "¡Tarjeta eliminada con éxito!",
+    "card_deleted_error": "Error al eliminar la tarjeta",
+    "card_not_found": "Tarjeta no encontrada",
+    "no_cards_found": "No se encontraron tarjetas",
+    "delete_card": "Eliminar Tarjeta",
+    "delete_card_confirmation": "¿Está seguro de que desea eliminar esta tarjeta?",
+    "addons_listed_successfully": "¡Complementos listados con éxito!",
+    "no_addons_found": "No se encontraron complementos",
+    "plan_recurring_updated_successfully": "¡Pago recurrente del plan actualizado con éxito!"
 }

@@ -3,7 +3,7 @@ import { userCard } from '@core/models';
 import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.schema';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 
 @injectable()
 export class UserCardsListerRepository {
@@ -18,7 +18,8 @@ export class UserCardsListerRepository {
     const result = await this.db.query.userCard.findFirst({
       where: and(
         eq(userCard.user_card_id, userCardId),
-        eq(userCard.user_id, userId)
+        eq(userCard.user_id, userId),
+        isNull(userCard.deleted_at)
       ),
       columns: {
         user_card_id: true,
@@ -34,7 +35,11 @@ export class UserCardsListerRepository {
     token: string
   ): Promise<{ user_card_id: string; token: string } | null> => {
     const result = await this.db.query.userCard.findFirst({
-      where: and(eq(userCard.user_id, userId), eq(userCard.token, token)),
+      where: and(
+        eq(userCard.user_id, userId),
+        eq(userCard.token, token),
+        isNull(userCard.deleted_at)
+      ),
       columns: {
         user_card_id: true,
         token: true,
@@ -48,7 +53,7 @@ export class UserCardsListerRepository {
     const result = await this.db
       .select()
       .from(userCard)
-      .where(eq(userCard.user_id, userId))
+      .where(and(eq(userCard.user_id, userId), isNull(userCard.deleted_at)))
       .execute();
 
     return result.length;
@@ -65,7 +70,7 @@ export class UserCardsListerRepository {
         created_at: userCard.created_at,
       })
       .from(userCard)
-      .where(eq(userCard.user_id, userId))
+      .where(and(eq(userCard.user_id, userId), isNull(userCard.deleted_at)))
       .execute();
 
     if (!result.length) {

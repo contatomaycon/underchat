@@ -4,6 +4,8 @@ import { useI18n } from 'vue-i18n';
 import { useAccountSettingsStore } from '@/@webcore/stores/accountSettings';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { ViewCurrentPlanInvoiceResponse } from '@core/schema/accountSettings/viewCurrentPlanInvoice/response.schema';
+import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.schema';
+import { ListAccountAddonsResponse } from '@core/schema/accountSettings/listAccountAddons/response.schema';
 
 const { t, locale } = useI18n();
 const accountSettingsStore = useAccountSettingsStore();
@@ -11,6 +13,12 @@ useSnackbarCleanup(accountSettingsStore);
 
 const loading = ref(false);
 const planInvoice = ref<ViewCurrentPlanInvoiceResponse | null>(null);
+const cardsLoading = ref(false);
+const addonsLoading = ref(false);
+const userCards = ref<ListUserCardResponse[]>([]);
+const accountAddons = ref<ListAccountAddonsResponse[]>([]);
+const cardToDelete = ref<string | null>(null);
+const isDeleteDialogOpen = ref(false);
 
 const getCurrencyConfig = () => {
   const localeMap: Record<string, { locale: string; currency: string }> = {
@@ -171,8 +179,56 @@ const loadPlanInvoice = async () => {
   loading.value = false;
 };
 
+const loadUserCards = async () => {
+  cardsLoading.value = true;
+  const result = await accountSettingsStore.listUserCards();
+  if (result) {
+    userCards.value = result;
+  }
+  cardsLoading.value = false;
+};
+
+const loadAccountAddons = async () => {
+  addonsLoading.value = true;
+  const result = await accountSettingsStore.listAccountAddons();
+  if (result) {
+    accountAddons.value = result;
+  }
+  addonsLoading.value = false;
+};
+
+const deleteCard = (cardId: string) => {
+  cardToDelete.value = cardId;
+  isDeleteDialogOpen.value = true;
+};
+
+const confirmDeleteCard = async () => {
+  if (!cardToDelete.value) return;
+
+  await accountSettingsStore.deleteUserCard(cardToDelete.value);
+  isDeleteDialogOpen.value = false;
+  cardToDelete.value = null;
+  await loadUserCards();
+};
+
+const getAddonProgressPercentage = (addon: ListAccountAddonsResponse) => {
+  if (addon.quantity_total === 0) return 0;
+  return Math.min(
+    Math.max((addon.quantity_used / addon.quantity_total) * 100, 0),
+    100
+  );
+};
+
+const getPlanProgressPercentage = (addon: ListAccountAddonsResponse) => {
+  if (addon.quantity_total === 0) return 0;
+  const planUsed = Math.min(addon.quantity_used, addon.quantity_plan);
+  return Math.min(Math.max((planUsed / addon.quantity_total) * 100, 0), 100);
+};
+
 onMounted(() => {
   loadPlanInvoice();
+  loadUserCards();
+  loadAccountAddons();
 });
 </script>
 
@@ -291,6 +347,81 @@ onMounted(() => {
                 {{ $t('cancel_subscription') }}
               </VBtn>
             </div>
+
+            <VDivider class="my-4" />
+
+            <div class="mb-4">
+              <div class="d-flex align-center justify-space-between mb-3">
+                <span class="text-h6">{{ $t('cards') }}</span>
+              </div>
+
+              <VProgressCircular
+                v-if="cardsLoading"
+                indeterminate
+                color="primary"
+                size="24"
+                class="mb-2"
+              />
+
+              <div
+                v-else-if="userCards.length === 0"
+                class="text-body-2 text-medium-emphasis"
+              >
+                {{ $t('no_cards_found') }}
+              </div>
+
+              <div v-else class="d-flex flex-column gap-2">
+                <VCard
+                  v-for="card in userCards"
+                  :key="card.user_card_id"
+                  variant="outlined"
+                  class="pa-3"
+                >
+                  <div class="d-flex align-center justify-space-between">
+                    <div class="d-flex align-center gap-3">
+                      <VIcon
+                        :icon="
+                          card.brand === 'Visa'
+                            ? 'tabler-brand-visa'
+                            : card.brand === 'Mastercard'
+                              ? 'tabler-brand-mastercard'
+                              : 'tabler-credit-card'
+                        "
+                        size="24"
+                      />
+                      <div>
+                        <div class="text-body-2 font-weight-medium">
+                          **** {{ card.last_number }}
+                        </div>
+                        <div class="text-caption text-medium-emphasis">
+                          {{ card.holder_name }}
+                        </div>
+                      </div>
+                      <VChip
+                        v-if="card.default"
+                        color="primary"
+                        size="small"
+                        variant="tonal"
+                      >
+                        {{ $t('default') }}
+                      </VChip>
+                    </div>
+                    <VBtn
+                      icon
+                      variant="text"
+                      size="small"
+                      color="error"
+                      @click="deleteCard(card.user_card_id)"
+                    >
+                      <VIcon icon="tabler-trash" size="20" />
+                      <VTooltip activator="parent" location="top">
+                        {{ $t('delete') }}
+                      </VTooltip>
+                    </VBtn>
+                  </div>
+                </VCard>
+              </div>
+            </div>
           </VCardText>
         </VCard>
       </VCol>
@@ -363,6 +494,62 @@ onMounted(() => {
                 </template>
               </p>
             </div>
+
+            <VDivider class="my-4" />
+
+            <div class="mb-4">
+              <div class="d-flex align-center justify-space-between mb-3">
+                <span class="text-h6">{{ $t('addons') }}</span>
+              </div>
+
+              <VProgressCircular
+                v-if="addonsLoading"
+                indeterminate
+                color="primary"
+                size="24"
+                class="mb-2"
+              />
+
+              <div
+                v-else-if="accountAddons.length === 0"
+                class="text-body-2 text-medium-emphasis"
+              >
+                {{ $t('no_addons_found') }}
+              </div>
+
+              <div v-else class="d-flex flex-column gap-3">
+                <div
+                  v-for="addon in accountAddons"
+                  :key="addon.plan_cross_sell_id"
+                >
+                  <div class="d-flex align-center justify-space-between mb-2">
+                    <span class="text-body-1 font-weight-medium">
+                      {{ addon.name }}
+                    </span>
+                    <span class="text-body-2 text-medium-emphasis">
+                      {{ addon.quantity_used }} / {{ addon.quantity_total }}
+                    </span>
+                  </div>
+                  <div class="addon-progress-container mb-1">
+                    <VProgressLinear
+                      :model-value="getAddonProgressPercentage(addon)"
+                      color="primary"
+                      height="8"
+                      rounded
+                      class="addon-progress-base"
+                    />
+                    <VProgressLinear
+                      v-if="addon.quantity_plan > 0 && addon.quantity_addon > 0"
+                      :model-value="getPlanProgressPercentage(addon)"
+                      color="secondary"
+                      height="8"
+                      rounded
+                      class="addon-progress-plan"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
           </VCardText>
         </VCard>
       </VCol>
@@ -391,6 +578,24 @@ onMounted(() => {
     >
       {{ accountSettingsStore.snackbar.message }}
     </VSnackbar>
+
+    <VDialog v-model="isDeleteDialogOpen" max-width="400">
+      <VCard>
+        <VCardTitle>{{ $t('delete_card') }}</VCardTitle>
+        <VCardText>
+          {{ $t('delete_card_confirmation') }}
+        </VCardText>
+        <VCardActions>
+          <VSpacer />
+          <VBtn variant="text" @click="isDeleteDialogOpen = false">
+            {{ $t('cancel') }}
+          </VBtn>
+          <VBtn color="error" variant="flat" @click="confirmDeleteCard">
+            {{ $t('delete') }}
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
   </div>
 </template>
 
@@ -399,5 +604,23 @@ onMounted(() => {
   background-color: rgb(var(--v-theme-surface)) !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
   border-radius: 8px;
+}
+
+.addon-progress-container {
+  position: relative;
+  width: 100%;
+}
+
+.addon-progress-base {
+  position: relative;
+  z-index: 1;
+}
+
+.addon-progress-plan {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  opacity: 0.8;
 }
 </style>

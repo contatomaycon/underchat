@@ -1551,5 +1551,16 @@
     "payment_billing_type_debit_card": "Debit Card",
     "payment_billing_type_pix": "PIX",
     "payment_billing_type_transfer": "Transfer",
-    "payment_billing_type_deposit": "Deposit"
+    "payment_billing_type_deposit": "Deposit",
+    "cards": "Cards",
+    "cards_listed_successfully": "Cards listed successfully!",
+    "card_deleted_successfully": "Card removed successfully!",
+    "card_deleted_error": "Error removing card",
+    "card_not_found": "Card not found",
+    "no_cards_found": "No cards found",
+    "delete_card": "Remove Card",
+    "delete_card_confirmation": "Are you sure you want to remove this card?",
+    "addons_listed_successfully": "Addons listed successfully!",
+    "no_addons_found": "No addons found",
+    "plan_recurring_updated_successfully": "Plan recurring payment updated successfully!"
 }

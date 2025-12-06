@@ -26,6 +26,11 @@ import {
 } from '@core/schema/accountSettings/listAccountPayments/response.schema';
 import { ListAccountPaymentsRequest } from '@core/schema/accountSettings/listAccountPayments/request.schema';
 import { PagingResponseSchema } from '@core/schema/common/pagingResponseSchema';
+import { ListUserCardsFinalResponse } from '@core/schema/plan/listUserCards/response.schema';
+import {
+  ListAccountAddonsFinalResponse,
+  ListAccountAddonsResponse,
+} from '@core/schema/accountSettings/listAccountAddons/response.schema';
 
 export const useAccountSettingsStore = defineStore('accountSettings', {
   state: () => ({
@@ -44,6 +49,8 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
       count: 0,
       total: 0,
     } as PagingResponseSchema,
+    userCardsList: [] as ListUserCardsFinalResponse,
+    accountAddonsList: [] as ListAccountAddonsResponse[],
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -403,6 +410,96 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
 
         this.accountPaymentsList = data.data.results;
         this.accountPaymentsPagings = data.data.pagings;
+
+        return data.data;
+      } catch {
+        this.loading = false;
+        return null;
+      }
+    },
+    async listUserCards(): Promise<ListUserCardsFinalResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListUserCardsFinalResponse>
+        >('/account-settings/cards');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        this.userCardsList = data.data;
+
+        return data.data;
+      } catch {
+        this.loading = false;
+        return null;
+      }
+    },
+    async deleteUserCard(userCardId: string): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.delete<IApiResponse<null>>(
+          `/account-settings/cards/${userCardId}`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const message =
+            data?.message ?? this.i18n.global.t('card_deleted_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          data.message ?? this.i18n.global.t('card_deleted_success'),
+          EColor.success
+        );
+
+        await this.listUserCards();
+        await this.getCurrentPlanInvoice();
+
+        return true;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t('card_deleted_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return false;
+      }
+    },
+    async listAccountAddons(): Promise<ListAccountAddonsFinalResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListAccountAddonsFinalResponse>
+        >('/account-settings/addons');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        this.accountAddonsList = data.data;
 
         return data.data;
       } catch {
