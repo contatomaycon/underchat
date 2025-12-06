@@ -41,21 +41,21 @@ export class NotificationsViewerRepository {
         ? {
             worker_id: twoFactorNotification.nwr?.worker_id || null,
             name: twoFactorNotification.nwr?.name || null,
-            message: twoFactorNotification.message || null,
+            message: twoFactorNotification.message_whatsapp || null,
           }
         : null,
       plan_notification: planNotification
         ? {
             worker_id: planNotification.nwr?.worker_id || null,
             name: planNotification.nwr?.name || null,
-            message: planNotification.message || null,
+            message: planNotification.message_whatsapp || null,
           }
         : null,
       plan_expiration_reminder: planExpirationNotification
         ? {
             worker_id: planExpirationNotification.nwr?.worker_id || null,
             name: planExpirationNotification.nwr?.name || null,
-            message: planExpirationNotification.message || null,
+            message: planExpirationNotification.message_whatsapp || null,
           }
         : null,
       created_at: twoFactorNotification?.created_at || null,
@@ -98,7 +98,8 @@ export class NotificationsViewerRepository {
       },
       columns: {
         notification_id: true,
-        message: true,
+        message_whatsapp: true,
+        message_email: true,
         created_at: true,
         updated_at: true,
       },

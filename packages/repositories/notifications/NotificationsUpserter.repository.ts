@@ -80,21 +80,21 @@ export class NotificationsUpserterRepository {
           ? {
               worker_id: twoFactorNotification.nwr?.worker_id || null,
               name: twoFactorNotification.nwr?.name || null,
-              message: twoFactorNotification.message || null,
+              message: twoFactorNotification.message_whatsapp || null,
             }
           : null,
         plan_notification: planNotification
           ? {
               worker_id: planNotification.nwr?.worker_id || null,
               name: planNotification.nwr?.name || null,
-              message: planNotification.message || null,
+              message: planNotification.message_whatsapp || null,
             }
           : null,
         plan_expiration_reminder: planExpirationNotification
           ? {
               worker_id: planExpirationNotification.nwr?.worker_id || null,
               name: planExpirationNotification.nwr?.name || null,
-              message: planExpirationNotification.message || null,
+              message: planExpirationNotification.message_whatsapp || null,
             }
           : null,
         created_at: twoFactorNotification?.created_at || null,
@@ -152,9 +152,11 @@ export class NotificationsUpserterRepository {
       },
       columns: {
         notification_id: true,
-        message: true,
+        message_whatsapp: true,
+        message_email: true,
         created_at: true,
         updated_at: true,
+        worker_id: true,
       },
     });
   }
@@ -167,7 +169,7 @@ export class NotificationsUpserterRepository {
     >,
     notificationTypeId: string,
     workerId: string | null | undefined,
-    message: string | null | undefined
+    messageWhatsapp: string | null | undefined
   ) {
     const existing = await this.findNotificationByType(tx, notificationTypeId);
 
@@ -183,7 +185,7 @@ export class NotificationsUpserterRepository {
 
       const updateData: {
         worker_id?: string;
-        message?: string | null;
+        message_whatsapp?: string | null;
         updated_at: string;
       } = {
         updated_at: new Date().toISOString(),
@@ -193,8 +195,8 @@ export class NotificationsUpserterRepository {
         updateData.worker_id = workerId;
       }
 
-      if (message !== undefined) {
-        updateData.message = message;
+      if (messageWhatsapp !== undefined) {
+        updateData.message_whatsapp = messageWhatsapp;
       }
 
       await tx
@@ -215,9 +217,11 @@ export class NotificationsUpserterRepository {
         },
         columns: {
           notification_id: true,
-          message: true,
+          message_whatsapp: true,
+          message_email: true,
           created_at: true,
           updated_at: true,
+          worker_id: true,
         },
       });
     }
@@ -234,7 +238,8 @@ export class NotificationsUpserterRepository {
         notification_id: notificationId,
         notification_type_id: notificationTypeId,
         worker_id: workerId,
-        message: message || null,
+        message_whatsapp: messageWhatsapp || null,
+        message_email: null,
       })
       .execute();
 
@@ -250,9 +255,11 @@ export class NotificationsUpserterRepository {
       },
       columns: {
         notification_id: true,
-        message: true,
+        message_whatsapp: true,
+        message_email: true,
         created_at: true,
         updated_at: true,
+        worker_id: true,
       },
     });
   }

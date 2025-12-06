@@ -103,7 +103,7 @@ export class NotificationMessageService {
         name: notification.nnt?.name || '',
       },
       message: await this.replaceNotificationParameters(
-        notification.message,
+        notification.message_whatsapp,
         notification.nnt?.name || '',
         fullName,
         accountId
