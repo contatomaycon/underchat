@@ -3,7 +3,7 @@ import { userCard } from '@core/models';
 import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.schema';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, desc } from 'drizzle-orm';
 
 @injectable()
 export class UserCardsListerRepository {
@@ -71,6 +71,7 @@ export class UserCardsListerRepository {
       })
       .from(userCard)
       .where(and(eq(userCard.user_id, userId), isNull(userCard.deleted_at)))
+      .orderBy(desc(userCard.default), desc(userCard.created_at))
       .execute();
 
     if (!result.length) {
