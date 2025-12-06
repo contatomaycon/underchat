@@ -255,6 +255,15 @@ const getPlanProductPlanProgressPercentage = (
   return Math.min(Math.max((planUsed / product.quantity_total) * 100, 0), 100);
 };
 
+const getPlanProductAddonProgressPercentage = (
+  product: ListAccountPlanProductsResponse
+) => {
+  if (product.quantity_total === 0) return 0;
+  const planUsed = Math.min(product.quantity_used, product.quantity_plan);
+  const addonUsed = Math.max(0, product.quantity_used - planUsed);
+  return Math.min(Math.max((addonUsed / product.quantity_total) * 100, 0), 100);
+};
+
 onMounted(() => {
   loadPlanInvoice();
   loadUserCards();
@@ -564,21 +573,21 @@ onMounted(() => {
                   <div class="addon-progress-container mb-1">
                     <VProgressLinear
                       :model-value="getPlanProductProgressPercentage(product)"
-                      :color="
-                        product.source === 'plan' ? 'primary' : 'secondary'
-                      "
+                      color="secondary"
                       height="8"
                       rounded
                       class="addon-progress-base"
                     />
                     <VProgressLinear
                       v-if="
-                        product.quantity_plan > 0 && product.quantity_addon > 0
+                        product.quantity_plan > 0 &&
+                        product.quantity_addon > 0 &&
+                        product.quantity_used > 0
                       "
                       :model-value="
                         getPlanProductPlanProgressPercentage(product)
                       "
-                      color="secondary"
+                      color="primary"
                       height="8"
                       rounded
                       class="addon-progress-plan"
