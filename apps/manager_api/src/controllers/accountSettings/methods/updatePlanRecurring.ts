@@ -16,7 +16,9 @@ export const updatePlanRecurring = async (
 
   try {
     await planRecurringUpdaterUseCase.execute(
+      t,
       tokenJwtData.account_id,
+      tokenJwtData.user_id,
       request.body
     );
 

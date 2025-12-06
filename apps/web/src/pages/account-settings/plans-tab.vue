@@ -252,6 +252,20 @@ const setCardAsDefault = async (cardId: string) => {
   await loadUserCards();
 };
 
+const toggleRecurringPayment = async (value: boolean | null) => {
+  if (value === null) return;
+  if (!planInvoice.value) return;
+
+  const previousValue = planInvoice.value.recurring_payment;
+  planInvoice.value.recurring_payment = value;
+
+  const success = await accountSettingsStore.updatePlanRecurring(value);
+
+  if (!success) {
+    planInvoice.value.recurring_payment = previousValue;
+  }
+};
+
 const canDeleteCard = (card: ListUserCardResponse): boolean => {
   if (!planInvoice.value) {
     return true;
@@ -626,15 +640,13 @@ onMounted(() => {
                   <span class="text-body-2 text-medium-emphasis">
                     {{ $t('recurring_payment') }}
                   </span>
-                  <VChip
-                    :color="
-                      planInvoice.recurring_payment ? 'success' : 'default'
-                    "
-                    size="small"
-                    variant="tonal"
-                  >
-                    {{ planInvoice.recurring_payment ? $t('yes') : $t('no') }}
-                  </VChip>
+                  <VSwitch
+                    :model-value="planInvoice.recurring_payment ?? false"
+                    :disabled="loading || cardsLoading"
+                    color="primary"
+                    @update:model-value="toggleRecurringPayment"
+                    hide-details
+                  />
                 </div>
               </div>
 

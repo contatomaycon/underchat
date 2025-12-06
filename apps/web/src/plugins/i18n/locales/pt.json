@@ -1587,5 +1587,6 @@
     "addons_listed_successfully": "Addons listados com sucesso!",
     "no_addons_found": "Nenhum addon encontrado",
     "plan_products": "Produtos do Plano",
-    "no_plan_products_found": "Nenhum produto encontrado"
+    "no_plan_products_found": "Nenhum produto encontrado",
+    "plan_recurring_updated_error": "Erro ao atualizar recorrência do plano"
 }

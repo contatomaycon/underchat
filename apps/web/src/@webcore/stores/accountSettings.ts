@@ -624,5 +624,49 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
         return null;
       }
     },
+    async updatePlanRecurring(recurringPayment: boolean): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<IApiResponse<null>>(
+          '/account-settings/plan/recurring',
+          { recurring_payment: recurringPayment }
+        );
+
+        this.loading = false;
+
+        const responseData = response?.data;
+
+        if (!responseData?.status) {
+          const message =
+            responseData?.message ??
+            this.i18n.global.t('plan_recurring_updated_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          responseData.message ??
+            this.i18n.global.t('plan_recurring_updated_successfully'),
+          EColor.success
+        );
+
+        await this.getCurrentPlanInvoice();
+
+        return true;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t('plan_recurring_updated_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return false;
+      }
+    },
   },
 });

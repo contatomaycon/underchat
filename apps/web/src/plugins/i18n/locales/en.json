@@ -1587,5 +1587,6 @@
     "addons_listed_successfully": "Addons listed successfully!",
     "no_addons_found": "No addons found",
     "plan_products": "Plan Products",
-    "no_plan_products_found": "No products found"
+    "no_plan_products_found": "No products found",
+    "plan_recurring_updated_error": "Error updating plan recurring payment"
 }

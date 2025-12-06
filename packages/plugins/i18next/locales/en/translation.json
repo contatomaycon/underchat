@@ -544,5 +544,8 @@
   "plan_products_listed_successfully": "Plan products listed successfully!",
   "user_customer_not_found": "User customer not found",
   "card_creation_failed": "Failed to create card",
-  "card_created_successfully": "Card added successfully!"
+  "card_created_successfully": "Card added successfully!",
+  "no_plan_found": "No plan found",
+  "no_cards_found": "No cards found",
+  "no_default_card_found": "No default card found"
 }

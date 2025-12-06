@@ -544,5 +544,8 @@
   "plan_products_listed_successfully": "Produtos do plano listados com sucesso!",
   "user_customer_not_found": "Cliente do usuário não encontrado",
   "card_creation_failed": "Falha ao criar cartão",
-  "card_created_successfully": "Cartão adicionado com sucesso!"
+  "card_created_successfully": "Cartão adicionado com sucesso!",
+  "no_plan_found": "Nenhum plano encontrado",
+  "no_cards_found": "Nenhum cartão encontrado",
+  "no_default_card_found": "Nenhum cartão padrão encontrado"
 }
