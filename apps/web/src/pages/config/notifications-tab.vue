@@ -14,7 +14,6 @@ useSnackbarCleanup(settingsStore);
 const loading = ref(false);
 const notifications = ref<ListNotificationsResponse | null>(null);
 const workers = ref<ListWorkersResponse>([]);
-const workerSearchQuery = ref('');
 
 const isWorkerModalOpen = ref(false);
 const selectedNotificationType = ref<
@@ -56,21 +55,7 @@ const planExpirationWorkerName = computed(() => {
   return notifications.value?.plan_expiration_reminder?.name || null;
 });
 
-const filteredWorkers = computed(() => {
-  if (!workerSearchQuery.value) {
-    return workers.value;
-  }
-
-  const query = workerSearchQuery.value.toLowerCase();
-  return workers.value.filter(
-    (worker) =>
-      worker.name.toLowerCase().includes(query) ||
-      (worker.number && worker.number.toLowerCase().includes(query))
-  );
-});
-
 const hasWorkers = computed(() => workers.value.length > 0);
-const hasFilteredWorkers = computed(() => filteredWorkers.value.length > 0);
 
 const loadNotifications = async () => {
   loading.value = true;
@@ -93,7 +78,6 @@ const openWorkerModal = async (
 ) => {
   selectedNotificationType.value = type;
   selectedWorkerId.value = null;
-  workerSearchQuery.value = '';
 
   if (type === 'two_factor') {
     selectedWorkerId.value =
@@ -108,6 +92,14 @@ const openWorkerModal = async (
 
   await loadWorkers();
   isWorkerModalOpen.value = true;
+};
+
+const filterWorkers = (value: string, query: string, item: any) => {
+  const searchQuery = query.toLowerCase();
+  return (
+    item.raw.name.toLowerCase().includes(searchQuery) ||
+    (item.raw.number && item.raw.number.toLowerCase().includes(searchQuery))
+  );
 };
 
 const closeWorkerModal = () => {
@@ -239,7 +231,7 @@ onMounted(() => {
                       v-if="twoFactorWorkerName"
                       class="text-body-2 text-medium-emphasis"
                     >
-                      {{ $t('worker') }}: {{ twoFactorWorkerName }}
+                      {{ $t('channel') }}: {{ twoFactorWorkerName }}
                     </div>
                     <div v-else class="text-body-2 text-medium-emphasis">
                       {{ $t('not_configured') }}
@@ -280,7 +272,7 @@ onMounted(() => {
                       v-if="planWorkerName"
                       class="text-body-2 text-medium-emphasis"
                     >
-                      {{ $t('worker') }}: {{ planWorkerName }}
+                      {{ $t('channel') }}: {{ planWorkerName }}
                     </div>
                     <div v-else class="text-body-2 text-medium-emphasis">
                       {{ $t('not_configured') }}
@@ -325,7 +317,7 @@ onMounted(() => {
                       v-if="planExpirationWorkerName"
                       class="text-body-2 text-medium-emphasis"
                     >
-                      {{ $t('worker') }}: {{ planExpirationWorkerName }}
+                      {{ $t('channel') }}: {{ planExpirationWorkerName }}
                     </div>
                     <div v-else class="text-body-2 text-medium-emphasis">
                       {{ $t('not_configured') }}
@@ -372,27 +364,17 @@ onMounted(() => {
           </div>
 
           <template v-else>
-            <AppTextField
-              v-model="workerSearchQuery"
-              :placeholder="$t('search') + '...'"
-              prepend-inner-icon="tabler-search"
-              single-line
-              hide-details
-              dense
-              outlined
-              class="mb-4"
-            />
-
-            <VSelect
+            <VAutocomplete
               v-model="selectedWorkerId"
-              :items="filteredWorkers"
+              :items="workers"
               item-title="name"
               item-value="id"
-              :placeholder="$t('select_worker')"
+              :placeholder="$t('select_channel')"
               variant="outlined"
               clearable
-              :label="$t('worker')"
-              :disabled="!hasFilteredWorkers"
+              :label="$t('channel')"
+              :filter="filterWorkers"
+              prepend-inner-icon="tabler-search"
             >
               <template #no-data>
                 <div class="text-center py-4">
@@ -412,7 +394,7 @@ onMounted(() => {
                   </VListItemSubtitle>
                 </VListItem>
               </template>
-            </VSelect>
+            </VAutocomplete>
           </template>
         </VCardText>
 
