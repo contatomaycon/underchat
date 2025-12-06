@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { PlanReleaseRepository } from '@core/repositories/plan/PlanRelease.repository';
 import { EPaymentStatus } from '@core/common/enums/EPaymentStatus';
 import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
@@ -11,16 +11,21 @@ import { AccountPaymentNfSeUpserterRepository } from '@core/repositories/account
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { ENotificationTypeId } from '@core/common/enums/ENotificationType';
+import Redis from 'ioredis';
 
 @injectable()
 export class PlanReleaseService {
+  private readonly notificationKeyPrefix = 'notification:sent:';
+  private readonly notificationTtlSeconds = 60;
+
   constructor(
     private readonly planReleaseRepository: PlanReleaseRepository,
     private readonly centrifugoService: CentrifugoService,
     private readonly asaasService: AsaasService,
     private readonly accountPaymentNfSeUpserterRepository: AccountPaymentNfSeUpserterRepository,
     private readonly streamProducerService: StreamProducerService,
-    private readonly kafkaServiceQueueService: KafkaServiceQueueService
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   private readonly mapAsaasStatusToPaymentStatus = (
@@ -159,6 +164,7 @@ export class PlanReleaseService {
     billingPeriodId: string | null;
     value: string;
     paymentAsaasId: string;
+    shouldSendNotification?: boolean;
   }): Promise<void> => {
     const currentPlanAccount =
       await this.planReleaseRepository.findPlanAccountByAccountId(
@@ -194,7 +200,9 @@ export class PlanReleaseService {
       data.paymentAsaasId
     );
 
-    await this.sendPlanNotification(data.accountId);
+    if (data.shouldSendNotification !== false) {
+      await this.sendPlanNotification(data.accountId);
+    }
   };
 
   private readonly processSuccessfulPayment = async (
@@ -256,6 +264,7 @@ export class PlanReleaseService {
       billingPeriodId: accountPaymentData.billing_period_id,
       value: accountPaymentData.value,
       paymentAsaasId,
+      shouldSendNotification: true,
     });
   };
 
@@ -421,6 +430,7 @@ export class PlanReleaseService {
       billingPeriodId: data.billingPeriodId,
       value: data.value,
       paymentAsaasId: accountPaymentData.billing || '',
+      shouldSendNotification: true,
     });
   };
 
@@ -532,12 +542,26 @@ export class PlanReleaseService {
   };
 
   private async sendPlanNotification(accountId: string): Promise<void> {
+    const notificationKey = `${this.notificationKeyPrefix}${accountId}:${ENotificationTypeId.plan}`;
+
+    const exists = await this.redis.exists(notificationKey);
+    if (exists === 1) {
+      return;
+    }
+
     try {
       const topic = this.kafkaServiceQueueService.notificationMessage();
       await this.streamProducerService.send(topic, {
         notification_type_id: ENotificationTypeId.plan,
         account_id: accountId,
       });
+
+      await this.redis.set(
+        notificationKey,
+        '1',
+        'EX',
+        this.notificationTtlSeconds
+      );
     } catch (error) {
       console.error('Erro ao enviar notificação de plano liberado:', error);
     }

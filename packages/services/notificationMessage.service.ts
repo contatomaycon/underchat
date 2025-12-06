@@ -113,9 +113,6 @@ export class NotificationMessageService {
       date: new Date().toISOString(),
     };
 
-    console.log('notificationMessage');
-    console.dir(notificationMessage, { depth: null, colors: true });
-
     await this.elasticDatabaseService.indices(
       EElasticIndex.notification,
       notificationMappings()
