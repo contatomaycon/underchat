@@ -210,10 +210,6 @@ const processCurrentPlanInvoice = (
   currentPlanBillingPeriod.value = currentPlanInvoice.billing_period as
     | 'monthly'
     | 'annual';
-
-  if (currentPlanBillingPeriod.value === 'annual') {
-    billingPeriod.value = 'annual';
-  }
 };
 
 const processPlanIdFromQuery = (
@@ -238,8 +234,6 @@ const loadStep1 = async () => {
   const planId = route.query.plan_id as string;
   const billing = (route.query.billing as 'monthly' | 'annual') || 'monthly';
 
-  billingPeriod.value = billing;
-
   const [plansList, currentPlanIdValue, currentPlanInvoice] = await Promise.all(
     [
       planStore.listPlanWithItems(),
@@ -257,6 +251,21 @@ const loadStep1 = async () => {
   plans.value = plansList;
   processCurrentPlan(plansList, currentPlanIdValue);
   processCurrentPlanInvoice(currentPlanInvoice);
+
+  const isActive = currentPlanInvoice?.next_payment_date
+    ? new Date(currentPlanInvoice.next_payment_date) > new Date()
+    : false;
+
+  if (
+    currentPlanBillingPeriod.value === 'annual' &&
+    isActive &&
+    billing === 'monthly'
+  ) {
+    billingPeriod.value = 'annual';
+  } else {
+    billingPeriod.value = billing;
+  }
+
   processPlanIdFromQuery(plansList, planId);
 
   step1Loaded.value = true;
@@ -303,6 +312,18 @@ const isPlanExpired = computed(() => {
     currentPlanInvoiceData.value.next_payment_date
   );
   return nextPaymentDate <= now;
+});
+
+const isPlanActive = computed(() => {
+  if (!currentPlanInvoiceData.value?.next_payment_date) {
+    return false;
+  }
+
+  const now = new Date();
+  const nextPaymentDate = new Date(
+    currentPlanInvoiceData.value.next_payment_date
+  );
+  return nextPaymentDate > now;
 });
 
 const loadUpgradeDiscount = async () => {
@@ -382,6 +403,7 @@ const isInvalidBillingPeriodChange = (
 
   if (
     currentPlanBillingPeriod.value === 'annual' &&
+    isPlanActive.value &&
     billingPeriod.value === 'monthly'
   ) {
     return true;
@@ -391,7 +413,11 @@ const isInvalidBillingPeriodChange = (
 };
 
 watch(billingPeriod, (newValue) => {
-  if (currentPlanBillingPeriod.value === 'annual' && newValue === 'monthly') {
+  if (
+    currentPlanBillingPeriod.value === 'annual' &&
+    isPlanActive.value &&
+    newValue === 'monthly'
+  ) {
     billingPeriod.value = 'annual';
   }
 });
@@ -786,7 +812,6 @@ const initPaymentSubscription = async () => {
           pixPaymentConfirmed.value = true;
           setTimeout(() => {
             pixModalOpen.value = false;
-            router.push('/plans');
           }, 3000);
         }
       }
@@ -1309,7 +1334,7 @@ onMounted(async () => {
                           billingPeriod === 'monthly'
                             ? 'text-primary'
                             : 'text-disabled',
-                          currentPlanBillingPeriod === 'annual'
+                          currentPlanBillingPeriod === 'annual' && isPlanActive
                             ? 'text-disabled'
                             : '',
                         ]"
@@ -1322,7 +1347,9 @@ onMounted(async () => {
                         false-value="monthly"
                         color="primary"
                         hide-details
-                        :disabled="currentPlanBillingPeriod === 'annual'"
+                        :disabled="
+                          currentPlanBillingPeriod === 'annual' && isPlanActive
+                        "
                       />
                       <span
                         :class="[

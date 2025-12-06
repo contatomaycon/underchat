@@ -33,6 +33,7 @@ const selectedPlanId = ref<string | null>(null);
 const currentPlanId = ref<string | null>(null);
 const currentPlan = ref<ListPlanWithItemsResponse | null>(null);
 const currentPlanBillingPeriod = ref<'monthly' | 'annual' | null>(null);
+const currentPlanInvoice = ref<any | null>(null);
 
 const getCurrencyConfig = () => {
   const localeMap: Record<string, { locale: string; currency: string }> = {
@@ -77,17 +78,18 @@ const getPrice = (plan: ListPlanWithItemsResponse): number => {
 
 const loadPlans = async () => {
   loading.value = true;
-  const [result, currentPlanIdValue, currentPlanInvoice] = await Promise.all([
+  const [result, currentPlanIdValue, planInvoice] = await Promise.all([
     planStore.listPlanWithItems(),
     planStore.getCurrentPlan(),
     accountSettingsStore.getCurrentPlanInvoice(),
   ]);
 
+  currentPlanInvoice.value = planInvoice;
+
   if (result) {
     plans.value = result;
     currentPlanId.value = currentPlanIdValue;
 
-    // Encontrar o plano atual na lista
     if (currentPlanIdValue) {
       currentPlan.value =
         result.find((p) => p.plan_id === currentPlanIdValue) || null;
@@ -95,12 +97,16 @@ const loadPlans = async () => {
       currentPlan.value = null;
     }
 
-    if (currentPlanInvoice?.billing_period) {
-      currentPlanBillingPeriod.value = currentPlanInvoice.billing_period as
+    if (planInvoice?.billing_period) {
+      currentPlanBillingPeriod.value = planInvoice.billing_period as
         | 'monthly'
         | 'annual';
 
-      if (currentPlanBillingPeriod.value === 'annual') {
+      const isActive = planInvoice.next_payment_date
+        ? new Date(planInvoice.next_payment_date) > new Date()
+        : false;
+
+      if (currentPlanBillingPeriod.value === 'annual' && isActive) {
         billingPeriod.value = 'annual';
       }
     } else {
@@ -117,6 +123,16 @@ const loadPlans = async () => {
 const selectPlan = (planId: string) => {
   selectedPlanId.value = planId;
 };
+
+const isPlanActive = computed(() => {
+  if (!currentPlanInvoice.value?.next_payment_date) {
+    return false;
+  }
+
+  const nextPaymentDate = new Date(currentPlanInvoice.value.next_payment_date);
+  const now = new Date();
+  return nextPaymentDate > now;
+});
 
 const openCheckout = (plan: ListPlanWithItemsResponse) => {
   if (isPlanDisabled(plan)) return;
@@ -161,6 +177,7 @@ const isInvalidBillingPeriodChange = (
 
   if (
     currentPlanBillingPeriod.value === 'annual' &&
+    isPlanActive.value &&
     billingPeriod.value === 'monthly'
   ) {
     return true;
@@ -237,7 +254,11 @@ const getColClasses = computed(() => {
 });
 
 watch(billingPeriod, (newValue) => {
-  if (currentPlanBillingPeriod.value === 'annual' && newValue === 'monthly') {
+  if (
+    currentPlanBillingPeriod.value === 'annual' &&
+    isPlanActive.value &&
+    newValue === 'monthly'
+  ) {
     billingPeriod.value = 'annual';
   }
 });
@@ -262,7 +283,9 @@ onMounted(() => {
               :class="[
                 'text-body-1',
                 billingPeriod === 'monthly' ? 'text-primary' : 'text-disabled',
-                currentPlanBillingPeriod === 'annual' ? 'text-disabled' : '',
+                currentPlanBillingPeriod === 'annual' && isPlanActive
+                  ? 'text-disabled'
+                  : '',
               ]"
             >
               {{ $t('monthly') }}
@@ -273,7 +296,7 @@ onMounted(() => {
               false-value="monthly"
               color="primary"
               hide-details
-              :disabled="currentPlanBillingPeriod === 'annual'"
+              :disabled="currentPlanBillingPeriod === 'annual' && isPlanActive"
             />
             <span
               :class="[
