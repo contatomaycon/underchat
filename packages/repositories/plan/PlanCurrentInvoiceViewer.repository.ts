@@ -34,7 +34,8 @@ export class PlanCurrentInvoiceViewerRepository {
       activePlanAccount.next_payment_date,
       activePlanAccount.recurring_payment,
       activePlanAccount.cancellation_date,
-      billingPeriodValue
+      billingPeriodValue,
+      activePlanAccount.value
     );
   };
 
@@ -49,6 +50,7 @@ export class PlanCurrentInvoiceViewerRepository {
             last_payment_date: true,
             recurring_payment: true,
             cancellation_date: true,
+            value: true,
           },
           with: {
             ppl: {
@@ -122,7 +124,8 @@ export class PlanCurrentInvoiceViewerRepository {
     nextPaymentDate: string | null,
     recurringPayment: boolean,
     cancellationDate: string | null,
-    billingPeriodValue: string | null
+    billingPeriodValue: string | null,
+    planAccountValue: string | null
   ): ViewCurrentPlanInvoiceResponse => {
     return {
       plan_id: planData.plan_id,
@@ -139,6 +142,7 @@ export class PlanCurrentInvoiceViewerRepository {
       recurring_payment: recurringPayment,
       cancellation_date: cancellationDate,
       billing_period: billingPeriodValue,
+      plan_account_value: planAccountValue ? Number(planAccountValue) : null,
     };
   };
 
@@ -156,6 +160,7 @@ export class PlanCurrentInvoiceViewerRepository {
       recurring_payment: null,
       cancellation_date: null,
       billing_period: null,
+      plan_account_value: null,
     };
   };
 }

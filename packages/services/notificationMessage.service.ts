@@ -177,11 +177,11 @@ export class NotificationMessageService {
       ? new Date(planInvoice.next_payment_date).toLocaleDateString('pt-BR')
       : null;
 
-    const value = planInvoice.plan_price
+    const value = planInvoice.plan_account_value
       ? new Intl.NumberFormat('pt-BR', {
           minimumFractionDigits: 2,
           maximumFractionDigits: 2,
-        }).format(Number(planInvoice.plan_price))
+        }).format(Number(planInvoice.plan_account_value))
       : null;
 
     return {

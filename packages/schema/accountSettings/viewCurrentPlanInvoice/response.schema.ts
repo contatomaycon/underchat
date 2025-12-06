@@ -13,6 +13,7 @@ export const viewCurrentPlanInvoiceResponseSchema = Type.Object({
   recurring_payment: Type.Union([Type.Boolean(), Type.Null()]),
   cancellation_date: Type.Union([Type.String(), Type.Null()]),
   billing_period: Type.Union([Type.String(), Type.Null()]),
+  plan_account_value: Type.Union([Type.Number(), Type.Null()]),
 });
 
 export type ViewCurrentPlanInvoiceResponse = Static<

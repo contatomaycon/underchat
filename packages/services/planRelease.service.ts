@@ -544,8 +544,15 @@ export class PlanReleaseService {
   private async sendPlanNotification(accountId: string): Promise<void> {
     const notificationKey = `${this.notificationKeyPrefix}${accountId}:${ENotificationTypeId.plan}`;
 
-    const exists = await this.redis.exists(notificationKey);
-    if (exists === 1) {
+    const setResult = await this.redis.set(
+      notificationKey,
+      '1',
+      'EX',
+      this.notificationTtlSeconds,
+      'NX'
+    );
+
+    if (setResult !== 'OK') {
       return;
     }
 
@@ -555,14 +562,8 @@ export class PlanReleaseService {
         notification_type_id: ENotificationTypeId.plan,
         account_id: accountId,
       });
-
-      await this.redis.set(
-        notificationKey,
-        '1',
-        'EX',
-        this.notificationTtlSeconds
-      );
     } catch (error) {
+      await this.redis.del(notificationKey);
       console.error('Erro ao enviar notificação de plano liberado:', error);
     }
   }
