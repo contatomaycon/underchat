@@ -64,7 +64,14 @@ export class AccountPaymentsListerRepository {
                 ppt: {
                   columns: {
                     plan_product_id: true,
-                    name: true,
+                  },
+                  with: {
+                    ppd: {
+                      columns: {
+                        plan_product_description_id: true,
+                        name: true,
+                      },
+                    },
                   },
                 },
               },
@@ -99,7 +106,9 @@ export class AccountPaymentsListerRepository {
       invoice_url: payment.invoice_url,
       cross_sells:
         payment.apcs?.map((crossSell) => ({
-          name: crossSell.apcs?.ppt?.name || '',
+          account_payment_cross_sell_id:
+            crossSell.account_payment_cross_sell_id,
+          name: crossSell.apcs?.ppt?.ppd?.name || '',
           quantity: crossSell.quantity,
           value: crossSell.value,
         })) || [],

@@ -1545,6 +1545,7 @@
     "no_invoices_found": "No se encontraron facturas",
     "payment_type": "Tipo de Pago",
     "payment_date": "Fecha de Pago",
+    "value": "Valor",
     "payment_billing_type_boleto": "Boleto",
     "payment_billing_type_credit_card": "Tarjeta de Crédito",
     "payment_billing_type_debit_card": "Tarjeta de Débito",

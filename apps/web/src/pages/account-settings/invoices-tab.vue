@@ -277,6 +277,7 @@ watch(
                     <VTable>
                       <thead>
                         <tr>
+                          <th>ID</th>
                           <th>{{ $t('name') }}</th>
                           <th>{{ $t('quantity') }}</th>
                           <th>{{ $t('value') }}</th>
@@ -287,6 +288,25 @@ watch(
                           v-for="(addon, index) in item.cross_sells"
                           :key="index"
                         >
+                          <td>
+                            <VTooltip>
+                              <template #activator="{ props }">
+                                <span
+                                  v-bind="props"
+                                  class="text-caption font-mono"
+                                >
+                                  {{
+                                    formatPaymentId(
+                                      addon.account_payment_cross_sell_id
+                                    )
+                                  }}
+                                </span>
+                              </template>
+                              <span>{{
+                                addon.account_payment_cross_sell_id
+                              }}</span>
+                            </VTooltip>
+                          </td>
                           <td>{{ addon.name }}</td>
                           <td>{{ addon.quantity }}</td>
                           <td>{{ formatCurrency(addon.value) }}</td>

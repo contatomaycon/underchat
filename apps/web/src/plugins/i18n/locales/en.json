@@ -1545,6 +1545,7 @@
     "no_invoices_found": "No invoices found",
     "payment_type": "Payment Type",
     "payment_date": "Payment Date",
+    "value": "Value",
     "payment_billing_type_boleto": "Bank Slip",
     "payment_billing_type_credit_card": "Credit Card",
     "payment_billing_type_debit_card": "Debit Card",

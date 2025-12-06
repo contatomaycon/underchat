@@ -17,6 +17,7 @@ export const listAccountPaymentsResponseSchema = Type.Object({
   invoice_url: Type.Union([Type.String(), Type.Null()]),
   cross_sells: Type.Array(
     Type.Object({
+      account_payment_cross_sell_id: Type.String({ format: 'uuid' }),
       name: Type.String(),
       quantity: Type.Number(),
       value: Type.String(),
