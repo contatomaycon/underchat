@@ -102,13 +102,8 @@ const openNfseModal = async (accountPaymentId: string) => {
   loadingNfse.value = true;
   nfseModal.value = true;
 
-  try {
-    await accountSettingsStore.viewAccountPaymentNfse(accountPaymentId);
-  } catch (error) {
-    loadingNfse.value = false;
-  } finally {
-    loadingNfse.value = false;
-  }
+  await accountSettingsStore.viewAccountPaymentNfse(accountPaymentId);
+  loadingNfse.value = false;
 };
 
 const closeNfseModal = () => {
@@ -332,10 +327,10 @@ watch(
                     <VTable>
                       <thead>
                         <tr>
-                          <th>ID</th>
-                          <th>{{ $t('name') }}</th>
-                          <th>{{ $t('quantity') }}</th>
-                          <th>{{ $t('value') }}</th>
+                          <th scope="col">ID</th>
+                          <th scope="col">{{ $t('name') }}</th>
+                          <th scope="col">{{ $t('quantity') }}</th>
+                          <th scope="col">{{ $t('value') }}</th>
                         </tr>
                       </thead>
                       <tbody>

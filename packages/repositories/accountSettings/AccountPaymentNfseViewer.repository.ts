@@ -47,7 +47,7 @@ export class AccountPaymentNfseViewerRepository {
       },
     });
 
-    if (!payment || !payment.apn || payment.apn.length === 0) {
+    if (!payment?.apn?.length) {
       return null;
     }
 
