@@ -201,7 +201,7 @@ export class PlanReleaseService {
     );
 
     if (data.shouldSendNotification !== false) {
-      await this.sendPlanNotification(data.accountId);
+      await this.sendPlanNotification(data.accountId, data.planId);
     }
   };
 
@@ -248,7 +248,10 @@ export class PlanReleaseService {
         paymentAsaasId
       );
 
-      await this.sendPlanNotification(accountPaymentData.account_id);
+      await this.sendPlanNotification(
+        accountPaymentData.account_id,
+        accountPaymentData.plan_id
+      );
 
       return;
     }
@@ -414,7 +417,7 @@ export class PlanReleaseService {
         accountPaymentData.billing || ''
       );
 
-      await this.sendPlanNotification(data.accountId);
+      await this.sendPlanNotification(data.accountId, data.planId);
 
       return;
     }
@@ -541,8 +544,11 @@ export class PlanReleaseService {
     }
   };
 
-  private async sendPlanNotification(accountId: string): Promise<void> {
-    const notificationKey = `${this.notificationKeyPrefix}${accountId}:${ENotificationTypeId.plan}`;
+  private async sendPlanNotification(
+    accountId: string,
+    planId: string
+  ): Promise<void> {
+    const notificationKey = `${this.notificationKeyPrefix}${accountId}:${planId}:${ENotificationTypeId.plan}`;
 
     const setResult = await this.redis.set(
       notificationKey,
