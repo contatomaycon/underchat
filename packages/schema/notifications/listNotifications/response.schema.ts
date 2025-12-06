@@ -1,7 +1,7 @@
 import { Static, Type } from '@sinclair/typebox';
 
 const workerSchema = Type.Object({
-  worker_id: Type.String({ format: 'uuid' }),
+  worker_id: Type.Union([Type.String({ format: 'uuid' }), Type.Null()]),
   name: Type.Union([Type.String(), Type.Null()]),
   message: Type.Union([Type.String(), Type.Null()]),
 });

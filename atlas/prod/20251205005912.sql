@@ -9,7 +9,7 @@ CREATE TABLE "notification_type" (
 -- Create "notifications" table
 CREATE TABLE "notifications" (
   "notification_id" uuid NOT NULL,
-  "worker_id" uuid NOT NULL,
+  "worker_id" uuid NULL,
   "notification_type_id" uuid NOT NULL,
   "message" text NOT NULL,
   "created_at" timestamptz NULL DEFAULT now(),

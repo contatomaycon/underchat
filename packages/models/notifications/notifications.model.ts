@@ -5,9 +5,7 @@ import { notificationType } from './notificationType.model';
 
 export const notifications = pgTable('notifications', {
   notification_id: uuid().primaryKey().notNull(),
-  worker_id: uuid()
-    .references(() => worker.worker_id)
-    .notNull(),
+  worker_id: uuid().references(() => worker.worker_id),
   notification_type_id: uuid()
     .references(() => notificationType.notification_type_id)
     .notNull(),

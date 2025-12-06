@@ -76,24 +76,24 @@ export class NotificationsUpserterRepository {
 
       return {
         notification_id: firstNotificationId,
-        two_factor_notification: twoFactorNotification?.nwr
+        two_factor_notification: twoFactorNotification
           ? {
-              worker_id: twoFactorNotification.nwr.worker_id,
-              name: twoFactorNotification.nwr.name,
+              worker_id: twoFactorNotification.nwr?.worker_id || null,
+              name: twoFactorNotification.nwr?.name || null,
               message: twoFactorNotification.message || null,
             }
           : null,
-        plan_notification: planNotification?.nwr
+        plan_notification: planNotification
           ? {
-              worker_id: planNotification.nwr.worker_id,
-              name: planNotification.nwr.name,
+              worker_id: planNotification.nwr?.worker_id || null,
+              name: planNotification.nwr?.name || null,
               message: planNotification.message || null,
             }
           : null,
-        plan_expiration_reminder: planExpirationNotification?.nwr
+        plan_expiration_reminder: planExpirationNotification
           ? {
-              worker_id: planExpirationNotification.nwr.worker_id,
-              name: planExpirationNotification.nwr.name,
+              worker_id: planExpirationNotification.nwr?.worker_id || null,
+              name: planExpirationNotification.nwr?.name || null,
               message: planExpirationNotification.message || null,
             }
           : null,
