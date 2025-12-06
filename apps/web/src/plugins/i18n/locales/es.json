@@ -1135,6 +1135,8 @@
     "units": "unidades",
     "unnamed_product": "Producto sin nombre",
     "addon_quantity": "Cant. del Adicional",
+    "plan_quantity": "Cant. del Plan",
+    "used": "usado",
     "total_plans": "Total de Planes",
     "transfer": "Transferir",
     "transfer_to": "Transferir a",

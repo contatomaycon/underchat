@@ -1135,6 +1135,8 @@
     "units": "units",
     "unnamed_product": "Unnamed product",
     "addon_quantity": "Add-on Qty",
+    "plan_quantity": "Plan Qty",
+    "used": "used",
     "total_plans": "Total Plans",
     "transfer": "Transfer",
     "transfer_to": "Transfer to",

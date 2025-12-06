@@ -255,6 +255,15 @@ const getPlanProductPlanProgressPercentage = (
   return Math.min(Math.max((planUsed / product.quantity_total) * 100, 0), 100);
 };
 
+const getPlanUsed = (product: ListAccountPlanProductsResponse): number => {
+  return Math.min(product.quantity_used, product.quantity_plan);
+};
+
+const getAddonUsed = (product: ListAccountPlanProductsResponse): number => {
+  const planUsed = getPlanUsed(product);
+  return Math.max(0, product.quantity_used - planUsed);
+};
+
 const getPlanProductAddonProgressPercentage = (
   product: ListAccountPlanProductsResponse
 ) => {
@@ -562,13 +571,29 @@ onMounted(() => {
                   v-for="product in accountPlanProducts"
                   :key="product.plan_product_id"
                 >
-                  <div class="d-flex align-center justify-space-between mb-2">
-                    <span class="text-body-1 font-weight-medium">
-                      {{ product.name }}
-                    </span>
-                    <span class="text-body-2 text-medium-emphasis">
-                      {{ product.quantity_used }} / {{ product.quantity_total }}
-                    </span>
+                  <div class="mb-2">
+                    <div class="d-flex align-center justify-space-between mb-1">
+                      <span class="text-body-1 font-weight-medium">
+                        {{ product.name }}
+                      </span>
+                      <span class="text-body-2 text-medium-emphasis">
+                        {{ product.quantity_used }} /
+                        {{ product.quantity_total }}
+                      </span>
+                    </div>
+                    <div
+                      v-if="
+                        product.quantity_plan > 0 || product.quantity_addon > 0
+                      "
+                      class="d-flex flex-column gap-1 text-caption text-disabled"
+                    >
+                      <span v-if="product.quantity_plan > 0">
+                        {{ $t('plan_quantity') }}: {{ product.quantity_plan }}
+                      </span>
+                      <span v-if="product.quantity_addon > 0">
+                        {{ $t('addon_quantity') }}: {{ product.quantity_addon }}
+                      </span>
+                    </div>
                   </div>
                   <div class="addon-progress-container mb-1">
                     <VProgressLinear
