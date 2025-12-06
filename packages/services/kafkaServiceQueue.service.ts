@@ -17,6 +17,7 @@ export class KafkaServiceQueueService {
     const updateProfileStatusExternalId = this.updateProfileStatusExternalId();
     const asaasInvoiceWebhook = this.asaasInvoiceWebhook();
     const asaasNfseWebhook = this.asaasNfseWebhook();
+    const notificationMessage = this.notificationMessage();
 
     return [
       createServer,
@@ -30,6 +31,7 @@ export class KafkaServiceQueueService {
       updateProfileStatusExternalId,
       asaasInvoiceWebhook,
       asaasNfseWebhook,
+      notificationMessage,
     ];
   };
 
@@ -85,5 +87,9 @@ export class KafkaServiceQueueService {
 
   asaasNfseWebhook = () => {
     return `asaas.nfse.webhook`;
+  };
+
+  notificationMessage = () => {
+    return `notification.message`;
   };
 }

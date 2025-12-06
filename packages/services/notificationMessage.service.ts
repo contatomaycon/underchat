@@ -40,6 +40,8 @@ export class NotificationMessageService {
         notificationTypeId
       );
 
+    console.log('notification', notification);
+
     if (!notification) {
       throw new Error('Notification not found');
     }
@@ -49,6 +51,8 @@ export class NotificationMessageService {
         accountId
       );
 
+    console.log('masterUser', masterUser);
+
     if (!masterUser) {
       throw new Error('Master user not found for account');
     }
@@ -56,23 +60,35 @@ export class NotificationMessageService {
     const userInfo = await this.userInfoViewerRepository.findUserInfoByUserId(
       masterUser.user_id
     );
+
+    console.log('userInfo', userInfo);
+
     if (!userInfo) {
       throw new Error('User info not found');
     }
 
     const phone = this.userService.getUserPhoneDecrypted(userInfo.phone);
+
+    console.log('phone', phone);
+
     if (!phone) {
       throw new Error('User phone not found');
     }
 
     const workerId =
       notification.worker_id || (await this.getFirstActiveWorkerId(accountId));
+
+    console.log('workerId', workerId);
+
     if (!workerId) {
       throw new Error('No active worker found for account');
     }
 
     const workerName =
       await this.workerNameViewerRepository.findWorkerNameById(workerId);
+
+    console.log('workerName', workerName);
+
     if (!workerName) {
       throw new Error('Worker not found');
     }
@@ -178,8 +194,8 @@ export class NotificationMessageService {
 
     const value = planInvoice.plan_price
       ? new Intl.NumberFormat('pt-BR', {
-          style: 'currency',
-          currency: 'BRL',
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
         }).format(Number(planInvoice.plan_price))
       : null;
 

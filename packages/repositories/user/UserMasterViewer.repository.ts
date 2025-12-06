@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { user, permissionAssignment, account } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 
 @injectable()
@@ -35,7 +35,10 @@ export class UserMasterViewerRepository {
       .where(
         and(
           eq(user.account_id, accountId),
-          eq(permissionAssignment.permission_role_id, EPermissionRole.master),
+          inArray(permissionAssignment.permission_role_id, [
+            EPermissionRole.master,
+            EPermissionRole.administrator,
+          ]),
           isNull(user.deleted_at),
           isNull(account.deleted_at),
           isNull(permissionAssignment.account_id)

@@ -8,6 +8,9 @@ import { paymentAccountCentrifugo } from '@core/common/functions/centrifugoQueue
 import { AsaasService } from '@core/services/asaas';
 import { ICreateAsaasInvoiceRequest } from '@core/common/interfaces/IAsaasInvoice';
 import { AccountPaymentNfSeUpserterRepository } from '@core/repositories/account/AccountPaymentNfSeUpserter.repository';
+import { StreamProducerService } from '@core/services/streamProducer.service';
+import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { ENotificationTypeId } from '@core/common/enums/ENotificationType';
 
 @injectable()
 export class PlanReleaseService {
@@ -15,7 +18,9 @@ export class PlanReleaseService {
     private readonly planReleaseRepository: PlanReleaseRepository,
     private readonly centrifugoService: CentrifugoService,
     private readonly asaasService: AsaasService,
-    private readonly accountPaymentNfSeUpserterRepository: AccountPaymentNfSeUpserterRepository
+    private readonly accountPaymentNfSeUpserterRepository: AccountPaymentNfSeUpserterRepository,
+    private readonly streamProducerService: StreamProducerService,
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 
   private readonly mapAsaasStatusToPaymentStatus = (
@@ -188,6 +193,8 @@ export class PlanReleaseService {
       data.accountPaymentId,
       data.paymentAsaasId
     );
+
+    await this.sendPlanNotification(data.accountId);
   };
 
   private readonly processSuccessfulPayment = async (
@@ -232,6 +239,8 @@ export class PlanReleaseService {
         accountPaymentData.account_payment_id,
         paymentAsaasId
       );
+
+      await this.sendPlanNotification(accountPaymentData.account_id);
 
       return;
     }
@@ -396,6 +405,8 @@ export class PlanReleaseService {
         accountPaymentData.billing || ''
       );
 
+      await this.sendPlanNotification(data.accountId);
+
       return;
     }
 
@@ -519,4 +530,18 @@ export class PlanReleaseService {
       );
     }
   };
+
+  private async sendPlanNotification(accountId: string): Promise<void> {
+    console.log('sendPlanNotification', accountId);
+
+    try {
+      const topic = this.kafkaServiceQueueService.notificationMessage();
+      await this.streamProducerService.send(topic, {
+        notification_type_id: ENotificationTypeId.plan,
+        account_id: accountId,
+      });
+    } catch (error) {
+      console.error('Erro ao enviar notificação de plano liberado:', error);
+    }
+  }
 }

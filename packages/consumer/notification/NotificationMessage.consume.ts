@@ -1,21 +1,21 @@
 import { singleton, inject } from 'tsyringe';
-import { baileysEnvironment } from '@core/config/environments';
-import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
-import { BaileysMessageTextService } from '@core/services/baileys/methods/messageText.service';
+import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { StreamProducerService } from '@core/services/streamProducer.service';
 import { Kafka, Consumer } from 'kafkajs';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { INotificationMessage } from '@core/common/interfaces/INotificationMessage';
+import { NotificationMessageService } from '@core/services/notificationMessage.service';
+import { INotificationMessageRequest } from '@core/common/interfaces/INotificationMessageRequest';
 
 @singleton()
-export class NotificationMessageSendConsume {
+export class NotificationMessageConsume {
   private consumer: Consumer | null = null;
 
   constructor(
     @inject('Kafka') private readonly kafka: Kafka,
-    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
-    private readonly baileysMessageTextService: BaileysMessageTextService
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    private readonly notificationMessageService: NotificationMessageService
   ) {}
 
   private get consumerOrThrow(): Consumer {
@@ -31,12 +31,10 @@ export class NotificationMessageSendConsume {
 
     this.consumer = createConsumer(
       this.kafka,
-      `group-underchat-baileys-notification-send-${baileysEnvironment.baileysWorkerId}`
+      'group-underchat-notification-message'
     );
 
-    const topic = this.kafkaBaileysQueueService.workerSendMessage(
-      baileysEnvironment.baileysWorkerId
-    );
+    const topic = this.kafkaServiceQueueService.notificationMessage();
 
     await ensureKafkaTopic(this.kafka, topic);
     await this.consumer.connect();
@@ -46,7 +44,7 @@ export class NotificationMessageSendConsume {
       autoCommit: false,
       partitionsConsumedConcurrently: 1,
       eachMessage: async ({ topic, partition, message, heartbeat }) => {
-        const data = this.parseNotificationMessage(message.value);
+        const data = this.parseNotificationMessageRequest(message.value);
 
         if (!data) {
           await this.commitNext(topic, partition, message.offset);
@@ -55,7 +53,10 @@ export class NotificationMessageSendConsume {
 
         const stop = startHeartbeat(heartbeat);
         try {
-          await this.processNotificationMessage(data);
+          await this.notificationMessageService.sendNotificationMessage(
+            data.notification_type_id,
+            data.account_id
+          );
         } catch {
           stop();
           await this.commitNext(topic, partition, message.offset);
@@ -79,9 +80,9 @@ export class NotificationMessageSendConsume {
     this.consumer = null;
   }
 
-  private parseNotificationMessage(
+  private parseNotificationMessageRequest(
     value: Buffer | null
-  ): INotificationMessage | null {
+  ): INotificationMessageRequest | null {
     if (!value) {
       return null;
     }
@@ -92,13 +93,11 @@ export class NotificationMessageSendConsume {
     }
 
     try {
-      const parsed = JSON.parse(raw) as INotificationMessage;
+      const parsed = JSON.parse(raw) as INotificationMessageRequest;
       if (
         parsed &&
-        'notification_id' in parsed &&
-        'message_key' in parsed &&
-        'message' in parsed &&
-        parsed.message_key?.remote_jid
+        'notification_type_id' in parsed &&
+        'account_id' in parsed
       ) {
         return parsed;
       }
@@ -106,21 +105,6 @@ export class NotificationMessageSendConsume {
     } catch {
       return null;
     }
-  }
-
-  private async processNotificationMessage(
-    data: INotificationMessage
-  ): Promise<void> {
-    if (!data.message || !data.message_key?.remote_jid) {
-      return;
-    }
-
-    console.log('data', data);
-
-    await this.baileysMessageTextService.sendText(
-      data.message_key.remote_jid,
-      data.message
-    );
   }
 
   private async commitNext(
