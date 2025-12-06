@@ -1588,5 +1588,19 @@
     "no_addons_found": "Nenhum addon encontrado",
     "plan_products": "Produtos do Plano",
     "no_plan_products_found": "Nenhum produto encontrado",
-    "plan_recurring_updated_error": "Erro ao atualizar recorrência do plano"
+    "plan_recurring_updated_error": "Erro ao atualizar recorrência do plano",
+    "view_nfse": "Ver Nota Fiscal",
+    "nfse_details": "Detalhes da Nota Fiscal",
+    "nfse_not_found": "Nota fiscal não encontrada",
+    "rps_serie": "Série RPS",
+    "status_description": "Descrição do Status",
+    "validation_code": "Código de Validação",
+    "download_xml": "Baixar XML",
+    "nfse_status_scheduled": "Agendada",
+    "nfse_status_authorized": "Autorizada",
+    "nfse_status_processing_cancellation": "Processando Cancelamento",
+    "nfse_status_canceled": "Cancelada",
+    "nfse_status_cancellation_denied": "Cancelamento Negado",
+    "nfse_status_error": "Erro",
+    "nfse_status_synchronized": "Sincronizada"
 }

@@ -547,5 +547,7 @@
   "card_created_successfully": "¡Tarjeta agregada con éxito!",
   "no_plan_found": "No se encontró ningún plan",
   "no_cards_found": "No se encontraron tarjetas",
-  "no_default_card_found": "No se encontró tarjeta predeterminada"
+  "no_default_card_found": "No se encontró tarjeta predeterminada",
+  "account_payment_nfse_viewed_successfully": "¡Factura visualizada con éxito!",
+  "account_payment_nfse_not_found": "Factura no encontrada"
 }

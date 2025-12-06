@@ -19,6 +19,7 @@ import { listAccountAddons } from './methods/listAccountAddons';
 import { listAccountPlanProducts } from './methods/listAccountPlanProducts';
 import { updateUserCardDefault } from './methods/updateUserCardDefault';
 import { createUserCard } from './methods/createUserCard';
+import { viewAccountPaymentNfse } from './methods/viewAccountPaymentNfse';
 
 @injectable()
 class AccountSettingsController {
@@ -42,6 +43,7 @@ class AccountSettingsController {
   public listAccountPlanProducts = listAccountPlanProducts;
   public updateUserCardDefault = updateUserCardDefault;
   public createUserCard = createUserCard;
+  public viewAccountPaymentNfse = viewAccountPaymentNfse;
 }
 
 export default AccountSettingsController;

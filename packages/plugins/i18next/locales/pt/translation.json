@@ -547,5 +547,7 @@
   "card_created_successfully": "Cartão adicionado com sucesso!",
   "no_plan_found": "Nenhum plano encontrado",
   "no_cards_found": "Nenhum cartão encontrado",
-  "no_default_card_found": "Nenhum cartão padrão encontrado"
+  "no_default_card_found": "Nenhum cartão padrão encontrado",
+  "account_payment_nfse_viewed_successfully": "Nota fiscal visualizada com sucesso!",
+  "account_payment_nfse_not_found": "Nota fiscal não encontrada"
 }

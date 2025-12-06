@@ -1588,5 +1588,19 @@
     "no_addons_found": "No addons found",
     "plan_products": "Plan Products",
     "no_plan_products_found": "No products found",
-    "plan_recurring_updated_error": "Error updating plan recurring payment"
+    "plan_recurring_updated_error": "Error updating plan recurring payment",
+    "view_nfse": "View Invoice",
+    "nfse_details": "Invoice Details",
+    "nfse_not_found": "Invoice not found",
+    "rps_serie": "RPS Series",
+    "status_description": "Status Description",
+    "validation_code": "Validation Code",
+    "download_xml": "Download XML",
+    "nfse_status_scheduled": "Scheduled",
+    "nfse_status_authorized": "Authorized",
+    "nfse_status_processing_cancellation": "Processing Cancellation",
+    "nfse_status_canceled": "Canceled",
+    "nfse_status_cancellation_denied": "Cancellation Denied",
+    "nfse_status_error": "Error",
+    "nfse_status_synchronized": "Synchronized"
 }

@@ -37,6 +37,7 @@ import {
 } from '@core/schema/accountSettings/listAccountPlanProducts/response.schema';
 import { CreateUserCardRequest } from '@core/schema/accountSettings/createUserCard/request.schema';
 import { CreateUserCardResponse } from '@core/schema/accountSettings/createUserCard/response.schema';
+import { ViewAccountPaymentNfseResponse } from '@core/schema/accountSettings/viewAccountPaymentNfse/response.schema';
 
 export const useAccountSettingsStore = defineStore('accountSettings', {
   state: () => ({
@@ -58,6 +59,7 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
     userCardsList: [] as ListUserCardsFinalResponse,
     accountAddonsList: [] as ListAccountAddonsResponse[],
     accountPlanProductsList: [] as ListAccountPlanProductsResponse[],
+    accountPaymentNfse: null as ViewAccountPaymentNfseResponse | null,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -666,6 +668,41 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
         this.showSnackbar(errorMessage, EColor.error);
 
         return false;
+      }
+    },
+    async viewAccountPaymentNfse(
+      accountPaymentId: string
+    ): Promise<ViewAccountPaymentNfseResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ViewAccountPaymentNfseResponse>
+        >(`/account-settings/payments/${accountPaymentId}/nfse`);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        this.accountPaymentNfse = data.data;
+
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t(
+          'account_payment_nfse_view_error'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
       }
     },
   },

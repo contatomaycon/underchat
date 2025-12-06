@@ -1588,5 +1588,19 @@
     "no_addons_found": "No se encontraron complementos",
     "plan_products": "Productos del Plan",
     "no_plan_products_found": "No se encontraron productos",
-    "plan_recurring_updated_error": "Error al actualizar el pago recurrente del plan"
+    "plan_recurring_updated_error": "Error al actualizar el pago recurrente del plan",
+    "view_nfse": "Ver Factura",
+    "nfse_details": "Detalles de la Factura",
+    "nfse_not_found": "Factura no encontrada",
+    "rps_serie": "Serie RPS",
+    "status_description": "Descripción del Estado",
+    "validation_code": "Código de Validación",
+    "download_xml": "Descargar XML",
+    "nfse_status_scheduled": "Programada",
+    "nfse_status_authorized": "Autorizada",
+    "nfse_status_processing_cancellation": "Procesando Cancelación",
+    "nfse_status_canceled": "Cancelada",
+    "nfse_status_cancellation_denied": "Cancelación Denegada",
+    "nfse_status_error": "Error",
+    "nfse_status_synchronized": "Sincronizada"
 }

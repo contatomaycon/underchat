@@ -41,6 +41,11 @@ const getPaymentStatusLabel = (statusName: string): string => {
   return t(translationKey, statusName);
 };
 
+const getNfseStatusLabel = (statusName: string): string => {
+  const translationKey = `nfse_status_${statusName.toLowerCase()}`;
+  return t(translationKey, statusName);
+};
+
 const getPaymentStatusColor = (statusName: string): string => {
   const statusMap: Record<string, string> = {
     PENDING: 'warning',
@@ -86,6 +91,42 @@ const formatPaymentId = (uuid: string): string => {
 const handleTableChange = (o: { page: number; itemsPerPage: number }) => {
   options.value.page = o.page;
   options.value.itemsPerPage = o.itemsPerPage;
+};
+
+const nfseModal = ref(false);
+const loadingNfse = ref(false);
+const selectedPaymentId = ref<string | null>(null);
+
+const openNfseModal = async (accountPaymentId: string) => {
+  selectedPaymentId.value = accountPaymentId;
+  loadingNfse.value = true;
+  nfseModal.value = true;
+
+  try {
+    await accountSettingsStore.viewAccountPaymentNfse(accountPaymentId);
+  } catch (error) {
+    loadingNfse.value = false;
+  } finally {
+    loadingNfse.value = false;
+  }
+};
+
+const closeNfseModal = () => {
+  nfseModal.value = false;
+  selectedPaymentId.value = null;
+  accountSettingsStore.accountPaymentNfse = null;
+};
+
+const downloadPdf = () => {
+  if (accountSettingsStore.accountPaymentNfse?.pdf_url) {
+    window.open(accountSettingsStore.accountPaymentNfse.pdf_url, '_blank');
+  }
+};
+
+const downloadXml = () => {
+  if (accountSettingsStore.accountPaymentNfse?.xml_url) {
+    window.open(accountSettingsStore.accountPaymentNfse.xml_url, '_blank');
+  }
 };
 
 watch(
@@ -246,20 +287,34 @@ watch(
                   {{ formatDate(item.created_at) }}
                 </td>
                 <td v-else-if="column.key === 'actions'">
-                  <VBtn
-                    v-if="item.invoice_url"
-                    icon
-                    variant="text"
-                    size="small"
-                    :href="item.invoice_url"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <VIcon icon="tabler-eye" size="20" />
-                    <VTooltip activator="parent" location="top">
-                      {{ $t('view_invoice') }}
-                    </VTooltip>
-                  </VBtn>
+                  <div class="d-flex align-center gap-2">
+                    <VBtn
+                      v-if="item.has_nfse"
+                      icon
+                      variant="text"
+                      size="small"
+                      @click="openNfseModal(item.account_payment_id)"
+                    >
+                      <VIcon icon="tabler-file-invoice" size="20" />
+                      <VTooltip activator="parent" location="top">
+                        {{ $t('view_nfse') }}
+                      </VTooltip>
+                    </VBtn>
+                    <VBtn
+                      v-if="item.invoice_url"
+                      icon
+                      variant="text"
+                      size="small"
+                      :href="item.invoice_url"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <VIcon icon="tabler-eye" size="20" />
+                      <VTooltip activator="parent" location="top">
+                        {{ $t('view_invoice') }}
+                      </VTooltip>
+                    </VBtn>
+                  </div>
                 </td>
               </template>
             </tr>
@@ -336,6 +391,166 @@ watch(
         </VDataTableServer>
       </VCardText>
     </VCard>
+
+    <VDialog v-model="nfseModal" max-width="600" persistent>
+      <VCard>
+        <VCardTitle class="d-flex align-center justify-space-between pa-6">
+          <span class="text-h6">{{ $t('nfse_details') }}</span>
+          <VBtn icon variant="text" size="small" @click="closeNfseModal">
+            <VIcon icon="tabler-x" />
+          </VBtn>
+        </VCardTitle>
+        <VDivider />
+        <VCardText class="pa-6">
+          <VProgressLinear v-if="loadingNfse" indeterminate class="mb-4" />
+          <div v-else-if="accountSettingsStore.accountPaymentNfse">
+            <VRow>
+              <VCol cols="12" md="6">
+                <div class="mb-4">
+                  <div class="text-caption text-medium-emphasis mb-1">
+                    {{ $t('type') }}
+                  </div>
+                  <div class="text-body-1">
+                    {{ accountSettingsStore.accountPaymentNfse.type || '-' }}
+                  </div>
+                </div>
+              </VCol>
+              <VCol cols="12" md="6">
+                <div class="mb-4">
+                  <div class="text-caption text-medium-emphasis mb-1">
+                    {{ $t('status') }}
+                  </div>
+                  <VChip
+                    :color="
+                      accountSettingsStore.accountPaymentNfse.status_name ===
+                      'AUTHORIZED'
+                        ? 'success'
+                        : 'warning'
+                    "
+                    variant="tonal"
+                    size="small"
+                  >
+                    {{
+                      getNfseStatusLabel(
+                        accountSettingsStore.accountPaymentNfse.status_name
+                      )
+                    }}
+                  </VChip>
+                </div>
+              </VCol>
+              <VCol cols="12">
+                <div class="mb-4">
+                  <div class="text-caption text-medium-emphasis mb-1">
+                    {{ $t('status_description') }}
+                  </div>
+                  <div class="text-body-1">
+                    {{
+                      accountSettingsStore.accountPaymentNfse
+                        .status_description || '-'
+                    }}
+                  </div>
+                </div>
+              </VCol>
+              <VCol cols="12" md="6">
+                <div class="mb-4">
+                  <div class="text-caption text-medium-emphasis mb-1">
+                    {{ $t('rps_serie') }}
+                  </div>
+                  <div class="text-body-1">
+                    {{
+                      accountSettingsStore.accountPaymentNfse.rps_serie || '-'
+                    }}
+                  </div>
+                </div>
+              </VCol>
+              <VCol cols="12" md="6">
+                <div class="mb-4">
+                  <div class="text-caption text-medium-emphasis mb-1">
+                    {{ $t('number') }}
+                  </div>
+                  <div class="text-body-1">
+                    {{ accountSettingsStore.accountPaymentNfse.number || '-' }}
+                  </div>
+                </div>
+              </VCol>
+              <VCol cols="12">
+                <div class="mb-4">
+                  <div class="text-caption text-medium-emphasis mb-1">
+                    {{ $t('validation_code') }}
+                  </div>
+                  <div class="text-body-1 font-mono">
+                    {{
+                      accountSettingsStore.accountPaymentNfse.validation_code ||
+                      '-'
+                    }}
+                  </div>
+                </div>
+              </VCol>
+              <VCol cols="12" md="6">
+                <div class="mb-4">
+                  <div class="text-caption text-medium-emphasis mb-1">
+                    {{ $t('value') }}
+                  </div>
+                  <div class="text-body-1">
+                    {{
+                      formatCurrency(
+                        accountSettingsStore.accountPaymentNfse.value
+                      )
+                    }}
+                  </div>
+                </div>
+              </VCol>
+              <VCol cols="12" md="6">
+                <div class="mb-4">
+                  <div class="text-caption text-medium-emphasis mb-1">
+                    {{ $t('created_at') }}
+                  </div>
+                  <div class="text-body-1">
+                    {{
+                      formatDate(
+                        accountSettingsStore.accountPaymentNfse.created_at
+                      )
+                    }}
+                  </div>
+                </div>
+              </VCol>
+            </VRow>
+            <VDivider class="my-4" />
+            <div class="d-flex gap-2">
+              <VBtn
+                v-if="accountSettingsStore.accountPaymentNfse.pdf_url"
+                color="primary"
+                variant="outlined"
+                prepend-icon="tabler-file-pdf"
+                @click="downloadPdf"
+              >
+                {{ $t('download_pdf') }}
+              </VBtn>
+              <VBtn
+                v-if="accountSettingsStore.accountPaymentNfse.xml_url"
+                color="primary"
+                variant="outlined"
+                prepend-icon="tabler-file-code"
+                @click="downloadXml"
+              >
+                {{ $t('download_xml') }}
+              </VBtn>
+            </div>
+          </div>
+          <div v-else class="text-center py-8">
+            <VIcon icon="tabler-file-invoice-off" size="48" class="mb-4" />
+            <p class="text-body-1">{{ $t('nfse_not_found') }}</p>
+          </div>
+        </VCardText>
+        <VDivider />
+        <VCardActions class="pa-4">
+          <VSpacer />
+          <VBtn variant="tonal" color="secondary" @click="closeNfseModal">
+            {{ $t('close') }}
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
   </div>
 </template>
 

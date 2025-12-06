@@ -21,6 +21,7 @@ import { listAccountAddonsSchema } from '@core/schema/accountSettings/listAccoun
 import { listAccountPlanProductsSchema } from '@core/schema/accountSettings/listAccountPlanProducts';
 import { updateUserCardDefaultSchema } from '@core/schema/accountSettings/updateUserCardDefault';
 import { createUserCardSchema } from '@core/schema/accountSettings/createUserCard';
+import { viewAccountPaymentNfseSchema } from '@core/schema/accountSettings/viewAccountPaymentNfse';
 import { planInvoicePermissions } from '@/permissions';
 
 export default async function accountSettingsRoutes(server: FastifyInstance) {
@@ -169,6 +170,15 @@ export default async function accountSettingsRoutes(server: FastifyInstance) {
   server.patch('/account-settings/cards/default', {
     schema: updateUserCardDefaultSchema,
     handler: accountSettingsController.updateUserCardDefault,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.get('/account-settings/payments/:account_payment_id/nfse', {
+    schema: viewAccountPaymentNfseSchema,
+    handler: accountSettingsController.viewAccountPaymentNfse,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),

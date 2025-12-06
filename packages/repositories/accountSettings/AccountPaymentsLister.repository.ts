@@ -78,6 +78,11 @@ export class AccountPaymentsListerRepository {
             },
           },
         },
+        apn: {
+          columns: {
+            account_payment_nfse_id: true,
+          },
+        },
       },
       orderBy: (accountPayment, { desc: descFn }) => [
         descFn(accountPayment.created_at),
@@ -104,6 +109,7 @@ export class AccountPaymentsListerRepository {
       payment_date: payment.payment_date,
       created_at: payment.created_at || '',
       invoice_url: payment.invoice_url,
+      has_nfse: payment.apn && payment.apn.length > 0,
       cross_sells:
         payment.apc?.map((crossSell) => ({
           account_payment_cross_sell_id:
