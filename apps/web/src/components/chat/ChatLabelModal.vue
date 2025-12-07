@@ -100,14 +100,16 @@ watch(
   >
     <DialogCloseBtn :disabled="isSavingLabel" @click="closeLabelModal" />
 
+    <VOverlay
+      :model-value="isLoadingLabels || isSavingLabel"
+      class="align-center justify-center"
+      contained
+    >
+      <VProgressCircular color="primary" indeterminate size="64" />
+    </VOverlay>
+
     <VCard :title="t('label')">
       <VCardText>
-        <VProgressLinear
-          v-if="isLoadingLabels"
-          indeterminate
-          color="primary"
-          class="mb-4"
-        />
 
         <VSelect
           v-else

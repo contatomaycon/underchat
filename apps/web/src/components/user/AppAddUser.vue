@@ -1342,14 +1342,13 @@ onMounted(resetForm);
   <VDialog v-model="isVisible" max-width="1200">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <template v-if="userStore.loading">
-      <VOverlay
-        :model-value="userStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
+    <VOverlay
+      :model-value="isInitializingModal || userStore.loading"
+      class="align-center justify-center"
+      contained
+    >
+      <VProgressCircular color="primary" indeterminate size="64" />
+    </VOverlay>
 
     <VCard class="mx-2 my-2">
       <VCardTitle class="pa-6 pb-4 text-h5">
