@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { computed, onMounted, nextTick, watch } from 'vue';
+import { computed, onMounted, nextTick, watch, ref } from 'vue';
 import { useUsersStore } from '@/@webcore/stores/user';
 import { useAccountStore } from '@/@webcore/stores/account';
 import { VForm } from 'vuetify/components/VForm';
@@ -28,8 +28,6 @@ const {
   loadStates,
   loadCities,
   clearCities,
-  loadingStates,
-  loadingCities,
 } = useStatesAndCities();
 const { t } = useI18n();
 
@@ -37,6 +35,12 @@ const isAdministrator = computed(() => getAdministrator());
 const currentUser = computed(() => getUser());
 const accountId = ref<string | null>(null);
 const accountsOptions = ref<{ account_id: string; name: string }[]>([]);
+const accountSearchQuery = ref('');
+const isAccountMenuOpen = ref(false);
+const permissionRoleId = ref<string | null>(null);
+const rolesOptions = ref<{ id: string; name: string }[]>([]);
+const roleSearchQuery = ref('');
+const isRoleMenuOpen = ref(false);
 
 const countrySearchQuery = ref('');
 const isCountryMenuOpen = ref(false);
@@ -203,7 +207,6 @@ const cropPreviewSize = 400;
 
 const cropDialog = ref({
   imageSrc: '',
-  croppedImage: '',
 });
 
 const cropArea = ref({
@@ -211,7 +214,6 @@ const cropArea = ref({
   y: 0,
   width: 200,
   height: 200,
-  aspectRatio: 1,
   isDragging: false,
   isResizing: false,
   startX: 0,
@@ -319,12 +321,8 @@ const goPrev = () => {
   tab.value = navigateToPrevTab(tab.value);
 };
 
-const {
-  strength: passwordStrength,
-  strengthColor,
-  strengthLabel,
-  strengthPercentage,
-} = usePasswordStrength(() => password.value);
+const { strengthColor, strengthLabel, strengthPercentage } =
+  usePasswordStrength(() => password.value);
 
 const rules = {
   password: (v: string | null) => {
@@ -447,32 +445,44 @@ const buildUserPayload = () => {
     (c) => c.id_zipcode_city === city_id.value
   );
 
-  return {
-    email: email.value!,
-    password: password.value!,
-    account_id:
-      isAdministrator.value && accountId.value ? accountId.value : undefined,
+  const payload: any = {
+    email: { value: email.value! },
+    password: { value: password.value! },
     user_info: {
-      phone_ddi: phone_ddi.value!,
-      phone: phoneNumber,
-      name: name.value!,
-      last_name: last_name.value!,
-      birth_date: birth_date.value,
+      phone_ddi: { value: phone_ddi.value! },
+      phone: { value: phoneNumber },
+      name: { value: name.value! },
+      last_name: { value: last_name.value! },
+      birth_date: birth_date.value ? { value: birth_date.value } : undefined,
     },
     user_document: {
-      user_document_type_id: user_document_type_id.value!,
-      document: document.value!,
+      document_type_id: { value: user_document_type_id.value! },
+      document: { value: document.value! },
     },
     user_address: {
-      country_id: country_id.value!,
-      zip_code: zip_code.value!,
-      address1: address1.value!,
-      address2: address2.value,
-      city_fiscal_code: selectedCity?.fiscal_code ?? null,
-      state_fiscal_code: selectedState?.fiscal_code ?? null,
-      district: district.value!,
+      country_id: { value: country_id.value! },
+      zip_code: { value: zip_code.value! },
+      address1: { value: address1.value! },
+      address2: address2.value ? { value: address2.value } : undefined,
+      city_fiscal_code: {
+        value: selectedCity?.fiscal_code ?? null,
+      },
+      state_fiscal_code: {
+        value: selectedState?.fiscal_code ?? null,
+      },
+      district: { value: district.value! },
     },
   };
+
+  if (isAdministrator.value && accountId.value) {
+    payload.account_id = { value: accountId.value };
+  }
+
+  if (permissionRoleId.value) {
+    payload.permission_role_id = { value: permissionRoleId.value };
+  }
+
+  return payload;
 };
 
 const addUser = async () => {
@@ -544,8 +554,27 @@ watch(isCityMenuOpen, (isOpen) => {
 });
 
 const resetForm = () => {
+  email.value = null;
+  password.value = null;
+  confirmPassword.value = null;
   name.value = null;
+  last_name.value = null;
+  birth_date.value = null;
+  user_document_type_id.value = null;
+  document.value = null;
+  phone_ddi.value = '55';
+  phone.value = null;
+  country_id.value = null;
+  zip_code.value = null;
+  address1.value = null;
+  address2.value = null;
+  city.value = null;
+  state.value = null;
+  state_id.value = null;
+  city_id.value = null;
+  district.value = null;
   accountId.value = null;
+  permissionRoleId.value = null;
   if (!isAdministrator.value && currentUser.value?.account_id) {
     accountId.value = currentUser.value.account_id;
   }
@@ -553,8 +582,9 @@ const resetForm = () => {
   photoFile.value = null;
   photoPreview.value = null;
   cropDialog.value.imageSrc = '';
-  cropDialog.value.croppedImage = '';
   refFormAddUser.value?.resetValidation();
+  refFormStep1.value?.resetValidation();
+  refFormStep2.value?.resetValidation();
 };
 
 const createFileInput = (): HTMLInputElement => {
@@ -659,8 +689,6 @@ const setupCropArea = (
 
   img.style.width = `${displayWidth}px`;
   img.style.height = `${displayHeight}px`;
-
-  cropArea.value.aspectRatio = 1;
 
   const maxCropSize = Math.min(displayWidth, displayHeight, cropPreviewSize);
   const cropSize = maxCropSize;
@@ -1111,16 +1139,6 @@ const createCroppedFile = (blob: Blob): File => {
   });
 };
 
-const handleCropSuccess = (canvas: HTMLCanvasElement) => {
-  const croppedFile = createCroppedFile(
-    new Blob([canvas.toDataURL('image/jpeg')], { type: 'image/jpeg' })
-  );
-  photoFile.value = croppedFile;
-  photoPreview.value = canvas.toDataURL('image/jpeg');
-  cropDialog.value.croppedImage = canvas.toDataURL('image/jpeg');
-  isCropModalOpen.value = false;
-};
-
 const cropImage = () => {
   if (!cropImageRef.value || !cropCanvasRef.value) return;
 
@@ -1145,7 +1163,6 @@ const cropImage = () => {
       const croppedFile = createCroppedFile(blob);
       photoFile.value = croppedFile;
       photoPreview.value = canvas.toDataURL('image/jpeg');
-      cropDialog.value.croppedImage = canvas.toDataURL('image/jpeg');
       isCropModalOpen.value = false;
     },
     'image/jpeg',
@@ -1156,7 +1173,6 @@ const cropImage = () => {
 const cancelCrop = () => {
   isCropModalOpen.value = false;
   cropDialog.value.imageSrc = '';
-  cropDialog.value.croppedImage = '';
   photoFile.value = null;
 };
 
@@ -1164,7 +1180,6 @@ const removePhoto = () => {
   photo.value = null;
   photoFile.value = null;
   photoPreview.value = null;
-  cropDialog.value.croppedImage = '';
 };
 
 const loadAdministratorAccounts = async () => {
@@ -1182,9 +1197,49 @@ const setCurrentUserAccount = () => {
   }
 };
 
+const filteredAccounts = computed(() => {
+  if (!accountSearchQuery.value) {
+    return accountsOptions.value;
+  }
+  const query = accountSearchQuery.value.toLowerCase();
+  return accountsOptions.value.filter((account) =>
+    account.name.toLowerCase().includes(query)
+  );
+});
+
+const filteredRoles = computed(() => {
+  if (!roleSearchQuery.value) {
+    return rolesOptions.value;
+  }
+  const query = roleSearchQuery.value.toLowerCase();
+  return rolesOptions.value.filter((role) =>
+    role.name.toLowerCase().includes(query)
+  );
+});
+
+watch(isAccountMenuOpen, (isOpen) => {
+  if (!isOpen) {
+    accountSearchQuery.value = '';
+  }
+});
+
+watch(isRoleMenuOpen, (isOpen) => {
+  if (!isOpen) {
+    roleSearchQuery.value = '';
+  }
+});
+
+const loadRoles = async () => {
+  const roles = await userStore.listUserRoles();
+  if (roles) {
+    rolesOptions.value = roles;
+  }
+};
+
 const loadAccounts = async () => {
   await loadAdministratorAccounts();
   setCurrentUserAccount();
+  await loadRoles();
 };
 
 watch(isVisible, async (visible) => {
@@ -1302,8 +1357,8 @@ onMounted(resetForm);
                   </VCol>
                   <VDivider vertical class="d-none d-md-block" />
                   <VCol cols="12" md="8" class="pa-6">
-                    <VRow class="mb-2">
-                      <VCol v-if="isAdministrator" cols="12" md="6">
+                    <VRow class="mb-4">
+                      <VCol cols="12">
                         <AppTextField
                           v-model="email"
                           type="email"
@@ -1312,40 +1367,153 @@ onMounted(resetForm);
                           :rules="[
                             emailValidator,
                             requiredValidator(email, $t('email_required')),
-                          ]"
-                        />
-                      </VCol>
-
-                      <VCol v-if="!isAdministrator" cols="12">
-                        <AppTextField
-                          v-model="email"
-                          type="email"
-                          :label="$t('email') + ':'"
-                          :placeholder="$t('email')"
-                          :rules="[
-                            emailValidator,
-                            requiredValidator(email, $t('email_required')),
-                          ]"
-                        />
-                      </VCol>
-
-                      <VCol v-if="isAdministrator" cols="12" md="6">
-                        <AppAutocomplete
-                          v-model="accountId"
-                          :items="accountsOptions"
-                          item-title="name"
-                          item-value="account_id"
-                          :label="$t('account') + ':'"
-                          :placeholder="$t('select_account')"
-                          :rules="[
-                            requiredValidator(
-                              accountId,
-                              $t('account_required')
-                            ),
                           ]"
                         />
                       </VCol>
                     </VRow>
+
+                    <VDivider class="mb-4" />
+                    <VRow class="mb-4">
+                      <VCol v-if="isAdministrator" cols="12" md="6">
+                        <div>
+                          <VLabel class="mb-1 text-body-2"
+                            >{{ $t('account') }}:</VLabel
+                          >
+                          <VMenu v-model="isAccountMenuOpen">
+                            <template #activator="{ props: menuProps }">
+                              <VTextField
+                                v-bind="menuProps"
+                                :model-value="
+                                  accountsOptions.find(
+                                    (a) => a.account_id === accountId
+                                  )?.name || ''
+                                "
+                                :placeholder="$t('select_account')"
+                                variant="outlined"
+                                readonly
+                                append-inner-icon="tabler-chevron-down"
+                                :rules="[
+                                  requiredValidator(
+                                    accountId,
+                                    $t('account_required')
+                                  ),
+                                ]"
+                              />
+                            </template>
+                            <VCard>
+                              <VCardText class="pa-2">
+                                <AppTextField
+                                  v-model="accountSearchQuery"
+                                  :placeholder="$t('search') + '...'"
+                                  prepend-inner-icon="tabler-search"
+                                  density="compact"
+                                  hide-details
+                                  autofocus
+                                  @click.stop
+                                />
+                              </VCardText>
+                              <VDivider />
+                              <VList max-height="300" style="overflow-y: auto">
+                                <VListItem
+                                  v-for="(item, index) in filteredAccounts"
+                                  :key="index"
+                                  :value="item.account_id"
+                                  @click="
+                                    () => {
+                                      accountId = item.account_id;
+                                      isAccountMenuOpen = false;
+                                    }
+                                  "
+                                  :active="accountId === item.account_id"
+                                >
+                                  <VListItemTitle>{{
+                                    item.name
+                                  }}</VListItemTitle>
+                                </VListItem>
+                                <VListItem
+                                  v-if="filteredAccounts.length === 0"
+                                  disabled
+                                >
+                                  <VListItemTitle
+                                    class="text-center text-body-2 text-medium-emphasis"
+                                  >
+                                    {{ $t('no_results_found') }}
+                                  </VListItemTitle>
+                                </VListItem>
+                              </VList>
+                            </VCard>
+                          </VMenu>
+                        </div>
+                      </VCol>
+
+                      <VCol cols="12" :md="isAdministrator ? 6 : 12">
+                        <div>
+                          <VLabel class="mb-1 text-body-2"
+                            >{{ $t('role') }}:</VLabel
+                          >
+                          <VMenu v-model="isRoleMenuOpen">
+                            <template #activator="{ props: menuProps }">
+                              <VTextField
+                                v-bind="menuProps"
+                                :model-value="
+                                  rolesOptions.find(
+                                    (r) => r.id === permissionRoleId
+                                  )?.name || ''
+                                "
+                                :placeholder="$t('select_role')"
+                                variant="outlined"
+                                readonly
+                                append-inner-icon="tabler-chevron-down"
+                              />
+                            </template>
+                            <VCard>
+                              <VCardText class="pa-2">
+                                <AppTextField
+                                  v-model="roleSearchQuery"
+                                  :placeholder="$t('search') + '...'"
+                                  prepend-inner-icon="tabler-search"
+                                  density="compact"
+                                  hide-details
+                                  autofocus
+                                  @click.stop
+                                />
+                              </VCardText>
+                              <VDivider />
+                              <VList max-height="300" style="overflow-y: auto">
+                                <VListItem
+                                  v-for="(item, index) in filteredRoles"
+                                  :key="index"
+                                  :value="item.id"
+                                  @click="
+                                    () => {
+                                      permissionRoleId = item.id;
+                                      isRoleMenuOpen = false;
+                                    }
+                                  "
+                                  :active="permissionRoleId === item.id"
+                                >
+                                  <VListItemTitle>{{
+                                    item.name
+                                  }}</VListItemTitle>
+                                </VListItem>
+                                <VListItem
+                                  v-if="filteredRoles.length === 0"
+                                  disabled
+                                >
+                                  <VListItemTitle
+                                    class="text-center text-body-2 text-medium-emphasis"
+                                  >
+                                    {{ $t('no_results_found') }}
+                                  </VListItemTitle>
+                                </VListItem>
+                              </VList>
+                            </VCard>
+                          </VMenu>
+                        </div>
+                      </VCol>
+                    </VRow>
+
+                    <VDivider class="mb-4" />
                     <VRow class="mb-2">
                       <VCol cols="12" md="6">
                         <AppTextField

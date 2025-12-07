@@ -17,6 +17,7 @@ import { UserExistsByEmailAndPhoneRepository } from './UserExistsByEmailAndPhone
 import moment from 'moment';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
 import { ChatUserCreatorRepository } from '../chat/ChatUserCreator.repository';
+import { PermissionAssignmentCreatorRepository } from '../permission/PermissionAssignmentCreator.repository';
 
 @injectable()
 export class UserTransactionCreatorRepository {
@@ -29,7 +30,8 @@ export class UserTransactionCreatorRepository {
     private readonly userDocumentCreatorRepository: UserDocumentCreatorRepository,
     private readonly userInfoCreatorRepository: UserInfoCreatorRepository,
     private readonly userExistsByEmailAndPhoneRepository: UserExistsByEmailAndPhoneRepository,
-    private readonly chatUserCreatorRepository: ChatUserCreatorRepository
+    private readonly chatUserCreatorRepository: ChatUserCreatorRepository,
+    private readonly permissionAssignmentCreatorRepository: PermissionAssignmentCreatorRepository
   ) {}
 
   private validateBirthDate(
@@ -218,6 +220,20 @@ export class UserTransactionCreatorRepository {
 
       if (!userAddress || !userDocument || !userInfo || !chatUser) {
         throw new Error('user_creation_failed');
+      }
+
+      if (input.permission_role_id?.value) {
+        const permissionAssignmentId =
+          await this.permissionAssignmentCreatorRepository.createPermissionAssignmentInTransaction(
+            tx,
+            createUserId,
+            input.permission_role_id.value,
+            accountId
+          );
+
+        if (!permissionAssignmentId) {
+          throw new Error(t('user_role_assignment_failed'));
+        }
       }
     });
     return true;

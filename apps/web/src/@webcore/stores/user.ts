@@ -27,6 +27,7 @@ import { ViewUserAddress2Response } from '@core/schema/user/viewUserAddress2/res
 import { AssignUserRoleRequest } from '@core/schema/user/assignUserRole/request.schema';
 import { ViewUserRoleResponse } from '@core/schema/user/viewUserRole/response.schema';
 import { ListAllUsersResponse } from '@core/schema/user/listAllUsers/response.schema';
+import { ListUserRolesResponse } from '@core/schema/user/listUserRoles/response.schema';
 
 export const useUsersStore = defineStore('users', {
   state: () => ({
@@ -314,28 +315,29 @@ export const useUsersStore = defineStore('users', {
 
     async addUser(
       payload: {
-        email: string;
-        password: string;
-        account_id?: string;
+        email: { value: string };
+        password: { value: string };
+        account_id?: { value: string };
+        permission_role_id?: { value: string };
         user_info: {
-          phone_ddi: string;
-          phone: string;
-          name: string;
-          last_name: string;
-          birth_date: string | null;
+          phone_ddi: { value: string };
+          phone: { value: string };
+          name: { value: string };
+          last_name: { value: string };
+          birth_date?: { value: string | null };
         };
         user_document: {
-          user_document_type_id: string;
-          document: string;
+          document_type_id: { value: string };
+          document: { value: string };
         };
         user_address: {
-          country_id: number;
-          zip_code: string;
-          address1: string;
-          address2: string | null;
-          city_fiscal_code: string | null;
-          state_fiscal_code: string | null;
-          district: string;
+          country_id: { value: number };
+          zip_code: { value: string };
+          address1: { value: string };
+          address2?: { value: string | null };
+          city_fiscal_code: { value: string | null };
+          state_fiscal_code: { value: string | null };
+          district: { value: string };
         };
       },
       photoFile?: File | null
@@ -345,49 +347,61 @@ export const useUsersStore = defineStore('users', {
 
         const formData = new FormData();
 
-        formData.append('email', payload.email);
-        formData.append('password', payload.password);
+        formData.append('email[value]', payload.email.value);
+        formData.append('password[value]', payload.password.value);
 
         if (payload.account_id) {
-          formData.append('account_id', payload.account_id);
+          formData.append('account_id[value]', payload.account_id.value);
         }
 
-        formData.append('phone_ddi', payload.user_info.phone_ddi);
-        formData.append('phone', payload.user_info.phone);
-        formData.append('name', payload.user_info.name);
-        formData.append('last_name', payload.user_info.last_name);
+        if (payload.permission_role_id) {
+          formData.append(
+            'permission_role_id[value]',
+            payload.permission_role_id.value
+          );
+        }
+
+        formData.append('phone_ddi[value]', payload.user_info.phone_ddi.value);
+        formData.append('phone[value]', payload.user_info.phone.value);
+        formData.append('name[value]', payload.user_info.name.value);
+        formData.append('last_name[value]', payload.user_info.last_name.value);
         if (payload.user_info.birth_date) {
-          formData.append('birth_date', payload.user_info.birth_date);
+          formData.append(
+            'birth_date[value]',
+            payload.user_info.birth_date.value || ''
+          );
         }
 
         formData.append(
-          'document_type_id',
-          payload.user_document.user_document_type_id
+          'document_type_id[value]',
+          payload.user_document.document_type_id.value
         );
-        formData.append('document', payload.user_document.document);
+        formData.append(
+          'document[value]',
+          payload.user_document.document.value
+        );
 
         formData.append(
-          'country_id',
-          payload.user_address.country_id.toString()
+          'country_id[value]',
+          payload.user_address.country_id.value.toString()
         );
-        formData.append('zip_code', payload.user_address.zip_code);
-        formData.append('address1', payload.user_address.address1);
+        formData.append('zip_code[value]', payload.user_address.zip_code.value);
+        formData.append('address1[value]', payload.user_address.address1.value);
         if (payload.user_address.address2) {
-          formData.append('address2', payload.user_address.address2);
-        }
-        if (payload.user_address.city_fiscal_code) {
           formData.append(
-            'city_fiscal_code',
-            payload.user_address.city_fiscal_code
+            'address2[value]',
+            payload.user_address.address2.value || ''
           );
         }
-        if (payload.user_address.state_fiscal_code) {
-          formData.append(
-            'state_fiscal_code',
-            payload.user_address.state_fiscal_code
-          );
-        }
-        formData.append('district', payload.user_address.district);
+        formData.append(
+          'city_fiscal_code[value]',
+          payload.user_address.city_fiscal_code.value || ''
+        );
+        formData.append(
+          'state_fiscal_code[value]',
+          payload.user_address.state_fiscal_code.value || ''
+        );
+        formData.append('district[value]', payload.user_address.district.value);
 
         if (photoFile instanceof File) {
           formData.append('photo', photoFile);
@@ -755,6 +769,41 @@ export const useUsersStore = defineStore('users', {
         this.loading = false;
 
         return false;
+      }
+    },
+
+    async listUserRoles(): Promise<ListUserRolesResponse | null> {
+      try {
+        this.loading = true;
+
+        const response =
+          await axios.get<IApiResponse<ListUserRolesResponse>>(`/user/roles`);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('user_roles_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('user_roles_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
       }
     },
   },

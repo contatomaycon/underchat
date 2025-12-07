@@ -60,6 +60,11 @@ export const createUserRequestSchema = Type.Object({
     value: Type.String(),
   }),
   photo: Type.Optional(uploadFileRequestSchema),
+  permission_role_id: Type.Optional(
+    Type.Object({
+      value: Type.Union([Type.String({ format: 'uuid' }), Type.Null()]),
+    })
+  ),
 });
 
 export type CreateUserRequest = Static<typeof createUserRequestSchema>;
