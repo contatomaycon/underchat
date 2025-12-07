@@ -7,6 +7,9 @@ import { CreateOrderPaymentResponse } from '@core/schema/plan/createOrderPayment
 import { EPaymentBillingType } from '@core/common/enums/EPaymentBillingType';
 import { EPaymentStatus } from '@core/common/enums/EPaymentStatus';
 import { PlanReleaseService } from '@core/services/planRelease.service';
+import { AccountTestService } from '@core/services/accountTest.service';
+import { UserMasterViewerRepository } from '@core/repositories/user/UserMasterViewer.repository';
+import { UserService } from '@core/services/user.service';
 import { randomUUID } from 'node:crypto';
 
 @injectable()
@@ -14,7 +17,10 @@ export class OrderPaymentCreatorUseCase {
   constructor(
     private readonly paymentService: PaymentService,
     private readonly planService: PlanService,
-    private readonly planReleaseService: PlanReleaseService
+    private readonly planReleaseService: PlanReleaseService,
+    private readonly accountTestService: AccountTestService,
+    private readonly userMasterViewerRepository: UserMasterViewerRepository,
+    private readonly userService: UserService
   ) {}
 
   execute = async (
@@ -32,6 +38,67 @@ export class OrderPaymentCreatorUseCase {
       const isTestPlan = plan.is_test === true && (plan.days_trial ?? 0) > 0;
       if (isTestPlan && input.addons && input.addons.length > 0) {
         throw new Error(t('test_plan_cannot_have_addons'));
+      }
+
+      if (isTestPlan) {
+        const masterUser =
+          await this.userMasterViewerRepository.findMasterUserByAccountId(
+            accountId
+          );
+
+        if (!masterUser) {
+          throw new Error(t('master_user_not_found'));
+        }
+
+        const sensitiveData =
+          await this.userService.getUserSensitiveDataDecrypted(
+            masterUser.user_id
+          );
+
+        if (!sensitiveData) {
+          throw new Error(t('user_sensitive_data_not_found'));
+        }
+
+        if (
+          !sensitiveData.document ||
+          !sensitiveData.phone ||
+          !sensitiveData.email
+        ) {
+          throw new Error(t('test_plan_required_fields'));
+        }
+
+        const hasExistingTest = await this.accountTestService.checkExistingTest(
+          {
+            document: sensitiveData.document,
+            phone: sensitiveData.phone,
+            email: sensitiveData.email,
+          }
+        );
+
+        if (hasExistingTest) {
+          throw new Error(t('test_plan_already_used'));
+        }
+
+        await this.accountTestService.createTestPlan({
+          accountId,
+          planId: input.plan_id,
+          daysTrial: plan.days_trial!,
+          document: sensitiveData.document,
+          phone: sensitiveData.phone,
+          email: sensitiveData.email,
+        });
+
+        return {
+          order_id: randomUUID(),
+          total_amount: 0,
+          plan_price: 0,
+          addons_total: 0,
+          upgrade_discount: 0,
+          payment_method: input.payment_method,
+          pix_payment: undefined,
+          credit_card_payment: undefined,
+          boleto_payment: undefined,
+        };
       }
 
       const customer = await this.paymentService.getOrCreateCustomer(accountId);

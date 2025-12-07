@@ -1049,9 +1049,7 @@ const processCreditCardPayment = async (creditCardData: {
 const processPayment = async () => {
   if (!selectedPlanForCheckout.value) return;
 
-  // For test plans, no payment method is needed
   if (isTestPlan(selectedPlanForCheckout.value)) {
-    // Process test plan activation
     processingPayment.value = true;
     try {
       const paymentData = buildPaymentData();
@@ -1059,11 +1057,14 @@ const processPayment = async () => {
         await planStore.createOrderPayment(paymentData);
 
       if (result) {
-        // Redirect or show success message
         router.push({ name: 'account-settings', query: { tab: 'plans' } });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao ativar plano de teste:', error);
+      planStore.showSnackbar(
+        error?.message || t('test_plan_activation_failed'),
+        EColor.error
+      );
     } finally {
       processingPayment.value = false;
     }

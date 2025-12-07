@@ -11,6 +11,7 @@ import {
   nfse,
 } from '@core/models';
 import { randomUUID } from 'node:crypto';
+import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
 
 @injectable()
 export class PlanReleaseRepository {
@@ -594,6 +595,34 @@ export class PlanReleaseRepository {
     });
 
     return planData || null;
+  };
+
+  createTestPlanAccount = async (data: {
+    accountId: string;
+    planId: string;
+    daysTrial: number;
+  }): Promise<void> => {
+    const now = new Date();
+    const nextPaymentDate = new Date(now);
+    nextPaymentDate.setDate(nextPaymentDate.getDate() + data.daysTrial);
+
+    const planAccountId = randomUUID();
+    const planAccountData = {
+      plan_account_id: planAccountId,
+      account_id: data.accountId,
+      plan_id: data.planId,
+      account_payment_id: null,
+      recurring_payment: false,
+      billing_period_id: EBillingPeriod.monthly,
+      last_payment_date: now.toISOString(),
+      next_payment_date: nextPaymentDate.toISOString(),
+      cancellation_date: null,
+      value: '0',
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+    };
+
+    await this.db.insert(planAccount).values(planAccountData);
   };
 
   findUserCustomerByAccountPaymentId = async (

@@ -39,6 +39,7 @@ import { CreateUserCardRequest } from '@core/schema/accountSettings/createUserCa
 import { CreateUserCardResponse } from '@core/schema/accountSettings/createUserCard/response.schema';
 import { ViewAccountPaymentNfseResponse } from '@core/schema/accountSettings/viewAccountPaymentNfse/response.schema';
 import { CancelPlanAccountResponse } from '@core/schema/accountSettings/cancelPlanAccount/response.schema';
+import { getUser } from '@/@webcore/localStorage/user';
 
 export const useAccountSettingsStore = defineStore('accountSettings', {
   state: () => ({
@@ -273,6 +274,26 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
         }
 
         return data.data.document;
+      } catch {
+        return null;
+      }
+    },
+    async getEmailDecrypted(): Promise<string | null> {
+      try {
+        const user = getUser();
+        if (!user?.user_id) return null;
+
+        const response = await axios.get<IApiResponse<{ email: string }>>(
+          `/user/${user.user_id}/email`
+        );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data.email;
       } catch {
         return null;
       }
