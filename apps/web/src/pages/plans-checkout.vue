@@ -945,13 +945,14 @@ const buildPaymentData = (): CreateOrderPaymentRequest => {
         }))
       : undefined;
 
+  const isTest = isTestPlan(selectedPlanForCheckout.value);
   const isCreditCard = selectedPaymentMethod.value === 'credit_card';
 
   return {
     plan_id: selectedPlanForCheckout.value!.plan_id,
     billing_period: billingPeriod.value,
     addons: addons,
-    payment_method: selectedPaymentMethod.value!,
+    payment_method: isTest ? 'pix' : selectedPaymentMethod.value!,
     credit_card_id:
       isCreditCard && selectedCardId.value ? selectedCardId.value : undefined,
     new_card:
@@ -1046,7 +1047,30 @@ const processCreditCardPayment = async (creditCardData: {
 };
 
 const processPayment = async () => {
-  if (!selectedPlanForCheckout.value || !selectedPaymentMethod.value) return;
+  if (!selectedPlanForCheckout.value) return;
+
+  // For test plans, no payment method is needed
+  if (isTestPlan(selectedPlanForCheckout.value)) {
+    // Process test plan activation
+    processingPayment.value = true;
+    try {
+      const paymentData = buildPaymentData();
+      const result: CreateOrderPaymentResponse | null =
+        await planStore.createOrderPayment(paymentData);
+
+      if (result) {
+        // Redirect or show success message
+        router.push({ name: 'account-settings', query: { tab: 'plans' } });
+      }
+    } catch (error) {
+      console.error('Erro ao ativar plano de teste:', error);
+    } finally {
+      processingPayment.value = false;
+    }
+    return;
+  }
+
+  if (!selectedPaymentMethod.value) return;
 
   const isPixPayment = selectedPaymentMethod.value === 'pix';
   const isCreditCardPayment = selectedPaymentMethod.value === 'credit_card';
@@ -1356,7 +1380,14 @@ onMounted(async () => {
               <VDivider />
               <VStepperItem :value="3" :title="$t('user_information')" />
               <VDivider />
-              <VStepperItem :value="4" :title="$t('payment')" />
+              <VStepperItem
+                :value="4"
+                :title="
+                  isTestPlan(selectedPlanForCheckout)
+                    ? $t('test')
+                    : $t('payment')
+                "
+              />
             </VStepperHeader>
 
             <VStepperWindow>
@@ -2057,9 +2088,105 @@ onMounted(async () => {
                 </div>
               </VStepperWindowItem>
 
-              <!-- Step 4: Pagamento -->
+              <!-- Step 4: Pagamento ou Teste -->
               <VStepperWindowItem :value="4">
-                <div>
+                <!-- Tela de Teste para Plano de Teste -->
+                <div v-if="isTestPlan(selectedPlanForCheckout)">
+                  <div class="text-center mb-6">
+                    <VIcon
+                      v-if="selectedPlanForCheckout"
+                      :icon="selectedPlanForCheckout.icon || 'tabler-test-pipe'"
+                      size="64"
+                      color="primary"
+                      class="mb-4"
+                    />
+                    <h4 class="text-h4 mb-2">
+                      {{ $t('test_plan_title') }}
+                    </h4>
+                    <p class="text-body-1 text-medium-emphasis">
+                      {{ $t('test_plan_subtitle') }}
+                    </p>
+                  </div>
+
+                  <VCard variant="outlined" class="mb-6">
+                    <VCardText>
+                      <div
+                        v-if="selectedPlanForCheckout"
+                        class="d-flex align-center gap-3 mb-4"
+                      >
+                        <VIcon
+                          :icon="
+                            selectedPlanForCheckout.icon || 'tabler-rocket'
+                          "
+                          size="32"
+                          color="primary"
+                        />
+                        <div>
+                          <h5 class="text-h6 mb-1">
+                            {{ selectedPlanForCheckout.name }}
+                          </h5>
+                          <p
+                            v-if="selectedPlanForCheckout.description"
+                            class="text-body-2 text-medium-emphasis mb-0"
+                          >
+                            {{ selectedPlanForCheckout.description }}
+                          </p>
+                        </div>
+                      </div>
+
+                      <VDivider class="my-4" />
+
+                      <div class="d-flex flex-column gap-3">
+                        <div class="d-flex align-center gap-2">
+                          <VIcon
+                            icon="tabler-clock"
+                            size="20"
+                            color="primary"
+                          />
+                          <span class="text-body-1">
+                            {{
+                              $t('test_plan_duration', {
+                                days: selectedPlanForCheckout?.days_trial || 0,
+                              })
+                            }}
+                          </span>
+                        </div>
+                        <div class="d-flex align-center gap-2">
+                          <VIcon
+                            icon="tabler-info-circle"
+                            size="20"
+                            color="primary"
+                          />
+                          <span class="text-body-1">
+                            {{ $t('test_plan_unique') }}
+                          </span>
+                        </div>
+                        <div class="d-flex align-center gap-2">
+                          <VIcon
+                            icon="tabler-check"
+                            size="20"
+                            color="success"
+                          />
+                          <span class="text-body-1">
+                            {{ $t('test_plan_features') }}
+                          </span>
+                        </div>
+                      </div>
+                    </VCardText>
+                  </VCard>
+
+                  <VAlert type="info" variant="tonal" class="mb-6">
+                    <VAlertTitle>
+                      {{ $t('test_plan_info_title') }}
+                    </VAlertTitle>
+                    <div>
+                      {{ $t('test_plan_info_message') }}
+                    </div>
+                  </VAlert>
+                </div>
+
+                <!-- Tela de Pagamento para Planos Normais -->
+                <div v-else>
                   <h4 class="text-h6 mb-4">
                     {{ $t('select_payment_method') }}
                   </h4>
@@ -3115,11 +3242,13 @@ onMounted(async () => {
                     color="primary"
                     :disabled="
                       !selectedPlanForCheckout ||
-                      !selectedPaymentMethod ||
-                      (selectedPaymentMethod === 'credit_card' &&
-                        !selectedCardId &&
-                        userCards.length > 0 &&
-                        !isNewCardValid) ||
+                      (isTestPlan(selectedPlanForCheckout)
+                        ? false
+                        : !selectedPaymentMethod ||
+                          (selectedPaymentMethod === 'credit_card' &&
+                            !selectedCardId &&
+                            userCards.length > 0 &&
+                            !isNewCardValid)) ||
                       isDiscountGreaterThanTotal ||
                       isUpgradeBlocked ||
                       isTotalZero ||
@@ -3128,7 +3257,11 @@ onMounted(async () => {
                     :loading="processingPayment"
                     @click="processPayment"
                   >
-                    {{ $t('finalize_purchase') }}
+                    {{
+                      isTestPlan(selectedPlanForCheckout)
+                        ? $t('test_now')
+                        : $t('finalize_purchase')
+                    }}
                   </VBtn>
                 </div>
               </template>
