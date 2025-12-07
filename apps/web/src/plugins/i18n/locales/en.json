@@ -1080,6 +1080,8 @@
     "report_attendance_view": "View Attendance Reports",
     "report_attendance_list_successfully": "Attendance reports retrieved successfully!",
     "report_attendance_list_error": "An error occurred while listing attendance reports. Please try again.",
+    "report_attendance_pdf_generate_successfully": "Attendance report PDF generated successfully!",
+    "report_attendance_pdf_generate_error": "An error occurred while generating the attendance report PDF. Please try again.",
     "report_attendance_list_not_found": "No attendance reports found.",
     "attendances": "Attendances",
     "attendance_reports": "Attendance Reports",

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EReportConversationHistoryPermissions } from '@core/common/enums/EPermissions/reportConversationHistory';
 import { EReportAttendancePermissions } from '@core/common/enums/EPermissions/reportAttendance';
 import { useI18n } from 'vue-i18n';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
@@ -9,13 +10,14 @@ import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import BarChart from '@/@webcore/libs/chartjs/components/BarChart';
 import { refDebounced } from '@vueuse/core';
 import { useReportAttendanceStore } from '@/@webcore/stores/reportAttendance';
+import axios from '@webcore/axios';
 
 definePage({
   meta: {
     permissions: [
       EGeneralPermissions.full_access,
       EGeneralPermissions.full_access_group,
-      EReportAttendancePermissions.report_attendance_group,
+      EReportConversationHistoryPermissions.report_conversation_history_group,
       EReportAttendancePermissions.report_attendance_view,
     ],
   },
@@ -396,6 +398,44 @@ const formatDateForPicker = (date: Date): string => {
   return `${year}-${month}-${day}`;
 };
 
+// Função para baixar PDF
+const downloadPdf = async () => {
+  if (!startDate.value || !endDate.value) {
+    return;
+  }
+
+  const startDateFormatted = formatDateForApi(startDate.value, false);
+  const endDateFormatted = formatDateForApi(endDate.value, true);
+
+  if (!startDateFormatted || !endDateFormatted) {
+    return;
+  }
+
+  try {
+    const response = await axios.get('/report-attendance/pdf', {
+      params: {
+        report_type: reportType.value,
+        period: periodType.value,
+        start_date: startDateFormatted,
+        end_date: endDateFormatted,
+      },
+      responseType: 'blob',
+    });
+
+    const blob = new Blob([response.data], { type: 'application/pdf' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `relatorio-atendimentos-${new Date().toISOString().split('T')[0]}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('Erro ao baixar PDF:', error);
+  }
+};
+
 // Inicializar com datas padrão
 onMounted(() => {
   const today = new Date();
@@ -483,7 +523,18 @@ onMounted(() => {
 
         <!-- Tabela -->
         <VCard>
-          <VCardTitle>{{ getChartTitle() }}</VCardTitle>
+          <VCardTitle class="d-flex justify-space-between align-center">
+            <span>{{ getChartTitle() }}</span>
+            <VBtn
+              color="primary"
+              variant="outlined"
+              prepend-icon="tabler-file-pdf"
+              @click="downloadPdf"
+              :disabled="!startDate || !endDate || loading"
+            >
+              {{ $t('download_pdf') }}
+            </VBtn>
+          </VCardTitle>
           <VCardText>
             <div class="d-flex justify-end align-center mb-4">
               <div class="d-flex align-center gap-4">

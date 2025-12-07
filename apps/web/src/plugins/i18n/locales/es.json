@@ -1080,6 +1080,8 @@
     "report_attendance_view": "Ver Informes de Atención",
     "report_attendance_list_successfully": "¡Informes de atención obtenidos con éxito!",
     "report_attendance_list_error": "Ocurrió un error al listar los informes de atención. Por favor, intente nuevamente.",
+    "report_attendance_pdf_generate_successfully": "¡PDF del informe de atención generado con éxito!",
+    "report_attendance_pdf_generate_error": "Ocurrió un error al generar el PDF del informe de atención. Por favor, intente nuevamente.",
     "report_attendance_list_not_found": "No se encontraron informes de atención.",
     "attendances": "Atenciones",
     "attendance_reports": "Informes de Atenciones",

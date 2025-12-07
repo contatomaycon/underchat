@@ -1113,6 +1113,8 @@
     "report_attendance_list_successfully": "Relatórios de atendimentos obtidos com sucesso!",
     "report_attendance_list_error": "Ocorreu um erro ao listar os relatórios de atendimentos. Por favor, tente novamente.",
     "report_attendance_list_not_found": "Nenhum relatório de atendimentos encontrado.",
+    "report_attendance_pdf_generate_successfully": "PDF do relatório de atendimentos gerado com sucesso!",
+    "report_attendance_pdf_generate_error": "Ocorreu um erro ao gerar o PDF do relatório de atendimentos. Por favor, tente novamente.",
     "attendances": "Atendimentos",
     "attendance_reports": "Relatórios de Atendimentos",
     "attendances_by_queue": "Atendimentos por Fila",

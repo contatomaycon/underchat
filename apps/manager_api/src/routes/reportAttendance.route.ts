@@ -17,4 +17,15 @@ export default function reportAttendanceRoutes(server: FastifyInstance) {
         server.authenticateJwt(request, reply, reportAttendanceViewPermissions),
     ],
   });
+
+  server.get('/report-attendance/pdf', {
+    schema: {
+      querystring: listReportAttendanceSchema.querystring,
+    },
+    handler: reportAttendanceController.downloadReportAttendancePdf,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, reportAttendanceViewPermissions),
+    ],
+  });
 }

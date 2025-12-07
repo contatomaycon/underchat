@@ -282,7 +282,7 @@ export default [
         permissions: [
           EGeneralPermissions.full_access,
           EGeneralPermissions.full_access_group,
-          EReportAttendancePermissions.report_attendance_group,
+          EReportConversationHistoryPermissions.report_conversation_history_group,
           EReportAttendancePermissions.report_attendance_view,
         ],
       },
