@@ -1,13 +1,5 @@
 <script lang="ts" setup>
-import {
-  nextTick,
-  computed,
-  watch,
-  onMounted,
-  type Ref,
-  toRef,
-  ref,
-} from 'vue';
+import { nextTick, computed, watch, type Ref, toRef, ref } from 'vue';
 import { useUsersStore } from '@/@webcore/stores/user';
 import { useAccountStore } from '@/@webcore/stores/account';
 import { ECountry } from '@core/common/enums/ECountry';
@@ -2177,40 +2169,54 @@ const isInitializingModal = ref(false);
 const initializeModal = async () => {
   if (!isVisible.value || !userId.value) return;
   if (isInitializingModal.value) return;
-  
+
   isInitializingModal.value = true;
-  
+
   try {
     loadedTabs.value.clear();
     initialZipCode.value = null;
-    
+
     const previousTab = tab.value;
     tab.value = 'user_data';
-    
+
     if (previousTab !== 'user_data') {
       await nextTick();
     }
-    
+
     await loadUserDataTab(true);
   } finally {
     isInitializingModal.value = false;
   }
 };
 
-watch(isVisible, async (visible) => {
-  if (visible && userId.value) {
-    await initializeModal();
-  } else {
-    loadedTabs.value.clear();
-  }
-}, { immediate: true });
+watch(
+  isVisible,
+  async (visible) => {
+    if (visible && userId.value) {
+      await initializeModal();
+    } else {
+      loadedTabs.value.clear();
+    }
+  },
+  { immediate: true }
+);
 
-watch(tab, async (newTab, oldTab) => {
-  if (isInitializingModal.value) return;
-  if (isVisible.value && newTab && userId.value && newTab !== oldTab && oldTab !== undefined) {
-    await loadTabData(newTab);
-  }
-}, { immediate: false });
+watch(
+  tab,
+  async (newTab, oldTab) => {
+    if (isInitializingModal.value) return;
+    if (
+      isVisible.value &&
+      newTab &&
+      userId.value &&
+      newTab !== oldTab &&
+      oldTab !== undefined
+    ) {
+      await loadTabData(newTab);
+    }
+  },
+  { immediate: false }
+);
 
 watch(password, () => {
   confirmPassword.value = null;

@@ -6,6 +6,7 @@ import {
   IPlanAccountCancellationData,
   IPlanAccountCancellationResult,
   IPlanAccountWithPayment,
+  CancellationType,
 } from '@core/common/interfaces/IPlanAccountCancellation';
 import { PlanAccountCancellerRepository } from '@core/repositories/accountSettings/PlanAccountCanceller.repository';
 import { AccountUpdaterRepository } from '@core/repositories/account/AccountUpdater.repository';
@@ -123,13 +124,13 @@ export class PlanAccountCancellationService {
     invoiceId: string | null
   ): Array<
     Promise<{
-      type: 'payment' | 'subscription' | 'invoice';
+      type: CancellationType;
       result: boolean;
     }>
   > {
     const promises: Array<
       Promise<{
-        type: 'payment' | 'subscription' | 'invoice';
+        type: CancellationType;
         result: boolean;
       }>
     > = [
@@ -162,7 +163,7 @@ export class PlanAccountCancellationService {
 
   private processCancellationResults(
     results: Array<{
-      type: 'payment' | 'subscription' | 'invoice';
+      type: CancellationType;
       result: boolean;
     }>
   ): IPlanAccountCancellationResult['asaasActions'] {

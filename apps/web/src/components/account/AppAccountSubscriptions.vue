@@ -9,6 +9,8 @@ const accountStore = useAccountStore();
 const planStore = usePlanStore();
 const { t, locale } = useI18n();
 
+type DateOrStringOrNull = Date | string | null;
+
 const props = defineProps<{
   modelValue: boolean;
   accountId: string | null;
@@ -28,9 +30,9 @@ const isSaving = ref<boolean>(false);
 const plan_id = ref<string | null>(null);
 const recurring_payment = ref<boolean>(false);
 const billing_period_id = ref<string | null>(null);
-const last_payment_date = ref<Date | string | null>(null);
-const next_payment_date = ref<Date | string | null>(null);
-const cancellation_date = ref<Date | string | null>(null);
+const last_payment_date = ref<DateOrStringOrNull>(null);
+const next_payment_date = ref<DateOrStringOrNull>(null);
+const cancellation_date = ref<DateOrStringOrNull>(null);
 const valueDisplay = ref<string>('');
 const valueRaw = ref<number | null>(null);
 

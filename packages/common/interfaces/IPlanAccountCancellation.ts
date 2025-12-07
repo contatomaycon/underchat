@@ -33,3 +33,5 @@ export interface IPlanAccountWithPayment {
     recurring_payment: boolean;
   } | null;
 }
+
+export type CancellationType = 'payment' | 'subscription' | 'invoice';

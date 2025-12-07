@@ -7,6 +7,7 @@ import { UpdatePlanAccountRequest } from '@core/schema/planAccount/updatePlanAcc
 import { currentTime } from '@core/common/functions/currentTime';
 import { v7 as uuidv7 } from 'uuid';
 import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
+import { ICalculatedPlanAccountData } from '@core/common/interfaces/IPlanAccountUpdater';
 
 @injectable()
 export class PlanAccountUpdaterRepository {
@@ -72,33 +73,28 @@ export class PlanAccountUpdaterRepository {
         input.billing_period_id
       );
 
+      const calculatedData: ICalculatedPlanAccountData = {
+        recurringPayment,
+        billingPeriodId,
+        lastPaymentDate,
+        nextPaymentDate,
+        planValue,
+      };
+
       if (existingPlanAccount) {
         return this.updateExistingPlanAccount(
           tx,
           accountId,
           input,
-          recurringPayment,
-          billingPeriodId,
-          lastPaymentDate,
-          nextPaymentDate,
-          planValue
+          calculatedData
         );
       }
 
-      return this.createNewPlanAccount(
-        tx,
-        accountId,
-        input,
-        recurringPayment,
-        billingPeriodId,
-        lastPaymentDate,
-        nextPaymentDate,
-        planValue
-      );
+      return this.createNewPlanAccount(tx, accountId, input, calculatedData);
     });
   };
 
-  private findExistingPlanAccount = async (
+  private readonly findExistingPlanAccount = async (
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
     >[0],
@@ -116,7 +112,7 @@ export class PlanAccountUpdaterRepository {
     });
   };
 
-  private findPlanData = async (
+  private readonly findPlanData = async (
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
     >[0],
@@ -140,7 +136,7 @@ export class PlanAccountUpdaterRepository {
     return planData;
   };
 
-  private determineLastPaymentDate = (
+  private readonly determineLastPaymentDate = (
     inputLastPaymentDate: string | null | undefined,
     existingLastPaymentDate: string | null | undefined
   ): Date => {
@@ -155,7 +151,7 @@ export class PlanAccountUpdaterRepository {
     return new Date();
   };
 
-  private calculateNextPaymentDate = (
+  private readonly calculateNextPaymentDate = (
     inputNextPaymentDate: string | null | undefined,
     lastPaymentDate: Date,
     planData: {
@@ -181,7 +177,7 @@ export class PlanAccountUpdaterRepository {
     );
   };
 
-  private calculateTestPlanNextPaymentDate = (
+  private readonly calculateTestPlanNextPaymentDate = (
     lastPaymentDate: Date,
     daysTrial: number
   ): Date => {
@@ -190,7 +186,7 @@ export class PlanAccountUpdaterRepository {
     return nextPaymentDate;
   };
 
-  private calculateRegularPlanNextPaymentDate = (
+  private readonly calculateRegularPlanNextPaymentDate = (
     lastPaymentDate: Date,
     billingPeriodId: string | undefined
   ): Date => {
@@ -201,7 +197,7 @@ export class PlanAccountUpdaterRepository {
     return nextPaymentDate;
   };
 
-  private determinePlanValue = (
+  private readonly determinePlanValue = (
     inputValue: string | undefined,
     planData: {
       is_test: boolean;
@@ -221,7 +217,7 @@ export class PlanAccountUpdaterRepository {
     return this.calculateRegularPlanValue(planData, billingPeriodId);
   };
 
-  private calculateRegularPlanValue = (
+  private readonly calculateRegularPlanValue = (
     planData: {
       price: string | null;
       annual_discount: string | null;
@@ -238,7 +234,7 @@ export class PlanAccountUpdaterRepository {
     return monthlyPrice.toString();
   };
 
-  private calculateAnnualPrice = (
+  private readonly calculateAnnualPrice = (
     monthlyPrice: number,
     annualDiscount: string | null
   ): string => {
@@ -252,7 +248,7 @@ export class PlanAccountUpdaterRepository {
     return (annualPrice * (1 - discount / 100)).toString();
   };
 
-  private determineRecurringPayment = (
+  private readonly determineRecurringPayment = (
     isTest: boolean,
     inputRecurringPayment: boolean | undefined
   ): boolean => {
@@ -263,7 +259,7 @@ export class PlanAccountUpdaterRepository {
     return inputRecurringPayment ?? false;
   };
 
-  private determineBillingPeriodId = (
+  private readonly determineBillingPeriodId = (
     isTest: boolean,
     inputBillingPeriodId: string | undefined
   ): string => {
@@ -274,26 +270,22 @@ export class PlanAccountUpdaterRepository {
     return inputBillingPeriodId || EBillingPeriod.monthly;
   };
 
-  private updateExistingPlanAccount = async (
+  private readonly updateExistingPlanAccount = async (
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
     >[0],
     accountId: string,
     input: UpdatePlanAccountRequest,
-    recurringPayment: boolean,
-    billingPeriodId: string,
-    lastPaymentDate: Date,
-    nextPaymentDate: Date,
-    planValue: string
+    calculatedData: ICalculatedPlanAccountData
   ): Promise<boolean> => {
     const updateData = {
       plan_id: input.plan_id,
-      recurring_payment: recurringPayment,
-      billing_period_id: billingPeriodId,
-      last_payment_date: lastPaymentDate.toISOString(),
-      next_payment_date: nextPaymentDate.toISOString(),
+      recurring_payment: calculatedData.recurringPayment,
+      billing_period_id: calculatedData.billingPeriodId,
+      last_payment_date: calculatedData.lastPaymentDate.toISOString(),
+      next_payment_date: calculatedData.nextPaymentDate.toISOString(),
       cancellation_date: input.cancellation_date || null,
-      value: planValue,
+      value: calculatedData.planValue,
       updated_at: currentTime(),
     };
 
@@ -311,17 +303,13 @@ export class PlanAccountUpdaterRepository {
     return (result.rowCount ?? 0) > 0;
   };
 
-  private createNewPlanAccount = async (
+  private readonly createNewPlanAccount = async (
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
     >[0],
     accountId: string,
     input: UpdatePlanAccountRequest,
-    recurringPayment: boolean,
-    billingPeriodId: string,
-    lastPaymentDate: Date,
-    nextPaymentDate: Date,
-    planValue: string
+    calculatedData: ICalculatedPlanAccountData
   ): Promise<boolean> => {
     const planAccountId = uuidv7();
     const now = currentTime();
@@ -331,12 +319,12 @@ export class PlanAccountUpdaterRepository {
       account_id: accountId,
       plan_id: input.plan_id,
       account_payment_id: null,
-      recurring_payment: recurringPayment,
-      billing_period_id: billingPeriodId,
-      last_payment_date: lastPaymentDate.toISOString(),
-      next_payment_date: nextPaymentDate.toISOString(),
+      recurring_payment: calculatedData.recurringPayment,
+      billing_period_id: calculatedData.billingPeriodId,
+      last_payment_date: calculatedData.lastPaymentDate.toISOString(),
+      next_payment_date: calculatedData.nextPaymentDate.toISOString(),
       cancellation_date: input.cancellation_date || null,
-      value: planValue,
+      value: calculatedData.planValue,
       created_at: now,
       updated_at: now,
     });

@@ -94,7 +94,7 @@ export class AccountCreatorRepository {
     });
   };
 
-  private createPlanAccountForAccount = async (
+  private readonly createPlanAccountForAccount = async (
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
     >[0],
@@ -127,7 +127,7 @@ export class AccountCreatorRepository {
     );
   };
 
-  private findPlanData = async (
+  private readonly findPlanData = async (
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
     >[0],
@@ -151,7 +151,7 @@ export class AccountCreatorRepository {
     return planData;
   };
 
-  private createTestPlanAccount = async (
+  private readonly createTestPlanAccount = async (
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
     >[0],
@@ -180,7 +180,7 @@ export class AccountCreatorRepository {
     });
   };
 
-  private createRegularPlanAccount = async (
+  private readonly createRegularPlanAccount = async (
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
     >[0],
@@ -223,7 +223,7 @@ export class AccountCreatorRepository {
     });
   };
 
-  private getBillingPeriodId = (
+  private readonly getBillingPeriodId = (
     billingPeriod: 'monthly' | 'annual'
   ): string => {
     return billingPeriod === 'monthly'
@@ -231,7 +231,7 @@ export class AccountCreatorRepository {
       : EBillingPeriod.annual;
   };
 
-  private calculateNextPaymentDate = (
+  private readonly calculateNextPaymentDate = (
     now: Date,
     billingPeriod: 'monthly' | 'annual'
   ): string => {
@@ -254,7 +254,7 @@ export class AccountCreatorRepository {
     return this.calculateAnnualPrice(monthlyPrice, planData.annual_discount);
   };
 
-  private calculateAnnualPrice = (
+  private readonly calculateAnnualPrice = (
     monthlyPrice: number,
     annualDiscount: string | null
   ): number => {

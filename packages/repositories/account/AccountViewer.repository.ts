@@ -82,7 +82,7 @@ export class AccountViewerRepository {
                 billing_period:
                   activePlanAccount.bpl?.name === 'monthly' ||
                   activePlanAccount.bpl?.name === 'annual'
-                    ? (activePlanAccount.bpl.name as 'monthly' | 'annual')
+                    ? activePlanAccount.bpl.name
                     : null,
               }
             : null,

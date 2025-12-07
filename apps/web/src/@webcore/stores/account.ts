@@ -22,6 +22,7 @@ import { ViewAccountInfoResponse } from '@core/schema/account/viewAccountInfo/re
 import { EditAccountInfoParamsRequest } from '@core/schema/account/editAccountInfo/request.schema';
 import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 import { ListAccountSubscriptionsResponse } from '@core/schema/account/listAccountSubscriptions/response.schema';
+import { ViewPlanAccountResponse } from '@core/schema/planAccount/viewPlanAccount/response.schema';
 
 export const useAccountStore = defineStore('account', {
   state: () => ({
@@ -472,11 +473,13 @@ export const useAccountStore = defineStore('account', {
       }
     },
 
-    async getPlanAccount(accountId: string): Promise<any | null> {
+    async getPlanAccount(
+      accountId: string
+    ): Promise<ViewPlanAccountResponse | null> {
       try {
         this.loading = true;
 
-        const response = await axios.get<IApiResponse<any>>(
+        const response = await axios.get<IApiResponse<ViewPlanAccountResponse>>(
           `/account/${accountId}/plan-account`
         );
 
