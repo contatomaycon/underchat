@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRouter } from 'vue-router';
 import { useAccountSettingsStore } from '@/@webcore/stores/accountSettings';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { ViewCurrentPlanInvoiceResponse } from '@core/schema/accountSettings/viewCurrentPlanInvoice/response.schema';
@@ -20,6 +21,7 @@ import meliSvg from '@images/icons/payments/card/meli.svg?url';
 import realSvg from '@images/icons/payments/card/real.svg?url';
 
 const { t, locale } = useI18n();
+const router = useRouter();
 const accountSettingsStore = useAccountSettingsStore();
 useSnackbarCleanup(accountSettingsStore);
 
@@ -596,6 +598,40 @@ const cancelSubscription = async () => {
   }
 };
 
+const isPlanActive = computed(() => {
+  if (!planInvoice.value) return false;
+  
+  const hasCancellationDate = !!planInvoice.value.cancellation_date;
+  if (hasCancellationDate) {
+    const nextPaymentDateStr = planInvoice.value.next_payment_date;
+    if (nextPaymentDateStr) {
+      const nextPaymentDate = new Date(nextPaymentDateStr);
+      const now = new Date();
+      return nextPaymentDate > now;
+    }
+    return false;
+  }
+  
+  return true;
+});
+
+const renewPlan = () => {
+  if (!planInvoice.value) return;
+  
+  if (isPlanActive.value) {
+    const billingPeriod = planInvoice.value.billing_period || 'monthly';
+    router.push({
+      name: 'plans-checkout',
+      query: {
+        plan_id: planInvoice.value.plan_id,
+        billing: billingPeriod,
+      },
+    });
+  } else {
+    router.push({ name: 'plans' });
+  }
+};
+
 onMounted(() => {
   loadPlanInvoice();
   loadUserCards();
@@ -726,7 +762,7 @@ onMounted(() => {
             </div>
 
             <div class="d-flex gap-2">
-              <VBtn color="primary" variant="flat">
+              <VBtn color="primary" variant="flat" @click="renewPlan">
                 {{ $t('upgrade_plan') }}
               </VBtn>
               <VBtn
