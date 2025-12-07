@@ -289,9 +289,9 @@ export default [
     ],
   },
   {
-    title: 'notifications',
-    to: { name: 'notifications' as keyof RouteNamedMap },
-    icon: { icon: 'tabler-bell' },
+    title: 'config',
+    to: { name: 'config' as keyof RouteNamedMap },
+    icon: { icon: 'tabler-settings' },
     permissions: [
       EGeneralPermissions.full_access,
       EGeneralPermissions.full_access_group,

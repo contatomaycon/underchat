@@ -25,6 +25,7 @@ CREATE TABLE "user_card" (
   "default" boolean NOT NULL DEFAULT false,
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
+  "deleted_at" timestamptz NULL,
   PRIMARY KEY ("user_card_id"),
   CONSTRAINT "user_card_user_id_user_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "user" ("user_id") ON UPDATE NO ACTION ON DELETE NO ACTION
 );

@@ -56,6 +56,17 @@ export class UpgradeDiscountCalculatorRepository {
     const billingPeriodForNewPlan: string | null =
       selectedBillingPeriod || billingPeriodName || null;
 
+    const currentPlanId = activePlanAccount.ppl.plan_id;
+    const isSamePlan = currentPlanId === newPlanId;
+
+    if (
+      selectedBillingPeriod &&
+      billingPeriodName !== selectedBillingPeriod &&
+      isSamePlan
+    ) {
+      return this.buildResponseWithoutDiscount(currentPlanValue, false);
+    }
+
     const newPlanPrice = this.getNewPlanPrice(
       {
         price: Number(newPlan.price),
@@ -65,10 +76,13 @@ export class UpgradeDiscountCalculatorRepository {
     );
 
     const currentPlanMonthlyPrice = Number(activePlanAccount.ppl.price);
-    const currentPlanPriceForComparison =
-      billingPeriodName === 'annual'
-        ? currentPlanMonthlyPrice * 12
-        : currentPlanMonthlyPrice;
+
+    let currentPlanPriceForComparison: number;
+    if (billingPeriodForNewPlan === 'annual') {
+      currentPlanPriceForComparison = currentPlanMonthlyPrice * 12;
+    } else {
+      currentPlanPriceForComparison = currentPlanMonthlyPrice;
+    }
 
     const isUpgrade = this.isUpgrade(
       newPlanPrice,

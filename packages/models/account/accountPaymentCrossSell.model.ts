@@ -31,11 +31,11 @@ export const accountPaymentCrossSell = pgTable('account_payment_cross_sell', {
 export const accountPaymentCrossSellRelations = relations(
   accountPaymentCrossSell,
   ({ one }) => ({
-    apcs: one(planCrossSell, {
+    apc: one(planCrossSell, {
       fields: [accountPaymentCrossSell.plan_cross_sell_id],
       references: [planCrossSell.plan_cross_sell_id],
     }),
-    apcp: one(accountPayment, {
+    app: one(accountPayment, {
       fields: [accountPaymentCrossSell.account_payment_id],
       references: [accountPayment.account_payment_id],
     }),

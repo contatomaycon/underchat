@@ -179,13 +179,15 @@ export class OrderPaymentCreatorRepository {
     }
   };
 
-  private readonly getPlan = async (planId: string) => {
+  getPlan = async (planId: string) => {
     return this.db.query.plan.findFirst({
       where: and(eq(plan.plan_id, planId), isNull(plan.deleted_at)),
       columns: {
         plan_id: true,
         price: true,
         annual_discount: true,
+        is_test: true,
+        days_trial: true,
       },
     });
   };

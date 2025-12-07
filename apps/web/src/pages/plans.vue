@@ -33,6 +33,8 @@ const selectedPlanId = ref<string | null>(null);
 const currentPlanId = ref<string | null>(null);
 const currentPlan = ref<ListPlanWithItemsResponse | null>(null);
 const currentPlanBillingPeriod = ref<'monthly' | 'annual' | null>(null);
+const currentPlanInvoice = ref<any | null>(null);
+const testPlanAlreadyUsed = ref(false);
 
 const getCurrencyConfig = () => {
   const localeMap: Record<string, { locale: string; currency: string }> = {
@@ -75,48 +77,91 @@ const getPrice = (plan: ListPlanWithItemsResponse): number => {
   return plan.price;
 };
 
+const setCurrentPlan = (
+  result: ListPlanWithItemsResponse[],
+  currentPlanIdValue: string | null
+) => {
+  if (currentPlanIdValue) {
+    currentPlan.value =
+      result.find((p) => p.plan_id === currentPlanIdValue) || null;
+  } else {
+    currentPlan.value = null;
+  }
+};
+
+const setBillingPeriodFromInvoice = (planInvoice: any) => {
+  if (!planInvoice?.billing_period) {
+    currentPlanBillingPeriod.value = null;
+    return;
+  }
+
+  currentPlanBillingPeriod.value = planInvoice.billing_period as
+    | 'monthly'
+    | 'annual';
+
+  const isActive = planInvoice.next_payment_date
+    ? new Date(planInvoice.next_payment_date) > new Date()
+    : false;
+
+  if (currentPlanBillingPeriod.value === 'annual' && isActive) {
+    billingPeriod.value = 'annual';
+  }
+};
+
 const loadPlans = async () => {
   loading.value = true;
-  const [result, currentPlanIdValue, currentPlanInvoice] = await Promise.all([
-    planStore.listPlanWithItems(),
-    planStore.getCurrentPlan(),
-    accountSettingsStore.getCurrentPlanInvoice(),
-  ]);
+  const [result, currentPlanIdValue, planInvoice, alreadyUsed] =
+    await Promise.all([
+      planStore.listPlanWithItems(),
+      planStore.getCurrentPlan(),
+      accountSettingsStore.getCurrentPlanInvoice(),
+      planStore.checkTestPlanAlreadyUsed(),
+    ]);
 
-  if (result) {
-    plans.value = result;
-    currentPlanId.value = currentPlanIdValue;
+  currentPlanInvoice.value = planInvoice;
+  testPlanAlreadyUsed.value = alreadyUsed;
 
-    // Encontrar o plano atual na lista
-    if (currentPlanIdValue) {
-      currentPlan.value =
-        result.find((p) => p.plan_id === currentPlanIdValue) || null;
-    } else {
-      currentPlan.value = null;
-    }
-
-    if (currentPlanInvoice?.billing_period) {
-      currentPlanBillingPeriod.value = currentPlanInvoice.billing_period as
-        | 'monthly'
-        | 'annual';
-
-      if (currentPlanBillingPeriod.value === 'annual') {
-        billingPeriod.value = 'annual';
-      }
-    } else {
-      currentPlanBillingPeriod.value = null;
-    }
-
-    if (result.length > 1) {
-      selectedPlanId.value = result[1].plan_id;
-    }
+  if (!result) {
+    loading.value = false;
+    return;
   }
+
+  plans.value = result;
+  currentPlanId.value = currentPlanIdValue;
+  setCurrentPlan(result, currentPlanIdValue);
+  setBillingPeriodFromInvoice(planInvoice);
+
+  if (result.length > 1) {
+    selectedPlanId.value = result[1].plan_id;
+  }
+
   loading.value = false;
 };
+
+const isTestPlan = (plan: ListPlanWithItemsResponse): boolean => {
+  return plan.is_test === true && (plan.days_trial ?? 0) > 0;
+};
+
+const filteredPlans = computed(() => {
+  if (billingPeriod.value === 'annual') {
+    return plans.value.filter((plan) => !isTestPlan(plan));
+  }
+  return plans.value;
+});
 
 const selectPlan = (planId: string) => {
   selectedPlanId.value = planId;
 };
+
+const isPlanActive = computed(() => {
+  if (!currentPlanInvoice.value?.next_payment_date) {
+    return false;
+  }
+
+  const nextPaymentDate = new Date(currentPlanInvoice.value.next_payment_date);
+  const now = new Date();
+  return nextPaymentDate > now;
+});
 
 const openCheckout = (plan: ListPlanWithItemsResponse) => {
   if (isPlanDisabled(plan)) return;
@@ -138,7 +183,9 @@ const isPlanSelected = (planId: string): boolean => {
 };
 
 const isCurrentPlan = (planId: string): boolean => {
-  return currentPlanId.value === planId;
+  if (currentPlanId.value !== planId) return false;
+  if (!currentPlanBillingPeriod.value) return false;
+  return currentPlanBillingPeriod.value === billingPeriod.value;
 };
 
 const getCurrentPlanPrice = (): number | null => {
@@ -161,6 +208,7 @@ const isInvalidBillingPeriodChange = (
 
   if (
     currentPlanBillingPeriod.value === 'annual' &&
+    isPlanActive.value &&
     billingPeriod.value === 'monthly'
   ) {
     return true;
@@ -170,21 +218,34 @@ const isInvalidBillingPeriodChange = (
 };
 
 const isPlanDisabled = (plan: ListPlanWithItemsResponse): boolean => {
-  return (
-    isCurrentPlan(plan.plan_id) ||
-    isDowngrade(plan) ||
-    isInvalidBillingPeriodChange(plan)
-  );
+  if (isTestPlan(plan) && testPlanAlreadyUsed.value) {
+    return true;
+  }
+  return isDowngrade(plan) || isInvalidBillingPeriodChange(plan);
 };
 
-const getButtonText = (planId: string): string => {
-  if (isCurrentPlan(planId)) {
+const getButtonText = (plan: ListPlanWithItemsResponse): string => {
+  if (isCurrentPlan(plan.plan_id)) {
     return t('your_current_plan');
+  }
+  if (isTestPlan(plan)) {
+    if (testPlanAlreadyUsed.value) {
+      return t('test_already_used');
+    }
+    return t('test');
   }
   if (!currentPlanId.value) {
     return t('buy');
   }
   return t('upgrade');
+};
+
+const getBillingPeriodText = (plan: ListPlanWithItemsResponse): string => {
+  if (isTestPlan(plan) && plan.days_trial) {
+    const days = plan.days_trial;
+    return days === 1 ? `/1 ${t('day')}` : `/${days} ${t('days')}`;
+  }
+  return billingPeriod.value === 'annual' ? t('year') : t('month');
 };
 
 const formatItemName = (
@@ -207,7 +268,7 @@ const formatItemName = (
 };
 
 const getColClasses = computed(() => {
-  const count = plans.value.length;
+  const count = filteredPlans.value.length;
 
   if (count === 1) {
     return { cols: '12', sm: '12', md: '4', offset: '4' };
@@ -237,7 +298,11 @@ const getColClasses = computed(() => {
 });
 
 watch(billingPeriod, (newValue) => {
-  if (currentPlanBillingPeriod.value === 'annual' && newValue === 'monthly') {
+  if (
+    currentPlanBillingPeriod.value === 'annual' &&
+    isPlanActive.value &&
+    newValue === 'monthly'
+  ) {
     billingPeriod.value = 'annual';
   }
 });
@@ -262,7 +327,9 @@ onMounted(() => {
               :class="[
                 'text-body-1',
                 billingPeriod === 'monthly' ? 'text-primary' : 'text-disabled',
-                currentPlanBillingPeriod === 'annual' ? 'text-disabled' : '',
+                currentPlanBillingPeriod === 'annual' && isPlanActive
+                  ? 'text-disabled'
+                  : '',
               ]"
             >
               {{ $t('monthly') }}
@@ -273,7 +340,7 @@ onMounted(() => {
               false-value="monthly"
               color="primary"
               hide-details
-              :disabled="currentPlanBillingPeriod === 'annual'"
+              :disabled="currentPlanBillingPeriod === 'annual' && isPlanActive"
             />
             <span
               :class="[
@@ -298,9 +365,13 @@ onMounted(() => {
           </VCol>
         </VRow>
 
-        <VRow v-else-if="plans.length > 0" class="plans-row" justify="center">
+        <VRow
+          v-else-if="filteredPlans.length > 0"
+          class="plans-row"
+          justify="center"
+        >
           <VCol
-            v-for="(plan, index) in plans"
+            v-for="(plan, index) in filteredPlans"
             :key="plan.plan_id"
             :cols="getColClasses.cols"
             :sm="getColClasses.sm"
@@ -388,9 +459,7 @@ onMounted(() => {
                       {{ formatCurrency(getPrice(plan)) }}
                     </span>
                     <span class="text-body-2 text-medium-emphasis">
-                      /{{
-                        billingPeriod === 'annual' ? $t('year') : $t('month')
-                      }}
+                      {{ getBillingPeriodText(plan) }}
                     </span>
                   </div>
                   <div
@@ -476,9 +545,7 @@ onMounted(() => {
                   @click.stop="!isPlanDisabled(plan) && openCheckout(plan)"
                 >
                   {{
-                    isDowngrade(plan)
-                      ? $t('unavailable')
-                      : getButtonText(plan.plan_id)
+                    isDowngrade(plan) ? $t('unavailable') : getButtonText(plan)
                   }}
                 </VBtn>
               </VCardText>

@@ -7,6 +7,9 @@ import { CreateOrderPaymentResponse } from '@core/schema/plan/createOrderPayment
 import { EPaymentBillingType } from '@core/common/enums/EPaymentBillingType';
 import { EPaymentStatus } from '@core/common/enums/EPaymentStatus';
 import { PlanReleaseService } from '@core/services/planRelease.service';
+import { AccountTestService } from '@core/services/accountTest.service';
+import { UserMasterViewerRepository } from '@core/repositories/user/UserMasterViewer.repository';
+import { UserService } from '@core/services/user.service';
 import { randomUUID } from 'node:crypto';
 
 @injectable()
@@ -14,8 +17,156 @@ export class OrderPaymentCreatorUseCase {
   constructor(
     private readonly paymentService: PaymentService,
     private readonly planService: PlanService,
-    private readonly planReleaseService: PlanReleaseService
+    private readonly planReleaseService: PlanReleaseService,
+    private readonly accountTestService: AccountTestService,
+    private readonly userMasterViewerRepository: UserMasterViewerRepository,
+    private readonly userService: UserService
   ) {}
+
+  private async processTestPlan(
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    planId: string,
+    plan: { is_test: boolean; days_trial: number | null },
+    input: CreateOrderPaymentRequest
+  ): Promise<CreateOrderPaymentResponse> {
+    if (input.addons && input.addons.length > 0) {
+      throw new Error(t('test_plan_cannot_have_addons'));
+    }
+
+    const masterUser =
+      await this.userMasterViewerRepository.findMasterUserByAccountId(
+        accountId
+      );
+
+    if (!masterUser) {
+      throw new Error(t('master_user_not_found'));
+    }
+
+    const sensitiveData = await this.userService.getUserSensitiveDataDecrypted(
+      masterUser.user_id
+    );
+
+    if (!sensitiveData) {
+      throw new Error(t('user_sensitive_data_not_found'));
+    }
+
+    if (
+      !sensitiveData.document ||
+      !sensitiveData.phone ||
+      !sensitiveData.email
+    ) {
+      throw new Error(t('test_plan_required_fields'));
+    }
+
+    const hasExistingTest = await this.accountTestService.checkExistingTest({
+      document: sensitiveData.document,
+      phone: sensitiveData.phone,
+      email: sensitiveData.email,
+    });
+
+    if (hasExistingTest) {
+      throw new Error(t('test_plan_already_used'));
+    }
+
+    if (!plan.days_trial || plan.days_trial <= 0) {
+      throw new Error(t('test_plan_required_fields'));
+    }
+
+    await this.accountTestService.createTestPlan({
+      accountId,
+      planId,
+      daysTrial: plan.days_trial,
+      document: sensitiveData.document,
+      phone: sensitiveData.phone,
+      email: sensitiveData.email,
+    });
+
+    return {
+      order_id: randomUUID(),
+      total_amount: 0,
+      plan_price: 0,
+      addons_total: 0,
+      upgrade_discount: 0,
+      payment_method: input.payment_method,
+      pix_payment: undefined,
+      credit_card_payment: undefined,
+      boleto_payment: undefined,
+    };
+  }
+
+  private async processRegularPayment(
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    input: CreateOrderPaymentRequest,
+    remoteIp: string
+  ): Promise<CreateOrderPaymentResponse> {
+    const customer = await this.paymentService.getOrCreateCustomer(accountId);
+    if (!customer) {
+      throw new Error(t('customer_not_found_or_could_not_create'));
+    }
+
+    const { planPrice, addonsTotal, discountAmount, totalAmount } =
+      await this.planService.calculateOrderPayment(accountId, input);
+
+    const orderId = randomUUID();
+
+    const pixPaymentData =
+      input.payment_method === 'pix'
+        ? await this.processPixPayment({
+            t,
+            accountId,
+            customer,
+            planId: input.plan_id,
+            totalAmount,
+            orderId,
+            billingPeriod: input.billing_period,
+            addons: input.addons || [],
+          })
+        : undefined;
+
+    const creditCardPaymentData =
+      input.payment_method === 'credit_card'
+        ? await this.processCreditCardPayment({
+            t,
+            accountId,
+            customer,
+            planId: input.plan_id,
+            totalAmount,
+            orderId,
+            billingPeriod: input.billing_period,
+            addons: input.addons || [],
+            remoteIp,
+            input,
+          })
+        : undefined;
+
+    const boletoPaymentData =
+      input.payment_method === 'boleto'
+        ? await this.processBoletoPayment({
+            t,
+            accountId,
+            customer,
+            planId: input.plan_id,
+            totalAmount,
+            orderId,
+            billingPeriod: input.billing_period,
+            addons: input.addons || [],
+          })
+        : undefined;
+
+    return {
+      order_id: orderId,
+      total_amount: totalAmount,
+      plan_price: planPrice,
+      addons_total: addonsTotal,
+      upgrade_discount: discountAmount,
+      payment_method: input.payment_method,
+      pix_payment: pixPaymentData,
+      credit_card_payment: creditCardPaymentData,
+      boleto_payment: boletoPaymentData,
+    };
+  }
 
   execute = async (
     t: TFunction<'translation', undefined>,
@@ -24,73 +175,17 @@ export class OrderPaymentCreatorUseCase {
     remoteIp: string
   ): Promise<CreateOrderPaymentResponse> => {
     try {
-      const customer = await this.paymentService.getOrCreateCustomer(accountId);
-      if (!customer) {
-        throw new Error(t('customer_not_found_or_could_not_create'));
+      const plan = await this.planService.getPlan(input.plan_id);
+      if (!plan) {
+        throw new Error(t('plan_not_found'));
       }
 
-      const { planPrice, addonsTotal, discountAmount, totalAmount } =
-        await this.planService.calculateOrderPayment(accountId, input);
+      const isTestPlan = plan.is_test === true && (plan.days_trial ?? 0) > 0;
+      if (isTestPlan) {
+        return this.processTestPlan(t, accountId, input.plan_id, plan, input);
+      }
 
-      const orderId = randomUUID();
-
-      const pixPaymentData =
-        input.payment_method === 'pix'
-          ? await this.processPixPayment({
-              t,
-              accountId,
-              customer,
-              planId: input.plan_id,
-              totalAmount,
-              orderId,
-              billingPeriod: input.billing_period,
-              addons: input.addons || [],
-            })
-          : undefined;
-
-      const creditCardPaymentData =
-        input.payment_method === 'credit_card'
-          ? await this.processCreditCardPayment({
-              t,
-              accountId,
-              customer,
-              planId: input.plan_id,
-              totalAmount,
-              orderId,
-              billingPeriod: input.billing_period,
-              addons: input.addons || [],
-              remoteIp,
-              input,
-            })
-          : undefined;
-
-      const boletoPaymentData =
-        input.payment_method === 'boleto'
-          ? await this.processBoletoPayment({
-              t,
-              accountId,
-              customer,
-              planId: input.plan_id,
-              totalAmount,
-              orderId,
-              billingPeriod: input.billing_period,
-              addons: input.addons || [],
-            })
-          : undefined;
-
-      const result: CreateOrderPaymentResponse = {
-        order_id: orderId,
-        total_amount: totalAmount,
-        plan_price: planPrice,
-        addons_total: addonsTotal,
-        upgrade_discount: discountAmount,
-        payment_method: input.payment_method,
-        pix_payment: pixPaymentData,
-        credit_card_payment: creditCardPaymentData,
-        boleto_payment: boletoPaymentData,
-      };
-
-      return result;
+      return this.processRegularPayment(t, accountId, input, remoteIp);
     } catch (error) {
       if (error instanceof Error) {
         throw error;

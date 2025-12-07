@@ -13,6 +13,16 @@ import { viewAddress2Schema } from '@core/schema/accountSettings/viewAddress2';
 import { viewAdditionalInfoSchema } from '@core/schema/accountSettings/viewAdditionalInfo';
 import { changePasswordSchema } from '@core/schema/accountSettings/changePassword';
 import { viewCurrentPlanInvoiceSchema } from '@core/schema/accountSettings/viewCurrentPlanInvoice';
+import { listAccountPaymentsSchema } from '@core/schema/accountSettings/listAccountPayments';
+import { listUserCardsSchema } from '@core/schema/plan/listUserCards';
+import { deleteUserCardSchema } from '@core/schema/accountSettings/deleteUserCard';
+import { updatePlanRecurringSchema } from '@core/schema/accountSettings/updatePlanRecurring';
+import { listAccountAddonsSchema } from '@core/schema/accountSettings/listAccountAddons';
+import { listAccountPlanProductsSchema } from '@core/schema/accountSettings/listAccountPlanProducts';
+import { updateUserCardDefaultSchema } from '@core/schema/accountSettings/updateUserCardDefault';
+import { createUserCardSchema } from '@core/schema/accountSettings/createUserCard';
+import { viewAccountPaymentNfseSchema } from '@core/schema/accountSettings/viewAccountPaymentNfse';
+import { cancelPlanAccountSchema } from '@core/schema/accountSettings/cancelPlanAccount';
 import { planInvoicePermissions } from '@/permissions';
 
 export default async function accountSettingsRoutes(server: FastifyInstance) {
@@ -89,6 +99,96 @@ export default async function accountSettingsRoutes(server: FastifyInstance) {
   server.get('/account-settings/current-plan-invoice', {
     schema: viewCurrentPlanInvoiceSchema,
     handler: accountSettingsController.viewCurrentPlanInvoice,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.get('/account-settings/payments', {
+    schema: listAccountPaymentsSchema,
+    handler: accountSettingsController.listAccountPayments,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.get('/account-settings/cards', {
+    schema: listUserCardsSchema,
+    handler: accountSettingsController.listUserCards,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.post('/account-settings/cards', {
+    schema: createUserCardSchema,
+    handler: accountSettingsController.createUserCard,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.delete('/account-settings/cards/:user_card_id', {
+    schema: deleteUserCardSchema,
+    handler: accountSettingsController.deleteUserCard,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.patch('/account-settings/plan/recurring', {
+    schema: updatePlanRecurringSchema,
+    handler: accountSettingsController.updatePlanRecurring,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.get('/account-settings/addons', {
+    schema: listAccountAddonsSchema,
+    handler: accountSettingsController.listAccountAddons,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.get('/account-settings/plan-products', {
+    schema: listAccountPlanProductsSchema,
+    handler: accountSettingsController.listAccountPlanProducts,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.patch('/account-settings/cards/default', {
+    schema: updateUserCardDefaultSchema,
+    handler: accountSettingsController.updateUserCardDefault,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.get('/account-settings/payments/:account_payment_id/nfse', {
+    schema: viewAccountPaymentNfseSchema,
+    handler: accountSettingsController.viewAccountPaymentNfse,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.post('/account-settings/plan/cancel', {
+    schema: cancelPlanAccountSchema,
+    handler: accountSettingsController.cancelPlanAccount,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),

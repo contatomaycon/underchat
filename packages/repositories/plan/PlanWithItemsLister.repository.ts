@@ -41,6 +41,8 @@ export class PlanWithItemsListerRepository {
         description: plan.description,
         annual_discount: plan.annual_discount,
         icon: plan.icon,
+        is_test: plan.is_test,
+        days_trial: plan.days_trial,
         created_at: plan.created_at,
       })
       .from(plan)
@@ -120,6 +122,8 @@ export class PlanWithItemsListerRepository {
       description: p.description ?? null,
       annual_discount: p.annual_discount ?? null,
       icon: p.icon ?? null,
+      is_test: p.is_test,
+      days_trial: p.days_trial ? Number(p.days_trial) : null,
       created_at: p.created_at,
       plan_items: itemsByPlanId.get(p.plan_id) ?? [],
     }));

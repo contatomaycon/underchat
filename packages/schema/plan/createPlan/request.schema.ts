@@ -7,6 +7,10 @@ export const createPlanRequestSchema = Type.Object({
   description: Type.Optional(Type.String({ maxLength: 500 })),
   annual_discount: Type.Optional(Type.Number({ minimum: 0, maximum: 100 })),
   icon: Type.Optional(Type.String({ maxLength: 100 })),
+  is_test: Type.Optional(Type.Boolean()),
+  days_trial: Type.Optional(
+    Type.Union([Type.Number({ minimum: 1 }), Type.Null()])
+  ),
 });
 
 export type CreatePlanRequest = Static<typeof createPlanRequestSchema>;

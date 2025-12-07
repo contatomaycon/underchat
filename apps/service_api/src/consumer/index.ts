@@ -7,7 +7,9 @@ import messageStatusUpdateConsume from './updateMessageStatus.consume';
 import clearChatSummaryConsume from './clearChatSummary.consume';
 import phoneValidationResponseConsume from './phoneValidationResponse.consume';
 import profileStatusExternalIdUpdateConsume from './profileStatusExternalIdUpdate.consume';
-import asaasPaymentWebhookConsume from './asaasPaymentWebhook.consume';
+import asaasInvoiceWebhookConsume from './asaasInvoiceWebhook.consume';
+import asaasNfseWebhookConsume from './asaasNfseWebhook.consume';
+import notificationMessageConsume from './notificationMessage.consume';
 
 export default async function registerConsumer(server: FastifyInstance) {
   await server.register(balanceConsume);
@@ -18,5 +20,7 @@ export default async function registerConsumer(server: FastifyInstance) {
   await server.register(clearChatSummaryConsume);
   await server.register(phoneValidationResponseConsume);
   await server.register(profileStatusExternalIdUpdateConsume);
-  await server.register(asaasPaymentWebhookConsume);
+  await server.register(asaasInvoiceWebhookConsume);
+  await server.register(asaasNfseWebhookConsume);
+  await server.register(notificationMessageConsume);
 }

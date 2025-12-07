@@ -7,6 +7,7 @@ import {
   EditRoleParamsRequest,
   UpdateRoleRequest,
 } from '@core/schema/role/editRole/request.schema';
+import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 
 export const editRole = async (
   request: FastifyRequest<{
@@ -18,10 +19,7 @@ export const editRole = async (
   const roleUpdaterUseCase = container.resolve(RoleUpdaterUseCase);
   const { t, tokenJwtData } = request;
 
-  const systemRoleIds = [
-    '019a930d-c6f5-75af-82a5-899cb84b6089',
-    '019a930d-c6f5-75af-82a5-8c20f9d0e6e2',
-  ];
+  const systemRoleIds = [EPermissionRole.administrator, EPermissionRole.master];
 
   if (request.params.permission_role_id === tokenJwtData.permission_role_id) {
     return sendResponse(reply, {
@@ -30,7 +28,9 @@ export const editRole = async (
     });
   }
 
-  if (systemRoleIds.includes(request.params.permission_role_id)) {
+  if (
+    systemRoleIds.includes(request.params.permission_role_id as EPermissionRole)
+  ) {
     return sendResponse(reply, {
       message: t('cannot_edit_system_role'),
       httpStatusCode: EHTTPStatusCode.bad_request,

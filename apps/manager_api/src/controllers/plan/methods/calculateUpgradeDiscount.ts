@@ -13,7 +13,7 @@ export const calculateUpgradeDiscount = async (
     UpgradeDiscountCalculatorUseCase
   );
   const { t, tokenJwtData } = request;
-  const { plan_id } = request.query;
+  const { plan_id, billing_period } = request.query;
 
   if (!plan_id) {
     return sendResponse(reply, {
@@ -25,7 +25,8 @@ export const calculateUpgradeDiscount = async (
   try {
     const response = await upgradeDiscountCalculatorUseCase.execute(
       tokenJwtData.account_id,
-      plan_id
+      plan_id,
+      billing_period
     );
 
     return sendResponse(reply, {

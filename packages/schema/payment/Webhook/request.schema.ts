@@ -1,6 +1,6 @@
 import { Static, Type } from '@sinclair/typebox';
 
-export const asaasPaymentWebhookRequestSchema = Type.Object({
+export const asaasInvoiceWebhookRequestSchema = Type.Object({
   id: Type.String({ description: 'ID do evento' }),
   event: Type.String({ description: 'Tipo do evento' }),
   dateCreated: Type.String({ description: 'Data de criação do evento' }),
@@ -92,6 +92,6 @@ export const asaasPaymentWebhookRequestSchema = Type.Object({
   }),
 });
 
-export type AsaasPaymentWebhookRequest = Static<
-  typeof asaasPaymentWebhookRequestSchema
+export type AsaasInvoiceWebhookRequest = Static<
+  typeof asaasInvoiceWebhookRequestSchema
 >;

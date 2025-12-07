@@ -1,8 +1,8 @@
 import { Type } from '@sinclair/typebox';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { asaasPaymentWebhookRequestSchema } from './request.schema';
+import { asaasInvoiceWebhookRequestSchema } from './request.schema';
 
-export const asaasPaymentWebhookSchema = {
+export const asaasInvoiceWebhookSchema = {
   description: 'Webhook para receber eventos de cobranças do Asaas',
   tags: [ETagSwagger.webhook],
   produces: ['application/json'],
@@ -11,7 +11,7 @@ export const asaasPaymentWebhookSchema = {
       description: 'Token de autenticação do webhook Asaas',
     }),
   }),
-  body: asaasPaymentWebhookRequestSchema,
+  body: asaasInvoiceWebhookRequestSchema,
   response: {
     200: Type.Object(
       {
