@@ -110,9 +110,7 @@ watch(
 
     <VCard :title="t('label')">
       <VCardText>
-
         <VSelect
-          v-else
           v-model="selectedLabelTemplateId"
           :items="labelTemplates"
           item-title="label"
