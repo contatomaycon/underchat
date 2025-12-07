@@ -176,6 +176,23 @@ const getPrice = (plan: ListPlanWithItemsResponse): number => {
   return plan.price;
 };
 
+const isTestPlan = (plan: ListPlanWithItemsResponse | null): boolean => {
+  if (!plan) return false;
+  return plan.is_test === true && (plan.days_trial ?? 0) > 0;
+};
+
+const getBillingPeriodText = (
+  plan: ListPlanWithItemsResponse | null
+): string => {
+  if (!plan) return billingPeriod.value === 'annual' ? t('year') : t('month');
+
+  if (isTestPlan(plan) && plan.days_trial) {
+    const days = plan.days_trial;
+    return days === 1 ? `/1 ${t('day')}` : `/${days} ${t('days')}`;
+  }
+  return billingPeriod.value === 'annual' ? t('year') : t('month');
+};
+
 const processCurrentPlan = (
   plansList: ListPlanWithItemsResponse[],
   currentPlanIdValue: string | null
@@ -1501,11 +1518,7 @@ onMounted(async () => {
                                 {{ formatCurrency(getPrice(plan)) }}
                               </span>
                               <span class="text-body-2 text-medium-emphasis">
-                                /{{
-                                  billingPeriod === 'annual'
-                                    ? $t('year')
-                                    : $t('month')
-                                }}
+                                {{ getBillingPeriodText(plan) }}
                               </span>
                             </div>
                             <div
@@ -1705,10 +1718,10 @@ onMounted(async () => {
                                   }}
                                 </div>
                                 <div class="text-body-2 text-medium-emphasis">
-                                  /{{
-                                    billingPeriod === 'annual'
-                                      ? $t('year')
-                                      : $t('month')
+                                  {{
+                                    getBillingPeriodText(
+                                      selectedPlanForCheckout
+                                    )
                                   }}
                                 </div>
                               </div>
