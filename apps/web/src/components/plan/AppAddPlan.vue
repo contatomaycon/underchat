@@ -338,11 +338,17 @@ onMounted(resetForm);
                 :maxlength="100"
               />
             </VCol>
-            <VCol cols="12">
-              <VCheckbox
+            <VCol cols="12" sm="6">
+              <AppSelect
                 v-model="is_test"
-                :label="$t('is_test_plan')"
-                hide-details
+                :items="[
+                  { title: $t('no'), value: false },
+                  { title: $t('yes'), value: true },
+                ]"
+                :label="$t('is_test_plan') + ':'"
+                :placeholder="$t('is_test_plan')"
+                item-title="title"
+                item-value="value"
               />
             </VCol>
             <VCol v-if="is_test" cols="12" sm="6">
