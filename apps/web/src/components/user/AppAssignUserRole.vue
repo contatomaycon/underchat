@@ -3,8 +3,8 @@ import { ref, watch, onMounted, nextTick, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useUsersStore } from '@/@webcore/stores/user';
 import { AssignUserRoleRequest } from '@core/schema/user/assignUserRole/request.schema';
+import { EditUserParamsRequest, UpdateUserRequest } from '@core/schema/user/editUser/request.schema';
 import { VForm } from 'vuetify/components/VForm';
-import { requiredValidator } from '@/@webcore/utils/validators';
 
 const { t } = useI18n();
 const userStore = useUsersStore();
@@ -80,20 +80,36 @@ const loadUserRole = async () => {
 };
 
 const assignRole = async () => {
-  if (!props.userId || !permissionRoleId.value) return;
+  if (!props.userId) return;
 
-  const validateForm = await refFormAssignRole.value?.validate();
-  if (!validateForm?.valid) return;
+  if (permissionRoleId.value) {
+    const payload: AssignUserRoleRequest = {
+      permission_role_id: permissionRoleId.value,
+    };
 
-  const payload: AssignUserRoleRequest = {
-    permission_role_id: permissionRoleId.value,
-  };
+    const result = await userStore.assignUserRole(props.userId, payload);
 
-  const result = await userStore.assignUserRole(props.userId, payload);
+    if (result) {
+      isVisible.value = false;
+      await userStore.listUsers();
+    }
+  } else {
+    const payload: EditUserParamsRequest = {
+      user_id: props.userId,
+    };
 
-  if (result) {
-    isVisible.value = false;
-    await userStore.listUsers();
+    const body: UpdateUserRequest = {
+      permission_role_id: {
+        value: null,
+      },
+    };
+
+    const result = await userStore.updateUser(payload, body);
+
+    if (result) {
+      isVisible.value = false;
+      await userStore.listUsers();
+    }
   }
 };
 
@@ -153,13 +169,14 @@ onMounted(async () => {
                       :placeholder="$t('select_role')"
                       variant="outlined"
                       readonly
-                      append-inner-icon="tabler-chevron-down"
-                      :rules="[
-                        requiredValidator(
-                          permissionRoleId,
-                          $t('role_required')
-                        ),
-                      ]"
+                      :clearable="!!permissionRoleId"
+                      clear-icon="tabler-x"
+                      @click:clear="permissionRoleId = null"
+                      :append-inner-icon="
+                        permissionRoleId
+                          ? undefined
+                          : 'tabler-chevron-down'
+                      "
                     />
                   </template>
                   <VCard>

@@ -164,6 +164,7 @@ const docRules = computed(() => [
 ]);
 
 const tab = ref('user_data');
+const loadedTabs = ref<Set<string>>(new Set());
 
 const email = ref<string | null>(null);
 const password = ref<string | null>(null);
@@ -399,19 +400,34 @@ const updateAddressFields = async (response: {
   }
 };
 
+const isViewingZipcode = ref(false);
+
 const viewZipcode = async () => {
+  if (isViewingZipcode.value) return;
+
   if (!country_id.value || !zip_code.value) {
     return;
   }
 
-  const params: ViewZipcodeRequest = {
-    country_id: country_id.value,
-    zipcode: zip_code.value,
-  };
+  if (timer) {
+    (globalThis as Window & typeof globalThis).clearTimeout(timer);
+    timer = null;
+  }
 
-  const response = await userStore.viewZipcode(params);
-  if (response) {
-    await updateAddressFields(response);
+  isViewingZipcode.value = true;
+
+  try {
+    const params: ViewZipcodeRequest = {
+      country_id: country_id.value,
+      zipcode: zip_code.value,
+    };
+
+    const response = await userStore.viewZipcode(params);
+    if (response) {
+      await updateAddressFields(response);
+    }
+  } finally {
+    isViewingZipcode.value = false;
   }
 };
 
@@ -1236,32 +1252,86 @@ const loadRoles = async () => {
   }
 };
 
-const loadAccounts = async () => {
+const loadUserDataTab = async (force = false) => {
+  if (!force && loadedTabs.value.has('user_data')) return;
+
   await loadAdministratorAccounts();
   setCurrentUserAccount();
   await loadRoles();
+
+  loadedTabs.value.add('user_data');
+};
+
+const loadAdditionalInfoTab = async () => {
+  if (loadedTabs.value.has('additional_info')) return;
+  loadedTabs.value.add('additional_info');
+};
+
+const loadAddressTab = async () => {
+  if (loadedTabs.value.has('address')) return;
+  if (country_id.value) {
+    await loadStates(country_id.value);
+  }
+  loadedTabs.value.add('address');
+};
+
+const loadTabData = async (tabName: string): Promise<void> => {
+  if (tabName === 'user_data') {
+    await loadUserDataTab();
+  } else if (tabName === 'additional_info') {
+    await loadAdditionalInfoTab();
+  } else if (tabName === 'address') {
+    await loadAddressTab();
+  }
+};
+
+const isInitializingModal = ref(false);
+
+const initializeModal = async () => {
+  if (!isVisible.value) return;
+  if (isInitializingModal.value) return;
+  
+  isInitializingModal.value = true;
+  
+  try {
+    resetForm();
+    loadedTabs.value.clear();
+    tab.value = 'user_data';
+    await nextTick();
+    await loadUserDataTab(true);
+  } finally {
+    isInitializingModal.value = false;
+  }
 };
 
 watch(isVisible, async (visible) => {
   if (visible) {
-    resetForm();
-    await loadAccounts();
+    await initializeModal();
+  } else {
+    loadedTabs.value.clear();
   }
-});
+}, { immediate: true });
 
-onMounted(async () => {
-  await loadAccounts();
-  setCurrentUserAccount();
-});
+watch(tab, async (newTab, oldTab) => {
+  if (isInitializingModal.value) return;
+  if (isVisible.value && newTab && newTab !== oldTab && oldTab !== undefined) {
+    await loadTabData(newTab);
+  }
+}, { immediate: false });
 
 let timer: number | null = null;
 watch(zip_code, () => {
+  if (isViewingZipcode.value) return;
   if (!country_id.value || !zip_code.value || zip_code.value.length < 8) return;
 
-  if (timer) (globalThis as Window & typeof globalThis).clearTimeout(timer);
+  if (timer) {
+    (globalThis as Window & typeof globalThis).clearTimeout(timer);
+    timer = null;
+  }
 
   timer = (globalThis as Window & typeof globalThis).setTimeout(() => {
     viewZipcode();
+    timer = null;
   }, 400);
 });
 
@@ -1794,7 +1864,6 @@ onMounted(resetForm);
                         requiredValidator(zip_code, $t('zip_code_required')),
                       ]"
                       :disabled="!country_id"
-                      @blur="viewZipcode"
                       @keydown.enter.prevent="viewZipcode"
                       maxlength="8"
                     />

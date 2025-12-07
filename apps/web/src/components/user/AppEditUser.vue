@@ -183,6 +183,7 @@ const docRules = computed(() => [
 ]);
 
 const tab = ref('user_data');
+const loadedTabs = ref<Set<string>>(new Set());
 
 const userId = toRef(props, 'userId');
 const email = ref<string | null>(null);
@@ -379,6 +380,16 @@ const onTabChange = async (newTab: string | unknown) => {
   }
 
   tab.value = newTab;
+};
+
+const loadTabData = async (tabName: string): Promise<void> => {
+  if (tabName === 'user_data') {
+    await loadUserDataTab();
+  } else if (tabName === 'additional_info') {
+    await loadAdditionalInfoTab();
+  } else if (tabName === 'address') {
+    await loadAddressTab();
+  }
 };
 
 const goNext = async () => {
@@ -1809,21 +1820,35 @@ const updateAddressFromZipcode = async (response: {
   }
 };
 
+const isViewingZipcode = ref(false);
+
 const viewZipcode = async () => {
   if (isInitializing.value) return;
+  if (isViewingZipcode.value) return;
 
   if (!country_id.value || !zip_code.value) {
     return;
   }
 
-  const params: ViewZipcodeRequest = {
-    country_id: country_id.value,
-    zipcode: zip_code.value,
-  };
+  if (timer) {
+    (globalThis as Window & typeof globalThis).clearTimeout(timer);
+    timer = null;
+  }
 
-  const response = await userStore.viewZipcode(params);
-  if (response) {
-    await updateAddressFromZipcode(response);
+  isViewingZipcode.value = true;
+
+  try {
+    const params: ViewZipcodeRequest = {
+      country_id: country_id.value,
+      zipcode: zip_code.value,
+    };
+
+    const response = await userStore.viewZipcode(params);
+    if (response) {
+      await updateAddressFromZipcode(response);
+    }
+  } finally {
+    isViewingZipcode.value = false;
   }
 };
 
@@ -2075,7 +2100,6 @@ const loadAccounts = async () => {
       accountsOptions.value = accounts;
     }
   }
-  await loadRoles();
 };
 
 const loadUserRole = async () => {
@@ -2091,10 +2115,15 @@ const loadUserRole = async () => {
   }
 };
 
-const loadUserData = async (): Promise<void> => {
+const loadUserDataTab = async (force = false): Promise<void> => {
   if (!userId.value) return;
+  if (!force && loadedTabs.value.has('user_data')) return;
+
+  isInitializing.value = true;
 
   await loadAccounts();
+  await loadRoles();
+  await loadUserRole();
 
   const responseUser = await userStore.viewUserById(userId.value);
   if (!responseUser) {
@@ -2104,30 +2133,84 @@ const loadUserData = async (): Promise<void> => {
   }
 
   loadBasicUserInfo(responseUser);
-  loadUserAddress(responseUser);
-  await loadStateAndCity();
 
+  loadedTabs.value.add('user_data');
   await nextTick();
   isInitializing.value = false;
 };
 
-onMounted(async () => {
-  await loadRoles();
-  await loadUserData();
-  await loadUserRole();
-});
+const loadAdditionalInfoTab = async (): Promise<void> => {
+  if (!userId.value) return;
+  if (loadedTabs.value.has('additional_info')) return;
+
+  if (!loadedTabs.value.has('user_data')) {
+    await loadUserDataTab();
+  }
+
+  loadedTabs.value.add('additional_info');
+};
+
+const loadAddressTab = async (): Promise<void> => {
+  if (!userId.value) return;
+  if (loadedTabs.value.has('address')) return;
+
+  if (!loadedTabs.value.has('user_data')) {
+    await loadUserDataTab();
+  }
+
+  if (!country_id.value) {
+    const responseUser = await userStore.viewUserById(userId.value);
+    if (responseUser) {
+      loadUserAddress(responseUser);
+    }
+  }
+
+  if (country_id.value) {
+    await loadStateAndCity();
+  }
+
+  loadedTabs.value.add('address');
+};
+
+const isInitializingModal = ref(false);
+
+const initializeModal = async () => {
+  if (!isVisible.value || !userId.value) return;
+  if (isInitializingModal.value) return;
+  
+  isInitializingModal.value = true;
+  
+  try {
+    loadedTabs.value.clear();
+    initialZipCode.value = null;
+    
+    const previousTab = tab.value;
+    tab.value = 'user_data';
+    
+    if (previousTab !== 'user_data') {
+      await nextTick();
+    }
+    
+    await loadUserDataTab(true);
+  } finally {
+    isInitializingModal.value = false;
+  }
+};
 
 watch(isVisible, async (visible) => {
   if (visible && userId.value) {
-    isInitializing.value = true;
-    initialZipCode.value = null;
-    await loadRoles();
-    await loadUserData();
-    await loadUserRole();
-    await nextTick();
-    isInitializing.value = false;
+    await initializeModal();
+  } else {
+    loadedTabs.value.clear();
   }
-});
+}, { immediate: true });
+
+watch(tab, async (newTab, oldTab) => {
+  if (isInitializingModal.value) return;
+  if (isVisible.value && newTab && userId.value && newTab !== oldTab && oldTab !== undefined) {
+    await loadTabData(newTab);
+  }
+}, { immediate: false });
 
 watch(password, () => {
   confirmPassword.value = null;
@@ -2138,6 +2221,7 @@ watch(
   zip_code,
   (newValue, oldValue) => {
     if (isInitializing.value) return;
+    if (isViewingZipcode.value) return;
 
     if (newValue === oldValue || oldValue === undefined) return;
 
@@ -2146,10 +2230,14 @@ watch(
     if (!country_id.value || !zip_code.value || zip_code.value.length < 8)
       return;
 
-    if (timer) (globalThis as Window & typeof globalThis).clearTimeout(timer);
+    if (timer) {
+      (globalThis as Window & typeof globalThis).clearTimeout(timer);
+      timer = null;
+    }
 
     timer = (globalThis as Window & typeof globalThis).setTimeout(() => {
       viewZipcode();
+      timer = null;
     }, 400);
   },
   { immediate: false }
@@ -2160,14 +2248,13 @@ watch(
   <VDialog v-model="isVisible" max-width="1200">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <template v-if="userStore.loading">
-      <VOverlay
-        :model-value="userStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
+    <VOverlay
+      :model-value="isInitializing || isInitializingModal || userStore.loading"
+      class="align-center justify-center"
+      contained
+    >
+      <VProgressCircular color="primary" indeterminate size="64" />
+    </VOverlay>
 
     <VCard class="mx-2 my-2">
       <VCardTitle class="pa-6 pb-4 text-h5">
@@ -2762,7 +2849,6 @@ watch(
                         requiredValidator(zip_code, $t('zip_code_required')),
                       ]"
                       :disabled="!country_id"
-                      @blur="viewZipcode"
                       @keydown.enter.prevent="viewZipcode"
                       maxlength="8"
                     />
