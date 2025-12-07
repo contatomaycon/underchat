@@ -756,10 +756,18 @@ onMounted(() => {
 
   <!-- Photo Modal -->
   <VDialog v-model="isPhotoModalOpen" max-width="500" persistent>
+    <VOverlay
+      :model-value="isUploadingPhoto"
+      class="align-center justify-center"
+      contained
+    >
+      <VProgressCircular color="primary" indeterminate size="64" />
+    </VOverlay>
+
     <VCard>
       <VCardTitle class="d-flex justify-space-between align-center">
         <span>{{ $t('profile_photo') }}</span>
-        <IconBtn @click="closePhotoModal">
+        <IconBtn @click="closePhotoModal" :disabled="isUploadingPhoto">
           <VIcon icon="tabler-x" />
         </IconBtn>
       </VCardTitle>

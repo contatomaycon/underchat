@@ -34,6 +34,7 @@ const accountStatusOptions = Object.entries(EAccountStatus).map(
 );
 
 const refFormEditAccount = ref<VForm>();
+const isInitializingModal = ref(false);
 
 const updateAccount = async () => {
   const validateForm = await refFormEditAccount?.value?.validate();
@@ -63,32 +64,43 @@ const updateAccount = async () => {
   }
 };
 
-onMounted(async () => {
-  if (!accountId.value) return;
+const initializeModal = async () => {
+  if (!isVisible.value || !accountId.value) return;
+  if (isInitializingModal.value) return;
 
-  const account = await accountStore.getAccountById(accountId.value);
-  if (account) {
-    name.value = account.name;
-    accountStatus.value = account.account_status?.account_status_id ?? null;
+  isInitializingModal.value = true;
+
+  try {
+    const account = await accountStore.getAccountById(accountId.value);
+    if (account) {
+      name.value = account.name;
+      accountStatus.value = account.account_status?.account_status_id ?? null;
+    }
+  } finally {
+    isInitializingModal.value = false;
   }
-});
+};
+
+watch(isVisible, async (visible) => {
+  if (visible && accountId.value) {
+    await initializeModal();
+  }
+}, { immediate: true });
 </script>
 
 <template>
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <template v-if="accountStore.loading">
-      <VOverlay
-        :model-value="accountStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
-
     <VForm ref="refFormEditAccount" @submit.prevent>
-      <VCard :title="$t('edit_account')">
+      <VCard :title="$t('edit_account')" class="position-relative">
+        <VOverlay
+          :model-value="isInitializingModal || accountStore.loading"
+          class="align-center justify-center"
+          contained
+        >
+          <VProgressCircular color="primary" indeterminate size="64" />
+        </VOverlay>
         <VCardText>
           <VRow>
             <VCol cols="12" md="6">

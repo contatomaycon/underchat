@@ -31,6 +31,7 @@ const is_test = ref<boolean>(false);
 const days_trial = ref<number | null>(null);
 
 const refFormEditPlan = ref<VForm>();
+const isInitializingModal = ref(false);
 
 const { locale } = useI18n();
 
@@ -246,42 +247,53 @@ watch(is_test, (value) => {
   }
 });
 
-onMounted(async () => {
-  if (!planId.value) return;
+const initializeModal = async () => {
+  if (!isVisible.value || !planId.value) return;
+  if (isInitializingModal.value) return;
 
-  const plan = planStore.list.find((p) => p.plan_id === planId.value);
-  if (plan) {
-    name.value = plan.name;
-    priceRaw.value = plan.price;
-    price_oldRaw.value = plan.price_old;
-    priceDisplay.value = formatCurrency(plan.price);
-    price_oldDisplay.value = formatCurrency(plan.price_old);
-    description.value = plan.description ?? null;
-    annual_discount.value = plan.annual_discount
-      ? Number.parseFloat(plan.annual_discount)
-      : null;
-    icon.value = plan.icon ?? null;
-    is_test.value = plan.is_test ?? false;
-    days_trial.value = plan.days_trial ?? null;
+  isInitializingModal.value = true;
+
+  try {
+    const plan = planStore.list.find((p) => p.plan_id === planId.value);
+    if (plan) {
+      name.value = plan.name;
+      priceRaw.value = plan.price;
+      price_oldRaw.value = plan.price_old;
+      priceDisplay.value = formatCurrency(plan.price);
+      price_oldDisplay.value = formatCurrency(plan.price_old);
+      description.value = plan.description ?? null;
+      annual_discount.value = plan.annual_discount
+        ? Number.parseFloat(plan.annual_discount)
+        : null;
+      icon.value = plan.icon ?? null;
+      is_test.value = plan.is_test ?? false;
+      days_trial.value = plan.days_trial ?? null;
+    }
+  } finally {
+    isInitializingModal.value = false;
   }
-});
+};
+
+watch(isVisible, async (visible) => {
+  if (visible && planId.value) {
+    await initializeModal();
+  }
+}, { immediate: true });
 </script>
 
 <template>
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <template v-if="planStore.loading">
-      <VOverlay
-        :model-value="planStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
-
     <VForm ref="refFormEditPlan" @submit.prevent>
-      <VCard :title="$t('edit_plan')">
+      <VCard :title="$t('edit_plan')" class="position-relative">
+        <VOverlay
+          :model-value="isInitializingModal || planStore.loading"
+          class="align-center justify-center"
+          contained
+        >
+          <VProgressCircular color="primary" indeterminate size="64" />
+        </VOverlay>
         <VCardText>
           <VRow>
             <VCol cols="12">

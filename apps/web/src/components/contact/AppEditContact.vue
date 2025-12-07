@@ -23,6 +23,7 @@ const labelTemplates = ref<
 >([]);
 
 const { t } = useI18n();
+const isInitializingModal = ref(false);
 
 const countrySearchQuery = ref('');
 const isCountryMenuOpen = ref(false);
@@ -966,36 +967,40 @@ const loadLabelTemplates = async () => {
     })) ?? [];
 };
 
-watch([contactId, isVisible], async ([newContactId, newIsVisible]) => {
-  if (newIsVisible && newContactId) {
+const initializeModal = async () => {
+  if (!isVisible.value || !contactId.value) return;
+  if (isInitializingModal.value) return;
+
+  isInitializingModal.value = true;
+
+  try {
     await loadLabelTemplates();
     await loadContactData();
+  } finally {
+    isInitializingModal.value = false;
   }
-});
+};
 
-onMounted(async () => {
-  await loadLabelTemplates();
-  if (contactId.value && isVisible.value) {
-    await loadContactData();
+watch([contactId, isVisible], async ([newContactId, newIsVisible]) => {
+  if (newIsVisible && newContactId) {
+    await initializeModal();
   }
-});
+}, { immediate: true });
 </script>
 
 <template>
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <template v-if="contactStore.loading">
-      <VOverlay
-        :model-value="contactStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
-
     <VForm ref="refFormEditContact" @submit.prevent>
-      <VCard>
+      <VCard class="position-relative">
+        <VOverlay
+          :model-value="isInitializingModal || contactStore.loading"
+          class="align-center justify-center"
+          contained
+        >
+          <VProgressCircular color="primary" indeterminate size="64" />
+        </VOverlay>
         <VCardTitle class="d-flex align-center justify-space-between">
           <span>{{ $t('edit_contact') }}</span>
           <VChip :color="isValided ? 'success' : 'error'" size="small">

@@ -178,7 +178,7 @@ watch(isVisible, (visible) => {
             <VProgressCircular
               color="primary"
               indeterminate
-              size="48"
+              size="64"
               class="ma-auto"
             />
             <div class="text-body-1 mt-4 text-high-emphasis">
