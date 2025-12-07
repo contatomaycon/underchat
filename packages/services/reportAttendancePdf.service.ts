@@ -445,8 +445,12 @@ export class ReportAttendancePdfService {
         }
       }
 
-      const labels = Array.from(periodsMap.keys()).sort();
-      const categories = Array.from(categoriesSet).sort();
+      const labels = Array.from(periodsMap.keys()).sort((a, b) =>
+        a.localeCompare(b)
+      );
+      const categories = Array.from(categoriesSet).sort((a, b) =>
+        a.localeCompare(b)
+      );
       const colors = [
         '#FF6384',
         '#36A2EB',
@@ -469,7 +473,9 @@ export class ReportAttendancePdfService {
         datasets,
       };
     } else {
-      const labels = data.map((item) => item.period || '').sort();
+      const labels = data
+        .map((item) => item.period || '')
+        .sort((a, b) => a.localeCompare(b));
       const totals = labels.map((period) => {
         const item = data.find((d) => d.period === period);
         return item?.total || 0;
