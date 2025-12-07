@@ -216,6 +216,14 @@ const getButtonText = (plan: ListPlanWithItemsResponse): string => {
   return t('upgrade');
 };
 
+const getBillingPeriodText = (plan: ListPlanWithItemsResponse): string => {
+  if (isTestPlan(plan) && plan.days_trial) {
+    const days = plan.days_trial;
+    return days === 1 ? `/1 ${t('day')}` : `/${days} ${t('days')}`;
+  }
+  return billingPeriod.value === 'annual' ? t('year') : t('month');
+};
+
 const formatItemName = (
   name: string | null | undefined,
   quantity: number
@@ -427,9 +435,7 @@ onMounted(() => {
                       {{ formatCurrency(getPrice(plan)) }}
                     </span>
                     <span class="text-body-2 text-medium-emphasis">
-                      /{{
-                        billingPeriod === 'annual' ? $t('year') : $t('month')
-                      }}
+                      {{ getBillingPeriodText(plan) }}
                     </span>
                   </div>
                   <div
