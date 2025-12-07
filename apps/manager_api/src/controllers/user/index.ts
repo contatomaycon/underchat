@@ -14,6 +14,7 @@ import { assignUserRole } from './methods/assignUserRole';
 import { viewUserRole } from './methods/viewUserRole';
 import { uploadPhoto } from './methods/uploadPhoto';
 import { deletePhoto } from './methods/deletePhoto';
+import { listUserRoles } from './methods/listUserRoles';
 
 @injectable()
 class UserController {
@@ -32,6 +33,7 @@ class UserController {
   public viewUserRole = viewUserRole;
   public uploadPhoto = uploadPhoto;
   public deletePhoto = deletePhoto;
+  public listUserRoles = listUserRoles;
 }
 
 export default UserController;

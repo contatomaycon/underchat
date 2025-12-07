@@ -71,6 +71,14 @@ const handleCreateChatbot = async () => {
 
 <template>
   <VDialog v-model="isVisible" max-width="500" persistent>
+    <VOverlay
+      :model-value="isCreating"
+      class="align-center justify-center"
+      contained
+    >
+      <VProgressCircular color="primary" indeterminate size="64" />
+    </VOverlay>
+
     <VCard>
       <VCardTitle class="d-flex align-center justify-space-between pa-4">
         <span>{{ $t('add') }} {{ $t('chatbot') }}</span>

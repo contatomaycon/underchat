@@ -14,6 +14,7 @@ export const editAccountInfoResponseSchema = Type.Object({
     value: Type.String({ format: 'uuid' }),
   }),
   logo: Type.Optional(Type.Union([uploadFileRequestSchema, Type.Null()])),
+  delete_logo: Type.Optional(Type.Boolean()),
   content_width: Type.Object({
     value: Type.Union([Type.String(), Type.Null()]),
   }),

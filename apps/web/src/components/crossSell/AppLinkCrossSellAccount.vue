@@ -178,14 +178,13 @@ onMounted(async () => {
   <VDialog v-model="isVisible" max-width="800">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <template v-if="crossSellStore.loading || accountStore.loading">
-      <VOverlay
-        :model-value="crossSellStore.loading || accountStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
+    <VOverlay
+      :model-value="crossSellStore.loading || accountStore.loading"
+      class="align-center justify-center"
+      contained
+    >
+      <VProgressCircular color="primary" indeterminate size="64" />
+    </VOverlay>
 
     <VCard :title="$t('link_account')">
       <VCardText>

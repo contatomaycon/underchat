@@ -2,41 +2,45 @@ import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { DeleteAccountInfoRequest } from '@core/schema/account/deleteAccountInfo/request.schema';
-import { AccountInfoDeleterUseCase } from '@core/useCases/account/AccountInfoDeleter.useCase';
+import {
+  UpdatePlanAccountParamsRequest,
+  UpdatePlanAccountRequest,
+} from '@core/schema/planAccount/updatePlanAccount/request.schema';
+import { PlanAccountUpdaterUseCase } from '@core/useCases/planAccount/PlanAccountUpdater.useCase';
 
-export const deleteAccountInfo = async (
+export const updatePlanAccount = async (
   request: FastifyRequest<{
-    Params: DeleteAccountInfoRequest;
+    Params: UpdatePlanAccountParamsRequest;
+    Body: UpdatePlanAccountRequest;
   }>,
   reply: FastifyReply
 ) => {
-  const accountInfoDeleterUseCase = container.resolve(
-    AccountInfoDeleterUseCase
+  const planAccountUpdaterUseCase = container.resolve(
+    PlanAccountUpdaterUseCase
   );
-  const { t } = request;
+  const { t, tokenJwtData } = request;
 
   try {
-    const response = await accountInfoDeleterUseCase.execute(
+    const response = await planAccountUpdaterUseCase.execute(
       t,
-      request.params.account_info_id
+      request.params.account_id,
+      request.body,
+      tokenJwtData.is_administrator
     );
 
     if (response) {
       return sendResponse(reply, {
-        message: t('account_info_deleted_successfully'),
+        message: t('plan_account_update_successfully'),
         httpStatusCode: EHTTPStatusCode.ok,
       });
     }
 
-    request.server.logger.info(response, request.id);
-
     return sendResponse(reply, {
-      message: t('account_info_deleter_error'),
+      message: t('plan_account_update_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

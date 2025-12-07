@@ -4,6 +4,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { eq } from 'drizzle-orm';
 import { UpdateAccountRequest } from '@core/schema/account/editAccount/request.schema';
+import { currentTime } from '@core/common/functions/currentTime';
 
 @injectable()
 export class AccountUpdaterRepository {
@@ -40,5 +41,21 @@ export class AccountUpdaterRepository {
       .execute();
 
     return result.rowCount === 1;
+  };
+
+  updateAccountStatusById = async (
+    accountId: string,
+    accountStatusId: string
+  ): Promise<boolean> => {
+    const result = await this.db
+      .update(account)
+      .set({
+        account_status_id: accountStatusId,
+        updated_at: currentTime(),
+      })
+      .where(eq(account.account_id, accountId))
+      .execute();
+
+    return (result.rowCount ?? 0) > 0;
   };
 }

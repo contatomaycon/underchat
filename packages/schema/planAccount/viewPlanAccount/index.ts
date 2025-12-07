@@ -1,10 +1,11 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { deleteAccountInfoRequestSchema } from './request.schema';
+import { viewPlanAccountParamsRequestSchema } from './request.schema';
+import { viewPlanAccountResponseSchema } from './response.schema';
 
-export const deleteAccountInfoSchema = {
-  description: 'Remove uma informação de conta existente',
+export const viewPlanAccountSchema = {
+  description: 'Visualiza o plano da conta',
   tags: [ETagSwagger.account],
   produces: ['application/json'],
   security: [
@@ -21,14 +22,14 @@ export const deleteAccountInfoSchema = {
       })
     ),
   }),
-  params: deleteAccountInfoRequestSchema,
+  params: viewPlanAccountParamsRequestSchema,
   response: {
     200: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: Type.Null(),
+        data: viewPlanAccountResponseSchema,
       },
       { description: 'Successful' }
     ),

@@ -83,6 +83,14 @@ const handleUpdateChatbot = async () => {
 
 <template>
   <VDialog v-model="isVisible" max-width="500" persistent>
+    <VOverlay
+      :model-value="isUpdating"
+      class="align-center justify-center"
+      contained
+    >
+      <VProgressCircular color="primary" indeterminate size="64" />
+    </VOverlay>
+
     <VCard>
       <VCardTitle class="d-flex align-center justify-space-between pa-4">
         <span>{{ $t('edit') }} {{ $t('chatbot') }}</span>

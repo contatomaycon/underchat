@@ -6,7 +6,7 @@ import { createConsumer } from '@core/common/functions/createConsumer';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { FastifyInstance } from 'fastify';
-import { NfseWebhookProcessorService } from '@core/services/NfseWebhookProcessor.service';
+import { NfseProcessorService } from '@core/services/nfseProcessor.service';
 
 @singleton()
 export class AsaasNfseWebhookConsume {
@@ -15,7 +15,7 @@ export class AsaasNfseWebhookConsume {
   constructor(
     @inject('Kafka') private readonly kafka: Kafka,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
-    private readonly nfseWebhookProcessorService: NfseWebhookProcessorService
+    private readonly nfseProcessorService: NfseProcessorService
   ) {}
 
   private get consumerOrThrow(): Consumer {
@@ -93,7 +93,7 @@ export class AsaasNfseWebhookConsume {
   private async handleWebhookEvent(
     data: AsaasNfseWebhookRequest
   ): Promise<void> {
-    await this.nfseWebhookProcessorService.processWebhookEvent(data);
+    await this.nfseProcessorService.processWebhookEvent(data);
   }
 
   private parseMessage(value: Buffer | null): AsaasNfseWebhookRequest | null {

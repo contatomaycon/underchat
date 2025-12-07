@@ -104,6 +104,11 @@ export const updateUserRequestSchema = Type.Object({
       value: Type.Union([Type.String(), Type.Null()]),
     })
   ),
+  permission_role_id: Type.Optional(
+    Type.Object({
+      value: Type.Union([Type.String({ format: 'uuid' }), Type.Null()]),
+    })
+  ),
 });
 
 export type UpdateUserRequest = Static<typeof updateUserRequestSchema>;

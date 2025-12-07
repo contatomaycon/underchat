@@ -22,6 +22,7 @@ import { assignUserRoleSchema } from '@core/schema/user/assignUserRole';
 import { viewUserRoleSchema } from '@core/schema/user/viewUserRole';
 import { uploadPhotoSchema } from '@core/schema/user/uploadPhoto';
 import { deletePhotoSchema } from '@core/schema/user/deletePhoto';
+import { listUserRolesSchema } from '@core/schema/user/listUserRoles';
 
 export default function userRoutes(server: FastifyInstance) {
   const userController = container.resolve(UserController);
@@ -158,6 +159,15 @@ export default function userRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, userUpdatePermissions),
+    ],
+  });
+
+  server.get('/user/roles', {
+    schema: listUserRolesSchema,
+    handler: userController.listUserRoles,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userViewPermissions),
     ],
   });
 }

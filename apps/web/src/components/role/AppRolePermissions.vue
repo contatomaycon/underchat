@@ -363,7 +363,7 @@ watch(
           class="align-center justify-center"
           contained
         >
-          <VProgressCircular indeterminate color="primary" size="32" />
+          <VProgressCircular indeterminate color="primary" size="64" />
         </VOverlay>
 
         <template v-if="!isLoading">

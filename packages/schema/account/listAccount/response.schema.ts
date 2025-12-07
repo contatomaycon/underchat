@@ -4,8 +4,12 @@ import { Static, Type } from '@sinclair/typebox';
 const planSchema = Type.Object({
   plan_id: Type.String({ format: 'uuid' }),
   name: Type.String(),
-  price: Type.Number(),
-  price_old: Type.Number(),
+  recurring_payment: Type.Boolean(),
+  billing_period: Type.Union([
+    Type.Literal('monthly'),
+    Type.Literal('annual'),
+    Type.Null(),
+  ]),
 });
 
 const accountStatusSchema = Type.Object({

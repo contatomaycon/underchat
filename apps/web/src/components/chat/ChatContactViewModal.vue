@@ -133,14 +133,13 @@ watch(
   >
     <DialogCloseBtn @click="isOpen = false" />
 
-    <template v-if="chatStore.loading">
-      <VOverlay
-        :model-value="chatStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
+    <VOverlay
+      :model-value="chatStore.loading"
+      class="align-center justify-center"
+      contained
+    >
+      <VProgressCircular color="primary" indeterminate size="64" />
+    </VOverlay>
 
     <VCard :title="$t('view_contact')" v-if="contact">
       <VCardText>

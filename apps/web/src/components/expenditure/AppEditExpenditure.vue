@@ -30,6 +30,7 @@ const description = ref<string | null>(null);
 const priceRaw = ref<number | null>(null);
 
 const refFormEditExpenditure = ref<VForm>();
+const isInitializingModal = ref(false);
 
 const { locale } = useI18n();
 
@@ -174,36 +175,47 @@ const updateExpenditure = async () => {
   }
 };
 
-onMounted(async () => {
-  if (!expenditureId.value) return;
+const initializeModal = async () => {
+  if (!isVisible.value || !expenditureId.value) return;
+  if (isInitializingModal.value) return;
 
-  const expenditure = await expenditureStore.getExpenditureById(
-    expenditureId.value
-  );
-  if (expenditure) {
-    name.value = expenditure.name;
-    description.value = expenditure.description;
-    priceRaw.value = expenditure.price;
-    priceDisplay.value = formatCurrency(expenditure.price);
+  isInitializingModal.value = true;
+
+  try {
+    const expenditure = await expenditureStore.getExpenditureById(
+      expenditureId.value
+    );
+    if (expenditure) {
+      name.value = expenditure.name;
+      description.value = expenditure.description;
+      priceRaw.value = expenditure.price;
+      priceDisplay.value = formatCurrency(expenditure.price);
+    }
+  } finally {
+    isInitializingModal.value = false;
   }
-});
+};
+
+watch(isVisible, async (visible) => {
+  if (visible && expenditureId.value) {
+    await initializeModal();
+  }
+}, { immediate: true });
 </script>
 
 <template>
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <template v-if="expenditureStore.loading">
-      <VOverlay
-        :model-value="expenditureStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
-
     <VForm ref="refFormEditExpenditure" @submit.prevent>
-      <VCard :title="$t('edit_expenditure')">
+      <VCard :title="$t('edit_expenditure')" class="position-relative">
+        <VOverlay
+          :model-value="isInitializingModal || expenditureStore.loading"
+          class="align-center justify-center"
+          contained
+        >
+          <VProgressCircular color="primary" indeterminate size="64" />
+        </VOverlay>
         <VCardText>
           <VRow>
             <VCol cols="12">

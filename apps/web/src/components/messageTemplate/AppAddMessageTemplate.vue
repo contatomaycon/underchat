@@ -387,6 +387,14 @@ onBeforeUnmount(() => {
   <VDialog v-model="isVisible" max-width="600" :persistent="isLoading">
     <DialogCloseBtn :disabled="isLoading" @click="isVisible = false" />
 
+    <VOverlay
+      :model-value="isLoading"
+      class="align-center justify-center"
+      contained
+    >
+      <VProgressCircular color="primary" indeterminate size="64" />
+    </VOverlay>
+
     <VForm ref="refFormAddMessageTemplate" @submit.prevent>
       <VCard :title="$t('add_message_template')">
         <VCardText>

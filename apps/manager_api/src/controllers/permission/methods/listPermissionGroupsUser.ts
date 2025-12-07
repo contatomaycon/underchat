@@ -30,7 +30,7 @@ export const listPermissionGroupsUser = async (
       data: response,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

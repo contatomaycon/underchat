@@ -28,14 +28,19 @@ export class AccountViewerRepository {
           columns: {
             plan_account_id: true,
             next_payment_date: true,
+            recurring_payment: true,
           },
           with: {
             ppl: {
               columns: {
                 plan_id: true,
                 name: true,
-                price: true,
-                price_old: true,
+              },
+            },
+            bpl: {
+              columns: {
+                billing_period_id: true,
+                name: true,
               },
             },
           },
@@ -73,8 +78,12 @@ export class AccountViewerRepository {
             ? {
                 plan_id: activePlanAccount.ppl.plan_id,
                 name: activePlanAccount.ppl.name,
-                price: Number(activePlanAccount.ppl.price),
-                price_old: Number(activePlanAccount.ppl.price_old),
+                recurring_payment: activePlanAccount.recurring_payment,
+                billing_period:
+                  activePlanAccount.bpl?.name === 'monthly' ||
+                  activePlanAccount.bpl?.name === 'annual'
+                    ? activePlanAccount.bpl.name
+                    : null,
               }
             : null,
           created_at: result[0].created_at,

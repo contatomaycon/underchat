@@ -63,14 +63,13 @@ onMounted(resetForm);
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <template v-if="sectorStore.loading">
-      <VOverlay
-        :model-value="sectorStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
+    <VOverlay
+      :model-value="sectorStore.loading"
+      class="align-center justify-center"
+      contained
+    >
+      <VProgressCircular color="primary" indeterminate size="64" />
+    </VOverlay>
 
     <VForm ref="refFormAddSector" @submit.prevent>
       <VCard :title="$t('add_sector')">

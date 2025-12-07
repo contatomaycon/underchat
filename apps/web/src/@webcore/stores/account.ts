@@ -22,6 +22,7 @@ import { ViewAccountInfoResponse } from '@core/schema/account/viewAccountInfo/re
 import { EditAccountInfoParamsRequest } from '@core/schema/account/editAccountInfo/request.schema';
 import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 import { ListAccountSubscriptionsResponse } from '@core/schema/account/listAccountSubscriptions/response.schema';
+import { ViewPlanAccountResponse } from '@core/schema/planAccount/viewPlanAccount/response.schema';
 
 export const useAccountStore = defineStore('account', {
   state: () => ({
@@ -431,47 +432,6 @@ export const useAccountStore = defineStore('account', {
       }
     },
 
-    async deleteAccountInfo(accountInfoId: string): Promise<boolean> {
-      try {
-        this.loading = true;
-
-        const response = await axios.delete<IApiResponse<boolean>>(
-          `/account-info/${accountInfoId}`
-        );
-
-        this.loading = false;
-
-        const data = response?.data;
-
-        if (!data?.status) {
-          const mensage =
-            data?.message ?? this.i18n.global.t('account_info_deleted_error');
-
-          this.showSnackbar(mensage, EColor.error);
-
-          return false;
-        }
-
-        this.showSnackbar(
-          this.i18n.global.t('account_info_deleted_success'),
-          EColor.success
-        );
-
-        return true;
-      } catch (error) {
-        let errorMessage = this.i18n.global.t('account_info_deleted_error');
-        if (error instanceof AxiosError) {
-          errorMessage = error?.response?.data?.message ?? errorMessage;
-        }
-
-        this.showSnackbar(errorMessage, EColor.error);
-
-        this.loading = false;
-
-        return false;
-      }
-    },
-
     async getAccountSubscriptions(
       accountId: string
     ): Promise<ListAccountSubscriptionsResponse | null> {
@@ -510,6 +470,73 @@ export const useAccountStore = defineStore('account', {
         this.loading = false;
 
         return null;
+      }
+    },
+
+    async getPlanAccount(
+      accountId: string
+    ): Promise<ViewPlanAccountResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<IApiResponse<ViewPlanAccountResponse>>(
+          `/account/${accountId}/plan-account`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        this.loading = false;
+        return null;
+      }
+    },
+
+    async updatePlanAccount(accountId: string, payload: any): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<IApiResponse<boolean>>(
+          `/account/${accountId}/plan-account`,
+          payload
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('plan_account_update_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('plan_account_update_successfully'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('plan_account_update_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
       }
     },
   },

@@ -2,12 +2,15 @@ import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AccountService } from '@core/services/account.service';
 import { ApiKeyService } from '@core/services/apiKey.service';
+import { PlanAccountCancellationService } from '@core/services/planAccountCancellation.service';
+import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 
 @injectable()
 export class AccountDeleterUseCase {
   constructor(
     private readonly accountService: AccountService,
-    private readonly apiKeyService: ApiKeyService
+    private readonly apiKeyService: ApiKeyService,
+    private readonly planAccountCancellationService: PlanAccountCancellationService
   ) {}
 
   async execute(
@@ -26,6 +29,8 @@ export class AccountDeleterUseCase {
       throw new Error(t('account_not_found'));
     }
 
+    await this.cancelAccountPlanIfExists(t, accountId);
+
     const accountDeleted =
       await this.accountService.deleteAccountById(accountId);
 
@@ -40,5 +45,36 @@ export class AccountDeleterUseCase {
     }
 
     return true;
+  }
+
+  private async cancelAccountPlanIfExists(
+    t: TFunction<'translation', undefined>,
+    accountId: string
+  ): Promise<void> {
+    try {
+      await this.planAccountCancellationService.cancelPlanAccount(
+        t,
+        accountId,
+        EAccountStatus.inactive
+      );
+    } catch (error) {
+      if (this.isPlanNotFoundError(error, t)) {
+        return;
+      }
+
+      console.warn('Erro ao cancelar plano da conta:', error);
+    }
+  }
+
+  private isPlanNotFoundError(
+    error: unknown,
+    t: TFunction<'translation', undefined>
+  ): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    const planNotFoundMessage = t('plan_not_found_or_already_cancelled');
+    return error.message === planNotFoundMessage;
   }
 }

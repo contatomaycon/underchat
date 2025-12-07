@@ -212,14 +212,13 @@ watch(searchDebounced, async (value) => {
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <template v-if="contactGroupStore.loading">
-      <VOverlay
-        :model-value="contactGroupStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
+    <VOverlay
+      :model-value="contactGroupStore.loading"
+      class="align-center justify-center"
+      contained
+    >
+      <VProgressCircular color="primary" indeterminate size="64" />
+    </VOverlay>
 
     <VForm ref="refFormAddContactGroup" @submit.prevent>
       <VCard :title="$t('add_or_delete_contact_group')">

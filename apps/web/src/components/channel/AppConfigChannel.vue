@@ -1991,14 +1991,13 @@ onMounted(async () => {
       @click="isVisible = false"
     />
 
-    <template v-if="channelStore.loading && !isSavingProfileStatus">
-      <VOverlay
-        :model-value="channelStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
+    <VOverlay
+      :model-value="channelStore.loading && !isSavingProfileStatus"
+      class="align-center justify-center"
+      contained
+    >
+      <VProgressCircular color="primary" indeterminate size="64" />
+    </VOverlay>
 
     <VCard>
       <VCardTitle class="d-flex justify-space-between align-center">

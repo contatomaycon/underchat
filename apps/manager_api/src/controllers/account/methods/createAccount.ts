@@ -29,15 +29,11 @@ export const createAccount = async (
       });
     }
 
-    request.server.logger.info(response, request.id);
-
     return sendResponse(reply, {
       message: t('account_creator_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
-
     if (error instanceof Error) {
       return sendResponse(reply, {
         message: error.message,

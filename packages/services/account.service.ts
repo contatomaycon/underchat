@@ -18,7 +18,6 @@ import { UpdateAccountRequest } from '@core/schema/account/editAccount/request.s
 import { AccountInfoViewerExistsRepository } from '@core/repositories/account/AccountInfoViewerExists.repository';
 import { AccountInfoCreatorRepository } from '@core/repositories/account/AccountInfoCreator.repository';
 import { AccountInfoUpdaterRepository } from '@core/repositories/account/AccountInfoUpdater.repository';
-import { AccountInfoDeleterRepository } from '@core/repositories/account/AccountInfoDeleter.repository';
 import { AccountInfoByIdViewerExistsRepository } from '@core/repositories/account/AccountInfoByIdViewerExists.repository';
 import { CreateAccountInfoRequest } from '@core/schema/account/createAccountInfo/request.schema';
 import { EditAccountInfoResponse } from '@core/schema/account/editAccountInfo/request.schema';
@@ -42,7 +41,6 @@ export class AccountService {
     private readonly accountInfoViewerExistsRepository: AccountInfoViewerExistsRepository,
     private readonly accountInfoCreatorRepository: AccountInfoCreatorRepository,
     private readonly accountInfoUpdaterRepository: AccountInfoUpdaterRepository,
-    private readonly accountInfoDeleterRepository: AccountInfoDeleterRepository,
     private readonly accountInfoByIdViewerExistsRepository: AccountInfoByIdViewerExistsRepository,
     private readonly accountAllListerRepository: AccountAllListerRepository,
     private readonly accountSubscriptionsListerRepository: AccountSubscriptionsListerRepository
@@ -53,6 +51,14 @@ export class AccountService {
   ): Promise<AccountInfoResponse | null> => {
     return this.accountInfoViewerRepository.viewAccountInfoByAccountId(
       accountId
+    );
+  };
+
+  viewLogoByAccountInfoId = async (
+    accountInfoId: string
+  ): Promise<string | null> => {
+    return this.accountInfoViewerRepository.viewLogoByAccountInfoId(
+      accountInfoId
     );
   };
 
@@ -105,6 +111,12 @@ export class AccountService {
     return this.accountCreatorRepository.createAccount(input);
   };
 
+  createAccountWithPlanAndApiKey = async (
+    input: CreateAccountRequest
+  ): Promise<string | null> => {
+    return this.accountCreatorRepository.createAccountWithPlanAndApiKey(input);
+  };
+
   viewAccounts = async (
     accountId: string,
     isAdministrator: boolean
@@ -142,18 +154,12 @@ export class AccountService {
   updateAccountInfoById = async (
     accountInfoId: string,
     input: EditAccountInfoResponse,
-    urlLogo: string | null
+    urlLogo: string | null | undefined
   ): Promise<boolean> => {
     return this.accountInfoUpdaterRepository.updateAccountInfoById(
       accountInfoId,
       input,
       urlLogo
-    );
-  };
-
-  deleteAccountInfoById = async (accountInfoId: string): Promise<boolean> => {
-    return this.accountInfoDeleterRepository.deleteAccountInfoById(
-      accountInfoId
     );
   };
 

@@ -13,6 +13,7 @@ import { IUpdateUserAddress } from '@core/common/interfaces/IUpdateUserAddress';
 import { CountryService } from '@core/services/country.service';
 import { AccountService } from '@core/services/account.service';
 import { StorageService } from '@core/services/storage.service';
+import { PermissionService } from '@core/services/permission.service';
 import { validatePassword } from '@core/common/utils/passwordValidator';
 
 @injectable()
@@ -23,13 +24,18 @@ export class UserUpdaterUseCase {
     private readonly userService: UserService,
     private readonly CountryService: CountryService,
     private readonly accountService: AccountService,
-    private readonly storageService: StorageService
+    private readonly storageService: StorageService,
+    private readonly permissionService: PermissionService
   ) {}
 
   private extractStringValue(
     field: { value: string | null } | null | undefined
   ): string | null {
-    return field?.value ?? null;
+    const value = field?.value ?? null;
+    if (value === '') {
+      return null;
+    }
+    return value;
   }
 
   private extractPhotoUrlValue(
@@ -545,6 +551,85 @@ export class UserUpdaterUseCase {
     );
   }
 
+  private hasPermissionRoleIdField(body: UpdateUserRequest): boolean {
+    return body.permission_role_id !== undefined;
+  }
+
+  private async assignUserRoleToUser(
+    t: TFunction<'translation', undefined>,
+    userId: string,
+    permissionRoleId: string,
+    accountId: string,
+    isAdministrator: boolean
+  ): Promise<void> {
+    const userAccountId = await this.userService.getUserAccountId(userId);
+    if (!userAccountId) {
+      throw new Error(t('user_not_found'));
+    }
+
+    const existsPermissionRole =
+      await this.permissionService.existsPermissionRoleById(
+        userAccountId,
+        permissionRoleId,
+        isAdministrator
+      );
+
+    if (!existsPermissionRole) {
+      throw new Error(t('permission_role_not_found'));
+    }
+
+    const assigned = await this.userService.assignUserRole(
+      userId,
+      permissionRoleId
+    );
+
+    if (!assigned) {
+      throw new Error(t('user_role_assignment_failed'));
+    }
+  }
+
+  private async removeUserRoleFromUser(
+    t: TFunction<'translation', undefined>,
+    userId: string
+  ): Promise<void> {
+    const currentRole = await this.userService.getUserRole(userId);
+
+    if (!currentRole) {
+      return;
+    }
+
+    const deleted = await this.userService.deleteUserRole(userId);
+
+    if (!deleted) {
+      throw new Error(t('user_role_deletion_failed'));
+    }
+  }
+
+  private async updateUserRoleData(
+    t: TFunction<'translation', undefined>,
+    userId: string,
+    body: UpdateUserRequest,
+    accountId: string,
+    isAdministrator: boolean
+  ): Promise<void> {
+    const permissionRoleIdValue = this.extractStringValue(
+      body.permission_role_id
+    );
+
+    if (permissionRoleIdValue) {
+      await this.assignUserRoleToUser(
+        t,
+        userId,
+        permissionRoleIdValue,
+        accountId,
+        isAdministrator
+      );
+      return;
+    }
+
+    await this.removeUserRoleFromUser(t, userId);
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     userId: string,
@@ -582,6 +667,12 @@ export class UserUpdaterUseCase {
     if (this.hasUserAddressFields(body)) {
       await this.validateUserAddressFields(t, body);
       updatePromises.push(this.updateUserAddressData(t, userId, body));
+    }
+
+    if (this.hasPermissionRoleIdField(body)) {
+      updatePromises.push(
+        this.updateUserRoleData(t, userId, body, accountId, isAdministrator)
+      );
     }
 
     await Promise.all(updatePromises);

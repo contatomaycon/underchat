@@ -182,14 +182,13 @@ onMounted(resetForm);
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <template v-if="expenditureStore.loading">
-      <VOverlay
-        :model-value="expenditureStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
+    <VOverlay
+      :model-value="expenditureStore.loading"
+      class="align-center justify-center"
+      contained
+    >
+      <VProgressCircular color="primary" indeterminate size="64" />
+    </VOverlay>
 
     <VForm ref="refFormAddExpenditure" @submit.prevent>
       <VCard :title="$t('add_expenditure')">

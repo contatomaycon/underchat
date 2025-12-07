@@ -22,6 +22,7 @@ const channelId = toRef(props, 'channelId');
 const name = ref<string | null>(null);
 
 const refFormEditChannel = ref<VForm>();
+const isInitializingModal = ref(false);
 
 const updateServer = async () => {
   const validateForm = await refFormEditChannel?.value?.validate();
@@ -45,31 +46,42 @@ const updateServer = async () => {
   }
 };
 
-onMounted(async () => {
-  if (!channelId.value) return;
+const initializeModal = async () => {
+  if (!isVisible.value || !channelId.value) return;
+  if (isInitializingModal.value) return;
 
-  const channel = await channelStore.getWorkerById(channelId.value);
-  if (channel) {
-    name.value = channel.name;
+  isInitializingModal.value = true;
+
+  try {
+    const channel = await channelStore.getWorkerById(channelId.value);
+    if (channel) {
+      name.value = channel.name;
+    }
+  } finally {
+    isInitializingModal.value = false;
   }
-});
+};
+
+watch(isVisible, async (visible) => {
+  if (visible && channelId.value) {
+    await initializeModal();
+  }
+}, { immediate: true });
 </script>
 
 <template>
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <template v-if="channelStore.loading">
-      <VOverlay
-        :model-value="channelStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
-
     <VForm ref="refFormEditChannel" @submit.prevent>
-      <VCard :title="$t('edit_channel')">
+      <VCard :title="$t('edit_channel')" class="position-relative">
+        <VOverlay
+          :model-value="isInitializingModal || channelStore.loading"
+          class="align-center justify-center"
+          contained
+        >
+          <VProgressCircular color="primary" indeterminate size="64" />
+        </VOverlay>
         <VCardText>
           <VRow>
             <VCol cols="12">

@@ -33,14 +33,12 @@ export const saveChatbotFlow = async (
       });
     }
 
-    request.server.logger.info(chatbotFlowId, request.id);
-
     return sendResponse(reply, {
       message: t('chatbot_flow_save_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

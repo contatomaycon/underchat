@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { nextTick, computed, watch, onMounted, type Ref } from 'vue';
+import { nextTick, computed, watch, type Ref, toRef, ref } from 'vue';
 import { useUsersStore } from '@/@webcore/stores/user';
 import { useAccountStore } from '@/@webcore/stores/account';
 import { ECountry } from '@core/common/enums/ECountry';
@@ -13,7 +13,7 @@ import { VForm } from 'vuetify/components/VForm';
 import { useCountryCodes } from '@/composables/useCountryCodes';
 import { useStatesAndCities } from '@/composables/useStatesAndCities';
 import { ViewZipcodeRequest } from '@core/schema/zipcode/viewZipcode/request.schema';
-import { getAdministrator, getUser } from '@/@webcore/localStorage/user';
+import { getAdministrator } from '@/@webcore/localStorage/user';
 import { EColor } from '@core/common/enums/EColor';
 import { ViewUserResponse } from '@core/schema/user/viewUser/response.schema';
 import { useI18n } from 'vue-i18n';
@@ -34,15 +34,19 @@ const {
   loadStates,
   loadCities,
   clearCities,
-  loadingStates,
-  loadingCities,
 } = useStatesAndCities();
 const { t } = useI18n();
 
 const isAdministrator = computed(() => getAdministrator());
-const currentUser = computed(() => getUser());
 const accountId = ref<string | null>(null);
 const accountsOptions = ref<{ account_id: string; name: string }[]>([]);
+const accountSearchQuery = ref('');
+const isAccountMenuOpen = ref(false);
+const permissionRoleId = ref<string | null>(null);
+const initialPermissionRoleId = ref<string | null>(null);
+const rolesOptions = ref<{ id: string; name: string }[]>([]);
+const roleSearchQuery = ref('');
+const isRoleMenuOpen = ref(false);
 
 const countrySearchQuery = ref('');
 const isCountryMenuOpen = ref(false);
@@ -171,6 +175,7 @@ const docRules = computed(() => [
 ]);
 
 const tab = ref('user_data');
+const loadedTabs = ref<Set<string>>(new Set());
 
 const userId = toRef(props, 'userId');
 const email = ref<string | null>(null);
@@ -223,7 +228,6 @@ const cropPreviewSize = 400;
 
 const cropDialog = ref({
   imageSrc: '',
-  croppedImage: '',
 });
 
 const cropArea = ref({
@@ -231,7 +235,6 @@ const cropArea = ref({
   y: 0,
   width: 200,
   height: 200,
-  aspectRatio: 1,
   isDragging: false,
   isResizing: false,
   startX: 0,
@@ -263,6 +266,7 @@ const initialValues = ref<{
   district: string | null;
   user_status_id: string | null;
   account_id: string | null;
+  permission_role_id: string | null;
 }>({
   email: null,
   phone_ddi: null,
@@ -281,6 +285,7 @@ const initialValues = ref<{
   district: null,
   user_status_id: null,
   account_id: null,
+  permission_role_id: null,
 });
 
 const refFormEditUser = ref<VForm>();
@@ -369,6 +374,16 @@ const onTabChange = async (newTab: string | unknown) => {
   tab.value = newTab;
 };
 
+const loadTabData = async (tabName: string): Promise<void> => {
+  if (tabName === 'user_data') {
+    await loadUserDataTab();
+  } else if (tabName === 'additional_info') {
+    await loadAdditionalInfoTab();
+  } else if (tabName === 'address') {
+    await loadAddressTab();
+  }
+};
+
 const goNext = async () => {
   if (tab.value === 'user_data') {
     const isValid = await validateStep1();
@@ -387,12 +402,8 @@ const goPrev = () => {
   tab.value = navigateToPrevTab(tab.value);
 };
 
-const {
-  strength: passwordStrength,
-  strengthColor,
-  strengthLabel,
-  strengthPercentage,
-} = usePasswordStrength(() => password.value);
+const { strengthColor, strengthLabel, strengthPercentage } =
+  usePasswordStrength(() => password.value);
 
 const rules = {
   password: (v: string | null) => {
@@ -883,76 +894,6 @@ const determineAddress2ToSave = (): string | null | undefined => {
   return undefined;
 };
 
-const buildUserInfo = (): {
-  phone_ddi?: string | null;
-  phone?: string | null;
-  name?: string | null;
-  last_name?: string | null;
-  birth_date?: string | null;
-} | null => {
-  const userInfo: {
-    phone_ddi?: string | null;
-    phone?: string | null;
-    name?: string | null;
-    last_name?: string | null;
-    birth_date?: string | null;
-  } = {};
-
-  if (phone_ddi.value !== initialValues.value.phone_ddi) {
-    userInfo.phone_ddi = phone_ddi.value;
-  }
-
-  const phoneToSave = determinePhoneToSave();
-  if (phoneToSave !== undefined) {
-    userInfo.phone = phoneToSave ?? null;
-  }
-
-  if (name.value !== initialValues.value.name) {
-    userInfo.name = name.value;
-  }
-
-  if (last_name.value !== initialValues.value.last_name) {
-    userInfo.last_name = last_name.value;
-  }
-
-  if (birth_date.value !== initialValues.value.birth_date) {
-    userInfo.birth_date = birth_date.value;
-  }
-
-  if (Object.keys(userInfo).length === 0) {
-    return null;
-  }
-
-  return userInfo;
-};
-
-const buildUserDocument = (): {
-  user_document_type_id?: string | null;
-  document?: string;
-} | null => {
-  const userDocument: {
-    user_document_type_id?: string | null;
-    document?: string;
-  } = {};
-
-  if (
-    user_document_type_id.value !== initialValues.value.user_document_type_id
-  ) {
-    userDocument.user_document_type_id = user_document_type_id.value;
-  }
-
-  const documentToSave = determineDocumentToSave();
-  if (documentToSave !== undefined) {
-    userDocument.document = documentToSave ?? '';
-  }
-
-  if (Object.keys(userDocument).length === 0) {
-    return null;
-  }
-
-  return userDocument;
-};
-
 const createFileInput = (): HTMLInputElement => {
   const input = globalThis.document.createElement('input');
   input.type = 'file';
@@ -1055,8 +996,6 @@ const setupCropArea = (
 
   img.style.width = `${displayWidth}px`;
   img.style.height = `${displayHeight}px`;
-
-  cropArea.value.aspectRatio = 1;
 
   const maxCropSize = Math.min(displayWidth, displayHeight, cropPreviewSize);
   const cropSize = maxCropSize;
@@ -1507,16 +1446,6 @@ const createCroppedFile = (blob: Blob): File => {
   });
 };
 
-const handleCropSuccess = (canvas: HTMLCanvasElement) => {
-  const croppedFile = createCroppedFile(
-    new Blob([canvas.toDataURL('image/jpeg')], { type: 'image/jpeg' })
-  );
-  photoFile.value = croppedFile;
-  photoPreview.value = canvas.toDataURL('image/jpeg');
-  cropDialog.value.croppedImage = canvas.toDataURL('image/jpeg');
-  isCropModalOpen.value = false;
-};
-
 const cropImage = () => {
   if (!cropImageRef.value || !cropCanvasRef.value) return;
 
@@ -1541,7 +1470,6 @@ const cropImage = () => {
       const croppedFile = createCroppedFile(blob);
       photoFile.value = croppedFile;
       photoPreview.value = canvas.toDataURL('image/jpeg');
-      cropDialog.value.croppedImage = canvas.toDataURL('image/jpeg');
       isCropModalOpen.value = false;
     },
     'image/jpeg',
@@ -1552,7 +1480,6 @@ const cropImage = () => {
 const cancelCrop = () => {
   isCropModalOpen.value = false;
   cropDialog.value.imageSrc = '';
-  cropDialog.value.croppedImage = '';
   photoFile.value = null;
 };
 
@@ -1562,7 +1489,6 @@ const removePhoto = () => {
   photoPreview.value = null;
   photoRemoved.value = true;
   cropDialog.value.imageSrc = '';
-  cropDialog.value.croppedImage = '';
 };
 
 const determinePhotoUrl = (): string | null | undefined => {
@@ -1609,18 +1535,20 @@ const updateUser = async () => {
 
   const body = buildUpdateUserBody();
 
-  if (!hasUpdatePayload(body)) {
+  const hasUserUpdate = hasUpdatePayload(body);
+
+  if (!hasUserUpdate) {
     return;
   }
 
   const photoUrl = determinePhotoUrl();
-  const result = await userStore.updateUser(
+  const userUpdateResult = await userStore.updateUser(
     payload,
     body,
     photoUrl ? null : photoFile.value
   );
 
-  if (result) {
+  if (userUpdateResult) {
     isVisible.value = false;
     await userStore.listUsers();
   }
@@ -1760,6 +1688,13 @@ const buildUpdateUserBody = (): UpdateUserRequest => {
     addFieldIfDefined(body, 'photo_url', photoUrl);
   }
 
+  // Adicionar permission_role_id se houver mudança
+  if (permissionRoleId.value !== initialPermissionRoleId.value) {
+    body.permission_role_id = {
+      value: permissionRoleId.value,
+    };
+  }
+
   return body;
 };
 
@@ -1877,38 +1812,79 @@ const updateAddressFromZipcode = async (response: {
   }
 };
 
+const isViewingZipcode = ref(false);
+
 const viewZipcode = async () => {
   if (isInitializing.value) return;
+  if (isViewingZipcode.value) return;
 
   if (!country_id.value || !zip_code.value) {
     return;
   }
 
-  const params: ViewZipcodeRequest = {
-    country_id: country_id.value,
-    zipcode: zip_code.value,
-  };
+  if (timer) {
+    (globalThis as Window & typeof globalThis).clearTimeout(timer);
+    timer = null;
+  }
 
-  const response = await userStore.viewZipcode(params);
-  if (response) {
-    await updateAddressFromZipcode(response);
+  isViewingZipcode.value = true;
+
+  try {
+    const params: ViewZipcodeRequest = {
+      country_id: country_id.value,
+      zipcode: zip_code.value,
+    };
+
+    const response = await userStore.viewZipcode(params);
+    if (response) {
+      await updateAddressFromZipcode(response);
+    }
+  } finally {
+    isViewingZipcode.value = false;
   }
 };
 
 const isInitializing = ref(true);
 const initialZipCode = ref<string | null>(null);
 
-const loadAdministratorAccounts = async () => {
-  if (!isAdministrator.value) return;
-  const accounts = await accountStore.listAllAccounts();
-  if (accounts) {
-    accountsOptions.value = accounts;
+const filteredAccounts = computed(() => {
+  if (!accountSearchQuery.value) {
+    return accountsOptions.value;
+  }
+  const query = accountSearchQuery.value.toLowerCase();
+  return accountsOptions.value.filter((account) =>
+    account.name.toLowerCase().includes(query)
+  );
+});
+
+const filteredRoles = computed(() => {
+  if (!roleSearchQuery.value) {
+    return rolesOptions.value;
+  }
+  const query = roleSearchQuery.value.toLowerCase();
+  return rolesOptions.value.filter((role) =>
+    role.name.toLowerCase().includes(query)
+  );
+});
+
+const loadRoles = async () => {
+  const roles = await userStore.listUserRoles();
+  if (roles) {
+    rolesOptions.value = roles;
   }
 };
 
-const loadAccounts = async () => {
-  await loadAdministratorAccounts();
-};
+watch(isAccountMenuOpen, (isOpen) => {
+  if (!isOpen) {
+    accountSearchQuery.value = '';
+  }
+});
+
+watch(isRoleMenuOpen, (isOpen) => {
+  if (!isOpen) {
+    roleSearchQuery.value = '';
+  }
+});
 
 const setFieldValue = <K extends keyof typeof initialValues.value>(
   field: K,
@@ -2109,10 +2085,37 @@ const loadUserAddress = (responseUser: ViewUserResponse): void => {
   setFieldValue('district', district.value);
 };
 
-const loadUserData = async (): Promise<void> => {
+const loadAccounts = async () => {
+  if (isAdministrator.value) {
+    const accounts = await accountStore.listAllAccounts();
+    if (accounts) {
+      accountsOptions.value = accounts;
+    }
+  }
+};
+
+const loadUserRole = async () => {
   if (!userId.value) return;
 
+  const currentRole = await userStore.getUserRole(userId.value);
+  if (currentRole) {
+    permissionRoleId.value = currentRole;
+    initialPermissionRoleId.value = currentRole;
+  } else {
+    permissionRoleId.value = null;
+    initialPermissionRoleId.value = null;
+  }
+};
+
+const loadUserDataTab = async (force = false): Promise<void> => {
+  if (!userId.value) return;
+  if (!force && loadedTabs.value.has('user_data')) return;
+
+  isInitializing.value = true;
+
   await loadAccounts();
+  await loadRoles();
+  await loadUserRole();
 
   const responseUser = await userStore.viewUserById(userId.value);
   if (!responseUser) {
@@ -2122,26 +2125,98 @@ const loadUserData = async (): Promise<void> => {
   }
 
   loadBasicUserInfo(responseUser);
-  loadUserAddress(responseUser);
-  await loadStateAndCity();
 
+  loadedTabs.value.add('user_data');
   await nextTick();
   isInitializing.value = false;
 };
 
-onMounted(async () => {
-  await loadUserData();
-});
+const loadAdditionalInfoTab = async (): Promise<void> => {
+  if (!userId.value) return;
+  if (loadedTabs.value.has('additional_info')) return;
 
-watch(isVisible, async (visible) => {
-  if (visible && userId.value) {
-    isInitializing.value = true;
-    initialZipCode.value = null;
-    await loadUserData();
-    await nextTick();
-    isInitializing.value = false;
+  if (!loadedTabs.value.has('user_data')) {
+    await loadUserDataTab();
   }
-});
+
+  loadedTabs.value.add('additional_info');
+};
+
+const loadAddressTab = async (): Promise<void> => {
+  if (!userId.value) return;
+  if (loadedTabs.value.has('address')) return;
+
+  if (!loadedTabs.value.has('user_data')) {
+    await loadUserDataTab();
+  }
+
+  if (!country_id.value) {
+    const responseUser = await userStore.viewUserById(userId.value);
+    if (responseUser) {
+      loadUserAddress(responseUser);
+    }
+  }
+
+  if (country_id.value) {
+    await loadStateAndCity();
+  }
+
+  loadedTabs.value.add('address');
+};
+
+const isInitializingModal = ref(false);
+
+const initializeModal = async () => {
+  if (!isVisible.value || !userId.value) return;
+  if (isInitializingModal.value) return;
+
+  isInitializingModal.value = true;
+
+  try {
+    loadedTabs.value.clear();
+    initialZipCode.value = null;
+
+    const previousTab = tab.value;
+    tab.value = 'user_data';
+
+    if (previousTab !== 'user_data') {
+      await nextTick();
+    }
+
+    await loadUserDataTab(true);
+  } finally {
+    isInitializingModal.value = false;
+  }
+};
+
+watch(
+  isVisible,
+  async (visible) => {
+    if (visible && userId.value) {
+      await initializeModal();
+    } else {
+      loadedTabs.value.clear();
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  tab,
+  async (newTab, oldTab) => {
+    if (isInitializingModal.value) return;
+    if (
+      isVisible.value &&
+      newTab &&
+      userId.value &&
+      newTab !== oldTab &&
+      oldTab !== undefined
+    ) {
+      await loadTabData(newTab);
+    }
+  },
+  { immediate: false }
+);
 
 watch(password, () => {
   confirmPassword.value = null;
@@ -2152,6 +2227,7 @@ watch(
   zip_code,
   (newValue, oldValue) => {
     if (isInitializing.value) return;
+    if (isViewingZipcode.value) return;
 
     if (newValue === oldValue || oldValue === undefined) return;
 
@@ -2160,10 +2236,14 @@ watch(
     if (!country_id.value || !zip_code.value || zip_code.value.length < 8)
       return;
 
-    if (timer) (globalThis as Window & typeof globalThis).clearTimeout(timer);
+    if (timer) {
+      (globalThis as Window & typeof globalThis).clearTimeout(timer);
+      timer = null;
+    }
 
     timer = (globalThis as Window & typeof globalThis).setTimeout(() => {
       viewZipcode();
+      timer = null;
     }, 400);
   },
   { immediate: false }
@@ -2174,14 +2254,12 @@ watch(
   <VDialog v-model="isVisible" max-width="1200">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <template v-if="userStore.loading">
-      <VOverlay
-        :model-value="userStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
+    <VOverlay
+      :model-value="isInitializing || isInitializingModal || userStore.loading"
+      class="align-center justify-center"
+    >
+      <VProgressCircular color="primary" indeterminate size="64" />
+    </VOverlay>
 
     <VCard class="mx-2 my-2">
       <VCardTitle class="pa-6 pb-4 text-h5">
@@ -2263,8 +2341,8 @@ watch(
                   </VCol>
                   <VDivider vertical class="d-none d-md-block" />
                   <VCol cols="12" md="8" class="pa-6">
-                    <VRow class="mb-2">
-                      <VCol v-if="isAdministrator" md="6" cols="12">
+                    <VRow class="mb-4">
+                      <VCol cols="12">
                         <AppTextField
                           v-model="emailFormatted"
                           type="email"
@@ -2294,50 +2372,150 @@ watch(
                           </template>
                         </AppTextField>
                       </VCol>
+                    </VRow>
 
+                    <VDivider class="mb-4" />
+                    <VRow class="mb-4">
                       <VCol v-if="isAdministrator" cols="12" md="6">
-                        <AppAutocomplete
-                          v-model="accountId"
-                          :items="accountsOptions"
-                          item-title="name"
-                          item-value="account_id"
-                          :label="$t('account') + ':'"
-                          :placeholder="$t('select_account')"
-                        />
+                        <div>
+                          <VLabel class="mb-1 text-body-2"
+                            >{{ $t('account') }}:</VLabel
+                          >
+                          <VMenu v-model="isAccountMenuOpen">
+                            <template #activator="{ props: menuProps }">
+                              <VTextField
+                                v-bind="menuProps"
+                                :model-value="
+                                  accountsOptions.find(
+                                    (a) => a.account_id === accountId
+                                  )?.name || ''
+                                "
+                                :placeholder="$t('select_account')"
+                                variant="outlined"
+                                readonly
+                                append-inner-icon="tabler-chevron-down"
+                              />
+                            </template>
+                            <VCard>
+                              <VCardText class="pa-2">
+                                <AppTextField
+                                  v-model="accountSearchQuery"
+                                  :placeholder="$t('search') + '...'"
+                                  prepend-inner-icon="tabler-search"
+                                  density="compact"
+                                  hide-details
+                                  autofocus
+                                  @click.stop
+                                />
+                              </VCardText>
+                              <VDivider />
+                              <VList max-height="300" style="overflow-y: auto">
+                                <VListItem
+                                  v-for="(item, index) in filteredAccounts"
+                                  :key="index"
+                                  :value="item.account_id"
+                                  @click="
+                                    () => {
+                                      accountId = item.account_id;
+                                      isAccountMenuOpen = false;
+                                    }
+                                  "
+                                  :active="accountId === item.account_id"
+                                >
+                                  <VListItemTitle>{{
+                                    item.name
+                                  }}</VListItemTitle>
+                                </VListItem>
+                                <VListItem
+                                  v-if="filteredAccounts.length === 0"
+                                  disabled
+                                >
+                                  <VListItemTitle
+                                    class="text-center text-body-2 text-medium-emphasis"
+                                  >
+                                    {{ $t('no_results_found') }}
+                                  </VListItemTitle>
+                                </VListItem>
+                              </VList>
+                            </VCard>
+                          </VMenu>
+                        </div>
                       </VCol>
 
-                      <VCol v-if="!isAdministrator" md="6" cols="12">
-                        <AppTextField
-                          v-model="emailFormatted"
-                          type="email"
-                          :label="$t('email') + ':'"
-                          :placeholder="$t('email')"
-                          :rules="[
-                            emailValidator,
-                            requiredValidator(
-                              emailFormatted,
-                              $t('email_required')
-                            ),
-                          ]"
-                          @focus="startEditEmail"
-                          @click="startEditEmail"
-                        >
-                          <template #append-inner>
-                            <VIcon
-                              :icon="
-                                isEmailDecrypted
-                                  ? 'tabler-eye-off'
-                                  : 'tabler-eye'
-                              "
-                              class="cursor-pointer"
-                              :class="{ 'opacity-50': isLoadingEmail }"
-                              @click.stop="toggleEmailVisibility"
-                            />
-                          </template>
-                        </AppTextField>
+                      <VCol cols="12" :md="isAdministrator ? 6 : 12">
+                        <div>
+                          <VLabel class="mb-1 text-body-2">
+                            {{ $t('role') }}:
+                          </VLabel>
+                          <VMenu v-model="isRoleMenuOpen">
+                            <template #activator="{ props: menuProps }">
+                              <VTextField
+                                v-bind="menuProps"
+                                :model-value="
+                                  rolesOptions.find(
+                                    (r) => r.id === permissionRoleId
+                                  )?.name || ''
+                                "
+                                :placeholder="$t('select_role')"
+                                variant="outlined"
+                                readonly
+                                :clearable="!!permissionRoleId"
+                                clear-icon="tabler-x"
+                                @click:clear="permissionRoleId = null"
+                                :append-inner-icon="
+                                  permissionRoleId
+                                    ? undefined
+                                    : 'tabler-chevron-down'
+                                "
+                              />
+                            </template>
+                            <VCard>
+                              <VCardText class="pa-2">
+                                <AppTextField
+                                  v-model="roleSearchQuery"
+                                  :placeholder="$t('search') + '...'"
+                                  prepend-inner-icon="tabler-search"
+                                  density="compact"
+                                  hide-details
+                                  autofocus
+                                  @click.stop
+                                />
+                              </VCardText>
+                              <VDivider />
+                              <VList max-height="300" style="overflow-y: auto">
+                                <VListItem
+                                  v-for="(item, index) in filteredRoles"
+                                  :key="index"
+                                  :value="item.id"
+                                  @click="
+                                    () => {
+                                      permissionRoleId = item.id;
+                                      isRoleMenuOpen = false;
+                                    }
+                                  "
+                                  :active="permissionRoleId === item.id"
+                                >
+                                  <VListItemTitle>{{
+                                    item.name
+                                  }}</VListItemTitle>
+                                </VListItem>
+                                <VListItem
+                                  v-if="filteredRoles.length === 0"
+                                  disabled
+                                >
+                                  <VListItemTitle
+                                    class="text-center text-body-2 text-medium-emphasis"
+                                  >
+                                    {{ $t('no_results_found') }}
+                                  </VListItemTitle>
+                                </VListItem>
+                              </VList>
+                            </VCard>
+                          </VMenu>
+                        </div>
                       </VCol>
 
-                      <VCol v-if="!isAdministrator" md="6" cols="12">
+                      <VCol v-if="!isAdministrator" cols="12" md="6">
                         <VLabel>{{ $t('status') }}:</VLabel>
                         <AppAutocomplete
                           item-title="text"
@@ -2348,6 +2526,8 @@ watch(
                         />
                       </VCol>
                     </VRow>
+
+                    <VDivider class="mb-4" />
                     <VRow class="mb-2">
                       <VCol cols="12" md="6">
                         <AppTextField
@@ -2674,7 +2854,6 @@ watch(
                         requiredValidator(zip_code, $t('zip_code_required')),
                       ]"
                       :disabled="!country_id"
-                      @blur="viewZipcode"
                       @keydown.enter.prevent="viewZipcode"
                       maxlength="8"
                     />

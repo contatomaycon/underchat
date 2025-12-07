@@ -49,4 +49,27 @@ export class AccountInfoViewerRepository {
 
     return result[0] as AccountInfoResponse;
   };
+
+  viewLogoByAccountInfoId = async (
+    accountInfoId: string
+  ): Promise<string | null> => {
+    const result = await this.db
+      .select({
+        logo: accountInfo.logo,
+      })
+      .from(accountInfo)
+      .where(
+        and(
+          eq(accountInfo.account_info_id, accountInfoId),
+          isNull(accountInfo.deleted_at)
+        )
+      )
+      .execute();
+
+    if (!result.length) {
+      return null;
+    }
+
+    return result[0].logo;
+  };
 }
