@@ -118,9 +118,9 @@ const headers: DataTableHeader<ListUserResponse>[] = [
   { title: '', key: 'photo', sortable: false, width: '80px' },
   { title: t('account'), key: 'account' },
   { title: t('status'), key: 'status' },
-  { title: t('email_partial'), key: 'email_partial' },
-  { title: t('phone_partial'), key: 'phone_partial' },
-  { title: t('document_partial'), key: 'document_partial' },
+  { title: t('email'), key: 'email_partial' },
+  { title: t('phone'), key: 'phone_partial' },
+  { title: t('document'), key: 'document_partial' },
   { title: t('created_at'), key: 'created_at' },
   { title: t('actions'), key: 'actions', sortable: false },
 ];
