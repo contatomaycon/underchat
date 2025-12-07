@@ -347,61 +347,58 @@ export const useUsersStore = defineStore('users', {
 
         const formData = new FormData();
 
-        formData.append('email[value]', payload.email.value);
-        formData.append('password[value]', payload.password.value);
+        formData.append('email', payload.email.value);
+        formData.append('password', payload.password.value);
 
         if (payload.account_id) {
-          formData.append('account_id[value]', payload.account_id.value);
+          formData.append('account_id', payload.account_id.value);
         }
 
         if (payload.permission_role_id) {
           formData.append(
-            'permission_role_id[value]',
+            'permission_role_id',
             payload.permission_role_id.value
           );
         }
 
-        formData.append('phone_ddi[value]', payload.user_info.phone_ddi.value);
-        formData.append('phone[value]', payload.user_info.phone.value);
-        formData.append('name[value]', payload.user_info.name.value);
-        formData.append('last_name[value]', payload.user_info.last_name.value);
+        formData.append('phone_ddi', payload.user_info.phone_ddi.value);
+        formData.append('phone', payload.user_info.phone.value);
+        formData.append('name', payload.user_info.name.value);
+        formData.append('last_name', payload.user_info.last_name.value);
         if (payload.user_info.birth_date) {
           formData.append(
-            'birth_date[value]',
+            'birth_date',
             payload.user_info.birth_date.value || ''
           );
         }
 
         formData.append(
-          'document_type_id[value]',
+          'document_type_id',
           payload.user_document.document_type_id.value
         );
-        formData.append(
-          'document[value]',
-          payload.user_document.document.value
-        );
+        formData.append('document', payload.user_document.document.value);
 
         formData.append(
-          'country_id[value]',
+          'country_id',
           payload.user_address.country_id.value.toString()
         );
-        formData.append('zip_code[value]', payload.user_address.zip_code.value);
-        formData.append('address1[value]', payload.user_address.address1.value);
+        formData.append('zip_code', payload.user_address.zip_code.value);
+        formData.append('address1', payload.user_address.address1.value);
         if (payload.user_address.address2) {
           formData.append(
-            'address2[value]',
+            'address2',
             payload.user_address.address2.value || ''
           );
         }
         formData.append(
-          'city_fiscal_code[value]',
+          'city_fiscal_code',
           payload.user_address.city_fiscal_code.value || ''
         );
         formData.append(
-          'state_fiscal_code[value]',
+          'state_fiscal_code',
           payload.user_address.state_fiscal_code.value || ''
         );
-        formData.append('district[value]', payload.user_address.district.value);
+        formData.append('district', payload.user_address.district.value);
 
         if (photoFile instanceof File) {
           formData.append('photo', photoFile);

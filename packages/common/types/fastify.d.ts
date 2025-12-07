@@ -1,6 +1,5 @@
 import * as schema from '@core/models';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
-import { LoggerService } from '@core/services/logger.service';
 import { TFunction } from 'i18next';
 import { Connection, Client as ClientTemporal } from '@temporalio/client';
 import { NativeConnection } from '@temporalio/worker';
@@ -26,7 +25,6 @@ declare module 'fastify' {
     Centrifuge: Centrifuge;
     Kafka: Kafka;
     Redis: Redis;
-    logger: LoggerService;
     authenticateJwt: (
       request: FastifyRequest,
       reply: FastifyReply,

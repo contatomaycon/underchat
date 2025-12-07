@@ -25,14 +25,13 @@ export const createCrossSell = async (
       });
     }
 
-    request.server.logger.info(response, request.id);
 
     return sendResponse(reply, {
       message: t('cross_sell_creation_failed'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

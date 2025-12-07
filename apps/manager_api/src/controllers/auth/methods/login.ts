@@ -30,14 +30,13 @@ export const login = async (
       });
     }
 
-    request.server.logger.info(responseAuth, request.id);
 
     return sendResponse(reply, {
       message: t('login_invalid'),
       httpStatusCode: EHTTPStatusCode.unauthorized,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

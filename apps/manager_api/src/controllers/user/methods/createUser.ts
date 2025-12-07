@@ -35,14 +35,13 @@ export const createUser = async (
       });
     }
 
-    request.server.logger.info(response, request.id);
 
     return sendResponse(reply, {
       message: t('user_creator_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

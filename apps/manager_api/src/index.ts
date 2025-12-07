@@ -4,7 +4,6 @@ import fastify from 'fastify';
 import dbConnector from '@core/config/database';
 import authenticateJwt from '@core/middlewares/jwt.middleware';
 import i18nextPlugin from '@core/plugins/i18next';
-import { requestHook, responseHook, errorHook } from '@core/hooks';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { v7 } from 'uuid';
 import swaggerPlugin from '@/plugins/swagger';
@@ -12,7 +11,6 @@ import corsPlugin from '@core/plugins/cors';
 import jwtPlugin from '@core/plugins/jwt';
 import databaseElasticPlugin from '@core/plugins/dbElastic';
 import elasticLogsPlugin from '@core/plugins/elasticLogs';
-import loggerServicePlugin from '@core/plugins/logger';
 import centrifugoPlugin from '@core/plugins/centrifugo';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 import redisPlugin from '@core/plugins/redis';
@@ -30,10 +28,6 @@ const server = fastify({
   genReqId: () => v7(),
   logger: true,
 });
-
-server.addHook('preValidation', requestHook);
-server.addHook('onSend', responseHook);
-server.addHook('onError', errorHook);
 
 server.decorateRequest('module', ERouteModule.manager);
 
@@ -65,8 +59,6 @@ server.register(safePlugin(elasticLogsPlugin, 'elasticLogs'), {
   prefix: ERouteModule.balancer,
 });
 
-server.register(safePlugin(loggerServicePlugin, 'loggerService'));
-
 server.register(safePlugin(swaggerPlugin, 'swagger'));
 server.register(safePlugin(routes, 'routes', true), {
   prefix: EPrefixRoutes.v1,
@@ -77,11 +69,11 @@ const start = async () => {
   try {
     await server.listen({ port: 3002, host: '0.0.0.0' });
 
-    server.logger.info('Server running');
+    console.log('Server running');
   } catch (err) {
     console.log(err);
 
-    server.logger.error(err);
+    console.error(err);
     process.exit(1);
   }
 };

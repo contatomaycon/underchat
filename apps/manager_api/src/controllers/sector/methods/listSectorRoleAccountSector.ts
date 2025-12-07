@@ -31,14 +31,13 @@ export const listSectorRoleAccountSector = async (
       });
     }
 
-    request.server.logger.info(response, request.id);
 
     return sendResponse(reply, {
       message: t('sector_role_not_found'),
       httpStatusCode: EHTTPStatusCode.not_found,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

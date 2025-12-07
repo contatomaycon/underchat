@@ -22,15 +22,11 @@ export const viewMetrics = async (
       });
     }
 
-    request.server.logger.info(responseMetricsView, request.id);
-
     return sendResponse(reply, {
       message: t('metrics_server_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
-
     if (error instanceof Error) {
       return sendResponse(reply, {
         message: error.message,

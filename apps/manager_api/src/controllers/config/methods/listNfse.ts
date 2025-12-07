@@ -20,7 +20,7 @@ export const listNfse = async (
       data: response,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       const notFoundMessage = t('nfse_not_found');

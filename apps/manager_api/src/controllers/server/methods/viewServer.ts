@@ -28,14 +28,13 @@ export const viewServer = async (
       });
     }
 
-    request.server.logger.info(response, request.id);
 
     return sendResponse(reply, {
       message: t('server_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {
