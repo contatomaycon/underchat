@@ -121,9 +121,7 @@ const loadPlans = async () => {
 };
 
 const isTestPlan = (plan: ListPlanWithItemsResponse): boolean => {
-  const name = plan.name?.toLowerCase() || '';
-  const description = plan.description?.toLowerCase() || '';
-  return name.includes('teste') || description.includes('teste');
+  return plan.is_test === true && (plan.days_trial ?? 0) > 0;
 };
 
 const filteredPlans = computed(() => {
@@ -335,7 +333,11 @@ onMounted(() => {
           </VCol>
         </VRow>
 
-        <VRow v-else-if="filteredPlans.length > 0" class="plans-row" justify="center">
+        <VRow
+          v-else-if="filteredPlans.length > 0"
+          class="plans-row"
+          justify="center"
+        >
           <VCol
             v-for="(plan, index) in filteredPlans"
             :key="plan.plan_id"
@@ -513,9 +515,7 @@ onMounted(() => {
                   @click.stop="!isPlanDisabled(plan) && openCheckout(plan)"
                 >
                   {{
-                    isDowngrade(plan)
-                      ? $t('unavailable')
-                      : getButtonText(plan)
+                    isDowngrade(plan) ? $t('unavailable') : getButtonText(plan)
                   }}
                 </VBtn>
               </VCardText>

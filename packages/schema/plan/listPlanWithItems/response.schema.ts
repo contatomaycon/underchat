@@ -9,6 +9,8 @@ export const listPlanWithItemsResponseSchema = Type.Object({
   description: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   annual_discount: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   icon: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  is_test: Type.Boolean(),
+  days_trial: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   created_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   plan_items: Type.Array(listPlanItemResponseSchema),
 });
