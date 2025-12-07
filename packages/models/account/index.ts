@@ -8,3 +8,4 @@ export * from './accountPaymentNfSeStatus.model';
 export * from './billingPeriod.model';
 export * from './paymentBillingType.model';
 export * from './paymentStatus.model';
+export * from './accountTest.model';
