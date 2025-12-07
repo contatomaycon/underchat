@@ -88,11 +88,7 @@ export class PlanReleaseService {
       daysToAdd = 365;
     }
 
-    if (
-      currentPlanId === newPlanId &&
-      currentBillingPeriodId === billingPeriodId &&
-      currentNextPaymentDate
-    ) {
+    if (currentPlanId === newPlanId && currentNextPaymentDate) {
       const currentNextDate = new Date(currentNextPaymentDate);
       currentNextDate.setDate(currentNextDate.getDate() + daysToAdd);
       return currentNextDate.toISOString();

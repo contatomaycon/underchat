@@ -822,6 +822,7 @@ const initPaymentSubscription = async () => {
         pixPaymentStatus.value = data.status || null;
         if (data.is_confirmed) {
           pixPaymentConfirmed.value = true;
+
           setTimeout(() => {
             pixModalOpen.value = false;
           }, 3000);
