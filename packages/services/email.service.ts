@@ -33,25 +33,40 @@ export class EmailService {
     return this.transporter;
   }
 
+  private normalizeEmailAddress(
+    email: string | string[] | undefined
+  ): string | undefined {
+    if (!email) {
+      return undefined;
+    }
+    if (Array.isArray(email)) {
+      return email.join(', ');
+    }
+    return email;
+  }
+
+  private normalizeRequiredEmailAddress(email: string | string[]): string {
+    if (Array.isArray(email)) {
+      return email.join(', ');
+    }
+    return email;
+  }
+
   async sendEmail(data: ISendEmailRequest): Promise<void> {
     const transporter = this.getTransporter();
 
+    const to = this.normalizeRequiredEmailAddress(data.to);
+    const cc = this.normalizeEmailAddress(data.cc);
+    const bcc = this.normalizeEmailAddress(data.bcc);
+
     const mailOptions = {
       from: smtpEnvironment.getSmtpFrom(),
-      to: Array.isArray(data.to) ? data.to.join(', ') : data.to,
+      to,
       subject: data.subject,
       html: data.html,
       text: data.text,
-      cc: data.cc
-        ? Array.isArray(data.cc)
-          ? data.cc.join(', ')
-          : data.cc
-        : undefined,
-      bcc: data.bcc
-        ? Array.isArray(data.bcc)
-          ? data.bcc.join(', ')
-          : data.bcc
-        : undefined,
+      cc,
+      bcc,
       attachments: data.attachments,
     };
 

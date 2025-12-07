@@ -33,6 +33,99 @@ export class NotificationMessageService {
     private readonly emailService: EmailService
   ) {}
 
+  private async prepareNotificationMessages(
+    notification: any,
+    notificationTypeName: string,
+    fullName: string | null,
+    accountId: string
+  ): Promise<{
+    whatsappMessage: string | null;
+    emailMessage: string | null;
+    emailSubject: string | null;
+  }> {
+    let whatsappMessage: string | null = null;
+    let emailMessage: string | null = null;
+    let emailSubject: string | null = null;
+
+    if (notification.message_whatsapp) {
+      whatsappMessage = await this.replaceNotificationParameters(
+        notification.message_whatsapp,
+        notificationTypeName,
+        fullName,
+        accountId
+      );
+    }
+
+    if (notification.message_email) {
+      emailMessage = await this.replaceNotificationParameters(
+        notification.message_email,
+        notificationTypeName,
+        fullName,
+        accountId
+      );
+
+      if (notification.email_subject) {
+        emailSubject = await this.replaceNotificationParameters(
+          notification.email_subject,
+          notificationTypeName,
+          fullName,
+          accountId
+        );
+      }
+    }
+
+    return { whatsappMessage, emailMessage, emailSubject };
+  }
+
+  private async saveNotificationToElastic(
+    notificationMessage: INotificationMessage,
+    notificationId: string
+  ): Promise<void> {
+    await this.elasticDatabaseService.indices(
+      EElasticIndex.notification,
+      notificationMappings()
+    );
+
+    await this.elasticDatabaseService.update(
+      EElasticIndex.notification,
+      notificationMessage,
+      notificationId
+    );
+  }
+
+  private async sendWhatsAppNotification(
+    notification: any,
+    phone: string | null,
+    workerId: string,
+    notificationMessage: INotificationMessage
+  ): Promise<void> {
+    if (!notification.message_whatsapp || !phone) {
+      return;
+    }
+
+    const kafkaTopic =
+      this.kafkaBaileysQueueService.workerNotificationMessage(workerId);
+    await this.streamProducerService.send(kafkaTopic, notificationMessage);
+  }
+
+  private async sendEmailNotification(
+    notification: any,
+    userEmail: string | null,
+    emailMessage: string | null,
+    emailSubject: string | null
+  ): Promise<void> {
+    if (!notification.message_email || !userEmail || !emailMessage) {
+      return;
+    }
+
+    await this.emailService.sendEmail({
+      to: userEmail,
+      subject: emailSubject || '',
+      html: emailMessage,
+      text: emailMessage,
+    });
+  }
+
   async sendNotificationMessage(
     notificationTypeId: string,
     accountId: string
@@ -83,95 +176,67 @@ export class NotificationMessageService {
       throw new Error('Worker not found');
     }
 
-    let whatsappMessage: string | null = null;
-    let emailMessage: string | null = null;
-    let emailSubject: string | null = null;
-
-    if (notification.message_whatsapp) {
-      whatsappMessage = await this.replaceNotificationParameters(
-        notification.message_whatsapp,
-        notificationTypeName,
-        fullName,
-        accountId
-      );
-    }
-
-    if (notification.message_email) {
-      emailMessage = await this.replaceNotificationParameters(
-        notification.message_email,
+    const { whatsappMessage, emailMessage, emailSubject } =
+      await this.prepareNotificationMessages(
+        notification,
         notificationTypeName,
         fullName,
         accountId
       );
 
-      emailSubject = notification.email_subject
-        ? await this.replaceNotificationParameters(
-            notification.email_subject,
-            notificationTypeName,
-            fullName,
-            accountId
-          )
-        : null;
+    if (!notification.message_whatsapp && !notification.message_email) {
+      return true;
     }
 
-    if (notification.message_whatsapp || notification.message_email) {
-      const remoteJid = phone
-        ? normalizePhoneToJid(phone, userInfo.phone_ddi) || null
-        : null;
+    const remoteJid = phone
+      ? normalizePhoneToJid(phone, userInfo.phone_ddi) || null
+      : null;
 
-      const notificationMessage: INotificationMessage = {
-        id: notification.notification_id,
-        notification_id: notification.notification_id,
-        message_key: {
-          remote_jid: remoteJid,
-        },
-        account: {
-          id: accountId,
-          name: masterUser.account_name,
-        },
-        worker: {
-          id: workerId,
-          name: workerName || null,
-        },
-        notification_type: {
-          id: notification.notification_type_id,
-          name: notificationTypeName,
-        },
-        message_whatsapp: whatsappMessage,
-        message_email: emailMessage,
-        email_subject: emailSubject,
-        name: fullName,
-        phone: phone || null,
-        email: userEmail || null,
-        date: new Date().toISOString(),
-      };
+    const notificationMessage: INotificationMessage = {
+      id: notification.notification_id,
+      notification_id: notification.notification_id,
+      message_key: {
+        remote_jid: remoteJid,
+      },
+      account: {
+        id: accountId,
+        name: masterUser.account_name,
+      },
+      worker: {
+        id: workerId,
+        name: workerName || null,
+      },
+      notification_type: {
+        id: notification.notification_type_id,
+        name: notificationTypeName,
+      },
+      message_whatsapp: whatsappMessage,
+      message_email: emailMessage,
+      email_subject: emailSubject,
+      name: fullName,
+      phone: phone || null,
+      email: userEmail || null,
+      date: new Date().toISOString(),
+    };
 
-      await this.elasticDatabaseService.indices(
-        EElasticIndex.notification,
-        notificationMappings()
-      );
+    await this.saveNotificationToElastic(
+      notificationMessage,
+      notification.notification_id
+    );
 
-      await this.elasticDatabaseService.update(
-        EElasticIndex.notification,
-        notificationMessage,
-        notification.notification_id
-      );
+    await this.sendWhatsAppNotification(
+      notification,
+      phone,
+      workerId,
+      notificationMessage
+    );
 
-      if (notification.message_whatsapp && phone) {
-        const kafkaTopic =
-          this.kafkaBaileysQueueService.workerNotificationMessage(workerId);
-        await this.streamProducerService.send(kafkaTopic, notificationMessage);
-      }
-    }
-
-    if (notification.message_email && userEmail && emailMessage) {
-      await this.emailService.sendEmail({
-        to: userEmail,
-        subject: emailSubject || '',
-        html: emailMessage,
-        text: emailMessage,
-      });
-    }
+    await this.sendEmailNotification(
+      notification,
+      userEmail,
+      emailMessage,
+      emailSubject
+    );
 
     return true;
   }
@@ -250,11 +315,8 @@ export class NotificationMessageService {
 
     if (notificationTypeName === ENotificationType.two_factor) {
       const code = this.generateCode();
-      replacedMessage = replacedMessage.replace(/\{\{code\}\}/g, code);
-      replacedMessage = replacedMessage.replace(
-        /\{\{name\}\}/g,
-        userName || ''
-      );
+      replacedMessage = replacedMessage.replaceAll('{{code}}', code);
+      replacedMessage = replacedMessage.replaceAll('{{name}}', userName || '');
       return replacedMessage;
     }
 
@@ -263,20 +325,17 @@ export class NotificationMessageService {
       notificationTypeName === ENotificationType.plan_expiration
     ) {
       const planData = await this.getPlanData(accountId);
-      replacedMessage = replacedMessage.replace(
-        /\{\{plan\}\}/g,
+      replacedMessage = replacedMessage.replaceAll(
+        '{{plan}}',
         planData.plan || ''
       );
-      replacedMessage = replacedMessage.replace(
-        /\{\{name\}\}/g,
-        userName || ''
-      );
-      replacedMessage = replacedMessage.replace(
-        /\{\{expiration_date\}\}/g,
+      replacedMessage = replacedMessage.replaceAll('{{name}}', userName || '');
+      replacedMessage = replacedMessage.replaceAll(
+        '{{expiration_date}}',
         planData.expiration_date || ''
       );
-      replacedMessage = replacedMessage.replace(
-        /\{\{value\}\}/g,
+      replacedMessage = replacedMessage.replaceAll(
+        '{{value}}',
         planData.value || ''
       );
     }

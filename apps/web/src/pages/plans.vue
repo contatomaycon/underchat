@@ -77,6 +77,37 @@ const getPrice = (plan: ListPlanWithItemsResponse): number => {
   return plan.price;
 };
 
+const setCurrentPlan = (
+  result: ListPlanWithItemsResponse[],
+  currentPlanIdValue: string | null
+) => {
+  if (currentPlanIdValue) {
+    currentPlan.value =
+      result.find((p) => p.plan_id === currentPlanIdValue) || null;
+  } else {
+    currentPlan.value = null;
+  }
+};
+
+const setBillingPeriodFromInvoice = (planInvoice: any) => {
+  if (!planInvoice?.billing_period) {
+    currentPlanBillingPeriod.value = null;
+    return;
+  }
+
+  currentPlanBillingPeriod.value = planInvoice.billing_period as
+    | 'monthly'
+    | 'annual';
+
+  const isActive = planInvoice.next_payment_date
+    ? new Date(planInvoice.next_payment_date) > new Date()
+    : false;
+
+  if (currentPlanBillingPeriod.value === 'annual' && isActive) {
+    billingPeriod.value = 'annual';
+  }
+};
+
 const loadPlans = async () => {
   loading.value = true;
   const [result, currentPlanIdValue, planInvoice, alreadyUsed] =
@@ -90,37 +121,20 @@ const loadPlans = async () => {
   currentPlanInvoice.value = planInvoice;
   testPlanAlreadyUsed.value = alreadyUsed;
 
-  if (result) {
-    plans.value = result;
-    currentPlanId.value = currentPlanIdValue;
-
-    if (currentPlanIdValue) {
-      currentPlan.value =
-        result.find((p) => p.plan_id === currentPlanIdValue) || null;
-    } else {
-      currentPlan.value = null;
-    }
-
-    if (planInvoice?.billing_period) {
-      currentPlanBillingPeriod.value = planInvoice.billing_period as
-        | 'monthly'
-        | 'annual';
-
-      const isActive = planInvoice.next_payment_date
-        ? new Date(planInvoice.next_payment_date) > new Date()
-        : false;
-
-      if (currentPlanBillingPeriod.value === 'annual' && isActive) {
-        billingPeriod.value = 'annual';
-      }
-    } else {
-      currentPlanBillingPeriod.value = null;
-    }
-
-    if (result.length > 1) {
-      selectedPlanId.value = result[1].plan_id;
-    }
+  if (!result) {
+    loading.value = false;
+    return;
   }
+
+  plans.value = result;
+  currentPlanId.value = currentPlanIdValue;
+  setCurrentPlan(result, currentPlanIdValue);
+  setBillingPeriodFromInvoice(planInvoice);
+
+  if (result.length > 1) {
+    selectedPlanId.value = result[1].plan_id;
+  }
+
   loading.value = false;
 };
 
