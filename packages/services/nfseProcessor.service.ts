@@ -4,7 +4,7 @@ import { AccountPaymentNfSeUpserterRepository } from '@core/repositories/account
 import { AsaasNfseWebhookRequest } from '@core/schema/nfse/Webhook/request.schema';
 
 @injectable()
-export class NfseWebhookProcessorService {
+export class NfseProcessorService {
   constructor(
     private readonly asaasService: AsaasService,
     private readonly accountPaymentNfSeUpserterRepository: AccountPaymentNfSeUpserterRepository

@@ -19,3 +19,17 @@ export interface IPlanAccountCancellationResponse {
   success: boolean;
   message: string;
 }
+
+export interface IPlanAccountWithPayment {
+  plan_account_id: string;
+  account_id: string;
+  account_payment_id: string | null;
+  last_payment_date: string | null;
+  next_payment_date: string | null;
+  cancellation_date: string | null;
+  apy: {
+    account_payment_id: string;
+    billing: string | null;
+    recurring_payment: boolean;
+  } | null;
+}

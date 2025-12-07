@@ -1,6 +1,7 @@
 import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
-import { PlanAccountCancellationService } from '@core/services/planAccount/PlanAccountCancellation.service';
+import { PlanAccountCancellationService } from '@core/services/planAccountCancellation.service';
+import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 
 @injectable()
 export class PlanAccountCancellerUseCase {
@@ -12,6 +13,10 @@ export class PlanAccountCancellerUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string
   ): Promise<string> {
-    return this.planAccountCancellationService.cancelPlanAccount(t, accountId);
+    return this.planAccountCancellationService.cancelPlanAccount(
+      t,
+      accountId,
+      EAccountStatus.inactive
+    );
   }
 }
