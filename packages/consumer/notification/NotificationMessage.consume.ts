@@ -1,6 +1,5 @@
 import { singleton, inject } from 'tsyringe';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
-import { StreamProducerService } from '@core/services/streamProducer.service';
 import { Kafka, Consumer } from 'kafkajs';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';

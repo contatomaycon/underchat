@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { notifications, notificationType, worker } from '@core/models';
+import { notifications, notificationType } from '@core/models';
 import {
   NodePgDatabase,
   NodePgQueryResultHKT,

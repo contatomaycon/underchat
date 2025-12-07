@@ -74,8 +74,7 @@ export class PlanReleaseService {
     billingPeriodId: string | null,
     currentPlanId: string | null,
     newPlanId: string,
-    currentNextPaymentDate: string | null,
-    currentBillingPeriodId: string | null
+    currentNextPaymentDate: string | null
   ): string => {
     const paymentDateObj = new Date(paymentDate);
     let daysToAdd = 0;
@@ -214,8 +213,7 @@ export class PlanReleaseService {
       data.billingPeriodId,
       currentPlanAccount?.plan_id || null,
       data.planId,
-      currentPlanAccount?.next_payment_date || null,
-      currentPlanAccount?.billing_period_id || null
+      currentPlanAccount?.next_payment_date || null
     );
 
     const isSamePlan = currentPlanAccount?.plan_id === data.planId;

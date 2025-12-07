@@ -22,6 +22,8 @@ export class PlanUpdaterRepository {
       description?: string | null;
       annual_discount?: string | null;
       icon?: string | null;
+      is_test?: boolean;
+      days_trial?: number | null;
     } = {};
 
     if (input.name !== null && input.name !== undefined) {
@@ -46,6 +48,14 @@ export class PlanUpdaterRepository {
 
     if (input.icon !== undefined) {
       updateData.icon = input.icon;
+    }
+
+    if (input.is_test !== undefined) {
+      updateData.is_test = input.is_test ?? false;
+    }
+
+    if (input.days_trial !== undefined) {
+      updateData.days_trial = input.days_trial;
     }
 
     const result = await this.db

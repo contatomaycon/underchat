@@ -24,6 +24,8 @@ export class PlanCreatorRepository {
         description: input.description ?? null,
         annual_discount: input.annual_discount?.toString() ?? null,
         icon: input.icon ?? null,
+        is_test: input.is_test ?? false,
+        days_trial: input.days_trial ?? null,
       })
       .execute();
 

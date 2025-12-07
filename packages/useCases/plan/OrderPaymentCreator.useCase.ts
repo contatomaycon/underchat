@@ -79,10 +79,14 @@ export class OrderPaymentCreatorUseCase {
           throw new Error(t('test_plan_already_used'));
         }
 
+        if (!plan.days_trial || plan.days_trial <= 0) {
+          throw new Error(t('test_plan_required_fields'));
+        }
+
         await this.accountTestService.createTestPlan({
           accountId,
           planId: input.plan_id,
-          daysTrial: plan.days_trial!,
+          daysTrial: plan.days_trial,
           document: sensitiveData.document,
           phone: sensitiveData.phone,
           email: sensitiveData.email,
