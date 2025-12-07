@@ -13,11 +13,11 @@ export class AccountInfoUpdaterRepository {
 
   private updateInput(
     input: EditAccountInfoResponse,
-    urlLogo: string | null
+    urlLogo: string | null | undefined
   ): Partial<typeof accountInfo.$inferInsert> {
     const inputUpdate: Partial<typeof accountInfo.$inferInsert> = {};
 
-    if (urlLogo !== null) {
+    if (urlLogo !== undefined) {
       inputUpdate.logo = urlLogo;
     }
 
@@ -77,7 +77,7 @@ export class AccountInfoUpdaterRepository {
   updateAccountInfoById = async (
     accountInfoId: string,
     input: EditAccountInfoResponse,
-    urlLogo: string | null
+    urlLogo: string | null | undefined
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input, urlLogo);
 

@@ -23,14 +23,29 @@ export class AccountInfoUpdaterUseCase {
       throw new Error(t('account_info_not_found'));
     }
 
-    const urlLogo = body.logo
-      ? await this.storageService.uploadImage(body.logo, body.account_id.value)
-      : null;
+    let urlLogo: string | null | undefined = undefined;
+
+    if (body.delete_logo) {
+      const currentLogoUrl =
+        await this.accountService.viewLogoByAccountInfoId(accountInfoId);
+
+      if (currentLogoUrl) {
+        await this.storageService.deleteImage(currentLogoUrl);
+      }
+
+      urlLogo = null;
+    } else if (body.logo) {
+      const uploadResult = await this.storageService.uploadImage(
+        body.logo,
+        body.account_id.value
+      );
+      urlLogo = uploadResult?.url ?? null;
+    }
 
     const accountInfoUpdater = await this.accountService.updateAccountInfoById(
       accountInfoId,
       body,
-      urlLogo?.url ?? null
+      urlLogo
     );
 
     if (!accountInfoUpdater) {

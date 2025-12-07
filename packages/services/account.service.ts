@@ -54,6 +54,14 @@ export class AccountService {
     );
   };
 
+  viewLogoByAccountInfoId = async (
+    accountInfoId: string
+  ): Promise<string | null> => {
+    return this.accountInfoViewerRepository.viewLogoByAccountInfoId(
+      accountInfoId
+    );
+  };
+
   viewAccountQuantityProduct = async (
     accountId: string,
     planProductId: string
@@ -146,7 +154,7 @@ export class AccountService {
   updateAccountInfoById = async (
     accountInfoId: string,
     input: EditAccountInfoResponse,
-    urlLogo: string | null
+    urlLogo: string | null | undefined
   ): Promise<boolean> => {
     return this.accountInfoUpdaterRepository.updateAccountInfoById(
       accountInfoId,
