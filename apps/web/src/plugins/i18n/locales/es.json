@@ -1113,6 +1113,8 @@
     "annual": "Anual",
     "monthly": "Mensual",
     "daily": "Diario",
+    "billing_period": "Período de Facturación",
+    "billing_period_required": "El período de facturación es obligatorio cuando se selecciona un plan",
     "annual_revenue": "Ingresos Anuales",
     "annual_expense": "Gastos Anuales",
     "annual_net": "Neto Anual",

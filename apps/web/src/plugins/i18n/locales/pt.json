@@ -1087,6 +1087,8 @@
     "annual": "Anual",
     "monthly": "Mensal",
     "daily": "Diário",
+    "billing_period": "Período de Cobrança",
+    "billing_period_required": "Período de cobrança é obrigatório quando um plano é selecionado",
     "annual_revenue": "Receita Anual",
     "annual_expense": "Despesa Anual",
     "annual_net": "Líquido Anual",

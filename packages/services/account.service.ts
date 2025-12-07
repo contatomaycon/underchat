@@ -105,6 +105,12 @@ export class AccountService {
     return this.accountCreatorRepository.createAccount(input);
   };
 
+  createAccountWithPlanAndApiKey = async (
+    input: CreateAccountRequest
+  ): Promise<string | null> => {
+    return this.accountCreatorRepository.createAccountWithPlanAndApiKey(input);
+  };
+
   viewAccounts = async (
     accountId: string,
     isAdministrator: boolean

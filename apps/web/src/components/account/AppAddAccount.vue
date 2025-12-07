@@ -35,16 +35,28 @@ const itemsPlan = computed(() =>
 );
 
 const name = ref<string | null>(null);
-const account_status_id = ref<string | null>(null);
+const account_status_id = ref<string | null>(EAccountStatus.active);
 const plan_id = ref<string | null>(null);
+const billing_period = ref<'monthly' | 'annual' | null>(null);
 
 const refFormAddAccount = ref<VForm>();
+
+const itemsBillingPeriod = [
+  { value: 'monthly', text: t('monthly') },
+  { value: 'annual', text: t('annual') },
+];
+
+const showBillingPeriod = computed(() => !!plan_id.value);
 
 const addAccount = async () => {
   const validateForm = await refFormAddAccount?.value?.validate();
   if (!validateForm?.valid) return;
 
-  if (!name.value || !account_status_id.value || !plan_id.value) {
+  if (!name.value || !account_status_id.value) {
+    return;
+  }
+
+  if (plan_id.value && !billing_period.value) {
     return;
   }
 
@@ -53,10 +65,14 @@ const addAccount = async () => {
     account_status: {
       account_status_id: account_status_id.value,
     },
-    plan: {
-      plan_id: plan_id.value,
-    },
   };
+
+  if (plan_id.value && billing_period.value) {
+    payload.plan = {
+      plan_id: plan_id.value,
+      billing_period: billing_period.value,
+    };
+  }
 
   const result = await accountStore.addAccount(payload);
 
@@ -69,10 +85,17 @@ const addAccount = async () => {
 
 const resetForm = () => {
   name.value = null;
-  account_status_id.value = null;
+  account_status_id.value = EAccountStatus.active;
   plan_id.value = null;
+  billing_period.value = null;
   refFormAddAccount.value?.resetValidation();
 };
+
+watch(plan_id, (newValue) => {
+  if (!newValue) {
+    billing_period.value = null;
+  }
+});
 
 onMounted(async () => {
   resetForm();
@@ -108,7 +131,7 @@ watch(isVisible, async (visible) => {
       <VCard :title="$t('add_account')">
         <VCardText>
           <VRow>
-            <VCol cols="12">
+            <VCol cols="12" md="6">
               <AppTextField
                 v-model="name"
                 :label="$t('name') + ':'"
@@ -135,6 +158,23 @@ watch(isVisible, async (visible) => {
                 item-value="value"
                 :label="$t('plan') + ':'"
                 :placeholder="$t('plan')"
+                clearable
+              />
+            </VCol>
+            <VCol v-if="showBillingPeriod" cols="12" md="6">
+              <AppSelect
+                v-model="billing_period"
+                :items="itemsBillingPeriod"
+                item-title="text"
+                item-value="value"
+                :label="$t('billing_period') + ':'"
+                :placeholder="$t('billing_period')"
+                :rules="[
+                  requiredValidator(
+                    billing_period,
+                    $t('billing_period_required')
+                  ),
+                ]"
               />
             </VCol>
           </VRow>

@@ -238,6 +238,7 @@
   "plan_created_successfully": "¡Plan creado con éxito!",
   "plan_updated_successfully": "¡Plan actualizado con éxito!",
   "account_name_cannot_exceed_10_characters": "¡El nombre de la cuenta no puede exceder los 10 caracteres!",
+  "billing_period_required_when_plan_selected": "El período de facturación es obligatorio cuando se selecciona un plan",
   "api_key_creation_failed": "Error al crear la clave API",
   "api_key_deleter_error": "Error al eliminar la clave API",
   "account_info_view_successfully": "¡Información de la cuenta visualizada con éxito!",

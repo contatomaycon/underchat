@@ -1113,6 +1113,8 @@
     "annual": "Annual",
     "monthly": "Monthly",
     "daily": "Daily",
+    "billing_period": "Billing Period",
+    "billing_period_required": "Billing period is required when a plan is selected",
     "annual_revenue": "Annual Revenue",
     "annual_expense": "Annual Expense",
     "annual_net": "Annual Net",

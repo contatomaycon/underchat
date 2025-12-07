@@ -6,10 +6,8 @@ import {
   EditAccountParamsRequest,
   UpdateAccountRequest,
 } from '@core/schema/account/editAccount/request.schema';
-import { usePlanStore } from '@/@webcore/stores/plan';
 
 const accountStore = useAccountStore();
-const planStore = usePlanStore();
 
 const { t } = useI18n();
 
@@ -28,19 +26,11 @@ const isVisible = computed({
 const accountId = toRef(props, 'accountId');
 const name = ref<string | null>(null);
 const accountStatus = ref<string | null>(null);
-const plan = ref<string | null>(null);
 const accountStatusOptions = Object.entries(EAccountStatus).map(
   ([key, value]) => ({
     name: t(`${key}`) || key,
     id: value,
   })
-);
-
-const planOptions = computed(() =>
-  planStore.listAll.map((p) => ({
-    id: p.plan_id,
-    name: p.name,
-  }))
 );
 
 const refFormEditAccount = ref<VForm>();
@@ -62,9 +52,6 @@ const updateAccount = async () => {
     account_status: {
       account_status_id: accountStatus.value,
     },
-    plan: {
-      plan_id: plan.value,
-    },
   };
 
   const result = await accountStore.updateAccount(payload, body);
@@ -76,12 +63,6 @@ const updateAccount = async () => {
   }
 };
 
-watch(isVisible, async (visible) => {
-  if (visible && !planStore.listAll.length) {
-    await planStore.listPlanAll();
-  }
-});
-
 onMounted(async () => {
   if (!accountId.value) return;
 
@@ -89,11 +70,6 @@ onMounted(async () => {
   if (account) {
     name.value = account.name;
     accountStatus.value = account.account_status?.account_status_id ?? null;
-    plan.value = account.plan?.plan_id ?? null;
-  }
-
-  if (!planStore.listAll.length) {
-    await planStore.listPlanAll();
   }
 });
 </script>
@@ -115,7 +91,7 @@ onMounted(async () => {
       <VCard :title="$t('edit_account')">
         <VCardText>
           <VRow>
-            <VCol cols="12">
+            <VCol cols="12" md="6">
               <AppTextField
                 v-model="name"
                 :label="$t('name') + ':'"
@@ -125,41 +101,14 @@ onMounted(async () => {
               />
             </VCol>
 
-            <VCol cols="12" sm="6" md="6">
-              <label
-                :for="'account-status-select'"
-                class="d-block text-body-2 font-weight-medium mb-1"
-              >
-                {{ $t('account_status') }}:
-              </label>
-              <VSelect
+            <VCol cols="12" md="6">
+              <AppSelect
+                v-model="accountStatus"
                 :items="accountStatusOptions"
                 item-title="name"
                 item-value="id"
-                v-model="accountStatus"
-                dense
-                variant="outlined"
-                hide-details
-                style="min-width: 200px"
-              />
-            </VCol>
-
-            <VCol cols="12" sm="6" md="6">
-              <label
-                :for="'account-status-select'"
-                class="d-block text-body-2 font-weight-medium mb-1"
-              >
-                {{ $t('plan') }}:
-              </label>
-              <VSelect
-                :items="planOptions"
-                item-title="name"
-                item-value="id"
-                v-model="plan"
-                dense
-                variant="outlined"
-                hide-details
-                style="min-width: 200px"
+                :label="$t('account_status') + ':'"
+                :placeholder="$t('account_status')"
               />
             </VCol>
           </VRow>
