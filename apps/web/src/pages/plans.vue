@@ -120,6 +120,19 @@ const loadPlans = async () => {
   loading.value = false;
 };
 
+const isTestPlan = (plan: ListPlanWithItemsResponse): boolean => {
+  const name = plan.name?.toLowerCase() || '';
+  const description = plan.description?.toLowerCase() || '';
+  return name.includes('teste') || description.includes('teste');
+};
+
+const filteredPlans = computed(() => {
+  if (billingPeriod.value === 'annual') {
+    return plans.value.filter((plan) => !isTestPlan(plan));
+  }
+  return plans.value;
+});
+
 const selectPlan = (planId: string) => {
   selectedPlanId.value = planId;
 };
@@ -192,9 +205,12 @@ const isPlanDisabled = (plan: ListPlanWithItemsResponse): boolean => {
   return isDowngrade(plan) || isInvalidBillingPeriodChange(plan);
 };
 
-const getButtonText = (planId: string): string => {
-  if (isCurrentPlan(planId)) {
+const getButtonText = (plan: ListPlanWithItemsResponse): string => {
+  if (isCurrentPlan(plan.plan_id)) {
     return t('your_current_plan');
+  }
+  if (isTestPlan(plan)) {
+    return t('test');
   }
   if (!currentPlanId.value) {
     return t('buy');
@@ -222,7 +238,7 @@ const formatItemName = (
 };
 
 const getColClasses = computed(() => {
-  const count = plans.value.length;
+  const count = filteredPlans.value.length;
 
   if (count === 1) {
     return { cols: '12', sm: '12', md: '4', offset: '4' };
@@ -319,9 +335,9 @@ onMounted(() => {
           </VCol>
         </VRow>
 
-        <VRow v-else-if="plans.length > 0" class="plans-row" justify="center">
+        <VRow v-else-if="filteredPlans.length > 0" class="plans-row" justify="center">
           <VCol
-            v-for="(plan, index) in plans"
+            v-for="(plan, index) in filteredPlans"
             :key="plan.plan_id"
             :cols="getColClasses.cols"
             :sm="getColClasses.sm"
@@ -499,7 +515,7 @@ onMounted(() => {
                   {{
                     isDowngrade(plan)
                       ? $t('unavailable')
-                      : getButtonText(plan.plan_id)
+                      : getButtonText(plan)
                   }}
                 </VBtn>
               </VCardText>
