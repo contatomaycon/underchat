@@ -68,13 +68,6 @@ const itemsStatus = ref([
   { id: EAccountStatus.blocked, text: t('blocked') },
 ]);
 
-const formatCurrency = (value?: number) => {
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  }).format(value ?? 0);
-};
-
 const resolveStatusText = (statusId?: string | null) => {
   if (!statusId) {
     return '-';
@@ -125,8 +118,8 @@ const headers: DataTableHeader<ListAccountResponse>[] = [
   { title: t('name'), key: 'name' },
   { title: t('account_status'), key: 'account_status' },
   { title: t('plan'), key: 'plan' },
-  { title: t('price'), key: 'price' },
-  { title: t('price_old'), key: 'price_old' },
+  { title: t('recurring_payment'), key: 'recurring_payment' },
+  { title: t('billing_period'), key: 'billing_period' },
   { title: t('created_at'), key: 'created_at' },
   { title: t('actions'), key: 'actions', sortable: false },
 ];
@@ -318,17 +311,32 @@ watch(
           <VChip v-else class="uc-chip uc-badge--muted" size="small">-</VChip>
         </template>
 
-        <template #item.price="{ item }">
-          {{
-            new Intl.NumberFormat('pt-BR', {
-              style: 'currency',
-              currency: 'BRL',
-            }).format(item.plan?.price ?? 0)
-          }}
+        <template #item.recurring_payment="{ item }">
+          <VChip
+            v-if="item.plan"
+            :color="item.plan.recurring_payment ? 'success' : 'warning'"
+            size="small"
+            variant="tonal"
+          >
+            {{ item.plan.recurring_payment ? $t('yes') : $t('no') }}
+          </VChip>
+          <span v-else class="text-medium-emphasis">-</span>
         </template>
 
-        <template #item.price_old="{ item }">
-          <s>{{ formatCurrency(item.plan?.price_old) }}</s>
+        <template #item.billing_period="{ item }">
+          <VChip
+            v-if="item.plan?.billing_period"
+            :color="item.plan.billing_period === 'monthly' ? 'primary' : 'info'"
+            size="small"
+            variant="tonal"
+          >
+            {{
+              item.plan.billing_period === 'monthly'
+                ? $t('monthly')
+                : $t('annual')
+            }}
+          </VChip>
+          <span v-else class="text-medium-emphasis">-</span>
         </template>
 
         <template #item.created_at="{ item }">
@@ -345,7 +353,7 @@ watch(
               >
                 <span>{{ $t('account_info') }}</span> </VTooltip
               ><VIcon
-                icon="tabler-square-rounded-plus"
+                icon="tabler-settings"
                 @click="openAddRoleDialog(item.account_id)"
             /></IconBtn>
 
