@@ -4,6 +4,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { DeleteRoleRequest } from '@core/schema/role/deleteRole/request.schema';
 import { RoleDeleterUseCase } from '@core/useCases/role/RoleDeleter.useCase';
+import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 
 export const deleteRole = async (
   request: FastifyRequest<{
@@ -14,10 +15,7 @@ export const deleteRole = async (
   const roleDeleterUseCase = container.resolve(RoleDeleterUseCase);
   const { t, tokenJwtData } = request;
 
-  const systemRoleIds = [
-    '019a930d-c6f5-75af-82a5-899cb84b6089',
-    '019a930d-c6f5-75af-82a5-8c20f9d0e6e2',
-  ];
+  const systemRoleIds = [EPermissionRole.administrator, EPermissionRole.master];
 
   if (request.params.permission_role_id === tokenJwtData.permission_role_id) {
     return sendResponse(reply, {
@@ -26,7 +24,9 @@ export const deleteRole = async (
     });
   }
 
-  if (systemRoleIds.includes(request.params.permission_role_id)) {
+  if (
+    systemRoleIds.includes(request.params.permission_role_id as EPermissionRole)
+  ) {
     return sendResponse(reply, {
       message: t('cannot_delete_system_role'),
       httpStatusCode: EHTTPStatusCode.bad_request,

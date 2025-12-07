@@ -9,6 +9,8 @@ import { ListNotificationsResponse } from '@core/schema/notifications/listNotifi
 import { UpdateNotificationsRequest } from '@core/schema/notifications/updateNotifications/request.schema';
 import { UpdateNotificationsResponse } from '@core/schema/notifications/updateNotifications/response.schema';
 import { ListWorkersResponse } from '@core/schema/notifications/listWorkers/response.schema';
+import { ListSentNotificationsRequest } from '@core/schema/notifications/listSentNotifications/request.schema';
+import { ListSentNotificationsFinalResponse } from '@core/schema/notifications/listSentNotifications/response.schema';
 
 export const useNotificationsStore = defineStore('notifications', {
   state: () => ({
@@ -20,6 +22,14 @@ export const useNotificationsStore = defineStore('notifications', {
     i18n: getI18n(),
     loading: false,
     notifications: null as ListNotificationsResponse | null,
+    sentNotificationsList: [] as ListSentNotificationsFinalResponse['results'],
+    sentNotificationsPagings: {
+      current_page: 1,
+      total_pages: 0,
+      per_page: 10,
+      count: 0,
+      total: 0,
+    },
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -124,6 +134,57 @@ export const useNotificationsStore = defineStore('notifications', {
         return data.data;
       } catch {
         this.loading = false;
+        return null;
+      }
+    },
+    async getSentNotifications(
+      query: ListSentNotificationsRequest
+    ): Promise<ListSentNotificationsFinalResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListSentNotificationsFinalResponse>
+        >('/config/notifications/sent', {
+          params: query,
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          this.sentNotificationsList = [];
+          this.sentNotificationsPagings = {
+            current_page: 1,
+            total_pages: 0,
+            per_page: query.per_page ?? 10,
+            count: 0,
+            total: 0,
+          };
+          return null;
+        }
+
+        this.sentNotificationsList = data.data.results || [];
+        this.sentNotificationsPagings = data.data.pagings || {
+          current_page: 1,
+          total_pages: 0,
+          per_page: query.per_page ?? 10,
+          count: 0,
+          total: 0,
+        };
+
+        return data.data;
+      } catch {
+        this.loading = false;
+        this.sentNotificationsList = [];
+        this.sentNotificationsPagings = {
+          current_page: 1,
+          total_pages: 0,
+          per_page: query.per_page ?? 10,
+          count: 0,
+          total: 0,
+        };
         return null;
       }
     },

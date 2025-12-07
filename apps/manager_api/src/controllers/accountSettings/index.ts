@@ -11,6 +11,16 @@ import { viewAddress2 } from './methods/viewAddress2';
 import { viewAdditionalInfo } from './methods/viewAdditionalInfo';
 import { changePassword } from './methods/changePassword';
 import { viewCurrentPlanInvoice } from './methods/viewCurrentPlanInvoice';
+import { listAccountPayments } from './methods/listAccountPayments';
+import { listUserCards } from './methods/listUserCards';
+import { deleteUserCard } from './methods/deleteUserCard';
+import { updatePlanRecurring } from './methods/updatePlanRecurring';
+import { listAccountAddons } from './methods/listAccountAddons';
+import { listAccountPlanProducts } from './methods/listAccountPlanProducts';
+import { updateUserCardDefault } from './methods/updateUserCardDefault';
+import { createUserCard } from './methods/createUserCard';
+import { viewAccountPaymentNfse } from './methods/viewAccountPaymentNfse';
+import { cancelPlanAccount } from './methods/cancelPlanAccount';
 
 @injectable()
 class AccountSettingsController {
@@ -26,6 +36,16 @@ class AccountSettingsController {
   public viewAdditionalInfo = viewAdditionalInfo;
   public changePassword = changePassword;
   public viewCurrentPlanInvoice = viewCurrentPlanInvoice;
+  public listAccountPayments = listAccountPayments;
+  public listUserCards = listUserCards;
+  public deleteUserCard = deleteUserCard;
+  public updatePlanRecurring = updatePlanRecurring;
+  public listAccountAddons = listAccountAddons;
+  public listAccountPlanProducts = listAccountPlanProducts;
+  public updateUserCardDefault = updateUserCardDefault;
+  public createUserCard = createUserCard;
+  public viewAccountPaymentNfse = viewAccountPaymentNfse;
+  public cancelPlanAccount = cancelPlanAccount;
 }
 
 export default AccountSettingsController;

@@ -17,24 +17,27 @@ export class PlanCurrentInvoiceViewerRepository {
   ): Promise<ViewCurrentPlanInvoiceResponse> => {
     const accountResult = await this.findAccountWithPlanAccounts(accountId);
     const activePlanAccount = this.findActivePlanAccount(accountResult);
+    const planAccount =
+      activePlanAccount || this.findMostRecentPlanAccount(accountResult);
 
-    if (!activePlanAccount?.ppl) {
+    if (!planAccount?.ppl) {
       return this.buildEmptyResponse();
     }
 
     const billingPeriodValue = this.getBillingPeriod(
-      activePlanAccount.bpl?.name,
-      activePlanAccount.last_payment_date,
-      activePlanAccount.next_payment_date
+      planAccount.bpl?.name,
+      planAccount.last_payment_date,
+      planAccount.next_payment_date
     );
 
     return this.buildPlanInvoiceResponse(
-      activePlanAccount.ppl,
-      activePlanAccount.last_payment_date,
-      activePlanAccount.next_payment_date,
-      activePlanAccount.recurring_payment,
-      activePlanAccount.cancellation_date,
-      billingPeriodValue
+      planAccount.ppl,
+      planAccount.last_payment_date,
+      planAccount.next_payment_date,
+      planAccount.recurring_payment,
+      planAccount.cancellation_date,
+      billingPeriodValue,
+      planAccount.value
     );
   };
 
@@ -49,6 +52,7 @@ export class PlanCurrentInvoiceViewerRepository {
             last_payment_date: true,
             recurring_payment: true,
             cancellation_date: true,
+            value: true,
           },
           with: {
             ppl: {
@@ -96,6 +100,32 @@ export class PlanCurrentInvoiceViewerRepository {
     });
   };
 
+  private readonly findMostRecentPlanAccount = (
+    accountResult: Awaited<
+      ReturnType<typeof this.findAccountWithPlanAccounts>
+    > | null
+  ) => {
+    if (!accountResult?.apc || accountResult.apc.length === 0) {
+      return null;
+    }
+
+    const planAccountsWithDate = accountResult.apc
+      .filter((pa) => pa.last_payment_date || pa.cancellation_date)
+      .map((pa) => ({
+        ...pa,
+        sortDate: pa.last_payment_date || pa.cancellation_date || '',
+      }))
+      .sort((a, b) => {
+        const dateA = new Date(a.sortDate).getTime();
+        const dateB = new Date(b.sortDate).getTime();
+        return dateB - dateA;
+      });
+
+    return planAccountsWithDate.length > 0
+      ? planAccountsWithDate[0]
+      : accountResult.apc[0];
+  };
+
   private readonly getBillingPeriod = (
     billingPeriodName: string | null | undefined,
     lastPaymentDate: string | null,
@@ -122,7 +152,8 @@ export class PlanCurrentInvoiceViewerRepository {
     nextPaymentDate: string | null,
     recurringPayment: boolean,
     cancellationDate: string | null,
-    billingPeriodValue: string | null
+    billingPeriodValue: string | null,
+    planAccountValue: string | null
   ): ViewCurrentPlanInvoiceResponse => {
     return {
       plan_id: planData.plan_id,
@@ -139,6 +170,7 @@ export class PlanCurrentInvoiceViewerRepository {
       recurring_payment: recurringPayment,
       cancellation_date: cancellationDate,
       billing_period: billingPeriodValue,
+      plan_account_value: planAccountValue ? Number(planAccountValue) : null,
     };
   };
 
@@ -156,6 +188,7 @@ export class PlanCurrentInvoiceViewerRepository {
       recurring_payment: null,
       cancellation_date: null,
       billing_period: null,
+      plan_account_value: null,
     };
   };
 }

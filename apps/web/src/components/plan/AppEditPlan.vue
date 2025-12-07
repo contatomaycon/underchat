@@ -2,6 +2,7 @@
 import { usePlanStore } from '@/@webcore/stores/plan';
 import { VForm } from 'vuetify/components/VForm';
 import { UpdatePlanRequest } from '@core/schema/plan/updatePlan/request.schema';
+import { EColor } from '@core/common/enums/EColor';
 
 const planStore = usePlanStore();
 const { t } = useI18n();
@@ -26,6 +27,8 @@ const price_oldRaw = ref<number | null>(null);
 const description = ref<string | null>(null);
 const annual_discount = ref<number | null>(null);
 const icon = ref<string | null>(null);
+const is_test = ref<boolean>(false);
+const days_trial = ref<number | null>(null);
 
 const refFormEditPlan = ref<VForm>();
 
@@ -214,6 +217,11 @@ const updatePlan = async () => {
     return;
   }
 
+  if (is_test.value && (!days_trial.value || days_trial.value < 1)) {
+    planStore.showSnackbar(t('trial_days_required'), EColor.error);
+    return;
+  }
+
   const payload: UpdatePlanRequest = {
     name: name.value,
     price: priceRaw.value,
@@ -221,6 +229,8 @@ const updatePlan = async () => {
     description: description.value ?? null,
     annual_discount: annual_discount.value ?? null,
     icon: icon.value ?? null,
+    is_test: is_test.value,
+    days_trial: is_test.value ? (days_trial.value ?? null) : null,
   };
 
   const result = await planStore.updatePlan(planId.value, payload);
@@ -229,6 +239,12 @@ const updatePlan = async () => {
     await planStore.listPlan();
   }
 };
+
+watch(is_test, (value) => {
+  if (!value) {
+    days_trial.value = null;
+  }
+});
 
 onMounted(async () => {
   if (!planId.value) return;
@@ -245,6 +261,8 @@ onMounted(async () => {
       ? Number.parseFloat(plan.annual_discount)
       : null;
     icon.value = plan.icon ?? null;
+    is_test.value = plan.is_test ?? false;
+    days_trial.value = plan.days_trial ?? null;
   }
 });
 </script>
@@ -321,6 +339,34 @@ onMounted(async () => {
                 :label="$t('icon') + ':'"
                 :placeholder="$t('icon')"
                 :maxlength="100"
+              />
+            </VCol>
+            <VCol cols="12" sm="6">
+              <AppSelect
+                v-model="is_test"
+                :items="[
+                  { title: $t('no'), value: false },
+                  { title: $t('yes'), value: true },
+                ]"
+                :label="$t('is_test_plan') + ':'"
+                :placeholder="$t('is_test_plan')"
+                item-title="title"
+                item-value="value"
+              />
+            </VCol>
+            <VCol v-if="is_test" cols="12" sm="6">
+              <AppTextField
+                v-model="days_trial"
+                type="number"
+                :label="$t('trial_days') + ':'"
+                :placeholder="$t('trial_days')"
+                :rules="[
+                  (v: number | null) =>
+                    !is_test ||
+                    (v !== null && v >= 1) ||
+                    $t('trial_days_required'),
+                ]"
+                :min="1"
               />
             </VCol>
           </VRow>

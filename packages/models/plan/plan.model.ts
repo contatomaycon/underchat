@@ -4,6 +4,8 @@ import {
   timestamp,
   varchar,
   numeric,
+  boolean,
+  integer,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { planItems, planAccount } from '@core/models';
@@ -16,6 +18,8 @@ export const plan = pgTable('plan', {
   description: varchar({ length: 500 }),
   annual_discount: numeric({ precision: 5, scale: 2 }),
   icon: varchar({ length: 100 }),
+  is_test: boolean().notNull().default(false),
+  days_trial: integer(),
   created_at: timestamp('created_at', {
     mode: 'string',
     withTimezone: true,

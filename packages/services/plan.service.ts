@@ -136,11 +136,13 @@ export class PlanService {
 
   calculateUpgradeDiscount = async (
     accountId: string,
-    newPlanId: string
+    newPlanId: string,
+    billingPeriod?: 'monthly' | 'annual'
   ): Promise<CalculateUpgradeDiscountResponse> => {
     return this.upgradeDiscountCalculatorRepository.calculateUpgradeDiscount(
       accountId,
-      newPlanId
+      newPlanId,
+      billingPeriod
     );
   };
 
@@ -203,5 +205,18 @@ export class PlanService {
     return this.orderPaymentCreatorRepository.createAccountPaymentCrossSells(
       data
     );
+  };
+
+  getPlan = async (
+    planId: string
+  ): Promise<{
+    plan_id: string;
+    price: string;
+    annual_discount: string | null;
+    is_test: boolean;
+    days_trial: number | null;
+  } | null> => {
+    const plan = await this.orderPaymentCreatorRepository.getPlan(planId);
+    return plan || null;
   };
 }

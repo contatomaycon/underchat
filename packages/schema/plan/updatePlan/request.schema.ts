@@ -21,6 +21,10 @@ export const updatePlanRequestSchema = Type.Object({
   icon: Type.Optional(
     Type.Union([Type.String({ maxLength: 100 }), Type.Null()])
   ),
+  is_test: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
+  days_trial: Type.Optional(
+    Type.Union([Type.Number({ minimum: 1 }), Type.Null()])
+  ),
 });
 
 export type UpdatePlanRequest = Static<typeof updatePlanRequestSchema>;

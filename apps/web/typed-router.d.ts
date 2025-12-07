@@ -117,6 +117,28 @@ declare module 'vue-router/auto-routes' {
       { id: ParamValue<false> },
       | never
     >,
+    'config': RouteRecordInfo<
+      'config',
+      '/config',
+      Record<never, never>,
+      Record<never, never>,
+      | 'config-nfse-tab'
+      | 'config-notifications-tab'
+    >,
+    'config-nfse-tab': RouteRecordInfo<
+      'config-nfse-tab',
+      '/config/nfse-tab',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'config-notifications-tab': RouteRecordInfo<
+      'config-notifications-tab',
+      '/config/notifications-tab',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     'contact': RouteRecordInfo<
       'contact',
       '/contact',
@@ -176,13 +198,6 @@ declare module 'vue-router/auto-routes' {
     'not-authorized': RouteRecordInfo<
       'not-authorized',
       '/not-authorized',
-      Record<never, never>,
-      Record<never, never>,
-      | never
-    >,
-    'notifications': RouteRecordInfo<
-      'notifications',
-      '/notifications',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -367,6 +382,26 @@ declare module 'vue-router/auto-routes' {
       views:
         | never
     }
+    'src/pages/config.vue': {
+      routes:
+        | 'config'
+        | 'config-nfse-tab'
+        | 'config-notifications-tab'
+      views:
+        | 'default'
+    }
+    'src/pages/config/nfse-tab.vue': {
+      routes:
+        | 'config-nfse-tab'
+      views:
+        | never
+    }
+    'src/pages/config/notifications-tab.vue': {
+      routes:
+        | 'config-notifications-tab'
+      views:
+        | never
+    }
     'src/pages/contact.vue': {
       routes:
         | 'contact'
@@ -418,12 +453,6 @@ declare module 'vue-router/auto-routes' {
     'src/pages/not-authorized.vue': {
       routes:
         | 'not-authorized'
-      views:
-        | never
-    }
-    'src/pages/notifications.vue': {
-      routes:
-        | 'notifications'
       views:
         | never
     }

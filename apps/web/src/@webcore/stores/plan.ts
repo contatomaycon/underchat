@@ -632,6 +632,24 @@ export const usePlanStore = defineStore('plan', {
       }
     },
 
+    async checkTestPlanAlreadyUsed(): Promise<boolean> {
+      try {
+        const response = await axios.get<
+          IApiResponse<{ already_used: boolean }>
+        >('/plan/check-test-already-used');
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return false;
+        }
+
+        return data.data.already_used;
+      } catch {
+        return false;
+      }
+    },
+
     async viewUserInfo(): Promise<ViewUserInfoResponse | null> {
       try {
         this.loading = true;
@@ -670,14 +688,20 @@ export const usePlanStore = defineStore('plan', {
     },
 
     async calculateUpgradeDiscount(
-      planId: string
+      planId: string,
+      billingPeriod?: 'monthly' | 'annual'
     ): Promise<CalculateUpgradeDiscountResponse | null> {
       try {
         this.loading = true;
 
+        const queryParams = new URLSearchParams({ plan_id: planId });
+        if (billingPeriod) {
+          queryParams.append('billing_period', billingPeriod);
+        }
+
         const response = await axios.get<
           IApiResponse<CalculateUpgradeDiscountResponse>
-        >(`/plan/upgrade-discount?plan_id=${planId}`);
+        >(`/plan/upgrade-discount?${queryParams.toString()}`);
 
         this.loading = false;
 

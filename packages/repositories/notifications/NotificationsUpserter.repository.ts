@@ -1,15 +1,16 @@
 import * as schema from '@core/models';
-import { notifications } from '@core/models';
+import { notifications, notificationType } from '@core/models';
 import {
   NodePgDatabase,
   NodePgQueryResultHKT,
 } from 'drizzle-orm/node-postgres';
 import { PgTransaction } from 'drizzle-orm/pg-core';
-import { ExtractTablesWithRelations, eq, isNull } from 'drizzle-orm';
+import { ExtractTablesWithRelations, eq, isNull, and } from 'drizzle-orm';
 import { inject, injectable } from 'tsyringe';
 import { v7 as uuidv7 } from 'uuid';
 import { UpdateNotificationsRequest } from '@core/schema/notifications/updateNotifications/request.schema';
 import { UpdateNotificationsResponse } from '@core/schema/notifications/updateNotifications/response.schema';
+import { ENotificationType } from '@core/common/enums/ENotificationType';
 
 @injectable()
 export class NotificationsUpserterRepository {
@@ -21,129 +22,158 @@ export class NotificationsUpserterRepository {
     input: UpdateNotificationsRequest
   ): Promise<UpdateNotificationsResponse> => {
     return this.db.transaction(async (tx) => {
-      await this.ensureSingleNotification(tx);
+      const twoFactorTypeId = await this.findNotificationTypeIdByName(
+        tx,
+        ENotificationType.two_factor
+      );
+      const planTypeId = await this.findNotificationTypeIdByName(
+        tx,
+        ENotificationType.plan
+      );
+      const planExpirationTypeId = await this.findNotificationTypeIdByName(
+        tx,
+        ENotificationType.plan_expiration
+      );
 
-      const existing = await this.findExistingNotification(tx);
+      const twoFactorNotification =
+        input.two_factor_notification !== undefined ||
+        input.two_factor_message_whatsapp !== undefined ||
+        input.two_factor_message_email !== undefined ||
+        input.two_factor_email_subject !== undefined
+          ? await this.upsertNotificationByType(
+              tx,
+              twoFactorTypeId,
+              input.two_factor_notification,
+              input.two_factor_message_whatsapp,
+              input.two_factor_message_email,
+              input.two_factor_email_subject
+            )
+          : await this.findNotificationByType(tx, twoFactorTypeId);
 
-      if (existing) {
-        return this.updateNotificationTx(tx, existing.notification_id, input);
-      }
+      const planNotification =
+        input.plan_notification !== undefined ||
+        input.plan_message_whatsapp !== undefined ||
+        input.plan_message_email !== undefined ||
+        input.plan_email_subject !== undefined
+          ? await this.upsertNotificationByType(
+              tx,
+              planTypeId,
+              input.plan_notification,
+              input.plan_message_whatsapp,
+              input.plan_message_email,
+              input.plan_email_subject
+            )
+          : await this.findNotificationByType(tx, planTypeId);
 
-      return this.createNotificationTx(tx, input);
+      const planExpirationNotification =
+        input.plan_expiration_reminder !== undefined ||
+        input.plan_expiration_message_whatsapp !== undefined ||
+        input.plan_expiration_message_email !== undefined ||
+        input.plan_expiration_email_subject !== undefined
+          ? await this.upsertNotificationByType(
+              tx,
+              planExpirationTypeId,
+              input.plan_expiration_reminder,
+              input.plan_expiration_message_whatsapp,
+              input.plan_expiration_message_email,
+              input.plan_expiration_email_subject
+            )
+          : await this.findNotificationByType(tx, planExpirationTypeId);
+
+      const firstNotificationId =
+        twoFactorNotification?.notification_id ||
+        planNotification?.notification_id ||
+        planExpirationNotification?.notification_id ||
+        uuidv7();
+
+      return {
+        notification_id: firstNotificationId,
+        two_factor_notification: twoFactorNotification
+          ? {
+              whatsapp: {
+                worker_id: twoFactorNotification.nwr?.worker_id || null,
+                name: twoFactorNotification.nwr?.name || null,
+                message: twoFactorNotification.message_whatsapp || null,
+              },
+              email: {
+                subject: twoFactorNotification.email_subject || null,
+                message: twoFactorNotification.message_email || null,
+              },
+            }
+          : null,
+        plan_notification: planNotification
+          ? {
+              whatsapp: {
+                worker_id: planNotification.nwr?.worker_id || null,
+                name: planNotification.nwr?.name || null,
+                message: planNotification.message_whatsapp || null,
+              },
+              email: {
+                subject: planNotification.email_subject || null,
+                message: planNotification.message_email || null,
+              },
+            }
+          : null,
+        plan_expiration_reminder: planExpirationNotification
+          ? {
+              whatsapp: {
+                worker_id: planExpirationNotification.nwr?.worker_id || null,
+                name: planExpirationNotification.nwr?.name || null,
+                message: planExpirationNotification.message_whatsapp || null,
+              },
+              email: {
+                subject: planExpirationNotification.email_subject || null,
+                message: planExpirationNotification.message_email || null,
+              },
+            }
+          : null,
+        created_at: twoFactorNotification?.created_at || null,
+        updated_at:
+          twoFactorNotification?.updated_at ||
+          planNotification?.updated_at ||
+          planExpirationNotification?.updated_at ||
+          null,
+      };
     });
   };
 
-  private async ensureSingleNotification(
-    tx: PgTransaction<
-      NodePgQueryResultHKT,
-      typeof schema,
-      ExtractTablesWithRelations<typeof schema>
-    >
-  ): Promise<void> {
-    const existingNotifications = await tx
-      .select({ notification_id: notifications.notification_id })
-      .from(notifications)
-      .where(isNull(notifications.deleted_at))
-      .execute();
-
-    if (existingNotifications.length <= 1) {
-      return;
-    }
-
-    const notificationsToDelete = existingNotifications.slice(1);
-    for (const notification of notificationsToDelete) {
-      await tx
-        .update(notifications)
-        .set({ deleted_at: new Date().toISOString() })
-        .where(eq(notifications.notification_id, notification.notification_id))
-        .execute();
-    }
-  }
-
-  private async findExistingNotification(
-    tx: PgTransaction<
-      NodePgQueryResultHKT,
-      typeof schema,
-      ExtractTablesWithRelations<typeof schema>
-    >
-  ): Promise<{
-    notification_id: string;
-    two_factor_notification: string | null;
-    plan_notification: string | null;
-    plan_expiration_reminder: string | null;
-  } | null> {
-    const result = await tx
-      .select({
-        notification_id: notifications.notification_id,
-        two_factor_notification: notifications.two_factor_notification,
-        plan_notification: notifications.plan_notification,
-        plan_expiration_reminder: notifications.plan_expiration_reminder,
-      })
-      .from(notifications)
-      .where(isNull(notifications.deleted_at))
-      .limit(1)
-      .execute();
-
-    return result.length > 0 ? result[0] : null;
-  }
-
-  private buildUpdateData(
-    input: UpdateNotificationsRequest
-  ): Partial<typeof notifications.$inferInsert> {
-    const updateData: Partial<typeof notifications.$inferInsert> = {
-      updated_at: new Date().toISOString(),
-    };
-
-    if (input.two_factor_notification !== undefined) {
-      updateData.two_factor_notification =
-        input.two_factor_notification ?? null;
-    }
-
-    if (input.plan_notification !== undefined) {
-      updateData.plan_notification = input.plan_notification ?? null;
-    }
-
-    if (input.plan_expiration_reminder !== undefined) {
-      updateData.plan_expiration_reminder =
-        input.plan_expiration_reminder ?? null;
-    }
-
-    return updateData;
-  }
-
-  private async updateNotificationTx(
+  private async findNotificationTypeIdByName(
     tx: PgTransaction<
       NodePgQueryResultHKT,
       typeof schema,
       ExtractTablesWithRelations<typeof schema>
     >,
-    notificationId: string,
-    input: UpdateNotificationsRequest
-  ): Promise<UpdateNotificationsResponse> {
-    const updateData = this.buildUpdateData(input);
-
-    await tx
-      .update(notifications)
-      .set(updateData)
-      .where(eq(notifications.notification_id, notificationId))
+    name: string
+  ): Promise<string> {
+    const result = await tx
+      .select({ notification_type_id: notificationType.notification_type_id })
+      .from(notificationType)
+      .where(eq(notificationType.name, name))
+      .limit(1)
       .execute();
 
-    const updated = await tx.query.notifications.findFirst({
-      where: eq(notifications.notification_id, notificationId),
+    if (!result.length || !result[0].notification_type_id) {
+      throw new Error(`Notification type not found: ${name}`);
+    }
+
+    return result[0].notification_type_id;
+  }
+
+  private async findNotificationByType(
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
+    notificationTypeId: string
+  ) {
+    return tx.query.notifications.findFirst({
+      where: and(
+        eq(notifications.notification_type_id, notificationTypeId),
+        isNull(notifications.deleted_at)
+      ),
       with: {
-        ntw: {
-          columns: {
-            worker_id: true,
-            name: true,
-          },
-        },
-        npw: {
-          columns: {
-            worker_id: true,
-            name: true,
-          },
-        },
-        new: {
+        nwr: {
           columns: {
             worker_id: true,
             name: true,
@@ -152,79 +182,116 @@ export class NotificationsUpserterRepository {
       },
       columns: {
         notification_id: true,
-        two_factor_notification: true,
-        plan_notification: true,
-        plan_expiration_reminder: true,
+        message_whatsapp: true,
+        message_email: true,
+        email_subject: true,
         created_at: true,
         updated_at: true,
+        worker_id: true,
       },
     });
-
-    if (!updated) {
-      throw new Error('Failed to retrieve updated notification');
-    }
-
-    return {
-      notification_id: updated.notification_id,
-      two_factor_notification: updated.ntw
-        ? {
-            worker_id: updated.ntw.worker_id,
-            name: updated.ntw.name,
-          }
-        : null,
-      plan_notification: updated.npw
-        ? {
-            worker_id: updated.npw.worker_id,
-            name: updated.npw.name,
-          }
-        : null,
-      plan_expiration_reminder: updated.new
-        ? {
-            worker_id: updated.new.worker_id,
-            name: updated.new.name,
-          }
-        : null,
-      created_at: updated.created_at,
-      updated_at: updated.updated_at,
-    };
   }
 
-  private async createNotificationTx(
+  private async upsertNotificationByType(
     tx: PgTransaction<
       NodePgQueryResultHKT,
       typeof schema,
       ExtractTablesWithRelations<typeof schema>
     >,
-    input: UpdateNotificationsRequest
-  ): Promise<UpdateNotificationsResponse> {
+    notificationTypeId: string,
+    workerId: string | null | undefined,
+    messageWhatsapp: string | null | undefined,
+    messageEmail: string | null | undefined,
+    emailSubject: string | null | undefined
+  ) {
+    const existing = await this.findNotificationByType(tx, notificationTypeId);
+
+    if (existing) {
+      if (workerId === null) {
+        await tx
+          .update(notifications)
+          .set({ deleted_at: new Date().toISOString() })
+          .where(eq(notifications.notification_id, existing.notification_id))
+          .execute();
+        return null;
+      }
+
+      const updateData: {
+        worker_id?: string;
+        message_whatsapp?: string | null;
+        message_email?: string | null;
+        email_subject?: string | null;
+        updated_at: string;
+      } = {
+        updated_at: new Date().toISOString(),
+      };
+
+      if (workerId !== undefined) {
+        updateData.worker_id = workerId;
+      }
+
+      if (messageWhatsapp !== undefined) {
+        updateData.message_whatsapp = messageWhatsapp;
+      }
+
+      if (messageEmail !== undefined) {
+        updateData.message_email = messageEmail;
+      }
+
+      if (emailSubject !== undefined) {
+        updateData.email_subject = emailSubject;
+      }
+
+      await tx
+        .update(notifications)
+        .set(updateData)
+        .where(eq(notifications.notification_id, existing.notification_id))
+        .execute();
+
+      return tx.query.notifications.findFirst({
+        where: eq(notifications.notification_id, existing.notification_id),
+        with: {
+          nwr: {
+            columns: {
+              worker_id: true,
+              name: true,
+            },
+          },
+        },
+        columns: {
+          notification_id: true,
+          message_whatsapp: true,
+          message_email: true,
+          email_subject: true,
+          created_at: true,
+          updated_at: true,
+          worker_id: true,
+        },
+      });
+    }
+
+    if (workerId === null || workerId === undefined) {
+      return null;
+    }
+
     const notificationId = uuidv7();
 
     await tx
       .insert(notifications)
       .values({
         notification_id: notificationId,
-        two_factor_notification: input.two_factor_notification ?? null,
-        plan_notification: input.plan_notification ?? null,
-        plan_expiration_reminder: input.plan_expiration_reminder ?? null,
+        notification_type_id: notificationTypeId,
+        worker_id: workerId,
+        message_whatsapp: messageWhatsapp || null,
+        message_email: messageEmail || null,
+        email_subject: emailSubject || null,
       })
       .execute();
 
-    const created = await tx.query.notifications.findFirst({
+    return tx.query.notifications.findFirst({
       where: eq(notifications.notification_id, notificationId),
       with: {
-        ntw: {
-          columns: {
-            worker_id: true,
-            name: true,
-          },
-        },
-        npw: {
-          columns: {
-            worker_id: true,
-            name: true,
-          },
-        },
-        new: {
+        nwr: {
           columns: {
             worker_id: true,
             name: true,
@@ -233,40 +300,13 @@ export class NotificationsUpserterRepository {
       },
       columns: {
         notification_id: true,
-        two_factor_notification: true,
-        plan_notification: true,
-        plan_expiration_reminder: true,
+        message_whatsapp: true,
+        message_email: true,
+        email_subject: true,
         created_at: true,
         updated_at: true,
+        worker_id: true,
       },
     });
-
-    if (!created) {
-      throw new Error('Failed to retrieve created notification');
-    }
-
-    return {
-      notification_id: created.notification_id,
-      two_factor_notification: created.ntw
-        ? {
-            worker_id: created.ntw.worker_id,
-            name: created.ntw.name,
-          }
-        : null,
-      plan_notification: created.npw
-        ? {
-            worker_id: created.npw.worker_id,
-            name: created.npw.name,
-          }
-        : null,
-      plan_expiration_reminder: created.new
-        ? {
-            worker_id: created.new.worker_id,
-            name: created.new.name,
-          }
-        : null,
-      created_at: created.created_at,
-      updated_at: created.updated_at,
-    };
   }
 }

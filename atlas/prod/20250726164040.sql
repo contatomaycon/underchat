@@ -15,6 +15,8 @@ CREATE TABLE "plan" (
   "description" text NULL,
   "annual_discount" numeric(5,2) NULL,
   "icon" character varying(100) NULL,
+  "is_test" boolean NOT NULL DEFAULT false,
+  "days_trial" integer NULL,
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
   "deleted_at" timestamptz NULL,

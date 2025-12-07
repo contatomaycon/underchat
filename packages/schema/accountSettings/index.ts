@@ -8,3 +8,5 @@ export * from './viewAddress1';
 export * from './viewAddress2';
 export * from './viewAdditionalInfo';
 export * from './viewCurrentPlanInvoice';
+export * from './viewAccountPaymentNfse';
+export * from './cancelPlanAccount';

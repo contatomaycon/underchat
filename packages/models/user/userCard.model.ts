@@ -26,6 +26,10 @@ export const userCard = pgTable('user_card', {
     mode: 'string',
     withTimezone: true,
   }).defaultNow(),
+  deleted_at: timestamp({
+    mode: 'string',
+    withTimezone: true,
+  }),
 });
 
 export const userCardRelations = relations(userCard, ({ one }) => ({
