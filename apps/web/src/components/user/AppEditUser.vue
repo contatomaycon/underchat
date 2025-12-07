@@ -1533,33 +1533,17 @@ const updateUser = async () => {
   const body = buildUpdateUserBody();
 
   const hasUserUpdate = hasUpdatePayload(body);
-  const hasRoleUpdate =
-    permissionRoleId.value !== initialPermissionRoleId.value;
 
-  if (!hasUserUpdate && !hasRoleUpdate) {
+  if (!hasUserUpdate) {
     return;
   }
 
   const photoUrl = determinePhotoUrl();
-  let userUpdateResult = true;
-
-  if (hasUserUpdate) {
-    userUpdateResult = await userStore.updateUser(
-      payload,
-      body,
-      photoUrl ? null : photoFile.value
-    );
-  }
-
-  if (hasRoleUpdate && permissionRoleId.value) {
-    const roleResult = await userStore.assignUserRole(userId.value, {
-      permission_role_id: permissionRoleId.value,
-    });
-
-    if (!roleResult) {
-      return;
-    }
-  }
+  const userUpdateResult = await userStore.updateUser(
+    payload,
+    body,
+    photoUrl ? null : photoFile.value
+  );
 
   if (userUpdateResult) {
     isVisible.value = false;
@@ -1699,6 +1683,13 @@ const buildUpdateUserBody = (): UpdateUserRequest => {
   if (!photoRemoved.value) {
     const photoUrl = determinePhotoUrl();
     addFieldIfDefined(body, 'photo_url', photoUrl);
+  }
+
+  // Adicionar permission_role_id se houver mudança
+  if (permissionRoleId.value !== initialPermissionRoleId.value) {
+    body.permission_role_id = {
+      value: permissionRoleId.value,
+    };
   }
 
   return body;
@@ -2361,9 +2352,9 @@ watch(
 
                       <VCol cols="12" :md="isAdministrator ? 6 : 12">
                         <div>
-                          <VLabel class="mb-1 text-body-2"
-                            >{{ $t('role') }}:</VLabel
-                          >
+                          <VLabel class="mb-1 text-body-2">
+                            {{ $t('role') }}:
+                          </VLabel>
                           <VMenu v-model="isRoleMenuOpen">
                             <template #activator="{ props: menuProps }">
                               <VTextField
@@ -2376,7 +2367,14 @@ watch(
                                 :placeholder="$t('select_role')"
                                 variant="outlined"
                                 readonly
-                                append-inner-icon="tabler-chevron-down"
+                                :clearable="!!permissionRoleId"
+                                clear-icon="tabler-x"
+                                @click:clear="permissionRoleId = null"
+                                :append-inner-icon="
+                                  permissionRoleId
+                                    ? undefined
+                                    : 'tabler-chevron-down'
+                                "
                               />
                             </template>
                             <VCard>

@@ -1448,9 +1448,9 @@ onMounted(resetForm);
 
                       <VCol cols="12" :md="isAdministrator ? 6 : 12">
                         <div>
-                          <VLabel class="mb-1 text-body-2"
-                            >{{ $t('role') }}:</VLabel
-                          >
+                          <VLabel class="mb-1 text-body-2">
+                            {{ $t('role') }}:
+                          </VLabel>
                           <VMenu v-model="isRoleMenuOpen">
                             <template #activator="{ props: menuProps }">
                               <VTextField
@@ -1463,7 +1463,14 @@ onMounted(resetForm);
                                 :placeholder="$t('select_role')"
                                 variant="outlined"
                                 readonly
-                                append-inner-icon="tabler-chevron-down"
+                                :clearable="!!permissionRoleId"
+                                clear-icon="tabler-x"
+                                @click:clear="permissionRoleId = null"
+                                :append-inner-icon="
+                                  permissionRoleId
+                                    ? undefined
+                                    : 'tabler-chevron-down'
+                                "
                               />
                             </template>
                             <VCard>

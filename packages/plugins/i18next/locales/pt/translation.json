@@ -144,6 +144,7 @@
   "country_not_found": "País não encontrado!",
   "user_role_assigned_successfully": "Usuário vinculado ao cargo com sucesso!",
   "user_role_assignment_failed": "Erro ao vincular usuário ao cargo!",
+  "user_role_deleted_successfully": "Cargo removido do usuário com sucesso!",
   "user_role_deletion_failed": "Erro ao remover vinculação de cargo do usuário!",
   "user_already_has_role": "Usuário já possui este cargo!",
   "user_role_viewed_successfully": "Cargo do usuário visualizado com sucesso!",
