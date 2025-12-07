@@ -10,6 +10,8 @@ import { editAccountInfo } from './methods/editAccountInfo';
 import { deleteAccountInfo } from './methods/deleteAccountInfo';
 import { listAllAccounts } from './methods/listAllAccounts';
 import { listAccountSubscriptions } from './methods/listAccountSubscriptions';
+import { updatePlanAccount } from './methods/updatePlanAccount';
+import { viewPlanAccount } from './methods/viewPlanAccount';
 
 @injectable()
 class AccountController {
@@ -24,6 +26,8 @@ class AccountController {
   public deleteAccountInfo = deleteAccountInfo;
   public listAllAccounts = listAllAccounts;
   public listAccountSubscriptions = listAccountSubscriptions;
+  public updatePlanAccount = updatePlanAccount;
+  public viewPlanAccount = viewPlanAccount;
 }
 
 export default AccountController;

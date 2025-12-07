@@ -1,8 +1,12 @@
 <script lang="ts" setup>
 import { useAccountStore } from '@/@webcore/stores/account';
-import { ListAccountSubscriptionsResponse } from '@core/schema/account/listAccountSubscriptions/response.schema';
+import { usePlanStore } from '@/@webcore/stores/plan';
+import { VForm } from 'vuetify/components/VForm';
+import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
+import { UpdatePlanAccountRequest } from '@core/schema/planAccount/updatePlanAccount/request.schema';
 
 const accountStore = useAccountStore();
+const planStore = usePlanStore();
 const { t, locale } = useI18n();
 
 const props = defineProps<{
@@ -17,11 +21,34 @@ const isVisible = computed({
   set: (v) => emit('update:modelValue', v),
 });
 
-const subscriptions = ref<ListAccountSubscriptionsResponse | null>(null);
 const accountId = toRef(props, 'accountId');
-const accountName = ref<string | null>(null);
+const refFormPlanAccount = ref<VForm>();
 
-const MAX_ITEMS_VISIBLE = 2;
+const plan_id = ref<string | null>(null);
+const recurring_payment = ref<boolean>(false);
+const billing_period_id = ref<string | null>(null);
+const last_payment_date = ref<Date | null>(null);
+const next_payment_date = ref<Date | null>(null);
+const cancellation_date = ref<Date | null>(null);
+const valueDisplay = ref<string>('');
+const valueRaw = ref<number | null>(null);
+
+const itemsPlan = computed(() =>
+  planStore.listAll.map((p) => ({
+    value: p.plan_id,
+    text: p.name,
+  }))
+);
+
+const itemsRecurringPayment = [
+  { value: true, text: t('yes') },
+  { value: false, text: t('no') },
+];
+
+const itemsBillingPeriod = [
+  { value: EBillingPeriod.monthly, text: t('monthly') },
+  { value: EBillingPeriod.annual, text: t('annual') },
+];
 
 const getCurrencyConfig = () => {
   const localeMap: Record<string, { locale: string; currency: string }> = {
@@ -33,41 +60,188 @@ const getCurrencyConfig = () => {
   return localeMap[locale.value] || localeMap.pt;
 };
 
-const formatCurrency = (value: string | number): string => {
-  const config = getCurrencyConfig();
-  const numValue = typeof value === 'string' ? Number.parseFloat(value) : value;
-
-  return new Intl.NumberFormat(config.locale, {
-    style: 'currency',
-    currency: config.currency,
-  }).format(numValue);
+const removeInvalidChars = (value: string, allowedChars: string): string => {
+  return value
+    .split('')
+    .filter((char) => {
+      const code = char.codePointAt(0);
+      return (
+        (code !== undefined && code >= 48 && code <= 57) ||
+        allowedChars.includes(char)
+      );
+    })
+    .join('');
 };
 
-const hasMorePlanItems = computed(() => {
-  if (!subscriptions.value?.plan_items) return false;
-  return subscriptions.value.plan_items.length > MAX_ITEMS_VISIBLE;
-});
+const parseCurrency = (value: string): number | null => {
+  if (!value) return null;
+  const config = getCurrencyConfig();
+  let cleanValue = removeInvalidChars(value, '.,-');
 
-const hasMoreCrossSells = computed(() => {
-  if (!subscriptions.value?.cross_sells) return false;
-  return subscriptions.value.cross_sells.length > MAX_ITEMS_VISIBLE;
+  if (config.currency === 'BRL') {
+    cleanValue = cleanValue.replaceAll('.', '');
+    const commaIndex = cleanValue.indexOf(',');
+    if (commaIndex !== -1) {
+      cleanValue =
+        cleanValue.substring(0, commaIndex) +
+        '.' +
+        cleanValue.substring(commaIndex + 1);
+    }
+  } else if (config.currency === 'USD' || config.currency === 'EUR') {
+    cleanValue = cleanValue.replaceAll(',', '');
+  }
+
+  const parsed = Number.parseFloat(cleanValue);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
+const formatCurrencyForInput = (value: string | null): string => {
+  if (!value) return '';
+  const numValue = Number.parseFloat(value);
+  if (Number.isNaN(numValue)) return '';
+  const config = getCurrencyConfig();
+
+  if (config.currency === 'BRL') {
+    return numValue.toFixed(2).replace('.', ',');
+  }
+
+  return numValue.toFixed(2);
+};
+
+const handleValueInput = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  let value = target.value;
+
+  const config = getCurrencyConfig();
+
+  if (config.currency === 'BRL') {
+    value = removeInvalidChars(value, ',');
+    const parts = value.split(',');
+    if (parts.length > 2) {
+      value = parts[0] + ',' + parts.slice(1).join('');
+    }
+    if (parts[1] && parts[1].length > 2) {
+      value = parts[0] + ',' + parts[1].substring(0, 2);
+    }
+  } else {
+    value = removeInvalidChars(value, '.');
+    const parts = value.split('.');
+    if (parts.length > 2) {
+      value = parts[0] + '.' + parts.slice(1).join('');
+    }
+    if (parts[1] && parts[1].length > 2) {
+      value = parts[0] + '.' + parts[1].substring(0, 2);
+    }
+  }
+
+  valueDisplay.value = value;
+  valueRaw.value = parseCurrency(value);
+};
+
+const formatDateForInput = (dateString: string | null): Date | null => {
+  if (!dateString) return null;
+  return new Date(dateString);
+};
+
+const formatDateForApi = (date: Date | null): string | null => {
+  if (!date) return null;
+  return date.toISOString();
+};
+
+const updatePlanAccount = async () => {
+  const validateForm = await refFormPlanAccount?.value?.validate();
+  if (!validateForm?.valid) return;
+
+  if (
+    !plan_id.value ||
+    recurring_payment.value === null ||
+    recurring_payment.value === undefined ||
+    !billing_period_id.value ||
+    valueRaw.value === null ||
+    valueRaw.value === undefined
+  ) {
+    return;
+  }
+
+  const payload: UpdatePlanAccountRequest = {
+    plan_id: plan_id.value,
+    recurring_payment: recurring_payment.value,
+    billing_period_id: billing_period_id.value,
+    last_payment_date: formatDateForApi(last_payment_date.value),
+    next_payment_date: formatDateForApi(next_payment_date.value),
+    cancellation_date: formatDateForApi(cancellation_date.value),
+    value: valueRaw.value.toString(),
+  };
+
+  const result = await accountStore.updatePlanAccount(
+    accountId.value!,
+    payload
+  );
+
+  if (result) {
+    isVisible.value = false;
+    await accountStore.listAccount();
+  }
+};
+
+const resetForm = () => {
+  plan_id.value = null;
+  recurring_payment.value = false;
+  billing_period_id.value = null;
+  last_payment_date.value = null;
+  next_payment_date.value = null;
+  cancellation_date.value = null;
+  valueDisplay.value = '';
+  valueRaw.value = null;
+  refFormPlanAccount.value?.resetValidation();
+};
+
+const loadPlanAccountData = async () => {
+  if (!accountId.value) return;
+
+  if (!planStore.listAll.length) {
+    await planStore.listPlanAll();
+  }
+
+  const planAccountData = await accountStore.getPlanAccount(accountId.value);
+
+  if (planAccountData) {
+    plan_id.value = planAccountData.plan_id;
+    recurring_payment.value = planAccountData.recurring_payment;
+    billing_period_id.value = planAccountData.billing_period_id;
+    last_payment_date.value = formatDateForInput(
+      planAccountData.last_payment_date
+    );
+    next_payment_date.value = formatDateForInput(
+      planAccountData.next_payment_date
+    );
+    cancellation_date.value = formatDateForInput(
+      planAccountData.cancellation_date
+    );
+    valueDisplay.value = formatCurrencyForInput(planAccountData.value);
+    valueRaw.value = planAccountData.value
+      ? Number.parseFloat(planAccountData.value)
+      : null;
+  }
+};
+
+watch([isVisible, accountId], async ([visible, id]) => {
+  if (visible && id) {
+    resetForm();
+    await loadPlanAccountData();
+  }
 });
 
 onMounted(async () => {
-  if (!accountId.value) return;
-
-  const [subscriptionsData, accountData] = await Promise.all([
-    accountStore.getAccountSubscriptions(accountId.value),
-    accountStore.getAccountById(accountId.value),
-  ]);
-
-  subscriptions.value = subscriptionsData;
-  accountName.value = accountData?.name ?? null;
+  if (isVisible.value && accountId.value) {
+    resetForm();
+    await loadPlanAccountData();
+  }
 });
 </script>
 
 <template>
-  <VDialog v-model="isVisible" max-width="800">
+  <VDialog v-model="isVisible" max-width="900">
     <DialogCloseBtn @click="isVisible = false" />
 
     <template v-if="accountStore.loading">
@@ -79,233 +253,114 @@ onMounted(async () => {
       </VOverlay>
     </template>
 
-    <VCard :title="$t('account_subscriptions')">
-      <VCardText>
-        <div v-if="subscriptions" class="d-flex flex-column gap-4">
-          <VAlert
-            v-if="accountName"
-            type="info"
-            variant="tonal"
-            class="mb-2"
-            prominent
-          >
-            <div class="d-flex align-center gap-2">
-              <VIcon icon="tabler-user" size="24" />
-              <div>
-                <strong>{{ $t('account') }}:</strong> {{ accountName }}
-              </div>
-            </div>
-          </VAlert>
+    <VForm ref="refFormPlanAccount" @submit.prevent>
+      <VCard :title="$t('plan')">
+        <VCardText>
+          <VRow>
+            <VCol cols="12">
+              <VDivider class="mb-4" />
+              <h3 class="text-h6 mb-4">{{ $t('plan_information') }}</h3>
+            </VCol>
 
-          <div v-if="subscriptions.plan">
-            <h3 class="text-h6 mb-3">{{ $t('plan') }}</h3>
-            <VCard variant="outlined">
-              <VCardText>
-                <div class="d-flex flex-column gap-4">
-                  <div class="d-flex flex-column gap-2">
-                    <div class="d-flex align-center gap-2">
-                      <VIcon
-                        icon="tabler-package"
-                        size="20"
-                        class="text-primary"
-                      />
-                      <span class="text-body-1">
-                        <strong>{{ $t('name') }}:</strong>
-                        {{ subscriptions.plan.name }}
-                      </span>
-                    </div>
-                    <div class="d-flex align-center gap-2">
-                      <VIcon
-                        icon="tabler-currency-dollar"
-                        size="20"
-                        class="text-primary"
-                      />
-                      <span class="text-body-1">
-                        <strong>{{ $t('price') }}:</strong>
-                        {{ formatCurrency(subscriptions.plan.price) }}
-                      </span>
-                    </div>
-                  </div>
+            <VCol cols="12" md="6">
+              <AppSelect
+                v-model="plan_id"
+                :items="itemsPlan"
+                item-title="text"
+                item-value="value"
+                :label="$t('plan') + ':'"
+                :placeholder="$t('plan')"
+                :rules="[requiredValidator(plan_id, $t('plan_required'))]"
+              />
+            </VCol>
 
-                  <div
-                    v-if="
-                      subscriptions.plan_items &&
-                      subscriptions.plan_items.length > 0
-                    "
-                  >
-                    <VDivider class="my-2" />
-                    <h4 class="text-subtitle-1 mb-2">{{ $t('plan_items') }}</h4>
-                    <div
-                      :class="{
-                        'subscription-list-container': hasMorePlanItems,
-                      }"
-                      :style="
-                        hasMorePlanItems
-                          ? { maxHeight: '160px', overflowY: 'auto' }
-                          : {}
-                      "
-                    >
-                      <VList>
-                        <VListItem
-                          v-for="item in subscriptions.plan_items"
-                          :key="item.plan_item_id"
-                        >
-                          <VListItemTitle>
-                            <div class="d-flex align-center gap-2 flex-wrap">
-                              <VIcon
-                                icon="tabler-package"
-                                size="18"
-                                class="text-primary"
-                              />
-                              <span class="font-weight-medium">{{
-                                item.plan_product.name || '-'
-                              }}</span>
-                              <span
-                                v-if="item.plan_product.description"
-                                class="text-body-2 text-medium-emphasis"
-                              >
-                                ({{ item.plan_product.description }})
-                              </span>
-                            </div>
-                          </VListItemTitle>
-                          <VListItemSubtitle>
-                            <div class="d-flex align-center gap-2 mt-1">
-                              <VIcon
-                                icon="tabler-hash"
-                                size="16"
-                                class="text-primary"
-                              />
-                              <span
-                                >{{ $t('quantity') }}: {{ item.quantity }}</span
-                              >
-                            </div>
-                          </VListItemSubtitle>
-                        </VListItem>
-                      </VList>
-                    </div>
-                  </div>
-                </div>
-              </VCardText>
-            </VCard>
-          </div>
+            <VCol cols="12" md="6">
+              <AppSelect
+                v-model="recurring_payment"
+                :items="itemsRecurringPayment"
+                item-title="text"
+                item-value="value"
+                :label="$t('recurring_payment') + ':'"
+                :placeholder="$t('recurring_payment')"
+                :rules="[
+                  requiredValidator(
+                    recurring_payment !== null,
+                    $t('recurring_payment_required')
+                  ),
+                ]"
+              />
+            </VCol>
 
-          <div
-            v-if="
-              subscriptions.cross_sells && subscriptions.cross_sells.length > 0
-            "
-          >
-            <h3 class="text-h6 mb-3">{{ $t('cross_sells') }}</h3>
-            <VCard variant="outlined">
-              <VCardText>
-                <div
-                  :class="{
-                    'subscription-list-container': hasMoreCrossSells,
-                  }"
-                  :style="
-                    hasMoreCrossSells
-                      ? { maxHeight: '160px', overflowY: 'auto' }
-                      : {}
-                  "
-                >
-                  <VList>
-                    <VListItem
-                      v-for="crossSell in subscriptions.cross_sells"
-                      :key="crossSell.plan_cross_sell_id"
-                    >
-                      <VListItemTitle>
-                        <div class="d-flex align-center gap-2 flex-wrap">
-                          <VIcon
-                            icon="tabler-package"
-                            size="18"
-                            class="text-primary"
-                          />
-                          <span class="font-weight-medium">{{
-                            crossSell.plan_product.name || '-'
-                          }}</span>
-                          <span
-                            v-if="crossSell.plan_product.description"
-                            class="text-body-2 text-medium-emphasis"
-                          >
-                            ({{ crossSell.plan_product.description }})
-                          </span>
-                        </div>
-                      </VListItemTitle>
-                      <VListItemSubtitle>
-                        <div class="d-flex flex-column gap-1 mt-1">
-                          <div class="d-flex align-center gap-2">
-                            <VIcon
-                              icon="tabler-hash"
-                              size="16"
-                              class="text-primary"
-                            />
-                            <span
-                              >{{ $t('quantity') }}:
-                              {{ crossSell.quantity }}</span
-                            >
-                          </div>
-                          <div class="d-flex align-center gap-2">
-                            <VIcon
-                              icon="tabler-currency-dollar"
-                              size="16"
-                              class="text-primary"
-                            />
-                            <span
-                              >{{ $t('price') }}:
-                              {{ formatCurrency(crossSell.price) }}</span
-                            >
-                          </div>
-                        </div>
-                      </VListItemSubtitle>
-                    </VListItem>
-                  </VList>
-                </div>
-              </VCardText>
-            </VCard>
-          </div>
+            <VCol cols="12" md="6">
+              <AppSelect
+                v-model="billing_period_id"
+                :items="itemsBillingPeriod"
+                item-title="text"
+                item-value="value"
+                :label="$t('billing_period') + ':'"
+                :placeholder="$t('billing_period')"
+                :rules="[
+                  requiredValidator(
+                    billing_period_id,
+                    $t('billing_period_required')
+                  ),
+                ]"
+              />
+            </VCol>
 
-          <div
-            v-if="
-              !subscriptions.cross_sells ||
-              subscriptions.cross_sells.length === 0
-            "
-            class="text-center py-4"
-          >
-            <p class="text-body-2 text-medium-emphasis">
-              {{ $t('no_cross_sells_found') }}
-            </p>
-          </div>
-        </div>
-      </VCardText>
+            <VCol cols="12" md="6">
+              <AppTextField
+                :model-value="valueDisplay"
+                @input="handleValueInput"
+                :label="$t('value') + ':'"
+                :placeholder="$t('value')"
+                :rules="[
+                  requiredValidator(
+                    valueRaw !== null && valueRaw !== undefined,
+                    $t('value_required')
+                  ),
+                ]"
+              />
+            </VCol>
 
-      <VCardText class="d-flex justify-end">
-        <VBtn variant="tonal" color="secondary" @click="isVisible = false">
-          {{ $t('close') }}
-        </VBtn>
-      </VCardText>
-    </VCard>
+            <VCol cols="12">
+              <VDivider class="my-4" />
+              <h3 class="text-h6 mb-4">{{ $t('payment_dates') }}</h3>
+            </VCol>
+
+            <VCol cols="12" md="4">
+              <AppDateTimePicker
+                v-model="last_payment_date"
+                :label="$t('last_payment_date') + ':'"
+                :placeholder="$t('last_payment_date')"
+              />
+            </VCol>
+
+            <VCol cols="12" md="4">
+              <AppDateTimePicker
+                v-model="next_payment_date"
+                :label="$t('next_payment_date') + ':'"
+                :placeholder="$t('next_payment_date')"
+              />
+            </VCol>
+
+            <VCol cols="12" md="4">
+              <AppDateTimePicker
+                v-model="cancellation_date"
+                :label="$t('cancellation_date') + ':'"
+                :placeholder="$t('cancellation_date')"
+              />
+            </VCol>
+          </VRow>
+        </VCardText>
+
+        <VCardText class="d-flex justify-end flex-wrap gap-3">
+          <VBtn variant="tonal" color="secondary" @click="isVisible = false">
+            {{ $t('cancel') }}
+          </VBtn>
+          <VBtn @click="updatePlanAccount"> {{ $t('save') }} </VBtn>
+        </VCardText>
+      </VCard>
+    </VForm>
   </VDialog>
 </template>
-
-<style scoped>
-.subscription-list-container {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(var(--v-theme-on-surface), 0.3) transparent;
-}
-
-.subscription-list-container::-webkit-scrollbar {
-  width: 8px;
-}
-
-.subscription-list-container::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.subscription-list-container::-webkit-scrollbar-thumb {
-  background-color: rgba(var(--v-theme-on-surface), 0.3);
-  border-radius: 4px;
-}
-
-.subscription-list-container::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(var(--v-theme-on-surface), 0.5);
-}
-</style>

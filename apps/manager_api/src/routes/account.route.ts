@@ -18,6 +18,8 @@ import { editAccountInfoSchema } from '@core/schema/account/editAccountInfo';
 import { deleteAccountInfoSchema } from '@core/schema/account/deleteAccountInfo';
 import { listAllAccountsSchema } from '@core/schema/account/listAllAccounts';
 import { listAccountSubscriptionsSchema } from '@core/schema/account/listAccountSubscriptions';
+import { updatePlanAccountSchema } from '@core/schema/planAccount/updatePlanAccount';
+import { viewPlanAccountSchema } from '@core/schema/planAccount/viewPlanAccount';
 
 export default async function accountRoutes(server: FastifyInstance) {
   const accountController = container.resolve(AccountController);
@@ -118,6 +120,24 @@ export default async function accountRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, accountViewPermissions),
+    ],
+  });
+
+  server.get('/account/:account_id/plan-account', {
+    schema: viewPlanAccountSchema,
+    handler: accountController.viewPlanAccount,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountViewPermissions),
+    ],
+  });
+
+  server.patch('/account/:account_id/plan-account', {
+    schema: updatePlanAccountSchema,
+    handler: accountController.updatePlanAccount,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountUpdatePermissions),
     ],
   });
 }

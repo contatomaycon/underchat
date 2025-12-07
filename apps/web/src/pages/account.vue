@@ -355,9 +355,9 @@ watch(
                 transition="scale-transition"
                 activator="parent"
               >
-                <span>{{ $t('account_subscriptions') }}</span> </VTooltip
+                <span>{{ $t('plan') }}</span> </VTooltip
               ><VIcon
-                icon="tabler-list"
+                icon="tabler-credit-card"
                 @click="openSubscriptionsDialog(item.account_id)"
             /></IconBtn>
 
