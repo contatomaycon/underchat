@@ -31,7 +31,11 @@ export class UserUpdaterUseCase {
   private extractStringValue(
     field: { value: string | null } | null | undefined
   ): string | null {
-    return field?.value ?? null;
+    const value = field?.value ?? null;
+    if (value === '') {
+      return null;
+    }
+    return value;
   }
 
   private extractPhotoUrlValue(

@@ -303,6 +303,15 @@ export const useUsersStore = defineStore('users', {
       );
       this.appendStringField(formData, body.district, 'district');
 
+      if (body.permission_role_id !== undefined) {
+        const permissionRoleIdValue = body.permission_role_id.value;
+        if (permissionRoleIdValue) {
+          formData.append('permission_role_id', permissionRoleIdValue);
+        } else {
+          formData.append('permission_role_id', '');
+        }
+      }
+
       if (body.photo_url?.value !== undefined) {
         formData.append('photo_url', body.photo_url.value ?? '');
       }
