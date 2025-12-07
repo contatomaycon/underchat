@@ -98,6 +98,43 @@ export class PlanReleaseService {
     return paymentDateObj.toISOString();
   };
 
+  private readonly calculateProportionalValue = (
+    currentValue: string | null,
+    lastPaymentDate: string | null,
+    nextPaymentDate: string | null,
+    newPaymentValue: string
+  ): string => {
+    if (!currentValue || !lastPaymentDate || !nextPaymentDate) {
+      return newPaymentValue;
+    }
+
+    const now = new Date();
+    const lastDate = new Date(lastPaymentDate);
+    const nextDate = new Date(nextPaymentDate);
+
+    const totalDays = Math.ceil(
+      (nextDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    const daysRemaining = Math.max(
+      0,
+      Math.ceil((nextDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    );
+
+    if (totalDays <= 0 || daysRemaining <= 0) {
+      return newPaymentValue;
+    }
+
+    const currentValueNum = Number(currentValue);
+    const pricePerDay = currentValueNum / totalDays;
+    const proportionalValue = pricePerDay * daysRemaining;
+
+    const newPaymentValueNum = Number(newPaymentValue);
+    const totalValue = proportionalValue + newPaymentValueNum;
+
+    return Math.round(totalValue * 100) / 100 + '';
+  };
+
   private readonly checkIfPlanAlreadyReleased = async (
     accountPaymentId: string,
     planId: string
@@ -181,6 +218,16 @@ export class PlanReleaseService {
       currentPlanAccount?.billing_period_id || null
     );
 
+    const isSamePlan = currentPlanAccount?.plan_id === data.planId;
+    const finalValue = isSamePlan
+      ? this.calculateProportionalValue(
+          currentPlanAccount?.value || null,
+          currentPlanAccount?.last_payment_date || null,
+          currentPlanAccount?.next_payment_date || null,
+          data.value
+        )
+      : data.value;
+
     await this.planReleaseRepository.processPaymentAndReleasePlan({
       accountPaymentId: data.accountPaymentId,
       paymentStatusId: data.paymentStatusId,
@@ -193,7 +240,7 @@ export class PlanReleaseService {
       billingPeriodId: data.billingPeriodId,
       lastPaymentDate: data.paymentDate,
       nextPaymentDate,
-      value: data.value,
+      value: finalValue,
       shouldReleasePlan: true,
     });
 

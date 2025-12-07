@@ -189,11 +189,7 @@ const isInvalidBillingPeriodChange = (
 };
 
 const isPlanDisabled = (plan: ListPlanWithItemsResponse): boolean => {
-  return (
-    isCurrentPlan(plan.plan_id) ||
-    isDowngrade(plan) ||
-    isInvalidBillingPeriodChange(plan)
-  );
+  return isDowngrade(plan) || isInvalidBillingPeriodChange(plan);
 };
 
 const getButtonText = (planId: string): string => {

@@ -428,11 +428,7 @@ watch(billingPeriod, (newValue) => {
 });
 
 const isPlanDisabled = (plan: ListPlanWithItemsResponse): boolean => {
-  return (
-    isCurrentPlan(plan.plan_id) ||
-    isDowngrade(plan) ||
-    isInvalidBillingPeriodChange(plan)
-  );
+  return isDowngrade(plan) || isInvalidBillingPeriodChange(plan);
 };
 
 const getButtonText = (planId: string): string => {
@@ -697,10 +693,13 @@ const isUpgradeBlocked = computed(() => {
   const isSamePlan =
     selectedPlanForCheckout.value?.plan_id === currentPlanId.value;
 
+  if (isSamePlan) {
+    return false;
+  }
+
   if (
     currentPlanBillingPeriod.value &&
-    currentPlanBillingPeriod.value !== billingPeriod.value &&
-    isSamePlan
+    currentPlanBillingPeriod.value !== billingPeriod.value
   ) {
     return false;
   }
