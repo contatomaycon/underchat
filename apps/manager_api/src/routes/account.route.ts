@@ -15,7 +15,6 @@ import { editAccountSchema } from '@core/schema/account/editAccount';
 import { viewAccountInfoSchema } from '@core/schema/account/viewAccountInfo';
 import { createAccountInfoSchema } from '@core/schema/account/createAccountInfo';
 import { editAccountInfoSchema } from '@core/schema/account/editAccountInfo';
-import { deleteAccountInfoSchema } from '@core/schema/account/deleteAccountInfo';
 import { listAllAccountsSchema } from '@core/schema/account/listAllAccounts';
 import { listAccountSubscriptionsSchema } from '@core/schema/account/listAccountSubscriptions';
 import { updatePlanAccountSchema } from '@core/schema/planAccount/updatePlanAccount';
@@ -102,15 +101,6 @@ export default async function accountRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, accountUpdatePermissions),
-    ],
-  });
-
-  server.delete('/account-info/:account_info_id', {
-    schema: deleteAccountInfoSchema,
-    handler: accountController.deleteAccountInfo,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, accountDeletePermissions),
     ],
   });
 

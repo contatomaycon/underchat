@@ -7,7 +7,6 @@ import { createAccount } from './methods/createAccount';
 import { viewAccountInfo } from './methods/viewAccountInfo';
 import { createAccountInfo } from './methods/createAccountInfo';
 import { editAccountInfo } from './methods/editAccountInfo';
-import { deleteAccountInfo } from './methods/deleteAccountInfo';
 import { listAllAccounts } from './methods/listAllAccounts';
 import { listAccountSubscriptions } from './methods/listAccountSubscriptions';
 import { updatePlanAccount } from './methods/updatePlanAccount';
@@ -23,7 +22,6 @@ class AccountController {
   public viewAccountInfo = viewAccountInfo;
   public createAccountInfo = createAccountInfo;
   public updateAccountInfo = editAccountInfo;
-  public deleteAccountInfo = deleteAccountInfo;
   public listAllAccounts = listAllAccounts;
   public listAccountSubscriptions = listAccountSubscriptions;
   public updatePlanAccount = updatePlanAccount;

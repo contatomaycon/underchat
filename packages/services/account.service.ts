@@ -18,7 +18,6 @@ import { UpdateAccountRequest } from '@core/schema/account/editAccount/request.s
 import { AccountInfoViewerExistsRepository } from '@core/repositories/account/AccountInfoViewerExists.repository';
 import { AccountInfoCreatorRepository } from '@core/repositories/account/AccountInfoCreator.repository';
 import { AccountInfoUpdaterRepository } from '@core/repositories/account/AccountInfoUpdater.repository';
-import { AccountInfoDeleterRepository } from '@core/repositories/account/AccountInfoDeleter.repository';
 import { AccountInfoByIdViewerExistsRepository } from '@core/repositories/account/AccountInfoByIdViewerExists.repository';
 import { CreateAccountInfoRequest } from '@core/schema/account/createAccountInfo/request.schema';
 import { EditAccountInfoResponse } from '@core/schema/account/editAccountInfo/request.schema';
@@ -42,7 +41,6 @@ export class AccountService {
     private readonly accountInfoViewerExistsRepository: AccountInfoViewerExistsRepository,
     private readonly accountInfoCreatorRepository: AccountInfoCreatorRepository,
     private readonly accountInfoUpdaterRepository: AccountInfoUpdaterRepository,
-    private readonly accountInfoDeleterRepository: AccountInfoDeleterRepository,
     private readonly accountInfoByIdViewerExistsRepository: AccountInfoByIdViewerExistsRepository,
     private readonly accountAllListerRepository: AccountAllListerRepository,
     private readonly accountSubscriptionsListerRepository: AccountSubscriptionsListerRepository
@@ -154,12 +152,6 @@ export class AccountService {
       accountInfoId,
       input,
       urlLogo
-    );
-  };
-
-  deleteAccountInfoById = async (accountInfoId: string): Promise<boolean> => {
-    return this.accountInfoDeleterRepository.deleteAccountInfoById(
-      accountInfoId
     );
   };
 

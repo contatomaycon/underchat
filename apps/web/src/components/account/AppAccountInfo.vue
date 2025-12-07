@@ -129,10 +129,6 @@ const darkPrimaryColor = ref<string | null>(null);
 const darkSecondaryColor = ref<string | null>(null);
 
 const hasAccountInfo = computed(() => !!accountInfoId.value);
-const isDeleteDialogOpen = ref(false);
-const openDeleteDialog = () => {
-  isDeleteDialogOpen.value = true;
-};
 
 const refFormEditAccount = ref<VForm>();
 
@@ -201,19 +197,6 @@ const addAccountInfo = async () => {
 
   if (result) {
     isVisible.value = false;
-  }
-};
-
-const handleDeleteAccountInfo = async () => {
-  if (!accountInfoId.value) return;
-
-  const result = await accountStore.deleteAccountInfo(accountInfoId.value);
-
-  if (result) {
-    isVisible.value = false;
-    accountInfoId.value = null;
-
-    await accountStore.listAccount();
   }
 };
 
@@ -538,9 +521,6 @@ onMounted(async () => {
             <VBtn color="primary" @click="updateAccountInfo">
               {{ $t('update') }}
             </VBtn>
-            <VBtn color="error" variant="tonal" @click="openDeleteDialog">
-              {{ $t('delete') }}
-            </VBtn>
           </template>
 
           <template v-else>
@@ -551,12 +531,5 @@ onMounted(async () => {
         </VCardText>
       </VCard>
     </VForm>
-    <VDialogHandler
-      v-if="isDeleteDialogOpen"
-      v-model="isDeleteDialogOpen"
-      :title="$t('delete_account_info')"
-      :message="$t('delete_account_info_confirmation')"
-      @confirm="handleDeleteAccountInfo"
-    />
   </VDialog>
 </template>
