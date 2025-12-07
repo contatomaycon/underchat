@@ -28,7 +28,6 @@ export const deleteChatbot = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('chatbot_deleter_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

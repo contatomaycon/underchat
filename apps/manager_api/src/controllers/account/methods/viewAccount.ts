@@ -29,7 +29,6 @@ export const viewAccount = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('account_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

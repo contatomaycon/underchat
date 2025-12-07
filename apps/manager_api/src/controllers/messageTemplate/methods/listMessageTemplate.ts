@@ -32,7 +32,6 @@ export const listMessageTemplate = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('message_template_list_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

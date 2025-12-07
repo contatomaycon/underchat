@@ -1,4 +1,4 @@
-import { inject, injectable } from 'tsyringe';
+import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AsaasService } from '@core/services/asaas';
 import { currentTime } from '@core/common/functions/currentTime';
@@ -106,7 +106,9 @@ export class PlanAccountCancellationService {
     data: IPlanAccountCancellationData
   ): Promise<[string | null, string | null]> {
     const promises: [Promise<string | null>, Promise<string | null>] = [
-      this.findSubscriptionIdByPaymentId(data.billing!),
+      data.billing
+        ? this.findSubscriptionIdByPaymentId(data.billing)
+        : Promise.resolve(null),
       data.account_payment_id
         ? this.findInvoiceIdByAccountPaymentId(data.account_payment_id)
         : Promise.resolve(null),

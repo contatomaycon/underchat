@@ -29,7 +29,6 @@ export const deleteUser = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('user_deleter_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

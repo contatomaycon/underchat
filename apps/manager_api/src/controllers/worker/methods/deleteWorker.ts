@@ -29,7 +29,6 @@ export const deleteWorker = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('worker_delete_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

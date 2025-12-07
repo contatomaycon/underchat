@@ -30,7 +30,6 @@ export const listAccountSubscriptions = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('account_subscriptions_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

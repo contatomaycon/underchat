@@ -36,7 +36,6 @@ export const updateChatStatus = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('chat_status_update_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

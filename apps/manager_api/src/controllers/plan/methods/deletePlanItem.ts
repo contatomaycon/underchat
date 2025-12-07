@@ -27,7 +27,6 @@ export const deletePlanItem = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('plan_item_delete_failed'),
       httpStatusCode: EHTTPStatusCode.bad_request,

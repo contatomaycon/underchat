@@ -33,7 +33,6 @@ export const editSector = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('sector_update_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

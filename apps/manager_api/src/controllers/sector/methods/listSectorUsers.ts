@@ -29,7 +29,6 @@ export const listSectorUsers = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('sector_users_not_found'),
       httpStatusCode: EHTTPStatusCode.not_found,

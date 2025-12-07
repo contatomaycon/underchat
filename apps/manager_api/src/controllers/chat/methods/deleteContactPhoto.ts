@@ -31,7 +31,6 @@ export const deleteContactPhoto = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('contact_photo_delete_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

@@ -33,7 +33,6 @@ export const editAccount = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('account_update_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

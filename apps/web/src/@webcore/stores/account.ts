@@ -489,7 +489,7 @@ export const useAccountStore = defineStore('account', {
         }
 
         return data.data;
-      } catch (error) {
+      } catch {
         this.loading = false;
         return null;
       }

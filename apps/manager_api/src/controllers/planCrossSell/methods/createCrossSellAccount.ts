@@ -30,7 +30,6 @@ export const createCrossSellAccount = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('cross_sell_account_creation_failed'),
       httpStatusCode: EHTTPStatusCode.bad_request,

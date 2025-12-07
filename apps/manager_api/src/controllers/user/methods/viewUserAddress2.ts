@@ -30,7 +30,6 @@ export const viewUserAddress2 = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('user_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

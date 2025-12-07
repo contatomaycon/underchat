@@ -29,7 +29,6 @@ export const deleteExpenditure = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('expenditure_deleter_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

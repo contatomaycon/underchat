@@ -35,7 +35,6 @@ export const createUser = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('user_creator_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

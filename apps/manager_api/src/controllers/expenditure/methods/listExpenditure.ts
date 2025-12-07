@@ -25,7 +25,6 @@ export const listExpenditure = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('expenditure_list_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

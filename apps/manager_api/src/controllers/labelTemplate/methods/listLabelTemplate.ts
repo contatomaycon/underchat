@@ -32,7 +32,6 @@ export const listLabelTemplate = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('label_template_list_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

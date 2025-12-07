@@ -27,7 +27,6 @@ export const createExpenditure = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('expenditure_creator_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

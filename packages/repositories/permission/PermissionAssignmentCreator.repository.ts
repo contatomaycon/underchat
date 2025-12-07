@@ -1,10 +1,12 @@
 import * as schema from '@core/models';
 import { permissionAssignment } from '@core/models';
-import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import {
+  NodePgDatabase,
+  NodePgQueryResultHKT,
+} from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { v7 as uuidv7 } from 'uuid';
 import { ExtractTablesWithRelations } from 'drizzle-orm';
-import { NodePgQueryResultHKT } from 'drizzle-orm/node-postgres';
 import { PgTransaction } from 'drizzle-orm/pg-core';
 
 @injectable()

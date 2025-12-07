@@ -34,7 +34,6 @@ export const editExpenditure = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('expenditure_update_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

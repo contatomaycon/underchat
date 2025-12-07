@@ -27,7 +27,6 @@ export const deleteContact = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('contact_deleter_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

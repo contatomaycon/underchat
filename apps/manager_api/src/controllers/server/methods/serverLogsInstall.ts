@@ -33,7 +33,6 @@ export const serverLogsInstall = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('server_logs_install_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

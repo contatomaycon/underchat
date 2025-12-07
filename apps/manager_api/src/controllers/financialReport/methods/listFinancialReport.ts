@@ -30,7 +30,6 @@ export const listFinancialReport = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('financial_report_list_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

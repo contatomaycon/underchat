@@ -30,7 +30,6 @@ export const viewContactEmail = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('contact_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

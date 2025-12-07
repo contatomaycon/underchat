@@ -31,7 +31,6 @@ export const listRole = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('role_list_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

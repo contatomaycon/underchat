@@ -35,7 +35,6 @@ export const assignUserRole = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('user_role_assignment_failed'),
       httpStatusCode: EHTTPStatusCode.bad_request,

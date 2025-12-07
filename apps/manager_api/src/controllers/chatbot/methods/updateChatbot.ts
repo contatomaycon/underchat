@@ -34,7 +34,6 @@ export const updateChatbot = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('chatbot_update_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

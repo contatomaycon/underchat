@@ -32,7 +32,6 @@ export const updatePlan = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('plan_update_failed'),
       httpStatusCode: EHTTPStatusCode.bad_request,

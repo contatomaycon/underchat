@@ -31,7 +31,6 @@ export const createRole = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('role_creator_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

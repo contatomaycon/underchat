@@ -31,7 +31,6 @@ export const listChats = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('chat_list_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

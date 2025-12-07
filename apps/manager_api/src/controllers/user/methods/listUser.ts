@@ -31,7 +31,6 @@ export const listUser = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('user_list_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

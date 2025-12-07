@@ -30,7 +30,6 @@ export const viewLabelTemplate = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('label_template_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

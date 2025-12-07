@@ -25,7 +25,6 @@ export const createPlanItem = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('plan_item_creation_failed'),
       httpStatusCode: EHTTPStatusCode.bad_request,

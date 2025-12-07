@@ -34,7 +34,6 @@ export const editMessage = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('chat_edit_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

@@ -39,7 +39,6 @@ export const editUser = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('user_update_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

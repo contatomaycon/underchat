@@ -37,7 +37,6 @@ export const workerConnectionLogs = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('worker_connection_logs_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

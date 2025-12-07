@@ -29,7 +29,6 @@ export const recreateWorker = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('worker_recreate_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

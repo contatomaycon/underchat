@@ -29,7 +29,6 @@ export const deleteSector = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('sector_deleter_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

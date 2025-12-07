@@ -27,7 +27,6 @@ export const deleteServer = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('server_deleter_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

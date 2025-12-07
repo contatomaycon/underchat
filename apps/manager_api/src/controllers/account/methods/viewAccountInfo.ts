@@ -28,7 +28,6 @@ export const viewAccountInfo = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('account_info_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

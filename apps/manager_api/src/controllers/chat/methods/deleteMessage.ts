@@ -47,7 +47,6 @@ export const deleteMessage = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('chat_delete_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

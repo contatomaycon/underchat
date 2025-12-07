@@ -30,7 +30,6 @@ export const viewChatLinkPreview = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('chat_link_preview_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

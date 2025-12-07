@@ -27,7 +27,6 @@ export const viewAdditionalInfo = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('user_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

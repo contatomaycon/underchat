@@ -30,7 +30,6 @@ export const viewSector = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('sector_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

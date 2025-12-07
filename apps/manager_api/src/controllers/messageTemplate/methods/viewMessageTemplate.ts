@@ -30,7 +30,6 @@ export const viewMessageTemplate = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('message_template_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

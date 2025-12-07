@@ -54,7 +54,6 @@ export const editRole = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('role_update_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

@@ -25,7 +25,6 @@ export const listServer = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('server_list_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

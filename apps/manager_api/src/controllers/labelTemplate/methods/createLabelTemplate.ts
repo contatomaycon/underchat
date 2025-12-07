@@ -31,7 +31,6 @@ export const createLabelTemplate = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('label_template_creator_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

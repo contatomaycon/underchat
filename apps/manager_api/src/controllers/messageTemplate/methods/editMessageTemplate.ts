@@ -35,7 +35,6 @@ export const editMessageTemplate = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('message_template_update_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

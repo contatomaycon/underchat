@@ -28,7 +28,6 @@ export const viewServer = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('server_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

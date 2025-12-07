@@ -34,7 +34,6 @@ export const editContactGroup = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('contact_group_update_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

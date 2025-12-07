@@ -30,7 +30,6 @@ export const listSector = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('sector_list_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

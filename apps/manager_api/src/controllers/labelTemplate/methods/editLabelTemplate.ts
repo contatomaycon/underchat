@@ -34,7 +34,6 @@ export const editLabelTemplate = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('label_template_update_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

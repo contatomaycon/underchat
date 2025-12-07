@@ -29,7 +29,6 @@ export const updateWorker = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('channel_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

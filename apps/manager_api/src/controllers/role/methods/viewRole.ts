@@ -30,7 +30,6 @@ export const viewRole = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('role_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

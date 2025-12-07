@@ -28,7 +28,6 @@ export const viewExpenditure = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('expenditure_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

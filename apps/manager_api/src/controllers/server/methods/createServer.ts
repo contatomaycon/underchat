@@ -25,7 +25,6 @@ export const createServer = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('server_creator_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

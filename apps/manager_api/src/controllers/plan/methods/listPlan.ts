@@ -25,7 +25,6 @@ export const listPlan = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('plan_list_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

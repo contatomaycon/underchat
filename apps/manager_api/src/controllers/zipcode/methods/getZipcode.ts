@@ -25,7 +25,6 @@ export const getZipcode = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('zipcode_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

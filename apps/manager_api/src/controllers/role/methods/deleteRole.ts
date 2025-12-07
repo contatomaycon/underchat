@@ -48,7 +48,6 @@ export const deleteRole = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('role_deleter_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

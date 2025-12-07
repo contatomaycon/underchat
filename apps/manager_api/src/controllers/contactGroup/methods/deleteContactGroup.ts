@@ -29,7 +29,6 @@ export const deleteContactGroup = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('contact_group_deleter_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

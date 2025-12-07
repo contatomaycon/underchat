@@ -32,7 +32,6 @@ export const editServer = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('server_update_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

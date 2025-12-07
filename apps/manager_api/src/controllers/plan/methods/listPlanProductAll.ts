@@ -24,7 +24,6 @@ export const listPlanProductAll = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('plan_product_list_all_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

@@ -29,7 +29,6 @@ export const reinstallServer = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('server_reinstall_failed'),
       httpStatusCode: EHTTPStatusCode.bad_request,

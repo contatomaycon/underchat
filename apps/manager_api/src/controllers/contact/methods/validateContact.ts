@@ -28,7 +28,6 @@ export const validateContact = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('contact_validation_failed'),
       httpStatusCode: EHTTPStatusCode.bad_request,

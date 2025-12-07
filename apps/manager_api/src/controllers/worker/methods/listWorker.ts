@@ -30,7 +30,6 @@ export const listWorker = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('worker_list_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

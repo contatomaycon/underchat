@@ -25,7 +25,6 @@ export const createCrossSell = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('cross_sell_creation_failed'),
       httpStatusCode: EHTTPStatusCode.bad_request,

@@ -30,7 +30,6 @@ export const login = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('login_invalid'),
       httpStatusCode: EHTTPStatusCode.unauthorized,

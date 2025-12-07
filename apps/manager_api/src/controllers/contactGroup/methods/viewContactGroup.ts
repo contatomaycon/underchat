@@ -30,7 +30,6 @@ export const viewContactGroup = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('contact_group_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

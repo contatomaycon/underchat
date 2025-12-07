@@ -31,7 +31,6 @@ export const createContactGroup = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('contact_group_creator_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

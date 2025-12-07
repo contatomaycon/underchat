@@ -34,7 +34,6 @@ export const createSectorRole = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('sector_role_creator_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

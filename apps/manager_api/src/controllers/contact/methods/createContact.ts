@@ -29,7 +29,6 @@ export const createContact = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('contact_creator_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

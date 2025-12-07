@@ -33,7 +33,6 @@ export const editContact = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('contact_update_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

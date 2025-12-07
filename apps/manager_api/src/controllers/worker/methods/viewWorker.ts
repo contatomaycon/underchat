@@ -30,7 +30,6 @@ export const viewWorker = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('worker_view_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

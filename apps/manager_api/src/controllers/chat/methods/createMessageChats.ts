@@ -38,7 +38,6 @@ export const createMessageChats = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('chat_create_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

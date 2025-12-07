@@ -31,7 +31,6 @@ export const listSectorRoleAccountSector = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('sector_role_not_found'),
       httpStatusCode: EHTTPStatusCode.not_found,

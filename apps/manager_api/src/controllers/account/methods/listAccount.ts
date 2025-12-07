@@ -29,7 +29,6 @@ export const listAccount = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('account_list_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

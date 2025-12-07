@@ -25,7 +25,6 @@ export const listCrossSell = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('cross_sell_list_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,

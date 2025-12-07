@@ -27,7 +27,6 @@ export const deleteCrossSell = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('cross_sell_delete_failed'),
       httpStatusCode: EHTTPStatusCode.bad_request,

@@ -29,7 +29,6 @@ export const deleteLabelTemplate = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('label_template_deleter_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

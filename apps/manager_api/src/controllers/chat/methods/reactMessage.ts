@@ -52,7 +52,6 @@ export const reactMessage = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('chat_reaction_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

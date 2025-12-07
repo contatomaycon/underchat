@@ -29,7 +29,6 @@ export const deleteMessageTemplate = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('message_template_deleter_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,

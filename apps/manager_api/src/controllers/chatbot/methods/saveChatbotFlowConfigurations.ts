@@ -36,7 +36,6 @@ export const saveChatbotFlowConfigurations = async (
       });
     }
 
-
     return sendResponse(reply, {
       message: t('chatbot_flow_configurations_save_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,
