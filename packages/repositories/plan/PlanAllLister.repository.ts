@@ -16,6 +16,8 @@ export class PlanAllListerRepository {
       .select({
         plan_id: plan.plan_id,
         name: plan.name,
+        is_test: plan.is_test,
+        days_trial: plan.days_trial,
       })
       .from(plan)
       .where(isNull(plan.deleted_at))
@@ -25,6 +27,11 @@ export class PlanAllListerRepository {
       return [];
     }
 
-    return result as ListPlanAllResponse[];
+    return result.map((item) => ({
+      plan_id: item.plan_id,
+      name: item.name,
+      is_test: item.is_test,
+      days_trial: item.days_trial ?? null,
+    }));
   };
 }

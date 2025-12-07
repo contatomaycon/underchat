@@ -28,13 +28,6 @@ export class PlanAccountUpdaterUseCase {
       throw new Error(t('account_not_found'));
     }
 
-    const planAccount =
-      await this.planAccountService.findPlanAccountByAccountId(accountId);
-
-    if (!planAccount) {
-      throw new Error(t('plan_account_not_found'));
-    }
-
     const updated = await this.planAccountService.updatePlanAccountByAccountId(
       accountId,
       body

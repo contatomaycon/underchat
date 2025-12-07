@@ -31,8 +31,17 @@ const itemsPlan = computed(() =>
   planStore.listAll.map((p) => ({
     value: p.plan_id,
     text: p.name,
+    is_test: p.is_test,
+    days_trial: p.days_trial,
   }))
 );
+
+const selectedPlan = computed(() => {
+  if (!plan_id.value) return null;
+  return planStore.listAll.find((p) => p.plan_id === plan_id.value);
+});
+
+const isTestPlan = computed(() => selectedPlan.value?.is_test ?? false);
 
 const name = ref<string | null>(null);
 const account_status_id = ref<string | null>(EAccountStatus.active);
@@ -46,7 +55,7 @@ const itemsBillingPeriod = [
   { value: 'annual', text: t('annual') },
 ];
 
-const showBillingPeriod = computed(() => !!plan_id.value);
+const showBillingPeriod = computed(() => !!plan_id.value && !isTestPlan.value);
 
 const addAccount = async () => {
   const validateForm = await refFormAddAccount?.value?.validate();
@@ -56,7 +65,7 @@ const addAccount = async () => {
     return;
   }
 
-  if (plan_id.value && !billing_period.value) {
+  if (plan_id.value && !isTestPlan.value && !billing_period.value) {
     return;
   }
 
@@ -67,11 +76,18 @@ const addAccount = async () => {
     },
   };
 
-  if (plan_id.value && billing_period.value) {
-    payload.plan = {
-      plan_id: plan_id.value,
-      billing_period: billing_period.value,
-    };
+  if (plan_id.value) {
+    if (isTestPlan.value) {
+      payload.plan = {
+        plan_id: plan_id.value,
+        billing_period: 'monthly' as const,
+      };
+    } else if (billing_period.value) {
+      payload.plan = {
+        plan_id: plan_id.value,
+        billing_period: billing_period.value,
+      };
+    }
   }
 
   const result = await accountStore.addAccount(payload);

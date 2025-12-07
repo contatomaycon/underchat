@@ -23,6 +23,7 @@ const isVisible = computed({
 
 const accountId = toRef(props, 'accountId');
 const refFormPlanAccount = ref<VForm>();
+const isSaving = ref<boolean>(false);
 
 const plan_id = ref<string | null>(null);
 const recurring_payment = ref<boolean>(false);
@@ -37,8 +38,17 @@ const itemsPlan = computed(() =>
   planStore.listAll.map((p) => ({
     value: p.plan_id,
     text: p.name,
+    is_test: p.is_test,
+    days_trial: p.days_trial,
   }))
 );
+
+const selectedPlan = computed(() => {
+  if (!plan_id.value) return null;
+  return planStore.listAll.find((p) => p.plan_id === plan_id.value);
+});
+
+const isTestPlan = computed(() => selectedPlan.value?.is_test ?? false);
 
 const itemsRecurringPayment = [
   { value: true, text: t('yes') },
@@ -158,35 +168,50 @@ const updatePlanAccount = async () => {
   const validateForm = await refFormPlanAccount?.value?.validate();
   if (!validateForm?.valid) return;
 
-  if (
-    !plan_id.value ||
-    recurring_payment.value === null ||
-    recurring_payment.value === undefined ||
-    !billing_period_id.value ||
-    valueRaw.value === null ||
-    valueRaw.value === undefined
-  ) {
+  if (!plan_id.value) {
     return;
   }
 
-  const payload: UpdatePlanAccountRequest = {
-    plan_id: plan_id.value,
-    recurring_payment: recurring_payment.value,
-    billing_period_id: billing_period_id.value,
-    last_payment_date: formatDateForApi(last_payment_date.value),
-    next_payment_date: formatDateForApi(next_payment_date.value),
-    cancellation_date: formatDateForApi(cancellation_date.value),
-    value: valueRaw.value.toString(),
-  };
+  if (!isTestPlan.value) {
+    if (
+      recurring_payment.value === null ||
+      recurring_payment.value === undefined ||
+      !billing_period_id.value ||
+      valueRaw.value === null ||
+      valueRaw.value === undefined
+    ) {
+      return;
+    }
+  }
 
-  const result = await accountStore.updatePlanAccount(
-    accountId.value!,
-    payload
-  );
+  isSaving.value = true;
 
-  if (result) {
-    isVisible.value = false;
-    await accountStore.listAccount();
+  try {
+    const payload: UpdatePlanAccountRequest = {
+      plan_id: plan_id.value,
+      recurring_payment: isTestPlan.value ? undefined : recurring_payment.value,
+      billing_period_id: isTestPlan.value
+        ? undefined
+        : billing_period_id.value || undefined,
+      last_payment_date: formatDateForApi(last_payment_date.value),
+      next_payment_date: formatDateForApi(next_payment_date.value),
+      cancellation_date: formatDateForApi(cancellation_date.value),
+      value: isTestPlan.value
+        ? undefined
+        : valueRaw.value?.toString() || undefined,
+    };
+
+    const result = await accountStore.updatePlanAccount(
+      accountId.value!,
+      payload
+    );
+
+    if (result) {
+      isVisible.value = false;
+      await accountStore.listAccount();
+    }
+  } finally {
+    isSaving.value = false;
   }
 };
 
@@ -230,6 +255,18 @@ const loadPlanAccountData = async () => {
       : null;
   }
 };
+
+watch(plan_id, (newPlanId) => {
+  if (newPlanId) {
+    const plan = planStore.listAll.find((p) => p.plan_id === newPlanId);
+    if (plan?.is_test) {
+      recurring_payment.value = false;
+      billing_period_id.value = null;
+      valueDisplay.value = '';
+      valueRaw.value = null;
+    }
+  }
+});
 
 watch([isVisible, accountId], async ([visible, id]) => {
   if (visible && id) {
@@ -280,7 +317,7 @@ onMounted(async () => {
               />
             </VCol>
 
-            <VCol cols="12" md="6">
+            <VCol v-if="!isTestPlan" cols="12" md="6">
               <AppSelect
                 v-model="recurring_payment"
                 :items="itemsRecurringPayment"
@@ -297,7 +334,7 @@ onMounted(async () => {
               />
             </VCol>
 
-            <VCol cols="12" md="6">
+            <VCol v-if="!isTestPlan" cols="12" md="6">
               <AppSelect
                 v-model="billing_period_id"
                 :items="itemsBillingPeriod"
@@ -314,7 +351,7 @@ onMounted(async () => {
               />
             </VCol>
 
-            <VCol cols="12" md="6">
+            <VCol v-if="!isTestPlan" cols="12" md="6">
               <AppTextField
                 :model-value="valueDisplay"
                 @input="handleValueInput"
@@ -364,7 +401,9 @@ onMounted(async () => {
           <VBtn variant="tonal" color="secondary" @click="isVisible = false">
             {{ $t('cancel') }}
           </VBtn>
-          <VBtn @click="updatePlanAccount"> {{ $t('save') }} </VBtn>
+          <VBtn :loading="isSaving" @click="updatePlanAccount">
+            {{ $t('save') }}
+          </VBtn>
         </VCardText>
       </VCard>
     </VForm>

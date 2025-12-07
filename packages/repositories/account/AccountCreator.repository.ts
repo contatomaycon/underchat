@@ -55,56 +55,7 @@ export class AccountCreatorRepository {
       });
 
       if (input.plan) {
-        const planData = await tx.query.plan.findFirst({
-          where: and(
-            eq(plan.plan_id, input.plan.plan_id),
-            isNull(plan.deleted_at)
-          ),
-          columns: {
-            plan_id: true,
-            price: true,
-            annual_discount: true,
-          },
-        });
-
-        if (!planData) {
-          throw new Error('Plan not found');
-        }
-
-        const planPrice = this.calculatePlanPrice(
-          {
-            price: Number(planData.price),
-            annual_discount: planData.annual_discount,
-          },
-          input.plan.billing_period
-        );
-
-        const billingPeriodId =
-          input.plan.billing_period === 'monthly'
-            ? EBillingPeriod.monthly
-            : EBillingPeriod.annual;
-
-        const now = new Date();
-        const nextPaymentDate = new Date(now);
-        const daysToAdd = input.plan.billing_period === 'monthly' ? 30 : 365;
-        nextPaymentDate.setDate(nextPaymentDate.getDate() + daysToAdd);
-
-        const planAccountId = uuidv7();
-
-        await tx.insert(planAccount).values({
-          plan_account_id: planAccountId,
-          account_id: accountId,
-          plan_id: input.plan.plan_id,
-          account_payment_id: null,
-          recurring_payment: false,
-          billing_period_id: billingPeriodId,
-          last_payment_date: now.toISOString(),
-          next_payment_date: nextPaymentDate.toISOString(),
-          cancellation_date: null,
-          value: planPrice.toString(),
-          created_at: now.toISOString(),
-          updated_at: now.toISOString(),
-        });
+        await this.createPlanAccountForAccount(tx, accountId, input.plan);
       }
 
       const apiKeyId = uuidv7();
@@ -143,6 +94,153 @@ export class AccountCreatorRepository {
     });
   };
 
+  private createPlanAccountForAccount = async (
+    tx: Parameters<
+      Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
+    >[0],
+    accountId: string,
+    planInput: { plan_id: string; billing_period: 'monthly' | 'annual' }
+  ): Promise<void> => {
+    const planData = await this.findPlanData(tx, planInput.plan_id);
+    const now = new Date();
+    const planAccountId = uuidv7();
+
+    if (planData.is_test && planData.days_trial) {
+      await this.createTestPlanAccount(
+        tx,
+        planAccountId,
+        accountId,
+        planInput.plan_id,
+        now,
+        planData.days_trial
+      );
+      return;
+    }
+
+    await this.createRegularPlanAccount(
+      tx,
+      planAccountId,
+      accountId,
+      planInput,
+      planData,
+      now
+    );
+  };
+
+  private findPlanData = async (
+    tx: Parameters<
+      Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
+    >[0],
+    planId: string
+  ) => {
+    const planData = await tx.query.plan.findFirst({
+      where: and(eq(plan.plan_id, planId), isNull(plan.deleted_at)),
+      columns: {
+        plan_id: true,
+        price: true,
+        annual_discount: true,
+        is_test: true,
+        days_trial: true,
+      },
+    });
+
+    if (!planData) {
+      throw new Error('Plan not found');
+    }
+
+    return planData;
+  };
+
+  private createTestPlanAccount = async (
+    tx: Parameters<
+      Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
+    >[0],
+    planAccountId: string,
+    accountId: string,
+    planId: string,
+    now: Date,
+    daysTrial: number
+  ): Promise<void> => {
+    const nextPaymentDate = new Date(now);
+    nextPaymentDate.setDate(nextPaymentDate.getDate() + daysTrial);
+
+    await tx.insert(planAccount).values({
+      plan_account_id: planAccountId,
+      account_id: accountId,
+      plan_id: planId,
+      account_payment_id: null,
+      recurring_payment: false,
+      billing_period_id: EBillingPeriod.monthly,
+      last_payment_date: now.toISOString(),
+      next_payment_date: nextPaymentDate.toISOString(),
+      cancellation_date: null,
+      value: '0',
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+    });
+  };
+
+  private createRegularPlanAccount = async (
+    tx: Parameters<
+      Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
+    >[0],
+    planAccountId: string,
+    accountId: string,
+    planInput: { plan_id: string; billing_period: 'monthly' | 'annual' },
+    planData: {
+      price: string | null;
+      annual_discount: string | null;
+    },
+    now: Date
+  ): Promise<void> => {
+    const planPrice = this.calculatePlanPrice(
+      {
+        price: Number(planData.price),
+        annual_discount: planData.annual_discount,
+      },
+      planInput.billing_period
+    );
+
+    const billingPeriodId = this.getBillingPeriodId(planInput.billing_period);
+    const nextPaymentDate = this.calculateNextPaymentDate(
+      now,
+      planInput.billing_period
+    );
+
+    await tx.insert(planAccount).values({
+      plan_account_id: planAccountId,
+      account_id: accountId,
+      plan_id: planInput.plan_id,
+      account_payment_id: null,
+      recurring_payment: false,
+      billing_period_id: billingPeriodId,
+      last_payment_date: now.toISOString(),
+      next_payment_date: nextPaymentDate,
+      cancellation_date: null,
+      value: planPrice.toString(),
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+    });
+  };
+
+  private getBillingPeriodId = (
+    billingPeriod: 'monthly' | 'annual'
+  ): string => {
+    return billingPeriod === 'monthly'
+      ? EBillingPeriod.monthly
+      : EBillingPeriod.annual;
+  };
+
+  private calculateNextPaymentDate = (
+    now: Date,
+    billingPeriod: 'monthly' | 'annual'
+  ): string => {
+    const nextPaymentDate = new Date(now);
+    const daysToAdd = billingPeriod === 'monthly' ? 30 : 365;
+    nextPaymentDate.setDate(nextPaymentDate.getDate() + daysToAdd);
+    return nextPaymentDate.toISOString();
+  };
+
   private readonly calculatePlanPrice = (
     planData: { price: number; annual_discount: string | null },
     billingPeriod: 'monthly' | 'annual'
@@ -153,12 +251,20 @@ export class AccountCreatorRepository {
       return monthlyPrice;
     }
 
+    return this.calculateAnnualPrice(monthlyPrice, planData.annual_discount);
+  };
+
+  private calculateAnnualPrice = (
+    monthlyPrice: number,
+    annualDiscount: string | null
+  ): number => {
     const annualPrice = monthlyPrice * 12;
-    if (!planData.annual_discount) {
+
+    if (!annualDiscount) {
       return annualPrice;
     }
 
-    const discount = Number.parseFloat(planData.annual_discount);
+    const discount = Number.parseFloat(annualDiscount);
     return annualPrice * (1 - discount / 100);
   };
 }

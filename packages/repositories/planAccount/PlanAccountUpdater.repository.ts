@@ -1,10 +1,12 @@
 import * as schema from '@core/models';
-import { planAccount } from '@core/models';
+import { planAccount, plan } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { eq, and, isNull } from 'drizzle-orm';
 import { UpdatePlanAccountRequest } from '@core/schema/planAccount/updatePlanAccount/request.schema';
 import { currentTime } from '@core/common/functions/currentTime';
+import { v7 as uuidv7 } from 'uuid';
+import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
 
 @injectable()
 export class PlanAccountUpdaterRepository {
@@ -31,31 +33,271 @@ export class PlanAccountUpdaterRepository {
     });
   };
 
-  updatePlanAccountByAccountId = async (
+  createOrUpdatePlanAccountByAccountId = async (
     accountId: string,
     input: UpdatePlanAccountRequest
   ): Promise<boolean> => {
-    const updateData: {
-      plan_id: string;
-      recurring_payment: boolean;
-      billing_period_id: string;
-      last_payment_date: string | null;
-      next_payment_date: string | null;
-      cancellation_date: string | null;
-      value: string;
-      updated_at: string;
-    } = {
+    return this.db.transaction(async (tx) => {
+      const existingPlanAccount = await this.findExistingPlanAccount(
+        tx,
+        accountId
+      );
+      const planData = await this.findPlanData(tx, input.plan_id);
+
+      const lastPaymentDate = this.determineLastPaymentDate(
+        input.last_payment_date,
+        existingPlanAccount?.last_payment_date
+      );
+
+      const nextPaymentDate = this.calculateNextPaymentDate(
+        input.next_payment_date,
+        lastPaymentDate,
+        planData,
+        input.billing_period_id
+      );
+
+      const planValue = this.determinePlanValue(
+        input.value,
+        planData,
+        input.billing_period_id
+      );
+
+      const recurringPayment = this.determineRecurringPayment(
+        planData.is_test,
+        input.recurring_payment
+      );
+
+      const billingPeriodId = this.determineBillingPeriodId(
+        planData.is_test,
+        input.billing_period_id
+      );
+
+      if (existingPlanAccount) {
+        return this.updateExistingPlanAccount(
+          tx,
+          accountId,
+          input,
+          recurringPayment,
+          billingPeriodId,
+          lastPaymentDate,
+          nextPaymentDate,
+          planValue
+        );
+      }
+
+      return this.createNewPlanAccount(
+        tx,
+        accountId,
+        input,
+        recurringPayment,
+        billingPeriodId,
+        lastPaymentDate,
+        nextPaymentDate,
+        planValue
+      );
+    });
+  };
+
+  private findExistingPlanAccount = async (
+    tx: Parameters<
+      Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
+    >[0],
+    accountId: string
+  ) => {
+    return tx.query.planAccount.findFirst({
+      where: and(
+        eq(planAccount.account_id, accountId),
+        isNull(planAccount.cancellation_date)
+      ),
+      columns: {
+        plan_account_id: true,
+        last_payment_date: true,
+      },
+    });
+  };
+
+  private findPlanData = async (
+    tx: Parameters<
+      Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
+    >[0],
+    planId: string
+  ) => {
+    const planData = await tx.query.plan.findFirst({
+      where: and(eq(plan.plan_id, planId), isNull(plan.deleted_at)),
+      columns: {
+        plan_id: true,
+        price: true,
+        annual_discount: true,
+        is_test: true,
+        days_trial: true,
+      },
+    });
+
+    if (!planData) {
+      throw new Error('Plan not found');
+    }
+
+    return planData;
+  };
+
+  private determineLastPaymentDate = (
+    inputLastPaymentDate: string | null | undefined,
+    existingLastPaymentDate: string | null | undefined
+  ): Date => {
+    if (inputLastPaymentDate) {
+      return new Date(inputLastPaymentDate);
+    }
+
+    if (existingLastPaymentDate) {
+      return new Date(existingLastPaymentDate);
+    }
+
+    return new Date();
+  };
+
+  private calculateNextPaymentDate = (
+    inputNextPaymentDate: string | null | undefined,
+    lastPaymentDate: Date,
+    planData: {
+      is_test: boolean;
+      days_trial: number | null;
+    },
+    billingPeriodId: string | undefined
+  ): Date => {
+    if (inputNextPaymentDate) {
+      return new Date(inputNextPaymentDate);
+    }
+
+    if (planData.is_test && planData.days_trial) {
+      return this.calculateTestPlanNextPaymentDate(
+        lastPaymentDate,
+        planData.days_trial
+      );
+    }
+
+    return this.calculateRegularPlanNextPaymentDate(
+      lastPaymentDate,
+      billingPeriodId
+    );
+  };
+
+  private calculateTestPlanNextPaymentDate = (
+    lastPaymentDate: Date,
+    daysTrial: number
+  ): Date => {
+    const nextPaymentDate = new Date(lastPaymentDate);
+    nextPaymentDate.setDate(nextPaymentDate.getDate() + daysTrial);
+    return nextPaymentDate;
+  };
+
+  private calculateRegularPlanNextPaymentDate = (
+    lastPaymentDate: Date,
+    billingPeriodId: string | undefined
+  ): Date => {
+    const periodId = billingPeriodId || EBillingPeriod.monthly;
+    const daysToAdd = periodId === EBillingPeriod.annual ? 365 : 30;
+    const nextPaymentDate = new Date(lastPaymentDate);
+    nextPaymentDate.setDate(nextPaymentDate.getDate() + daysToAdd);
+    return nextPaymentDate;
+  };
+
+  private determinePlanValue = (
+    inputValue: string | undefined,
+    planData: {
+      is_test: boolean;
+      price: string | null;
+      annual_discount: string | null;
+    },
+    billingPeriodId: string | undefined
+  ): string => {
+    if (inputValue) {
+      return inputValue;
+    }
+
+    if (planData.is_test) {
+      return '0';
+    }
+
+    return this.calculateRegularPlanValue(planData, billingPeriodId);
+  };
+
+  private calculateRegularPlanValue = (
+    planData: {
+      price: string | null;
+      annual_discount: string | null;
+    },
+    billingPeriodId: string | undefined
+  ): string => {
+    const monthlyPrice = Number(planData.price);
+    const periodId = billingPeriodId || EBillingPeriod.monthly;
+
+    if (periodId === EBillingPeriod.annual) {
+      return this.calculateAnnualPrice(monthlyPrice, planData.annual_discount);
+    }
+
+    return monthlyPrice.toString();
+  };
+
+  private calculateAnnualPrice = (
+    monthlyPrice: number,
+    annualDiscount: string | null
+  ): string => {
+    const annualPrice = monthlyPrice * 12;
+
+    if (!annualDiscount) {
+      return annualPrice.toString();
+    }
+
+    const discount = Number.parseFloat(annualDiscount);
+    return (annualPrice * (1 - discount / 100)).toString();
+  };
+
+  private determineRecurringPayment = (
+    isTest: boolean,
+    inputRecurringPayment: boolean | undefined
+  ): boolean => {
+    if (isTest) {
+      return false;
+    }
+
+    return inputRecurringPayment ?? false;
+  };
+
+  private determineBillingPeriodId = (
+    isTest: boolean,
+    inputBillingPeriodId: string | undefined
+  ): string => {
+    if (isTest) {
+      return EBillingPeriod.monthly;
+    }
+
+    return inputBillingPeriodId || EBillingPeriod.monthly;
+  };
+
+  private updateExistingPlanAccount = async (
+    tx: Parameters<
+      Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
+    >[0],
+    accountId: string,
+    input: UpdatePlanAccountRequest,
+    recurringPayment: boolean,
+    billingPeriodId: string,
+    lastPaymentDate: Date,
+    nextPaymentDate: Date,
+    planValue: string
+  ): Promise<boolean> => {
+    const updateData = {
       plan_id: input.plan_id,
-      recurring_payment: input.recurring_payment,
-      billing_period_id: input.billing_period_id,
-      last_payment_date: input.last_payment_date || null,
-      next_payment_date: input.next_payment_date || null,
+      recurring_payment: recurringPayment,
+      billing_period_id: billingPeriodId,
+      last_payment_date: lastPaymentDate.toISOString(),
+      next_payment_date: nextPaymentDate.toISOString(),
       cancellation_date: input.cancellation_date || null,
-      value: input.value,
+      value: planValue,
       updated_at: currentTime(),
     };
 
-    const result = await this.db
+    const result = await tx
       .update(planAccount)
       .set(updateData)
       .where(
@@ -67,5 +309,45 @@ export class PlanAccountUpdaterRepository {
       .execute();
 
     return (result.rowCount ?? 0) > 0;
+  };
+
+  private createNewPlanAccount = async (
+    tx: Parameters<
+      Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
+    >[0],
+    accountId: string,
+    input: UpdatePlanAccountRequest,
+    recurringPayment: boolean,
+    billingPeriodId: string,
+    lastPaymentDate: Date,
+    nextPaymentDate: Date,
+    planValue: string
+  ): Promise<boolean> => {
+    const planAccountId = uuidv7();
+    const now = currentTime();
+
+    await tx.insert(planAccount).values({
+      plan_account_id: planAccountId,
+      account_id: accountId,
+      plan_id: input.plan_id,
+      account_payment_id: null,
+      recurring_payment: recurringPayment,
+      billing_period_id: billingPeriodId,
+      last_payment_date: lastPaymentDate.toISOString(),
+      next_payment_date: nextPaymentDate.toISOString(),
+      cancellation_date: input.cancellation_date || null,
+      value: planValue,
+      created_at: now,
+      updated_at: now,
+    });
+
+    return true;
+  };
+
+  updatePlanAccountByAccountId = async (
+    accountId: string,
+    input: UpdatePlanAccountRequest
+  ): Promise<boolean> => {
+    return this.createOrUpdatePlanAccountByAccountId(accountId, input);
   };
 }

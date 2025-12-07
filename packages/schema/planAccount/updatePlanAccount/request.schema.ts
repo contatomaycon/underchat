@@ -10,8 +10,8 @@ export type UpdatePlanAccountParamsRequest = Static<
 
 export const updatePlanAccountRequestSchema = Type.Object({
   plan_id: Type.String({ format: 'uuid' }),
-  recurring_payment: Type.Boolean(),
-  billing_period_id: Type.String({ format: 'uuid' }),
+  recurring_payment: Type.Optional(Type.Boolean()),
+  billing_period_id: Type.Optional(Type.String({ format: 'uuid' })),
   last_payment_date: Type.Union([
     Type.String({ format: 'date-time' }),
     Type.Null(),
@@ -24,7 +24,7 @@ export const updatePlanAccountRequestSchema = Type.Object({
     Type.String({ format: 'date-time' }),
     Type.Null(),
   ]),
-  value: Type.String(),
+  value: Type.Optional(Type.String()),
 });
 
 export type UpdatePlanAccountRequest = Static<
