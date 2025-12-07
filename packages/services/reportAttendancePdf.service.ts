@@ -1,6 +1,7 @@
 import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import PDFDocument from 'pdfkit';
+import { ChartJSNodeCanvas } from 'chartjs-node-canvas';
 import { ReportAttendanceResult } from '@core/schema/reportAttendance/listReportAttendance/response.schema';
 
 type ReportType = 'queue' | 'analyst' | 'general';
@@ -8,7 +9,7 @@ type PeriodType = 'month' | 'week' | 'day' | 'hour';
 
 @injectable()
 export class ReportAttendancePdfService {
-  generatePdf(
+  async generatePdf(
     t: TFunction<'translation', undefined>,
     data: ReportAttendanceResult[],
     reportType: ReportType,
@@ -16,6 +17,13 @@ export class ReportAttendancePdfService {
     startDate: string,
     endDate: string
   ): Promise<Buffer> {
+    const chartImage = await this.generateChartImage(
+      t,
+      data,
+      reportType,
+      periodType
+    );
+
     return new Promise((resolve, reject) => {
       try {
         const doc = new PDFDocument({ margin: 50, size: 'A4' });
@@ -37,39 +45,24 @@ export class ReportAttendancePdfService {
           .text(reportTitle, { align: 'center' });
         doc.moveDown(0.5);
         doc.fontSize(12).font('Helvetica').text(dateRange, { align: 'center' });
+        doc.moveDown(1);
+
+        if (chartImage) {
+          const chartWidth = 495;
+          const chartHeight = 300;
+          doc.image(chartImage, 50, doc.y, {
+            width: chartWidth,
+            height: chartHeight,
+            fit: [chartWidth, chartHeight],
+          });
+          doc.y += chartHeight + 20;
+        }
+
+        doc
+          .fontSize(12)
+          .font('Helvetica-Bold')
+          .text(t('report_data'), { align: 'left' });
         doc.moveDown(0.8);
-
-        const legendY = doc.y;
-        doc
-          .fontSize(9)
-          .font('Helvetica-Bold')
-          .text(`${t('legend')}:`, 50, legendY, { align: 'left' });
-        doc.fontSize(8).font('Helvetica');
-        doc.text(
-          `• ${t('report_pdf_time_total_abbrev')} = ${t('total_attendance_time')}`,
-          50,
-          legendY + 12,
-          { align: 'left' }
-        );
-        doc.text(
-          `• ${t('report_pdf_avg_wait_abbrev')} = ${t('average_wait_time')}`,
-          50,
-          legendY + 24,
-          { align: 'left' }
-        );
-        doc.text(
-          `• ${t('report_pdf_avg_attendance_abbrev')} = ${t('average_attendance_time')}`,
-          50,
-          legendY + 36,
-          { align: 'left' }
-        );
-        doc.y = legendY + 50;
-
-        doc
-          .fontSize(14)
-          .font('Helvetica-Bold')
-          .text(t('report_data'), { underline: true });
-        doc.moveDown(0.5);
 
         const tableTop = doc.y;
         const tableLeft = 50;
@@ -174,6 +167,32 @@ export class ReportAttendancePdfService {
           });
           x += columnWidths[i];
         }
+
+        currentY += rowHeight + 20;
+        const legendY = currentY;
+        doc
+          .fontSize(9)
+          .font('Helvetica-Bold')
+          .text(`${t('legend')}:`, 50, legendY, { align: 'left' });
+        doc.fontSize(8).font('Helvetica');
+        doc.text(
+          `• ${t('report_pdf_time_total_abbrev')} = ${t('total_attendance_time')}`,
+          50,
+          legendY + 12,
+          { align: 'left' }
+        );
+        doc.text(
+          `• ${t('report_pdf_avg_wait_abbrev')} = ${t('average_wait_time')}`,
+          50,
+          legendY + 24,
+          { align: 'left' }
+        );
+        doc.text(
+          `• ${t('report_pdf_avg_attendance_abbrev')} = ${t('average_attendance_time')}`,
+          50,
+          legendY + 36,
+          { align: 'left' }
+        );
 
         doc.end();
       } catch (error) {
@@ -331,5 +350,141 @@ export class ReportAttendancePdfService {
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+
+  private async generateChartImage(
+    t: TFunction<'translation', undefined>,
+    data: ReportAttendanceResult[],
+    reportType: ReportType,
+    periodType: PeriodType
+  ): Promise<Buffer | null> {
+    if (!data || data.length === 0) {
+      return null;
+    }
+
+    try {
+      const width = 800;
+      const height = 400;
+      const chartJSNodeCanvas = new ChartJSNodeCanvas({
+        width,
+        height,
+        backgroundColour: 'white',
+      });
+
+      const chartData = this.prepareChartData(t, data, reportType);
+      const chartTitle = this.getReportTitle(t, reportType, periodType);
+
+      const configuration = {
+        type: 'bar' as const,
+        data: chartData,
+        options: {
+          responsive: false,
+          plugins: {
+            legend: {
+              position: 'bottom' as const,
+            },
+            title: {
+              display: true,
+              text: chartTitle,
+              font: {
+                size: 16,
+              },
+            },
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+            },
+          },
+        },
+      };
+
+      const imageBuffer = await chartJSNodeCanvas.renderToBuffer(configuration);
+      return imageBuffer;
+    } catch (error) {
+      console.error('Erro ao gerar gráfico:', error);
+      return null;
+    }
+  }
+
+  private prepareChartData(
+    t: TFunction<'translation', undefined>,
+    data: ReportAttendanceResult[],
+    reportType: ReportType
+  ): {
+    labels: string[];
+    datasets: Array<{
+      label: string;
+      data: number[];
+      backgroundColor: string;
+    }>;
+  } {
+    if (reportType === 'queue' || reportType === 'analyst') {
+      const periodsMap = new Map<string, Map<string, number>>();
+      const categoriesSet = new Set<string>();
+
+      for (const item of data) {
+        const period = item.period || '';
+        const category =
+          reportType === 'queue'
+            ? item.queue || 'Sem Fila'
+            : item.analyst || 'Sem Analista';
+
+        categoriesSet.add(category);
+
+        if (!periodsMap.has(period)) {
+          periodsMap.set(period, new Map());
+        }
+
+        const periodData = periodsMap.get(period);
+        if (periodData) {
+          periodData.set(
+            category,
+            (periodData.get(category) || 0) + (item.total || 0)
+          );
+        }
+      }
+
+      const labels = Array.from(periodsMap.keys()).sort();
+      const categories = Array.from(categoriesSet).sort();
+      const colors = [
+        '#FF6384',
+        '#36A2EB',
+        '#FFCE56',
+        '#4BC0C0',
+        '#9966FF',
+        '#FF9F40',
+      ];
+
+      const datasets = categories.map((category, index) => ({
+        label: category,
+        data: labels.map(
+          (period) => periodsMap.get(period)?.get(category) || 0
+        ),
+        backgroundColor: colors[index % colors.length],
+      }));
+
+      return {
+        labels,
+        datasets,
+      };
+    } else {
+      const labels = data.map((item) => item.period || '').sort();
+      const totals = labels.map((period) => {
+        const item = data.find((d) => d.period === period);
+        return item?.total || 0;
+      });
+
+      return {
+        labels,
+        datasets: [
+          {
+            label: t('attendances'),
+            data: totals,
+            backgroundColor: '#36A2EB',
+          },
+        ],
+      };
+    }
   }
 }

@@ -318,7 +318,7 @@ const getChartTitle = (): string => {
     general: t('attendances'),
   };
 
-  return `${reportLabels[reportType.value]} - ${periodLabels[periodType.value]}`;
+  return `${reportLabels[reportType.value]} (${periodLabels[periodType.value].toLowerCase()})`;
 };
 
 // Função para formatar data para API
