@@ -117,19 +117,15 @@ export class UserListerRepository {
     currentPage: number,
     query: ListUserRequest,
     accountId: string,
-    isAdministrator: boolean,
     searchHashes: string | null,
     excludeUserId: string
   ): Promise<ListUserResponse[]> => {
     const filtersUser = this.setFiltersUser(query, searchHashes);
     const filters = this.setFilters(accountId, query);
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(user.account_id, accountId);
 
     const result = await this.db.query.user.findMany({
       where: and(
-        accountCondition,
+        eq(user.account_id, accountId),
         isNull(user.deleted_at),
         ne(user.user_id, excludeUserId),
         filters,
@@ -301,15 +297,11 @@ export class UserListerRepository {
   listUsersTotal = async (
     query: ListUserRequest,
     accountId: string,
-    isAdministrator: boolean,
     searchHashes: string | null,
     excludeUserId: string
   ): Promise<number> => {
     const filtersUser = this.setFiltersUser(query, searchHashes);
     const filters = this.setFilters(accountId, query);
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(user.account_id, accountId);
 
     const result = await this.db
       .select({
@@ -324,7 +316,7 @@ export class UserListerRepository {
       .leftJoin(country, eq(userAddress.country_id, country.country_id))
       .where(
         and(
-          accountCondition,
+          eq(user.account_id, accountId),
           isNull(user.deleted_at),
           ne(user.user_id, excludeUserId),
           filters,

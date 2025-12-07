@@ -13,20 +13,16 @@ export class UserDeleterRepository {
 
   deleteUserById = async (
     userId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<boolean> => {
     const date = currentTime();
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(user.account_id, accountId);
 
     const result = await this.db
       .update(user)
       .set({
         deleted_at: date,
       })
-      .where(and(accountCondition, eq(user.user_id, userId)))
+      .where(and(eq(user.account_id, accountId), eq(user.user_id, userId)))
       .execute();
 
     return result.rowCount === 1;

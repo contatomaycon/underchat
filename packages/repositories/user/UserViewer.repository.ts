@@ -13,16 +13,11 @@ export class UserViewerRepository {
 
   viewUserById = async (
     userId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<ViewUserResponse | null> => {
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(user.account_id, accountId);
-
     const result = await this.db.query.user.findFirst({
       where: and(
-        accountCondition,
+        eq(user.account_id, accountId),
         isNull(user.deleted_at),
         eq(user.user_id, userId)
       ),

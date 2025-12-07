@@ -18,8 +18,7 @@ export const deleteUser = async (
     const response = await userDeleterUseCase.execute(
       t,
       request.params.user_id,
-      tokenJwtData.account_id,
-      tokenJwtData.is_administrator
+      tokenJwtData.account_id
     );
 
     if (response) {

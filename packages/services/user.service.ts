@@ -94,7 +94,6 @@ export class UserService {
     currentPage: number,
     query: ListUserRequest,
     accountId: string,
-    isAdministrator: boolean,
     excludeUserId: string
   ): Promise<[ListUserResponse[], number]> => {
     const searchHashes = query.search
@@ -107,14 +106,12 @@ export class UserService {
         currentPage,
         query,
         accountId,
-        isAdministrator,
         searchHashes,
         excludeUserId
       ),
       this.userListerRepository.listUsersTotal(
         query,
         accountId,
-        isAdministrator,
         searchHashes,
         excludeUserId
       ),
@@ -129,38 +126,23 @@ export class UserService {
 
   existsUserById = async (
     userId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<boolean> => {
-    return this.userViewerExistsRepository.existsUserById(
-      userId,
-      accountId,
-      isAdministrator
-    );
+    return this.userViewerExistsRepository.existsUserById(userId, accountId);
   };
 
   deleteUserById = async (
     userId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<boolean> => {
-    return this.userDeleterRepository.deleteUserById(
-      userId,
-      accountId,
-      isAdministrator
-    );
+    return this.userDeleterRepository.deleteUserById(userId, accountId);
   };
 
   viewUserById = async (
     userId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<ViewUserResponse | null> => {
-    return this.userViewerRepository.viewUserById(
-      userId,
-      accountId,
-      isAdministrator
-    );
+    return this.userViewerRepository.viewUserById(userId, accountId);
   };
 
   existsUserStatusById = async (userStatusId: string): Promise<boolean> => {

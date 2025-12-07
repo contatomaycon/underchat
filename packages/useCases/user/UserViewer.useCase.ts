@@ -10,19 +10,17 @@ export class UserViewerUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     userId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<ViewUserResponse | null> {
     const existsUserById = await this.userService.existsUserById(
       userId,
-      accountId,
-      isAdministrator
+      accountId
     );
 
     if (!existsUserById) {
       throw new Error(t('user_not_found'));
     }
 
-    return this.userService.viewUserById(userId, accountId, isAdministrator);
+    return this.userService.viewUserById(userId, accountId);
   }
 }

@@ -22,13 +22,11 @@ export class UserDeleterUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     userId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<boolean> {
     const existsUserById = await this.userService.existsUserById(
       userId,
-      accountId,
-      isAdministrator
+      accountId
     );
 
     if (!existsUserById) {
@@ -39,8 +37,7 @@ export class UserDeleterUseCase {
 
     const deleteUserById = await this.userService.deleteUserById(
       userId,
-      accountId,
-      isAdministrator
+      accountId
     );
 
     if (!deleteUserById) {

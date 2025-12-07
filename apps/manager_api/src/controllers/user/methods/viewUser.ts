@@ -18,8 +18,7 @@ export const viewUser = async (
     const response = await userViewerUseCase.execute(
       t,
       request.params.user_id,
-      tokenJwtData.account_id,
-      tokenJwtData.is_administrator
+      tokenJwtData.account_id
     );
 
     if (response) {
