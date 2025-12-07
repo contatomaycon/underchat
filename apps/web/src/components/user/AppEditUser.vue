@@ -2251,7 +2251,6 @@ watch(
     <VOverlay
       :model-value="isInitializing || isInitializingModal || userStore.loading"
       class="align-center justify-center"
-      contained
     >
       <VProgressCircular color="primary" indeterminate size="64" />
     </VOverlay>
