@@ -30,7 +30,7 @@ export const downloadReportAttendancePdf = async (
       .header('Content-Disposition', `attachment; filename="${filename}"`)
       .send(pdfBuffer);
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return reply.code(EHTTPStatusCode.internal_server_error).send({
