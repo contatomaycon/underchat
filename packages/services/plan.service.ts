@@ -206,4 +206,17 @@ export class PlanService {
       data
     );
   };
+
+  getPlan = async (
+    planId: string
+  ): Promise<{
+    plan_id: string;
+    price: string;
+    annual_discount: string | null;
+    is_test: boolean;
+    days_trial: number | null;
+  } | null> => {
+    const plan = await this.orderPaymentCreatorRepository.getPlan(planId);
+    return plan || null;
+  };
 }

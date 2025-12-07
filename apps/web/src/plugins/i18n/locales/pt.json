@@ -1548,6 +1548,8 @@
     "total_zero_message": "O desconto de upgrade é maior ou igual ao valor total da contratação. Por favor, entre em contato com o setor financeiro para realizar a alteração do plano.",
     "order_payment_created_successfully": "Pedido de pagamento criado com sucesso",
     "order_payment_creation_failed": "Falha ao criar o pedido de pagamento",
+    "plan_not_found": "Plano não encontrado",
+    "test_plan_cannot_have_addons": "Plano de teste não pode ter adicionais",
     "pix_payment": "Pagamento PIX",
     "pix_payment_instructions": "Escaneie o QR Code ou copie o código PIX para realizar o pagamento",
     "pix_expires_at": "Expira em",

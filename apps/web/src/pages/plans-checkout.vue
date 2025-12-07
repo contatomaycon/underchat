@@ -178,7 +178,9 @@ const getPrice = (plan: ListPlanWithItemsResponse): number => {
 
 const isTestPlan = (plan: ListPlanWithItemsResponse | null): boolean => {
   if (!plan) return false;
-  return plan.is_test === true && (plan.days_trial ?? 0) > 0;
+  if (plan.is_test !== true) return false;
+
+  return Boolean(plan.days_trial && plan.days_trial > 0);
 };
 
 const getBillingPeriodText = (
@@ -1312,6 +1314,13 @@ watch(currentStep, async (newStep) => {
   }
 });
 
+watch(selectedPlanForCheckout, (plan) => {
+  if (plan && isTestPlan(plan)) {
+    selectedAddons.value = [];
+    selectedCrossSellByType.value = {};
+  }
+});
+
 watch(selectedPaymentMethod, (newMethod) => {
   if (newMethod !== 'credit_card' && showAddCardModal.value) {
     showAddCardModal.value = false;
@@ -1788,6 +1797,9 @@ onMounted(async () => {
                                     color="error"
                                     variant="outlined"
                                     size="small"
+                                    :disabled="
+                                      isTestPlan(selectedPlanForCheckout)
+                                    "
                                     @click="removeAddon(group.product_id)"
                                   >
                                     {{ $t('remove') }}
@@ -1813,11 +1825,15 @@ onMounted(async () => {
                                     density="compact"
                                     class="flex-grow-1"
                                     placeholder="Selecione uma opção"
+                                    :disabled="
+                                      isTestPlan(selectedPlanForCheckout)
+                                    "
                                   />
                                   <VBtn
                                     color="primary"
                                     variant="outlined"
                                     :disabled="
+                                      isTestPlan(selectedPlanForCheckout) ||
                                       !canAddCrossSell(group.product_id)
                                     "
                                     @click="addAddon(group.product_id)"

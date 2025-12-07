@@ -24,6 +24,16 @@ export class OrderPaymentCreatorUseCase {
     remoteIp: string
   ): Promise<CreateOrderPaymentResponse> => {
     try {
+      const plan = await this.planService.getPlan(input.plan_id);
+      if (!plan) {
+        throw new Error(t('plan_not_found'));
+      }
+
+      const isTestPlan = plan.is_test === true && (plan.days_trial ?? 0) > 0;
+      if (isTestPlan && input.addons && input.addons.length > 0) {
+        throw new Error(t('test_plan_cannot_have_addons'));
+      }
+
       const customer = await this.paymentService.getOrCreateCustomer(accountId);
       if (!customer) {
         throw new Error(t('customer_not_found_or_could_not_create'));

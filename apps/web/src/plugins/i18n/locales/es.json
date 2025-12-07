@@ -1548,6 +1548,8 @@
     "total_zero_message": "El descuento de upgrade es mayor o igual al valor total de la contratación. Por favor, póngase en contacto con el departamento financiero para realizar el cambio de plan.",
     "order_payment_created_successfully": "Pago de pedido creado con éxito",
     "order_payment_creation_failed": "Error al crear el pago del pedido",
+    "plan_not_found": "Plan no encontrado",
+    "test_plan_cannot_have_addons": "El plan de prueba no puede tener complementos",
     "awaiting_payment": "Esperando pago",
     "payment_confirmed": "Pago confirmado",
     "payment_received": "Pago recibido",

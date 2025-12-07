@@ -1548,6 +1548,8 @@
     "total_zero_message": "The upgrade discount is greater than or equal to the total contract value. Please contact the finance department to proceed with the plan change.",
     "order_payment_created_successfully": "Order payment created successfully",
     "order_payment_creation_failed": "Failed to create order payment",
+    "plan_not_found": "Plan not found",
+    "test_plan_cannot_have_addons": "Test plan cannot have addons",
     "awaiting_payment": "Awaiting payment",
     "payment_confirmed": "Payment confirmed",
     "payment_received": "Payment received",
