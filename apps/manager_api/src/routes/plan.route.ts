@@ -26,6 +26,7 @@ import { viewCurrentPlanSchema } from '@core/schema/plan/viewCurrentPlan';
 import { calculateUpgradeDiscountSchema } from '@core/schema/plan/calculateUpgradeDiscount';
 import { createOrderPaymentSchema } from '@core/schema/plan/createOrderPayment';
 import { listAvailableCrossSellSchema } from '@core/schema/plan/listAvailableCrossSell';
+import { checkTestPlanAlreadyUsedSchema } from '@core/schema/plan/checkTestPlanAlreadyUsed';
 
 export default function planRoutes(server: FastifyInstance) {
   const planController = container.resolve(PlanController);
@@ -186,6 +187,15 @@ export default function planRoutes(server: FastifyInstance) {
   server.get('/plan/cross-sell/available', {
     schema: listAvailableCrossSellSchema,
     handler: planController.listAvailableCrossSell,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.get('/plan/check-test-already-used', {
+    schema: checkTestPlanAlreadyUsedSchema,
+    handler: planController.checkTestPlanAlreadyUsed,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),

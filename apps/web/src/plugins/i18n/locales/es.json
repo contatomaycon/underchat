@@ -1549,6 +1549,7 @@
     "order_payment_created_successfully": "Pago de pedido creado con éxito",
     "order_payment_creation_failed": "Error al crear el pago del pedido",
     "test_now": "Probar ahora",
+    "test_already_used": "Prueba ya utilizada",
     "test_plan_title": "Iniciar Prueba Gratuita",
     "test_plan_subtitle": "Prueba todas las funcionalidades del plan sin compromiso",
     "test_plan_duration": "Duración: {days} día(s)",

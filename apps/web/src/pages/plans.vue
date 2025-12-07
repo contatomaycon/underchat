@@ -34,6 +34,7 @@ const currentPlanId = ref<string | null>(null);
 const currentPlan = ref<ListPlanWithItemsResponse | null>(null);
 const currentPlanBillingPeriod = ref<'monthly' | 'annual' | null>(null);
 const currentPlanInvoice = ref<any | null>(null);
+const testPlanAlreadyUsed = ref(false);
 
 const getCurrencyConfig = () => {
   const localeMap: Record<string, { locale: string; currency: string }> = {
@@ -78,13 +79,16 @@ const getPrice = (plan: ListPlanWithItemsResponse): number => {
 
 const loadPlans = async () => {
   loading.value = true;
-  const [result, currentPlanIdValue, planInvoice] = await Promise.all([
-    planStore.listPlanWithItems(),
-    planStore.getCurrentPlan(),
-    accountSettingsStore.getCurrentPlanInvoice(),
-  ]);
+  const [result, currentPlanIdValue, planInvoice, alreadyUsed] =
+    await Promise.all([
+      planStore.listPlanWithItems(),
+      planStore.getCurrentPlan(),
+      accountSettingsStore.getCurrentPlanInvoice(),
+      planStore.checkTestPlanAlreadyUsed(),
+    ]);
 
   currentPlanInvoice.value = planInvoice;
+  testPlanAlreadyUsed.value = alreadyUsed;
 
   if (result) {
     plans.value = result;
@@ -200,6 +204,9 @@ const isInvalidBillingPeriodChange = (
 };
 
 const isPlanDisabled = (plan: ListPlanWithItemsResponse): boolean => {
+  if (isTestPlan(plan) && testPlanAlreadyUsed.value) {
+    return true;
+  }
   return isDowngrade(plan) || isInvalidBillingPeriodChange(plan);
 };
 
@@ -208,6 +215,9 @@ const getButtonText = (plan: ListPlanWithItemsResponse): string => {
     return t('your_current_plan');
   }
   if (isTestPlan(plan)) {
+    if (testPlanAlreadyUsed.value) {
+      return t('test_already_used');
+    }
     return t('test');
   }
   if (!currentPlanId.value) {

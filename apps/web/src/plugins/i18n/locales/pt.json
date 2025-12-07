@@ -1549,6 +1549,7 @@
     "order_payment_created_successfully": "Pedido de pagamento criado com sucesso",
     "order_payment_creation_failed": "Falha ao criar o pedido de pagamento",
     "test_now": "Testar agora",
+    "test_already_used": "Teste já utilizado",
     "test_plan_title": "Iniciar Teste Gratuito",
     "test_plan_subtitle": "Experimente todas as funcionalidades do plano sem compromisso",
     "test_plan_duration": "Duração: {days} dia(s)",

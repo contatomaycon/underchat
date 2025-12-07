@@ -17,6 +17,7 @@ import { viewCurrentPlan } from './methods/viewCurrentPlan';
 import { calculateUpgradeDiscount } from './methods/calculateUpgradeDiscount';
 import { createOrderPayment } from './methods/createOrderPayment';
 import { listAvailableCrossSell } from './methods/listAvailableCrossSell';
+import { checkTestPlanAlreadyUsed } from './methods/checkTestPlanAlreadyUsed';
 
 @injectable()
 class PlanController {
@@ -38,6 +39,7 @@ class PlanController {
   public calculateUpgradeDiscount = calculateUpgradeDiscount;
   public createOrderPayment = createOrderPayment;
   public listAvailableCrossSell = listAvailableCrossSell;
+  public checkTestPlanAlreadyUsed = checkTestPlanAlreadyUsed;
 }
 
 export default PlanController;

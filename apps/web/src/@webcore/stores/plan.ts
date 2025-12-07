@@ -632,6 +632,24 @@ export const usePlanStore = defineStore('plan', {
       }
     },
 
+    async checkTestPlanAlreadyUsed(): Promise<boolean> {
+      try {
+        const response = await axios.get<
+          IApiResponse<{ already_used: boolean }>
+        >('/plan/check-test-already-used');
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return false;
+        }
+
+        return data.data.already_used;
+      } catch {
+        return false;
+      }
+    },
+
     async viewUserInfo(): Promise<ViewUserInfoResponse | null> {
       try {
         this.loading = true;

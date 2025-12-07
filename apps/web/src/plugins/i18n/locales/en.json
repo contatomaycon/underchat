@@ -1549,6 +1549,7 @@
     "order_payment_created_successfully": "Order payment created successfully",
     "order_payment_creation_failed": "Failed to create order payment",
     "test_now": "Test Now",
+    "test_already_used": "Test already used",
     "test_plan_title": "Start Free Trial",
     "test_plan_subtitle": "Try all plan features with no commitment",
     "test_plan_duration": "Duration: {days} day(s)",

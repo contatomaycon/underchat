@@ -134,6 +134,7 @@ const pixPaymentStatus = ref<
 >(null);
 const pixPaymentConfirmed = ref(false);
 const paymentSubscription = ref<Subscription | null>(null);
+const testPlanAlreadyUsed = ref(false);
 
 const getCurrencyConfig = () => {
   const localeMap: Record<string, { locale: string; currency: string }> = {
@@ -253,13 +254,15 @@ const loadStep1 = async () => {
   const planId = route.query.plan_id as string;
   const billing = (route.query.billing as 'monthly' | 'annual') || 'monthly';
 
-  const [plansList, currentPlanIdValue, currentPlanInvoice] = await Promise.all(
-    [
+  const [plansList, currentPlanIdValue, currentPlanInvoice, alreadyUsed] =
+    await Promise.all([
       planStore.listPlanWithItems(),
       planStore.getCurrentPlan(),
       accountSettingsStore.getCurrentPlanInvoice(),
-    ]
-  );
+      planStore.checkTestPlanAlreadyUsed(),
+    ]);
+
+  testPlanAlreadyUsed.value = alreadyUsed;
 
   if (!plansList) {
     step1Loaded.value = true;
@@ -517,7 +520,16 @@ const selectPlan = (plan: ListPlanWithItemsResponse) => {
   loadUpgradeDiscount();
 };
 
+const canProceedToNextStep = computed(() => {
+  if (!selectedPlanForCheckout.value) return false;
+  if (isTestPlan(selectedPlanForCheckout.value) && testPlanAlreadyUsed.value) {
+    return false;
+  }
+  return true;
+});
+
 const nextStep = () => {
+  if (!canProceedToNextStep.value) return;
   if (currentStep.value < 4) {
     currentStep.value += 1;
   }
@@ -1050,6 +1062,10 @@ const processPayment = async () => {
   if (!selectedPlanForCheckout.value) return;
 
   if (isTestPlan(selectedPlanForCheckout.value)) {
+    if (testPlanAlreadyUsed.value) {
+      planStore.showSnackbar(t('test_plan_already_used'), EColor.error);
+      return;
+    }
     processingPayment.value = true;
     try {
       const paymentData = buildPaymentData();
@@ -3232,7 +3248,9 @@ onMounted(async () => {
                         !isNewCardValid) ||
                       isDiscountGreaterThanTotal ||
                       isUpgradeBlocked ||
-                      isTotalZero
+                      isTotalZero ||
+                      (isTestPlan(selectedPlanForCheckout) &&
+                        testPlanAlreadyUsed)
                     "
                     @click="nextStep"
                   >
@@ -3244,7 +3262,7 @@ onMounted(async () => {
                     :disabled="
                       !selectedPlanForCheckout ||
                       (isTestPlan(selectedPlanForCheckout)
-                        ? false
+                        ? testPlanAlreadyUsed
                         : !selectedPaymentMethod ||
                           (selectedPaymentMethod === 'credit_card' &&
                             !selectedCardId &&
