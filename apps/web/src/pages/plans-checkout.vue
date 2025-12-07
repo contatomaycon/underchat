@@ -694,9 +694,13 @@ const isUpgradeBlocked = computed(() => {
     return false;
   }
 
+  const isSamePlan =
+    selectedPlanForCheckout.value?.plan_id === currentPlanId.value;
+
   if (
     currentPlanBillingPeriod.value &&
-    currentPlanBillingPeriod.value !== billingPeriod.value
+    currentPlanBillingPeriod.value !== billingPeriod.value &&
+    isSamePlan
   ) {
     return false;
   }
