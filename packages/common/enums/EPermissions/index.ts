@@ -20,6 +20,7 @@ import { EPermissionPermissions } from './permission';
 import { EExpenditurePermissions } from './expenditure';
 import { EFinancialPermissions } from './financial';
 import { EReportConversationHistoryPermissions } from './reportConversationHistory';
+import { EReportAttendancePermissions } from './reportAttendance';
 
 export type EPermissionsRoles =
   | EUserPermissions
@@ -43,4 +44,5 @@ export type EPermissionsRoles =
   | EPermissionPermissions
   | EExpenditurePermissions
   | EFinancialPermissions
-  | EReportConversationHistoryPermissions;
+  | EReportConversationHistoryPermissions
+  | EReportAttendancePermissions;

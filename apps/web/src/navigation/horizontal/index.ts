@@ -15,6 +15,7 @@ import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { EFinancialPermissions } from '@core/common/enums/EPermissions/financial';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EReportConversationHistoryPermissions } from '@core/common/enums/EPermissions/reportConversationHistory';
+import { EReportAttendancePermissions } from '@core/common/enums/EPermissions/reportAttendance';
 
 export default [
   {
@@ -272,6 +273,17 @@ export default [
           EGeneralPermissions.full_access_group,
           EReportConversationHistoryPermissions.report_conversation_history_group,
           EReportConversationHistoryPermissions.report_conversation_history_view,
+        ],
+      },
+      {
+        title: 'attendances',
+        to: { name: 'reports-attendances' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-users-group' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EReportConversationHistoryPermissions.report_conversation_history_group,
+          EReportAttendancePermissions.report_attendance_view,
         ],
       },
     ],

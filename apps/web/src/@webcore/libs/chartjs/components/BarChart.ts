@@ -8,7 +8,7 @@ import {
   Tooltip,
   type PluginOptionsByType,
 } from 'chart.js';
-import { defineComponent, type PropType } from 'vue';
+import { defineComponent, h, type PropType } from 'vue';
 import { Bar } from 'vue-chartjs';
 
 ChartJS.register(
