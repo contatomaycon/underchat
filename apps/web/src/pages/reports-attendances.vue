@@ -203,7 +203,7 @@ const prepareChartData = (data: any[]) => {
     const periodsMap = new Map<string, Map<string, number>>();
     const categoriesSet = new Set<string>();
 
-    data.forEach((item) => {
+    for (const item of data) {
       const period = item.period || '';
       const category =
         reportType.value === 'queue'
@@ -218,7 +218,7 @@ const prepareChartData = (data: any[]) => {
 
       const periodData = periodsMap.get(period)!;
       periodData.set(category, (periodData.get(category) || 0) + item.total);
-    });
+    }
 
     const labels = Array.from(periodsMap.keys()).sort();
     const categories = Array.from(categoriesSet).sort();

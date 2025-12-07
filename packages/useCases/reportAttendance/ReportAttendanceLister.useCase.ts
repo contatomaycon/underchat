@@ -215,7 +215,7 @@ export class ReportAttendanceListerUseCase {
     const dateToUse = chat.started_at
       ? new Date(chat.started_at)
       : new Date(chat.date);
-    return dateToUse && !isNaN(dateToUse.getTime()) ? dateToUse : null;
+    return dateToUse && !Number.isNaN(dateToUse.getTime()) ? dateToUse : null;
   }
 
   private getCategoryKey(
@@ -239,9 +239,9 @@ export class ReportAttendanceListerUseCase {
   ): Map<string, any[]> {
     const grouped = new Map<string, any[]>();
 
-    chats.forEach((chat) => {
+    for (const chat of chats) {
       const dateToUse = this.getDateToUse(chat);
-      if (!dateToUse) return;
+      if (!dateToUse) continue;
 
       const period = this.formatPeriod(dateToUse, query.period);
       const key = this.getCategoryKey(chat, query.report_type, period);
@@ -253,7 +253,7 @@ export class ReportAttendanceListerUseCase {
       if (groupChats) {
         groupChats.push(chat);
       }
-    });
+    }
 
     return grouped;
   }
@@ -289,7 +289,7 @@ export class ReportAttendanceListerUseCase {
     let totalWaitTime = 0;
     let waitCount = 0;
 
-    groupChats.forEach((chat) => {
+    for (const chat of groupChats) {
       const startedAt = chat.started_at
         ? new Date(chat.started_at).getTime()
         : null;
@@ -305,7 +305,7 @@ export class ReportAttendanceListerUseCase {
         totalWaitTime += waitTime;
         waitCount++;
       }
-    });
+    }
 
     const averageWait =
       waitCount > 0
@@ -360,7 +360,7 @@ export class ReportAttendanceListerUseCase {
     const grouped = this.groupChatsByPeriod(chats, query);
     const results: ReportAttendanceResult[] = [];
 
-    grouped.forEach((groupChats, key) => {
+    for (const [key, groupChats] of grouped) {
       const parts = key.split('|');
       const period = parts[0];
       const category = parts.length > 1 ? parts[1] : null;
@@ -378,7 +378,7 @@ export class ReportAttendanceListerUseCase {
       );
 
       results.push(result);
-    });
+    }
 
     return results.sort((a, b) => a.period.localeCompare(b.period));
   }
