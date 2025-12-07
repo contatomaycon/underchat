@@ -27,9 +27,9 @@ const refFormPlanAccount = ref<VForm>();
 const plan_id = ref<string | null>(null);
 const recurring_payment = ref<boolean>(false);
 const billing_period_id = ref<string | null>(null);
-const last_payment_date = ref<Date | null>(null);
-const next_payment_date = ref<Date | null>(null);
-const cancellation_date = ref<Date | null>(null);
+const last_payment_date = ref<Date | string | null>(null);
+const next_payment_date = ref<Date | string | null>(null);
+const cancellation_date = ref<Date | string | null>(null);
 const valueDisplay = ref<string>('');
 const valueRaw = ref<number | null>(null);
 
@@ -143,9 +143,15 @@ const formatDateForInput = (dateString: string | null): Date | null => {
   return new Date(dateString);
 };
 
-const formatDateForApi = (date: Date | null): string | null => {
+const formatDateForApi = (date: Date | string | null): string | null => {
   if (!date) return null;
-  return date.toISOString();
+  if (typeof date === 'string') {
+    return new Date(date).toISOString();
+  }
+  if (date instanceof Date) {
+    return date.toISOString();
+  }
+  return null;
 };
 
 const updatePlanAccount = async () => {

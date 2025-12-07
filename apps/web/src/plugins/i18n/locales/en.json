@@ -459,6 +459,8 @@
     "account_subscriptions_list_successfully": "Subscriptions listed successfully!",
     "account_subscriptions_not_found": "No subscriptions found for this account.",
     "account_subscriptions_list_error": "An error occurred while listing subscriptions. Please try again.",
+    "plan_account_update_successfully": "Account plan updated successfully!",
+    "plan_account_update_error": "An error occurred while updating the account plan. Please try again.",
     "no_subscriptions_found": "No subscriptions found.",
     "no_cross_sells_found": "No additionals found.",
     "videos_selected": "Videos selected",

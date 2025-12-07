@@ -481,6 +481,8 @@
     "account_subscriptions_list_successfully": "Assinaturas listadas com sucesso!",
     "account_subscriptions_not_found": "Nenhuma assinatura encontrada para esta conta.",
     "account_subscriptions_list_error": "Ocorreu um erro ao listar as assinaturas. Por favor, tente novamente.",
+    "plan_account_update_successfully": "Plano da conta atualizado com sucesso!",
+    "plan_account_update_error": "Ocorreu um erro ao atualizar o plano da conta. Por favor, tente novamente.",
     "no_subscriptions_found": "Nenhuma assinatura encontrada.",
     "no_cross_sells_found": "Nenhum adicional encontrado.",
     "accounts": "Contas",

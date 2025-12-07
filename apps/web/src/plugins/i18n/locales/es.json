@@ -459,6 +459,8 @@
     "account_subscriptions_list_successfully": "¡Suscripciones listadas con éxito!",
     "account_subscriptions_not_found": "No se encontraron suscripciones para esta cuenta.",
     "account_subscriptions_list_error": "Ocurrió un error al listar las suscripciones. Por favor, inténtalo de nuevo.",
+    "plan_account_update_successfully": "¡Plan de la cuenta actualizado con éxito!",
+    "plan_account_update_error": "Ocurrió un error al actualizar el plan de la cuenta. Por favor, inténtalo de nuevo.",
     "no_cross_sells_found": "No se encontraron adicionales.",
     "videos_selected": "Videos seleccionados",
     "clear_documents_before_videos": "Limpiar documentos antes de seleccionar videos.",
