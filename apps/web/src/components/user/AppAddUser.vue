@@ -118,6 +118,44 @@ const itemsDocuments = ref([
 
 const itemsCountry = ref([{ value: ECountry.Brasil, title: t('brazil') }]);
 
+const documentTypeSearchQuery = ref('');
+const isDocumentTypeMenuOpen = ref(false);
+
+const filteredDocumentTypes = computed(() => {
+  if (!documentTypeSearchQuery.value) {
+    return itemsDocuments.value;
+  }
+  const query = documentTypeSearchQuery.value.toLowerCase();
+  return itemsDocuments.value.filter((doc) =>
+    doc.title.toLowerCase().includes(query)
+  );
+});
+
+const countrySearchQueryForSelect = ref('');
+const isCountrySelectMenuOpen = ref(false);
+
+const filteredCountries = computed(() => {
+  if (!countrySearchQueryForSelect.value) {
+    return itemsCountry.value;
+  }
+  const query = countrySearchQueryForSelect.value.toLowerCase();
+  return itemsCountry.value.filter((country) =>
+    country.title.toLowerCase().includes(query)
+  );
+});
+
+watch(isDocumentTypeMenuOpen, (isOpen) => {
+  if (!isOpen) {
+    documentTypeSearchQuery.value = '';
+  }
+});
+
+watch(isCountrySelectMenuOpen, (isOpen) => {
+  if (!isOpen) {
+    countrySearchQueryForSelect.value = '';
+  }
+});
+
 const isCPF = computed(
   () => user_document_type_id.value === EUserDocumentType.CPF
 );
@@ -1492,9 +1530,12 @@ onMounted(resetForm);
                                 variant="outlined"
                                 readonly
                                 :loading="accountsLoading"
-                                clearable
-                                append-inner-icon="tabler-chevron-down"
+                                :clearable="!!accountId"
+                                clear-icon="tabler-x"
                                 @click:clear="accountId = null"
+                                :append-inner-icon="
+                                  accountId ? undefined : 'tabler-chevron-down'
+                                "
                               />
                             </template>
                             <VCard>
@@ -1828,16 +1869,79 @@ onMounted(resetForm);
                   </VCol>
 
                   <VCol cols="12" md="6">
-                    <AppSelect
-                      :model-value="user_document_type_id"
-                      :items="itemsDocuments"
-                      :label="$t('document_type') + ':'"
-                      :placeholder="$t('document_type')"
-                      @update:model-value="
-                        user_document_type_id = $event;
-                        document = null;
-                      "
-                    />
+                    <VLabel class="mb-1 text-body-2"
+                      >{{ $t('document_type') }}:</VLabel
+                    >
+                    <VMenu v-model="isDocumentTypeMenuOpen">
+                      <template #activator="{ props: menuProps }">
+                        <VTextField
+                          v-bind="menuProps"
+                          :model-value="
+                            filteredDocumentTypes.find(
+                              (doc) => doc.value === user_document_type_id
+                            )?.title || ''
+                          "
+                          :placeholder="$t('document_type')"
+                          variant="outlined"
+                          readonly
+                          :clearable="!!user_document_type_id"
+                          clear-icon="tabler-x"
+                          @click:clear="
+                            user_document_type_id = null;
+                            document = null;
+                          "
+                          :append-inner-icon="
+                            user_document_type_id
+                              ? undefined
+                              : 'tabler-chevron-down'
+                          "
+                        />
+                      </template>
+                      <VCard>
+                        <VCardText class="pa-2">
+                          <AppTextField
+                            v-model="documentTypeSearchQuery"
+                            :placeholder="$t('search') + '...'"
+                            prepend-inner-icon="tabler-search"
+                            density="compact"
+                            hide-details
+                            autofocus
+                            @click.stop
+                          />
+                        </VCardText>
+                        <VDivider />
+                        <VList max-height="300" style="overflow-y: auto">
+                          <template v-if="filteredDocumentTypes.length > 0">
+                            <VListItem
+                              v-for="(item, index) in filteredDocumentTypes"
+                              :key="index"
+                              :value="item.value"
+                              @click="
+                                () => {
+                                  user_document_type_id = item.value;
+                                  document = null;
+                                  isDocumentTypeMenuOpen = false;
+                                  documentTypeSearchQuery = '';
+                                }
+                              "
+                              :active="user_document_type_id === item.value"
+                            >
+                              <VListItemTitle>{{ item.title }}</VListItemTitle>
+                            </VListItem>
+                          </template>
+                          <VListItem
+                            v-else-if="documentTypeSearchQuery"
+                            disabled
+                          >
+                            <VListItemTitle
+                              class="text-center text-body-2 text-medium-emphasis"
+                            >
+                              {{ $t('no_results_found') }}
+                            </VListItemTitle>
+                          </VListItem>
+                        </VList>
+                      </VCard>
+                    </VMenu>
                   </VCol>
 
                   <VCol v-if="isCPF || isCNPJ" cols="12" md="6">
@@ -1878,13 +1982,76 @@ onMounted(resetForm);
               <VForm class="mt-4" ref="refFormAddUser" @submit.prevent>
                 <VRow class="mb-2">
                   <VCol cols="12" md="6">
-                    <AppSelect
-                      :label="$t('country') + ':'"
-                      :placeholder="$t('country')"
-                      :model-value="country_id"
-                      :items="itemsCountry"
-                      @update:model-value="onCountryChange"
-                    />
+                    <VLabel class="mb-1 text-body-2"
+                      >{{ $t('country') }}:</VLabel
+                    >
+                    <VMenu v-model="isCountrySelectMenuOpen">
+                      <template #activator="{ props: menuProps }">
+                        <VTextField
+                          v-bind="menuProps"
+                          :model-value="
+                            filteredCountries.find(
+                              (country) => country.value === country_id
+                            )?.title || ''
+                          "
+                          :placeholder="$t('country')"
+                          variant="outlined"
+                          readonly
+                          :clearable="!!country_id"
+                          clear-icon="tabler-x"
+                          @click:clear="
+                            country_id = null;
+                            onCountryChange(null);
+                          "
+                          :append-inner-icon="
+                            country_id ? undefined : 'tabler-chevron-down'
+                          "
+                        />
+                      </template>
+                      <VCard>
+                        <VCardText class="pa-2">
+                          <AppTextField
+                            v-model="countrySearchQueryForSelect"
+                            :placeholder="$t('search') + '...'"
+                            prepend-inner-icon="tabler-search"
+                            density="compact"
+                            hide-details
+                            autofocus
+                            @click.stop
+                          />
+                        </VCardText>
+                        <VDivider />
+                        <VList max-height="300" style="overflow-y: auto">
+                          <template v-if="filteredCountries.length > 0">
+                            <VListItem
+                              v-for="(item, index) in filteredCountries"
+                              :key="index"
+                              :value="item.value"
+                              @click="
+                                () => {
+                                  onCountryChange(item.value);
+                                  isCountrySelectMenuOpen = false;
+                                  countrySearchQueryForSelect = '';
+                                }
+                              "
+                              :active="country_id === item.value"
+                            >
+                              <VListItemTitle>{{ item.title }}</VListItemTitle>
+                            </VListItem>
+                          </template>
+                          <VListItem
+                            v-else-if="countrySearchQueryForSelect"
+                            disabled
+                          >
+                            <VListItemTitle
+                              class="text-center text-body-2 text-medium-emphasis"
+                            >
+                              {{ $t('no_results_found') }}
+                            </VListItemTitle>
+                          </VListItem>
+                        </VList>
+                      </VCard>
+                    </VMenu>
                   </VCol>
                   <VCol cols="12" md="6">
                     <AppTextField

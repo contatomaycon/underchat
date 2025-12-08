@@ -81,6 +81,25 @@ const itemsStatus = ref([
   { id: EServerStatus.offline, text: t('offline') },
 ]);
 
+const statusSearchQuery = ref('');
+const isStatusMenuOpen = ref(false);
+
+const filteredStatuses = computed(() => {
+  if (!statusSearchQuery.value) {
+    return itemsStatus.value;
+  }
+  const query = statusSearchQuery.value.toLowerCase();
+  return itemsStatus.value.filter((status) =>
+    status.text.toLowerCase().includes(query)
+  );
+});
+
+watch(isStatusMenuOpen, (isOpen) => {
+  if (!isOpen) {
+    statusSearchQuery.value = '';
+  }
+});
+
 const isDialogDeleterShow = ref(false);
 const serverToDelete = ref<string | null>(null);
 
@@ -257,13 +276,71 @@ onBeforeUnmount(async () => {
           <div class="d-flex align-center flex-wrap gap-4">
             <div class="server-status-filter">
               <VLabel>{{ $t('status') }}:</VLabel>
-              <AppAutocomplete
-                item-title="text"
-                item-value="id"
-                :items="itemsStatus"
-                v-model="options.status"
-                :placeholder="$t('select_state')"
-              />
+              <VMenu v-model="isStatusMenuOpen">
+                <template #activator="{ props: menuProps }">
+                  <VTextField
+                    v-bind="menuProps"
+                    :model-value="
+                      filteredStatuses.find(
+                        (status) => status.id === options.status
+                      )?.text || ''
+                    "
+                    :placeholder="$t('select_state')"
+                    variant="outlined"
+                    readonly
+                    :clearable="!!options.status"
+                    clear-icon="tabler-x"
+                    @click:clear="
+                      options.status = null;
+                      options.page = 1;
+                    "
+                    :append-inner-icon="
+                      options.status ? undefined : 'tabler-chevron-down'
+                    "
+                  />
+                </template>
+                <VCard>
+                  <VCardText class="pa-2">
+                    <AppTextField
+                      v-model="statusSearchQuery"
+                      :placeholder="$t('search') + '...'"
+                      prepend-inner-icon="tabler-search"
+                      density="compact"
+                      hide-details
+                      autofocus
+                      @click.stop
+                    />
+                  </VCardText>
+                  <VDivider />
+                  <VList max-height="300" style="overflow-y: auto">
+                    <template v-if="filteredStatuses.length > 0">
+                      <VListItem
+                        v-for="(item, index) in filteredStatuses"
+                        :key="index"
+                        :value="item.id"
+                        @click="
+                          () => {
+                            options.status = item.id;
+                            options.page = 1;
+                            isStatusMenuOpen = false;
+                            statusSearchQuery = '';
+                          }
+                        "
+                        :active="options.status === item.id"
+                      >
+                        <VListItemTitle>{{ item.text }}</VListItemTitle>
+                      </VListItem>
+                    </template>
+                    <VListItem v-else-if="statusSearchQuery" disabled>
+                      <VListItemTitle
+                        class="text-center text-body-2 text-medium-emphasis"
+                      >
+                        {{ $t('no_results_found') }}
+                      </VListItemTitle>
+                    </VListItem>
+                  </VList>
+                </VCard>
+              </VMenu>
             </div>
 
             <div class="invoice-list-filter">

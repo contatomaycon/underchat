@@ -27,6 +27,25 @@ const priceRaw = ref<number | null>(null);
 
 const planProducts = ref<{ value: string; title: string }[]>([]);
 
+const planProductSearchQuery = ref('');
+const isPlanProductMenuOpen = ref(false);
+
+const filteredPlanProducts = computed(() => {
+  if (!planProductSearchQuery.value) {
+    return planProducts.value;
+  }
+  const query = planProductSearchQuery.value.toLowerCase();
+  return planProducts.value.filter((product) =>
+    product.title.toLowerCase().includes(query)
+  );
+});
+
+watch(isPlanProductMenuOpen, (isOpen) => {
+  if (!isOpen) {
+    planProductSearchQuery.value = '';
+  }
+});
+
 const refFormEditCrossSell = ref<VForm>();
 
 const { locale } = useI18n();
@@ -234,18 +253,75 @@ onMounted(async () => {
         <VCardText>
           <VRow>
             <VCol cols="12">
-              <AppAutocomplete
-                v-model="plan_product_id"
-                :items="planProducts"
-                :label="$t('plan_product') + ':'"
-                :placeholder="$t('select_plan_product')"
-                :rules="[
-                  requiredValidator(
-                    plan_product_id,
-                    $t('plan_product_required')
-                  ),
-                ]"
-              />
+              <VLabel class="mb-1 text-body-2"
+                >{{ $t('plan_product') }}:</VLabel
+              >
+              <VMenu v-model="isPlanProductMenuOpen">
+                <template #activator="{ props: menuProps }">
+                  <VTextField
+                    v-bind="menuProps"
+                    :model-value="
+                      filteredPlanProducts.find(
+                        (product) => product.value === plan_product_id
+                      )?.title || ''
+                    "
+                    :placeholder="$t('select_plan_product')"
+                    variant="outlined"
+                    readonly
+                    :clearable="!!plan_product_id"
+                    clear-icon="tabler-x"
+                    @click:clear="plan_product_id = null"
+                    :append-inner-icon="
+                      plan_product_id ? undefined : 'tabler-chevron-down'
+                    "
+                    :error-messages="
+                      !plan_product_id
+                        ? [$t('plan_product_required')]
+                        : undefined
+                    "
+                  />
+                </template>
+                <VCard>
+                  <VCardText class="pa-2">
+                    <AppTextField
+                      v-model="planProductSearchQuery"
+                      :placeholder="$t('search') + '...'"
+                      prepend-inner-icon="tabler-search"
+                      density="compact"
+                      hide-details
+                      autofocus
+                      @click.stop
+                    />
+                  </VCardText>
+                  <VDivider />
+                  <VList max-height="300" style="overflow-y: auto">
+                    <template v-if="filteredPlanProducts.length > 0">
+                      <VListItem
+                        v-for="(item, index) in filteredPlanProducts"
+                        :key="index"
+                        :value="item.value"
+                        @click="
+                          () => {
+                            plan_product_id = item.value;
+                            isPlanProductMenuOpen = false;
+                            planProductSearchQuery = '';
+                          }
+                        "
+                        :active="plan_product_id === item.value"
+                      >
+                        <VListItemTitle>{{ item.title }}</VListItemTitle>
+                      </VListItem>
+                    </template>
+                    <VListItem v-else-if="planProductSearchQuery" disabled>
+                      <VListItemTitle
+                        class="text-center text-body-2 text-medium-emphasis"
+                      >
+                        {{ $t('no_results_found') }}
+                      </VListItemTitle>
+                    </VListItem>
+                  </VList>
+                </VCard>
+              </VMenu>
             </VCol>
             <VCol cols="12" sm="6">
               <AppTextField
