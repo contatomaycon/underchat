@@ -141,11 +141,7 @@ export class PaymentService {
     if (!sensitiveData.document) {
       return null;
     }
-    const userView = await this.userService.viewUserById(
-      userId,
-      accountId,
-      false
-    );
+    const userView = await this.userService.viewUserById(userId, accountId);
     if (!userView) {
       return null;
     }
