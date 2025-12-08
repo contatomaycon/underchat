@@ -1,5 +1,4 @@
 import { injectable } from 'tsyringe';
-import { TFunction } from 'i18next';
 import { AccountService } from '@core/services/account.service';
 import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 
@@ -7,10 +6,7 @@ import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 export class AccountAllListerUseCase {
   constructor(private readonly accountService: AccountService) {}
 
-  async execute(
-    t: TFunction<'translation', undefined>,
-    accountId: string
-  ): Promise<IAccountBasic[]> {
-    return this.accountService.listAllAccounts(accountId);
+  async execute(): Promise<IAccountBasic[]> {
+    return this.accountService.listAllAccounts();
   }
 }

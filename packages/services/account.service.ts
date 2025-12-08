@@ -95,8 +95,8 @@ export class AccountService {
     return [result, total];
   };
 
-  listAllAccounts = async (accountId: string): Promise<IAccountBasic[]> => {
-    return this.accountAllListerRepository.listAllAccounts(accountId);
+  listAllAccounts = async (): Promise<IAccountBasic[]> => {
+    return this.accountAllListerRepository.listAllAccounts();
   };
 
   createAccount = async (

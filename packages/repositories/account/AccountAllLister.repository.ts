@@ -11,9 +11,9 @@ export class AccountAllListerRepository {
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  listAllAccounts = async (accountId: string): Promise<IAccountBasic[]> => {
+  listAllAccounts = async (): Promise<IAccountBasic[]> => {
     const result = await this.db.query.account.findMany({
-      where: and(eq(account.account_id, accountId), isNull(account.deleted_at)),
+      where: isNull(account.deleted_at),
       columns: {
         account_id: true,
         name: true,

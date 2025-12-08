@@ -4,6 +4,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { ListUserRequest } from '@core/schema/user/listUser/request.schema';
 import { UserListerUseCase } from '@core/useCases/user/UserLister.useCase';
+import { sanitizeQueryAccountId } from '@core/common/functions/hasFullAccess';
 
 export const listUser = async (
   request: FastifyRequest<{
@@ -14,12 +15,19 @@ export const listUser = async (
   const userListerUseCase = container.resolve(UserListerUseCase);
   const { t, tokenJwtData } = request;
 
+  const { query, accountId, canReturnAll } = sanitizeQueryAccountId(
+    request.query,
+    tokenJwtData.actions,
+    tokenJwtData.account_id
+  );
+
   try {
     const response = await userListerUseCase.execute(
       t,
-      request.query,
-      tokenJwtData.account_id,
-      tokenJwtData.user_id
+      query,
+      accountId,
+      tokenJwtData.user_id,
+      canReturnAll
     );
 
     if (response) {

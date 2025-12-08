@@ -16,17 +16,20 @@ export class UserListerUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     query: ListUserRequest,
-    accountId: string,
-    excludeUserId: string
+    accountId: string | null,
+    excludeUserId: string,
+    canReturnAll: boolean
   ): Promise<ListUserFinalResponse> {
     const perPage = query.per_page ?? 10;
     const currentPage = query.current_page ?? 1;
 
-    const accountExists =
-      await this.accountService.existsAccountById(accountId);
+    if (!canReturnAll && accountId) {
+      const accountExists =
+        await this.accountService.existsAccountById(accountId);
 
-    if (!accountExists) {
-      throw new Error(t('account_not_found'));
+      if (!accountExists) {
+        throw new Error(t('account_not_found'));
+      }
     }
 
     const [results, total] = await this.userService.listUsers(

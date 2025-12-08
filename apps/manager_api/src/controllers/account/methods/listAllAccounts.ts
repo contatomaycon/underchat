@@ -9,13 +9,10 @@ export const listAllAccounts = async (
   reply: FastifyReply
 ) => {
   const accountAllListerUseCase = container.resolve(AccountAllListerUseCase);
-  const { t, tokenJwtData } = request;
+  const { t } = request;
 
   try {
-    const response = await accountAllListerUseCase.execute(
-      t,
-      tokenJwtData.account_id
-    );
+    const response = await accountAllListerUseCase.execute();
 
     return sendResponse(reply, {
       message: t('account_list_successfully'),

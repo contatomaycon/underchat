@@ -93,7 +93,7 @@ export class UserService {
     perPage: number,
     currentPage: number,
     query: ListUserRequest,
-    accountId: string,
+    accountId: string | null,
     excludeUserId: string
   ): Promise<[ListUserResponse[], number]> => {
     const searchHashes = query.search
