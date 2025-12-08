@@ -88,6 +88,25 @@ const itemsLabel = computed(() =>
   }))
 );
 
+const labelSearchQuery = ref('');
+const isLabelMenuOpen = ref(false);
+
+const filteredLabels = computed(() => {
+  if (!labelSearchQuery.value) {
+    return itemsLabel.value;
+  }
+  const query = labelSearchQuery.value.toLowerCase();
+  return itemsLabel.value.filter((label) =>
+    label.title.toLowerCase().includes(query)
+  );
+});
+
+watch(isLabelMenuOpen, (isOpen) => {
+  if (!isOpen) {
+    labelSearchQuery.value = '';
+  }
+});
+
 const label_template_id = ref<string | null>(null);
 const name = ref<string | null>(null);
 const last_name = ref<string | null>(null);
@@ -967,37 +986,92 @@ watch(
             </VCol>
 
             <VCol cols="12" md="6">
-              <AppSelect
-                class="label-select"
-                v-model="label_template_id"
-                :items="itemsLabel"
-                item-title="title"
-                item-value="value"
-                :label="$t('label') + ':'"
-                :placeholder="$t('select_label')"
-              >
-                <template #item="{ props, item }">
-                  <VListItem v-bind="props">
-                    <template #prepend>
+              <VLabel class="mb-1 text-body-2">{{ $t('label') }}:</VLabel>
+              <VMenu v-model="isLabelMenuOpen">
+                <template #activator="{ props: menuProps }">
+                  <VTextField
+                    v-bind="menuProps"
+                    :model-value="
+                      filteredLabels.find(
+                        (label) => label.value === label_template_id
+                      )?.title || ''
+                    "
+                    :placeholder="$t('select_label')"
+                    variant="outlined"
+                    readonly
+                    :clearable="!!label_template_id"
+                    clear-icon="tabler-x"
+                    @click:clear="label_template_id = null"
+                    :append-inner-icon="
+                      label_template_id ? undefined : 'tabler-chevron-down'
+                    "
+                    class="label-select"
+                  >
+                    <template #prepend-inner>
                       <div
-                        v-if="item.raw.color"
-                        class="label-color-circle"
-                        :style="{ backgroundColor: item.raw.color }"
+                        v-if="
+                          filteredLabels.find(
+                            (label) => label.value === label_template_id
+                          )?.color
+                        "
+                        class="label-color-circle me-2"
+                        :style="{
+                          backgroundColor: filteredLabels.find(
+                            (label) => label.value === label_template_id
+                          )?.color,
+                        }"
                       />
                     </template>
-                  </VListItem>
+                  </VTextField>
                 </template>
-                <template #selection="{ item }">
-                  <div v-if="item.raw" class="d-flex align-center gap-2">
-                    <div
-                      v-if="item.raw.color"
-                      class="label-color-circle"
-                      :style="{ backgroundColor: item.raw.color }"
+                <VCard>
+                  <VCardText class="pa-2">
+                    <AppTextField
+                      v-model="labelSearchQuery"
+                      :placeholder="$t('search') + '...'"
+                      prepend-inner-icon="tabler-search"
+                      density="compact"
+                      hide-details
+                      autofocus
+                      @click.stop
                     />
-                    <span>{{ item.raw.title }}</span>
-                  </div>
-                </template>
-              </AppSelect>
+                  </VCardText>
+                  <VDivider />
+                  <VList max-height="300" style="overflow-y: auto">
+                    <template v-if="filteredLabels.length > 0">
+                      <VListItem
+                        v-for="(item, index) in filteredLabels"
+                        :key="index"
+                        :value="item.value"
+                        @click="
+                          () => {
+                            label_template_id = item.value;
+                            isLabelMenuOpen = false;
+                            labelSearchQuery = '';
+                          }
+                        "
+                        :active="label_template_id === item.value"
+                      >
+                        <template #prepend>
+                          <div
+                            v-if="item.color"
+                            class="label-color-circle"
+                            :style="{ backgroundColor: item.color }"
+                          />
+                        </template>
+                        <VListItemTitle>{{ item.title }}</VListItemTitle>
+                      </VListItem>
+                    </template>
+                    <VListItem v-else-if="labelSearchQuery" disabled>
+                      <VListItemTitle
+                        class="text-center text-body-2 text-medium-emphasis"
+                      >
+                        {{ $t('no_results_found') }}
+                      </VListItemTitle>
+                    </VListItem>
+                  </VList>
+                </VCard>
+              </VMenu>
             </VCol>
           </VRow>
           <VRow>

@@ -20,6 +20,25 @@ const itemsStatus = ref([
   { value: ELabelStatus.inactive, text: t('inactive') },
 ]);
 
+const statusSearchQuery = ref('');
+const isStatusMenuOpen = ref(false);
+
+const filteredStatuses = computed(() => {
+  if (!statusSearchQuery.value) {
+    return itemsStatus.value;
+  }
+  const query = statusSearchQuery.value.toLowerCase();
+  return itemsStatus.value.filter((status) =>
+    status.text.toLowerCase().includes(query)
+  );
+});
+
+watch(isStatusMenuOpen, (isOpen) => {
+  if (!isOpen) {
+    statusSearchQuery.value = '';
+  }
+});
+
 const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
 
 const isVisible = computed({
@@ -103,14 +122,70 @@ onMounted(async () => {
             </VCol>
 
             <VCol cols="12">
-              <AppSelect
-                v-model="label_status_id"
-                :items="itemsStatus"
-                item-title="text"
-                item-value="value"
-                :label="$t('label_status') + ':'"
-                :placeholder="$t('label_status')"
-              />
+              <VLabel class="mb-1 text-body-2"
+                >{{ $t('label_status') }}:</VLabel
+              >
+              <VMenu v-model="isStatusMenuOpen">
+                <template #activator="{ props: menuProps }">
+                  <VTextField
+                    v-bind="menuProps"
+                    :model-value="
+                      filteredStatuses.find(
+                        (status) => status.value === label_status_id
+                      )?.text || ''
+                    "
+                    :placeholder="$t('label_status')"
+                    variant="outlined"
+                    readonly
+                    :clearable="!!label_status_id"
+                    clear-icon="tabler-x"
+                    @click:clear="label_status_id = null"
+                    :append-inner-icon="
+                      label_status_id ? undefined : 'tabler-chevron-down'
+                    "
+                  />
+                </template>
+                <VCard>
+                  <VCardText class="pa-2">
+                    <AppTextField
+                      v-model="statusSearchQuery"
+                      :placeholder="$t('search') + '...'"
+                      prepend-inner-icon="tabler-search"
+                      density="compact"
+                      hide-details
+                      autofocus
+                      @click.stop
+                    />
+                  </VCardText>
+                  <VDivider />
+                  <VList max-height="300" style="overflow-y: auto">
+                    <template v-if="filteredStatuses.length > 0">
+                      <VListItem
+                        v-for="(item, index) in filteredStatuses"
+                        :key="index"
+                        :value="item.value"
+                        @click="
+                          () => {
+                            label_status_id = item.value;
+                            isStatusMenuOpen = false;
+                            statusSearchQuery = '';
+                          }
+                        "
+                        :active="label_status_id === item.value"
+                      >
+                        <VListItemTitle>{{ item.text }}</VListItemTitle>
+                      </VListItem>
+                    </template>
+                    <VListItem v-else-if="statusSearchQuery" disabled>
+                      <VListItemTitle
+                        class="text-center text-body-2 text-medium-emphasis"
+                      >
+                        {{ $t('no_results_found') }}
+                      </VListItemTitle>
+                    </VListItem>
+                  </VList>
+                </VCard>
+              </VMenu>
             </VCol>
 
             <VCol cols="12">

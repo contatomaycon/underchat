@@ -22,6 +22,25 @@ const itemsGroup = computed(() =>
   }))
 );
 
+const groupSearchQuery = ref('');
+const isGroupMenuOpen = ref(false);
+
+const filteredGroups = computed(() => {
+  if (!groupSearchQuery.value) {
+    return itemsGroup.value;
+  }
+  const query = groupSearchQuery.value.toLowerCase();
+  return itemsGroup.value.filter((group) =>
+    group.title.toLowerCase().includes(query)
+  );
+});
+
+watch(isGroupMenuOpen, (isOpen) => {
+  if (!isOpen) {
+    groupSearchQuery.value = '';
+  }
+});
+
 const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
 
 const isVisible = computed({
@@ -193,14 +212,70 @@ watch(isVisible, (visible) => {
         <VCardText>
           <VRow>
             <VCol cols="12">
-              <AppSelect
-                v-model="contact_group_id"
-                :items="itemsGroup"
-                item-title="title"
-                item-value="value"
-                :label="$t('contact_groups') + ':'"
-                :placeholder="$t('contact_groups')"
-              />
+              <VLabel class="mb-1 text-body-2"
+                >{{ $t('contact_groups') }}:</VLabel
+              >
+              <VMenu v-model="isGroupMenuOpen">
+                <template #activator="{ props: menuProps }">
+                  <VTextField
+                    v-bind="menuProps"
+                    :model-value="
+                      filteredGroups.find(
+                        (group) => group.value === contact_group_id
+                      )?.title || ''
+                    "
+                    :placeholder="$t('contact_groups')"
+                    variant="outlined"
+                    readonly
+                    :clearable="!!contact_group_id"
+                    clear-icon="tabler-x"
+                    @click:clear="contact_group_id = null"
+                    :append-inner-icon="
+                      contact_group_id ? undefined : 'tabler-chevron-down'
+                    "
+                  />
+                </template>
+                <VCard>
+                  <VCardText class="pa-2">
+                    <AppTextField
+                      v-model="groupSearchQuery"
+                      :placeholder="$t('search') + '...'"
+                      prepend-inner-icon="tabler-search"
+                      density="compact"
+                      hide-details
+                      autofocus
+                      @click.stop
+                    />
+                  </VCardText>
+                  <VDivider />
+                  <VList max-height="300" style="overflow-y: auto">
+                    <template v-if="filteredGroups.length > 0">
+                      <VListItem
+                        v-for="(item, index) in filteredGroups"
+                        :key="index"
+                        :value="item.value"
+                        @click="
+                          () => {
+                            contact_group_id = item.value;
+                            isGroupMenuOpen = false;
+                            groupSearchQuery = '';
+                          }
+                        "
+                        :active="contact_group_id === item.value"
+                      >
+                        <VListItemTitle>{{ item.title }}</VListItemTitle>
+                      </VListItem>
+                    </template>
+                    <VListItem v-else-if="groupSearchQuery" disabled>
+                      <VListItemTitle
+                        class="text-center text-body-2 text-medium-emphasis"
+                      >
+                        {{ $t('no_results_found') }}
+                      </VListItemTitle>
+                    </VListItem>
+                  </VList>
+                </VCard>
+              </VMenu>
             </VCol>
 
             <VCol cols="12">
