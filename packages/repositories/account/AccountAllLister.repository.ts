@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { account } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull } from 'drizzle-orm';
+import { isNull } from 'drizzle-orm';
 import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 
 @injectable()

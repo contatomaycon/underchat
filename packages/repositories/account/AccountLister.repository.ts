@@ -13,7 +13,6 @@ import {
   gt,
   sql,
   desc,
-  asc,
 } from 'drizzle-orm';
 import { ListAccountRequest } from '@core/schema/account/listAccount/request.schema';
 import { ListAccountResponse } from '@core/schema/account/listAccount/response.schema';
