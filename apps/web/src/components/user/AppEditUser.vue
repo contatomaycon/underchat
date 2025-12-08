@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import { nextTick, computed, watch, type Ref, toRef, ref } from 'vue';
 import { useUsersStore } from '@/@webcore/stores/user';
+import { useAccountStore } from '@/@webcore/stores/account';
 import { ECountry } from '@core/common/enums/ECountry';
 import { EUserDocumentType } from '@core/common/enums/EUserDocumentType';
 import { EUserStatus } from '@core/common/enums/EUserStatus';
@@ -18,8 +19,11 @@ import { useI18n } from 'vue-i18n';
 import { requiredValidator } from '@/@webcore/utils/validators';
 import { usePasswordStrength } from '@/composables/usePasswordStrength';
 import { validatePassword } from '@/@webcore/utils/passwordStrength';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { can } from '@/@layouts/plugins/casl';
 
 const userStore = useUsersStore();
+const accountStore = useAccountStore();
 const { items: countryCodes } = useCountryCodes();
 const {
   states,
@@ -34,6 +38,14 @@ const {
 } = useStatesAndCities();
 const { t } = useI18n();
 
+const hasFullAccess = computed(() =>
+  can([EGeneralPermissions.full_access, EGeneralPermissions.full_access_group])
+);
+const accountId = ref<string | null>(null);
+const accountsOptions = ref<{ id: string; text: string }[]>([]);
+const accountSearchQuery = ref('');
+const isAccountMenuOpen = ref(false);
+const accountsLoading = ref(false);
 const permissionRoleId = ref<string | null>(null);
 const initialPermissionRoleId = ref<string | null>(null);
 const rolesOptions = ref<{ id: string; name: string }[]>([]);
@@ -64,7 +76,10 @@ const props = defineProps<{
   userId: string | null;
 }>();
 
-const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
+const emit = defineEmits<{
+  'update:modelValue': [visible: boolean];
+  'user-updated': [];
+}>();
 
 const isVisible = computed({
   get: () => props.modelValue,
@@ -1542,7 +1557,7 @@ const updateUser = async () => {
 
   if (userUpdateResult) {
     isVisible.value = false;
-    await userStore.listUsers();
+    emit('user-updated');
   }
 };
 
@@ -1673,11 +1688,19 @@ const buildUpdateUserBody = (): UpdateUserRequest => {
     addFieldIfDefined(body, 'photo_url', photoUrl);
   }
 
-  // Adicionar permission_role_id se houver mudança
   if (permissionRoleId.value !== initialPermissionRoleId.value) {
     body.permission_role_id = {
       value: permissionRoleId.value,
     };
+  }
+
+  if (hasFullAccess.value) {
+    const initialAccountId = initialValues.value.account_id;
+    if (accountId.value !== initialAccountId) {
+      body.account_id = {
+        value: accountId.value,
+      };
+    }
   }
 
   return body;
@@ -1832,6 +1855,16 @@ const viewZipcode = async () => {
 const isInitializing = ref(true);
 const initialZipCode = ref<string | null>(null);
 
+const filteredAccounts = computed(() => {
+  if (!accountSearchQuery.value) {
+    return accountsOptions.value;
+  }
+  const query = accountSearchQuery.value.toLowerCase();
+  return accountsOptions.value.filter((account) =>
+    account.text.toLowerCase().includes(query)
+  );
+});
+
 const filteredRoles = computed(() => {
   if (!roleSearchQuery.value) {
     return rolesOptions.value;
@@ -1842,12 +1875,38 @@ const filteredRoles = computed(() => {
   );
 });
 
+const loadAccounts = async () => {
+  if (!hasFullAccess.value) return;
+
+  accountsLoading.value = true;
+  try {
+    const accounts = await accountStore.listAllAccounts();
+    if (accounts) {
+      accountsOptions.value = accounts.map((acc) => ({
+        id: acc.account_id,
+        text: acc.name,
+      }));
+    }
+  } catch (error) {
+    console.error('Error loading accounts:', error);
+    accountsOptions.value = [];
+  } finally {
+    accountsLoading.value = false;
+  }
+};
+
 const loadRoles = async () => {
   const roles = await userStore.listUserRoles();
   if (roles) {
     rolesOptions.value = roles;
   }
 };
+
+watch(isAccountMenuOpen, (isOpen) => {
+  if (!isOpen) {
+    accountSearchQuery.value = '';
+  }
+});
 
 watch(isRoleMenuOpen, (isOpen) => {
   if (!isOpen) {
@@ -1986,6 +2045,7 @@ const loadStateAndCity = async (): Promise<void> => {
 const loadBasicUserInfo = (responseUser: ViewUserResponse): void => {
   const userAccountId = responseUser.account?.account_id ?? null;
   setFieldValue('account_id', userAccountId);
+  accountId.value = userAccountId;
 
   const emailPartial = responseUser.email_partial ?? '';
   setPartialField(
@@ -2073,6 +2133,7 @@ const loadUserDataTab = async (force = false): Promise<void> => {
 
   isInitializing.value = true;
 
+  await loadAccounts();
   await loadRoles();
   await loadUserRole();
 
@@ -2335,7 +2396,81 @@ watch(
 
                     <VDivider class="mb-4" />
                     <VRow class="mb-4">
-                      <VCol cols="12" md="12">
+                      <VCol v-if="hasFullAccess" cols="12" md="6">
+                        <div>
+                          <VLabel class="mb-1 text-body-2">
+                            {{ $t('account') }}:
+                          </VLabel>
+                          <VMenu v-model="isAccountMenuOpen">
+                            <template #activator="{ props: menuProps }">
+                              <VTextField
+                                v-bind="menuProps"
+                                :model-value="
+                                  accountsOptions.find(
+                                    (acc) => acc.id === accountId
+                                  )?.text || ''
+                                "
+                                :placeholder="$t('select_account')"
+                                variant="outlined"
+                                readonly
+                                :loading="accountsLoading"
+                                clearable
+                                append-inner-icon="tabler-chevron-down"
+                                @click:clear="accountId = null"
+                              />
+                            </template>
+                            <VCard>
+                              <VCardText class="pa-2">
+                                <AppTextField
+                                  v-model="accountSearchQuery"
+                                  :placeholder="$t('search') + '...'"
+                                  prepend-inner-icon="tabler-search"
+                                  density="compact"
+                                  hide-details
+                                  autofocus
+                                  @click.stop
+                                />
+                              </VCardText>
+                              <VDivider />
+                              <VList max-height="300" style="overflow-y: auto">
+                                <template v-if="filteredAccounts.length > 0">
+                                  <VListItem
+                                    v-for="(item, index) in filteredAccounts"
+                                    :key="index"
+                                    :value="item.id"
+                                    @click="
+                                      () => {
+                                        accountId = item.id;
+                                        isAccountMenuOpen = false;
+                                        accountSearchQuery = '';
+                                      }
+                                    "
+                                    :active="accountId === item.id"
+                                  >
+                                    <VListItemTitle>{{
+                                      item.text
+                                    }}</VListItemTitle>
+                                  </VListItem>
+                                </template>
+                                <VListItem
+                                  v-else-if="accountSearchQuery"
+                                  disabled
+                                >
+                                  <VListItemTitle
+                                    class="text-center text-body-2 text-medium-emphasis"
+                                  >
+                                    {{ $t('no_results_found') }}
+                                  </VListItemTitle>
+                                </VListItem>
+                              </VList>
+                            </VCard>
+                          </VMenu>
+                        </div>
+                      </VCol>
+                      <VCol
+                        :cols="hasFullAccess ? 12 : 12"
+                        :md="hasFullAccess ? 6 : 12"
+                      >
                         <div>
                           <VLabel class="mb-1 text-body-2">
                             {{ $t('role') }}:

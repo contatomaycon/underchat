@@ -624,25 +624,55 @@ export class UserUpdaterUseCase {
     return body.permission_role_id !== undefined;
   }
 
+  private async validatePermissionRoleExists(
+    t: TFunction<'translation', undefined>,
+    permissionRoleId: string,
+    accountId: string,
+    canOperateOnOthers: boolean
+  ): Promise<void> {
+    if (!canOperateOnOthers) {
+      const existsPermissionRole =
+        await this.permissionService.existsPermissionRoleById(
+          accountId,
+          permissionRoleId
+        );
+
+      if (!existsPermissionRole) {
+        throw new Error(t('permission_role_not_found'));
+      }
+      return;
+    }
+
+    const permissionRoleAccountId =
+      await this.permissionService.getPermissionRoleAccountId(permissionRoleId);
+
+    if (!permissionRoleAccountId) {
+      throw new Error(t('permission_role_not_found'));
+    }
+  }
+
   private async assignUserRoleToUser(
     t: TFunction<'translation', undefined>,
     userId: string,
-    permissionRoleId: string
+    permissionRoleId: string,
+    accountId: string,
+    canOperateOnOthers: boolean
   ): Promise<void> {
     const userAccountId = await this.userService.getUserAccountId(userId);
     if (!userAccountId) {
       throw new Error(t('user_not_found'));
     }
 
-    const existsPermissionRole =
-      await this.permissionService.existsPermissionRoleById(
-        userAccountId,
-        permissionRoleId
-      );
+    const accountIdForValidation = canOperateOnOthers
+      ? userAccountId
+      : accountId;
 
-    if (!existsPermissionRole) {
-      throw new Error(t('permission_role_not_found'));
-    }
+    await this.validatePermissionRoleExists(
+      t,
+      permissionRoleId,
+      accountIdForValidation,
+      canOperateOnOthers
+    );
 
     const assigned = await this.userService.assignUserRole(
       userId,
@@ -674,14 +704,22 @@ export class UserUpdaterUseCase {
   private async updateUserRoleData(
     t: TFunction<'translation', undefined>,
     userId: string,
-    body: UpdateUserRequest
+    body: UpdateUserRequest,
+    accountId: string,
+    canOperateOnOthers: boolean
   ): Promise<void> {
     const permissionRoleIdValue = this.extractStringValue(
       body.permission_role_id
     );
 
     if (permissionRoleIdValue) {
-      await this.assignUserRoleToUser(t, userId, permissionRoleIdValue);
+      await this.assignUserRoleToUser(
+        t,
+        userId,
+        permissionRoleIdValue,
+        accountId,
+        canOperateOnOthers
+      );
       return;
     }
 
@@ -745,7 +783,9 @@ export class UserUpdaterUseCase {
     }
 
     if (this.hasPermissionRoleIdField(body)) {
-      updatePromises.push(this.updateUserRoleData(t, userId, body));
+      updatePromises.push(
+        this.updateUserRoleData(t, userId, body, accountId, canOperateOnOthers)
+      );
     }
 
     return updatePromises;

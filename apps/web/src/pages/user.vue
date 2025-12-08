@@ -243,6 +243,18 @@ const handleDelete = async () => {
   userToDelete.value = null;
 };
 
+const handleUserCreated = async () => {
+  await userStore.listUsers(query.value);
+};
+
+const handleUserUpdated = async () => {
+  await userStore.listUsers(query.value);
+};
+
+const handleRoleAssigned = async () => {
+  await userStore.listUsers(query.value);
+};
+
 const openEditDialog = (id: string) => {
   userToEdit.value = id;
 
@@ -655,14 +667,20 @@ watch(
         v-if="isDialogEditUserShow"
         v-model="isDialogEditUserShow"
         :user-id="userToEdit"
+        @user-updated="handleUserUpdated"
       />
 
-      <AppAddUser v-if="isAddUserVisible" v-model="isAddUserVisible" />
+      <AppAddUser
+        v-if="isAddUserVisible"
+        v-model="isAddUserVisible"
+        @user-created="handleUserCreated"
+      />
 
       <AppAssignUserRole
         v-if="isAssignRoleDialogShow"
         v-model="isAssignRoleDialogShow"
         :user-id="userToAssignRole"
+        @role-assigned="handleRoleAssigned"
       />
     </VCard>
 

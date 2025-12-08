@@ -3,7 +3,10 @@ import { ref, watch, onMounted, nextTick, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useUsersStore } from '@/@webcore/stores/user';
 import { AssignUserRoleRequest } from '@core/schema/user/assignUserRole/request.schema';
-import { EditUserParamsRequest, UpdateUserRequest } from '@core/schema/user/editUser/request.schema';
+import {
+  EditUserParamsRequest,
+  UpdateUserRequest,
+} from '@core/schema/user/editUser/request.schema';
 import { VForm } from 'vuetify/components/VForm';
 
 const { t } = useI18n();
@@ -14,7 +17,10 @@ const props = defineProps<{
   userId: string | null;
 }>();
 
-const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
+const emit = defineEmits<{
+  'update:modelValue': [visible: boolean];
+  'role-assigned': [];
+}>();
 
 const isVisible = computed({
   get: () => props.modelValue,
@@ -91,7 +97,7 @@ const assignRole = async () => {
 
     if (result) {
       isVisible.value = false;
-      await userStore.listUsers();
+      emit('role-assigned');
     }
   } else {
     const payload: EditUserParamsRequest = {
@@ -108,7 +114,7 @@ const assignRole = async () => {
 
     if (result) {
       isVisible.value = false;
-      await userStore.listUsers();
+      emit('role-assigned');
     }
   }
 };
@@ -172,9 +178,7 @@ onMounted(async () => {
                       clear-icon="tabler-x"
                       @click:clear="permissionRoleId = null"
                       :append-inner-icon="
-                        permissionRoleId
-                          ? undefined
-                          : 'tabler-chevron-down'
+                        permissionRoleId ? undefined : 'tabler-chevron-down'
                       "
                     />
                   </template>
