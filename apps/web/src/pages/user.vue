@@ -92,8 +92,24 @@ const itemsStatus = ref([
   { id: EUserStatus.blocked, text: t('blocked') },
 ]);
 
+const statusSearchQuery = ref('');
+const isStatusMenuOpen = ref(false);
+
+const filteredStatuses = computed(() => {
+  if (!statusSearchQuery.value) {
+    return itemsStatus.value;
+  }
+
+  const searchLower = statusSearchQuery.value.toLowerCase();
+  return itemsStatus.value.filter((status) =>
+    status.text.toLowerCase().includes(searchLower)
+  );
+});
+
 const itemsAccount = ref<Array<{ id: string; text: string }>>([]);
 const accountsLoading = ref(false);
+const accountSearchQuery = ref('');
+const isAccountMenuOpen = ref(false);
 
 const loadAccounts = async () => {
   if (!hasFullAccess.value || itemsAccount.value.length > 0) return;
@@ -114,6 +130,17 @@ const loadAccounts = async () => {
     accountsLoading.value = false;
   }
 };
+
+const filteredAccounts = computed(() => {
+  if (!accountSearchQuery.value) {
+    return itemsAccount.value;
+  }
+
+  const searchLower = accountSearchQuery.value.toLowerCase();
+  return itemsAccount.value.filter((account) =>
+    account.text.toLowerCase().includes(searchLower)
+  );
+});
 
 const handleAccountIdChange = (value: string | null | undefined) => {
   if (value === null || value === undefined) {
@@ -309,28 +336,140 @@ watch(
             </VBtn>
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
-            <div class="status-filter">
-              <VLabel>{{ $t('status') }}:</VLabel>
-              <AppAutocomplete
-                item-title="text"
-                item-value="id"
-                :items="itemsStatus"
-                v-model="options.user_status"
-                :placeholder="$t('select_state')"
-              />
-            </div>
             <div v-if="hasFullAccess" class="status-filter">
               <VLabel>{{ $t('account') }}:</VLabel>
-              <AppAutocomplete
-                item-title="text"
-                item-value="id"
-                :items="itemsAccount"
-                v-model="options.account_id"
-                :placeholder="$t('select_account')"
-                :loading="accountsLoading"
-                clearable
-                @update:model-value="handleAccountIdChange"
-              />
+              <VMenu v-model="isAccountMenuOpen">
+                <template #activator="{ props: menuProps }">
+                  <VTextField
+                    v-bind="menuProps"
+                    :model-value="
+                      filteredAccounts.find(
+                        (acc) =>
+                          acc.id === options.account_id ||
+                          (acc.id === '' && options.account_id === 'all')
+                      )?.text || ''
+                    "
+                    :placeholder="$t('select_account')"
+                    variant="outlined"
+                    readonly
+                    :loading="accountsLoading"
+                    :clearable="!!options.account_id"
+                    clear-icon="tabler-x"
+                    @click:clear="handleAccountIdChange(null)"
+                    :append-inner-icon="
+                      options.account_id ? undefined : 'tabler-chevron-down'
+                    "
+                  />
+                </template>
+                <VCard>
+                  <VCardText class="pa-2">
+                    <AppTextField
+                      v-model="accountSearchQuery"
+                      :placeholder="$t('search') + '...'"
+                      prepend-inner-icon="tabler-search"
+                      density="compact"
+                      hide-details
+                      autofocus
+                      @click.stop
+                    />
+                  </VCardText>
+                  <VDivider />
+                  <VList max-height="300" style="overflow-y: auto">
+                    <template v-if="filteredAccounts.length > 0">
+                      <VListItem
+                        v-for="(item, index) in filteredAccounts"
+                        :key="index"
+                        :value="item.id"
+                        @click="
+                          () => {
+                            handleAccountIdChange(item.id);
+                            isAccountMenuOpen = false;
+                            accountSearchQuery = '';
+                          }
+                        "
+                        :active="options.account_id === item.id"
+                      >
+                        <VListItemTitle>{{ item.text }}</VListItemTitle>
+                      </VListItem>
+                    </template>
+                    <VListItem v-else-if="accountSearchQuery" disabled>
+                      <VListItemTitle
+                        class="text-center text-body-2 text-medium-emphasis"
+                      >
+                        {{ $t('no_results_found') }}
+                      </VListItemTitle>
+                    </VListItem>
+                  </VList>
+                </VCard>
+              </VMenu>
+            </div>
+            <div class="status-filter">
+              <VLabel>{{ $t('status') }}:</VLabel>
+              <VMenu v-model="isStatusMenuOpen">
+                <template #activator="{ props: menuProps }">
+                  <VTextField
+                    v-bind="menuProps"
+                    :model-value="
+                      filteredStatuses.find(
+                        (status) => status.id === options.user_status
+                      )?.text || ''
+                    "
+                    :placeholder="$t('select_state')"
+                    variant="outlined"
+                    readonly
+                    :clearable="!!options.user_status"
+                    clear-icon="tabler-x"
+                    @click:clear="
+                      options.user_status = null;
+                      options.page = 1;
+                    "
+                    :append-inner-icon="
+                      options.user_status ? undefined : 'tabler-chevron-down'
+                    "
+                  />
+                </template>
+                <VCard>
+                  <VCardText class="pa-2">
+                    <AppTextField
+                      v-model="statusSearchQuery"
+                      :placeholder="$t('search') + '...'"
+                      prepend-inner-icon="tabler-search"
+                      density="compact"
+                      hide-details
+                      autofocus
+                      @click.stop
+                    />
+                  </VCardText>
+                  <VDivider />
+                  <VList max-height="300" style="overflow-y: auto">
+                    <template v-if="filteredStatuses.length > 0">
+                      <VListItem
+                        v-for="(item, index) in filteredStatuses"
+                        :key="index"
+                        :value="item.id"
+                        @click="
+                          () => {
+                            options.user_status = item.id;
+                            options.page = 1;
+                            isStatusMenuOpen = false;
+                            statusSearchQuery = '';
+                          }
+                        "
+                        :active="options.user_status === item.id"
+                      >
+                        <VListItemTitle>{{ item.text }}</VListItemTitle>
+                      </VListItem>
+                    </template>
+                    <VListItem v-else-if="statusSearchQuery" disabled>
+                      <VListItemTitle
+                        class="text-center text-body-2 text-medium-emphasis"
+                      >
+                        {{ $t('no_results_found') }}
+                      </VListItemTitle>
+                    </VListItem>
+                  </VList>
+                </VCard>
+              </VMenu>
             </div>
             <div class="invoice-list-filter">
               <VLabel>{{ $t('search') }}:</VLabel>
