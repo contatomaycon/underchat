@@ -32,25 +32,6 @@ const testOptions = computed(() => [
   { title: t('yes'), value: true },
 ]);
 
-const testSearchQuery = ref('');
-const isTestMenuOpen = ref(false);
-
-const filteredTestOptions = computed(() => {
-  if (!testSearchQuery.value) {
-    return testOptions.value;
-  }
-  const query = testSearchQuery.value.toLowerCase();
-  return testOptions.value.filter((option) =>
-    option.title.toLowerCase().includes(query)
-  );
-});
-
-watch(isTestMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    testSearchQuery.value = '';
-  }
-});
-
 const refFormAddPlan = ref<VForm>();
 
 const { locale } = useI18n();
@@ -362,70 +343,15 @@ onMounted(resetForm);
               />
             </VCol>
             <VCol cols="12" sm="6">
-              <VLabel class="mb-1 text-body-2"
-                >{{ $t('is_test_plan') }}:</VLabel
-              >
-              <VMenu v-model="isTestMenuOpen">
-                <template #activator="{ props: menuProps }">
-                  <VTextField
-                    v-bind="menuProps"
-                    :model-value="
-                      filteredTestOptions.find(
-                        (option) => option.value === is_test
-                      )?.title || ''
-                    "
-                    :placeholder="$t('is_test_plan')"
-                    variant="outlined"
-                    readonly
-                    :clearable="is_test !== null"
-                    clear-icon="tabler-x"
-                    @click:clear="is_test = false"
-                    :append-inner-icon="
-                      is_test !== null ? undefined : 'tabler-chevron-down'
-                    "
-                  />
-                </template>
-                <VCard>
-                  <VCardText class="pa-2">
-                    <AppTextField
-                      v-model="testSearchQuery"
-                      :placeholder="$t('search') + '...'"
-                      prepend-inner-icon="tabler-search"
-                      density="compact"
-                      hide-details
-                      autofocus
-                      @click.stop
-                    />
-                  </VCardText>
-                  <VDivider />
-                  <VList max-height="300" style="overflow-y: auto">
-                    <template v-if="filteredTestOptions.length > 0">
-                      <VListItem
-                        v-for="(item, index) in filteredTestOptions"
-                        :key="index"
-                        :value="item.value"
-                        @click="
-                          () => {
-                            is_test = item.value;
-                            isTestMenuOpen = false;
-                            testSearchQuery = '';
-                          }
-                        "
-                        :active="is_test === item.value"
-                      >
-                        <VListItemTitle>{{ item.title }}</VListItemTitle>
-                      </VListItem>
-                    </template>
-                    <VListItem v-else-if="testSearchQuery" disabled>
-                      <VListItemTitle
-                        class="text-center text-body-2 text-medium-emphasis"
-                      >
-                        {{ $t('no_results_found') }}
-                      </VListItemTitle>
-                    </VListItem>
-                  </VList>
-                </VCard>
-              </VMenu>
+              <AppSelectSearch
+                v-model="is_test"
+                :items="testOptions"
+                :label="$t('is_test_plan')"
+                :placeholder="$t('is_test_plan')"
+                :clearable="true"
+                item-value="value"
+                item-title="title"
+              />
             </VCol>
             <VCol v-if="is_test" cols="12" sm="6">
               <AppTextField

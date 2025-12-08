@@ -19,25 +19,6 @@ const labelTemplates = ref<
 
 const { t } = useI18n();
 
-const countrySearchQuery = ref('');
-const isCountryMenuOpen = ref(false);
-
-const filteredCountryCodes = computed(() => {
-  if (!countrySearchQuery.value) {
-    return countryCodes.value;
-  }
-  const query = countrySearchQuery.value.toLowerCase();
-  return countryCodes.value.filter((country) =>
-    country.title.toLowerCase().includes(query)
-  );
-});
-
-watch(isCountryMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    countrySearchQuery.value = '';
-  }
-});
-
 const props = defineProps<{
   modelValue: boolean;
   contactId: string | null;
@@ -164,25 +145,6 @@ const itemsLabel = computed(() =>
     color: item.color,
   }))
 );
-
-const labelSearchQuery = ref('');
-const isLabelMenuOpen = ref(false);
-
-const filteredLabels = computed(() => {
-  if (!labelSearchQuery.value) {
-    return itemsLabel.value;
-  }
-  const query = labelSearchQuery.value.toLowerCase();
-  return itemsLabel.value.filter((label) =>
-    label.title.toLowerCase().includes(query)
-  );
-});
-
-watch(isLabelMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    labelSearchQuery.value = '';
-  }
-});
 
 const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
 
@@ -1082,63 +1044,14 @@ onMounted(() => {
           </VRow>
           <VRow>
             <VCol cols="12" md="6">
-              <div>
-                <VLabel class="mb-1 text-body-2">{{ $t('phone_ddi') }}:</VLabel>
-                <VMenu v-model="isCountryMenuOpen">
-                  <template #activator="{ props: menuProps }">
-                    <VTextField
-                      v-bind="menuProps"
-                      :model-value="
-                        countryCodes.find((c) => c.value === phone_ddi)
-                          ?.title || ''
-                      "
-                      :placeholder="$t('select_phone_ddi')"
-                      variant="outlined"
-                      readonly
-                      append-inner-icon="tabler-chevron-down"
-                    />
-                  </template>
-                  <VCard>
-                    <VCardText class="pa-2">
-                      <AppTextField
-                        v-model="countrySearchQuery"
-                        :placeholder="$t('search') + '...'"
-                        prepend-inner-icon="tabler-search"
-                        density="compact"
-                        hide-details
-                        autofocus
-                        @click.stop
-                      />
-                    </VCardText>
-                    <VDivider />
-                    <VList max-height="300" style="overflow-y: auto">
-                      <template v-if="filteredCountryCodes.length > 0">
-                        <VListItem
-                          v-for="(item, index) in filteredCountryCodes"
-                          :key="index"
-                          :value="item.value"
-                          @click="
-                            () => {
-                              phone_ddi = item.value;
-                              isCountryMenuOpen = false;
-                            }
-                          "
-                          :active="phone_ddi === item.value"
-                        >
-                          <VListItemTitle>{{ item.title }}</VListItemTitle>
-                        </VListItem>
-                      </template>
-                      <VListItem v-else-if="countrySearchQuery" disabled>
-                        <VListItemTitle
-                          class="text-center text-body-2 text-medium-emphasis"
-                        >
-                          {{ $t('no_results_found') }}
-                        </VListItemTitle>
-                      </VListItem>
-                    </VList>
-                  </VCard>
-                </VMenu>
-              </div>
+              <AppSelectSearch
+                v-model="phone_ddi"
+                :items="countryCodes"
+                :label="$t('phone_ddi')"
+                :placeholder="$t('select_phone_ddi')"
+                item-value="value"
+                item-title="title"
+              />
             </VCol>
 
             <VCol cols="12" md="6">
@@ -1170,96 +1083,31 @@ onMounted(() => {
             </VCol>
 
             <VCol cols="12" md="6">
-              <VLabel class="mb-1 text-body-2">{{ $t('label') }}:</VLabel>
-              <VMenu v-model="isLabelMenuOpen">
-                <template #activator="{ props: menuProps }">
-                  <VTextField
-                    v-bind="menuProps"
-                    :model-value="
-                      filteredLabels.find(
-                        (label) => label.value === label_template_id
-                      )?.title || ''
-                    "
-                    :placeholder="$t('select_label')"
-                    variant="outlined"
-                    readonly
-                    :clearable="!!label_template_id"
-                    clear-icon="tabler-x"
-                    @click:clear="label_template_id = null"
-                    :append-inner-icon="
-                      label_template_id ? undefined : 'tabler-chevron-down'
-                    "
-                    class="label-select"
-                  >
-                    <template #prepend-inner>
-                      <div
-                        v-if="
-                          filteredLabels.find(
-                            (label) => label.value === label_template_id
-                          )?.color
-                        "
-                        class="label-color-circle me-2"
-                        :style="{
-                          backgroundColor: filteredLabels.find(
-                            (label) => label.value === label_template_id
-                          )?.color,
-                        }"
-                      />
-                    </template>
-                  </VTextField>
+              <AppSelectSearch
+                v-model="label_template_id"
+                :items="itemsLabel"
+                :label="$t('label')"
+                :placeholder="$t('select_label')"
+                :clearable="true"
+                item-value="value"
+                item-title="title"
+                class="label-select"
+              >
+                <template #prepend-inner="{ item }">
+                  <div
+                    v-if="item?.color"
+                    class="label-color-circle me-2"
+                    :style="{ backgroundColor: item.color }"
+                  />
                 </template>
-                <VCard>
-                  <VCardText class="pa-2">
-                    <AppTextField
-                      v-model="labelSearchQuery"
-                      :placeholder="$t('search') + '...'"
-                      prepend-inner-icon="tabler-search"
-                      density="compact"
-                      hide-details
-                      autofocus
-                      @click.stop
-                    />
-                  </VCardText>
-                  <VDivider />
-                  <VList max-height="300" style="overflow-y: auto">
-                    <template v-if="filteredLabels.length > 0">
-                      <VListItem
-                        v-for="(item, index) in filteredLabels"
-                        :key="index"
-                        :value="item.value"
-                        @click="
-                          () => {
-                            label_template_id = item.value;
-                            isLabelMenuOpen = false;
-                            labelSearchQuery = '';
-                          }
-                        "
-                        :active="label_template_id === item.value"
-                      >
-                        <template #prepend>
-                          <div
-                            v-if="item.color"
-                            class="label-color-circle"
-                            :style="{ backgroundColor: item.color }"
-                          />
-                        </template>
-                        <VListItemTitle>{{ item.title }}</VListItemTitle>
-                      </VListItem>
-                    </template>
-                    <VListItem v-else disabled>
-                      <VListItemTitle
-                        class="text-center text-body-2 text-medium-emphasis"
-                      >
-                        {{
-                          labelSearchQuery
-                            ? $t('no_results_found')
-                            : $t('no_items_available')
-                        }}
-                      </VListItemTitle>
-                    </VListItem>
-                  </VList>
-                </VCard>
-              </VMenu>
+                <template #item-prepend="{ item }">
+                  <div
+                    v-if="item.color"
+                    class="label-color-circle"
+                    :style="{ backgroundColor: item.color }"
+                  />
+                </template>
+              </AppSelectSearch>
             </VCol>
           </VRow>
           <VRow>

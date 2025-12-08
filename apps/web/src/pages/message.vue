@@ -65,25 +65,6 @@ const itemsStatus = ref([
   { id: EMessageStatus.inactive, text: t('inactive') },
 ]);
 
-const statusSearchQuery = ref('');
-const isStatusMenuOpen = ref(false);
-
-const filteredStatuses = computed(() => {
-  if (!statusSearchQuery.value) {
-    return itemsStatus.value;
-  }
-  const query = statusSearchQuery.value.toLowerCase();
-  return itemsStatus.value.filter((status) =>
-    status.text.toLowerCase().includes(query)
-  );
-});
-
-watch(isStatusMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    statusSearchQuery.value = '';
-  }
-});
-
 const imageExts = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp']);
 const pdfExts = new Set(['pdf']);
 const audioExts = new Set(['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac', 'opus']);
@@ -354,76 +335,16 @@ watch(
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
             <div class="status-filter">
-              <VLabel>{{ $t('status') }}:</VLabel>
-              <VMenu v-model="isStatusMenuOpen">
-                <template #activator="{ props: menuProps }">
-                  <VTextField
-                    v-bind="menuProps"
-                    :model-value="
-                      filteredStatuses.find(
-                        (status) => status.id === options.message_status
-                      )?.text || ''
-                    "
-                    :placeholder="$t('select_state')"
-                    variant="outlined"
-                    readonly
-                    :clearable="!!options.message_status"
-                    clear-icon="tabler-x"
-                    @click:clear="
-                      options.message_status = null;
-                      options.page = 1;
-                    "
-                    :append-inner-icon="
-                      options.message_status ? undefined : 'tabler-chevron-down'
-                    "
-                  />
-                </template>
-                <VCard>
-                  <VCardText class="pa-2">
-                    <AppTextField
-                      v-model="statusSearchQuery"
-                      :placeholder="$t('search') + '...'"
-                      prepend-inner-icon="tabler-search"
-                      density="compact"
-                      hide-details
-                      autofocus
-                      @click.stop
-                    />
-                  </VCardText>
-                  <VDivider />
-                  <VList max-height="300" style="overflow-y: auto">
-                    <template v-if="filteredStatuses.length > 0">
-                      <VListItem
-                        v-for="(item, index) in filteredStatuses"
-                        :key="index"
-                        :value="item.id"
-                        @click="
-                          () => {
-                            options.message_status = item.id;
-                            options.page = 1;
-                            isStatusMenuOpen = false;
-                            statusSearchQuery = '';
-                          }
-                        "
-                        :active="options.message_status === item.id"
-                      >
-                        <VListItemTitle>{{ item.text }}</VListItemTitle>
-                      </VListItem>
-                    </template>
-                    <VListItem v-else disabled>
-                      <VListItemTitle
-                        class="text-center text-body-2 text-medium-emphasis"
-                      >
-                        {{
-                          statusSearchQuery
-                            ? $t('no_results_found')
-                            : $t('no_items_available')
-                        }}
-                      </VListItemTitle>
-                    </VListItem>
-                  </VList>
-                </VCard>
-              </VMenu>
+              <AppSelectSearch
+                v-model="options.message_status"
+                :items="itemsStatus"
+                :label="$t('status')"
+                :placeholder="$t('select_state')"
+                :clearable="true"
+                item-value="id"
+                item-title="text"
+                @update:modelValue="options.page = 1"
+              />
             </div>
             <div class="invoice-list-filter">
               <VLabel>{{ $t('search') }}:</VLabel>

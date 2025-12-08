@@ -37,26 +37,6 @@ const itemsWebProtocol = ref([
   { value: EServerWebProtocol.https, title: 'HTTPS' },
 ]);
 
-const webProtocolSearchQuery = ref('');
-const isWebProtocolMenuOpen = ref(false);
-
-const filteredWebProtocols = computed(() => {
-  if (!webProtocolSearchQuery.value) {
-    return itemsWebProtocol.value;
-  }
-  const query = webProtocolSearchQuery.value.toLowerCase();
-  return itemsWebProtocol.value.filter(
-    (protocol: { value: EServerWebProtocol; title: string }) =>
-      protocol.title.toLowerCase().includes(query)
-  );
-});
-
-watch(isWebProtocolMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    webProtocolSearchQuery.value = '';
-  }
-});
-
 const refFormEditServer = ref<VForm>();
 const isInitializingModal = ref(false);
 
@@ -179,73 +159,15 @@ onMounted(async () => {
             </VCol>
 
             <VCol cols="12" sm="4" md="4">
-              <VLabel class="mb-1 text-body-2"
-                >{{ $t('web_protocol') }}:</VLabel
-              >
-              <VMenu v-model="isWebProtocolMenuOpen">
-                <template #activator="{ props: menuProps }">
-                  <VTextField
-                    v-bind="menuProps"
-                    :model-value="
-                      filteredWebProtocols.find(
-                        (protocol) => protocol.value === webProtocol
-                      )?.title || ''
-                    "
-                    :placeholder="$t('web_protocol')"
-                    variant="outlined"
-                    readonly
-                    :clearable="!!webProtocol"
-                    clear-icon="tabler-x"
-                    @click:clear="webProtocol = EServerWebProtocol.http"
-                    :append-inner-icon="
-                      webProtocol ? undefined : 'tabler-chevron-down'
-                    "
-                    :error-messages="
-                      !webProtocol ? [$t('web_protocol_required')] : undefined
-                    "
-                  />
-                </template>
-                <VCard>
-                  <VCardText class="pa-2">
-                    <AppTextField
-                      v-model="webProtocolSearchQuery"
-                      :placeholder="$t('search') + '...'"
-                      prepend-inner-icon="tabler-search"
-                      density="compact"
-                      hide-details
-                      autofocus
-                      @click.stop
-                    />
-                  </VCardText>
-                  <VDivider />
-                  <VList max-height="300" style="overflow-y: auto">
-                    <template v-if="filteredWebProtocols.length > 0">
-                      <VListItem
-                        v-for="(item, index) in filteredWebProtocols"
-                        :key="index"
-                        :value="item.value"
-                        @click="
-                          () => {
-                            webProtocol = item.value;
-                            isWebProtocolMenuOpen = false;
-                            webProtocolSearchQuery = '';
-                          }
-                        "
-                        :active="webProtocol === item.value"
-                      >
-                        <VListItemTitle>{{ item.title }}</VListItemTitle>
-                      </VListItem>
-                    </template>
-                    <VListItem v-else-if="webProtocolSearchQuery" disabled>
-                      <VListItemTitle
-                        class="text-center text-body-2 text-medium-emphasis"
-                      >
-                        {{ $t('no_results_found') }}
-                      </VListItemTitle>
-                    </VListItem>
-                  </VList>
-                </VCard>
-              </VMenu>
+              <AppSelectSearch
+                v-model="webProtocol"
+                :items="itemsWebProtocol"
+                :label="$t('web_protocol')"
+                :placeholder="$t('web_protocol')"
+                :clearable="true"
+                item-value="value"
+                item-title="title"
+              />
             </VCol>
 
             <VCol cols="12" sm="4" md="4">

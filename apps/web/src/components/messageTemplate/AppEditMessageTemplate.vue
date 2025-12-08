@@ -83,44 +83,6 @@ const itemsStatus = ref([
   { value: EMessageStatus.inactive, text: t('inactive') },
 ]);
 
-const typeSearchQuery = ref('');
-const isTypeMenuOpen = ref(false);
-
-const filteredTypes = computed(() => {
-  if (!typeSearchQuery.value) {
-    return messageTypeOptions.value;
-  }
-  const query = typeSearchQuery.value.toLowerCase();
-  return messageTypeOptions.value.filter((type) =>
-    type.title.toLowerCase().includes(query)
-  );
-});
-
-const statusSearchQuery = ref('');
-const isStatusMenuOpen = ref(false);
-
-const filteredStatuses = computed(() => {
-  if (!statusSearchQuery.value) {
-    return itemsStatus.value;
-  }
-  const query = statusSearchQuery.value.toLowerCase();
-  return itemsStatus.value.filter((status) =>
-    status.text.toLowerCase().includes(query)
-  );
-});
-
-watch(isTypeMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    typeSearchQuery.value = '';
-  }
-});
-
-watch(isStatusMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    statusSearchQuery.value = '';
-  }
-});
-
 const messageTemplateId = toRef(props, 'messageTemplateId');
 const selectedType = ref<EMessageType>(EMessageType.text);
 const message = ref<string | null>(null);
@@ -474,72 +436,15 @@ onBeforeUnmount(() => {
         <VCardText>
           <VRow>
             <VCol cols="12">
-              <VLabel class="mb-1 text-body-2"
-                >{{ $t('message_type') }}:</VLabel
-              >
-              <VMenu v-model="isTypeMenuOpen">
-                <template #activator="{ props: menuProps }">
-                  <VTextField
-                    v-bind="menuProps"
-                    :model-value="
-                      filteredTypes.find((type) => type.value === selectedType)
-                        ?.title || ''
-                    "
-                    :placeholder="$t('message_type')"
-                    variant="outlined"
-                    readonly
-                    :clearable="!!selectedType"
-                    clear-icon="tabler-x"
-                    @click:clear="selectedType = EMessageType.text"
-                    :append-inner-icon="
-                      selectedType ? undefined : 'tabler-chevron-down'
-                    "
-                    :error-messages="
-                      !selectedType ? [$t('message_type_required')] : undefined
-                    "
-                  />
-                </template>
-                <VCard>
-                  <VCardText class="pa-2">
-                    <AppTextField
-                      v-model="typeSearchQuery"
-                      :placeholder="$t('search') + '...'"
-                      prepend-inner-icon="tabler-search"
-                      density="compact"
-                      hide-details
-                      autofocus
-                      @click.stop
-                    />
-                  </VCardText>
-                  <VDivider />
-                  <VList max-height="300" style="overflow-y: auto">
-                    <template v-if="filteredTypes.length > 0">
-                      <VListItem
-                        v-for="(item, index) in filteredTypes"
-                        :key="index"
-                        :value="item.value"
-                        @click="
-                          () => {
-                            selectedType = item.value;
-                            isTypeMenuOpen = false;
-                            typeSearchQuery = '';
-                          }
-                        "
-                        :active="selectedType === item.value"
-                      >
-                        <VListItemTitle>{{ item.title }}</VListItemTitle>
-                      </VListItem>
-                    </template>
-                    <VListItem v-else-if="typeSearchQuery" disabled>
-                      <VListItemTitle
-                        class="text-center text-body-2 text-medium-emphasis"
-                      >
-                        {{ $t('no_results_found') }}
-                      </VListItemTitle>
-                    </VListItem>
-                  </VList>
-                </VCard>
-              </VMenu>
+              <AppSelectSearch
+                v-model="selectedType"
+                :items="messageTypeOptions"
+                :label="$t('message_type')"
+                :placeholder="$t('message_type')"
+                :clearable="true"
+                item-value="value"
+                item-title="title"
+              />
             </VCol>
 
             <VCol v-if="showTextInput" cols="12">
@@ -756,75 +661,15 @@ onBeforeUnmount(() => {
             </VCol>
 
             <VCol cols="12" md="6">
-              <VLabel class="mb-1 text-body-2"
-                >{{ $t('message_status') }}:</VLabel
-              >
-              <VMenu v-model="isStatusMenuOpen">
-                <template #activator="{ props: menuProps }">
-                  <VTextField
-                    v-bind="menuProps"
-                    :model-value="
-                      filteredStatuses.find(
-                        (status) => status.value === message_status_id
-                      )?.text || ''
-                    "
-                    :placeholder="$t('message_status')"
-                    variant="outlined"
-                    readonly
-                    :clearable="!!message_status_id"
-                    clear-icon="tabler-x"
-                    @click:clear="message_status_id = null"
-                    :append-inner-icon="
-                      message_status_id ? undefined : 'tabler-chevron-down'
-                    "
-                    :error-messages="
-                      !message_status_id
-                        ? [$t('message_status_id_required')]
-                        : undefined
-                    "
-                  />
-                </template>
-                <VCard>
-                  <VCardText class="pa-2">
-                    <AppTextField
-                      v-model="statusSearchQuery"
-                      :placeholder="$t('search') + '...'"
-                      prepend-inner-icon="tabler-search"
-                      density="compact"
-                      hide-details
-                      autofocus
-                      @click.stop
-                    />
-                  </VCardText>
-                  <VDivider />
-                  <VList max-height="300" style="overflow-y: auto">
-                    <template v-if="filteredStatuses.length > 0">
-                      <VListItem
-                        v-for="(item, index) in filteredStatuses"
-                        :key="index"
-                        :value="item.value"
-                        @click="
-                          () => {
-                            message_status_id = item.value;
-                            isStatusMenuOpen = false;
-                            statusSearchQuery = '';
-                          }
-                        "
-                        :active="message_status_id === item.value"
-                      >
-                        <VListItemTitle>{{ item.text }}</VListItemTitle>
-                      </VListItem>
-                    </template>
-                    <VListItem v-else-if="statusSearchQuery" disabled>
-                      <VListItemTitle
-                        class="text-center text-body-2 text-medium-emphasis"
-                      >
-                        {{ $t('no_results_found') }}
-                      </VListItemTitle>
-                    </VListItem>
-                  </VList>
-                </VCard>
-              </VMenu>
+              <AppSelectSearch
+                v-model="message_status_id"
+                :items="itemsStatus"
+                :label="$t('message_status')"
+                :placeholder="$t('message_status')"
+                :clearable="true"
+                item-value="value"
+                item-title="text"
+              />
             </VCol>
           </VRow>
         </VCardText>

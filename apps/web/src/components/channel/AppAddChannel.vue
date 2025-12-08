@@ -23,25 +23,6 @@ const type = ref<EWorkerType | null>(EWorkerType.baileys);
 
 const itemsType = ref([{ value: EWorkerType.baileys, title: t('unofficial') }]);
 
-const typeSearchQuery = ref('');
-const isTypeMenuOpen = ref(false);
-
-const filteredTypes = computed(() => {
-  if (!typeSearchQuery.value) {
-    return itemsType.value;
-  }
-  const query = typeSearchQuery.value.toLowerCase();
-  return itemsType.value.filter((item) =>
-    item.title.toLowerCase().includes(query)
-  );
-});
-
-watch(isTypeMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    typeSearchQuery.value = '';
-  }
-});
-
 const refFormAddChannel = ref<VForm>();
 
 const addChannel = async () => {
@@ -96,68 +77,15 @@ onMounted(resetForm);
         <VCardText>
           <VRow>
             <VCol cols="12" sm="6" md="6">
-              <VLabel class="mb-1 text-body-2">{{ $t('type') }}:</VLabel>
-              <VMenu v-model="isTypeMenuOpen">
-                <template #activator="{ props: menuProps }">
-                  <VTextField
-                    v-bind="menuProps"
-                    :model-value="
-                      filteredTypes.find((item) => item.value === type)
-                        ?.title || ''
-                    "
-                    :placeholder="$t('type')"
-                    variant="outlined"
-                    readonly
-                    :clearable="!!type"
-                    clear-icon="tabler-x"
-                    @click:clear="type = null"
-                    :append-inner-icon="
-                      type ? undefined : 'tabler-chevron-down'
-                    "
-                    :error-messages="!type ? [$t('type_required')] : undefined"
-                  />
-                </template>
-                <VCard>
-                  <VCardText class="pa-2">
-                    <AppTextField
-                      v-model="typeSearchQuery"
-                      :placeholder="$t('search') + '...'"
-                      prepend-inner-icon="tabler-search"
-                      density="compact"
-                      hide-details
-                      autofocus
-                      @click.stop
-                    />
-                  </VCardText>
-                  <VDivider />
-                  <VList max-height="300" style="overflow-y: auto">
-                    <template v-if="filteredTypes.length > 0">
-                      <VListItem
-                        v-for="(item, index) in filteredTypes"
-                        :key="index"
-                        :value="item.value"
-                        @click="
-                          () => {
-                            type = item.value;
-                            isTypeMenuOpen = false;
-                            typeSearchQuery = '';
-                          }
-                        "
-                        :active="type === item.value"
-                      >
-                        <VListItemTitle>{{ item.title }}</VListItemTitle>
-                      </VListItem>
-                    </template>
-                    <VListItem v-else-if="typeSearchQuery" disabled>
-                      <VListItemTitle
-                        class="text-center text-body-2 text-medium-emphasis"
-                      >
-                        {{ $t('no_results_found') }}
-                      </VListItemTitle>
-                    </VListItem>
-                  </VList>
-                </VCard>
-              </VMenu>
+              <AppSelectSearch
+                v-model="type"
+                :items="itemsType"
+                :label="$t('type')"
+                :placeholder="$t('type')"
+                :clearable="true"
+                item-value="value"
+                item-title="title"
+              />
             </VCol>
 
             <VCol cols="12" sm="6" md="6">

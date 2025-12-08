@@ -27,25 +27,6 @@ const crossSellId = toRef(props, 'crossSellId');
 const account_id = ref<string | null>(null);
 const accountsOptions = ref<{ value: string; title: string }[]>([]);
 
-const accountSearchQuery = ref('');
-const isAccountMenuOpen = ref(false);
-
-const filteredAccounts = computed(() => {
-  if (!accountSearchQuery.value) {
-    return accountsOptions.value;
-  }
-  const query = accountSearchQuery.value.toLowerCase();
-  return accountsOptions.value.filter((account) =>
-    account.title.toLowerCase().includes(query)
-  );
-});
-
-watch(isAccountMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    accountSearchQuery.value = '';
-  }
-});
-
 const crossSellAccounts = ref<ListCrossSellAccountResponse[]>([]);
 
 const isDialogDeleteAccountShow = ref(false);
@@ -301,71 +282,15 @@ onMounted(async () => {
           <VLabel class="mb-3">{{ $t('add_new_account') }}</VLabel>
           <VRow>
             <VCol cols="12">
-              <VLabel class="mb-1 text-body-2">{{ $t('account') }}:</VLabel>
-              <VMenu v-model="isAccountMenuOpen">
-                <template #activator="{ props: menuProps }">
-                  <VTextField
-                    v-bind="menuProps"
-                    :model-value="
-                      filteredAccounts.find(
-                        (account) => account.value === account_id
-                      )?.title || ''
-                    "
-                    :placeholder="$t('select_account')"
-                    variant="outlined"
-                    readonly
-                    :clearable="!!account_id"
-                    clear-icon="tabler-x"
-                    @click:clear="account_id = null"
-                    :append-inner-icon="
-                      account_id ? undefined : 'tabler-chevron-down'
-                    "
-                    :error-messages="
-                      !account_id ? [$t('account_required')] : undefined
-                    "
-                  />
-                </template>
-                <VCard>
-                  <VCardText class="pa-2">
-                    <AppTextField
-                      v-model="accountSearchQuery"
-                      :placeholder="$t('search') + '...'"
-                      prepend-inner-icon="tabler-search"
-                      density="compact"
-                      hide-details
-                      autofocus
-                      @click.stop
-                    />
-                  </VCardText>
-                  <VDivider />
-                  <VList max-height="300" style="overflow-y: auto">
-                    <template v-if="filteredAccounts.length > 0">
-                      <VListItem
-                        v-for="(item, index) in filteredAccounts"
-                        :key="index"
-                        :value="item.value"
-                        @click="
-                          () => {
-                            account_id = item.value;
-                            isAccountMenuOpen = false;
-                            accountSearchQuery = '';
-                          }
-                        "
-                        :active="account_id === item.value"
-                      >
-                        <VListItemTitle>{{ item.title }}</VListItemTitle>
-                      </VListItem>
-                    </template>
-                    <VListItem v-else-if="accountSearchQuery" disabled>
-                      <VListItemTitle
-                        class="text-center text-body-2 text-medium-emphasis"
-                      >
-                        {{ $t('no_results_found') }}
-                      </VListItemTitle>
-                    </VListItem>
-                  </VList>
-                </VCard>
-              </VMenu>
+              <AppSelectSearch
+                v-model="account_id"
+                :items="accountsOptions"
+                :label="$t('account')"
+                :placeholder="$t('select_account')"
+                :clearable="true"
+                item-value="value"
+                item-title="title"
+              />
             </VCol>
           </VRow>
         </VForm>

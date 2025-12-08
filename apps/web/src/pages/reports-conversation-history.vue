@@ -160,44 +160,6 @@ const phoneDebounced = refDebounced(phoneRaw, 500);
 const sectors = ref<Array<{ id: string | null; text: string }>>([]);
 const operators = ref<Array<{ id: string | null; text: string }>>([]);
 
-const operatorSearchQuery = ref('');
-const isOperatorMenuOpen = ref(false);
-
-const filteredOperators = computed(() => {
-  if (!operatorSearchQuery.value) {
-    return operators.value;
-  }
-  const query = operatorSearchQuery.value.toLowerCase();
-  return operators.value.filter((operator) =>
-    operator.text.toLowerCase().includes(query)
-  );
-});
-
-const sectorSearchQuery = ref('');
-const isSectorMenuOpen = ref(false);
-
-const filteredSectors = computed(() => {
-  if (!sectorSearchQuery.value) {
-    return sectors.value;
-  }
-  const query = sectorSearchQuery.value.toLowerCase();
-  return sectors.value.filter((sector) =>
-    sector.text.toLowerCase().includes(query)
-  );
-});
-
-watch(isOperatorMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    operatorSearchQuery.value = '';
-  }
-});
-
-watch(isSectorMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    sectorSearchQuery.value = '';
-  }
-});
-
 onMounted(async () => {
   const [, allUsers] = await Promise.all([
     sectorsStore.listSectors({ per_page: 200, page: 1, sort_by: [] }),
@@ -641,141 +603,28 @@ const openDocument = (url: string | null | undefined) => {
 
           <!-- Filtro por Operador -->
           <div v-if="searchBy === 'operator'" class="invoice-list-filter">
-            <VLabel>{{ $t('search_by_operator') }}:</VLabel>
-            <VMenu v-model="isOperatorMenuOpen">
-              <template #activator="{ props: menuProps }">
-                <VTextField
-                  v-bind="menuProps"
-                  :model-value="
-                    filteredOperators.find(
-                      (operator) => operator.id === operatorId
-                    )?.text || ''
-                  "
-                  :placeholder="$t('search_by_operator')"
-                  variant="outlined"
-                  readonly
-                  :clearable="!!operatorId"
-                  clear-icon="tabler-x"
-                  @click:clear="operatorId = null"
-                  :append-inner-icon="
-                    operatorId ? undefined : 'tabler-chevron-down'
-                  "
-                />
-              </template>
-              <VCard>
-                <VCardText class="pa-2">
-                  <AppTextField
-                    v-model="operatorSearchQuery"
-                    :placeholder="$t('search') + '...'"
-                    prepend-inner-icon="tabler-search"
-                    density="compact"
-                    hide-details
-                    autofocus
-                    @click.stop
-                  />
-                </VCardText>
-                <VDivider />
-                <VList max-height="300" style="overflow-y: auto">
-                  <template v-if="filteredOperators.length > 0">
-                    <VListItem
-                      v-for="(item, index) in filteredOperators"
-                      :key="index"
-                      :value="item.id"
-                      @click="
-                        () => {
-                          operatorId = item.id;
-                          isOperatorMenuOpen = false;
-                          operatorSearchQuery = '';
-                        }
-                      "
-                      :active="operatorId === item.id"
-                    >
-                      <VListItemTitle>{{ item.text }}</VListItemTitle>
-                    </VListItem>
-                  </template>
-                  <VListItem v-else disabled>
-                    <VListItemTitle
-                      class="text-center text-body-2 text-medium-emphasis"
-                    >
-                      {{
-                        operatorSearchQuery
-                          ? $t('no_results_found')
-                          : $t('no_items_available')
-                      }}
-                    </VListItemTitle>
-                  </VListItem>
-                </VList>
-              </VCard>
-            </VMenu>
+            <AppSelectSearch
+              v-model="operatorId"
+              :items="operators as any"
+              :label="$t('search_by_operator')"
+              :placeholder="$t('search_by_operator')"
+              :clearable="true"
+              item-value="id"
+              item-title="text"
+            />
           </div>
 
           <!-- Filtro por Fila -->
           <div v-if="searchBy === 'queue'" class="invoice-list-filter">
-            <VLabel>{{ $t('search_by_queue') }}:</VLabel>
-            <VMenu v-model="isSectorMenuOpen">
-              <template #activator="{ props: menuProps }">
-                <VTextField
-                  v-bind="menuProps"
-                  :model-value="
-                    filteredSectors.find((sector) => sector.id === queueId)
-                      ?.text || ''
-                  "
-                  :placeholder="$t('search_by_queue')"
-                  variant="outlined"
-                  readonly
-                  :clearable="!!queueId"
-                  clear-icon="tabler-x"
-                  @click:clear="queueId = null"
-                  :append-inner-icon="
-                    queueId ? undefined : 'tabler-chevron-down'
-                  "
-                />
-              </template>
-              <VCard>
-                <VCardText class="pa-2">
-                  <AppTextField
-                    v-model="sectorSearchQuery"
-                    :placeholder="$t('search') + '...'"
-                    prepend-inner-icon="tabler-search"
-                    density="compact"
-                    hide-details
-                    autofocus
-                    @click.stop
-                  />
-                </VCardText>
-                <VDivider />
-                <VList max-height="300" style="overflow-y: auto">
-                  <template v-if="filteredSectors.length > 0">
-                    <VListItem
-                      v-for="(item, index) in filteredSectors"
-                      :key="index"
-                      :value="item.id"
-                      @click="
-                        () => {
-                          queueId = item.id;
-                          isSectorMenuOpen = false;
-                          sectorSearchQuery = '';
-                        }
-                      "
-                      :active="queueId === item.id"
-                    >
-                      <VListItemTitle>{{ item.text }}</VListItemTitle>
-                    </VListItem>
-                  </template>
-                  <VListItem v-else disabled>
-                    <VListItemTitle
-                      class="text-center text-body-2 text-medium-emphasis"
-                    >
-                      {{
-                        sectorSearchQuery
-                          ? $t('no_results_found')
-                          : $t('no_items_available')
-                      }}
-                    </VListItemTitle>
-                  </VListItem>
-                </VList>
-              </VCard>
-            </VMenu>
+            <AppSelectSearch
+              v-model="queueId"
+              :items="sectors as any"
+              :label="$t('search_by_queue')"
+              :placeholder="$t('search_by_queue')"
+              :clearable="true"
+              item-value="id"
+              item-title="text"
+            />
           </div>
 
           <!-- Filtro por Protocolo -->

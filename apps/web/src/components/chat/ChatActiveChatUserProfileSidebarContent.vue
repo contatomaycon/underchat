@@ -29,25 +29,6 @@ const emit = defineEmits<{
   close: [];
 }>();
 
-const countrySearchQuery = ref('');
-const isCountryMenuOpen = ref(false);
-
-const filteredCountryCodes = computed(() => {
-  if (!countrySearchQuery.value) {
-    return countryCodes.value;
-  }
-  const query = countrySearchQuery.value.toLowerCase();
-  return countryCodes.value.filter((country) =>
-    country.title.toLowerCase().includes(query)
-  );
-});
-
-watch(isCountryMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    countrySearchQuery.value = '';
-  }
-});
-
 const isContact = computed(() => !!chatStore.activeChat?.contact?.id);
 const contactId = computed(() => chatStore.activeChat?.contact?.id ?? null);
 
@@ -1190,53 +1171,15 @@ onMounted(() => {
         <VRow>
           <VCol cols="12" md="6">
             <div>
-              <VLabel class="mb-1 text-body-2">{{ $t('phone_ddi') }}:</VLabel>
-              <VMenu v-model="isCountryMenuOpen" :disabled="isContact">
-                <template #activator="{ props: menuProps }">
-                  <VTextField
-                    v-bind="menuProps"
-                    :model-value="
-                      countryCodes.find((c) => c.value === phone_ddi)?.title ||
-                      ''
-                    "
-                    :placeholder="$t('select_phone_ddi')"
-                    variant="outlined"
-                    :disabled="isContact"
-                    :readonly="isContact"
-                    append-inner-icon="tabler-chevron-down"
-                  />
-                </template>
-                <VCard>
-                  <VCardText class="pa-2">
-                    <AppTextField
-                      v-model="countrySearchQuery"
-                      :placeholder="$t('search') + '...'"
-                      prepend-inner-icon="tabler-search"
-                      density="compact"
-                      hide-details
-                      autofocus
-                      @click.stop
-                    />
-                  </VCardText>
-                  <VDivider />
-                  <VList max-height="300" style="overflow-y: auto">
-                    <VListItem
-                      v-for="(item, index) in filteredCountryCodes"
-                      :key="index"
-                      :value="item.value"
-                      @click="
-                        () => {
-                          phone_ddi = item.value;
-                          isCountryMenuOpen = false;
-                        }
-                      "
-                      :active="phone_ddi === item.value"
-                    >
-                      <VListItemTitle>{{ item.title }}</VListItemTitle>
-                    </VListItem>
-                  </VList>
-                </VCard>
-              </VMenu>
+              <AppSelectSearch
+                v-model="phone_ddi"
+                :items="countryCodes"
+                :label="$t('phone_ddi')"
+                :placeholder="$t('select_phone_ddi')"
+                :disabled="isContact"
+                item-value="value"
+                item-title="title"
+              />
             </div>
           </VCol>
 

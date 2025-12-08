@@ -1,6 +1,5 @@
 <script lang="ts" setup>
 import { ref, watch, onMounted, nextTick, computed } from 'vue';
-import { useI18n } from 'vue-i18n';
 import { useUsersStore } from '@/@webcore/stores/user';
 import { AssignUserRoleRequest } from '@core/schema/user/assignUserRole/request.schema';
 import {
@@ -9,7 +8,6 @@ import {
 } from '@core/schema/user/editUser/request.schema';
 import { VForm } from 'vuetify/components/VForm';
 
-const { t } = useI18n();
 const userStore = useUsersStore();
 
 const props = defineProps<{
@@ -31,18 +29,6 @@ const permissionRoleId = ref<string | null>(null);
 const refFormAssignRole = ref<VForm>();
 
 const roleOptions = ref<{ id: string; name: string }[]>([]);
-const roleSearchQuery = ref('');
-const isRoleMenuOpen = ref(false);
-
-const filteredRoles = computed(() => {
-  if (!roleSearchQuery.value) {
-    return roleOptions.value;
-  }
-  const query = roleSearchQuery.value.toLowerCase();
-  return roleOptions.value.filter((role) =>
-    role.name.toLowerCase().includes(query)
-  );
-});
 
 const loadRoles = async () => {
   try {
@@ -131,12 +117,6 @@ watch(isVisible, async (visible) => {
   }
 });
 
-watch(isRoleMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    roleSearchQuery.value = '';
-  }
-});
-
 onMounted(async () => {
   if (isVisible.value) {
     await loadUserRole();
@@ -161,85 +141,15 @@ onMounted(async () => {
         <VCardText>
           <VRow>
             <VCol cols="12">
-              <div>
-                <VLabel class="mb-1 text-body-2">{{ $t('cargos') }}:</VLabel>
-                <VMenu v-model="isRoleMenuOpen">
-                  <template #activator="{ props: menuProps }">
-                    <VTextField
-                      v-bind="menuProps"
-                      :model-value="
-                        roleOptions.find((r) => r.id === permissionRoleId)
-                          ?.name || ''
-                      "
-                      :placeholder="$t('select_role')"
-                      variant="outlined"
-                      readonly
-                      :clearable="!!permissionRoleId"
-                      clear-icon="tabler-x"
-                      @click:clear="permissionRoleId = null"
-                      :append-inner-icon="
-                        permissionRoleId ? undefined : 'tabler-chevron-down'
-                      "
-                    />
-                  </template>
-                  <VCard>
-                    <VCardText class="pa-2">
-                      <AppTextField
-                        v-model="roleSearchQuery"
-                        :placeholder="$t('search') + '...'"
-                        prepend-inner-icon="tabler-search"
-                        density="compact"
-                        hide-details
-                        autofocus
-                        @click.stop
-                      />
-                    </VCardText>
-                    <VDivider />
-                    <VList max-height="300" style="overflow-y: auto">
-                      <VListItem
-                        v-for="(item, index) in filteredRoles"
-                        :key="index"
-                        :value="item.id"
-                        @click="
-                          () => {
-                            permissionRoleId = item.id;
-                            isRoleMenuOpen = false;
-                          }
-                        "
-                        :active="permissionRoleId === item.id"
-                      >
-                        <VListItemTitle>{{ item.name }}</VListItemTitle>
-                      </VListItem>
-                      <VListItem
-                        v-if="
-                          filteredRoles.length === 0 &&
-                          roleOptions.length === 0 &&
-                          !userStore.loading
-                        "
-                        disabled
-                      >
-                        <VListItemTitle
-                          class="text-center text-body-2 text-medium-emphasis"
-                        >
-                          {{ $t('no_data_available') }}
-                        </VListItemTitle>
-                      </VListItem>
-                      <VListItem
-                        v-else-if="
-                          filteredRoles.length === 0 && roleOptions.length > 0
-                        "
-                        disabled
-                      >
-                        <VListItemTitle
-                          class="text-center text-body-2 text-medium-emphasis"
-                        >
-                          {{ $t('no_results_found') }}
-                        </VListItemTitle>
-                      </VListItem>
-                    </VList>
-                  </VCard>
-                </VMenu>
-              </div>
+              <AppSelectSearch
+                v-model="permissionRoleId"
+                :items="roleOptions"
+                :label="$t('cargos')"
+                :placeholder="$t('select_role')"
+                :clearable="true"
+                item-value="id"
+                item-title="name"
+              />
             </VCol>
           </VRow>
         </VCardText>

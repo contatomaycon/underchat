@@ -1,5 +1,13 @@
 <script lang="ts" setup>
-import { computed, watch, nextTick, onMounted, onUnmounted, ref } from 'vue';
+import {
+  computed,
+  watch,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  onBeforeUnmount,
+  ref,
+} from 'vue';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { useDisplay, useTheme } from 'vuetify';
 import { themes } from '@/plugins/vuetify/theme';
@@ -160,281 +168,6 @@ const selectedLocation = ref<{
   address?: string | null;
 } | null>(null);
 
-const locationPickerLatitude = ref<number | null>(null);
-const locationPickerLongitude = ref<number | null>(null);
-const locationPickerName = ref<string>('');
-const locationPickerAddress = ref<string>('');
-const locationPickerMode = ref<'current' | 'map' | 'manual'>('current');
-const locationMapRef = ref<any>(null);
-const locationInputLatitude = ref<string>('');
-const locationInputLongitude = ref<string>('');
-
-const mapStyle = computed(() => {
-  return {
-    version: 8,
-    sources: {
-      'osm-tiles': {
-        type: 'raster',
-        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-        tileSize: 256,
-        attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      },
-    },
-    layers: [
-      {
-        id: 'osm-tiles-layer',
-        type: 'raster',
-        source: 'osm-tiles',
-        minzoom: 0,
-        maxzoom: 22,
-      },
-    ],
-  };
-});
-
-const locationMapCenter = computed<[number, number]>(() => {
-  if (
-    locationPickerLatitude.value !== null &&
-    locationPickerLongitude.value !== null
-  ) {
-    return [locationPickerLongitude.value, locationPickerLatitude.value];
-  }
-  return [0, 0];
-});
-
-const locationMarkerPosition = computed<[number, number]>(() => {
-  if (
-    locationPickerLatitude.value !== null &&
-    locationPickerLongitude.value !== null
-  ) {
-    return [locationPickerLongitude.value, locationPickerLatitude.value];
-  }
-  return [0, 0];
-});
-
-const getCurrentLocation = (): Promise<GeolocationPosition> => {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error('Geolocation is not supported'));
-      return;
-    }
-    const options: PositionOptions = {
-      enableHighAccuracy: true,
-      timeout: 10000,
-      maximumAge: 0,
-    };
-    navigator.geolocation.getCurrentPosition(resolve, reject, options); // NOSONAR: S5604 - Geolocalização é necessária para funcionalidade de envio de localização
-  });
-};
-
-const useCurrentLocation = async () => {
-  try {
-    const position = await getCurrentLocation();
-    const lat = position.coords.latitude;
-    const lng = position.coords.longitude;
-
-    locationPickerLatitude.value = lat;
-    locationPickerLongitude.value = lng;
-
-    await nextTick();
-
-    locationPickerMode.value = 'map';
-
-    await nextTick();
-
-    const updateMapCenter = () => {
-      if (locationMapRef.value?.map) {
-        const map = locationMapRef.value.map;
-        map.setCenter([lng, lat]);
-        return true;
-      }
-      return false;
-    };
-
-    if (updateMapCenter()) {
-      return;
-    }
-
-    await nextTick();
-    setTimeout(() => {
-      if (updateMapCenter()) {
-        return;
-      }
-      setTimeout(() => {
-        updateMapCenter();
-      }, 200);
-    }, 100);
-  } catch (error) {
-    console.error('Error getting current location:', error);
-  }
-};
-
-const onLocationMapClick = (event: any) => {
-  if (!event?.lngLat) return;
-
-  const lngLat = event.lngLat;
-  locationPickerLatitude.value = lngLat.lat;
-  locationPickerLongitude.value = lngLat.lng;
-};
-
-const useManualCoordinates = () => {
-  const lat = Number.parseFloat(locationInputLatitude.value);
-  const lng = Number.parseFloat(locationInputLongitude.value);
-
-  if (Number.isNaN(lat) || Number.isNaN(lng)) {
-    return;
-  }
-
-  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-    return;
-  }
-
-  locationPickerLatitude.value = lat;
-  locationPickerLongitude.value = lng;
-  locationPickerMode.value = 'map';
-
-  nextTick(() => {
-    if (locationMapRef.value?.map) {
-      const map = locationMapRef.value.map;
-      const currentZoom = map.getZoom();
-      map.setCenter([lng, lat]);
-      map.setZoom(currentZoom);
-    }
-  });
-};
-
-const confirmLocation = async () => {
-  if (!locationPickerLatitude.value || !locationPickerLongitude.value) {
-    return;
-  }
-
-  selectedLocation.value = {
-    latitude: locationPickerLatitude.value,
-    longitude: locationPickerLongitude.value,
-    name: locationPickerName.value || null,
-    address: locationPickerAddress.value || null,
-  };
-
-  isLocationPickerOpen.value = false;
-  locationPickerLatitude.value = null;
-  locationPickerLongitude.value = null;
-  locationPickerName.value = '';
-  locationPickerAddress.value = '';
-  locationInputLatitude.value = '';
-  locationInputLongitude.value = '';
-  locationPickerMode.value = 'current';
-
-  await nextTick();
-  await sendLocationMessage();
-  finalizeSend();
-};
-
-const getGeolocationCallbacks = () => {
-  const onSuccess = (position: GeolocationPosition) => {
-    locationPickerLatitude.value = position.coords.latitude;
-    locationPickerLongitude.value = position.coords.longitude;
-    if (locationMapRef.value?.map) {
-      locationMapRef.value.map.setCenter([
-        position.coords.longitude,
-        position.coords.latitude,
-      ]);
-      locationMapRef.value.map.setZoom(15);
-    }
-  };
-
-  const onError = () => {
-    locationPickerLatitude.value = -15.459175;
-    locationPickerLongitude.value = -47.602219;
-    if (locationMapRef.value?.map) {
-      locationMapRef.value.map.setCenter([-47.602219, -15.459175]);
-      locationMapRef.value.map.setZoom(15);
-    }
-  };
-
-  return { onSuccess, onError };
-};
-
-const onLocationMapLoad = () => {
-  if (!locationMapRef.value?.map) return;
-
-  const map = locationMapRef.value.map;
-  map.resize();
-
-  map.doubleClickZoom.disable();
-  if (map.boxZoom) {
-    map.boxZoom.disable();
-  }
-
-  map.on('click', (e: any) => {
-    if (!e?.lngLat) return;
-
-    const lngLat = e.lngLat;
-    locationPickerLatitude.value = lngLat.lat;
-    locationPickerLongitude.value = lngLat.lng;
-  });
-
-  if (locationPickerLatitude.value && locationPickerLongitude.value) {
-    map.setCenter([
-      locationPickerLongitude.value,
-      locationPickerLatitude.value,
-    ]);
-    map.setZoom(15);
-    return;
-  }
-
-  if (navigator.geolocation) {
-    const { onSuccess, onError } = getGeolocationCallbacks();
-
-    navigator.geolocation.getCurrentPosition(onSuccess, onError); // NOSONAR: S5604 - Geolocalização é necessária para funcionalidade de envio de localização
-  }
-};
-
-watch(isLocationPickerOpen, async (isOpen) => {
-  if (isOpen) {
-    await nextTick();
-    if (locationPickerMode.value === 'current') {
-      await useCurrentLocation();
-    }
-  }
-});
-
-watch(
-  () => [
-    locationPickerMode.value,
-    locationPickerLatitude.value,
-    locationPickerLongitude.value,
-  ],
-  async ([mode, lat, lng]) => {
-    if (
-      mode === 'map' &&
-      lat !== null &&
-      lng !== null &&
-      typeof lat === 'number' &&
-      typeof lng === 'number'
-    ) {
-      await nextTick();
-      setTimeout(() => {
-        if (locationMapRef.value?.map) {
-          const map = locationMapRef.value.map;
-          const currentCenter = map.getCenter();
-          const currentZoom = map.getZoom();
-          const centerLng = Number(currentCenter.lng);
-          const centerLat = Number(currentCenter.lat);
-          const distance = Math.sqrt(
-            Math.pow(centerLng - Number(lng), 2) +
-              Math.pow(centerLat - Number(lat), 2)
-          );
-          if (distance > 0.001) {
-            map.setCenter([Number(lng), Number(lat)]);
-            map.setZoom(currentZoom);
-          }
-        }
-      }, 100);
-    }
-  }
-);
-
 const isRecordingAudio = ref(false);
 const isRecordingPaused = ref(false);
 const audioViewOnce = ref(false);
@@ -582,15 +315,9 @@ const selectedTransferSectorUser = ref<string | null>(null);
 const transferUsers = ref<any[]>([]);
 const transferSectors = ref<any[]>([]);
 const transferSectorUsers = ref<any[]>([]);
-const transferUserSearch = ref('');
-const transferSectorSearch = ref('');
-const transferSectorUserSearch = ref('');
 const isLoadingTransferUsers = ref(false);
 const isLoadingTransferSectors = ref(false);
 const isLoadingTransferSectorUsers = ref(false);
-const isTransferUserMenuOpen = ref(false);
-const isTransferSectorMenuOpen = ref(false);
-const isTransferSectorUserMenuOpen = ref(false);
 const transferAnnotationText = ref('');
 const isTransferAnnotationEmojiOpen = ref(false);
 
@@ -632,60 +359,9 @@ watch(
   { immediate: true }
 );
 
-const filteredTransferUsers = computed(() => {
-  if (!transferUserSearch.value) {
-    return transferUsers.value;
-  }
-  const query = transferUserSearch.value.toLowerCase();
-  return transferUsers.value.filter((user) =>
-    user.title.toLowerCase().includes(query)
-  );
-});
-
-const filteredTransferSectors = computed(() => {
-  if (!transferSectorSearch.value) {
-    return transferSectors.value;
-  }
-  const query = transferSectorSearch.value.toLowerCase();
-  return transferSectors.value.filter((sector) =>
-    sector.title.toLowerCase().includes(query)
-  );
-});
-
-const filteredTransferSectorUsers = computed(() => {
-  if (!transferSectorUsers.value || transferSectorUsers.value.length === 0) {
-    return [];
-  }
-  if (!transferSectorUserSearch.value) {
-    return transferSectorUsers.value;
-  }
-  const query = transferSectorUserSearch.value.toLowerCase();
-  return transferSectorUsers.value.filter((user) =>
-    user?.title?.toLowerCase().includes(query)
-  );
-});
-
-watch(isTransferUserMenuOpen, (isOpen) => {
-  if (isOpen) {
-    loadTransferUsers();
-  } else {
-    transferUserSearch.value = '';
-  }
-});
-
-watch(isTransferSectorMenuOpen, (isOpen) => {
-  if (isOpen) {
-    loadTransferSectors();
-  } else {
-    transferSectorSearch.value = '';
-  }
-});
-
-watch(isTransferSectorUserMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    transferSectorUserSearch.value = '';
-  } else if (selectedTransferSector.value) {
-    loadTransferSectorUsers(selectedTransferSector.value);
+watch(selectedTransferSector, (sectorId) => {
+  if (sectorId) {
+    loadTransferSectorUsers(sectorId);
   }
 });
 
@@ -751,12 +427,6 @@ watch(transferType, (newType) => {
   selectedTransferSector.value = null;
   selectedTransferSectorUser.value = null;
   transferSectorUsers.value = [];
-  transferUserSearch.value = '';
-  transferSectorSearch.value = '';
-  transferSectorUserSearch.value = '';
-  isTransferUserMenuOpen.value = false;
-  isTransferSectorMenuOpen.value = false;
-  isTransferSectorUserMenuOpen.value = false;
 });
 
 watch(isTransferModalOpen, (isOpen) => {
@@ -783,13 +453,7 @@ watch(isTransferModalOpen, async (isOpen) => {
         selectedTransferUser.value = null;
         selectedTransferSector.value = null;
         selectedTransferSectorUser.value = null;
-        transferUserSearch.value = '';
-        transferSectorSearch.value = '';
-        transferSectorUserSearch.value = '';
         transferAnnotationText.value = '';
-        isTransferUserMenuOpen.value = false;
-        isTransferSectorMenuOpen.value = false;
-        isTransferSectorUserMenuOpen.value = false;
         isTransferAnnotationEmojiOpen.value = false;
         loadTransferUsers();
         loadTransferSectors();
@@ -855,29 +519,6 @@ const openLabelModal = async () => {
   selectedLabelTemplateId.value =
     chatStore.activeChat?.label?.label_template_id || null;
   isLoadingLabels.value = false;
-};
-
-const closeLabelModal = () => {
-  if (isSavingLabel.value) return;
-  isLabelModalOpen.value = false;
-  selectedLabelTemplateId.value = null;
-};
-
-const saveLabel = async () => {
-  if (!chatStore.activeChat?.chat_id) return;
-
-  isSavingLabel.value = true;
-
-  const success = await chatStore.updateChatLabel(
-    chatStore.activeChat.chat_id,
-    selectedLabelTemplateId.value || null
-  );
-
-  if (success) {
-    isLabelModalOpen.value = false;
-  }
-
-  isSavingLabel.value = false;
 };
 
 const removeLabel = async () => {
@@ -1039,7 +680,6 @@ const formattedRecordingTime = computed(() => {
   }
   return formatRecordingLabel(audioRecordingElapsedMs.value) ?? '00:00';
 });
-const forceReflow = (el: HTMLElement): number => el.offsetWidth;
 
 const scrollToBottomInChatLog = async (smooth: boolean = false) => {
   if (!chatLogPS.value) return;
@@ -1397,18 +1037,6 @@ const clearSelectedAudios = () => {
 
 const clearSelectedContacts = () => {
   selectedContacts.value = [];
-};
-
-const clearMessageFields = () => {
-  msg.value = '';
-  linkPreview.value = null;
-  clearSelectedVideos();
-  clearSelectedAudios();
-  clearSelectedContacts();
-  selectedPhotos.value = [];
-  selectedDocuments.value = [];
-  selectedLocation.value = null;
-  chatStore.clearMessageReply();
 };
 
 const canSendMessage = (): boolean => {
@@ -5482,291 +5110,140 @@ onBeforeUnmount(() => {
           </VCol>
 
           <VCol v-if="transferType === 'user'" cols="12">
-            <div>
-              <VLabel class="mb-1 text-body-2">{{ $t('user') }}:</VLabel>
-              <VMenu v-model="isTransferUserMenuOpen">
-                <template #activator="{ props: menuProps }">
-                  <VTextField
-                    v-bind="menuProps"
-                    :model-value="
-                      transferUsers.find(
-                        (u) => u.value === selectedTransferUser
-                      )?.title || ''
-                    "
-                    :placeholder="$t('search') + '...'"
-                    variant="outlined"
-                    readonly
-                    append-inner-icon="tabler-chevron-down"
-                    :loading="isLoadingTransferUsers"
-                  />
+            <AppSelectSearch
+              v-model="selectedTransferUser"
+              :items="transferUsers"
+              :label="$t('user')"
+              :placeholder="$t('search') + '...'"
+              :loading="isLoadingTransferUsers"
+              item-value="value"
+              item-title="title"
+              @select="loadTransferUsers()"
+            >
+              <template #item-prepend="{ item }">
+                <VAvatar
+                  size="32"
+                  :variant="!item.photo ? 'tonal' : undefined"
+                  color="primary"
+                >
+                  <VImg v-if="item.photo" :src="item.photo" :alt="item.title" />
+                  <VIcon v-else icon="tabler-user" size="18" />
+                </VAvatar>
+              </template>
+              <template #item-title="{ item }">
+                <template
+                  v-if="
+                    workerConfigForChat?.allow_attendance_only_online &&
+                    item.status
+                  "
+                >
+                  <div class="d-flex align-center gap-2">
+                    <span
+                      class="v-badge v-badge--dot v-badge--inline"
+                      :style="{
+                        backgroundColor: getStatusColor(
+                          (item.status as EChatUserStatus) ||
+                            EChatUserStatus.offline
+                        ),
+                      }"
+                      style="
+                        width: 8px;
+                        height: 8px;
+                        border-radius: 50%;
+                        display: inline-block;
+                        margin-right: 8px;
+                      "
+                    ></span>
+                    <span>{{ item.title }}</span>
+                  </div>
                 </template>
-                <VCard>
-                  <VCardText class="pa-2">
-                    <AppTextField
-                      v-model="transferUserSearch"
-                      :placeholder="$t('search') + '...'"
-                      prepend-inner-icon="tabler-search"
-                      density="compact"
-                      hide-details
-                      autofocus
-                      @click.stop
-                    />
-                  </VCardText>
-                  <VDivider />
-                  <VList max-height="300" style="overflow-y: auto">
-                    <template v-if="filteredTransferUsers.length > 0">
-                      <VListItem
-                        v-for="(item, index) in filteredTransferUsers"
-                        :key="index"
-                        :value="item.value"
-                        @click="
-                          () => {
-                            selectedTransferUser = item.value;
-                            isTransferUserMenuOpen = false;
-                          }
-                        "
-                        :active="selectedTransferUser === item.value"
-                      >
-                        <template #prepend>
-                          <VAvatar
-                            size="32"
-                            :variant="!item.photo ? 'tonal' : undefined"
-                            color="primary"
-                          >
-                            <VImg
-                              v-if="item.photo"
-                              :src="item.photo"
-                              :alt="item.title"
-                            />
-                            <VIcon v-else icon="tabler-user" size="18" />
-                          </VAvatar>
-                        </template>
-                        <VListItemTitle>
-                          <template
-                            v-if="
-                              workerConfigForChat?.allow_attendance_only_online &&
-                              item.status
-                            "
-                          >
-                            <div class="d-flex align-center gap-2">
-                              <span
-                                class="v-badge v-badge--dot v-badge--inline"
-                                :style="{
-                                  backgroundColor: getStatusColor(
-                                    (item.status as EChatUserStatus) ||
-                                      EChatUserStatus.offline
-                                  ),
-                                }"
-                                style="
-                                  width: 8px;
-                                  height: 8px;
-                                  border-radius: 50%;
-                                  display: inline-block;
-                                  margin-right: 8px;
-                                "
-                              ></span>
-                              <span>{{ item.title }}</span>
-                            </div>
-                          </template>
-                          <template v-else>
-                            {{ item.title }}
-                          </template>
-                        </VListItemTitle>
-                      </VListItem>
-                    </template>
-                    <VListItem v-else-if="!isLoadingTransferUsers" disabled>
-                      <VListItemTitle
-                        class="text-center text-body-2 text-medium-emphasis"
-                      >
-                        {{ $t('no_results_found') }}
-                      </VListItemTitle>
-                    </VListItem>
-                  </VList>
-                </VCard>
-              </VMenu>
-            </div>
+                <template v-else>
+                  {{ item.title }}
+                </template>
+              </template>
+            </AppSelectSearch>
           </VCol>
 
           <template v-if="transferType === 'sector'">
             <VCol cols="12">
-              <div>
-                <VLabel class="mb-1 text-body-2">{{ $t('sector') }}:</VLabel>
-                <VMenu v-model="isTransferSectorMenuOpen">
-                  <template #activator="{ props: menuProps }">
-                    <VTextField
-                      v-bind="menuProps"
-                      :model-value="
-                        transferSectors.find(
-                          (s) => s.value === selectedTransferSector
-                        )?.title || ''
-                      "
-                      :placeholder="$t('search') + '...'"
-                      variant="outlined"
-                      readonly
-                      append-inner-icon="tabler-chevron-down"
-                      :loading="isLoadingTransferSectors"
-                    />
-                  </template>
-                  <VCard>
-                    <VCardText class="pa-2">
-                      <AppTextField
-                        v-model="transferSectorSearch"
-                        :placeholder="$t('search') + '...'"
-                        prepend-inner-icon="tabler-search"
-                        density="compact"
-                        hide-details
-                        autofocus
-                        @click.stop
-                      />
-                    </VCardText>
-                    <VDivider />
-                    <VList max-height="300" style="overflow-y: auto">
-                      <template v-if="filteredTransferSectors.length > 0">
-                        <VListItem
-                          v-for="(item, index) in filteredTransferSectors"
-                          :key="index"
-                          :value="item.value"
-                          @click="
-                            () => {
-                              selectedTransferSector = item.value;
-                              isTransferSectorMenuOpen = false;
-                            }
-                          "
-                          :active="selectedTransferSector === item.value"
-                        >
-                          <template #prepend>
-                            <VAvatar
-                              size="24"
-                              :style="{
-                                backgroundColor: item.color || '#1976D2',
-                              }"
-                            />
-                          </template>
-                          <VListItemTitle>{{ item.title }}</VListItemTitle>
-                        </VListItem>
-                      </template>
-                      <VListItem v-else-if="!isLoadingTransferSectors" disabled>
-                        <VListItemTitle
-                          class="text-center text-body-2 text-medium-emphasis"
-                        >
-                          {{ $t('no_results_found') }}
-                        </VListItemTitle>
-                      </VListItem>
-                    </VList>
-                  </VCard>
-                </VMenu>
-              </div>
+              <AppSelectSearch
+                v-model="selectedTransferSector"
+                :items="transferSectors"
+                :label="$t('sector')"
+                :placeholder="$t('search') + '...'"
+                :loading="isLoadingTransferSectors"
+                item-value="value"
+                item-title="title"
+                @select="loadTransferSectors()"
+              >
+                <template #item-prepend="{ item }">
+                  <VAvatar
+                    size="24"
+                    :style="{
+                      backgroundColor: item.color || '#1976D2',
+                    }"
+                  />
+                </template>
+              </AppSelectSearch>
             </VCol>
 
             <VCol v-if="selectedTransferSector" cols="12">
-              <div>
-                <VLabel class="mb-1 text-body-2"
-                  >{{ $t('user') }} ({{ $t('sector') }}):</VLabel
-                >
-                <VMenu v-model="isTransferSectorUserMenuOpen">
-                  <template #activator="{ props: menuProps }">
-                    <VTextField
-                      v-bind="menuProps"
-                      :model-value="
-                        transferSectorUsers.find(
-                          (u) => u.value === selectedTransferSectorUser
-                        )?.title || ''
-                      "
-                      :placeholder="$t('search') + '...'"
-                      variant="outlined"
-                      readonly
-                      append-inner-icon="tabler-chevron-down"
-                      :loading="isLoadingTransferSectorUsers"
+              <AppSelectSearch
+                v-model="selectedTransferSectorUser"
+                :items="transferSectorUsers"
+                :label="$t('user') + ' (' + $t('sector') + ')'"
+                :placeholder="$t('search') + '...'"
+                :loading="isLoadingTransferSectorUsers"
+                item-value="value"
+                item-title="title"
+                @select="loadTransferSectorUsers(selectedTransferSector)"
+              >
+                <template #item-prepend="{ item }">
+                  <VAvatar
+                    size="32"
+                    :variant="!item.photo ? 'tonal' : undefined"
+                    color="primary"
+                  >
+                    <VImg
+                      v-if="item.photo"
+                      :src="item.photo"
+                      :alt="item.title"
                     />
+                    <VIcon v-else icon="tabler-user" size="18" />
+                  </VAvatar>
+                </template>
+                <template #item-title="{ item }">
+                  <template
+                    v-if="
+                      workerConfigForChat?.allow_attendance_only_online &&
+                      item.status
+                    "
+                  >
+                    <div class="d-flex align-center gap-2">
+                      <span
+                        class="v-badge v-badge--dot v-badge--inline"
+                        :style="{
+                          backgroundColor: getStatusColor(
+                            (item.status as EChatUserStatus) ||
+                              EChatUserStatus.offline
+                          ),
+                        }"
+                        style="
+                          width: 8px;
+                          height: 8px;
+                          border-radius: 50%;
+                          display: inline-block;
+                          margin-right: 8px;
+                        "
+                      ></span>
+                      <span>{{ item.title }}</span>
+                    </div>
                   </template>
-                  <VCard>
-                    <VCardText class="pa-2">
-                      <AppTextField
-                        v-model="transferSectorUserSearch"
-                        :placeholder="$t('search') + '...'"
-                        prepend-inner-icon="tabler-search"
-                        density="compact"
-                        hide-details
-                        autofocus
-                        @click.stop
-                      />
-                    </VCardText>
-                    <VDivider />
-                    <VList max-height="300" style="overflow-y: auto">
-                      <template v-if="filteredTransferSectorUsers.length > 0">
-                        <VListItem
-                          v-for="(item, index) in filteredTransferSectorUsers"
-                          :key="`sector-user-${item.value}-${index}`"
-                          :value="item.value"
-                          @click="
-                            () => {
-                              selectedTransferSectorUser = item.value;
-                              isTransferSectorUserMenuOpen = false;
-                            }
-                          "
-                          :active="selectedTransferSectorUser === item.value"
-                        >
-                          <template #prepend>
-                            <VAvatar
-                              size="32"
-                              :variant="!item.photo ? 'tonal' : undefined"
-                              color="primary"
-                            >
-                              <VImg
-                                v-if="item.photo"
-                                :src="item.photo"
-                                :alt="item.title"
-                              />
-                              <VIcon v-else icon="tabler-user" size="18" />
-                            </VAvatar>
-                          </template>
-                          <VListItemTitle>
-                            <template
-                              v-if="
-                                workerConfigForChat?.allow_attendance_only_online &&
-                                item.status
-                              "
-                            >
-                              <div class="d-flex align-center gap-2">
-                                <span
-                                  class="v-badge v-badge--dot v-badge--inline"
-                                  :style="{
-                                    backgroundColor: getStatusColor(
-                                      (item.status as EChatUserStatus) ||
-                                        EChatUserStatus.offline
-                                    ),
-                                  }"
-                                  style="
-                                    width: 8px;
-                                    height: 8px;
-                                    border-radius: 50%;
-                                    display: inline-block;
-                                    margin-right: 8px;
-                                  "
-                                ></span>
-                                <span>{{ item.title }}</span>
-                              </div>
-                            </template>
-                            <template v-else>
-                              {{ item.title }}
-                            </template>
-                          </VListItemTitle>
-                        </VListItem>
-                      </template>
-                      <VListItem
-                        v-else-if="!isLoadingTransferSectorUsers"
-                        disabled
-                      >
-                        <VListItemTitle
-                          class="text-center text-body-2 text-medium-emphasis"
-                        >
-                          {{ $t('no_results_found') }}
-                        </VListItemTitle>
-                      </VListItem>
-                    </VList>
-                  </VCard>
-                </VMenu>
-              </div>
+                  <template v-else>
+                    {{ item.title }}
+                  </template>
+                </template>
+              </AppSelectSearch>
             </VCol>
           </template>
 

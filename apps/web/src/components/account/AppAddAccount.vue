@@ -55,63 +55,6 @@ const itemsBillingPeriod = [
   { value: 'annual', text: t('annual') },
 ];
 
-const statusSearchQuery = ref('');
-const isStatusMenuOpen = ref(false);
-
-const filteredStatuses = computed(() => {
-  if (!statusSearchQuery.value) {
-    return itemsStatus.value;
-  }
-  const query = statusSearchQuery.value.toLowerCase();
-  return itemsStatus.value.filter((status) =>
-    status.text.toLowerCase().includes(query)
-  );
-});
-
-const planSearchQuery = ref('');
-const isPlanMenuOpen = ref(false);
-
-const filteredPlans = computed(() => {
-  if (!planSearchQuery.value) {
-    return itemsPlan.value;
-  }
-  const query = planSearchQuery.value.toLowerCase();
-  return itemsPlan.value.filter((plan) =>
-    plan.text.toLowerCase().includes(query)
-  );
-});
-
-const billingPeriodSearchQuery = ref('');
-const isBillingPeriodMenuOpen = ref(false);
-
-const filteredBillingPeriods = computed(() => {
-  if (!billingPeriodSearchQuery.value) {
-    return itemsBillingPeriod;
-  }
-  const query = billingPeriodSearchQuery.value.toLowerCase();
-  return itemsBillingPeriod.filter((item) =>
-    item.text.toLowerCase().includes(query)
-  );
-});
-
-watch(isStatusMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    statusSearchQuery.value = '';
-  }
-});
-
-watch(isPlanMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    planSearchQuery.value = '';
-  }
-});
-
-watch(isBillingPeriodMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    billingPeriodSearchQuery.value = '';
-  }
-});
-
 const showBillingPeriod = computed(() => !!plan_id.value && !isTestPlan.value);
 
 const addAccount = async () => {
@@ -213,208 +156,37 @@ watch(isVisible, async (visible) => {
               />
             </VCol>
             <VCol cols="12" md="6">
-              <VLabel class="mb-1 text-body-2"
-                >{{ $t('account_status') }}:</VLabel
-              >
-              <VMenu v-model="isStatusMenuOpen">
-                <template #activator="{ props: menuProps }">
-                  <VTextField
-                    v-bind="menuProps"
-                    :model-value="
-                      filteredStatuses.find(
-                        (status) => status.value === account_status_id
-                      )?.text || ''
-                    "
-                    :placeholder="$t('account_status')"
-                    variant="outlined"
-                    readonly
-                    :clearable="!!account_status_id"
-                    clear-icon="tabler-x"
-                    @click:clear="account_status_id = null"
-                    :append-inner-icon="
-                      account_status_id ? undefined : 'tabler-chevron-down'
-                    "
-                  />
-                </template>
-                <VCard>
-                  <VCardText class="pa-2">
-                    <AppTextField
-                      v-model="statusSearchQuery"
-                      :placeholder="$t('search') + '...'"
-                      prepend-inner-icon="tabler-search"
-                      density="compact"
-                      hide-details
-                      autofocus
-                      @click.stop
-                    />
-                  </VCardText>
-                  <VDivider />
-                  <VList max-height="300" style="overflow-y: auto">
-                    <template v-if="filteredStatuses.length > 0">
-                      <VListItem
-                        v-for="(item, index) in filteredStatuses"
-                        :key="index"
-                        :value="item.value"
-                        @click="
-                          () => {
-                            account_status_id = item.value;
-                            isStatusMenuOpen = false;
-                            statusSearchQuery = '';
-                          }
-                        "
-                        :active="account_status_id === item.value"
-                      >
-                        <VListItemTitle>{{ item.text }}</VListItemTitle>
-                      </VListItem>
-                    </template>
-                    <VListItem v-else-if="statusSearchQuery" disabled>
-                      <VListItemTitle
-                        class="text-center text-body-2 text-medium-emphasis"
-                      >
-                        {{ $t('no_results_found') }}
-                      </VListItemTitle>
-                    </VListItem>
-                  </VList>
-                </VCard>
-              </VMenu>
+              <AppSelectSearch
+                v-model="account_status_id"
+                :items="itemsStatus"
+                :label="$t('account_status')"
+                :placeholder="$t('account_status')"
+                :clearable="true"
+                item-value="value"
+                item-title="text"
+              />
             </VCol>
             <VCol cols="12" md="6">
-              <VLabel class="mb-1 text-body-2">{{ $t('plan') }}:</VLabel>
-              <VMenu v-model="isPlanMenuOpen">
-                <template #activator="{ props: menuProps }">
-                  <VTextField
-                    v-bind="menuProps"
-                    :model-value="
-                      filteredPlans.find((plan) => plan.value === plan_id)
-                        ?.text || ''
-                    "
-                    :placeholder="$t('plan')"
-                    variant="outlined"
-                    readonly
-                    :clearable="!!plan_id"
-                    clear-icon="tabler-x"
-                    @click:clear="plan_id = null"
-                    :append-inner-icon="
-                      plan_id ? undefined : 'tabler-chevron-down'
-                    "
-                  />
-                </template>
-                <VCard>
-                  <VCardText class="pa-2">
-                    <AppTextField
-                      v-model="planSearchQuery"
-                      :placeholder="$t('search') + '...'"
-                      prepend-inner-icon="tabler-search"
-                      density="compact"
-                      hide-details
-                      autofocus
-                      @click.stop
-                    />
-                  </VCardText>
-                  <VDivider />
-                  <VList max-height="300" style="overflow-y: auto">
-                    <template v-if="filteredPlans.length > 0">
-                      <VListItem
-                        v-for="(item, index) in filteredPlans"
-                        :key="index"
-                        :value="item.value"
-                        @click="
-                          () => {
-                            plan_id = item.value;
-                            isPlanMenuOpen = false;
-                            planSearchQuery = '';
-                          }
-                        "
-                        :active="plan_id === item.value"
-                      >
-                        <VListItemTitle>{{ item.text }}</VListItemTitle>
-                      </VListItem>
-                    </template>
-                    <VListItem v-else disabled>
-                      <VListItemTitle
-                        class="text-center text-body-2 text-medium-emphasis"
-                      >
-                        {{
-                          planSearchQuery
-                            ? $t('no_results_found')
-                            : $t('no_items_available')
-                        }}
-                      </VListItemTitle>
-                    </VListItem>
-                  </VList>
-                </VCard>
-              </VMenu>
+              <AppSelectSearch
+                v-model="plan_id"
+                :items="itemsPlan"
+                :label="$t('plan')"
+                :placeholder="$t('plan')"
+                :clearable="true"
+                item-value="value"
+                item-title="text"
+              />
             </VCol>
             <VCol v-if="showBillingPeriod" cols="12" md="6">
-              <VLabel class="mb-1 text-body-2"
-                >{{ $t('billing_period') }}:</VLabel
-              >
-              <VMenu v-model="isBillingPeriodMenuOpen">
-                <template #activator="{ props: menuProps }">
-                  <VTextField
-                    v-bind="menuProps"
-                    :model-value="
-                      filteredBillingPeriods.find(
-                        (item) => item.value === billing_period
-                      )?.text || ''
-                    "
-                    :placeholder="$t('billing_period')"
-                    variant="outlined"
-                    readonly
-                    :clearable="!!billing_period"
-                    clear-icon="tabler-x"
-                    @click:clear="billing_period = null"
-                    :append-inner-icon="
-                      billing_period ? undefined : 'tabler-chevron-down'
-                    "
-                    :error-messages="
-                      !billing_period
-                        ? [$t('billing_period_required')]
-                        : undefined
-                    "
-                  />
-                </template>
-                <VCard>
-                  <VCardText class="pa-2">
-                    <AppTextField
-                      v-model="billingPeriodSearchQuery"
-                      :placeholder="$t('search') + '...'"
-                      prepend-inner-icon="tabler-search"
-                      density="compact"
-                      hide-details
-                      autofocus
-                      @click.stop
-                    />
-                  </VCardText>
-                  <VDivider />
-                  <VList max-height="300" style="overflow-y: auto">
-                    <template v-if="filteredBillingPeriods.length > 0">
-                      <VListItem
-                        v-for="(item, index) in filteredBillingPeriods"
-                        :key="index"
-                        :value="item.value"
-                        @click="
-                          () => {
-                            billing_period = item.value as 'monthly' | 'annual';
-                            isBillingPeriodMenuOpen = false;
-                            billingPeriodSearchQuery = '';
-                          }
-                        "
-                        :active="billing_period === item.value"
-                      >
-                        <VListItemTitle>{{ item.text }}</VListItemTitle>
-                      </VListItem>
-                    </template>
-                    <VListItem v-else-if="billingPeriodSearchQuery" disabled>
-                      <VListItemTitle
-                        class="text-center text-body-2 text-medium-emphasis"
-                      >
-                        {{ $t('no_results_found') }}
-                      </VListItemTitle>
-                    </VListItem>
-                  </VList>
-                </VCard>
-              </VMenu>
+              <AppSelectSearch
+                v-model="billing_period"
+                :items="itemsBillingPeriod"
+                :label="$t('billing_period')"
+                :placeholder="$t('billing_period')"
+                :clearable="true"
+                item-value="value"
+                item-title="text"
+              />
             </VCol>
           </VRow>
         </VCardText>

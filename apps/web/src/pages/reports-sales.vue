@@ -56,23 +56,6 @@ const endDate = ref<string | null>(null);
 
 const plans = ref<Array<{ id: string | null; text: string }>>([]);
 
-const planSearchQuery = ref('');
-const isPlanMenuOpen = ref(false);
-
-const filteredPlans = computed(() => {
-  if (!planSearchQuery.value) {
-    return plans.value;
-  }
-  const query = planSearchQuery.value.toLowerCase();
-  return plans.value.filter((plan) => plan.text.toLowerCase().includes(query));
-});
-
-watch(isPlanMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    planSearchQuery.value = '';
-  }
-});
-
 onMounted(async () => {
   await planStore.listPlanAll();
   plans.value = [
@@ -230,71 +213,15 @@ const totalRevenueDialog = computed(() => {
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
             <div class="invoice-list-filter">
-              <VLabel>{{ $t('plan') }}:</VLabel>
-              <VMenu v-model="isPlanMenuOpen">
-                <template #activator="{ props: menuProps }">
-                  <VTextField
-                    v-bind="menuProps"
-                    :model-value="
-                      filteredPlans.find((plan) => plan.id === selectedPlan)
-                        ?.text || ''
-                    "
-                    :placeholder="$t('select_plan')"
-                    variant="outlined"
-                    readonly
-                    :clearable="!!selectedPlan"
-                    clear-icon="tabler-x"
-                    @click:clear="selectedPlan = null"
-                    :append-inner-icon="
-                      selectedPlan ? undefined : 'tabler-chevron-down'
-                    "
-                  />
-                </template>
-                <VCard>
-                  <VCardText class="pa-2">
-                    <AppTextField
-                      v-model="planSearchQuery"
-                      :placeholder="$t('search') + '...'"
-                      prepend-inner-icon="tabler-search"
-                      density="compact"
-                      hide-details
-                      autofocus
-                      @click.stop
-                    />
-                  </VCardText>
-                  <VDivider />
-                  <VList max-height="300" style="overflow-y: auto">
-                    <template v-if="filteredPlans.length > 0">
-                      <VListItem
-                        v-for="(item, index) in filteredPlans"
-                        :key="index"
-                        :value="item.id"
-                        @click="
-                          () => {
-                            selectedPlan = item.id;
-                            isPlanMenuOpen = false;
-                            planSearchQuery = '';
-                          }
-                        "
-                        :active="selectedPlan === item.id"
-                      >
-                        <VListItemTitle>{{ item.text }}</VListItemTitle>
-                      </VListItem>
-                    </template>
-                    <VListItem v-else disabled>
-                      <VListItemTitle
-                        class="text-center text-body-2 text-medium-emphasis"
-                      >
-                        {{
-                          planSearchQuery
-                            ? $t('no_results_found')
-                            : $t('no_items_available')
-                        }}
-                      </VListItemTitle>
-                    </VListItem>
-                  </VList>
-                </VCard>
-              </VMenu>
+              <AppSelectSearch
+                v-model="selectedPlan"
+                :items="plans as any"
+                :label="$t('plan')"
+                :placeholder="$t('select_plan')"
+                :clearable="true"
+                item-value="id"
+                item-title="text"
+              />
             </div>
             <div class="invoice-list-filter">
               <VLabel>{{ $t('start_date') }}:</VLabel>

@@ -39,69 +39,9 @@ const redirectData = ref<RedirectData>(getInitialData());
 const users = ref<any[]>([]);
 const sectors = ref<any[]>([]);
 const sectorUsers = ref<any[]>([]);
-const userSearch = ref('');
-const sectorSearch = ref('');
-const sectorUserSearch = ref('');
 const isLoadingUsers = ref(false);
 const isLoadingSectors = ref(false);
 const isLoadingSectorUsers = ref(false);
-const isUserMenuOpen = ref(false);
-const isSectorMenuOpen = ref(false);
-const isSectorUserMenuOpen = ref(false);
-
-const selectedUserTitle = computed(() => {
-  const current = users.value.find(
-    (u) => u.value === redirectData.value.selectedUser
-  );
-  return current?.title || '';
-});
-
-const selectedSectorTitle = computed(() => {
-  const current = sectors.value.find(
-    (s) => s.value === redirectData.value.selectedSector
-  );
-  return current?.title || '';
-});
-
-const selectedSectorUserTitle = computed(() => {
-  const current = sectorUsers.value.find(
-    (u) => u.value === redirectData.value.selectedSectorUser
-  );
-  return current?.title || '';
-});
-
-const filteredUsers = computed(() => {
-  if (!userSearch.value) {
-    return users.value;
-  }
-  const query = userSearch.value.toLowerCase();
-  return users.value.filter((user) =>
-    user?.title?.toLowerCase().includes(query)
-  );
-});
-
-const filteredSectors = computed(() => {
-  if (!sectorSearch.value) {
-    return sectors.value;
-  }
-  const query = sectorSearch.value.toLowerCase();
-  return sectors.value.filter((sector) =>
-    sector.title.toLowerCase().includes(query)
-  );
-});
-
-const filteredSectorUsers = computed(() => {
-  if (!sectorUsers.value || sectorUsers.value.length === 0) {
-    return [];
-  }
-  if (!sectorUserSearch.value) {
-    return sectorUsers.value;
-  }
-  const query = sectorUserSearch.value.toLowerCase();
-  return sectorUsers.value.filter((user) =>
-    user?.title?.toLowerCase().includes(query)
-  );
-});
 
 const updateNodeData = () => {
   if (props.data) {
@@ -213,29 +153,25 @@ const loadSectorUsers = async (sectorId: string) => {
   }
 };
 
-watch(isUserMenuOpen, (isOpen) => {
-  if (isOpen) {
-    loadUsers();
-  } else {
-    userSearch.value = '';
+watch(
+  () => redirectData.value.redirectType,
+  (newType) => {
+    if (newType === 'user' && users.value.length === 0) {
+      loadUsers();
+    } else if (newType === 'sector' && sectors.value.length === 0) {
+      loadSectors();
+    }
   }
-});
+);
 
-watch(isSectorMenuOpen, (isOpen) => {
-  if (isOpen) {
-    loadSectors();
-  } else {
-    sectorSearch.value = '';
+watch(
+  () => redirectData.value.selectedSector,
+  (sectorId) => {
+    if (sectorId) {
+      loadSectorUsers(sectorId);
+    }
   }
-});
-
-watch(isSectorUserMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    sectorUserSearch.value = '';
-  } else if (redirectData.value.selectedSector) {
-    loadSectorUsers(redirectData.value.selectedSector);
-  }
-});
+);
 
 watch(
   () => redirectData.value.redirectType,
@@ -244,12 +180,6 @@ watch(
     redirectData.value.selectedSector = null;
     redirectData.value.selectedSectorUser = null;
     sectorUsers.value = [];
-    userSearch.value = '';
-    sectorSearch.value = '';
-    sectorUserSearch.value = '';
-    isUserMenuOpen.value = false;
-    isSectorMenuOpen.value = false;
-    isSectorUserMenuOpen.value = false;
     updateNodeData();
   }
 );
@@ -350,142 +280,51 @@ onMounted(() => {
         />
 
         <div v-if="redirectData.redirectType === 'user'" class="mb-3">
-          <VLabel class="mb-1 text-body-2">{{
-            t('chatbot_user_label')
-          }}</VLabel>
-          <VMenu v-model="isUserMenuOpen">
-            <template #activator="{ props: menuProps }">
-              <VTextField
-                v-bind="menuProps"
-                :model-value="selectedUserTitle"
-                :placeholder="t('chatbot_search')"
-                variant="outlined"
-                readonly
-                append-inner-icon="tabler-chevron-down"
-                :loading="isLoadingUsers"
-                density="compact"
-              />
+          <AppSelectSearch
+            v-model="redirectData.selectedUser"
+            :items="users"
+            :label="t('chatbot_user_label')"
+            :placeholder="t('chatbot_search')"
+            :loading="isLoadingUsers"
+            :clearable="true"
+            item-value="value"
+            item-title="title"
+            @select="loadUsers()"
+          >
+            <template #item-prepend="{ item }">
+              <VAvatar
+                size="32"
+                :variant="!item.photo ? 'tonal' : undefined"
+                color="primary"
+              >
+                <VImg v-if="item.photo" :src="item.photo" :alt="item.title" />
+                <VIcon v-else icon="tabler-user" size="18" />
+              </VAvatar>
             </template>
-            <VCard>
-              <VCardText>
-                <VTextField
-                  v-model="userSearch"
-                  :placeholder="t('chatbot_search_user')"
-                  variant="outlined"
-                  density="compact"
-                  prepend-inner-icon="tabler-search"
-                  hide-details
-                />
-              </VCardText>
-              <VDivider />
-              <VList density="compact" class="max-height-300">
-                <VListItem
-                  v-for="user in filteredUsers"
-                  :key="user.value"
-                  :value="user.value"
-                  @click="
-                    redirectData.selectedUser = user.value;
-                    isUserMenuOpen = false;
-                  "
-                >
-                  <template #prepend>
-                    <VAvatar
-                      size="32"
-                      :variant="!user.photo ? 'tonal' : undefined"
-                      color="primary"
-                    >
-                      <VImg
-                        v-if="user.photo"
-                        :src="user.photo"
-                        :alt="user.title"
-                      />
-                      <VIcon v-else icon="tabler-user" size="18" />
-                    </VAvatar>
-                  </template>
-                  <VListItemTitle>{{ user.title }}</VListItemTitle>
-                  <template #append v-if="user.status === 'online'">
-                    <VChip size="small" color="success" variant="tonal">
-                      {{ t('chatbot_online') }}
-                    </VChip>
-                  </template>
-                </VListItem>
-                <VListItem
-                  v-if="filteredUsers.length === 0 && !isLoadingUsers"
-                  disabled
-                >
-                  <VListItemTitle
-                    class="text-center text-body-2 text-medium-emphasis"
-                  >
-                    {{ t('chatbot_no_results_found') }}
-                  </VListItemTitle>
-                </VListItem>
-              </VList>
-            </VCard>
-          </VMenu>
+          </AppSelectSearch>
         </div>
 
         <div v-if="redirectData.redirectType === 'sector'" class="mb-3">
-          <VLabel class="mb-1 text-body-2">{{
-            t('chatbot_sector_label')
-          }}</VLabel>
-          <VMenu v-model="isSectorMenuOpen">
-            <template #activator="{ props: menuProps }">
-              <VTextField
-                v-bind="menuProps"
-                :model-value="selectedSectorTitle"
-                :placeholder="t('chatbot_search')"
-                variant="outlined"
-                readonly
-                append-inner-icon="tabler-chevron-down"
-                :loading="isLoadingSectors"
-                density="compact"
+          <AppSelectSearch
+            v-model="redirectData.selectedSector"
+            :items="sectors"
+            :label="t('chatbot_sector_label')"
+            :placeholder="t('chatbot_search')"
+            :loading="isLoadingSectors"
+            :clearable="true"
+            item-value="value"
+            item-title="title"
+            @select="loadSectors()"
+          >
+            <template #item-prepend="{ item }">
+              <VAvatar
+                size="24"
+                :style="{
+                  backgroundColor: item.color || '#1976D2',
+                }"
               />
             </template>
-            <VCard>
-              <VCardText>
-                <VTextField
-                  v-model="sectorSearch"
-                  :placeholder="t('chatbot_search_sector')"
-                  variant="outlined"
-                  density="compact"
-                  prepend-inner-icon="tabler-search"
-                  hide-details
-                />
-              </VCardText>
-              <VDivider />
-              <VList density="compact" class="max-height-300">
-                <VListItem
-                  v-for="sector in filteredSectors"
-                  :key="sector.value"
-                  :value="sector.value"
-                  @click="
-                    redirectData.selectedSector = sector.value;
-                    isSectorMenuOpen = false;
-                  "
-                >
-                  <template #prepend>
-                    <VAvatar
-                      size="24"
-                      :style="{
-                        backgroundColor: sector.color || '#1976D2',
-                      }"
-                    />
-                  </template>
-                  <VListItemTitle>{{ sector.title }}</VListItemTitle>
-                </VListItem>
-                <VListItem
-                  v-if="filteredSectors.length === 0 && !isLoadingSectors"
-                  disabled
-                >
-                  <VListItemTitle
-                    class="text-center text-body-2 text-medium-emphasis"
-                  >
-                    {{ t('chatbot_no_results_found') }}
-                  </VListItemTitle>
-                </VListItem>
-              </VList>
-            </VCard>
-          </VMenu>
+          </AppSelectSearch>
         </div>
 
         <div
@@ -495,89 +334,28 @@ onMounted(() => {
           "
           class="mb-3"
         >
-          <VLabel class="mb-1 text-body-2">{{
-            t('chatbot_sector_user_label')
-          }}</VLabel>
-          <VMenu v-model="isSectorUserMenuOpen">
-            <template #activator="{ props: menuProps }">
-              <VTextField
-                v-bind="menuProps"
-                :model-value="selectedSectorUserTitle"
-                :placeholder="t('chatbot_search_optional')"
-                variant="outlined"
-                readonly
-                :append-inner-icon="
-                  redirectData.selectedSectorUser
-                    ? 'tabler-x'
-                    : 'tabler-chevron-down'
-                "
-                @click:append-inner="
-                  redirectData.selectedSectorUser
-                    ? (redirectData.selectedSectorUser = null)
-                    : undefined
-                "
-                :loading="isLoadingSectorUsers"
-                density="compact"
-              />
+          <AppSelectSearch
+            v-model="redirectData.selectedSectorUser"
+            :items="sectorUsers"
+            :label="t('chatbot_sector_user_label')"
+            :placeholder="t('chatbot_search_optional')"
+            :loading="isLoadingSectorUsers"
+            :clearable="true"
+            item-value="value"
+            item-title="title"
+            @select="loadSectorUsers(redirectData.selectedSector)"
+          >
+            <template #item-prepend="{ item }">
+              <VAvatar
+                size="32"
+                :variant="!item.photo ? 'tonal' : undefined"
+                color="primary"
+              >
+                <VImg v-if="item.photo" :src="item.photo" :alt="item.title" />
+                <VIcon v-else icon="tabler-user" size="18" />
+              </VAvatar>
             </template>
-            <VCard>
-              <VCardText>
-                <VTextField
-                  v-model="sectorUserSearch"
-                  :placeholder="t('chatbot_search_user')"
-                  variant="outlined"
-                  density="compact"
-                  prepend-inner-icon="tabler-search"
-                  hide-details
-                />
-              </VCardText>
-              <VDivider />
-              <VList density="compact" class="max-height-300">
-                <VListItem
-                  v-for="user in filteredSectorUsers"
-                  :key="user.value"
-                  :value="user.value"
-                  @click="
-                    redirectData.selectedSectorUser = user.value;
-                    isSectorUserMenuOpen = false;
-                  "
-                >
-                  <template #prepend>
-                    <VAvatar
-                      size="32"
-                      :variant="!user.photo ? 'tonal' : undefined"
-                      color="primary"
-                    >
-                      <VImg
-                        v-if="user.photo"
-                        :src="user.photo"
-                        :alt="user.title"
-                      />
-                      <VIcon v-else icon="tabler-user" size="18" />
-                    </VAvatar>
-                  </template>
-                  <VListItemTitle>{{ user.title }}</VListItemTitle>
-                  <template #append v-if="user.status === 'online'">
-                    <VChip size="small" color="success" variant="tonal">
-                      {{ t('chatbot_online') }}
-                    </VChip>
-                  </template>
-                </VListItem>
-                <VListItem
-                  v-if="
-                    filteredSectorUsers.length === 0 && !isLoadingSectorUsers
-                  "
-                  disabled
-                >
-                  <VListItemTitle
-                    class="text-center text-body-2 text-medium-emphasis"
-                  >
-                    {{ t('chatbot_no_results_found') }}
-                  </VListItemTitle>
-                </VListItem>
-              </VList>
-            </VCard>
-          </VMenu>
+          </AppSelectSearch>
         </div>
       </VCardText>
     </VCard>

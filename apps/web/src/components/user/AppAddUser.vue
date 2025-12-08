@@ -25,8 +25,6 @@ const {
   cities,
   filteredStates,
   filteredCities,
-  stateSearchQuery,
-  citySearchQuery,
   loadStates,
   loadCities,
   clearCities,
@@ -39,32 +37,9 @@ const hasFullAccess = computed(() =>
 );
 const accountId = ref<string | null>(null);
 const accountsOptions = ref<{ id: string; text: string }[]>([]);
-const accountSearchQuery = ref('');
-const isAccountMenuOpen = ref(false);
 const accountsLoading = ref(false);
 const permissionRoleId = ref<string | null>(null);
 const rolesOptions = ref<{ id: string; name: string }[]>([]);
-const roleSearchQuery = ref('');
-const isRoleMenuOpen = ref(false);
-
-const countrySearchQuery = ref('');
-const isCountryMenuOpen = ref(false);
-
-const filteredCountryCodes = computed(() => {
-  if (!countrySearchQuery.value) {
-    return countryCodes.value;
-  }
-  const query = countrySearchQuery.value.toLowerCase();
-  return countryCodes.value.filter((country) =>
-    country.title.toLowerCase().includes(query)
-  );
-});
-
-watch(isCountryMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    countrySearchQuery.value = '';
-  }
-});
 
 const props = defineProps<{
   modelValue: boolean;
@@ -117,44 +92,6 @@ const itemsDocuments = ref([
 ]);
 
 const itemsCountry = ref([{ value: ECountry.Brasil, title: t('brazil') }]);
-
-const documentTypeSearchQuery = ref('');
-const isDocumentTypeMenuOpen = ref(false);
-
-const filteredDocumentTypes = computed(() => {
-  if (!documentTypeSearchQuery.value) {
-    return itemsDocuments.value;
-  }
-  const query = documentTypeSearchQuery.value.toLowerCase();
-  return itemsDocuments.value.filter((doc) =>
-    doc.title.toLowerCase().includes(query)
-  );
-});
-
-const countrySearchQueryForSelect = ref('');
-const isCountrySelectMenuOpen = ref(false);
-
-const filteredCountries = computed(() => {
-  if (!countrySearchQueryForSelect.value) {
-    return itemsCountry.value;
-  }
-  const query = countrySearchQueryForSelect.value.toLowerCase();
-  return itemsCountry.value.filter((country) =>
-    country.title.toLowerCase().includes(query)
-  );
-});
-
-watch(isDocumentTypeMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    documentTypeSearchQuery.value = '';
-  }
-});
-
-watch(isCountrySelectMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    countrySearchQueryForSelect.value = '';
-  }
-});
 
 const isCPF = computed(
   () => user_document_type_id.value === EUserDocumentType.CPF
@@ -230,8 +167,6 @@ const city = ref<string | null>(null);
 const state = ref<string | null>(null);
 const state_id = ref<string | null>(null);
 const city_id = ref<string | null>(null);
-const isStateMenuOpen = ref(false);
-const isCityMenuOpen = ref(false);
 const district = ref<string | null>(null);
 
 const isPasswordVisible = ref(false);
@@ -602,18 +537,6 @@ const onStateChange = async (stateId: string | null) => {
     await loadCities(stateId);
   }
 };
-
-watch(isStateMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    stateSearchQuery.value = '';
-  }
-});
-
-watch(isCityMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    citySearchQuery.value = '';
-  }
-});
 
 const resetForm = () => {
   email.value = null;
@@ -1250,38 +1173,6 @@ const setCurrentUserAccount = () => {
   }
 };
 
-const filteredAccounts = computed(() => {
-  if (!accountSearchQuery.value) {
-    return accountsOptions.value;
-  }
-  const query = accountSearchQuery.value.toLowerCase();
-  return accountsOptions.value.filter((account) =>
-    account.text.toLowerCase().includes(query)
-  );
-});
-
-const filteredRoles = computed(() => {
-  if (!roleSearchQuery.value) {
-    return rolesOptions.value;
-  }
-  const query = roleSearchQuery.value.toLowerCase();
-  return rolesOptions.value.filter((role) =>
-    role.name.toLowerCase().includes(query)
-  );
-});
-
-watch(isAccountMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    accountSearchQuery.value = '';
-  }
-});
-
-watch(isRoleMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    roleSearchQuery.value = '';
-  }
-});
-
 const loadAccounts = async () => {
   if (!hasFullAccess.value) return;
 
@@ -1513,158 +1404,30 @@ onMounted(resetForm);
                     <VDivider class="mb-4" />
                     <VRow class="mb-4">
                       <VCol v-if="hasFullAccess" cols="12" md="6">
-                        <div>
-                          <VLabel class="mb-1 text-body-2">
-                            {{ $t('account') }}:
-                          </VLabel>
-                          <VMenu v-model="isAccountMenuOpen">
-                            <template #activator="{ props: menuProps }">
-                              <VTextField
-                                v-bind="menuProps"
-                                :model-value="
-                                  accountsOptions.find(
-                                    (acc) => acc.id === accountId
-                                  )?.text || ''
-                                "
-                                :placeholder="$t('select_account')"
-                                variant="outlined"
-                                readonly
-                                :loading="accountsLoading"
-                                :clearable="!!accountId"
-                                clear-icon="tabler-x"
-                                @click:clear="accountId = null"
-                                :append-inner-icon="
-                                  accountId ? undefined : 'tabler-chevron-down'
-                                "
-                              />
-                            </template>
-                            <VCard>
-                              <VCardText class="pa-2">
-                                <AppTextField
-                                  v-model="accountSearchQuery"
-                                  :placeholder="$t('search') + '...'"
-                                  prepend-inner-icon="tabler-search"
-                                  density="compact"
-                                  hide-details
-                                  autofocus
-                                  @click.stop
-                                />
-                              </VCardText>
-                              <VDivider />
-                              <VList max-height="300" style="overflow-y: auto">
-                                <template v-if="filteredAccounts.length > 0">
-                                  <VListItem
-                                    v-for="(item, index) in filteredAccounts"
-                                    :key="index"
-                                    :value="item.id"
-                                    @click="
-                                      () => {
-                                        accountId = item.id;
-                                        isAccountMenuOpen = false;
-                                        accountSearchQuery = '';
-                                      }
-                                    "
-                                    :active="accountId === item.id"
-                                  >
-                                    <VListItemTitle>{{
-                                      item.text
-                                    }}</VListItemTitle>
-                                  </VListItem>
-                                </template>
-                                <VListItem v-else disabled>
-                                  <VListItemTitle
-                                    class="text-center text-body-2 text-medium-emphasis"
-                                  >
-                                    {{
-                                      accountSearchQuery
-                                        ? $t('no_results_found')
-                                        : $t('no_items_available')
-                                    }}
-                                  </VListItemTitle>
-                                </VListItem>
-                              </VList>
-                            </VCard>
-                          </VMenu>
-                        </div>
+                        <AppSelectSearch
+                          v-model="accountId"
+                          :items="accountsOptions"
+                          :label="$t('account')"
+                          :placeholder="$t('select_account')"
+                          :clearable="true"
+                          :loading="accountsLoading"
+                          item-value="id"
+                          item-title="text"
+                        />
                       </VCol>
                       <VCol
                         :cols="hasFullAccess ? 12 : 12"
                         :md="hasFullAccess ? 6 : 12"
                       >
-                        <div>
-                          <VLabel class="mb-1 text-body-2">
-                            {{ $t('role') }}:
-                          </VLabel>
-                          <VMenu v-model="isRoleMenuOpen">
-                            <template #activator="{ props: menuProps }">
-                              <VTextField
-                                v-bind="menuProps"
-                                :model-value="
-                                  rolesOptions.find(
-                                    (r) => r.id === permissionRoleId
-                                  )?.name || ''
-                                "
-                                :placeholder="$t('select_role')"
-                                variant="outlined"
-                                readonly
-                                :clearable="!!permissionRoleId"
-                                clear-icon="tabler-x"
-                                @click:clear="permissionRoleId = null"
-                                :append-inner-icon="
-                                  permissionRoleId
-                                    ? undefined
-                                    : 'tabler-chevron-down'
-                                "
-                              />
-                            </template>
-                            <VCard>
-                              <VCardText class="pa-2">
-                                <AppTextField
-                                  v-model="roleSearchQuery"
-                                  :placeholder="$t('search') + '...'"
-                                  prepend-inner-icon="tabler-search"
-                                  density="compact"
-                                  hide-details
-                                  autofocus
-                                  @click.stop
-                                />
-                              </VCardText>
-                              <VDivider />
-                              <VList max-height="300" style="overflow-y: auto">
-                                <VListItem
-                                  v-for="(item, index) in filteredRoles"
-                                  :key="index"
-                                  :value="item.id"
-                                  @click="
-                                    () => {
-                                      permissionRoleId = item.id;
-                                      isRoleMenuOpen = false;
-                                    }
-                                  "
-                                  :active="permissionRoleId === item.id"
-                                >
-                                  <VListItemTitle>{{
-                                    item.name
-                                  }}</VListItemTitle>
-                                </VListItem>
-                                <VListItem
-                                  v-if="filteredRoles.length === 0"
-                                  disabled
-                                >
-                                  <VListItemTitle
-                                    class="text-center text-body-2 text-medium-emphasis"
-                                  >
-                                    {{
-                                      roleSearchQuery
-                                        ? $t('no_results_found')
-                                        : $t('no_items_available')
-                                    }}
-                                  </VListItemTitle>
-                                </VListItem>
-                              </VList>
-                            </VCard>
-                          </VMenu>
-                        </div>
+                        <AppSelectSearch
+                          v-model="permissionRoleId"
+                          :items="rolesOptions"
+                          :label="$t('role')"
+                          :placeholder="$t('select_role')"
+                          :clearable="true"
+                          item-value="id"
+                          item-title="name"
+                        />
                       </VCol>
                     </VRow>
 
@@ -1784,56 +1547,14 @@ onMounted(resetForm);
               <VForm class="mt-4" ref="refFormStep2" @submit.prevent>
                 <VRow class="mb-2">
                   <VCol cols="12" md="6">
-                    <div>
-                      <VLabel class="mb-1 text-body-2"
-                        >{{ $t('phone_ddi') }}:</VLabel
-                      >
-                      <VMenu v-model="isCountryMenuOpen">
-                        <template #activator="{ props: menuProps }">
-                          <VTextField
-                            v-bind="menuProps"
-                            :model-value="
-                              countryCodes.find((c) => c.value === phone_ddi)
-                                ?.title || ''
-                            "
-                            :placeholder="$t('select_phone_ddi')"
-                            variant="outlined"
-                            readonly
-                            append-inner-icon="tabler-chevron-down"
-                          />
-                        </template>
-                        <VCard>
-                          <VCardText class="pa-2">
-                            <AppTextField
-                              v-model="countrySearchQuery"
-                              :placeholder="$t('search') + '...'"
-                              prepend-inner-icon="tabler-search"
-                              density="compact"
-                              hide-details
-                              autofocus
-                              @click.stop
-                            />
-                          </VCardText>
-                          <VDivider />
-                          <VList max-height="300" style="overflow-y: auto">
-                            <VListItem
-                              v-for="(item, index) in filteredCountryCodes"
-                              :key="index"
-                              :value="item.value"
-                              @click="
-                                () => {
-                                  phone_ddi = item.value;
-                                  isCountryMenuOpen = false;
-                                }
-                              "
-                              :active="phone_ddi === item.value"
-                            >
-                              <VListItemTitle>{{ item.title }}</VListItemTitle>
-                            </VListItem>
-                          </VList>
-                        </VCard>
-                      </VMenu>
-                    </div>
+                    <AppSelectSearch
+                      v-model="phone_ddi"
+                      :items="countryCodes"
+                      :label="$t('phone_ddi')"
+                      :placeholder="$t('select_phone_ddi')"
+                      item-value="value"
+                      item-title="title"
+                    />
                   </VCol>
 
                   <VCol cols="12" md="6">
@@ -1874,79 +1595,17 @@ onMounted(resetForm);
                   </VCol>
 
                   <VCol cols="12" md="6">
-                    <VLabel class="mb-1 text-body-2"
-                      >{{ $t('document_type') }}:</VLabel
-                    >
-                    <VMenu v-model="isDocumentTypeMenuOpen">
-                      <template #activator="{ props: menuProps }">
-                        <VTextField
-                          v-bind="menuProps"
-                          :model-value="
-                            filteredDocumentTypes.find(
-                              (doc) => doc.value === user_document_type_id
-                            )?.title || ''
-                          "
-                          :placeholder="$t('document_type')"
-                          variant="outlined"
-                          readonly
-                          :clearable="!!user_document_type_id"
-                          clear-icon="tabler-x"
-                          @click:clear="
-                            user_document_type_id = null;
-                            document = null;
-                          "
-                          :append-inner-icon="
-                            user_document_type_id
-                              ? undefined
-                              : 'tabler-chevron-down'
-                          "
-                        />
-                      </template>
-                      <VCard>
-                        <VCardText class="pa-2">
-                          <AppTextField
-                            v-model="documentTypeSearchQuery"
-                            :placeholder="$t('search') + '...'"
-                            prepend-inner-icon="tabler-search"
-                            density="compact"
-                            hide-details
-                            autofocus
-                            @click.stop
-                          />
-                        </VCardText>
-                        <VDivider />
-                        <VList max-height="300" style="overflow-y: auto">
-                          <template v-if="filteredDocumentTypes.length > 0">
-                            <VListItem
-                              v-for="(item, index) in filteredDocumentTypes"
-                              :key="index"
-                              :value="item.value"
-                              @click="
-                                () => {
-                                  user_document_type_id = item.value;
-                                  document = null;
-                                  isDocumentTypeMenuOpen = false;
-                                  documentTypeSearchQuery = '';
-                                }
-                              "
-                              :active="user_document_type_id === item.value"
-                            >
-                              <VListItemTitle>{{ item.title }}</VListItemTitle>
-                            </VListItem>
-                          </template>
-                          <VListItem
-                            v-else-if="documentTypeSearchQuery"
-                            disabled
-                          >
-                            <VListItemTitle
-                              class="text-center text-body-2 text-medium-emphasis"
-                            >
-                              {{ $t('no_results_found') }}
-                            </VListItemTitle>
-                          </VListItem>
-                        </VList>
-                      </VCard>
-                    </VMenu>
+                    <AppSelectSearch
+                      v-model="user_document_type_id"
+                      :items="itemsDocuments"
+                      :label="$t('document_type')"
+                      :placeholder="$t('document_type')"
+                      :clearable="true"
+                      item-value="value"
+                      item-title="title"
+                      @select="document = null"
+                      @clear="document = null"
+                    />
                   </VCol>
 
                   <VCol v-if="isCPF || isCNPJ" cols="12" md="6">
@@ -1987,76 +1646,21 @@ onMounted(resetForm);
               <VForm class="mt-4" ref="refFormAddUser" @submit.prevent>
                 <VRow class="mb-2">
                   <VCol cols="12" md="6">
-                    <VLabel class="mb-1 text-body-2"
-                      >{{ $t('country') }}:</VLabel
-                    >
-                    <VMenu v-model="isCountrySelectMenuOpen">
-                      <template #activator="{ props: menuProps }">
-                        <VTextField
-                          v-bind="menuProps"
-                          :model-value="
-                            filteredCountries.find(
-                              (country) => country.value === country_id
-                            )?.title || ''
-                          "
-                          :placeholder="$t('country')"
-                          variant="outlined"
-                          readonly
-                          :clearable="!!country_id"
-                          clear-icon="tabler-x"
-                          @click:clear="
-                            country_id = null;
-                            onCountryChange(null);
-                          "
-                          :append-inner-icon="
-                            country_id ? undefined : 'tabler-chevron-down'
-                          "
-                        />
-                      </template>
-                      <VCard>
-                        <VCardText class="pa-2">
-                          <AppTextField
-                            v-model="countrySearchQueryForSelect"
-                            :placeholder="$t('search') + '...'"
-                            prepend-inner-icon="tabler-search"
-                            density="compact"
-                            hide-details
-                            autofocus
-                            @click.stop
-                          />
-                        </VCardText>
-                        <VDivider />
-                        <VList max-height="300" style="overflow-y: auto">
-                          <template v-if="filteredCountries.length > 0">
-                            <VListItem
-                              v-for="(item, index) in filteredCountries"
-                              :key="index"
-                              :value="item.value"
-                              @click="
-                                () => {
-                                  onCountryChange(item.value);
-                                  isCountrySelectMenuOpen = false;
-                                  countrySearchQueryForSelect = '';
-                                }
-                              "
-                              :active="country_id === item.value"
-                            >
-                              <VListItemTitle>{{ item.title }}</VListItemTitle>
-                            </VListItem>
-                          </template>
-                          <VListItem
-                            v-else-if="countrySearchQueryForSelect"
-                            disabled
-                          >
-                            <VListItemTitle
-                              class="text-center text-body-2 text-medium-emphasis"
-                            >
-                              {{ $t('no_results_found') }}
-                            </VListItemTitle>
-                          </VListItem>
-                        </VList>
-                      </VCard>
-                    </VMenu>
+                    <AppSelectSearch
+                      v-model="country_id"
+                      :items="itemsCountry"
+                      :label="$t('country')"
+                      :placeholder="$t('country')"
+                      :clearable="true"
+                      item-value="value"
+                      item-title="title"
+                      @select="
+                        (item) => onCountryChange(item.value as number | null)
+                      "
+                      @update:modelValue="
+                        (val) => onCountryChange(val as number | null)
+                      "
+                    />
                   </VCol>
                   <VCol cols="12" md="6">
                     <AppTextField
@@ -2073,134 +1677,37 @@ onMounted(resetForm);
                     />
                   </VCol>
                   <VCol cols="12" md="6">
-                    <div>
-                      <VLabel class="mb-1 text-body-2"
-                        >{{ $t('state') }}:</VLabel
-                      >
-                      <VMenu v-model="isStateMenuOpen">
-                        <template #activator="{ props: menuProps }">
-                          <VTextField
-                            v-bind="menuProps"
-                            :model-value="
-                              filteredStates.find((s) => s.value === state_id)
-                                ?.title || ''
-                            "
-                            :placeholder="$t('state')"
-                            variant="outlined"
-                            readonly
-                            :disabled="!country_id"
-                            append-inner-icon="tabler-chevron-down"
-                          />
-                        </template>
-                        <VCard>
-                          <VCardText class="pa-2">
-                            <AppTextField
-                              v-model="stateSearchQuery"
-                              :placeholder="$t('search') + '...'"
-                              prepend-inner-icon="tabler-search"
-                              density="compact"
-                              hide-details
-                              autofocus
-                              @click.stop
-                            />
-                          </VCardText>
-                          <VDivider />
-                          <VList max-height="300" style="overflow-y: auto">
-                            <template v-if="filteredStates.length > 0">
-                              <VListItem
-                                v-for="(item, index) in filteredStates"
-                                :key="index"
-                                :value="item.value"
-                                @click="
-                                  () => {
-                                    onStateChange(item.value);
-                                    state = item.title;
-                                    isStateMenuOpen = false;
-                                  }
-                                "
-                                :active="state_id === item.value"
-                              >
-                                <VListItemTitle>{{
-                                  item.title
-                                }}</VListItemTitle>
-                              </VListItem>
-                            </template>
-                            <VListItem v-else-if="stateSearchQuery" disabled>
-                              <VListItemTitle
-                                class="text-center text-body-2 text-medium-emphasis"
-                              >
-                                {{ $t('no_results_found') }}
-                              </VListItemTitle>
-                            </VListItem>
-                          </VList>
-                        </VCard>
-                      </VMenu>
-                    </div>
+                    <AppSelectSearch
+                      v-model="state_id"
+                      :items="filteredStates"
+                      :label="$t('state')"
+                      :placeholder="$t('state')"
+                      :disabled="!country_id"
+                      item-value="value"
+                      item-title="title"
+                      @select="
+                        (item) => {
+                          onStateChange(item.value as string | null);
+                          state = item.title || '';
+                        }
+                      "
+                    />
                   </VCol>
                   <VCol cols="12" md="6">
-                    <div>
-                      <VLabel class="mb-1 text-body-2"
-                        >{{ $t('city') }}:</VLabel
-                      >
-                      <VMenu v-model="isCityMenuOpen">
-                        <template #activator="{ props: menuProps }">
-                          <VTextField
-                            v-bind="menuProps"
-                            :model-value="
-                              filteredCities.find((c) => c.value === city_id)
-                                ?.title || ''
-                            "
-                            :placeholder="$t('city')"
-                            variant="outlined"
-                            readonly
-                            :disabled="!state_id || !country_id"
-                            append-inner-icon="tabler-chevron-down"
-                          />
-                        </template>
-                        <VCard>
-                          <VCardText class="pa-2">
-                            <AppTextField
-                              v-model="citySearchQuery"
-                              :placeholder="$t('search') + '...'"
-                              prepend-inner-icon="tabler-search"
-                              density="compact"
-                              hide-details
-                              autofocus
-                              @click.stop
-                            />
-                          </VCardText>
-                          <VDivider />
-                          <VList max-height="300" style="overflow-y: auto">
-                            <template v-if="filteredCities.length > 0">
-                              <VListItem
-                                v-for="(item, index) in filteredCities"
-                                :key="index"
-                                :value="item.value"
-                                @click="
-                                  () => {
-                                    city_id = item.value;
-                                    city = item.title;
-                                    isCityMenuOpen = false;
-                                  }
-                                "
-                                :active="city_id === item.value"
-                              >
-                                <VListItemTitle>{{
-                                  item.title
-                                }}</VListItemTitle>
-                              </VListItem>
-                            </template>
-                            <VListItem v-else-if="citySearchQuery" disabled>
-                              <VListItemTitle
-                                class="text-center text-body-2 text-medium-emphasis"
-                              >
-                                {{ $t('no_results_found') }}
-                              </VListItemTitle>
-                            </VListItem>
-                          </VList>
-                        </VCard>
-                      </VMenu>
-                    </div>
+                    <AppSelectSearch
+                      v-model="city_id"
+                      :items="filteredCities"
+                      :label="$t('city')"
+                      :placeholder="$t('city')"
+                      :disabled="!state_id || !country_id"
+                      item-value="value"
+                      item-title="title"
+                      @select="
+                        (item) => {
+                          city = item.title || '';
+                        }
+                      "
+                    />
                   </VCol>
                   <VCol cols="12" md="6">
                     <AppTextField
