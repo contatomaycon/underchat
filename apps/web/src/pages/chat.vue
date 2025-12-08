@@ -5099,13 +5099,16 @@ onBeforeUnmount(() => {
       <VCardText>
         <VRow>
           <VCol cols="12">
-            <AppSelect
+            <VLabel class="text-body-2 mb-1">{{ $t('transfer_to') }}:</VLabel>
+            <AppSelectSearch
               v-model="transferType"
               :items="[
                 { value: 'user', title: $t('user') },
                 { value: 'sector', title: $t('sector') },
               ]"
-              :label="$t('transfer_to') + ':'"
+              :placeholder="$t('transfer_to')"
+              item-value="value"
+              item-title="title"
             />
           </VCol>
 

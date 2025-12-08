@@ -999,24 +999,21 @@ onMounted(async () => {
 
       <VCardText class="pt-6">
         <div class="mb-6">
-          <VLabel class="mb-2">{{ $t('channel') }} *</VLabel>
-          <VSelect
+          <VLabel class="text-body-2 mb-1">{{ $t('channel') }} *</VLabel>
+          <AppSelectSearch
             v-model="selectedWorkerId"
-            :items="availableWorkers"
-            item-title="name"
-            item-value="id"
+            :items="
+              availableWorkers.map((w) => ({
+                value: w.id,
+                title: w.number ? `${w.name} (${w.number})` : w.name,
+                name: w.name,
+                number: w.number,
+              }))
+            "
             :placeholder="$t('select_channel')"
-            variant="outlined"
-            density="comfortable"
-          >
-            <template #item="{ props, item }">
-              <VListItem
-                v-bind="props"
-                :title="item.raw.name"
-                :subtitle="item.raw.number || undefined"
-              />
-            </template>
-          </VSelect>
+            item-value="value"
+            item-title="title"
+          />
           <div v-if="selectedWorkerId" class="mt-2">
             <VChip
               size="small"
@@ -1047,25 +1044,30 @@ onMounted(async () => {
         </div>
 
         <div class="mb-6">
-          <VLabel class="mb-2">{{ $t('sector') }}</VLabel>
-          <VSelect
+          <VLabel class="text-body-2 mb-1">{{ $t('sector') }}</VLabel>
+          <AppSelectSearch
             v-model="selectedSectorId"
-            :items="availableSectors"
-            item-title="name"
-            item-value="sector_id"
+            :items="
+              availableSectors.map((s) => ({
+                value: s.sector_id,
+                title: s.name,
+                color: s.color,
+              }))
+            "
             :placeholder="$t('select_sector')"
-            variant="outlined"
-            density="comfortable"
-            clearable
+            :clearable="true"
+            item-value="value"
+            item-title="title"
           >
-            <template #item="{ props, item }">
-              <VListItem v-bind="props" :title="item.raw.name">
-                <template #prepend>
-                  <VAvatar :color="item.raw.color" size="24" class="me-2" />
-                </template>
-              </VListItem>
+            <template #item-prepend="{ item }">
+              <VAvatar
+                v-if="item.color"
+                :color="item.color"
+                size="24"
+                class="me-2"
+              />
             </template>
-          </VSelect>
+          </AppSelectSearch>
         </div>
 
         <VAlert
