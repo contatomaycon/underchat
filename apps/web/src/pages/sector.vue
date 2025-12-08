@@ -286,11 +286,15 @@ watch(
                         <VListItemTitle>{{ item.text }}</VListItemTitle>
                       </VListItem>
                     </template>
-                    <VListItem v-else-if="statusSearchQuery" disabled>
+                    <VListItem v-else disabled>
                       <VListItemTitle
                         class="text-center text-body-2 text-medium-emphasis"
                       >
-                        {{ $t('no_results_found') }}
+                        {{
+                          statusSearchQuery
+                            ? $t('no_results_found')
+                            : $t('no_items_available')
+                        }}
                       </VListItemTitle>
                     </VListItem>
                   </VList>

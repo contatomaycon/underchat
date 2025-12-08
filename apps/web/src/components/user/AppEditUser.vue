@@ -2512,14 +2512,15 @@ watch(
                                     }}</VListItemTitle>
                                   </VListItem>
                                 </template>
-                                <VListItem
-                                  v-else-if="accountSearchQuery"
-                                  disabled
-                                >
+                                <VListItem v-else disabled>
                                   <VListItemTitle
                                     class="text-center text-body-2 text-medium-emphasis"
                                   >
-                                    {{ $t('no_results_found') }}
+                                    {{
+                                      accountSearchQuery
+                                        ? $t('no_results_found')
+                                        : $t('no_items_available')
+                                    }}
                                   </VListItemTitle>
                                 </VListItem>
                               </VList>
@@ -2594,7 +2595,11 @@ watch(
                                   <VListItemTitle
                                     class="text-center text-body-2 text-medium-emphasis"
                                   >
-                                    {{ $t('no_results_found') }}
+                                    {{
+                                      roleSearchQuery
+                                        ? $t('no_results_found')
+                                        : $t('no_items_available')
+                                    }}
                                   </VListItemTitle>
                                 </VListItem>
                               </VList>

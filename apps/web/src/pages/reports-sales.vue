@@ -281,11 +281,15 @@ const totalRevenueDialog = computed(() => {
                         <VListItemTitle>{{ item.text }}</VListItemTitle>
                       </VListItem>
                     </template>
-                    <VListItem v-else-if="planSearchQuery" disabled>
+                    <VListItem v-else disabled>
                       <VListItemTitle
                         class="text-center text-body-2 text-medium-emphasis"
                       >
-                        {{ $t('no_results_found') }}
+                        {{
+                          planSearchQuery
+                            ? $t('no_results_found')
+                            : $t('no_items_available')
+                        }}
                       </VListItemTitle>
                     </VListItem>
                   </VList>

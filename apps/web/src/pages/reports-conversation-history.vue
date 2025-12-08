@@ -693,11 +693,15 @@ const openDocument = (url: string | null | undefined) => {
                       <VListItemTitle>{{ item.text }}</VListItemTitle>
                     </VListItem>
                   </template>
-                  <VListItem v-else-if="operatorSearchQuery" disabled>
+                  <VListItem v-else disabled>
                     <VListItemTitle
                       class="text-center text-body-2 text-medium-emphasis"
                     >
-                      {{ $t('no_results_found') }}
+                      {{
+                        operatorSearchQuery
+                          ? $t('no_results_found')
+                          : $t('no_items_available')
+                      }}
                     </VListItemTitle>
                   </VListItem>
                 </VList>
@@ -758,11 +762,15 @@ const openDocument = (url: string | null | undefined) => {
                       <VListItemTitle>{{ item.text }}</VListItemTitle>
                     </VListItem>
                   </template>
-                  <VListItem v-else-if="sectorSearchQuery" disabled>
+                  <VListItem v-else disabled>
                     <VListItemTitle
                       class="text-center text-body-2 text-medium-emphasis"
                     >
-                      {{ $t('no_results_found') }}
+                      {{
+                        sectorSearchQuery
+                          ? $t('no_results_found')
+                          : $t('no_items_available')
+                      }}
                     </VListItemTitle>
                   </VListItem>
                 </VList>
