@@ -85,17 +85,11 @@ export class AccountService {
   listAccounts = async (
     perPage: number,
     currentPage: number,
-    query: ListAccountRequest,
-    accountId: string
+    query: ListAccountRequest
   ): Promise<[ListAccountResponse[], number]> => {
     const [result, total] = await Promise.all([
-      this.accountListerRepository.listAccounts(
-        perPage,
-        currentPage,
-        query,
-        accountId
-      ),
-      this.accountListerRepository.listAccountsTotal(query, accountId),
+      this.accountListerRepository.listAccounts(perPage, currentPage, query),
+      this.accountListerRepository.listAccountsTotal(query),
     ]);
 
     return [result, total];

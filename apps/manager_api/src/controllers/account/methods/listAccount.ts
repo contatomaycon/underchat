@@ -12,13 +12,10 @@ export const listAccount = async (
   reply: FastifyReply
 ) => {
   const accountListerUseCase = container.resolve(AccountListerUseCase);
-  const { t, tokenJwtData } = request;
+  const { t } = request;
 
   try {
-    const response = await accountListerUseCase.execute(
-      request.query,
-      tokenJwtData.account_id
-    );
+    const response = await accountListerUseCase.execute(request.query);
 
     if (response) {
       return sendResponse(reply, {

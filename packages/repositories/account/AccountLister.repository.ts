@@ -10,12 +10,14 @@ import {
   SQLWrapper,
   or,
   ilike,
-  inArray,
   gt,
   sql,
+  desc,
+  asc,
 } from 'drizzle-orm';
 import { ListAccountRequest } from '@core/schema/account/listAccount/request.schema';
 import { ListAccountResponse } from '@core/schema/account/listAccount/response.schema';
+import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 
 @injectable()
 export class AccountListerRepository {
@@ -32,13 +34,14 @@ export class AccountListerRepository {
       const conditions: (SQLWrapper | undefined)[] = [
         query.name ? ilike(account.name, `%${query.name}%`) : undefined,
         query.plan
-          ? inArray(
-              planAccount.plan_id,
-              this.db
-                .select({ plan_id: plan.plan_id })
-                .from(plan)
-                .where(ilike(plan.name, `%${query.plan}%`))
-            )
+          ? sql`EXISTS (
+              SELECT 1 
+              FROM ${planAccount} pa
+              INNER JOIN ${plan} p ON p.plan_id = pa.plan_id
+              WHERE pa.account_id = ${account.account_id}
+                AND p.name ILIKE ${`%${query.plan}%`}
+                AND p.deleted_at IS NULL
+            )`
           : undefined,
       ];
 
@@ -57,17 +60,12 @@ export class AccountListerRepository {
   listAccounts = async (
     perPage: number,
     currentPage: number,
-    query: ListAccountRequest,
-    accountId: string
+    query: ListAccountRequest
   ): Promise<ListAccountResponse[]> => {
     const filtersAccount = this.setFiltersAccount(query);
 
     const result = await this.db.query.account.findMany({
-      where: and(
-        eq(account.account_id, accountId),
-        isNull(account.deleted_at),
-        ...filtersAccount
-      ),
+      where: and(isNull(account.deleted_at), ...filtersAccount),
       with: {
         aac: {
           columns: {
@@ -102,6 +100,10 @@ export class AccountListerRepository {
         name: true,
         created_at: true,
       },
+      orderBy: [
+        sql`CASE WHEN ${account.account_status_id} = ${EAccountStatus.active} THEN 0 ELSE 1 END`,
+        desc(account.created_at),
+      ],
       limit: perPage,
       offset: (currentPage - 1) * perPage,
     });
@@ -143,10 +145,7 @@ export class AccountListerRepository {
     });
   };
 
-  listAccountsTotal = async (
-    query: ListAccountRequest,
-    accountId: string
-  ): Promise<number> => {
+  listAccountsTotal = async (query: ListAccountRequest): Promise<number> => {
     const filtersAccount = this.setFiltersAccount(query);
 
     const result = await this.db
@@ -162,7 +161,6 @@ export class AccountListerRepository {
       .leftJoin(plan, eq(plan.plan_id, planAccount.plan_id))
       .where(
         and(
-          eq(account.account_id, accountId),
           ...filtersAccount,
           isNull(account.deleted_at),
           gt(planAccount.next_payment_date, sql`NOW()`)

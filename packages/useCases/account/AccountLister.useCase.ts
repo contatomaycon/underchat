@@ -8,18 +8,14 @@ import { ListAccountRequest } from '@core/schema/account/listAccount/request.sch
 export class AccountListerUseCase {
   constructor(private readonly accountService: AccountService) {}
 
-  async execute(
-    query: ListAccountRequest,
-    accountId: string
-  ): Promise<ListAccountFinalResponse> {
+  async execute(query: ListAccountRequest): Promise<ListAccountFinalResponse> {
     const perPage = query.per_page ?? 10;
     const currentPage = query.current_page ?? 1;
 
     const [results, total] = await this.accountService.listAccounts(
       perPage,
       currentPage,
-      query,
-      accountId
+      query
     );
 
     const pagings = setPaginationData(
