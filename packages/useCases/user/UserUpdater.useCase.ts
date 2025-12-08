@@ -558,8 +558,7 @@ export class UserUpdaterUseCase {
   private async assignUserRoleToUser(
     t: TFunction<'translation', undefined>,
     userId: string,
-    permissionRoleId: string,
-    accountId: string
+    permissionRoleId: string
   ): Promise<void> {
     const userAccountId = await this.userService.getUserAccountId(userId);
     if (!userAccountId) {
@@ -606,20 +605,15 @@ export class UserUpdaterUseCase {
   private async updateUserRoleData(
     t: TFunction<'translation', undefined>,
     userId: string,
-    body: UpdateUserRequest,
-    accountId: string
+    body: UpdateUserRequest
   ): Promise<void> {
     const permissionRoleIdValue = this.extractStringValue(
       body.permission_role_id
     );
 
     if (permissionRoleIdValue) {
-      await this.assignUserRoleToUser(
-        t,
-        userId,
-        permissionRoleIdValue,
-        accountId
-      );
+      await this.assignUserRoleToUser(t, userId, permissionRoleIdValue);
+
       return;
     }
 
@@ -661,7 +655,7 @@ export class UserUpdaterUseCase {
     }
 
     if (this.hasPermissionRoleIdField(body)) {
-      updatePromises.push(this.updateUserRoleData(t, userId, body, accountId));
+      updatePromises.push(this.updateUserRoleData(t, userId, body));
     }
 
     await Promise.all(updatePromises);

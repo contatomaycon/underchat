@@ -13,7 +13,6 @@ import { IApiKeyGroupHierarchy } from '@core/common/interfaces/IApiKeyGroupHiera
 import { ITokenKeyData } from '@core/common/interfaces/ITokenKeyData';
 import { routePathWithoutPrefix } from '@core/common/functions/routePathWithoutPrefix';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
-import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 import Redis from 'ioredis';
 
 async function handleApiKeyCache(

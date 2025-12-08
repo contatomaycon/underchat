@@ -125,7 +125,13 @@ export class WorkerListerRepository {
       )
       .innerJoin(server, eq(server.server_id, worker.server_id))
       .innerJoin(account, eq(account.account_id, worker.account_id))
-      .where(and(eq(account.account_id, accountId), isNull(worker.deleted_at), ...filters));
+      .where(
+        and(
+          eq(account.account_id, accountId),
+          isNull(worker.deleted_at),
+          ...filters
+        )
+      );
 
     if (orders.length) {
       queryBuilder.orderBy(...orders);
@@ -175,7 +181,13 @@ export class WorkerListerRepository {
       )
       .innerJoin(server, eq(server.server_id, worker.server_id))
       .innerJoin(account, eq(account.account_id, worker.account_id))
-      .where(and(eq(account.account_id, accountId), isNull(worker.deleted_at), ...filters))
+      .where(
+        and(
+          eq(account.account_id, accountId),
+          isNull(worker.deleted_at),
+          ...filters
+        )
+      )
       .execute();
 
     return result[0]?.count ?? 0;

@@ -14,7 +14,6 @@ import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
 import { ITokenJwtData } from '@core/common/interfaces/ITokenJwtData';
 import { routePathWithoutPrefix } from '@core/common/functions/routePathWithoutPrefix';
-import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 import Redis from 'ioredis';
 import { UserService } from '@core/services/user.service';
 
