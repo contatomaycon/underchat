@@ -13,11 +13,9 @@ export class ViewShowMessageOnCallUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    isAdministrator: boolean,
     workerId: string
   ): Promise<{ show_message_on_call: string | null }> {
     const existsWorkerById = await this.workerService.existsWorkerById(
-      isAdministrator,
       accountId,
       workerId
     );

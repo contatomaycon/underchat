@@ -10,13 +10,8 @@ export class AccountUpdaterUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    body: UpdateAccountRequest,
-    isAdministrator: boolean
+    body: UpdateAccountRequest
   ): Promise<boolean> {
-    if (!isAdministrator) {
-      throw new Error(t('is_not_administrator'));
-    }
-
     const accountExists =
       await this.accountService.existsAccountById(accountId);
 

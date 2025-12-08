@@ -22,8 +22,7 @@ export const editAccount = async (
     const response = await accountUpdaterUseCase.execute(
       t,
       request.params.account_id,
-      request.body,
-      tokenJwtData.is_administrator
+      request.body
     );
 
     if (response) {

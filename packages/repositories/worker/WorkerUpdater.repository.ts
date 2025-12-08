@@ -44,14 +44,9 @@ export class WorkerUpdaterRepository {
   }
 
   updateWorkerById = async (
-    isAdministrator: boolean,
     accountId: string,
     input: IUpdateWorker
   ): Promise<boolean> => {
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(worker.account_id, accountId);
-
     const updateInput = this.updateInput(input);
 
     if (Object.keys(updateInput).length === 0) {
@@ -61,7 +56,12 @@ export class WorkerUpdaterRepository {
     const result = await this.db
       .update(worker)
       .set(updateInput)
-      .where(and(eq(worker.worker_id, input.worker_id), accountCondition))
+      .where(
+        and(
+          eq(worker.account_id, accountId),
+          eq(worker.worker_id, input.worker_id)
+        )
+      )
       .execute();
 
     return result.rowCount === 1;

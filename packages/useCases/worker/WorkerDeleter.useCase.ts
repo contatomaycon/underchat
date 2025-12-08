@@ -21,12 +21,10 @@ export class WorkerDeleterUseCase {
 
   private async validate(
     t: TFunction<'translation', undefined>,
-    isAdministrator: boolean,
     workerId: string,
     accountId: string
   ) {
     const existsWorkerById = await this.workerService.existsWorkerById(
-      isAdministrator,
       accountId,
       workerId
     );
@@ -53,14 +51,12 @@ export class WorkerDeleterUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    isAdministrator: boolean,
     workerId: string
   ): Promise<boolean> {
-    await this.validate(t, isAdministrator, workerId, accountId);
+    await this.validate(t, workerId, accountId);
 
     const viewWorkerBalancer = await this.workerService.viewWorkerBalancer(
       accountId,
-      isAdministrator,
       workerId
     );
 
@@ -73,7 +69,6 @@ export class WorkerDeleterUseCase {
       worker_id: workerId,
       server_id: viewWorkerBalancer.server_id,
       account_id: viewWorkerBalancer.account_id,
-      is_administrator: isAdministrator,
     };
 
     await this.centrifugoService.publishSub(
@@ -88,10 +83,6 @@ export class WorkerDeleterUseCase {
       worker_status_id: EWorkerStatus.deleting,
     };
 
-    return this.workerService.updateWorkerById(
-      isAdministrator,
-      accountId,
-      inputUpdate
-    );
+    return this.workerService.updateWorkerById(accountId, inputUpdate);
   }
 }

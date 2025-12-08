@@ -12,13 +12,12 @@ export const deleteAccount = async (
   reply: FastifyReply
 ) => {
   const accountDeleterUseCase = container.resolve(AccountDeleterUseCase);
-  const { t, tokenJwtData } = request;
+  const { t } = request;
 
   try {
     const response = await accountDeleterUseCase.execute(
       t,
-      request.params.account_id,
-      tokenJwtData.is_administrator
+      request.params.account_id
     );
 
     if (response) {

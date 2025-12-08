@@ -21,7 +21,6 @@ export const viewProfileInfo = async (
     const response = await workerProfileInfoViewerUseCase.execute(
       t,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       worker_id
     );
 

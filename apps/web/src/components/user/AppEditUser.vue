@@ -1,7 +1,6 @@
 <script lang="ts" setup>
 import { nextTick, computed, watch, type Ref, toRef, ref } from 'vue';
 import { useUsersStore } from '@/@webcore/stores/user';
-import { useAccountStore } from '@/@webcore/stores/account';
 import { ECountry } from '@core/common/enums/ECountry';
 import { EUserDocumentType } from '@core/common/enums/EUserDocumentType';
 import { EUserStatus } from '@core/common/enums/EUserStatus';
@@ -13,7 +12,6 @@ import { VForm } from 'vuetify/components/VForm';
 import { useCountryCodes } from '@/composables/useCountryCodes';
 import { useStatesAndCities } from '@/composables/useStatesAndCities';
 import { ViewZipcodeRequest } from '@core/schema/zipcode/viewZipcode/request.schema';
-import { getAdministrator } from '@/@webcore/localStorage/user';
 import { EColor } from '@core/common/enums/EColor';
 import { ViewUserResponse } from '@core/schema/user/viewUser/response.schema';
 import { useI18n } from 'vue-i18n';
@@ -22,7 +20,6 @@ import { usePasswordStrength } from '@/composables/usePasswordStrength';
 import { validatePassword } from '@/@webcore/utils/passwordStrength';
 
 const userStore = useUsersStore();
-const accountStore = useAccountStore();
 const { items: countryCodes } = useCountryCodes();
 const {
   states,
@@ -37,11 +34,6 @@ const {
 } = useStatesAndCities();
 const { t } = useI18n();
 
-const isAdministrator = computed(() => getAdministrator());
-const accountId = ref<string | null>(null);
-const accountsOptions = ref<{ account_id: string; name: string }[]>([]);
-const accountSearchQuery = ref('');
-const isAccountMenuOpen = ref(false);
 const permissionRoleId = ref<string | null>(null);
 const initialPermissionRoleId = ref<string | null>(null);
 const rolesOptions = ref<{ id: string; name: string }[]>([]);
@@ -1595,13 +1587,6 @@ const buildUpdateUserBody = (): UpdateUserRequest => {
     initialValues.value.user_status_id
   );
 
-  if (
-    isAdministrator.value &&
-    accountId.value !== initialValues.value.account_id
-  ) {
-    addFieldIfDefined(body, 'account_id', accountId.value);
-  }
-
   addFieldIfChanged(
     body,
     'phone_ddi',
@@ -1847,16 +1832,6 @@ const viewZipcode = async () => {
 const isInitializing = ref(true);
 const initialZipCode = ref<string | null>(null);
 
-const filteredAccounts = computed(() => {
-  if (!accountSearchQuery.value) {
-    return accountsOptions.value;
-  }
-  const query = accountSearchQuery.value.toLowerCase();
-  return accountsOptions.value.filter((account) =>
-    account.name.toLowerCase().includes(query)
-  );
-});
-
 const filteredRoles = computed(() => {
   if (!roleSearchQuery.value) {
     return rolesOptions.value;
@@ -1873,12 +1848,6 @@ const loadRoles = async () => {
     rolesOptions.value = roles;
   }
 };
-
-watch(isAccountMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    accountSearchQuery.value = '';
-  }
-});
 
 watch(isRoleMenuOpen, (isOpen) => {
   if (!isOpen) {
@@ -2015,8 +1984,8 @@ const loadStateAndCity = async (): Promise<void> => {
 };
 
 const loadBasicUserInfo = (responseUser: ViewUserResponse): void => {
-  accountId.value = responseUser.account?.account_id ?? null;
-  setFieldValue('account_id', accountId.value);
+  const userAccountId = responseUser.account?.account_id ?? null;
+  setFieldValue('account_id', userAccountId);
 
   const emailPartial = responseUser.email_partial ?? '';
   setPartialField(
@@ -2085,15 +2054,6 @@ const loadUserAddress = (responseUser: ViewUserResponse): void => {
   setFieldValue('district', district.value);
 };
 
-const loadAccounts = async () => {
-  if (isAdministrator.value) {
-    const accounts = await accountStore.listAllAccounts();
-    if (accounts) {
-      accountsOptions.value = accounts;
-    }
-  }
-};
-
 const loadUserRole = async () => {
   if (!userId.value) return;
 
@@ -2113,7 +2073,6 @@ const loadUserDataTab = async (force = false): Promise<void> => {
 
   isInitializing.value = true;
 
-  await loadAccounts();
   await loadRoles();
   await loadUserRole();
 
@@ -2376,73 +2335,7 @@ watch(
 
                     <VDivider class="mb-4" />
                     <VRow class="mb-4">
-                      <VCol v-if="isAdministrator" cols="12" md="6">
-                        <div>
-                          <VLabel class="mb-1 text-body-2"
-                            >{{ $t('account') }}:</VLabel
-                          >
-                          <VMenu v-model="isAccountMenuOpen">
-                            <template #activator="{ props: menuProps }">
-                              <VTextField
-                                v-bind="menuProps"
-                                :model-value="
-                                  accountsOptions.find(
-                                    (a) => a.account_id === accountId
-                                  )?.name || ''
-                                "
-                                :placeholder="$t('select_account')"
-                                variant="outlined"
-                                readonly
-                                append-inner-icon="tabler-chevron-down"
-                              />
-                            </template>
-                            <VCard>
-                              <VCardText class="pa-2">
-                                <AppTextField
-                                  v-model="accountSearchQuery"
-                                  :placeholder="$t('search') + '...'"
-                                  prepend-inner-icon="tabler-search"
-                                  density="compact"
-                                  hide-details
-                                  autofocus
-                                  @click.stop
-                                />
-                              </VCardText>
-                              <VDivider />
-                              <VList max-height="300" style="overflow-y: auto">
-                                <VListItem
-                                  v-for="(item, index) in filteredAccounts"
-                                  :key="index"
-                                  :value="item.account_id"
-                                  @click="
-                                    () => {
-                                      accountId = item.account_id;
-                                      isAccountMenuOpen = false;
-                                    }
-                                  "
-                                  :active="accountId === item.account_id"
-                                >
-                                  <VListItemTitle>{{
-                                    item.name
-                                  }}</VListItemTitle>
-                                </VListItem>
-                                <VListItem
-                                  v-if="filteredAccounts.length === 0"
-                                  disabled
-                                >
-                                  <VListItemTitle
-                                    class="text-center text-body-2 text-medium-emphasis"
-                                  >
-                                    {{ $t('no_results_found') }}
-                                  </VListItemTitle>
-                                </VListItem>
-                              </VList>
-                            </VCard>
-                          </VMenu>
-                        </div>
-                      </VCol>
-
-                      <VCol cols="12" :md="isAdministrator ? 6 : 12">
+                      <VCol cols="12" md="12">
                         <div>
                           <VLabel class="mb-1 text-body-2">
                             {{ $t('role') }}:
@@ -2515,7 +2408,7 @@ watch(
                         </div>
                       </VCol>
 
-                      <VCol v-if="!isAdministrator" cols="12" md="6">
+                      <VCol cols="12" md="6">
                         <VLabel>{{ $t('status') }}:</VLabel>
                         <AppAutocomplete
                           item-title="text"
@@ -2621,18 +2514,6 @@ watch(
                           @click:append-inner="
                             isConfirmVisible = !isConfirmVisible
                           "
-                        />
-                      </VCol>
-                    </VRow>
-                    <VRow v-if="isAdministrator" class="mb-2">
-                      <VCol md="6" cols="12">
-                        <VLabel>{{ $t('status') }}:</VLabel>
-                        <AppAutocomplete
-                          item-title="text"
-                          item-value="id"
-                          :items="itemsStatus"
-                          v-model="user_status_id"
-                          :placeholder="$t('select_state')"
                         />
                       </VCol>
                     </VRow>

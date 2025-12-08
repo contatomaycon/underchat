@@ -9,13 +9,8 @@ export class AccountCreatorUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    input: CreateAccountRequest,
-    isAdministrator: boolean
+    input: CreateAccountRequest
   ): Promise<boolean> {
-    if (!isAdministrator) {
-      throw new Error(t('is_not_administrator'));
-    }
-
     if (input.name.length >= 10) {
       throw new Error(t('account_name_cannot_exceed_10_characters'));
     }

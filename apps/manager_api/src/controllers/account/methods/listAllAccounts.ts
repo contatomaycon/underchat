@@ -14,7 +14,7 @@ export const listAllAccounts = async (
   try {
     const response = await accountAllListerUseCase.execute(
       t,
-      tokenJwtData.is_administrator
+      tokenJwtData.account_id
     );
 
     return sendResponse(reply, {

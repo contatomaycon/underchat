@@ -9,13 +9,11 @@ export class SectorDeleterUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     sectorId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<boolean> {
     const exists = await this.sectorService.existsSectorById(
       sectorId,
-      accountId,
-      isAdministrator
+      accountId
     );
 
     if (!exists) {
@@ -24,8 +22,7 @@ export class SectorDeleterUseCase {
 
     const deleteSectorById = await this.sectorService.deleteSectorById(
       sectorId,
-      accountId,
-      isAdministrator
+      accountId
     );
 
     if (!deleteSectorById) {

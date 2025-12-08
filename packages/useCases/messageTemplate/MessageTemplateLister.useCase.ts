@@ -1,5 +1,4 @@
 import { injectable } from 'tsyringe';
-import { TFunction } from 'i18next';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
 import { ListMessageTemplateFinalResponse } from '@core/schema/messageTemplate/listMessageTemplate/response.schema';
 import { MessageTemplateService } from '@core/services/messageTemplate.service';
@@ -12,9 +11,7 @@ export class MessageTemplateListerUseCase {
   ) {}
 
   async execute(
-    t: TFunction<'translation', undefined>,
     query: ListMessageTemplateRequest,
-    isAdministrator: boolean,
     accountId: string
   ): Promise<ListMessageTemplateFinalResponse> {
     const perPage = query.per_page ?? 10;
@@ -25,7 +22,6 @@ export class MessageTemplateListerUseCase {
         perPage,
         currentPage,
         query,
-        isAdministrator,
         accountId
       );
 

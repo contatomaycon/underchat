@@ -559,8 +559,7 @@ export class UserUpdaterUseCase {
     t: TFunction<'translation', undefined>,
     userId: string,
     permissionRoleId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<void> {
     const userAccountId = await this.userService.getUserAccountId(userId);
     if (!userAccountId) {
@@ -570,8 +569,7 @@ export class UserUpdaterUseCase {
     const existsPermissionRole =
       await this.permissionService.existsPermissionRoleById(
         userAccountId,
-        permissionRoleId,
-        isAdministrator
+        permissionRoleId
       );
 
     if (!existsPermissionRole) {
@@ -609,8 +607,7 @@ export class UserUpdaterUseCase {
     t: TFunction<'translation', undefined>,
     userId: string,
     body: UpdateUserRequest,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<void> {
     const permissionRoleIdValue = this.extractStringValue(
       body.permission_role_id
@@ -621,8 +618,7 @@ export class UserUpdaterUseCase {
         t,
         userId,
         permissionRoleIdValue,
-        accountId,
-        isAdministrator
+        accountId
       );
       return;
     }
@@ -634,14 +630,9 @@ export class UserUpdaterUseCase {
     t: TFunction<'translation', undefined>,
     userId: string,
     body: UpdateUserRequest,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<boolean> {
-    const userExists = await this.userService.existsUserById(
-      userId,
-      accountId,
-      isAdministrator
-    );
+    const userExists = await this.userService.existsUserById(userId, accountId);
 
     if (!userExists) {
       throw new Error(t('user_not_found'));
@@ -670,9 +661,7 @@ export class UserUpdaterUseCase {
     }
 
     if (this.hasPermissionRoleIdField(body)) {
-      updatePromises.push(
-        this.updateUserRoleData(t, userId, body, accountId, isAdministrator)
-      );
+      updatePromises.push(this.updateUserRoleData(t, userId, body, accountId));
     }
 
     await Promise.all(updatePromises);

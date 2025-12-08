@@ -35,13 +35,11 @@ export class PermissionService {
 
   existsPermissionRoleById = async (
     accountId: string,
-    permissionRoleId: string,
-    isAdministrator: boolean
+    permissionRoleId: string
   ): Promise<boolean> => {
     return this.permissionRoleViewerExistsRepository.existsPermissionRoleById(
       accountId,
-      permissionRoleId,
-      isAdministrator
+      permissionRoleId
     );
   };
 

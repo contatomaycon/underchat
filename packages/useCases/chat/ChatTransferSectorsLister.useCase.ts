@@ -6,13 +6,7 @@ import { ListTransferSectorsResponse } from '@core/schema/chat/listTransferSecto
 export class ChatTransferSectorsListerUseCase {
   constructor(private readonly sectorService: SectorService) {}
 
-  async execute(
-    accountId: string,
-    isAdministrator: boolean
-  ): Promise<ListTransferSectorsResponse> {
-    return this.sectorService.listSectorsForTransfer(
-      accountId,
-      isAdministrator
-    );
+  async execute(accountId: string): Promise<ListTransferSectorsResponse> {
+    return this.sectorService.listSectorsForTransfer(accountId);
   }
 }

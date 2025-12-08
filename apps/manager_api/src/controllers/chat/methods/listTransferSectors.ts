@@ -15,8 +15,7 @@ export const listTransferSectors = async (
 
   try {
     const response = await chatTransferSectorsListerUseCase.execute(
-      tokenJwtData.account_id,
-      tokenJwtData.is_administrator
+      tokenJwtData.account_id
     );
 
     return sendResponse(reply, {

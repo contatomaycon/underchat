@@ -12,14 +12,10 @@ export const createAccount = async (
   reply: FastifyReply
 ) => {
   const accountCreatorUseCase = container.resolve(AccountCreatorUseCase);
-  const { t, tokenJwtData } = request;
+  const { t } = request;
 
   try {
-    const response = await accountCreatorUseCase.execute(
-      t,
-      request.body,
-      tokenJwtData.is_administrator
-    );
+    const response = await accountCreatorUseCase.execute(t, request.body);
 
     if (response) {
       return sendResponse(reply, {

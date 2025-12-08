@@ -10,19 +10,14 @@ export class RoleViewerUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     roleId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<ViewRoleResponse | null> {
-    const exists = await this.roleService.existsRoleById(
-      roleId,
-      accountId,
-      isAdministrator
-    );
+    const exists = await this.roleService.existsRoleById(roleId, accountId);
 
     if (!exists) {
       throw new Error(t('role_not_found'));
     }
 
-    return this.roleService.viewRoleById(roleId, accountId, isAdministrator);
+    return this.roleService.viewRoleById(roleId, accountId);
   }
 }

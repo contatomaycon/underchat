@@ -87,13 +87,9 @@ export class ChatbotService {
   };
 
   listChatbotSectors = async (
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<ListChatbotSectorsResponse> => {
-    return this.sectorService.listSectorsForTransfer(
-      accountId,
-      isAdministrator
-    );
+    return this.sectorService.listSectorsForTransfer(accountId);
   };
 
   listChatbotSectorUsers = async (

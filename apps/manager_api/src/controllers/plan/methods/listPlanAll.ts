@@ -9,13 +9,10 @@ export const listPlanAll = async (
   reply: FastifyReply
 ) => {
   const planAllListerUseCase = container.resolve(PlanAllListerUseCase);
-  const { t, tokenJwtData } = request;
+  const { t } = request;
 
   try {
-    const response = await planAllListerUseCase.execute(
-      t,
-      tokenJwtData.is_administrator
-    );
+    const response = await planAllListerUseCase.execute();
 
     if (response) {
       return sendResponse(reply, {

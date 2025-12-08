@@ -16,9 +16,7 @@ export const listWorker = async (
 
   try {
     const response = await workerListerUseCase.execute(
-      t,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       request.query
     );
 

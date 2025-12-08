@@ -11,14 +11,9 @@ export class RoleUpdaterUseCase {
     roleId: string,
     name: string,
     accountId: string,
-    isAdministrator: boolean,
     description: string | null | undefined
   ): Promise<boolean> {
-    const exists = await this.roleService.existsRoleById(
-      roleId,
-      accountId,
-      isAdministrator
-    );
+    const exists = await this.roleService.existsRoleById(roleId, accountId);
 
     if (!exists) {
       throw new Error(t('role_not_found'));

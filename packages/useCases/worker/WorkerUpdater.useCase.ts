@@ -27,7 +27,6 @@ export class WorkerUpdaterUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    isAdministrator: boolean,
     input: EditWorkerRequest
   ): Promise<boolean> {
     await this.validate(t, accountId);
@@ -38,7 +37,6 @@ export class WorkerUpdaterUseCase {
     };
 
     const updateWorkerById = await this.workerService.updateWorkerById(
-      isAdministrator,
       accountId,
       inputUpdate
     );

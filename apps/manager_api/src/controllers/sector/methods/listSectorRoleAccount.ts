@@ -16,8 +16,7 @@ export const listSectorRoleAccount = async (
   try {
     const response = await sectorRoleAccountListUseCase.execute(
       t,
-      tokenJwtData.account_id,
-      tokenJwtData.is_administrator
+      tokenJwtData.account_id
     );
 
     if (response) {

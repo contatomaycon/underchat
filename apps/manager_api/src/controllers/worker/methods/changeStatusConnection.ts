@@ -20,7 +20,6 @@ export const changeStatusConnection = async (
     await workerChangeStatusConnectionUseCase.execute(
       t,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       request.body
     );
 

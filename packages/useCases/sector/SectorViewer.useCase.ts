@@ -10,23 +10,17 @@ export class SectorViewerUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     sectorId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<ViewSectorResponse | null> {
     const exists = await this.sectorService.existsSectorById(
       sectorId,
-      accountId,
-      isAdministrator
+      accountId
     );
 
     if (!exists) {
       throw new Error(t('sector_not_found'));
     }
 
-    return this.sectorService.viewSectorById(
-      sectorId,
-      accountId,
-      isAdministrator
-    );
+    return this.sectorService.viewSectorById(sectorId, accountId);
   }
 }

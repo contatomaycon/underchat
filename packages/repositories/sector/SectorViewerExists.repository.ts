@@ -12,13 +12,8 @@ export class SectorViewerExistsRepository {
 
   existsSectorById = async (
     sectorId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<boolean> => {
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(sector.account_id, accountId);
-
     const result = await this.db
       .select({
         total: count(),
@@ -26,7 +21,7 @@ export class SectorViewerExistsRepository {
       .from(sector)
       .where(
         and(
-          accountCondition,
+          eq(sector.account_id, accountId),
           eq(sector.sector_id, sectorId),
           isNull(sector.deleted_at)
         )

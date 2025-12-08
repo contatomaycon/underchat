@@ -10,13 +10,11 @@ export class SectorUpdaterUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     sectorId: string,
-    input: EditSectorParamsBody,
-    isAdministrator: boolean
+    input: EditSectorParamsBody
   ): Promise<boolean> {
     const exists = await this.sectorService.existsSectorById(
       sectorId,
-      input.account_id,
-      isAdministrator
+      input.account_id
     );
 
     if (!exists) {

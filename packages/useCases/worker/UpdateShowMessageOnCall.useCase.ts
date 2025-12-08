@@ -14,12 +14,10 @@ export class UpdateShowMessageOnCallUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    isAdministrator: boolean,
     workerId: string,
     body: UpdateShowMessageOnCallRequest
   ): Promise<{ show_message_on_call: string | null }> {
     const existsWorkerById = await this.workerService.existsWorkerById(
-      isAdministrator,
       accountId,
       workerId
     );

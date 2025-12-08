@@ -18,7 +18,6 @@ export const createWorker = async (
     const response = await workerCreatorUseCase.execute(
       t,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       request.body
     );
 

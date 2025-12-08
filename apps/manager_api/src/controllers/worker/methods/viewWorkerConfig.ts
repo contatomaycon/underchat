@@ -20,7 +20,6 @@ export const viewWorkerConfig = async (
     const response = await workerConfigViewerUseCase.execute(
       t,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       request.params.worker_id
     );
 

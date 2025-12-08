@@ -11,14 +11,12 @@ import { EColor } from '@core/common/enums/EColor';
 import { ISnackbar } from '@core/common/interfaces/ISnackbar';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import {
-  setAdministrator,
   setLayout,
   setPermissions,
   setSectors,
   setToken,
   setUser,
 } from '../localStorage/user';
-import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 import { updateAbilityPermissions } from '@/plugins/casl/ability';
 
 export const useAuthStore = defineStore('auth', {
@@ -93,14 +91,10 @@ export const useAuthStore = defineStore('auth', {
         this.permissions = (data.data.permissions ?? []) as EPermissionsRoles[];
         this.layout = data.data.layout as AccountInfoResponse;
 
-        const isAdministrator =
-          this.user.type.user_type_id === EPermissionRole.administrator;
-
         setUser(this.user);
         setToken(this.token);
         setPermissions(this.permissions);
         setLayout(this.layout);
-        setAdministrator(isAdministrator);
         setSectors(data.data.sectors ?? []);
         updateAbilityPermissions(this.permissions);
 

@@ -12,7 +12,6 @@ export class RolePermissionsUpdaterUseCase {
     permissionRoleId: string,
     groups: PermissionGroupRequest[],
     requesterAccountId: string,
-    isAdministrator: boolean,
     currentUserPermissionRoleId: string
   ): Promise<void> {
     if (permissionRoleId === currentUserPermissionRoleId) {
@@ -22,8 +21,7 @@ export class RolePermissionsUpdaterUseCase {
     const existsPermissionRole =
       await this.permissionService.existsPermissionRoleById(
         requesterAccountId,
-        permissionRoleId,
-        isAdministrator
+        permissionRoleId
       );
 
     if (!existsPermissionRole) {

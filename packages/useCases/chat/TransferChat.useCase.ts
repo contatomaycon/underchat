@@ -40,8 +40,7 @@ export class TransferChatUseCase {
 
   private async loadUserAndSector(
     body: TransferChatBody,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<{
     userData: Awaited<ReturnType<UserService['viewUserNamePhoto']>> | null;
     sectorData: Awaited<ReturnType<SectorService['viewSectorById']>> | null;
@@ -50,11 +49,7 @@ export class TransferChatUseCase {
       ? this.userService.viewUserNamePhoto(body.user_id)
       : Promise.resolve(null);
     const sectorPromise = body.sector_id
-      ? this.sectorService.viewSectorById(
-          body.sector_id,
-          accountId,
-          isAdministrator
-        )
+      ? this.sectorService.viewSectorById(body.sector_id, accountId)
       : Promise.resolve(null);
 
     const [userData, sectorData] = await Promise.all([
@@ -259,7 +254,6 @@ export class TransferChatUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    isAdministrator: boolean,
     params: TransferChatParams,
     body: TransferChatBody,
     userId: string,
@@ -276,8 +270,7 @@ export class TransferChatUseCase {
 
     const { userData, sectorData } = await this.loadUserAndSector(
       body,
-      accountId,
-      isAdministrator
+      accountId
     );
 
     const workerConfigFields =

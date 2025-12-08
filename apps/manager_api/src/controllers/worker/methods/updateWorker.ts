@@ -18,7 +18,6 @@ export const updateWorker = async (
     const response = await workerUpdaterUseCase.execute(
       t,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       request.params
     );
 

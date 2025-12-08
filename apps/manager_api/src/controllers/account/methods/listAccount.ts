@@ -16,9 +16,8 @@ export const listAccount = async (
 
   try {
     const response = await accountListerUseCase.execute(
-      t,
       request.query,
-      tokenJwtData.is_administrator
+      tokenJwtData.account_id
     );
 
     if (response) {

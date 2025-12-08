@@ -14,13 +14,8 @@ export class PlanAccountUpdaterUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    body: UpdatePlanAccountRequest,
-    isAdministrator: boolean
+    body: UpdatePlanAccountRequest
   ): Promise<boolean> {
-    if (!isAdministrator) {
-      throw new Error(t('is_not_administrator'));
-    }
-
     const accountExists =
       await this.accountService.existsAccountById(accountId);
 

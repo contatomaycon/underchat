@@ -64,14 +64,11 @@ function generateTokenKeyData(
     (item) => item.permission_role_id !== null
   )?.permission_role_id;
 
-  const isAdministrator = permissionRoleId === EPermissionRole.administrator;
-
   return {
     account_id: accountId,
     api_key_id: apiKeyId,
     api_key: apiKey,
     permission_role_id: permissionRoleId,
-    is_administrator: isAdministrator,
     name: name,
     actions: responseAuth,
   } as ITokenKeyData;

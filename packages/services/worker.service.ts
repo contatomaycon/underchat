@@ -221,7 +221,6 @@ export class WorkerService {
 
   listWorker = async (
     accountId: string,
-    isAdministrator: boolean,
     perPage: number,
     currentPage: number,
     query: ListWorkerRequest
@@ -229,64 +228,45 @@ export class WorkerService {
     const [result, total] = await Promise.all([
       this.workerListerRepository.listWorker(
         accountId,
-        isAdministrator,
         perPage,
         currentPage,
         query
       ),
-      this.workerListerRepository.listWorkerTotal(
-        accountId,
-        isAdministrator,
-        query
-      ),
+      this.workerListerRepository.listWorkerTotal(accountId, query),
     ]);
 
     return [result, total];
   };
 
   updateWorkerById = async (
-    isAdministrator: boolean,
     accountId: string,
     input: IUpdateWorker
   ): Promise<boolean> => {
-    return this.workerUpdaterRepository.updateWorkerById(
-      isAdministrator,
-      accountId,
-      input
-    );
+    return this.workerUpdaterRepository.updateWorkerById(accountId, input);
   };
 
   viewWorker = async (
     accountId: string,
-    isAdministrator: boolean,
     workerId: string
   ): Promise<ViewWorkerResponse | null> => {
-    return this.workerViewerRepository.viewWorker(
-      accountId,
-      isAdministrator,
-      workerId
-    );
+    return this.workerViewerRepository.viewWorker(accountId, workerId);
   };
 
   viewWorkerNameAndContainerId = async (
-    isAdministrator: boolean,
     accountId: string,
     workerId: string
   ): Promise<IViewWorkerNameAndContainerId | null> => {
     return this.workerNameAndContainerIdViewerRepository.viewWorkerNameAndContainerId(
-      isAdministrator,
       accountId,
       workerId
     );
   };
 
   existsWorkerById = async (
-    isAdministrator: boolean,
     accountId: string,
     workerId: string
   ): Promise<boolean> => {
     return this.workerViewerExistsRepository.existsWorkerById(
-      isAdministrator,
       accountId,
       workerId
     );
@@ -294,26 +274,19 @@ export class WorkerService {
 
   viewWorkerBalancer = async (
     accountId: string,
-    isAdministrator: boolean,
     workerId: string
   ): Promise<IViewWorkerServer | null> => {
     return this.workerBalancerViewerRepository.viewWorkerBalancer(
       accountId,
-      isAdministrator,
       workerId
     );
   };
 
   deleteWorkerById = async (
-    isAdministrator: boolean,
     accountId: string,
     workerId: string
   ): Promise<boolean> => {
-    return this.workerDeleterRepository.deleteWorkerById(
-      isAdministrator,
-      accountId,
-      workerId
-    );
+    return this.workerDeleterRepository.deleteWorkerById(accountId, workerId);
   };
 
   viewWorkerPhoneConnectionDate = async (
@@ -364,14 +337,9 @@ export class WorkerService {
 
   viewWorkerType = async (
     accountId: string,
-    isAdministrator: boolean,
     workerId: string
   ): Promise<IViewWorkerType | null> => {
-    return this.workerTypeViewerRepository.viewWorkerType(
-      accountId,
-      isAdministrator,
-      workerId
-    );
+    return this.workerTypeViewerRepository.viewWorkerType(accountId, workerId);
   };
 
   listWorkerBaileysActivities = async (): Promise<IListWorkerActivities[]> => {
@@ -424,13 +392,7 @@ export class WorkerService {
     return result;
   };
 
-  listAllWorkers = async (
-    accountId: string,
-    isAdministrator: boolean
-  ): Promise<TransferWorker[]> => {
-    return this.workerAllListerRepository.listAllWorkers(
-      accountId,
-      isAdministrator
-    );
+  listAllWorkers = async (accountId: string): Promise<TransferWorker[]> => {
+    return this.workerAllListerRepository.listAllWorkers(accountId);
   };
 }

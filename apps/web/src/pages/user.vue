@@ -13,7 +13,7 @@ import { ListUserResponse } from '@core/schema/user/listUser/response.schema';
 import { EUserStatus } from '@core/common/enums/EUserStatus';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { resolveAvatarBadgeVariant } from '@webcore/utils/formatters';
-import { getAdministrator, getUser } from '@/@webcore/localStorage/user';
+import { getUser } from '@/@webcore/localStorage/user';
 import { can } from '@/@layouts/plugins/casl';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 
@@ -61,16 +61,11 @@ const { global } = useTheme();
 const userStore = useUsersStore();
 useSnackbarCleanup(userStore);
 
-const isAdministrator = computed(() => getAdministrator());
 const currentUser = computed(() => getUser());
 
 const canAssignRole = (userId: string) => {
   if (!can(permissionsAssignRole)) {
     return false;
-  }
-
-  if (!isAdministrator.value) {
-    return true;
   }
 
   return currentUser.value?.user_id !== userId;

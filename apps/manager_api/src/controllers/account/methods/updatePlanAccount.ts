@@ -18,14 +18,13 @@ export const updatePlanAccount = async (
   const planAccountUpdaterUseCase = container.resolve(
     PlanAccountUpdaterUseCase
   );
-  const { t, tokenJwtData } = request;
+  const { t } = request;
 
   try {
     const response = await planAccountUpdaterUseCase.execute(
       t,
       request.params.account_id,
-      request.body,
-      tokenJwtData.is_administrator
+      request.body
     );
 
     if (response) {

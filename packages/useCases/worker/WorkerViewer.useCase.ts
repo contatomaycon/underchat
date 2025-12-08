@@ -10,14 +10,9 @@ export class WorkerViewerUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    isAdministrator: boolean,
     workerId: string
   ): Promise<ViewWorkerResponse> {
-    const worker = await this.workerService.viewWorker(
-      accountId,
-      isAdministrator,
-      workerId
-    );
+    const worker = await this.workerService.viewWorker(accountId, workerId);
 
     if (!worker) {
       throw new Error(t('worker_not_found'));

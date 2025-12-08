@@ -78,14 +78,10 @@ export class MessageTemplateListerRepository {
     perPage: number,
     currentPage: number,
     query: ListMessageTemplateRequest,
-    isAdministrator: boolean,
     accountId: string
   ): Promise<ListMessageTemplateResponse[]> => {
     const filters = this.setFilters(query);
     const orders = this.setOrders(query);
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(messageTemplate.account_id, accountId);
 
     const queryBuilder = this.db
       .select({
@@ -111,7 +107,11 @@ export class MessageTemplateListerRepository {
         eq(messageTemplate.message_status_id, messageStatus.message_status_id)
       )
       .where(
-        and(accountCondition, isNull(messageTemplate.deleted_at), ...filters)
+        and(
+          eq(messageTemplate.account_id, accountId),
+          isNull(messageTemplate.deleted_at),
+          ...filters
+        )
       );
 
     if (orders.length) {
@@ -149,13 +149,9 @@ export class MessageTemplateListerRepository {
 
   listMessageTemplateTotal = async (
     query: ListMessageTemplateRequest,
-    isAdministrator: boolean,
     accountId: string
   ): Promise<number> => {
     const filters = this.setFilters(query);
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(messageTemplate.account_id, accountId);
 
     const result = await this.db
       .select({
@@ -168,7 +164,11 @@ export class MessageTemplateListerRepository {
         eq(messageTemplate.message_status_id, messageStatus.message_status_id)
       )
       .where(
-        and(accountCondition, isNull(messageTemplate.deleted_at), ...filters)
+        and(
+          eq(messageTemplate.account_id, accountId),
+          isNull(messageTemplate.deleted_at),
+          ...filters
+        )
       )
       .execute();
 

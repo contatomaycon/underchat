@@ -26,7 +26,6 @@ export const uploadProfileInfo = async (
     const response = await workerProfileInfoUpserterUseCase.execute(
       t,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       worker_id,
       body
     );

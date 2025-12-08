@@ -21,7 +21,6 @@ export const startChatWithContact = async (
       t,
       tokenJwtData.account_id,
       tokenJwtData.user_id,
-      tokenJwtData.is_administrator,
       request.body
     );
 

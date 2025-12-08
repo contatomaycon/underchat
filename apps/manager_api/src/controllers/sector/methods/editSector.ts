@@ -22,8 +22,7 @@ export const editSector = async (
     const response = await sectorUpdaterUseCase.execute(
       t,
       request.params.sector_id,
-      request.body,
-      tokenJwtData.is_administrator
+      request.body
     );
 
     if (response) {

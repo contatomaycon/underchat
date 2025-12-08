@@ -18,8 +18,7 @@ export const deleteSector = async (
     const response = await sectorDeleterUseCase.execute(
       t,
       request.params.sector_id,
-      tokenJwtData.account_id,
-      tokenJwtData.is_administrator
+      tokenJwtData.account_id
     );
 
     if (response) {

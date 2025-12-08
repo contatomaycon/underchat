@@ -18,8 +18,7 @@ export const viewSector = async (
     const response = await sectorViewerUseCase.execute(
       t,
       request.params.sector_id,
-      tokenJwtData.account_id,
-      tokenJwtData.is_administrator
+      tokenJwtData.account_id
     );
 
     if (response) {

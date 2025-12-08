@@ -13,13 +13,9 @@ export class RoleDeleterRepository {
 
   deleteRoleById = async (
     roleId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<boolean> => {
     const date = currentTime();
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(permissionRole.account_id, accountId);
 
     const result = await this.db
       .update(permissionRole)
@@ -27,7 +23,10 @@ export class RoleDeleterRepository {
         deleted_at: date,
       })
       .where(
-        and(accountCondition, eq(permissionRole.permission_role_id, roleId))
+        and(
+          eq(permissionRole.account_id, accountId),
+          eq(permissionRole.permission_role_id, roleId)
+        )
       )
       .execute();
 

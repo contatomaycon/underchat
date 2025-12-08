@@ -43,7 +43,6 @@ export const editRole = async (
       request.params.permission_role_id,
       request.body.name,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       request.body.description
     );
 

@@ -5,7 +5,6 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
-import { getAdministrator } from '@/@webcore/localStorage/user';
 import { DataTableHeader } from 'vuetify';
 import { EMessageTemplatePermissions } from '@core/common/enums/EPermissions/messageTemplate';
 import { useMessageTemplateStore } from '@/@webcore/stores/messageTemplate';
@@ -50,7 +49,6 @@ const permissionsCreate = [
 const { t } = useI18n();
 const messageTemplateStore = useMessageTemplateStore();
 useSnackbarCleanup(messageTemplateStore);
-const isAdministrator = getAdministrator();
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -413,7 +411,9 @@ watch(
               >
                 <span>{{ $t('click_to_preview') }}</span>
               </VTooltip>
-              <VIcon :icon="getAttachmentIcon(item.attachment_url, item.type)" />
+              <VIcon
+                :icon="getAttachmentIcon(item.attachment_url, item.type)"
+              />
             </IconBtn>
           </div>
           <span v-else class="text-medium-emphasis">-</span>
@@ -427,8 +427,7 @@ watch(
           <div class="d-flex gap-1">
             <IconBtn
               v-if="
-                $canPermission(permissionsEdit) &&
-                (item?.message_template_id || isAdministrator)
+                $canPermission(permissionsEdit) && item?.message_template_id
               "
               ><VTooltip
                 location="top"
@@ -443,8 +442,7 @@ watch(
 
             <IconBtn
               v-if="
-                $canPermission(permissionsDelete) &&
-                (item.message_template_id || isAdministrator)
+                $canPermission(permissionsDelete) && item.message_template_id
               "
               ><VTooltip
                 location="top"
@@ -515,7 +513,8 @@ watch(
                       class="audio-waveform-bar"
                       :class="{
                         'audio-waveform-bar--active':
-                          audioProgress > (index / audioWaveformBars.length) * 100,
+                          audioProgress >
+                          (index / audioWaveformBars.length) * 100,
                       }"
                       :style="{
                         height: `${Math.max(10, bar * 100)}%`,
@@ -532,7 +531,9 @@ watch(
                 <div class="d-flex align-center justify-center gap-4 w-100">
                   <VBtn
                     :icon="
-                      isAudioPlaying ? 'tabler-player-pause' : 'tabler-player-play'
+                      isAudioPlaying
+                        ? 'tabler-player-pause'
+                        : 'tabler-player-play'
                     "
                     variant="flat"
                     color="primary"

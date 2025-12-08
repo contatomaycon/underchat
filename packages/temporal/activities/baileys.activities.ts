@@ -136,7 +136,6 @@ export async function notifyWorker(
     worker_id: input.worker_id,
     server_id: input.server_id,
     account_id: input.account_id,
-    is_administrator: false,
     worker_status_id: workerStatusId,
   };
 

@@ -9,12 +9,8 @@ export class AccountAllListerUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<IAccountBasic[]> {
-    if (!isAdministrator) {
-      throw new Error(t('is_not_administrator'));
-    }
-
-    return this.accountService.listAllAccounts();
+    return this.accountService.listAllAccounts(accountId);
   }
 }

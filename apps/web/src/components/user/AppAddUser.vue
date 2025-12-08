@@ -1,14 +1,13 @@
 <script lang="ts" setup>
 import { computed, onMounted, nextTick, watch, ref } from 'vue';
 import { useUsersStore } from '@/@webcore/stores/user';
-import { useAccountStore } from '@/@webcore/stores/account';
 import { VForm } from 'vuetify/components/VForm';
 import { EUserDocumentType } from '@core/common/enums/EUserDocumentType';
 import { ECountry } from '@core/common/enums/ECountry';
 import { ViewZipcodeRequest } from '@core/schema/zipcode/viewZipcode/request.schema';
 import { useCountryCodes } from '@/composables/useCountryCodes';
 import { useStatesAndCities } from '@/composables/useStatesAndCities';
-import { getAdministrator, getUser } from '@/@webcore/localStorage/user';
+import { getUser } from '@/@webcore/localStorage/user';
 import { EColor } from '@core/common/enums/EColor';
 import { useI18n } from 'vue-i18n';
 import { requiredValidator } from '@/@webcore/utils/validators';
@@ -16,7 +15,6 @@ import { usePasswordStrength } from '@/composables/usePasswordStrength';
 import { validatePassword } from '@/@webcore/utils/passwordStrength';
 
 const userStore = useUsersStore();
-const accountStore = useAccountStore();
 const { items: countryCodes } = useCountryCodes();
 const {
   states,
@@ -31,12 +29,8 @@ const {
 } = useStatesAndCities();
 const { t } = useI18n();
 
-const isAdministrator = computed(() => getAdministrator());
 const currentUser = computed(() => getUser());
 const accountId = ref<string | null>(null);
-const accountsOptions = ref<{ account_id: string; name: string }[]>([]);
-const accountSearchQuery = ref('');
-const isAccountMenuOpen = ref(false);
 const permissionRoleId = ref<string | null>(null);
 const rolesOptions = ref<{ id: string; name: string }[]>([]);
 const roleSearchQuery = ref('');
@@ -490,7 +484,7 @@ const buildUserPayload = () => {
     },
   };
 
-  if (isAdministrator.value && accountId.value) {
+  if (accountId.value) {
     payload.account_id = { value: accountId.value };
   }
 
@@ -591,7 +585,7 @@ const resetForm = () => {
   district.value = null;
   accountId.value = null;
   permissionRoleId.value = null;
-  if (!isAdministrator.value && currentUser.value?.account_id) {
+  if (currentUser.value?.account_id) {
     accountId.value = currentUser.value.account_id;
   }
   photo.value = null;
@@ -1198,30 +1192,11 @@ const removePhoto = () => {
   photoPreview.value = null;
 };
 
-const loadAdministratorAccounts = async () => {
-  if (!isAdministrator.value) return;
-  const accounts = await accountStore.listAllAccounts();
-  if (accounts) {
-    accountsOptions.value = accounts;
-  }
-};
-
 const setCurrentUserAccount = () => {
-  if (isAdministrator.value) return;
   if (currentUser.value?.account_id) {
     accountId.value = currentUser.value.account_id;
   }
 };
-
-const filteredAccounts = computed(() => {
-  if (!accountSearchQuery.value) {
-    return accountsOptions.value;
-  }
-  const query = accountSearchQuery.value.toLowerCase();
-  return accountsOptions.value.filter((account) =>
-    account.name.toLowerCase().includes(query)
-  );
-});
 
 const filteredRoles = computed(() => {
   if (!roleSearchQuery.value) {
@@ -1233,11 +1208,6 @@ const filteredRoles = computed(() => {
   );
 });
 
-watch(isAccountMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    accountSearchQuery.value = '';
-  }
-});
 
 watch(isRoleMenuOpen, (isOpen) => {
   if (!isOpen) {
@@ -1255,7 +1225,6 @@ const loadRoles = async () => {
 const loadUserDataTab = async (force = false) => {
   if (!force && loadedTabs.value.has('user_data')) return;
 
-  await loadAdministratorAccounts();
   setCurrentUserAccount();
   await loadRoles();
 
@@ -1290,9 +1259,9 @@ const isInitializingModal = ref(false);
 const initializeModal = async () => {
   if (!isVisible.value) return;
   if (isInitializingModal.value) return;
-  
+
   isInitializingModal.value = true;
-  
+
   try {
     resetForm();
     loadedTabs.value.clear();
@@ -1304,20 +1273,33 @@ const initializeModal = async () => {
   }
 };
 
-watch(isVisible, async (visible) => {
-  if (visible) {
-    await initializeModal();
-  } else {
-    loadedTabs.value.clear();
-  }
-}, { immediate: true });
+watch(
+  isVisible,
+  async (visible) => {
+    if (visible) {
+      await initializeModal();
+    } else {
+      loadedTabs.value.clear();
+    }
+  },
+  { immediate: true }
+);
 
-watch(tab, async (newTab, oldTab) => {
-  if (isInitializingModal.value) return;
-  if (isVisible.value && newTab && newTab !== oldTab && oldTab !== undefined) {
-    await loadTabData(newTab);
-  }
-}, { immediate: false });
+watch(
+  tab,
+  async (newTab, oldTab) => {
+    if (isInitializingModal.value) return;
+    if (
+      isVisible.value &&
+      newTab &&
+      newTab !== oldTab &&
+      oldTab !== undefined
+    ) {
+      await loadTabData(newTab);
+    }
+  },
+  { immediate: false }
+);
 
 let timer: number | null = null;
 watch(zip_code, () => {
@@ -1442,79 +1424,7 @@ onMounted(resetForm);
 
                     <VDivider class="mb-4" />
                     <VRow class="mb-4">
-                      <VCol v-if="isAdministrator" cols="12" md="6">
-                        <div>
-                          <VLabel class="mb-1 text-body-2"
-                            >{{ $t('account') }}:</VLabel
-                          >
-                          <VMenu v-model="isAccountMenuOpen">
-                            <template #activator="{ props: menuProps }">
-                              <VTextField
-                                v-bind="menuProps"
-                                :model-value="
-                                  accountsOptions.find(
-                                    (a) => a.account_id === accountId
-                                  )?.name || ''
-                                "
-                                :placeholder="$t('select_account')"
-                                variant="outlined"
-                                readonly
-                                append-inner-icon="tabler-chevron-down"
-                                :rules="[
-                                  requiredValidator(
-                                    accountId,
-                                    $t('account_required')
-                                  ),
-                                ]"
-                              />
-                            </template>
-                            <VCard>
-                              <VCardText class="pa-2">
-                                <AppTextField
-                                  v-model="accountSearchQuery"
-                                  :placeholder="$t('search') + '...'"
-                                  prepend-inner-icon="tabler-search"
-                                  density="compact"
-                                  hide-details
-                                  autofocus
-                                  @click.stop
-                                />
-                              </VCardText>
-                              <VDivider />
-                              <VList max-height="300" style="overflow-y: auto">
-                                <VListItem
-                                  v-for="(item, index) in filteredAccounts"
-                                  :key="index"
-                                  :value="item.account_id"
-                                  @click="
-                                    () => {
-                                      accountId = item.account_id;
-                                      isAccountMenuOpen = false;
-                                    }
-                                  "
-                                  :active="accountId === item.account_id"
-                                >
-                                  <VListItemTitle>{{
-                                    item.name
-                                  }}</VListItemTitle>
-                                </VListItem>
-                                <VListItem
-                                  v-if="filteredAccounts.length === 0"
-                                  disabled
-                                >
-                                  <VListItemTitle
-                                    class="text-center text-body-2 text-medium-emphasis"
-                                  >
-                                    {{ $t('no_results_found') }}
-                                  </VListItemTitle>
-                                </VListItem>
-                              </VList>
-                            </VCard>
-                          </VMenu>
-                        </div>
-                      </VCol>
-
-                      <VCol cols="12" :md="isAdministrator ? 6 : 12">
+                      <VCol cols="12" md="12">
                         <div>
                           <VLabel class="mb-1 text-body-2">
                             {{ $t('role') }}:

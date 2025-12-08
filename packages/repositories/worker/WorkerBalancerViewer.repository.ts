@@ -13,13 +13,8 @@ export class WorkerBalancerViewerRepository {
 
   viewWorkerBalancer = async (
     accountId: string,
-    isAdministrator: boolean,
     workerId: string
   ): Promise<IViewWorkerServer | null> => {
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(worker.account_id, accountId);
-
     const result = await this.db
       .select({
         server_id: server.server_id,
@@ -35,9 +30,9 @@ export class WorkerBalancerViewerRepository {
       .innerJoin(server, eq(server.server_id, worker.server_id))
       .where(
         and(
+          eq(worker.account_id, accountId),
           isNull(worker.deleted_at),
-          eq(worker.worker_id, workerId),
-          accountCondition
+          eq(worker.worker_id, workerId)
         )
       )
       .execute();

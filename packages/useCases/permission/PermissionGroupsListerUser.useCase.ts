@@ -11,14 +11,12 @@ export class PermissionGroupsListerUserUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     requesterAccountId: string,
-    permissionRoleId: string,
-    isAdministrator: boolean
+    permissionRoleId: string
   ): Promise<ListPermissionGroupsResponse> {
     const existsPermissionRole =
       await this.permissionService.existsPermissionRoleById(
         requesterAccountId,
-        permissionRoleId,
-        isAdministrator
+        permissionRoleId
       );
 
     if (!existsPermissionRole) {

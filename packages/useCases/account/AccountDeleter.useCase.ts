@@ -15,13 +15,8 @@ export class AccountDeleterUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<boolean> {
-    if (!isAdministrator) {
-      throw new Error(t('is_not_administrator'));
-    }
-
     const accountExists =
       await this.accountService.existsAccountById(accountId);
 

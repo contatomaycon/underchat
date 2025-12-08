@@ -14,8 +14,7 @@ export const exportContact = async (
   try {
     const response = await contactExporterUseCase.execute(
       t,
-      tokenJwtData.account_id,
-      tokenJwtData.is_administrator
+      tokenJwtData.account_id
     );
 
     return sendResponse(reply, {

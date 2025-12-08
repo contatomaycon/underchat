@@ -154,19 +154,14 @@ export class WorkerConsume {
 
   private async updateWorkerErrorStatus(
     workerId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<PublishResult> {
     const inputUpdate: IUpdateWorker = {
       worker_id: workerId,
       worker_status_id: EWorkerStatus.error,
     };
 
-    await this.workerService.updateWorkerById(
-      isAdministrator,
-      accountId,
-      inputUpdate
-    );
+    await this.workerService.updateWorkerById(accountId, inputUpdate);
 
     const dataPublish: IBaileysConnectionState = {
       code: ECodeMessage.info,
@@ -182,16 +177,11 @@ export class WorkerConsume {
   private async recreateWorker(data: IWorkerPayload): Promise<PublishResult> {
     const viewWorkerType = await this.workerService.viewWorkerType(
       data.account_id,
-      data.is_administrator,
       data.worker_id
     );
 
     if (!viewWorkerType) {
-      await this.updateWorkerErrorStatus(
-        data.worker_id,
-        data.account_id,
-        data.is_administrator
-      );
+      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
 
       throw new Error('Worker not found');
     }
@@ -202,11 +192,7 @@ export class WorkerConsume {
     );
 
     if (!removed) {
-      await this.updateWorkerErrorStatus(
-        data.worker_id,
-        data.account_id,
-        data.is_administrator
-      );
+      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
 
       throw new Error('Worker removal failed');
     }
@@ -222,11 +208,7 @@ export class WorkerConsume {
     );
 
     if (!containerId) {
-      await this.updateWorkerErrorStatus(
-        data.worker_id,
-        data.account_id,
-        data.is_administrator
-      );
+      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
 
       throw new Error('Worker creation failed');
     }
@@ -235,11 +217,7 @@ export class WorkerConsume {
       await this.containerHealthService.isServiceHealthy(containerId);
 
     if (!healthy) {
-      await this.updateWorkerErrorStatus(
-        data.worker_id,
-        data.account_id,
-        data.is_administrator
-      );
+      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
       throw new Error('Worker service is not healthy');
     }
 
@@ -251,17 +229,12 @@ export class WorkerConsume {
     };
 
     const updated = await this.workerService.updateWorkerById(
-      data.is_administrator,
       data.account_id,
       inputUpdate
     );
 
     if (!updated) {
-      await this.updateWorkerErrorStatus(
-        data.worker_id,
-        data.account_id,
-        data.is_administrator
-      );
+      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
 
       throw new Error('Failed to update worker status');
     }
@@ -291,17 +264,12 @@ export class WorkerConsume {
 
   private async deleteWorker(data: IWorkerPayload): Promise<PublishResult> {
     const exists = await this.workerService.existsWorkerById(
-      data.is_administrator,
       data.account_id,
       data.worker_id
     );
 
     if (!exists) {
-      await this.updateWorkerErrorStatus(
-        data.worker_id,
-        data.account_id,
-        data.is_administrator
-      );
+      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
 
       throw new Error('Worker not found');
     }
@@ -311,27 +279,18 @@ export class WorkerConsume {
     );
 
     if (!containerId) {
-      await this.updateWorkerErrorStatus(
-        data.worker_id,
-        data.account_id,
-        data.is_administrator
-      );
+      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
 
       throw new Error('Worker removal failed');
     }
 
     const deleted = await this.workerService.deleteWorkerById(
-      data.is_administrator,
       data.account_id,
       data.worker_id
     );
 
     if (!deleted) {
-      await this.updateWorkerErrorStatus(
-        data.worker_id,
-        data.account_id,
-        data.is_administrator
-      );
+      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
 
       throw new Error('Failed to delete worker');
     }
@@ -349,11 +308,7 @@ export class WorkerConsume {
 
   private async createWorker(data: IWorkerPayload): Promise<PublishResult> {
     if (!data?.worker_type_id) {
-      await this.updateWorkerErrorStatus(
-        data.worker_id,
-        data.account_id,
-        data.is_administrator
-      );
+      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
 
       throw new Error('Worker type ID is required');
     }
@@ -367,11 +322,7 @@ export class WorkerConsume {
     );
 
     if (!containerId) {
-      await this.updateWorkerErrorStatus(
-        data.worker_id,
-        data.account_id,
-        data.is_administrator
-      );
+      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
 
       throw new Error('Failed to create worker container');
     }
@@ -380,11 +331,7 @@ export class WorkerConsume {
       await this.containerHealthService.isServiceHealthy(containerId);
 
     if (!healthy) {
-      await this.updateWorkerErrorStatus(
-        data.worker_id,
-        data.account_id,
-        data.is_administrator
-      );
+      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
 
       throw new Error('Worker service is not healthy');
     }
@@ -396,17 +343,12 @@ export class WorkerConsume {
     };
 
     const updated = await this.workerService.updateWorkerById(
-      data.is_administrator,
       data.account_id,
       inputUpdate
     );
 
     if (!updated) {
-      await this.updateWorkerErrorStatus(
-        data.worker_id,
-        data.account_id,
-        data.is_administrator
-      );
+      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
 
       throw new Error('Failed to update worker status');
     }

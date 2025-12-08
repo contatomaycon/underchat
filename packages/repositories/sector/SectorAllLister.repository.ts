@@ -12,14 +12,7 @@ export class SectorAllListerRepository {
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  listAllSectors = async (
-    accountId: string,
-    isAdministrator: boolean
-  ): Promise<TransferSector[]> => {
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(sector.account_id, accountId);
-
+  listAllSectors = async (accountId: string): Promise<TransferSector[]> => {
     const result = await this.db
       .select({
         sector_id: sector.sector_id,
@@ -36,7 +29,7 @@ export class SectorAllListerRepository {
       )
       .where(
         and(
-          accountCondition,
+          eq(sector.account_id, accountId),
           isNull(sector.deleted_at),
           eq(sector.sector_status_id, ESectorStatus.active)
         )

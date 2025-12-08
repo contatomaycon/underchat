@@ -18,9 +18,7 @@ export const listLabelTemplate = async (
 
   try {
     const response = await labelTemplateListerUseCase.execute(
-      t,
       request.query,
-      tokenJwtData.is_administrator,
       tokenJwtData.account_id
     );
 

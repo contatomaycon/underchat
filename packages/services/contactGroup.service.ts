@@ -30,7 +30,6 @@ export class ContactGroupService {
     perPage: number,
     currentPage: number,
     query: ListContactGroupRequest,
-    isAdministrator: boolean,
     accountId: string
   ): Promise<[ListContactGroupResponse[], number]> => {
     const [result, total] = await Promise.all([
@@ -38,14 +37,9 @@ export class ContactGroupService {
         perPage,
         currentPage,
         query,
-        isAdministrator,
         accountId
       ),
-      this.contactGroupListerRepository.listContactGroupTotal(
-        query,
-        isAdministrator,
-        accountId
-      ),
+      this.contactGroupListerRepository.listContactGroupTotal(query, accountId),
     ]);
 
     return [result, total];

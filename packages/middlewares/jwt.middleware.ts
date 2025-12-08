@@ -62,8 +62,6 @@ async function generateTokenJwtAccess(
     (item) => item.permission_role_id !== null
   )?.permission_role_id;
 
-  const isAdministrator = permissionRoleId === EPermissionRole.administrator;
-
   let sectors: string[] = [];
   if (accountId) {
     const userService = container.resolve(UserService);
@@ -74,7 +72,6 @@ async function generateTokenJwtAccess(
     account_id: accountId,
     user_id: userId,
     permission_role_id: permissionRoleId,
-    is_administrator: isAdministrator,
     actions: responseAuth,
     sectors,
   } as ITokenJwtData;

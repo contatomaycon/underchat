@@ -12,8 +12,7 @@ export class AccountViewerRepository {
   ) {}
 
   viewAccounts = async (
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<ViewAccountResponse | null> => {
     const result = await this.db.query.account.findMany({
       where: and(eq(account.account_id, accountId), isNull(account.deleted_at)),
@@ -64,30 +63,28 @@ export class AccountViewerRepository {
       return nextPaymentDate > now;
     });
 
-    return isAdministrator
-      ? {
-          account_id: result[0].account_id,
-          name: result[0].name,
-          account_status: result[0].aac
-            ? {
-                account_status_id: result[0].aac.account_status_id,
-                name: result[0].aac.name,
-              }
-            : null,
-          plan: activePlanAccount?.ppl
-            ? {
-                plan_id: activePlanAccount.ppl.plan_id,
-                name: activePlanAccount.ppl.name,
-                recurring_payment: activePlanAccount.recurring_payment,
-                billing_period:
-                  activePlanAccount.bpl?.name === 'monthly' ||
-                  activePlanAccount.bpl?.name === 'annual'
-                    ? activePlanAccount.bpl.name
-                    : null,
-              }
-            : null,
-          created_at: result[0].created_at,
-        }
-      : null;
+    return {
+      account_id: result[0].account_id,
+      name: result[0].name,
+      account_status: result[0].aac
+        ? {
+            account_status_id: result[0].aac.account_status_id,
+            name: result[0].aac.name,
+          }
+        : null,
+      plan: activePlanAccount?.ppl
+        ? {
+            plan_id: activePlanAccount.ppl.plan_id,
+            name: activePlanAccount.ppl.name,
+            recurring_payment: activePlanAccount.recurring_payment,
+            billing_period:
+              activePlanAccount.bpl?.name === 'monthly' ||
+              activePlanAccount.bpl?.name === 'annual'
+                ? activePlanAccount.bpl.name
+                : null,
+          }
+        : null,
+      created_at: result[0].created_at,
+    };
   };
 }

@@ -16,12 +16,10 @@ export class UpdateChatbotUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    isAdministrator: boolean,
     workerId: string,
     body: UpdateChatbotRequest
   ): Promise<{ chatbot_id: string | null }> {
     const existsWorkerById = await this.workerService.existsWorkerById(
-      isAdministrator,
       accountId,
       workerId
     );

@@ -4,7 +4,6 @@ import { refDebounced } from '@vueuse/core';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { useI18n } from 'vue-i18n';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
-import { getAdministrator } from '@/@webcore/localStorage/user';
 import { DataTableHeader } from 'vuetify';
 import { useContactGroupStore } from '@/@webcore/stores/contactGroup';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
@@ -49,7 +48,6 @@ const permissionsCreate = [
 const { t } = useI18n();
 const contactGroupStore = useContactGroupStore();
 useSnackbarCleanup(contactGroupStore);
-const isAdministrator = getAdministrator();
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -205,10 +203,7 @@ watch(
         <template #item.actions="{ item }">
           <div class="d-flex gap-1">
             <IconBtn
-              v-if="
-                $canPermission(permissionsEdit) &&
-                (item?.contact_group_id || isAdministrator)
-              "
+              v-if="$canPermission(permissionsEdit) && item?.contact_group_id"
               ><VTooltip
                 location="top"
                 transition="scale-transition"
@@ -221,10 +216,7 @@ watch(
             /></IconBtn>
 
             <IconBtn
-              v-if="
-                $canPermission(permissionsDelete) &&
-                (item.contact_group_id || isAdministrator)
-              "
+              v-if="$canPermission(permissionsDelete) && item.contact_group_id"
               ><VTooltip
                 location="top"
                 transition="scale-transition"

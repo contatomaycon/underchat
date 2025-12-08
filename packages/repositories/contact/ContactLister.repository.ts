@@ -90,18 +90,14 @@ export class ContactListerRepository {
     perPage: number,
     currentPage: number,
     query: ListContactRequest,
-    isAdministrator: boolean,
     accountId: string,
     searchHashes: string | null
   ): Promise<ListContactResponse[]> => {
     const filters = this.setFilters(query, searchHashes);
     const orders = this.setOrders(query);
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(contact.account_id, accountId);
 
     const whereConditions = [
-      accountCondition,
+      eq(contact.account_id, accountId),
       isNull(contact.deleted_at),
       ...filters,
     ].filter(isDefinedFilter);
@@ -182,17 +178,13 @@ export class ContactListerRepository {
 
   listContactTotal = async (
     query: ListContactRequest,
-    isAdministrator: boolean,
     accountId: string,
     searchHashes: string | null
   ): Promise<number> => {
     const filters = this.setFilters(query, searchHashes);
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(contact.account_id, accountId);
 
     const whereConditions = [
-      accountCondition,
+      eq(contact.account_id, accountId),
       isNull(contact.deleted_at),
       ...filters,
     ].filter(isDefinedFilter);

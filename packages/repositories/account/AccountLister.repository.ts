@@ -58,12 +58,16 @@ export class AccountListerRepository {
     perPage: number,
     currentPage: number,
     query: ListAccountRequest,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<ListAccountResponse[]> => {
     const filtersAccount = this.setFiltersAccount(query);
 
     const result = await this.db.query.account.findMany({
-      where: and(isNull(account.deleted_at), ...filtersAccount),
+      where: and(
+        eq(account.account_id, accountId),
+        isNull(account.deleted_at),
+        ...filtersAccount
+      ),
       with: {
         aac: {
           columns: {
@@ -107,43 +111,41 @@ export class AccountListerRepository {
     }
 
     const now = new Date();
-    return isAdministrator
-      ? result.map((item) => {
-          const activePlanAccount = item.apc?.find((pa) => {
-            if (!pa.next_payment_date) return false;
-            const nextPaymentDate = new Date(pa.next_payment_date);
-            return nextPaymentDate > now;
-          });
-          return {
-            account_id: item.account_id,
-            name: item.name,
-            account_status: item.aac
-              ? {
-                  account_status_id: item.aac.account_status_id,
-                  name: item.aac.name,
-                }
-              : null,
-            plan: activePlanAccount?.ppl
-              ? {
-                  plan_id: activePlanAccount.ppl.plan_id,
-                  name: activePlanAccount.ppl.name,
-                  recurring_payment: activePlanAccount.recurring_payment,
-                  billing_period:
-                    activePlanAccount.bpl?.name === 'monthly' ||
-                    activePlanAccount.bpl?.name === 'annual'
-                      ? activePlanAccount.bpl.name
-                      : null,
-                }
-              : null,
-            created_at: item.created_at,
-          };
-        })
-      : [];
+    return result.map((item) => {
+      const activePlanAccount = item.apc?.find((pa) => {
+        if (!pa.next_payment_date) return false;
+        const nextPaymentDate = new Date(pa.next_payment_date);
+        return nextPaymentDate > now;
+      });
+      return {
+        account_id: item.account_id,
+        name: item.name,
+        account_status: item.aac
+          ? {
+              account_status_id: item.aac.account_status_id,
+              name: item.aac.name,
+            }
+          : null,
+        plan: activePlanAccount?.ppl
+          ? {
+              plan_id: activePlanAccount.ppl.plan_id,
+              name: activePlanAccount.ppl.name,
+              recurring_payment: activePlanAccount.recurring_payment,
+              billing_period:
+                activePlanAccount.bpl?.name === 'monthly' ||
+                activePlanAccount.bpl?.name === 'annual'
+                  ? activePlanAccount.bpl.name
+                  : null,
+            }
+          : null,
+        created_at: item.created_at,
+      };
+    });
   };
 
   listAccountsTotal = async (
     query: ListAccountRequest,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<number> => {
     const filtersAccount = this.setFiltersAccount(query);
 
@@ -160,6 +162,7 @@ export class AccountListerRepository {
       .leftJoin(plan, eq(plan.plan_id, planAccount.plan_id))
       .where(
         and(
+          eq(account.account_id, accountId),
           ...filtersAccount,
           isNull(account.deleted_at),
           gt(planAccount.next_payment_date, sql`NOW()`)
@@ -167,6 +170,6 @@ export class AccountListerRepository {
       )
       .execute();
 
-    return isAdministrator ? (result[0]?.count ?? 0) : 0;
+    return result[0]?.count ?? 0;
   };
 }

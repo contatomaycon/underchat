@@ -47,7 +47,6 @@ export class WorkerProfileStatusUpdaterUseCase {
     t: TFunction<'translation', undefined>,
     workerProfileStatusId: string,
     accountId: string,
-    isAdministrator: boolean,
     body: UpdateProfileStatusRequest
   ): Promise<boolean> {
     const profileStatus =
@@ -60,7 +59,6 @@ export class WorkerProfileStatusUpdaterUseCase {
     }
 
     const existsWorkerById = await this.workerService.existsWorkerById(
-      isAdministrator,
       accountId,
       profileStatus.worker_id
     );

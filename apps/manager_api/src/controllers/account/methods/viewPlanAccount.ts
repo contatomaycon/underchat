@@ -17,8 +17,7 @@ export const viewPlanAccount = async (
   try {
     const response = await planAccountViewerUseCase.execute(
       t,
-      request.params.account_id,
-      tokenJwtData.is_administrator
+      request.params.account_id
     );
 
     if (response) {

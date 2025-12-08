@@ -24,7 +24,6 @@ export const updateSimultaneousAttendance = async (
     const response = await updateSimultaneousAttendanceUseCase.execute(
       t,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       request.params.worker_id,
       request.body
     );

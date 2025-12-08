@@ -142,11 +142,9 @@ export class WorkerChangeStatusConnectionUseCase {
   private async validate(
     t: TFunction<'translation', undefined>,
     input: StatusConnectionWorkerRequest,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ) {
     const existsWorkerAccountById = await this.workerService.existsWorkerById(
-      isAdministrator,
       accountId,
       input.worker_id
     );
@@ -189,7 +187,6 @@ export class WorkerChangeStatusConnectionUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    isAdministrator: boolean,
     input: StatusConnectionWorkerRequest
   ): Promise<void> {
     if (input.type === EBaileysConnectionType.phone) {
@@ -214,7 +211,7 @@ export class WorkerChangeStatusConnectionUseCase {
       }
     }
 
-    await this.validate(t, input, accountId, isAdministrator);
+    await this.validate(t, input, accountId);
     await this.onChangeConnectionStatus(t, input);
   }
 }

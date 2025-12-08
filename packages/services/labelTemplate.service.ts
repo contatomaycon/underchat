@@ -31,7 +31,6 @@ export class LabelTemplateService {
     perPage: number,
     currentPage: number,
     query: ListLabelTemplateRequest,
-    isAdministrator: boolean,
     accountId: string
   ): Promise<[ListLabelTemplateResponse[], number]> => {
     const [result, total] = await Promise.all([
@@ -39,12 +38,10 @@ export class LabelTemplateService {
         perPage,
         currentPage,
         query,
-        isAdministrator,
         accountId
       ),
       this.labelTemplateListerRepository.listLabelTemplateTotal(
         query,
-        isAdministrator,
         accountId
       ),
     ]);

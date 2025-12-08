@@ -15,16 +15,14 @@ export const createUser = async (
   const { t, tokenJwtData } = request;
 
   try {
-    const accountIdToUse =
-      tokenJwtData.is_administrator && request.body.account_id?.value
-        ? request.body.account_id.value
-        : tokenJwtData.account_id;
+    const accountIdToUse = request.body.account_id?.value
+      ? request.body.account_id.value
+      : tokenJwtData.account_id;
 
     const response = await userCreatorUseCase.execute(
       t,
       request.body,
-      accountIdToUse,
-      tokenJwtData.is_administrator
+      accountIdToUse
     );
 
     if (response) {

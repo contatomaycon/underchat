@@ -5,7 +5,6 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
-import { getAdministrator } from '@/@webcore/localStorage/user';
 import { DataTableHeader } from 'vuetify';
 import { ESectorPermissions } from '@core/common/enums/EPermissions/sector';
 import { useSectorsStore } from '@/@webcore/stores/sector';
@@ -50,7 +49,6 @@ const permissionsCreate = [
 const { t } = useI18n();
 const sectorStore = useSectorsStore();
 useSnackbarCleanup(sectorStore);
-const isAdministrator = getAdministrator();
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -108,8 +106,6 @@ const textColor = (s: string): string => {
 
 const headers: DataTableHeader<ListSectorResponse>[] = [
   { title: t('name'), key: 'name' },
-  ...(isAdministrator ? [{ title: t('status'), key: 'status' }] : []),
-  ...(isAdministrator ? [{ title: t('account'), key: 'account' }] : []),
   { title: t('color'), key: 'color' },
   { title: t('created_at'), key: 'created_at' },
   { title: t('actions'), key: 'actions', sortable: false },
@@ -316,11 +312,7 @@ watch(
                 @click="openAddRoleDialog(item.sector_id)"
             /></IconBtn>
 
-            <IconBtn
-              v-if="
-                $canPermission(permissionsEdit) &&
-                (item.account?.id || isAdministrator)
-              "
+            <IconBtn v-if="$canPermission(permissionsEdit) && item.account?.id"
               ><VTooltip
                 location="top"
                 transition="scale-transition"
@@ -333,10 +325,7 @@ watch(
             /></IconBtn>
 
             <IconBtn
-              v-if="
-                $canPermission(permissionsDelete) &&
-                (item.account?.id || isAdministrator)
-              "
+              v-if="$canPermission(permissionsDelete) && item.account?.id"
               ><VTooltip
                 location="top"
                 transition="scale-transition"
