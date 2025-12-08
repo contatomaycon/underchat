@@ -7,6 +7,7 @@ import {
   AssignUserRoleParamsRequest,
 } from '@core/schema/user/assignUserRole/request.schema';
 import { UserRoleAssignerUseCase } from '@core/useCases/user/UserRoleAssigner.useCase';
+import { canOperateOnOtherAccounts } from '@core/common/functions/hasFullAccess';
 
 export const assignUserRole = async (
   request: FastifyRequest<{
@@ -18,12 +19,15 @@ export const assignUserRole = async (
   const userRoleAssignerUseCase = container.resolve(UserRoleAssignerUseCase);
   const { t, tokenJwtData } = request;
 
+  const canOperateOnOthers = canOperateOnOtherAccounts(tokenJwtData.actions);
+
   try {
     const response = await userRoleAssignerUseCase.execute(
       t,
       request.params.user_id,
       tokenJwtData.account_id,
-      request.body
+      request.body,
+      canOperateOnOthers
     );
 
     if (response) {

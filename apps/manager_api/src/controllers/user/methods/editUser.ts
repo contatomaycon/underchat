@@ -7,6 +7,7 @@ import {
   EditUserParamsRequest,
   UpdateUserRequest,
 } from '@core/schema/user/editUser/request.schema';
+import { canOperateOnOtherAccounts } from '@core/common/functions/hasFullAccess';
 
 export const editUser = async (
   request: FastifyRequest<{
@@ -18,6 +19,8 @@ export const editUser = async (
   const userUpdaterUseCase = container.resolve(UserUpdaterUseCase);
   const { t, tokenJwtData } = request;
 
+  const canOperateOnOthers = canOperateOnOtherAccounts(tokenJwtData.actions);
+
   try {
     const accountIdToUse = request.body.account_id?.value
       ? request.body.account_id.value
@@ -27,7 +30,8 @@ export const editUser = async (
       t,
       request.params.user_id,
       request.body,
-      accountIdToUse
+      accountIdToUse,
+      canOperateOnOthers
     );
 
     if (response) {

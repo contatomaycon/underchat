@@ -1,9 +1,10 @@
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
+import { canOperateOnOtherAccounts } from '@core/common/functions/hasFullAccess';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { ViewUserRoleParamsRequest } from '@core/schema/user/viewUserRole/request.schema';
-import { UserService } from '@core/services/user.service';
+import { UserRoleViewerUseCase } from '@core/useCases/user/UserRoleViewer.useCase';
 
 export const viewUserRole = async (
   request: FastifyRequest<{
@@ -11,24 +12,16 @@ export const viewUserRole = async (
   }>,
   reply: FastifyReply
 ) => {
-  const userService = container.resolve(UserService);
+  const userRoleViewerUseCase = container.resolve(UserRoleViewerUseCase);
   const { t, tokenJwtData } = request;
+  const canOperateOnOthers = canOperateOnOtherAccounts(tokenJwtData.actions);
 
   try {
-    const existsUser = await userService.existsUserById(
+    const permissionRoleId = await userRoleViewerUseCase.execute(
+      t,
       request.params.user_id,
-      tokenJwtData.account_id
-    );
-
-    if (!existsUser) {
-      return sendResponse(reply, {
-        message: t('user_not_found'),
-        httpStatusCode: EHTTPStatusCode.bad_request,
-      });
-    }
-
-    const permissionRoleId = await userService.getUserRole(
-      request.params.user_id
+      tokenJwtData.account_id,
+      canOperateOnOthers
     );
 
     return sendResponse(reply, {

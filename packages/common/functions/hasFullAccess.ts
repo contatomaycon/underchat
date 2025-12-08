@@ -115,3 +115,9 @@ export function sanitizeQueryAccountId<
     canReturnAll,
   };
 }
+
+export function canOperateOnOtherAccounts(
+  actions: IJwtGroupHierarchy[]
+): boolean {
+  return hasFullAccess(actions);
+}

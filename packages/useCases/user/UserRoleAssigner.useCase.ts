@@ -15,7 +15,8 @@ export class UserRoleAssignerUseCase {
     t: TFunction<'translation', undefined>,
     userId: string,
     accountId: string,
-    input: AssignUserRoleRequest
+    input: AssignUserRoleRequest,
+    canOperateOnOthers: boolean
   ): Promise<boolean> {
     const userAccountId = await this.userService.getUserAccountId(userId);
 
@@ -23,10 +24,15 @@ export class UserRoleAssignerUseCase {
       throw new Error(t('user_not_found'));
     }
 
-    const existsUser = await this.userService.existsUserById(userId, accountId);
+    if (!canOperateOnOthers) {
+      const existsUser = await this.userService.existsUserById(
+        userId,
+        accountId
+      );
 
-    if (!existsUser) {
-      throw new Error(t('user_not_found'));
+      if (!existsUser) {
+        throw new Error(t('user_not_found'));
+      }
     }
 
     const existsPermissionRole =

@@ -1,10 +1,9 @@
 import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { UserService } from '@core/services/user.service';
-import { ViewUserResponse } from '@core/schema/user/viewUser/response.schema';
 
 @injectable()
-export class UserViewerUseCase {
+export class UserRoleViewerUseCase {
   constructor(private readonly userService: UserService) {}
 
   private async validateUserExistsInAccount(
@@ -25,14 +24,12 @@ export class UserViewerUseCase {
   private async validateUserExists(
     t: TFunction<'translation', undefined>,
     userId: string
-  ): Promise<string> {
+  ): Promise<void> {
     const userAccountId = await this.userService.getUserAccountId(userId);
 
     if (!userAccountId) {
       throw new Error(t('user_not_found'));
     }
-
-    return userAccountId;
   }
 
   async execute(
@@ -40,14 +37,15 @@ export class UserViewerUseCase {
     userId: string,
     accountId: string,
     canOperateOnOthers: boolean
-  ): Promise<ViewUserResponse | null> {
+  ): Promise<string | null> {
     if (!canOperateOnOthers) {
       await this.validateUserExistsInAccount(t, userId, accountId);
-
-      return this.userService.viewUserById(userId, accountId);
     }
 
-    const userAccountId = await this.validateUserExists(t, userId);
-    return this.userService.viewUserById(userId, userAccountId);
+    if (canOperateOnOthers) {
+      await this.validateUserExists(t, userId);
+    }
+
+    return this.userService.getUserRole(userId);
   }
 }
