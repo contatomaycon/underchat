@@ -77,7 +77,7 @@ export default async function accountRoutes(server: FastifyInstance) {
     ],
   });
 
-  server.get('/account-info/:account_id', {
+  server.get('/account/info/:account_id', {
     schema: viewAccountInfoSchema,
     handler: accountController.viewAccountInfo,
     preHandler: [
@@ -86,7 +86,7 @@ export default async function accountRoutes(server: FastifyInstance) {
     ],
   });
 
-  server.post('/account-info', {
+  server.post('/account/info', {
     schema: createAccountInfoSchema,
     handler: accountController.createAccountInfo,
     preHandler: [
@@ -95,7 +95,7 @@ export default async function accountRoutes(server: FastifyInstance) {
     ],
   });
 
-  server.patch('/account-info/:account_info_id', {
+  server.patch('/account/info/:account_info_id', {
     schema: editAccountInfoSchema,
     handler: accountController.updateAccountInfo,
     preHandler: [
