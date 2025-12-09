@@ -325,7 +325,7 @@ watch(
               <VLabel class="text-body-2 mb-1">{{ $t('account') }}:</VLabel>
               <AppSelectSearch
                 :model-value="
-                  options.account_id === 'all' ? '' : options.account_id || ''
+                  options.account_id === 'all' ? '' : options.account_id || null
                 "
                 @update:modelValue="handleAccountIdChange"
                 :items="itemsAccount"

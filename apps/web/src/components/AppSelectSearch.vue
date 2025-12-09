@@ -4,9 +4,11 @@ import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
 
+type SelectValue = string | number | boolean | null;
+
 interface SelectItem {
-  id?: string | number | boolean | null;
-  value?: string | number | boolean | null;
+  id?: SelectValue;
+  value?: SelectValue;
   name?: string;
   title?: string;
   text?: string;
@@ -15,7 +17,7 @@ interface SelectItem {
 
 const props = withDefaults(
   defineProps<{
-    modelValue: string | number | boolean | null;
+    modelValue: SelectValue;
     items: SelectItem[];
     placeholder?: string;
     label?: string;
@@ -43,7 +45,7 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-  'update:modelValue': [value: string | number | boolean | null];
+  'update:modelValue': [value: SelectValue];
   select: [item: SelectItem];
   clear: [];
 }>();
