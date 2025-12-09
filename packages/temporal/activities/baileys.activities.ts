@@ -149,7 +149,13 @@ export async function updateStatusWorker(
 ): Promise<void> {
   const workerService = container.resolve(WorkerService);
 
-  if (input.worker_status_id === EWorkerStatus.mismatched) return;
+  if (
+    input.worker_status_id === EWorkerStatus.mismatched ||
+    input.worker_status_id === EWorkerStatus.new ||
+    input.worker_status_id === EWorkerStatus.creating
+  ) {
+    return;
+  }
 
   if (
     isHelmCheck &&

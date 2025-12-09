@@ -313,6 +313,26 @@ export class WorkerConsume {
       throw new Error('Worker type ID is required');
     }
 
+    const inputUpdateCreating: IUpdateWorker = {
+      worker_id: data.worker_id,
+      worker_status_id: EWorkerStatus.creating,
+    };
+
+    await this.workerService.updateWorkerById(
+      data.account_id,
+      inputUpdateCreating
+    );
+
+    const dataPublishCreating: IBaileysConnectionState = {
+      code: ECodeMessage.info,
+      status: EBaileysConnectionStatus.info,
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      worker_status_id: EWorkerStatus.creating,
+    };
+
+    await this.centrifugoPublish(dataPublishCreating);
+
     const imageName = getImageWorker(data.worker_type_id);
 
     const containerId = await this.workerService.createContainerWorker(

@@ -8,4 +8,5 @@ export enum EWorkerStatus {
   error = '019a930d-c6f6-766d-9c84-48cb970a9f21',
   delete = '019a930d-c6f6-766d-9c84-4dc1777f8f69',
   mismatched = '019a930d-c6f6-766d-9c84-5056ccf66633',
+  creating = '019a930d-c6f6-766d-9c84-52e87789979b',
 }

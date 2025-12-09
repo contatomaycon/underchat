@@ -30,6 +30,8 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { BaileysIncomingMessageService } from './incoming.service';
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
+import { WorkerService } from '@core/services/worker.service';
+import { container } from 'tsyringe';
 
 const FOLDER = `/app/data/storage/${baileysEnvironment.baileysWorkerId}`;
 const CHANNEL = workerCentrifugoQueue(baileysEnvironment.baileysAccountId);
@@ -502,6 +504,20 @@ export class BaileysConnectionService {
     if (statusCode === ECodeMessage.loggedOut) {
       this.clearFolder();
 
+      try {
+        const workerService = container.resolve(WorkerService);
+        const viewWorker = await workerService.viewWorker(ACCOUNT, WORKER);
+
+        if (
+          viewWorker?.status?.id === EWorkerStatus.new ||
+          viewWorker?.status?.id === EWorkerStatus.creating
+        ) {
+          return;
+        }
+      } catch (error) {
+        console.error('Error checking worker status:', error);
+      }
+
       const payload: IBaileysConnectionState = {
         status: this.status,
         worker_id: WORKER,
@@ -614,6 +630,16 @@ export class BaileysConnectionService {
 
   private async updateWorkerMismatchedStatus(): Promise<void> {
     try {
+      const workerService = container.resolve(WorkerService);
+      const viewWorker = await workerService.viewWorker(ACCOUNT, WORKER);
+
+      if (
+        viewWorker?.status?.id === EWorkerStatus.new ||
+        viewWorker?.status?.id === EWorkerStatus.creating
+      ) {
+        return;
+      }
+
       const payload: IBaileysConnectionState = {
         code: ECodeMessage.info,
         status: Status.disconnected,

@@ -5,6 +5,8 @@ import { KafkaBalanceQueueService } from '@core/services/kafkaBalanceQueue.servi
 import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
 import { container } from 'tsyringe';
 
 export interface IWorkerCreationActivity {
@@ -40,10 +42,17 @@ export async function processWorkerCreation(
     throw new Error('Worker name not found');
   }
 
+  const inputUpdateCreating: IUpdateWorker = {
+    worker_id: input.worker_id,
+    worker_status_id: EWorkerStatus.creating,
+  };
+
+  await workerService.updateWorkerById(input.account_id, inputUpdateCreating);
+
   const payloadCreate: IWorkerPayload = {
     action: EWorkerAction.create,
     worker_id: input.worker_id,
-    worker_status_id: input.worker_status_id,
+    worker_status_id: EWorkerStatus.creating,
     worker_type_id: viewWorkerType.worker_type_id as EWorkerType,
     server_id: input.server_id,
     account_id: input.account_id,

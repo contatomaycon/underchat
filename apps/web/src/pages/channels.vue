@@ -90,6 +90,7 @@ const itemsStatus = ref([
   { id: EWorkerStatus.offline, text: t('offline') },
   { id: EWorkerStatus.online, text: t('online') },
   { id: EWorkerStatus.new, text: t('new') },
+  { id: EWorkerStatus.creating, text: t('creating') },
   { id: EWorkerStatus.error, text: t('error') },
   { id: EWorkerStatus.mismatched, text: t('mismatched') },
 ]);
@@ -126,6 +127,8 @@ const resolveStatusVariant = (s: string | undefined | null) => {
   if (s === EWorkerStatus.online)
     return { color: EColor.success, text: t('online') };
   if (s === EWorkerStatus.new) return { color: EColor.info, text: t('new') };
+  if (s === EWorkerStatus.creating)
+    return { color: EColor.warning, text: t('creating') };
   if (s === EWorkerStatus.deleting)
     return { color: EColor.error, text: t('deleting') };
   if (s === EWorkerStatus.delete)
@@ -254,6 +257,8 @@ onMounted(async () => {
     await onMessage(
       workerCentrifugoQueue(user.account_id),
       (data: IBaileysConnectionState) => {
+        console.log('data', data);
+
         channelsStore.updateStatusChannel(data);
       }
     );
