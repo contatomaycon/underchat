@@ -52,11 +52,25 @@ const resolveFooterType = (
   return FooterType.Sticky;
 };
 
-const buildLogoNode = (layoutLogo?: string | null) =>
-  h('div', {
-    innerHTML: layoutLogo ?? logo,
+const buildLogoNode = (layoutLogo?: string | null) => {
+  const logoContent = layoutLogo ?? logo;
+
+  if (
+    logoContent &&
+    (logoContent.startsWith('http://') || logoContent.startsWith('https://'))
+  ) {
+    return h('img', {
+      src: logoContent,
+      alt: 'Logo',
+      style: 'line-height:0; max-height: 2rem;',
+    });
+  }
+
+  return h('div', {
+    innerHTML: logoContent,
     style: 'line-height:0; color: rgb(var(--v-global-theme-primary))',
   });
+};
 
 export const applyLayoutTheme = (
   layoutInput?: AccountInfoResponse | null,
