@@ -46,6 +46,8 @@ const itemsStatus = ref([
   { id: EWorkerStatus.creating, text: t('creating') },
   { id: EWorkerStatus.error, text: t('error') },
   { id: EWorkerStatus.mismatched, text: t('mismatched') },
+  { id: EWorkerStatus.deleting, text: t('deleting') },
+  { id: EWorkerStatus.recreating, text: t('recreating') },
 ]);
 
 const itemsType = ref([
