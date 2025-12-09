@@ -118,15 +118,22 @@ const handleClear = () => {
           :placeholder="placeholder"
           variant="outlined"
           readonly
-          :clearable="clearable && !!modelValue"
-          clear-icon="tabler-x"
-          @click:clear="handleClear"
           :disabled="disabled"
           :loading="loading"
-          :append-inner-icon="modelValue ? undefined : 'tabler-chevron-down'"
         >
           <template v-if="$slots['prepend-inner']" #prepend-inner>
             <slot name="prepend-inner" :item="selectedItem" />
+          </template>
+          <template #append-inner>
+            <div class="d-flex align-center ga-1 append-inner-icons">
+              <VIcon
+                v-if="clearable && modelValue"
+                icon="tabler-x"
+                class="cursor-pointer clear-icon"
+                @click.stop="handleClear"
+              />
+              <VIcon icon="tabler-chevron-down" class="chevron-icon" />
+            </div>
           </template>
         </VTextField>
       </template>
@@ -177,3 +184,16 @@ const handleClear = () => {
     </VMenu>
   </div>
 </template>
+
+<style scoped>
+:deep(.v-field) {
+  .append-inner-icons .clear-icon {
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  &:hover .append-inner-icons .clear-icon {
+    opacity: 1;
+  }
+}
+</style>
