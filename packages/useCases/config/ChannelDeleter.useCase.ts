@@ -9,7 +9,10 @@ import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { KafkaBalanceQueueService } from '@core/services/kafkaBalanceQueue.service';
-import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import {
+  workerCentrifugoQueue,
+  channelsConfigCentrifugo,
+} from '@core/common/functions/centrifugoQueue';
 
 @injectable()
 export class ChannelDeleterUseCase {
@@ -67,10 +70,13 @@ export class ChannelDeleterUseCase {
       account_id: viewWorkerBalancer.account_id,
     };
 
-    await this.centrifugoService.publishSub(
-      workerCentrifugoQueue(inputDeleter.account_id),
-      inputDeleter
-    );
+    await Promise.all([
+      this.centrifugoService.publishSub(
+        workerCentrifugoQueue(inputDeleter.account_id),
+        inputDeleter
+      ),
+      this.centrifugoService.publish(channelsConfigCentrifugo(), inputDeleter),
+    ]);
 
     await this.onChannelDeleted(t, inputDeleter);
 

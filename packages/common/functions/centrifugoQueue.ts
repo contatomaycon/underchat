@@ -25,3 +25,7 @@ export function presenceUserCentrifugo(userId: string): string {
 export function paymentAccountCentrifugo(accountId: string): string {
   return `payment:account#${accountId}`;
 }
+
+export function channelsConfigCentrifugo(): string {
+  return 'channels:config';
+}

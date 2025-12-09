@@ -49,6 +49,12 @@
         "allow_subscribe_for_client": true,
         "allow_publish_for_client": true,
         "presence": true
+      },
+      {
+        "name": "channels",
+        "allow_subscribe_for_client": true,
+        "allow_publish_for_client": true,
+        "presence": false
       }
     ]
   }

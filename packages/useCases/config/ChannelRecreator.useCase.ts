@@ -9,7 +9,10 @@ import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { KafkaBalanceQueueService } from '@core/services/kafkaBalanceQueue.service';
-import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import {
+  workerCentrifugoQueue,
+  channelsConfigCentrifugo,
+} from '@core/common/functions/centrifugoQueue';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
 
 @injectable()
@@ -70,10 +73,13 @@ export class ChannelRecreatorUseCase {
       worker_status_id: EWorkerStatus.recreating,
     };
 
-    await this.centrifugoService.publishSub(
-      workerCentrifugoQueue(inputRecreate.account_id),
-      inputRecreate
-    );
+    await Promise.all([
+      this.centrifugoService.publishSub(
+        workerCentrifugoQueue(inputRecreate.account_id),
+        inputRecreate
+      ),
+      this.centrifugoService.publish(channelsConfigCentrifugo(), inputRecreate),
+    ]);
 
     await this.onChannelRecreated(t, inputRecreate);
 

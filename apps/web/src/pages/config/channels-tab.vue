@@ -14,8 +14,7 @@ import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { EColor } from '@core/common/enums/EColor';
 import TablePagination from '@/@webcore/components/TablePagination.vue';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
-import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
-import { getUser } from '@/@webcore/localStorage/user';
+import { channelsConfigCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
@@ -171,7 +170,6 @@ watch(
   { immediate: true, deep: true }
 );
 
-const user = getUser();
 const channelToDelete = ref<string | null>(null);
 const isDialogDeleterShow = ref(false);
 
@@ -226,20 +224,16 @@ onMounted(async () => {
   await loadAccounts();
   await loadChannels();
 
-  if (user?.account_id) {
-    await onMessage(
-      workerCentrifugoQueue(user.account_id),
-      (data: IBaileysConnectionState | IWorkerPayload) => {
-        updateChannelFromCentrifugo(data);
-      }
-    );
-  }
+  await onMessage(
+    channelsConfigCentrifugo(),
+    (data: IBaileysConnectionState | IWorkerPayload) => {
+      updateChannelFromCentrifugo(data);
+    }
+  );
 });
 
 onUnmounted(async () => {
-  if (user?.account_id) {
-    await unsubscribe(workerCentrifugoQueue(user.account_id));
-  }
+  await unsubscribe(channelsConfigCentrifugo());
 });
 </script>
 
