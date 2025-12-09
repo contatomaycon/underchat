@@ -401,138 +401,144 @@ watch(
             </div>
           </div>
         </div>
-      </VCardText>
 
-      <VDivider class="my-4" />
+        <VDivider class="my-4" />
 
-      <VDataTableServer
-        class="data-table"
-        v-model:page="options.page"
-        v-model:items-per-page="options.itemsPerPage"
-        :headers="headers"
-        :items="userStore.list"
-        :items-length="userStore.pagings.total"
-        :loading="userStore.loading"
-        :sort-by="options.sortBy"
-        @update:options="handleTableChange"
-        :loading-text="$t('loading_text')"
-      >
-        <template #item.name="{ item }">
-          <div class="d-flex flex-column ms-3">
-            <span
-              class="d-block font-weight-medium text-high-emphasis text-truncate"
-            >
-              {{ item.account?.name ?? '-' }}
-            </span>
-          </div>
-        </template>
-
-        <template #item.email="{ item }">
-          <div class="d-flex align-center justify-space-between">
-            <span>
-              {{
-                decryptedData[item.user_id]?.email ?? item.email_partial ?? '-'
-              }}
-            </span>
-            <VIcon
-              v-if="item.email_partial"
-              :icon="
-                decryptedData[item.user_id]?.email
-                  ? 'tabler-eye-off'
-                  : 'tabler-eye'
-              "
-              size="18"
-              class="cursor-pointer"
-              :class="{
-                'text-disabled': isLoadingDecrypt[item.user_id]?.email,
-              }"
-              @click="toggleEmailVisibility(item.user_id, item.email_partial)"
-            />
-          </div>
-        </template>
-
-        <template #item.phone="{ item }">
-          <div class="d-flex align-center justify-space-between">
-            <span>
-              {{
-                decryptedData[item.user_id]?.phone
-                  ? formatPhone(decryptedData[item.user_id].phone)
-                  : (item.user_info?.phone_partial ?? '-')
-              }}
-            </span>
-            <VIcon
-              v-if="item.user_info?.phone_partial"
-              :icon="
-                decryptedData[item.user_id]?.phone
-                  ? 'tabler-eye-off'
-                  : 'tabler-eye'
-              "
-              size="18"
-              class="cursor-pointer"
-              :class="{
-                'text-disabled': isLoadingDecrypt[item.user_id]?.phone,
-              }"
-              @click="
-                togglePhoneVisibility(
-                  item.user_id,
-                  item.user_info?.phone_partial ?? ''
-                )
-              "
-            />
-          </div>
-        </template>
-
-        <template #item.document="{ item }">
-          <div class="d-flex align-center justify-space-between">
-            <span>
-              {{
-                decryptedData[item.user_id]?.document ??
-                item.user_document?.document_partial ??
-                '-'
-              }}
-            </span>
-            <VIcon
-              v-if="item.user_document?.document_partial"
-              :icon="
-                decryptedData[item.user_id]?.document
-                  ? 'tabler-eye-off'
-                  : 'tabler-eye'
-              "
-              size="18"
-              class="cursor-pointer"
-              :class="{
-                'text-disabled': isLoadingDecrypt[item.user_id]?.document,
-              }"
-              @click="
-                toggleDocumentVisibility(
-                  item.user_id,
-                  item.user_document?.document_partial ?? ''
-                )
-              "
-            />
-          </div>
-        </template>
-
-        <template #item.status="{ item }">
-          {{ resolveStatusText(item.user_status?.user_status_id) }}
-        </template>
-
-        <template #item.created_at="{ item }">
-          <span>{{ formatDateTime(item.created_at ?? null) }}</span>
-        </template>
-
-        <template #no-data>
-          {{ $t('no_data_available') }}
-        </template>
-
-        <template #bottom>
-          <TablePagination
+        <div>
+          <VDataTableServer
+            class="data-table"
             v-model:page="options.page"
-            :items-per-page="options.itemsPerPage"
-            :total-items="userStore.pagings.total"
-          />
-        </template>
-      </VDataTableServer>
+            v-model:items-per-page="options.itemsPerPage"
+            :headers="headers"
+            :items="userStore.list"
+            :items-length="userStore.pagings.total"
+            :loading="userStore.loading"
+            :sort-by="options.sortBy"
+            @update:options="handleTableChange"
+            :loading-text="$t('loading_text')"
+          >
+            <template #item.name="{ item }">
+              <div class="d-flex flex-column ms-3">
+                <span
+                  class="d-block font-weight-medium text-high-emphasis text-truncate"
+                >
+                  {{ item.account?.name ?? '-' }}
+                </span>
+              </div>
+            </template>
+
+            <template #item.email="{ item }">
+              <div class="d-flex align-center justify-space-between">
+                <span>
+                  {{
+                    decryptedData[item.user_id]?.email ??
+                    item.email_partial ??
+                    '-'
+                  }}
+                </span>
+                <VIcon
+                  v-if="item.email_partial"
+                  :icon="
+                    decryptedData[item.user_id]?.email
+                      ? 'tabler-eye-off'
+                      : 'tabler-eye'
+                  "
+                  size="18"
+                  class="cursor-pointer"
+                  :class="{
+                    'text-disabled': isLoadingDecrypt[item.user_id]?.email,
+                  }"
+                  @click="
+                    toggleEmailVisibility(item.user_id, item.email_partial)
+                  "
+                />
+              </div>
+            </template>
+
+            <template #item.phone="{ item }">
+              <div class="d-flex align-center justify-space-between">
+                <span>
+                  {{
+                    decryptedData[item.user_id]?.phone
+                      ? formatPhone(decryptedData[item.user_id].phone)
+                      : (item.user_info?.phone_partial ?? '-')
+                  }}
+                </span>
+                <VIcon
+                  v-if="item.user_info?.phone_partial"
+                  :icon="
+                    decryptedData[item.user_id]?.phone
+                      ? 'tabler-eye-off'
+                      : 'tabler-eye'
+                  "
+                  size="18"
+                  class="cursor-pointer"
+                  :class="{
+                    'text-disabled': isLoadingDecrypt[item.user_id]?.phone,
+                  }"
+                  @click="
+                    togglePhoneVisibility(
+                      item.user_id,
+                      item.user_info?.phone_partial ?? ''
+                    )
+                  "
+                />
+              </div>
+            </template>
+
+            <template #item.document="{ item }">
+              <div class="d-flex align-center justify-space-between">
+                <span>
+                  {{
+                    decryptedData[item.user_id]?.document ??
+                    item.user_document?.document_partial ??
+                    '-'
+                  }}
+                </span>
+                <VIcon
+                  v-if="item.user_document?.document_partial"
+                  :icon="
+                    decryptedData[item.user_id]?.document
+                      ? 'tabler-eye-off'
+                      : 'tabler-eye'
+                  "
+                  size="18"
+                  class="cursor-pointer"
+                  :class="{
+                    'text-disabled': isLoadingDecrypt[item.user_id]?.document,
+                  }"
+                  @click="
+                    toggleDocumentVisibility(
+                      item.user_id,
+                      item.user_document?.document_partial ?? ''
+                    )
+                  "
+                />
+              </div>
+            </template>
+
+            <template #item.status="{ item }">
+              {{ resolveStatusText(item.user_status?.user_status_id) }}
+            </template>
+
+            <template #item.created_at="{ item }">
+              <span>{{ formatDateTime(item.created_at ?? null) }}</span>
+            </template>
+
+            <template #no-data>
+              {{ $t('no_data_available') }}
+            </template>
+
+            <template #bottom>
+              <TablePagination
+                v-model:page="options.page"
+                :items-per-page="options.itemsPerPage"
+                :total-items="userStore.pagings.total"
+              />
+            </template>
+          </VDataTableServer>
+        </div>
+      </VCardText>
     </VCard>
   </div>
 </template>

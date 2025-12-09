@@ -226,101 +226,107 @@ watch(
             </div>
           </div>
         </div>
-      </VCardText>
 
-      <VDivider class="my-4" />
+        <VDivider class="my-4" />
 
-      <VDataTableServer
-        class="data-table"
-        v-model:page="options.page"
-        v-model:items-per-page="options.itemsPerPage"
-        :headers="headers"
-        :items="labelTemplateStore.list"
-        :items-length="labelTemplateStore.pagings.total"
-        :loading="labelTemplateStore.loading"
-        :sort-by="options.sortBy"
-        @update:options="handleTableChange"
-        :loading-text="$t('loading_text')"
-      >
-        <template #item.label="{ item }">
-          <VChip
-            class="uc-chip"
-            size="small"
-            :style="{
-              backgroundColor: backgroundColor(item.color),
-              color: textColor(item.color),
-            }"
-          >
-            {{ item.label }}
-          </VChip>
-        </template>
-
-        <template #item.label_status="{ item }">
-          <VChip
-            v-if="item.label_status"
-            :color="
-              item.label_status.label_status_id === ELabelStatus.active
-                ? 'success'
-                : 'error'
-            "
-            size="small"
-            variant="tonal"
-          >
-            {{
-              item.label_status.label_status_id === ELabelStatus.active
-                ? $t('active')
-                : $t('inactive')
-            }}
-          </VChip>
-          <span v-else class="text-medium-emphasis">-</span>
-        </template>
-
-        <template #item.created_at="{ item }">
-          <span>{{ formatDateTime(item?.created_at ?? null) }}</span>
-        </template>
-
-        <template #item.actions="{ item }">
-          <div class="d-flex gap-1">
-            <IconBtn
-              v-if="$canPermission(permissionsEdit) && item?.label_template_id"
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('edit_label_template') }}</span> </VTooltip
-              ><VIcon
-                icon="tabler-edit"
-                @click="openEditDialog(item.label_template_id)"
-            /></IconBtn>
-
-            <IconBtn
-              v-if="$canPermission(permissionsDelete) && item.label_template_id"
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('delete_label_template') }}</span> </VTooltip
-              ><VIcon
-                icon="tabler-trash"
-                @click="deleteLabelTemplate(item.label_template_id)"
-            /></IconBtn>
-          </div>
-        </template>
-
-        <template #no-data>
-          {{ $t('no_data_available') }}
-        </template>
-
-        <template #bottom>
-          <TablePagination
+        <div>
+          <VDataTableServer
+            class="data-table"
             v-model:page="options.page"
-            :items-per-page="options.itemsPerPage"
-            :total-items="labelTemplateStore.pagings.total"
-          />
-        </template>
-      </VDataTableServer>
+            v-model:items-per-page="options.itemsPerPage"
+            :headers="headers"
+            :items="labelTemplateStore.list"
+            :items-length="labelTemplateStore.pagings.total"
+            :loading="labelTemplateStore.loading"
+            :sort-by="options.sortBy"
+            @update:options="handleTableChange"
+            :loading-text="$t('loading_text')"
+          >
+            <template #item.label="{ item }">
+              <VChip
+                class="uc-chip"
+                size="small"
+                :style="{
+                  backgroundColor: backgroundColor(item.color),
+                  color: textColor(item.color),
+                }"
+              >
+                {{ item.label }}
+              </VChip>
+            </template>
+
+            <template #item.label_status="{ item }">
+              <VChip
+                v-if="item.label_status"
+                :color="
+                  item.label_status.label_status_id === ELabelStatus.active
+                    ? 'success'
+                    : 'error'
+                "
+                size="small"
+                variant="tonal"
+              >
+                {{
+                  item.label_status.label_status_id === ELabelStatus.active
+                    ? $t('active')
+                    : $t('inactive')
+                }}
+              </VChip>
+              <span v-else class="text-medium-emphasis">-</span>
+            </template>
+
+            <template #item.created_at="{ item }">
+              <span>{{ formatDateTime(item?.created_at ?? null) }}</span>
+            </template>
+
+            <template #item.actions="{ item }">
+              <div class="d-flex gap-1">
+                <IconBtn
+                  v-if="
+                    $canPermission(permissionsEdit) && item?.label_template_id
+                  "
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('edit_label_template') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-edit"
+                    @click="openEditDialog(item.label_template_id)"
+                /></IconBtn>
+
+                <IconBtn
+                  v-if="
+                    $canPermission(permissionsDelete) && item.label_template_id
+                  "
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('delete_label_template') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-trash"
+                    @click="deleteLabelTemplate(item.label_template_id)"
+                /></IconBtn>
+              </div>
+            </template>
+
+            <template #no-data>
+              {{ $t('no_data_available') }}
+            </template>
+
+            <template #bottom>
+              <TablePagination
+                v-model:page="options.page"
+                :items-per-page="options.itemsPerPage"
+                :total-items="labelTemplateStore.pagings.total"
+              />
+            </template>
+          </VDataTableServer>
+        </div>
+      </VCardText>
 
       <VDialogHandler
         v-if="isDialogDeleterShow"

@@ -252,63 +252,65 @@ watch(
             </div>
           </div>
         </div>
-      </VCardText>
 
-      <VDivider class="my-4" />
+        <VDivider class="my-4" />
 
-      <VDataTableServer
-        class="data-table"
-        v-model:page="options.page"
-        v-model:items-per-page="options.itemsPerPage"
-        :headers="headers"
-        :items="accountStore.list"
-        :items-length="accountStore.pagings.total"
-        :loading="accountStore.loading"
-        :sort-by="options.sortBy"
-        @update:options="handleTableChange"
-        :loading-text="$t('loading_text')"
-      >
-        <template #item.name="{ item }">
-          <div class="d-flex flex-column ms-3">
-            <span
-              class="d-block font-weight-medium text-high-emphasis text-truncate"
-            >
-              {{ item.name }}
-            </span>
-          </div>
-        </template>
-
-        <template #item.account_status="{ item }">
-          {{ resolveStatusText(item.account_status?.account_status_id) }}
-        </template>
-
-        <template #item.plan="{ item }">
-          <VChip
-            v-if="item.plan"
-            :color="resolvePlanVariant(item.plan?.name).color"
-            size="small"
-          >
-            {{ resolvePlanVariant(item.plan?.name).text }}
-          </VChip>
-          <span v-else>-</span>
-        </template>
-
-        <template #item.created_at="{ item }">
-          <span>{{ formatDateTime(item?.created_at ?? null) }}</span>
-        </template>
-
-        <template #no-data>
-          {{ $t('no_data_available') }}
-        </template>
-
-        <template #bottom>
-          <TablePagination
+        <div>
+          <VDataTableServer
+            class="data-table"
             v-model:page="options.page"
-            :items-per-page="options.itemsPerPage"
-            :total-items="accountStore.pagings.total"
-          />
-        </template>
-      </VDataTableServer>
+            v-model:items-per-page="options.itemsPerPage"
+            :headers="headers"
+            :items="accountStore.list"
+            :items-length="accountStore.pagings.total"
+            :loading="accountStore.loading"
+            :sort-by="options.sortBy"
+            @update:options="handleTableChange"
+            :loading-text="$t('loading_text')"
+          >
+            <template #item.name="{ item }">
+              <div class="d-flex flex-column ms-3">
+                <span
+                  class="d-block font-weight-medium text-high-emphasis text-truncate"
+                >
+                  {{ item.name }}
+                </span>
+              </div>
+            </template>
+
+            <template #item.account_status="{ item }">
+              {{ resolveStatusText(item.account_status?.account_status_id) }}
+            </template>
+
+            <template #item.plan="{ item }">
+              <VChip
+                v-if="item.plan"
+                :color="resolvePlanVariant(item.plan?.name).color"
+                size="small"
+              >
+                {{ resolvePlanVariant(item.plan?.name).text }}
+              </VChip>
+              <span v-else>-</span>
+            </template>
+
+            <template #item.created_at="{ item }">
+              <span>{{ formatDateTime(item?.created_at ?? null) }}</span>
+            </template>
+
+            <template #no-data>
+              {{ $t('no_data_available') }}
+            </template>
+
+            <template #bottom>
+              <TablePagination
+                v-model:page="options.page"
+                :items-per-page="options.itemsPerPage"
+                :total-items="accountStore.pagings.total"
+              />
+            </template>
+          </VDataTableServer>
+        </div>
+      </VCardText>
     </VCard>
   </div>
 </template>

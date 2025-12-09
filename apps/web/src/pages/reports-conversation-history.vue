@@ -680,95 +680,97 @@ const openDocument = (url: string | null | undefined) => {
             </div>
           </div>
         </div>
-      </VCardText>
 
-      <VDivider class="my-4" />
+        <VDivider class="my-4" />
 
-      <VDataTableServer
-        class="data-table"
-        v-model:page="options.page"
-        v-model:items-per-page="options.itemsPerPage"
-        :headers="headers"
-        :items="reportConversationHistoryStore.list"
-        :items-length="reportConversationHistoryStore.pagings.total"
-        :loading="reportConversationHistoryStore.loading"
-        :sort-by="options.sortBy"
-        @update:options="handleTableChange"
-        :loading-text="$t('loading_text')"
-      >
-        <template #item.date="{ item }">
-          <span>{{ formatDateTime(item.date) }}</span>
-        </template>
-
-        <template #item.protocol="{ item }">
-          <div class="d-flex align-center justify-space-between w-100">
-            <span>{{ item.protocol || '-' }}</span>
-            <VBtn
-              v-if="getProtocolsList(item).length > 0"
-              icon
-              size="x-small"
-              variant="text"
-              color="primary"
-              density="compact"
-              class="flex-shrink-0"
-              @click="openProtocolsDialog(item, item.client)"
-            >
-              <VTooltip location="top">
-                <template #activator="{ props }">
-                  <VIcon v-bind="props" size="16">tabler-list</VIcon>
-                </template>
-                <span>{{ t('view_all_protocols') }}</span>
-              </VTooltip>
-            </VBtn>
-          </div>
-        </template>
-
-        <template #item.client="{ item }">
-          <span>{{ item.client || '-' }}</span>
-        </template>
-
-        <template #item.phone="{ item }">
-          <span>{{ item.phone ? formatPhoneBR(item.phone) : '-' }}</span>
-        </template>
-
-        <template #item.operator="{ item }">
-          <span>{{ item.operator || '-' }}</span>
-        </template>
-
-        <template #item.queue="{ item }">
-          <span>{{ item.queue || '-' }}</span>
-        </template>
-
-        <template #item.channel="{ item }">
-          <span>{{ item.channel || '-' }}</span>
-        </template>
-
-        <template #item.actions="{ item }">
-          <div class="d-flex justify-center">
-            <VBtn
-              size="x-small"
-              color="primary"
-              variant="text"
-              icon="tabler-eye"
-              @click="openConversationModal(item)"
-            >
-              <VIcon size="18">tabler-eye</VIcon>
-            </VBtn>
-          </div>
-        </template>
-
-        <template #no-data>
-          {{ $t('no_data_available') }}
-        </template>
-
-        <template #bottom>
-          <TablePagination
+        <div>
+          <VDataTableServer
+            class="data-table"
             v-model:page="options.page"
-            :items-per-page="options.itemsPerPage"
-            :total-items="reportConversationHistoryStore.pagings.total"
-          />
-        </template>
-      </VDataTableServer>
+            v-model:items-per-page="options.itemsPerPage"
+            :headers="headers"
+            :items="reportConversationHistoryStore.list"
+            :items-length="reportConversationHistoryStore.pagings.total"
+            :loading="reportConversationHistoryStore.loading"
+            :sort-by="options.sortBy"
+            @update:options="handleTableChange"
+            :loading-text="$t('loading_text')"
+          >
+            <template #item.date="{ item }">
+              <span>{{ formatDateTime(item.date) }}</span>
+            </template>
+
+            <template #item.protocol="{ item }">
+              <div class="d-flex align-center justify-space-between w-100">
+                <span>{{ item.protocol || '-' }}</span>
+                <VBtn
+                  v-if="getProtocolsList(item).length > 0"
+                  icon
+                  size="x-small"
+                  variant="text"
+                  color="primary"
+                  density="compact"
+                  class="flex-shrink-0"
+                  @click="openProtocolsDialog(item, item.client)"
+                >
+                  <VTooltip location="top">
+                    <template #activator="{ props }">
+                      <VIcon v-bind="props" size="16">tabler-list</VIcon>
+                    </template>
+                    <span>{{ t('view_all_protocols') }}</span>
+                  </VTooltip>
+                </VBtn>
+              </div>
+            </template>
+
+            <template #item.client="{ item }">
+              <span>{{ item.client || '-' }}</span>
+            </template>
+
+            <template #item.phone="{ item }">
+              <span>{{ item.phone ? formatPhoneBR(item.phone) : '-' }}</span>
+            </template>
+
+            <template #item.operator="{ item }">
+              <span>{{ item.operator || '-' }}</span>
+            </template>
+
+            <template #item.queue="{ item }">
+              <span>{{ item.queue || '-' }}</span>
+            </template>
+
+            <template #item.channel="{ item }">
+              <span>{{ item.channel || '-' }}</span>
+            </template>
+
+            <template #item.actions="{ item }">
+              <div class="d-flex justify-center">
+                <VBtn
+                  size="x-small"
+                  color="primary"
+                  variant="text"
+                  icon="tabler-eye"
+                  @click="openConversationModal(item)"
+                >
+                  <VIcon size="18">tabler-eye</VIcon>
+                </VBtn>
+              </div>
+            </template>
+
+            <template #no-data>
+              {{ $t('no_data_available') }}
+            </template>
+
+            <template #bottom>
+              <TablePagination
+                v-model:page="options.page"
+                :items-per-page="options.itemsPerPage"
+                :total-items="reportConversationHistoryStore.pagings.total"
+              />
+            </template>
+          </VDataTableServer>
+        </div>
+      </VCardText>
     </VCard>
 
     <!-- Modal de Visualização da Conversa -->

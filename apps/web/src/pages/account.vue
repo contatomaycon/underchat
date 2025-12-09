@@ -249,167 +249,177 @@ watch(
             </div>
           </div>
         </div>
-      </VCardText>
 
-      <VDivider class="my-4" />
+        <VDivider class="my-4" />
 
-      <VDataTableServer
-        class="data-table"
-        v-model:page="options.page"
-        v-model:items-per-page="options.itemsPerPage"
-        :headers="headers"
-        :items="accountStore.list"
-        :items-length="accountStore.pagings.total"
-        :loading="accountStore.loading"
-        :sort-by="options.sortBy"
-        @update:options="handleTableChange"
-        :loading-text="$t('loading_text')"
-      >
-        <template #item.name="{ item }">
-          <div class="d-flex flex-column ms-3">
-            <span
-              class="d-block font-weight-medium text-high-emphasis text-truncate"
-            >
-              {{ item.name }}
-            </span>
-          </div>
-        </template>
-
-        <template #item.account_status="{ item }">
-          <VChip
-            v-if="item.account_status"
-            :color="
-              item.account_status.account_status_id === EAccountStatus.active
-                ? 'success'
-                : item.account_status.account_status_id ===
-                    EAccountStatus.blocked
-                  ? 'error'
-                  : 'warning'
-            "
-            size="small"
-            variant="tonal"
-          >
-            {{
-              item.account_status.account_status_id === EAccountStatus.active
-                ? $t('active')
-                : item.account_status.account_status_id ===
-                    EAccountStatus.blocked
-                  ? $t('blocked')
-                  : $t('inactive')
-            }}
-          </VChip>
-          <span v-else class="text-medium-emphasis">-</span>
-        </template>
-
-        <template #item.plan="{ item }">
-          <VChip
-            v-if="item.plan"
-            :color="resolvePlanVariant(item.plan?.name).color"
-            class="uc-chip"
-            size="small"
-          >
-            {{ resolvePlanVariant(item.plan?.name).text }}
-          </VChip>
-
-          <VChip v-else class="uc-chip uc-badge--muted" size="small">-</VChip>
-        </template>
-
-        <template #item.recurring_payment="{ item }">
-          <VChip
-            v-if="item.plan"
-            :color="item.plan.recurring_payment ? 'success' : 'warning'"
-            size="small"
-            variant="tonal"
-          >
-            {{ item.plan.recurring_payment ? $t('yes') : $t('no') }}
-          </VChip>
-          <span v-else class="text-medium-emphasis">-</span>
-        </template>
-
-        <template #item.billing_period="{ item }">
-          <VChip
-            v-if="item.plan?.billing_period"
-            :color="item.plan.billing_period === 'monthly' ? 'primary' : 'info'"
-            size="small"
-            variant="tonal"
-          >
-            {{
-              item.plan.billing_period === 'monthly'
-                ? $t('monthly')
-                : $t('annual')
-            }}
-          </VChip>
-          <span v-else class="text-medium-emphasis">-</span>
-        </template>
-
-        <template #item.created_at="{ item }">
-          <span>{{ formatDateTime(item?.created_at ?? null) }}</span>
-        </template>
-
-        <template #item.actions="{ item }">
-          <div class="d-flex gap-1">
-            <IconBtn
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('account_info') }}</span> </VTooltip
-              ><VIcon
-                icon="tabler-settings"
-                @click="openAddRoleDialog(item.account_id)"
-            /></IconBtn>
-
-            <IconBtn
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('plan') }}</span> </VTooltip
-              ><VIcon
-                icon="tabler-credit-card"
-                @click="openSubscriptionsDialog(item.account_id)"
-            /></IconBtn>
-
-            <IconBtn v-if="$canPermission(permissionsEdit) && item?.account_id"
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('edit_account') }}</span> </VTooltip
-              ><VIcon
-                icon="tabler-edit"
-                @click="openEditDialog(item.account_id)"
-            /></IconBtn>
-
-            <IconBtn v-if="$canPermission(permissionsDelete) && item.account_id"
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('delete_account') }}</span> </VTooltip
-              ><VIcon
-                icon="tabler-trash"
-                @click="deleteAccount(item.account_id)"
-            /></IconBtn>
-          </div>
-        </template>
-
-        <template #no-data>
-          {{ $t('no_data_available') }}
-        </template>
-
-        <template #bottom>
-          <TablePagination
+        <div>
+          <VDataTableServer
+            class="data-table"
             v-model:page="options.page"
-            :items-per-page="options.itemsPerPage"
-            :total-items="accountStore.pagings.total"
-          />
-        </template>
-      </VDataTableServer>
+            v-model:items-per-page="options.itemsPerPage"
+            :headers="headers"
+            :items="accountStore.list"
+            :items-length="accountStore.pagings.total"
+            :loading="accountStore.loading"
+            :sort-by="options.sortBy"
+            @update:options="handleTableChange"
+            :loading-text="$t('loading_text')"
+          >
+            <template #item.name="{ item }">
+              <div class="d-flex flex-column ms-3">
+                <span
+                  class="d-block font-weight-medium text-high-emphasis text-truncate"
+                >
+                  {{ item.name }}
+                </span>
+              </div>
+            </template>
+
+            <template #item.account_status="{ item }">
+              <VChip
+                v-if="item.account_status"
+                :color="
+                  item.account_status.account_status_id ===
+                  EAccountStatus.active
+                    ? 'success'
+                    : item.account_status.account_status_id ===
+                        EAccountStatus.blocked
+                      ? 'error'
+                      : 'warning'
+                "
+                size="small"
+                variant="tonal"
+              >
+                {{
+                  item.account_status.account_status_id ===
+                  EAccountStatus.active
+                    ? $t('active')
+                    : item.account_status.account_status_id ===
+                        EAccountStatus.blocked
+                      ? $t('blocked')
+                      : $t('inactive')
+                }}
+              </VChip>
+              <span v-else class="text-medium-emphasis">-</span>
+            </template>
+
+            <template #item.plan="{ item }">
+              <VChip
+                v-if="item.plan"
+                :color="resolvePlanVariant(item.plan?.name).color"
+                class="uc-chip"
+                size="small"
+              >
+                {{ resolvePlanVariant(item.plan?.name).text }}
+              </VChip>
+
+              <VChip v-else class="uc-chip uc-badge--muted" size="small"
+                >-</VChip
+              >
+            </template>
+
+            <template #item.recurring_payment="{ item }">
+              <VChip
+                v-if="item.plan"
+                :color="item.plan.recurring_payment ? 'success' : 'warning'"
+                size="small"
+                variant="tonal"
+              >
+                {{ item.plan.recurring_payment ? $t('yes') : $t('no') }}
+              </VChip>
+              <span v-else class="text-medium-emphasis">-</span>
+            </template>
+
+            <template #item.billing_period="{ item }">
+              <VChip
+                v-if="item.plan?.billing_period"
+                :color="
+                  item.plan.billing_period === 'monthly' ? 'primary' : 'info'
+                "
+                size="small"
+                variant="tonal"
+              >
+                {{
+                  item.plan.billing_period === 'monthly'
+                    ? $t('monthly')
+                    : $t('annual')
+                }}
+              </VChip>
+              <span v-else class="text-medium-emphasis">-</span>
+            </template>
+
+            <template #item.created_at="{ item }">
+              <span>{{ formatDateTime(item?.created_at ?? null) }}</span>
+            </template>
+
+            <template #item.actions="{ item }">
+              <div class="d-flex gap-1">
+                <IconBtn
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('account_info') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-settings"
+                    @click="openAddRoleDialog(item.account_id)"
+                /></IconBtn>
+
+                <IconBtn
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('plan') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-credit-card"
+                    @click="openSubscriptionsDialog(item.account_id)"
+                /></IconBtn>
+
+                <IconBtn
+                  v-if="$canPermission(permissionsEdit) && item?.account_id"
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('edit_account') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-edit"
+                    @click="openEditDialog(item.account_id)"
+                /></IconBtn>
+
+                <IconBtn
+                  v-if="$canPermission(permissionsDelete) && item.account_id"
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('delete_account') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-trash"
+                    @click="deleteAccount(item.account_id)"
+                /></IconBtn>
+              </div>
+            </template>
+
+            <template #no-data>
+              {{ $t('no_data_available') }}
+            </template>
+
+            <template #bottom>
+              <TablePagination
+                v-model:page="options.page"
+                :items-per-page="options.itemsPerPage"
+                :total-items="accountStore.pagings.total"
+              />
+            </template>
+          </VDataTableServer>
+        </div>
+      </VCardText>
 
       <VDialogHandler
         v-if="isDialogDeleterShow"
