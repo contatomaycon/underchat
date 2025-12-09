@@ -804,9 +804,18 @@ const onDrop = (event: DragEvent) => {
   draggedNodeType.value = null;
 };
 
-const prepareNodesForSave = (nodesToSave: Node[]) => {
+const prepareNodesForSave = (
+  nodesToSave: Node[]
+): Array<{
+  id: string;
+  type: string;
+  position: { x: number; y: number };
+  data: Record<string, any>;
+  label?: string;
+  draggable?: boolean;
+}> => {
   return nodesToSave.map((node) => {
-    const nodeData = { ...node.data };
+    const nodeData: Record<string, any> = { ...node.data };
     if (nodeData && 'attachmentFile' in nodeData) {
       delete nodeData.attachmentFile;
     }
@@ -1609,23 +1618,21 @@ onMounted(() => {
                     <VLabel class="mb-1 text-body-2">{{
                       t('chatbot_inactivity_alert')
                     }}</VLabel>
-                    <VSelect
+                    <AppSelectSearch
                       v-model="inactivityAlertStatus"
                       :items="[
                         {
-                          value: 'active',
+                          id: 'active',
                           title: t('chatbot_inactivity_alert_active'),
                         },
                         {
-                          value: 'inactive',
+                          id: 'inactive',
                           title: t('chatbot_inactivity_alert_inactive'),
                         },
                       ]"
+                      item-value="id"
                       item-title="title"
-                      item-value="value"
-                      variant="outlined"
-                      density="compact"
-                      hide-details
+                      :clearable="false"
                     />
                   </div>
 
@@ -1684,17 +1691,15 @@ onMounted(() => {
                       <VLabel class="mb-1 text-body-2">{{
                         t('chatbot_action')
                       }}</VLabel>
-                      <VSelect
+                      <AppSelectSearch
                         v-model="inactivityAlertAction"
                         :items="[
-                          { value: 'redirect', title: t('chatbot_redirect') },
-                          { value: 'finish', title: t('chatbot_finish') },
+                          { id: 'redirect', title: t('chatbot_redirect') },
+                          { id: 'finish', title: t('chatbot_finish') },
                         ]"
+                        item-value="id"
                         item-title="title"
-                        item-value="value"
-                        variant="outlined"
-                        density="compact"
-                        hide-details
+                        :clearable="false"
                       />
                     </div>
 
@@ -1703,23 +1708,21 @@ onMounted(() => {
                         <VLabel class="mb-1 text-body-2">{{
                           t('chatbot_redirect_to')
                         }}</VLabel>
-                        <VSelect
+                        <AppSelectSearch
                           v-model="inactivityAlertRedirectType"
                           :items="[
                             {
-                              value: 'user',
+                              id: 'user',
                               title: t('chatbot_redirect_user'),
                             },
                             {
-                              value: 'sector',
+                              id: 'sector',
                               title: t('chatbot_redirect_sector'),
                             },
                           ]"
+                          item-value="id"
                           item-title="title"
-                          item-value="value"
-                          variant="outlined"
-                          density="compact"
-                          hide-details
+                          :clearable="false"
                         />
                       </div>
 
@@ -1832,23 +1835,21 @@ onMounted(() => {
                     <VLabel class="mb-1 text-body-2">{{
                       t('chatbot_redirect_failed_attempts')
                     }}</VLabel>
-                    <VSelect
+                    <AppSelectSearch
                       v-model="redirectFailedAttemptsStatus"
                       :items="[
                         {
-                          value: 'active',
+                          id: 'active',
                           title: t('chatbot_redirect_failed_attempts_active'),
                         },
                         {
-                          value: 'inactive',
+                          id: 'inactive',
                           title: t('chatbot_redirect_failed_attempts_inactive'),
                         },
                       ]"
+                      item-value="id"
                       item-title="title"
-                      item-value="value"
-                      variant="outlined"
-                      density="compact"
-                      hide-details
+                      :clearable="false"
                     />
                   </div>
 
@@ -1883,20 +1884,18 @@ onMounted(() => {
                       <VLabel class="mb-1 text-body-2">{{
                         t('chatbot_redirect_to')
                       }}</VLabel>
-                      <VSelect
+                      <AppSelectSearch
                         v-model="redirectFailedAttemptsRedirectType"
                         :items="[
-                          { value: 'user', title: t('chatbot_redirect_user') },
+                          { id: 'user', title: t('chatbot_redirect_user') },
                           {
-                            value: 'sector',
+                            id: 'sector',
                             title: t('chatbot_redirect_sector'),
                           },
                         ]"
+                        item-value="id"
                         item-title="title"
-                        item-value="value"
-                        variant="outlined"
-                        density="compact"
-                        hide-details
+                        :clearable="false"
                       />
                     </div>
 
