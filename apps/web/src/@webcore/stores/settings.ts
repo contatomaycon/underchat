@@ -12,6 +12,8 @@ import { ListWorkersResponse } from '@core/schema/notifications/listWorkers/resp
 import { ListNfseResponse } from '@core/schema/config/listNfse/response.schema';
 import { UpdateNfseRequest } from '@core/schema/config/updateNfse/request.schema';
 import { UpdateNfseResponse } from '@core/schema/config/updateNfse/response.schema';
+import { ListChannelsRequest } from '@core/schema/config/listChannels/request.schema';
+import { ListChannelsFinalResponse } from '@core/schema/config/listChannels/response.schema';
 
 export const useSettingsStore = defineStore('settings', {
   state: () => ({
@@ -24,6 +26,7 @@ export const useSettingsStore = defineStore('settings', {
     loading: false,
     notifications: null as ListNotificationsResponse | null,
     nfse: null as ListNfseResponse | null,
+    channels: null as ListChannelsFinalResponse | null,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -194,6 +197,34 @@ export const useSettingsStore = defineStore('settings', {
 
         this.showSnackbar(errorMessage, EColor.error);
 
+        return null;
+      }
+    },
+    async getChannels(
+      query: ListChannelsRequest
+    ): Promise<ListChannelsFinalResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListChannelsFinalResponse>
+        >('/config/channels', {
+          params: query,
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        this.channels = data.data;
+
+        return data.data;
+      } catch {
+        this.loading = false;
         return null;
       }
     },

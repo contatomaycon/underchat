@@ -122,8 +122,16 @@ declare module 'vue-router/auto-routes' {
       '/config',
       Record<never, never>,
       Record<never, never>,
+      | 'config-channels-tab'
       | 'config-nfse-tab'
       | 'config-notifications-tab'
+    >,
+    'config-channels-tab': RouteRecordInfo<
+      'config-channels-tab',
+      '/config/channels-tab',
+      Record<never, never>,
+      Record<never, never>,
+      | never
     >,
     'config-nfse-tab': RouteRecordInfo<
       'config-nfse-tab',
@@ -392,10 +400,17 @@ declare module 'vue-router/auto-routes' {
     'src/pages/config.vue': {
       routes:
         | 'config'
+        | 'config-channels-tab'
         | 'config-nfse-tab'
         | 'config-notifications-tab'
       views:
         | 'default'
+    }
+    'src/pages/config/channels-tab.vue': {
+      routes:
+        | 'config-channels-tab'
+      views:
+        | never
     }
     'src/pages/config/nfse-tab.vue': {
       routes:

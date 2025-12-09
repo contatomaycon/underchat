@@ -5,6 +5,7 @@ import { listWorkers } from '@/controllers/notifications/methods/listWorkers';
 import { listSentNotifications } from '@/controllers/notifications/methods/listSentNotifications';
 import { listNfse } from './methods/listNfse';
 import { updateNfse } from './methods/updateNfse';
+import { listChannels } from './methods/listChannels';
 
 @injectable()
 class ConfigController {
@@ -14,6 +15,7 @@ class ConfigController {
   public listSentNotifications = listSentNotifications;
   public listNfse = listNfse;
   public updateNfse = updateNfse;
+  public listChannels = listChannels;
 }
 
 export default ConfigController;
