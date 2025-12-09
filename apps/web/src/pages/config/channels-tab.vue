@@ -247,7 +247,9 @@ onMounted(async () => {
           </div>
         </div>
 
-        <div class="mt-4">
+        <VDivider class="my-4" />
+
+        <div>
           <VDataTable
             :headers="headers"
             :items="channels"

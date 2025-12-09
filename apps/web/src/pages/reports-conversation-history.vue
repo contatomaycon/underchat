@@ -633,7 +633,9 @@ const openDocument = (url: string | null | undefined) => {
 
           <!-- Filtro por Protocolo -->
           <div v-if="searchBy === 'protocol'" class="invoice-list-filter">
-            <VLabel class="text-body-2 mb-1">{{ $t('search_by_protocol') }}:</VLabel>
+            <VLabel class="text-body-2 mb-1"
+              >{{ $t('search_by_protocol') }}:</VLabel
+            >
             <AppTextField
               v-model="protocol"
               :placeholder="$t('search_by_protocol')"
@@ -642,7 +644,9 @@ const openDocument = (url: string | null | undefined) => {
 
           <!-- Filtro por Cliente -->
           <div v-if="searchBy === 'client'" class="invoice-list-filter">
-            <VLabel class="text-body-2 mb-1">{{ $t('search_by_client') }}:</VLabel>
+            <VLabel class="text-body-2 mb-1"
+              >{{ $t('search_by_client') }}:</VLabel
+            >
             <AppTextField
               v-model="clientName"
               :placeholder="$t('search_by_client')"
@@ -651,7 +655,9 @@ const openDocument = (url: string | null | undefined) => {
 
           <!-- Filtro por Telefone -->
           <div v-if="searchBy === 'phone'" class="invoice-list-filter">
-            <VLabel class="text-body-2 mb-1">{{ $t('search_by_phone') }}:</VLabel>
+            <VLabel class="text-body-2 mb-1"
+              >{{ $t('search_by_phone') }}:</VLabel
+            >
             <AppTextField
               v-model="phoneFormatted"
               :placeholder="$t('search_by_phone')"
@@ -675,6 +681,8 @@ const openDocument = (url: string | null | undefined) => {
           </div>
         </div>
       </VCardText>
+
+      <VDivider class="my-4" />
 
       <VDataTableServer
         v-model:page="options.page"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { DataTableHeader } from 'vuetify';
@@ -12,6 +12,7 @@ import { useRouter } from 'vue-router';
 import AppAddChatbot from '@/components/chatbot/AppAddChatbot.vue';
 import AppEditChatbot from '@/components/chatbot/AppEditChatbot.vue';
 import VDialogHandler from '@/components/VDialogHandler.vue';
+import TablePagination from '@/@webcore/components/TablePagination.vue';
 
 definePage({
   meta: {
@@ -40,6 +41,33 @@ const isEditModalOpen = ref(false);
 const editingChatbotId = ref<string | null>(null);
 const isDialogDeleterShow = ref(false);
 const chatbotToDelete = ref<string | null>(null);
+
+const itemsPerPage = ref([
+  { value: 5, title: '5' },
+  { value: 10, title: '10' },
+  { value: 25, title: '25' },
+  { value: 50, title: '50' },
+  { value: 100, title: '100' },
+  { value: -1, title: 'All' },
+]);
+
+const options = ref({
+  page: 1,
+  itemsPerPage: 10,
+});
+
+const paginatedList = computed(() => {
+  if (options.value.itemsPerPage === -1) {
+    return chatbotStore.list;
+  }
+
+  const start = (options.value.page - 1) * options.value.itemsPerPage;
+  const end = start + options.value.itemsPerPage;
+
+  return chatbotStore.list.slice(start, end);
+});
+
+const totalItems = computed(() => chatbotStore.list.length);
 
 const editChatbot = (id: string) => {
   editingChatbotId.value = id;
@@ -86,19 +114,38 @@ onMounted(async () => {
   <div>
     <VCard :title="$t('chatbots')" no-padding>
       <VCardText>
-        <div class="d-flex justify-space-between flex-wrap gap-4 mb-4">
-          <VBtn
-            prepend-icon="tabler-plus"
-            color="primary"
-            @click="openAddModal"
-          >
-            {{ $t('add') }}
-          </VBtn>
+        <div class="d-flex justify-space-between flex-wrap gap-4">
+          <div class="d-flex gap-4 align-center">
+            <div class="d-flex align-center gap-x-2">
+              <div>{{ $t('show') }}</div>
+              <AppSelect
+                :model-value="options.itemsPerPage"
+                :items="itemsPerPage"
+                @update:model-value="
+                  options.itemsPerPage = parseInt($event, 10);
+                  options.page = 1;
+                "
+              />
+            </div>
+
+            <VBtn
+              prepend-icon="tabler-plus"
+              color="primary"
+              @click="openAddModal"
+            >
+              {{ $t('add') }}
+            </VBtn>
+          </div>
         </div>
 
+        <VDivider class="my-4" />
+
         <VDataTable
+          v-model:page="options.page"
+          v-model:items-per-page="options.itemsPerPage"
           :headers="headers"
-          :items="chatbotStore.list"
+          :items="paginatedList"
+          :items-length="totalItems"
           :loading="chatbotStore.loading"
           :loading-text="$t('loading_text')"
         >
@@ -158,6 +205,15 @@ onMounted(async () => {
 
           <template #no-data>
             {{ $t('no_data_available') }}
+          </template>
+
+          <template #bottom>
+            <TablePagination
+              v-if="options.itemsPerPage !== -1"
+              v-model:page="options.page"
+              :items-per-page="options.itemsPerPage"
+              :total-items="totalItems"
+            />
           </template>
         </VDataTable>
       </VCardText>

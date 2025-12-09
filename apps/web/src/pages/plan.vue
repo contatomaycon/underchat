@@ -178,6 +178,8 @@ watch(
         </div>
       </VCardText>
 
+      <VDivider class="my-4" />
+
       <VDataTableServer
         v-model:page="options.page"
         v-model:items-per-page="options.itemsPerPage"
@@ -191,11 +193,7 @@ watch(
       >
         <template #item.name="{ item }">
           <div class="d-flex align-center gap-2">
-            <VIcon
-              v-if="item.icon"
-              :icon="item.icon"
-              size="20"
-            />
+            <VIcon v-if="item.icon" :icon="item.icon" size="20" />
             <span>{{ item.name }}</span>
           </div>
         </template>

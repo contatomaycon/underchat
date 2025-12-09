@@ -553,6 +553,8 @@ onMounted(() => {
               </div>
             </div>
 
+            <VDivider class="my-4" />
+
             <VDataTable
               v-model:page="options.page"
               v-model:items-per-page="options.itemsPerPage"

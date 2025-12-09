@@ -362,6 +362,8 @@ watch(
         </div>
       </VCardText>
 
+      <VDivider class="my-4" />
+
       <VDataTableServer
         v-model:page="options.page"
         v-model:items-per-page="options.itemsPerPage"
