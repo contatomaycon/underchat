@@ -257,8 +257,6 @@ onMounted(async () => {
     await onMessage(
       workerCentrifugoQueue(user.account_id),
       (data: IBaileysConnectionState) => {
-        console.log('data', data);
-
         channelsStore.updateStatusChannel(data);
       }
     );
