@@ -35,10 +35,37 @@ export class KafkaService {
   }
 
   async deleteTopics(topics: string[]): Promise<void> {
-    await this.admin.connect();
-    await this.admin.deleteTopics({ topics });
+    if (topics.length === 0) {
+      return;
+    }
 
-    await this.close();
+    await this.admin.connect();
+
+    try {
+      const existingTopics = await this.admin.listTopics();
+      const topicsToDelete = topics.filter((topic) =>
+        existingTopics.includes(topic)
+      );
+
+      if (topicsToDelete.length === 0) {
+        return;
+      }
+
+      await this.admin.deleteTopics({ topics: topicsToDelete });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
+      if (
+        errorMessage.includes('This server does not host this topic-partition')
+      ) {
+        return;
+      }
+
+      throw error;
+    } finally {
+      await this.close();
+    }
   }
 
   async close(): Promise<void> {
