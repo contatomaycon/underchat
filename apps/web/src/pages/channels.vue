@@ -294,10 +294,10 @@ onUnmounted(async () => {
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
             <div class="type-filter">
+              <VLabel class="text-body-2 mb-1">{{ $t('type') }}:</VLabel>
               <AppSelectSearch
                 v-model="options.type"
                 :items="itemsType"
-                :label="$t('type')"
                 :placeholder="$t('select_type')"
                 :clearable="true"
                 item-value="id"
@@ -307,10 +307,10 @@ onUnmounted(async () => {
             </div>
 
             <div class="status-filter">
+              <VLabel class="text-body-2 mb-1">{{ $t('status') }}:</VLabel>
               <AppSelectSearch
                 v-model="options.status"
                 :items="itemsStatus"
-                :label="$t('status')"
                 :placeholder="$t('select_state')"
                 :clearable="true"
                 item-value="id"

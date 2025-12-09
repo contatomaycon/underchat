@@ -147,19 +147,21 @@ watch(isVisible, async (visible) => {
         <VCardText>
           <VRow>
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
               <AppTextField
                 v-model="name"
-                :label="$t('name') + ':'"
                 :placeholder="$t('name')"
                 maxlength="10"
                 :rules="[requiredValidator(name, $t('name_required'))]"
               />
             </VCol>
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('account_status') }}:</VLabel
+              >
               <AppSelectSearch
                 v-model="account_status_id"
                 :items="itemsStatus"
-                :label="$t('account_status')"
                 :placeholder="$t('account_status')"
                 :clearable="true"
                 item-value="value"
@@ -167,10 +169,10 @@ watch(isVisible, async (visible) => {
               />
             </VCol>
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('plan') }}:</VLabel>
               <AppSelectSearch
                 v-model="plan_id"
                 :items="itemsPlan"
-                :label="$t('plan')"
                 :placeholder="$t('plan')"
                 :clearable="true"
                 item-value="value"
@@ -178,10 +180,12 @@ watch(isVisible, async (visible) => {
               />
             </VCol>
             <VCol v-if="showBillingPeriod" cols="12" md="6">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('billing_period') }}:</VLabel
+              >
               <AppSelectSearch
                 v-model="billing_period"
                 :items="itemsBillingPeriod"
-                :label="$t('billing_period')"
                 :placeholder="$t('billing_period')"
                 :clearable="true"
                 item-value="value"

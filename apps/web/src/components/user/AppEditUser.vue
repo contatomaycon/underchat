@@ -2308,10 +2308,12 @@ watch(
                   <VCol cols="12" md="8" class="pa-6">
                     <VRow class="mb-4">
                       <VCol cols="12">
+                        <VLabel class="text-body-2 mb-1"
+                          >{{ $t('email') }}:</VLabel
+                        >
                         <AppTextField
                           v-model="emailFormatted"
                           type="email"
-                          :label="$t('email') + ':'"
                           :placeholder="$t('email')"
                           :rules="[
                             emailValidator,
@@ -2342,10 +2344,12 @@ watch(
                     <VDivider class="mb-4" />
                     <VRow class="mb-4">
                       <VCol v-if="hasFullAccess" cols="12" md="6">
+                        <VLabel class="text-body-2 mb-1"
+                          >{{ $t('account') }}:</VLabel
+                        >
                         <AppSelectSearch
                           v-model="accountId"
                           :items="accountsOptions"
-                          :label="$t('account')"
                           :placeholder="$t('select_account')"
                           :clearable="true"
                           :loading="accountsLoading"
@@ -2357,10 +2361,12 @@ watch(
                         :cols="hasFullAccess ? 12 : 12"
                         :md="hasFullAccess ? 6 : 12"
                       >
+                        <VLabel class="text-body-2 mb-1"
+                          >{{ $t('role') }}:</VLabel
+                        >
                         <AppSelectSearch
                           v-model="permissionRoleId"
                           :items="rolesOptions"
-                          :label="$t('role')"
                           :placeholder="$t('select_role')"
                           :clearable="true"
                           item-value="id"
@@ -2369,10 +2375,12 @@ watch(
                       </VCol>
 
                       <VCol cols="12" md="6">
+                        <VLabel class="text-body-2 mb-1"
+                          >{{ $t('status') }}:</VLabel
+                        >
                         <AppSelectSearch
                           v-model="user_status_id"
                           :items="itemsStatus"
-                          :label="$t('status')"
                           :placeholder="$t('select_state')"
                           :clearable="true"
                           item-value="id"
@@ -2384,11 +2392,13 @@ watch(
                     <VDivider class="mb-4" />
                     <VRow class="mb-2">
                       <VCol cols="12" md="6">
+                        <VLabel class="text-body-2 mb-1"
+                          >{{ $t('password') }}:</VLabel
+                        >
                         <AppTextField
                           id="new-password"
                           name="new-password"
                           v-model="password"
-                          :label="$t('password') + ':'"
                           :placeholder="$t('password')"
                           :type="isPasswordVisible ? 'text' : 'password'"
                           :autocomplete="
@@ -2452,11 +2462,13 @@ watch(
                       </VCol>
 
                       <VCol cols="12" md="6">
+                        <VLabel class="text-body-2 mb-1"
+                          >{{ $t('confirm_password') }}:</VLabel
+                        >
                         <AppTextField
                           id="confirm-new-password"
                           name="confirm-new-password"
                           v-model="confirmPassword"
-                          :label="$t('confirm_password') + ':'"
                           :placeholder="$t('confirm_password')"
                           :type="isConfirmVisible ? 'text' : 'password'"
                           :autocomplete="
@@ -2497,10 +2509,12 @@ watch(
               <VForm class="mt-4" ref="refFormStep2" @submit.prevent>
                 <VRow class="mb-2">
                   <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('phone_ddi') }}:</VLabel
+                    >
                     <AppSelectSearch
                       v-model="phone_ddi"
                       :items="countryCodes"
-                      :label="$t('phone_ddi')"
                       :placeholder="$t('select_phone_ddi')"
                       item-value="value"
                       item-title="title"
@@ -2508,10 +2522,10 @@ watch(
                   </VCol>
 
                   <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1">{{ $t('phone') }}:</VLabel>
                     <AppTextField
                       v-model="phoneFormatted"
                       type="tel"
-                      :label="$t('phone') + ':'"
                       :placeholder="$t('phone')"
                       maxlength="15"
                       @focus="startEditPhone"
@@ -2535,26 +2549,27 @@ watch(
                   </VCol>
 
                   <VCol cols="12" md="6">
-                    <AppTextField
-                      v-model="name"
-                      :label="$t('name') + ':'"
-                      :placeholder="$t('name')"
-                    />
+                    <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
+                    <AppTextField v-model="name" :placeholder="$t('name')" />
                   </VCol>
 
                   <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('last_name') }}:</VLabel
+                    >
                     <AppTextField
                       v-model="last_name"
-                      :label="$t('last_name') + ':'"
                       :placeholder="$t('last_name')"
                     />
                   </VCol>
 
                   <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('document_type') }}:</VLabel
+                    >
                     <AppSelectSearch
                       v-model="user_document_type_id"
                       :items="itemsDocuments"
-                      :label="$t('document_type')"
                       :placeholder="$t('document_type')"
                       :clearable="true"
                       item-value="value"
@@ -2568,7 +2583,6 @@ watch(
                     <AppTextField
                       v-if="isDocumentDecrypted"
                       v-model="document"
-                      :label="docLabel + ':'"
                       :placeholder="docPlaceholder"
                       :rules="docRules"
                       v-maska="docMask"
@@ -2587,7 +2601,6 @@ watch(
                     <AppTextField
                       v-else
                       :model-value="documentPartialOriginal"
-                      :label="docLabel + ':'"
                       :placeholder="docPlaceholder"
                       :rules="docRules"
                       readonly
@@ -2606,9 +2619,11 @@ watch(
                   </VCol>
 
                   <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('birth_date') }}:</VLabel
+                    >
                     <AppDateTimePicker
                       v-model="birth_date"
-                      :label="$t('birth_date') + ':'"
                       :placeholder="$t('birth_date')"
                     />
                   </VCol>
@@ -2626,10 +2641,12 @@ watch(
               <VForm class="mt-4" ref="refFormEditUser" @submit.prevent>
                 <VRow class="mb-2">
                   <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('country') }}:</VLabel
+                    >
                     <AppSelectSearch
                       v-model="country_id"
                       :items="itemsCountry"
-                      :label="$t('country')"
                       :placeholder="$t('country')"
                       :clearable="true"
                       item-value="value"
@@ -2643,10 +2660,12 @@ watch(
                     />
                   </VCol>
                   <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('zip_code') }}:</VLabel
+                    >
                     <AppTextField
                       ref="zipInputRef"
                       v-model="zip_code"
-                      :label="$t('zip_code') + ':'"
                       :placeholder="$t('zip_code')"
                       :rules="[
                         requiredValidator(zip_code, $t('zip_code_required')),
@@ -2657,10 +2676,10 @@ watch(
                     />
                   </VCol>
                   <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1">{{ $t('state') }}:</VLabel>
                     <AppSelectSearch
                       v-model="state_id"
                       :items="filteredStates"
-                      :label="$t('state')"
                       :placeholder="$t('state')"
                       :disabled="!country_id"
                       item-value="value"
@@ -2674,10 +2693,10 @@ watch(
                     />
                   </VCol>
                   <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1">{{ $t('city') }}:</VLabel>
                     <AppSelectSearch
                       v-model="city_id"
                       :items="filteredCities"
-                      :label="$t('city')"
                       :placeholder="$t('city')"
                       :disabled="!state_id || !country_id"
                       item-value="value"
@@ -2690,10 +2709,12 @@ watch(
                     />
                   </VCol>
                   <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('address') }}:</VLabel
+                    >
                     <AppTextField
                       v-model="address1Formatted"
                       :disabled="!country_id"
-                      :label="$t('address') + ':'"
                       :placeholder="$t('address')"
                       @focus="startEditAddress1"
                       @click="startEditAddress1"
@@ -2713,10 +2734,12 @@ watch(
                     </AppTextField>
                   </VCol>
                   <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('address_secondary') }}:</VLabel
+                    >
                     <AppTextField
                       v-model="address2Formatted"
                       :disabled="!country_id"
-                      :label="$t('address_secondary') + ':'"
                       :placeholder="$t('address_secondary')"
                       @focus="startEditAddress2"
                       @click="startEditAddress2"
@@ -2736,10 +2759,12 @@ watch(
                     </AppTextField>
                   </VCol>
                   <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('district') }}:</VLabel
+                    >
                     <AppTextField
                       v-model="district"
                       :disabled="!country_id"
-                      :label="$t('district') + ':'"
                       :placeholder="$t('district')"
                     />
                   </VCol>

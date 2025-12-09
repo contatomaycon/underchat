@@ -225,18 +225,18 @@ watch(searchDebounced, async (value) => {
         <VCardText>
           <VRow>
             <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
               <AppTextField
                 v-model="name"
-                :label="$t('name') + ':'"
                 :placeholder="$t('name')"
                 :rules="[requiredValidator(name, $t('name_required'))]"
               />
             </VCol>
 
             <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('description') }}:</VLabel>
               <AppTextField
                 v-model="description"
-                :label="$t('description') + ':'"
                 :placeholder="$t('description')"
               />
             </VCol>

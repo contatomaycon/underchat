@@ -62,11 +62,15 @@ const initializeModal = async () => {
   }
 };
 
-watch(isVisible, async (visible) => {
-  if (visible && channelId.value) {
-    await initializeModal();
-  }
-}, { immediate: true });
+watch(
+  isVisible,
+  async (visible) => {
+    if (visible && channelId.value) {
+      await initializeModal();
+    }
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
@@ -85,9 +89,9 @@ watch(isVisible, async (visible) => {
         <VCardText>
           <VRow>
             <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
               <AppTextField
                 v-model="name"
-                :label="$t('name') + ':'"
                 :placeholder="$t('name')"
                 :rules="[requiredValidator(name, $t('name_required'))]"
               />

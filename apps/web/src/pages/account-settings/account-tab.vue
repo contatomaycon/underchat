@@ -1193,10 +1193,10 @@ watch(zip_code, () => {
         <VForm class="mt-4" ref="refFormAdditionalInfo" @submit.prevent>
           <VRow class="mb-2">
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('phone_ddi') }}:</VLabel>
               <AppSelectSearch
                 v-model="phone_ddi"
                 :items="countryCodes"
-                :label="$t('phone_ddi')"
                 :placeholder="$t('select_phone_ddi')"
                 item-value="value"
                 item-title="title"
@@ -1204,10 +1204,10 @@ watch(zip_code, () => {
             </VCol>
 
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('phone') }}:</VLabel>
               <AppTextField
                 v-model="phoneFormatted"
                 type="tel"
-                :label="$t('phone') + ':'"
                 :placeholder="$t('phone')"
                 maxlength="15"
               >
@@ -1228,26 +1228,25 @@ watch(zip_code, () => {
             </VCol>
 
             <VCol cols="12" md="6">
-              <AppTextField
-                v-model="name"
-                :label="$t('name') + ':'"
-                :placeholder="$t('name')"
-              />
+              <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
+              <AppTextField v-model="name" :placeholder="$t('name')" />
             </VCol>
 
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('last_name') }}:</VLabel>
               <AppTextField
                 v-model="last_name"
-                :label="$t('last_name') + ':'"
                 :placeholder="$t('last_name')"
               />
             </VCol>
 
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('document_type') }}:</VLabel
+              >
               <AppSelect
                 :model-value="user_document_type_id"
                 :items="itemsDocuments"
-                :label="$t('document_type') + ':'"
                 :placeholder="$t('document_type')"
                 @update:model-value="
                   user_document_type_id = $event;
@@ -1260,9 +1259,9 @@ watch(zip_code, () => {
             </VCol>
 
             <VCol v-if="isCPF || isCNPJ || documentPartial" cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ docLabel }}:</VLabel>
               <AppTextField
                 v-model="documentFormatted"
-                :label="docLabel + ':'"
                 :placeholder="docPlaceholder"
                 :inputmode="isCPF || isCNPJ ? 'numeric' : 'text'"
                 :rules="docRules"
@@ -1283,9 +1282,9 @@ watch(zip_code, () => {
             </VCol>
 
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('birth_date') }}:</VLabel>
               <AppDateTimePicker
                 v-model="birth_date"
-                :label="$t('birth_date') + ':'"
                 :placeholder="$t('birth_date')"
               />
             </VCol>
@@ -1312,8 +1311,8 @@ watch(zip_code, () => {
         <VForm class="mt-4" ref="refFormAddress" @submit.prevent>
           <VRow class="mb-2">
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('country') }}:</VLabel>
               <AppSelect
-                :label="$t('country') + ':'"
                 :placeholder="$t('country')"
                 :model-value="country_id"
                 :items="itemsCountry"
@@ -1321,10 +1320,10 @@ watch(zip_code, () => {
               />
             </VCol>
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('zip_code') }}:</VLabel>
               <AppTextField
                 ref="zipInputRef"
                 v-model="zip_code"
-                :label="$t('zip_code') + ':'"
                 :placeholder="$t('zip_code')"
                 :disabled="!country_id"
                 @blur="viewZipcode"
@@ -1333,10 +1332,10 @@ watch(zip_code, () => {
               />
             </VCol>
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('state') }}:</VLabel>
               <AppSelectSearch
                 v-model="state_id"
                 :items="filteredStates"
-                :label="$t('state')"
                 :placeholder="$t('state')"
                 :disabled="!country_id"
                 item-value="value"
@@ -1350,10 +1349,10 @@ watch(zip_code, () => {
               />
             </VCol>
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('city') }}:</VLabel>
               <AppSelectSearch
                 v-model="city_id"
                 :items="filteredCities"
-                :label="$t('city')"
                 :placeholder="$t('city')"
                 :disabled="!state_id || !country_id"
                 item-value="value"
@@ -1366,10 +1365,10 @@ watch(zip_code, () => {
               />
             </VCol>
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('address') }}:</VLabel>
               <AppTextField
                 v-model="address1Formatted"
                 :disabled="!country_id"
-                :label="$t('address') + ':'"
                 :placeholder="$t('address')"
               >
                 <template #append-inner>
@@ -1386,10 +1385,12 @@ watch(zip_code, () => {
               </AppTextField>
             </VCol>
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('address_secondary') }}:</VLabel
+              >
               <AppTextField
                 v-model="address2Formatted"
                 :disabled="!country_id"
-                :label="$t('address_secondary') + ':'"
                 :placeholder="$t('address_secondary')"
               >
                 <template #append-inner>
@@ -1406,10 +1407,10 @@ watch(zip_code, () => {
               </AppTextField>
             </VCol>
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('district') }}:</VLabel>
               <AppTextField
                 v-model="district"
                 :disabled="!country_id"
-                :label="$t('district') + ':'"
                 :placeholder="$t('district')"
               />
             </VCol>

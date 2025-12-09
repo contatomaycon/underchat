@@ -1124,36 +1124,30 @@ onMounted(() => {
       <VForm ref="refFormContact" @submit.prevent="saveContact">
         <VRow>
           <VCol cols="12" md="6">
+            <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
             <AppTextField
               v-model="name"
-              :label="$t('name') + ':'"
               :placeholder="$t('name')"
               :rules="[requiredValidator(name, $t('name_required'))]"
             />
           </VCol>
 
           <VCol cols="12" md="6">
-            <AppTextField
-              v-model="last_name"
-              :label="$t('last_name') + ':'"
-              :placeholder="$t('last_name')"
-            />
+            <VLabel class="text-body-2 mb-1">{{ $t('last_name') }}:</VLabel>
+            <AppTextField v-model="last_name" :placeholder="$t('last_name')" />
           </VCol>
         </VRow>
         <VRow>
           <VCol cols="12" md="6">
-            <AppTextField
-              v-model="nickname"
-              :label="$t('nickname') + ':'"
-              :placeholder="$t('nickname')"
-            />
+            <VLabel class="text-body-2 mb-1">{{ $t('nickname') }}:</VLabel>
+            <AppTextField v-model="nickname" :placeholder="$t('nickname')" />
           </VCol>
 
           <VCol cols="12" md="6">
+            <VLabel class="text-body-2 mb-1">{{ $t('email') }}:</VLabel>
             <AppTextField
               v-model="emailFormatted"
               type="email"
-              :label="$t('email') + ':'"
               :placeholder="$t('email')"
               :rules="[emailValidator]"
             >
@@ -1170,25 +1164,23 @@ onMounted(() => {
         </VRow>
         <VRow>
           <VCol cols="12" md="6">
-            <div>
-              <AppSelectSearch
-                v-model="phone_ddi"
-                :items="countryCodes"
-                :label="$t('phone_ddi')"
-                :placeholder="$t('select_phone_ddi')"
-                :disabled="isContact"
-                item-value="value"
-                item-title="title"
-              />
-            </div>
+            <VLabel class="text-body-2 mb-1">{{ $t('phone_ddi') }}:</VLabel>
+            <AppSelectSearch
+              v-model="phone_ddi"
+              :items="countryCodes"
+              :placeholder="$t('select_phone_ddi')"
+              :disabled="isContact"
+              item-value="value"
+              item-title="title"
+            />
           </VCol>
 
           <VCol cols="12" md="6">
             <div class="phone-field-wrapper">
+              <VLabel class="text-body-2 mb-1">{{ $t('phone') }}:</VLabel>
               <AppTextField
                 v-model="phoneFormatted"
                 type="tel"
-                :label="$t('phone') + ':'"
                 :placeholder="$t('phone')"
                 maxlength="15"
                 :disabled="isContact"
@@ -1207,21 +1199,21 @@ onMounted(() => {
         </VRow>
         <VRow>
           <VCol cols="12" md="6">
+            <VLabel class="text-body-2 mb-1">{{ $t('birthday') }}:</VLabel>
             <AppDateTimePicker
               v-model="birthday"
-              :label="$t('birthday') + ':'"
               :placeholder="$t('birthday')"
             />
           </VCol>
 
           <VCol cols="12" md="6">
+            <VLabel class="text-body-2 mb-1">{{ $t('label') }}:</VLabel>
             <AppSelect
               class="label-select"
               v-model="label_template_id"
               :items="itemsLabel"
               item-title="title"
               item-value="value"
-              :label="$t('label') + ':'"
               :placeholder="$t('select_label')"
               clearable
               clear-icon="tabler-x"

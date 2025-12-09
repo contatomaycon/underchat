@@ -266,13 +266,15 @@ onMounted(() => {
       </VCardTitle>
 
       <VCardText class="pa-3">
+        <VLabel class="text-body-2 mb-1"
+          >{{ t('chatbot_redirect_to') }}:</VLabel
+        >
         <VSelect
           v-model="redirectData.redirectType"
           :items="[
             { value: 'user', title: t('chatbot_redirect_user') },
             { value: 'sector', title: t('chatbot_redirect_sector') },
           ]"
-          :label="t('chatbot_redirect_to')"
           variant="outlined"
           density="compact"
           class="mb-3"
@@ -280,10 +282,12 @@ onMounted(() => {
         />
 
         <div v-if="redirectData.redirectType === 'user'" class="mb-3">
+          <VLabel class="text-body-2 mb-1"
+            >{{ t('chatbot_user_label') }}:</VLabel
+          >
           <AppSelectSearch
             v-model="redirectData.selectedUser"
             :items="users"
-            :label="t('chatbot_user_label')"
             :placeholder="t('chatbot_search')"
             :loading="isLoadingUsers"
             :clearable="true"
@@ -305,10 +309,12 @@ onMounted(() => {
         </div>
 
         <div v-if="redirectData.redirectType === 'sector'" class="mb-3">
+          <VLabel class="text-body-2 mb-1"
+            >{{ t('chatbot_sector_label') }}:</VLabel
+          >
           <AppSelectSearch
             v-model="redirectData.selectedSector"
             :items="sectors"
-            :label="t('chatbot_sector_label')"
             :placeholder="t('chatbot_search')"
             :loading="isLoadingSectors"
             :clearable="true"
@@ -334,10 +340,12 @@ onMounted(() => {
           "
           class="mb-3"
         >
+          <VLabel class="text-body-2 mb-1"
+            >{{ t('chatbot_sector_user_label') }}:</VLabel
+          >
           <AppSelectSearch
             v-model="redirectData.selectedSectorUser"
             :items="sectorUsers"
-            :label="t('chatbot_sector_user_label')"
             :placeholder="t('chatbot_search_optional')"
             :loading="isLoadingSectorUsers"
             :clearable="true"

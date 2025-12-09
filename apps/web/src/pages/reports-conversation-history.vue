@@ -603,10 +603,12 @@ const openDocument = (url: string | null | undefined) => {
 
           <!-- Filtro por Operador -->
           <div v-if="searchBy === 'operator'" class="invoice-list-filter">
+            <VLabel class="text-body-2 mb-1"
+              >{{ $t('search_by_operator') }}:</VLabel
+            >
             <AppSelectSearch
               v-model="operatorId"
               :items="operators as any"
-              :label="$t('search_by_operator')"
               :placeholder="$t('search_by_operator')"
               :clearable="true"
               item-value="id"
@@ -616,10 +618,12 @@ const openDocument = (url: string | null | undefined) => {
 
           <!-- Filtro por Fila -->
           <div v-if="searchBy === 'queue'" class="invoice-list-filter">
+            <VLabel class="text-body-2 mb-1"
+              >{{ $t('search_by_queue') }}:</VLabel
+            >
             <AppSelectSearch
               v-model="queueId"
               :items="sectors as any"
-              :label="$t('search_by_queue')"
               :placeholder="$t('search_by_queue')"
               :clearable="true"
               item-value="id"

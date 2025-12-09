@@ -224,10 +224,10 @@ watch(
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
             <div class="status-filter">
+              <VLabel class="text-body-2 mb-1">{{ $t('status') }}:</VLabel>
               <AppSelectSearch
                 v-model="options.account_status"
                 :items="itemsStatus"
-                :label="$t('status')"
                 :placeholder="$t('select_state')"
                 :clearable="true"
                 item-value="id"

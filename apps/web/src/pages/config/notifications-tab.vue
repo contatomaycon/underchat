@@ -252,16 +252,16 @@ const formatDate = (date: string | null): string => {
 
 const formatPhone = (phone: string | null): string => {
   if (!phone) return '-';
-  
+
   // Tenta formatar com formatPhoneBR primeiro (para números com DDI 55)
   const formattedBR = formatPhoneBR(phone);
   if (formattedBR !== phone.replaceAll(/\D/g, '')) {
     return formattedBR;
   }
-  
+
   // Se não formatou, formata como número brasileiro sem DDI
   const numbers = phone.replaceAll(/\D/g, '').slice(0, 11);
-  
+
   if (numbers.length <= 2) {
     return numbers;
   }
@@ -757,7 +757,6 @@ onMounted(async () => {
                 :placeholder="$t('select_channel')"
                 variant="outlined"
                 clearable
-                :label="$t('channel')"
                 :filter="filterWorkers"
                 prepend-inner-icon="tabler-search"
               >
@@ -781,12 +780,13 @@ onMounted(async () => {
                 </template>
               </VAutocomplete>
 
+              <VLabel class="text-body-2 mb-1 mt-4"
+                >{{ $t('message') }}:</VLabel
+              >
               <VTextarea
                 v-model="whatsappMessage"
-                :label="$t('message')"
                 variant="outlined"
                 rows="4"
-                class="mt-4"
                 :placeholder="$t('notification_message_placeholder')"
               />
             </div>
@@ -799,27 +799,26 @@ onMounted(async () => {
                 <span class="text-h6">{{ $t('email') }}</span>
               </div>
 
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('email_subject') }}:</VLabel
+              >
               <VTextField
                 v-model="emailSubject"
-                :label="$t('email_subject')"
                 variant="outlined"
                 :placeholder="$t('email_subject_placeholder')"
               />
 
+              <VLabel class="text-body-2 mb-1 mt-4"
+                >{{ $t('email_message') }}:</VLabel
+              >
               <VTextarea
                 v-model="emailMessage"
-                :label="$t('email_message')"
                 variant="outlined"
                 rows="4"
-                class="mt-4"
                 :placeholder="$t('email_message_placeholder')"
               />
 
-              <VCard
-                v-if="emailMessage"
-                variant="outlined"
-                class="mt-4"
-              >
+              <VCard v-if="emailMessage" variant="outlined" class="mt-4">
                 <VCardTitle class="text-body-2 pa-3 pb-2">
                   {{ $t('email_preview') }}
                 </VCardTitle>
@@ -828,7 +827,10 @@ onMounted(async () => {
                   <div
                     v-if="emailSubject"
                     class="mb-4 pb-4"
-                    style="border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);"
+                    style="
+                      border-bottom: 1px solid
+                        rgba(var(--v-theme-on-surface), 0.12);
+                    "
                   >
                     <div class="text-caption text-medium-emphasis mb-1">
                       {{ $t('subject') }}:
@@ -842,10 +844,7 @@ onMounted(async () => {
                     v-html="emailMessage"
                     class="email-preview-content"
                   ></div>
-                  <div
-                    v-else
-                    class="text-body-2 text-medium-emphasis"
-                  >
+                  <div v-else class="text-body-2 text-medium-emphasis">
                     {{ $t('no_email_preview_available') }}
                   </div>
                 </VCardText>

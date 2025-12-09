@@ -307,10 +307,10 @@ onMounted(async () => {
             </VCol>
 
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('plan') }}:</VLabel>
               <AppSelectSearch
                 v-model="plan_id"
                 :items="itemsPlan"
-                :label="$t('plan')"
                 :placeholder="$t('plan')"
                 :clearable="true"
                 item-value="value"
@@ -319,10 +319,12 @@ onMounted(async () => {
             </VCol>
 
             <VCol v-if="!isTestPlan" cols="12" md="6">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('recurring_payment') }}:</VLabel
+              >
               <AppSelectSearch
                 v-model="recurring_payment"
                 :items="itemsRecurringPayment"
-                :label="$t('recurring_payment')"
                 :placeholder="$t('recurring_payment')"
                 :clearable="true"
                 item-value="value"
@@ -331,10 +333,12 @@ onMounted(async () => {
             </VCol>
 
             <VCol v-if="!isTestPlan" cols="12" md="6">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('billing_period') }}:</VLabel
+              >
               <AppSelectSearch
                 v-model="billing_period_id"
                 :items="itemsBillingPeriod"
-                :label="$t('billing_period')"
                 :placeholder="$t('billing_period')"
                 :clearable="true"
                 item-value="value"
@@ -343,10 +347,10 @@ onMounted(async () => {
             </VCol>
 
             <VCol v-if="!isTestPlan" cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('value') }}:</VLabel>
               <AppTextField
                 :model-value="valueDisplay"
                 @input="handleValueInput"
-                :label="$t('value') + ':'"
                 :placeholder="$t('value')"
                 :rules="[
                   requiredValidator(
@@ -363,25 +367,31 @@ onMounted(async () => {
             </VCol>
 
             <VCol cols="12" md="4">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('last_payment_date') }}:</VLabel
+              >
               <AppDateTimePicker
                 v-model="last_payment_date"
-                :label="$t('last_payment_date') + ':'"
                 :placeholder="$t('last_payment_date')"
               />
             </VCol>
 
             <VCol cols="12" md="4">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('next_payment_date') }}:</VLabel
+              >
               <AppDateTimePicker
                 v-model="next_payment_date"
-                :label="$t('next_payment_date') + ':'"
                 :placeholder="$t('next_payment_date')"
               />
             </VCol>
 
             <VCol cols="12" md="4">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('cancellation_date') }}:</VLabel
+              >
               <AppDateTimePicker
                 v-model="cancellation_date"
-                :label="$t('cancellation_date') + ':'"
                 :placeholder="$t('cancellation_date')"
               />
             </VCol>

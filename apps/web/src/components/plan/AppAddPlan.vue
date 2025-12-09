@@ -286,17 +286,17 @@ onMounted(resetForm);
         <VCardText>
           <VRow>
             <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
               <AppTextField
                 v-model="name"
-                :label="$t('name') + ':'"
                 :placeholder="$t('name')"
                 :rules="[requiredValidator(name, $t('name_required'))]"
               />
             </VCol>
             <VCol cols="12" sm="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('price') }}:</VLabel>
               <AppTextField
                 v-model="price"
-                :label="$t('price') + ':'"
                 :placeholder="formatCurrency(0)"
                 :rules="[requiredValidator(priceRaw, $t('price_required'))]"
                 @input="handlePriceInput"
@@ -304,18 +304,18 @@ onMounted(resetForm);
               />
             </VCol>
             <VCol cols="12" sm="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('price_old') }}:</VLabel>
               <AppTextField
                 v-model="price_old"
-                :label="$t('price_old') + ':'"
                 :placeholder="formatCurrency(0)"
                 @input="handlePriceOldInput"
                 @blur="handlePriceOldBlur"
               />
             </VCol>
             <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('description') }}:</VLabel>
               <AppTextarea
                 v-model="description"
-                :label="$t('description') + ':'"
                 :placeholder="$t('description')"
                 :maxlength="500"
                 :counter="500"
@@ -323,10 +323,12 @@ onMounted(resetForm);
               />
             </VCol>
             <VCol cols="12" sm="6">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('annual_discount') }} (%):</VLabel
+              >
               <AppTextField
                 v-model="annual_discount"
                 type="number"
-                :label="$t('annual_discount') + ' (%):'"
                 :placeholder="'0'"
                 :rules="[
                   (v: number | null) =>
@@ -335,18 +337,20 @@ onMounted(resetForm);
               />
             </VCol>
             <VCol cols="12" sm="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('icon') }}:</VLabel>
               <AppTextField
                 v-model="icon"
-                :label="$t('icon') + ':'"
                 :placeholder="$t('icon')"
                 :maxlength="100"
               />
             </VCol>
             <VCol cols="12" sm="6">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('is_test_plan') }}:</VLabel
+              >
               <AppSelectSearch
                 v-model="is_test"
                 :items="testOptions"
-                :label="$t('is_test_plan')"
                 :placeholder="$t('is_test_plan')"
                 :clearable="true"
                 item-value="value"
@@ -354,10 +358,10 @@ onMounted(resetForm);
               />
             </VCol>
             <VCol v-if="is_test" cols="12" sm="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('trial_days') }}:</VLabel>
               <AppTextField
                 v-model="days_trial"
                 type="number"
-                :label="$t('trial_days') + ':'"
                 :placeholder="$t('trial_days')"
                 :rules="[
                   (v: number | null) =>

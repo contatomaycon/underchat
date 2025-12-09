@@ -281,10 +281,12 @@ onMounted(async () => {
           <VLabel class="mb-3">{{ $t('add_new_item') }}:</VLabel>
           <VRow>
             <VCol cols="12" sm="6">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('plan_product') }}:</VLabel
+              >
               <AppSelectSearch
                 v-model="plan_product_id"
                 :items="planProducts"
-                :label="$t('plan_product')"
                 :placeholder="$t('select_plan_product')"
                 :clearable="true"
                 item-value="value"
@@ -292,9 +294,9 @@ onMounted(async () => {
               />
             </VCol>
             <VCol cols="12" sm="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('quantity') }}:</VLabel>
               <AppTextField
                 v-model="quantity"
-                :label="$t('quantity') + ':'"
                 :placeholder="$t('quantity')"
                 type="number"
                 :rules="[requiredValidator(quantity, $t('quantity_required'))]"

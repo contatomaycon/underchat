@@ -135,10 +135,10 @@ const handleLogin = async () => {
           <VForm ref="refFormLogin" @submit.prevent>
             <VRow>
               <VCol cols="12">
+                <VLabel class="text-body-2 mb-1">{{ $t('email') }}:</VLabel>
                 <AppTextField
                   v-model="form.login"
                   autofocus
-                  :label="$t('email')"
                   type="text"
                   placeholder="email@email.com"
                   :rules="[requiredValidator(form.login, $t('email_required'))]"
@@ -146,9 +146,9 @@ const handleLogin = async () => {
               </VCol>
 
               <VCol cols="12">
+                <VLabel class="text-body-2 mb-1">{{ $t('password') }}:</VLabel>
                 <AppTextField
                   v-model="form.password"
-                  :label="$t('password')"
                   placeholder="············"
                   :type="isPasswordVisible ? 'text' : 'password'"
                   :append-inner-icon="

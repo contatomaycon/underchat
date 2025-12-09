@@ -100,19 +100,19 @@ onMounted(async () => {
         <VCardText>
           <VRow>
             <VCol cols="12" sm="6" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
               <AppTextField
                 v-model="name"
-                :label="$t('name') + ':'"
                 :placeholder="$t('name')"
                 :rules="[requiredValidator(name, $t('name_required'))]"
               />
             </VCol>
 
             <VCol cols="12" sm="6" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('status') }}:</VLabel>
               <AppSelectSearch
                 v-model="sectorStatus"
                 :items="sectorStatusOptions"
-                :label="$t('status')"
                 :placeholder="$t('status')"
                 :clearable="true"
                 item-value="id"

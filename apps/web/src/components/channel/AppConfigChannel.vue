@@ -2155,19 +2155,23 @@ onMounted(async () => {
               />
 
               <div class="status-type-wrapper">
+                <VLabel class="text-body-2 mb-1"
+                  >{{ $t('profile_status_type') }}:</VLabel
+                >
                 <VSelect
                   v-model="selectedType"
                   :items="statusTypeOptions"
                   item-title="title"
                   item-value="value"
-                  :label="$t('profile_status_type')"
-                  class="mb-4 mt-2"
+                  class="mb-4"
                 />
 
                 <div v-if="showTextInput" class="mb-4">
+                  <VLabel class="text-body-2 mb-1"
+                    >{{ $t('profile_status_text') }}:</VLabel
+                  >
                   <VTextarea
                     v-model="textContent"
-                    :label="$t('profile_status_text')"
                     :counter="MAX_TEXT_LENGTH"
                     :maxlength="MAX_TEXT_LENGTH"
                     rows="4"
@@ -2178,6 +2182,9 @@ onMounted(async () => {
                   v-if="showFileInput"
                   class="d-flex align-center gap-4 file-input-wrapper mb-4"
                 >
+                  <VLabel class="text-body-2 mb-1"
+                    >{{ $t('profile_status_upload_button') }}:</VLabel
+                  >
                   <VFileInput
                     :key="fileInputKey"
                     multiple
@@ -2185,47 +2192,56 @@ onMounted(async () => {
                     counter
                     chips
                     :accept="acceptedFileTypes"
-                    :label="$t('profile_status_upload_button')"
                     class="flex-grow-1"
                     @update:model-value="handleFilesSelected"
                   />
                 </div>
 
                 <div v-if="showCaptionInput" class="mb-4">
+                  <VLabel class="text-body-2 mb-1"
+                    >{{ $t('profile_status_caption') }}:</VLabel
+                  >
                   <VTextarea
                     v-model="caption"
-                    :label="$t('profile_status_caption')"
                     :counter="MAX_TEXT_LENGTH"
                     :maxlength="MAX_TEXT_LENGTH"
                     rows="2"
                   />
                 </div>
 
+                <VLabel class="text-body-2 mb-1"
+                  >{{ $t('is_permanent') }}:</VLabel
+                >
                 <VSelect
                   v-model="isPermanent"
                   :items="isPermanentOptions"
                   item-title="title"
                   item-value="value"
-                  :label="$t('is_permanent')"
                   class="mb-4"
                 />
 
+                <VLabel class="text-body-2 mb-1"
+                  >{{ $t('status_visibility_label') }}:</VLabel
+                >
                 <VSelect
                   v-model="statusVisibilityType"
                   :items="statusVisibilityOptions"
                   item-title="title"
                   item-value="value"
-                  :label="$t('status_visibility_label')"
                   class="mb-4"
                 />
 
+                <VLabel
+                  v-if="statusVisibilityType === 'contact_groups'"
+                  class="text-body-2 mb-1"
+                  >{{ $t('status_visibility_select_contact_groups') }}:</VLabel
+                >
                 <VAutocomplete
                   v-if="statusVisibilityType === 'contact_groups'"
                   v-model="selectedContactGroups"
                   :items="filteredContactGroups"
                   item-title="name"
                   item-value="contact_group_id"
-                  :label="$t('status_visibility_select_contact_groups')"
                   multiple
                   chips
                   closable-chips
@@ -2235,6 +2251,11 @@ onMounted(async () => {
                   class="mb-4"
                 />
 
+                <VLabel
+                  v-if="statusVisibilityType === 'contacts'"
+                  class="text-body-2 mb-1"
+                  >{{ $t('status_visibility_select_contacts') }}:</VLabel
+                >
                 <VAutocomplete
                   v-if="statusVisibilityType === 'contacts'"
                   v-model="selectedContacts"
@@ -2248,7 +2269,6 @@ onMounted(async () => {
                     }
                   "
                   item-value="contact_id"
-                  :label="$t('status_visibility_select_contacts')"
                   multiple
                   chips
                   closable-chips
@@ -2685,17 +2705,19 @@ onMounted(async () => {
               <VForm @submit.prevent="saveProfileInfo">
                 <VRow>
                   <VCol cols="12">
+                    <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
                     <AppTextField
                       v-model="profileName"
-                      :label="$t('name') + ':'"
                       :placeholder="$t('name')"
                     />
                   </VCol>
 
                   <VCol cols="12">
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('description') }}:</VLabel
+                    >
                     <VTextarea
                       v-model="profileDescription"
-                      :label="$t('description') + ':'"
                       :placeholder="$t('description')"
                       :counter="MAX_DESCRIPTION_LENGTH"
                       :maxlength="MAX_DESCRIPTION_LENGTH"
@@ -2904,9 +2926,11 @@ onMounted(async () => {
         </IconBtn>
       </VCardTitle>
       <VCardText>
+        <VLabel class="text-body-2 mb-1"
+          >{{ $t('transfer_protocol_text_label') }}:</VLabel
+        >
         <VTextarea
           v-model="transferProtocolText"
-          :label="$t('transfer_protocol_text_label')"
           :placeholder="$t('transfer_protocol_text_placeholder')"
           :maxlength="2000"
           rows="8"
@@ -2961,9 +2985,11 @@ onMounted(async () => {
         </IconBtn>
       </VCardTitle>
       <VCardText>
+        <VLabel class="text-body-2 mb-1"
+          >{{ $t('start_protocol_text_label') }}:</VLabel
+        >
         <VTextarea
           v-model="startProtocolText"
-          :label="$t('start_protocol_text_label')"
           :placeholder="$t('start_protocol_text_placeholder')"
           :maxlength="2000"
           rows="8"
@@ -3018,9 +3044,11 @@ onMounted(async () => {
         </IconBtn>
       </VCardTitle>
       <VCardText>
+        <VLabel class="text-body-2 mb-1"
+          >{{ $t('simultaneous_attendance_quantity_label') }}:</VLabel
+        >
         <VTextField
           v-model="simultaneousAttendanceInput"
-          :label="$t('simultaneous_attendance_quantity_label')"
           :placeholder="$t('simultaneous_attendance_quantity_placeholder')"
           type="number"
           min="1"
@@ -3085,9 +3113,11 @@ onMounted(async () => {
         </IconBtn>
       </VCardTitle>
       <VCardText>
+        <VLabel class="text-body-2 mb-1"
+          >{{ $t('show_message_on_call_text_label') }}:</VLabel
+        >
         <VTextarea
           v-model="showMessageOnCallText"
-          :label="$t('show_message_on_call_text_label')"
           :placeholder="$t('show_message_on_call_text_placeholder')"
           :maxlength="2000"
           rows="8"
@@ -3137,12 +3167,14 @@ onMounted(async () => {
         </IconBtn>
       </VCardTitle>
       <VCardText>
+        <VLabel class="text-body-2 mb-1"
+          >{{ $t('chatbot_select_label') }}:</VLabel
+        >
         <VSelect
           v-model="selectedChatbotId"
           :items="chatbotStore.list"
           item-title="name"
           item-value="chatbot_id"
-          :label="$t('chatbot_select_label')"
           :placeholder="$t('chatbot_select_placeholder')"
           clearable
         />

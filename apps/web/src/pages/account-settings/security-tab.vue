@@ -114,9 +114,11 @@ const handleChangePassword = async () => {
         >
           <VRow>
             <VCol cols="12">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('current_password') }}:</VLabel
+              >
               <AppTextField
                 v-model="currentPassword"
-                :label="$t('current_password') + ':'"
                 :placeholder="$t('current_password')"
                 :type="isCurrentPasswordVisible ? 'text' : 'password'"
                 :autocomplete="currentPasswordAutocomplete"
@@ -141,9 +143,11 @@ const handleChangePassword = async () => {
 
           <VRow>
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('new_password') }}:</VLabel
+              >
               <AppTextField
                 v-model="newPassword"
-                :label="$t('new_password') + ':'"
                 :placeholder="$t('new_password')"
                 :type="isNewPasswordVisible ? 'text' : 'password'"
                 :autocomplete="newPasswordAutocomplete"
@@ -180,9 +184,11 @@ const handleChangePassword = async () => {
             </VCol>
 
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('confirm_new_password') }}:</VLabel
+              >
               <AppTextField
                 v-model="confirmPassword"
-                :label="$t('confirm_new_password') + ':'"
                 :placeholder="$t('confirm_new_password')"
                 :type="isConfirmPasswordVisible ? 'text' : 'password'"
                 :autocomplete="confirmPasswordAutocomplete"

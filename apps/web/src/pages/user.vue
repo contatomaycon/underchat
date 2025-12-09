@@ -322,13 +322,13 @@ watch(
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
             <div v-if="hasFullAccess" class="status-filter">
+              <VLabel class="text-body-2 mb-1">{{ $t('account') }}:</VLabel>
               <AppSelectSearch
                 :model-value="
                   options.account_id === 'all' ? '' : options.account_id || ''
                 "
                 @update:modelValue="handleAccountIdChange"
                 :items="itemsAccount"
-                :label="$t('account')"
                 :placeholder="$t('select_account')"
                 :loading="accountsLoading"
                 :clearable="true"
@@ -337,10 +337,10 @@ watch(
               />
             </div>
             <div class="status-filter">
+              <VLabel class="text-body-2 mb-1">{{ $t('status') }}:</VLabel>
               <AppSelectSearch
                 v-model="options.user_status"
                 :items="itemsStatus"
-                :label="$t('status')"
                 :placeholder="$t('select_state')"
                 :clearable="true"
                 item-value="id"

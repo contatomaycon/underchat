@@ -96,93 +96,108 @@ onMounted(() => {
             <VForm ref="refFormNfse" @submit.prevent="saveNfse">
               <VRow>
                 <VCol cols="12" md="6">
+                  <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
                   <AppTextField
                     v-model="form.name"
-                    :label="$t('name')"
                     :rules="[requiredValidator(form.name, $t('name_required'))]"
                   />
                 </VCol>
 
                 <VCol cols="12" md="6">
-                  <AppTextField
-                    v-model="form.municipal_service_code"
-                    :label="$t('municipal_service_code')"
-                  />
+                  <VLabel class="text-body-2 mb-1"
+                    >{{ $t('municipal_service_code') }}:</VLabel
+                  >
+                  <AppTextField v-model="form.municipal_service_code" />
                 </VCol>
 
                 <VCol cols="12">
+                  <VLabel class="text-body-2 mb-1"
+                    >{{ $t('municipal_service_description_field') }}:</VLabel
+                  >
                   <AppTextField
                     v-model="form.municipal_service_description_field"
-                    :label="$t('municipal_service_description_field')"
                   />
                 </VCol>
 
                 <VCol cols="12" md="6">
-                  <VSwitch
-                    v-model="form.retain_iss"
-                    :label="$t('retain_iss')"
-                    color="primary"
-                  />
+                  <VLabel class="text-body-2 mb-1"
+                    >{{ $t('retain_iss') }}:</VLabel
+                  >
+                  <VSwitch v-model="form.retain_iss" color="primary" />
                 </VCol>
 
                 <VCol cols="12" md="6">
+                  <VLabel class="text-body-2 mb-1"
+                    >{{ $t('iss_value') }}:</VLabel
+                  >
                   <AppTextField
                     v-model="form.iss_value"
-                    :label="$t('iss_value')"
                     type="number"
                     step="0.00001"
                   />
                 </VCol>
 
                 <VCol cols="12" md="6">
+                  <VLabel class="text-body-2 mb-1"
+                    >{{ $t('cofins_value') }}:</VLabel
+                  >
                   <AppTextField
                     v-model="form.cofins_value"
-                    :label="$t('cofins_value')"
                     type="number"
                     step="0.00001"
                   />
                 </VCol>
 
                 <VCol cols="12" md="6">
+                  <VLabel class="text-body-2 mb-1"
+                    >{{ $t('csll_value') }}:</VLabel
+                  >
                   <AppTextField
                     v-model="form.csll_value"
-                    :label="$t('csll_value')"
                     type="number"
                     step="0.00001"
                   />
                 </VCol>
 
                 <VCol cols="12" md="6">
+                  <VLabel class="text-body-2 mb-1"
+                    >{{ $t('inss_value') }}:</VLabel
+                  >
                   <AppTextField
                     v-model="form.inss_value"
-                    :label="$t('inss_value')"
                     type="number"
                     step="0.00001"
                   />
                 </VCol>
 
                 <VCol cols="12" md="6">
+                  <VLabel class="text-body-2 mb-1"
+                    >{{ $t('ir_value') }}:</VLabel
+                  >
                   <AppTextField
                     v-model="form.ir_value"
-                    :label="$t('ir_value')"
                     type="number"
                     step="0.00001"
                   />
                 </VCol>
 
                 <VCol cols="12" md="6">
+                  <VLabel class="text-body-2 mb-1"
+                    >{{ $t('pis_value') }}:</VLabel
+                  >
                   <AppTextField
                     v-model="form.pis_value"
-                    :label="$t('pis_value')"
                     type="number"
                     step="0.00001"
                   />
                 </VCol>
 
                 <VCol cols="12" md="6">
+                  <VLabel class="text-body-2 mb-1"
+                    >{{ $t('deductions') }}:</VLabel
+                  >
                   <AppTextField
                     v-model="form.deductions"
-                    :label="$t('deductions')"
                     type="number"
                     step="0.00001"
                   />

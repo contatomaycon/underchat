@@ -859,36 +859,33 @@ watch(
           </VRow>
           <VRow>
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
               <AppTextField
                 v-model="name"
-                :label="$t('name') + ':'"
                 :placeholder="$t('name')"
                 :rules="[requiredValidator(name, $t('name_required'))]"
               />
             </VCol>
 
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('last_name') }}:</VLabel>
               <AppTextField
                 v-model="last_name"
-                :label="$t('last_name') + ':'"
                 :placeholder="$t('last_name')"
               />
             </VCol>
           </VRow>
           <VRow>
             <VCol cols="12" md="6">
-              <AppTextField
-                v-model="nickname"
-                :label="$t('nickname') + ':'"
-                :placeholder="$t('nickname')"
-              />
+              <VLabel class="text-body-2 mb-1">{{ $t('nickname') }}:</VLabel>
+              <AppTextField v-model="nickname" :placeholder="$t('nickname')" />
             </VCol>
 
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('email') }}:</VLabel>
               <AppTextField
                 v-model="email"
                 type="email"
-                :label="$t('email') + ':'"
                 :placeholder="$t('email')"
                 :rules="[emailValidator]"
               />
@@ -896,10 +893,10 @@ watch(
           </VRow>
           <VRow>
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('phone_ddi') }}:</VLabel>
               <AppSelectSearch
                 v-model="phone_ddi"
                 :items="countryCodes"
-                :label="$t('phone_ddi')"
                 :placeholder="$t('select_phone_ddi')"
                 item-value="value"
                 item-title="title"
@@ -907,10 +904,10 @@ watch(
             </VCol>
 
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('phone') }}:</VLabel>
               <AppTextField
                 v-model="phoneFormatted"
                 type="tel"
-                :label="$t('phone') + ':'"
                 :placeholder="$t('phone')"
                 maxlength="15"
                 :rules="[requiredValidator(phone, $t('phone_required'))]"
@@ -919,18 +916,18 @@ watch(
           </VRow>
           <VRow>
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('birthday') }}:</VLabel>
               <AppDateTimePicker
                 v-model="birthday"
-                :label="$t('birthday') + ':'"
                 :placeholder="$t('birthday')"
               />
             </VCol>
 
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('label') }}:</VLabel>
               <AppSelectSearch
                 v-model="label_template_id"
                 :items="itemsLabel"
-                :label="$t('label')"
                 :placeholder="$t('select_label')"
                 :clearable="true"
                 item-value="value"

@@ -213,10 +213,10 @@ const totalRevenueDialog = computed(() => {
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
             <div class="invoice-list-filter">
+              <VLabel class="text-body-2 mb-1">{{ $t('plan') }}:</VLabel>
               <AppSelectSearch
                 v-model="selectedPlan"
                 :items="plans as any"
-                :label="$t('plan')"
                 :placeholder="$t('select_plan')"
                 :clearable="true"
                 item-value="id"

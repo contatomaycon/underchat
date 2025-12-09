@@ -5113,10 +5113,10 @@ onBeforeUnmount(() => {
           </VCol>
 
           <VCol v-if="transferType === 'user'" cols="12">
+            <VLabel class="text-body-2 mb-1">{{ $t('user') }}:</VLabel>
             <AppSelectSearch
               v-model="selectedTransferUser"
               :items="transferUsers"
-              :label="$t('user')"
               :placeholder="$t('search') + '...'"
               :loading="isLoadingTransferUsers"
               item-value="value"
@@ -5169,10 +5169,10 @@ onBeforeUnmount(() => {
 
           <template v-if="transferType === 'sector'">
             <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('sector') }}:</VLabel>
               <AppSelectSearch
                 v-model="selectedTransferSector"
                 :items="transferSectors"
-                :label="$t('sector')"
                 :placeholder="$t('search') + '...'"
                 :loading="isLoadingTransferSectors"
                 item-value="value"
@@ -5191,10 +5191,12 @@ onBeforeUnmount(() => {
             </VCol>
 
             <VCol v-if="selectedTransferSector" cols="12">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('user') }} ({{ $t('sector') }}):</VLabel
+              >
               <AppSelectSearch
                 v-model="selectedTransferSectorUser"
                 :items="transferSectorUsers"
-                :label="$t('user') + ' (' + $t('sector') + ')'"
                 :placeholder="$t('search') + '...'"
                 :loading="isLoadingTransferSectorUsers"
                 item-value="value"

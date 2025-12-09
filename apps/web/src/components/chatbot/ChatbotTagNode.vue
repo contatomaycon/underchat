@@ -135,13 +135,15 @@ const handleRemove = () => {
       </VCardTitle>
 
       <VCardText class="pa-3">
+        <VLabel class="text-body-2 mb-1"
+          >{{ t('chatbot_tag_type_label') }}:</VLabel
+        >
         <VSelect
           v-model="tagData.tagType"
           :items="[
             { value: 'chat', title: t('chatbot_tag_type_chat') },
             { value: 'contact', title: t('chatbot_tag_type_contact') },
           ]"
-          :label="t('chatbot_tag_type_label')"
           variant="outlined"
           density="compact"
           class="mb-3"
@@ -150,10 +152,12 @@ const handleRemove = () => {
         />
 
         <div v-if="tagData.tagType" class="mb-3">
+          <VLabel class="text-body-2 mb-1"
+            >{{ t('chatbot_tag_label') }}:</VLabel
+          >
           <AppSelectSearch
             v-model="tagData.selectedTag"
             :items="tags"
-            :label="t('chatbot_tag_label')"
             :placeholder="t('chatbot_tag_search_placeholder')"
             :loading="isLoadingTags"
             item-value="value"
