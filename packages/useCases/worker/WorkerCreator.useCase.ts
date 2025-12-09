@@ -82,8 +82,20 @@ export class WorkerCreatorUseCase {
       throw new Error(t('worker_server_not_disponible'));
     }
 
-    const workerId = uuidv7();
+    if (!viewWorkerServer.server_id) {
+      throw new Error(t('worker_server_not_disponible'));
+    }
+
     const workerType = input.worker_type as EWorkerType;
+    if (!workerType || !Object.values(EWorkerType).includes(workerType)) {
+      throw new Error(t('worker_type_invalid'));
+    }
+
+    if (!input.name || input.name.trim().length === 0) {
+      throw new Error(t('worker_name_required'));
+    }
+
+    const workerId = uuidv7();
 
     const createWorkerPayload: ICreateWorker = {
       worker_id: workerId,
@@ -91,7 +103,7 @@ export class WorkerCreatorUseCase {
       worker_type_id: workerType,
       server_id: viewWorkerServer.server_id,
       account_id: accountId,
-      name: input.name,
+      name: input.name.trim(),
     };
 
     const isCreated =
@@ -108,7 +120,7 @@ export class WorkerCreatorUseCase {
       worker_type_id: workerType,
       server_id: viewWorkerServer.server_id,
       account_id: viewWorkerServer.account_id,
-      name: input.name,
+      name: input.name.trim(),
     };
 
     await this.centrifugoService.publishSub(

@@ -32,6 +32,7 @@ import { IViewWorkerServer } from '@core/common/interfaces/IViewWorkerServer';
 import { WorkerBaileysActivitiesListerRepository } from '@core/repositories/worker/WorkerBaileysActivitiesLister.repository';
 import { IListWorkerActivities } from '@core/common/interfaces/IListWorkerActivities';
 import { WorkerStatusUpdaterRepository } from '@core/repositories/worker/WorkerStatusUpdater.repository';
+import { WorkerNewStatusListerRepository } from '@core/repositories/worker/WorkerNewStatusLister.repository';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IViewWorkerNameAndContainerId } from '@core/common/interfaces/IViewWorkerNameAndContainerId';
 import { WorkerNameAndIdViewerRepository } from '@core/repositories/worker/WorkerNameAndIdViewer.repository';
@@ -64,6 +65,7 @@ export class WorkerService {
     private readonly workerPhoneConnectionCreatorRepository: WorkerPhoneConnectionCreatorRepository,
     private readonly workerTypeViewerRepository: WorkerTypeViewerRepository,
     private readonly workerBaileysActivitiesListerRepository: WorkerBaileysActivitiesListerRepository,
+    private readonly workerNewStatusListerRepository: WorkerNewStatusListerRepository,
     private readonly workerStatusUpdaterRepository: WorkerStatusUpdaterRepository,
     private readonly workerNameAndIdViewerRepository: WorkerNameAndIdViewerRepository,
     private readonly workerConfigFieldsViewerRepository: WorkerConfigFieldsViewerRepository,
@@ -344,6 +346,10 @@ export class WorkerService {
 
   listWorkerBaileysActivities = async (): Promise<IListWorkerActivities[]> => {
     return this.workerBaileysActivitiesListerRepository.listWorkerBaileysActivities();
+  };
+
+  listWorkerNewStatus = async (): Promise<IListWorkerActivities[]> => {
+    return this.workerNewStatusListerRepository.listWorkerNewStatus();
   };
 
   updateStatusWorker = async (
