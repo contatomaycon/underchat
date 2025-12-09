@@ -227,6 +227,8 @@ onMounted(async () => {
   await onMessage(
     channelsConfigCentrifugo(),
     (data: IBaileysConnectionState | IWorkerPayload) => {
+      console.log('data', data);
+
       updateChannelFromCentrifugo(data);
     }
   );
