@@ -224,14 +224,14 @@ const totalRevenueDialog = computed(() => {
               />
             </div>
             <div class="invoice-list-filter">
-              <VLabel>{{ $t('start_date') }}:</VLabel>
+              <VLabel class="text-body-2 mb-1">{{ $t('start_date') }}:</VLabel>
               <AppDateTimePicker
                 v-model="startDate"
                 :placeholder="$t('select_date')"
               />
             </div>
             <div class="invoice-list-filter">
-              <VLabel>{{ $t('end_date') }}:</VLabel>
+              <VLabel class="text-body-2 mb-1">{{ $t('end_date') }}:</VLabel>
               <AppDateTimePicker
                 v-model="endDate"
                 :placeholder="$t('select_date')"

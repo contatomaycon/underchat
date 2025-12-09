@@ -27,7 +27,7 @@ const DEFAULT_COLOR = '#A89999';
 
 const color = ref<string>(DEFAULT_COLOR);
 const label = ref<string | null>(null);
-const label_status_id = ref<string | null>(null);
+const label_status_id = ref<string | null>(ELabelStatus.active);
 
 const refFormAddLabelTemplate = ref<VForm>();
 
@@ -58,7 +58,7 @@ const addLabelTemplate = async () => {
 
 const resetForm = () => {
   label.value = null;
-  label_status_id.value = null;
+  label_status_id.value = ELabelStatus.active;
   color.value = DEFAULT_COLOR;
   refFormAddLabelTemplate.value?.resetValidation();
 };

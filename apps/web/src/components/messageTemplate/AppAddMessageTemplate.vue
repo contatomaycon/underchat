@@ -59,19 +59,19 @@ type FilePreview = {
 
 const messageTypeOptions = computed(() => [
   {
-    value: EMessageType.text,
+    id: EMessageType.text,
     title: t('message_type_text'),
   },
   {
-    value: EMessageType.image,
+    id: EMessageType.image,
     title: t('message_type_image'),
   },
   {
-    value: EMessageType.video,
+    id: EMessageType.video,
     title: t('message_type_video'),
   },
   {
-    value: EMessageType.audio,
+    id: EMessageType.audio,
     title: t('message_type_audio'),
   },
 ]);
@@ -80,38 +80,6 @@ const itemsStatus = ref([
   { value: EMessageStatus.active, text: t('active') },
   { value: EMessageStatus.inactive, text: t('inactive') },
 ]);
-
-const typeSearchQuery = ref('');
-const isTypeMenuOpen = ref(false);
-
-const filteredTypes = computed(() => {
-  if (!typeSearchQuery.value) {
-    return messageTypeOptions.value;
-  }
-  const query = typeSearchQuery.value.toLowerCase();
-  return messageTypeOptions.value.filter((type) =>
-    type.title.toLowerCase().includes(query)
-  );
-});
-
-const statusSearchQuery = ref('');
-const isStatusMenuOpen = ref(false);
-
-const filteredStatuses = computed(() => {
-  if (!statusSearchQuery.value) {
-    return itemsStatus.value;
-  }
-  const query = statusSearchQuery.value.toLowerCase();
-  return itemsStatus.value.filter((status) =>
-    status.text.toLowerCase().includes(query)
-  );
-});
-
-watch(isTypeMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    typeSearchQuery.value = '';
-  }
-});
 
 const selectedType = ref<EMessageType>(EMessageType.text);
 const message = ref<string | null>(null);
@@ -435,11 +403,12 @@ onBeforeUnmount(() => {
               <VLabel class="text-body-2 mb-1"
                 >{{ $t('message_type') }}:</VLabel
               >
-              <VSelect
+              <AppSelectSearch
                 v-model="selectedType"
                 :items="messageTypeOptions"
+                item-value="id"
                 item-title="title"
-                item-value="value"
+                :clearable="false"
                 :rules="[
                   requiredValidator(selectedType, $t('message_type_required')),
                 ]"

@@ -452,7 +452,7 @@ onMounted(() => {
         <!-- Filtros -->
         <div class="d-flex align-center flex-wrap gap-4 mb-6">
           <div class="invoice-list-filter">
-            <VLabel>{{ $t('report_type') }}:</VLabel>
+            <VLabel class="text-body-2 mb-1">{{ $t('report_type') }}:</VLabel>
             <AppSelect
               v-model="reportType"
               :items="[
@@ -465,7 +465,7 @@ onMounted(() => {
           </div>
 
           <div class="invoice-list-filter">
-            <VLabel>{{ $t('start_date') }}:</VLabel>
+            <VLabel class="text-body-2 mb-1">{{ $t('start_date') }}:</VLabel>
             <AppDateTimePicker
               v-model="startDate"
               :placeholder="$t('select_date')"
@@ -473,7 +473,7 @@ onMounted(() => {
           </div>
 
           <div class="invoice-list-filter">
-            <VLabel>{{ $t('end_date') }}:</VLabel>
+            <VLabel class="text-body-2 mb-1">{{ $t('end_date') }}:</VLabel>
             <AppDateTimePicker
               v-model="endDate"
               :placeholder="$t('select_date')"

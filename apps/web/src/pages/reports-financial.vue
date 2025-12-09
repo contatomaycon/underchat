@@ -173,7 +173,7 @@ onMounted(async () => {
         <div class="d-flex align-center flex-wrap gap-4 mb-6">
           <template v-if="viewType === 'annual'">
             <div class="invoice-list-filter">
-              <VLabel>{{ $t('start_year') }}:</VLabel>
+              <VLabel class="text-body-2 mb-1">{{ $t('start_year') }}:</VLabel>
               <AppSelect
                 v-model="startYear"
                 :items="years"
@@ -182,7 +182,7 @@ onMounted(async () => {
               />
             </div>
             <div class="invoice-list-filter">
-              <VLabel>{{ $t('end_year') }}:</VLabel>
+              <VLabel class="text-body-2 mb-1">{{ $t('end_year') }}:</VLabel>
               <AppSelect
                 v-model="endYear"
                 :items="years"
@@ -194,14 +194,14 @@ onMounted(async () => {
 
           <template v-else>
             <div class="invoice-list-filter">
-              <VLabel>{{ $t('start_date') }}:</VLabel>
+              <VLabel class="text-body-2 mb-1">{{ $t('start_date') }}:</VLabel>
               <AppDateTimePicker
                 v-model="startDate"
                 :placeholder="$t('select_date')"
               />
             </div>
             <div class="invoice-list-filter">
-              <VLabel>{{ $t('end_date') }}:</VLabel>
+              <VLabel class="text-body-2 mb-1">{{ $t('end_date') }}:</VLabel>
               <AppDateTimePicker
                 v-model="endDate"
                 :placeholder="$t('select_date')"
