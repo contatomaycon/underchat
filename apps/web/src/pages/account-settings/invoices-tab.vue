@@ -142,6 +142,7 @@ watch(
       <VDivider />
       <VCardText>
         <VDataTableServer
+          class="data-table"
           v-model:page="options.page"
           v-model:items-per-page="options.itemsPerPage"
           :headers="[
@@ -554,5 +555,22 @@ watch(
   background-color: rgb(var(--v-theme-surface)) !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
   border-radius: 8px;
+}
+
+.data-table {
+  :deep(.v-table__wrapper > table > thead) {
+    background-color: rgba(var(--v-theme-on-surface), 0.04);
+  }
+
+  :deep(.v-table__wrapper > table > thead > tr > th) {
+    background-color: transparent;
+    color: rgb(var(--v-theme-primary));
+    font-weight: 700;
+    border-bottom: 1px solid rgba(var(--v-theme-primary), 0.25);
+  }
+
+  :deep(.v-table__wrapper > table > thead > tr > th .v-data-table-header__content) {
+    color: inherit;
+  }
 }
 </style>
