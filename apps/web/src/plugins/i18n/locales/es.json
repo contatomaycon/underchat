@@ -348,6 +348,7 @@
     "worker_recreate_success": "Canal recreado exitosamente.",
     "deleting": "Eliminando",
     "recreating": "Recreando",
+    "recreate": "Recrear",
     "delete": "Eliminar",
     "user_list_error": "Ocurrió un error al listar los usuarios. Por favor, inténtalo de nuevo.",
     "user_view_error": "Ocurrió un error al ver el usuario. Por favor, inténtalo de nuevo.",

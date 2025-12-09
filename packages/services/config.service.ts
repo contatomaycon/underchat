@@ -1,12 +1,15 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ChannelsListerRepository } from '@core/repositories/config/ChannelsLister.repository';
+import { ChannelViewerRepository } from '@core/repositories/config/ChannelViewer.repository';
 import { ListChannelsRequest } from '@core/schema/config/listChannels/request.schema';
 import { ListChannelsResponse } from '@core/schema/config/listChannels/response.schema';
+import { IViewWorkerServer } from '@core/common/interfaces/IViewWorkerServer';
 
 @injectable()
 export class ConfigService {
   constructor(
-    private readonly channelsListerRepository: ChannelsListerRepository
+    private readonly channelsListerRepository: ChannelsListerRepository,
+    private readonly channelViewerRepository: ChannelViewerRepository
   ) {}
 
   listChannels = async (
@@ -20,5 +23,11 @@ export class ConfigService {
     ]);
 
     return [result, total];
+  };
+
+  viewChannelBalancer = async (
+    channelId: string
+  ): Promise<IViewWorkerServer | null> => {
+    return this.channelViewerRepository.viewChannelBalancer(channelId);
   };
 }

@@ -347,6 +347,7 @@
     "worker_recreate_success": "Channel recreated successfully!",
     "deleting": "Deleting",
     "recreating": "Recreating",
+    "recreate": "Recreate",
     "delete": "Delete",
     "user_list_error": "An error occurred while listing users. Please try again.",
     "user_view_error": "An error occurred while viewing the user. Please try again.",

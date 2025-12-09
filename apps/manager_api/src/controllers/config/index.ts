@@ -7,6 +7,8 @@ import { listNfse } from './methods/listNfse';
 import { updateNfse } from './methods/updateNfse';
 import { listChannels } from './methods/listChannels';
 import { listAccounts } from './methods/listAccounts';
+import { recreateChannel } from './methods/recreateChannel';
+import { deleteChannel } from './methods/deleteChannel';
 
 @injectable()
 class ConfigController {
@@ -18,6 +20,8 @@ class ConfigController {
   public updateNfse = updateNfse;
   public listChannels = listChannels;
   public listAccounts = listAccounts;
+  public recreateChannel = recreateChannel;
+  public deleteChannel = deleteChannel;
 }
 
 export default ConfigController;

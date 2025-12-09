@@ -9,6 +9,8 @@ import { listNfseSchema } from '@core/schema/config/listNfse';
 import { updateNfseSchema } from '@core/schema/config/updateNfse';
 import { listChannelsSchema } from '@core/schema/config/listChannels';
 import { listAccountsSchema } from '@core/schema/config/listAccounts';
+import { recreateChannelSchema } from '@core/schema/config/recreateChannel';
+import { deleteChannelSchema } from '@core/schema/config/deleteChannel';
 import { configPermissions } from '@/permissions';
 
 export default async function configRoutes(server: FastifyInstance) {
@@ -80,6 +82,24 @@ export default async function configRoutes(server: FastifyInstance) {
   server.get('/config/accounts', {
     schema: listAccountsSchema,
     handler: configController.listAccounts,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, configPermissions),
+    ],
+  });
+
+  server.patch('/config/channels/:channel_id/recreate', {
+    schema: recreateChannelSchema,
+    handler: configController.recreateChannel,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, configPermissions),
+    ],
+  });
+
+  server.delete('/config/channels/:channel_id', {
+    schema: deleteChannelSchema,
+    handler: configController.deleteChannel,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, configPermissions),

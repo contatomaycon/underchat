@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { refDebounced } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 import { useSettingsStore } from '@/@webcore/stores/settings';
@@ -13,6 +13,13 @@ import { ListChannelsResponse } from '@core/schema/config/listChannels/response.
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { EColor } from '@core/common/enums/EColor';
 import TablePagination from '@/@webcore/components/TablePagination.vue';
+import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
+import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { getUser } from '@/@webcore/localStorage/user';
+import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
+import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
+import { EWorkerAction } from '@core/common/enums/EWorkerAction';
+import VDialogHandler from '@/components/VDialogHandler.vue';
 
 const { t } = useI18n();
 const settingsStore = useSettingsStore();
@@ -104,6 +111,7 @@ const headers: DataTableHeader<ListChannelsResponse>[] = [
   { title: t('server'), key: 'server' },
   { title: t('connection_date'), key: 'connection_date' },
   { title: t('created_at'), key: 'created_at' },
+  { title: t('actions'), key: 'actions', sortable: false },
 ];
 
 const options = ref({
@@ -161,9 +169,75 @@ watch(
   { immediate: true, deep: true }
 );
 
+const user = getUser();
+const channelToDelete = ref<string | null>(null);
+const isDialogDeleterShow = ref(false);
+
+const handleDelete = async () => {
+  if (!channelToDelete.value) return;
+
+  const result = await settingsStore.deleteChannel(channelToDelete.value);
+  if (result) {
+    await loadChannels();
+  }
+
+  channelToDelete.value = null;
+};
+
+const handleRecreate = async (channelId: string) => {
+  const result = await settingsStore.recreateChannel(channelId);
+  if (result) {
+    await loadChannels();
+  }
+};
+
+const deleteChannel = (id: string) => {
+  channelToDelete.value = id;
+  isDialogDeleterShow.value = true;
+};
+
+const updateChannelFromCentrifugo = (
+  data: IBaileysConnectionState | IWorkerPayload
+) => {
+  if ('action' in data) {
+    const payload = data as IWorkerPayload;
+
+    if (
+      payload.action === EWorkerAction.delete ||
+      payload.action === EWorkerAction.recreate
+    ) {
+      loadChannels();
+    }
+  } else {
+    const connectionState = data as IBaileysConnectionState;
+    const channelIndex = channels.value.findIndex(
+      (ch) => ch.id === connectionState.worker_id
+    );
+
+    if (channelIndex !== -1) {
+      loadChannels();
+    }
+  }
+};
+
 onMounted(async () => {
   await loadAccounts();
-  loadChannels();
+  await loadChannels();
+
+  if (user?.account_id) {
+    await onMessage(
+      workerCentrifugoQueue(user.account_id),
+      (data: IBaileysConnectionState | IWorkerPayload) => {
+        updateChannelFromCentrifugo(data);
+      }
+    );
+  }
+});
+
+onUnmounted(async () => {
+  if (user?.account_id) {
+    await unsubscribe(workerCentrifugoQueue(user.account_id));
+  }
 });
 </script>
 
@@ -319,6 +393,35 @@ onMounted(async () => {
               <span v-else>-</span>
             </template>
 
+            <template #item.actions="{ item }">
+              <div class="d-flex gap-1">
+                <IconBtn>
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('recreate') }}</span>
+                  </VTooltip>
+                  <VIcon
+                    icon="tabler-refresh"
+                    @click="handleRecreate(item.id)"
+                  />
+                </IconBtn>
+
+                <IconBtn>
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('delete') }}</span>
+                  </VTooltip>
+                  <VIcon icon="tabler-trash" @click="deleteChannel(item.id)" />
+                </IconBtn>
+              </div>
+            </template>
+
             <template #bottom>
               <TablePagination
                 v-if="options.itemsPerPage !== -1"
@@ -340,6 +443,13 @@ onMounted(async () => {
     >
       {{ settingsStore.snackbar.message }}
     </VSnackbar>
+
+    <VDialogHandler
+      v-model="isDialogDeleterShow"
+      :title="$t('delete') + ' ' + $t('channel')"
+      :message="$t('delete_channel_confirmation')"
+      @confirm="handleDelete"
+    />
   </div>
 </template>
 
@@ -364,7 +474,9 @@ onMounted(async () => {
     border-bottom: 1px solid rgba(var(--v-theme-primary), 0.25);
   }
 
-  :deep(.v-table__wrapper > table > thead > tr > th .v-data-table-header__content) {
+  :deep(
+    .v-table__wrapper > table > thead > tr > th .v-data-table-header__content
+  ) {
     color: inherit;
   }
 }
