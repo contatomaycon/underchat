@@ -46,6 +46,28 @@ const itemsType = ref([
   { id: EWorkerType.whatsapp, text: t('official') },
 ]);
 
+const itemsAccount = ref<Array<{ id: string; text: string }>>([]);
+const accountsLoading = ref(false);
+
+const loadAccounts = async () => {
+  if (itemsAccount.value.length > 0) return;
+
+  accountsLoading.value = true;
+  try {
+    const accounts = await settingsStore.getAccounts();
+    if (accounts) {
+      itemsAccount.value = accounts.map((acc) => ({
+        id: acc.account_id,
+        text: acc.name,
+      }));
+    }
+  } catch (error) {
+    console.error('Erro ao carregar accounts:', error);
+  } finally {
+    accountsLoading.value = false;
+  }
+};
+
 const resolveStatusVariant = (s: string | undefined | null) => {
   if (s === EWorkerStatus.disponible)
     return { color: EColor.warning, text: t('disponible') };
@@ -90,6 +112,7 @@ const options = ref({
   sortBy: [] as SortRequest[],
   status: null as string | null,
   type: null as string | null,
+  account: null as string | null,
   search: null as string | null,
 });
 
@@ -105,6 +128,7 @@ const query = computed(() => ({
   sort_by: options.value.sortBy,
   status: options.value.status || undefined,
   type: options.value.type || undefined,
+  account: options.value.account || undefined,
   name: debouncedSearch.value || undefined,
   number: debouncedSearch.value || undefined,
 }));
@@ -137,7 +161,8 @@ watch(
   { immediate: true, deep: true }
 );
 
-onMounted(() => {
+onMounted(async () => {
+  await loadAccounts();
   loadChannels();
 });
 </script>
@@ -167,6 +192,20 @@ onMounted(() => {
           </div>
 
           <div class="d-flex align-center flex-wrap gap-4">
+            <div class="status-filter">
+              <VLabel class="text-body-2 mb-1">{{ $t('account') }}:</VLabel>
+              <AppSelectSearch
+                v-model="options.account"
+                :items="itemsAccount"
+                :placeholder="$t('select_account')"
+                :clearable="true"
+                :loading="accountsLoading"
+                item-value="id"
+                item-title="text"
+                @update:modelValue="options.page = 1"
+              />
+            </div>
+
             <div class="status-filter">
               <VLabel class="text-body-2 mb-1">{{ $t('type') }}:</VLabel>
               <AppSelectSearch

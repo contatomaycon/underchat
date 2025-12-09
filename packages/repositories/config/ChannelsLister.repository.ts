@@ -56,17 +56,20 @@ export class ChannelsListerRepository {
   private readonly setFilters = (query: ListChannelsRequest): SQLWrapper[] => {
     const filters: SQLWrapper[] = [];
 
-    if (query.name || query.number || query.server || query.account) {
+    if (query.name || query.number || query.server) {
       const conditions: (SQLWrapper | undefined)[] = [
         query.name ? ilike(worker.name, `%${query.name}%`) : undefined,
         query.number ? ilike(worker.number, `%${query.number}%`) : undefined,
         query.server ? ilike(server.name, `%${query.server}%`) : undefined,
-        query.account ? ilike(account.name, `%${query.account}%`) : undefined,
       ];
 
       const combined = or(...conditions);
 
       if (combined) filters.push(combined);
+    }
+
+    if (query.account) {
+      filters.push(eq(account.account_id, query.account));
     }
 
     if (query.status) {

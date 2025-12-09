@@ -14,6 +14,7 @@ import { UpdateNfseRequest } from '@core/schema/config/updateNfse/request.schema
 import { UpdateNfseResponse } from '@core/schema/config/updateNfse/response.schema';
 import { ListChannelsRequest } from '@core/schema/config/listChannels/request.schema';
 import { ListChannelsFinalResponse } from '@core/schema/config/listChannels/response.schema';
+import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 
 export const useSettingsStore = defineStore('settings', {
   state: () => ({
@@ -221,6 +222,27 @@ export const useSettingsStore = defineStore('settings', {
         }
 
         this.channels = data.data;
+
+        return data.data;
+      } catch {
+        this.loading = false;
+        return null;
+      }
+    },
+    async getAccounts(): Promise<IAccountBasic[] | null> {
+      try {
+        this.loading = true;
+
+        const response =
+          await axios.get<IApiResponse<IAccountBasic[]>>('/config/accounts');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
 
         return data.data;
       } catch {
