@@ -32,7 +32,6 @@ const itemsPerPage = ref([
 ]);
 
 const itemsStatus = ref([
-  { id: '', text: t('all') },
   { id: EWorkerStatus.disponible, text: t('disponible') },
   { id: EWorkerStatus.offline, text: t('offline') },
   { id: EWorkerStatus.online, text: t('online') },
@@ -43,7 +42,6 @@ const itemsStatus = ref([
 ]);
 
 const itemsType = ref([
-  { id: '', text: t('all') },
   { id: EWorkerType.baileys, text: t('unofficial') },
   { id: EWorkerType.whatsapp, text: t('official') },
 ]);
@@ -168,108 +166,126 @@ onMounted(() => {
             </div>
           </div>
 
-          <div class="d-flex gap-4 align-center flex-wrap">
-            <AppTextField
-              v-model="options.search"
-              :placeholder="$t('search')"
-              prepend-inner-icon="tabler-search"
-              style="max-width: 300px"
-            />
+          <div class="d-flex align-center flex-wrap gap-4">
+            <div class="status-filter">
+              <VLabel class="text-body-2 mb-1">{{ $t('type') }}:</VLabel>
+              <AppSelectSearch
+                v-model="options.type"
+                :items="itemsType"
+                :placeholder="$t('select_type')"
+                :clearable="true"
+                item-value="id"
+                item-title="text"
+                @update:modelValue="options.page = 1"
+              />
+            </div>
 
-            <AppSelect
-              v-model="options.status"
-              :items="itemsStatus"
-              :placeholder="$t('status')"
-              style="max-width: 200px"
-            />
+            <div class="status-filter">
+              <VLabel class="text-body-2 mb-1">{{ $t('status') }}:</VLabel>
+              <AppSelectSearch
+                v-model="options.status"
+                :items="itemsStatus"
+                :placeholder="$t('select_state')"
+                :clearable="true"
+                item-value="id"
+                item-title="text"
+                @update:modelValue="options.page = 1"
+              />
+            </div>
 
-            <AppSelect
-              v-model="options.type"
-              :items="itemsType"
-              :placeholder="$t('type')"
-              style="max-width: 200px"
-            />
+            <div class="invoice-list-filter">
+              <VLabel class="text-body-2 mb-1">{{ $t('search') }}:</VLabel>
+              <AppTextField
+                :placeholder="$t('search') + '...'"
+                append-inner-icon="tabler-search"
+                single-line
+                hide-details
+                dense
+                outlined
+                v-model="options.search"
+              />
+            </div>
           </div>
         </div>
 
         <div class="mt-4">
           <VDataTable
-          :headers="headers"
-          :items="channels"
-          :loading="loading || settingsStore.loading"
-          :items-per-page="
-            options.itemsPerPage === -1 ? total : options.itemsPerPage
-          "
-          :page="options.page"
-          :server-items-length="total"
-          @update:options="handleTableChange"
-        >
-          <template #item.name="{ item }">
-            {{ item.name }}
-          </template>
+            :headers="headers"
+            :items="channels"
+            :loading="loading || settingsStore.loading"
+            :items-per-page="
+              options.itemsPerPage === -1 ? total : options.itemsPerPage
+            "
+            :page="options.page"
+            :server-items-length="total"
+            @update:options="handleTableChange"
+          >
+            <template #item.name="{ item }">
+              {{ item.name }}
+            </template>
 
-          <template #item.number="{ item }">
-            <span v-if="item.number">
-              {{ formatPhoneBR(item.number) }}
-            </span>
-            <span v-else>-</span>
-          </template>
+            <template #item.number="{ item }">
+              <span v-if="item.number">
+                {{ formatPhoneBR(item.number) }}
+              </span>
+              <span v-else>-</span>
+            </template>
 
-          <template #item.status="{ item }">
-            <VChip
-              v-if="item.status"
-              :color="resolveStatusVariant(item.status.id).color"
-              size="small"
-            >
-              {{ resolveStatusVariant(item.status.id).text }}
-            </VChip>
-            <span v-else>-</span>
-          </template>
+            <template #item.status="{ item }">
+              <VChip
+                v-if="item.status"
+                :color="resolveStatusVariant(item.status.id).color"
+                size="small"
+              >
+                {{ resolveStatusVariant(item.status.id).text }}
+              </VChip>
+              <span v-else>-</span>
+            </template>
 
-          <template #item.type="{ item }">
-            <VChip
-              v-if="item.type"
-              :color="resolveTypeVariant(item.type.id).color"
-              size="small"
-            >
-              {{ resolveTypeVariant(item.type.id).text }}
-            </VChip>
-            <span v-else>-</span>
-          </template>
+            <template #item.type="{ item }">
+              <VChip
+                v-if="item.type"
+                :color="resolveTypeVariant(item.type.id).color"
+                size="small"
+              >
+                {{ resolveTypeVariant(item.type.id).text }}
+              </VChip>
+              <span v-else>-</span>
+            </template>
 
-          <template #item.account="{ item }">
-            <span v-if="item.account">{{ item.account.name }}</span>
-            <span v-else>-</span>
-          </template>
+            <template #item.account="{ item }">
+              <span v-if="item.account">{{ item.account.name }}</span>
+              <span v-else>-</span>
+            </template>
 
-          <template #item.server="{ item }">
-            <span v-if="item.server">{{ item.server.name }}</span>
-            <span v-else>-</span>
-          </template>
+            <template #item.server="{ item }">
+              <span v-if="item.server">{{ item.server.name }}</span>
+              <span v-else>-</span>
+            </template>
 
-          <template #item.connection_date="{ item }">
-            <span v-if="item.connection_date">
-              {{ formatDateTime(item.connection_date) }}
-            </span>
-            <span v-else>-</span>
-          </template>
+            <template #item.connection_date="{ item }">
+              <span v-if="item.connection_date">
+                {{ formatDateTime(item.connection_date) }}
+              </span>
+              <span v-else>-</span>
+            </template>
 
-          <template #item.created_at="{ item }">
-            <span v-if="item.created_at">
-              {{ formatDateTime(item.created_at) }}
-            </span>
-            <span v-else>-</span>
-          </template>
+            <template #item.created_at="{ item }">
+              <span v-if="item.created_at">
+                {{ formatDateTime(item.created_at) }}
+              </span>
+              <span v-else>-</span>
+            </template>
 
-          <template #bottom>
-            <TablePagination
-              v-if="options.itemsPerPage !== -1"
-              v-model:page="options.page"
-              :items-per-page="options.itemsPerPage"
-              :total-items="total"
-            />
-          </template>
-        </VDataTable>
+            <template #bottom>
+              <TablePagination
+                v-if="options.itemsPerPage !== -1"
+                v-model:page="options.page"
+                :items-per-page="options.itemsPerPage"
+                :total-items="total"
+              />
+            </template>
+          </VDataTable>
         </div>
       </VCardText>
     </VCard>
@@ -284,3 +300,13 @@ onMounted(() => {
     </VSnackbar>
   </div>
 </template>
+
+<style lang="scss" scoped>
+.status-filter {
+  inline-size: 12rem;
+}
+
+.invoice-list-filter {
+  inline-size: 20rem;
+}
+</style>
